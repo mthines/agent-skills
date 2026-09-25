@@ -42,6 +42,7 @@ import { computeGates } from "./finalize/gates.mjs";
 import {
   buildReportPayload, buildQualitySummary,
   toFindingBullet, toAdvisoryFinding, toOpenThreadBullet, toInlineCommentPayload,
+  buildOptimalityCard,
 } from "./finalize/payload.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
@@ -77,6 +78,127 @@ export function sha7(raw) {
 export function withRenderAt(context, now = new Date().toISOString()) {
   if (context?.render?.at) return context;
   return { ...context, render: { ...(context?.render || {}), at: now } };
+}
+
+/**
+ * D5/AC-11 real gap (arm B's first live A/B run, `ab/B/20230/1/meta.json`): prepare-review.mjs
+ * deliberately strips `files[].patch` from the context by default (D5's "the context is an
+ * INDEX, not an ARCHIVE") — the full per-file patch text lives instead in the `paths.files` /
+ * `filesPath` sidecar (pr-files.json, one JSON object per line). finalizeReview()'s line-validity
+ * pre-flight reads `f.patch` straight off `context.files` and has no other way to anchor a
+ * candidate's line — against a real (non-`--inline-payloads`) context every candidate came back
+ * anchorless, which a hand run had to work around by hand-copying the sidecar's patches into a
+ * throwaway context copy. This is the I/O boundary (D18: only `main()` reads files) that closes
+ * that gap at the source: re-hydrate `context.files[].patch` from the sidecar before
+ * `finalizeReview()` (the pure core) ever sees the context, so a live run needs zero manual
+ * patching. A context that already carries inline patches (`--inline-payloads`, or a hand-crafted
+ * AC-11 fixture) is left untouched, and a missing/unreadable sidecar degrades to the pre-fix
+ * behavior (patch-less files, everything anchorless) rather than throwing — finalize.mjs has
+ * always been able to run against a partial context.
+ * @param {any} context @returns {any}
+ */
+export function hydrateFilePatches(context) {
+  const files = context?.files;
+  if (!Array.isArray(files) || files.length === 0) return context;
+  if (files.every((f) => typeof f?.patch === "string" && f.patch.length > 0)) return context;
+  const sidecarPath = context?.paths?.files || context?.filesPath;
+  if (!sidecarPath) return context;
+  let raw;
+  try {
+    raw = readFileSync(sidecarPath, "utf8");
+  } catch {
+    return context;
+  }
+  /** @type {Record<string, string>} */
+  const patchByFile = {};
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue; // one malformed sidecar line never blocks the rest
+    }
+    if (row && typeof row.filename === "string" && typeof row.patch === "string") {
+      patchByFile[row.filename] = row.patch;
+    }
+  }
+  return {
+    ...context,
+    files: files.map((f) => (
+      f && typeof f.filename === "string" && patchByFile[f.filename] !== undefined
+        ? { ...f, patch: patchByFile[f.filename] }
+        : f
+    )),
+  };
+}
+
+/**
+ * RUN_ANOMALY — render-report.mjs's own docstring: "one line naming something that changed what
+ * this run actually reviewed". Pure (D18): the caller resolves `capApplied`/`depthCapability`/
+ * `contextAnomalies` from the context; this only formats them, and never begins with a glyph
+ * (the renderer prepends its own ⚠️ — a value that did would double it).
+ * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[] }} args
+ * @returns {string|undefined}
+ */
+export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies }) {
+  const parts = [];
+  if (capApplied) {
+    parts.push(`depth capability (${depthCapability || "diff-only"}) capped this run below the deep tier its mode would otherwise require`);
+  }
+  const anomalies = Array.isArray(contextAnomalies) ? contextAnomalies : [];
+  if (anomalies.length) {
+    const n = anomalies.length;
+    const lead = String(anomalies[0]).replace(/\s+/g, " ").trim();
+    parts.push(`${n} prepare-time anomal${n === 1 ? "y" : "ies"} (${lead}${n > 1 ? `, +${n - 1} more` : ""})`);
+  }
+  return parts.length ? parts.join(" — ") : undefined;
+}
+
+/**
+ * `judgments.memory.{relevance_rules,lessons_used}` → render-report.mjs `MEMORIES_USED[]` rows
+ * (D4: "copied verbatim from MCP reads … finalize.mjs decides the lifecycle"). A relevance rule
+ * IS a suppression rule, so it is always `kind: "rule"`; a lesson's kind is derived from its
+ * LoreKit key prefix (`hotspot::…` / `knowledge::…`), defaulting to `lesson` for anything else
+ * (e.g. an `aw-lessons`-namespaced record).
+ * @param {string|null|undefined} key @param {string} fallback @returns {string}
+ */
+function deriveMemoryKind(key, fallback) {
+  const k = String(key || "");
+  if (k.startsWith("hotspot::")) return "hotspot";
+  if (k.startsWith("knowledge::")) return "knowledge";
+  return fallback;
+}
+
+/** @param {any} record @param {string|null} kindOverride @returns {Record<string, any>} */
+function toMemoryUsedItem(record, kindOverride) {
+  const kind = kindOverride || deriveMemoryKind(record?.key, "lesson");
+  /** @type {Record<string, any>} */
+  const out = { key: record?.key, kind };
+  const note = record?.used_as || record?.note;
+  if (note) out.note = note;
+  if (Array.isArray(record?.evidence) && record.evidence.length) out.evidence = record.evidence;
+  if (record?.url) out.url = record.url;
+  return out;
+}
+
+/** @param {any} memory @returns {Record<string, any>[]} */
+export function buildMemoriesUsed(memory) {
+  return [
+    ...(memory?.relevance_rules || []).map((/** @type {any} */ r) => toMemoryUsedItem(r, "rule")),
+    ...(memory?.lessons_used || []).map((/** @type {any} */ r) => toMemoryUsedItem(r, null)),
+  ];
+}
+
+/**
+ * render-report.mjs requires MEMORIES_SUMMARY to be exactly `<N> indexed` (with `N >=` the
+ * MEMORIES_USED count) whenever MEMORIES_USED is non-empty, and rejects any string carrying the
+ * word "used" (that half is derived from MEMORIES_USED.length). Computed from the SAME array
+ * MEMORIES_USED renders, so the two can never disagree.
+ * @param {Record<string, any>[]} memoryUsed @returns {string}
+ */
+export function memoriesSummaryFor(memoryUsed) {
+  return memoryUsed.length > 0 ? `${memoryUsed.length} indexed` : "no relevance rules or lessons consulted";
 }
 
 /**
@@ -206,12 +328,31 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // D5: the diff-only-cap carve-out (Phase 1, render-report.mjs's TIER_FOR_MODE) — a
   // capability-capped run auto-names its own anomaly rather than requiring the caller to
   // remember to. An explicit context.render.RUN_ANOMALY always wins (a real anomaly, e.g. a
-  // base-branch merge pollution, is never masked by the cap-derived one).
+  // base-branch merge pollution, is never masked by the cap-derived one). Also folds in
+  // prepare-review.mjs's own `anomalies[]` — workspace-ladder exhaustion, a failed shape
+  // classifier, an incomplete threads read, and the like are exactly the "something changed
+  // what this run actually reviewed" class RUN_ANOMALY exists for, and were previously dropped
+  // entirely unless a caller hand-authored one into context.render.RUN_ANOMALY (which is how
+  // arm B's first live run — ab/B/20230/1/meta.json — got the leading-glyph rule wrong: a
+  // hand-typed value defensively prefixed with the same ⚠️ the rest of the report shows,
+  // duplicating the renderer's own prefix). Computed here, a live run never hand-authors this
+  // and can never reintroduce the glyph.
   const capApplied = context?.routing?.capApplied === true;
-  const autoRunAnomaly = capApplied
-    ? `depth capability (${context?.workspace?.depthCapability || context?.depthCapability || "diff-only"})`
-      + " capped this run below the deep tier its mode would otherwise require"
-    : undefined;
+  const autoRunAnomaly = buildAutoRunAnomaly({
+    capApplied,
+    depthCapability: context?.workspace?.depthCapability || context?.depthCapability,
+    contextAnomalies: context?.anomalies,
+  });
+
+  // MEMORIES_USED / MEMORIES_SUMMARY — computed from judgments.memory's two arrays (D4:
+  // "copied verbatim from MCP reads … finalize.mjs decides the lifecycle"; the schema forbids a
+  // `summary` field on judgments.memory outright, additionalProperties:false, so the OLD
+  // `judgments?.memory?.summary` read here could never be populated by a real run). Built from
+  // the SAME array MEMORIES_USED renders, so the two can never disagree — arm B's first live run
+  // hand-typed a MEMORIES_SUMMARY that used the wrong vocabulary (render-report.mjs requires the
+  // literal `<N> indexed` shape and rejects any string carrying "used", which is derived).
+  const memoryUsed = buildMemoriesUsed(judgments?.memory);
+  const memoriesSummary = memoriesSummaryFor(memoryUsed);
 
   const tier = context?.routing?.tier;
   const depth = context?.workspace?.depthCapability || context?.depthCapability;
@@ -231,7 +372,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     ...(tier ? { tier } : {}),
     ...(depth ? { depth } : {}),
     summary: judgments?.summary || "",
-    memoriesSummary: judgments?.memory?.summary || context?.render?.MEMORIES_SUMMARY,
+    memoriesSummary: context?.render?.MEMORIES_SUMMARY ?? memoriesSummary,
     integrations: context?.render?.INTEGRATIONS,
     optimalityLog: judgments?.lenses?.optimality_log,
     standardsLog: judgments?.lenses?.standards_log,
@@ -242,8 +383,12 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   const extras = {
     ...(context?.render || {}),
     RUN_ANOMALY: context?.render?.RUN_ANOMALY ?? autoRunAnomaly,
+    MEMORIES_USED: context?.render?.MEMORIES_USED ?? memoryUsed,
+    // BUILT from judgments.lenses.optimality_cards' structured fields (buildOptimalityCard), never
+    // `card.markdown ?? card` — see buildOptimalityCard's own docstring for why the pass-through
+    // was wrong (arm B's first live run, ab/B/20230/1/meta.json).
     ...(judgments?.lenses?.optimality_cards?.length
-      ? { OPTIMALITY_CARDS: judgments.lenses.optimality_cards.map((/** @type {any} */ c) => c.markdown ?? c) }
+      ? { OPTIMALITY_CARDS: judgments.lenses.optimality_cards.map((/** @type {any} */ c) => buildOptimalityCard(c)) }
       : {}),
   };
 
@@ -543,6 +688,145 @@ async function selfTest() {
       renderReportCheck.ok, renderReportCheck.stderr.trim());
   }
 
+  // buildAutoRunAnomaly — ab/B/20230/1/meta.json: RUN_ANOMALY must never start with a glyph
+  // (the renderer prepends its own ⚠️), and prepare-review.mjs's own anomalies[] were previously
+  // dropped entirely rather than surfaced.
+  {
+    check("buildAutoRunAnomaly returns undefined when nothing anomalous happened",
+      buildAutoRunAnomaly({ capApplied: false, contextAnomalies: [] }) === undefined);
+    const capOnly = buildAutoRunAnomaly({ capApplied: true, depthCapability: "diff-only", contextAnomalies: [] });
+    check("buildAutoRunAnomaly names the depth-capability cap, never with a leading glyph",
+      typeof capOnly === "string" && !/^\s*[⚠️❌✅⏭️]/.test(capOnly) && capOnly.includes("diff-only"));
+    const anomaliesOnly = buildAutoRunAnomaly({ capApplied: false, contextAnomalies: ["workspace ladder exhausted — DEPTH_CAPABILITY=diff-only, tier capped at standard"] });
+    check("buildAutoRunAnomaly folds prepare-review.mjs's context.anomalies[] in, never with a leading glyph",
+      typeof anomaliesOnly === "string" && !/^\s*[⚠️❌✅⏭️]/.test(anomaliesOnly) && anomaliesOnly.includes("1 prepare-time anomaly"));
+    const both = buildAutoRunAnomaly({ capApplied: true, depthCapability: "diff-only", contextAnomalies: ["a", "b", "c"] });
+    check("buildAutoRunAnomaly combines the cap note and the anomaly count when both apply",
+      typeof both === "string" && both.includes("diff-only") && both.includes("3 prepare-time anomalies"));
+  }
+
+  // buildMemoriesUsed / memoriesSummaryFor — ab/B/20230/1/meta.json: MEMORIES_SUMMARY must be
+  // the literal `<N> indexed` shape (never a hand-typed "used" string), computed from the SAME
+  // array MEMORIES_USED renders so the two can never disagree.
+  {
+    const memory = {
+      relevance_rules: [{ key: "rule::foo@a.ts", evidence: [1, 2] }],
+      lessons_used: [
+        { key: "hotspot::b.tsx", used_as: "finder pointer (re-verified)" },
+        { key: "knowledge::useThing", used_as: "contradiction record respected" },
+        { key: "aw-lessons::some-slug", used_as: "advisory context" },
+      ],
+    };
+    const used = buildMemoriesUsed(memory);
+    check("buildMemoriesUsed emits one row per relevance_rules + lessons_used entry", used.length === 4);
+    check("a relevance_rules entry is always kind: rule", used[0].kind === "rule" && used[0].key === "rule::foo@a.ts");
+    check("a lessons_used entry derives kind from its hotspot:: key prefix", used[1].kind === "hotspot");
+    check("a lessons_used entry derives kind from its knowledge:: key prefix", used[2].kind === "knowledge");
+    check("a lessons_used entry with neither prefix defaults to kind: lesson", used[3].kind === "lesson");
+    check("note is populated from used_as", used[1].note === "finder pointer (re-verified)");
+    check("evidence is carried through as an array of PR numbers", Array.isArray(used[0].evidence) && used[0].evidence[0] === 1);
+
+    check("memoriesSummaryFor is the literal `<N> indexed` shape, matching MEMORIES_USED.length exactly",
+      memoriesSummaryFor(used) === "4 indexed");
+    check("memoriesSummaryFor never contains the word 'used' — render-report.mjs derives that half from MEMORIES_USED.length",
+      !/\bused\b/.test(memoriesSummaryFor(used)));
+    check("memoriesSummaryFor defaults sensibly with no records", memoriesSummaryFor([]) === "no relevance rules or lessons consulted");
+
+    // End-to-end: a live-shaped context whose judgments carry real memory reads — proving the
+    // exact run-1 shape (relevance_rules empty, lessons_used populated) renders with zero manual
+    // authoring of MEMORIES_SUMMARY/MEMORIES_USED.
+    const liveShapedMemory = withRenderAt({
+      mode: "full", headSha: "906a74781990f75607f0234de963fdbbc3953f2c",
+      deltaLines: 3, routing: { tier: "deep" }, workspace: { depthCapability: "checkout" },
+      files: [], threads: [],
+    }, "2026-09-25T12:00:00Z");
+    const memJudgments = {
+      candidates: [],
+      gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } },
+      threads: [],
+      memory: { relevance_rules: [], lessons_used: [{ key: "hotspot::x.tsx", used_as: "finder pointer (re-verified)" }] },
+      summary: "s",
+    };
+    const rMem = finalizeReview({ context: liveShapedMemory, judgments: memJudgments });
+    check("RUN.memoriesSummary is computed as `1 indexed`, matching the single lessons_used entry", rMem.payload.MEMORIES_SUMMARY === "1 indexed");
+    check("payload.MEMORIES_USED carries the one lesson, tagged kind: hotspot from its key prefix",
+      rMem.payload.MEMORIES_USED.length === 1 && rMem.payload.MEMORIES_USED[0].kind === "hotspot");
+    const memRenderCheck = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, rMem.payload, "self-test-memories");
+    check("the memories payload renders through render-report.mjs with zero manual edits", memRenderCheck.ok, memRenderCheck.stderr.trim());
+  }
+
+  // hydrateFilePatches — the real "context.files has empty patch" gap (ab/B/20230/1/meta.json).
+  {
+    const scratchDir = join(scratchRoot(), "finalize-hydrate-self-test");
+    mkdirSync(scratchDir, { recursive: true });
+    const sidecarPath = join(scratchDir, "pr-files.json");
+    writeFileSync(sidecarPath, [
+      JSON.stringify({ filename: "a.ts", additions: 1, deletions: 0, patch: "@@ -1,1 +1,2 @@\n+x\n y" }),
+      JSON.stringify({ filename: "b.ts", additions: 1, deletions: 0, patch: "@@ -1,1 +1,2 @@\n+y\n z" }),
+    ].join("\n") + "\n", "utf8");
+
+    const stripped = hydrateFilePatches({
+      files: [{ filename: "a.ts", additions: 1, deletions: 0 }, { filename: "b.ts", additions: 1, deletions: 0 }],
+      paths: { files: sidecarPath },
+    });
+    check("hydrateFilePatches re-populates patch from the paths.files sidecar",
+      stripped.files[0].patch === "@@ -1,1 +1,2 @@\n+x\n y" && stripped.files[1].patch === "@@ -1,1 +1,2 @@\n+y\n z");
+
+    const viaFilesPath = hydrateFilePatches({
+      files: [{ filename: "a.ts" }],
+      filesPath: sidecarPath, // the older/alternate field name — same sidecar
+    });
+    check("hydrateFilePatches also accepts the filesPath field name (not just paths.files)",
+      viaFilesPath.files[0].patch === "@@ -1,1 +1,2 @@\n+x\n y");
+
+    const alreadyInline = hydrateFilePatches({
+      files: [{ filename: "a.ts", patch: "already here" }],
+      paths: { files: sidecarPath },
+    });
+    check("hydrateFilePatches is a no-op when every file already carries a patch (--inline-payloads)",
+      alreadyInline.files[0].patch === "already here");
+
+    const noSidecar = hydrateFilePatches({ files: [{ filename: "a.ts" }] });
+    check("hydrateFilePatches degrades to the pre-fix behavior (patch-less) when no sidecar path is given, never throws",
+      noSidecar.files[0].patch === undefined);
+
+    const missingSidecar = hydrateFilePatches({
+      files: [{ filename: "a.ts" }],
+      paths: { files: join(scratchDir, "does-not-exist.json") },
+    });
+    check("hydrateFilePatches degrades gracefully when the sidecar file is unreadable, never throws",
+      missingSidecar.files[0].patch === undefined);
+
+    const notInSidecar = hydrateFilePatches({
+      files: [{ filename: "c-not-in-sidecar.ts" }],
+      paths: { files: sidecarPath },
+    });
+    check("hydrateFilePatches leaves a file absent from the sidecar untouched rather than inventing a patch",
+      notInSidecar.files[0].patch === undefined);
+
+    // End-to-end: the same field-bridging proof as the "live-shaped" block above, but now with
+    // patch-less files (as prepare-review.mjs actually emits by default) plus the sidecar main()
+    // reads — proving the SAME candidate that was anchorless in arm B's run now line-validates.
+    const liveShapedNoPatch = withRenderAt({
+      mode: "full", headSha: "906a74781990f75607f0234de963fdbbc3953f2c",
+      deltaLines: 3, routing: { tier: "deep" }, workspace: { depthCapability: "checkout" },
+      files: [{ filename: "a.ts" }], threads: [],
+      paths: { files: sidecarPath },
+    }, "2026-09-25T12:00:00Z");
+    const hydrated = hydrateFilePatches(liveShapedNoPatch);
+    const j = {
+      candidates: [mkCandidate({ final: 95, path: "a.ts", line: 1 })],
+      gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "s",
+    };
+    const rNoHydrate = finalizeReview({ context: liveShapedNoPatch, judgments: j });
+    const rHydrated = finalizeReview({ context: hydrated, judgments: j });
+    check("without hydration, a candidate on a patch-less context.files entry lands anchorless",
+      rNoHydrate.anchorless.length === 1 && rNoHydrate.inline.length === 0);
+    check("with hydration, the SAME candidate line-validates and clears to inline",
+      rHydrated.anchorless.length === 0 && rHydrated.inline.length === 1);
+  }
+
   // AC-10 case: defer band edges (t-15, the 50 floor, t).
   {
     const judgments = { candidates: [mkCandidate({ final: 65, prefix: "issue" })], gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
@@ -702,7 +986,7 @@ async function main() {
   }
 
   const contextRaw = JSON.parse(readFileSync(/** @type {string} */(opts.context), "utf8"));
-  const context = withRenderAt(contextRaw);
+  const context = withRenderAt(hydrateFilePatches(contextRaw));
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
   mkdirSync(outDir, { recursive: true });

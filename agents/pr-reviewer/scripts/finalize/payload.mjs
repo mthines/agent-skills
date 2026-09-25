@@ -8,11 +8,16 @@
  * `scripts/eval/fixtures/{report-body,inline-comment}/*.expected.md` via
  * `finalize.mjs --replay-fixtures` and `scripts/eval/fixtures/finalize/*`.
  * A small set of fields are genuine PASSTHROUGH — facts finalize.mjs was
- * never scoped to compute (Phase B's impact graph, memory reads, the
- * optimality lens's own markdown cards, CI's informational note) — and are
- * relayed verbatim from `context.render.*` (a prepare-review.mjs extension
- * point, never schema-validated) when present, never invented here.
+ * never scoped to compute (Phase B's impact graph, CI's informational note)
+ * — and are relayed verbatim from `context.render.*` (a prepare-review.mjs
+ * extension point, never schema-validated) when present, never invented
+ * here. Optimality cards and the FP fingerprint are NOT passthrough — both
+ * are BUILT here from judgments.json's structured fields (buildOptimalityCard,
+ * toInlineCommentPayload's FP), never relayed from a model-supplied string.
  */
+
+import { buildFingerprint } from "../fingerprint.mjs";
+import { CLAIM_PREFIXES } from "./thresholds.mjs";
 
 const GATE_FIELD = { g1: "GATE_DESCRIPTION", g3: "GATE_PRIOR", g4: "GATE_SELFREVIEW", g5: "GATE_DOCS", g6: "GATE_CODEREVIEW" };
 const BLOCKING_DECORATION_RE = /\(blocking\)|(?:^|\n)\s*issue:|severity:\s*(?:critical|high)/i;
@@ -68,24 +73,76 @@ export function toAdvisoryFinding(c) {
   return out;
 }
 
+const ASK_WORD_LIMIT = 12;
+
+/**
+ * `[text](url)` → `text` — render-report.mjs's assertPlain rejects a markdown link outright.
+ * @param {string} s
+ */
+function unwrapMarkdownLinks(s) {
+  return s.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+}
+
+/**
+ * The first non-empty line, then its first sentence (`.`/`!`/`?`) if one is found before the
+ * line ends — matching pr-reviewer.md's own "take its first sentence (or its suggestion:/issue:
+ * line)" prose. Falls back to the whole first line when no sentence-ending punctuation appears.
+ * @param {string} s
+ */
+function firstSentenceOrLine(s) {
+  const firstLine = String(s).split(/\r?\n/).find((l) => l.trim() !== "") || "";
+  const m = firstLine.match(/^[^.!?]*[.!?]/);
+  return (m ? m[0] : firstLine).trim();
+}
+
+/**
+ * Cuts to ~12 words with a trailing `…`, per pr-reviewer.md's own "cut to ~12 words".
+ * @param {string} s
+ * @param {number} [limit]
+ */
+function truncateWords(s, limit = ASK_WORD_LIMIT) {
+  const words = s.split(/\s+/).filter(Boolean);
+  if (words.length <= limit) return s.trim();
+  return `${words.slice(0, limit).join(" ")}…`;
+}
+
+/**
+ * pr-reviewer.md's own prose for `ask` ("the comment's own lead line, truncated, not
+ * paraphrased: take its first sentence … strip noise like (non-blocking), and cut to ~12 words")
+ * — mechanized. `root_body` is a real GitHub comment body: it can be multi-paragraph, carry
+ * markdown links, or run well past a sentence, and render-report.mjs's `assertPlain` rejects any
+ * of those outright (single line, no markdown link). Arm B's first live run (ab/B/20230/1/
+ * meta.json) hit exactly this — a multi-line thread root collapsed the whole render — because the
+ * old stripping only removed the claim-prefix and the trailing `(blocking)` marker, never
+ * collapsed to one line or bounded the length.
+ * @param {string} rootBody
+ */
+export function normalizeAsk(rootBody) {
+  const noPrefix = String(rootBody || "").replace(/^\s*(?:issue|suggestion)\s*:\s*/i, "");
+  const unlinked = unwrapMarkdownLinks(noPrefix);
+  let line = firstSentenceOrLine(unlinked);
+  line = line
+    .replace(/\s*\((?:non-)?blocking\)\s*/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  // A body that is ENTIRELY decoration (e.g. "issue: (blocking)" with no real ask left after
+  // stripping) must not reach the renderer as an empty string — anchorBullet() requires a
+  // non-empty text field, and an empty ask would fail closed rather than degrade.
+  if (!line) return "(no summary available)";
+  return truncateWords(line);
+}
+
 /**
  * A prepare-review.mjs `context.threads[]` item → render-report.mjs `OPEN_THREADS[]` row.
  * @param {any} t
  */
 export function toOpenThreadBullet(t) {
   const rootBody = t.root_body || "";
+  // AC-11/D5: `blocking` reads the RAW comment body, unmodified — gate3()'s own blocking-
+  // decoration regex needs the literal conventional-comments prefix, and `ask` below is a
+  // truncated, single-line PARAPHRASE derived from the same raw body, never the reverse.
   const blocking = BLOCKING_DECORATION_RE.test(rootBody);
-  // AC-11/D5: `root_body` is the raw comment body — gate3()'s own blocking-decoration regex
-  // reads it directly, unmodified, since that detection needs the literal conventional-comments
-  // prefix. `ask` is the human-facing paraphrase the OPEN_THREADS_LIST bullet renders, so the
-  // same claim-prefix and `(blocking)` decoration that just drove `blocking` above is stripped
-  // from it here — a reader does not need "issue: ... (blocking)" repeated verbatim next to a
-  // bullet that already carries the blocking fact structurally (Gate 3's FAIL/WARN split, and
-  // OPEN_THREADS_SUFFIX's own "(<K> blocking)" count on the accordion summary).
-  const ask = rootBody
-    .replace(/^\s*(?:issue|suggestion)\s*:\s*/i, "")
-    .replace(/\s*\(blocking\)\s*$/i, "")
-    .trim();
+  const ask = normalizeAsk(rootBody);
   /** @type {Record<string, any>} */
   const out = { path: t.path, line: t.line, ask, blocking };
   if (t.url) out.url = t.url;
@@ -103,7 +160,17 @@ export function toInlineCommentPayload(c, { sha }) {
   if (c.title) payload.TITLE = c.title;
   if (c.blocking === true) payload.BLOCKING = true;
   if (c.pseudo === true) payload.PSEUDO = true;
-  if (c.fp) payload.FP = c.fp;
+  // render-comment.mjs REQUIRES FP on a claim (issue/suggestion) and FORBIDS it otherwise, but
+  // judgments.schema.json's candidate shape forbids the model from supplying `fp` at all
+  // (additionalProperties: false, no `fp` property) — on purpose (D4: "the model never decides
+  // suppression"; a hand-typed fingerprint is exactly what fingerprint.mjs's `FingerprintError`
+  // exists to prevent). Arm B's first live run (ab/B/20230/1/meta.json) hit this gap directly:
+  // finalize never computed one, so every claim finding failed render-comment.mjs's FP check.
+  // Built here, the same way findings-bus.mjs already does for its own `fp` field — one function,
+  // never a hand-typed string.
+  if (CLAIM_PREFIXES.has(c.prefix)) {
+    payload.FP = buildFingerprint({ finder: c.finder, defectClass: c.defect_class, symbol: c.symbol || "", path: c.path });
+  }
   if (c.fix_url) payload.FIX_URL = c.fix_url;
   if (Array.isArray(c.evidence_anchors) && c.evidence_anchors.length) {
     payload.EVIDENCE = c.evidence_anchors.map((/** @type {any} */ e) => (
@@ -119,6 +186,32 @@ const RENDER_EXTRAS = [
   "RUN_NOTE", "RUN_ANOMALY", "CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "FIX_ALL_URL",
   "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED", "IMPACT", "WITHHELD", "OPTIMALITY_CARDS",
 ];
+
+/**
+ * `judgments.schema.json`'s `optimality_card` ({path, line?, verdict, analysis_confidence,
+ * card_body}) → the markdown string render-report.mjs's `OPTIMALITY_CARDS[]` requires: each
+ * entry must be a string carrying a `### Optimality proposal — <path>:<line>` heading. BUILT from
+ * the structured fields, never `card.markdown ?? card` — arm B's first live run (ab/B/20230/1/
+ * meta.json) hit this directly: the schema permits an ad-hoc `markdown` field
+ * (`additionalProperties: true` on `optimality_card`), but nothing REQUIRES the model to supply
+ * one, and the bare pass-through rendered `[object Object]` (or worse, silently coerced) when it
+ * didn't. `line` is optional in the schema (a whole-file/approach-level proposal may name no
+ * single line) but the renderer's heading regex requires an integer — a missing line anchors to
+ * `1` rather than failing the render, since "which line" is never the load-bearing part of an
+ * optimality proposal's heading. Only the heading is synthesized here — render-report.mjs's own
+ * docstring calls a card "a multi-line markdown block by nature (a Now/Better table and prose)…
+ * model-authored", so `card_body` is emitted verbatim rather than wrapped in a second,
+ * finalize-invented "Verdict: …" line the model never wrote; `verdict`/`analysis_confidence`
+ * stay real schema fields used elsewhere (e.g. the inline-pointer gate,
+ * `optimality-review.md § Inline pointer`), not rendering inputs.
+ * @param {{path:string, line?:number, verdict:string, analysis_confidence:number, card_body:string}} card
+ * @returns {string}
+ */
+export function buildOptimalityCard(card) {
+  const anchor = `${card.path}:${Number.isInteger(card.line) ? card.line : 1}`;
+  const heading = `### Optimality proposal — ${anchor}`;
+  return `${heading}\n\n${card.card_body}`;
+}
 
 /**
  * @param {{ gates: any, run: any, findings: any[], deferred: any[], lowConfidence: any[], quality: string, extras?: Record<string, any> }} args
@@ -240,14 +333,56 @@ async function selfTest() {
     const untyped = toOpenThreadBullet({ path: "a.ts", line: 1, root_body: "just an observation" });
     check("toOpenThreadBullet omits author/is_bot when type unknown", untyped.author === undefined && untyped.is_bot === undefined);
   }
+  // normalizeAsk — ab/B/20230/1/meta.json's "render-report rejects multi-line/markdown thread
+  // asks" defect: a real GitHub thread root can be multi-paragraph, carry markdown links, or run
+  // well past a sentence, and render-report.mjs's assertPlain rejects any of those outright.
   {
-    const claim = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", blocking: true, fp: "x:y:z@a.ts" }, { sha: "abc1234" });
-    check("toInlineCommentPayload maps a claim's scalars", claim.PREFIX === "issue" && claim.TIER === "high" && claim.TITLE === "T" && claim.BLOCKING === true && claim.FP === "x:y:z@a.ts" && claim.SHA === "abc1234");
+    const multiLine = normalizeAsk("issue: this breaks auth (blocking)\n\nSecond paragraph with more detail.\nThird line.");
+    check("normalizeAsk collapses a multi-line/multi-paragraph body to a single line",
+      !multiLine.includes("\n") && multiLine === "this breaks auth");
+    const withLink = normalizeAsk("suggestion: see [the docs](https://example.com/x) for context.");
+    check("normalizeAsk unwraps a markdown link rather than leaving one (which assertPlain rejects)",
+      !/\[[^\]]*\]\([^)]*\)/.test(withLink) && withLink === "see the docs for context.");
+    const long = normalizeAsk("issue: " + Array.from({ length: 20 }, (_, i) => `word${i}`).join(" ") + ".");
+    const words = long.replace(/…$/, "").trim().split(/\s+/);
+    check("normalizeAsk truncates to ~12 words with a trailing … when longer", words.length === 12 && long.endsWith("…"));
+    const nonBlocking = normalizeAsk("suggestion: minor nit (non-blocking)");
+    check("normalizeAsk strips (non-blocking) noise, same as (blocking)", nonBlocking === "minor nit");
+    const decorationOnly = normalizeAsk("issue: (blocking)");
+    check("normalizeAsk never returns an empty string — anchorBullet() requires a non-empty text field",
+      decorationOnly.length > 0);
+    const withBacktick = normalizeAsk("issue: `retryRequest` now throws instead of returning null.");
+    check("normalizeAsk preserves a backtick (allowCode: true at the render boundary) rather than stripping it",
+      withBacktick.includes("`retryRequest`"));
+  }
+  // buildOptimalityCard — ab/B/20230/1/meta.json: finalize must BUILD the markdown from the
+  // schema's structured fields (path/line/verdict/analysis_confidence/card_body), never rely on
+  // a model-supplied `card.markdown` passthrough.
+  {
+    const card = buildOptimalityCard({ path: "src/a.ts", line: 42, verdict: "suboptimal", analysis_confidence: 91.4, card_body: "Use a Map instead of a linear scan." });
+    check("buildOptimalityCard emits the exact heading render-report.mjs's regex requires",
+      /^### Optimality proposal — src\/a\.ts:42/m.test(card));
+    check("buildOptimalityCard includes the card body verbatim, unmodified", card.includes("Use a Map instead of a linear scan."));
+    check("buildOptimalityCard is exactly heading + blank line + card_body — never inventing its own prose the model didn't write",
+      card === "### Optimality proposal — src/a.ts:42\n\nUse a Map instead of a linear scan.");
+    const noLine = buildOptimalityCard({ path: "src/b.ts", verdict: "optimal", analysis_confidence: 96, card_body: "Already the simplest approach." });
+    check("buildOptimalityCard anchors to line 1 when the schema's optional `line` is absent, rather than failing the heading regex",
+      /^### Optimality proposal — src\/b\.ts:1/m.test(noLine));
+  }
+  {
+    const claim = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", blocking: true, finder: "correctness", defect_class: "logic", symbol: "foo", path: "a.ts" }, { sha: "abc1234" });
+    check("toInlineCommentPayload maps a claim's scalars", claim.PREFIX === "issue" && claim.TIER === "high" && claim.TITLE === "T" && claim.BLOCKING === true && claim.SHA === "abc1234");
+    check("toInlineCommentPayload BUILDS FP via fingerprint.mjs from finder/defect_class/symbol/path — never a hand-typed/passed-through string",
+      claim.FP === "correctness:logic:foo@a.ts");
     const oneLiner = toInlineCommentPayload({ prefix: "nitpick", severity: "low", body: "b" }, { sha: "abc1234" });
-    check("toInlineCommentPayload omits TITLE/BLOCKING/FP on a one-liner", oneLiner.TITLE === undefined && oneLiner.BLOCKING === undefined && oneLiner.FP === undefined);
-    const withEvidence = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", evidence_anchors: [{ path: "a.ts", line: 1, note: "x" }, { path: "b.ts", line: 2 }] }, { sha: "abc1234" });
+    check("toInlineCommentPayload omits TITLE/BLOCKING/FP on a one-liner (never a claim prefix — FP is never built for it)",
+      oneLiner.TITLE === undefined && oneLiner.BLOCKING === undefined && oneLiner.FP === undefined);
+    const withEvidence = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", finder: "consumer-impact", defect_class: "contract-break", symbol: "bar", path: "a.ts", evidence_anchors: [{ path: "a.ts", line: 1, note: "x" }, { path: "b.ts", line: 2 }] }, { sha: "abc1234" });
     check("toInlineCommentPayload reshapes evidence_anchors, dropping note when absent",
       withEvidence.EVIDENCE.length === 2 && withEvidence.EVIDENCE[0].note === "x" && withEvidence.EVIDENCE[1].note === undefined);
+    const suggestion = toInlineCommentPayload({ prefix: "suggestion", severity: "medium", body: "b", finder: "quality", defect_class: "maintainability", path: "b.ts" }, { sha: "abc1234" });
+    check("toInlineCommentPayload builds FP for suggestion: too, not only issue: (both are CLAIM_PREFIXES)",
+      suggestion.FP === "quality:maintainability:-@b.ts");
   }
 
   if (failed > 0) {

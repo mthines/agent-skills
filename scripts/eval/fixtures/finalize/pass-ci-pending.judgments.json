@@ -11,7 +11,7 @@
     "gate5": { "status": "PASS", "details": "The change is documented well enough to follow." }
   },
   "threads": [],
-  "memory": { "relevance_rules": [], "lessons_used": [], "summary": "53 indexed" },
+  "memory": { "relevance_rules": [], "lessons_used": [] },
   "lenses": {
     "optimality_cards": [],
     "optimality_log": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
