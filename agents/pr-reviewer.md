@@ -1766,54 +1766,35 @@ it never feeds `FAILING_GATE_COUNT` or `WARN_GATE_COUNT`. **Never ❌** — see
 under Gate 6 instead, on this reviewer's own evidence.
 
 **Gate 3 — Unresolved prior review feedback**
-Use `OPEN_BOT_COMMENTS[]` from Step 1.0. Identify any prior review comment — from a bot
-(Cursor, Claude, other agents) **or** a human reviewer — whose review thread is still open —
-`isResolved == false` and the thread not dismissed.
-Finding format: one line per unresolved item, rendered as a **clickable entry with the thread's
-own lead line** `- [\`<path>:<line>\`](<url>) — <ask> (<bot|human> · \`<author>\`)` using the
-Step 1.0 fields (`path:line`, `url`, `ask`, and the `author` / `is_bot` label the renderer appends). This is what makes the gate actionable: the author clicks straight
-through to each thread and reads in one line what it wants — instead of a bare `path:line` they
-have to hunt for.
-Whenever any thread is open — on ⚠️ as well as ❌ — this list renders **inside** the `Review
-details` accordion, as `OPEN_THREADS_LIST` immediately below the gate table, and the accordion's
-own `<summary>` carries `OPEN_THREADS_SUFFIX` — the open count, plus the blocking subset on ❌.
-That split is the whole contract: the reader learns *that* threads are open and *how many block*
-from the one line that is visible while the report is collapsed, and the per-thread bullets —
-which on a long-running PR grow to dozens of lines and crowd the report off the screen — are one
-click away behind that same line. The accordion's Gate 3 Details cell then stays terse —
-`<N> unresolved review thread(s) — see the thread list below`.
+Use `OPEN_BOT_COMMENTS[]` from Step 1.0, which already restricts admission to comments whose thread
+state was read and is `isResolved == false` — an unknown or unpaged thread is excluded there, not
+here, so it can never fail this gate.
+Finding format: one line per unresolved item, rendered as a **clickable entry with the thread's own
+lead line** `- [\`<path>:<line>\`](<url>) — <ask> (<bot|human> · \`<author>\`)` using the Step 1.0
+fields — the author clicks straight through to each thread instead of hunting for a bare `path:line`.
+Whenever any thread is open — ⚠️ as well as ❌ — this list renders **inside** the `Review details`
+accordion as `OPEN_THREADS_LIST`, and the accordion's own `<summary>` carries `OPEN_THREADS_SUFFIX`
+(the open count, plus the blocking subset on ❌), so the collapsed report still shows *that* threads
+are open and *how many block*; the accordion's Gate 3 Details cell stays terse — `<N> unresolved
+review thread(s) — see the thread list below`.
 
-Result: PASS (✅), WARN (⚠️), or FAIL (❌), graded from the `blocking` and `answered` fields
-captured in Step 1.0 (*Gate states*):
+Result: PASS (✅), WARN (⚠️), or FAIL (❌) — the same tri-state `gate3()` implements
+(`agents/pr-reviewer/scripts/finalize/gates.mjs`, self-tested), graded on the `blocking` and
+`answered` fields Step 1.0 captures (*Gate states*):
 
 - ✅ — `OPEN_BOT_COMMENTS[]` is empty.
 - ❌ — at least one entry has `blocking == true` **and** `answered == false`.
 - ⚠️ — otherwise: threads are open, but every one of them is non-blocking, already answered, or
   both.
 
-Grading by severity is what stops this gate failing a PR for work that is already done or was
-never required — a `nitpick:` nobody clicked Resolve on, a suggestion declined on-thread with a
-rationale, a finding fixed in a later commit whose thread this run had no permission to resolve.
-None of those give the author anything to fix, which is the same test the *unknown thread* rule
-below already applies. What ⚠️ does not do is hide them: the checklist renders identically, and
-the WARN headline names the gate.
-
-Three rules keep this gate honest:
-
-- **A resolved thread never fails this gate**, regardless of who resolved it or how the
-  reply was worded. A fixer that addresses a finding and resolves its thread has resolved
-  it — that is the whole signal.
-- **An unknown thread never fails it either.** If thread state was unavailable or the
-  thread map is incomplete (`hasNextPage` could not be paged), the affected comments are
-  **not** admitted to `OPEN_BOT_COMMENTS[]`; the gate keeps its ✅ and its Details carry
-  `thread state unavailable — <N> comment(s) unverified`. A tooling gap is not the PR's
-  fault, and failing on one gives the author nothing to fix. This rule changes what enters
-  the gate; the ⚠️ / ❌ grading above decides what an entry that *did* get in is worth.
-- **Only an explicit blocking decoration reaches ❌.** Severity comes from the other bot's own
-  marker, never from this reviewer re-reading the code to decide how serious another bot's
-  finding really is (*Gate states*). An undecorated ask grades non-blocking. This is deliberately
-  lossy in the safe direction: a genuinely serious problem the other bot under-decorated is still
-  found by this run's own review pass and blocks under Gate 6, on evidence this reviewer owns.
+Grading by severity is what stops this gate failing a PR for work that is already done or was never
+required — a `nitpick:` nobody clicked Resolve on, a suggestion declined on-thread with a rationale,
+a finding fixed in a later commit. None of those give the author anything to fix, and ⚠️ never hides
+them: the checklist still renders in full and the WARN headline names the gate. Severity itself
+comes only from the other bot's own decoration (`(blocking)` / `issue:` / an equivalent marker) —
+never from this reviewer re-reading the code to judge how serious another bot's finding is — so a
+genuinely serious problem the other bot under-decorated is still caught by this run's own pass and
+blocks under Gate 6, on evidence this reviewer owns.
 
 **Gate 4 — Self-review signals**
 This is a coarse safety net for the residue a careful author strips out before pushing — not a style or design review (Gate 6 owns those). It scans **only `+`-prefixed additions** for a fixed set of unambiguous "this was never self-reviewed" tells, which is exactly why it is green on almost every PR: a clean diff simply does not contain these artifacts, so the gate stays quiet and only trips when genuinely unfinished or debug material was committed. Treat a green result as "no smoking guns", not "the code is good".
