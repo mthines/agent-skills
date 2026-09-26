@@ -303,11 +303,20 @@ This is the **same** [`finalize/dedupe.mjs`](../../../agents/pr-reviewer/scripts
 module `finalize.mjs` runs internally on the post-verification pool, adapted (never re-implemented)
 to the finder-stage record shape: an exact `(path, line, defect_class)` match, or an adjacent-line
 `(path, line±2, defect_class, same 40-char claim prefix)` fuzzy match, merges two finders'
-candidates into one, recording every finder that flagged it in `_also_flagged_by` for the
-cross-rubric agreement boost `thresholds.mjs` already applies. Feed the finders' outputs in
-`finders.md`'s own table order (`correctness, consumer-impact, dependency, intent, standards,
-quality`) so the kept record is deterministic across runs. Only `deduped.json`'s `kept[]` proceeds to
-verification — the `dropped[]` are cross-finder duplicates, not findings the run is discarding.
+candidates into one, recording every finder that flagged it in `_also_flagged_by`. Feed the finders'
+outputs in `finders.md`'s own table order (`correctness, consumer-impact, dependency, intent,
+standards, quality`) so the kept record is deterministic across runs. Only `deduped.json`'s `kept[]`
+proceeds to verification — the `dropped[]` are cross-finder duplicates, not findings the run is
+discarding.
+
+**`_also_flagged_by` never reaches `judgments.json`** — it is not a field
+[`judgments.schema.json`](../../../agents/pr-reviewer/schemas/judgments.schema.json)'s candidate
+shape defines, and `validate-judgments.mjs` rejects it as an unknown property. Pass it to the
+**verifier** in step e as context instead (`N independent finders flagged this`) and let it fold
+that corroboration into its own `R`/`A`/`Ac` judgment, the same way `finders.md`'s
+diversify-then-vote treats a unanimous `votes` count as verifier input rather than schema data —
+strip `_also_flagged_by` (and `agreement_promoted`) from the record before assembling
+`judgments.json`.
 
 ### Step e — parallel verification
 
@@ -358,6 +367,14 @@ Step 0, never per op.
 `report-body.md`, `inline/*.md`, and `write-plan.json` are written to scratch and nothing is posted —
 [`rules/pipeline.md`](../../../agents/pr-reviewer/rules/pipeline.md#--dry-run) owns the full contract
 this orchestration inherits unchanged.
+
+**Steps d–f's mechanical glue is proven offline** in
+[`scripts/eval/fanout-glue.mjs`](../../../scripts/eval/fanout-glue.mjs) (`--self-test`): a raw
+finder-candidate fixture (with a cross-finder duplicate) through the real
+`finalize.mjs --dedupe-candidates`, a deterministically stubbed verifier pass standing in for the
+one dispatch this orchestration cannot exercise without a model, an assembled `judgments.json`,
+and the real `validate-judgments.mjs` and `finalize.mjs` — through both writers. No live model
+call; only the finder's and the verifier's own judgment are stubbed.
 
 ### Step g — concurrency cap
 

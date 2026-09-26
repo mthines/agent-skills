@@ -31,6 +31,7 @@
     "execute-write-plan.mjs",
     "../../../scripts/eval/thread-outcomes.mjs",
     "../../../scripts/eval/ab-review.mjs",
+    "../../../scripts/eval/fanout-glue.mjs",
     "../../../scripts/record-comment-relevance.mjs"
   ]
 }

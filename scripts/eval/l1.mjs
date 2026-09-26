@@ -9008,6 +9008,27 @@ const isPollBlock = (block) =>
     s.check("G66j AC-18's caller skills (review-loop/create-pr/polish/review-changes) are byte-unchanged vs. origin/main",
       r.status === 0, r.status === null ? "git not found" : `git diff exit ${r.status}`);
   }
+
+  // The offline proof of the --fanout glue chain (D17): a raw finder-candidate fixture through
+  // finalize.mjs --dedupe-candidates, a mocked verifier pass, an assembled judgments.json,
+  // validate-judgments.mjs, and finalize.mjs itself — self-tested exactly like every other new
+  // script in this pipeline, so it cannot silently rot unexecuted between the day it was added
+  // and the day someone next reads it.
+  {
+    const GLUE = join(REPO_ROOT, "scripts/eval/fanout-glue.mjs");
+    s.check("G66k scripts/eval/fanout-glue.mjs exists", existsSync(GLUE));
+    if (existsSync(GLUE)) {
+      s.check("G66k fanout-glue.mjs is // @ts-check", /^\/\/ @ts-check/m.test(readFileSync(GLUE, "utf8").split("\n").slice(0, 3).join("\n")));
+      const r = spawnSync(process.execPath, [GLUE, "--self-test"], { encoding: "utf8" });
+      s.check("G66k fanout-glue.mjs --self-test passes (dedupe -> mock-verify -> validate -> finalize, both writers)",
+        r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+    }
+    const TS = join(REPO_ROOT, "agents/pr-reviewer/scripts/tsconfig.json");
+    if (existsSync(TS)) {
+      s.check("G66k tsconfig.json's files[] lists fanout-glue.mjs",
+        readFileSync(TS, "utf8").includes("fanout-glue.mjs"));
+    }
+  }
 }
 
 process.exit(s.report() ? 0 : 1);
