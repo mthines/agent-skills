@@ -412,7 +412,7 @@ With `FIX_LINKS=off` supply no `FIX_ALL_URL` and pass no `FIX_URL` in any inline
 # /user is NOT repo-scoped, so it 401s under a GitHub App installation token and under a
 # wrapped `gh` that injects a per-call repo-scoped credential — both of which are ordinary
 # hosted-runner setups, not exotic ones. Treat a failure as "identity unknown", never as "".
-ME=$(gh api user --jq .login 2>/dev/null || echo "")
+ME=$(gh api user --jq .login 2>/dev/null) || ME=""
 # One call, three values: the author decides the relation, the head branch is the
 # PR-state record's scope (Step 0.7), and headRefOid is folded in here — at zero extra
 # cost — so a HEAD_SHA reading is already available before Step 1 spends anything, which

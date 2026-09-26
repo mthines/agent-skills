@@ -80,7 +80,7 @@ const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NO
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
   "FINDINGS", "FAIL_REASONS", "WARN_REASONS",
-  "OPEN_THREADS", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
+  "OPEN_THREADS", "NOTES", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
   "IMPACT", "WITHHELD"];
 
 function fail(msg) {
@@ -99,6 +99,7 @@ const SHAPES = {
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note", "kind", "evidence"],
   "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
+  "NOTES[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   // The findings this run posted inline — the worklist the report never had. `title` is the same
@@ -242,7 +243,7 @@ function main() {
   const unknown = Object.keys(data).filter((k) => !known.has(k));
   if (unknown.length) {
     const V1 = ["MEMORIES", "FOOTER_LINE", "RUN_MODE", "OPEN_THREADS_COUNT",
-      "OPEN_THREADS_SUFFIX", "ADDITIONAL_COUNT", "LOW_CONFIDENCE_COUNT", "OPTIMALITY_COUNT",
+      "OPEN_THREADS_SUFFIX", "NOTES_COUNT", "ADDITIONAL_COUNT", "LOW_CONFIDENCE_COUNT", "OPTIMALITY_COUNT",
       "BUDGET_CALLS", "BUDGET_SCANNED", "BUDGET_TOTAL", "PARTIAL_BANNER"];
     const V2 = ["HEADLINE", "TIER_TALLY"];
     const hint = unknown.some((k) => V2.includes(k))
@@ -1018,18 +1019,22 @@ function main() {
   //
   // Notes (A/B round 2 item 7). A cleared `nitpick:`/`question:` one-liner posts inline but earns
   // no FINDINGS row — a title is forbidden on a one-liner and required on a row — so it lands in
-  // ADDITIONAL_FINDINGS instead. A reader who counted six comments at the code under a heading
-  // saying `5 findings` had no way to reconcile the two; ab/B/20230/2 was the zero-finding case of
-  // the same gap ("No findings" next to a posted comment). Every heading form now appends
-  // ` · <M> note(s)`, counted from ADDITIONAL_FINDINGS entries whose prefix is a one-liner prefix
-  // (comment-spine.mjs's CONV_PREFIXES minus CLAIM_PREFIXES), so the count is derived from the array
-  // it describes. APPENDED, never inserted: `### <glyph> <N> findings — <K> blocking` stays a
-  // prefix of the heading, the same append-after-the-parseable-part rule the Run line follows, so
-  // a consumer matching the documented forms by prefix keeps working
-  // (reviewer-report-ingest.md § Headline).
+  // its own NOTES slot (A/B iteration 4 — it used to share ADDITIONAL_FINDINGS, the list headed
+  // "too minor to comment on", which was false for a comment that posted). A reader who counted six
+  // comments at the code under a heading saying `5 findings` had no way to reconcile the two;
+  // ab/B/20230/2 was the zero-finding case of the same gap. Every heading form now appends
+  // ` · <M> note(s)`, where <M> is NOTES.length — derived from the array it describes. APPENDED,
+  // never inserted: `### <glyph> <N> findings — <K> blocking` stays a prefix of the heading, the
+  // same append-after-the-parseable-part rule the Run line follows, so a consumer matching the
+  // documented forms by prefix keeps working (reviewer-report-ingest.md § Headline).
   const n = findings.length;
-  const notes = arr("ADDITIONAL_FINDINGS")
-    .filter((a) => isPlainObject(a) && NOTE_PREFIXES.includes(String(a.prefix))).length;
+  arr("NOTES").forEach((a, i) => {
+    if (isPlainObject(a) && !NOTE_PREFIXES.includes(String(a.prefix))) {
+      fail(`NOTES[${i}].prefix must be a one-liner prefix (${NOTE_PREFIXES.join(" | ")}) — a claim`
+        + ` that posted inline is a FINDINGS row, got ${JSON.stringify(a.prefix)}`);
+    }
+  });
+  const notes = arr("NOTES").length;
   const notesSuffix = notes > 0 ? ` · ${notes} note${notes === 1 ? "" : "s"}` : "";
   let headline;
   if (n > 0) {
@@ -1111,6 +1116,8 @@ function main() {
     OPEN_THREADS_COUNT: openThreads.length || "",
     OPEN_THREADS_SUFFIX: openSuffix,
     RESOLVED_SINCE: resolvedSince,
+    NOTES: findingBullets("NOTES", arr("NOTES")),
+    NOTES_COUNT: arr("NOTES").length || "",
     ADDITIONAL_FINDINGS: findingBullets("ADDITIONAL_FINDINGS", arr("ADDITIONAL_FINDINGS")),
     ADDITIONAL_COUNT: arr("ADDITIONAL_FINDINGS").length || "",
     LOW_CONFIDENCE_FINDINGS: findingBullets("LOW_CONFIDENCE_FINDINGS", arr("LOW_CONFIDENCE_FINDINGS")),

@@ -237,8 +237,23 @@ export function candidateDomainRules(candidates, errors) {
     if (c.verdict !== "unobtainable" && hasReason) {
       errors.push(`${path}: "unverified_reason" is only valid when verdict is "unobtainable" (got ${JSON.stringify(c.verdict)})`);
     }
+    // A/B iteration 4: the severity skill's crosswalk (`skills/quality/severity/SKILL.md § Mapping
+    // to a reviewer's blocking flag`) makes the tier the source of `(blocking)` — critical/high
+    // block, medium/low never do — and says "do not encode a second, divergent blocking rule".
+    // Nothing enforced it, and round 3 on sync-tray#72 had two arms mark a `medium` finding
+    // blocking, which is what Gate 6 FAILs on. One direction only: `high` WITHOUT blocking stays
+    // legal, because the crosswalk's floor-only exception (a tier raised by the path floor alone)
+    // is exactly that shape, and nothing on the candidate records the base tier.
+    if (c.blocking === true && typeof c.severity === "string" && !BLOCKING_TIERS.includes(c.severity)) {
+      errors.push(`${path}: "blocking": true requires severity high or critical (got ${JSON.stringify(c.severity)})`
+        + " — the tier decides blocking (severity SKILL.md crosswalk). Raise the tier if the base impact is"
+        + " broken behaviour, security, data loss, or misimplemented intent; otherwise set blocking false");
+    }
   });
 }
+
+/** The tiers the severity crosswalk maps to `(blocking)`. */
+export const BLOCKING_TIERS = ["critical", "high"];
 
 /**
  * Hand-coded domain rules the fixed keyword subset cannot express as
@@ -536,6 +551,20 @@ async function selfTest() {
       const errs = validateShapeOnly(schema, badType);
       check("validateShapeOnly catches a candidate-level schema type violation (path: 123)",
         errs.length > 0 && errs.some(e => e.includes("expected type")));
+    }
+    {
+      // A/B iteration 4: the severity crosswalk — blocking requires high/critical.
+      const [firstValid] = loadFixture("valid.json").candidates;
+      const mediumBlocking = validateShapeOnly(schema, [{ ...firstValid, severity: "medium", blocking: true }]);
+      check("a medium-severity candidate marked blocking is rejected (severity crosswalk)",
+        mediumBlocking.some((e) => e.includes("requires severity high or critical")), mediumBlocking.join(" | "));
+      const lowBlocking = validateShapeOnly(schema, [{ ...firstValid, severity: "low", blocking: true }]);
+      check("a low-severity candidate marked blocking is rejected", lowBlocking.some((e) => e.includes("requires severity high or critical")));
+      const highBlocking = validateShapeOnly(schema, [{ ...firstValid, severity: "high", blocking: true }]);
+      check("a high-severity blocking candidate is accepted", !highBlocking.some((e) => e.includes("requires severity")), highBlocking.join(" | "));
+      const highNonBlocking = validateShapeOnly(schema, [{ ...firstValid, severity: "high", blocking: false }]);
+      check("a high-severity NON-blocking candidate is accepted (the floor-only exception)",
+        !highNonBlocking.some((e) => e.includes("requires severity")), highNonBlocking.join(" | "));
     }
     {
       // A verifier's own CLI entry point, through the real process boundary.

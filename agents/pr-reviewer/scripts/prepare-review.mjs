@@ -244,6 +244,16 @@ export function verifyPinnedHead(pinnedSha, liveHeadSha) {
 }
 
 /**
+ * A GitHub login: 1–39 alphanumerics or single hyphens, not starting or ending with a hyphen, with
+ * an optional `[bot]` suffix for App identities. Anything else — an error body, a URL, whitespace —
+ * is not a login and must never be compared against a PR author.
+ * @param {unknown} s
+ */
+export function isGithubLogin(s) {
+  return typeof s === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$/.test(s);
+}
+
+/**
  * `--isolated` run-mode resolution (R3, D10, D13, AC-5). Isolated repeat
  * runs (the A/B harness, the shadow run) need first-run semantics on every
  * invocation — no LoreKit state-record read, `--full` forced, so a run's
@@ -1089,10 +1099,19 @@ async function prepare(opts) {
 
   // Step 0.5 — review relation. Never from `gh api /user`: it is not repo-scoped
   // and 401s under an installation token, which is an ordinary hosted setup.
-  const me = opts.reviewerLogin || process.env.PR_REVIEWER_LOGIN || "";
+  // A/B iteration 4: validated, never trusted. Round 6 on sync-tray#72 passed a 401 JSON error
+  // body as `--reviewer-login` (the agent body's `ME=$(gh api user … || echo "")` captures gh's
+  // stdout error payload, then appends the empty fallback) and this script accepted it as a login.
+  // Anything that is not a GitHub login shape is treated as unknown, and says so.
+  const suppliedLogin = opts.reviewerLogin || process.env.PR_REVIEWER_LOGIN || "";
+  const me = isGithubLogin(suppliedLogin) ? suppliedLogin : "";
   const authorLogin = meta.author?.login || "";
   const reviewRelation = me ? (normalizeLogin(me) === normalizeLogin(authorLogin) ? "self" : "cross") : "cross";
-  if (!me) {
+  if (!me && suppliedLogin) {
+    anomalies.push(
+      `reviewer login rejected — ${JSON.stringify(String(suppliedLogin).slice(0, 40))} is not a GitHub login; relation defaulted to cross`,
+    );
+  } else if (!me) {
     anomalies.push(
       "reviewer identity unknown (no --reviewer-login / PR_REVIEWER_LOGIN; /user 401s here) — relation defaulted to cross",
     );
@@ -1964,6 +1983,11 @@ async function selfTest() {
       { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123" },
     ) === false;
   });
+  t("isGithubLogin accepts real logins and App identities", () =>
+    ["mthines", "a", "dash0-dev", "app-x[bot]", "A1-b2"].every((l) => isGithubLogin(l)));
+  t("isGithubLogin rejects a 401 error body, empties, and malformed names (A/B iteration 4)", () =>
+    ['{"message":"Bad credentials","status":"401"}', "", " mthines", "-lead", "trail-", "a--b", "x".repeat(40), null]
+      .every((l) => !isGithubLogin(l)));
   t("isReusableWorktreeDir: isolated with no runScratchDir bound fails closed to never-reuse", () => {
     return isReusableWorktreeDir("/anything", { isolated: true, runScratchDir: null }) === false;
   });

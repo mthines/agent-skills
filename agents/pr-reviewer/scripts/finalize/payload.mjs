@@ -244,10 +244,10 @@ export function buildOptimalityCard(card) {
 }
 
 /**
- * @param {{ gates: any, run: any, findings: any[], deferred: any[], lowConfidence: any[], quality: string, extras?: Record<string, any> }} args
+ * @param {{ gates: any, run: any, findings: any[], notes?: any[], deferred: any[], lowConfidence: any[], quality: string, extras?: Record<string, any> }} args
  * @returns {any} a render-report.mjs-shaped payload
  */
-export function buildReportPayload({ gates, run, findings, deferred, lowConfidence, quality, extras }) {
+export function buildReportPayload({ gates, run, findings, notes = [], deferred, lowConfidence, quality, extras }) {
   // AC-11: each phrase is the gate's own short `reason` (the "Warnings:"/"FAIL:" summary line),
   // never the longer `details` sentence the gate TABLE cell renders — gates.mjs computes both.
   const failReasons = [];
@@ -285,6 +285,9 @@ export function buildReportPayload({ gates, run, findings, deferred, lowConfiden
     ADDITIONAL_FINDINGS: deferred,
     LOW_CONFIDENCE_FINDINGS: lowConfidence,
   };
+  // A/B iteration 4: posted one-liners have their own slot. ADDITIONAL_FINDINGS is the list the
+  // report calls "too minor to comment on", so it holds only findings that did NOT post.
+  if (notes.length) payload.NOTES = notes;
   for (const [key, field] of Object.entries(GATE_FIELD)) {
     const g = gates[key];
     payload[`${field}_STATUS`] = STATUS_GLYPH[g?.status] ?? "⏭️";

@@ -68,22 +68,6 @@
     "count": 4,
     "sha": "70cf147"
   },
-  "ADDITIONAL_FINDINGS": [
-    {
-      "path": "packages/web/src/lib/queries/explorer-stats.ts",
-      "line": 16,
-      "prefix": "nitpick",
-      "body": "the header table still says GET /memories/activity",
-      "confidence": 84
-    },
-    {
-      "path": "packages/web/src/lib/filters.ts",
-      "line": 713,
-      "prefix": "question",
-      "body": "no production call site remains for filtersToFacetParams",
-      "confidence": 78
-    }
-  ],
   "MEMORIES_SUMMARY": "62 indexed",
   "MEMORIES_USED": [
     {
@@ -101,5 +85,21 @@
   "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
   "MEASURABILITY_LOG": "ran · 2 paths classified · 1 missing · 0 unlinked",
   "SKIPPED_FILES": "none",
-  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&utm_source=pr-reviewer-fix-all"
+  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&utm_source=pr-reviewer-fix-all",
+  "NOTES": [
+    {
+      "path": "packages/web/src/lib/queries/explorer-stats.ts",
+      "line": 16,
+      "prefix": "nitpick",
+      "body": "the header table still says GET /memories/activity",
+      "confidence": 84
+    },
+    {
+      "path": "packages/web/src/lib/filters.ts",
+      "line": 713,
+      "prefix": "question",
+      "body": "no production call site remains for filtersToFacetParams",
+      "confidence": 78
+    }
+  ]
 }

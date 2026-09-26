@@ -14,7 +14,7 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <a href="https://app.dash0.com/goto/agent0?auto_submit=true&amp;initial_prompt=%2Fpr-fix%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&amp;utm_source=pr-reviewer-fix-all"><picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0-dark.svg"><source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0-light.svg"><img alt="Fix all with Agent0" src="https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets/fix-all-agent0.svg" height="36"></picture></a>
 
 <details>
-<summary>2 more findings — verified, too minor to comment on</summary>
+<summary>Notes (2) — posted inline</summary>
 
 - `packages/web/src/lib/queries/explorer-stats.ts:16` — nitpick: the header table still says GET /memories/activity (confidence 84)
 - `packages/web/src/lib/filters.ts:713` — question: no production call site remains for filtersToFacetParams (confidence 78)

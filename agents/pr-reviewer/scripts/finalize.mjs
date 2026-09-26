@@ -612,7 +612,8 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     gates,
     run,
     findings: inlineClaims.map(toFindingBullet),
-    deferred: inlineNonClaims.concat(overCapDeferred).map(toAdvisoryFinding),
+    notes: inlineNonClaims.map(toAdvisoryFinding),
+    deferred: overCapDeferred.map(toAdvisoryFinding),
     lowConfidence: advisoryDeferred.map(toAdvisoryFinding),
     quality,
     extras,
@@ -1296,11 +1297,17 @@ async function selfTest() {
     check("the sole cleared candidate is a posted one-liner: FINDINGS stays empty (it earns no table row)",
       r.payload.FINDINGS.length === 0);
     check("…but it DOES clear and post inline — write-plan carries a real comment for it",
-      r.inline.length === 1 && r.payload.ADDITIONAL_FINDINGS.length === 1);
+      r.inline.length === 1 && (r.payload.NOTES || []).length === 1);
+    // A/B iteration 4: a POSTED note is never listed under "too minor to comment on".
+    check("the posted note lands in NOTES, not in the unposted ADDITIONAL_FINDINGS list",
+      r.payload.ADDITIONAL_FINDINGS.length === 0);
     const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-nitpick-only-headline");
     check("the payload renders through render-report.mjs with zero manual edits", rendered.ok, rendered.stderr.trim());
     check("the headline counts the posted note instead of reading as if nothing happened",
       rendered.ok && /^### ⚠️ No findings — \d+ gates? needs? attention · 1 note$/m.test(rendered.stdout));
+    check("the rendered report lists it under the posted-notes accordion, not the too-minor one",
+      rendered.ok && /<summary>Notes \(1\) — posted inline<\/summary>/.test(rendered.stdout)
+        && !/too minor to comment on/.test(rendered.stdout));
   }
 
   // AC-10 case: suppression >=3/>=2 + never-suppressible.

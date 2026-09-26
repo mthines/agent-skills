@@ -208,7 +208,8 @@ length**, so there is no count to supply and none to get wrong:
 | `MEMORIES_USED` | `[{key, url?, note?, kind?, evidence?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. `kind` is `knowledge` · `hotspot` · `rule` ([`memory.md`](./memory.md)) and renders as a bold prefix; when any entry supplies one, the summary's `used` half gains a per-kind breakdown (`3 used (1 knowledge · 1 hotspot · 1 rule)`) derived from the array. `evidence` is an array of the PR numbers a `rule` was learned from, rendered `<sup>evidence #88 #91 #97</sup>`; a `rule`-kind entry with an empty `evidence` array is **rejected** — a suppression rule with no evidence trail is exactly the unauditable suppression `memory.md` forbids. Omit `evidence` entirely on the other two kinds. |
 | `IMPACT` | `{telemetry?, symbols?, dependencies?, overlaps?}` | The consequence-note accordion from [`impact-graph.md`](./impact-graph.md). `symbols` is `[{name, path, change, consumer_files, verified_unaffected, findings}]` — `change` is `signature` · `body` · `removed`; `dependencies` is `[{name, from, to, delta, usage_sites, url?}]`; `overlaps` is `[{pr, author, path, symbol?, url?}]`; `telemetry` is one plain line ([`telemetry.md`](./telemetry.md)). The renderer derives the `<summary>` counts, builds every link from `url`, and joins the three bullet groups into **one** list. It rejects `verified_unaffected + findings > consumer_files` and states any untraced remainder in the bullet, so a partial trace can never render as a complete one. |
 | `WITHHELD` | `[{prefix, body, reason, path?, line?, url?}]` | The `unobtainable` findings from [`verification-receipt.md`](../../shared/rules/verification-receipt.md) — re-framed, not dropped. `reason` is **required** (which rung was unavailable); `prefix` must be `suggestion` or `question` and any other value is rejected, because nothing was verified so nothing is asserted. Renders in its own collapsed accordion with `<sup>(unverified: <reason>)</sup>`. |
-| `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. |
+| `NOTES` | `[{path, line, url?, prefix, body, confidence}]` | The cleared one-liners (`nitpick` / `question` / `praise`) that **posted inline**. Renders as the `Notes (<M>) — posted inline` accordion and drives the heading's ` · <M> notes` clause. A claim prefix (`issue` / `suggestion`) is rejected here — a posted claim is a `FINDINGS` row. |
+| `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | Findings that cleared review but did **not** post (over the inline caps). `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. A posted note never belongs here — the accordion calls this list "too minor to comment on". |
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
 | `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. The heading itself is BUILT by `finalize/payload.mjs`'s `buildOptimalityCard()` from the judgment's own `path`/`line`, never taken from the model — `card_body` (the field the optimality lens actually supplies) is expected to EXCLUDE the heading, and `buildOptimalityCard()` strips a leading one if the model echoes its own `proposal.template.md` (which opens with the same heading) rather than starting its content after it, so a card never renders the heading twice. |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
@@ -315,9 +316,11 @@ optional advisory note:
 
 **Notes are counted, never folded into findings.**
 A cleared `nitpick:` / `question:` / `praise:` one-liner posts inline but earns no `FINDINGS` row,
-because a one-liner carries no title, so it is listed in `ADDITIONAL_FINDINGS` instead.
-Every heading form appends ` · <M> notes` (` · 1 note` when singular), counting the
-`ADDITIONAL_FINDINGS` entries whose `prefix` is a one-liner prefix, and drops the clause at `M == 0`.
+because a one-liner carries no title, so it is listed in `NOTES` instead — its own
+`Notes (<M>) — posted inline` accordion, never the `too minor to comment on` one, which holds only
+findings that did not post.
+Every heading form appends ` · <M> notes` (` · 1 note` when singular), where `<M>` is
+`NOTES.length`, and drops the clause at `M == 0`.
 Without it, six comments at the code sat under a heading reading `5 findings`.
 The clause is appended after the whole form, so each form in the table stays a prefix of the
 rendered heading:

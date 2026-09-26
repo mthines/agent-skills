@@ -9593,11 +9593,11 @@ const isPollBlock = (block) =>
         { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
         { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
       ];
-      c.ADDITIONAL_FINDINGS = [note("nitpick", 3)];
+      c.NOTES = [note("nitpick", 3)];
     });
     s.check("G84h findings + a posted note: the note clause is appended after the blocking clause",
       withBoth.ok && /^### 🟠 2 findings — 1 blocking · 1 note$/m.test(withBoth.out), withBoth.err);
-    const passNotes = render((c) => { c.ADDITIONAL_FINDINGS = [note("nitpick", 3), note("question", 4)]; });
+    const passNotes = render((c) => { c.NOTES = [note("nitpick", 3), note("question", 4)]; });
     s.check("G84h a PASS with posted notes counts them rather than reading as if nothing was posted",
       passNotes.ok && /^### ✅ No issues found · 2 notes$/m.test(passNotes.out), passNotes.err);
     const claimOnly = render((c) => {
@@ -9619,6 +9619,49 @@ const isPollBlock = (block) =>
     s.check("G84h report-rendering.md documents the appended note clause; reviewer-report-ingest.md says to match the forms as prefixes",
       /Notes are counted, never folded into findings/.test(rrDoc) && rrDoc.includes("### 🟠 5 findings — 1 blocking · 1 note")
         && /may end in ` · <M> note\(s\)`/.test(ingest) && /match the forms as prefixes/.test(ingest));
+
+    // G84l (A/B iteration 4): posted notes have their OWN slot. ADDITIONAL_FINDINGS is the accordion
+    // headed "too minor to comment on", which was false for a note that posted; a one-liner there is
+    // an unposted finding and is no longer counted as a note, and a claim in NOTES is refused.
+    const legacyShape = render((c) => { c.ADDITIONAL_FINDINGS = [note("nitpick", 3)]; });
+    s.check("G84l a one-liner in ADDITIONAL_FINDINGS (unposted) is not counted as a posted note",
+      legacyShape.ok && /^### ✅ No issues found$/m.test(legacyShape.out), legacyShape.err);
+    const claimInNotes = render((c) => { c.NOTES = [note("issue", 3)]; });
+    s.check("G84l a claim prefix in NOTES is refused (a posted claim is a FINDINGS row)",
+      !claimInNotes.ok && /NOTES\[0\]\.prefix must be a one-liner prefix/.test(claimInNotes.err));
+    s.check("G84l posted notes render under `Notes (<M>) — posted inline`, never the too-minor accordion",
+      passNotes.ok && /<summary>Notes \(2\) — posted inline<\/summary>/.test(passNotes.out)
+        && !/too minor to comment on/.test(passNotes.out));
+    s.check("G84l the warn snapshot lists its two posted notes under Notes, not under too-minor",
+      /<summary>Notes \(2\) — posted inline<\/summary>/.test(warnFixture) && !/too minor to comment on/.test(warnFixture));
+    const finSrc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
+    s.check("G84l finalize.mjs sends posted one-liners to NOTES and only over-cap findings to ADDITIONAL_FINDINGS",
+      /notes: inlineNonClaims\.map\(toAdvisoryFinding\)/.test(finSrc)
+        && /deferred: overCapDeferred\.map\(toAdvisoryFinding\)/.test(finSrc)
+        && !/inlineNonClaims\.concat\(overCapDeferred\)/.test(finSrc));
+    const cf = readFileSync(join(REPO_ROOT, "skills/workflow/implement-suggestion/rules/comment-fetching.md"), "utf8");
+    s.check("G84l reviewer-report-ingest.md and implement-suggestion never expand a Notes bullet into a finding",
+      /\| Notes \| `<summary>Notes \(<N>\) — posted inline<\/summary>`/.test(ingest) && /Never expand a Notes bullet/.test(ingest)
+        && /\| `Notes` bullet \| \*\*nothing\*\*/.test(cf));
+
+    // G84l (cont.): the severity crosswalk — blocking requires high/critical — is enforced by
+    // validate-judgments.mjs's candidate rules, which --shape-only (the verifier self-check) runs too.
+    const vjPath = join(REPO_ROOT, "agents/pr-reviewer/scripts/validate-judgments.mjs");
+    const vjTxt = readFileSync(vjPath, "utf8");
+    const vjRun = spawnSync(process.execPath, [vjPath, "--self-test"], { encoding: "utf8" });
+    s.check("G84l validate-judgments.mjs rejects blocking on a medium/low finding and keeps the floor-only exception",
+      /export const BLOCKING_TIERS = \["critical", "high"\]/.test(vjTxt)
+        && vjRun.status === 0
+        && /a medium-severity candidate marked blocking is rejected/.test(vjRun.stdout || "")
+        && /a high-severity NON-blocking candidate is accepted/.test(vjRun.stdout || ""));
+
+    // G84l (cont.): a reviewer login is validated, and the body's capture cannot keep gh's error body.
+    const prTxt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
+    const bodyTxt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+    s.check("G84l prepare-review.mjs validates --reviewer-login and the body's ME capture resets on a gh failure",
+      /export function isGithubLogin\(/.test(prTxt) && /isGithubLogin\(suppliedLogin\)/.test(prTxt)
+        && bodyTxt.includes('ME=$(gh api user --jq .login 2>/dev/null) || ME=""')
+        && !bodyTxt.includes('ME=$(gh api user --jq .login 2>/dev/null || echo "")'));
   }
   // G84i (A/B round 3 → iteration 1): three pipeline defects the sync-tray#72 arms hit.
   // (1) Every --isolated write-plan targeted the PR's LIVE sticky; --isolated now requires
