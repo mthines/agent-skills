@@ -193,34 +193,50 @@ reviewed one.
 
 #### Verify at PR open — you dispatch `feature-pr-verifier`
 
-**You own the independent verification, not the executor.** `feature-pr-verifier`
-was dispatched **0 times across 48 `aw-executor` runs**: its old trigger was "after
-CI is green", but the executor hands back as soon as the draft PR is open, so the
-trigger was never reached — and a dispatched executor holds no dispatch tool to
-reach the verifier with anyway. You are one rung above it and you are still
-running when the PR opens, so you dispatch it, once, **as soon as the executor
-returns a PR URL**. Do not wait for CI: every one of the verifier's four checks
-(Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity)
-runs its own commands against the PR head, and none reads CI.
+**You own the independent verification, not the executor.** In the local
+transcripts the restructure plan analysed (`~/.claude/projects`, 2026-08-20 →
+2026-09-25), `feature-pr-verifier` was never dispatched by an `aw-executor` run.
+Two things explain it: the old trigger was "after CI is green", while the
+executor's done-condition only needs the Phase 7 gate to have *run once*, so it
+routinely handed back before CI settled; and a dispatched executor holds no
+sub-agent dispatch tool to reach the verifier with anyway. You are one rung above
+it and still running when it returns, so you dispatch it, once, **as soon as the
+executor returns a PR URL**. Do not wait for CI: each of the verifier's four
+checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough
+integrity) runs its own commands against the PR head, and none reads CI.
 
-Preconditions — all three, else record `not run (<reason>)`:
+**Everything the verifier reads lives in the planner's worktree**, not in the
+checkout you are running in: `.agent/` is gitignored and was written there
+(`Worktree: <path>` in the planner's handoff message). Resolve the inputs first,
+from that worktree:
 
-1. Tier is **Full** and `.agent/<branch>/plan.md` exists (Micro and Lite have no
-   plan to verify against — they emit no `Verified:` line).
-2. The executor returned a PR URL.
-3. Some available tool dispatches a sub-agent **and** accepts `feature-pr-verifier`
+```bash
+WT=<the Worktree: path from the planner's handoff>
+PR=<the PR URL the executor returned>
+gh pr view "$PR" --json headRefOid,baseRefOid -q '.headRefOid + " " + .baseRefOid'
+# test command: the one checks.yaml / plan.md name for the full suite — never guessed
+```
+
+Preconditions — all four, else record `not run (<reason>)`:
+
+1. Tier is **Full** and `$WT/.agent/<branch>/plan.md` exists (Micro and Lite have
+   no plan to verify against — they emit no `Verified:` line).
+2. The executor returned a PR URL, and `gh pr view` returned both SHAs.
+3. `checks.yaml` or `plan.md` names the project's test command.
+4. Some available tool dispatches a sub-agent **and** accepts `feature-pr-verifier`
    as its agent type — a capability check, never a check for a file at an install
    path. A host that lists no such type is `not run (feature-pr-verifier not
    dispatchable on this host)`, never a silent skip.
 
 ```
 Task(subagent_type="feature-pr-verifier", prompt="""
-Verify this feature PR. Inputs:
-- plan.md path: .agent/<branch>/plan.md
-- walkthrough.md path: .agent/<branch>/walkthrough.md
-- PR head SHA: <pr_head_sha>
-- Base SHA: <base_sha>
-- Project test command: <project_test_command>
+Verify this feature PR. Run every command from the worktree <WT>, never from any other checkout.
+Inputs:
+- plan.md path: <WT>/.agent/<branch>/plan.md
+- walkthrough.md path: <WT>/.agent/<branch>/walkthrough.md
+- PR head SHA: <headRefOid>
+- Base SHA: <baseRefOid>
+- Project test command: <from checks.yaml / plan.md>
 Follow the feature-pr-verifier agent's procedure end-to-end. Run all four checks.
 Return the verdict block in the exact format specified. Do not propose fixes.
 """)

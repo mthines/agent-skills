@@ -137,7 +137,7 @@ Skill("docs", "update --auto")
 | -------------------------- | -------------------------------------------------------------------- |
 | Runs in Full Mode          | Yes                                                                  |
 | Runs in Lite Mode          | **Yes** — small changes still drift docs; the loop must stay closed  |
-| If missing | Report `skipped (not installed)`, then if the skill is not installed, log and continue                |
+| If missing | Report `skipped (not installed)` and continue                                                      |
 | Disable                    | Remove this section (not recommended; breaks the self-improving loop) |
 
 After invocation, log to the `plan.md` Progress Log (Full Mode) or

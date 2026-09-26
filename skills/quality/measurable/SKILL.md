@@ -53,7 +53,7 @@ every time.
 > Backend span/metric semantic conventions belong to the `otel-instrumentation`
 > and `otel-semantic-conventions` skills (from the
 > [dash0 agent-skills repo](https://github.com/dash0hq/agent-skills)) when
-> installed — invoked via `Skill()`, skipped silently otherwise, with
+> installed — invoked via `Skill()`, otherwise skipped with a one-line report, with
 > [`rules/backend-instrumentation.md`](./rules/backend-instrumentation.md) as
 > the built-in fallback. Persistence for the Observability Profile is
 > [`persistent-memory`](../../authoring/persistent-memory/SKILL.md)'s

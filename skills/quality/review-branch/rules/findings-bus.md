@@ -88,6 +88,7 @@ files) — a bare `agents/…` path resolves against the reviewed repository and
 everywhere but this one:
 
 ```bash
+AGENT_SUPPORT='<printed value>'   # pinned by branch-reviewer — see its § Locating this agent's own files
 node "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" build \
   --finder consumer-impact --defect-class contract-break \
   --symbol retryRequest --path src/jobs/sync.ts

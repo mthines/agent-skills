@@ -175,8 +175,8 @@ if present.
 
 A review body carrying `<!-- PR_REVIEWER_REPORT -->` is handled specially: it is
 never self-filtered (the reviewer and this skill often share one GitHub App
-identity — and neither is a `pr-reviewer` inline finding, recognised by its
-attribution footer), and it is **expanded** into one ledger entry per finding — deferred
+identity; the same carve-out covers a `pr-reviewer` inline finding, recognised by
+its attribution footer), and it is **expanded** into one ledger entry per finding — deferred
 findings, gate findings, and optimality proposals all live only in that body.
 The parse grammar is shared with `pr-reviewer` itself
 ([`agents/shared/rules/reviewer-report-ingest.md`](../../../agents/shared/rules/reviewer-report-ingest.md));

@@ -6668,7 +6668,7 @@ const isPollBlock = (block) =>
   const P7 = read("skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md");
   s.check("G70d phase-7 no longer detects feature-pr-verifier by a file at an install path",
     !/\[ -f "[^"]*agents\/feature-pr-verifier\.md" \]/.test(P7) && !/subagent_type: feature-pr-verifier/.test(P7),
-    "the post-CI dispatch was reached 0 times in 48 executor runs; aw owns it at PR open");
+    "the post-CI dispatch never fired from the executor; aw owns it at PR open");
   const AW = read("skills/workflow/autonomous-workflow/aw/SKILL.md");
   const term = (AW.match(/AW RUN COMPLETE\n[\s\S]*?```/) || [""])[0];
   s.check("G70e aw dispatches feature-pr-verifier at PR open and reports a mandatory Verified: line",
@@ -6682,7 +6682,8 @@ const isPollBlock = (block) =>
   // answers for all three. A `$(gh api user …)` rung is the regression; prose naming the
   // endpoint to explain why it is not used is not.
   for (const rel of ["agents/shared/rules/prior-comment-awareness.md", "agents/shared/rules/outcome-learning.md",
-                     "agents/shared/rules/github-access.md", "skills/workflow/implement-suggestion/rules/comment-fetching.md"]) {
+                     "agents/shared/rules/github-access.md", "skills/workflow/implement-suggestion/rules/comment-fetching.md",
+                     "agents/pr-reviewer.md"]) {
     const body = read(rel);
     s.check(`G70f ${rel} resolves identity via GraphQL viewer, never $(gh api user)`,
       !/\$\(gh api (\/)?user\b/.test(body) && /viewer \{ login \}/.test(body)
@@ -6709,6 +6710,8 @@ const isPollBlock = (block) =>
   // agent actually reads — must not restate the silent form; and the executor's own table must
   // carry test-provenance-guard, whose absence there is one of the measured causes.
   const CS = read("skills/workflow/autonomous-workflow/rules/companion-skills.md");
+  s.check("G70h companion-skills.md no longer says any companion skips silently",
+    !/skips? silently/i.test(CS.replace(/headline read \*skip silently\*/g, "")));
   s.check("G70h companion-skills.md defines the mandatory report line and its closed reason set",
     /^## The companion report$/m.test(CS)
     && ["trigger not met:", "disabled (", "not installed", "not dispatchable on this host", "tool unavailable:"]
@@ -6910,6 +6913,8 @@ const isPollBlock = (block) =>
   for (const rel of ["agents/branch-reviewer.md", "skills/quality/review-branch/rules/findings-bus.md",
                      "skills/quality/pr-review/SKILL.md"]) {
     const p = join(REPO_ROOT, rel);
+    // A renamed file must red, not silently drop out of the sweep.
+    s.check(`G52g ${rel} exists (the bare-path sweep reads it)`, existsSync(p));
     if (!existsSync(p)) continue;
     const hit = readFileSync(p, "utf8").split("\n").find((l) => BARE_SCRIPT.test(l));
     s.check(`G52g ${rel} never runs a support-tree script by a bare agents/ path`, !hit,

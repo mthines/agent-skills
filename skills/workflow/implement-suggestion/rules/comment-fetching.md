@@ -259,9 +259,11 @@ spot mis-filtering.
 
 Any body carrying `<!-- PR_REVIEWER_REPORT -->` is **always included**, even when its author is the
 current user — the sticky issue comment as much as a legacy review body.
-So is every **inline finding** `pr-reviewer` posted: its body ends with the attribution footer
-`` <sup>`pr-reviewer` · commit `<sha7>`</sup> ``, and a finding the loop is meant to apply and resolve
-is never a self-note, whoever the credential says wrote it. The sticky makes this
+So is every **inline finding** `pr-reviewer` posted: its body contains the attribution footer, whose
+stable prefix is the substring `` <sup>`pr-reviewer` · commit ` `` (a `run` part may follow inside the
+`<sup>`, and a `<!-- fp:v2:… -->` marker may follow the footer, so match the substring, never the line
+ending). A finding the loop is meant to apply and resolve is never a self-note, whoever the credential
+says wrote it. The sticky makes this
 carve-out matter more, not less: it is an *issue comment* authored by the bot, exactly the shape the
 self-filter is designed to drop.
 

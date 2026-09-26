@@ -63,7 +63,8 @@ companion: test-provenance-guard — skipped (trigger not met: no new *.test.* f
 ```
 
 **Why this is mandatory, not courtesy.** Across 39 `aw-planner` and 48
-`aw-executor` runs, `Skill("interview")`, `Skill("tdd")`, and
+`aw-executor` runs in the author's local transcripts (`~/.claude/projects`,
+2026-08-20 → 2026-09-25 — local sessions only, not Agent0 or cloud runs), `Skill("interview")`, `Skill("tdd")`, and
 `Skill("test-provenance-guard")` were each invoked **zero** times, and the
 transcripts could not say why: the contract's headline read *skip silently*, so
 an uninstalled companion, an untriggered one, and one the agent never reached all
@@ -123,7 +124,7 @@ line is what lets the next measurement confirm or refute them.
 
 ## Agent Companions
 
-A second class of optional companions exists: **agents** (definitions in `agents/<name>.md`) rather than skills. They are dispatched as sub-agents (`subagent_type: <name>`) and detected by **capability** — the dispatch tool accepts `<name>` as an agent type — never by a file at an install path, which misses plugin-installed, project-local, and hosted agents alike. An agent that cannot be dispatched is reported by name as `not run (<reason>)`, never skipped silently.
+A second class of optional companions exists: **agents** (definitions in `agents/<name>.md`) rather than skills. They are dispatched as sub-agents (`subagent_type: <name>`) and detected by **capability** — the dispatch tool accepts `<name>` as an agent type — never by a file at an install path, which misses plugin-installed, project-local, and hosted agents alike. An agent that cannot be dispatched is reported by name — `companion: <name> — skipped (not dispatchable on this host)` — never skipped silently.
 
 | Agent      | Phase | Trigger condition                                            | Args                                          | Detection paths                                                                                  | Disable by                                                                                       |
 | ---------- | ----- | ------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
@@ -155,9 +156,9 @@ The full contract — lesson schema, scope mapping (`global` / `repo::`), read /
 write triggers, promotion gate, and the entrenchment guards that stop
 self-reinforcing error — lives in
 [`self-improvement-loop.md`](./self-improvement-loop.md). Like every companion,
-the LoreKit fast tier **skips silently when the `memory.*` tools are not
-connected**: it degrades to nothing and the slow tier (`diagnose`) is
-unaffected.
+the LoreKit fast tier **never blocks**: when the `memory.*` tools are not
+connected it reports `companion: lorekit-memory — skipped (tool unavailable: memory.*)`
+and does nothing else; the slow tier (`diagnose`) is unaffected.
 
 ---
 

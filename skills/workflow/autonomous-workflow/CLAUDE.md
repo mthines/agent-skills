@@ -148,7 +148,7 @@ requested, invoke:
 
 If the skill is unavailable, log one line and continue:
 
-    - [TIMESTAMP] Phase 3: tdd — not available, continuing
+    - [TIMESTAMP] Phase 3: tdd — skipped (not installed)
 ```
 
 Three things matter:
@@ -209,8 +209,8 @@ and [`rules/phase-7-ci-gate.md#auto-review`](./rules/phase-7-ci-gate.md#auto-rev
 
 The `feature-pr-verifier` agent is dispatched as `subagent_type: feature-pr-verifier`
 by the **`aw` dispatcher at PR open**, not by Phase 7 after CI green — that trigger
-was reached 0 times in 48 `aw-executor` runs, because the executor returns before CI
-settles and holds no dispatch tool of its own. It is the only remaining agent
+was never reached in the analysed executor transcripts: the executor's done-condition
+needs Phase 7 to have run once, not CI to be green, and it holds no dispatch tool of its own. It is the only remaining agent
 companion in the registry. When adding new agent companions, mirror the same
 pattern: dispatch from the session that holds the dispatch rung, detect by
 capability (the dispatch tool accepts the agent type — never a file at an install

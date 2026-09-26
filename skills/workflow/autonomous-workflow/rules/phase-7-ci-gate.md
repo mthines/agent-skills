@@ -227,7 +227,7 @@ Each `ci-auto-fix` invocation has its own internal retry budget. **Do not wrap i
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 7: ci-auto-fix(<check>) — invoked
+- [TIMESTAMP] Phase 7: ci-auto-fix(<check>) — ran
 - [TIMESTAMP] Phase 7: ci-auto-fix(<check>) — fixed (commit <sha> pushed, CI re-running)
 ```
 
@@ -312,7 +312,7 @@ Once all checks are green:
 
 Tell the user: PR URL, all checks green, and that the worktree is preserved pending their review/merge.
 
-Then proceed to [Auto Verify](#auto-verify) before any cleanup. Capture any
+Then proceed to [Auto Review](#auto-review) before any cleanup (verification is not this phase's job — see [Auto Verify](#auto-verify)). Capture any
 durable run lesson per [Lessons Write](#lessons-write) (also applies on a
 user-approved stop, or when a post-merge bug surfaces in the same session).
 
@@ -386,14 +386,14 @@ Never auto-undraft based on the spec rehearsal verdict. Log:
 ## Auto Verify
 
 **Moved to the `aw` dispatcher — this phase no longer dispatches `feature-pr-verifier`.**
-The old trigger ("after CI is green, before Auto Review") was reached **0 times across 48 `aw-executor` runs**: the executor hands back once the draft PR is open, before CI settles, and a dispatched executor holds no sub-agent dispatch tool to reach the verifier with in any case.
+The old trigger ("after CI is green, before Auto Review") was never reached by an `aw-executor` run in the transcripts the restructure plan analysed: the executor's done-condition needs this gate to have *run once*, not CI to be green, so it routinely handed back first — and a dispatched executor holds no sub-agent dispatch tool to reach the verifier with in any case.
 The verifier's four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity) run their own commands against the PR head and read no CI, so they are dispatched **at PR open** by the session one rung up — the `aw` dispatcher's § *Verify at PR open*, which owns the preconditions, the dispatch prompt, and the mandatory `Verified:` line of its terminal contract.
 
 When you are playing the executor role inside a single-context Full run (no sub-agent dispatch anywhere), do **not** grade the PR yourself — that is the self-grading the verifier exists to remove.
 Log one line and continue to Auto Review:
 
 ```markdown
-- [TIMESTAMP] Phase 7: feature-pr-verifier — not run (sub-agent dispatch unavailable; verification is dispatched by aw at PR open)
+- [TIMESTAMP] Phase 7: feature-pr-verifier — skipped (not dispatchable on this host: single-context run, so there is no second context to verify from)
 ```
 
 ## Auto Review

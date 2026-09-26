@@ -73,14 +73,30 @@ resolve() {  # portable readlink -f
 }
 AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md}" || echo "")
 AGENT_SUPPORT="${AGENT_MD%/branch-reviewer.md}"
+[ -n "$AGENT_MD" ] || { echo "branch-reviewer: support tree unresolved (tried ${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md})" >&2; exit 1; }
 echo "AGENT_SUPPORT=$AGENT_SUPPORT"   # print it: later tool calls need the literal string
 ```
 
-Shell state does not survive between tool calls, so **reuse the printed string** in every later
-`Read` — `Read "$AGENT_SUPPORT/pr-reviewer/rules/finders.md"` — and re-run the block verbatim in any
-later Bash call that invokes a script.
+Shell state does not survive between tool calls — not the variable, and not an `export` either.
+So **pin the printed string** and reuse it: in every later `Read`
+(`Read "<printed value>/pr-reviewer/rules/finders.md"`), and as the first line of every later Bash
+call that runs a script, followed by the same emptiness guard:
 
-| Link written in this file | Read or run it as |
+```bash
+AGENT_SUPPORT='<the value printed above>'
+[ -n "$AGENT_SUPPORT" ] && [ -d "$AGENT_SUPPORT/pr-reviewer/scripts" ] \
+  || { echo "branch-reviewer: support tree unresolved (AGENT_SUPPORT='$AGENT_SUPPORT')" >&2; exit 1; }
+```
+
+Re-running the `resolve()` block instead is only correct on the install path: on a by-path
+dispatch (below) it silently falls back to the `$HOME` default, resolves nothing, and the script
+call becomes `node "/branch-reviewer/scripts/…"`.
+
+The mapping covers every `agents/…` or `./…` path you meet **while running this agent** — in this
+file and in every rule file you read through it (`finders.md`, `memory.md`, `findings-bus.md`, …),
+whichever file wrote it:
+
+| Path as written | Read or run it as |
 | --- | --- |
 | `./pr-reviewer/rules/<file>` | `$AGENT_SUPPORT/pr-reviewer/rules/<file>` |
 | `./shared/rules/<file>` | `$AGENT_SUPPORT/shared/rules/<file>` |
@@ -88,12 +104,13 @@ later Bash call that invokes a script.
 | `agents/pr-reviewer/scripts/<file>` | `$AGENT_SUPPORT/pr-reviewer/scripts/<file>` |
 | `../skills/quality/review-branch/rules/findings-bus.md` | `$AGENT_SUPPORT/../skills/quality/review-branch/rules/findings-bus.md` |
 
-A caller that dispatches this definition **by file path** — a generic sub-agent told to read this
-file and follow it, because the harness has no named `branch-reviewer` agent type — is not on the
-install path and **MUST** export the anchor first:
+**Dispatched by file path?** When the harness has no named `branch-reviewer` agent type, the caller
+dispatches a generic sub-agent and tells it to read this file and follow it. That sub-agent is not
+on the install path, so it **MUST** name the file it was told to read in the resolve call itself —
+in the same Bash call, since an `export` would not outlive it:
 
 ```bash
-export CLAUDE_AGENT_FILE=/path/to/this/branch-reviewer.md   # the exact path you were told to read
+AGENT_MD=$(resolve "/path/to/this/branch-reviewer.md" || echo "")   # the exact path you were told to read
 ```
 
 **When `AGENT_SUPPORT` does not resolve** (empty `AGENT_MD`), stop and report
@@ -152,6 +169,7 @@ Both scripts are addressed through `$AGENT_SUPPORT` ([Locating this agent's own 
 never by a bare `agents/…` path:
 
 ```bash
+AGENT_SUPPORT='<printed value>'   # pinned — § Locating this agent's own files, with its guard
 node "$AGENT_SUPPORT/branch-reviewer/scripts/local-diff-files.mjs" \
   --base "$BASE" ${HEAD:+--head "$HEAD"} ${UNTRACKED:+--include-untracked} \
   --merge-base > "$TMP/local-files.json"

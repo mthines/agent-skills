@@ -126,7 +126,7 @@ Handle the (filtered) review output:
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: review-loop — invoked (N iterations; M findings applied; 0 blocking remaining)
+- [TIMESTAMP] Phase 6: review-loop — ran (N iterations; M findings applied; 0 blocking remaining)
 ```
 
 Or, if `review-loop` is missing:
@@ -157,7 +157,7 @@ The skill gathers context from `plan.md`, git history, and test results to produ
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: aw-create-walkthrough — invoked (.agent/{branch}/walkthrough.md generated)
+- [TIMESTAMP] Phase 6: aw-create-walkthrough — ran (.agent/{branch}/walkthrough.md generated)
 ```
 
 ## PR Creation
@@ -198,7 +198,7 @@ A missing `ui-verify` is reported `companion: ui-verify — skipped (not install
 
 ### Phase 6 Delivery Receipt (GATE — Full + Lite)
 
-Phase 6 is NOT complete until you emit this receipt. It is the mechanical proof the quality passes ran; an empty/`skipped`-only receipt without a `companion … skipped (<reason>)` line is a Phase 6 collapse — stop and run the missing pass before declaring delivery done.
+Phase 6 is NOT complete until you emit this receipt. It is the mechanical proof the quality passes ran. These passes are **required**, so only a reason the run cannot fix may excuse one: `skipped (not installed)`, `skipped (not dispatchable on this host)`, `skipped (tool unavailable: <tool>)`, or `skipped (disabled (<flag>))` for a flag **the user** passed. `trigger not met` is never admissible here — a required pass has no trigger to miss. A receipt line carrying any other reason, or no line at all, is a Phase 6 collapse — stop and run the missing pass before declaring delivery done.
 
 ```bash
 # Deterministic check (Full Mode): the walkthrough MUST exist on disk.
@@ -218,7 +218,7 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 - create-pr → external-reviewer-feedback loop: <stop reason + iterations | --no-feedback (only if user asked) | skipped (<reason>)>
 ```
 
-If any line above would be blank because the pass did not run AND no `skipped (<reason>)` applies, the pass was skipped in error: run it, then re-emit the receipt.
+If any line above would be blank, or would carry a reason outside the admissible four, the pass was skipped in error: run it, then re-emit the receipt.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
@@ -272,7 +272,7 @@ EOF
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: create-pr — invoked (PR #XX opened as draft, CI watch started)
+- [TIMESTAMP] Phase 6: create-pr — ran (PR #XX opened as draft, CI watch started)
 ```
 
 ### Step 5: Show the Walkthrough Inline (BLOCKING)

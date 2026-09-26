@@ -183,19 +183,24 @@ never read again.
 
 The script lives in the `pr-reviewer` agent's support tree, not in the repository you are standing
 in, so a bare `node agents/…` exits `MODULE_NOT_FOUND` everywhere but this skill's own repository.
-Resolve the tree the way the agent does (its § Locating this agent's own files), in the same Bash
-call:
+Resolve the tree in the same Bash call. A Dash0 Agent0 install exports it from its `env.sh`;
+everywhere else resolve it the way the agent does (its § Locating this agent's own files):
 
 ```bash
-resolve() {  # portable readlink -f
-  [ -e "$1" ] || return 1
-  ( cd "$(dirname "$1")" && t=$(basename "$1")
-    while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
-    printf '%s/%s\n' "$(pwd -P)" "$t" )
-}
-AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
-[ -n "$AGENT_MD" ] || { echo "pr-review remember: pr-reviewer support tree unresolved" >&2; exit 1; }
-node "${AGENT_MD%/pr-reviewer.md}/pr-reviewer/scripts/fingerprint.mjs" build \
+[ -f /tmp/workspace/agent-skills/env.sh ] && . /tmp/workspace/agent-skills/env.sh   # Agent0: exports AGENT_SUPPORT
+if [ -z "$AGENT_SUPPORT" ]; then
+  resolve() {  # portable readlink -f
+    [ -e "$1" ] || return 1
+    ( cd "$(dirname "$1")" && t=$(basename "$1")
+      while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+      printf '%s/%s\n' "$(pwd -P)" "$t" )
+  }
+  AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+  AGENT_SUPPORT="${AGENT_MD%/pr-reviewer.md}"
+fi
+[ -f "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" ] || {
+  echo "pr-review remember: support tree unresolved (tried env.sh, ${CLAUDE_AGENT_FILE:-\$HOME/.claude/agents/pr-reviewer.md})" >&2; exit 1; }
+node "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" build \
   --finder <finder> --defect-class <class> --symbol <symbol|-> --path <repo-relative path>
 ```
 

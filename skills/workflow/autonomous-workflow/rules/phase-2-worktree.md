@@ -250,7 +250,7 @@ The executor's Phase 4 loop gates on those checks mechanically.
 Log the invocation in the plan's Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 2: aw-create-plan() — invoked (.agent/{branch}/plan.md + checks.yaml written, N checks)
+- [TIMESTAMP] Phase 2: aw-create-plan() — ran (.agent/{branch}/plan.md + checks.yaml written, N checks)
 - [TIMESTAMP] Phase 2: aw-create-plan() — skipped (not installed), continuing without artifact
 ```
 

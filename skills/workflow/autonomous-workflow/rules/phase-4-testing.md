@@ -477,7 +477,7 @@ Log every step of the auto-replan protocol in `plan.md` Progress Log:
 
 ```markdown
 - [2026-04-29T16:35:10Z] Phase 4: cap hit (3 iterations on ThemeToggle initial state, Lite Mode)
-- [2026-04-29T16:35:42Z] Phase 4: confidence(analysis) — invoked (74%, suspects provider boundary)
+- [2026-04-29T16:35:42Z] Phase 4: confidence(analysis) — ran (74%, suspects provider boundary)
 - [2026-04-29T16:35:55Z] Phase 4: confidence < 90% — auto-replan triggered
 - [2026-04-29T16:36:30Z] Phase 4: holistic-analysis() — re-traced provider chain, identified missing context default
 - [2026-04-29T16:37:05Z] Phase 4: plan.v2.md created (auto-replan); plan.md updated; counter reset; auto_replan_used=True
@@ -541,7 +541,7 @@ approach, or stop.
 ### Logging
 
 ```markdown
-- [2026-04-29T16:42:18Z] Phase 4: holistic-analysis() — invoked (user-driven, re-traced provider chain, identified missing context default)
+- [2026-04-29T16:42:18Z] Phase 4: holistic-analysis() — ran (user-driven, re-traced provider chain, identified missing context default)
 - [2026-04-29T16:45:50Z] Phase 4: plan.v3.md created — ThemeProvider must mount above StoreProvider; plan.md updated; counter reset to 0
 ```
 

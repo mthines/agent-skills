@@ -245,7 +245,7 @@ Skill("holistic-analysis")     # missing ⇒ companion: <name> — skipped (not 
 Log to the conversation and to `plan.md` Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: holistic-analysis() — invoked
+- [TIMESTAMP] Phase 1: holistic-analysis() — ran
 - [TIMESTAMP] Phase 1: holistic-analysis() — skipped (not installed)
 ```
 
@@ -533,7 +533,7 @@ Log:
 **Anchor:** `adversarial-pre-mortem`
 
 **Opt-in only.** Run this step **only** when the user passed `--critical` to
-the workflow. Otherwise report `companion: critical — skipped (disabled — opt-in, --critical not passed)` — no auto-engage heuristics at this stage.
+the workflow. Otherwise report `companion: critical — skipped (trigger not met: --critical not passed)` — no auto-engage heuristics at this stage.
 
 Purpose: surface plan defects that pass static rules but would fail under
 adversarial review, and force exploration of at least one alternative design
@@ -566,7 +566,7 @@ Log:
 ```markdown
 - [TIMESTAMP] Phase 1: critical(plan) — applied (N must-fixes addressed, steelman recorded)
 - [TIMESTAMP] Phase 1: critical(plan) — skipped (not installed)
-- [TIMESTAMP] Phase 1: critical(plan) — skipped (no --critical flag)
+- [TIMESTAMP] Phase 1: critical(plan) — skipped (trigger not met: --critical not passed)
 ```
 
 Disable by removing the invocation here (see
