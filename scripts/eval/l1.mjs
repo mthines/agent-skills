@@ -9398,6 +9398,35 @@ const isPollBlock = (block) =>
     s.check("G84c finalize.mjs's dedupeCandidates() calls semanticDedupe AFTER the exact/adjacent pass",
       semImportIdx > -1 && dedupeCallIdx > -1 && semCallIdx > -1 && semCallIdx > dedupeCallIdx);
   }
+
+  // G84d (A/B round 1 delta): validate-judgments.mjs runs finalize.mjs's OWN checkShape() —
+  // imported, never a second copy of render-comment.mjs's caps — so a judgments.json that
+  // passes validate is proven to pass finalize's real render step too, on EVERY run, not only
+  // a --fanout one that reaches the separate --check-shape pre-flight. Two fixture-driven
+  // self-test cases (an over-200-char BODY the schema's own maxLength-less `body` property lets
+  // through; evidence_anchors on a nitpick, which nothing in the schema ties to prefix) pin the
+  // exact gap A/B round 1 needed a hand workaround for.
+  const VALIDATE_JUDGMENTS_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/validate-judgments.mjs");
+  if (existsSync(VALIDATE_JUDGMENTS_PATH)) {
+    const vjSrc = readFileSync(VALIDATE_JUDGMENTS_PATH, "utf8");
+    s.check("G84d validate-judgments.mjs imports checkShape from finalize.mjs (never a copy)",
+      /import\s*\{\s*checkShape\s*\}\s*from\s*"\.\/finalize\.mjs"/.test(vjSrc));
+    const validateJudgmentsBody = vjSrc.match(/export function validateJudgments\([\s\S]*?\n\}/)?.[0] || "";
+    s.check("G84d validateJudgments() calls renderLegalityErrors() (checkShape), not only schema+domainRules",
+      /renderLegalityErrors\(data\)/.test(validateJudgmentsBody));
+    const FIXTURES = join(REPO_ROOT, "scripts/eval/fixtures/judgments");
+    s.check("G84d the two A/B-round-1 fixtures exist (over-200-char BODY; evidence_anchors on a nitpick)",
+      existsSync(join(FIXTURES, "invalid-render-overlong-body.json"))
+        && existsSync(join(FIXTURES, "invalid-render-evidence-on-nitpick.json")));
+    const r = spawnSync(process.execPath, [VALIDATE_JUDGMENTS_PATH, "--self-test"], { encoding: "utf8" });
+    const out = r.stdout || "";
+    s.check("G84d validate-judgments.mjs --self-test passes, including both new render-legality cases",
+      r.status === 0
+        && /caught by validate \(checkShape\/render-comment\.mjs\), not left for finalize/.test(out)
+        && /caught by validate, not left for finalize/.test(out)
+        && /ALSO passes finalize's real render step/.test(out),
+      (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+  }
 }
 
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,

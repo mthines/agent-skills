@@ -21,6 +21,21 @@
  * exempt" (D6) lives here for the same reason — it is not expressible as a
  * type/enum/required constraint.
  *
+ * A THIRD class of error is neither of the above: a candidate can satisfy
+ * every schema keyword and every domainRules() check and still be something
+ * finalize.mjs's own render step refuses to post — the schema's `body` has
+ * no `maxLength` (render-comment.mjs's 200-char PROSE_MAX is enforced only
+ * there), and nothing in the schema ties `evidence_anchors` to `prefix`
+ * (render-comment.mjs refuses EVIDENCE on a non-claim prefix). Both gaps
+ * were real: A/B round 1 (dash0hq/dash0#20230) needed a hand workaround for
+ * exactly these two shapes, because validate-judgments passed a body that
+ * finalize then rejected. `renderLegalityErrors()` closes this by calling
+ * `finalize.mjs`'s OWN `checkShape()` — the exact `toInlineCommentPayload`
+ * -> `renderComment` path finalize runs at write time — never a second,
+ * hand-rolled copy of its caps. A judgments file that now passes
+ * `validateJudgments()` is therefore proven to pass finalize's render step
+ * too, on the SAME candidates, before any verifier spend.
+ *
  * Usage:
  *   node validate-judgments.mjs <judgments.json>
  *   node validate-judgments.mjs --self-test
@@ -29,6 +44,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { checkShape } from "./finalize.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = join(HERE, "..", "schemas", "judgments.schema.json");
@@ -264,6 +280,21 @@ export function loadSchema() {
 }
 
 /**
+ * Every candidate through the REAL render path finalize.mjs uses at write time
+ * (`toInlineCommentPayload` -> `renderComment`, via `finalize.mjs`'s own `checkShape()`
+ * — imported, never copied). A violation here is exactly the class of failure that used
+ * to surface only inside finalize itself, after verification had already spent its
+ * budget on the candidate.
+ * @param {any} data
+ * @returns {string[]}
+ */
+export function renderLegalityErrors(data) {
+  const { violations } = checkShape(data);
+  return violations.map((v) =>
+    `#.candidates[${v.index}]: fails finalize's render step (${v.field}) — ${v.reason}`);
+}
+
+/**
  * @param {any} schema - a schema already passed through loadSchema/checkSchemaKeywords
  * @param {any} data
  * @returns {string[]} errors — empty means valid
@@ -273,6 +304,7 @@ export function validateJudgments(schema, data) {
   const errors = [];
   validateNode(schema, schema, data, "#", errors);
   domainRules(data, errors);
+  errors.push(...renderLegalityErrors(data));
   return errors;
 }
 
@@ -383,6 +415,38 @@ async function selfTest() {
       const data = loadFixture("invalid-gate-details-overlong.json");
       const errs = validateJudgments(schema, data);
       check("an over-120-char gate1.details (GATE_DESCRIPTION_DETAILS) is rejected", errs.length > 0 && errs.some(e => e.includes("maxLength")));
+    }
+    {
+      // A/B round 1 (dash0hq/dash0#20230): the schema's `body` carries no `maxLength`, so
+      // this fixture is schema-valid and passes every domainRules() check, yet
+      // render-comment.mjs's 200-char PROSE_MAX would reject it at finalize time — the
+      // "validate passes a body that finalize then rejects" workaround, closed here.
+      const data = loadFixture("invalid-render-overlong-body.json");
+      const errs = validateJudgments(schema, data);
+      check("an over-200-char BODY is caught by validate (checkShape/render-comment.mjs), not left for finalize",
+        errs.length > 0 && errs.some(e => e.includes("fails finalize's render step (BODY)") && e.includes("200-char cap")));
+    }
+    {
+      // A/B round 1's other workaround: evidence_anchors on a one-liner prefix. Nothing in
+      // the schema or domainRules() ties evidence_anchors to prefix; only render-comment.mjs
+      // refuses "EVIDENCE on a nitpick: — nothing is being proved".
+      const data = loadFixture("invalid-render-evidence-on-nitpick.json");
+      const errs = validateJudgments(schema, data);
+      check("evidence_anchors on a nitpick is caught by validate, not left for finalize",
+        errs.length > 0 && errs.some(e => e.includes("fails finalize's render step (EVIDENCE)") && e.includes("nothing is being proved")));
+    }
+    {
+      // The inverse claim: a judgments file that passes validateJudgments() must ALSO
+      // pass finalize's own checkShape() on the identical data — the whole point of
+      // importing checkShape rather than re-deriving its caps. valid.json's own
+      // unverified_reason was, before this change, 85 chars — over UNVERIFIED_MAX (40) —
+      // and validate-judgments never noticed; it is now render-legal too.
+      const data = loadFixture("valid.json");
+      const validateErrs = validateJudgments(schema, data);
+      const shapeResult = checkShape(data);
+      check("a judgments file that validates ALSO passes finalize's real render step",
+        validateErrs.length === 0 && shapeResult.ok === true,
+        `validate errors: ${validateErrs.length}, checkShape violations: ${JSON.stringify(shapeResult.violations)}`);
     }
   }
 

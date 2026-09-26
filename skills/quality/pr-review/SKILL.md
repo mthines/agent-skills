@@ -464,7 +464,15 @@ node agents/pr-reviewer/scripts/finalize.mjs \
 ```
 
 `validate-judgments.mjs` exits non-zero on a schema violation and stops the run there — a malformed
-`judgments.json` is a synthesis bug, not something `finalize.mjs` should try to interpret. Once
+`judgments.json` is a synthesis bug, not something `finalize.mjs` should try to interpret.
+`validate-judgments.mjs` also calls `finalize.mjs`'s own `checkShape()` (the same function
+`--check-shape` above wraps — imported, never a second copy of its caps), so a candidate a schema
+alone would let through — an over-`PROSE_MAX` `body` with no `maxLength` in the schema, or
+`evidence_anchors` on a one-liner prefix, both real A/B round-1 workarounds — now fails validate
+too, on EVERY run, not only a `--fanout` one that reached the pre-flight above. The pre-flight is
+still worth running first here: it names which VERIFIER to re-dispatch, one repair round, before
+assembly — `validate-judgments.mjs` only tells the orchestrator the assembled file is unpostable.
+Once
 `finalize.mjs` has written `write-plan.json`, execute it exactly as `pr-reviewer.md` Step 4 does:
 `execute-write-plan.mjs` where a `gh` access path exists, or the write-plan's ops walked one by one
 against the `mcp__github__*` / `mcp__lorekit__*` mapping in
