@@ -417,6 +417,44 @@ Paste that command's output into the verifier's prompt (alongside the worker pre
 `body`, `evidence[]`, and the fenced-suggestion line cap it produces are checked against the caps
 the renderer will actually enforce, not against a value someone remembered.
 
+### Verifier self-check — appended to every verifier dispatch in Step e
+
+The caps above tell a verifier what the limits are; this block makes it check its own file against
+them before it returns.
+In A/B round 1 the orchestrator hand-trimmed 6 verifier bodies on one arm and 16 on another, because
+nothing ran the renderer's shape check until every verifier had already returned.
+Append this block, verbatim, after the worker preamble and the pasted shape caps in every verifier
+dispatch, with `<REPO>` replaced by the absolute path of this repository's checkout and `<OUT>` by
+the verifier's own output path:
+
+```text
+Before you return, self-check the file you wrote:
+  node <REPO>/agents/pr-reviewer/scripts/validate-judgments.mjs --shape-only <OUT>
+- Exit 0 with "OK" on stdout: return <OUT>.
+- Exit 1: stderr names each violation by candidate index and field. Edit ONLY the named fields in
+  <OUT>, then run the command again.
+- At most 2 fix-and-rerun rounds (3 runs in total). If the third run still exits 1, return <OUT>
+  followed by one line: SHAPE-UNRESOLVED: <first stderr line>.
+- Exit 2 (the check itself could not run): return <OUT> followed by one line:
+  SHAPE-CHECK-UNAVAILABLE: <first stderr line>.
+- Never change verdict, severity, blocking, R, A, or Ac to make the check pass, and never delete a
+  candidate. The check governs how a finding is written, not whether it is true.
+```
+
+`--shape-only` validates each candidate against `judgments.schema.json`'s `$defs.candidate`, the
+candidate-level domain rules, and `finalize.mjs`'s own `checkShape()`, imported rather than copied.
+It needs no `gates`/`threads`/`memory` wrapper, which a single verifier's output never has.
+It accepts the two shapes a verifier writes: a bare JSON array of candidates, or
+`{ "candidates": [...] }`.
+A file holding one bare candidate object is rejected, so `<OUT>` always holds an array, even for a
+single candidate.
+The bound is two rounds for the same reason Step f allows one repair round: a verifier that
+miscounted against a cap it was given fixes it in one pass, and one that cannot follow the
+instruction will not fix it in a fifth.
+A `SHAPE-UNRESOLVED` or `SHAPE-CHECK-UNAVAILABLE` line changes nothing downstream.
+Step f's `--check-shape` pre-flight and `finalize.mjs`'s `coerceShape()` routing still run on every
+candidate, so a verified finding is still never dropped over its shape.
+
 ### Step f — assemble, validate, finalize, write
 
 One synthesis pass — a dedicated sub-agent, or the orchestrator itself; both are permitted, and

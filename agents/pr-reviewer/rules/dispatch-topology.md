@@ -120,3 +120,14 @@ node agents/pr-reviewer/scripts/comment-spine.mjs --shape-caps
 
 so `title`, `body`, `evidence[]`, and the fenced-suggestion line cap a verifier writes against are
 checked against the caps the renderer will actually enforce, never a value someone remembered.
+
+Every verifier dispatch's prompt also ends with the **verifier self-check** block, appended after the
+preamble and the shape caps, verbatim and by reference:
+[`skills/quality/pr-review/SKILL.md § Verifier self-check`](../../../skills/quality/pr-review/SKILL.md#verifier-self-check--appended-to-every-verifier-dispatch-in-step-e).
+It tells the verifier to run `validate-judgments.mjs --shape-only` on its own output file before
+returning, fix only the fields the check names, and stop after 2 fix-and-rerun rounds.
+It must never change a verdict, a severity, or `blocking` to pass the check.
+The single-dispatch path uses the same block as `--fanout`, for the same reason it uses the same
+preamble: one copy, so a verifier dispatched by either path runs the same check.
+A verifier that returns `SHAPE-UNRESOLVED` changes nothing downstream.
+`finalize.mjs`'s `coerceShape()` still routes the candidate, and never drops it.

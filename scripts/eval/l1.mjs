@@ -9467,6 +9467,52 @@ const isPollBlock = (block) =>
         /RUN:\s*\[[^\]]*"thoroughness"/.test(rrSrc) && /run\.thoroughness/.test(rrSrc));
     }
   }
+
+  // G84f (A/B round 2 item 5): the verifier self-check is WIRED, not only implemented. The
+  // `--shape-only` CLI existed after 895bbc2 but nothing told a verifier to run it, so it would
+  // have caught nothing — the same gap A/B round 1 hit, where the orchestrator hand-trimmed 6 and
+  // 16 verifier bodies. One copy of the instruction (SKILL.md), referenced by dispatch-topology.md
+  // so the single-dispatch path and `--fanout` run the same bounded check.
+  {
+    const SKILL = join(REPO_ROOT, "skills/quality/pr-review/SKILL.md");
+    const DT = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
+    const VJ = join(REPO_ROOT, "agents/pr-reviewer/scripts/validate-judgments.mjs");
+    const skillTxt = existsSync(SKILL) ? readFileSync(SKILL, "utf8") : "";
+    const selfCheck = (() => {
+      const start = skillTxt.indexOf("### Verifier self-check");
+      if (start === -1) return "";
+      const rest = skillTxt.slice(start);
+      const next = rest.indexOf("\n### ", 1);
+      return next === -1 ? rest : rest.slice(0, next);
+    })();
+    const fanoutStart = skillTxt.indexOf("## `--fanout`");
+    const fanoutEnd = fanoutStart === -1 ? -1 : skillTxt.indexOf("\n## ", fanoutStart + 1);
+    const selfCheckIdx = skillTxt.indexOf("### Verifier self-check");
+    s.check("G84f SKILL.md has a Verifier self-check block inside the --fanout section, after Step e and before Step f",
+      selfCheckIdx > fanoutStart && fanoutStart > -1 && (fanoutEnd === -1 || selfCheckIdx < fanoutEnd)
+        && selfCheckIdx > skillTxt.indexOf("### Step e") && selfCheckIdx < skillTxt.indexOf("### Step f"));
+    s.check("G84f the self-check runs validate-judgments.mjs --shape-only on the verifier's own output path",
+      /node <REPO>\/agents\/pr-reviewer\/scripts\/validate-judgments\.mjs --shape-only <OUT>/.test(selfCheck));
+    s.check("G84f the self-check is bounded (2 fix-and-rerun rounds) and names the unresolved/unavailable returns",
+      /At most 2 fix-and-rerun rounds/.test(selfCheck) && selfCheck.includes("SHAPE-UNRESOLVED:")
+        && selfCheck.includes("SHAPE-CHECK-UNAVAILABLE:"));
+    s.check("G84f the self-check forbids changing a verdict/severity/blocking or deleting a candidate to pass",
+      /Never change verdict, severity, blocking/.test(selfCheck) && /never delete a\s+candidate/.test(selfCheck));
+    const dtTxt = existsSync(DT) ? readFileSync(DT, "utf8") : "";
+    s.check("G84f dispatch-topology.md appends the self-check to every verifier dispatch, by reference to SKILL.md",
+      dtTxt.includes("SKILL.md#verifier-self-check--appended-to-every-verifier-dispatch-in-step-e")
+        && dtTxt.includes("--shape-only"));
+    const vjTxt = existsSync(VJ) ? readFileSync(VJ, "utf8") : "";
+    s.check("G84f validate-judgments.mjs exports validateShapeOnly and its CLI routes --shape-only to it",
+      /export function validateShapeOnly\(/.test(vjTxt)
+        && /shapeOnly \? validateShapeOnly\(schema, data\) : validateJudgments\(schema, data\)/.test(vjTxt));
+    const r = spawnSync(process.execPath, [VJ, "--self-test"], { encoding: "utf8" });
+    const out = r.stdout || "";
+    s.check("G84f validate-judgments.mjs --self-test exercises --shape-only through the real CLI (pass and fail)",
+      r.status === 0 && /CLI: --shape-only exits 0 and prints OK/.test(out)
+        && /CLI: --shape-only exits 1 and names the cap/.test(out),
+      (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+  }
 }
 
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,
