@@ -139,10 +139,12 @@ rather than trusted from the stage before it:**
   set and `--dry-run` was not passed — checked before any rendering happens.
 - A `--dry-run` run's `write-plan.json` self-identifies (`dry_run: true`, `historical: {review_sha}`,
   `lorekit_write: []`) — never silently indistinguishable from an ordinary plan.
-- `execute-write-plan.mjs` refuses (`refusalReason()`, exit 5, zero `gh` calls) on a plan carrying
-  either marker — from the PLAN FILE's own fields, never from a caller-supplied `--dry-run` CLI
+- `execute-write-plan.mjs` refuses (`refusalReason()`, exit 5, zero `gh` calls) to EXECUTE a plan
+  carrying either marker — from the PLAN FILE's own fields, never cleared by a caller-supplied CLI
   flag, so a plan that reached this script some other way (hand-assembled, replayed, a future
-  caller) is still refused on what it says about itself.
+  caller) is still refused on what it says about itself. `execute-write-plan.mjs --dry-run` on the
+  same plan is a preview, not an execution: it lists the planned steps (zero `gh` calls, as always)
+  and carries the reason a live run would refuse it as `wouldRefuse`.
 
 A historical run is therefore, by construction, **never** anything other than
 `--isolated --dry-run --review-sha <sha>` together — there is no supported way to make one post.

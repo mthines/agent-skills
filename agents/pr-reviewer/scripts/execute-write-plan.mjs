@@ -206,22 +206,31 @@ export async function executeWritePlan(writePlan, opts = {}) {
   const repo = opts.repo || writePlan.repo;
   const lorekitOps = writePlan.lorekit_write || [];
 
-  // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-18): refuse a plan that self-identifies as
-  // historical or dry_run — checked from the PLAN FILE'S OWN fields, never the caller's `--dry-run`
-  // CLI flag, and BEFORE `probeGhAccess` (which itself spawns `gh`) or any runner call. This is
-  // defense in depth behind finalize.mjs's own historical-without-dry-run refusal (AC-17): a plan
-  // that reached this script some other way — hand-assembled, replayed from an old run, a future
-  // caller that skips finalize.mjs — still gets refused on the plan's own markers, not on trusting
-  // that whatever wrote it got the CLI flags right.
-  if (refusalReason(writePlan)) {
+  // `--dry-run` is a PREVIEW and spawns nothing, so it always lists the planned steps — including
+  // for a plan that self-identifies as dry_run/historical, which is exactly what
+  // `finalize.mjs --dry-run` emits and what pipeline.md promises can be previewed. The reason a
+  // live run would refuse it is carried as `wouldRefuse`, never silently dropped.
+  const refusal = refusalReason(writePlan);
+  if (dryRun) {
     return {
-      executed: [], dryRun: true, refused: true, reason: refusalReason(writePlan),
-      plannedSteps: [], lorekitOps, ghAccess: null, code: 5,
+      executed: [], dryRun: true, plannedSteps: planExecutionSteps(writePlan), lorekitOps, ghAccess: null,
+      ...(refusal ? { wouldRefuse: refusal } : {}),
     };
   }
 
-  if (dryRun) {
-    return { executed: [], dryRun: true, plannedSteps: planExecutionSteps(writePlan), lorekitOps, ghAccess: null };
+  // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-18): outside --dry-run, refuse a plan that
+  // self-identifies as historical or dry_run — checked from the PLAN FILE'S OWN fields (the CLI
+  // flag only decides preview-vs-execute, it can never clear the refusal), and BEFORE
+  // `probeGhAccess` (which itself spawns `gh`) or any runner call. This is defense in depth behind
+  // finalize.mjs's own historical-without-dry-run refusal (AC-17): a plan that reached this script
+  // some other way — hand-assembled, replayed from an old run, a future caller that skips
+  // finalize.mjs — still gets refused on the plan's own markers, not on trusting that whatever
+  // wrote it got the CLI flags right.
+  if (refusal) {
+    return {
+      executed: [], dryRun: false, refused: true, reason: refusal,
+      plannedSteps: [], lorekitOps, ghAccess: null, code: 5,
+    };
   }
 
   const hasGhAccess = await probeGhAccess(repo, runner);
@@ -431,6 +440,33 @@ async function selfTest() {
     check("a historical/dry_run plan is refused with code 5, zero runner calls, even with dryRun NOT passed",
       result.refused === true && result.code === 5 && calls.length === 0, JSON.stringify(result));
     check("the refusal reason names the historical review_sha", /historical/i.test(result.reason || ""));
+  }
+
+  // A plan finalize.mjs --dry-run produced (dry_run: true, optionally historical) must still be
+  // PREVIEWABLE under --dry-run — pipeline.md promises the planned steps — while staying refused
+  // without it. Both halves, zero runner calls in each.
+  {
+    const rehearsal = {
+      repo: "owner/repo", pr_number: 1, dry_run: true,
+      historical: { review_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
+      thread_reply: [{ thread_id: "t1", body: "fixed" }],
+      sticky_upsert: { comment_id: null, body_path: "/tmp/body.md" },
+      review_create: { commit_id: "abc", comments: [{ path: "a.ts", line: 1, body: "x" }] },
+      lorekit_write: [],
+    };
+    const { spy: dSpy, calls: dCalls } = mkSpy();
+    const previewed = /** @type {any} */ (await executeWritePlan(rehearsal, { runner: dSpy, dryRun: true }));
+    check("--dry-run on a dry_run/historical plan lists the planned steps instead of refusing",
+      previewed.refused !== true && previewed.code === undefined
+      && (previewed.plannedSteps || []).map((/** @type {any} */ s) => s.kind).join(",") === "thread.reply,sticky.upsert,review.create",
+      JSON.stringify(previewed));
+    check("--dry-run on a dry_run/historical plan still names why a live run would refuse it",
+      /historical/i.test(previewed.wouldRefuse || ""), String(previewed.wouldRefuse));
+    check("--dry-run on a dry_run/historical plan spawns zero gh processes", dCalls.length === 0, `${dCalls.length} calls`);
+    const { spy: lSpy, calls: lCalls } = mkSpy();
+    const live = await executeWritePlan(rehearsal, { runner: lSpy });
+    check("the same plan WITHOUT --dry-run is refused with code 5 and zero gh processes",
+      live.refused === true && live.code === 5 && lCalls.length === 0, JSON.stringify(live));
   }
 
   // AC-3 case: a plan with empty inline comments emits no review.create.

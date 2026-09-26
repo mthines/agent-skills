@@ -9229,6 +9229,19 @@ const isPollBlock = (block) =>
     s.check("G80 the refusal never spawned the PATH-shim gh (empty log)",
       readFileSync(logPath, "utf8").trim() === "", readFileSync(logPath, "utf8"));
 
+    // The same plan under --dry-run is a PREVIEW (pipeline.md): exit 0, planned steps listed, the
+    // live-run refusal carried as wouldRefuse, and still zero gh spawns.
+    const rPreview = spawnSync(process.execPath, [
+      EXECUTE_WRITE_PLAN_PATH, "--plan", planPath, "--repo", "o/r", "--dry-run",
+    ], { encoding: "utf8", env });
+    let preview = null;
+    try { preview = JSON.parse(rPreview.stdout || "null"); } catch { preview = null; }
+    s.check("G80 execute-write-plan.mjs --dry-run previews a historical/dry_run plan (exit 0, wouldRefuse set)",
+      rPreview.status === 0 && Array.isArray(preview?.plannedSteps) && /historical/i.test(preview?.wouldRefuse || ""),
+      `exit ${rPreview.status} ${rPreview.stderr}`);
+    s.check("G80 the --dry-run preview never spawned the PATH-shim gh (empty log)",
+      readFileSync(logPath, "utf8").trim() === "", readFileSync(logPath, "utf8"));
+
     rmSync(shimDir, { recursive: true, force: true });
   }
 
