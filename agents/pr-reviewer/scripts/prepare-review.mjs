@@ -49,7 +49,7 @@ import { join, dirname, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Timing } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
-import { routeDepth } from "./route-depth.mjs";
+import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1264,6 +1264,20 @@ async function prepare(opts) {
     depthCapability: workspace.depthCapability,
   });
 
+  // resolveBudget() layers the continuous thoroughness knob on top of the routed tier
+  // (depth-routing.md § Thoroughness budget). This script cannot know whether the agent
+  // reading this context holds `Task`, so `budget.topology` here assumes dispatch IS
+  // available — the agent re-derives it as `dispatchAvailable ? budget.topology :
+  // "in-context"` and logs RUN_ANOMALY when that downgrades it
+  // (dispatch-topology.md § Reading a budget into dispatch).
+  const thoroughnessOverride = opts.thoroughness === "" ? undefined : Number(opts.thoroughness);
+  const budget = resolveBudget({
+    thoroughness: thoroughnessOverride,
+    routedTier: routing.tier,
+    shape: (deltaShape && deltaShape.shapes) || [],
+    effortHigh: opts.effort === "high",
+  });
+
   const gate4Precandidates = scanGate4(deltaFiles);
 
   timing.end(); // triage-routing
@@ -1407,6 +1421,7 @@ async function prepare(opts) {
     impact: opts.inlinePayloads ? impact : null,
 
     routing,
+    budget,
     threads,
     gate4_precandidates: gate4Precandidates,
 
@@ -1809,6 +1824,7 @@ async function main(argv) {
     full: false,
     state: "",
     effort: "",
+    thoroughness: "",
     threads: true,
     reviewSha: "",
   };
@@ -1830,6 +1846,7 @@ async function main(argv) {
     else if (a === "--full") opts.full = true;
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
+    else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
     else if (a === "--no-threads") opts.threads = false;
     else if (a === "--review-sha") opts.reviewSha = argv[++i]; // D8/D9: historical read-only review target
     else {
@@ -1843,7 +1860,7 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
         "[--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--effort high] [--no-threads] [--review-sha sha] | --self-test\n",
+        "[--state file] [--effort high] [--thoroughness 0..1] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
   }
@@ -1895,6 +1912,7 @@ async function main(argv) {
           `  shape     ${context.shape ? JSON.stringify(context.shape).slice(0, 160) : "unavailable"}`,
           `  impact    ${context.impactSummary ? `band=${context.impactSummary.band} · ${context.impactSummary.changedSymbols} symbols (${context.impactSummary.changedExports} exported) · ${context.impactSummary.dependencies} deps` : "unavailable"}`,
           `  routing   tier=${context.routing.tier}${context.routing.capApplied ? " (capped)" : ""} · triggers=[${context.routing.triggers.join(",")}] · threads=${context.threads.length} · gate4=${context.gate4_precandidates.length} pre-candidate(s)`,
+          `  budget    thoroughness=${context.budget.effectiveThoroughness}${context.budget.riskFloorApplied ? ` (floored: ${context.budget.riskFloorReason})` : ""} · topology=${context.budget.topology} · votes=${context.budget.correctnessVotes}`,
           `  context   ${(Buffer.byteLength(JSON.stringify(context)) / 1024).toFixed(0)} KB index + sidecars in ${dirname(outPath)}`,
           `  anomalies ${context.anomalies.length}`,
           ...context.anomalies.map((a) => `    ⚠ ${a}`),

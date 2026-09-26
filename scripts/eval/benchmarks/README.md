@@ -115,6 +115,35 @@ a `reviewed_sha` mismatch or a missing `reviewed_sha` — plus the **D1 gate ver
 below 8 PRs x 3 runs per arm with matched data, else `pass` when
 `B.recall >= A.recall` and `B.precision >= A.precision - 0.05`, else `fail`.
 
+## Rounds 2/3 — the thoroughness sweep
+
+Round 1 (below) compared two **topologies** (single-dispatch vs `--fanout`) at each arm's default
+thoroughness. Rounds 2/3 hold the topology fixed and sweep the **continuous** knob
+(`agents/pr-reviewer/rules/depth-routing.md § Thoroughness budget`) to draw a recall-vs-wall-clock
+curve instead of a two-point comparison.
+
+`plan`'s new `--thoroughness <0..1|default>` flag is the harness's per-arm hook: it appends
+`--thoroughness <n>` to every dispatch in that matrix (omit it, or pass the literal `default`, to
+reproduce round 1's flags exactly — each PR routes its own tier default, unchanged). One `plan`
+invocation is one sweep point; run the full plan → dispatch → extract-labels → score cycle **three
+times**, once per point, against the **same** manifest and the **same** arm(s):
+
+```bash
+for t in 0.3 default 1.0; do
+  node scripts/eval/ab-review.mjs plan \
+    --manifest scripts/eval/benchmarks/reviewer-ab.manifest.json \
+    --worktree "$PWD" --arms A --runs 3 --thoroughness "$t" \
+    --out "/path/to/scratch-dir/t-$t"
+done
+```
+
+Score each point's `matrix.json` independently (Step 3–5 above, one `runs-dir`/`scores.json` per
+`t`), then plot `t` on the x-axis against each score file's `mean_wall_clock` and `recall` — three
+points is enough to see whether the curve is monotone (thoroughness buys recall at a wall-clock
+cost) or flat past a breakpoint (the budget's own breakpoints, § Thoroughness budget, predict
+roughly where it should bend: `t=0.3` sits below the `0.4` parallel-topology breakpoint — in-context,
+cheap, `votes=1` — while `t=1.0` is the ceiling on every lever at once).
+
 ## Per-arm cost table (measured, PR #205)
 
 | Arm | Runs | Mean tokens | Mean wall-clock | Recall (pre-`--review-sha`, stale labels) |

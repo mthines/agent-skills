@@ -91,7 +91,7 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 // an item is silent: it changes nothing and reports nothing, so a misremembered field name reads
 // as accepted. Caught exactly that with a `delta_note` typo inside RUN.
 const SHAPES = {
-  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth"],
+  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth", "thoroughness"],
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note", "kind", "evidence"],
@@ -434,6 +434,18 @@ function main() {
         + " standard when there is no workspace");
     }
     runLine += ` · depth ${DEPTH_LABEL[String(run.depth)]}`;
+  }
+
+  // A/B round 1 delta: the thoroughness budget (depth-routing.md § Thoroughness budget) is
+  // OPTIONAL to this renderer — an older caller that never resolved a budget still renders — but
+  // when present it must be the real 0..1 value, never a placeholder, so a reader can see the risk
+  // floor firing directly on the line that already shows tier/depth.
+  if (run.thoroughness !== undefined && run.thoroughness !== null) {
+    const t = Number(run.thoroughness);
+    if (!Number.isFinite(t) || t < 0 || t > 1) {
+      fail(`RUN.thoroughness must be a finite number in [0,1] — got ${JSON.stringify(run.thoroughness)}`);
+    }
+    runLine += ` · thoroughness ${t}`;
   }
 
   if (data.RUN_NOTE) {

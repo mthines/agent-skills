@@ -167,18 +167,24 @@ async function runPickReviewSha(/** @type {Record<string,string|boolean>} */ opt
  * `general-purpose` only, and the installed `pr-reviewer` agent is never named as a
  * dispatch type (the prompt text below never places the literal words "dispatch type"
  * or "subagent_type" directly adjacent to "pr-reviewer").
- * @param {{ entries: any[], worktree: string, arms: string[], runs: number }} args
+ * `thoroughness` is the A/B round 2/3 sweep knob (`--thoroughness <0..1>`, `agents/pr-reviewer/rules/depth-routing.md
+ * § Thoroughness budget`): omitted or the literal string `"default"` reproduces round 1's flags exactly
+ * (no override — each PR routes its own tier default), any other value appends `--thoroughness <n>`
+ * to every dispatch in this matrix, uniformly across arms and PRs — one `plan` invocation is one
+ * sweep point, run three times (t=0.3, default, 1.0) to draw the recall-vs-wall-clock curve.
+ * @param {{ entries: any[], worktree: string, arms: string[], runs: number, thoroughness?: string }} args
  */
-export function buildMatrix({ entries, worktree, arms, runs }) {
+export function buildMatrix({ entries, worktree, arms, runs, thoroughness }) {
   const usable = entries.filter((e) => /^[0-9a-f]{40}$/.test(e.review_sha || ""));
   const skipped = entries.length - usable.length;
+  const thoroughnessFlag = thoroughness && thoroughness !== "default" ? ` --thoroughness ${thoroughness}` : "";
   /** @type {any[]} */
   const dispatches = [];
 
   for (const entry of usable) {
     for (const arm of arms) {
       for (let run = 1; run <= runs; run++) {
-        const flags = `--dry-run --isolated --review-sha ${entry.review_sha}`;
+        const flags = `--dry-run --isolated --review-sha ${entry.review_sha}${thoroughnessFlag}`;
         const prompt = arm === "A"
           ? `Act as the reviewer agent defined at ${worktree}/agents/pr-reviewer.md, read by absolute path. `
             + `Run as a general-purpose agent — never resolve to the installed reviewer agent by name. `
@@ -248,11 +254,13 @@ async function runPlan(/** @type {Record<string,string|boolean>} */ opts) {
   const outDir = /** @type {string} */ (opts.out);
   if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
-  const { dispatches, skipped } = buildMatrix({ entries: manifest.entries ?? [], worktree, arms, runs });
+  const thoroughness = opts.thoroughness !== undefined ? String(opts.thoroughness) : undefined;
+  const { dispatches, skipped } = buildMatrix({ entries: manifest.entries ?? [], worktree, arms, runs, thoroughness });
   const matrixPath = join(outDir, "matrix.json");
   writeFileSync(matrixPath, JSON.stringify({ dispatches }, null, 2));
   console.log(
-    `plan: ${dispatches.length} dispatch(es) across ${arms.length} arm(s) x ${runs} run(s), `
+    `plan: ${dispatches.length} dispatch(es) across ${arms.length} arm(s) x ${runs} run(s)`
+      + `${thoroughness && thoroughness !== "default" ? ` at thoroughness=${thoroughness}` : ""}, `
       + `${skipped} manifest entrie(s) skipped (no valid review_sha) -> ${matrixPath}`,
   );
   process.exit(0);
@@ -757,6 +765,22 @@ async function selfTest() {
       dispatches.every((d) => !/subagent_type\W+pr-reviewer/.test(JSON.stringify(d))));
   }
 
+  // buildMatrix thoroughness sweep (A/B round 2/3)
+  {
+    const entries = [{ repo: "o/r", number: 1, review_sha: "2222222222222222222222222222222222222222" }];
+    const noOverride = buildMatrix({ entries, worktree: "/w", arms: ["A"], runs: 1 });
+    check("buildMatrix with no thoroughness given carries no --thoroughness flag (round 1 unchanged)",
+      noOverride.dispatches.every((d) => !d.flags.includes("--thoroughness")));
+    const defaultLiteral = buildMatrix({ entries, worktree: "/w", arms: ["A"], runs: 1, thoroughness: "default" });
+    check("buildMatrix with thoroughness:'default' carries no --thoroughness flag either",
+      defaultLiteral.dispatches.every((d) => !d.flags.includes("--thoroughness")));
+    const swept = buildMatrix({ entries, worktree: "/w", arms: ["A"], runs: 1, thoroughness: "0.3" });
+    check("buildMatrix with an explicit thoroughness appends --thoroughness <n> to every dispatch's flags",
+      swept.dispatches.every((d) => d.flags.includes("--thoroughness 0.3")));
+    check("the thoroughness flag rides alongside --dry-run --isolated --review-sha, not instead of them",
+      swept.dispatches.every((d) => /--dry-run/.test(d.flags) && /--isolated/.test(d.flags) && /--review-sha [0-9a-f]{40}/.test(d.flags)));
+  }
+
   // scoreArm reviewed_sha exclusion + mean tokens/wall-clock (D13, AC-22)
   {
     const scratch = mkdtempSync(join(tmpdir(), "ab-review-selftest-"));
@@ -857,7 +881,7 @@ async function selfTest() {
 function usage() {
   console.error(
     "usage: ab-review.mjs pick-review-sha --manifest <m> [--write]"
-      + " | plan --manifest <m> --worktree <abs> --arms A,B --runs 3 --out <dir>"
+      + " | plan --manifest <m> --worktree <abs> --arms A,B --runs 3 [--thoroughness 0..1|default] --out <dir>"
       + " | record-meta --matrix <matrix.json> --index <i> --runs <dir> --tokens <n> --wall-clock-ms <n>"
       + " | shadow-report <dir>"
       + " | score --manifest <m> --runs <dir> --labels <dir> [--out <json>] [--lorekit-out <json>]"

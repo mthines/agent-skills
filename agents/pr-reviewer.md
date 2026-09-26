@@ -136,7 +136,7 @@ whose `HEAD_SHA` has not moved):
 
 | Mode | When | What runs |
 |---|---|---|
-| `full` | No prior review found, OR `--full` passed, OR delta > 100 lines, OR new files in delta, OR high-stakes paths touched (classifier-owned list + repo `high_stakes_paths:`), OR **a propagation shape in the delta** (governing doc + restatements — Step 1.2b), OR **cumulative delta since the last full review > `FULL_REFRESH_DELTA` (150) lines**, OR **≥ `FULL_REFRESH_RUNS` (3) incremental reviews since the last full review**, OR **no prior full review is recorded** (including every run on the Step 0.7 fallback rung, which recovers a baseline but no history) | Tier `deep`: every finder, holistic broad + targeted escalation (cap 10), optimality. Gate 4 and inline review scan the full PR diff. |
+| `full` | No prior review found, OR `--full` passed, OR delta > 100 lines, OR new files in delta, OR high-stakes paths touched (classifier-owned list + repo `high_stakes_paths:`), OR **a propagation shape in the delta** (governing doc + restatements — Step 1.2b), OR **cumulative delta since the last full review > `FULL_REFRESH_DELTA` (150) lines**, OR **≥ `FULL_REFRESH_RUNS` (3) incremental reviews since the last full review**, OR **no prior full review is recorded** (including every run on the Step 0.7 fallback rung, which recovers a baseline but no history) | Tier `deep`: every finder, holistic broad + targeted escalation (budget-capped), optimality. Gate 4 and inline review scan the full PR diff. |
 | `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths, no propagation shape | Tier `standard`: every finder, holistic broad pass (2.4) skipped; **targeted escalation (2.4b) runs on the delta findings (cap 3) when the delta carries a risky content shape** (`ESCALATE_IN_INCREMENTAL`, Step 1.2b). Optimality (2.4c) skipped — it is `deep`-tier only; measurability (2.4e) runs on the delta files. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
 | `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths, no propagation shape | Tier `quick`: correctness, quality, and description finders only. Holistic broad pass (2.4), optimality (2.4c), measurability (2.4e), and the consumer-impact and dependency finders skipped; **targeted escalation (2.4b) still runs (cap 3) when the delta carries a risky content shape**. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
 | *(zero-delta)* | Prior review found, zero lines changed, no new files | Gate checks only (no inline review). Announced and handled as a special case of `incremental-quick`. Detected at Step 0.8 (identical `HEAD_SHA`, no fetch pipeline spent) or, on a rebase/amend that changes `HEAD_SHA` without an authored delta, at Step 1.2b. |
@@ -299,6 +299,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--no-fix-links` | Suppress the "Fix with Agent0" buttons for this run. They render by default everywhere (`agents/shared/rules/agent0-fix-links.md`); this is the per-run opt-out and beats every other signal. |
 | `--fix-links` | Force the buttons on for this run, overriding an `agent0_fix_links: false` in the review config. Rarely needed — they are already on by default. |
 | `--effort high` | Force `DEPTH_TIER = deep`, enable Tier-2/3 receipts where the toolchain allows, and widen diversify-then-vote to N=5 ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)). Also settable as `effort: high` in the review config. `--full` is the narrower alias — it forces `deep` and nothing else |
+| `--thoroughness <0..1>` | Continuous dispatch/scope override; `--effort high` = `1`. Also `thoroughness: <n>` in config — [depth-routing.md § Thoroughness budget](./pr-reviewer/rules/depth-routing.md#thoroughness-budget) |
 | `--dry-run` | Run the full pipeline through the rendered artifacts, then **stop**: zero GitHub writes (no sticky, no review, no thread resolve/reply) and zero LoreKit writes (no state record, no knowledge/hotspot writes). `REPORT_BODY`, the inline comment bodies, and the pointer body are written to scratch (`$(scratchRoot())/<run-id>/` — see [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--dry-run)) instead of posted. The **one** stated exception to Step 4c's "unconditional" state write |
 | `--isolated` | Comparable repeat run for the A/B harness and the shadow run (pr-reviewer deterministic pipeline, D13): skip the Step 0.7 LoreKit state-record read entirely (first-run semantics on every invocation — `PRIOR_RUN=none` unconditionally), force `RUN_MODE=full` (the D1/D6 first-run trigger), and require `--pin-head <sha>`. See [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated) |
 | `--pin-head <sha>` | Required with `--isolated` **unless `--review-sha` is also set** (a historical run pins to `review_sha` instead — see below). `prepare-review.mjs` compares it against the live `headRefOid` and **hard-stops with no review** (`head moved: pinned <a> live <b>`) on a mismatch — a pinned run silently reviewing a moved head would poison every metric an A/B or shadow comparison computes from it |
@@ -1802,13 +1803,8 @@ rung that produced each result. The slot is **required**: `render-report.mjs` ex
 nothing on stdout when it is absent, so a run that leaves it unset posts no report at all. An "integrations checked" line never implies upstream release-note
 verification unless a rung that reads the changelog actually ran.
 
-**Diversify then vote.** When this agent holds `Task`, the correctness finder runs as **N = 3**
-sub-agents over the same hunks in **permuted file order** (N = 5 under `--effort high`), and a
-candidate corroborated at the same `(path, line ± 3)` and defect class by ≥ 2 of them carries
-`votes`. Permuting the order matters because a single pass over a long diff attends unevenly and
-the tail gets less. Without `Task` the finder runs once and `votes` is omitted — not a degraded
-mode to apologize for: the verifier is a genuine independent check, and voting amplifies it rather
-than substituting for it.
+**Dispatch topology is budget-driven** — sub-agenting, vote count, and verification batching
+all read `resolveBudget()` — [`dispatch-topology.md`](./pr-reviewer/rules/dispatch-topology.md).
 
 **Two things break finder independence even when the calls are parallel**, and both are forbidden:
 passing one finder's candidates to another (the second then confirms the first rather than
@@ -1897,7 +1893,8 @@ before dedupe. Default ON for `pr-reviewer`. Skip via `--no-escalate`, or when 2
 incremental-mode 2.4 skip is a run-mode policy, not a triviality verdict, and gets the
 shape-gated exception below.
 Selects context-dependent findings (changed exports whose correctness depends on caller
-behaviour) and fans out parallel focused traces — one per finding, cap 10.
+behaviour) and fans out parallel focused traces — one per finding, capped at
+`budget.holisticEscalationCap` (depth-routing.md § Thoroughness budget).
 
 **Incremental modes:** 2.4b runs even though the broad pass (2.4) is skipped, **when and only
 when `ESCALATE_IN_INCREMENTAL` is true** (Step 1.2b — the delta carries a risky content shape:
@@ -1912,7 +1909,7 @@ from), highest-severity first. This is the depth lever for a small-but-dangerous
 
 See `agents/shared/rules/optimality-review.md`. Cross-review is **report-only** — never
 apply. Skip via `--no-optimize`, when the `TRIVIAL_SKIP` cache from Step 1.7b is true, or when
-`DEPTH_TIER != "deep"`, logged `skipped (tier: <DEPTH_TIER>)`.
+`!budget.optimalityLens`, logged `skipped (t=<t>)`.
 
 The lens is `deep`-tier only because approach analysis needs the whole change to judge: an
 approach question asked of a delta is asked of a fragment of the approach, and the answer is
@@ -1939,10 +1936,10 @@ proposals.
 ### 2.4d Standards conformance (default ON at the `deep` and `standard` tiers)
 
 See `agents/shared/rules/standards-conformance.md`. Skip via `--no-standards`, when the
-`TRIVIAL_SKIP` cache from Step 1.7b is true, or when `DEPTH_TIER == "quick"` (the delta is too
-small to warrant governing-doc comparison), logged `skipped (tier: quick)`.
+`TRIVIAL_SKIP` cache from Step 1.7b is true, or when `!budget.finders.standards` (the delta is
+too small to warrant governing-doc comparison), logged `skipped (t=<t>)`.
 
-Scope follows the tier: **all changed files** at `deep`, **delta files only** at `standard`.
+Scope follows `budget.finderScope.standards` (depth-routing.md § Thoroughness budget).
 
 Uses the `STANDARDS_DOCS` cache built in Step 1.7b.
 Emits `issue:` findings for violated "never" / "must" / "always" / "do not" / "forbidden" statements
@@ -1964,7 +1961,7 @@ The question is the one no other lens asks: **will this change's impact be prova
 regressions be visible, after it merges?**
 
 Skip via `--no-measurable`, when the `TRIVIAL_SKIP` cache from Step 1.7b is true, or when
-`DEPTH_TIER == "quick"`, logged `skipped (tier: quick)`.
+`!budget.measurabilityLens`, logged `skipped (t=<t>)`.
 
 Invoke `Skill("measurable", "audit")` — **`audit` mode only**. Never `implement`: this agent is
 read-only in both relations, and a reviewer that instrumented the diff would be authoring the change

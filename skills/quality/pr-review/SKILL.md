@@ -6,7 +6,7 @@ description: >
   for "review this PR" when you do not want an apply-and-converge loop. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`. Invoke with /pr-review.
 disable-model-invocation: true
-argument-hint: '[<pr-url>|#<n>] [--fanout] [--critical] [--full] [--effort high] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--fanout] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines

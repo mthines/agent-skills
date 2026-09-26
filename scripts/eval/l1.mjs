@@ -5283,6 +5283,9 @@ const isPollBlock = (block) =>
     // Positional switches are boolean by construction.
     for (const m of src.matchAll(/args\[\d+\] === "(--[a-z-]+)"/g)) boolean.add(m[1]);
     for (const m of src.matchAll(/cmd === "(--[a-z-]+)"/g)) boolean.add(m[1]);
+    // Shape 3 — an `.includes()` presence check (comment-spine.mjs's `argv.includes("--shape-caps")`,
+    // every script's own `--self-test`), which never consumes a following argv slot.
+    for (const m of src.matchAll(/\b(?:argv|process\.argv|args)\.includes\("(--[a-z-]+)"\)/g)) boolean.add(m[1]);
     return { takesValue, boolean };
   };
 
@@ -9426,6 +9429,43 @@ const isPollBlock = (block) =>
         && /caught by validate, not left for finalize/.test(out)
         && /ALSO passes finalize's real render step/.test(out),
       (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+  }
+
+  // G84e (A/B round 1 delta, item 3 rescope): resolveBudget() — the continuous thoroughness
+  // knob that replaced the hard-coded per-tier dispatch table — is exported, self-tested
+  // (INCLUDING the monotonicity sweep, executed here rather than re-implemented), and wired
+  // into the report's RUN.thoroughness payload slot.
+  {
+    const RD_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/route-depth.mjs");
+    if (existsSync(RD_PATH)) {
+      const rdSrc = readFileSync(RD_PATH, "utf8");
+      s.check("G84e route-depth.mjs exports resolveBudget, TIER_DEFAULT_THOROUGHNESS, and RISK_FLOOR",
+        /export function resolveBudget\(/.test(rdSrc)
+          && /export const TIER_DEFAULT_THOROUGHNESS/.test(rdSrc)
+          && /export const RISK_FLOOR/.test(rdSrc));
+
+      const r = spawnSync(process.execPath, [RD_PATH, "--self-test"], { encoding: "utf8" });
+      const out = r.stdout || "";
+      s.check("G84e route-depth.mjs --self-test passes (includes resolveBudget defaults, risk floor, fail-closed, and monotonicity)",
+        r.status === 0 && /^✓ route-depth self-test: all \d+ cases passed$/m.test(out),
+        (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+
+      const drPath = join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md");
+      const drSrc = existsSync(drPath) ? readFileSync(drPath, "utf8") : "";
+      s.check("G84e depth-routing.md's Thoroughness budget section exists and states the same three tier defaults route-depth.mjs's TIER_DEFAULT_THOROUGHNESS carries",
+        /## Thoroughness budget/.test(drSrc)
+          && /quick.*0\.2/.test(drSrc) && /standard.*0\.5/.test(drSrc) && /deep.*0\.8/.test(drSrc));
+
+      const dtPath = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
+      const dtSrc = existsSync(dtPath) ? readFileSync(dtPath, "utf8") : "";
+      s.check("G84e dispatch-topology.md reads resolveBudget()'s output rather than hard-coding a per-tier table",
+        /resolveBudget/.test(dtSrc) && /budget\.topology/.test(dtSrc) && !/\| `deep` \| yes \|/.test(dtSrc));
+
+      const rrPath = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+      const rrSrc = existsSync(rrPath) ? readFileSync(rrPath, "utf8") : "";
+      s.check("G84e render-report.mjs accepts an optional RUN.thoroughness and renders it on the Run line",
+        /RUN:\s*\[[^\]]*"thoroughness"/.test(rrSrc) && /run\.thoroughness/.test(rrSrc));
+    }
   }
 }
 
