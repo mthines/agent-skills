@@ -9416,50 +9416,62 @@ const isPollBlock = (block) =>
     rawBytes <= PR_REVIEWER_MD_RAW_CEILING);
 
   // The two L2-read sections (code-review-retrieval-relevance's rubric) and
-  // rubric-composition.md's Cross-rubric agreement section must stay byte-identical to base
-  // 23190e4 — no L2 rubric moves unverified (R18/AC-5). Same three (file, anchor) pairs AC-5's
-  // checks.yaml command asserts; this is the standing L1 copy of that promise, so a future PR
-  // (not just this one's own Phase 4 run) is guarded too.
-  const RC_PATH = join(REPO_ROOT, "agents/shared/rules/rubric-composition.md");
-  let baseAvailable = true;
-  let basePRW = "", baseRC = "";
-  try {
-    basePRW = execSync("git show 23190e4:agents/pr-reviewer.md", { cwd: REPO_ROOT, encoding: "utf8" });
-    baseRC = execSync("git show 23190e4:agents/shared/rules/rubric-composition.md",
-      { cwd: REPO_ROOT, encoding: "utf8" });
-  } catch { baseAvailable = false; }
-  if (baseAvailable) {
-    // extractSection() reads a repo-relative file path itself (it re-derives fence-skipping and
-    // level-aware boundaries from the raw bytes), so the base copies are written to real files
-    // under REPO_ROOT-relative paths — a temp dir outside the repo would make join(REPO_ROOT, …)
-    // produce the wrong path, since join() does not special-case an absolute second argument.
+  // rubric-composition.md's Cross-rubric agreement section (reviewer-agreement-bump's rubric) may
+  // not move UNVERIFIED (R18/AC-5, CLAUDE.md "Keeping the evals honest"). The rule, stated so it
+  // guards every future PR without freezing the sections forever:
+  //
+  //   1. The comparison base is resolved DYNAMICALLY — `git merge-base HEAD <ref>`, where <ref> is
+  //      `$L1_BASE_REF` when set (a stacked PR points it at its parent branch), else `origin/main`,
+  //      else `main`. No hard-coded commit: a SHA that lives only on a stacked base branch vanishes
+  //      when that branch is squash-merged.
+  //   2. An unresolvable base FAILS the check. A guard that passes when it cannot see is not a
+  //      guard (evals-l1.yml checks out with fetch-depth: 0, so origin/main is always present in CI).
+  //   3. A section identical to base passes. A section that DIFFERS from base passes only when the
+  //      same range also shows the edit was verified: the suite's golden file changed (base..working
+  //      tree), or a commit message in base..HEAD carries an `L2-verified: <suite>` trailer — the
+  //      author's statement that the suite was run and its accuracy reported in the PR description.
+  const G82_SECTIONS = [
+    { heading: "### 1.0 Prior-comment awareness + relevance memory load (default ON)", file: "agents/pr-reviewer.md", suite: "code-review-retrieval-relevance" },
+    { heading: "### 1.2c Diff-keyed lesson search (all modes)", file: "agents/pr-reviewer.md", suite: "code-review-retrieval-relevance" },
+    { heading: "## Cross-rubric agreement", file: "agents/shared/rules/rubric-composition.md", suite: "reviewer-agreement-bump" },
+  ];
+  const g82Git = (/** @type {string[]} */ args) => execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const g82Refs = process.env.L1_BASE_REF ? [process.env.L1_BASE_REF] : ["origin/main", "main"];
+  let g82Base = "";
+  let g82BaseRef = "";
+  for (const ref of g82Refs) {
+    try { g82Base = g82Git(["merge-base", "HEAD", ref]).trim(); g82BaseRef = ref; break; } catch { /* try the next ref */ }
+  }
+  s.check(`G82 the L2-read-section comparison base resolves (merge-base HEAD ${g82Refs.join(" | ")})`,
+    /^[0-9a-f]{40}$/.test(g82Base),
+    "no base ref reachable — fetch origin/main (CI uses fetch-depth: 0) or set L1_BASE_REF; an unresolved base FAILS rather than passing blind");
+  if (/^[0-9a-f]{40}$/.test(g82Base)) {
+    let changed = [];
+    let messages = "";
+    try { changed = g82Git(["diff", "--name-only", g82Base]).split("\n").filter(Boolean); } catch { /* empty */ }
+    try { messages = g82Git(["log", "--format=%B", `${g82Base}..HEAD`]); } catch { /* empty */ }
     const baseDir = mkdtempSync(join(tmpdir(), "l1-g82-base-"));
-    const basePrwFile = join(baseDir, "base-pr-reviewer.md");
-    const baseRcFile = join(baseDir, "base-rubric-composition.md");
-    writeFileSync(basePrwFile, basePRW);
-    writeFileSync(baseRcFile, baseRC);
-    const basePrwRel = relative(REPO_ROOT, basePrwFile);
-    const baseRcRel = relative(REPO_ROOT, baseRcFile);
-    const pairs = [
-      ["### 1.0 Prior-comment awareness + relevance memory load (default ON)", "agents/pr-reviewer.md", basePrwRel],
-      ["### 1.2c Diff-keyed lesson search (all modes)", "agents/pr-reviewer.md", basePrwRel],
-      ["## Cross-rubric agreement", "agents/shared/rules/rubric-composition.md", baseRcRel],
-    ];
-    for (const [heading, nowFile, baseFile] of pairs) {
+    for (const { heading, file, suite } of G82_SECTIONS) {
+      // extractSection() resolves a REPO_ROOT-relative path, so the base copy is written to a temp
+      // file and addressed relative to REPO_ROOT (join() does not special-case an absolute argument).
+      let baseText = "";
+      try { baseText = g82Git(["show", `${g82Base}:${file}`]); } catch { /* file absent at base */ }
+      const baseFile = join(baseDir, `${suite}-${Buffer.from(heading).toString("hex").slice(0, 16)}.md`);
+      writeFileSync(baseFile, baseText);
       let nowSection = "", baseSection = "";
-      try { nowSection = extractSection(nowFile, heading); } catch { /* asserted false below */ }
-      try { baseSection = extractSection(baseFile, heading); } catch { /* asserted false below */ }
-      s.check(`G82 "${heading}" stays byte-identical to base 23190e4`,
-        nowSection !== "" && nowSection === baseSection,
-        nowSection === "" ? "section not found in the current file" : "content drifted from base");
+      try { nowSection = extractSection(file, heading); } catch { /* asserted below */ }
+      try { baseSection = extractSection(relative(REPO_ROOT, baseFile), heading); } catch { /* new section at base */ }
+      const identical = nowSection !== "" && nowSection === baseSection;
+      const goldenTouched = changed.includes(`scripts/eval/golden/${suite}.jsonl`);
+      const markerRe = new RegExp(`^L2-verified:\\s*.*\\b${suite.replace(/[-]/g, "\\-")}\\b`, "m");
+      const marker = markerRe.test(messages);
+      s.check(`G82 "${heading}" is unchanged from base (${g82BaseRef} ${g82Base.slice(0, 7)}) or its ${suite} edit is verified`,
+        nowSection !== "" && (identical || goldenTouched || marker),
+        nowSection === ""
+          ? "section not found in the current file"
+          : `section drifted from base with neither scripts/eval/golden/${suite}.jsonl changed nor an \`L2-verified: ${suite}\` commit trailer — run the suite and record it`);
     }
     rmSync(baseDir, { recursive: true, force: true });
-  } else {
-    // base 23190e4 unreachable (shallow clone, detached history) — do not fail the whole
-    // ratchet guard on an environment limitation; AC-5's checks.yaml command still covers this
-    // in the worktree where the plan's base commit is guaranteed reachable.
-    s.check("G82 base 23190e4 was reachable for the L2-read-section byte-identity check", true,
-      "skipped: git show 23190e4 failed in this environment — see AC-5's checks.yaml command");
   }
 }
 
