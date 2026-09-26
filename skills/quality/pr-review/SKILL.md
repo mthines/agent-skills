@@ -221,6 +221,9 @@ You are a worker in this pipeline's parallel orchestration, not the full pr-revi
   context this orchestration already isolated you from (and burn the tokens doing it).
 - Do NOT call Skill() for anything this orchestration already resolved for you (deduping, the
   shape caps, rendering). Read the rule file(s) you were given instead.
+- Read the review packet first (context.packet.path): the PR description and every hunk widened
+  against the head file, with head line numbers you cite directly. Open a workspace file only for
+  what it does not show — a caller, a definition, or a file its index marks "listed".
 - Write your JSON output to the path you were given. Return ONLY that path in your final message
   — never the payload inline. The orchestrator reads the file from disk; a payload returned as
   text spends context neither side needs to spend, and is the difference between a worker costing
@@ -299,6 +302,8 @@ Each finder sub-agent receives **only**:
   dedicated rule ([`finder-consumer-impact.md`](../../../agents/pr-reviewer/rules/finder-consumer-impact.md),
   [`finder-dependency.md`](../../../agents/pr-reviewer/rules/finder-dependency.md));
 - `context.json`;
+- the review packet (`context.packet.path`, written by `prepare-review.mjs`), which each finder reads
+  before opening any workspace file;
 - the workspace path.
 
 Never the other finders' output, never a running count of candidates so far — `finders.md`'s own
@@ -456,6 +461,9 @@ Before you return, self-check the file you wrote:
   SHAPE-CHECK-UNAVAILABLE: <first stderr line>.
 - Never change verdict, severity, blocking, R, A, or Ac to make the check pass, and never delete a
   candidate. The check governs how a finding is written, not whether it is true.
+- One named exception: "blocking": true requires severity high or critical. That is the severity
+  crosswalk, not a shape rule. Re-apply it: raise the tier only if the base impact is broken
+  behaviour, security, data loss, or misimplemented intent; otherwise set blocking to false.
 ```
 
 `--shape-only` validates each candidate against `judgments.schema.json`'s `$defs.candidate`, the

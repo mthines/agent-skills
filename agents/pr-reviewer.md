@@ -104,7 +104,7 @@ guarantee in *REPORT_BODY format (the sticky comment)* below is void for that ru
 - Stop and report if no PR reference is found in the invocation.
 - Stop and report a BLOCKED result if the inline review sub-pipeline fails twice.
 - Tool-call budget: **30** calls for ≤ 10 changed files, **60** for 11–30, **100** for > 30, times the thoroughness multiplier — read `budget.toolCalls` off `context.json` ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#thoroughness-budget)). `--full` on a large PR always uses the top band.
-- Memory-call budget, **inside** that total and scaled to the same bands: **1** `memory_read` for the PR-state record (Step 0.7) + **1** `memory_write` for it (Step 4c) + **4** `memory_list` calls (Step 1.0) + the **2** impact-keyed knowledge calls (Step 1.2a — one `memory_list`, one `memory_search`) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` calls — so **14** of 30, **19** of 60, or **24** of 100. The two state calls are fixed cost, not part of `MEMORY_READ_BUDGET`, and must never be traded against it: the state read is what makes the run incremental at all, and the state write is what makes the *next* run incremental.
+- Memory-call budget, **inside** that total and scaled to the same bands: **1** `memory_read` for the PR-state record (Step 0.7) + **1** `memory_write` for it (Step 4c) + **4** `memory_list` calls (Step 1.0) + the **2** impact-keyed knowledge calls (Step 1.2a — one `memory_list`, one `memory_search`) + **1** `memory_search` (Step 1.2c) + a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` records (batched via `refs`) — so **14** of 30, **19** of 60, or **24** of 100. The two state calls are fixed cost, not part of `MEMORY_READ_BUDGET`, and must never be traded against it: the state read is what makes the run incremental at all, and the state write is what makes the *next* run incremental.
 - **Step 4d's writes sit outside that budget**, capped by their own rule (`memory.md § Write budget`: ≤ 10 knowledge, one hotspot per file with a confirmed finding, `deep` tier only for knowledge) — a read budget spent is this run's context, a write skipped is every future run's memory, so a run that trims 4d to stay under a read cap has optimised the wrong side of the ledger. `MEMORY_READ_BUDGET` is a **single pool spanning both read sites**, Step 1.2d (lesson bodies) and Step 2.7b (relevance bodies, per `comment-relevance-memory.md § Read`): 1.2d spends at most **half** of it, rounded down, so a lesson-heavy shortlist can never starve the relevance verdicts that decide what gets posted, and 2.7b may spend the whole remainder; decrement the pool as calls are made and stop at zero at either site. The reads trade call count for context — the four lists are summary-only (~15 KB for a typical fan-out instead of ~110 KB), and only shortlisted entries are ever expanded, so a review that matches nothing spends 5 calls and ~15 KB rather than 5 calls and ~110 KB.
 - If the budget is exhausted, stop, report partial results, and say so **loudly**: the terminal report and the review body must both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.` In the review body this goes in the `PARTIAL_BANNER` slot of the Step 4 templates (see *REPORT_BODY format (the sticky comment)*), never as free prose. Never present a budget-truncated run as a complete review.
 - Never post a GitHub review that was not produced from fully consolidated results.
@@ -1519,12 +1519,14 @@ generous: this filter drops the obviously-unrelated, not the final call — a ca
 match once its body is read falls out at Step 1.2e.
 
 ```text
-# One call per candidate. Issue as a real mcp__lorekit__memory_read tool call.
-mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
+# ONE call for the whole shortlist (a refs batch, ≤ 32). Issue as a real mcp__lorekit__memory_read call.
+mcp__lorekit__memory_read: refs=["<scope>::<key>", "<scope>::<key>", …]
 ```
 
-**Budget:** at most **half of `MEMORY_READ_BUDGET`, rounded down** — 2 reads on a ≤ 10-file diff, 5
-on 11–30, 7 on > 30 — decremented from the shared pool, leaving the remainder to Step 2.7b's
+A server that rejects `refs` gets one `scope` + `key` call per entry instead.
+
+**Budget:** at most **half of `MEMORY_READ_BUDGET`, rounded down** — 2 records on a ≤ 10-file diff, 5
+on 11–30, 7 on > 30 (records, not calls: one batch spends several) — decremented from the shared pool, leaving the remainder to Step 2.7b's
 relevance bodies (which decide what actually gets posted, and must never be starved by a
 lesson-heavy shortlist). Over budget, fill it in order — Step 1.2c hits first (in their
 relevance-ranked order), then everything else by most-recently-updated — and bind
@@ -1597,31 +1599,23 @@ The cap governs placement only; overflow is deferred to the review body, never d
 
 See `agents/shared/rules/standards-conformance.md` § Step 1.7b — Standards discovery.
 
-First, evaluate the trivial-skip heuristic against the changed-file list and cache the boolean as
-`TRIVIAL_SKIP`.
-The conditions are defined once in `agents/shared/rules/holistic-review.md` § Trivial-skip set, and
-this step is their single evaluation point because it is the earliest consumer.
-Evaluate it even when `--no-standards` was passed, so Steps 2.4, 2.4c, and 2.4d always read a
-populated `TRIVIAL_SKIP` cache instead of recomputing the heuristic.
+`prepare-review.mjs` evaluates both halves of this step before any model turn
+([`discover-standards.mjs`](./pr-reviewer/scripts/discover-standards.mjs)):
 
-Skip the discovery below when `--no-standards` was passed, when `TRIVIAL_SKIP` is true, or when
-`RUN_MODE == "incremental-quick"`.
-Step 2.4d is the only consumer of `STANDARDS_DOCS` and it skips on all three conditions, so running
-discovery in those cases spends the 30,000-character budget building a cache nothing reads.
+- Bind `TRIVIAL_SKIP` from `context.trivialSkip.value` — the conditions in
+  `agents/shared/rules/holistic-review.md` § Trivial-skip set, evaluated once, even under
+  `--no-standards`, so Steps 2.4, 2.4c, and 2.4d read the cache and never recompute it.
+- Bind `STANDARDS_DOCS` from `context.standards`; the normative lines, each with its `doc:line`,
+  are in the `context.paths.standards` sidecar (nearest non-root `CLAUDE.md`, matching
+  `.claude/rules/*.md`, `AGENTS.md`, root `CLAUDE.md`; 30,000 characters of normative text,
+  nearest-first, drops logged). When `context.standards.reviewConfigStandards` is true, merge the
+  review config's `standards:` entries by hand (`review-config.md § Standards`).
 
-Reuse `review-config.md`'s upward walk on the changed-file list (Step 1.1 / Step 1.2) to
-discover governing documents: nearest-package `CLAUDE.md`, matching `.claude/rules/*.md`,
-`AGENTS.md`, and a bounded root `CLAUDE.md` slice.
-Merge any review-config `standards:` entries (from `.github/review.yaml` or a subtree `.review.yaml`)
-whose glob covers each changed file (concatenation, closer-file-first, per `review-config.md § Standards`).
-Apply the 30,000-character nearest-first cap and log any dropped documents by path.
-Cache the result as `STANDARDS_DOCS` for Step 2.4d, keyed by **changed-file path** → list of
-`(doc_path, normative_bullets[])` entries.
-A governing document that covers several changed files is listed under each of them but loaded and
-counted once against the 30,000-character cap.
+Do not read the sidecar when `--no-standards` was passed, `TRIVIAL_SKIP` is true, or
+`RUN_MODE == "incremental-quick"` — Step 2.4d, its only consumer, skips on the same three. A context
+without these fields falls back to `standards-conformance.md` § Two input sources, walked by hand.
 
-Announce: `Standards discovery: <N> governing doc(s) loaded, <B> normative bullet(s) extracted.`
-When any documents are dropped: `Standards discovery: <D> doc(s) dropped (cap exceeded) — <paths>.`
+Announce `context.standards.announce` verbatim.
 
 ---
 
@@ -1802,6 +1796,11 @@ when the diff touches no manifest or lockfile, `skipped (tier: quick)` at `quick
 rung that produced each result. The slot is **required**: `render-report.mjs` exits non-zero with
 nothing on stdout when it is absent, so a run that leaves it unset posts no report at all. An "integrations checked" line never implies upstream release-note
 verification unless a rung that reads the changelog actually ran.
+
+**Finders and the verifier read the review packet first** — `context.packet.path`: the PR
+description and every hunk widened against the head file, with head line numbers a candidate cites
+directly ([`review-packet.mjs`](./pr-reviewer/scripts/review-packet.mjs)). Open a workspace file only
+for what it does not show: a caller, a definition, or a file its index marks *listed*.
 
 **Dispatch topology is budget-driven** — sub-agenting, vote count, and verification batching
 all read `resolveBudget()` — [`dispatch-topology.md`](./pr-reviewer/rules/dispatch-topology.md).
@@ -2088,8 +2087,8 @@ anything was verified.
 **First, resolve the relevance bodies.** The findings now exist *and have been verified*, so the
 fingerprint match is both possible and worth paying for — this is the step that owns that fetch,
 and Step 1.2d deliberately did not do it. For each loaded `reviewer-comment-relevance` entry whose
-fingerprint matches a confirmed finding, fetch its body with `mcp__lorekit__memory_read`
-(`scope` + `key`), because `relevance`, `seen_count`, `resolution_method` and `status` all live
+fingerprint matches a confirmed finding, fetch its body with `mcp__lorekit__memory_read` — one
+`refs` batch for every match — because `relevance`, `seen_count`, `resolution_method` and `status` all live
 there and none of them is in the key.
 
 - **Skip the fetch** when `SUMMARY_VIEW` is `false` (Step 1.0 already returned full bodies) or when

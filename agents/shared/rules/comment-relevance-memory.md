@@ -366,9 +366,12 @@ every entry whose fingerprint matches one of this run's raw findings, fetch the 
 applying anything:
 
 ```text
-# One call per fingerprint-matched entry.
-mcp__lorekit__memory_read: scope="<the entry's scope>" key="<the entry's key>"
+# ONE call for every fingerprint-matched entry (a refs batch, ≤ 32).
+mcp__lorekit__memory_read: refs=["<scope>::<key>", "<scope>::<key>", …]
 ```
+
+A server that rejects `refs` gets one `scope` + `key` call per entry instead. The budget counts
+records, not calls, so batching changes the turn count and nothing else.
 
 This fetch happens **after** the run's raw findings exist, because the selector is a fingerprint
 match against them — there is nothing to match earlier. In `pr-reviewer` that is Step 2.7b, **after** Phase E verification: suppressing before it would drop a candidate nobody looked at on the strength of a fingerprint match, while suppressing after it drops a *verified* finding the repo has repeatedly declined, which is a recordable maintainer preference.

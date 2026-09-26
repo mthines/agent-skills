@@ -9787,6 +9787,44 @@ const isPollBlock = (block) =>
 
 }
 
+// ── G84m (A/B iteration 4, speed): the mechanical parts of a review run before any model turn ──
+// Context assembly (the review packet), Step 1.7b (TRIVIAL_SKIP + standards discovery), and the
+// memory-body reads (one refs batch) are functions or single calls now. Each check below executes
+// the script or reads the owning file; none re-encodes the behaviour.
+{
+  const SCRIPTS = join(REPO_ROOT, "agents/pr-reviewer/scripts");
+  for (const [name, marker] of [["review-packet.mjs", "✓ review-packet self-test: all checks passed"], ["discover-standards.mjs", "✓ discover-standards self-test: all checks passed"]]) {
+    const r = spawnSync(process.execPath, [join(SCRIPTS, name), "--self-test"], { encoding: "utf8" });
+    s.check(`G84m ${name} --self-test passes`, r.status === 0 && (r.stdout || "").includes(marker),
+      (r.stdout || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+  }
+  const prep = readFileSync(join(SCRIPTS, "prepare-review.mjs"), "utf8");
+  s.check("G84m prepare-review.mjs builds the packet and runs Step 1.7b's functions into the context",
+    /import \{ buildReviewPacket, consumersByFile \} from "\.\/review-packet\.mjs"/.test(prep)
+      && /import \{ discoverStandards, trivialSkip \} from "\.\/discover-standards\.mjs"/.test(prep)
+      && /\n    packet,\n    trivialSkip: trivial,\n    standards,/.test(prep));
+  const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  const s17b = (body.match(/^### 1\.7b Load standards[\s\S]*?(?=^## Step 1\.8)/m) || [""])[0];
+  s.check("G84m Step 1.7b binds TRIVIAL_SKIP and STANDARDS_DOCS from the context, with a manual fallback",
+    s17b.includes("context.trivialSkip.value") && s17b.includes("context.standards")
+      && /falls back to `standards-conformance\.md` § Two input sources/.test(s17b));
+  s.check("G84m the agent body routes finders and the verifier to the review packet first",
+    /\*\*Finders and the verifier read the review packet first\*\* — `context\.packet\.path`/.test(body));
+  const s12d = (body.match(/^### 1\.2d Resolve the bodies that matter[\s\S]*?(?=^### 1\.2e)/m) || [""])[0];
+  const crm = readFileSync(join(REPO_ROOT, "agents/shared/rules/comment-relevance-memory.md"), "utf8");
+  s.check("G84m memory bodies are read in one refs batch at both call sites (1.2d, comment-relevance § Read)",
+    /mcp__lorekit__memory_read: refs=\[/.test(s12d) && !/One call per candidate/.test(s12d)
+      && /mcp__lorekit__memory_read: refs=\[/.test(crm) && !/One call per fingerprint-matched entry/.test(crm));
+  const skill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
+  const pre = (skill.match(/### Worker preamble[\s\S]*?```text\n([\s\S]*?)```/) || ["", ""])[1];
+  s.check("G84m the worker preamble tells every worker to read the review packet first",
+    /Read the review packet first \(context\.packet\.path\)/.test(pre));
+  const selfCheck = (skill.match(/### Verifier self-check[\s\S]*?```text\n([\s\S]*?)```/) || ["", ""])[1];
+  s.check("G84m the verifier self-check names the severity crosswalk as its one exception",
+    /One named exception: "blocking": true requires severity high or critical/.test(selfCheck)
+      && /Never change verdict, severity, blocking/.test(selfCheck));
+}
+
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,
 // AC-3/AC-5/AC-6, plan feat/pr-reviewer-shrink-fanout-ab) ──
 //

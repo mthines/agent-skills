@@ -186,8 +186,15 @@ the **same worker preamble** `skills/quality/pr-review/SKILL.md`'s `--fanout` or
 defines, reused verbatim by reference rather than restated here:
 [`skills/quality/pr-review/SKILL.md § Worker preamble`](../../../skills/quality/pr-review/SKILL.md#worker-preamble--every-dispatch-in-steps-c-e-and-f).
 It tells the worker to read only the files it was handed by absolute path, never to read
-`agents/pr-reviewer.md` itself, and to write its JSON output to a path and return only that path —
-never the payload inline.
+`agents/pr-reviewer.md` itself, to read the review packet (`context.packet.path`) before opening any
+workspace file, and to write its JSON output to a path and return only that path — never the payload
+inline.
+
+**Every finder, lens, and verifier dispatch names the review packet by absolute path.** It is the
+largest single cut in a worker's turn count: an isolated intent finder on sync-tray#72 spent 21–40
+tool calls and 5–6 minutes, most of them paging a 5,260-line diff and opening files around hunks to
+see context and find a line number to cite — all of which `review-packet.mjs` assembles once,
+before any model turn, with head line numbers on every line.
 
 Every verifier dispatch's prompt additionally carries the live shape caps, pasted verbatim, never
 restated as fixed numbers:
@@ -204,7 +211,9 @@ preamble and the shape caps, verbatim and by reference:
 [`skills/quality/pr-review/SKILL.md § Verifier self-check`](../../../skills/quality/pr-review/SKILL.md#verifier-self-check--appended-to-every-verifier-dispatch-in-step-e).
 It tells the verifier to run `validate-judgments.mjs --shape-only` on its own output file before
 returning, fix only the fields the check names, and stop after 2 fix-and-rerun rounds.
-It must never change a verdict, a severity, or `blocking` to pass the check.
+It must never change a verdict, a severity, or `blocking` to pass the check — except the one error
+that is the severity crosswalk rather than a shape rule, which it resolves by re-applying the
+crosswalk.
 The single-dispatch path uses the same block as `--fanout`, for the same reason it uses the same
 preamble: one copy, so a verifier dispatched by either path runs the same check.
 A verifier that returns `SHAPE-UNRESOLVED` changes nothing downstream.

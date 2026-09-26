@@ -164,6 +164,8 @@ A historical run is therefore, by construction, **never** anything other than
 
 ```
 review-context.json  (prepare-review.mjs)
+  + review-packet.md  (review-packet.mjs — description + widened hunks, head line numbers)
+  + standards.json    (discover-standards.mjs — normative lines with doc:line; TRIVIAL_SKIP in context)
         │
         ▼
 judgments.json        (the model — single-context agent OR /pr-review --fanout)

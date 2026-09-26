@@ -50,6 +50,8 @@ import { fileURLToPath } from "node:url";
 import { Timing } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
+import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
+import { discoverStandards, trivialSkip } from "./discover-standards.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1209,6 +1211,49 @@ async function prepare(opts) {
   }
   timing.end(); // impact-graph
 
+  // A/B iteration 4 (speed): the review packet — the PR description, a priority-ordered file
+  // index, and every hunk widened against the head file with head line numbers — so a finder or
+  // verifier reads one file instead of the raw diff plus a dozen workspace reads
+  // (review-packet.mjs). Deterministic and never a gate: a failure is an anomaly, and the diff
+  // sidecar is still there.
+  const packetPath = join(sidecarDir, "review-packet.md");
+  let packet = null;
+  try {
+    const built = buildReviewPacket({
+      title: meta.title, body: meta.body, repo, number, headSha: checkoutSha, files,
+      consumers: consumersByFile(impact), workspaceDir: workspace.dir || null,
+    });
+    writeFileSync(packetPath, built.text, "utf8");
+    packet = { path: packetPath, lines: built.lines, files: built.files, maxLines: built.maxLines, contextLines: built.contextLines };
+  } catch (e) {
+    anomalies.push(`review packet not built: ${String(e && e.message || e).slice(0, 200)} — read the diff sidecar instead`);
+  }
+
+  // A/B iteration 4 (speed): Step 1.7b's two halves as functions (discover-standards.mjs) — the
+  // TRIVIAL_SKIP conditions and Source-1 standards discovery with normative-line extraction. The
+  // full bullet list is a sidecar; the context carries the summary Step 1.7b announces.
+  let trivial = null;
+  try {
+    trivial = trivialSkip({ files, highStakesFiles: (shape && shape.high_stakes_files) || [] });
+  } catch (e) {
+    anomalies.push(`trivial-skip not evaluated: ${String(e && e.message || e).slice(0, 200)}`);
+  }
+  const standardsPath = join(sidecarDir, "standards.json");
+  let standards = null;
+  if (workspace.dir) {
+    try {
+      const found = discoverStandards({ root: workspace.dir, changed: files.map((f) => f.filename) });
+      writeFileSync(standardsPath, JSON.stringify(found, null, 2), "utf8");
+      standards = {
+        path: standardsPath, docs: found.docs.map((d) => ({ path: d.path, bullets: d.bullets.length })),
+        bulletCount: found.bulletCount, chars: found.chars, capChars: found.capChars, dropped: found.dropped,
+        reviewConfigStandards: found.reviewConfigStandards, announce: found.announce,
+      };
+    } catch (e) {
+      anomalies.push(`standards discovery not run: ${String(e && e.message || e).slice(0, 200)} — Step 1.7b falls back to the manual walk`);
+    }
+  }
+
   // Delta triage + Phase C depth routing + Gate 4 pre-candidates (D10). Depth
   // routing binds EVERY run's tier (agents/pr-reviewer.md § "Bind DEPTH_TIER
   // … all modes, including full and zero-delta"); delta TRIAGE itself (the
@@ -1467,7 +1512,12 @@ async function prepare(opts) {
       diff: diffR.ok ? diffPath : null,
       impact: impactPath,
       undiffable: undiffablePath,
+      packet: packet ? packetPath : null,
+      standards: standards ? standardsPath : null,
     },
+    packet,
+    trivialSkip: trivial,
+    standards,
     diff: {
       path: diffR.ok ? diffPath : null,
       bytes: diffR.ok ? Buffer.byteLength(diffR.stdout) : 0,
