@@ -39,24 +39,19 @@ tier is a silent no-op (log one line, continue).
 
 ## What this loop owns vs. what aw-lessons owns
 
-`/implement-suggestion`'s **standard-lane** dispatches `aw-planner` (Phase 6),
-which **already** reads / writes the `aw-lessons` lessons (LoreKit tag
-`loop::aw-lessons`) for the *planning* of an architectural change. **Do not
-duplicate that here.** The **fast-lane** worker is a `general-purpose` subagent
-that inherits no lesson scope at all — so `implement-suggestion-lessons` is the
-primary learning surface for this skill, and the *only* one for the dominant
-fast-lane path.
+Nothing this skill dispatches reads or writes `aw-lessons` any more: the Phase 6
+worker is a generic sub-agent that inherits no lesson scope, and the `aw-planner`
+lane that used to contribute to `aw-lessons` was removed in v3.0.0. So
+`implement-suggestion-lessons` is this skill's **only** learning surface, and it
+owns every decision the skill makes:
 
-This loop owns lessons about implement-suggestion's **own** decision phases —
-the ones neither `aw-planner` nor the worker ever see:
-
-| Owned by `implement-suggestion-lessons` | Owned by `aw-lessons` (via standard-lane `aw-planner`) |
-| --------------------------------------- | ------------------------------------------------------ |
-| Comment classification misfires (Phase 3) — a bot "nit" that was actually actionable, or vice-versa | Plan authoring for architectural changes (aw-planner Phase 1) |
-| Two-gate calibration (Phase 4) — a suggestion class `/confidence` over- or under-scored | Implementation / test patterns for the planned change |
-| Lane-selection misfires (Phase 6) — fast-lane picked but the edit rippled | |
-| Reviewer-source patterns — a specific bot's suggestion class that always/never applies cleanly | |
-| Apply-outcome patterns — a suggestion class whose apply broke tests or got re-flagged | |
+| Owned by `implement-suggestion-lessons` |
+| --------------------------------------- |
+| Comment classification misfires (Phase 3) — a bot "nit" that was actually actionable, or vice-versa |
+| Two-gate calibration (Phase 4) — a suggestion class `/confidence` over- or under-scored |
+| Pack ordering (Phase 5) — a dependency the pack missed, or a contradiction it should have surfaced |
+| Reviewer-source patterns — a specific bot's suggestion class that always/never applies cleanly |
+| Apply-outcome patterns — a suggestion class whose apply broke tests, rippled past its own files, or got re-flagged |
 
 ---
 
@@ -132,8 +127,8 @@ memory.search { q: "<reviewer source + topic keywords>", scopes: ["repo::{owner}
 2. Apply matches as **inputs** to the decision they target: a classification
    lesson biases the Phase 3 tag for that comment; a calibration lesson is
    passed to Phase 4 as a "previously this suggestion class was over-/under-scored"
-   hint to `/confidence`; a lane lesson biases the Phase 6 fast-vs-standard call
-   toward the safer lane.
+   hint to `/confidence`; an ordering lesson biases the Phase 5 pack order, or moves
+   a known-contradictory pair to `surface`.
 3. Lessons are **advisory** — they never relax the two-gate requirement, the
    `/confidence` thresholds, the `/critical` Must-fix override, or any hard rule
    in [`../SKILL.md#hard-rules`](../SKILL.md#hard-rules). A lesson can bias a
@@ -190,12 +185,12 @@ shown to have under-performed — these are the high-signal moments:
 
 | Write point | When | Lesson captures |
 | ----------- | ---- | --------------- |
-| **Phase 7 end-of-run** | Every run (retrospective) | Any durable lesson from the run: a comment that Phase 3 misclassified, a suggestion class the Phase 4 gate mis-scored, a lane the Phase 6 split got wrong, an apply that broke a scoped check |
+| **Phase 7 end-of-run** | Every run (retrospective) | Any durable lesson from the run: a comment that Phase 3 misclassified, a suggestion class the Phase 4 gate mis-scored, an ordering the Phase 5 pack got wrong, an apply that broke a scoped check |
 | **Watch re-flag** | (`--watch` only) a reviewer re-comments on a location / topic that a **prior iteration already applied** | The strongest signal: the earlier apply was wrong or incomplete — almost always a Phase 4 calibration or Phase 3 classification lesson for that reviewer source + topic |
 | **User override** | The user, on reading Phase 7, overrides a `skip` / `surface` (or reverses an `apply`) | The gate was mis-calibrated for that suggestion class — capture what evidence would have changed the score |
 
 Before writing, run the **retrospective prompt** (Phase 7): was there a
-misclassified comment, a gate that scored a class wrong, a lane misfire, or an
+misclassified comment, a gate that scored a class wrong, an ordering misfire, or an
 apply that needed a scoped-check fix? Phrase each capture as an **observation**
 ("last run, `coderabbitai[bot]` import-order nits all applied cleanly at ≥ 90 %"),
 never a rule. Write nothing when the retrospective surfaces nothing **and** no
@@ -274,7 +269,7 @@ scope + key.
 Identical to the canonical loop — the dominant risk is self-reinforcing error:
 
 1. **Lessons are advisory, never auto-applied to behavior.** The only path from a
-   lesson to a changed classification rule, gate threshold, or lane trigger is a
+   lesson to a changed classification rule, gate threshold, or ordering rule is a
    confidence-gated, user-approved `diagnose` apply.
 2. **Recurrence (`seen_count >= 3`), not one run, gates promotion.**
 3. **Every lesson expires** (`ttl_days: 90`, refreshed on each re-sighting); the
@@ -285,7 +280,7 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
 5. **Privacy pre-flight is never bypassed** by an autonomous write.
 
 A suggestion lesson must **never** be allowed to relax a hard rule from
-[`../SKILL.md#hard-rules`](../SKILL.md#hard-rules) — it can bias the Phase 6 lane
-toward standard, but it can never skip the two-gate validation, override a
+[`../SKILL.md#hard-rules`](../SKILL.md#hard-rules) — it can bias the Phase 5 pack
+order or send a comment to `surface`, but it can never skip the two-gate validation, override a
 `/critical` Must-fix, weaken a test to make a suggestion fit, or let the worker
 force-push.

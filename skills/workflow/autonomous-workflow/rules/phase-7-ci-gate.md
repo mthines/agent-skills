@@ -106,7 +106,7 @@ rule 2 is *do the work you can*. Instead:
 
 After Phase 6, you should already have the PR URL and number. Start watching:
 
-**Ask CI what it is doing before watching it.** `create-pr` Step 7 already watched these checks, and the background `implement-suggestion --watch` and any `ci-auto-fix` subagents may have pushed since. Rather than inheriting a budget or a recorded verdict from those runs — which would be a claim about *some* commit, not necessarily the current head — make one cheap, stateless query:
+**Ask CI what it is doing before watching it.** `create-pr` Step 7 already watched these checks, and its Step 8 `ci-auto-fix` may have pushed since. Rather than inheriting a budget or a recorded verdict from those runs — which would be a claim about *some* commit, not necessarily the current head — make one cheap, stateless query:
 
 ```bash
 # No --watch: returns immediately with the state of the CURRENT head.
@@ -401,7 +401,7 @@ Log one line and continue to Auto Review:
 After CI is green, automatically run `review-loop` against the PR with `--critical`.
 Because Phase 7 PRs are always self-authored (aw-executor opens them), `pr-reviewer`
 sets `REVIEW_RELATION = self` automatically in Step 0.5.
-The loop runs `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` up to 5 iterations
+The loop runs `pr-reviewer` → `implement-suggestion --resolve-all` → `code-quality simplify` up to 5 iterations
 (or until every review thread is resolved via fix or reply), posts a visible `COMMENT` review, applies
 findings inline, and answers-and-resolves the non-fix threads. On convergence it refreshes the PR description.
 **`review-loop` is a skill companion**, invoked via `Skill()`.
@@ -444,7 +444,7 @@ Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")
 ```
 
 `pr-reviewer` detects self-authorship via `REVIEW_RELATION` in Step 0.5 automatically.
-The loop applies findings via `implement-suggestion` and runs `polish simplify` each iteration.
+The loop applies findings via `implement-suggestion` and runs `code-quality simplify` each iteration.
 Complex findings that the loop cannot apply are surfaced to the user inline.
 
 Do **not** wrap in a retry loop — `review-loop` owns its own iteration cap.
@@ -521,7 +521,7 @@ This section is the anchor referenced from [`companion-skills.md`](./companion-s
 audits telemetry before Step 6 — but `ci-auto-fix` ([Auto Fix](#auto-fix)) and
 `review-loop` ([Auto Review](#auto-review)) both mutate code **after** that
 point: a mechanical CI fix can delete an unused-looking `catch` log, and
-`polish simplify` can refactor away a span or an error path Phase 3 added
+`code-quality simplify` can refactor away a span or an error path Phase 3 added
 in the name of cleanliness. Phase 4's audit has no visibility into either —
 it already ran. This is the one point in the run, after every code-mutating
 step has settled, where a final check can catch that drift before the run

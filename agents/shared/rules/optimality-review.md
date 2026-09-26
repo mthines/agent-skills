@@ -21,7 +21,7 @@ A proposal is not a comment. It keeps the gates that test whether the claim is t
 - [Default-on, opt-out via `--no-optimize`](#default-on-opt-out-via---no-optimize)
 - [Trivial-skip set](#trivial-skip-set)
 - [When to run (the call)](#when-to-run-the-call)
-- [Apply (`polish optimize` — never the reviewer)](#apply-polish-optimize--never-the-reviewer)
+- [Apply (standalone `optimize-approach apply` — never the reviewer)](#apply-standalone-optimize-approach-apply--never-the-reviewer)
 - [Where proposals surface](#where-proposals-surface)
 - [Inline pointer for high-confidence proposals](#inline-pointer-for-high-confidence-proposals)
 - [Gates](#gates)
@@ -48,7 +48,7 @@ Step 1.7b exists only in `pr-reviewer`, so this section names the binding point 
 | Host | Where `TRIVIAL_SKIP` comes from |
 | --- | --- |
 | `pr-reviewer` (either relation) | The cache evaluated once at Step 1.7b — read it, never recompute it. |
-| `polish` (`optimize` mode) | There is no Step 1.7b outside `pr-reviewer`: evaluate the referenced conditions once at the start of the pass, bind the result to `TRIVIAL_SKIP`, and read that value for the rest of the pass. |
+| standalone `/optimize-approach apply` | There is no Step 1.7b outside `pr-reviewer`: evaluate the referenced conditions once at the start of the pass, bind the result to `TRIVIAL_SKIP`, and read that value for the rest of the pass. |
 
 Skipping reports as `Optimality review: skipped (trivial diff).` in the Quality Gate summary.
 
@@ -81,16 +81,15 @@ Whether a proposal is *applied* is decided by the **caller**, never by `pr-revie
 | --- | --- | --- | --- |
 | `pr-reviewer` | cross | no | Cross-review never rewrites someone else's PR — proposals surface as prose cards in the review body |
 | `pr-reviewer` | self | no | The agent is read-only in both relations (`agents/pr-reviewer.md` § What this agent does not do); an auto-fix attempt there is a guard failure |
-| `polish` (`optimize` mode) | self only | yes | The standalone approach-rewrite pass — see below |
+| standalone `/optimize-approach apply` | self only | yes | The approach-rewrite pass on your own branch — see below |
 
-## Apply (`polish optimize` — never the reviewer)
+## Apply (standalone `optimize-approach apply` — never the reviewer)
 
 `pr-reviewer` runs `report` mode only and stops at the proposal.
 Applying is a separate, explicitly-invoked pass on your own branch:
 
 ```
-Skill("polish", "optimize")           # dispatches optimize-approach apply
-Skill("optimize-approach", "apply")   # one proposal only, when invoked directly
+Skill("optimize-approach", "apply")   # one proposal, applied behind its own gate; you commit it
 ```
 
 The skill applies it behind its own `apply_safe` + `confidence(code) ≥ 90 %` gate, with a scoped check and revert-on-failure (see [`../../../skills/quality/optimize-approach/rules/apply-mode.md`](../../../skills/quality/optimize-approach/rules/apply-mode.md)).
@@ -109,7 +108,7 @@ Proposals therefore leave the pipeline through a **dedicated long-form surface**
 | --- | --- | --- |
 | `pr-reviewer` (either relation) | `Optimality review` section in the GitHub review body | One card per proposal from [`proposal.template.md`](../../../skills/quality/optimize-approach/templates/proposal.template.md) |
 | `pr-reviewer` (either relation) | `Optimality Review` section of the Step 3 terminal report | The same card |
-| `polish` (`optimize` mode) | The pass's own terminal output | The same card, plus the apply outcome |
+| standalone `/optimize-approach apply` | The pass's own terminal output | The same card, plus the apply outcome |
 
 Omit the section entirely when the skill returned no proposals — the quiet early-exit must stay quiet.
 Never render a proposal's **full argument** as an inline comment — the ten-field comparison does not survive the 200-char inline shape. A very-high-confidence proposal may, in addition to its body card, leave a short inline **pointer** to that card — see § Inline pointer for high-confidence proposals.
@@ -147,7 +146,7 @@ The card is prose, so framing replaces category mapping:
 | `cross` (someone else's PR) | Ask: "Have you considered …?" — the reviewer has less context than the author | no |
 
 An optimality proposal is **always non-blocking** — it never drives "Request changes", the same way `scope-creep` never does.
-A rewrite applied later by `polish optimize` is recorded in that pass's own output as an approach change, not as a comment.
+A rewrite applied later by a standalone `optimize-approach apply` is recorded in that pass's own output as an approach change, not as a comment.
 
 ## Gates
 
@@ -184,7 +183,7 @@ This is intentional and matches `holistic-review`'s treatment of `system-fit` an
 
 ## Logging
 
-Every report that carries a Quality Gate summary **must** render this block, in `pr-reviewer`'s terminal report and review-body diagnostics and in the `polish optimize` pass output:
+Every report that carries a Quality Gate summary **must** render this block, in `pr-reviewer`'s terminal report and review-body diagnostics and in a standalone `optimize-approach apply` pass's output:
 
 ```text
 Optimality review (2.4c):
@@ -193,7 +192,7 @@ Optimality review (2.4c):
   Optimal:            <O>
   Proposals:          <P> (cap 2)
   Inline pointers:    <PTR> (analysis_confidence ≥ 95 with a resolvable anchor; pr-reviewer only)
-  Applied:            <A>  (`polish optimize` only — always 0 under `pr-reviewer`)
+  Applied:            <A>  (standalone `optimize-approach apply` only — always 0 under `pr-reviewer`)
   Withheld/reverted:  <W>
 ```
 
@@ -226,4 +225,4 @@ Do not block the run.
 - It does not set the blocker rules — those live in each agent's verdict step (and optimality never blocks).
 - It does not apply anything in `pr-reviewer` — cross-review is report-only.
 - It does not emit a proposal's full argument as an inline comment — that surfaces only through the sections in § Where proposals surface. A qualifying high-confidence proposal additionally leaves a short inline **pointer** to its card (§ Inline pointer for high-confidence proposals); the pointer is a signpost, not the proposal.
-- It does not re-run the trivial-skip computation. Under `pr-reviewer` it reads the `TRIVIAL_SKIP` cache written at Step 1.7b; under `polish` (`optimize` mode) the value is bound once at the start of the pass (§ Trivial-skip set).
+- It does not re-run the trivial-skip computation. Under `pr-reviewer` it reads the `TRIVIAL_SKIP` cache written at Step 1.7b; under a standalone `optimize-approach apply` the value is bound once at the start of the pass (§ Trivial-skip set).

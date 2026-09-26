@@ -14,11 +14,11 @@ description: >
   review, after writing new code, in TDD GREEN/REFACTOR, or when
   asked to "improve quality", "make this readable", "reduce
   complexity", "deduplicate", "clean this up", or "/code-quality".
-argument-hint: '[plan|review|simplify] [aggressive|dry-run|<path>]'
+argument-hint: '[plan|review|simplify|quick] [aggressive|dry-run|<path>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.4.1'
+  version: '1.5.0'
   workflow_type: advisory
   tags:
     - code-quality
@@ -49,14 +49,17 @@ The three quality axes this skill targets, in priority order:
 3. **Pragmatic performance** — algorithmic wins by default, micro-optimizations
    only when a profiler points at them.
 
-This skill applies in four modes:
+This skill applies in five modes:
 
 1. **Plan mode** — invoked with `Skill("code-quality", "plan")`, before any code is written. Reads a `plan.md` (or proposed approach) and the existing codebase, and verifies the plan's structure follows the existing patterns and avoids predictable design-time risks (premature parallel maps, missing branded primitives, untyped error paths, parameter creep, neighbour mismatch). Returns findings only — no code edits. Used by `autonomous-workflow` Phase 1. See [`rules/plan-mode.md`](./rules/plan-mode.md).
 2. **Authoring mode** — when writing new code (e.g., GREEN phase of TDD, new features). Apply principles inline so the first version already meets the bar. Default mode when no argument is passed.
 3. **Review mode** — invoked with `Skill("code-quality", "code")` or `Skill("code-quality", "review")`, after code is written. When refactoring, reviewing PRs, or being asked to "clean this up". Diagnose against the rules and propose targeted changes. Returns findings only — no code edits.
 4. **Simplify mode** — invoked with `Skill("code-quality", "simplify")`, after a feature is implemented and tests are green. Runs the review pass, then **applies** mechanical refactors (Class M recipes from [`rules/refactor-recipes.md`](./rules/refactor-recipes.md#recipe-class--mechanical-vs-judgment)) one at a time behind `Skill("confidence", "code") ≥ 90 %` and a scoped fast-check, reverting on failure. Judgment-class recipes (Class J) stay as proposals. See [`rules/simplify-mode.md`](./rules/simplify-mode.md). Variants: `simplify aggressive` also auto-applies Medium-impact mechanical recipes; `simplify dry-run` reports without writing; `simplify <path>` scopes to a path instead of the diff.
+5. **Quick mode** — invoked with `Skill("code-quality", "quick")`: the review pass over the branch diff, then auto-apply only the mechanical subset (comments, local names, dead code, trivial control flow) — no structural refactor, no confidence gate. See [`rules/quick-mode.md`](./rules/quick-mode.md).
 
-Detect the mode from the `$ARGUMENTS` first token: `plan` → plan mode; `code` or `review` → review mode; `simplify` → simplify mode; anything else (including no argument) → authoring mode. The legacy convention "user said review or audit" still routes to review mode for ad-hoc invocations.
+`simplify` and `quick` edit the working tree and **never commit**: the caller commits what they applied, as its own commit, so it stays revertible as one unit.
+
+Detect the mode from the `$ARGUMENTS` first token: `plan` → plan mode; `code` or `review` → review mode; `simplify` → simplify mode; `quick` → quick mode; anything else (including no argument) → authoring mode. The legacy convention "user said review or audit" still routes to review mode for ad-hoc invocations.
 
 ---
 
@@ -143,7 +146,7 @@ when working in that stack.
 
 ## Procedure
 
-The skill operates in four modes — plan (validate a plan), authoring (writing new code), review (refactor / audit, findings only), and simplify (review then auto-apply mechanical recipes). Detect the mode from `$ARGUMENTS` per the table above; default is authoring.
+The skill operates in five modes — plan (validate a plan), authoring (writing new code), review (refactor / audit, findings only), simplify (review then auto-apply mechanical recipes), and quick (review then auto-apply only the trivial mechanical subset). Detect the mode from `$ARGUMENTS` per the table above; default is authoring.
 
 Load [`rules/procedure.md`](./rules/procedure.md) for authoring (13-step checklist) and review (8-step pass). Load [`rules/simplify-mode.md`](./rules/simplify-mode.md) for the simplify procedure (partition → confidence-gate → apply one recipe at a time → scoped fast-check → revert on failure → whole-suite verify at end).
 
@@ -178,6 +181,7 @@ that stack.
 | PR scope, neighbour-pattern symmetry, migration & evolution, working with legacy code, diff hygiene | `rules/collaboration.md` |
 | Naming a refactor in review output (R1 Consolidate Parallel Maps, R6 Replace Type Declaration with Inferred Type, etc.) | `rules/refactor-recipes.md` |
 | Auto-applying mechanical refactors at end of feature (review-then-apply, confidence-gated, revert-on-failure) | `rules/simplify-mode.md` |
+| Light mechanical cleanup of a branch diff (comments, names, dead code; no gate, no structural change) | `rules/quick-mode.md` |
 
 ### Stack-specific rules
 

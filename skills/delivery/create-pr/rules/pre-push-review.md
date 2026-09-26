@@ -39,7 +39,7 @@ passes:
 
 Split mode depends on the step more heavily still: Step 6.5 is post-draft and split mode never
 reaches it, so nothing reviews the whole branch otherwise.
-That slot previously ran `Skill("polish", "simplify")` — mechanical refactors and **no review at
+That slot previously ran a `simplify` pass (today `Skill("code-quality", "simplify")`) — mechanical refactors and **no review at
 all**, because no reviewer could run without a PR.
 That is now the *fallback*, taken only on `--no-pre-review` or an absent-dispatch skip.
 
@@ -72,7 +72,7 @@ Pass nothing else: `review-branch` owns its own grammar.
 | --- | --- |
 | **Converged** | Continue to Step 6. The pushed branch is already review-clean, so Step 6.5 should find little; that is the point, not a reason to skip it. |
 | **`flagged` findings** | Surface every one to the user **before** pushing. They are the reason a human is still needed, and a run that pushes past them silently has converted the safety valve into a green-wash. Continue only after surfacing. |
-| **Skipped (sub-agent dispatch unavailable)** | The branch has **not** been reviewed here. One absent-dispatch return is conclusive; never retry. In split mode, fall back to `Skill("polish", "simplify")` on the full branch. In default mode just continue — Step 6.5 is the reviewer of record there. |
+| **Skipped (sub-agent dispatch unavailable)** | The branch has **not** been reviewed here. One absent-dispatch return is conclusive; never retry. In split mode, fall back to `Skill("code-quality", "simplify")` on the full branch, then commit. In default mode just continue — Step 6.5 is the reviewer of record there. |
 | **`checks-red`** | The repo's own fast checks are failing on your branch. Fix that before pushing; opening a PR on a locally-red branch spends a CI run to learn what you already knew. |
 
 ## Record the outcome before continuing

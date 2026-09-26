@@ -6755,6 +6755,44 @@ const isPollBlock = (block) =>
     total < baseTotal ? `${total} < baseline ${baseTotal}: lower it with --write` : `${total} escaping links`);
 }
 
+// ── G72: every Skill("<name>") names a skill that exists ──
+//
+// A deleted or renamed skill leaves `Skill("<old>")` calls behind that nothing else catches:
+// the link checker sees only Markdown links, and the harness answers with `Unknown skill` —
+// which every caller here is written to treat as a tolerable skip. The restructure deletes
+// skills in bulk (review-changes, polish, …), so this is where a leftover call would hide.
+// Three kinds of name are legitimate:
+//   - a skill directory in this repo (holds a SKILL.md);
+//   - an EXTERNAL skill from another repo, named here so the list is reviewed;
+//   - an AGENT name, but only inside a prohibition ("never Skill("pr-reviewer")", "❌ WRONG",
+//     "Unknown skill") — that is the documentation of the mistake, not the mistake.
+{
+  const EXTERNAL = new Set(["otel-instrumentation", "otel-semantic-conventions"]); // dash0hq/agent-skills
+  const skillNames = new Set(walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))
+    .map((p) => p.split("/").slice(-2)[0]));
+  const agentNames = new Set([
+    ...readdirSync(join(REPO_ROOT, "agents")).filter((f) => f.endsWith(".md")).map((f) => f.replace(/\.md$/, "")),
+    ...walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith(".agent.md")).map((p) => p.split("/").pop().replace(/\.agent\.md$/, "")),
+  ]);
+  const PROHIBITION = /never|do not|don't|not a skill|unknown skill|❌|wrong/i;
+  const bad = [];
+  const files = [...walk(join(REPO_ROOT, "skills")), ...walk(join(REPO_ROOT, "agents")), join(REPO_ROOT, "CLAUDE.md"), join(REPO_ROOT, "README.md")];
+  for (const f of files) {
+    const lines = readFileSync(f, "utf8").split("\n");
+    lines.forEach((line, i) => {
+      for (const m of line.matchAll(/Skill\("([a-z0-9][a-z0-9-]*)"/g)) {
+        const name = m[1];
+        if (skillNames.has(name) || EXTERNAL.has(name)) continue;
+        const windowText = lines.slice(Math.max(0, i - 2), i + 1).join(" ");
+        if (agentNames.has(name) && PROHIBITION.test(windowText)) continue;
+        bad.push(`${rel(f)}:${i + 1} Skill("${name}")`);
+      }
+    });
+  }
+  s.check("G72 every Skill(\"<name>\") names an existing skill, a declared external skill, or an agent inside a prohibition",
+    bad.length === 0, bad.slice(0, 5).join("; "));
+}
+
 // ── G52: review-branch / branch-reviewer — the PR-less review path ──
 //
 // This path makes exactly two load-bearing claims, and both are the kind that rot silently
@@ -8231,8 +8269,10 @@ const isPollBlock = (block) =>
     for (const m of t.matchAll(/(?:\$AGENT_SKILLS_ROOT|\/tmp\/workspace\/pr-reviewer)\/skills\/([a-z0-9-]+\/[A-Za-z0-9._/-]+\.(?:md|mjs))/g)) named.add(m[1]);
   }
   const unverified = [...named].filter((n) => !setup.includes(`"$S/${n}"`));
+  // Floor is 5, not 6: the `polish` entry left with the skill (restructure PR 3a) and its file
+  // with it. The floor only proves the regex still finds the rules' mentions at all.
   s.check("G58e the installer verifies every installed file the Agent0 rules name",
-    named.size >= 6 && unverified.length === 0,
+    named.size >= 5 && unverified.length === 0,
     `named=${[...named].join(",") || "∅"}; unverified by ${SETUP_REL}: ${unverified.join(",") || "none"}`);
 
   // G58f — the top-level constraints do not forbid what the loop does, and a refusal has a token.

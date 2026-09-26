@@ -62,7 +62,7 @@ Set `STOP_REASON = "reviewer-refused"`, report the reply's first line verbatim, 
 | Sub-step | `SKILL.md` call | Agent0 file |
 | --- | --- | --- |
 | B | `Skill("implement-suggestion", "<PR> --resolve-all")` | `$AGENT_SKILLS_ROOT/skills/implement-suggestion/SKILL.md` |
-| C | `Skill("polish", "simplify")` | `$AGENT_SKILLS_ROOT/skills/polish/SKILL.md` (which in turn reads `$AGENT_SKILLS_ROOT/skills/code-quality/SKILL.md`) |
+| C | `Skill("code-quality", "simplify")` | `$AGENT_SKILLS_ROOT/skills/code-quality/SKILL.md` |
 | D | `ci-auto-fix` sub-agent | `general` sub-agent told to read `$AGENT_SKILLS_ROOT/skills/ci-auto-fix/SKILL.md`, with `/tmp/workspace/agent-skills/CONSTRAINTS.md` named in its prompt as its standing constraints — it pushes, and `AGENTS.md` may not load into a sub-agent |
 | 1.6 | `ui-verify run` | `$AGENT_SKILLS_ROOT/skills/ui-verify/SKILL.md`, which follows [its own Agent0 rule](../../../testing/ui-verify/rules/agent0-runtime.md) — Playwright via a `general` `aw-tester`, one level deep from this loop |
 
@@ -72,10 +72,9 @@ Every one of these is followed in the loop's own top-level context, so each keep
 
 | Dispatch | Owner | Outcome |
 | --- | --- | --- |
-| `aw-planner` | `implement-suggestion` standard lane | Stop that comment's standard lane: it stays an open, flagged thread and the report names it as `standard lane not run (aw-planner not dispatchable)`. Never downgrade it to the fast lane — `implement-suggestion`'s own hard rule forbids that fallback |
 | Chromium | Step 1.6, when the setup script could not install it | `not run (playwright browser unavailable in this sandbox: <reason>)` — Step 1.6 is report-only, so convergence is unaffected |
 
-Both outcomes are reported by name, because a skip that reads as a pass is the self-concealing degradation this repo's `F6`/`F7` doctrine exists to catch.
+The outcome is reported by name, because a skip that reads as a pass is the self-concealing degradation this repo's `F6`/`F7` doctrine exists to catch.
 
 ## What this rule does not do
 

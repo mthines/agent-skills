@@ -5,7 +5,7 @@ Loaded only when `--watch` is present in `$ARGUMENTS`; normal invocations skip t
 
 `--watch` turns the single-pass apply into a **feedback loop on one PR**: after each apply-and-push, wait for the repo's review bots (and humans) to re-review the new commit, then apply the next round of actionable comments — repeating until the reviewers go quiet or an iteration cap is hit.
 
-This is what `/create-pr` dispatches (as a background subagent) after it opens a PR, so a freshly-created PR converges to "all actionable bot feedback addressed" without the user babysitting it.
+Run it on purpose when a PR is waiting on reviewers who comment after the automated passes — `create-pr` no longer backgrounds it (its `review-loop` already applies and resolves every open thread, from any author, on every iteration).
 
 ## Preconditions and parameters
 
@@ -129,7 +129,7 @@ read at the head you are stopping on.
 
 This is **reporting, not fixing**: watch mode dispatches nothing, pushes no CI fix,
 and spends none of the `ci-auto-fix` handoff budget that
-[`create-pr` Step 9](../../../delivery/create-pr/SKILL.md) and `phase-7-ci-gate.md`
+[`create-pr` Step 8](../../../delivery/create-pr/SKILL.md) and `phase-7-ci-gate.md`
 own. It stops early and hands off cleanly.
 
 ## Report (watch mode)
@@ -161,4 +161,4 @@ On a `ci red` stop, list the failing check names and name the handoff (`ci-auto-
 - **Never lower the confidence gate to "make progress".** A surfaced comment stays surfaced across every iteration.
 - **Never re-apply a comment already processed in an earlier iteration.** Advance the baseline timestamp after each pass.
 - **Never `--force` push.** Inherited; watch mode pushes fast-forward only.
-- **Never fix CI.** Watch mode reads check state to decide whether to *stop*; it dispatches no `ci-auto-fix`, pushes no CI fix, and spends none of the 2-handoff budget owned by `create-pr` Step 9 / `phase-7-ci-gate.md`.
+- **Never fix CI.** Watch mode reads check state to decide whether to *stop*; it dispatches no `ci-auto-fix`, pushes no CI fix, and spends none of the 2-handoff budget owned by `create-pr` Step 8 / `phase-7-ci-gate.md`.

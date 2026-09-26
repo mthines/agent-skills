@@ -204,7 +204,7 @@ for the full registry, trigger conditions, and **how to disable any companion**.
 | 6     | `create-pr`            | Always — push, open draft PR, run review-loop, watch CI | —               |
 | 6 (UI)| `ui-verify`         | Via `create-pr` Step 6.4 on a UI diff — PR-body verification spec, seeded from `specs.md` when present | `author` |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
-| 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
+| 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `code-quality simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
 | 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
 
 ---
@@ -417,7 +417,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 - [`docs`](../../authoring/docs/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
 - [`review-loop`](../../quality/review-loop/SKILL.md) — bounded review → apply → simplify convergence (Phases 6–7)
 - [`pr-review`](../../quality/pr-review/SKILL.md) — one-shot read-only review
-- [`review-loop`](../../quality/review-loop/SKILL.md) — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence loop; Phase 6/7 review passes
+- [`review-loop`](../../quality/review-loop/SKILL.md) — bounded `pr-reviewer` → `implement-suggestion` → `code-quality simplify` convergence loop; Phase 6/7 review passes
 - [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + open draft PR + review-loop + watch
 - [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks
 - `lorekit-memory` (LoreKit `memory.*` tools) — backs the `aw-lessons` and `aw-tester-lessons` fast-tier self-improvement loops. See also [`persistent-memory`](../../authoring/persistent-memory/SKILL.md) for the LoreKit backend docs (`rules/scaling-tiers.md`)
@@ -426,7 +426,7 @@ per-companion disabling, see the [README](./README.md#installation) and
 ### Related Agents
 
 - [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent (Playwright, sub-agent). Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires an aw-target at `.claude/aw-targets/` — run `/aw-setup` first. Shares the engine-agnostic [spec-run contract](./rules/spec-run-contract.md) with the in-session [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) runner.
-- [`pr-reviewer`](../../../agents/pr-reviewer.md) — Phase 6 and Phase 7 review passes, invoked via the `review-loop` skill. Handles both self-relation (own PR — `REVIEW_RELATION = self`) and cross-relation (someone else's PR). Stays read-only; apply passes are delegated to `implement-suggestion` and `polish simplify`.
+- [`pr-reviewer`](../../../agents/pr-reviewer.md) — Phase 6 and Phase 7 review passes, invoked via the `review-loop` skill. Handles both self-relation (own PR — `REVIEW_RELATION = self`) and cross-relation (someone else's PR). Stays read-only; apply passes are delegated to `implement-suggestion` and `code-quality simplify`.
 
 ---
 
