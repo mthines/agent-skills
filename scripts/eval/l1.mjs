@@ -9620,6 +9620,47 @@ const isPollBlock = (block) =>
       /Notes are counted, never folded into findings/.test(rrDoc) && rrDoc.includes("### 🟠 5 findings — 1 blocking · 1 note")
         && /may end in ` · <M> note\(s\)`/.test(ingest) && /match the forms as prefixes/.test(ingest));
   }
+  // G84i (A/B round 3 → iteration 1): three pipeline defects the sync-tray#72 arms hit.
+  // (1) Every --isolated write-plan targeted the PR's LIVE sticky; --isolated now requires
+  //     --dry-run in finalize.mjs and the plan's `isolated` marker is refused by
+  //     execute-write-plan.mjs. (2) Distinct claims on one (path, line, prefix) anchor merged and a
+  //     96.5 finding vanished; a finder repeating itself counted as cross-rubric agreement.
+  //     (3) execute-write-plan.mjs required --repo although the plan carries it.
+  {
+    const FIN = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
+    const EWP = join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs");
+    const DED = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/dedupe.mjs");
+    const finSrc = readFileSync(FIN, "utf8");
+    const ewpSrc = readFileSync(EWP, "utf8");
+    const dedSrc = readFileSync(DED, "utf8");
+    s.check("G84i finalize.mjs refuses an --isolated context without --dry-run",
+      /if \(context\?\.isolated && !isDryRun\)/.test(finSrc));
+    s.check("G84i execute-write-plan.mjs refuses a plan marked isolated",
+      /if \(writePlan\?\.isolated\)/.test(ewpSrc));
+    const fin = spawnSync(process.execPath, [FIN, "--self-test"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    s.check("G84i finalize.mjs --self-test proves the --isolated refusal and marker end to end",
+      fin.status === 0 && /an --isolated context without --dry-run: finalize\.mjs exits non-zero/.test(fin.stdout || "")
+        && /an --isolated, --dry-run write-plan\.json carries isolated: true/.test(fin.stdout || ""),
+      (fin.stdout || fin.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+    const ewp = spawnSync(process.execPath, [EWP, "--self-test"], { encoding: "utf8" });
+    s.check("G84i execute-write-plan.mjs --self-test proves the isolated refusal and the --repo default",
+      ewp.status === 0 && /an --isolated plan is refused with code 5 and zero runner calls/.test(ewp.stdout || "")
+        && /CLI: --dry-run without --repo uses the plan's repo and exits 0/.test(ewp.stdout || ""),
+      (ewp.stdout || ewp.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+    s.check("G84i dedupe.mjs keeps distinct claims apart at one anchor and counts agreement only across finders",
+      /function exactMatch\(a, b\) \{\n  return a\.path === b\.path && a\.line === b\.line && a\.prefix === b\.prefix && !distinctClaims\(a, b\);/.test(dedSrc)
+        && /reason === "exact" && c\.finder !== mergedInto\.finder/.test(dedSrc));
+    const ded = spawnSync(process.execPath, [DED, "--self-test"], { encoding: "utf8" });
+    s.check("G84i dedupe.mjs --self-test covers the same-anchor and same-finder cases",
+      ded.status === 0 && /distinct claims at one \(path, line, prefix\) anchor are both kept/.test(ded.stdout || "")
+        && /a finder repeating its own finding is dropped but is never cross-rubric agreement/.test(ded.stdout || ""),
+      (ded.stdout || ded.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+    const pipe = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/pipeline.md"), "utf8");
+    const rc = readFileSync(join(REPO_ROOT, "agents/shared/rules/rubric-composition.md"), "utf8");
+    s.check("G84i pipeline.md states --isolated requires --dry-run; rubric-composition.md states distinct claims never merge",
+      /\*\*`--isolated` requires `--dry-run`\.\*\*/.test(pipe) && /\*\*Distinct claims never merge\.\*\*/.test(rc));
+  }
+
 }
 
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,

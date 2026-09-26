@@ -5,7 +5,9 @@
  *
  * Walk findings in finder load order. For each new finding, if a prior KEPT
  * finding has:
- *   - same (path, line) AND same prefix -> drop the new one, record agreement.
+ *   - same (path, line) AND same prefix AND claims not distinct -> drop the new one, record
+ *     agreement when a DIFFERENT finder flagged it (a finder repeating itself is not agreement).
+ *     Distinct claims at one anchor (claim-token Jaccard < SEMANTIC_JACCARD_MIN) are kept apart.
  *   - adjacent lines (|line_a - line_b| <= 2) AND same prefix AND same first
  *     40 chars of body -> drop the new one (NOT agreement-promoted — this is
  *     the fuzzy near-duplicate case, not the exact-match case § Cross-rubric
@@ -13,9 +15,26 @@
  *   - same (path, line) AND different prefix -> keep both.
  */
 
+/**
+ * Two findings at one anchor describe DISTINCT defects when both carry claim text and their
+ * claim-token Jaccard is below SEMANTIC_JACCARD_MIN — the same calibrated floor the semantic pass
+ * below uses (true duplicates 0.23–0.46, distinct pairs <= 0.19). A/B round 3 (sync-tray#72,
+ * D-default arm): two defects the verifier confirmed on ONE line — a remount loop and a
+ * notification double-count, the latter at final 96.5 — merged on `(path, line, prefix)` alone and
+ * the second vanished from the report. When either side has no claim text (a legacy body-only
+ * record), there is nothing to compare, so the exact-anchor rule applies unchanged.
+ * @param {any} a @param {any} b
+ */
+function distinctClaims(a, b) {
+  const ta = claimTokens(a);
+  const tb = claimTokens(b);
+  if (ta.size === 0 || tb.size === 0) return false;
+  return jaccard(ta, tb) < SEMANTIC_JACCARD_MIN;
+}
+
 /** @param {any} a @param {any} b */
 function exactMatch(a, b) {
-  return a.path === b.path && a.line === b.line && a.prefix === b.prefix;
+  return a.path === b.path && a.line === b.line && a.prefix === b.prefix && !distinctClaims(a, b);
 }
 
 /** @param {any} a @param {any} b */
@@ -25,7 +44,7 @@ function adjacentFuzzyMatch(a, b) {
   if (Math.abs(a.line - b.line) > 2) return false;
   const bodyA = (a.body || "").slice(0, 40);
   const bodyB = (b.body || "").slice(0, 40);
-  return bodyA === bodyB;
+  return bodyA === bodyB && !distinctClaims(a, b);
 }
 
 /**
@@ -46,7 +65,10 @@ export function dedupe(candidates) {
       if (adjacentFuzzyMatch(k, c)) { mergedInto = k; reason = "adjacent"; break; }
     }
     if (mergedInto) {
-      if (reason === "exact") {
+      // Agreement means a SECOND finder fingerprinted the same anchor. The same finder emitting
+      // the same finding twice is a duplicate to drop, never cross-rubric agreement — counting it
+      // lowered the kept finding's threshold on the strength of one opinion stated twice.
+      if (reason === "exact" && c.finder !== mergedInto.finder) {
         if (!mergedInto._also_flagged_by) mergedInto._also_flagged_by = [];
         if (!mergedInto._also_flagged_by.includes(c.finder)) mergedInto._also_flagged_by.push(c.finder);
       }
@@ -281,6 +303,46 @@ async function selfTest() {
     const { kept, dropped } = dedupe([c1, c2]);
     check("adjacent line (<=2) + same prefix + same 40-char prefix drops the second", kept.length === 1 && dropped.length === 1 && dropped[0]._dedupe_reason === "adjacent");
     check("adjacent-line drop does NOT mark agreement-promoted", !kept[0]._also_flagged_by);
+  }
+
+  // A/B round 3 (sync-tray#72): two verified defects on one line, same prefix, claims about
+  // different things. The exact-anchor rule used to merge them and the second vanished.
+  {
+    const loop = { finder: "correctness", path: "s.swift", line: 3551, prefix: "issue", body: "b",
+      claim: "A drain with persistent failures remounts cache-only-pending and auto-resume retries it with no backoff",
+      bad_outcome: "An unbounded unmount, drain, remount, notify cycle" };
+    const count = { finder: "correctness", path: "s.swift", line: 3551, prefix: "issue", body: "b",
+      claim: "The notification passes remainingPending plus failed, double-counting failed files",
+      bad_outcome: "The user is told twice as many files failed as did" };
+    const { kept, dropped } = dedupe([loop, count]);
+    check("distinct claims at one (path, line, prefix) anchor are both kept", kept.length === 2 && dropped.length === 0,
+      `kept ${kept.length}, dropped ${dropped.length}`);
+  }
+  {
+    const a = { finder: "correctness", path: "s.swift", line: 20, prefix: "issue", body: "b",
+      claim: "uploadNow cancels the Task but OverlaySyncService.run never checks cancellation",
+      bad_outcome: "two keep-mode upload runs execute concurrently on one overlay" };
+    const b = { finder: "quality", path: "s.swift", line: 20, prefix: "issue", body: "b",
+      claim: "Upload Now cancellation never stops OverlaySyncService.run, which has no cancellation checks",
+      bad_outcome: "concurrent upload runs race on the overlay manifest" };
+    const { kept, dropped } = dedupe([a, b]);
+    check("overlapping claims at one anchor still merge, and a second finder records agreement",
+      kept.length === 1 && dropped.length === 1 && kept[0]._also_flagged_by?.includes("quality"));
+  }
+  {
+    const a = { finder: "correctness", path: "s.swift", line: 30, prefix: "issue", body: "b",
+      claim: "uploadNow cancels the Task but OverlaySyncService.run never checks cancellation",
+      bad_outcome: "two keep-mode upload runs execute concurrently on one overlay" };
+    const { kept, dropped } = dedupe([a, { ...a }]);
+    const promoted = markAgreementPromoted(kept);
+    check("a finder repeating its own finding is dropped but is never cross-rubric agreement",
+      kept.length === 1 && dropped.length === 1 && promoted[0].agreement_promoted === false);
+  }
+  {
+    const a = { finder: "correctness", path: "a.ts", line: 40, prefix: "issue", body: "first wording" };
+    const b = { finder: "quality", path: "a.ts", line: 40, prefix: "issue", body: "second wording" };
+    const { kept } = dedupe([a, b]);
+    check("body-only records (no claim text) keep the exact-anchor merge unchanged", kept.length === 1);
   }
 
   {

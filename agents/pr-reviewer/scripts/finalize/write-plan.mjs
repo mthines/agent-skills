@@ -57,13 +57,14 @@ export function buildThreadOps(threads) {
  *   lorekitWrite?: any[],
  *   dryRun?: boolean,
  *   historical?: {review_sha: string}|null,
+ *   isolated?: boolean,
  * }} args
  * @returns {any}
  */
 export function buildWritePlan({
   repo, prNumber, commitSha, threads, stickyCommentId,
   reportBodyPath, pointerBodyPath, inlineComments, lorekitWrite,
-  dryRun = false, historical = null,
+  dryRun = false, historical = null, isolated = false,
 }) {
   const { thread_reply, thread_resolve } = buildThreadOps(threads || []);
   return {
@@ -77,6 +78,9 @@ export function buildWritePlan({
     // (AC-18) does not have to trust a caller that got here correctly.
     dry_run: Boolean(dryRun),
     historical: historical || null,
+    // A/B round 3: an --isolated plan targets the PR's live sticky, so it self-identifies too.
+    // Present only when set, so every non-isolated plan keeps its exact shape.
+    ...(isolated ? { isolated: true } : {}),
     thread_reply,
     thread_resolve,
     sticky_upsert: {

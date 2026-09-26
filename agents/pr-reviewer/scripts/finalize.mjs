@@ -1733,6 +1733,40 @@ async function selfTest() {
       }
     }
 
+    // A/B round 3: an --isolated context carries the live sticky id (the dry-run rehearses the
+    // exact write), so finalize must refuse it without --dry-run, and a --dry-run plan must carry
+    // the `isolated` marker execute-write-plan.mjs refuses on.
+    {
+      const isoDir = join(e2eDir, "isolated-test");
+      rmSync(isoDir, { recursive: true, force: true });
+      mkdirSync(isoDir, { recursive: true });
+      const isoContext = withRenderAt({
+        ...e2eContext, isolated: true,
+        priorRun: { ...(e2eContext.priorRun || {}), stickyCommentId: 5839554292 },
+      }, "2026-09-25T12:00:00Z");
+      const isoContextPath = join(isoDir, "context.json");
+      writeFileSync(isoContextPath, JSON.stringify(isoContext, null, 2));
+      const isoNoDry = join(isoDir, "out-no-dry-run");
+      const rIso = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", isoContextPath, "--judgments", judgmentsPath, "--out-dir", isoNoDry,
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      check("an --isolated context without --dry-run: finalize.mjs exits non-zero, naming --isolated",
+        rIso.status !== 0 && /--isolated/.test(rIso.stderr || ""), `exit ${rIso.status}`);
+      check("an --isolated context without --dry-run: no write-plan.json is written",
+        !existsSync(join(isoNoDry, "write-plan.json")));
+      const isoDry = join(isoDir, "out-dry-run");
+      const rIsoDry = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", isoContextPath, "--judgments", judgmentsPath, "--out-dir", isoDry, "--dry-run",
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      const isoPlanPath = join(isoDry, "write-plan.json");
+      const isoPlan = existsSync(isoPlanPath) ? JSON.parse(readFileSync(isoPlanPath, "utf8")) : null;
+      check("an --isolated, --dry-run write-plan.json carries isolated: true and dry_run: true",
+        rIsoDry.status === 0 && isoPlan?.isolated === true && isoPlan?.dry_run === true,
+        (rIsoDry.stderr || "").trim().slice(0, 300));
+    }
+
     // D16 CLI-level coverage: `--writer findings-bus` is branch-reviewer's entire output path, and
     // until now only finalizeReview()'s pure `findingsBusRecords` array was self-tested — the CLI
     // main() branch that skips the GitHub-shaped artifacts and appends the bus file was exercised
@@ -1874,6 +1908,19 @@ async function main() {
     );
     process.exit(1);
   }
+  // A/B round 3 (sync-tray#72): every arm's --isolated write-plan targeted the PR's LIVE sticky
+  // report (prepare-review.mjs keeps priorRun.stickyCommentId so a dry-run rehearses the exact
+  // write). --dry-run made that harmless; an --isolated run without it would have overwritten
+  // the real report with a comparability run's output. --isolated is a comparability mode, so
+  // it now requires --dry-run here, and the plan carries an `isolated` marker that
+  // execute-write-plan.mjs refuses on its own (rules/pipeline.md § --isolated).
+  if (context?.isolated && !isDryRun) {
+    console.error(
+      "finalize: refusing — context is --isolated (a comparability run whose write-plan targets "
+      + "the PR's live sticky report) but --dry-run was not passed. Pass --dry-run.",
+    );
+    process.exit(1);
+  }
 
   mkdirSync(outDir, { recursive: true });
 
@@ -1983,6 +2030,7 @@ async function main() {
     inlineComments: renderedInlineComments,
     dryRun: isDryRun,
     historical: context?.historical || null,
+    isolated: Boolean(context?.isolated),
   });
   writeFileSync(join(outDir, "write-plan.json"), JSON.stringify(writePlan, null, 2));
   console.log(`finalize: wrote write-plan.json (${writePlan.thread_reply.length} replies, `

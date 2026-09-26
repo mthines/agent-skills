@@ -54,8 +54,12 @@ Announce auto-engagement in one line: `Auto-engaging critical: <reason>.` User c
 Walk findings in load order. For each new finding, if a prior finding has:
 
 - Same `(file, line)` AND same Conventional-Comments prefix → **drop the new one**, append `(also flagged by <new-rubric>)` to the prior body.
+  The annotation is added only when the new finding came from a **different** rubric; a rubric repeating its own finding is a duplicate, not agreement.
 - Same `(file, line)` AND different prefix → keep both; humans benefit from seeing both lenses.
 - Adjacent lines (`|line_a - line_b| ≤ 2`) AND same prefix AND same first 40 chars of body → **drop the new one** (likely the same finding, different rubric named it differently).
+- **Distinct claims never merge.** When both findings carry claim text and their claim-token Jaccard similarity is below `0.21` (the calibrated floor in the semantic pass below), keep both, even at the same `(file, line)` with the same prefix.
+  A/B round 3 lost a verified finding at confidence 96.5 this way: two different defects confirmed on one line merged on the anchor alone.
+  A finding with no claim text keeps the anchor-only rule, since there is nothing to compare.
 
 Dedupe runs **before** the per-comment confidence check (`per-comment-confidence.md`) — no point scoring a duplicate.
 

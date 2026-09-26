@@ -75,9 +75,20 @@ depending on what a prior run in the series left behind. `--isolated`:
    comparison computes from it — this is not a narrower review, it is a
    review of a different commit wearing the pinned one's label.
 
-`--isolated` says nothing about writes on its own — pair it with `--dry-run`
-for a comparability run that is also side-effect-free (the A/B harness and
-the shadow run always pass both together).
+**`--isolated` requires `--dry-run`.**
+An isolated run still carries the PR's live sticky report id, so its dry-run
+write-plan rehearses the exact write a real run would make.
+A/B round 3 found every arm's `write-plan.json` targeting that live comment;
+`--dry-run` made it harmless, and without it an isolated run would have
+overwritten the real report with a comparability run's output.
+Two layers enforce the pairing:
+
+- `finalize.mjs` refuses an `--isolated` context without `--dry-run`, before
+  writing anything to its out-dir.
+- The write-plan carries `isolated: true`, and `execute-write-plan.mjs`
+  refuses any plan with that marker, whatever flags its caller passes.
+
+The A/B harness and the shadow run already pass both flags together.
 
 **What `--isolated` does NOT skip:** Steps 1.0 / 1.2a / 1.2c / 1.2d — the
 `codebase-knowledge` and `reviewer-lessons` LoreKit reads — are project

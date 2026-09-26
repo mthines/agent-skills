@@ -166,6 +166,10 @@ export function refusalReason(writePlan) {
   if (writePlan?.dry_run) {
     return "plan is marked dry_run — refusing to execute a plan that identifies itself as a rehearsal";
   }
+  if (writePlan?.isolated) {
+    return "plan is from an --isolated comparability run — its sticky target is the PR's live report,"
+      + " so it must never reach a GitHub write";
+  }
   return null;
 }
 
@@ -422,6 +426,35 @@ async function selfTest() {
       && (refusalReason({ historical: { review_sha: "abc1234" } }) || "").includes("abc1234"));
     check("refusalReason: a dry_run plan is refused even with no historical block",
       /dry_run/i.test(refusalReason({ dry_run: true }) || ""));
+    check("refusalReason: an --isolated plan is refused even with dry_run stripped (A/B round 3)",
+      /--isolated/.test(refusalReason({ isolated: true }) || ""));
+  }
+  {
+    const spy = { calls: 0 };
+    const result = await executeWritePlan({ repo: "o/r", pr_number: 1, isolated: true },
+      { runner: async () => { spy.calls++; return { ok: true, stdout: "", stderr: "" }; }, repo: "o/r" });
+    check("an --isolated plan is refused with code 5 and zero runner calls",
+      result.code === 5 && spy.calls === 0, JSON.stringify({ code: result.code, calls: spy.calls }));
+  }
+  {
+    // CLI: --repo defaults to the plan's own repo field (A/B round 3: two arms hit a usage exit).
+    const { spawnSync } = await import("node:child_process");
+    const { fileURLToPath } = await import("node:url");
+    const planPath = join(scratchRoot(), `ewp-repo-default-${process.pid}.json`);
+    writeFileSync(planPath, JSON.stringify({ repo: "owner/repo", pr_number: 1, dry_run: true,
+      thread_reply: [], thread_resolve: [], sticky_upsert: { comment_id: null, body_path: "x", pointer_body_path: "y" },
+      review_create: { commit_id: "abc1234", comments: [] }, lorekit_write: [] }));
+    const self = fileURLToPath(import.meta.url);
+    const r = spawnSync(process.execPath, [self, "--plan", planPath, "--dry-run"], { encoding: "utf8" });
+    check("CLI: --dry-run without --repo uses the plan's repo and exits 0", r.status === 0,
+      `status=${r.status} stderr=${(r.stderr || "").trim().slice(0, 200)}`);
+    const noRepoPath = planPath.replace(".json", "-norepo.json");
+    writeFileSync(noRepoPath, JSON.stringify({ pr_number: 1, dry_run: true }));
+    const r2 = spawnSync(process.execPath, [self, "--plan", noRepoPath, "--dry-run"], { encoding: "utf8" });
+    check("CLI: a plan with no repo field and no --repo is a usage error (exit 2)", r2.status === 2);
+    const { rmSync } = await import("node:fs");
+    rmSync(planPath, { force: true });
+    rmSync(noRepoPath, { force: true });
   }
 
   // AC-18 case: a HISTORICAL or dry_run write-plan is refused BEFORE any runner call — proven
@@ -598,12 +631,21 @@ async function main() {
   const opts = parseArgs(argv);
   if (opts["self-test"]) { await selfTest(); return; }
 
-  if (!opts.plan || !opts.repo) {
-    console.error("usage: execute-write-plan.mjs --plan <write-plan.json> --repo <owner/name> [--dry-run] [--self-test]");
+  const USAGE = "usage: execute-write-plan.mjs --plan <write-plan.json> [--repo <owner/name>] [--dry-run] [--self-test]"
+    + "\n  --repo defaults to the plan's own `repo` field.";
+  if (!opts.plan) {
+    console.error(USAGE);
     process.exit(2);
   }
   const writePlan = JSON.parse(readFileSync(/** @type {string} */(opts.plan), "utf8"));
-  const result = await executeWritePlan(writePlan, { repo: /** @type {string} */(opts.repo), dryRun: Boolean(opts["dry-run"]) });
+  // A/B round 3: two arms tripped on a required --repo while the plan already names its repo.
+  // finalize.mjs always writes `repo` into the plan, so it is the default; --repo still overrides.
+  const repo = /** @type {string|undefined} */ (opts.repo) || writePlan?.repo;
+  if (!repo) {
+    console.error(`${USAGE}\n  (the plan carries no repo field, so --repo is required)`);
+    process.exit(2);
+  }
+  const result = await executeWritePlan(writePlan, { repo, dryRun: Boolean(opts["dry-run"]) });
   if (result.code === 5) {
     console.error(`execute-write-plan: refused — ${result.reason}`);
     process.exit(5);

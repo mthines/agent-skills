@@ -1468,9 +1468,11 @@ async function prepare(opts) {
       // Under `--isolated`, `source` reports "none" even when a sticky physically exists on
       // the PR (from an earlier, non-comparability review) — `priorSha`/`zeroDelta` above are
       // already nulled/false for the same reason. `stickyCommentId`/`stickyUrl`/`stickyKind`
-      // stay populated regardless: they identify WHERE a (dry-run-only, per pipeline.md pairing)
-      // write would target, which is a different concern from "is this a prior run to diff
-      // against" and carries no judgment-affecting state.
+      // stay populated regardless: they identify WHERE a dry-run's rehearsed write would target,
+      // which is a different concern from "is this a prior run to diff against" and carries no
+      // judgment-affecting state. Because that target is the LIVE report, finalize.mjs refuses an
+      // --isolated context without --dry-run and marks the plan `isolated`, which
+      // execute-write-plan.mjs refuses on its own (A/B round 3; rules/pipeline.md § --isolated).
       source: runMode.isolated ? "none" : (sticky ? "github-fallback-rung" : "none"),
       stickyCommentId: sticky ? sticky.id : null,
       stickyUrl: sticky ? sticky.html_url : null,
