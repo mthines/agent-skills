@@ -30,11 +30,14 @@ import { dirname, join } from "node:path";
 import {
   TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX, TITLE_MAX,
   worstTier, tierTally, footerLine, fixButton, anchor, assertPostable,
-  assertNoStructure, sentenceCount, assertPlain as spineAssertPlain,
+  assertNoStructure, sentenceCount, assertPlain as spineAssertPlain, CONV_PREFIXES, CLAIM_PREFIXES,
 } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = join(HERE, "..", "templates", "report-body.md");
+
+/** One-liner prefixes. A posted one of these counts as a NOTE in the headline, never a finding. */
+const NOTE_PREFIXES = CONV_PREFIXES.filter((p) => !CLAIM_PREFIXES.includes(p));
 
 const VALID_STATUS = new Set(["✅", "⚠️", "❌", "⏭️"]);
 const VALID_MODES = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
@@ -77,7 +80,7 @@ const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NO
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
   "FINDINGS", "FAIL_REASONS", "WARN_REASONS",
-  "OPEN_THREADS", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
+  "OPEN_THREADS", "NOTES", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
   "IMPACT", "WITHHELD"];
 
 function fail(msg) {
@@ -91,11 +94,12 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 // an item is silent: it changes nothing and reports nothing, so a misremembered field name reads
 // as accepted. Caught exactly that with a `delta_note` typo inside RUN.
 const SHAPES = {
-  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth"],
+  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth", "thoroughness"],
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note", "kind", "evidence"],
   "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
+  "NOTES[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   // The findings this run posted inline — the worklist the report never had. `title` is the same
@@ -239,7 +243,7 @@ function main() {
   const unknown = Object.keys(data).filter((k) => !known.has(k));
   if (unknown.length) {
     const V1 = ["MEMORIES", "FOOTER_LINE", "RUN_MODE", "OPEN_THREADS_COUNT",
-      "OPEN_THREADS_SUFFIX", "ADDITIONAL_COUNT", "LOW_CONFIDENCE_COUNT", "OPTIMALITY_COUNT",
+      "OPEN_THREADS_SUFFIX", "NOTES_COUNT", "ADDITIONAL_COUNT", "LOW_CONFIDENCE_COUNT", "OPTIMALITY_COUNT",
       "BUDGET_CALLS", "BUDGET_SCANNED", "BUDGET_TOTAL", "PARTIAL_BANNER"];
     const V2 = ["HEADLINE", "TIER_TALLY"];
     const hint = unknown.some((k) => V2.includes(k))
@@ -434,6 +438,18 @@ function main() {
         + " standard when there is no workspace");
     }
     runLine += ` · depth ${DEPTH_LABEL[String(run.depth)]}`;
+  }
+
+  // A/B round 1 delta: the thoroughness budget (depth-routing.md § Thoroughness budget) is
+  // OPTIONAL to this renderer — an older caller that never resolved a budget still renders — but
+  // when present it must be the real 0..1 value, never a placeholder, so a reader can see the risk
+  // floor firing directly on the line that already shows tier/depth.
+  if (run.thoroughness !== undefined && run.thoroughness !== null) {
+    const t = Number(run.thoroughness);
+    if (!Number.isFinite(t) || t < 0 || t > 1) {
+      fail(`RUN.thoroughness must be a finite number in [0,1] — got ${JSON.stringify(run.thoroughness)}`);
+    }
+    runLine += ` · thoroughness ${t}`;
   }
 
   if (data.RUN_NOTE) {
@@ -967,7 +983,11 @@ function main() {
     });
     // Two phrases plus a count, never a paragraph. The cap is the same one the prose spec set at
     // ~140 chars, expressed as a list bound so it cannot be exceeded by wording.
-    return v.length <= 2 ? v.join("; ") : `${v.slice(0, 2).join("; ")}; +${v.length - 2} more`;
+    // Each entry is a noun phrase, so trailing sentence punctuation is dropped before joining —
+    // A/B iteration 2: a reason copied from a gate's Details sentence rendered "…minutes.; …".
+    const phrases = v.map((r) => String(r).trim().replace(/[.;:,]+$/u, ""));
+    return phrases.length <= 2 ? phrases.join("; ")
+      : `${phrases.slice(0, 2).join("; ")}; +${phrases.length - 2} more`;
   };
   if (verdict === "FAIL" && arr("FAIL_REASONS").length === 0) {
     fail("VERDICT FAIL with no FAIL_REASONS — a failing gate names why in one noun phrase"
@@ -996,32 +1016,38 @@ function main() {
   // The count-forward headline. `<N> findings` is the number the author acts on, so it leads; the
   // gate state follows in the reasons line. A run with no findings still has a state to report,
   // which is what the two zero-finding forms are for.
+  //
+  // Notes (A/B round 2 item 7). A cleared `nitpick:`/`question:` one-liner posts inline but earns
+  // no FINDINGS row — a title is forbidden on a one-liner and required on a row — so it lands in
+  // its own NOTES slot (A/B iteration 4 — it used to share ADDITIONAL_FINDINGS, the list headed
+  // "too minor to comment on", which was false for a comment that posted). A reader who counted six
+  // comments at the code under a heading saying `5 findings` had no way to reconcile the two;
+  // ab/B/20230/2 was the zero-finding case of the same gap. Every heading form now appends
+  // ` · <M> note(s)`, where <M> is NOTES.length — derived from the array it describes. APPENDED,
+  // never inserted: `### <glyph> <N> findings — <K> blocking` stays a prefix of the heading, the
+  // same append-after-the-parseable-part rule the Run line follows, so a consumer matching the
+  // documented forms by prefix keeps working (reviewer-report-ingest.md § Headline).
   const n = findings.length;
+  arr("NOTES").forEach((a, i) => {
+    if (isPlainObject(a) && !NOTE_PREFIXES.includes(String(a.prefix))) {
+      fail(`NOTES[${i}].prefix must be a one-liner prefix (${NOTE_PREFIXES.join(" | ")}) — a claim`
+        + ` that posted inline is a FINDINGS row, got ${JSON.stringify(a.prefix)}`);
+    }
+  });
+  const notes = arr("NOTES").length;
+  const notesSuffix = notes > 0 ? ` · ${notes} note${notes === 1 ? "" : "s"}` : "";
   let headline;
   if (n > 0) {
     const glyph = TIER_GLYPH[worstTier(findings)];
     headline = `### ${glyph} ${n} finding${n === 1 ? "" : "s"}`
-      + (blockingFindings > 0 ? ` — ${blockingFindings} blocking` : "");
+      + (blockingFindings > 0 ? ` — ${blockingFindings} blocking` : "")
+      + notesSuffix;
   } else if (verdict === "PASS") {
-    headline = "### ✅ No issues found";
+    headline = `### ✅ No issues found${notesSuffix}`;
   } else {
     const gates = failing + warning;
-    // ab/B/20230/2: "No findings" is correct on its own terms (FINDINGS is the claim-severity
-    // table, and zero `issue:`/`suggestion:` findings cleared) — but rendered alone, next to a
-    // real write-plan comment for a cleared `nitpick:`/`question:` one-liner that earns no table
-    // row, it reads as "nothing happened" when something did. `ADDITIONAL_FINDINGS_SECTION`
-    // already renders right below this headline whenever that array is non-empty (report-
-    // rendering.md's own placeholder-omission rule) — this only makes the headline itself point at
-    // it, rather than leaving a reader to notice the accordion on their own. No fixture exercises
-    // this exact combination (verdict FAIL/WARN, zero FINDINGS, non-empty ADDITIONAL_FINDINGS) —
-    // every existing FAIL/WARN report-body fixture has FINDINGS.length > 0 — so this is additive,
-    // never a change to a pinned byte.
-    const additionalCount = arr("ADDITIONAL_FINDINGS").length;
-    const additionalNote = additionalCount > 0
-      ? ` (${additionalCount} more note${additionalCount === 1 ? "" : "s"} below)`
-      : "";
-    headline = `### ${VERDICT_GLYPH[verdict]} No findings — ${gates} gate${gates === 1 ? "" : "s"}`
-      + ` need attention${additionalNote}`;
+    headline = `### ${VERDICT_GLYPH[verdict]} No findings — ${gates} gate${gates === 1 ? " needs" : "s need"}`
+      + ` attention${notesSuffix}`;
   }
 
   const summary = String(data.SUMMARY).trim();
@@ -1090,6 +1116,8 @@ function main() {
     OPEN_THREADS_COUNT: openThreads.length || "",
     OPEN_THREADS_SUFFIX: openSuffix,
     RESOLVED_SINCE: resolvedSince,
+    NOTES: findingBullets("NOTES", arr("NOTES")),
+    NOTES_COUNT: arr("NOTES").length || "",
     ADDITIONAL_FINDINGS: findingBullets("ADDITIONAL_FINDINGS", arr("ADDITIONAL_FINDINGS")),
     ADDITIONAL_COUNT: arr("ADDITIONAL_FINDINGS").length || "",
     LOW_CONFIDENCE_FINDINGS: findingBullets("LOW_CONFIDENCE_FINDINGS", arr("LOW_CONFIDENCE_FINDINGS")),

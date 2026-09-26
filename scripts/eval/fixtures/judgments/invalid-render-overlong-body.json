@@ -52,7 +52,7 @@
       "severity": "low",
       "prefix": "nitpick",
       "blocking": false,
-      "body": "`x` at line 12 shadows the `x` imported at line 3 \u2014 consider a more specific name.",
+      "body": "x at line 12 shadows the x imported at line 3, and this sentence exists purely to push the body past the two hundred character render cap so the fixture proves the gap validate-judgments.mjs used to leave open before finalize saw it.",
       "materiality": true,
       "category": "naming-nits"
     },

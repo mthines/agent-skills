@@ -15,6 +15,9 @@
     "otlp.mjs",
     "review-telemetry.mjs",
     "route-depth.mjs",
+    "review-packet.mjs",
+    "discover-standards.mjs",
+    "plan-dispatch.mjs",
     "delta-triage.mjs",
     "gate4-scan.mjs",
     "validate-judgments.mjs",
@@ -32,6 +35,7 @@
     "../../../scripts/eval/thread-outcomes.mjs",
     "../../../scripts/eval/ab-review.mjs",
     "../../../scripts/eval/fanout-glue.mjs",
+    "../../../scripts/eval/prompt-size.mjs",
     "../../../scripts/record-comment-relevance.mjs"
   ]
 }

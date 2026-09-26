@@ -18,6 +18,7 @@
 
 import { buildFingerprint } from "../fingerprint.mjs";
 import { CLAIM_PREFIXES } from "./thresholds.mjs";
+import { TERMINAL_PUNCT_RE } from "../comment-spine.mjs";
 
 const GATE_FIELD = { g1: "GATE_DESCRIPTION", g3: "GATE_PRIOR", g4: "GATE_SELFREVIEW", g5: "GATE_DOCS", g6: "GATE_CODEREVIEW" };
 const BLOCKING_DECORATION_RE = /\(blocking\)|(?:^|\n)\s*issue:|severity:\s*(?:critical|high)/i;
@@ -39,13 +40,16 @@ const RUN_FIELDS = ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "de
  * `carried forward` tracks findings still open from a PRIOR iteration of the
  * same PR (multi-run continuity) — genuinely out of a single `finalizeReview()`
  * pass's scope, so it defaults to 0 unless the caller supplies one (D5).
- * @param {{ produced: number, cleared: number, deferredOverCap: number, confidenceDeferred: number, posted: number, suppressed: number, carriedForward?: number }} counters
+ * `notes` (A/B iteration 2) counts the cleared one-liners that posted inline as notes. It renders
+ * right after `posted inline <N>` only when non-zero, so `posted inline (\d+)` still reads the
+ * claim count and every existing zero-note line keeps its exact bytes.
+ * @param {{ produced: number, cleared: number, deferredOverCap: number, confidenceDeferred: number, posted: number, suppressed: number, carriedForward?: number, notes?: number }} counters
  */
 export function buildQualitySummary(counters) {
   const {
-    produced, cleared, deferredOverCap, confidenceDeferred, posted, suppressed, carriedForward = 0,
+    produced, cleared, deferredOverCap, confidenceDeferred, posted, suppressed, carriedForward = 0, notes = 0,
   } = counters;
-  const line = `produced ${produced} → posted inline ${posted} · cleared ${cleared}`
+  const line = `produced ${produced} → posted inline ${posted}${notes > 0 ? ` · notes ${notes}` : ""} · cleared ${cleared}`
     + ` · carried forward ${carriedForward} · deferred ${deferredOverCap} · below-bar ${confidenceDeferred}`;
   return suppressed > 0 ? `${line} · memory suppressions ${suppressed}` : line;
 }
@@ -84,15 +88,22 @@ function unwrapMarkdownLinks(s) {
 }
 
 /**
- * The first non-empty line, then its first sentence (`.`/`!`/`?`) if one is found before the
- * line ends — matching pr-reviewer.md's own "take its first sentence (or its suggestion:/issue:
- * line)" prose. Falls back to the whole first line when no sentence-ending punctuation appears.
+ * The first non-empty line, then its first sentence if one is found before the line ends —
+ * matching pr-reviewer.md's own "take its first sentence (or its suggestion:/issue: line)" prose.
+ * Falls back to the whole first line when no sentence-ending punctuation appears.
+ *
+ * Uses `comment-spine.mjs`'s `TERMINAL_PUNCT_RE` (D7) rather than a hand-rolled `.`/`!`/`?` scan —
+ * the old `/^[^.!?]*[.!?]/` cut at the FIRST dot character, which sliced a thread root like
+ * "See `foo.md` for context, it changed." at "See `foo.md" and dropped everything after it. A run
+ * of terminal punctuation only counts as a sentence end when it is followed by whitespace or the
+ * end of the string, matching `sentenceCount`'s own rule.
  * @param {string} s
  */
 function firstSentenceOrLine(s) {
   const firstLine = String(s).split(/\r?\n/).find((l) => l.trim() !== "") || "";
-  const m = firstLine.match(/^[^.!?]*[.!?]/);
-  return (m ? m[0] : firstLine).trim();
+  TERMINAL_PUNCT_RE.lastIndex = 0;
+  const m = TERMINAL_PUNCT_RE.exec(firstLine);
+  return (m ? firstLine.slice(0, m.index + m[0].length) : firstLine).trim();
 }
 
 /**
@@ -215,20 +226,28 @@ const RENDER_EXTRAS = [
  * finalize-invented "Verdict: …" line the model never wrote; `verdict`/`analysis_confidence`
  * stay real schema fields used elsewhere (e.g. the inline-pointer gate,
  * `optimality-review.md § Inline pointer`), not rendering inputs.
+ * `optimize-approach/templates/proposal.template.md`'s first line IS this exact heading (D6) —
+ * the lens's own template opens with it, so a model that echoes the template rather than starting
+ * its content after it hands `card_body` back already carrying a first copy. Strip a LEADING
+ * occurrence of the heading pattern (any `path:line`, not only this card's own anchor — a model
+ * can echo a stale one from a prior draft) before prepending the real, finalize-computed heading,
+ * so the render never doubles it. `report-rendering.md` documents that `card_body` is expected to
+ * exclude the heading; this is the enforcement, not merely the convention.
  * @param {{path:string, line?:number, verdict:string, analysis_confidence:number, card_body:string}} card
  * @returns {string}
  */
 export function buildOptimalityCard(card) {
   const anchor = `${card.path}:${Number.isInteger(card.line) ? card.line : 1}`;
   const heading = `### Optimality proposal — ${anchor}`;
-  return `${heading}\n\n${card.card_body}`;
+  const body = String(card.card_body).replace(/^###\s+Optimality proposal\s+—\s+[^\n]*\n+/, "");
+  return `${heading}\n\n${body}`;
 }
 
 /**
- * @param {{ gates: any, run: any, findings: any[], deferred: any[], lowConfidence: any[], quality: string, extras?: Record<string, any> }} args
+ * @param {{ gates: any, run: any, findings: any[], notes?: any[], deferred: any[], lowConfidence: any[], quality: string, extras?: Record<string, any> }} args
  * @returns {any} a render-report.mjs-shaped payload
  */
-export function buildReportPayload({ gates, run, findings, deferred, lowConfidence, quality, extras }) {
+export function buildReportPayload({ gates, run, findings, notes = [], deferred, lowConfidence, quality, extras }) {
   // AC-11: each phrase is the gate's own short `reason` (the "Warnings:"/"FAIL:" summary line),
   // never the longer `details` sentence the gate TABLE cell renders — gates.mjs computes both.
   const failReasons = [];
@@ -266,6 +285,9 @@ export function buildReportPayload({ gates, run, findings, deferred, lowConfiden
     ADDITIONAL_FINDINGS: deferred,
     LOW_CONFIDENCE_FINDINGS: lowConfidence,
   };
+  // A/B iteration 4: posted one-liners have their own slot. ADDITIONAL_FINDINGS is the list the
+  // report calls "too minor to comment on", so it holds only findings that did NOT post.
+  if (notes.length) payload.NOTES = notes;
   for (const [key, field] of Object.entries(GATE_FIELD)) {
     const g = gates[key];
     payload[`${field}_STATUS`] = STATUS_GLYPH[g?.status] ?? "⏭️";
@@ -404,6 +426,28 @@ async function selfTest() {
     const noLine = buildOptimalityCard({ path: "src/b.ts", verdict: "optimal", analysis_confidence: 96, card_body: "Already the simplest approach." });
     check("buildOptimalityCard anchors to line 1 when the schema's optional `line` is absent, rather than failing the heading regex",
       /^### Optimality proposal — src\/b\.ts:1/m.test(noLine));
+    // D6 / AC-13: the lens's own proposal.template.md opens with this exact heading, and a model
+    // that echoes the template rather than starting after it hands card_body back carrying a first
+    // copy — buildOptimalityCard must strip that leading copy so the render never doubles it.
+    const echoed = buildOptimalityCard({
+      path: "src/a.ts", line: 42, verdict: "suboptimal", analysis_confidence: 91,
+      card_body: "### Optimality proposal — src/a.ts:42\n\nUse a Map.",
+    });
+    const headingCount = (echoed.match(/^### Optimality proposal — /gm) || []).length;
+    check("buildOptimalityCard strips a model-echoed leading heading — exactly one heading survives",
+      headingCount === 1);
+    check("buildOptimalityCard keeps the real card_body text after stripping the echoed heading",
+      echoed.includes("Use a Map.") && echoed === "### Optimality proposal — src/a.ts:42\n\nUse a Map.");
+    // A stale echoed heading (a different path:line than this card's own anchor — the model
+    // copying a prior draft) is stripped too: the anchor render-report.mjs indexes on is always
+    // the finalize-computed one, never whatever the model echoed.
+    const staleEcho = buildOptimalityCard({
+      path: "src/a.ts", line: 42, verdict: "suboptimal", analysis_confidence: 91,
+      card_body: "### Optimality proposal — src/OLD.ts:1\n\nUse a Map.",
+    });
+    check("buildOptimalityCard strips a STALE echoed heading (different path:line) too",
+      (staleEcho.match(/^### Optimality proposal — /gm) || []).length === 1
+        && staleEcho.startsWith("### Optimality proposal — src/a.ts:42"));
   }
   {
     const claim = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", blocking: true, finder: "correctness", defect_class: "logic", symbol: "foo", path: "a.ts" }, { sha: "abc1234" });

@@ -54,6 +54,10 @@ export const PROSE_MAX = 200;
 export const UNVERIFIED_MAX = 40;
 export const EVIDENCE_MAX = 180;
 export const EVIDENCE_REFS_MAX = 3;
+/** Words in one evidence reference's parenthetical note. A/B rounds 3 and 5: render-comment.mjs
+ *  enforced 5 as a literal that `--shape-caps` never printed, so verifiers that pasted the caps
+ *  still wrote 6–9-word notes and spent a self-check round on each (7 rejections in round 5). */
+export const EVIDENCE_NOTE_MAX_WORDS = 5;
 export const FENCE_MAX_LINES = 10;
 export const GATE_DETAILS_MAX = 120;
 
@@ -445,12 +449,36 @@ export function assertPlain(where, v, { allowCode = false } = {}) {
 }
 
 /**
- * Sentence count over prose, matching `comment-shape.md § Mechanical pre-emit check`: `.`, `!`, `?`
- * count, and punctuation inside backticks or a fenced block does not.
+ * A run of `.`/`!`/`?` that ends a sentence: one or more terminal-punctuation characters
+ * immediately followed by whitespace or the end of the string. `comment-shape.md § Mechanical
+ * pre-emit check` carries the same rule in its Python reference; `payload.mjs`'s
+ * `firstSentenceOrLine` reuses this regex directly rather than re-deriving it.
+ *
+ * Exported (not inlined into `sentenceCount`) because it is the one home for the rule — a second
+ * hand-copied regex is exactly how the report and the inline surface drifted apart before
+ * `comment-spine.mjs` existed.
+ */
+export const TERMINAL_PUNCT_RE = /[.!?]+(?=\s|$)/g;
+
+/**
+ * Sentence count over prose, matching `comment-shape.md § Mechanical pre-emit check`.
+ *
+ * Counts RUNS of terminal punctuation immediately followed by whitespace or end-of-string, not
+ * every `.`/`!`/`?` character — a per-character count scored a version number or a filename as a
+ * sentence (`3.2.6` as 2, `foo.md` as 1), which fails a perfectly good noun-phrase title closed:
+ * `render-comment.mjs` had no legal form for a title naming a dotted symbol, because the backticked
+ * spelling was rejected as markup and the bare spelling tripped this count on the dot. Punctuation
+ * inside backticks or a fenced block is stripped first and never counted either way.
+ *
+ * Known strict-side residue, left in place deliberately (documented in `comment-shape.md`): an
+ * abbreviation like `e.g. foo` still counts as one sentence, because its dot is followed by a
+ * space exactly like a real sentence boundary. Splitting that case needs a dictionary of
+ * abbreviations, which is the "NLP sentence splitting" alternative D7 rejects — one regex, one
+ * home, a residue that fails closed rather than open.
  */
 export function sentenceCount(prose) {
   const bare = String(prose).replace(/`[^`]*`/g, "");
-  return [...bare].filter((c) => ".!?".includes(c)).length;
+  return (bare.match(TERMINAL_PUNCT_RE) ?? []).length;
 }
 
 /** The structural shapes a body may never open with (`comment-shape.md § Hard caps`). */
@@ -471,14 +499,50 @@ export function assertAbsent(where, v, why) {
   }
 }
 
+/**
+ * The comment-shape caps, sourced LIVE from the constants above — never restated as bare numbers.
+ * (plan D4/AC-9): a `--fanout` run's verifier sub-agents get no chance to read this file's source
+ * (the worker preamble forbids it), so this is the one way they learn the real caps rather than a
+ * hand-typed `60-char` / `200-char` that drifts the moment `TITLE_MAX`/`PROSE_MAX` change. `--shape-
+ * caps` pastes this block VERBATIM into every verifier prompt (`skills/quality/pr-review/SKILL.md
+ * § --fanout`, Step e).
+ * @returns {string}
+ */
+export function shapeCapsBlock() {
+  return [
+    "## Comment shape caps (source of truth: comment-spine.mjs — do not restate these numbers)",
+    "",
+    `- TITLE: required on \`issue:\`/\`suggestion:\`, forbidden on a one-liner. <= ${TITLE_MAX} chars,`
+      + " a noun phrase (no sentence punctuation outside backticks), no pipe `|`.",
+    `- BODY: <= ${PROSE_MAX} chars, <= 2 sentences. A sentence is a run of \`.\`/\`!\`/\`?\` immediately`
+      + " followed by whitespace or end-of-string — a dotted filename or version number"
+      + " (`foo.md`, `3.2.6`) does not count, in backticks or bare; this is a reader-facing style"
+      + " rule now (backtick code symbols for readability), not a counting workaround.",
+    `- EVIDENCE line: <= ${EVIDENCE_MAX} chars, <= ${EVIDENCE_REFS_MAX} references; each reference's`
+      + ` note is a parenthetical of <= ${EVIDENCE_NOTE_MAX_WORDS} words.`,
+    `- Fix fence: <= ${FENCE_MAX_LINES} lines, one per comment, must declare a language.`,
+    `- UNVERIFIED reason: <= ${UNVERIFIED_MAX} chars.`,
+    "- No markdown heading or list marker opening the body. No markdown link inside TITLE/BODY —",
+    "  supply a bare url in its own field.",
+    "- Backtick every code symbol mentioned in prose (filenames, identifiers, version numbers).",
+  ].join("\n");
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
 //
 // `node comment-spine.mjs --check <file>` runs `assertPostable` over a final body and exits
 // non-zero with the reason on stderr. This is the only executable form of the "post the renderer's
 // bytes verbatim" rule, and it exists so the pre-write assertion blocks in `pr-reviewer.md` can
 // call the same code the renderers do instead of re-deriving the signatures as greps that drift.
+//
+// `--shape-caps` prints `shapeCapsBlock()` and exits 0 — no file argument, since it reads nothing
+// but this module's own constants.
 if (import.meta.url === `file://${process.argv[1]}`) {
   const argv = process.argv.slice(2);
+  if (argv.includes("--shape-caps")) {
+    process.stdout.write(`${shapeCapsBlock()}\n`);
+    process.exit(0);
+  }
   const flags = { check: null, relayCheck: null, assetsCheck: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -488,7 +552,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     else {
       process.stderr.write(`unknown argument: ${a}\n`
         + "usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>"
-        + " | --assets-check <body-file>\n");
+        + " | --assets-check <body-file> | --shape-caps\n");
       process.exit(2);
     }
   }
@@ -567,7 +631,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   if (!flags.check) {
     process.stderr.write("usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>"
-      + " | --assets-check <body-file>\n");
+      + " | --assets-check <body-file> | --shape-caps\n");
     process.exit(2);
   }
   const { readFileSync } = await import("node:fs");

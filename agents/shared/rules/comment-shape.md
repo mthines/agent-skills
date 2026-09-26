@@ -368,6 +368,20 @@ import re
 FENCE_RE    = re.compile(r"```[a-zA-Z0-9_+-]*\n.*?\n```", re.DOTALL)
 EVIDENCE_RE = re.compile(r"^Evidence:.*$", re.MULTILINE)
 MARKER_RE   = re.compile(r"<!--\s*fp:v\d+:[^\s>]+?\s*-->")
+BACKTICK_RE = re.compile(r"`[^`]*`")
+# Matches comment-spine.mjs's own TERMINAL_PUNCT_RE (D7): a RUN of terminal punctuation
+# followed by whitespace or end-of-string counts as one sentence end, not one per
+# `.`/`!`/`?` character — a per-character count scored a version number as two sentences
+# (`3.2.6`) and a filename as one (`foo.md`), rejecting titles that named either.
+TERMINAL_PUNCT_RE = re.compile(r"[.!?]+(?=\s|$)")
+
+def sentence_count(prose: str) -> int:
+    """A dotted symbol in backticks is stripped first, same as the renderer — mid-identifier
+    punctuation is never followed by whitespace anyway, so stripping only matters for the
+    backtick-quoted case. Known strict-side residue, kept deliberately: `e.g. foo` still
+    counts as one sentence, because its dot IS followed by a space."""
+    bare = BACKTICK_RE.sub("", prose)
+    return len(TERMINAL_PUNCT_RE.findall(bare))
 
 def strip_fences(body: str) -> tuple[str, list[str], str]:
     """Split the body into prose, fences, and the one evidence line.
@@ -401,7 +415,7 @@ def passes_shape(body: str) -> tuple[bool, str]:
 
     if len(prose) > 200:
         return (False, "length")
-    if sum(prose.count(c) for c in ".!?") > 2:
+    if sentence_count(prose) > 2:
         return (False, "sentences")
     if any(prose.lstrip().startswith(p) for p in ("#", "## ", "### ", "- ", "* ", "1. ")):
         return (False, "structure")

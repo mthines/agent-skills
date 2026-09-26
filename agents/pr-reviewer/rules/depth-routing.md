@@ -23,6 +23,7 @@ This phase routes on **what the change reaches**, not how much of it there is.
 - [Announce the decision with its inputs](#announce-the-decision-with-its-inputs)
 - [The deep-lens refresh](#the-deep-lens-refresh)
 - [`--effort`](#--effort)
+- [Thoroughness budget](#thoroughness-budget)
 - [Superseded head](#superseded-head)
 - [Zero-delta](#zero-delta)
 - [Capability cap](#capability-cap)
@@ -193,10 +194,144 @@ Without this, a PR that grows by ninety lines a day never gets another holistic 
 /pr-review <PR> --effort high     # or `effort: high` in .github/review.yaml
 ```
 
-`--effort high` forces `deep`, enables Tier-2 and Tier-3 receipts where the toolchain allows, and raises the diversify-then-vote finder count from 3 to 5 where `Task` is available.
-`--full` remains an alias for forcing `deep` only.
+`--effort high` forces `deep` **and** is an alias for `--thoroughness 1` — the ceiling on every
+lever the section below describes, not only the two named here.
+`--full` remains an alias for forcing `deep` only (`routedTier`, not thoroughness).
 
 This is the explicit-cost lever: more findings per run at the same precision, paid for on purpose rather than triggered by a size heuristic.
+
+## Thoroughness budget
+
+`routeDepth()` above still decides `DEPTH_TIER` — nothing on this page changes that. What used to be
+hard-coded *per tier* (which finders run as sub-agents, how many `correctness` votes, how deep the
+verifier's evidence ladder goes, whether the optimality/measurability lenses fire) is now a single
+continuous value, **thoroughness**, `t ∈ [0, 1]`, resolved by
+[`route-depth.mjs`](../scripts/route-depth.mjs)'s `resolveBudget({ thoroughness, routedTier, shape,
+dispatchAvailable })` — a second pure function, the same routing-vs-execution split as `routeDepth`
+itself. The reason: an A/B dry run of two review arms on the same PR at the same commit found the
+arm that ran `intent`/`standards`/`quality` in-context (a topology choice nothing prescribed) missed
+the best-corroborated bug in the diff, while the arm that ran them as sub-agents caught it.
+Hard-coding "always sub-agent" would have cost every quick/standard review the same fixed price;
+making the price a knob, defaulted from the tier and overridable, is what lets the cost track risk
+continuously instead of jumping at two tier boundaries.
+
+**Input**, first match wins:
+
+1. `--effort high` / `effort: high` → `t = 1`.
+2. `--thoroughness <n>` / `thoroughness: <n>` (CLI wins over config) → `t = clamp(n, 0, 1)`. A
+   non-finite or garbage value **fails closed to `t = 1`** — the safe direction for a broken override
+   is maximum scrutiny, never a silent under-review.
+3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.2, standard → 0.5, deep → 0.8.**
+
+**Risk floor.** A diff carrying a high-stakes shape (`auth`, `payments`, `schema-migration`,
+`secrets`, `infra`) **or** `impact.json`'s `blast_radius.band == "high"` floors the *effective*
+thoroughness at **0.5**, whatever `t` resolved to above — this guards only the override path:
+D7/D9 already route these shapes/bands to `deep` (default `t = 0.8`) through `routeDepth()`, so the
+floor matters exactly when a low `--thoroughness` override or a repo-wide config default would
+otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.3` on a band-high PR
+(61 exports), `consumer-impact` never activated (its own breakpoint is 0.5) and the run found nothing
+— the floor now catches this exactly as it already caught a high-stakes shape.
+
+**Breakpoints.** Chosen so the three tier defaults (0.2 / 0.5 / 0.8) reproduce today's per-tier
+behaviour, on every lever but two (noted below):
+
+| Lever | `t < 0.4` | `0.4 ≤ t < 0.5` | `0.5 ≤ t < 0.7` | `0.7 ≤ t < 0.8` | `0.8 ≤ t < 0.95` | `t ≥ 0.95` |
+| --- | --- | --- | --- | --- | --- | --- |
+| Active finders | correctness, intent, quality | *(same)* | + consumer-impact (delta), dependency, standards (delta) | *(same)* | consumer-impact/standards widen to **all** files | *(same)* |
+| Topology | in-context | **parallel**, one sub-agent per finder | *(same)* | *(same)* | *(same)* | *(same)* |
+| `correctness` votes | 1 | *(same)* | *(same)* | *(same)* | **3** | **5** |
+| Max verifier evidence tier | 1 | *(same)* | **2** | *(same)* | *(same)* | **3** |
+| Optimality lens | off | *(same)* | *(same)* | **on** | *(same)* | *(same)* |
+| Measurability lens | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
+| Holistic broad pass (Step 2.4) | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
+| Holistic escalation cap | `round(10t)` | *(same formula, every column)* | | | | |
+| Tool-call budget multiplier | ×1 | *(same)* | *(same)* | *(same)* | **×1.5** | **×2** |
+
+`round(10t)` is the one lever that does **not** land on the old flat "cap 10" at deep's 0.8 default —
+it gives 8. That is a deliberate, reported deviation: proportional scaling is what "escalation SCALES
+with thoroughness" means, and `--effort high` (`t = 1`) restores the old flat 10 exactly.
+
+**Tool-call budget (A/B iterations 1–3).** `pr-reviewer.md § Stop conditions` sizes the run's
+tool-call budget by changed-file count — 30 for ≤ 10 files, 60 for 11–30, 100 for > 30 — and
+`resolveBudget({ …, changedFiles })` multiplies that band by `budget.toolCallMultiplier` and returns
+the result as `budget.toolCalls`, which `prepare-review.mjs` writes into `context.json`.
+Before this lever, every thoroughness paid for its extra finders, votes, and lenses out of the same
+calls.
+On sync-tray#72 (22 files), arms at `t = 0.8` skipped whole files to stay inside 60: one declared a
+partial review after reading 13 of 22 files, and the file it only grepped held the
+highest-severity corroborated defect, which the `t = 0.8` arm missed in all three rounds.
+This is the third deliberate, reported deviation from the pre-delta defaults: `deep`'s default
+(`t = 0.8`) now allows 90 calls on an 11–30-file diff instead of 60.
+The budget is a ceiling, never a target, so a run that finishes early spends nothing extra.
+
+**Holistic broad pass (item 3).** Step 2.4 used to run unconditionally — gated only by
+[`holistic-review.md`](../../shared/rules/holistic-review.md)'s five `TRIVIAL_SKIP` conditions, never
+by thoroughness — so whether a given budget intended it to run was ambiguous. `budget.holisticBroadPass`
+is the explicit lever: `t ≥ 0.4` (reusing the topology breakpoint — below it there is no parallel
+dispatch to run the pass as a sub-agent), **or always `true` when `routedTier == "deep"`**, regardless
+of any thoroughness override, the same "always on" carve-out the risk floor uses. This is a second
+deliberate, reported deviation from the pre-delta behaviour: at the very bottom of the quick tier
+(`t = 0.2`) the pass is now off where it previously always ran.
+
+Every other row reproduces the pre-delta quick/standard/deep behaviour bit-for-bit at `t = 0.2/0.5/0.8`,
+which is what `route-depth.mjs --self-test` asserts directly (fixture-free — the assertions are inline,
+since the whole point is that they never drift from the table above without the guard noticing).
+
+**Budget vs. capability (item 3).** A `deep`-thoroughness budget whose materialized workspace cannot
+support a finder is not a smaller budget — it is the same budget with that finder turned off, and the
+reason recorded rather than left ambiguous. `resolveBudget({ …, depthCapability })` deactivates
+`consumer-impact` (and sets its scope to `"none"`) whenever `depthCapability == "diff-only"`, per
+[`finder-consumer-impact.md`](./finder-consumer-impact.md)'s own exclusion, and appends a human-readable
+line to `budget.capabilityNotes[]` naming what was turned off and why. `dependency` and `standards`
+carry no such exclusion in their own rule files today and are unaffected. A/B round 2 observed this
+gap directly: under diff-only the pipeline still activated `consumer-impact`, which the finder's own
+rule excludes, and produced a fully wasted dispatch.
+
+### Expected sub-agents per band
+
+A band's cost is mostly how many sub-agents it dispatches.
+Each one pays a base of roughly 110–160k tokens before it reads a line of the diff (A/B round 2), so
+the dispatch count is the number to watch, not the prompt size.
+[`plan-dispatch.mjs`](../scripts/plan-dispatch.mjs) turns a budget into that count, and
+`node agents/pr-reviewer/scripts/plan-dispatch.mjs --table` prints the table below.
+L1 `G84g` fails when the two differ, so regenerate the table rather than editing a cell.
+
+| Band | Finder dispatches | Lens dispatches | Verifier dispatches | Total at 10 candidates | Before packing |
+| --- | --- | --- | --- | --- | --- |
+| `t < 0.4` | 0 | 0 | 0 (in-context) | 0 | 0 |
+| `0.4 ≤ t < 0.5` | 3 | 1 (holistic + measurability) | ⌈V / 8⌉ | 6 | 15 |
+| `0.5 ≤ t < 0.7` | 6 | 2 (holistic + measurability; standards-conformance) | ⌈V / 8⌉ | 10 | 19 |
+| `0.7 ≤ t < 0.8` | 6 | 2 (holistic + optimality + measurability; standards-conformance) | ⌈V / 8⌉ | 10 | 20 |
+| `0.8 ≤ t < 0.95` | 8 | 2 (holistic + optimality + measurability; standards-conformance) | ⌈V / 8⌉ | 12 | 22 |
+| `t ≥ 0.95` | 10 | 2 (holistic + optimality + measurability; standards-conformance) | ⌈V / 8⌉ | 14 | 24 |
+
+How to read it:
+
+- `V` is the number of candidates that survive dedupe.
+  `⌈V / 8⌉` holds when every candidate sits on its own path.
+  When several share a path, the count is the larger of that and the biggest same-path group,
+  because two candidates on one path never share a verifier dispatch.
+- The two total columns assume 10 candidates on distinct paths.
+- *Before packing* is the same budget with one dispatch per lens and one per candidate — the shape
+  this pipeline dispatched before [`dispatch-topology.md § Packing`](./dispatch-topology.md#packing--how-units-become-dispatches).
+- The finder column never shrinks under packing: finders and `correctness` votes each keep their own
+  context.
+- A lens turned off by its own gate (`--no-holistic`, the incremental-mode 2.4 skip, `TRIVIAL_SKIP`)
+  leaves the bundle, and an empty bundle is not dispatched.
+- Holistic escalation (Step 2.4b) is not in the table: its traces are `Skill()` calls in the
+  orchestrator's own turn, not sub-agents.
+- Under `DEPTH_CAPABILITY = diff-only`, `consumer-impact` is not dispatched, so the finder column is
+  one lower from `t ≥ 0.5` up.
+
+**Topology and dispatch mechanics** — what "parallel, one sub-agent per finder" and "verification in
+`PR_REVIEW_MAX_PARALLEL`-capped batches" mean operationally, and the `RUN_ANOMALY` line for a run
+that requested parallel but held no `Task` — are
+[`dispatch-topology.md`](./dispatch-topology.md#reading-a-budget-into-dispatch)'s job, not this
+page's; this page owns the breakpoints, that one owns what a caller does with them.
+
+`finders.md` and `finding-verifier.md` stay byte-identical through all of this — the budget changes
+*how many dispatches* run and *how far* the verifier's evidence ladder goes, never the finder or
+verifier rubric itself.
 
 ## Superseded head
 

@@ -40,7 +40,7 @@
  */
 
 import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, rmSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import { join, dirname, resolve, relative, basename, extname, posix } from "node:path";
 import { tmpdir } from "node:os";
 import { pathToFileURL } from "node:url";
@@ -142,26 +142,47 @@ function walkFiles(root, { onlySource = true } = {}) {
  * "optimistic tool + untested fallback" is that the fallback is wrong the one time
  * it runs.
  */
+/**
+ * Positive `--glob *.ext` args for every extension `search()` treats as source, so rg
+ * prunes non-source files DURING its own tree walk instead of `search()` discarding
+ * them after the fact in JS. Cached once — `SOURCE_EXT` is a module-level constant.
+ * Purely a narrowing: every path this drops was already thrown away by `isSourcePath`
+ * a few lines below, so it changes nothing about which hits `search()` returns.
+ */
+const SOURCE_GLOB_ARGS = [...SOURCE_EXT].flatMap((ext) => ["--glob", `*${ext}`]);
+
+function rgArgs(pattern, onlySource) {
+  // `--sort path` trades rg's default (unordered, multi-threaded) file walk for a
+  // deterministic one. Without it, a symbol's `consumers` array (never itself sorted
+  // — only truncated to CONSUMER_LIST_CAP) could come back in a different relative
+  // order between two runs over the SAME tree, which is exactly what the batched vs.
+  // legacy equivalence self-test below needs to rule out to compare outputs by
+  // strict equality rather than by set membership.
+  const args = ["--no-heading", "--line-number", "--no-messages", "--sort", "path", "--regexp", pattern, "."];
+  for (const d of IGNORE_DIRS) args.push("--glob", `!${d}/**`);
+  if (onlySource) args.push("--glob", "!*.min.js", "--glob", "!*.map", ...SOURCE_GLOB_ARGS);
+  return args;
+}
+
+function parseRgStdout(stdout, onlySource, cap) {
+  const hits = [];
+  for (const line of (stdout || "").split("\n")) {
+    if (!line || hits.length >= cap) break;
+    const m = /^(.*?):(\d+):([\s\S]*)$/.exec(line);
+    if (!m) continue;
+    const path = toPosix(m[1].replace(/^\.\//, ""));
+    if (onlySource && !isSourcePath(path)) continue;
+    hits.push({ path, line: parseInt(m[2], 10), text: m[3] });
+  }
+  return hits;
+}
+
 function search(root, pattern, { useRg = true, cap = 5000, onlySource = true } = {}) {
   if (useRg && hasBinary("rg")) {
-    const args = ["--no-heading", "--line-number", "--no-messages", "--regexp", pattern, "."];
-    for (const d of IGNORE_DIRS) args.push("--glob", `!${d}/**`);
-    if (onlySource) args.push("--glob", `!*.min.js`, "--glob", "!*.map");
-    const r = spawnSync("rg", args, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    const r = spawnSync("rg", rgArgs(pattern, onlySource), { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
     // rg exits 1 for "no matches", 2 for a real error. Only 2 is a failure worth
     // falling back over; treating 1 as an error would rerun every empty search in JS.
-    if (r.status === 0 || r.status === 1) {
-      const hits = [];
-      for (const line of (r.stdout || "").split("\n")) {
-        if (!line || hits.length >= cap) break;
-        const m = /^(.*?):(\d+):([\s\S]*)$/.exec(line);
-        if (!m) continue;
-        const path = toPosix(m[1].replace(/^\.\//, ""));
-        if (onlySource && !isSourcePath(path)) continue;
-        hits.push({ path, line: parseInt(m[2], 10), text: m[3] });
-      }
-      return hits;
-    }
+    if (r.status === 0 || r.status === 1) return parseRgStdout(r.stdout, onlySource, cap);
   }
   const re = new RegExp(pattern);
   const hits = [];
@@ -180,6 +201,31 @@ function search(root, pattern, { useRg = true, cap = 5000, onlySource = true } =
   return hits;
 }
 
+/** Async twin of `search()`'s rg branch, so independent search KINDS can run
+ *  concurrently (`Promise.all`) instead of blocking one after another. Falls back to
+ *  the same synchronous JS walk `search()` uses (wrapped in a resolved promise) when
+ *  `useRg` is off or `rg` is unavailable — the fallback is CPU-bound, not I/O-bound,
+ *  so concurrency buys it nothing and reusing `search()` keeps the two code paths
+ *  from drifting.
+ */
+function searchAsync(root, pattern, { useRg = true, cap = Infinity, onlySource = true } = {}) {
+  if (useRg && hasBinary("rg")) {
+    return new Promise((resolveHits) => {
+      const child = spawn("rg", rgArgs(pattern, onlySource), { cwd: root });
+      let out = "";
+      let sawError = false;
+      child.stdout.on("data", (d) => { out += d; });
+      child.on("error", () => { sawError = true; resolveHits(search(root, pattern, { useRg: false, cap, onlySource })); });
+      child.on("close", (code) => {
+        if (sawError) return;
+        if (code === 0 || code === 1) resolveHits(parseRgStdout(out, onlySource, cap));
+        else resolveHits(search(root, pattern, { useRg: false, cap, onlySource }));
+      });
+    });
+  }
+  return Promise.resolve(search(root, pattern, { useRg: false, cap, onlySource }));
+}
+
 const binaryCache = new Map();
 function hasBinary(name) {
   if (!binaryCache.has(name)) {
@@ -187,6 +233,72 @@ function hasBinary(name) {
     binaryCache.set(name, r.status === 0 && !!(r.stdout || "").trim());
   }
   return binaryCache.get(name);
+}
+
+// ── Batched search ───────────────────────────────────────────────────────────────
+//
+// Each `search()` call site below scans the whole tree once PER ITEM — once per
+// symbol name, once per changed module, once per dependency, once per changed
+// config file. On a large checkout that dominates: measured on a 368 MB / 96-symbol
+// PR, `build-impact-graph.mjs` cost 64s real / 510s sys, one `rg` spawn per symbol
+// or module pattern (Evidence: A/B round 1, dash0hq/dash0#20230).
+//
+// `gatherCandidates`/`gatherCandidatesAsync` run ONE tree scan per SEARCH KIND
+// (consumers / importers / dependency usage sites / config consumers) instead of
+// one per item, by combining every item's own literal into a single alternation.
+// `buildPattern(altGroup)` must wrap the already-`|`-joined, already-escaped
+// `altGroup` in EXACTLY the surrounding pattern the per-item call used, so the
+// combined scan's hit set is provably a SUPERSET of every per-item call's own hits
+// (the same text can match; there are just more literals to choose from at each
+// position — the outer pattern, and in particular any `\b` boundary, is untouched).
+//
+// Correctness therefore never depends on WHICH alternative the regex engine reports
+// matching. Each per-item consumer (`consumersOf`, `importersOf`, `usageSites`,
+// `configConsumers`) re-applies its OWN unchanged per-item predicate to this shared
+// candidate list when one is supplied — so the result is identical to calling
+// `search()` once per item; only how candidates are GATHERED changes, never how
+// they are JUDGED. `--self-test` proves this on a real fixture by comparing
+// `buildGraph` run with and without `opts.forceLegacy` (which skips batching and
+// falls back to the original one-`search()`-per-item path).
+//
+// Needles are chunked so a single alternation, and the regex built from it, never
+// grows past a size any engine or argv is comfortable with — a few hundred symbol
+// names is nowhere near the limit, but a monorepo-sized change could be.
+const BATCH_CHUNK_SIZE = 300;
+
+function chunkArr(arr, n) {
+  const out = [];
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
+  return out;
+}
+
+function escapeRe(s) { return String(s).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"); }
+
+function mergeHits(chunksOfHits) {
+  const seen = new Map();
+  for (const hits of chunksOfHits) for (const h of hits) seen.set(`${h.path}:${h.line}`, h);
+  return [...seen.values()];
+}
+
+/** Synchronous batched gather — used by the `--no-rg` JS-walk path, where each
+ *  chunk is one bounded tree walk rather than one `rg` spawn, so there is nothing
+ *  to gain from running chunks concurrently. */
+function gatherCandidates(root, needles, buildPattern, opts) {
+  const uniq = [...new Set(needles)];
+  if (!uniq.length) return [];
+  const results = chunkArr(uniq, BATCH_CHUNK_SIZE).map((part) =>
+    search(root, buildPattern(part.map(escapeRe).join("|")), { useRg: opts.useRg, cap: Infinity, onlySource: true }));
+  return mergeHits(results);
+}
+
+/** Async batched gather — one `rg` spawn per chunk (almost always exactly one),
+ *  used so the four independent search KINDS can be dispatched with `Promise.all`. */
+async function gatherCandidatesAsync(root, needles, buildPattern, opts) {
+  const uniq = [...new Set(needles)];
+  if (!uniq.length) return [];
+  const results = await Promise.all(chunkArr(uniq, BATCH_CHUNK_SIZE).map((part) =>
+    searchAsync(root, buildPattern(part.map(escapeRe).join("|")), { useRg: opts.useRg, cap: Infinity, onlySource: true })));
+  return mergeHits(results);
 }
 
 // ── Patch parsing ────────────────────────────────────────────────────────────────
@@ -449,10 +561,27 @@ function packageRootOf(relPath, root) {
   }
 }
 
-/** Call sites and references to `name`, excluding its own defining file. */
-function consumersOf(name, definingPath, root, opts) {
+/** The pattern `consumersOf` looks for, shared with the batched gather so the two
+ *  stay provably in sync (the gather's alternation MUST wrap literals in exactly
+ *  this surrounding shape, or its hit set stops being a superset of the per-item
+ *  one below). */
+function consumerPattern(nameOrAlt) { return `\\b(?:${nameOrAlt})\\b`; }
+
+/**
+ * Call sites and references to `name`, excluding its own defining file.
+ * `candidateHits`, when supplied (the batched path — see § Batched search), is a
+ * pre-gathered superset already produced by `consumerPattern`'s own alternation;
+ * this function re-applies the SAME per-name test it always did, just against
+ * that smaller shared list instead of spawning a search of its own. Omitting it
+ * (the legacy/`forceLegacy` path, and the default) keeps the original one-search-
+ * per-symbol behaviour, which the equivalence self-test compares against.
+ */
+function consumersOf(name, definingPath, root, opts, candidateHits) {
   if (!/^[A-Za-z_$][\w$]*$/.test(name)) return { consumers: [], count: 0 };
-  const hits = search(root, `\\b${name}\\b`, { useRg: opts.useRg, cap: opts.maxConsumers, onlySource: true });
+  const re = new RegExp(consumerPattern(name));
+  const hits = candidateHits
+    ? candidateHits.filter((h) => re.test(h.text)).slice(0, opts.maxConsumers)
+    : search(root, consumerPattern(name), { useRg: opts.useRg, cap: opts.maxConsumers, onlySource: true });
   const consumers = [];
   for (const h of hits) {
     if (h.path === definingPath) continue;
@@ -526,10 +655,15 @@ export function gateConsumers({ symbol, definingPath, consumers, importerPaths }
  * import edge rather than a basename coincidence. Alias specifiers come from
  * `tsconfig` `paths` and the `go.mod` module path.
  */
-function importersOf(modulePath, root, aliases, opts) {
+function importerPattern(bareOrAlt) { return `(?:from|require|import)\\s*\\(?\\s*['"\`][^'"\`]*(?:${bareOrAlt})['"\`]`; }
+
+function importersOf(modulePath, root, aliases, opts, candidateHits) {
   const bare = basename(stripExt(modulePath));
   if (!bare) return [];
-  const hits = search(root, `(from|require|import)\\s*\\(?\\s*['"\`][^'"\`]*${bare}['"\`]`, { useRg: opts.useRg, cap: 2000 });
+  const re = new RegExp(importerPattern(escapeRe(bare)));
+  const hits = candidateHits
+    ? candidateHits.filter((h) => re.test(h.text)).slice(0, 2000)
+    : search(root, importerPattern(escapeRe(bare)), { useRg: opts.useRg, cap: 2000 });
   const target = stripExt(modulePath);
   const out = new Set();
   for (const h of hits) {
@@ -768,7 +902,13 @@ function makeBaseReader({ baseDir, baseRef, workdir, useVcs }) {
 
 // ── Dependency deltas ────────────────────────────────────────────────────────────
 
-function dependencyDeltas(files, root, readBase, opts) {
+/**
+ * The delta rows, WITHOUT `usage_sites` — split out so the caller can collect every
+ * row's `name` first, gather usage-site candidates for all of them in ONE batched
+ * scan, and only then attach sites (see `dependencyDeltas` below). Kept as its own
+ * function rather than inlined so there is exactly one place that computes a row.
+ */
+function dependencyDeltaRows(files, root, readBase) {
   const out = [];
   const changedLocks = files
     .map((f) => toPosix(f.filename ?? f.path ?? ""))
@@ -805,7 +945,6 @@ function dependencyDeltas(files, root, readBase, opts) {
         to: to ?? null,
         direct: direct.has(name),
         ...delta,
-        usage_sites: usageSites(name, root, opts),
       });
     }
   }
@@ -827,11 +966,25 @@ function dependencyDeltas(files, root, readBase, opts) {
         from: from ?? null, to: to ?? null, direct: true,
         ...delta,
         range_only: true,
-        usage_sites: usageSites(name, root, opts),
       });
     }
   }
 
+  return out;
+}
+
+/**
+ * `usageCandidates`, when supplied, is a `Map<name, hits[]>` pre-gathered by ONE
+ * batched scan over every row's `name` at once (see § Batched search); omitting it
+ * falls back to the original one-`search()`-per-dependency path.
+ */
+function dependencyDeltas(files, root, readBase, opts, usageCandidates) {
+  const out = dependencyDeltaRows(files, root, readBase);
+  for (const row of out) {
+    row.usage_sites = usageCandidates
+      ? usageSitesFrom(row.name, usageCandidates.get(row.name) ?? [])
+      : usageSites(row.name, root, opts);
+  }
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -884,10 +1037,11 @@ function manifestRanges(text, manifestPath) {
   return out;
 }
 
-/** Where the repo actually calls the package — the intersection that makes a bump real. */
-function usageSites(name, root, opts) {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
-  const hits = search(root, `['"\`]${escaped}(/[^'"\`]*)?['"\`]`, { useRg: opts.useRg, cap: 200 });
+function usagePattern(escapedNameOrAlt) { return `['"\`](?:${escapedNameOrAlt})(?:/[^'"\`]*)?['"\`]`; }
+
+/** The shared per-hit filter, applied whether the hits came from a dedicated
+ *  per-dependency search or from a batched candidate list — see `usageSites`. */
+function usageSitesFrom(name, hits) {
   const sites = [];
   for (const h of hits) {
     if (!/\b(import|require|from|use)\b/.test(h.text) && !/^\s*(import|use)\b/.test(h.text)) continue;
@@ -897,16 +1051,47 @@ function usageSites(name, root, opts) {
   return sites.slice(0, 50);
 }
 
+/** Where the repo actually calls the package — the intersection that makes a bump real.
+ *  Legacy (non-batched) path only: kept for `--no-rg`-style single-name callers and as
+ *  the equivalence self-test's reference implementation. */
+function usageSites(name, root, opts) {
+  const escaped = escapeRe(name);
+  const hits = search(root, usagePattern(escaped), { useRg: opts.useRg, cap: 200 });
+  return usageSitesFrom(name, hits);
+}
+
 // ── Config consumers ─────────────────────────────────────────────────────────────
 
-function configConsumers(files, root, opts) {
+function configPattern(escapedBareOrAlt) { return `['"\`][^'"\`]*(?:${escapedBareOrAlt})['"\`]`; }
+
+/**
+ * `usageCandidates`, when supplied, is a `Map<name, hits[]>` from ONE batched scan
+ * over every dependency name in `dependencies` at once. Each name's own hits are
+ * re-tested with its OWN escaped pattern (not just membership in the shared pool)
+ * because the alternation is a superset — a hit gathered for `stripe` could also
+ * contain the substring `strip`, and only the per-name regex decides membership,
+ * exactly as the legacy per-name `search()` call would have.
+ */
+function usageSitesBatched(dependencies, candidatePool) {
+  const byName = new Map();
+  for (const name of new Set(dependencies.map((d) => d.name))) {
+    const re = new RegExp(usagePattern(escapeRe(name)));
+    byName.set(name, candidatePool.filter((h) => re.test(h.text)).slice(0, 200));
+  }
+  return byName;
+}
+
+function configConsumers(files, root, opts, candidateHits) {
   const out = [];
   for (const f of files) {
     const p = toPosix(f.filename ?? f.path ?? "");
     if (!CONFIG_EXT.has(extOf(p))) continue;
     if (LOCKFILES[basename(p)] || basename(p) === "package.json") continue;
     const bare = basename(p);
-    const hits = search(root, `['"\`][^'"\`]*${bare.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}['"\`]`, { useRg: opts.useRg, cap: 100 });
+    const re = new RegExp(configPattern(escapeRe(bare)));
+    const hits = candidateHits
+      ? candidateHits.filter((h) => re.test(h.text)).slice(0, 100)
+      : search(root, configPattern(escapeRe(bare)), { useRg: opts.useRg, cap: 100 });
     const readers = [...new Set(hits.map((h) => h.path).filter((r) => r !== p))].sort();
     if (readers.length) out.push({ changed: p, readers: readers.slice(0, 25), reader_count: readers.length });
   }
@@ -1058,7 +1243,13 @@ export function computeOverlaps(otherPrs, changedFiles, changedSymbolNames) {
 
 // ── Assemble ─────────────────────────────────────────────────────────────────────
 
-export function buildGraph({ files, workdir, readBase, production, otherPrs, opts }) {
+/**
+ * `opts.forceLegacy: true` skips every batched gather below and lets each per-item
+ * function fall back to its original one-`search()`-per-item path — this is the
+ * reference implementation the equivalence cases inside `--self-test`
+ * compares the default (batched) path against, on the same fixture tree.
+ */
+export async function buildGraph({ files, workdir, readBase, production, otherPrs, opts }) {
   // Every package directory that owns a changed file, so a monorepo's per-package
   // `paths` aliases are read alongside the root's.
   const configDirs = new Set();
@@ -1069,19 +1260,53 @@ export function buildGraph({ files, workdir, readBase, production, otherPrs, opt
     if (pkg && pkg !== ".") configDirs.add(pkg);
   }
   const aliases = aliasMap(workdir, [...configDirs]);
-  const symbols = [];
-  const modules = [];
 
+  // ── Pass 1: figure out WHAT needs searching for, with no tree scan at all — just
+  // reading the (small) set of changed files themselves and parsing their patches. ──
+  const fileEntries = [];
   for (const f of files) {
     const path = toPosix(f.filename ?? f.path ?? "");
     if (!path || !isSourcePath(path)) continue;
     if (TEST_RE.test(path)) continue; // a changed test is not a changed contract
     const headBody = readIfExists(join(workdir, path));
-    const importers = importersOf(path, workdir, aliases, opts);
+    fileEntries.push({ path, bare: basename(stripExt(path)), syms: changedSymbolsForFile(f, headBody) });
+  }
+  const depRows = dependencyDeltaRows(files, workdir, readBase);
+
+  // ── Pass 2: one batched tree scan PER SEARCH KIND, all four dispatched
+  // concurrently (they are fully independent of one another) instead of one
+  // `search()` per symbol/module/dependency/config file. `opts.forceLegacy`
+  // skips this pass entirely, leaving every candidate `undefined` so each
+  // per-item function below takes its own original `search()` branch. ──
+  let consumerCandidates, importerCandidates, dependencyCandidatePool, configCandidates;
+  if (!opts.forceLegacy) {
+    const consumerNeedles = fileEntries.flatMap((e) => e.syms.map((s) => s.name)).filter((n) => /^[A-Za-z_$][\w$]*$/.test(n));
+    const importerNeedles = fileEntries.map((e) => e.bare).filter(Boolean);
+    const dependencyNeedles = depRows.map((r) => r.name);
+    const configNeedles = files
+      .map((f) => toPosix(f.filename ?? f.path ?? ""))
+      .filter((p) => CONFIG_EXT.has(extOf(p)) && !LOCKFILES[basename(p)] && basename(p) !== "package.json")
+      .map((p) => basename(p));
+
+    [consumerCandidates, importerCandidates, dependencyCandidatePool, configCandidates] = await Promise.all([
+      gatherCandidatesAsync(workdir, consumerNeedles, consumerPattern, opts),
+      gatherCandidatesAsync(workdir, importerNeedles, importerPattern, opts),
+      gatherCandidatesAsync(workdir, dependencyNeedles, usagePattern, opts),
+      gatherCandidatesAsync(workdir, configNeedles, configPattern, opts),
+    ]);
+  }
+  const usageCandidates = dependencyCandidatePool === undefined ? undefined : usageSitesBatched(depRows, dependencyCandidatePool);
+
+  // ── Pass 3: everything downstream of a tree scan — pure JS over the (now much
+  // smaller) candidate lists, exactly the judgment the per-item path always applied. ──
+  const symbols = [];
+  const modules = [];
+  for (const { path, syms } of fileEntries) {
+    const importers = importersOf(path, workdir, aliases, opts, importerCandidates);
     modules.push({ path, importers: importers.length, importer_paths: importers.slice(0, 25) });
 
-    for (const sym of changedSymbolsForFile(f, headBody)) {
-      const raw = consumersOf(sym.name, path, workdir, opts);
+    for (const sym of syms) {
+      const raw = consumersOf(sym.name, path, workdir, opts, consumerCandidates);
       const { consumers, gate } = gateConsumers({
         symbol: sym,
         definingPath: path,
@@ -1110,7 +1335,7 @@ export function buildGraph({ files, workdir, readBase, production, otherPrs, opt
     }
   }
 
-  const dependencies = dependencyDeltas(files, workdir, readBase, opts);
+  const dependencies = dependencyDeltas(files, workdir, readBase, opts, usageCandidates);
   const productionTop = attachProduction(symbols, production);
   const changedFiles = files.map((f) => toPosix(f.filename ?? f.path ?? "")).filter(Boolean);
   const overlaps = computeOverlaps(otherPrs, changedFiles, new Set(symbols.map((s) => s.name)));
@@ -1121,7 +1346,7 @@ export function buildGraph({ files, workdir, readBase, production, otherPrs, opt
     symbols: symbols.sort((a, b) => ((b.consumer_files ?? 0) - (a.consumer_files ?? 0)) || a.name.localeCompare(b.name)),
     modules: modules.sort((a, b) => b.importers - a.importers),
     dependencies,
-    config_consumers: configConsumers(files, workdir, opts),
+    config_consumers: configConsumers(files, workdir, opts, configCandidates),
     blast_radius: blast,
     overlaps,
     ...(productionTop ? { production: productionTop } : {}),
@@ -1176,7 +1401,7 @@ function writeTree(root, tree) {
   }
 }
 
-function selfTest() {
+async function selfTest() {
   const cases = [];
   const t = (name, fn) => cases.push([name, fn]);
 
@@ -1402,7 +1627,7 @@ function selfTest() {
     computeOverlaps([{ number: 1, files: [{ path: "other.ts" }] }], ["src/a.ts"], new Set()).length === 0);
 
   // ── end-to-end over a real tree, both search backends ─────────────────────────
-  const scenario = (useRg) => {
+  const scenario = async (useRg, opts = {}) => {
     const base = mkdtempSync(join(tmpdir(), "impact-base-"));
     const head = mkdtempSync(join(tmpdir(), "impact-head-"));
     try {
@@ -1429,13 +1654,13 @@ function selfTest() {
         { filename: "src/api/client.ts", status: "modified", patch: "@@ -1,3 +1,3 @@\n-export function retryRequest(job) {\n+export function retryRequest(job, attempts) {\n-  return null\n+  throw new RetryExhausted()\n }\n" },
         { filename: "package-lock.json", status: "modified", patch: "@@ -1 +1 @@\n-  \"version\": \"14.2.0\"\n+  \"version\": \"16.0.1\"\n" },
       ];
-      return buildGraph({
+      return await buildGraph({
         files,
         workdir: head,
         readBase: (p) => readIfExists(join(base, p)),
         production: null,
         otherPrs: null,
-        opts: { useRg, maxConsumers: 200 },
+        opts: { useRg, maxConsumers: 200, ...opts },
       });
     } finally {
       rmSync(base, { recursive: true, force: true });
@@ -1446,69 +1671,84 @@ function selfTest() {
   for (const useRg of [true, false]) {
     const label = useRg ? "rg" : "js-fallback";
 
-    t(`[${label}] the changed export is found with its signature change`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] the changed export is found with its signature change`, async () => {
+      const g = await scenario(useRg);
       const s = g.symbols.find((x) => x.name === "retryRequest");
       return s && s.change === "signature" && s.exported === true && s.path === "src/api/client.ts";
     });
 
-    t(`[${label}] consumers are found across relative AND alias imports`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] consumers are found across relative AND alias imports`, async () => {
+      const g = await scenario(useRg);
       const s = g.symbols.find((x) => x.name === "retryRequest");
       const paths = s.consumers.map((c) => c.path);
       return paths.includes("src/jobs/sync.ts") && paths.includes("src/jobs/other.ts");
     });
 
-    t(`[${label}] an import line is not counted as a consumer (modules owns import edges)`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] an import line is not counted as a consumer (modules owns import edges)`, async () => {
+      const g = await scenario(useRg);
       const s = g.symbols.find((x) => x.name === "retryRequest");
       return s.consumers.every((c) => c.kind !== "import")
         && s.consumer_files === 3   // sync.ts, other.ts, client.test.ts — call sites only
         && g.modules.find((m) => m.path === "src/api/client.ts").importers === 3;
     });
 
-    t(`[${label}] the defining file is never its own consumer`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] the defining file is never its own consumer`, async () => {
+      const g = await scenario(useRg);
       const s = g.symbols.find((x) => x.name === "retryRequest");
       return !s.consumers.some((c) => c.path === "src/api/client.ts");
     });
 
-    t(`[${label}] the covering test is found`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] the covering test is found`, async () => {
+      const g = await scenario(useRg);
       const s = g.symbols.find((x) => x.name === "retryRequest");
       return s.covering_tests.includes("src/api/client.test.ts");
     });
 
-    t(`[${label}] importers resolve through a tsconfig alias`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] importers resolve through a tsconfig alias`, async () => {
+      const g = await scenario(useRg);
       const m = g.modules.find((x) => x.path === "src/api/client.ts");
       return m && m.importer_paths.includes("src/jobs/other.ts") && m.importer_paths.includes("src/jobs/sync.ts");
     });
 
-    t(`[${label}] the lockfile bump is a major delta with its usage site`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] the lockfile bump is a major delta with its usage site`, async () => {
+      const g = await scenario(useRg);
       const d = g.dependencies.find((x) => x.name === "stripe");
       return d && d.from === "14.2.0" && d.to === "16.0.1" && d.semver_delta === "major"
         && d.direct === true && d.usage_sites.some((u) => u.path === "src/billing/charge.ts");
     });
 
-    t(`[${label}] a changed test file contributes no symbol row`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] a changed test file contributes no symbol row`, async () => {
+      const g = await scenario(useRg);
       return !g.symbols.some((s) => TEST_RE.test(s.path));
     });
 
-    t(`[${label}] routing signals carry the facts Phase C keys on`, () => {
-      const g = scenario(useRg);
+    t(`[${label}] routing signals carry the facts Phase C keys on`, async () => {
+      const g = await scenario(useRg);
       return g.routing_signals.max_semver_delta === "major"
         && g.routing_signals.structural_change_count === 1
         && ["low", "medium", "high"].includes(g.routing_signals.blast_band);
     });
+
+    // ── Batched vs. legacy equivalence (D1/AC): the whole point of batching is that
+    // it changes HOW candidates are gathered and never WHAT a per-item search would
+    // have found. Prove it on the same fixture tree `scenario` already builds, with
+    // `opts.forceLegacy` selecting the original one-`search()`-per-item path. ──
+    t(`[${label}] batched candidate gathering is byte-identical to the legacy per-item path`, async () => {
+      const batched = await scenario(useRg);
+      const legacy = await scenario(useRg, { forceLegacy: true });
+      const a = JSON.stringify(batched);
+      const b = JSON.stringify(legacy);
+      if (a !== b) {
+        process.stderr.write(`  batch-equivalence[${label}] MISMATCH\n  batched: ${a.slice(0, 500)}\n  legacy:  ${b.slice(0, 500)}\n`);
+      }
+      return a === b;
+    });
   }
 
-  t("an empty file list produces a valid, zero graph rather than throwing", () => {
+  t("an empty file list produces a valid, zero graph rather than throwing", async () => {
     const dir = mkdtempSync(join(tmpdir(), "impact-empty-"));
     try {
-      const g = buildGraph({ files: [], workdir: dir, readBase: () => null, production: null, otherPrs: null, opts: { useRg: true, maxConsumers: 200 } });
+      const g = await buildGraph({ files: [], workdir: dir, readBase: () => null, production: null, otherPrs: null, opts: { useRg: true, maxConsumers: 200 } });
       return g.symbols.length === 0 && g.blast_radius.band === "none" && g.routing_signals.max_semver_delta === "none";
     } finally { rmSync(dir, { recursive: true, force: true }); }
   });
@@ -1516,7 +1756,7 @@ function selfTest() {
   let failed = 0;
   for (const [name, fn] of cases) {
     let ok = false;
-    try { ok = fn() === true; } catch (err) { process.stderr.write(`self-test THREW: ${name}: ${err.message}\n`); }
+    try { ok = (await fn()) === true; } catch (err) { process.stderr.write(`self-test THREW: ${name}: ${err.message}\n`); }
     if (!ok) { failed++; process.stderr.write(`self-test FAIL: ${name}\n`); }
   }
   if (failed > 0) process.exit(1);
@@ -1525,7 +1765,7 @@ function selfTest() {
 
 // ── CLI ──────────────────────────────────────────────────────────────────────────
 
-function main() {
+async function main() {
   const argv = process.argv.slice(2);
   if (argv[0] === "--self-test") return selfTest();
 
@@ -1559,7 +1799,7 @@ function main() {
       ? JSON.parse(readFileSync(flags.overlaps, "utf8"))
       : fetchOverlaps({ repo: flags.repo, pr: flags.pr, useVcs: flags.useVcs });
 
-    const graph = buildGraph({
+    const graph = await buildGraph({
       files,
       workdir: resolve(flags.workdir),
       readBase: makeBaseReader({ baseDir: flags.baseDir, baseRef: flags.baseRef, workdir: resolve(flags.workdir), useVcs: flags.useVcs }),
@@ -1574,4 +1814,6 @@ function main() {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => { process.stderr.write(`${err?.stack || err}\n`); process.exit(2); });
+}

@@ -1,5 +1,5 @@
 {
-  "$schema_note": "public-safe benchmark manifest \u2014 no titles, excerpts, or comment counts",
+  "$schema_note": "public-safe benchmark manifest — no titles, excerpts, or comment counts",
   "entries": [
     {
       "repo": "dash0hq/dash0",
@@ -7,7 +7,8 @@
       "head_sha": "c3326bf9f32312f4f9c5dbacf3b74542c338557b",
       "base_sha": "dfff0ded2475fe0b171683d412deca44dd586956",
       "class": "api-contract",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "c3326bf9f32312f4f9c5dbacf3b74542c338557b"
     },
     {
       "repo": "dash0hq/dash0",
@@ -15,7 +16,8 @@
       "head_sha": "fde72d3a8517537ccbac4c3696f9e59b1783ca1c",
       "base_sha": "6ef359f1bc73ef7476817553d79fe6f00f41012c",
       "class": "api-contract",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "92f0bd5112a0b6783b38904c5f35f90a95d85495"
     },
     {
       "repo": "dash0hq/dash0",
@@ -23,7 +25,8 @@
       "head_sha": "dc55831b5b7061839d564768b38ecc71debd7c82",
       "base_sha": "901480975dcedf2c21a6ca90a9d262710c74a450",
       "class": "big-but-boring",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "dc55831b5b7061839d564768b38ecc71debd7c82"
     },
     {
       "repo": "dash0hq/dash0",
@@ -31,7 +34,8 @@
       "head_sha": "1ab4059fa90fe6aa07c434c63ca4b19a81555c8b",
       "base_sha": "599758bce04fd55ce2b565c2ea1be5de73bf21d6",
       "class": "big-but-boring",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "1ab4059fa90fe6aa07c434c63ca4b19a81555c8b"
     },
     {
       "repo": "dash0hq/dash0",
@@ -39,7 +43,8 @@
       "head_sha": "00ef55f3db3f4278eba36ff8ae1c29121e66ac07",
       "base_sha": "64896f8874a54cba2199134c40195b772f2d55c1",
       "class": "db-migration",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "00ef55f3db3f4278eba36ff8ae1c29121e66ac07"
     },
     {
       "repo": "dash0hq/dash0",
@@ -47,7 +52,8 @@
       "head_sha": "bc3f1c3d676c4ae0c59afddb77b2026591fa57f0",
       "base_sha": "1ba906c6c1aef9c9c6488acdcf001e301ac607fc",
       "class": "db-migration",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "1120b6982e1efae77af8844e36dd4c97a10699df"
     },
     {
       "repo": "dash0hq/dash0",
@@ -55,7 +61,8 @@
       "head_sha": "4a2de5c6839f637b91dffb2a34f4a6544c0d3f3d",
       "base_sha": "4658a8d8c6394c6464689712c54af435abbfeac8",
       "class": "dependency-bump",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "4a2de5c6839f637b91dffb2a34f4a6544c0d3f3d"
     },
     {
       "repo": "dash0hq/dash0",
@@ -63,7 +70,8 @@
       "head_sha": "282c0b4154067ff13e9f5eca1149e2cfe784da68",
       "base_sha": "5d4389e3d76295eecdd92b14aacf1923971141af",
       "class": "docs-only",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "282c0b4154067ff13e9f5eca1149e2cfe784da68"
     },
     {
       "repo": "dash0hq/dash0",
@@ -71,7 +79,8 @@
       "head_sha": "4d4b00cffa282d2f271e0c226d87ddacb2822554",
       "base_sha": "e76ecfb55ad2a0a7367d1ff83326a85785222a5d",
       "class": "docs-only",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "4d4b00cffa282d2f271e0c226d87ddacb2822554"
     },
     {
       "repo": "dash0hq/dash0",
@@ -79,7 +88,8 @@
       "head_sha": "bfa17b68d16a595d0a816e299d4245edd0f14a48",
       "base_sha": "599758bce04fd55ce2b565c2ea1be5de73bf21d6",
       "class": "small-but-dangerous",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "bfa17b68d16a595d0a816e299d4245edd0f14a48"
     },
     {
       "repo": "dash0hq/dash0",
@@ -87,7 +97,8 @@
       "head_sha": "76187254e0b30d0effcf0cff0507707e12230b13",
       "base_sha": "efb1bbb6d63b4e932a72af550e8e384101ba6970",
       "class": "small-but-dangerous",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "76187254e0b30d0effcf0cff0507707e12230b13"
     },
     {
       "repo": "dash0hq/dash0",
@@ -95,7 +106,8 @@
       "head_sha": "906a74781990f75607f0234de963fdbbc3953f2c",
       "base_sha": "6d6b99112fd6547424d1c1d62a2f5be3d14a3cc8",
       "class": "big-but-boring",
-      "status": "pending"
+      "status": "pending",
+      "review_sha": "6452c2a3a393e33b236004a116792b42aa5d67c5"
     }
   ]
 }

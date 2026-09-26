@@ -49,7 +49,9 @@ import { join, dirname, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Timing } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
-import { routeDepth } from "./route-depth.mjs";
+import { routeDepth, resolveBudget } from "./route-depth.mjs";
+import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
+import { discoverStandards, trivialSkip } from "./discover-standards.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -87,13 +89,57 @@ export function scratchRoot() {
   return tmpdir();
 }
 
-export function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024 } = {}) {
+export function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024, env } = {}) {
   return new Promise((res) => {
-    execFile(cmd, args, { timeout: timeoutMs, cwd, maxBuffer, encoding: "utf8" }, (err, stdout, stderr) => {
-      res({ ok: !err, code: err ? (err.code ?? 1) : 0, stdout: stdout ?? "", stderr: stderr ?? "" });
+    execFile(cmd, args, { timeout: timeoutMs, cwd, maxBuffer, encoding: "utf8", env: env || process.env }, (err, stdout, stderr) => {
+      // A/B round 2 item 1(a): `execFile`'s own `timeout` kills the child with `err.killed ===
+      // true` and a signal, but reports NO stderr of its own — the process never got to write
+      // one. Losing that distinction is exactly what produced "workspace rung 1 clone failed: "
+      // with an empty message: a caller reading `stderr` alone cannot tell a killed process from
+      // one that failed fast and silently. `timedOut` makes the distinction explicit so a caller
+      // can report "timed out after Ns" instead of nothing.
+      const timedOut = !!(err && err.killed === true);
+      res({ ok: !err, code: err ? (err.code ?? 1) : 0, stdout: stdout ?? "", stderr: stderr ?? "", timedOut });
     });
   });
 }
+
+/**
+ * Turns a failed `run()` result into a caller-facing anomaly string, never blank. A/B round 2
+ * item 1(a): "report a killed or timed-out process explicitly (`timed out after Ns`), never as
+ * empty stderr" — and the same fix closes the more general case of ANY failure with empty
+ * stderr (not only a timeout), which read exactly the same way before this: nothing.
+ * @param {{ ok: boolean, code: number, stderr: string, timedOut?: boolean }} result
+ * @param {number} timeoutMs
+ * @returns {string}
+ */
+export function describeFailure(result, timeoutMs) {
+  if (result.timedOut) return `timed out after ${Math.round(timeoutMs / 1000)}s`;
+  const stderr = (result.stderr || "").trim();
+  return stderr ? stderr.slice(0, 200) : `failed with exit code ${result.code}`;
+}
+
+/**
+ * A/B round 1 delta. Every `git` invocation below that talks to a remote
+ * (`clone`, `fetch`) passes these FIRST, before the subcommand — git's own
+ * `-c` ordering rule. Clearing `credential.helper` before re-setting it
+ * (rather than only appending a second one) matters: git tries every
+ * configured helper in order and stops at the first that answers, so an
+ * ambient one left in place (an expired keychain entry, a helper for a
+ * different host) can still win and either prompt or answer wrong. Routing
+ * through `gh auth git-credential` reuses whatever token `gh` is already
+ * authenticated with, so a private-repo fetch here needs no separate login.
+ */
+export const GIT_CREDENTIAL_ARGS = ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"];
+
+/**
+ * `GIT_TERMINAL_PROMPT=0` is the belt to `GIT_CREDENTIAL_ARGS`' suspenders:
+ * if `gh` itself is not authenticated, git falls back to trying an
+ * interactive username/password prompt on a TTY nothing here is reading,
+ * which hangs the whole pipeline instead of failing the fetch. This env
+ * makes that failure immediate and visible in `stderr` instead.
+ */
+export const GIT_NONINTERACTIVE_ENV = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
 
 /**
  * Parse a PR reference into { repo, number }.
@@ -200,6 +246,16 @@ export function verifyPinnedHead(pinnedSha, liveHeadSha) {
 }
 
 /**
+ * A GitHub login: 1–39 alphanumerics or single hyphens, not starting or ending with a hyphen, with
+ * an optional `[bot]` suffix for App identities. Anything else — an error body, a URL, whitespace —
+ * is not a login and must never be compared against a PR author.
+ * @param {unknown} s
+ */
+export function isGithubLogin(s) {
+  return typeof s === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(?:\[bot\])?$/.test(s);
+}
+
+/**
  * `--isolated` run-mode resolution (R3, D10, D13, AC-5). Isolated repeat
  * runs (the A/B harness, the shadow run) need first-run semantics on every
  * invocation — no LoreKit state-record read, `--full` forced, so a run's
@@ -238,6 +294,131 @@ export function resolvePriorRun({ isolated, stickyBody, headSha }) {
   if (isolated) return { priorSha: null, zeroDelta: false };
   const priorSha = stickyBody ? priorShaFromBody(stickyBody) : null;
   return { priorSha, zeroDelta: sameCommit(headSha, priorSha) };
+}
+
+/**
+ * `--review-sha <sha>` resolution (D8/D9, plan feat/pr-reviewer-shrink-fanout-ab, AC-15/16).
+ *
+ * A pure prefix-resolution helper over a candidate list — the SAME shape `git` itself uses
+ * to resolve an abbreviated SHA — never a live network call. The caller supplies the
+ * candidate list (this PR's own commit OIDs, read from the SAME `gh pr view --json commits`
+ * fetch the metadata read already makes, at no extra round trip) so this function is fully
+ * self-testable without `gh`.
+ *
+ * Three ways a `--review-sha` can fail to name exactly one commit, each refused rather than
+ * guessed: too short to disambiguate (below `MIN_SHA_LEN`), matching nothing in the PR's own
+ * history (not-in-list), or matching more than one commit (ambiguous — an 8-char prefix can
+ * collide on a large enough PR). Only an exact match or a UNIQUE prefix match resolves.
+ * @param {string} reviewSha
+ * @param {string[]} candidates - full-length commit OIDs, e.g. this PR's own commit list
+ * @returns {{ ok: boolean, resolved: string|null, message: string }}
+ */
+const MIN_SHA_LEN = 7;
+export function verifyReviewSha(reviewSha, candidates) {
+  const sha = String(reviewSha || "").trim().toLowerCase();
+  if (!sha) return { ok: false, resolved: null, message: "--review-sha is empty" };
+  if (sha.length < MIN_SHA_LEN) {
+    return {
+      ok: false,
+      resolved: null,
+      message: `--review-sha ${sha} is shorter than ${MIN_SHA_LEN} chars — cannot prove which commit this names`,
+    };
+  }
+  const list = (candidates || []).map((c) => String(c || "").toLowerCase()).filter(Boolean);
+  const exact = list.find((c) => c === sha);
+  if (exact) return { ok: true, resolved: exact, message: "exact match" };
+  const matches = [...new Set(list.filter((c) => c.startsWith(sha)))];
+  if (matches.length === 1) return { ok: true, resolved: matches[0], message: "unique prefix match" };
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      resolved: null,
+      message: `--review-sha ${sha} is ambiguous — matches ${matches.length} commits on this PR (${matches.map((m) => m.slice(0, 10)).join(", ")})`,
+    };
+  }
+  return {
+    ok: false,
+    resolved: null,
+    message: `--review-sha ${sha} does not match any commit on this PR — cannot prove it exists`,
+  };
+}
+
+/**
+ * Filter a list of GitHub-sourced, timestamped items to only those that existed AS OF a
+ * given instant — used to keep a historical (`--review-sha`) run from reading anything that
+ * postdates the commit it is reviewing (`historicalThreads()` below is the caller). Three
+ * cases, stated separately because they fail in different directions:
+ *   - no cutoff (`null` / `""`) filters NOTHING — the live-review path. This is a pass-through,
+ *     not a fail-closed default, so a historical caller must never reach it: `historicalThreads()`
+ *     refuses to call this without a resolved cutoff.
+ *   - a non-empty but unparseable cutoff fails CLOSED: nothing is returned.
+ *   - an item with no readable own timestamp is dropped rather than assumed to qualify.
+ * @param {any[]} items
+ * @param {string|null} asOfIso - ISO 8601 instant, e.g. review_sha's commit timestamp
+ * @param {string} [dateField]
+ * @returns {any[]}
+ */
+export function filterAsOf(items, asOfIso, dateField = "created_at") {
+  if (!asOfIso) return items || [];
+  const cutoff = Date.parse(asOfIso);
+  if (Number.isNaN(cutoff)) return [];
+  return (items || []).filter((it) => {
+    const t = Date.parse(it?.[dateField]);
+    return Number.isNaN(t) ? false : t <= cutoff;
+  });
+}
+
+/**
+ * `--review-sha` thread state (D9): keep only the threads whose ROOT comment existed at the
+ * reviewed commit's committer date, and within them only the replies that did. The cutoff is
+ * the resolved commit's `committedDate` from the SAME `gh pr view --json commits` read that
+ * `verifyReviewSha` used. A missing or unparseable date fails CLOSED — zero threads plus an
+ * anomaly — because reading present-day threads into a past review is exactly the leak this
+ * exists to stop. Resolution / outdated flags cannot be reconstructed from the API and stay
+ * as of now (`historical.thread_state_as_of: "now"`); only the thread SET and its replies are
+ * filtered (`historical.threads_created_as_of`).
+ * @param {{ threads: any[], commits: any[], reviewSha: string }} args
+ * @returns {{ threads: any[], asOf: string|null, anomaly: string|null }}
+ */
+export function historicalThreads({ threads, commits, reviewSha }) {
+  const sha = String(reviewSha || "").toLowerCase();
+  const commit = (commits || []).find((c) => String(c?.oid || "").toLowerCase() === sha);
+  const asOf = commit?.committedDate || null;
+  if (!asOf || Number.isNaN(Date.parse(asOf))) {
+    return {
+      threads: [],
+      asOf: null,
+      anomaly: `--review-sha ${sha.slice(0, 7)}: no committedDate for the reviewed commit — thread state dropped (fail closed) rather than read as of now`,
+    };
+  }
+  const kept = filterAsOf(threads, asOf).map((t) => ({ ...t, replies: filterAsOf(t.replies || [], asOf) }));
+  return { threads: kept, asOf, anomaly: null };
+}
+
+/**
+ * The `historical` block embedded in `context.json` whenever `--review-sha` is set (D8/D9).
+ * Every field either IS `review_sha` or is explicitly marked `"now"` / `"not-read"` — never
+ * silently presented as contemporaneous with `review_sha`:
+ *
+ *   - `thread_state_as_of` / `description_as_of` are `"now"`: GitHub's API has no way to
+ *     reconstruct either as of an arbitrary past commit, so a historical run reads the
+ *     CURRENT thread state and CURRENT description against the PAST code — an honest
+ *     mixed-time view, not a simulated past PR page.
+ *   - `ci` is `"not-read"`: `gh pr checks` reports the CURRENT check run for the CURRENT
+ *     head, which has no relationship to `review_sha`'s own (likely long-superseded) check
+ *     runs — reporting it would silently misattribute today's CI result to a commit reviewed
+ *     days or weeks ago. `finalize.mjs` and `execute-write-plan.mjs` both refuse to POST
+ *     anything for a context carrying this block outside `--dry-run` (D9, AC-17/AC-18).
+ * @param {{ reviewSha: string }} args
+ * @returns {{ review_sha: string, thread_state_as_of: string, description_as_of: string, ci: string }}
+ */
+export function historicalBlock({ reviewSha }) {
+  return {
+    review_sha: reviewSha,
+    thread_state_as_of: "now",
+    description_as_of: "now",
+    ci: "not-read",
+  };
 }
 
 /** Total changed lines across the patch list. */
@@ -421,6 +602,7 @@ export function buildThreads(rawNodes) {
       is_outdated: !!node.isOutdated,
       url: root.url ?? null,
       author: root.author ? root.author.login : null,
+      created_at: root.createdAt ?? null,
       is_bot: !!(root.author && root.author.__typename === "Bot"),
       root_body: root.body ?? null,
       replies: replies.map((r) => ({ author: r.author ? r.author.login : null, created_at: r.createdAt ?? null })),
@@ -504,6 +686,15 @@ export function readStateFile(path) {
 
 /* ---------------------------- workspace ladder ---------------------------- */
 
+// A/B round 2 item 1(a): rung 1's clone was observed timing out at ~145s under 4 CONCURRENT
+// clones of a 368 MB repo against the old 120s floor, with the tarball rung then ALSO exhausted
+// and depth routing paying 205s to discover DEPTH_CAPABILITY=diff-only. Two fixes, both applied
+// to rung 1 and rung 2 alike: a clone timeout floor of >= 300s (never the caller's shorter
+// `timeoutMs`), and `--filter=blob:none` (a partial clone — trees and commits eagerly, blob
+// content lazily on checkout) to cut the bytes a slow/contended clone has to move before it can
+// even fail informatively.
+const CLONE_TIMEOUT_FLOOR_MS = 300000;
+
 /**
  * Walk the Phase A capability ladder once and bind DEPTH_CAPABILITY.
  *
@@ -517,8 +708,15 @@ export function readStateFile(path) {
  * temp clone or tarball: on a worktree it leaves a stale entry in the parent
  * repo's `.git/worktrees`, so the review breaks the repo it was reviewing.
  */
-async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies }) {
+async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies, isolated = false }) {
   const originRepo = await currentRepoSlug();
+  const cloneTimeoutMs = Math.max(timeoutMs, CLONE_TIMEOUT_FLOOR_MS);
+
+  // A/B round 2 item 1(b): every worktree this ladder can create lands under ONE run-scoped
+  // scratch directory, generated fresh per `materializeWorkspace()` call. Under `--isolated`
+  // this is what makes reuse impossible across separate runs — a sibling run's `wt-XXXX` never
+  // falls under THIS run's own `run-<id>/` prefix, however identical the PR/head/repo are.
+  const runScratchDir = join(scratchRoot(), `run-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
   // Rung 0 — worktree over the local object store.
   if (originRepo && originRepo.toLowerCase() === repo.toLowerCase()) {
@@ -527,7 +725,12 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
     // parent repo carrying one registered worktree per invocation. Reusing one
     // already checked out at this exact head is also the only disposal-safe
     // answer: the reused one is not ours to remove, so it is `cleanup: none`.
-    const existing = await findWorktreeAt(headSha);
+    //
+    // `--isolated` narrows this: D10 (A/B round 2) observed one isolated run reuse a WORKTREE
+    // ANOTHER RUN (arm B) had created, because reuse scanned every worktree registered against
+    // the shared repo with no notion of which run made which — breaking `--isolated`'s own
+    // independence promise. `runScratchDir` below is this scoping.
+    const existing = await findWorktreeAt(headSha, { isolated, runScratchDir });
     if (existing) {
       return {
         dir: existing,
@@ -538,9 +741,14 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
       };
     }
 
-    const fetched = await run("git", ["fetch", "-q", "origin", `pull/${number}/head`], { timeoutMs });
+    const fetched = await run(
+      "git",
+      [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "origin", `pull/${number}/head`],
+      { timeoutMs, env: GIT_NONINTERACTIVE_ENV },
+    );
     if (fetched.ok) {
-      const parent = mkdtempSync(join(scratchRoot(), "wt-"));
+      mkdirSync(runScratchDir, { recursive: true });
+      const parent = mkdtempSync(join(runScratchDir, "wt-"));
       const dir = join(parent, "w");
       const added = await run("git", ["worktree", "add", "--detach", dir, headSha], { timeoutMs });
       if (added.ok) {
@@ -552,23 +760,25 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
           cleanup: "worktree",
         };
       }
-      anomalies.push(`workspace rung 0 failed: ${(added.stderr || "").trim().slice(0, 200)}`);
+      anomalies.push(`workspace rung 0 failed: ${describeFailure(added, timeoutMs)}`);
     } else {
       anomalies.push(`workspace rung 0 skipped: could not fetch pull/${number}/head`);
     }
   }
 
-  // Rung 1 — shallow clone of the head ref.
+  // Rung 1 — shallow, partial clone of the head ref. `--filter=blob:none` (trees/commits eagerly,
+  // blob content lazily) and a >= 300s timeout floor — see CLONE_TIMEOUT_FLOOR_MS's docstring.
   const cloneDir = mkdtempSync(join(scratchRoot(), "clone-"));
   const cloned = await run(
     "git",
-    ["clone", "-q", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
-    { timeoutMs: Math.max(timeoutMs, 120000) },
+    [...GIT_CREDENTIAL_ARGS, "clone", "-q", "--filter=blob:none", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
+    { timeoutMs: cloneTimeoutMs, env: GIT_NONINTERACTIVE_ENV },
   );
   if (cloned.ok) {
-    await run("git", ["fetch", "-q", "--depth", "50", "origin", `pull/${number}/head`], {
-      timeoutMs,
+    await run("git", [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "--depth", "50", "origin", `pull/${number}/head`], {
+      timeoutMs: cloneTimeoutMs,
       cwd: cloneDir,
+      env: GIT_NONINTERACTIVE_ENV,
     });
     const co = await run("git", ["checkout", "-q", "--detach", headSha], { timeoutMs, cwd: cloneDir });
     if (co.ok) {
@@ -580,15 +790,17 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
         cleanup: "rm",
       };
     }
-    anomalies.push(`workspace rung 1 checkout failed: ${(co.stderr || "").trim().slice(0, 200)}`);
+    anomalies.push(`workspace rung 1 checkout failed: ${describeFailure(co, timeoutMs)}`);
   } else {
-    anomalies.push(`workspace rung 1 clone failed: ${(cloned.stderr || "").trim().slice(0, 200)}`);
+    anomalies.push(`workspace rung 1 clone failed: ${describeFailure(cloned, cloneTimeoutMs)}`);
   }
 
-  // Rung 2 — tarball at the head.
+  // Rung 2 — tarball at the head. Same extended timeout floor as rung 1 ("apply the same to the
+  // tarball rung", A/B round 2 item 1(a)) — a tarball fetch of the same repo is no smaller than
+  // the clone it falls back from, and the old 120s-floor-less timeout starved it identically.
   const tarDir = mkdtempSync(join(scratchRoot(), "tar-"));
   const tarball = join(tarDir, "head.tgz");
-  const got = await run("gh", ["api", `repos/${repo}/tarball/${headSha}`], { timeoutMs });
+  const got = await run("gh", ["api", `repos/${repo}/tarball/${headSha}`], { timeoutMs: cloneTimeoutMs });
   if (got.ok && got.stdout.length > 0) {
     writeFileSync(tarball, got.stdout, "binary");
     const untarred = await run("tar", ["-xzf", tarball, "-C", tarDir, "--strip-components", "1"], { timeoutMs });
@@ -601,11 +813,31 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
         cleanup: "rm",
       };
     }
+    anomalies.push(`workspace rung 2 untar failed: ${describeFailure(untarred, timeoutMs)}`);
+  } else if (!got.ok) {
+    anomalies.push(`workspace rung 2 tarball fetch failed: ${describeFailure(got, cloneTimeoutMs)}`);
   }
   anomalies.push("workspace ladder exhausted — DEPTH_CAPABILITY=diff-only, tier capped at standard");
 
   // A failed ladder is not a failed run.
   return { dir: null, worktreeParent: null, depthCapability: "diff-only", rung: "none", cleanup: "none" };
+}
+
+/**
+ * A/B round 2 item 1(b): pure predicate behind rung-0 reuse. Not isolated — any matching
+ * worktree in the repo is fair game (today's behaviour, a retry/re-review reusing its own prior
+ * checkout). Isolated — only a directory that falls under THIS run's own `runScratchDir` may be
+ * reused; a null `runScratchDir` (nothing bound yet) fails closed to "never reuse", never to
+ * "reuse anything".
+ * @param {string} dir @param {{ isolated?: boolean, runScratchDir?: string|null }} opts
+ * @returns {boolean}
+ */
+export function isReusableWorktreeDir(dir, { isolated = false, runScratchDir = null } = {}) {
+  if (!isolated) return true;
+  if (!runScratchDir) return false;
+  const normalizedDir = pathResolve(dir);
+  const normalizedRoot = pathResolve(runScratchDir);
+  return normalizedDir === normalizedRoot || normalizedDir.startsWith(`${normalizedRoot}/`);
 }
 
 /**
@@ -616,7 +848,7 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
  * worktree is excluded: reviewing inside it would put the review in the tree the
  * user is sitting in, and disposal there is never ours.
  */
-async function findWorktreeAt(sha) {
+async function findWorktreeAt(sha, { isolated = false, runScratchDir = null } = {}) {
   if (!sha) return null;
   const r = await run("git", ["worktree", "list", "--porcelain"], { timeoutMs: 10000 });
   if (!r.ok) return null;
@@ -640,7 +872,8 @@ async function findWorktreeAt(sha) {
   }
   if (dir) records.push({ dir, head, detached });
   // records[0] is the main worktree; only the detached ones we could have made.
-  const hit = records.slice(1).find((w) => w.detached && sameCommit(w.head, sha) && existsSync(w.dir));
+  const hit = records.slice(1).find((w) => w.detached && sameCommit(w.head, sha) && existsSync(w.dir)
+    && isReusableWorktreeDir(w.dir, { isolated, runScratchDir }));
   return hit ? hit.dir : null;
 }
 
@@ -733,9 +966,17 @@ async function prepare(opts) {
 
   const runMode = resolveRunMode({ isolated: opts.isolated, full: opts.full, statePath: opts.state || null });
 
-  // Step 1.1 — the five fetches, concurrently. One await, one moment in time.
+  // `--review-sha` (D8/D9): live pr-diff / pr-checks / pulls-files are all tied to the
+  // CURRENT head, not an arbitrary past commit, so a historical run skips them here and
+  // fetches a compare-based equivalent below, once `review_sha` is verified against this
+  // PR's own commit list — which is why `commits` rides the SAME metadata read rather than
+  // a second round trip.
+  const wantHistorical = Boolean(opts.reviewSha);
+
+  // Step 1.1 — the five (six under --review-sha) fetches, concurrently. One await, one
+  // moment in time.
   timing.start("fetch");
-  const [metaR, diffR, checksR, reviewsR, commentsR, filesR] = await Promise.all([
+  const [metaR, diffR0, checksR0, reviewsR, commentsR, filesR0] = await Promise.all([
     ghJson(
       [
         "pr",
@@ -744,12 +985,16 @@ async function prepare(opts) {
         "--repo",
         repo,
         "--json",
-        "title,body,headRefName,baseRefName,headRefOid,baseRefOid,author,additions,deletions,changedFiles,state,labels,isDraft,createdAt,url",
+        "title,body,headRefName,baseRefName,headRefOid,baseRefOid,author,additions,deletions,changedFiles,state,labels,isDraft,createdAt,url,commits",
       ],
       { timeoutMs },
     ),
-    run("gh", ["pr", "diff", String(number), "--repo", repo], { timeoutMs }),
-    run("gh", ["pr", "checks", String(number), "--repo", repo], { timeoutMs }),
+    wantHistorical
+      ? Promise.resolve({ ok: false, code: 0, stdout: "", stderr: "" })
+      : run("gh", ["pr", "diff", String(number), "--repo", repo], { timeoutMs }),
+    wantHistorical
+      ? Promise.resolve({ ok: false, code: 0, stdout: "", stderr: "not-read (historical — gh pr checks reports the current head, not review_sha)" })
+      : run("gh", ["pr", "checks", String(number), "--repo", repo], { timeoutMs }),
     ghNdjson(
       [
         "api",
@@ -770,8 +1015,11 @@ async function prepare(opts) {
       ],
       timeoutMs,
     ),
-    fetchFiles(repo, number, timeoutMs),
+    wantHistorical ? Promise.resolve({ ok: false, error: null, value: [] }) : fetchFiles(repo, number, timeoutMs),
   ]);
+  /** @type {any} */ let diffR = diffR0;
+  /** @type {any} */ let checksR = checksR0;
+  /** @type {any} */ let filesR = filesR0;
 
   timing.end(); // fetch
 
@@ -796,8 +1044,37 @@ async function prepare(opts) {
     throw new Error(pinCheck.message);
   }
 
+  // `--review-sha` (D8/D9): resolve the historical review target against this PR's own
+  // commit list, then fetch the compare-based diff/files it needs in place of the
+  // live-head fetches skipped above. `checkoutSha` is what the workspace ladder and the
+  // impact graph materialize/diff against below — `headSha` above stays the LIVE head
+  // throughout (still what `--pin-head` compares against, still what a non-historical
+  // run's `context.headSha` reports).
+  let historical = null;
+  let checkoutSha = headSha;
+  if (wantHistorical) {
+    const commitShas = (meta.commits || []).map((/** @type {any} */ c) => c.oid).filter(Boolean);
+    const verified = verifyReviewSha(opts.reviewSha, commitShas);
+    if (!verified.ok) {
+      throw new Error(`--review-sha ${opts.reviewSha}: ${verified.message}`);
+    }
+    checkoutSha = /** @type {string} */ (verified.resolved);
+    historical = { ...historicalBlock({ reviewSha: checkoutSha }), live_head_sha: headSha };
+
+    const compareRange = `${baseSha}...${checkoutSha}`;
+    const [cDiff, cFiles] = await Promise.all([
+      run("gh", ["api", "-H", "Accept: application/vnd.github.v3.diff", `repos/${repo}/compare/${compareRange}`], { timeoutMs }),
+      ghNdjson(
+        ["api", `repos/${repo}/compare/${compareRange}`, "--jq", ".files[] | {filename, patch, status, additions, deletions, sha}"],
+        timeoutMs,
+      ),
+    ]);
+    diffR = cDiff;
+    filesR = cFiles;
+  }
+
   if (!filesR.ok) anomalies.push(`patch list unreadable: ${filesR.error}`);
-  if (!checksR.ok) anomalies.push("gh pr checks unreadable — CI state is informational only, so this never grades");
+  if (!checksR.ok && !wantHistorical) anomalies.push("gh pr checks unreadable — CI state is informational only, so this never grades");
   if (!reviewsR.ok) anomalies.push(`prior reviews unreadable: ${reviewsR.error}`);
   if (!commentsR.ok) anomalies.push(`issue comments unreadable: ${commentsR.error} — prior-run detection degrades to first run`);
 
@@ -824,22 +1101,35 @@ async function prepare(opts) {
 
   // Step 0.5 — review relation. Never from `gh api /user`: it is not repo-scoped
   // and 401s under an installation token, which is an ordinary hosted setup.
-  const me = opts.reviewerLogin || process.env.PR_REVIEWER_LOGIN || "";
+  // A/B iteration 4: validated, never trusted. Round 6 on sync-tray#72 passed a 401 JSON error
+  // body as `--reviewer-login` (the agent body's `ME=$(gh api user … || echo "")` captures gh's
+  // stdout error payload, then appends the empty fallback) and this script accepted it as a login.
+  // Anything that is not a GitHub login shape is treated as unknown, and says so.
+  const suppliedLogin = opts.reviewerLogin || process.env.PR_REVIEWER_LOGIN || "";
+  const me = isGithubLogin(suppliedLogin) ? suppliedLogin : "";
   const authorLogin = meta.author?.login || "";
   const reviewRelation = me ? (normalizeLogin(me) === normalizeLogin(authorLogin) ? "self" : "cross") : "cross";
-  if (!me) {
+  if (!me && suppliedLogin) {
+    anomalies.push(
+      `reviewer login rejected — ${JSON.stringify(String(suppliedLogin).slice(0, 40))} is not a GitHub login; relation defaulted to cross`,
+    );
+  } else if (!me) {
     anomalies.push(
       "reviewer identity unknown (no --reviewer-login / PR_REVIEWER_LOGIN; /user 401s here) — relation defaulted to cross",
     );
   }
 
-  // Step 1.1b — the workspace ladder.
+  // Step 1.1b — the workspace ladder. `checkoutSha` is `headSha` on a live run and
+  // `review_sha` on a historical one (D9) — the impact graph below diffs whatever this
+  // workspace is checked out to, so materializing it at the historical target is the whole
+  // fix for "merge-base impact graph": build-impact-graph.mjs needs no separate awareness
+  // of `--review-sha` at all.
   timing.start("workspace");
   let workspace = { dir: null, worktreeParent: null, depthCapability: "diff-only", rung: "skipped", cleanup: "none" };
-  if (opts.workspace && headSha) {
+  if (opts.workspace && checkoutSha) {
     workspace = opts.workdir
       ? { dir: opts.workdir, worktreeParent: null, depthCapability: "checkout", rung: "caller-supplied", cleanup: "none" }
-      : await materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies });
+      : await materializeWorkspace({ repo, number, headSha: checkoutSha, timeoutMs, anomalies, isolated: runMode.isolated });
   }
   const tier2Checker = detectTier2Checker(workspace.dir);
   timing.end(); // workspace
@@ -921,6 +1211,49 @@ async function prepare(opts) {
   }
   timing.end(); // impact-graph
 
+  // A/B iteration 4 (speed): the review packet — the PR description, a priority-ordered file
+  // index, and every hunk widened against the head file with head line numbers — so a finder or
+  // verifier reads one file instead of the raw diff plus a dozen workspace reads
+  // (review-packet.mjs). Deterministic and never a gate: a failure is an anomaly, and the diff
+  // sidecar is still there.
+  const packetPath = join(sidecarDir, "review-packet.md");
+  let packet = null;
+  try {
+    const built = buildReviewPacket({
+      title: meta.title, body: meta.body, repo, number, headSha: checkoutSha, files,
+      consumers: consumersByFile(impact), workspaceDir: workspace.dir || null,
+    });
+    writeFileSync(packetPath, built.text, "utf8");
+    packet = { path: packetPath, lines: built.lines, files: built.files, maxLines: built.maxLines, contextLines: built.contextLines };
+  } catch (e) {
+    anomalies.push(`review packet not built: ${String(e && e.message || e).slice(0, 200)} — read the diff sidecar instead`);
+  }
+
+  // A/B iteration 4 (speed): Step 1.7b's two halves as functions (discover-standards.mjs) — the
+  // TRIVIAL_SKIP conditions and Source-1 standards discovery with normative-line extraction. The
+  // full bullet list is a sidecar; the context carries the summary Step 1.7b announces.
+  let trivial = null;
+  try {
+    trivial = trivialSkip({ files, highStakesFiles: (shape && shape.high_stakes_files) || [] });
+  } catch (e) {
+    anomalies.push(`trivial-skip not evaluated: ${String(e && e.message || e).slice(0, 200)}`);
+  }
+  const standardsPath = join(sidecarDir, "standards.json");
+  let standards = null;
+  if (workspace.dir) {
+    try {
+      const found = discoverStandards({ root: workspace.dir, changed: files.map((f) => f.filename) });
+      writeFileSync(standardsPath, JSON.stringify(found, null, 2), "utf8");
+      standards = {
+        path: standardsPath, docs: found.docs.map((d) => ({ path: d.path, bullets: d.bullets.length })),
+        bulletCount: found.bulletCount, chars: found.chars, capChars: found.capChars, dropped: found.dropped,
+        reviewConfigStandards: found.reviewConfigStandards, announce: found.announce,
+      };
+    } catch (e) {
+      anomalies.push(`standards discovery not run: ${String(e && e.message || e).slice(0, 200)} — Step 1.7b falls back to the manual walk`);
+    }
+  }
+
   // Delta triage + Phase C depth routing + Gate 4 pre-candidates (D10). Depth
   // routing binds EVERY run's tier (agents/pr-reviewer.md § "Bind DEPTH_TIER
   // … all modes, including full and zero-delta"); delta TRIAGE itself (the
@@ -957,6 +1290,14 @@ async function prepare(opts) {
     threads = buildThreads(tr.nodes);
     if (!tr.complete) {
       anomalies.push("review threads read incomplete — THREAD_OVERLAP and open-thread data may undercount");
+    }
+    // `--review-sha` (D9): never read the future — only threads (and replies) that existed at
+    // the reviewed commit's committer date survive into THREAD_OVERLAP and context.threads[].
+    if (historical) {
+      const ht = historicalThreads({ threads, commits: meta.commits || [], reviewSha: historical.review_sha });
+      threads = ht.threads;
+      historical = { ...historical, threads_created_as_of: ht.asOf };
+      if (ht.anomaly) anomalies.push(ht.anomaly);
     }
   }
 
@@ -1082,6 +1423,28 @@ async function prepare(opts) {
     depthCapability: workspace.depthCapability,
   });
 
+  // resolveBudget() layers the continuous thoroughness knob on top of the routed tier
+  // (depth-routing.md § Thoroughness budget). This script cannot know whether the agent
+  // reading this context holds `Task`, so `budget.topology` here assumes dispatch IS
+  // available — the agent re-derives it as `dispatchAvailable ? budget.topology :
+  // "in-context"` and logs RUN_ANOMALY when that downgrades it
+  // (dispatch-topology.md § Reading a budget into dispatch).
+  const thoroughnessOverride = opts.thoroughness === "" ? undefined : Number(opts.thoroughness);
+  const budget = resolveBudget({
+    thoroughness: thoroughnessOverride,
+    routedTier: routing.tier,
+    shape: (deltaShape && deltaShape.shapes) || [],
+    band: impact?.blast_radius?.band ?? "none",
+    depthCapability: workspace.depthCapability,
+    effortHigh: opts.effort === "high",
+    changedFiles: files.length,
+  });
+
+  // Item 3: a capability-deactivated finder is exactly the class of "something changed what this
+  // run actually reviewed" RUN_ANOMALY exists for — folded into the same anomalies[] every other
+  // workspace/routing degrade already flows through, rather than a second, easy-to-miss channel.
+  for (const note of budget.capabilityNotes) anomalies.push(note);
+
   const gate4Precandidates = scanGate4(deltaFiles);
 
   timing.end(); // triage-routing
@@ -1127,8 +1490,15 @@ async function prepare(opts) {
       changedFiles: meta.changedFiles,
       createdAt: meta.createdAt,
     },
-    headSha,
+    // `headSha` is the SHA under review — `checkoutSha` on every run, which equals the LIVE
+    // head unless `--review-sha` is set (D8/D9), in which case `historical.live_head_sha`
+    // below still carries the live head for reference. Every downstream consumer (the
+    // renderer's "reviewed for commit" footer, line-validity, the impact graph) reads THIS
+    // field, never `headRefOid` directly, so a historical run's report never claims to have
+    // reviewed a commit it did not.
+    headSha: checkoutSha,
     baseSha,
+    historical,
     reviewRelation,
     reviewerLogin: me || null,
     identitySource: me ? (opts.reviewerLogin ? "--reviewer-login" : "PR_REVIEWER_LOGIN") : "unknown",
@@ -1142,7 +1512,12 @@ async function prepare(opts) {
       diff: diffR.ok ? diffPath : null,
       impact: impactPath,
       undiffable: undiffablePath,
+      packet: packet ? packetPath : null,
+      standards: standards ? standardsPath : null,
     },
+    packet,
+    trivialSkip: trivial,
+    standards,
     diff: {
       path: diffR.ok ? diffPath : null,
       bytes: diffR.ok ? Buffer.byteLength(diffR.stdout) : 0,
@@ -1163,9 +1538,11 @@ async function prepare(opts) {
       // Under `--isolated`, `source` reports "none" even when a sticky physically exists on
       // the PR (from an earlier, non-comparability review) — `priorSha`/`zeroDelta` above are
       // already nulled/false for the same reason. `stickyCommentId`/`stickyUrl`/`stickyKind`
-      // stay populated regardless: they identify WHERE a (dry-run-only, per pipeline.md pairing)
-      // write would target, which is a different concern from "is this a prior run to diff
-      // against" and carries no judgment-affecting state.
+      // stay populated regardless: they identify WHERE a dry-run's rehearsed write would target,
+      // which is a different concern from "is this a prior run to diff against" and carries no
+      // judgment-affecting state. Because that target is the LIVE report, finalize.mjs refuses an
+      // --isolated context without --dry-run and marks the plan `isolated`, which
+      // execute-write-plan.mjs refuses on its own (A/B round 3; rules/pipeline.md § --isolated).
       source: runMode.isolated ? "none" : (sticky ? "github-fallback-rung" : "none"),
       stickyCommentId: sticky ? sticky.id : null,
       stickyUrl: sticky ? sticky.html_url : null,
@@ -1218,6 +1595,7 @@ async function prepare(opts) {
     impact: opts.inlinePayloads ? impact : null,
 
     routing,
+    budget,
     threads,
     gate4_precandidates: gate4Precandidates,
 
@@ -1230,9 +1608,35 @@ async function prepare(opts) {
 
 /* ------------------------------- self-test ------------------------------- */
 
-function selfTest() {
+async function selfTest() {
   const cases = [];
   const t = (name, fn) => cases.push([name, fn]);
+
+  // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no
+  // dependency-injection seam here, so the offline-feasible test is (1) the
+  // constants' own shape and (2) a source-level check — this file's own
+  // text — that every remote-touching `git` invocation actually spreads
+  // GIT_CREDENTIAL_ARGS and passes the non-interactive env, the same
+  // "read the real shipped source" idiom L1's cross-file guards use.
+  t("GIT_CREDENTIAL_ARGS clears the ambient credential.helper before setting gh's, in that order", () => {
+    return GIT_CREDENTIAL_ARGS[0] === "-c" && GIT_CREDENTIAL_ARGS[1] === "credential.helper="
+      && GIT_CREDENTIAL_ARGS[2] === "-c" && GIT_CREDENTIAL_ARGS[3] === "credential.helper=!gh auth git-credential";
+  });
+  t("GIT_NONINTERACTIVE_ENV sets GIT_TERMINAL_PROMPT=0 without dropping the rest of process.env", () => {
+    return GIT_NONINTERACTIVE_ENV.GIT_TERMINAL_PROMPT === "0"
+      && Object.keys(GIT_NONINTERACTIVE_ENV).length >= Object.keys(process.env).length;
+  });
+  t("every remote-touching git fetch/clone in this file's own source spreads GIT_CREDENTIAL_ARGS and passes GIT_NONINTERACTIVE_ENV", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    // One block per git-subprocess call whose array contains "fetch" or "clone" — each such
+    // call, up to its closing statement terminator, must carry both wires. worktree-add and
+    // checkout are deliberately excluded: neither touches a remote once the fetch above ran.
+    const remoteCalls = [...src.matchAll(/\brun\(\s*"git"[\s\S]*?\);/g)]
+      .map((m) => m[0])
+      .filter((block) => /"fetch"|"clone"/.test(block));
+    if (remoteCalls.length < 3) return false; // guard the guard: the extractor must find all three
+    return remoteCalls.every((block) => block.includes("GIT_CREDENTIAL_ARGS") && block.includes("GIT_NONINTERACTIVE_ENV"));
+  });
 
   t("parsePrRef reads a full URL", () => {
     const r = parsePrRef("https://github.com/mthines/agent-skills/pull/198");
@@ -1378,6 +1782,102 @@ function selfTest() {
     return r.priorSha === null && r.zeroDelta === false;
   });
 
+  // ── verifyReviewSha (D8/D9, AC-15/AC-16) — exact / prefix / not-in-list / ambiguous / truncated ──
+  const REVIEW_SHA_CANDIDATES = [
+    "906a74781990f75607f0234de963fdbbc3953f2",
+    "906a74799990f75607f0234de963fdbbc3953f2",
+    "deadbeef00000000000000000000000000000000".slice(0, 40),
+  ];
+  t("verifyReviewSha: an exact 40-char match resolves", () => {
+    const r = verifyReviewSha(REVIEW_SHA_CANDIDATES[0], REVIEW_SHA_CANDIDATES);
+    return r.ok === true && r.resolved === REVIEW_SHA_CANDIDATES[0];
+  });
+  t("verifyReviewSha: a unique short prefix resolves to the full SHA", () => {
+    const r = verifyReviewSha("deadbeef", REVIEW_SHA_CANDIDATES);
+    return r.ok === true && r.resolved === REVIEW_SHA_CANDIDATES[2];
+  });
+  t("verifyReviewSha: a prefix matching nothing in this PR's commit list is refused — cannot prove it exists", () => {
+    const r = verifyReviewSha("cafef00d", REVIEW_SHA_CANDIDATES);
+    return r.ok === false && r.resolved === null && /cannot prove/i.test(r.message);
+  });
+  t("verifyReviewSha: a prefix matching more than one commit is ambiguous, never guessed", () => {
+    const r = verifyReviewSha("906a747", REVIEW_SHA_CANDIDATES);
+    return r.ok === false && r.resolved === null && /ambiguous/i.test(r.message) && r.message.includes("2 commits");
+  });
+  t("verifyReviewSha: shorter than the minimum length is refused as unable to disambiguate — cannot prove", () => {
+    const r = verifyReviewSha("90", REVIEW_SHA_CANDIDATES);
+    return r.ok === false && r.resolved === null && /cannot prove/i.test(r.message);
+  });
+  t("verifyReviewSha: case-insensitive and whitespace-tolerant", () => {
+    const r = verifyReviewSha(`  ${REVIEW_SHA_CANDIDATES[0].toUpperCase()}  `, REVIEW_SHA_CANDIDATES);
+    return r.ok === true && r.resolved === REVIEW_SHA_CANDIDATES[0];
+  });
+
+  // ── filterAsOf (D9) — the historical-run "never read the future" filter ──
+  t("filterAsOf: keeps items at or before the cutoff, drops items after it", () => {
+    const items = [
+      { id: 1, created_at: "2026-01-01T00:00:00Z" },
+      { id: 2, created_at: "2026-01-05T00:00:00Z" },
+      { id: 3, created_at: "2026-01-10T00:00:00Z" },
+    ];
+    const out = filterAsOf(items, "2026-01-05T00:00:00Z");
+    return out.length === 2 && out.every((/** @type {any} */ i) => i.id !== 3);
+  });
+  t("filterAsOf: an item with an unparseable own timestamp is dropped, never assumed to qualify", () => {
+    const items = [{ id: 1, created_at: "not-a-date" }, { id: 2, created_at: "2026-01-01T00:00:00Z" }];
+    const out = filterAsOf(items, "2026-01-05T00:00:00Z");
+    return out.length === 1 && out[0].id === 2;
+  });
+  t("filterAsOf: no cutoff (the live-review path) filters nothing", () => {
+    const items = [{ id: 1, created_at: "2026-01-01T00:00:00Z" }];
+    return filterAsOf(items, null).length === 1 && filterAsOf(items, "").length === 1;
+  });
+  t("filterAsOf: a custom date field is honored", () => {
+    const items = [{ id: 1, submitted_at: "2026-01-01T00:00:00Z" }, { id: 2, submitted_at: "2026-01-10T00:00:00Z" }];
+    const out = filterAsOf(items, "2026-01-05T00:00:00Z", "submitted_at");
+    return out.length === 1 && out[0].id === 1;
+  });
+
+  t("filterAsOf: an unparseable non-empty cutoff fails CLOSED (drops everything)", () => {
+    const items = [{ id: 1, created_at: "2026-01-01T00:00:00Z" }];
+    return filterAsOf(items, "not-a-date").length === 0;
+  });
+
+  // ── historicalThreads (D9) — --review-sha filters thread state to the reviewed commit's
+  // committer date; it is what prepare() calls on the historical path ──
+  const HT_SHA = "906a74781990f75607f0234de963fdbbc3953f2a";
+  const HT_THREADS = [
+    { thread_id: "old", created_at: "2026-01-01T00:00:00Z", replies: [
+      { author: "a", created_at: "2026-01-02T00:00:00Z" }, { author: "b", created_at: "2026-01-09T00:00:00Z" }] },
+    { thread_id: "future", created_at: "2026-01-08T00:00:00Z", replies: [] },
+  ];
+  t("historicalThreads: drops threads opened after the reviewed commit's committedDate and later replies", () => {
+    const r = historicalThreads({ threads: HT_THREADS, commits: [{ oid: HT_SHA, committedDate: "2026-01-05T00:00:00Z" }], reviewSha: HT_SHA });
+    return r.asOf === "2026-01-05T00:00:00Z" && r.anomaly === null
+      && r.threads.length === 1 && r.threads[0].thread_id === "old" && r.threads[0].replies.length === 1;
+  });
+  t("historicalThreads: no committedDate for the reviewed commit fails CLOSED (zero threads + anomaly)", () => {
+    const r = historicalThreads({ threads: HT_THREADS, commits: [{ oid: HT_SHA }], reviewSha: HT_SHA });
+    return r.threads.length === 0 && r.asOf === null && /committedDate/.test(r.anomaly || "");
+  });
+  t("prepare() wires historicalThreads into the --review-sha path (not merely exported)", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+    return /historicalThreads\(\{/.test(body) && /threads_created_as_of/.test(body);
+  });
+  t("buildThreads: carries the root comment's createdAt as created_at (the as-of filter's key)", () => {
+    const out = buildThreads([{ id: "T", comments: { nodes: [{ databaseId: 1, createdAt: "2026-01-01T00:00:00Z" }] } }]);
+    return out[0].created_at === "2026-01-01T00:00:00Z";
+  });
+
+  // ── historicalBlock (D8/D9) — the context.json block finalize.mjs/execute-write-plan.mjs
+  // refuse to post anything for outside --dry-run ──
+  t("historicalBlock: carries review_sha plus the explicit thread_state_as_of/description_as_of=now, ci=not-read markers", () => {
+    const b = historicalBlock({ reviewSha: "906a74781990f75607f0234de963fdbbc3953f2" });
+    return b.review_sha === "906a74781990f75607f0234de963fdbbc3953f2"
+      && b.thread_state_as_of === "now" && b.description_as_of === "now" && b.ci === "not-read";
+  });
+
   t("scratchRoot prefers the agent workspace over os.tmpdir()", () => {
     // The whole point is that a sub-agent can read the checkout. `/tmp/workspace`
     // exists on the host this runs on; `PR_REVIEWER_SCRATCH` overrides it, and the
@@ -1477,15 +1977,86 @@ function selfTest() {
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
   });
 
+  // A/B round 2 item 1(a): real timeout detection, not a source-grep — proves `run()` bites.
+  // `sleep` needs no network and is present on every runner this pipeline executes on.
+  t("run(): a real timeout reports timedOut:true, never a bare ok:false with no signal", async () => {
+    const r = await run("sleep", ["2"], { timeoutMs: 100 });
+    return r.ok === false && r.timedOut === true;
+  });
+  t("run(): a process that exits non-zero on its own (no kill) is NOT reported as a timeout", async () => {
+    const r = await run("node", ["-e", "process.exit(3)"], { timeoutMs: 5000 });
+    return r.ok === false && r.timedOut === false && r.code === 3;
+  });
+  t("describeFailure(): a timed-out result reports 'timed out after Ns', never empty stderr", () => {
+    return describeFailure({ ok: false, code: 1, stderr: "", timedOut: true }, 300000) === "timed out after 300s";
+  });
+  t("describeFailure(): a non-timeout failure with empty stderr names its exit code rather than blanking", () => {
+    return describeFailure({ ok: false, code: 7, stderr: "", timedOut: false }, 60000) === "failed with exit code 7";
+  });
+  t("describeFailure(): a non-timeout failure WITH stderr still prefers the real message", () => {
+    return describeFailure({ ok: false, code: 1, stderr: "  fatal: repository not found\n", timedOut: false }, 60000)
+      === "fatal: repository not found";
+  });
+  t("materializeWorkspace's source passes --filter=blob:none and a >= 300s timeout floor on rung 1's clone", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    return src.includes("--filter=blob:none") && src.includes("CLONE_TIMEOUT_FLOOR_MS = 300000")
+      && /clone.*"-q", "--filter=blob:none"/.test(src.replace(/\n/g, " "));
+  });
+  t("materializeWorkspace's source applies the same extended timeout floor to the tarball rung", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    const tarballBlock = src.slice(src.indexOf("// Rung 2"), src.indexOf("anomalies.push(\"workspace ladder exhausted"));
+    return tarballBlock.includes("cloneTimeoutMs") && tarballBlock.includes("describeFailure(got, cloneTimeoutMs)");
+  });
+
+  // A/B round 2 item 1(b): rung-0/worktree reuse keyed to the run — pure predicate, no git calls.
+  t("isReusableWorktreeDir: non-isolated reuse is unrestricted (today's behaviour)", () => {
+    return isReusableWorktreeDir("/tmp/workspace/.pr-reviewer-scratch/wt-anything/w", { isolated: false, runScratchDir: null }) === true;
+  });
+  t("isReusableWorktreeDir: isolated + exact runScratchDir match is reusable", () => {
+    return isReusableWorktreeDir("/tmp/ws/.pr-reviewer-scratch/run-123", { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123" }) === true;
+  });
+  t("isReusableWorktreeDir: isolated + nested under this run's own scratch dir is reusable", () => {
+    return isReusableWorktreeDir(
+      "/tmp/ws/.pr-reviewer-scratch/run-123/wt-abcd/w",
+      { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123" },
+    ) === true;
+  });
+  t("isReusableWorktreeDir: isolated + ANOTHER run's scratch dir (arm B's D10 leak) is refused", () => {
+    return isReusableWorktreeDir(
+      "/tmp/ws/.pr-reviewer-scratch/run-456-arm-b/wt-zzzz/w",
+      { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123-arm-d" },
+    ) === false;
+  });
+  t("isReusableWorktreeDir: isolated + a lookalike sibling PREFIX (run-123x) is refused, not string-matched", () => {
+    return isReusableWorktreeDir(
+      "/tmp/ws/.pr-reviewer-scratch/run-123x/wt-zzzz/w",
+      { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123" },
+    ) === false;
+  });
+  t("isGithubLogin accepts real logins and App identities", () =>
+    ["mthines", "a", "dash0-dev", "app-x[bot]", "A1-b2"].every((l) => isGithubLogin(l)));
+  t("isGithubLogin rejects a 401 error body, empties, and malformed names (A/B iteration 4)", () =>
+    ['{"message":"Bad credentials","status":"401"}', "", " mthines", "-lead", "trail-", "a--b", "x".repeat(40), null]
+      .every((l) => !isGithubLogin(l)));
+  t("isReusableWorktreeDir: isolated with no runScratchDir bound fails closed to never-reuse", () => {
+    return isReusableWorktreeDir("/anything", { isolated: true, runScratchDir: null }) === false;
+  });
+
+  // Every case's name is echoed on PASS too, not only on failure — this is the one self-test
+  // in the pipeline a standing L1 guard (or a checks.yaml AC) greps for a case NAME in the
+  // OUTPUT rather than only in the source, so a silent-on-success run would read as though
+  // that coverage did not exist (AC-16).
   let failed = 0;
   for (const [name, fn] of cases) {
     let ok = false;
     try {
-      ok = fn() === true;
+      ok = (await fn()) === true;
     } catch (err) {
       process.stderr.write(`self-test THREW: ${name}: ${err.message}\n`);
     }
-    if (!ok) {
+    if (ok) {
+      process.stderr.write(`  ✓ ${name}\n`);
+    } else {
       failed++;
       process.stderr.write(`self-test FAIL: ${name}\n`);
     }
@@ -1518,7 +2089,9 @@ async function main(argv) {
     full: false,
     state: "",
     effort: "",
+    thoroughness: "",
     threads: true,
+    reviewSha: "",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -1538,7 +2111,9 @@ async function main(argv) {
     else if (a === "--full") opts.full = true;
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
+    else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
     else if (a === "--no-threads") opts.threads = false;
+    else if (a === "--review-sha") opts.reviewSha = argv[++i]; // D8/D9: historical read-only review target
     else {
       process.stderr.write(`unknown argument: ${a}\n`);
       process.exit(2);
@@ -1550,9 +2125,40 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
         "[--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--effort high] [--no-threads] | --self-test\n",
+        "[--state file] [--effort high] [--thoroughness 0..1] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
+  }
+
+  // `--review-sha` write-refusal gate (D8/D9, AC-15) — checked BEFORE `prepare()` spawns any
+  // `gh` process, so a caller who got the combination wrong never spends a network round trip
+  // (or, on a PATH-shim test double, ever writes to the shim's argv log) finding that out.
+  // Two refusals, never combined into one message, so each names the exact flag to change:
+  //   1. `--review-sha` without `--isolated` — a historical review must not read live PR
+  //      state (Step 0.7, the sticky footer fallback) that postdates the commit it reviews.
+  //   2. `--review-sha` together with `--pin-head` — `--review-sha` already pins the review
+  //      to a specific (historical) commit; `--pin-head` compares against the LIVE head,
+  //      which is a different, live-head-only comparability contract this run does not need.
+  //      (`--isolated` runs WITHOUT `--review-sha` still require `--pin-head`, per
+  //      pipeline.md § --isolated item 3 — that requirement is unchanged and does not apply
+  //      here.)
+  if (opts.reviewSha) {
+    if (!opts.isolated) {
+      process.stderr.write(
+        "prepare-review.mjs: --review-sha requires --isolated — a historical review must not read " +
+          "live PR state that postdates the commit it is reviewing. Pass --isolated.\n",
+      );
+      process.exit(2);
+    }
+    if (opts.pinHead) {
+      process.stderr.write(
+        "prepare-review.mjs: --review-sha and --pin-head are mutually exclusive — --review-sha " +
+          "already pins this review to a specific (historical) commit, and --pin-head compares " +
+          "against the LIVE head, a different comparability contract this run does not need. " +
+          "Drop --pin-head.\n",
+      );
+      process.exit(2);
+    }
   }
 
   try {
@@ -1571,6 +2177,7 @@ async function main(argv) {
           `  shape     ${context.shape ? JSON.stringify(context.shape).slice(0, 160) : "unavailable"}`,
           `  impact    ${context.impactSummary ? `band=${context.impactSummary.band} · ${context.impactSummary.changedSymbols} symbols (${context.impactSummary.changedExports} exported) · ${context.impactSummary.dependencies} deps` : "unavailable"}`,
           `  routing   tier=${context.routing.tier}${context.routing.capApplied ? " (capped)" : ""} · triggers=[${context.routing.triggers.join(",")}] · threads=${context.threads.length} · gate4=${context.gate4_precandidates.length} pre-candidate(s)`,
+          `  budget    thoroughness=${context.budget.effectiveThoroughness}${context.budget.riskFloorApplied ? ` (floored: ${context.budget.riskFloorReason})` : ""} · topology=${context.budget.topology} · votes=${context.budget.correctnessVotes} · tool calls=${context.budget.toolCalls ?? "?"}`,
           `  context   ${(Buffer.byteLength(JSON.stringify(context)) / 1024).toFixed(0)} KB index + sidecars in ${dirname(outPath)}`,
           `  anomalies ${context.anomalies.length}`,
           ...context.anomalies.map((a) => `    ⚠ ${a}`),

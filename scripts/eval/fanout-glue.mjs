@@ -99,24 +99,42 @@ function rawFinderCandidates() {
 }
 
 /**
+ * Step e's INPUT: exactly what SKILL.md's `--fanout` Step e hands one verifier — the
+ * representative candidate record and nothing else from the dedupe step except `_also_flagged_by`
+ * (the exact `(path, line, defect_class)` agreement `rubric-composition.md ## Cross-rubric
+ * agreement` sanctions, finder NAMES only). `_semantic_merged` is removed: its members are other
+ * finders' claims, which `finding-verifier.md`'s exclusion table keeps from the verifier, and a
+ * semantic merge is never agreement. It stays on `deduped.json`'s kept record for the report and
+ * the audit trail only.
+ * @param {any} c
+ * @returns {any}
+ */
+export function verifierInput(c) {
+  const { _semantic_merged, agreement_promoted, _dedupe_dropped_for, _dedupe_reason, ...input } = c;
+  return input;
+}
+
+/**
  * Step e's output, stubbed: what a verifier sub-agent returns after reading `finding-verifier.md`
  * and the candidate record. Deterministic, never a live call — every field a real verifier would
  * add is present, at fixed values, so the assembled judgments.json is realistic rather than a
  * minimal schema-satisfying stub.
  *
- * Two bookkeeping fields step d's dedupe leaves on a merged candidate — `_also_flagged_by` and
- * `agreement_promoted` — are NOT part of judgments.schema.json (additionalProperties: false) and
- * must not reach judgments.json. Cross-finder corroboration is real signal, though, so it is
- * folded into the verifier's own confidence here (a small bump, mirroring finders.md's
- * diversify-then-vote note that "a unanimous candidate is pre-corroborated") rather than smuggled
- * through as an extra schema field — the same place finalize.mjs's OWN internal dedupe would have
- * re-derived agreement_promoted had step d not already merged the duplicate away.
+ * Three bookkeeping fields step d's dedupe leaves on a merged candidate — `_also_flagged_by`,
+ * `agreement_promoted` (exact/adjacent pass), and `_semantic_merged` (semantic pass) — are NOT part
+ * of judgments.schema.json (additionalProperties: false) and must not reach judgments.json.
+ * Only EXACT cross-finder agreement (`_also_flagged_by`) is corroboration: it is folded into the
+ * verifier's own confidence here (a small bump, mirroring finders.md's diversify-then-vote note that
+ * "a unanimous candidate is pre-corroborated") rather than smuggled through as an extra schema
+ * field. A semantic merge earns nothing — the verifier never sees it (`verifierInput`), and
+ * counting it would be the cross-finder promotion `rubric-composition.md ## Dedupe` forbids.
  * @param {any} c
  * @returns {any}
  */
 function mockVerify(c) {
-  const corroborated = Array.isArray(c._also_flagged_by) && c._also_flagged_by.length > 0;
-  const { _also_flagged_by, agreement_promoted, _dedupe_dropped_for, _dedupe_reason, ...clean } = c;
+  const input = verifierInput(c);
+  const corroborated = Array.isArray(input._also_flagged_by) && input._also_flagged_by.length > 0;
+  const { _also_flagged_by, ...clean } = input;
   const high = clean.severity_hint === "high";
   const bump = corroborated ? 4 : 0;
   return {
@@ -166,6 +184,99 @@ async function runGlue({ verbose = false } = {}) {
     { kept: deduped.kept.length, dropped: deduped.dropped.length }) && ok;
   log(`[step d] deduped 3 raw candidate(s) -> ${deduped.kept.length} kept, ${deduped.dropped.length} dropped`);
 
+  // step d (extra, D5/AC-12) — a semantic-duplicate group (the same defect filed under a
+  // DIFFERENT defect_class per finder — the real dash0hq/dash0#20230 failure mode, which the
+  // exact/adjacent pass above can never catch by construction) plus a decoy that must survive,
+  // through the REAL finalize.mjs --dedupe-candidates end to end (dedupe() -> semanticDedupe()).
+  const semanticRawPath = join(dir, "semantic-raw-candidates.json");
+  const semanticRaw = [
+    {
+      finder: "correctness", defect_class: "edge-case", path: "src/pay.ts", line: 10, symbol: "processPayment",
+      claim: "processPayment does not handle a zero amount refund correctly",
+      bad_outcome: "a zero amount refund silently succeeds without reversing the charge",
+      evidence: ["src/pay.ts:10"], severity_hint: "high", verify_by: "trace the refund branch",
+    },
+    {
+      finder: "consumer-impact", defect_class: "contract-break", path: "src/pay.ts", line: 11, symbol: "processPayment",
+      claim: "processPayment silently succeeds on a zero amount refund",
+      bad_outcome: "callers assume the refund reversed the charge but it does not",
+      evidence: ["src/pay.ts:11"], severity_hint: "high", verify_by: "check callers",
+    },
+    // The decoy: same path, same symbol, a nearby line — but a disjoint topic. Proximity and
+    // symbol alone must never be enough to merge.
+    {
+      finder: "quality", defect_class: "maintainability", path: "src/pay.ts", line: 12, symbol: "processPayment",
+      claim: "this function is 140 lines long and mixes three concerns",
+      bad_outcome: "hard to test in isolation",
+      evidence: ["src/pay.ts:12"], severity_hint: "low", verify_by: "read the function",
+    },
+  ];
+  writeFileSync(semanticRawPath, JSON.stringify(semanticRaw, null, 2));
+  const semanticDedupedPath = join(dir, "semantic-deduped.json");
+  const semanticDedupeRun = spawnSync(process.execPath, [
+    FINALIZE, "--dedupe-candidates", semanticRawPath, "--out", semanticDedupedPath,
+  ], { encoding: "utf8" });
+  ok = assert("[step d, semantic] finalize.mjs --dedupe-candidates exits 0",
+    semanticDedupeRun.status === 0, semanticDedupeRun.stderr) && ok;
+  if (existsSync(semanticDedupedPath)) {
+    const semanticDeduped = JSON.parse(readFileSync(semanticDedupedPath, "utf8"));
+    ok = assert("[step d, semantic] the differently-worded, differently-classed duplicate merges via semanticDedupe",
+      semanticDeduped.kept.length === 2 && semanticDeduped.dropped.length === 1
+        && semanticDeduped.dropped[0]._dedupe_reason === "semantic",
+      { kept: semanticDeduped.kept.length, dropped: semanticDeduped.dropped.length }) && ok;
+    ok = assert("[step d, semantic] the maintainability decoy survives — never semantically merged",
+      semanticDeduped.kept.some((/** @type {any} */ c) => c.defect_class === "maintainability"),
+      semanticDeduped.kept.map((/** @type {any} */ c) => c.defect_class)) && ok;
+    log(`[step d, semantic] semantic dedupe: ${semanticRaw.length} raw -> ${semanticDeduped.kept.length} kept, `
+      + `${semanticDeduped.dropped.length} dropped (1 semantic decoy correctly kept)`);
+
+    // step e/f (extra, D5) — the SKILL.md --fanout text promises `_semantic_merged` is recorded on
+    // deduped.json for the report/audit, is NEVER handed to the Step e verifier, is never counted
+    // as agreement, and is stripped before judgments.json assembly. Prove each half through the
+    // real mockVerify / validate-judgments.mjs, not just the dedupe step above.
+    const semMergedHead = semanticDeduped.kept.find((/** @type {any} */ c) => Array.isArray(c._semantic_merged));
+    ok = assert("[step d, semantic] the merged kept record carries _semantic_merged for the audit trail",
+      Boolean(semMergedHead) && semMergedHead._semantic_merged.length === 1, semMergedHead) && ok;
+    if (semMergedHead) {
+      const semVerified = mockVerify(semMergedHead);
+      ok = assert("[step e, semantic] mockVerify strips _semantic_merged before the judgment record",
+        !("_semantic_merged" in semVerified), Object.keys(semVerified)) && ok;
+      // The verifier sees ONLY the representative: a semantic merge is never shown to it and never
+      // counted as agreement (rubric-composition.md ## Dedupe; finding-verifier.md's exclusion of
+      // other candidates). So the verifier input carries no merged member, and the verdict is
+      // byte-identical to verifying the same record with no merge at all.
+      const semInput = verifierInput(semMergedHead);
+      ok = assert("[step e, semantic] the verifier input carries no _semantic_merged and no other finder's claim",
+        !("_semantic_merged" in semInput)
+          && !semMergedHead._semantic_merged.some((/** @type {any} */ m) => JSON.stringify(semInput).includes(m.claim)),
+        Object.keys(semInput)) && ok;
+      const { _semantic_merged: _dropMerged, ...unmerged } = semMergedHead;
+      ok = assert("[step e, semantic] a semantic merge earns no corroboration bump (same scores as the unmerged record)",
+        JSON.stringify(mockVerify(semMergedHead)) === JSON.stringify(mockVerify(unmerged)),
+        { merged: mockVerify(semMergedHead).final, unmerged: mockVerify(unmerged).final }) && ok;
+      const semJudgments = {
+        v: 1, head_sha: "a1b2c3d", candidates: [semVerified],
+        gates: {
+          gate1: { status: "PASS", details: "" },
+          gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
+          gate5: { status: "PASS", details: "" },
+        },
+        threads: [],
+        lenses: {
+          optimality_cards: [], optimality_log: "skipped", standards_log: "skipped",
+          measurability_log: "skipped", holistic_log: "skipped",
+        },
+        summary: "semantic-merge glue demo", memory: { relevance_rules: [], lessons_used: [] },
+      };
+      const semJudgmentsPath = join(dir, "semantic-judgments.json");
+      writeFileSync(semJudgmentsPath, JSON.stringify(semJudgments, null, 2));
+      const semValidateRun = spawnSync(process.execPath, [VALIDATE_JUDGMENTS, semJudgmentsPath], { encoding: "utf8" });
+      ok = assert("[step f, semantic] validate-judgments.mjs accepts the record once _semantic_merged is stripped",
+        semValidateRun.status === 0, (semValidateRun.stdout || semValidateRun.stderr || "").trim().slice(0, 300)) && ok;
+      log("[step f, semantic] semantically-merged candidate verified, stripped, and validated end to end");
+    }
+  }
+
   // step e (stubbed) — one verifier pass per surviving candidate.
   const verified = deduped.kept.map(mockVerify);
   log(`[step e] mock-verified ${verified.length} surviving candidate(s)`);
@@ -212,6 +323,45 @@ async function runGlue({ verbose = false } = {}) {
   ], { encoding: "utf8" });
   ok = assert("[step f] finalize.mjs --context/--judgments/--out-dir exits 0",
     finalizeRun.status === 0, finalizeRun.stderr) && ok;
+
+  // step f (extra, D4/AC-12) — a cap-violating stub verdict (a > 60-char title, the exact shape
+  // that failed closed live on arm C: "verifier-authored title/body exceeded comment-shape caps,
+  // not in fan-out prompt") caught by the REAL finalize.mjs --check-shape pre-flight.
+  const capViolatingPath = join(dir, "cap-violating-judgments.json");
+  const capViolatingJudgments = {
+    v: 1,
+    head_sha: "a1b2c3d",
+    candidates: [{
+      finder: "correctness", defect_class: "nil-deref", path: "a.ts", line: 12, symbol: "foo",
+      claim: "foo may be null here", bad_outcome: "crash", evidence: ["a.ts:12"], verify_by: "trace",
+      verdict: "confirmed", R: 90, A: 88, Ac: 88, final: 89, severity: "high", prefix: "issue",
+      blocking: true,
+      title: "x".repeat(70),
+      body: "foo may be null before this call and callers do not guard it.",
+      materiality: true, category: "nil-deref",
+    }],
+    gates: {
+      gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
+      gate5: { status: "PASS", details: "" },
+    },
+    threads: [],
+    lenses: {
+      optimality_cards: [], optimality_log: "skipped", standards_log: "skipped",
+      measurability_log: "skipped", holistic_log: "skipped",
+    },
+    summary: "cap-violating stub for --check-shape", memory: { relevance_rules: [], lessons_used: [] },
+  };
+  writeFileSync(capViolatingPath, JSON.stringify(capViolatingJudgments, null, 2));
+  const checkShapeRun = spawnSync(process.execPath, [FINALIZE, "--check-shape", capViolatingPath], { encoding: "utf8" });
+  ok = assert("[step f, check-shape] finalize.mjs --check-shape exits non-zero on a cap-violating stub verdict",
+    checkShapeRun.status !== 0, checkShapeRun.status) && ok;
+  let shapeResult = null;
+  try { shapeResult = JSON.parse(checkShapeRun.stdout); } catch { /* reported below */ }
+  ok = assert("[step f, check-shape] the violation names index 0 and field TITLE",
+    Boolean(shapeResult) && shapeResult.ok === false
+      && shapeResult.violations[0]?.index === 0 && shapeResult.violations[0]?.field === "TITLE",
+    shapeResult) && ok;
+  log("[step f, check-shape] cap-violating stub verdict caught by the real finalize.mjs --check-shape");
 
   let result = null;
   const resultPath = join(outDir, "finalize-result.json");

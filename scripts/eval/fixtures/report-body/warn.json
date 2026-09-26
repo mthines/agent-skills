@@ -68,7 +68,25 @@
     "count": 4,
     "sha": "70cf147"
   },
-  "ADDITIONAL_FINDINGS": [
+  "MEMORIES_SUMMARY": "62 indexed",
+  "MEMORIES_USED": [
+    {
+      "key": "pre-flight-logic:token-membership-tests-mis-ordered",
+      "url": "https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22",
+      "note": "promoted, seen 2x"
+    }
+  ],
+  "CI_NOTE": "`Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.",
+  "VERIFIED_NOTE": "`node scripts/sync-edge-schemas.mjs --check` in sync (15 files).",
+  "QUALITY": "produced 7 → posted inline 3 · notes 2 · cleared 3 · carried forward 0 · deferred 0 · below-bar 0",
+  "QUALITY_DROPPED": "relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0",
+  "INTEGRATIONS": "not activated",
+  "OPTIMALITY_LOG": "ran · 3 judged · 3 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
+  "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
+  "MEASURABILITY_LOG": "ran · 2 paths classified · 1 missing · 0 unlinked",
+  "SKIPPED_FILES": "none",
+  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&utm_source=pr-reviewer-fix-all",
+  "NOTES": [
     {
       "path": "packages/web/src/lib/queries/explorer-stats.ts",
       "line": 16,
@@ -83,23 +101,5 @@
       "body": "no production call site remains for filtersToFacetParams",
       "confidence": 78
     }
-  ],
-  "MEMORIES_SUMMARY": "62 indexed",
-  "MEMORIES_USED": [
-    {
-      "key": "pre-flight-logic:token-membership-tests-mis-ordered",
-      "url": "https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22",
-      "note": "promoted, seen 2x"
-    }
-  ],
-  "CI_NOTE": "`Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.",
-  "VERIFIED_NOTE": "`node scripts/sync-edge-schemas.mjs --check` in sync (15 files).",
-  "QUALITY": "produced 7 → posted inline 3 · cleared 3 · carried forward 0 · deferred 2 · below-bar 0",
-  "QUALITY_DROPPED": "relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0",
-  "INTEGRATIONS": "not activated",
-  "OPTIMALITY_LOG": "ran · 3 judged · 3 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
-  "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
-  "MEASURABILITY_LOG": "ran · 2 paths classified · 1 missing · 0 unlinked",
-  "SKIPPED_FILES": "none",
-  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20https%3A%2F%2Fgithub.com%2Fowner%2Frepo%2Fpull%2F123%20pr-review-bot&utm_source=pr-reviewer-fix-all"
+  ]
 }

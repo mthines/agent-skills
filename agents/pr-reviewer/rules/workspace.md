@@ -50,6 +50,22 @@ A git worktree deleted with `rm -rf` leaves the parent repo broken, so "we creat
 
 ## The capability ladder
 
+Every `fetch` or `clone` in this ladder — A/B round 1 delta — carries the same two wires, defined
+once and reused by reference rather than respelled at each call site:
+
+```bash
+GIT_CRED=(-c credential.helper= -c credential.helper='!gh auth git-credential')
+export GIT_TERMINAL_PROMPT=0
+```
+
+`GIT_CRED` clears any ambient `credential.helper` before pointing git at `gh`'s own credential
+store — git tries every configured helper in order and stops at the first that answers, so an
+expired keychain entry or a helper for a different host can still win and either prompt or answer
+wrong if it is not cleared first. This reuses whatever token `gh` is already authenticated with, so
+a private-repo fetch needs no separate login. `GIT_TERMINAL_PROMPT=0` is the belt to that
+suspenders: if `gh` itself is unauthenticated, git's fallback is an interactive prompt on a TTY
+nothing here is reading, which hangs the pipeline instead of failing the fetch loudly.
+
 Try each rung in order. Stop at the first that succeeds.
 
 ```bash
@@ -58,7 +74,7 @@ Try each rung in order. Stop at the first that succeeds.
 # Two implementations; `gw` is preferred, plain git is the fallback. See the section below.
 if git remote get-url origin 2>/dev/null \
      | grep -qiE "[:/]${RESOLVED_REPO}(\.git)?/?$" \
-   && git fetch origin "pull/$PR_NUMBER/head" 2>/dev/null; then
+   && git "${GIT_CRED[@]}" fetch origin "pull/$PR_NUMBER/head" 2>/dev/null; then
 
   # `$PR_NUMBER` (bound at Step 0), not a URL: this rung's own precondition just established
   # that `origin` IS the PR's repo, so the bare number is unambiguous — and it is a binding
@@ -87,7 +103,11 @@ if [ -z "$DEPTH_CAPABILITY" ]; then
 
   # Rung 1 — a real checkout. Depth 50 is enough for blame and for a base..head diff
   # on any PR a human would review, and bounded so a monorepo does not cost minutes.
-  if git clone --depth 50 --branch "$HEAD_REF" \
+  # `--filter=blob:none` (a partial clone — trees/commits eagerly, blob content lazily on
+  # checkout) and a >= 300s timeout floor are A/B round 2 item 1(a): 4 concurrent clones of a
+  # 368 MB repo hit the old 120s floor at ~145s with an EMPTY error, the tarball rung then
+  # exhausted too, and depth routing paid 205s discovering DEPTH_CAPABILITY=diff-only.
+  if git "${GIT_CRED[@]}" clone --filter=blob:none --depth 50 --branch "$HEAD_REF" \
        "https://github.com/$RESOLVED_REPO.git" "$WORKDIR" 2>/dev/null; then
     DEPTH_CAPABILITY=checkout
 
@@ -109,6 +129,13 @@ The rule is that the run continues, degraded, and says so.
 
 **Never fabricate the rung.** If the clone failed, the capability is not `checkout` because a later step happened to read one file successfully.
 
+**A killed process is not an empty error (A/B round 2 item 1(a)).** [`prepare-review.mjs`](../scripts/prepare-review.mjs)'s `run()`
+distinguishes a real timeout (`err.killed === true`, no stderr because the process never got to
+write one) from an ordinary non-zero exit, and `describeFailure()` reports the former as `timed out
+after Ns` — never as a blank anomaly line a reader has to guess the cause of. The same >= 300s
+timeout floor and `--filter=blob:none` applied to rung 1's clone apply identically to rung 2's
+tarball fetch, since a tarball of the same repo is no smaller than the clone it falls back from.
+
 ## Rung 0 — a worktree over the local object store
 
 When the run is already inside a clone of the PR's repository, cloning it again over the network to read files that are on the local disk is waste.
@@ -124,7 +151,7 @@ Rung 0 is skipped — not failed — unless both of these hold. Fall through to 
 | Precondition | Check |
 | --- | --- |
 | the current directory is a clone of the PR's repo | the origin remote resolves to `$RESOLVED_REPO` |
-| the PR's head is fetchable into it | `git fetch origin "pull/$PR_NUMBER/head"` exits 0 |
+| the PR's head is fetchable into it | `git "${GIT_CRED[@]}" fetch origin "pull/$PR_NUMBER/head"` exits 0 |
 
 Fetch the **`pull/<n>/head` ref**, not `$HEAD_REF`. A fork PR's head branch does not exist on `origin`, and `git fetch origin <branch>` fails for exactly the PRs where a local clone is most useful — so branch-fetching would silently restrict rung 0 to same-repo PRs.
 
@@ -168,9 +195,22 @@ git -C "$WORKDIR" rev-parse HEAD         # must equal $HEAD_SHA
 ```
 
 - **Dirty tree** → fall through to the next implementation, then to rung 1. Do **not** stash, reset, or clean: those are the user's uncommitted changes, and a review is not worth destroying them. A finding produced from a dirty tree is also wrong twice over — it may describe code that is not in the PR, attributed to the PR's author.
-- **`HEAD != HEAD_SHA`** → `git fetch origin "pull/$PR_NUMBER/head" && git merge --ff-only FETCH_HEAD` once, then re-check; still mismatched → fall through. `HEAD_SHA` was bound once at Step 1.1 and is the commit this whole run is about, so reviewing a different tree would silently break the one-read-one-head rule.
+- **`HEAD != HEAD_SHA`** → `git "${GIT_CRED[@]}" fetch origin "pull/$PR_NUMBER/head" && git merge --ff-only FETCH_HEAD` once, then re-check; still mismatched → fall through. `HEAD_SHA` was bound once at Step 1.1 and is the commit this whole run is about, so reviewing a different tree would silently break the one-read-one-head rule.
 
 Never `git checkout <branch>` in the user's main worktree to reach the PR's head — that mutates their working state without consent. A worktree, or a rung below.
+
+**Reuse is keyed to the run under `--isolated` (A/B round 2 item 1(b)).** [`prepare-review.mjs`](../scripts/prepare-review.mjs)'s
+own executable form of rung 0 (its `materializeWorkspace()`) checks `git worktree list --porcelain`
+for an existing detached worktree at `$HEAD_SHA` *before* fetching and creating one — a retry, a
+second pass, or an ordinary re-review of the same head reuses what an earlier invocation already
+made, rather than leaking one registered worktree per invocation. Under `--isolated`, D10 (A/B
+round 2) observed a run reuse a worktree ANOTHER run had created — `git worktree list` has no
+notion of which run made which, so any prior invocation's checkout at the same head was fair game,
+breaking `--isolated`'s own independence promise. Every worktree a run may create now lands under
+one run-scoped scratch directory generated fresh per invocation, and `isReusableWorktreeDir()`
+(pure, self-tested) refuses a candidate outside it whenever `isolated` is true — a directory
+outside `runScratchDir` is refused even when it is a lookalike prefix, and a null `runScratchDir`
+fails closed to "never reuse", never to "reuse anything".
 
 ### `--no-hooks` is not optional here
 
@@ -225,7 +265,7 @@ It means the object store holds no commit reachable from both sides, which is th
 | --- | --- |
 | **the base OID itself empty** | Do **not** run `merge-base`, and do not read the empty result as a disjoint history. This is a binding failure upstream, not a property of the object store: go straight to the last row, and name it in `RUN_ANOMALY` as an unbound base rather than as missing history — the two have different fixes and only one of them is the repo's. |
 | non-empty | Compute the delta locally: `git -C "$WORKDIR" diff "$MERGE_BASE" "$HEAD_SHA"`. |
-| empty, and `DEPTH_CAPABILITY == checkout` | One deepening attempt: `git -C "$WORKDIR" fetch --deepen 100 origin "$BASE_SHA" 2>/dev/null` (fall back to `fetch origin "$BASE_SHA"`), then recompute **once**. Still empty ⇒ next row. Fetching *by OID* is deliberate and verified: it brings the base commit in and deepens the head's graft far enough for `merge-base` to resolve, where deepening the head branch alone need not reach the fork point. |
+| empty, and `DEPTH_CAPABILITY == checkout` | One deepening attempt: `git -C "$WORKDIR" "${GIT_CRED[@]}" fetch --deepen 100 origin "$BASE_SHA" 2>/dev/null` (fall back to `"${GIT_CRED[@]}" fetch origin "$BASE_SHA"`), then recompute **once**. Still empty ⇒ next row. Fetching *by OID* is deliberate and verified: it brings the base commit in and deepens the head's graft far enough for `merge-base` to resolve, where deepening the head branch alone need not reach the fork point. |
 | empty, after the deepening attempt, or `DEPTH_CAPABILITY != checkout` | Take the delta from the **authoritative per-file patches** — the PR files API (`pull_request_read` with `method: "get_files"`, or `gh pr diff`) — set `DIFF_SOURCE=api`, and emit the `RUN_ANOMALY` line below. |
 
 Two forms must never appear once `MERGE_BASE` is empty, and they are the whole reason this section is a table rather than a sentence:

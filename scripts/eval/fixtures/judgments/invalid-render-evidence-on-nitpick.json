@@ -54,7 +54,14 @@
       "blocking": false,
       "body": "`x` at line 12 shadows the `x` imported at line 3 \u2014 consider a more specific name.",
       "materiality": true,
-      "category": "naming-nits"
+      "category": "naming-nits",
+      "evidence_anchors": [
+        {
+          "path": "src/lib/widget.ts",
+          "line": 3,
+          "note": "the shadowed import"
+        }
+      ]
     },
     {
       "finder": "dependency",

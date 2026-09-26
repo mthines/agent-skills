@@ -33,7 +33,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { dedupe, markAgreementPromoted } from "./finalize/dedupe.mjs";
+import { dedupe, markAgreementPromoted, semanticDedupe } from "./finalize/dedupe.mjs";
 import { resolveThreshold, dispose, deferFloor, recomputeFinal, CLAIM_PREFIXES } from "./finalize/thresholds.mjs";
 import { applySuppression } from "./finalize/suppression.mjs";
 import { validateLine } from "./finalize/line-validity.mjs";
@@ -44,6 +44,8 @@ import {
   toFindingBullet, toAdvisoryFinding, toOpenThreadBullet, toInlineCommentPayload,
   buildOptimalityCard,
 } from "./finalize/payload.mjs";
+import { renderComment } from "./render-comment.mjs";
+import { TITLE_MAX, PROSE_MAX, UNVERIFIED_MAX, EVIDENCE_REFS_MAX, sentenceCount } from "./comment-spine.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
@@ -140,11 +142,19 @@ export function hydrateFilePatches(context) {
  * this run actually reviewed". Pure (D18): the caller resolves `capApplied`/`depthCapability`/
  * `contextAnomalies` from the context; this only formats them, and never begins with a glyph
  * (the renderer prepends its own ⚠️ — a value that did would double it).
- * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[] }} args
+ * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number }} args
  * @returns {string|undefined}
  */
-export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies }) {
+export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt }) {
   const parts = [];
+  // A/B iteration 2: every in-context arm hand-wrote dispatch-topology.md's no-dispatch line into
+  // context.render.RUN_ANOMALY, which REPLACED this function's output and dropped prepare-review's
+  // own anomalies (two arms re-merged them by hand, one re-ran finalize three times). `--no-dispatch`
+  // makes the line computed, with the budget's own effective thoroughness.
+  if (typeof noDispatchAt === "number") {
+    parts.push("no sub-agent dispatch available — finders and verification ran in-context, serially,"
+      + ` at effective thoroughness ${noDispatchAt}, instead of the parallel topology that value would otherwise dispatch`);
+  }
   if (capApplied) {
     parts.push(`depth capability (${depthCapability || "diff-only"}) capped this run below the deep tier its mode would otherwise require`);
   }
@@ -155,6 +165,84 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
     parts.push(`${n} prepare-time anomal${n === 1 ? "y" : "ies"} (${lead}${n > 1 ? `, +${n - 1} more` : ""})`);
   }
   return parts.length ? parts.join(" — ") : undefined;
+}
+
+/**
+ * A caller-supplied RUN_ANOMALY is MERGED with the computed one, never a replacement for it: a
+ * supplied value used to win outright, silently dropping a capability cap or a prepare-time
+ * anomaly the caller never saw. Parts are joined with " — " and exact repeats are dropped, so a
+ * caller that already copied the computed text does not see it twice.
+ * @param {string|undefined|null} supplied @param {string|undefined} computed
+ * @returns {string|undefined}
+ */
+export function mergeRunAnomaly(supplied, computed) {
+  /** @type {string[]} */
+  const parts = [];
+  for (const v of [supplied, computed]) {
+    if (typeof v !== "string") continue;
+    for (const p of v.split(" — ")) {
+      const t = p.trim();
+      if (t && !parts.includes(t)) parts.push(t);
+    }
+  }
+  return parts.length ? parts.join(" — ") : undefined;
+}
+
+/**
+ * Item 4 (A/B round 2): `QUALITY_DROPPED` (render-report.mjs's `OPTIONAL_SCALARS`, "Dropped — …")
+ * was defined on the renderer side since the field's introduction, but `finalize.mjs` never
+ * computed it — a caller-supplied `context.render.QUALITY_DROPPED` was the only way it was ever
+ * populated. `confidenceDropped` (a candidate whose score never cleared even the near-miss defer
+ * band) and `anchorless` (a candidate whose proposed line failed validation) are both fully
+ * disposed of by `finalizeReview()`'s own pipeline but were invisible in the rendered output —
+ * the direct cause of the "candidate lost from the report" defect: a real run's final=67.5,
+ * severity=low candidate landed in `confidenceDropped` (balanced profile: threshold 90, defer
+ * floor 75, 67.5 < 75) and simply never appeared anywhere.
+ * @param {{ confidenceDropped: any[], anchorless: any[] }} args
+ * @returns {string|null}
+ */
+export function buildAutoQualityDropped({ confidenceDropped, anchorless }) {
+  const parts = [];
+  if (confidenceDropped.length > 0) parts.push(`${confidenceDropped.length} below-bar`);
+  if (anchorless.length > 0) parts.push(`${anchorless.length} anchorless`);
+  return parts.length ? parts.join(", ") : null;
+}
+
+/**
+ * Item 4 (A/B round 2): fails CLOSED when any candidate in the raw `judgments.candidates` array
+ * ends with zero or more than one disposition. `buckets` maps a disposition LABEL to the array of
+ * candidates that landed there; every entry in every array must carry the `_orig_index` tag
+ * `finalizeReview()` applies to the raw array before any spread/filter/dedupe runs. This is a
+ * structural invariant check (the pipeline is already exhaustive/disjoint by construction, traced
+ * bucket-by-bucket in `finalizeReview()`'s own comment above the call site) — its job is to keep
+ * that invariant load-bearing rather than incidental, so a future change that breaks it fails the
+ * run instead of silently dropping (or double-counting) a finding.
+ * @param {number} total
+ * @param {Record<string, any[]>} buckets
+ */
+export function assertEveryCandidateDisposed(total, buckets) {
+  /** @type {Map<number, string[]>} */
+  const seenBy = new Map();
+  for (const [label, items] of Object.entries(buckets)) {
+    for (const c of items) {
+      if (typeof c?._orig_index !== "number") {
+        throw new Error(`finalizeReview: a candidate in bucket "${label}" carries no _orig_index — the disposition-completeness check cannot account for it (candidate: ${JSON.stringify(c).slice(0, 200)})`);
+      }
+      const existing = seenBy.get(c._orig_index) || [];
+      existing.push(label);
+      seenBy.set(c._orig_index, existing);
+    }
+  }
+  /** @type {string[]} */
+  const problems = [];
+  for (let i = 0; i < total; i++) {
+    const labels = seenBy.get(i);
+    if (!labels || labels.length === 0) problems.push(`candidate[${i}]: no disposition — silently dropped`);
+    else if (labels.length > 1) problems.push(`candidate[${i}]: ${labels.length} dispositions (${labels.join(", ")}) — double-counted`);
+  }
+  if (problems.length > 0) {
+    throw new Error(`finalizeReview: disposition-completeness check failed (fails closed rather than silently dropping a finding):\n${problems.join("\n")}`);
+  }
 }
 
 /**
@@ -260,7 +348,21 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     if (f && typeof f.filename === "string") patches[f.filename] = f.patch || "";
   }
 
-  const { kept: dedupedKept, dropped: dedupeDropped } = dedupe(judgments?.candidates || []);
+  // Item 4 (A/B round 2): every candidate must end with exactly one disposition. `_orig_index`
+  // is tagged once, on the raw array, and threads through every downstream spread (`{...c}`) the
+  // rest of this pipeline already uses — checked, not assumed, by
+  // assertEveryCandidateDisposed()'s own self-test below.
+  const rawCandidates = (judgments?.candidates || [])
+    .map((/** @type {any} */ c, /** @type {number} */ i) => ({ ...c, _orig_index: i }));
+
+  // A candidate the verifier CONTRADICTED never enters scoring at all — it is disposed as
+  // "contradicted" before dedupe, rather than left to clear or defer on its score alone (which is
+  // what the pipeline did before this delta: `finalizeReview()` never read `.verdict`, so a
+  // contradicted candidate with a high self-reported score could still post inline).
+  const contradicted = rawCandidates.filter((/** @type {any} */ c) => c.verdict === "contradicted");
+  const scorable = rawCandidates.filter((/** @type {any} */ c) => c.verdict !== "contradicted");
+
+  const { kept: dedupedKept, dropped: dedupeDropped } = dedupe(scorable);
   const promoted = markAgreementPromoted(dedupedKept);
 
   /** @type {any[]} */
@@ -299,13 +401,41 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
       continue;
     }
     if (r.retarget !== null) {
-      lineValidated.push({ ...f, line: r.retarget, body: `${f.body}\n\n(originally proposed for line ${f.line} — moved to nearest hunk line)` });
+      // Appended on the SAME paragraph: render-comment.mjs rejects a multi-paragraph BODY, so a
+      // `\n\n`-joined note made every retargeted finding fail to render at the write step.
+      lineValidated.push({ ...f, line: r.retarget, body: `${f.body} (originally proposed for line ${f.line} — moved to nearest hunk line)` });
     } else {
       lineValidated.push(f);
     }
   }
 
-  const { inline, deferred: overCapDeferred } = place(lineValidated, { profile });
+  const placed = place(lineValidated, { profile });
+  const overCapDeferred = placed.deferred;
+
+  // --fanout Step f's shape fallback: a verified finding that still fails render-comment.mjs's
+  // shape after its one repair round is NEVER dropped. A non-blocking one moves to the report
+  // body's deferred section (it cannot post inline as-is, and a mechanically truncated
+  // non-blocker is worth less than its full text in the report); a blocking one posts inline with
+  // a renderer-legal truncated title/body (`coerceShape`), and only if even that cannot render
+  // does it join the deferred section — where Gate 6 still counts it as blocking.
+  const shaForShape = sha7(sha || context?.headSha || context?.head_sha || judgments?.head_sha || "0000000");
+  /** @type {any[]} */
+  const inline = [];
+  /** @type {any[]} */
+  const shapeCoerced = [];
+  for (const f of placed.inline) {
+    if (rendersInline(f, shaForShape)) { inline.push(f); continue; }
+    if (f.blocking === true) {
+      const coerced = coerceShape(f);
+      if (rendersInline(coerced, shaForShape)) {
+        inline.push(coerced);
+        shapeCoerced.push({ path: f.path, line: f.line, finder: f.finder, action: "truncated-inline" });
+        continue;
+      }
+    }
+    overCapDeferred.push(f);
+    shapeCoerced.push({ path: f.path, line: f.line, finder: f.finder, action: "report-body" });
+  }
 
   // AC-11/D5: the REPORT's FINDINGS table (and the Code review gate it feeds) is for
   // claim-prefix findings — the same `issue:`/`suggestion:` split dispose()/thresholds.mjs
@@ -329,6 +459,25 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   const inlineNonClaimsSet = new Set(inline.filter((f) => !CLAIM_PREFIXES.has(f.prefix)));
   const inlineClaims = inline.filter((f) => CLAIM_PREFIXES.has(f.prefix));
   const inlineNonClaims = lineValidated.filter((f) => inlineNonClaimsSet.has(f));
+
+  // Item 4 (A/B round 2): fail-closed disposition-completeness check. Every candidate in
+  // judgments.candidates must land in EXACTLY one bucket: posted inline, deferred/less-certain,
+  // below-bar-dropped, suppressed, contradicted, or merged. This is the fix for the observed
+  // defect — a final=67.5, severity=low candidate (balanced profile: threshold 90, defer floor
+  // max(90-15,50)=75; 67.5 < 75 -> "drop") ended up in `confidenceDropped`, which was silently
+  // computed and NEVER surfaced anywhere (no QUALITY count, no report line) — appearing in
+  // neither the report's Less-certain section nor its counts, exactly as observed. The pipeline
+  // was already structurally exhaustive/disjoint by construction (traced bucket-by-bucket below);
+  // this assertion makes that invariant load-bearing rather than incidental, so a future change
+  // that breaks it fails the run instead of silently dropping a finding.
+  assertEveryCandidateDisposed(rawCandidates.length, {
+    "posted inline": inline,
+    "deferred": [...advisoryDeferred, ...overCapDeferred],
+    "below-bar-dropped": [...confidenceDropped, ...anchorless],
+    "suppressed": suppressed,
+    "contradicted": contradicted,
+    "merged": dedupeDropped,
+  });
 
   // AC-11/D5: report-rendering.md's PARTIAL_REVIEW banner ({calls, scanned, total},
   // scanned < total) means the code-review finders never finished a pass — Gate 6 renders
@@ -358,7 +507,11 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     confidenceDeferred: advisoryDeferred.length,
     suppressed: suppressed.length,
     cleared: inlineClaims.length,
-    deferredOverCap: overCapDeferred.length + inlineNonClaims.length,
+    // A/B iteration 2: a cleared one-liner is POSTED inline as a note; counting it as "deferred"
+    // made the quality line read "posted inline 5 · deferred 1" under a heading of
+    // "5 findings · 1 note" on a run that posted 6 comments (two arms flagged the mismatch).
+    deferredOverCap: overCapDeferred.length,
+    notes: inlineNonClaims.length,
     posted: inlineClaims.length,
     carriedForward: context?.render?.carriedForward ?? 0,
   });
@@ -387,10 +540,14 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // duplicating the renderer's own prefix). Computed here, a live run never hand-authors this
   // and can never reintroduce the glyph.
   const capApplied = context?.routing?.capApplied === true;
+  const noDispatchAt = context?.dispatchUnavailable === true && context?.budget?.topology === "parallel"
+    && typeof context?.budget?.effectiveThoroughness === "number"
+    ? context.budget.effectiveThoroughness : undefined;
   const autoRunAnomaly = buildAutoRunAnomaly({
     capApplied,
     depthCapability: context?.workspace?.depthCapability || context?.depthCapability,
     contextAnomalies: context?.anomalies,
+    noDispatchAt,
   });
 
   // MEMORIES_USED / MEMORIES_SUMMARY — computed from judgments.memory's two arrays (D4:
@@ -429,10 +586,20 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     skippedFiles: context?.render?.SKIPPED_FILES,
   };
 
+  // Item 4: the literal fix for the vanishing-candidate defect — confidenceDropped and
+  // anchorless were computed all along but NEVER passed to the renderer under any field. Only
+  // emitted when non-empty, so the huge majority of runs (nothing dropped) get no new "Dropped —"
+  // line and every existing report-body fixture stays byte-identical. `context.render.QUALITY_DROPPED`
+  // still wins when the caller hand-supplies one (the existing passthrough precedent RUN_ANOMALY uses).
+  const autoQualityDropped = buildAutoQualityDropped({ confidenceDropped, anchorless });
+
   const extras = {
     ...(context?.render || {}),
-    RUN_ANOMALY: context?.render?.RUN_ANOMALY ?? autoRunAnomaly,
+    RUN_ANOMALY: mergeRunAnomaly(context?.render?.RUN_ANOMALY, autoRunAnomaly),
     MEMORIES_USED: context?.render?.MEMORIES_USED ?? memoryUsed,
+    ...(context?.render?.QUALITY_DROPPED === undefined && autoQualityDropped !== null
+      ? { QUALITY_DROPPED: autoQualityDropped }
+      : {}),
     // BUILT from judgments.lenses.optimality_cards' structured fields (buildOptimalityCard), never
     // `card.markdown ?? card` — see buildOptimalityCard's own docstring for why the pass-through
     // was wrong (arm B's first live run, ab/B/20230/1/meta.json).
@@ -445,7 +612,8 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     gates,
     run,
     findings: inlineClaims.map(toFindingBullet),
-    deferred: inlineNonClaims.concat(overCapDeferred).map(toAdvisoryFinding),
+    notes: inlineNonClaims.map(toAdvisoryFinding),
+    deferred: overCapDeferred.map(toAdvisoryFinding),
     lowConfidence: advisoryDeferred.map(toAdvisoryFinding),
     quality,
     extras,
@@ -461,11 +629,13 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     gates,
     dedupeDropped,
     confidenceDropped,
+    contradicted,
     advisoryDeferred,
     suppressed,
     anchorless,
     inline,
     deferred: overCapDeferred,
+    shapeCoerced,
     identityHolds,
     quality,
     payload,
@@ -491,6 +661,16 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
  * responsibility, not this function's: pass finder outputs in the table order
  * (`finders.md`'s `correctness, consumer-impact, dependency, intent, standards, quality`) so the
  * kept record is deterministic across runs.
+ *
+ * D5: after the exact/adjacent pass, `semanticDedupe()` runs a SECOND pass over the survivors —
+ * the same defect filed under a DIFFERENT `defect_class` per finder (the live dash0hq/dash0#20230
+ * run's real failure: one issue filed four times as `edge-case` / `contract-break` / `scope-creep`
+ * / `missing-update`) can never match on `prefix` equality by construction, since each finder's
+ * taxonomy differs. Order matters: semantic dedupe runs AFTER exact/adjacent, never before it, so
+ * an exact duplicate is still caught by the cheaper, higher-precision rule first. Never
+ * agreement-promoted (`markAgreementPromoted` runs once, on the exact/adjacent survivors only,
+ * before the semantic pass sees them) — see `finalize/dedupe.mjs`'s own docstring on
+ * `semanticDedupe` for why.
  * @param {any[]} candidates
  * @returns {{ kept: any[], dropped: any[] }}
  */
@@ -498,6 +678,7 @@ export function dedupeCandidates(candidates) {
   const adapted = candidates.map((c) => ({ ...c, prefix: c.defect_class, body: c.claim }));
   const { kept, dropped } = dedupe(adapted);
   const promoted = markAgreementPromoted(kept);
+  const { kept: semKept, dropped: semDropped } = semanticDedupe(promoted);
   /** @param {any} c */
   const strip = (c) => {
     const rest = { ...c };
@@ -505,7 +686,95 @@ export function dedupeCandidates(candidates) {
     delete rest.body;
     return rest;
   };
-  return { kept: promoted.map(strip), dropped: dropped.map(strip) };
+  return { kept: semKept.map(strip), dropped: [...dropped, ...semDropped].map(strip) };
+}
+
+/**
+ * Whether a finding renders as an inline comment through the REAL payload -> render path.
+ * @param {any} f @param {string} sha
+ */
+function rendersInline(f, sha) {
+  try {
+    renderComment(toInlineCommentPayload(f, { sha: /^[0-9a-f]{7}$/.test(sha) ? sha : "0000000" }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Cut `text` to at most `max` chars at a word boundary, keeping backtick spans balanced.
+ * @param {string} text @param {number} max
+ */
+function cutAtWord(text, max) {
+  let t = String(text || "").replace(/\s+/g, " ").trim();
+  if (t.length > max) {
+    t = t.slice(0, max);
+    const sp = t.lastIndexOf(" ");
+    if (sp > max / 2) t = t.slice(0, sp);
+  }
+  if ((t.match(/`/g) || []).length % 2 === 1) t = t.replace(/`/g, "");
+  return t.trim();
+}
+
+/**
+ * The renderer-legal fallback for a verified BLOCKING finding whose verifier-authored prose still
+ * breaks render-comment.mjs's caps after the one repair round: the title becomes a noun phrase
+ * (no sentence punctuation, no pipe) of at most TITLE_MAX chars — synthesized from the body when
+ * absent — and the body keeps at most two sentences within PROSE_MAX. Evidence past the ref cap,
+ * an over-long UNVERIFIED reason, and a fix FENCE (a truncated patch would be a wrong patch) are
+ * trimmed or removed. The claim itself, its severity, and its blocking flag never change.
+ * @param {any} f
+ * @returns {any}
+ */
+export function coerceShape(f) {
+  const out = { ...f };
+  const bodyFlat = String(f.body || "").replace(/\s+/g, " ").trim();
+  const sentences = bodyFlat.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [bodyFlat];
+  let body = cutAtWord(sentences.slice(0, 2).join(" "), PROSE_MAX - 1);
+  if (!/[.!?]$/.test(body)) body = `${body.replace(/[,;:\s-]+$/, "")}.`;
+  out.body = body;
+  const titleSrc = f.title ? String(f.title) : bodyFlat;
+  let title = titleSrc.replace(/\|/g, "/").replace(/[.!?;:]+(\s|$)/g, " ").replace(/\s+/g, " ").trim();
+  title = cutAtWord(title, TITLE_MAX).replace(/[,\s-]+$/, "");
+  if (sentenceCount(title) > 0) title = title.replace(/[.!?]/g, "");
+  out.title = title;
+  if (Array.isArray(f.evidence_anchors)) out.evidence_anchors = f.evidence_anchors.slice(0, EVIDENCE_REFS_MAX);
+  if (f.unverified_reason) out.unverified_reason = cutAtWord(f.unverified_reason, UNVERIFIED_MAX);
+  delete out.fence;
+  return out;
+}
+
+/**
+ * D4 / AC-10: the `--fanout` orchestrator's post-synthesis pre-flight (Step f, one repair round).
+ * Maps every judgments.json candidate through the REAL `toInlineCommentPayload` -> `renderComment`
+ * path — the exact code the posting run itself calls, not a second hand-rolled shape validator —
+ * and reports which candidates would fail to render, naming the candidate's index and the FIELD
+ * `render-comment.mjs`'s rejection names (its error messages open with the field, e.g. `TITLE is
+ * 61 chars, over the 60-char cap`). A candidate that fails here failed closed live on arm C
+ * (dash0hq/dash0#20230): "verifier-authored title/body exceeded comment-shape caps (not in
+ * fan-out prompt)" — this is the mechanical check that would have caught it before verification
+ * spend, not after.
+ * @param {any} judgments
+ * @returns {{ok: boolean, violations: {index: number, finder: string, field: string, reason: string}[]}}
+ */
+export function checkShape(judgments) {
+  const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
+  const shaSrc = String(judgments?.head_sha || "");
+  const sha = /^[0-9a-f]{7,40}$/.test(shaSrc) ? shaSrc.slice(0, 7) : "0000000";
+  /** @type {{index: number, finder: string, field: string, reason: string}[]} */
+  const violations = [];
+  candidates.forEach((/** @type {any} */ c, /** @type {number} */ index) => {
+    try {
+      const payload = toInlineCommentPayload(c, { sha });
+      renderComment(payload);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const m = /^([A-Z][A-Z_]{1,24})\b/.exec(msg);
+      violations.push({ index, finder: c?.finder, field: m ? m[1] : "UNKNOWN", reason: msg });
+    }
+  });
+  return { ok: violations.length === 0, violations };
 }
 
 // ── CLI ──
@@ -516,15 +785,16 @@ function parseArgs(argv) {
   const opts = { writer: "github" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates") { opts[a.slice(2)] = true; continue; }
+    if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch") { opts[a.slice(2)] = true; continue; }
     if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; continue; }
   }
   return opts;
 }
 
 function usage() {
-  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]\n"
-    + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]");
+  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-dispatch] [--skip-gates] [--self-test] [--replay-fixtures]\n"
+    + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
+    + "   or: finalize.mjs --check-shape <judgments.json>");
 }
 
 // AC-11: the 5 report-body fixtures this replay drives — each backed by a
@@ -796,6 +1066,36 @@ async function selfTest() {
     const both = buildAutoRunAnomaly({ capApplied: true, depthCapability: "diff-only", contextAnomalies: ["a", "b", "c"] });
     check("buildAutoRunAnomaly combines the cap note and the anomaly count when both apply",
       typeof both === "string" && both.includes("diff-only") && both.includes("3 prepare-time anomalies"));
+    // A/B iteration 2: --no-dispatch renders dispatch-topology.md's line from the budget.
+    const noDispatch = buildAutoRunAnomaly({ capApplied: false, contextAnomalies: [], noDispatchAt: 0.8 });
+    check("buildAutoRunAnomaly renders the no-dispatch line with the effective thoroughness",
+      typeof noDispatch === "string" && noDispatch.startsWith("no sub-agent dispatch available")
+        && noDispatch.includes("at effective thoroughness 0.8"));
+    // A/B iteration 2: a supplied RUN_ANOMALY used to REPLACE the computed one.
+    const merged = mergeRunAnomaly("reviewer identity unknown", "1 prepare-time anomaly (x)");
+    check("mergeRunAnomaly keeps a supplied anomaly AND the computed one",
+      merged === "reviewer identity unknown — 1 prepare-time anomaly (x)");
+    check("mergeRunAnomaly drops an exact repeat, so copying the computed text does not double it",
+      mergeRunAnomaly("1 prepare-time anomaly (x)", "1 prepare-time anomaly (x)") === "1 prepare-time anomaly (x)");
+    check("mergeRunAnomaly returns undefined when neither side has anything",
+      mergeRunAnomaly(undefined, undefined) === undefined);
+  }
+  {
+    // End to end through finalizeReview: a parallel budget + dispatchUnavailable + a caller-supplied
+    // RUN_ANOMALY all reach the payload, none replacing another.
+    const ctx = {
+      mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, workspace: { depthCapability: "checkout" },
+      budget: { topology: "parallel", effectiveThoroughness: 0.5 }, dispatchUnavailable: true,
+      anomalies: ["reviewer identity unknown (/user 401) — relation defaulted to cross"],
+      render: { RUN_ANOMALY: "caller note" },
+    };
+    const j = { candidates: [], gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+    let anomaly = "";
+    try { anomaly = String(finalizeReview({ context: ctx, judgments: j }).payload.RUN_ANOMALY || ""); } catch (e) { anomaly = `threw: ${/** @type {Error} */ (e).message}`; }
+    check("finalizeReview merges caller note, the no-dispatch line, and prepare-time anomalies",
+      anomaly.startsWith("caller note") && anomaly.includes("at effective thoroughness 0.5")
+        && anomaly.includes("1 prepare-time anomaly"), anomaly.slice(0, 200));
   }
 
   // checkPostedInlineMatchesClaims — ab/B/20230/2's explicit ask for a cross-check proving this
@@ -997,11 +1297,17 @@ async function selfTest() {
     check("the sole cleared candidate is a posted one-liner: FINDINGS stays empty (it earns no table row)",
       r.payload.FINDINGS.length === 0);
     check("…but it DOES clear and post inline — write-plan carries a real comment for it",
-      r.inline.length === 1 && r.payload.ADDITIONAL_FINDINGS.length === 1);
+      r.inline.length === 1 && (r.payload.NOTES || []).length === 1);
+    // A/B iteration 4: a POSTED note is never listed under "too minor to comment on".
+    check("the posted note lands in NOTES, not in the unposted ADDITIONAL_FINDINGS list",
+      r.payload.ADDITIONAL_FINDINGS.length === 0);
     const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-nitpick-only-headline");
     check("the payload renders through render-report.mjs with zero manual edits", rendered.ok, rendered.stderr.trim());
-    check("the headline now points at the note below instead of reading as if nothing happened",
-      rendered.ok && /No findings — \d+ gates? need attention \(1 more note below\)/.test(rendered.stdout));
+    check("the headline counts the posted note instead of reading as if nothing happened",
+      rendered.ok && /^### ⚠️ No findings — \d+ gates? needs? attention · 1 note$/m.test(rendered.stdout));
+    check("the rendered report lists it under the posted-notes accordion, not the too-minor one",
+      rendered.ok && /<summary>Notes \(1\) — posted inline<\/summary>/.test(rendered.stdout)
+        && !/too minor to comment on/.test(rendered.stdout));
   }
 
   // AC-10 case: suppression >=3/>=2 + never-suppressible.
@@ -1103,6 +1409,80 @@ async function selfTest() {
     check("finalize never violates cleared - suppressed - anchorless - deferred == posted", r.identityHolds === true);
   }
 
+  // Item 4 (A/B round 2) — the reproduction fixture: a final=67.5, severity=low issue: candidate.
+  // balanced profile: threshold("low")=90, deferFloor(90)=max(90-15,50)=75; 67.5 < 75 -> "drop"
+  // (confidenceDropped), exactly the real defect's shape. Before this delta it vanished — no
+  // report line, no count, nowhere. After: it is named in QUALITY_DROPPED, and the
+  // disposition-completeness check accounts for it without throwing.
+  {
+    const judgments = {
+      candidates: [mkCandidate({ final: 67.5, severity: "low", prefix: "issue" })],
+      gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "",
+    };
+    const r = finalizeReview({ context: baseContext, judgments });
+    check("the 67.5/low reproduction: candidate lands in confidenceDropped, not inline or deferred",
+      r.confidenceDropped.length === 1 && r.inline.length === 0 && r.advisoryDeferred.length === 0);
+    check("the 67.5/low reproduction: QUALITY_DROPPED now names it (\"1 below-bar\") instead of vanishing",
+      r.payload.QUALITY_DROPPED === "1 below-bar");
+  }
+
+  // assertEveryCandidateDisposed: pure unit coverage on the six-bucket disposition contract.
+  {
+    const c = (/** @type {number} */ i) => ({ _orig_index: i });
+    check("three candidates, each in exactly one bucket, passes", (() => {
+      try {
+        assertEveryCandidateDisposed(3, { "posted inline": [c(0)], "deferred": [c(1)], "merged": [c(2)] });
+        return true;
+      } catch { return false; }
+    })());
+    check("a candidate present in NO bucket throws (silently dropped)", (() => {
+      try {
+        assertEveryCandidateDisposed(2, { "posted inline": [c(0)] });
+        return false;
+      } catch (e) { return /no disposition/.test(/** @type {Error} */(e).message); }
+    })());
+    check("a candidate present in TWO buckets throws (double-counted)", (() => {
+      try {
+        assertEveryCandidateDisposed(1, { "posted inline": [c(0)], "suppressed": [c(0)] });
+        return false;
+      } catch (e) { return /double-counted/.test(/** @type {Error} */(e).message); }
+    })());
+    check("a candidate object with no _orig_index throws rather than silently mis-accounting", (() => {
+      try {
+        assertEveryCandidateDisposed(1, { "posted inline": [{ path: "a.ts" }] });
+        return false;
+      } catch (e) { return /no _orig_index/.test(/** @type {Error} */(e).message); }
+    })());
+  }
+
+  // buildAutoQualityDropped: the QUALITY_DROPPED formatter, pure.
+  {
+    check("buildAutoQualityDropped returns null when nothing was dropped (no line rendered)",
+      buildAutoQualityDropped({ confidenceDropped: [], anchorless: [] }) === null);
+    check("buildAutoQualityDropped names below-bar alone",
+      buildAutoQualityDropped({ confidenceDropped: [{}, {}], anchorless: [] }) === "2 below-bar");
+    check("buildAutoQualityDropped names anchorless alone",
+      buildAutoQualityDropped({ confidenceDropped: [], anchorless: [{}] }) === "1 anchorless");
+    check("buildAutoQualityDropped names both when both are non-empty",
+      buildAutoQualityDropped({ confidenceDropped: [{}], anchorless: [{}, {}] }) === "1 below-bar, 2 anchorless");
+  }
+
+  // Item 4: a verifier-contradicted candidate never scores, clears, or posts — it is disposed as
+  // "contradicted" and excluded from the pipeline entirely (a real latent gap this delta closes:
+  // finalizeReview() never read `.verdict` before, so a contradicted candidate with a high
+  // self-reported score could still have cleared and posted inline).
+  {
+    const judgments = {
+      candidates: [mkCandidate({ final: 95, verdict: "contradicted" })],
+      gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "",
+    };
+    const r = finalizeReview({ context: baseContext, judgments });
+    check("a contradicted-verdict candidate never posts inline despite a high score",
+      r.inline.length === 0 && r.contradicted.length === 1);
+  }
+
   // AC-19: findings-bus writer record shape.
   {
     const judgments = { candidates: [mkCandidate({ final: 95 })], gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
@@ -1165,6 +1545,73 @@ async function selfTest() {
     ], { encoding: "utf8" });
     check("finalize.mjs --dedupe-candidates with no --out exits 0 and prints JSON to stdout",
       r2.status === 0 && (() => { try { const p = JSON.parse(r2.stdout); return p.kept.length === 1 && p.dropped.length === 1; } catch { return false; } })());
+  }
+
+  // D4 / AC-10: checkShape() — the pure function, called directly.
+  {
+    const conforming = { candidates: [mkCandidate({ title: "Handle the null case", final: 90 })] };
+    const okResult = checkShape(conforming);
+    check("checkShape passes a conforming candidate", okResult.ok === true && okResult.violations.length === 0);
+
+    const overLong = { candidates: [mkCandidate({ title: "x".repeat(61), final: 90 })] };
+    const badResult = checkShape(overLong);
+    check("checkShape catches a 61-char title, naming the index and field TITLE",
+      badResult.ok === false && badResult.violations.length === 1
+        && badResult.violations[0].index === 0 && badResult.violations[0].field === "TITLE");
+  }
+
+  // --fanout Step f: a verified candidate that STILL fails --check-shape after its one repair
+  // round is never dropped. finalizeReview() coerces it: a blocking finding posts inline with a
+  // renderer-legal truncated title/body (and still FAILs Gate 6); a non-blocking one that cannot
+  // render inline lands in the report body's deferred section.
+  {
+    const shapeJ = (/** @type {any[]} */ cands) => ({
+      candidates: cands,
+      gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "s",
+    });
+    const longTitle = "Unguarded null dereference of the session token in the refresh path of the handler";
+    const longBody = `${"The refresh handler reads session.token before the guard runs ".repeat(5)}and crashes.`;
+    const blocker = mkCandidate({ final: 95, severity: "high", blocking: true, title: longTitle, body: longBody });
+    const rb = finalizeReview({ context: baseContext, judgments: shapeJ([blocker]) });
+    const posted = rb.inline.find((/** @type {any} */ f) => f.blocking === true);
+    let renders = false;
+    try { if (posted) { renderComment(toInlineCommentPayload(posted, { sha: "a1b2c3d" })); renders = true; } } catch { renders = false; }
+    check("a shape-violating BLOCKING finding stays inline with a renderer-legal truncated title/body",
+      Boolean(posted) && renders && posted.title.length <= 60 && posted.body.length <= 200,
+      JSON.stringify(posted && { t: posted.title, b: posted.body?.length }));
+    check("the coerced blocking finding still FAILs the verdict (Gate 6)", rb.verdict === "FAIL", rb.verdict);
+    check("the coercion is recorded (shape_coerced) rather than silent", Array.isArray(rb.shapeCoerced) && rb.shapeCoerced.length === 1);
+
+    const nonBlocker = mkCandidate({ final: 95, blocking: false, title: longTitle, body: longBody });
+    const rn = finalizeReview({ context: baseContext, judgments: shapeJ([nonBlocker]) });
+    check("a shape-violating NON-blocking finding is routed to the report body's deferred section, never dropped",
+      rn.inline.length === 0 && rn.deferred.length === 1 && rn.payload?.ADDITIONAL_FINDINGS?.length === 1,
+      JSON.stringify({ inline: rn.inline.length, deferred: rn.deferred.length }));
+    check("the identity invariant still holds after the shape routing", rn.identityHolds === true && rb.identityHolds === true);
+  }
+
+  // D4 / AC-10 CLI: `--check-shape <judgments.json>` through the real process boundary.
+  {
+    const shapeDir = join(scratchRoot(), "finalize-check-shape-cli");
+    rmSync(shapeDir, { recursive: true, force: true });
+    mkdirSync(shapeDir, { recursive: true });
+
+    const goodPath = join(shapeDir, "good.json");
+    writeFileSync(goodPath, JSON.stringify({ head_sha: "abc1234def", candidates: [mkCandidate({ title: "Handle the null case", final: 90 })] }));
+    const rGood = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--check-shape", goodPath], { encoding: "utf8" });
+    check("finalize.mjs --check-shape exits 0 on a conforming judgments.json",
+      rGood.status === 0, (rGood.stderr || "").trim().slice(0, 300));
+    check("finalize.mjs --check-shape prints {ok:true, violations:[]} on stdout",
+      (() => { try { const p = JSON.parse(rGood.stdout); return p.ok === true && p.violations.length === 0; } catch { return false; } })());
+
+    const badPath = join(shapeDir, "bad.json");
+    writeFileSync(badPath, JSON.stringify({ head_sha: "abc1234def", candidates: [mkCandidate({ title: "x".repeat(61), final: 90 })] }));
+    const rBad = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--check-shape", badPath], { encoding: "utf8" });
+    check("finalize.mjs --check-shape exits 1 on a shape-violating judgments.json",
+      rBad.status === 1);
+    check("finalize.mjs --check-shape's violation names index 0 and field TITLE",
+      (() => { try { const p = JSON.parse(rBad.stdout); return p.ok === false && p.violations[0]?.index === 0 && p.violations[0]?.field === "TITLE"; } catch { return false; } })());
   }
 
   // End-to-end CLI replay, shaped like ab/B/20230/1's real inputs (multi-line/markdown-link
@@ -1309,6 +1756,91 @@ async function selfTest() {
         && !reportBody.includes("[the retry doc](https://example.com/retry)"));
     }
 
+    // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-17): a HISTORICAL context.json (the
+    // context.historical block prepare-review.mjs's --review-sha attaches) must refuse a real
+    // finalize.mjs run unless --dry-run is also passed, and once it is, the write-plan.json it
+    // writes self-identifies as historical/dry-run. Two real subprocess spawns against the SAME
+    // historical context — never a unit-level stand-in, since AC-17 is about main()'s own I/O
+    // boundary (the exit code and the presence/absence of write-plan.json on disk), the exact
+    // thing only spawning the real CLI proves.
+    {
+      const histDir = join(e2eDir, "historical-test");
+      rmSync(histDir, { recursive: true, force: true });
+      mkdirSync(histDir, { recursive: true });
+      const histContext = withRenderAt({
+        ...e2eContext,
+        historical: {
+          review_sha: "906a74781990f75607f0234de963fdbbc3953f2",
+          thread_state_as_of: "now", description_as_of: "now", ci: "not-read",
+          live_head_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+      }, "2026-09-25T12:00:00Z");
+      const histContextPath = join(histDir, "context.json");
+      writeFileSync(histContextPath, JSON.stringify(histContext, null, 2));
+
+      const noDryOutDir = join(histDir, "out-no-dry-run");
+      const rNoDry = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", histContextPath, "--judgments", judgmentsPath, "--out-dir", noDryOutDir,
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      check("a HISTORICAL context without --dry-run: finalize.mjs exits non-zero",
+        rNoDry.status !== 0, `exit ${rNoDry.status}`);
+      check("a HISTORICAL context without --dry-run: no write-plan.json is written",
+        !existsSync(join(noDryOutDir, "write-plan.json")));
+
+      const dryOutDir = join(histDir, "out-dry-run");
+      const rDry = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", histContextPath, "--judgments", judgmentsPath, "--out-dir", dryOutDir, "--dry-run",
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      check("a HISTORICAL context WITH --dry-run: finalize.mjs exits 0",
+        rDry.status === 0, (rDry.stderr || "").trim().slice(0, 300));
+      if (existsSync(join(dryOutDir, "write-plan.json"))) {
+        const histPlan = JSON.parse(readFileSync(join(dryOutDir, "write-plan.json"), "utf8"));
+        check("a HISTORICAL, --dry-run write-plan.json carries dry_run: true", histPlan.dry_run === true);
+        check("a HISTORICAL, --dry-run write-plan.json carries historical.review_sha verbatim",
+          Boolean(histPlan.historical) && histPlan.historical.review_sha === "906a74781990f75607f0234de963fdbbc3953f2");
+        check("a HISTORICAL, --dry-run write-plan.json's lorekit_write stays empty",
+          Array.isArray(histPlan.lorekit_write) && histPlan.lorekit_write.length === 0);
+      } else {
+        check("a HISTORICAL, --dry-run write-plan.json is written", false, "file missing");
+      }
+    }
+
+    // A/B round 3: an --isolated context carries the live sticky id (the dry-run rehearses the
+    // exact write), so finalize must refuse it without --dry-run, and a --dry-run plan must carry
+    // the `isolated` marker execute-write-plan.mjs refuses on.
+    {
+      const isoDir = join(e2eDir, "isolated-test");
+      rmSync(isoDir, { recursive: true, force: true });
+      mkdirSync(isoDir, { recursive: true });
+      const isoContext = withRenderAt({
+        ...e2eContext, isolated: true,
+        priorRun: { ...(e2eContext.priorRun || {}), stickyCommentId: 5839554292 },
+      }, "2026-09-25T12:00:00Z");
+      const isoContextPath = join(isoDir, "context.json");
+      writeFileSync(isoContextPath, JSON.stringify(isoContext, null, 2));
+      const isoNoDry = join(isoDir, "out-no-dry-run");
+      const rIso = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", isoContextPath, "--judgments", judgmentsPath, "--out-dir", isoNoDry,
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      check("an --isolated context without --dry-run: finalize.mjs exits non-zero, naming --isolated",
+        rIso.status !== 0 && /--isolated/.test(rIso.stderr || ""), `exit ${rIso.status}`);
+      check("an --isolated context without --dry-run: no write-plan.json is written",
+        !existsSync(join(isoNoDry, "write-plan.json")));
+      const isoDry = join(isoDir, "out-dry-run");
+      const rIsoDry = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", isoContextPath, "--judgments", judgmentsPath, "--out-dir", isoDry, "--dry-run",
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      const isoPlanPath = join(isoDry, "write-plan.json");
+      const isoPlan = existsSync(isoPlanPath) ? JSON.parse(readFileSync(isoPlanPath, "utf8")) : null;
+      check("an --isolated, --dry-run write-plan.json carries isolated: true and dry_run: true",
+        rIsoDry.status === 0 && isoPlan?.isolated === true && isoPlan?.dry_run === true,
+        (rIsoDry.stderr || "").trim().slice(0, 300));
+    }
+
     // D16 CLI-level coverage: `--writer findings-bus` is branch-reviewer's entire output path, and
     // until now only finalizeReview()'s pure `findingsBusRecords` array was self-tested — the CLI
     // main() branch that skips the GitHub-shaped artifacts and appends the bus file was exercised
@@ -1389,6 +1921,17 @@ async function main() {
   if (opts["self-test"]) { await selfTest(); return; }
   if (opts["replay-fixtures"]) { await runReplayFixtures(); return; }
 
+  // D4: --check-shape <judgments.json> — the --fanout Step f pre-flight. Exit 0 (ok) or 1, with
+  // {ok, violations} on stdout either way, so the orchestrator can parse the violations to decide
+  // which verifier to re-dispatch for the one repair round.
+  if (opts["check-shape"]) {
+    const inPath = /** @type {string} */(opts["check-shape"]);
+    const judgments = JSON.parse(readFileSync(inPath, "utf8"));
+    const result = checkShape(judgments);
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(result.ok ? 0 : 1);
+  }
+
   // D17: the --fanout orchestrator's candidate-merge step (skills/quality/pr-review/SKILL.md's
   // `--fanout` orchestration, step d). Reads a JSON file — a raw array, or {candidates:[...]} —
   // of finder-stage (pre-verification) candidate records concatenated across the parallel finder
@@ -1423,8 +1966,40 @@ async function main() {
 
   const contextRaw = JSON.parse(readFileSync(/** @type {string} */(opts.context), "utf8"));
   const context = withRenderAt(hydrateFilePatches(contextRaw));
+  // `--no-dispatch`: the reviewer held no sub-agent dispatch tool, so a `parallel` budget ran
+  // in-context (rules/dispatch-topology.md § No-dispatch fallback). finalizeReview() renders the
+  // prescribed RUN_ANOMALY part from the budget itself.
+  if (opts["no-dispatch"]) context.dispatchUnavailable = true;
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
+
+  // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-17): a historical context (`--review-sha`
+  // set upstream in prepare-review.mjs, carried here as context.historical) must never reach a
+  // GitHub write. Refused BEFORE any rendering or write-plan work, and before out-dir is even
+  // created, so a caller that got the flags wrong gets nothing on disk to mistake for a result.
+  const isDryRun = Boolean(opts["dry-run"]);
+  if (context?.historical && !isDryRun) {
+    console.error(
+      "finalize: refusing — context is historical (review_sha "
+      + `${context.historical.review_sha || "unknown"}) but --dry-run was not passed. `
+      + "A historical review must never reach a GitHub write. Pass --dry-run.",
+    );
+    process.exit(1);
+  }
+  // A/B round 3 (sync-tray#72): every arm's --isolated write-plan targeted the PR's LIVE sticky
+  // report (prepare-review.mjs keeps priorRun.stickyCommentId so a dry-run rehearses the exact
+  // write). --dry-run made that harmless; an --isolated run without it would have overwritten
+  // the real report with a comparability run's output. --isolated is a comparability mode, so
+  // it now requires --dry-run here, and the plan carries an `isolated` marker that
+  // execute-write-plan.mjs refuses on its own (rules/pipeline.md § --isolated).
+  if (context?.isolated && !isDryRun) {
+    console.error(
+      "finalize: refusing — context is --isolated (a comparability run whose write-plan targets "
+      + "the PR's live sticky report) but --dry-run was not passed. Pass --dry-run.",
+    );
+    process.exit(1);
+  }
+
   mkdirSync(outDir, { recursive: true });
 
   const result = finalizeReview({
@@ -1531,6 +2106,9 @@ async function main() {
     reportBodyPath: join(outDir, "report-body.md"),
     pointerBodyPath,
     inlineComments: renderedInlineComments,
+    dryRun: isDryRun,
+    historical: context?.historical || null,
+    isolated: Boolean(context?.isolated),
   });
   writeFileSync(join(outDir, "write-plan.json"), JSON.stringify(writePlan, null, 2));
   console.log(`finalize: wrote write-plan.json (${writePlan.thread_reply.length} replies, `

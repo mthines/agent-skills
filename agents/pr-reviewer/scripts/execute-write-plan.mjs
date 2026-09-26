@@ -148,6 +148,32 @@ export async function probeGhAccess(repo, runner = defaultRun) {
 }
 
 /**
+ * A write-plan self-identifying as historical or dry_run must never be executed (D8/D9,
+ * AC-18) — checked purely from the plan's own fields, never a caller-supplied flag. Returns a
+ * human-readable reason string when the plan should be refused, or `null` when it is clear to
+ * execute. Two independent markers, either one sufficient: `historical` (finalize.mjs attaches
+ * this whenever context.historical was set, i.e. `--review-sha` was in play upstream) and
+ * `dry_run` (finalize.mjs's own `--dry-run` marker, carried through so a plan built under
+ * `--dry-run` stays refused even if handed to this script without repeating the flag).
+ * @param {any} writePlan
+ * @returns {string|null}
+ */
+export function refusalReason(writePlan) {
+  if (writePlan?.historical) {
+    const sha = writePlan.historical.review_sha || "unknown";
+    return `plan is historical (review_sha ${sha}) — a historical review must never reach a GitHub write`;
+  }
+  if (writePlan?.dry_run) {
+    return "plan is marked dry_run — refusing to execute a plan that identifies itself as a rehearsal";
+  }
+  if (writePlan?.isolated) {
+    return "plan is from an --isolated comparability run — its sticky target is the PR's live report,"
+      + " so it must never reach a GitHub write";
+  }
+  return null;
+}
+
+/**
  * Pure: decides what steps WOULD run, in order, from a write-plan. No I/O.
  * Used by --dry-run and by the self-test to assert ordering without
  * spawning anything.
@@ -184,8 +210,31 @@ export async function executeWritePlan(writePlan, opts = {}) {
   const repo = opts.repo || writePlan.repo;
   const lorekitOps = writePlan.lorekit_write || [];
 
+  // `--dry-run` is a PREVIEW and spawns nothing, so it always lists the planned steps — including
+  // for a plan that self-identifies as dry_run/historical, which is exactly what
+  // `finalize.mjs --dry-run` emits and what pipeline.md promises can be previewed. The reason a
+  // live run would refuse it is carried as `wouldRefuse`, never silently dropped.
+  const refusal = refusalReason(writePlan);
   if (dryRun) {
-    return { executed: [], dryRun: true, plannedSteps: planExecutionSteps(writePlan), lorekitOps, ghAccess: null };
+    return {
+      executed: [], dryRun: true, plannedSteps: planExecutionSteps(writePlan), lorekitOps, ghAccess: null,
+      ...(refusal ? { wouldRefuse: refusal } : {}),
+    };
+  }
+
+  // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-18): outside --dry-run, refuse a plan that
+  // self-identifies as historical or dry_run — checked from the PLAN FILE'S OWN fields (the CLI
+  // flag only decides preview-vs-execute, it can never clear the refusal), and BEFORE
+  // `probeGhAccess` (which itself spawns `gh`) or any runner call. This is defense in depth behind
+  // finalize.mjs's own historical-without-dry-run refusal (AC-17): a plan that reached this script
+  // some other way — hand-assembled, replayed from an old run, a future caller that skips
+  // finalize.mjs — still gets refused on the plan's own markers, not on trusting that whatever
+  // wrote it got the CLI flags right.
+  if (refusal) {
+    return {
+      executed: [], dryRun: false, refused: true, reason: refusal,
+      plannedSteps: [], lorekitOps, ghAccess: null, code: 5,
+    };
   }
 
   const hasGhAccess = await probeGhAccess(repo, runner);
@@ -369,6 +418,90 @@ async function selfTest() {
       (result.plannedSteps || []).map((/** @type {any} */ s) => s.kind).join(",") === "thread.reply,sticky.upsert,review.create");
   }
 
+  // refusalReason (D8/D9, AC-18) — pure unit coverage of the plan-self-identifies check itself.
+  {
+    check("refusalReason: a plain live plan is clear to execute", refusalReason({ repo: "o/r" }) === null);
+    check("refusalReason: a historical plan is refused, naming its review_sha",
+      /historical/i.test(refusalReason({ historical: { review_sha: "abc1234" } }) || "")
+      && (refusalReason({ historical: { review_sha: "abc1234" } }) || "").includes("abc1234"));
+    check("refusalReason: a dry_run plan is refused even with no historical block",
+      /dry_run/i.test(refusalReason({ dry_run: true }) || ""));
+    check("refusalReason: an --isolated plan is refused even with dry_run stripped (A/B round 3)",
+      /--isolated/.test(refusalReason({ isolated: true }) || ""));
+  }
+  {
+    const spy = { calls: 0 };
+    const result = await executeWritePlan({ repo: "o/r", pr_number: 1, isolated: true },
+      { runner: async () => { spy.calls++; return { ok: true, stdout: "", stderr: "" }; }, repo: "o/r" });
+    check("an --isolated plan is refused with code 5 and zero runner calls",
+      result.code === 5 && spy.calls === 0, JSON.stringify({ code: result.code, calls: spy.calls }));
+  }
+  {
+    // CLI: --repo defaults to the plan's own repo field (A/B round 3: two arms hit a usage exit).
+    const { spawnSync } = await import("node:child_process");
+    const { fileURLToPath } = await import("node:url");
+    const planPath = join(scratchRoot(), `ewp-repo-default-${process.pid}.json`);
+    writeFileSync(planPath, JSON.stringify({ repo: "owner/repo", pr_number: 1, dry_run: true,
+      thread_reply: [], thread_resolve: [], sticky_upsert: { comment_id: null, body_path: "x", pointer_body_path: "y" },
+      review_create: { commit_id: "abc1234", comments: [] }, lorekit_write: [] }));
+    const self = fileURLToPath(import.meta.url);
+    const r = spawnSync(process.execPath, [self, "--plan", planPath, "--dry-run"], { encoding: "utf8" });
+    check("CLI: --dry-run without --repo uses the plan's repo and exits 0", r.status === 0,
+      `status=${r.status} stderr=${(r.stderr || "").trim().slice(0, 200)}`);
+    const noRepoPath = planPath.replace(".json", "-norepo.json");
+    writeFileSync(noRepoPath, JSON.stringify({ pr_number: 1, dry_run: true }));
+    const r2 = spawnSync(process.execPath, [self, "--plan", noRepoPath, "--dry-run"], { encoding: "utf8" });
+    check("CLI: a plan with no repo field and no --repo is a usage error (exit 2)", r2.status === 2);
+    const { rmSync } = await import("node:fs");
+    rmSync(planPath, { force: true });
+    rmSync(noRepoPath, { force: true });
+  }
+
+  // AC-18 case: a HISTORICAL or dry_run write-plan is refused BEFORE any runner call — proven
+  // against the exact minimal (non-schema-shaped) plan the checks.yaml PATH-shim test uses, so the
+  // shape here is deliberately sparse (thread_ops/lorekit.write, not thread_reply/lorekit_write) —
+  // the refusal must fire on `historical`/`dry_run` alone, never by first parsing the rest of the
+  // plan's shape.
+  {
+    const { spy, calls } = mkSpy();
+    const historicalPlan = {
+      dry_run: true,
+      historical: { review_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
+      thread_ops: [], lorekit: { write: [] },
+    };
+    const result = await executeWritePlan(historicalPlan, { runner: spy, repo: "o/r" });
+    check("a historical/dry_run plan is refused with code 5, zero runner calls, even with dryRun NOT passed",
+      result.refused === true && result.code === 5 && calls.length === 0, JSON.stringify(result));
+    check("the refusal reason names the historical review_sha", /historical/i.test(result.reason || ""));
+  }
+
+  // A plan finalize.mjs --dry-run produced (dry_run: true, optionally historical) must still be
+  // PREVIEWABLE under --dry-run — pipeline.md promises the planned steps — while staying refused
+  // without it. Both halves, zero runner calls in each.
+  {
+    const rehearsal = {
+      repo: "owner/repo", pr_number: 1, dry_run: true,
+      historical: { review_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
+      thread_reply: [{ thread_id: "t1", body: "fixed" }],
+      sticky_upsert: { comment_id: null, body_path: "/tmp/body.md" },
+      review_create: { commit_id: "abc", comments: [{ path: "a.ts", line: 1, body: "x" }] },
+      lorekit_write: [],
+    };
+    const { spy: dSpy, calls: dCalls } = mkSpy();
+    const previewed = /** @type {any} */ (await executeWritePlan(rehearsal, { runner: dSpy, dryRun: true }));
+    check("--dry-run on a dry_run/historical plan lists the planned steps instead of refusing",
+      previewed.refused !== true && previewed.code === undefined
+      && (previewed.plannedSteps || []).map((/** @type {any} */ s) => s.kind).join(",") === "thread.reply,sticky.upsert,review.create",
+      JSON.stringify(previewed));
+    check("--dry-run on a dry_run/historical plan still names why a live run would refuse it",
+      /historical/i.test(previewed.wouldRefuse || ""), String(previewed.wouldRefuse));
+    check("--dry-run on a dry_run/historical plan spawns zero gh processes", dCalls.length === 0, `${dCalls.length} calls`);
+    const { spy: lSpy, calls: lCalls } = mkSpy();
+    const live = await executeWritePlan(rehearsal, { runner: lSpy });
+    check("the same plan WITHOUT --dry-run is refused with code 5 and zero gh processes",
+      live.refused === true && live.code === 5 && lCalls.length === 0, JSON.stringify(live));
+  }
+
   // AC-3 case: a plan with empty inline comments emits no review.create.
   {
     const { spy, calls } = mkSpy();
@@ -498,12 +631,25 @@ async function main() {
   const opts = parseArgs(argv);
   if (opts["self-test"]) { await selfTest(); return; }
 
-  if (!opts.plan || !opts.repo) {
-    console.error("usage: execute-write-plan.mjs --plan <write-plan.json> --repo <owner/name> [--dry-run] [--self-test]");
+  const USAGE = "usage: execute-write-plan.mjs --plan <write-plan.json> [--repo <owner/name>] [--dry-run] [--self-test]"
+    + "\n  --repo defaults to the plan's own `repo` field.";
+  if (!opts.plan) {
+    console.error(USAGE);
     process.exit(2);
   }
   const writePlan = JSON.parse(readFileSync(/** @type {string} */(opts.plan), "utf8"));
-  const result = await executeWritePlan(writePlan, { repo: /** @type {string} */(opts.repo), dryRun: Boolean(opts["dry-run"]) });
+  // A/B round 3: two arms tripped on a required --repo while the plan already names its repo.
+  // finalize.mjs always writes `repo` into the plan, so it is the default; --repo still overrides.
+  const repo = /** @type {string|undefined} */ (opts.repo) || writePlan?.repo;
+  if (!repo) {
+    console.error(`${USAGE}\n  (the plan carries no repo field, so --repo is required)`);
+    process.exit(2);
+  }
+  const result = await executeWritePlan(writePlan, { repo, dryRun: Boolean(opts["dry-run"]) });
+  if (result.code === 5) {
+    console.error(`execute-write-plan: refused — ${result.reason}`);
+    process.exit(5);
+  }
   if (result.code === 3) {
     console.error(result.error);
     process.exit(3);

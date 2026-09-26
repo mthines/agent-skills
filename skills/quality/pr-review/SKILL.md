@@ -6,7 +6,7 @@ description: >
   for "review this PR" when you do not want an apply-and-converge loop. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`. Invoke with /pr-review.
 disable-model-invocation: true
-argument-hint: '[<pr-url>|#<n>] [--fanout] [--critical] [--full] [--effort high] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--fanout] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
@@ -206,6 +206,37 @@ dispatch *is* the fallback and still runs — dispatching that one agent needs t
 the same skip; the distinction only matters when read carefully: `--fanout`'s absence-of-dispatch
 case degrades one rung, not to nothing.
 
+### Worker preamble — every dispatch in Steps c, e, and f
+
+Every sub-agent this orchestration dispatches — each finder and lens in Step c, each verifier in
+Step e, and synthesis in Step f when it runs as its own dispatch — gets the SAME preamble prepended
+to its prompt, verbatim:
+
+```text
+You are a worker in this pipeline's parallel orchestration, not the full pr-reviewer agent.
+- Read ONLY the file(s) named below, by their ABSOLUTE path — never a bare relative path; your
+  cwd is not guaranteed to be this repo's checkout.
+- Do NOT read agents/pr-reviewer.md. It is the full agent's own document; you are one step of its
+  pipeline, dispatched with exactly the context that step needs, and reading it would re-derive
+  context this orchestration already isolated you from (and burn the tokens doing it).
+- Do NOT call Skill() for anything this orchestration already resolved for you (deduping, the
+  shape caps, rendering). Read the rule file(s) you were given instead.
+- Read the review packet first (context.packet.path): the PR description and every hunk widened
+  against the head file, with head line numbers you cite directly. Open a workspace file only for
+  what it does not show — a caller, a definition, or a file its index marks "listed".
+- Write your JSON output to the path you were given. Return ONLY that path in your final message
+  — never the payload inline. The orchestrator reads the file from disk; a payload returned as
+  text spends context neither side needs to spend, and is the difference between a worker costing
+  tens of KB and one costing a few hundred bytes.
+```
+
+This is the one thing the fan-out orchestration's own dispatch prompts CAN still shrink, even
+though they cannot touch what the harness auto-loads per session (`scripts/eval/benchmarks/README.md
+§ Base overhead` — the ~245 KB `agents/pr-reviewer.md` and the repo's own `CLAUDE.md` are both
+harness-loaded, not dispatch-prompt content). An explicit read-list plus a forbidden-file rule is
+what stops a worker from re-reading the full agent document on top of whatever the harness already
+loaded for that session.
+
 ### Step a — build the review context
 
 Run [`prepare-review.mjs`](../../../agents/pr-reviewer/scripts/prepare-review.mjs) exactly as
@@ -221,7 +252,7 @@ one run directory:
   context.json
   candidates/<finder>.json         # step c
   lenses/<lens>.json                # step c
-  verdicts/<n>.json                 # step e
+  verdicts/<batch-id>.json          # step e, one file per verifier batch
   judgments.json                    # step f
   finalize/…                        # finalize.mjs --out-dir
 ```
@@ -230,6 +261,15 @@ Each dispatched sub-agent **writes its JSON to that path and returns only the pa
 payload inline. A finder or verifier's full output can run to tens of KB; returning it as the
 dispatch result would spend the orchestrator's own context on data it only needs to hand to the next
 mechanical step, exactly the cost this whole pipeline exists to cut.
+
+**`--review-sha <sha>` pass-through.** When the orchestration is invoked with `--review-sha <sha>`
+in its own argument tail, forward it to `prepare-review.mjs` verbatim, together with the
+`--isolated` flag it requires alongside it and `--dry-run` (mandatory for the whole run, not just
+this step, since a historical context is never current enough to post a write against). This is a
+pass-through, not a re-implementation: `prepare-review.mjs` owns `--review-sha`'s verification and
+its `--isolated`/`--pin-head` refusals (`rules/pipeline.md#--review-sha`), and this orchestration's
+only job is to route the flag through to Steps a and f unmodified and to never construct a
+historical run that omits `--dry-run`.
 
 ### Step b — route: `quick` tier skips the fan-out
 
@@ -262,6 +302,8 @@ Each finder sub-agent receives **only**:
   dedicated rule ([`finder-consumer-impact.md`](../../../agents/pr-reviewer/rules/finder-consumer-impact.md),
   [`finder-dependency.md`](../../../agents/pr-reviewer/rules/finder-dependency.md));
 - `context.json`;
+- the review packet (`context.packet.path`, written by `prepare-review.mjs`), which each finder reads
+  before opening any workspace file;
 - the workspace path.
 
 Never the other finders' output, never a running count of candidates so far — `finders.md`'s own
@@ -277,17 +319,39 @@ independent dispatch counted against the same concurrency cap below, with agreem
 `votes` on the merged candidate.
 
 **Lenses ride the same parallel wave**, each self-gating on the tier `route-depth.mjs` already
-resolved — no separate wave, no separate cap accounting:
+resolved — no separate wave. Holistic review, optimality, and measurability run together in **one
+lens-bundle dispatch** for whichever of the three are active; standards-conformance is its own
+dispatch ([`dispatch-topology.md § Packing`](../../../agents/pr-reviewer/rules/dispatch-topology.md#packing--how-units-become-dispatches)
+owns the grouping and why):
 
-| Lens | Runs at | Rule |
-| --- | --- | --- |
-| holistic review | default ON in `full` mode; shape-gated in incremental | [`holistic-review.md`](../../../agents/shared/rules/holistic-review.md) |
-| optimality | `deep` only | [`optimality-review.md`](../../../agents/shared/rules/optimality-review.md) |
-| standards-conformance | `deep` and `standard` | [`standards-conformance.md`](../../../agents/shared/rules/standards-conformance.md) |
-| measurability | `deep` and `standard` | [`measurability-review.md`](../../../agents/shared/rules/measurability-review.md) |
+| Lens | Runs at | Dispatch | Rule |
+| --- | --- | --- | --- |
+| holistic review | default ON in `full` mode; shape-gated in incremental | lens bundle | [`holistic-review.md`](../../../agents/shared/rules/holistic-review.md) |
+| optimality | `deep` only | lens bundle | [`optimality-review.md`](../../../agents/shared/rules/optimality-review.md) |
+| measurability | `deep` and `standard` | lens bundle | [`measurability-review.md`](../../../agents/shared/rules/measurability-review.md) |
+| standards-conformance | `deep` and `standard` | its own | [`standards-conformance.md`](../../../agents/shared/rules/standards-conformance.md) |
 
-Each lens's output lands at `lenses/<lens>.json` and feeds `judgments.lenses.*` at assembly (Step f)
-— unchanged from how `pr-reviewer.md` already shapes that object.
+The lens bundle receives each active lens's rule file and runs them one after another, never letting
+one lens's output inform another's.
+Each lens's output lands at `lenses/<lens>.json` — the bundle writes one file per lens it ran — and
+feeds `judgments.lenses.*` at assembly (Step f), unchanged from how `pr-reviewer.md` already shapes
+that object.
+
+**`standards-conformance` (a lens, Step c) and `standards` (a finder, also Step c) are two separate
+dispatches, never one folded into the other.** One live arm-C run merged them — ran the
+governing-docs check once and used its output for both — which is a deviation from the pipeline
+this section documents, not a shortcut it condones: the finder answers "does this diff violate a
+written rule" per `finders.md`'s pre-verification candidate shape, the lens answers the same
+governing-docs question but through `standards-conformance.md`'s own lens contract feeding
+`judgments.lenses.standards`, and `report-rendering.md` reads both independently. Dispatch both,
+every run.
+
+**Lens instruction — `optimality`'s `card_body` carries no heading.** Tell the optimality lens
+dispatch explicitly: write `card_body` as the proposal's prose only, with no leading
+`### Optimality proposal — <path>:<line>` line — `finalize/payload.mjs`'s `buildOptimalityCard()`
+builds that heading itself from the candidate's own `path`/`line` fields and strips a leading
+echoed one from `card_body`, so an instruction that lets the lens omit it from the start avoids
+relying on the strip path at all.
 
 ### Step d — deterministic dedupe
 
@@ -318,19 +382,103 @@ diversify-then-vote treats a unanimous `votes` count as verifier input rather th
 strip `_also_flagged_by` (and `agreement_promoted`) from the record before assembling
 `judgments.json`.
 
+**A second, semantic pass runs after the exact/adjacent one, on the survivors.** Different finders
+describe the same defect in different words far more often than they describe it at the same
+`(path, line, defect_class)` — the exact/adjacent pass above catches the second, not the first.
+`finalize/dedupe.mjs`'s `semanticDedupe()` groups candidates that share a path, a resolvable and
+matching `symbol`, a line within 3, and a Jaccard token-set overlap over its own calibrated
+threshold on the `claim` + `bad_outcome` text; the surviving head record carries a
+`_semantic_merged` array (one entry per merged member: `finder`, `defect_class`, `line`, `claim`)
+that is an **audit record only**: it stays on `deduped.json` for the report, is stripped before
+assembly, and is **never handed to the Step e verifier and never counted as agreement**. The
+verifier gets the representative candidate alone — showing it the merged members would show it
+other finders' claims (excluded by `finding-verifier.md`), and counting them would be the
+cross-finder promotion `rubric-composition.md ## Dedupe` forbids for a heuristic match.
+
 ### Step e — parallel verification
 
-Dispatch one verifier sub-agent per surviving candidate (batch small groups of unrelated candidates
-together where the concurrency cap makes that necessary — never batch candidates that share a path,
-since [`finding-verifier.md`](../../../agents/shared/rules/finding-verifier.md)'s adversarial framing
-depends on seeing one claim at a time). Each verifier receives **only** the candidate record, the
-workspace, and `impact.json` — never the finder's reasoning, never the other candidates, per
-`finding-verifier.md`'s own exclusion table. Each returns the four-way verdict
-(`confirmed`/`contradicted`/`ambiguous`/`unobtainable`) plus the `R`/`A`/`Ac` scores, `severity`,
-`prefix`, `blocking`, `title`, `body`, `materiality`, and `category` — the remaining fields
-`judgments.schema.json`'s candidate shape requires — written to `verdicts/<n>.json`. A `contradicted`
-candidate is dropped here and never reaches `judgments.json`, with its contradicting evidence logged
-per `finding-verifier.md`'s own rule.
+Plan the verifier batches from `deduped.json`'s `kept[]`, then dispatch one verifier sub-agent per
+batch:
+
+```bash
+node agents/pr-reviewer/scripts/plan-dispatch.mjs \
+  --verifier-batches "<scratchRoot()>/<run-id>/deduped.json"
+```
+
+Each batch holds at most `VERIFY_BATCH_MAX` (8) candidates.
+**Never batch candidates that share a path** into one dispatch, since
+[`finding-verifier.md`](../../../agents/shared/rules/finding-verifier.md)'s adversarial framing
+depends on seeing one claim at a time.
+A batched verifier judges each candidate as if it were the only one, in the order given, and writes
+`verdicts/<batch-id>.json` as `{ "candidates": [...] }` — one entry per candidate in its batch. **This is a hard rule, not a preference: one live arm-C run
+batched several same-path candidates into one verifier dispatch to save a wave, and it is a
+deviation from the pipeline this section documents — batching by path is exactly the shared-summary
+problem `finders.md`'s independence rule already forbids at the finder stage, moved one step
+downstream, and it makes the verifier quieter on each claim in the batch instead of adversarial on
+one.** Two candidates that share a path always land in different verifier dispatches, each batched with
+*unrelated-path* candidates only, never with each other; `plan-dispatch.mjs` guarantees it. Each verifier receives **only** the
+candidate record, the workspace, and `impact.json` — never the finder's reasoning, never the other
+candidates, per `finding-verifier.md`'s own exclusion table; a semantically merged candidate is
+verified as its representative alone, its `_semantic_merged` members withheld. Each returns the
+four-way verdict (`confirmed`/`contradicted`/`ambiguous`/`unobtainable`) plus the `R`/`A`/`Ac`
+scores, `severity`, `prefix`, `blocking`, `title`, `body`, `materiality`, and `category` — the
+remaining fields `judgments.schema.json`'s candidate shape requires — written to its batch's
+`verdicts/<batch-id>.json`.
+A `contradicted` candidate is dropped here and never reaches `judgments.json`, with its
+contradicting evidence logged per `finding-verifier.md`'s own rule.
+
+**Every verifier dispatch's prompt includes the live shape caps, pasted verbatim — never
+restated as fixed numbers in this document**, since a number copied into prose here would drift the
+moment `comment-spine.mjs`'s constants change and nothing would catch it:
+
+```bash
+node agents/pr-reviewer/scripts/comment-spine.mjs --shape-caps
+```
+
+Paste that command's output into the verifier's prompt (alongside the worker preamble) so `title`,
+`body`, `evidence[]`, and the fenced-suggestion line cap it produces are checked against the caps
+the renderer will actually enforce, not against a value someone remembered.
+
+### Verifier self-check — appended to every verifier dispatch in Step e
+
+The caps above tell a verifier what the limits are; this block makes it check its own file against
+them before it returns.
+In A/B round 1 the orchestrator hand-trimmed 6 verifier bodies on one arm and 16 on another, because
+nothing ran the renderer's shape check until every verifier had already returned.
+Append this block, verbatim, after the worker preamble and the pasted shape caps in every verifier
+dispatch, with `<REPO>` replaced by the absolute path of this repository's checkout and `<OUT>` by
+the verifier's own output path:
+
+```text
+Before you return, self-check the file you wrote:
+  node <REPO>/agents/pr-reviewer/scripts/validate-judgments.mjs --shape-only <OUT>
+- Exit 0 with "OK" on stdout: return <OUT>.
+- Exit 1: stderr names each violation by candidate index and field. Edit ONLY the named fields in
+  <OUT>, then run the command again.
+- At most 2 fix-and-rerun rounds (3 runs in total). If the third run still exits 1, return <OUT>
+  followed by one line: SHAPE-UNRESOLVED: <first stderr line>.
+- Exit 2 (the check itself could not run): return <OUT> followed by one line:
+  SHAPE-CHECK-UNAVAILABLE: <first stderr line>.
+- Never change verdict, severity, blocking, R, A, or Ac to make the check pass, and never delete a
+  candidate. The check governs how a finding is written, not whether it is true.
+- One named exception: "blocking": true requires severity high or critical. That is the severity
+  crosswalk, not a shape rule. Re-apply it: raise the tier only if the base impact is broken
+  behaviour, security, data loss, or misimplemented intent; otherwise set blocking to false.
+```
+
+`--shape-only` validates each candidate against `judgments.schema.json`'s `$defs.candidate`, the
+candidate-level domain rules, and `finalize.mjs`'s own `checkShape()`, imported rather than copied.
+It needs no `gates`/`threads`/`memory` wrapper, which a single verifier's output never has.
+It accepts the two shapes a verifier writes: a bare JSON array of candidates, or
+`{ "candidates": [...] }`.
+A file holding one bare candidate object is rejected, so `<OUT>` always holds an array, even for a
+single candidate.
+The bound is two rounds for the same reason Step f allows one repair round: a verifier that
+miscounted against a cap it was given fixes it in one pass, and one that cannot follow the
+instruction will not fix it in a fifth.
+A `SHAPE-UNRESOLVED` or `SHAPE-CHECK-UNAVAILABLE` line changes nothing downstream.
+Step f's `--check-shape` pre-flight and `finalize.mjs`'s `coerceShape()` routing still run on every
+candidate, so a verified finding is still never dropped over its shape.
 
 ### Step f — assemble, validate, finalize, write
 
@@ -344,6 +492,30 @@ in `context.json`), and the open-thread classifications
 these together with every surviving verified candidate into one `judgments.json` matching
 [`judgments.schema.json`](../../../agents/pr-reviewer/schemas/judgments.schema.json).
 
+Then, before the three steps every `pr-reviewer` run takes, one this orchestration adds because it
+is the only path where verifiers write shape-bearing prose in N independent, un-cross-checked
+dispatches:
+
+```bash
+node agents/pr-reviewer/scripts/finalize.mjs --check-shape "<scratchRoot()>/<run-id>/judgments.json"
+```
+
+`--check-shape` runs every candidate's `title`/`body`/`evidence[]` through the real
+`render-comment.mjs` shape validation and reports each violation's `index`, `finder`, and `field`
+without writing anything. **On a violation, re-dispatch only the named verifier(s)** — one repair
+round, with the caps pasted (Step e) and the specific violation named in the prompt — then re-run
+`--check-shape` once more. There is exactly one repair round, never a loop — one catches a
+verifier that miscounted against a cap it was given; a second would be chasing a verifier that
+cannot follow the instruction. **A candidate still violating shape after that round is never
+dropped**: a verified
+finding is not less true for a 61-char title. Proceed to `finalize.mjs`, which routes it
+mechanically — a **non-blocking** one lands in the report body's deferred section (`N more
+findings`) instead of inline, and a **blocking** one posts inline with a renderer-legal truncated
+title and body (`coerceShape()`: the claim, severity, and blocking flag never change; a fix fence
+is removed rather than truncated into a wrong patch). If even that cannot render, the blocker joins
+the deferred section and Gate 6 still FAILs on it. Every such routing is listed in
+`finalize`'s `shapeCoerced[]`.
+
 Then the same three steps every `pr-reviewer` run takes, unchanged:
 
 ```bash
@@ -355,7 +527,15 @@ node agents/pr-reviewer/scripts/finalize.mjs \
 ```
 
 `validate-judgments.mjs` exits non-zero on a schema violation and stops the run there — a malformed
-`judgments.json` is a synthesis bug, not something `finalize.mjs` should try to interpret. Once
+`judgments.json` is a synthesis bug, not something `finalize.mjs` should try to interpret.
+`validate-judgments.mjs` also calls `finalize.mjs`'s own `checkShape()` (the same function
+`--check-shape` above wraps — imported, never a second copy of its caps), so a candidate a schema
+alone would let through — an over-`PROSE_MAX` `body` with no `maxLength` in the schema, or
+`evidence_anchors` on a one-liner prefix, both real A/B round-1 workarounds — now fails validate
+too, on EVERY run, not only a `--fanout` one that reached the pre-flight above. The pre-flight is
+still worth running first here: it names which VERIFIER to re-dispatch, one repair round, before
+assembly — `validate-judgments.mjs` only tells the orchestrator the assembled file is unpostable.
+Once
 `finalize.mjs` has written `write-plan.json`, execute it exactly as `pr-reviewer.md` Step 4 does:
 `execute-write-plan.mjs` where a `gh` access path exists, or the write-plan's ops walked one by one
 against the `mcp__github__*` / `mcp__lorekit__*` mapping in
@@ -383,9 +563,15 @@ Batch every dispatch wave (finders + lenses in Step c, verifiers in Step e) in g
 This exists for the same reason `diversify-then-vote`'s N is a small fixed number rather than
 "as many as helpful": a PR review dispatching one sub-agent per finding on a large diff can burst
 past a harness's or GitHub's own rate limits, and a burst that gets throttled mid-run is worse than
-a queued batch that finishes slightly later. Six finders plus up to four lenses is already at the
-default cap for Step c's own wave on a `deep`-tier run; Step e's verifier wave batches similarly for
-a diff with more than six surviving candidates.
+a queued batch that finishes slightly later.
+Step c's wave on a `deep`-tier run is up to eight finder dispatches (three `correctness` votes) plus
+the lens bundle and the standards-conformance lens, so it already spans two messages; Step e's
+verifier batches queue the same way.
+Send the next message only after every dispatch in the current one has returned, dispatch each unit
+exactly once, and retry a unit only once when it returned no readable output file —
+[`dispatch-topology.md § Packing`](../../../agents/pr-reviewer/rules/dispatch-topology.md#packing--how-units-become-dispatches)
+owns those rules and the expected sub-agent count per thoroughness band.
+`plan-dispatch.mjs` prints the messages in the order to send them.
 
 ### The default-flip gate
 

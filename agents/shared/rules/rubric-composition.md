@@ -54,10 +54,36 @@ Announce auto-engagement in one line: `Auto-engaging critical: <reason>.` User c
 Walk findings in load order. For each new finding, if a prior finding has:
 
 - Same `(file, line)` AND same Conventional-Comments prefix → **drop the new one**, append `(also flagged by <new-rubric>)` to the prior body.
+  The annotation is added only when the new finding came from a **different** rubric; a rubric repeating its own finding is a duplicate, not agreement.
 - Same `(file, line)` AND different prefix → keep both; humans benefit from seeing both lenses.
 - Adjacent lines (`|line_a - line_b| ≤ 2`) AND same prefix AND same first 40 chars of body → **drop the new one** (likely the same finding, different rubric named it differently).
+- **Distinct claims never merge.** When both findings carry claim text and their claim-token Jaccard similarity is below `0.21` (the calibrated floor in the semantic pass below), keep both, even at the same `(file, line)` with the same prefix.
+  A/B round 3 lost a verified finding at confidence 96.5 this way: two different defects confirmed on one line merged on the anchor alone.
+  A finding with no claim text keeps the anchor-only rule, since there is nothing to compare.
 
 Dedupe runs **before** the per-comment confidence check (`per-comment-confidence.md`) — no point scoring a duplicate.
+
+**`/pr-review --fanout`'s SEMANTIC pass (plan feat/pr-reviewer-shrink-fanout-ab, D5).** The rule
+above requires the SAME Conventional-Comments prefix, which a fan-out run's finders can never
+satisfy for the same underlying defect: pre-verification, the prefix stand-in is each finder's own
+`defect_class`, and finders name the same issue differently by construction (`edge-case` vs.
+`contract-break` vs. `scope-creep` vs. `missing-update` — the real failure on dash0hq/dash0#20230,
+where one issue posted as four separate findings). `finalize/dedupe.mjs`'s `semanticDedupe()` runs
+as a SECOND pass, after the exact/adjacent pass above, over the `--fanout` orchestrator's
+pre-verification candidate pool only (`dedupeCandidates()`, never `finalizeReview()`'s
+post-verification path): two candidates merge iff same `path`, both `symbol` non-null and equal,
+both `line` within 3 of each other, and a claim-token Jaccard similarity `>= 0.21` (calibrated on
+the real run: true duplicates scored 0.23–0.46, every distinct pair on the same path scored
+`<= 0.19`; 0.21 is the midpoint of that gap). Grouping is the single-linkage transitive closure of those pairwise matches
+(union-find), so a candidate bridging two clusters merges both and the partition does not depend
+on input order; the kept representative is picked by a total order (highest `severity_hint`, then
+earliest `line`, then lexical `finder` / `defect_class` / `claim`), so it does not either. The kept
+record carries a `_semantic_merged` entry per merged candidate as an audit record for the report
+only — the verifier sees the representative alone, never the merged members.
+**Never agreement-promoted** — a semantic merge is a lower-confidence, threshold-calibrated
+heuristic match, not the exact `(file, line, prefix)` agreement the section below defines, and
+promoting it would change `## Cross-rubric agreement`'s threshold semantics on the strength of a
+pass no live run has verified against that rubric.
 
 ## Cross-rubric agreement
 

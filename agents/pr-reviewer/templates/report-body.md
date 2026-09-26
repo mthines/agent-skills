@@ -19,7 +19,14 @@
 {{OPTIMALITY_CARDS}}
 
 </details>
-{{/OPTIMALITY_CARDS}}{{#ADDITIONAL_FINDINGS}}
+{{/OPTIMALITY_CARDS}}{{#NOTES}}
+<details>
+<summary>Notes ({{NOTES_COUNT}}) — posted inline</summary>
+
+{{NOTES}}
+
+</details>
+{{/NOTES}}{{#ADDITIONAL_FINDINGS}}
 <details>
 <summary>{{ADDITIONAL_COUNT}} more findings — verified, too minor to comment on</summary>
 

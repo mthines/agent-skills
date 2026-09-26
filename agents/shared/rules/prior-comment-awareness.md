@@ -62,7 +62,7 @@ REPO_NAME="${REPO##*/}"
 # unguarded call here silently yields "" — and every `select(.user_login == "")` below then
 # matches nothing, which reads as "this agent has never commented on this PR". Dedup, the
 # anti-flip-flop check and Step 2.9c all no-op on a PR full of this agent's own threads.
-BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
+BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null)}" || BOT_LOGIN=""
 # Fallback: this agent's own login, recorded the last time it reviewed THIS PR. The caller binds
 # PRIOR_REPORT_AUTHOR from the PR-state record's `bot_login`, or off the sticky it found on the
 # fallback rung (pr-reviewer Step 0.7); either way it costs no extra API call here.
