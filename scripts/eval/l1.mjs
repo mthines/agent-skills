@@ -9044,6 +9044,84 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G81: --fanout worker discipline + shape/dedupe/check-shape text
+// (plan feat/pr-reviewer-shrink-fanout-ab, D4/D5/D6/D8, AC-7/AC-9/AC-25) ──
+// G66 above already guards the --fanout section's baseline contract from #205 (default-off,
+// quick-tier skip, capability test, concurrency cap, six-finder list). This block guards the
+// additions layered on top of it in this plan: a worker preamble that keeps every dispatched
+// sub-agent from re-reading the ~245 KB agents/pr-reviewer.md, the second (semantic) dedupe pass
+// wired to the verifier as context, the live shape caps pasted rather than restated as fixed
+// numbers, a --check-shape pre-flight with a one-repair-round contract, the optimality lens's
+// no-heading instruction, and the two arm-C deviations (path-batched verification, a folded
+// standards lens/finder) named and reversed in the text — reproduced here as a standing guard for
+// the same reason G66 reproduces checks.yaml's AC-17: the check definition is executor-immutable,
+// but a standing L1 guard catches drift the moment the file changes.
+{
+  const SKILL_PATH = join(REPO_ROOT, "skills/quality/pr-review/SKILL.md");
+  if (existsSync(SKILL_PATH)) {
+    const text = readFileSync(SKILL_PATH, "utf8");
+    const fanoutSection = (() => {
+      const start = text.indexOf("## `--fanout`");
+      if (start === -1) return "";
+      const rest = text.slice(start);
+      const next = rest.indexOf("\n## ", 1);
+      return next === -1 ? rest : rest.slice(0, next);
+    })();
+    s.check("G81 a `## `--fanout`` section exists", fanoutSection.length > 0);
+
+    // AC-7's worker preamble, reproduced as a standing guard.
+    s.check("G81 a worker preamble is documented",
+      /worker preamble/i.test(fanoutSection));
+    s.check("G81 the preamble requires absolute paths",
+      /absolute path/i.test(fanoutSection));
+    s.check("G81 the preamble forbids reading agents/pr-reviewer.md",
+      fanoutSection.includes("agents/pr-reviewer.md") && /do not read agents\/pr-reviewer\.md/i.test(fanoutSection));
+    s.check("G81 the preamble forbids Skill() calls inside a worker",
+      fanoutSection.includes("Skill()"));
+    s.check("G81 the preamble requires write-to-path/return-path-only",
+      /return.*path/i.test(fanoutSection));
+
+    // D5: the semantic dedupe pass is documented as feeding the verifier, not the schema.
+    s.check("G81 the semantic dedupe pass and _semantic_merged verifier context are documented",
+      /semantic/i.test(fanoutSection) && fanoutSection.includes("_semantic_merged"));
+
+    // AC-9's shape-caps paste, reproduced: the live command is present and no hard-coded
+    // 60-char/200-char restatement has crept back in.
+    s.check("G81 verifiers are told to paste the live --shape-caps output",
+      fanoutSection.includes("--shape-caps"));
+    s.check("G81 no hard-coded 60-char/200-char cap restatement",
+      !/(60|200)[- ]char/.test(fanoutSection));
+
+    // D4: the --check-shape pre-flight with its one-repair-round contract. Scoped to Step f's own
+    // subsection — `validate-judgments.mjs` is also named in Step d's `_also_flagged_by` aside, so
+    // comparing indices across the whole section would key on the wrong occurrence.
+    const stepFIdx = fanoutSection.indexOf("### Step f");
+    const stepFSection = stepFIdx === -1 ? "" : fanoutSection.slice(stepFIdx);
+    s.check("G81 the assembly step runs --check-shape before validate-judgments",
+      stepFSection.includes("--check-shape")
+      && stepFSection.includes("node agents/pr-reviewer/scripts/validate-judgments.mjs")
+      && stepFSection.indexOf("--check-shape") < stepFSection.indexOf("node agents/pr-reviewer/scripts/validate-judgments.mjs"));
+    s.check("G81 --check-shape failures get exactly one repair round, not an unbounded loop",
+      /one repair round/i.test(fanoutSection));
+
+    // D6: the optimality lens's card_body carries no heading.
+    s.check("G81 the optimality lens instruction states card_body carries no heading",
+      fanoutSection.includes("card_body") && /carries no heading/i.test(fanoutSection));
+
+    // Arm C's two named deviations, reversed in the text: verification batched by path, and the
+    // standards lens folded into the standards finder.
+    s.check("G81 path-batched verification is named and forbidden as an arm-C deviation",
+      /arm-c/i.test(fanoutSection) && /never batch candidates that share a path/i.test(fanoutSection));
+    s.check("G81 the standards lens and standards finder are stated as two separate dispatches",
+      /standards-conformance.*standards.*(two separate dispatches|never one folded into)/is.test(fanoutSection)
+      || /two separate dispatches/i.test(fanoutSection));
+
+    // D8: --review-sha is passed through, never re-implemented, by this orchestration.
+    s.check("G81 --review-sha pass-through is documented",
+      fanoutSection.includes("--review-sha") && /pass-through/i.test(fanoutSection));
+  }
+}
+
 // ── G84: shape semantics (plan feat/pr-reviewer-shrink-fanout-ab, D5/D6/D7) ──
 //
 // Three independent behaviour fixes bundled under one guard because they share one theme — a

@@ -104,19 +104,21 @@ function rawFinderCandidates() {
  * add is present, at fixed values, so the assembled judgments.json is realistic rather than a
  * minimal schema-satisfying stub.
  *
- * Two bookkeeping fields step d's dedupe leaves on a merged candidate — `_also_flagged_by` and
- * `agreement_promoted` — are NOT part of judgments.schema.json (additionalProperties: false) and
- * must not reach judgments.json. Cross-finder corroboration is real signal, though, so it is
- * folded into the verifier's own confidence here (a small bump, mirroring finders.md's
- * diversify-then-vote note that "a unanimous candidate is pre-corroborated") rather than smuggled
- * through as an extra schema field — the same place finalize.mjs's OWN internal dedupe would have
- * re-derived agreement_promoted had step d not already merged the duplicate away.
+ * Three bookkeeping fields step d's dedupe leaves on a merged candidate — `_also_flagged_by`,
+ * `agreement_promoted` (exact/adjacent pass), and `_semantic_merged` (semantic pass) — are NOT part
+ * of judgments.schema.json (additionalProperties: false) and must not reach judgments.json.
+ * Cross-finder corroboration is real signal either way, though, so it is folded into the verifier's
+ * own confidence here (a small bump, mirroring finders.md's diversify-then-vote note that "a
+ * unanimous candidate is pre-corroborated") rather than smuggled through as an extra schema field —
+ * the same place finalize.mjs's OWN internal dedupe would have re-derived agreement_promoted had
+ * step d not already merged the duplicate away.
  * @param {any} c
  * @returns {any}
  */
 function mockVerify(c) {
-  const corroborated = Array.isArray(c._also_flagged_by) && c._also_flagged_by.length > 0;
-  const { _also_flagged_by, agreement_promoted, _dedupe_dropped_for, _dedupe_reason, ...clean } = c;
+  const corroborated = (Array.isArray(c._also_flagged_by) && c._also_flagged_by.length > 0)
+    || (Array.isArray(c._semantic_merged) && c._semantic_merged.length > 0);
+  const { _also_flagged_by, agreement_promoted, _dedupe_dropped_for, _dedupe_reason, _semantic_merged, ...clean } = c;
   const high = clean.severity_hint === "high";
   const bump = corroborated ? 4 : 0;
   return {
@@ -211,6 +213,39 @@ async function runGlue({ verbose = false } = {}) {
       semanticDeduped.kept.map((/** @type {any} */ c) => c.defect_class)) && ok;
     log(`[step d, semantic] semantic dedupe: ${semanticRaw.length} raw -> ${semanticDeduped.kept.length} kept, `
       + `${semanticDeduped.dropped.length} dropped (1 semantic decoy correctly kept)`);
+
+    // step e/f (extra, D5) — the SKILL.md --fanout text promises `_semantic_merged` is handed to
+    // the Step e verifier as context and then stripped before judgments.json assembly, the same
+    // treatment `_also_flagged_by` already gets. Prove both halves through the real mockVerify /
+    // validate-judgments.mjs, not just the dedupe step above.
+    const semMergedHead = semanticDeduped.kept.find((/** @type {any} */ c) => Array.isArray(c._semantic_merged));
+    ok = assert("[step d, semantic] the merged kept record carries _semantic_merged for the verifier",
+      Boolean(semMergedHead) && semMergedHead._semantic_merged.length === 1, semMergedHead) && ok;
+    if (semMergedHead) {
+      const semVerified = mockVerify(semMergedHead);
+      ok = assert("[step e, semantic] mockVerify strips _semantic_merged before the judgment record",
+        !("_semantic_merged" in semVerified), Object.keys(semVerified)) && ok;
+      const semJudgments = {
+        v: 1, head_sha: "a1b2c3d", candidates: [semVerified],
+        gates: {
+          gate1: { status: "PASS", details: "" },
+          gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
+          gate5: { status: "PASS", details: "" },
+        },
+        threads: [],
+        lenses: {
+          optimality_cards: [], optimality_log: "skipped", standards_log: "skipped",
+          measurability_log: "skipped", holistic_log: "skipped",
+        },
+        summary: "semantic-merge glue demo", memory: { relevance_rules: [], lessons_used: [] },
+      };
+      const semJudgmentsPath = join(dir, "semantic-judgments.json");
+      writeFileSync(semJudgmentsPath, JSON.stringify(semJudgments, null, 2));
+      const semValidateRun = spawnSync(process.execPath, [VALIDATE_JUDGMENTS, semJudgmentsPath], { encoding: "utf8" });
+      ok = assert("[step f, semantic] validate-judgments.mjs accepts the record once _semantic_merged is stripped",
+        semValidateRun.status === 0, (semValidateRun.stdout || semValidateRun.stderr || "").trim().slice(0, 300)) && ok;
+      log("[step f, semantic] semantically-merged candidate verified, stripped, and validated end to end");
+    }
   }
 
   // step e (stubbed) — one verifier pass per surviving candidate.
