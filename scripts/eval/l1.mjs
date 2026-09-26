@@ -9044,4 +9044,52 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G84: shape semantics (plan feat/pr-reviewer-shrink-fanout-ab, D5/D6/D7) ──
+//
+// Three independent behaviour fixes bundled under one guard because they share one theme — a
+// renderer that fails a comment closed on a shape it should have accepted, or renders a shape it
+// should have rejected. G46n already re-derives D7's four sentenceCount cases directly against
+// comment-spine.mjs (a second witness on the renderer's own self-test); this guard covers the
+// other two surfaces D7 touches, plus D6's optimality heading and D5's semantic-dedupe decoys.
+{
+  const SPINE_SRC_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs");
+  const PAYLOAD_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/payload.mjs");
+  const SHAPE_MD = join(REPO_ROOT, "agents/shared/rules/comment-shape.md");
+
+  // D7 (part 2 of 2 — G46n above covers sentenceCount itself): firstSentenceOrLine reuses the
+  // shared regex rather than a second hand-rolled `.`/`!`/`?` scan, and the Python reference in
+  // comment-shape.md was rewritten off the old per-character counting line.
+  if (existsSync(PAYLOAD_PATH)) {
+    const payloadSrc = readFileSync(PAYLOAD_PATH, "utf8");
+    s.check("G84a payload.mjs's firstSentenceOrLine imports TERMINAL_PUNCT_RE from comment-spine.mjs, not a local regex",
+      /import\s*\{[^}]*TERMINAL_PUNCT_RE[^}]*\}\s*from\s*["']\.\.\/comment-spine\.mjs["']/.test(payloadSrc)
+        && !/\/\^\[\^\.!?\]\*\[\.!?\]\//.test(payloadSrc));
+  }
+  if (existsSync(SHAPE_MD)) {
+    const shapeSrc = readFileSync(SHAPE_MD, "utf8");
+    s.check("G84a comment-shape.md's Python reference no longer counts individual `.`/`!`/`?` characters",
+      !shapeSrc.includes('prose.count(c) for c in "'));
+    s.check("G84a comment-shape.md's Python reference uses the same terminal-punctuation-run rule",
+      /\[\.\!\?\]\+\(\?=\\s\|\$\)/.test(shapeSrc));
+  }
+
+  // D6: buildOptimalityCard strips a model-echoed leading heading — a second witness, independent
+  // of payload.mjs's own self-test, imported and called directly.
+  if (existsSync(PAYLOAD_PATH)) {
+    const mod = await import(pathToFileURL(PAYLOAD_PATH).href);
+    const echoed = mod.buildOptimalityCard({
+      path: "src/a.ts", line: 42, verdict: "suboptimal", analysis_confidence: 91,
+      card_body: "### Optimality proposal — src/a.ts:42\n\nUse a Map.",
+    });
+    const headingCount = (echoed.match(/^### Optimality proposal — /gm) || []).length;
+    s.check("G84b buildOptimalityCard renders exactly ONE heading when card_body echoes the template's own",
+      headingCount === 1, `got ${headingCount} headings in: ${JSON.stringify(echoed)}`);
+    s.check("G84b buildOptimalityCard keeps the real card_body prose after stripping an echoed heading",
+      echoed.includes("Use a Map."));
+  }
+
+  // D5 (semantic-dedupe decoy suite) lands as G84c once finalize/dedupe.mjs's semanticDedupe
+  // exists — see the D5 implementation step for that addition.
+}
+
 process.exit(s.report() ? 0 : 1);

@@ -223,13 +223,21 @@ const RENDER_EXTRAS = [
  * finalize-invented "Verdict: …" line the model never wrote; `verdict`/`analysis_confidence`
  * stay real schema fields used elsewhere (e.g. the inline-pointer gate,
  * `optimality-review.md § Inline pointer`), not rendering inputs.
+ * `optimize-approach/templates/proposal.template.md`'s first line IS this exact heading (D6) —
+ * the lens's own template opens with it, so a model that echoes the template rather than starting
+ * its content after it hands `card_body` back already carrying a first copy. Strip a LEADING
+ * occurrence of the heading pattern (any `path:line`, not only this card's own anchor — a model
+ * can echo a stale one from a prior draft) before prepending the real, finalize-computed heading,
+ * so the render never doubles it. `report-rendering.md` documents that `card_body` is expected to
+ * exclude the heading; this is the enforcement, not merely the convention.
  * @param {{path:string, line?:number, verdict:string, analysis_confidence:number, card_body:string}} card
  * @returns {string}
  */
 export function buildOptimalityCard(card) {
   const anchor = `${card.path}:${Number.isInteger(card.line) ? card.line : 1}`;
   const heading = `### Optimality proposal — ${anchor}`;
-  return `${heading}\n\n${card.card_body}`;
+  const body = String(card.card_body).replace(/^###\s+Optimality proposal\s+—\s+[^\n]*\n+/, "");
+  return `${heading}\n\n${body}`;
 }
 
 /**
@@ -412,6 +420,28 @@ async function selfTest() {
     const noLine = buildOptimalityCard({ path: "src/b.ts", verdict: "optimal", analysis_confidence: 96, card_body: "Already the simplest approach." });
     check("buildOptimalityCard anchors to line 1 when the schema's optional `line` is absent, rather than failing the heading regex",
       /^### Optimality proposal — src\/b\.ts:1/m.test(noLine));
+    // D6 / AC-13: the lens's own proposal.template.md opens with this exact heading, and a model
+    // that echoes the template rather than starting after it hands card_body back carrying a first
+    // copy — buildOptimalityCard must strip that leading copy so the render never doubles it.
+    const echoed = buildOptimalityCard({
+      path: "src/a.ts", line: 42, verdict: "suboptimal", analysis_confidence: 91,
+      card_body: "### Optimality proposal — src/a.ts:42\n\nUse a Map.",
+    });
+    const headingCount = (echoed.match(/^### Optimality proposal — /gm) || []).length;
+    check("buildOptimalityCard strips a model-echoed leading heading — exactly one heading survives",
+      headingCount === 1);
+    check("buildOptimalityCard keeps the real card_body text after stripping the echoed heading",
+      echoed.includes("Use a Map.") && echoed === "### Optimality proposal — src/a.ts:42\n\nUse a Map.");
+    // A stale echoed heading (a different path:line than this card's own anchor — the model
+    // copying a prior draft) is stripped too: the anchor render-report.mjs indexes on is always
+    // the finalize-computed one, never whatever the model echoed.
+    const staleEcho = buildOptimalityCard({
+      path: "src/a.ts", line: 42, verdict: "suboptimal", analysis_confidence: 91,
+      card_body: "### Optimality proposal — src/OLD.ts:1\n\nUse a Map.",
+    });
+    check("buildOptimalityCard strips a STALE echoed heading (different path:line) too",
+      (staleEcho.match(/^### Optimality proposal — /gm) || []).length === 1
+        && staleEcho.startsWith("### Optimality proposal — src/a.ts:42"));
   }
   {
     const claim = toInlineCommentPayload({ prefix: "issue", severity: "high", body: "b", title: "T", blocking: true, finder: "correctness", defect_class: "logic", symbol: "foo", path: "a.ts" }, { sha: "abc1234" });
