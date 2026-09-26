@@ -99,6 +99,22 @@ function rawFinderCandidates() {
 }
 
 /**
+ * Step e's INPUT: exactly what SKILL.md's `--fanout` Step e hands one verifier — the
+ * representative candidate record and nothing else from the dedupe step except `_also_flagged_by`
+ * (the exact `(path, line, defect_class)` agreement `rubric-composition.md ## Cross-rubric
+ * agreement` sanctions, finder NAMES only). `_semantic_merged` is removed: its members are other
+ * finders' claims, which `finding-verifier.md`'s exclusion table keeps from the verifier, and a
+ * semantic merge is never agreement. It stays on `deduped.json`'s kept record for the report and
+ * the audit trail only.
+ * @param {any} c
+ * @returns {any}
+ */
+export function verifierInput(c) {
+  const { _semantic_merged, agreement_promoted, _dedupe_dropped_for, _dedupe_reason, ...input } = c;
+  return input;
+}
+
+/**
  * Step e's output, stubbed: what a verifier sub-agent returns after reading `finding-verifier.md`
  * and the candidate record. Deterministic, never a live call — every field a real verifier would
  * add is present, at fixed values, so the assembled judgments.json is realistic rather than a
@@ -107,18 +123,18 @@ function rawFinderCandidates() {
  * Three bookkeeping fields step d's dedupe leaves on a merged candidate — `_also_flagged_by`,
  * `agreement_promoted` (exact/adjacent pass), and `_semantic_merged` (semantic pass) — are NOT part
  * of judgments.schema.json (additionalProperties: false) and must not reach judgments.json.
- * Cross-finder corroboration is real signal either way, though, so it is folded into the verifier's
- * own confidence here (a small bump, mirroring finders.md's diversify-then-vote note that "a
- * unanimous candidate is pre-corroborated") rather than smuggled through as an extra schema field —
- * the same place finalize.mjs's OWN internal dedupe would have re-derived agreement_promoted had
- * step d not already merged the duplicate away.
+ * Only EXACT cross-finder agreement (`_also_flagged_by`) is corroboration: it is folded into the
+ * verifier's own confidence here (a small bump, mirroring finders.md's diversify-then-vote note that
+ * "a unanimous candidate is pre-corroborated") rather than smuggled through as an extra schema
+ * field. A semantic merge earns nothing — the verifier never sees it (`verifierInput`), and
+ * counting it would be the cross-finder promotion `rubric-composition.md ## Dedupe` forbids.
  * @param {any} c
  * @returns {any}
  */
 function mockVerify(c) {
-  const corroborated = (Array.isArray(c._also_flagged_by) && c._also_flagged_by.length > 0)
-    || (Array.isArray(c._semantic_merged) && c._semantic_merged.length > 0);
-  const { _also_flagged_by, agreement_promoted, _dedupe_dropped_for, _dedupe_reason, _semantic_merged, ...clean } = c;
+  const input = verifierInput(c);
+  const corroborated = Array.isArray(input._also_flagged_by) && input._also_flagged_by.length > 0;
+  const { _also_flagged_by, ...clean } = input;
   const high = clean.severity_hint === "high";
   const bump = corroborated ? 4 : 0;
   return {
@@ -214,17 +230,30 @@ async function runGlue({ verbose = false } = {}) {
     log(`[step d, semantic] semantic dedupe: ${semanticRaw.length} raw -> ${semanticDeduped.kept.length} kept, `
       + `${semanticDeduped.dropped.length} dropped (1 semantic decoy correctly kept)`);
 
-    // step e/f (extra, D5) — the SKILL.md --fanout text promises `_semantic_merged` is handed to
-    // the Step e verifier as context and then stripped before judgments.json assembly, the same
-    // treatment `_also_flagged_by` already gets. Prove both halves through the real mockVerify /
-    // validate-judgments.mjs, not just the dedupe step above.
+    // step e/f (extra, D5) — the SKILL.md --fanout text promises `_semantic_merged` is recorded on
+    // deduped.json for the report/audit, is NEVER handed to the Step e verifier, is never counted
+    // as agreement, and is stripped before judgments.json assembly. Prove each half through the
+    // real mockVerify / validate-judgments.mjs, not just the dedupe step above.
     const semMergedHead = semanticDeduped.kept.find((/** @type {any} */ c) => Array.isArray(c._semantic_merged));
-    ok = assert("[step d, semantic] the merged kept record carries _semantic_merged for the verifier",
+    ok = assert("[step d, semantic] the merged kept record carries _semantic_merged for the audit trail",
       Boolean(semMergedHead) && semMergedHead._semantic_merged.length === 1, semMergedHead) && ok;
     if (semMergedHead) {
       const semVerified = mockVerify(semMergedHead);
       ok = assert("[step e, semantic] mockVerify strips _semantic_merged before the judgment record",
         !("_semantic_merged" in semVerified), Object.keys(semVerified)) && ok;
+      // The verifier sees ONLY the representative: a semantic merge is never shown to it and never
+      // counted as agreement (rubric-composition.md ## Dedupe; finding-verifier.md's exclusion of
+      // other candidates). So the verifier input carries no merged member, and the verdict is
+      // byte-identical to verifying the same record with no merge at all.
+      const semInput = verifierInput(semMergedHead);
+      ok = assert("[step e, semantic] the verifier input carries no _semantic_merged and no other finder's claim",
+        !("_semantic_merged" in semInput)
+          && !semMergedHead._semantic_merged.some((/** @type {any} */ m) => JSON.stringify(semInput).includes(m.claim)),
+        Object.keys(semInput)) && ok;
+      const { _semantic_merged: _dropMerged, ...unmerged } = semMergedHead;
+      ok = assert("[step e, semantic] a semantic merge earns no corroboration bump (same scores as the unmerged record)",
+        JSON.stringify(mockVerify(semMergedHead)) === JSON.stringify(mockVerify(unmerged)),
+        { merged: mockVerify(semMergedHead).final, unmerged: mockVerify(unmerged).final }) && ok;
       const semJudgments = {
         v: 1, head_sha: "a1b2c3d", candidates: [semVerified],
         gates: {

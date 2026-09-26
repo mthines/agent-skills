@@ -9122,9 +9122,13 @@ const isPollBlock = (block) =>
     s.check("G81 the preamble requires write-to-path/return-path-only",
       /return.*path/i.test(fanoutSection));
 
-    // D5: the semantic dedupe pass is documented as feeding the verifier, not the schema.
-    s.check("G81 the semantic dedupe pass and _semantic_merged verifier context are documented",
-      /semantic/i.test(fanoutSection) && fanoutSection.includes("_semantic_merged"));
+    // D5: the semantic dedupe pass is documented, and its _semantic_merged members are an audit
+    // record only — withheld from the verifier and never counted as agreement (rubric-composition.md
+    // ## Dedupe; finding-verifier.md's exclusion of other candidates).
+    s.check("G81 the semantic dedupe pass is documented and _semantic_merged is withheld from the verifier",
+      /semantic/i.test(fanoutSection) && fanoutSection.includes("_semantic_merged")
+        && /never handed to the Step e\s+verifier and never counted as agreement/.test(fanoutSection)
+        && !/_semantic_merged` array as corroboration context/.test(fanoutSection));
 
     // AC-9's shape-caps paste, reproduced: the live command is present and no hard-coded
     // 60-char/200-char restatement has crept back in.

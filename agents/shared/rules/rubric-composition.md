@@ -74,7 +74,8 @@ the real run: true duplicates scored 0.23–0.46, every distinct pair on the sam
 (union-find), so a candidate bridging two clusters merges both and the partition does not depend
 on input order; the kept representative is picked by a total order (highest `severity_hint`, then
 earliest `line`, then lexical `finder` / `defect_class` / `claim`), so it does not either. The kept
-record carries a `_semantic_merged` entry per merged candidate so the verifier sees every finder's framing.
+record carries a `_semantic_merged` entry per merged candidate as an audit record for the report
+only — the verifier sees the representative alone, never the merged members.
 **Never agreement-promoted** — a semantic merge is a lower-confidence, threshold-calibrated
 heuristic match, not the exact `(file, line, prefix)` agreement the section below defines, and
 promoting it would change `## Cross-rubric agreement`'s threshold semantics on the strength of a

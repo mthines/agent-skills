@@ -378,9 +378,11 @@ describe the same defect in different words far more often than they describe it
 matching `symbol`, a line within 3, and a Jaccard token-set overlap over its own calibrated
 threshold on the `claim` + `bad_outcome` text; the surviving head record carries a
 `_semantic_merged` array (one entry per merged member: `finder`, `defect_class`, `line`, `claim`)
-that — like `_also_flagged_by` — is stripped before assembly and instead **handed to the Step e
-verifier as context**, the same "N independent framings of this claim" corroboration signal, never
-schema data.
+that is an **audit record only**: it stays on `deduped.json` for the report, is stripped before
+assembly, and is **never handed to the Step e verifier and never counted as agreement**. The
+verifier gets the representative candidate alone — showing it the merged members would show it
+other finders' claims (excluded by `finding-verifier.md`), and counting them would be the
+cross-finder promotion `rubric-composition.md ## Dedupe` forbids for a heuristic match.
 
 ### Step e — parallel verification
 
@@ -395,8 +397,8 @@ downstream, and it makes the verifier quieter on each claim in the batch instead
 one.** Every candidate — including two that share a path — gets its own verifier dispatch, batched
 with *unrelated-path* candidates only, never with each other. Each verifier receives **only** the
 candidate record, the workspace, and `impact.json` — never the finder's reasoning, never the other
-candidates, per `finding-verifier.md`'s own exclusion table — plus, when Step d's semantic pass
-merged the candidate, its `_semantic_merged` array as corroboration context. Each returns the
+candidates, per `finding-verifier.md`'s own exclusion table; a semantically merged candidate is
+verified as its representative alone, its `_semantic_merged` members withheld. Each returns the
 four-way verdict (`confirmed`/`contradicted`/`ambiguous`/`unobtainable`) plus the `R`/`A`/`Ac`
 scores, `severity`, `prefix`, `blocking`, `title`, `body`, `materiality`, and `category` — the
 remaining fields `judgments.schema.json`'s candidate shape requires — written to `verdicts/<n>.json`.
