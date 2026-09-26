@@ -188,10 +188,16 @@ place in this pipeline that *can* be the orchestrator rather than another leaf.
 
 Before doing anything else, establish **by capability** whether this session can dispatch a
 sub-agent at all — **never** by checking for the literal tool name `Task`. The dispatch tool is
-spelled `Task` in the Claude Code CLI and `Agent` in the Claude Agent SDK harness behind Claude Code
-on the web; a name-literal check reports "unavailable" on every session that spells it the other
-way, even though the capability is present. Use whichever tool this session exposes that takes a
-`subagent_type` (or equivalent agent-name) parameter.
+spelled `Task` in the Claude Code CLI, `Agent` in the Claude Agent SDK harness behind Claude Code
+on the web, and `task` in OpenCode-based hosts such as Dash0 Agent0; a name-literal check reports
+"unavailable" on every session that spells it another way, even though the capability is present.
+Use whichever tool this session exposes that takes a `subagent_type` (or equivalent agent-name)
+parameter.
+
+Every finder, lens, verifier, and synthesis sub-agent below is a **generic** sub-agent. Hosts spell
+that type differently too — `general-purpose` in Claude Code, `general` in OpenCode-based hosts —
+so pass whichever the dispatch tool accepts; a missing `general-purpose` is a spelling difference,
+never a reason to take the fallback.
 
 | Capability | Action |
 | --- | --- |
@@ -208,7 +214,28 @@ case degrades one rung, not to nothing.
 
 ### Step a — build the review context
 
-Run [`prepare-review.mjs`](../../../agents/pr-reviewer/scripts/prepare-review.mjs) exactly as
+**Resolve the support tree first.** Every script this orchestration runs lives in the
+`pr-reviewer` agent's support tree, not in the repository under review, so a bare
+`node agents/…` exits `MODULE_NOT_FOUND` everywhere but this skill's own repository. Resolve it
+the way the agent does (`pr-reviewer.md` § Locating this agent's own files), print it, and reuse
+the printed string in every later Bash call — shell state does not survive between calls:
+
+```bash
+resolve() {  # portable readlink -f
+  [ -e "$1" ] || return 1
+  ( cd "$(dirname "$1")" && t=$(basename "$1")
+    while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+    printf '%s/%s\n' "$(pwd -P)" "$t" )
+}
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+[ -n "$AGENT_MD" ] || { echo "pr-review --fanout: pr-reviewer support tree unresolved" >&2; exit 1; }
+echo "AGENT_SUPPORT=${AGENT_MD%/pr-reviewer.md}"
+```
+
+An unresolved tree is the same case as an absent dispatch capability: fall back to
+[Step 2](#step-2-dispatch-the-agent)'s single dispatch and say why in the terminal report.
+
+Then run [`prepare-review.mjs`](../../../agents/pr-reviewer/scripts/prepare-review.mjs) exactly as
 `pr-reviewer.md` Step 1 does, writing `context.json` under
 [`scratchRoot()`](../../../agents/pr-reviewer/scripts/prepare-review.mjs#L75) — `/tmp/workspace/.pr-reviewer-scratch/`
 on Agent0 hosts (the workspace directory every dispatched sub-agent's file tools can read; a bare
@@ -294,7 +321,7 @@ Each lens's output lands at `lenses/<lens>.json` and feeds `judgments.lenses.*` 
 Concatenate every `candidates/<finder>.json` file and run:
 
 ```bash
-node agents/pr-reviewer/scripts/finalize.mjs \
+node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" \
   --dedupe-candidates "<scratchRoot()>/<run-id>/all-candidates.json" \
   --out "<scratchRoot()>/<run-id>/deduped.json"
 ```
@@ -347,8 +374,8 @@ these together with every surviving verified candidate into one `judgments.json`
 Then the same three steps every `pr-reviewer` run takes, unchanged:
 
 ```bash
-node agents/pr-reviewer/scripts/validate-judgments.mjs "<scratchRoot()>/<run-id>/judgments.json"
-node agents/pr-reviewer/scripts/finalize.mjs \
+node "$AGENT_SUPPORT/pr-reviewer/scripts/validate-judgments.mjs" "<scratchRoot()>/<run-id>/judgments.json"
+node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" \
   --context "<scratchRoot()>/<run-id>/context.json" \
   --judgments "<scratchRoot()>/<run-id>/judgments.json" \
   --out-dir "<scratchRoot()>/<run-id>/finalize"

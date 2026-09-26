@@ -8996,17 +8996,29 @@ const isPollBlock = (block) =>
     s.check("G66i finalize.mjs's usage string documents --dedupe-candidates", /--dedupe-candidates/.test(finSrc.match(/function usage\(\)[\s\S]*?\n\}/)?.[0] || ""));
   }
 
-  // AC-18, reproduced as a standing guard for the same reason G63d reproduces AC-12: a later
-  // phase editing one of these four caller skills would otherwise only be caught by a
-  // Phase-6-specific checks.yaml run, not by every L1 pass in between.
-  {
-    const AC18_PATHS = [
-      "skills/quality/review-loop", "skills/delivery/create-pr",
-      "skills/quality/polish", "skills/quality/review-changes",
-    ];
-    const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ...AC18_PATHS], { cwd: REPO_ROOT, encoding: "utf8" });
-    s.check("G66j AC-18's caller skills (review-loop/create-pr/polish/review-changes) are byte-unchanged vs. origin/main",
-      r.status === 0, r.status === null ? "git not found" : `git diff exit ${r.status}`);
+  // G66j (retired): AC-18 — "Phase 6 leaves review-loop / create-pr / polish / review-changes
+  // byte-unchanged vs. origin/main" — is a property of THIS branch's diff, not a standing
+  // invariant. As an L1 guard it reds every later PR that edits those skills (the restructure
+  // stack edits review-loop and create-pr, and deletes polish and review-changes), and it goes
+  // on doing so after this PR merges. It stays enforced where it belongs: checks.yaml's AC-18.
+
+  // G66l: --fanout runs from the TOP LEVEL of whatever repository is under review, so every
+  // script it names must be addressed through the resolved support tree — a bare
+  // `node agents/pr-reviewer/scripts/…` exits MODULE_NOT_FOUND everywhere but this repo, the same
+  // defect G41d/G52g guard in the agents. And the dispatch spellings must include the OpenCode
+  // host's (`task` tool, `general` sub-agent type), or Dash0 Agent0 reads "no dispatch" and falls
+  // back to a single dispatch of a custom agent type that host cannot run either.
+  if (existsSync(SKILL_PATH)) {
+    const text = readFileSync(SKILL_PATH, "utf8");
+    const start = text.indexOf("## `--fanout`");
+    const rest = start === -1 ? "" : text.slice(start);
+    const fanout = rest.slice(0, rest.indexOf("\n## ", 1) === -1 ? undefined : rest.indexOf("\n## ", 1));
+    const bare = fanout.split("\n").find((l) => /node\s+"?agents\/pr-reviewer\/scripts\//.test(l));
+    s.check("G66l --fanout runs no pr-reviewer script by a bare agents/ path", !bare, (bare || "").trim().slice(0, 120));
+    s.check("G66l --fanout resolves the support tree before its first script",
+      /AGENT_MD=\$\(resolve /.test(fanout) && fanout.indexOf("AGENT_MD=$(resolve") < fanout.indexOf('node "$AGENT_SUPPORT/'));
+    s.check("G66l --fanout names the OpenCode spellings (`task` tool, `general` sub-agent type)",
+      /`task`/.test(fanout) && /`general`/.test(fanout));
   }
 
   // The offline proof of the --fanout glue chain (D17): a raw finder-candidate fixture through
