@@ -94,8 +94,9 @@ node scripts/eval/thread-outcomes.mjs \
   --out /path/to/labels-dir/<number>.json
 ```
 
-`--at-sha` keeps only root comments whose `original_commit_id` equals the
-reviewed SHA (D13) — a label extracted from a different commit is not a
+`--at-sha` keeps only root comments whose `original_commit_id` is the
+reviewed SHA (D13; case-insensitive, a unique >= 7-char prefix resolves, and an
+ambiguous or unmatched SHA is an error rather than an empty label set) — a label extracted from a different commit is not a
 claim about the diff the arms actually reviewed.
 
 ### 5. Score
