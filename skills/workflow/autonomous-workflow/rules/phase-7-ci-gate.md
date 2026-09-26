@@ -106,7 +106,7 @@ rule 2 is *do the work you can*. Instead:
 
 After Phase 6, you should already have the PR URL and number. Start watching:
 
-**Ask CI what it is doing before watching it.** `create-pr` Step 7 already watched these checks, and the background `implement-suggestion --watch` and any `ci-auto-fix` subagents may have pushed since. Rather than inheriting a budget or a recorded verdict from those runs — which would be a claim about *some* commit, not necessarily the current head — make one cheap, stateless query:
+**Ask CI what it is doing before watching it.** `create-pr` Step 7 already watched these checks, and its Step 8 `ci-auto-fix` may have pushed since. Rather than inheriting a budget or a recorded verdict from those runs — which would be a claim about *some* commit, not necessarily the current head — make one cheap, stateless query:
 
 ```bash
 # No --watch: returns immediately with the state of the CURRENT head.

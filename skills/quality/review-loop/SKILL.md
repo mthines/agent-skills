@@ -208,7 +208,7 @@ Everything else is a flag.
 | `--no-refresh` | Run the convergence loop as normal but skip the final PR-description refresh and Linear note. |
 | `--external-review` | Replace sub-step A: wait for an **out-of-process** reviewer instead of dispatching `pr-reviewer`. See [Sub-step A — external-review mode](#sub-step-a--external-review-mode). |
 | `--interval S` | Poll interval in seconds for `--external-review`, default `300`, **clamped to `540`**. Ignored without `--external-review`. |
-| `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–9) and `autonomous-workflow` (Phase 7) both do. |
+| `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–8) and `autonomous-workflow` (Phase 7) both do. |
 | `--no-preview-run` | Skip [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit), the report-only ui-verify run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
 | `--merge` | Merge the PR (squash) on the first agent approval. After the loop, [Step 2.5](#step-25-merge-under---merge-on-approval) merges **only** when the run reached clean convergence (`all-threads-resolved` — every non-blocking comment fixed or answered), the final review is an approval (pr-reviewer `PASS`, or a GitHub `reviewDecision == APPROVED` under `--external-review`), and CI is green. It undrafts first (the one case that overrides *never undraft*). It never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI — it reports why and stops. |
 
@@ -567,7 +567,7 @@ gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"
 
 This is a **query, not a watch**: it adds no `gh … --watch` site and spends nothing
 from the watch budgets that
-[`create-pr` Step 9](../../delivery/create-pr/SKILL.md) and
+[`create-pr` Step 8](../../delivery/create-pr/SKILL.md) and
 [`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md)
 each count inside their own invocation. `ci-auto-fix` likewise keeps its own local
 counter, so delegating to it stays inside the existing contract — no budget is

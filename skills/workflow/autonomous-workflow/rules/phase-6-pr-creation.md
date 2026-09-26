@@ -150,7 +150,7 @@ Invoke `create-pr` to handle the rest of the delivery in one go: narrative descr
 Skill("create-pr")
 ```
 
-A bare `create-pr` runs its FULL default pipeline: push → open draft PR → Step 6.5 delegates to `Skill("review-loop", "<pr-url> --no-ci")` (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved) → Step 6.7 runs the external-bot reviewer-feedback loop. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, `--no-quality`, or `--no-feedback`** unless the user explicitly asked to skip a pass.
+A bare `create-pr` runs its FULL default pipeline: push → open draft PR → Step 6.5 delegates to `Skill("review-loop", "<pr-url> --no-ci")` (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved) → Steps 7–8 watch CI and hand red CI to `ci-auto-fix`. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, or `--no-quality`** unless the user explicitly asked to skip a pass.
 
 > **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It does NOT let you skip the quality passes. `create-pr`'s `review-loop` (`pr-reviewer`, `implement-suggestion`, `polish simplify`) and the Phase 6 quality gate are sequential reasoning passes — the single-sequential-loop variant is explicitly permitted. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5).
 
@@ -164,7 +164,7 @@ What `create-pr` handles:
 | Post-draft review loop        | `create-pr` Step 6.5 → `review-loop` (always with `--no-ci`) → `pr-reviewer` + `implement-suggestion` + `polish simplify` |
 | Preview verification spec (UI diffs) | `create-pr` Step 6.4 → `ui-verify` (see below) |
 | Watch initial CI              | `create-pr` |
-| External-bot reviewer-feedback | `create-pr` Step 6.7 |
+| Red CI                        | `create-pr` Step 8 → `ci-auto-fix` |
 
 ### UI-verify
 
@@ -195,7 +195,6 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 - create-pr → review-loop (pr-reviewer pass): <N iterations, M findings, B blocking remaining | skipped (<reason>)>
 - create-pr → review-loop (implement-suggestion): <N findings applied | skipped (<reason>)>
 - create-pr → review-loop (polish simplify): <recipe IDs applied | none | skipped (<reason>)>
-- create-pr → external-reviewer-feedback loop: <stop reason + iterations | --no-feedback (only if user asked) | skipped (<reason>)>
 ```
 
 If any line above would be blank because the pass did not run AND no `skipped (<reason>)` applies, the pass was skipped in error: run it, then re-emit the receipt.

@@ -437,8 +437,8 @@ If LoreKit's `memory.*` tools are not connected, both steps are silent no-ops; t
 A loop wrapper around the multi-PR single-pass, scoped to one PR. Each iteration:
 waits for new review activity, runs Phases 1–7 over comments newer than the last
 processed timestamp, advances the baseline, and repeats until the reviewers go
-quiet, CI goes red, or the iteration cap (default 5) is hit. `/create-pr` dispatches
-this as a background subagent post-push so a new PR auto-converges on its bot feedback.
+quiet, CI goes red, or the iteration cap (default 5) is hit. Run it on purpose for
+reviewers who comment after the automated passes; `create-pr` no longer backgrounds it.
 
 The wait is the shared
 [review-activity poll](../../../agents/shared/rules/review-activity-poll.md) —
