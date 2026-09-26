@@ -131,8 +131,11 @@ creation.
 ## Companion Skills You Invoke
 
 Full registry in [`rules/companion-skills.md`](../rules/companion-skills.md).
-**Companions skip silently if not installed** — log
-`companion: <name> — not available, continuing` and proceed.
+**Companions never block, and never skip silently.** Every registry row for a
+phase you ran gets exactly one line — `companion: <name> — ran` or
+`companion: <name> — skipped (<reason>)`, with the reason from the closed set in
+[`rules/companion-skills.md § The companion report`](../rules/companion-skills.md#the-companion-report)
+— and the lines are repeated under `Companions:` in your final message.
 
 | Phase | Companion           | Trigger                                          | Args              |
 | ----- | ------------------- | ------------------------------------------------ | ----------------- |
@@ -156,7 +159,7 @@ this task as a **hard constraint** on the plan (record them under
 `## Lessons applied` in `plan.md`). Lessons are advisory — if one conflicts with
 the user's intent, the user wins; surface it. If a matched lesson is at the store's own
 `seen_count >= 3`, or carries the `status::structural` tag, surface the promotion suggestion
-(`/create-skill diagnose autonomous-workflow`). Skips silently if LoreKit's
+(`/create-skill diagnose autonomous-workflow`). Skipped with one report line if LoreKit's
 `memory.*` tools are not connected. Full contract:
 [`rules/self-improvement-loop.md`](../rules/self-improvement-loop.md).
 
@@ -232,6 +235,7 @@ Output the structured handoff message verbatim (canonical format from
 - Acceptance Criteria: M items
 - Checks: .agent/{branch}/checks.yaml (M checks: K command/grep, J judge)
 - Specs: .agent/{branch}/specs.md ({N} specs, aw-target: {name}) | none (non-UI task)
+- Companions: one `companion: <name> — ran | skipped (<reason>)` line per Phase 0–2 registry row
 
 Reply with one of:
 - "execute" / "continue" — dispatch the executor.
@@ -329,8 +333,8 @@ design patterns, API docs) during Phase 1.
 
 ## Universal Rules
 
-- **Companions skip silently** — log one line and continue if a companion is
-  missing. Never block the workflow.
+- **Companions never block, and never skip silently** — every registry companion
+  for a phase you ran gets one `companion: <name> — ran | skipped (<reason>)` line.
 - **Stop and ask when blocked** — don't guess on ambiguity or fundamental
   design questions.
 - **plan.md must be self-contained but lean** — a new session with no chat

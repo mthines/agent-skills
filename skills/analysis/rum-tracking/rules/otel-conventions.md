@@ -26,18 +26,18 @@ guidance.
 
 **Load them at runtime when present.** Before applying the conventions below,
 invoke both — they carry the authoritative span/metric/attribute rules this rule
-defers to. Each **skips silently if not installed** (the dash0 skills are an
-optional dependency); log one line and continue with the RUM-specific guidance
+defers to. A missing one **never blocks** (the dash0 skills are an
+optional dependency) and is **never skipped silently** — log one line and continue with the RUM-specific guidance
 here:
 
 ```
-Skill("otel-semantic-conventions")   # authoritative attribute registry; skips silently if not installed
-Skill("otel-instrumentation")        # span/metric hygiene + sensitive-data rules; skips silently if not installed
+Skill("otel-semantic-conventions")   # authoritative attribute registry; missing ⇒ one report line, continue
+Skill("otel-instrumentation")        # span/metric hygiene + sensitive-data rules; missing ⇒ one report line, continue
 ```
 
 ```markdown
-- [TIMESTAMP] otel-conventions: otel-semantic-conventions — invoked (or: not available, continuing)
-- [TIMESTAMP] otel-conventions: otel-instrumentation — invoked (or: not available, continuing)
+- [TIMESTAMP] otel-conventions: otel-semantic-conventions — ran (or: skipped (not installed))
+- [TIMESTAMP] otel-conventions: otel-instrumentation — ran (or: skipped (not installed))
 ```
 
 When installed, treat their guidance as authoritative and this rule as the

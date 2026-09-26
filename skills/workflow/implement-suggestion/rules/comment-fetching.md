@@ -229,9 +229,28 @@ clarification. When two thread comments disagree, the deeper one wins.
 
 ## Author filter
 
-By default, include comments from all authors **except** the current user
-(authenticated via `gh auth status`). The user's own comments are usually
-self-notes, not suggestions to themselves.
+By default, include comments from all authors **except** the current user.
+The user's own comments are usually self-notes, not suggestions to themselves.
+
+Resolve the current user from GraphQL `viewer` — never from `gh auth status`
+(which inspects a stored token and fails under a per-call credential proxy) and
+never from `gh api user` (which 401s under a GitHub App installation token):
+
+```bash
+ME=$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null || echo "")
+```
+
+Compare logins **normalized** — lowercase, one trailing `[bot]` stripped — because
+one GitHub App reads `dash0-dev[bot]` from `viewer` and REST `.user.login` but
+`dash0-dev` from GraphQL `author.login`:
+
+```text
+jq:  def norm: ascii_downcase | sub("\\[bot\\]$"; "");
+     select((.author.login | norm) != ($me | norm))
+```
+
+An unresolved `ME` filters **nothing** and says so in the Phase 7 count line
+(`self-filtered: unknown (identity unresolved)`) — never treat `""` as a login.
 
 Surface a count of filtered comments in the Phase 7 report so the user can
 spot mis-filtering.
@@ -239,7 +258,12 @@ spot mis-filtering.
 ### Carve-out — never self-filter a reviewer report
 
 Any body carrying `<!-- PR_REVIEWER_REPORT -->` is **always included**, even when its author is the
-current user — the sticky issue comment as much as a legacy review body. The sticky makes this
+current user — the sticky issue comment as much as a legacy review body.
+So is every **inline finding** `pr-reviewer` posted: its body contains the attribution footer, whose
+stable prefix is the substring `` <sup>`pr-reviewer` · commit ` `` (a `run` part may follow inside the
+`<sup>`, and a `<!-- fp:v2:… -->` marker may follow the footer, so match the substring, never the line
+ending). A finding the loop is meant to apply and resolve is never a self-note, whoever the credential
+says wrote it. The sticky makes this
 carve-out matter more, not less: it is an *issue comment* authored by the bot, exactly the shape the
 self-filter is designed to drop.
 
@@ -250,8 +274,8 @@ drops the single most actionable artifact on the PR before Phase 3 ever sees it
 — and drops it *silently*, since a filtered count of 1 looks like an ordinary
 self-note.
 
-The carve-out is keyed on the marker, not on the login: any identity may post a
-report, and a genuine self-note never carries the marker.
+The carve-out is keyed on the marker (report) or the footer (inline finding), not on the login:
+any identity may post either, and a genuine self-note carries neither.
 
 ## Author inclusion — humans AND AI reviewers
 
@@ -267,7 +291,7 @@ Concretely:
 | --------------------------------------------------------------------------------------------- | ---------------------- |
 | Human teammate                                                                                | **Include**            |
 | AI code-review bot — `claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]`  | **Include**            |
-| The current user (`gh auth status` login)                                                     | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. **Except** any body carrying `<!-- PR_REVIEWER_REPORT -->` — sticky issue comment or legacy review body alike — which is always included (see *Carve-out* above). |
+| The current user (GraphQL `viewer` login, normalized)                                         | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. **Except** any body carrying `<!-- PR_REVIEWER_REPORT -->` — sticky issue comment or legacy review body alike — or the `pr-reviewer` inline-finding footer, which are always included (see *Carve-out* above). |
 | Noise bots — `dependabot[bot]`, `renovate[bot]`                                               | **Exclude** unless the body contains a fenced `suggestion` block          |
 | CI summary bots — `github-actions[bot]`                                                       | **Exclude** unless the body contains a fenced `suggestion` block          |
 

@@ -135,7 +135,7 @@ For a skill named `<skill>` in category `<cat>`:
       scope-appropriate: `global` → `/create-skill diagnose <skill>`;
       `repo::` → `Skill("docs", "update --add-rule …")`.
 - [ ] `lorekit-memory` (LoreKit `memory.*` tools) added to the skill's companion
-      registry / prerequisites as **optional** (loop skips silently if the
+      registry / prerequisites as **optional** (loop is skipped with one report line if the
       `memory.*` tools are not connected).
 - [ ] `## Lessons scope` section added to the skill's `rules/diagnostic-surface.md`
       (so `diagnose` Step 2 loads it as evidence).

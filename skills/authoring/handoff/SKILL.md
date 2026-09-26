@@ -62,7 +62,7 @@ and resolve every pronoun.
    filling every section. Omit a section entirely (heading and all) only if it
    is genuinely empty — never leave a placeholder or a "TODO" in the output.
 6. **Copy to clipboard.** Pipe the file to `pbcopy` (`pbcopy < <path>`). If
-   `pbcopy` is absent (non-macOS or not on `PATH`), skip silently and say so in
+   `pbcopy` is absent (non-macOS or not on `PATH`), skip it and say so in
    the report — the file is the primary artifact; the clipboard is a
    convenience.
 7. **Report.** Print the resolved path, whether the clipboard copy succeeded,

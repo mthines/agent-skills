@@ -55,7 +55,7 @@ confidence gate the literature insists on to prevent self-reinforcing error.
 
 The fast tier runs through **LoreKit's `memory.*` MCP tools** (surfaced by the
 `lorekit-memory` skill). If those tools are **not connected**, the whole fast
-tier skips silently (log one line, continue). The slow tier
+tier is skipped with one report line (never silently), and the run continues. The slow tier
 (`/create-skill diagnose`) is unaffected and still works on demand.
 
 ---
@@ -95,7 +95,7 @@ and `npx @lorekit/cli list --scope <scope> --json`; write with
 `npx @lorekit/cli write "<scope>::<key>" "<body>" --tags loop::aw-lessons --source-agent <agent> --trigger <slug>`
 (an upsert — same `scope::key` overwrites in place, mirroring `memory.write`).
 Prefer the MCP tools when present; the CLI is the fallback. If neither is
-available, skip silently.
+available, skip with one report line.
 
 **Scope** is LoreKit's partition axis — `global`, `repo::{owner}/{repo}`, or
 `branch::{owner}/{repo}::{branch}` (`::` is the only separator; segments are
@@ -203,7 +203,7 @@ The read is **narrow-to-broad** — project-bound lessons from `repo::` first,
 then universal lessons from `global` — merging the results:
 
 ```text
-# (1) Project-bound lessons for this repo (skips silently if memory.* not connected).
+# (1) Project-bound lessons for this repo (skipped with one report line if memory.* not connected).
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"], limit: 50 }
 
 # (2) Universal lessons that follow the user across every repo.
@@ -302,7 +302,7 @@ contract sets:
    note, marked `(codebase-knowledge)` so a reviewer can tell it from an
    `aw-lessons` entry.
 
-Skip silently when `memory.*` is not connected, when there is no git remote, or
+Skip with one report line when `memory.*` is not connected, when there is no git remote, or
 when no record matches the plan — the common case on a greenfield path.
 
 Log:

@@ -263,7 +263,7 @@ The [clone + symlink](#recommended-clone--symlink) install already links the `aw
 bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```
 
-Companions (`tdd`, `ux`, `code-quality`, `docs`, `ci-auto-fix`, …) skip silently if absent — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. Drop `--global` for a per-project install. Requires [`gh`](https://cli.github.com); [`gw`](https://github.com/mthines/gw-tools) is optional (native `git worktree` fallback).
+Companions (`tdd`, `ux`, `code-quality`, `docs`, `ci-auto-fix`, …) never block the workflow; an absent one is reported `skipped (not installed)` — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. Drop `--global` for a per-project install. Requires [`gh`](https://cli.github.com); [`gw`](https://github.com/mthines/gw-tools) is optional (native `git worktree` fallback).
 
 ### Further reading
 

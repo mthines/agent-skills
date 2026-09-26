@@ -82,10 +82,14 @@ from [`finding-verifier.md`](../../../../agents/shared/rules/finding-verifier.md
 
 ## Identity is the fingerprint
 
-`fp` is built by the **same script** `pr-reviewer` uses, never by hand:
+`fp` is built by the **same script** `pr-reviewer` uses, never by hand. Address it through the
+`$AGENT_SUPPORT` root `branch-reviewer` resolved at its start (its § Locating this agent's own
+files) — a bare `agents/…` path resolves against the reviewed repository and exits `MODULE_NOT_FOUND`
+everywhere but this one:
 
 ```bash
-node agents/pr-reviewer/scripts/fingerprint.mjs build \
+AGENT_SUPPORT='<printed value>'   # pinned by branch-reviewer — see its § Locating this agent's own files
+node "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" build \
   --finder consumer-impact --defect-class contract-break \
   --symbol retryRequest --path src/jobs/sync.ts
 ```

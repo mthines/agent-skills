@@ -99,7 +99,7 @@ Cost expectation: a deep run with a typical 2–4-idea finalist band dispatches 
 ### Phase 0 — Intake & triage
 
 1. Read lessons (advisory input for *mechanics only* — see the hard invariant under Self-Improvement).
-   Narrow-to-broad LoreKit fan-out; skips silently if `memory.*` is not connected:
+   Narrow-to-broad LoreKit fan-out; skipped with one report line if `memory.*` is not connected:
 
    ```text
    memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::ideate-lessons"], limit: 50 }
@@ -141,7 +141,7 @@ Problem framing measurably shapes ideation breadth and direction (§2.5) — ski
 | `ux`                | Finalists that are UI/UX or product-surface concepts.           | `Skill("ux")` as a lens on the finalist.                    |
 | `lorekit-memory` (LoreKit `memory.*` tools) | Phases 0 and 7.                        | See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md). |
 
-`confidence` is required; the others are optional — skip silently if not installed / not connected.
+`confidence` is required; the others are optional — a missing one never blocks, and is reported in one line (`<name> — skipped (not installed | not connected)`), never silently.
 
 ---
 

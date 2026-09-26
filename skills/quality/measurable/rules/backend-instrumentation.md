@@ -10,7 +10,7 @@ Skill("otel-semantic-conventions")   # attribute naming lookup
 ```
 
 (Both live in the [dash0 agent-skills repo](https://github.com/dash0hq/agent-skills),
-not this one. Skip silently and use the checklist below when absent.)
+not this one. When absent, say so in one line and use the checklist below.)
 
 ## What a new or changed operation needs
 

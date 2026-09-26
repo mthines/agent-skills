@@ -48,7 +48,7 @@ Highest cost, highest certainty. Runs the covering test if one exists; otherwise
 | --- | --- |
 | Run the existing covering test | A test already exercises the claimed behavior — cheapest Tier 3 path |
 | Synthesize a minimal repro | No covering test exists; write the smallest script/test that exercises exactly the claim, run it, then delete it (per [`isolation-safety.md`](./isolation-safety.md)) |
-| Observe the run's telemetry | The claim is about cross-process behavior a test or repro cannot see directly — fan-out, retry count, span status on an error path, attribute cardinality — delegate to `Skill("observe-run")`, which returns a receipt in this same shape. Skips silently when the skill (or its Observability Profile dev target) is unavailable; the caller then falls back to the covering-test or synthesized-repro approaches above. |
+| Observe the run's telemetry | The claim is about cross-process behavior a test or repro cannot see directly — fan-out, retry count, span status on an error path, attribute cardinality — delegate to `Skill("observe-run")`, which returns a receipt in this same shape. Skipped with one report line when the skill (or its Observability Profile dev target) is unavailable; the caller then falls back to the covering-test or synthesized-repro approaches above. |
 
 Decides: actual runtime return value, actual thrown/rejected error, actual side-effect ordering, actual data flow, and — via the third approach above — actual cross-process telemetry shape (fan-out, retries, cardinality) that a test alone cannot observe.
 This is the only tier that can decide a genuinely dynamic claim.

@@ -47,8 +47,8 @@ The complexity is the machine's job, not yours. You write the sentence; it runs 
 This skill enables AI agents to autonomously execute complete feature
 development workflows from requirements to merged PR. It provides a phase-based
 procedure (0–7) where each phase has a gate and optionally invokes companion
-skills based on task signals. **Companions skip silently if not installed** —
-the workflow never blocks on a missing companion.
+skills based on task signals. **Companions never block, and never skip silently** —
+each is reported `ran` or `skipped (<reason>)`.
 
 | Phase | Name                       | Gate                                             |
 | ----- | -------------------------- | ------------------------------------------------ |
@@ -214,8 +214,8 @@ the plan gate is gone and the workflow loses its primary safety mechanism.
 `review-loop` is a **skill**, not an agent — see
 [`rules/companion-skills.md#agent-companions`](./rules/companion-skills.md#agent-companions)
 for the agent-companion dispatch contract (currently `feature-pr-verifier`).
-Like every other companion, `review-loop` **skips silently** if its definition
-file isn't present — the workflow logs one line and continues.
+Like every other companion, a missing `review-loop` never blocks the workflow —
+it is reported `companion: review-loop — skipped (not installed)` and the workflow continues.
 
 ---
 
@@ -253,7 +253,7 @@ permanently.
 When the workflow tries to invoke the missing companion, Claude will return an
 error and the workflow will log:
 
-> `companion: <name> — not available, continuing`
+> `companion: <name> — skipped (not installed)`
 
 …and continue without it. This is by design.
 
@@ -329,8 +329,9 @@ untouched — only new artifacts land in `.agent/`. Migrate manually with
 4. **Verify after editing** — fast check before continuing.
 5. **Stuck-loop cap is mode-aware** — 3 iterations (Lite) / 5 iterations (Full); at
    the cap, run `confidence(analysis)` and auto-replan or escalate.
-6. **Companions skip silently** — never block on a missing companion (except
-   `confidence` at Phase 1).
+6. **Companions never block, and never skip silently** — a missing or untriggered
+   companion is reported `skipped (<reason>)` (except `confidence` at Phase 1, which
+   cannot be skipped).
 7. **Stop and ask when blocked** — don't guess on ambiguity. A `blocking`
    missing-information gap halts even under `--no-confirm`.
 8. **Plans are grounded, traceable, and executable** (Full Mode) — every

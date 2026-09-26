@@ -38,7 +38,7 @@ When a candidate lesson mentions idea content, discard it, or restate it as a pu
 
 ## Read point (Phase 0)
 
-Narrow-to-broad fan-out — `repo::` first, then `global` (skips silently if `memory.*` not connected):
+Narrow-to-broad fan-out — `repo::` first, then `global` (skipped with one report line if `memory.*` not connected):
 
 ```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::ideate-lessons"], limit: 50 }

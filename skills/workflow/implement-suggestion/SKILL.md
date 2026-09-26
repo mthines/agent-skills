@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '2.4.0'
+  version: '2.4.1'
   workflow_type: orchestrator
   architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/commit-per-comment+resolve-thread/report
   composes:
@@ -175,7 +175,8 @@ if present.
 
 A review body carrying `<!-- PR_REVIEWER_REPORT -->` is handled specially: it is
 never self-filtered (the reviewer and this skill often share one GitHub App
-identity), and it is **expanded** into one ledger entry per finding — deferred
+identity; the same carve-out covers a `pr-reviewer` inline finding, recognised by
+its attribution footer), and it is **expanded** into one ledger entry per finding — deferred
 findings, gate findings, and optimality proposals all live only in that body.
 The parse grammar is shared with `pr-reviewer` itself
 ([`agents/shared/rules/reviewer-report-ingest.md`](../../../agents/shared/rules/reviewer-report-ingest.md));
@@ -281,7 +282,7 @@ For each PR, dispatch the worker subagent (one message, parallel across PRs):
 ```
 Agent(
   description: "Apply suggestion-pack to PR #<n>",
-  subagent_type: "general-purpose",
+  subagent_type: "general-purpose",   # "general" on OpenCode / Agent0 — rules/handoff.md#generic-sub-agent-type
   prompt: <the "Worker prompt template" from rules/handoff.md, filled in — the template is inline in that file; no external prompt file exists>
 )
 ```

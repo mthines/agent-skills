@@ -159,6 +159,7 @@ At the end of Phase 2, the planner outputs **one** of the two messages below —
 - Acceptance Criteria: M items
 - Checks: .agent/{branch}/checks.yaml (M checks: K command/grep, J judge)
 - Specs: .agent/{branch}/specs.md ({N} specs, aw-target: {name}) | none (non-UI task)
+- Companions: one `companion: <name> — ran | skipped (<reason>)` line per Phase 0–2 registry row
 
 Reply with one of:
 - "execute" / "continue" — dispatch the executor.

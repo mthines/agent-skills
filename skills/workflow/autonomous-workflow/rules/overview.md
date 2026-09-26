@@ -61,8 +61,8 @@ docs, and CI auto-fix.
 - **Stuck-loop has a mode-aware cap**: 3 iterations (Lite Mode) / 5 iterations
   (Full Mode) on the same failing area triggers `Skill("confidence", "analysis")`
   and the one-shot auto-replan or user escalation.
-- **Companions skip silently if not installed**: never block on a missing
-  companion.
+- **Companions never block, and never skip silently**: a missing or untriggered
+  companion is reported `skipped (<reason>)`, never omitted.
 - **Self-validate continuously**: Check work at every step.
 - **Stop and ask when blocked**: Don't guess on ambiguity.
 
@@ -70,8 +70,8 @@ docs, and CI auto-fix.
 
 Companion skills are invoked at specific phases based on the task. The full
 registry, trigger conditions, and disable instructions live in
-[`companion-skills.md`](./companion-skills.md). **All companions skip silently
-if not installed** — the workflow continues without them. The only
+[`companion-skills.md`](./companion-skills.md). **No companion blocks the
+workflow, and every one is reported** (`ran` or `skipped (<reason>)`). The only
 non-removable companion is `confidence` at Phase 1 (the Full Mode plan gate —
 Lite Mode has no `plan.md` to gate and Micro skips all quality companions).
 

@@ -46,7 +46,7 @@ Runs only when **all** hold:
 - Phase 7 verifier returned green and the PR was undrafted.
 - The PR has been merged and deployed to the environment that produced the original signal.
 
-Skipped silently when the input was not a telemetry URL.
+Skipped, with one report line (`telemetry verification — skipped (trigger not met: input was not a telemetry URL)`), when the input was not a telemetry URL.
 
 ---
 

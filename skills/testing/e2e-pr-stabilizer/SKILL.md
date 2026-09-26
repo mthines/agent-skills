@@ -22,7 +22,7 @@ argument-hint: '[stabilize|optimize] [pr-url|pr-number]'
 allowed-tools: Bash(gh *) Bash(git *) Bash(node *) Bash(pnpm *) Bash(npx *) Bash(jq *) Read Edit Write Grep Glob
 metadata:
   author: mthines
-  version: '2.2.0'
+  version: '2.2.1'
   workflow_type: slash-command
   tags:
     - playwright

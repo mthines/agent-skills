@@ -62,7 +62,8 @@ REPO_NAME="${REPO##*/}"
 # unguarded call here silently yields "" — and every `select(.user_login == "")` below then
 # matches nothing, which reads as "this agent has never commented on this PR". Dedup, the
 # anti-flip-flop check and Step 2.9c all no-op on a PR full of this agent's own threads.
-BOT_LOGIN="${BOT_LOGIN:-$(gh api user --jq .login 2>/dev/null || echo "")}"
+# Rung 1 is GraphQL `viewer`, which answers for an App token and a proxy alike (`github-access.md § Identity`).
+BOT_LOGIN="${BOT_LOGIN:-$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null || echo "")}"
 # Fallback: this agent's own login, recorded the last time it reviewed THIS PR. The caller binds
 # PRIOR_REPORT_AUTHOR from the PR-state record's `bot_login`, or off the sticky it found on the
 # fallback rung (pr-reviewer Step 0.7); either way it costs no extra API call here.
@@ -80,7 +81,10 @@ gh api repos/$REPO/pulls/$PR_NUMBER/comments \
 
 # Comments authored by this agent (bot login)
 if [ -n "$BOT_LOGIN" ]; then
-  BOT_COMMENTS=$(jq --arg login "$BOT_LOGIN" '[.[] | select(.user_login == $login)]' /tmp/prior-comments.json)
+  # Normalized comparison: `dash0-dev[bot]` (REST, viewer) and `dash0-dev` (GraphQL author, a
+  # caller-typed login) are one identity (`github-access.md § Identity`).
+  BOT_COMMENTS=$(jq --arg login "$BOT_LOGIN" 'def norm: ascii_downcase | sub("\\[bot\\]$"; "");
+    [.[] | select((.user_login | norm) == ($login | norm))]' /tmp/prior-comments.json)
   BOT_IDENTITY_UNKNOWN=false
 else
   # Both rungs failed. That is only reachable when this agent has posted no report on this PR

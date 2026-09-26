@@ -4,7 +4,7 @@ description: >
   The phase-based machinery (0–7) behind the `aw` dispatcher — task intake
   through tested PR delivery in an isolated Git worktree, with optional
   companion skills for planning, quality gates, TDD, UX, code quality, docs,
-  and CI verification. Companions skip silently if not installed. NOT the entry
+  and CI verification. Companions never block; a skipped one is reported, never silent. NOT the entry
   point and not auto-triggered: a natural-language request to do work
   autonomously, end-to-end, in isolation, or in a worktree belongs to the `aw`
   skill, which detects the task tier and routes. Reach for this skill only to
@@ -15,7 +15,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '3.26.0'
+  version: '3.27.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -29,7 +29,7 @@ metadata:
 
 Phase-based autonomous feature development. Each phase has a gate that must pass
 before continuing. Phases optionally invoke companion skills based on the task —
-companions skip silently if not installed.
+companions never block; a skipped one is reported, never silent.
 
 > **Source of truth.** This `SKILL.md` is a thin index. Detailed procedures
 > live in `rules/*.md` and load on demand. Companion-skill triggers and
@@ -47,7 +47,7 @@ The workflow reads accumulated `loop::aw-lessons` lessons before planning
 (Phase 1) and writes new ones when it gets stuck (Phase 4) or finishes (Phase 7),
 mapping universal lessons to LoreKit's `global` scope and repo-bound lessons to
 `repo::{owner}/{repo}`. Lessons are **advisory** — they bias the plan, never
-silently change a gate. Skips silently when LoreKit's `memory.*` tools are not
+silently change a gate. Skipped with one report line when LoreKit's `memory.*` tools are not
 connected.
 **When invoked through the `aw` dispatcher, the read/write is hoisted to the
 dispatcher** (intake + exit) so **every tier** — Micro, Lite, and Full — both
@@ -177,8 +177,8 @@ See [phase-0-validation.md](./rules/phase-0-validation.md#step-5-get-explicit-co
 ## Companion Skills
 
 Optional companions are invoked at specific phases based on task signals.
-**All companions skip silently if not installed** — the workflow continues
-without them. See [`rules/companion-skills.md`](./rules/companion-skills.md)
+**No companion blocks the workflow, and every one is reported `ran` or
+`skipped (<reason>)`** — never omitted. See [`rules/companion-skills.md`](./rules/companion-skills.md)
 for the full registry, trigger conditions, and **how to disable any companion**.
 
 | Phase | Companion              | Trigger                                                | Args             |
@@ -389,7 +389,7 @@ bash scripts/sync-symlinks.sh --aw
 the companion skills into `~/.claude/skills/`, plus the `aw-planner` /
 `aw-executor` / `aw-tester` agents into `~/.claude/agents/`. The `review-loop`
 skill (Phase 6/7 review passes) is also linked; if absent Phase 7 logs
-`review-loop — not available, continuing` and proceeds. Edits to the cloned repo
+`review-loop — skipped (not installed)` and proceeds. Edits to the cloned repo
 are picked up live on the next agent turn.
 
 The routing rule invokes `Skill("aw")`, which detects the tier and routes —

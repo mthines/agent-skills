@@ -176,7 +176,7 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit
 The read is **read-only, structural, bounded to the pack, advisory, and raises care
 without suppressing** — the full contract, including when a run may write a verified
 fact back, is [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
-Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+Skip with one report line when `memory.*` is not connected, there is no git remote, or nothing
 matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 ---

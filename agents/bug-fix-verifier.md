@@ -33,7 +33,7 @@ Skill("verify-behavior", "change")
   caller: "bug-fix-verifier"
 ```
 
-If the skill is unavailable, log `verify-behavior — not available, continuing` and run the
+If the skill is unavailable, log `verify-behavior — skipped (not installed)` and run the
 commands below directly, exactly as before this delegation existed. This agent is not deleted and
 its grading logic is unchanged either way.
 

@@ -272,7 +272,7 @@ namespace**:
 ### Read / write shape
 
 ```text
-# Read narrow-to-broad (skips silently if memory.* not connected):
+# Read narrow-to-broad (skipped with one report line if memory.* not connected):
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::<skill>-lessons"], limit: 50 }
 memory.list { scope: "global",               tags: ["loop::<skill>-lessons"], limit: 50 }
 

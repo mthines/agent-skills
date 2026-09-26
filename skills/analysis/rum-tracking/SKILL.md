@@ -42,7 +42,7 @@ update, and remove tracking code without breaking downstream dashboards.
 > builds on the `otel-instrumentation` and `otel-semantic-conventions` skills,
 > which live in the [dash0 agent-skills repo](https://github.com/dash0hq/agent-skills),
 > not this one. That rule **invokes them at runtime via `Skill()` when they're
-> installed** (and skips silently otherwise) — install them alongside this skill
+> installed** (and otherwise skips them with a one-line report, never silently) — install them alongside this skill
 > to get their authoritative span/metric/attribute guidance.
 
 > **This `SKILL.md` is a thin index.**

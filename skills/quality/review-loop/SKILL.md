@@ -20,7 +20,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interv
 license: MIT
 metadata:
   author: mthines
-  version: '1.9.0'
+  version: '1.10.0'
   workflow_type: command
   tags:
     - review
@@ -646,11 +646,17 @@ Skip this step entirely when **any** of:
 - `NO_FEEDBACK == 1` — report-only mode applied nothing, so there is nothing new to verify.
 - the loop returned a dispatch skip (no dispatch tool, nested dispatch) — no run happened.
 
-Otherwise dispatch it **once**, regardless of iteration count:
+Otherwise dispatch it **once**, regardless of iteration count, **always with `--unattended`**:
 
 ```text
-Skill("ui-verify", "run <PR-URL>")
+Skill("ui-verify", "run <PR-URL> --unattended")
 ```
+
+`--unattended` is mandatory here, not a host-specific choice: this step runs at the end of a
+loop the caller expects to finish on its own, and without the flag `ui-verify`'s `auto` driver
+stops to ask `AskUserQuestion` whenever Chrome is absent — blocking forever in an automation, and
+failing outright on a host that has no ask-user tool. Under the flag it runs Playwright or returns
+`inconclusive: no driver available (…)`, never a question.
 
 `ui-verify run` owns the whole procedure: it reads the committed
 `<!-- ui-verify:v1 -->` block (the **only** source — never the gitignored
@@ -681,7 +687,7 @@ Map its outcome into the report:
 | `no spec` (no block — not a UI PR, or `author` never ran) | `not run (no ui-verify block)` — log and continue |
 | `inconclusive: preview not deployed` | `inconclusive (preview not deployed at exit)` — note `re-run /ui-verify run <PR-URL> once the preview is up`. Never a red |
 | `inconclusive: no access path for deployment lookup (pass --url)` | `inconclusive (no deployment lookup on this access path)` — note `re-run /ui-verify run <PR-URL> --url <preview-url>`. Never a red, and never recorded as `preview not deployed`: no lookup ran, so waiting for the build fixes nothing and only an explicit URL changes the outcome |
-| any other `inconclusive: <reason>` (`preview building`, `no preview environment`, `preview deploy failed`, `preview URL not published`) | `inconclusive (<reason> at exit)` — log the reason verbatim and continue. Never a red |
+| any other `inconclusive: <reason>` (`preview building`, `no preview environment`, `preview deploy failed`, `preview URL not published`, `no driver available (unattended — …)`) | `inconclusive (<reason> at exit)` — log the reason verbatim and continue. Never a red |
 | `empty spec` (markers present, body empty) | `not run (empty ui-verify block)` — log and continue. Distinct from `no spec` on purpose: `author` **did** run and embedded nothing, which is a spec-authoring bug worth naming, not a PR that needed no spec |
 | `NOT RUN (<reason>)` (`chrome unavailable, user declined Playwright`, `sub-agent dispatch unavailable`, `no Chrome extension and no sub-agent dispatch available`) | `not run (<reason>)` — log the reason verbatim and continue. Never a red: no driver executed, so there is no verdict to be red about |
 | `green` | `green (<N> specs on <preview-url>)` |
@@ -714,7 +720,7 @@ the loop's fixes:
    )"
    ```
 
-Then, **best-effort**, note the linked Linear ticket (skip silently if any part is absent):
+Then, **best-effort**, note the linked Linear ticket (skip with one report line if any part is absent):
 
 - Detect a ticket from the branch name (`.../ABC-123-...`), the PR title/body, or `gh pr view`.
 - If a ticket id is found **and** the Linear MCP tools are connected, post a short comment on the ticket linking the PR and stating that review converged (e.g. `Review loop converged — PR <url> ready for review.`).

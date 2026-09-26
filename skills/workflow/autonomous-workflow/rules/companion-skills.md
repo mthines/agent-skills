@@ -1,12 +1,14 @@
 # Companion Skills Registry
 
 Single source of truth for which optional skills the workflow invokes, when, and
-how. **All companions skip silently if not installed.** This file is the place
-to disable, swap, or add companions.
+how. **No companion blocks the workflow, and none disappears from the record** —
+each is reported `ran` or `skipped (<reason>)` ([§ The companion report](#the-companion-report)).
+This file is the place to disable, swap, or add companions.
 
 ## Contents
 
 - [How invocation works](#how-invocation-works)
+- [The companion report](#the-companion-report)
 - [Registry](#registry)
 - [Agent Companions](#agent-companions)
 - [Self-Improvement Loop (LoreKit)](#self-improvement-loop-lorekit)
@@ -27,13 +29,63 @@ Each phase rule contains lines like:
 Skill("ux")     # if companion installed and trigger matches
 ```
 
-If the skill isn't installed, Claude returns an error message; the workflow
+If the skill isn't installed, the skill tool returns an error; the workflow
 catches that and continues without the skill. **Never block the workflow on a
-missing companion.**
+missing companion — and never let it vanish from the record either.**
 
-When invoking, log one line in the conversation and the `plan.md` Progress Log:
+## The companion report
 
-> `companion: <name> — invoked` or `companion: <name> — not available, continuing`
+**Every registry row whose phase ran gets exactly one line** — in the
+conversation, in the `plan.md` Progress Log, and repeated under `Companions:` in
+the agent's final message (the planner's handoff, the executor's hand-back):
+
+```text
+companion: <name> — ran
+companion: <name> — skipped (<reason>)
+```
+
+`<reason>` comes from a closed set, so a reader can tell the cases apart:
+
+| Reason | Meaning |
+| --- | --- |
+| `trigger not met: <the condition that failed>` | The companion is installed; its trigger did not match this task. Name the condition — `trigger not met: no new *.test.* file`, not `not needed` |
+| `disabled (<flag>)` | The user opted out — `disabled (--no-interview)` |
+| `not installed` | The skill tool reported it missing |
+| `not dispatchable on this host` | An agent companion whose type the dispatch tool does not list |
+| `tool unavailable: <tool>` | The companion needs a tool this context lacks — `tool unavailable: AskUserQuestion` |
+
+```text
+❌ WRONG — the three reasons a line can be absent look identical in a transcript
+(no line for test-provenance-guard)
+
+✅ RIGHT
+companion: test-provenance-guard — skipped (trigger not met: no new *.test.* file)
+```
+
+**Why this is mandatory, not courtesy.** Across 39 `aw-planner` and 48
+`aw-executor` runs in the author's local transcripts (`~/.claude/projects`,
+2026-08-20 → 2026-09-25 — local sessions only, not Agent0 or cloud runs), `Skill("interview")`, `Skill("tdd")`, and
+`Skill("test-provenance-guard")` were each invoked **zero** times, and the
+transcripts could not say why: the contract's headline read *skip silently*, so
+an uninstalled companion, an untriggered one, and one the agent never reached all
+left the same nothing behind. Reading the definitions turned up three concrete
+contributors, each now fixed or made visible:
+
+1. **`test-provenance-guard` was absent from the executor's own companion
+   table** — the table the executor reads first — and lived only ~630 lines into
+   `phase-4-testing.md`. A run working from the template never met it. The row is
+   now in the template.
+2. **`interview`'s question round runs through `AskUserQuestion`, which
+   `aw-planner`'s tool grant does not include.** A planner that decided the
+   companion could not do its job there fell back to the inline gate and said
+   nothing; that decision now has to be written down as
+   `skipped (tool unavailable: AskUserQuestion)` — or the line says `ran`.
+3. **`tdd`'s trigger — "pure logic / business rules" — is a judgement with no
+   stated negative**, so declining it cost nothing and recorded nothing. A
+   `trigger not met: <condition>` line makes that judgement auditable.
+
+These are inferences from the definitions, not from replayed runs; the report
+line is what lets the next measurement confirm or refute them.
 
 ---
 
@@ -72,11 +124,11 @@ When invoking, log one line in the conversation and the `plan.md` Progress Log:
 
 ## Agent Companions
 
-A second class of optional companions exists: **agents** (definitions in `agents/<name>.md`) rather than skills. They are dispatched as sub-agents (`subagent_type: <name>`) and detected by file presence in `.claude/agents/`, `~/.agents/agents/`, or `~/.claude/agents/`. The graceful-skip contract is the same — log one line, continue — but the invocation mechanism differs from `Skill()`.
+A second class of optional companions exists: **agents** (definitions in `agents/<name>.md`) rather than skills. They are dispatched as sub-agents (`subagent_type: <name>`) and detected by **capability** — the dispatch tool accepts `<name>` as an agent type — never by a file at an install path, which misses plugin-installed, project-local, and hosted agents alike. An agent that cannot be dispatched is reported by name — `companion: <name> — skipped (not dispatchable on this host)` — never skipped silently.
 
 | Agent      | Phase | Trigger condition                                            | Args                                          | Detection paths                                                                                  | Disable by                                                                                       |
 | ---------- | ----- | ------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `feature-pr-verifier` | 7 | Full Mode AND CI green AND `plan.md` exists (independent green/red verdict before optional undraft) | — | `.claude/agents/feature-pr-verifier.md`, `~/.agents/agents/feature-pr-verifier.md`, `~/.claude/agents/feature-pr-verifier.md` | Remove invocation in [`phase-7-ci-gate.md`](./phase-7-ci-gate.md#auto-verify) |
+| `feature-pr-verifier` | PR open (dispatched by `aw`, not by a phase) | Full Mode AND `plan.md` exists AND the executor returned a PR URL (independent green/red verdict; a done-condition via `aw`'s `Verified:` line) | — | The dispatch tool accepts `feature-pr-verifier` as an agent type | Remove § *Verify at PR open* in the `aw` dispatcher skill |
 
 The review passes in Phase 6 and Phase 7 are now delegated to `review-loop` (the bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence skill) rather than the retired `reviewer` agent.
 Phase 6 invokes `review-loop` (or `pr-reviewer` directly via `create-pr` Step 6.5) after the draft PR is open.
@@ -104,9 +156,9 @@ The full contract — lesson schema, scope mapping (`global` / `repo::`), read /
 write triggers, promotion gate, and the entrenchment guards that stop
 self-reinforcing error — lives in
 [`self-improvement-loop.md`](./self-improvement-loop.md). Like every companion,
-the LoreKit fast tier **skips silently when the `memory.*` tools are not
-connected**: it degrades to nothing and the slow tier (`diagnose`) is
-unaffected.
+the LoreKit fast tier **never blocks**: when the `memory.*` tools are not
+connected it reports `companion: lorekit-memory — skipped (tool unavailable: memory.*)`
+and does nothing else; the slow tier (`diagnose`) is unaffected.
 
 ---
 

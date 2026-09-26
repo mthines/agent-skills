@@ -40,6 +40,23 @@ change forces the whole PR into standard-lane.
 
 Record the chosen lane in the pack's frontmatter as `lane: fast | standard`.
 
+## Generic sub-agent type
+
+The worker is a **generic** sub-agent, and hosts spell that type differently:
+`general-purpose` in Claude Code, `general` in OpenCode-based hosts such as Dash0 Agent0.
+Pass whichever of the two the dispatch tool's `subagent_type` accepts.
+A missing `general-purpose` is a spelling difference, never evidence that dispatch is unavailable.
+
+```text
+❌ WRONG — a name check; strands the worker on every OpenCode-based host
+if "general-purpose" not in subagent_types: skip
+
+✅ RIGHT — the capability, whichever spelling the host lists
+TYPE = "general-purpose" if "general-purpose" in subagent_types else "general"
+```
+
+The blocks below write `"general-purpose"`; read it as `TYPE`.
+
 ## Fast-lane dispatch
 
 Skip `aw-planner`. Dispatch the worker directly with the pack:
@@ -47,7 +64,7 @@ Skip `aw-planner`. Dispatch the worker directly with the pack:
 ```
 Agent(
   description: "Apply suggestion-pack to PR #<n>",
-  subagent_type: "general-purpose",
+  subagent_type: "general-purpose",   # or "general" — see Generic sub-agent type
   prompt: <worker prompt — see below>
 )
 ```
@@ -82,14 +99,14 @@ Step B — worker:
 ```
 Agent(
   description: "Apply suggestion-plan to PR #<n>",
-  subagent_type: "general-purpose",
+  subagent_type: "general-purpose",   # or "general" — see Generic sub-agent type
   prompt: <worker prompt, with plan.md cited as source of truth>
 )
 ```
 
 ## Worker prompt template
 
-Filled per PR, passed to the dispatched general-purpose subagent. Inline this
+Filled per PR, passed to the dispatched generic sub-agent ([type](#generic-sub-agent-type)). Inline this
 as the `prompt` field — no external file lookup required by the worker.
 
 ```text

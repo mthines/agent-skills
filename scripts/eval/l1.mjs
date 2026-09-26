@@ -6640,6 +6640,91 @@ const isPollBlock = (block) =>
     "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
 }
 
+// ── G70: host portability — capability checks, never a tool name, prefix, or install path ──
+//
+// Every check below is the F6 shape (`diagnostic-surface.md`): a precondition keyed on how ONE
+// harness spells a capability, which reads as "unavailable" on every other harness and hides
+// itself because a skip is a documented, legitimate outcome. Each is pinned where it lived.
+// (G70 rather than the next free number: PR #205 claims G60–G65 on its own branch.)
+{
+  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+  const CP = read("skills/delivery/create-pr/SKILL.md");
+  s.check("G70a create-pr gates the review on the dispatch capability, not the name `Task`",
+    !/Confirm `Task` is available/.test(CP) && /confirm that \*\*some\*\* available tool dispatches a sub-agent/.test(CP),
+    "a literal `Task` check records NOT REVIEWED on every harness that spells the tool `Agent` or `task`");
+
+  const HO = read("skills/workflow/implement-suggestion/rules/handoff.md");
+  s.check("G70b implement-suggestion names the `general` spelling of the generic sub-agent type",
+    /^## Generic sub-agent type$/m.test(HO) && /`general` in OpenCode-based hosts/.test(HO),
+    "a bare `general-purpose` strands the worker on OpenCode-based hosts (Dash0 Agent0)");
+
+  const TDA = read("skills/testing/e2e-pr-stabilizer/rules/telemetry-driven-analysis.md");
+  s.check("G70c e2e-pr-stabilizer detects telemetry by capability, not the `mcp__dash0-*` prefix",
+    !/\(no `mcp__dash0-\*` tools in the session\)/.test(TDA) && /capability, never a tool-name prefix/.test(TDA),
+    "a prefix check reports no-telemetry on any host that names the Dash0 server differently");
+
+  // The verifier: dispatched by the session that holds the dispatch rung, at PR open, and its
+  // verdict is a done-condition. Phase 7 must not also dispatch it by an install-path probe.
+  const P7 = read("skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md");
+  s.check("G70d phase-7 no longer detects feature-pr-verifier by a file at an install path",
+    !/\[ -f "[^"]*agents\/feature-pr-verifier\.md" \]/.test(P7) && !/subagent_type: feature-pr-verifier/.test(P7),
+    "the post-CI dispatch never fired from the executor; aw owns it at PR open");
+  const AW = read("skills/workflow/autonomous-workflow/aw/SKILL.md");
+  const term = (AW.match(/AW RUN COMPLETE\n[\s\S]*?```/) || [""])[0];
+  s.check("G70e aw dispatches feature-pr-verifier at PR open and reports a mandatory Verified: line",
+    /^#### Verify at PR open — you dispatch `feature-pr-verifier`$/m.test(AW)
+    && /Task\(subagent_type="feature-pr-verifier"/.test(AW)
+    && /^- Verified: /m.test(term),
+    "without the dispatch and the terminal slot, a Full run can end unverified and report nothing");
+
+  // Identity: `/user` 401s under an App installation token and a per-call proxy, and
+  // `gh auth status` fails under the proxy while every real call succeeds. GraphQL `viewer`
+  // answers for all three. A `$(gh api user …)` rung is the regression; prose naming the
+  // endpoint to explain why it is not used is not.
+  for (const rel of ["agents/shared/rules/prior-comment-awareness.md", "agents/shared/rules/outcome-learning.md",
+                     "agents/shared/rules/github-access.md", "skills/workflow/implement-suggestion/rules/comment-fetching.md",
+                     "agents/pr-reviewer.md"]) {
+    const body = read(rel);
+    s.check(`G70f ${rel} resolves identity via GraphQL viewer, never $(gh api user)`,
+      !/\$\(gh api (\/)?user\b/.test(body) && /viewer \{ login \}/.test(body)
+      && !/authenticated via `gh auth status`/.test(body));
+  }
+  s.check("G70f github-access.md requires normalized login comparison (lowercase, strip [bot])",
+    /Compare logins normalized, never raw/.test(read("agents/shared/rules/github-access.md")));
+
+  // --unattended: an automated caller must never reach AskUserQuestion. review-loop Step 1.6 is
+  // the named caller, and the runner's prompt section must exclude the flag, or the prompt fires
+  // at the end of a loop nobody is watching (and errors on a host with no ask-user tool).
+  const RL = read("skills/quality/review-loop/SKILL.md");
+  const RN = read("skills/testing/ui-verify/rules/runner.md");
+  const UV = read("skills/testing/ui-verify/SKILL.md");
+  s.check("G70g review-loop Step 1.6 invokes ui-verify run with --unattended",
+    /Skill\("ui-verify", "run <PR-URL> --unattended"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
+  s.check("G70g ui-verify's auto-mode prompt is excluded under --unattended, and the flag is advertised",
+    /\*\*Never under `--unattended`\*\*/.test(RN) && /only in `auto` mode without `--unattended`/.test(RN)
+    && /argument-hint:[^\n]*--unattended/.test(UV));
+
+  // The companion report. `interview`, `tdd`, and `test-provenance-guard` had 0 invocations in
+  // 39 planner + 48 executor runs, and "skip silently" made that unexplainable. The contract
+  // must define the line and its closed reason set; the two agent templates — what a dispatched
+  // agent actually reads — must not restate the silent form; and the executor's own table must
+  // carry test-provenance-guard, whose absence there is one of the measured causes.
+  const CS = read("skills/workflow/autonomous-workflow/rules/companion-skills.md");
+  s.check("G70h companion-skills.md no longer says any companion skips silently",
+    !/skips? silently/i.test(CS.replace(/headline read \*skip silently\*/g, "")));
+  s.check("G70h companion-skills.md defines the mandatory report line and its closed reason set",
+    /^## The companion report$/m.test(CS)
+    && ["trigger not met:", "disabled (", "not installed", "not dispatchable on this host", "tool unavailable:"]
+      .every((r) => CS.includes(`\`${r}`)));
+  for (const t of ["aw-planner", "aw-executor"]) {
+    const body = read(`skills/workflow/autonomous-workflow/templates/${t}.agent.md`);
+    s.check(`G70h ${t} template carries no "companions skip silently" contract`,
+      !/Companions skip silently/i.test(body) && /companion-skills\.md#the-companion-report/.test(body));
+  }
+  s.check("G70h the executor's companion table lists test-provenance-guard",
+    /^\| 4\s+\| `test-provenance-guard`/m.test(read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md")));
+}
+
 // ── G52: review-branch / branch-reviewer — the PR-less review path ──
 //
 // This path makes exactly two load-bearing claims, and both are the kind that rot silently
@@ -6812,6 +6897,28 @@ const isPollBlock = (block) =>
     s.check("G52e branch-reviewer.md does not restate the candidate-record schema",
       !/severity_hint\s*:/.test(body) && !/verify_by\s*:/.test(body),
       "found finders.md's own field names — the detection core was copied, not referenced");
+
+    // (g) The support tree is resolved, never assumed to be the cwd. A bare
+    // `node agents/branch-reviewer/scripts/…` resolves against the REVIEWED repository, so it
+    // exits MODULE_NOT_FOUND in every repo but this one and the impact graph comes back empty —
+    // a review that finds nothing and reads exactly like a clean branch (create-pr Step 5.5).
+    // Same contract pr-reviewer holds under G41a/G41d, one derivation point per agent.
+    s.check("G52g branch-reviewer.md has a support-tree section that derives AGENT_SUPPORT",
+      /^## Locating this agent's own files$/m.test(body)
+      && [...body.matchAll(/AGENT_SUPPORT="\$\{AGENT_MD%\/branch-reviewer\.md\}"/g)].length === 1);
+  }
+  // (g) …and no file on the PR-less path invokes a support-tree script by a bare path. The
+  // pattern names the two script dirs so the cautionary prose (`node agents/…`) is not a hit.
+  const BARE_SCRIPT = /node\s+"?agents\/(?:branch-reviewer|pr-reviewer)\/scripts\//;
+  for (const rel of ["agents/branch-reviewer.md", "skills/quality/review-branch/rules/findings-bus.md",
+                     "skills/quality/pr-review/SKILL.md"]) {
+    const p = join(REPO_ROOT, rel);
+    // A renamed file must red, not silently drop out of the sweep.
+    s.check(`G52g ${rel} exists (the bare-path sweep reads it)`, existsSync(p));
+    if (!existsSync(p)) continue;
+    const hit = readFileSync(p, "utf8").split("\n").find((l) => BARE_SCRIPT.test(l));
+    s.check(`G52g ${rel} never runs a support-tree script by a bare agents/ path`, !hit,
+      (hit || "").trim().slice(0, 120));
   }
 
   // (f) The skill passes the repo's own skill validator, same bar as G51b.
@@ -7820,7 +7927,7 @@ const isPollBlock = (block) =>
     s.check("G54e weaver-schema.md states it never blocks a mode or a gate",
       /never blocks|never block\b|Advisory, always/i.test(weaver),
       "no advisory/never-blocks statement found — an external CLI that can fail a gate is a dependency, not a companion");
-    const companionPrinciple = (skill.match(/\*\*Companions skip silently\.\*\*[\s\S]*?(?=\n\d+\.\s\*\*|\n\n##)/) ?? [""])[0];
+    const companionPrinciple = (skill.match(/\*\*Companions never block, and never skip silently\.\*\*[\s\S]*?(?=\n\d+\.\s\*\*|\n\n##)/) ?? [""])[0];
     s.check("G54e SKILL.md's companion principle names the `weaver` CLI among the optional ones",
       /`weaver`/.test(companionPrinciple),
       "the principle that makes every companion skippable does not list the one companion that is not even a skill");

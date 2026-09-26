@@ -82,7 +82,7 @@ Standalone (`/optimize-approach [report|apply]`) derives the diff-mode inputs fr
 
 | Phase | Name | Rule file | Gate |
 | --- | --- | --- | --- |
-| O0 | Read lessons | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier read; skips silently if LoreKit `memory.*` not connected |
+| O0 | Read lessons | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier read; skipped with one report line if LoreKit `memory.*` not connected |
 | O1 | Intent capture | this file | 1–2 line intent per changed approach unit |
 | O2 | Optimality judgment | [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) | Verdict `optimal` \| `suboptimal` per the 4-axis rubric + materiality bar |
 | O3 | Quiet early-exit | [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) | If `optimal`, return empty and stop |

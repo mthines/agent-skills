@@ -219,7 +219,7 @@ Skill("ci-auto-fix", "<run-id|pr-url>")
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — fall back to manual fix-and-push, log and continue               |
+| If missing | Report `skipped (not installed)`, then fall back to manual fix-and-push, log and continue               |
 | Disable                   | Remove this section; the workflow then stops at first failure and reports to user |
 
 Each `ci-auto-fix` invocation has its own internal retry budget. **Do not wrap it in another loop.** When it returns, accept its verdict and move on.
@@ -227,7 +227,7 @@ Each `ci-auto-fix` invocation has its own internal retry budget. **Do not wrap i
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 7: ci-auto-fix(<check>) — invoked
+- [TIMESTAMP] Phase 7: ci-auto-fix(<check>) — ran
 - [TIMESTAMP] Phase 7: ci-auto-fix(<check>) — fixed (commit <sha> pushed, CI re-running)
 ```
 
@@ -249,7 +249,7 @@ Sub-agent prompt template (one per failed check):
 
 ```
 description: Run ci-auto-fix for <check-name>
-subagent_type: general-purpose
+subagent_type: general-purpose   # "general" on OpenCode-based hosts (Dash0 Agent0)
 prompt: |
   Drive the ci-auto-fix workflow end-to-end for this PR.
 
@@ -312,7 +312,7 @@ Once all checks are green:
 
 Tell the user: PR URL, all checks green, and that the worktree is preserved pending their review/merge.
 
-Then proceed to [Auto Verify](#auto-verify) before any cleanup. Capture any
+Then proceed to [Auto Review](#auto-review) before any cleanup (verification is not this phase's job — see [Auto Verify](#auto-verify)). Capture any
 durable run lesson per [Lessons Write](#lessons-write) (also applies on a
 user-approved stop, or when a post-merge bug surfaces in the same session).
 
@@ -385,77 +385,16 @@ Never auto-undraft based on the spec rehearsal verdict. Log:
 
 ## Auto Verify
 
-After CI is green and **before** Auto Review, dispatch the `feature-pr-verifier` agent in fresh context to grade the PR against `plan.md`'s Acceptance Criteria, PASS_TO_PASS, diff sanity, and walkthrough integrity. This closes the same self-grading loophole `bug-fix-verifier` closes for bug fixes — Anthropic's harness research is explicit that "agents reliably skew positive when grading their own work."
+**Moved to the `aw` dispatcher — this phase no longer dispatches `feature-pr-verifier`.**
+The old trigger ("after CI is green, before Auto Review") was never reached by an `aw-executor` run in the transcripts the restructure plan analysed: the executor's done-condition needs this gate to have *run once*, not CI to be green, so it routinely handed back first — and a dispatched executor holds no sub-agent dispatch tool to reach the verifier with in any case.
+The verifier's four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity) run their own commands against the PR head and read no CI, so they are dispatched **at PR open** by the session one rung up — the `aw` dispatcher's § *Verify at PR open*, which owns the preconditions, the dispatch prompt, and the mandatory `Verified:` line of its terminal contract.
 
-| Property                  | Value                                                                  |
-| ------------------------- | ---------------------------------------------------------------------- |
-| Runs in Full Mode         | Yes (Lite Mode has no `plan.md` to verify against — skip)              |
-| Runs in Lite Mode         | No                                                                     |
-| Skips silently if missing | Yes — log one line and continue to Auto Review                         |
-| Verdict effect            | Advisory — surfaced inline in chat. The user undrafts the PR.         |
-| Disable                   | Remove this section; Auto Review then becomes the next step after CI green |
-
-### Step 1: Detect the `feature-pr-verifier` agent
-
-Stop at the first hit, in this order:
-
-```bash
-[ -f ".claude/agents/feature-pr-verifier.md" ] && VERIFIER_AVAILABLE=1
-[ -z "$VERIFIER_AVAILABLE" ] && [ -f "$HOME/.agents/agents/feature-pr-verifier.md" ] && VERIFIER_AVAILABLE=1
-[ -z "$VERIFIER_AVAILABLE" ] && [ -f "$HOME/.claude/agents/feature-pr-verifier.md" ] && VERIFIER_AVAILABLE=1
-```
-
-If none of the paths resolve, log and skip to Auto Review:
+When you are playing the executor role inside a single-context Full run (no sub-agent dispatch anywhere), do **not** grade the PR yourself — that is the self-grading the verifier exists to remove.
+Log one line and continue to Auto Review:
 
 ```markdown
-- [TIMESTAMP] Phase 7: feature-pr-verifier — not available, continuing (install `agents/feature-pr-verifier.md` from agent-skills.git into one of: `.claude/agents/`, `~/.agents/agents/`, `~/.claude/agents/`)
+- [TIMESTAMP] Phase 7: feature-pr-verifier — skipped (not dispatchable on this host: single-context run, so there is no second context to verify from)
 ```
-
-If running in Lite Mode (no `plan.md`), also skip:
-
-```markdown
-- [TIMESTAMP] Phase 7: feature-pr-verifier — skipped (Lite Mode has no plan.md to verify against)
-```
-
-### Step 2: Dispatch the `feature-pr-verifier` sub-agent
-
-Spawn one sub-agent with `subagent_type: feature-pr-verifier` and pass the inputs the agent's contract requires.
-
-```
-description: Verify PR after CI green
-subagent_type: feature-pr-verifier
-prompt: |
-  Verify this feature PR. Inputs:
-
-  - plan.md path: .agent/<branch>/plan.md
-  - walkthrough.md path: .agent/<branch>/walkthrough.md
-  - PR head SHA: <pr_head_sha>
-  - Base SHA: <base_sha>
-  - Project test command: <project_test_command>
-
-  Follow the feature-pr-verifier agent's procedure end-to-end. Run all four
-  checks. Return the verdict block in the exact format specified. Do not
-  propose fixes; do not editorialise; do not request additional inputs.
-```
-
-Do **not** wrap the sub-agent call in a retry loop — the verifier owns its own validation and returns a single terminal verdict.
-
-### Step 3: Surface the verdict
-
-When the sub-agent returns:
-
-```markdown
-- [TIMESTAMP] Phase 7: feature-pr-verifier — verdict: <green|red> (<one-line summary>)
-```
-
-Show the user the verifier's full verdict block (it's terse). Then proceed to [Auto Review](#auto-review) regardless of green or red — the user makes the final call on undrafting:
-
-| Verifier verdict | What to tell the user                                                                                    |
-| ---------------- | -------------------------------------------------------------------------------------------------------- |
-| green            | "Verifier passed all four checks. PR ready for your review and undraft."                                 |
-| red              | "Verifier flagged Check N: <reason>. PR remains in draft. Recommend addressing the finding before undraft." |
-
-Never auto-undraft. The verifier is advisory; the human is the gatekeeper.
 
 ## Auto Review
 
@@ -471,7 +410,7 @@ findings inline, and answers-and-resolves the non-fix threads. On convergence it
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — log one line and continue to cleanup step                        |
+| If missing | Report `skipped (not installed)`, then log one line and continue to cleanup step                        |
 | Posts comments live?      | Yes — `pr-reviewer` posts one visible `COMMENT` review per iteration   |
 | Args                      | `<pr-url> [--critical]` passed to `review-loop`                       |
 | Disable                   | Remove this section; CI green becomes the terminal gate                |
@@ -493,7 +432,7 @@ Check for the skill in the standard locations:
 If not found, log and skip:
 
 ```markdown
-- [TIMESTAMP] Phase 7: review-loop — not available, continuing (install review-loop skill from agent-skills.git)
+- [TIMESTAMP] Phase 7: review-loop — skipped (not installed) (install review-loop skill from agent-skills.git)
 ```
 
 Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
@@ -614,8 +553,8 @@ Skill("measurable", "audit --diff --base $(git merge-base HEAD main) --strict")
 | Default behavior (no `--observability-strict`) | Advisory — log the finding, note it in the hand-back message, never block |
 | `--observability-strict` behavior | A `missing` finding that **Phase 4 did not already flag** (i.e. newly introduced by Auto Fix or Auto Review) is a regression: fix it directly (it's a small, localized diff — restore the removed span/log/event) and re-run this recheck **once**. If it still reports `missing` after that one attempt, stop and escalate to the user rather than looping — this is a tail check, not a second stuck-loop instance. A `missing` finding that Phase 4 **already** flagged and the user accepted is not re-litigated here |
 | Read-only until the regression fix | The recheck itself never writes files; only the one-shot regression fix (under `--observability-strict`) does |
-| If skill missing               | Log `measurable() — not available, continuing`                      |
-| Progress Log entry             | `[TIMESTAMP] Phase 7: measurable(audit) — recheck: N missing (K new since Phase 4), M unlinked` (or `— not available, continuing`) |
+| If skill missing               | Log `measurable() — skipped (not installed)`                      |
+| Progress Log entry             | `[TIMESTAMP] Phase 7: measurable(audit) — recheck: N missing (K new since Phase 4), M unlinked` (or `— skipped (not installed)`) |
 
 Disable: remove the `Skill("measurable", "audit", ...)` invocation from this
 section (the Phase 3/4 companions are unaffected — this is the Phase 7
@@ -767,7 +706,7 @@ Disable by removing this invocation (see
 - [ ] Judgment failures escalated to user with full report
 - [ ] CI is green OR user has approved stopping
 - [ ] (Optional, UI tasks) `aw-tester` spec rehearsal dispatched against preview URL; verdict surfaced or skip logged
-- [ ] (Optional, Full Mode) `feature-pr-verifier` agent dispatched after CI green; verdict surfaced or skip logged
+- [ ] (Full Mode) `feature-pr-verifier` is **not** dispatched here — `aw` dispatches it at PR open; in a single-context run the `not run` line is logged
 - [ ] (Optional) `review-loop` invoked after CI green with `--critical`; inline report surfaced or skip logged
 - [ ] (If Phase 3's Observability Trigger matched) `measurable(audit)` recheck invoked after Auto Fix + Auto Review settle; findings surfaced (advisory) or, under `--observability-strict`, a newly-introduced `missing` finding fixed and re-checked once before escalating (anchor: `observability-recheck`)
 - [ ] (Optional) PR merged → worktree removed with user confirmation
@@ -783,5 +722,5 @@ Disable by removing this invocation (see
 - Related skill: [review-loop](../../../quality/review-loop/SKILL.md) — optional Phase 7 auto-review (self-relation)
 - Related skill: [create-pr — Step 8 parallel pattern](../../../delivery/create-pr/SKILL.md)
 - Related agent: [aw-tester](../templates/aw-tester.agent.md) — optional Phase 7 spec rehearsal (UI tasks)
-- Related agent: [feature-pr-verifier](../../../../agents/feature-pr-verifier.md) — optional Phase 7 auto-verify (Full Mode)
+- Related agent: [feature-pr-verifier](../../../../agents/feature-pr-verifier.md) — dispatched by `aw` at PR open (Full Mode), not by this phase
 - Without `gw`, clean up natively: `git worktree remove <path>` then `git branch -d <branch>` (Step 3 above shows the full commands).
