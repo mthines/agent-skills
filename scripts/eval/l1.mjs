@@ -8911,4 +8911,103 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G66: pr-reviewer deterministic pipeline, Phase 6 (--fanout) ──
+//
+// D17/AC-17/R9: skills/quality/pr-review/SKILL.md's --fanout orchestration is opt-in and
+// documents the contract that keeps it safe to dispatch — default OFF, a quick-tier route that
+// skips the fan-out, a capability test for sub-agent dispatch that never checks the literal tool
+// name `Task`, a stated concurrency cap, and a fallback (not a silent skip) when no dispatch tool
+// is available. Reproduced here as a standing guard, independent of checks.yaml's own AC-17
+// command, for the same reason G64c/G65a-b/G65e are: the check definition is
+// executor-immutable, but a standing L1 guard catches drift the moment the file changes, without
+// waiting for a Phase-4 checks.yaml run.
+{
+  const SKILL_PATH = join(REPO_ROOT, "skills/quality/pr-review/SKILL.md");
+  s.check("G66a skills/quality/pr-review/SKILL.md exists", existsSync(SKILL_PATH));
+  if (existsSync(SKILL_PATH)) {
+    const text = readFileSync(SKILL_PATH, "utf8");
+    const fanoutSection = (() => {
+      const start = text.indexOf("## `--fanout`");
+      if (start === -1) return "";
+      const rest = text.slice(start);
+      const next = rest.indexOf("\n## ", 1);
+      return next === -1 ? rest : rest.slice(0, next);
+    })();
+
+    s.check("G66a a `## `--fanout`` section exists", fanoutSection.length > 0);
+    s.check("G66a --fanout is named in the frontmatter argument-hint",
+      /argument-hint:.*--fanout/.test(text));
+
+    // Default OFF: stated explicitly, not merely inferable from the flag's absence elsewhere.
+    s.check("G66b --fanout is documented as default OFF / opt-in",
+      /\*\*Default OFF\*\*/.test(fanoutSection) || /default\s+off/i.test(fanoutSection));
+
+    // Quick-tier skip: keyed on the SAME field route-depth.mjs/prepare-review.mjs actually
+    // produce (context.routing.tier), not a re-described concept with no wire to the real field.
+    s.check("G66c the quick-tier skip reads context.routing.tier and names the `quick` tier",
+      /context\.routing\.tier/.test(fanoutSection) && /`quick`/.test(fanoutSection)
+      && /skip/i.test(fanoutSection));
+
+    // Capability test, never a literal `Task` name check — the exact F6 anti-pattern this repo
+    // already removed from `aw`'s own dispatch-availability check (autonomous-workflow CLAUDE.md
+    // v3.25). Assert the disclaiming sentence survives, not just that "Task" appears somewhere.
+    s.check("G66d the capability test explicitly rejects a literal-name (`Task`-only) check",
+      /never\*\*\s*by checking for the literal tool name\s*`Task`/i.test(fanoutSection));
+    s.check("G66d both harness spellings (`Task` and `Agent`) are named",
+      /\bTask\b/.test(fanoutSection) && /\bAgent\b/.test(fanoutSection));
+
+    // Concurrency cap: the named constant AND its stated default, not just the bare word
+    // "concurrency".
+    s.check("G66e PR_REVIEW_MAX_PARALLEL is named with its default of 6",
+      /PR_REVIEW_MAX_PARALLEL/.test(fanoutSection) && /default\s*6\b/i.test(fanoutSection));
+
+    // Fallback, not a skip: the no-dispatch-capability branch must say it FALLS BACK to the
+    // single dispatch and runs it, never that it skips — the same distinction that keeps a
+    // caller from mistaking "ran the cheaper path" for "did not review at all".
+    s.check("G66f the no-dispatch-capability branch is a documented fallback, not a skip",
+      /fallback, not a skip/i.test(fanoutSection));
+    s.check("G66f the fallback states the exact terminal-report sentence a caller reads",
+      /--fanout` requested but no sub-agent dispatch tool is available — ran the single-dispatch `pr-reviewer` review instead/.test(fanoutSection));
+
+    // The default-flip gate from D1 — the numeric bar itself, not just a promise that one
+    // exists, so a later edit cannot silently soften it.
+    s.check("G66g the D1 default-flip gate states recall >= arm A and precision >= arm A - 0.05 at N>=3 over >=8 PRs",
+      /recall/i.test(fanoutSection) && /0\.05/.test(fanoutSection)
+      && /N\s*(≥|>=)\s*3/.test(fanoutSection) && /8/.test(fanoutSection));
+
+    // The six finder names AC-17 requires, reproduced as a standing guard (same rationale as
+    // G65e's manifest-allowlist reproduction). Pinned to the literal one-line finder list, not a
+    // loose "does this word appear anywhere" scan — several of these six are common enough
+    // English words ("quality", "intent", "standards") to appear elsewhere in the section's own
+    // prose even after the actual finder list is edited, which would leave this check unable to
+    // fail on exactly the regression it exists to catch.
+    s.check("G66h finders.md's own six-finder list is named verbatim, in table order",
+      fanoutSection.includes("correctness · consumer-impact · dependency · intent · standards · quality"));
+  }
+
+  // Second witness (independent of finalize.mjs's own --self-test) that the CLI subcommand the
+  // --fanout orchestration's Step d invokes really exists — same pattern as G63c re-deriving
+  // findings-bus.mjs's field set from findings-bus.md rather than trusting the self-test alone.
+  const FINALIZE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
+  if (existsSync(FINALIZE_PATH)) {
+    const finSrc = readFileSync(FINALIZE_PATH, "utf8");
+    s.check("G66i finalize.mjs exports dedupeCandidates", /export function dedupeCandidates\(/.test(finSrc));
+    s.check("G66i finalize.mjs's CLI wires up --dedupe-candidates", /opts\["dedupe-candidates"\]/.test(finSrc));
+    s.check("G66i finalize.mjs's usage string documents --dedupe-candidates", /--dedupe-candidates/.test(finSrc.match(/function usage\(\)[\s\S]*?\n\}/)?.[0] || ""));
+  }
+
+  // AC-18, reproduced as a standing guard for the same reason G63d reproduces AC-12: a later
+  // phase editing one of these four caller skills would otherwise only be caught by a
+  // Phase-6-specific checks.yaml run, not by every L1 pass in between.
+  {
+    const AC18_PATHS = [
+      "skills/quality/review-loop", "skills/delivery/create-pr",
+      "skills/quality/polish", "skills/quality/review-changes",
+    ];
+    const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ...AC18_PATHS], { cwd: REPO_ROOT, encoding: "utf8" });
+    s.check("G66j AC-18's caller skills (review-loop/create-pr/polish/review-changes) are byte-unchanged vs. origin/main",
+      r.status === 0, r.status === null ? "git not found" : `git diff exit ${r.status}`);
+  }
+}
+
 process.exit(s.report() ? 0 : 1);
