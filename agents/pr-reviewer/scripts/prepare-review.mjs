@@ -87,13 +87,35 @@ export function scratchRoot() {
   return tmpdir();
 }
 
-export function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024 } = {}) {
+export function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024, env } = {}) {
   return new Promise((res) => {
-    execFile(cmd, args, { timeout: timeoutMs, cwd, maxBuffer, encoding: "utf8" }, (err, stdout, stderr) => {
+    execFile(cmd, args, { timeout: timeoutMs, cwd, maxBuffer, encoding: "utf8", env: env || process.env }, (err, stdout, stderr) => {
       res({ ok: !err, code: err ? (err.code ?? 1) : 0, stdout: stdout ?? "", stderr: stderr ?? "" });
     });
   });
 }
+
+/**
+ * A/B round 1 delta. Every `git` invocation below that talks to a remote
+ * (`clone`, `fetch`) passes these FIRST, before the subcommand — git's own
+ * `-c` ordering rule. Clearing `credential.helper` before re-setting it
+ * (rather than only appending a second one) matters: git tries every
+ * configured helper in order and stops at the first that answers, so an
+ * ambient one left in place (an expired keychain entry, a helper for a
+ * different host) can still win and either prompt or answer wrong. Routing
+ * through `gh auth git-credential` reuses whatever token `gh` is already
+ * authenticated with, so a private-repo fetch here needs no separate login.
+ */
+export const GIT_CREDENTIAL_ARGS = ["-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential"];
+
+/**
+ * `GIT_TERMINAL_PROMPT=0` is the belt to `GIT_CREDENTIAL_ARGS`' suspenders:
+ * if `gh` itself is not authenticated, git falls back to trying an
+ * interactive username/password prompt on a TTY nothing here is reading,
+ * which hangs the whole pipeline instead of failing the fetch. This env
+ * makes that failure immediate and visible in `stderr` instead.
+ */
+export const GIT_NONINTERACTIVE_ENV = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
 
 /**
  * Parse a PR reference into { repo, number }.
@@ -664,7 +686,11 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
       };
     }
 
-    const fetched = await run("git", ["fetch", "-q", "origin", `pull/${number}/head`], { timeoutMs });
+    const fetched = await run(
+      "git",
+      [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "origin", `pull/${number}/head`],
+      { timeoutMs, env: GIT_NONINTERACTIVE_ENV },
+    );
     if (fetched.ok) {
       const parent = mkdtempSync(join(scratchRoot(), "wt-"));
       const dir = join(parent, "w");
@@ -688,13 +714,14 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
   const cloneDir = mkdtempSync(join(scratchRoot(), "clone-"));
   const cloned = await run(
     "git",
-    ["clone", "-q", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
-    { timeoutMs: Math.max(timeoutMs, 120000) },
+    [...GIT_CREDENTIAL_ARGS, "clone", "-q", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
+    { timeoutMs: Math.max(timeoutMs, 120000), env: GIT_NONINTERACTIVE_ENV },
   );
   if (cloned.ok) {
-    await run("git", ["fetch", "-q", "--depth", "50", "origin", `pull/${number}/head`], {
+    await run("git", [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "--depth", "50", "origin", `pull/${number}/head`], {
       timeoutMs,
       cwd: cloneDir,
+      env: GIT_NONINTERACTIVE_ENV,
     });
     const co = await run("git", ["checkout", "-q", "--detach", headSha], { timeoutMs, cwd: cloneDir });
     if (co.ok) {
@@ -1437,6 +1464,32 @@ async function prepare(opts) {
 function selfTest() {
   const cases = [];
   const t = (name, fn) => cases.push([name, fn]);
+
+  // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no
+  // dependency-injection seam here, so the offline-feasible test is (1) the
+  // constants' own shape and (2) a source-level check — this file's own
+  // text — that every remote-touching `git` invocation actually spreads
+  // GIT_CREDENTIAL_ARGS and passes the non-interactive env, the same
+  // "read the real shipped source" idiom L1's cross-file guards use.
+  t("GIT_CREDENTIAL_ARGS clears the ambient credential.helper before setting gh's, in that order", () => {
+    return GIT_CREDENTIAL_ARGS[0] === "-c" && GIT_CREDENTIAL_ARGS[1] === "credential.helper="
+      && GIT_CREDENTIAL_ARGS[2] === "-c" && GIT_CREDENTIAL_ARGS[3] === "credential.helper=!gh auth git-credential";
+  });
+  t("GIT_NONINTERACTIVE_ENV sets GIT_TERMINAL_PROMPT=0 without dropping the rest of process.env", () => {
+    return GIT_NONINTERACTIVE_ENV.GIT_TERMINAL_PROMPT === "0"
+      && Object.keys(GIT_NONINTERACTIVE_ENV).length >= Object.keys(process.env).length;
+  });
+  t("every remote-touching git fetch/clone in this file's own source spreads GIT_CREDENTIAL_ARGS and passes GIT_NONINTERACTIVE_ENV", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    // One block per git-subprocess call whose array contains "fetch" or "clone" — each such
+    // call, up to its closing statement terminator, must carry both wires. worktree-add and
+    // checkout are deliberately excluded: neither touches a remote once the fetch above ran.
+    const remoteCalls = [...src.matchAll(/\brun\(\s*"git"[\s\S]*?\);/g)]
+      .map((m) => m[0])
+      .filter((block) => /"fetch"|"clone"/.test(block));
+    if (remoteCalls.length < 3) return false; // guard the guard: the extractor must find all three
+    return remoteCalls.every((block) => block.includes("GIT_CREDENTIAL_ARGS") && block.includes("GIT_NONINTERACTIVE_ENV"));
+  });
 
   t("parsePrRef reads a full URL", () => {
     const r = parsePrRef("https://github.com/mthines/agent-skills/pull/198");
