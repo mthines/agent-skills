@@ -224,13 +224,16 @@ continuously instead of jumping at two tier boundaries.
 3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.2, standard → 0.5, deep → 0.8.**
 
 **Risk floor.** A diff carrying a high-stakes shape (`auth`, `payments`, `schema-migration`,
-`secrets`, `infra`) floors the *effective* thoroughness at **0.5**, whatever `t` resolved to above —
-this guards only the override path: D7/D9 already route these shapes to `deep` (default `t = 0.8`)
-through `routeDepth()`, so the floor matters exactly when a low `--thoroughness` override or a
-repo-wide config default would otherwise under-review one.
+`secrets`, `infra`) **or** `impact.json`'s `blast_radius.band == "high"` floors the *effective*
+thoroughness at **0.5**, whatever `t` resolved to above — this guards only the override path:
+D7/D9 already route these shapes/bands to `deep` (default `t = 0.8`) through `routeDepth()`, so the
+floor matters exactly when a low `--thoroughness` override or a repo-wide config default would
+otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.3` on a band-high PR
+(61 exports), `consumer-impact` never activated (its own breakpoint is 0.5) and the run found nothing
+— the floor now catches this exactly as it already caught a high-stakes shape.
 
 **Breakpoints.** Chosen so the three tier defaults (0.2 / 0.5 / 0.8) reproduce today's per-tier
-behaviour exactly, on every lever but one (noted below):
+behaviour, on every lever but two (noted below):
 
 | Lever | `t < 0.4` | `0.4 ≤ t < 0.5` | `0.5 ≤ t < 0.7` | `0.7 ≤ t < 0.8` | `0.8 ≤ t < 0.95` | `t ≥ 0.95` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -240,14 +243,35 @@ behaviour exactly, on every lever but one (noted below):
 | Max verifier evidence tier | 1 | *(same)* | **2** | *(same)* | *(same)* | **3** |
 | Optimality lens | off | *(same)* | *(same)* | **on** | *(same)* | *(same)* |
 | Measurability lens | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
+| Holistic broad pass (Step 2.4) | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
 | Holistic escalation cap | `round(10t)` | *(same formula, every column)* | | | | |
 
 `round(10t)` is the one lever that does **not** land on the old flat "cap 10" at deep's 0.8 default —
 it gives 8. That is a deliberate, reported deviation: proportional scaling is what "escalation SCALES
-with thoroughness" means, and `--effort high` (`t = 1`) restores the old flat 10 exactly. Every other
-row reproduces the pre-delta quick/standard/deep behaviour bit-for-bit at `t = 0.2/0.5/0.8`, which is
-what `route-depth.mjs --self-test` asserts directly (fixture-free — the assertions are inline, since
-the whole point is that they never drift from the table above without the guard noticing).
+with thoroughness" means, and `--effort high` (`t = 1`) restores the old flat 10 exactly.
+
+**Holistic broad pass (item 3).** Step 2.4 used to run unconditionally — gated only by
+[`holistic-review.md`](../../shared/rules/holistic-review.md)'s five `TRIVIAL_SKIP` conditions, never
+by thoroughness — so whether a given budget intended it to run was ambiguous. `budget.holisticBroadPass`
+is the explicit lever: `t ≥ 0.4` (reusing the topology breakpoint — below it there is no parallel
+dispatch to run the pass as a sub-agent), **or always `true` when `routedTier == "deep"`**, regardless
+of any thoroughness override, the same "always on" carve-out the risk floor uses. This is a second
+deliberate, reported deviation from the pre-delta behaviour: at the very bottom of the quick tier
+(`t = 0.2`) the pass is now off where it previously always ran.
+
+Every other row reproduces the pre-delta quick/standard/deep behaviour bit-for-bit at `t = 0.2/0.5/0.8`,
+which is what `route-depth.mjs --self-test` asserts directly (fixture-free — the assertions are inline,
+since the whole point is that they never drift from the table above without the guard noticing).
+
+**Budget vs. capability (item 3).** A `deep`-thoroughness budget whose materialized workspace cannot
+support a finder is not a smaller budget — it is the same budget with that finder turned off, and the
+reason recorded rather than left ambiguous. `resolveBudget({ …, depthCapability })` deactivates
+`consumer-impact` (and sets its scope to `"none"`) whenever `depthCapability == "diff-only"`, per
+[`finder-consumer-impact.md`](./finder-consumer-impact.md)'s own exclusion, and appends a human-readable
+line to `budget.capabilityNotes[]` naming what was turned off and why. `dependency` and `standards`
+carry no such exclusion in their own rule files today and are unaffected. A/B round 2 observed this
+gap directly: under diff-only the pipeline still activated `consumer-impact`, which the finder's own
+rule excludes, and produced a fully wasted dispatch.
 
 **Topology and dispatch mechanics** — what "parallel, one message per finder" and "verification in
 `PR_REVIEW_MAX_PARALLEL`-capped batches" mean operationally, and the `RUN_ANOMALY` line for a run

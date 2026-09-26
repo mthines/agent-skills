@@ -176,6 +176,16 @@ export const EFFORT_HIGH_THOROUGHNESS = 1;
 const HIGH_STAKES_SHAPES = new Set(["auth", "payments", "schema-migration", "secrets", "infra"]);
 export const RISK_FLOOR = 0.5;
 
+/** A/B round 2 item 2: the original spec named `blast_radius.band == "high"`
+ *  (impact.json's own field — `resolveBudget`'s caller reads it as `i.band`,
+ *  the same shape `routeDepth`'s D9 already consumes) as a risk-floor input,
+ *  and it was missing — at `t=0.3` on a band-high PR (61 exports),
+ *  consumer-impact never activated (`T_FINDERS_MID` is 0.5) and the run found
+ *  nothing. `band == "high"` now floors exactly like a high-stakes SHAPE:
+ *  the floor is a safety net for an override on a diff D9 already routes to
+ *  `deep` by default, so it only bites when something asks for less than 0.5
+ *  anyway. */
+
 /** Breakpoints. Each is a `t >=` threshold. Chosen so the three tier defaults
  *  (0.2 / 0.5 / 0.8) reproduce today's per-tier behaviour on every lever
  *  EXCEPT the holistic-escalation cap, which is `round(10 * t)` by design —
@@ -192,17 +202,29 @@ const T_VERIFY_TIER_2 = 0.5;
 const T_VERIFY_TIER_3 = 0.95;
 const T_OPTIMALITY = 0.7;
 const T_MEASURABILITY = 0.4;
+/** A/B round 2 item 3: Step 2.4's holistic broad pass had no explicit lever —
+ *  it ran unconditionally (gated only by holistic-review.md's five
+ *  TRIVIAL_SKIP conditions, never by thoroughness), so whether it ran on a
+ *  given budget was ambiguous. `T_TOPOLOGY`'s own breakpoint (0.4) is reused
+ *  here deliberately: below it there is no parallel dispatch to run the pass
+ *  as a sub-agent, so tying the two together is not a second independent
+ *  guess. This is a reported, deliberate deviation from "always on" at the
+ *  very bottom of the quick tier (t=0.2) — `routedTier === "deep"` still
+ *  forces it on regardless of any override, same shape as the risk floor. */
+const T_HOLISTIC_BROAD = 0.4;
 
-/** @param {string[]} shape */
-function highStakesReason(shape) {
+/** @param {string[]} shape @param {string} band */
+function highStakesReason(shape, band) {
   const hit = (shape ?? []).find((s) => HIGH_STAKES_SHAPES.has(s));
-  return hit ?? null;
+  if (hit) return hit;
+  return band === "high" ? "blast_radius:high" : null;
 }
 
 /**
  * @typedef {{
  *   thoroughness?: number, routedTier?: "deep"|"standard"|"quick",
- *   shape?: string[], dispatchAvailable?: boolean, effortHigh?: boolean,
+ *   shape?: string[], band?: string, depthCapability?: string,
+ *   dispatchAvailable?: boolean, effortHigh?: boolean,
  * }} ResolveBudgetInput
  * @typedef {{
  *   effectiveThoroughness: number, requestedThoroughness: number,
@@ -212,7 +234,8 @@ function highStakesReason(shape) {
  *   finderScope: {"consumer-impact": "none"|"delta"|"all", standards: "none"|"delta"|"all"},
  *   correctnessVotes: 1|3|5, topology: "in-context"|"parallel",
  *   maxVerificationTier: 1|2|3, holisticEscalationCap: number,
- *   optimalityLens: boolean, measurabilityLens: boolean,
+ *   optimalityLens: boolean, measurabilityLens: boolean, holisticBroadPass: boolean,
+ *   capabilityNotes: string[],
  * }} Budget
  */
 
@@ -244,12 +267,35 @@ export function resolveBudget(i = {}) {
   }
 
   // --- risk floor ---
-  const floorReason = highStakesReason(shape);
+  const band = i.band ?? "none";
+  const floorReason = highStakesReason(shape, band);
   const riskFloorApplied = floorReason !== null && base < RISK_FLOOR;
   const t = riskFloorApplied ? RISK_FLOOR : base;
 
   const findersMid = t >= T_FINDERS_MID;
   const findersHigh = t >= T_FINDERS_HIGH;
+
+  // --- item 3: budget vs. capability. A `deep`-thoroughness budget whose
+  // materialized workspace cannot support a finder is not a smaller budget —
+  // it is the SAME budget with a finder that cannot run turned off, and the
+  // reason recorded rather than left ambiguous (A/B round 2 observed defect:
+  // "under diff-only it still activated consumer-impact, which
+  // finder-consumer-impact.md excludes"). Only consumer-impact excludes
+  // diff-only today (finder-consumer-impact.md § DEPTH_CAPABILITY = diff-only);
+  // dependency and standards carry no such exclusion in their own rule files.
+  const depthCapability = i.depthCapability;
+  /** @type {string[]} */
+  const capabilityNotes = [];
+  let consumerImpactActive = findersMid;
+  /** @type {"none"|"delta"|"all"} */
+  let consumerImpactScope = findersMid ? (findersHigh ? "all" : "delta") : "none";
+  if (depthCapability === "diff-only" && consumerImpactActive) {
+    consumerImpactActive = false;
+    consumerImpactScope = "none";
+    capabilityNotes.push(
+      "consumer-impact deactivated: DEPTH_CAPABILITY=diff-only (finder-consumer-impact.md excludes diff-only)",
+    );
+  }
 
   return {
     effectiveThoroughness: t,
@@ -261,12 +307,12 @@ export function resolveBudget(i = {}) {
       correctness: true,
       intent: true,
       quality: true,
-      "consumer-impact": findersMid,
+      "consumer-impact": consumerImpactActive,
       dependency: findersMid,
       standards: findersMid,
     },
     finderScope: {
-      "consumer-impact": findersMid ? (findersHigh ? "all" : "delta") : "none",
+      "consumer-impact": consumerImpactScope,
       standards: findersMid ? (findersHigh ? "all" : "delta") : "none",
     },
     correctnessVotes: t >= T_VOTES_5 ? 5 : t >= T_VOTES_3 ? 3 : 1,
@@ -275,6 +321,8 @@ export function resolveBudget(i = {}) {
     holisticEscalationCap: Math.round(10 * t),
     optimalityLens: t >= T_OPTIMALITY,
     measurabilityLens: t >= T_MEASURABILITY,
+    holisticBroadPass: t >= T_HOLISTIC_BROAD || i.routedTier === "deep",
+    capabilityNotes,
   };
 }
 
@@ -320,7 +368,10 @@ function selfTest() {
   if (q.effectiveThoroughness === 0.2 && q.correctnessVotes === 1 && q.topology === "in-context"
     && q.maxVerificationTier === 1 && q.optimalityLens === false && q.measurabilityLens === false
     && q.finders["consumer-impact"] === false && q.finders.dependency === false && q.finders.standards === false
-    && q.holisticEscalationCap === 2) passed++;
+    && q.holisticEscalationCap === 2
+    // Deliberate, reported deviation (item 3): today Step 2.4 ran unconditionally; the
+    // new explicit lever turns it off at quick's bottom-of-range default.
+    && q.holisticBroadPass === false) passed++;
   else fails.push(`resolveBudget(quick) drifted from today's quick budget: ${JSON.stringify(q)}`);
 
   total++;
@@ -329,7 +380,7 @@ function selfTest() {
     && st.maxVerificationTier === 2 && st.optimalityLens === false && st.measurabilityLens === true
     && st.finders["consumer-impact"] === true && st.finderScope["consumer-impact"] === "delta"
     && st.finders.standards === true && st.finderScope.standards === "delta"
-    && st.holisticEscalationCap === 5) passed++;
+    && st.holisticEscalationCap === 5 && st.holisticBroadPass === true) passed++;
   else fails.push(`resolveBudget(standard) drifted from today's standard budget: ${JSON.stringify(st)}`);
 
   total++;
@@ -337,8 +388,53 @@ function selfTest() {
   if (dp.effectiveThoroughness === 0.8 && dp.correctnessVotes === 3 && dp.topology === "parallel"
     && dp.maxVerificationTier === 2 && dp.optimalityLens === true && dp.measurabilityLens === true
     && dp.finderScope["consumer-impact"] === "all" && dp.finderScope.standards === "all"
-    && dp.holisticEscalationCap === 8) passed++;
+    && dp.holisticEscalationCap === 8 && dp.holisticBroadPass === true) passed++;
   else fails.push(`resolveBudget(deep) drifted from today's deep budget: ${JSON.stringify(dp)}`);
+
+  // ---- resolveBudget: holisticBroadPass "always on when routed deep" holds even
+  // under a low explicit override (a deep-routed PR with an under-thoroughness override
+  // must not lose the broad pass) ----
+  total++;
+  const deepLowOverride = resolveBudget({ thoroughness: 0.1, routedTier: "deep" });
+  if (deepLowOverride.holisticBroadPass === true) passed++;
+  else fails.push(`holisticBroadPass was not forced on for routedTier=deep under a low override: ${JSON.stringify(deepLowOverride)}`);
+
+  // ---- resolveBudget: risk floor — band high (item 2) ----
+  total++;
+  const bandFloored = resolveBudget({ thoroughness: 0.3, band: "high" });
+  if (bandFloored.riskFloorApplied === true && bandFloored.effectiveThoroughness === RISK_FLOOR
+    && bandFloored.riskFloorReason === "blast_radius:high"
+    && bandFloored.finders["consumer-impact"] === true) passed++;
+  else fails.push(`risk floor did not fire on blast_radius.band=high: ${JSON.stringify(bandFloored)}`);
+
+  total++;
+  const bandNotFloored = resolveBudget({ thoroughness: 0.8, band: "high" });
+  if (bandNotFloored.riskFloorApplied === false) passed++;
+  else fails.push(`risk floor fired on band=high when the override was already above the floor: ${JSON.stringify(bandNotFloored)}`);
+
+  total++;
+  const bandMedium = resolveBudget({ thoroughness: 0.1, band: "medium" });
+  if (bandMedium.riskFloorApplied === false) passed++;
+  else fails.push(`risk floor fired on band=medium, which is not in the floor's band set: ${JSON.stringify(bandMedium)}`);
+
+  // ---- resolveBudget: budget vs. capability (item 3) ----
+  total++;
+  const capBudget = resolveBudget({ routedTier: "deep", depthCapability: "diff-only" });
+  if (capBudget.finders["consumer-impact"] === false && capBudget.finderScope["consumer-impact"] === "none"
+    && capBudget.capabilityNotes.length === 1 && /diff-only/.test(capBudget.capabilityNotes[0])
+    // dependency/standards carry no diff-only exclusion in their own rule files — unaffected.
+    && capBudget.finders.dependency === true && capBudget.finders.standards === true) passed++;
+  else fails.push(`depthCapability=diff-only did not deactivate consumer-impact with a recorded reason: ${JSON.stringify(capBudget)}`);
+
+  total++;
+  const notCapped = resolveBudget({ routedTier: "deep", depthCapability: "checkout" });
+  if (notCapped.finders["consumer-impact"] === true && notCapped.capabilityNotes.length === 0) passed++;
+  else fails.push(`depthCapability=checkout wrongly deactivated a finder: ${JSON.stringify(notCapped)}`);
+
+  total++;
+  const cappedBelowMid = resolveBudget({ thoroughness: 0.3, depthCapability: "diff-only" });
+  if (cappedBelowMid.finders["consumer-impact"] === false && cappedBelowMid.capabilityNotes.length === 0) passed++;
+  else fails.push(`depthCapability=diff-only should be a no-op (and log nothing) when consumer-impact was already off: ${JSON.stringify(cappedBelowMid)}`);
 
   total++;
   const eh = resolveBudget({ effortHigh: true, routedTier: "deep" });
@@ -407,6 +503,7 @@ function selfTest() {
         [lo.holisticEscalationCap <= hi.holisticEscalationCap, "holisticEscalationCap regressed"],
         [!lo.optimalityLens || hi.optimalityLens, "optimalityLens regressed"],
         [!lo.measurabilityLens || hi.measurabilityLens, "measurabilityLens regressed"],
+        [!lo.holisticBroadPass || hi.holisticBroadPass, "holisticBroadPass regressed"],
       ];
       const broke = checks.find(([ok]) => !ok);
       if (broke) monotonicityBroken = `t=${grid[a]} -> t=${grid[b]}: ${broke[1]}`;
