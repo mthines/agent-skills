@@ -473,6 +473,41 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   };
 }
 
+/**
+ * D17: the `--fanout` orchestrator's candidate-merge step. Finder sub-agents each emit
+ * finders.md's PRE-verification candidate record (`finder`, `defect_class`, `path`, `line`,
+ * `symbol`, `claim`, `bad_outcome`, `evidence`, `severity_hint`, `fix`, `verify_by` — no
+ * `prefix`, no `body`, both of which are the VERIFIER's fields per judgments.schema.json). The
+ * orchestrator concatenates every finder's output and must merge cross-finder duplicates before
+ * spending verifier budget on the same defect twice — the exact job `finalize/dedupe.mjs`'s
+ * `dedupe()` already does for the post-verification pool inside `finalizeReview()`.
+ *
+ * Rather than a second dedupe implementation keyed on the pre-verification field names, this
+ * adapts the SAME module: `defect_class` stands in for `prefix` and `claim` stands in for `body`
+ * for identity purposes only (an exact `(path, line, defect_class)` match, or an adjacent-line
+ * `(path, line±2, defect_class, same 40-char claim prefix)` fuzzy match — `dedupe()`'s own two
+ * rules, unchanged), and the adapter fields are stripped back off before returning. `kept[0]` of
+ * an agreement group is whichever candidate appeared first in the merged array — orchestrator
+ * responsibility, not this function's: pass finder outputs in the table order
+ * (`finders.md`'s `correctness, consumer-impact, dependency, intent, standards, quality`) so the
+ * kept record is deterministic across runs.
+ * @param {any[]} candidates
+ * @returns {{ kept: any[], dropped: any[] }}
+ */
+export function dedupeCandidates(candidates) {
+  const adapted = candidates.map((c) => ({ ...c, prefix: c.defect_class, body: c.claim }));
+  const { kept, dropped } = dedupe(adapted);
+  const promoted = markAgreementPromoted(kept);
+  /** @param {any} c */
+  const strip = (c) => {
+    const rest = { ...c };
+    delete rest.prefix;
+    delete rest.body;
+    return rest;
+  };
+  return { kept: promoted.map(strip), dropped: dropped.map(strip) };
+}
+
 // ── CLI ──
 
 /** @param {string[]} argv */
@@ -488,7 +523,8 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]");
+  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]\n"
+    + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]");
 }
 
 // AC-11: the 5 report-body fixtures this replay drives — each backed by a
@@ -1076,6 +1112,61 @@ async function selfTest() {
       && JSON.stringify(Object.keys(r.findingsBusRecords[0]).sort()) === JSON.stringify([...FINDINGS_BUS_FIELDS].sort()));
   }
 
+  // D17: dedupeCandidates() — the --fanout orchestrator's candidate-merge step, operating on
+  // finders.md's PRE-verification record shape (no prefix, no body — claim/defect_class instead).
+  {
+    const finderCandidates = [
+      // correctness and consumer-impact both flag src/api/client.ts:88, same defect class,
+      // different wording — the exact cross-finder-agreement case dedupe() exists to catch.
+      { finder: "correctness", defect_class: "logic", path: "src/api/client.ts", line: 88, symbol: "earlyReturn", claim: "an early return may skip the audit log write and this is a real problem worth flagging", bad_outcome: "audit log silently drops entries", evidence: ["src/api/client.ts:88"], verify_by: "trace the branch" },
+      { finder: "consumer-impact", defect_class: "logic", path: "src/api/client.ts", line: 88, symbol: "earlyReturn", claim: "an early return may skip the audit log write and this is a real problem worth flagging", bad_outcome: "downstream consumer never sees the log entry", evidence: ["src/api/client.ts:88"], verify_by: "check callers" },
+      // dependency flags an unrelated file — never merges.
+      { finder: "dependency", defect_class: "breaking-api", path: "package.json", line: null, symbol: null, claim: "left-pad 1.x -> 2.x removes the default export", bad_outcome: "import crashes at load time", evidence: ["package.json"], verify_by: "read the changelog" },
+    ];
+    const { kept, dropped } = dedupeCandidates(finderCandidates);
+    check("cross-finder duplicates at adjacent lines with the same defect_class merge into one kept candidate",
+      kept.length === 2 && dropped.length === 1);
+    check("the kept, merged candidate records the dropped finder in _also_flagged_by",
+      kept.find((c) => c.finder === "correctness")?._also_flagged_by?.includes("consumer-impact"));
+    check("dedupeCandidates never leaks the prefix/body adapter fields back onto kept records",
+      kept.every((c) => !("prefix" in c) && !("body" in c)));
+    check("dedupeCandidates never leaks the prefix/body adapter fields back onto dropped records",
+      dropped.every((c) => !("prefix" in c) && !("body" in c)));
+    check("the unrelated dependency candidate on a different path never merges",
+      kept.some((c) => c.finder === "dependency" && c.path === "package.json"));
+    check("the merged-away duplicate still carries its own original claim/finder for audit",
+      dropped[0].finder === "consumer-impact" && dropped[0].claim.startsWith("an early return"));
+  }
+
+  // D17 CLI: `--dedupe-candidates <file> [--out <file>]` — the same merge, through the real
+  // process boundary an orchestrator actually invokes.
+  {
+    const dedupeDir = join(scratchRoot(), "finalize-dedupe-cli");
+    rmSync(dedupeDir, { recursive: true, force: true });
+    mkdirSync(dedupeDir, { recursive: true });
+    const candidatesPath = join(dedupeDir, "candidates.json");
+    writeFileSync(candidatesPath, JSON.stringify([
+      { finder: "correctness", defect_class: "nil-deref", path: "a.ts", line: 10, claim: "x may be null here", bad_outcome: "crash", evidence: ["a.ts:10"], verify_by: "read" },
+      { finder: "quality", defect_class: "nil-deref", path: "a.ts", line: 10, claim: "x may be null here", bad_outcome: "crash", evidence: ["a.ts:10"], verify_by: "read" },
+    ]));
+    const outPath = join(dedupeDir, "deduped.json");
+    const r = spawnSync(process.execPath, [
+      join(HERE, "finalize.mjs"), "--dedupe-candidates", candidatesPath, "--out", outPath,
+    ], { encoding: "utf8" });
+    check("finalize.mjs --dedupe-candidates exits 0", r.status === 0, (r.stderr || "").trim().slice(0, 300));
+    if (existsSync(outPath)) {
+      const parsed = JSON.parse(readFileSync(outPath, "utf8"));
+      check("--dedupe-candidates --out writes {kept, dropped} matching the same (path,line,defect_class) merge",
+        parsed.kept.length === 1 && parsed.dropped.length === 1);
+    }
+    // No --out: prints the same shape to stdout instead of writing a file.
+    const r2 = spawnSync(process.execPath, [
+      join(HERE, "finalize.mjs"), "--dedupe-candidates", candidatesPath,
+    ], { encoding: "utf8" });
+    check("finalize.mjs --dedupe-candidates with no --out exits 0 and prints JSON to stdout",
+      r2.status === 0 && (() => { try { const p = JSON.parse(r2.stdout); return p.kept.length === 1 && p.dropped.length === 1; } catch { return false; } })());
+  }
+
   // End-to-end CLI replay, shaped like ab/B/20230/1's real inputs (multi-line/markdown-link
   // thread asks, a thread this run resolves, a claim needing a built FP, an optimality card) —
   // spawns `finalize.mjs --context … --judgments … --out-dir …` as a REAL subprocess (the only
@@ -1297,6 +1388,33 @@ async function main() {
 
   if (opts["self-test"]) { await selfTest(); return; }
   if (opts["replay-fixtures"]) { await runReplayFixtures(); return; }
+
+  // D17: the --fanout orchestrator's candidate-merge step (skills/quality/pr-review/SKILL.md's
+  // `--fanout` orchestration, step d). Reads a JSON file — a raw array, or {candidates:[...]} —
+  // of finder-stage (pre-verification) candidate records concatenated across the parallel finder
+  // dispatch, and writes {kept, dropped} deduped by dedupeCandidates() above. Standalone: this
+  // branch runs before the --context/--judgments/--out-dir requirement below, because the
+  // orchestrator calls it BEFORE judgments.json exists at all.
+  if (opts["dedupe-candidates"]) {
+    const inPath = /** @type {string} */(opts["dedupe-candidates"]);
+    const raw = JSON.parse(readFileSync(inPath, "utf8"));
+    const candidates = Array.isArray(raw) ? raw : raw?.candidates;
+    if (!Array.isArray(candidates)) {
+      console.error("finalize.mjs --dedupe-candidates: input must be a JSON array or {candidates:[...]}");
+      process.exit(2);
+    }
+    const result = dedupeCandidates(candidates);
+    const text = JSON.stringify(result, null, 2);
+    if (typeof opts.out === "string") {
+      mkdirSync(dirname(opts.out), { recursive: true });
+      writeFileSync(opts.out, text);
+      console.log(`finalize: deduped ${candidates.length} candidate(s) -> ${result.kept.length} kept, `
+        + `${result.dropped.length} dropped -> ${opts.out}`);
+    } else {
+      console.log(text);
+    }
+    return;
+  }
 
   if (!opts.context || !opts.judgments || !opts["out-dir"]) {
     usage();
