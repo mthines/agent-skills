@@ -8906,13 +8906,15 @@ const isPollBlock = (block) =>
   // copy of the same check (same rationale as G64c/G65a-b: the check definition is
   // executor-immutable, but a standing L1 guard catches drift the moment the file changes,
   // without waiting for a Phase-4 checks.yaml run).
+  // AC-20/D12 (plan feat/pr-reviewer-shrink-fanout-ab): allowlist extended with the one new
+  // key `review_sha`, and >= 8 entries must carry a verified 40-hex value.
   const MANIFEST = join(REPO_ROOT, EVAL_DIR, "benchmarks/reviewer-ab.manifest.json");
   s.check("G65e reviewer-ab.manifest.json exists", existsSync(MANIFEST));
   if (existsSync(MANIFEST)) {
     /** @type {any} */
     const m = JSON.parse(readFileSync(MANIFEST, "utf8"));
     const entries = Array.isArray(m) ? m : m.entries;
-    const ALLOW = new Set(["repo", "number", "head_sha", "base_sha", "class", "status"]);
+    const ALLOW = new Set(["repo", "number", "head_sha", "base_sha", "review_sha", "class", "status"]);
     s.check("G65e manifest has 8-12 entries", Array.isArray(entries) && entries.length >= 8 && entries.length <= 12,
       String(entries?.length));
     s.check("G65e manifest covers >=5 of the 6 shape classes",
@@ -8921,6 +8923,9 @@ const isPollBlock = (block) =>
       entries.every((/** @type {any} */ e) => Object.keys(e).every((k) => ALLOW.has(k))));
     s.check("G65e every head_sha/base_sha is a full 40-char lowercase hex SHA",
       entries.every((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.head_sha) && /^[0-9a-f]{40}$/.test(e.base_sha)));
+    s.check("G65e >= 8 manifest entries carry a full 40-char lowercase hex review_sha",
+      entries.filter((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.review_sha || "")).length >= 8,
+      String(entries.filter((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.review_sha || "")).length));
   }
 }
 
@@ -9201,6 +9206,67 @@ const isPollBlock = (block) =>
     s.check("G80 finalize.mjs --self-test passes, including its own historical/--dry-run cases",
       r.status === 0 && /historical/i.test(out) && /dry_run/i.test(out),
       out.split("\n").slice(-6).join(" | "));
+  }
+}
+
+// ── G83: A/B readiness — manifest review_sha, plan/score subcommands, the runbook (D15, AC-20-23) ──
+//
+// The manifest allowlist + review_sha count is G65e's job (extended in place, not duplicated
+// here). This guard covers what G65e does not: the CLI surface (pick-review-sha/plan/score exist
+// and are routed), an end-to-end offline `plan` run against the REAL manifest (no live dispatch —
+// building matrix.json is pure filesystem + already-persisted review_sha values), and the runbook.
+{
+  const AB_PATH = join(REPO_ROOT, "scripts/eval/ab-review.mjs");
+  s.check("G83 ab-review.mjs exists", existsSync(AB_PATH));
+  if (existsSync(AB_PATH)) {
+    const src = readFileSync(AB_PATH, "utf8");
+    s.check("G83 ab-review.mjs routes pick-review-sha, plan, and score as CLI subcommands",
+      ['sub === "pick-review-sha"', 'sub === "plan"', 'sub === "score"'].every((needle) => src.includes(needle)));
+    s.check("G83 ab-review.mjs exports pickReviewSha, buildMatrix, and evaluateGate",
+      ["export function pickReviewSha(", "export function buildMatrix(", "export function evaluateGate("].every((needle) => src.includes(needle)));
+
+    const MANIFEST = join(REPO_ROOT, "scripts/eval/benchmarks/reviewer-ab.manifest.json");
+    if (existsSync(MANIFEST)) {
+      const scratch = mkdtempSync(join(tmpdir(), "g83-plan-"));
+      const r = spawnSync(process.execPath, [
+        AB_PATH, "plan", "--manifest", MANIFEST, "--worktree", REPO_ROOT, "--arms", "A,B", "--runs", "3", "--out", scratch,
+      ], { encoding: "utf8" });
+      const matrixPath = join(scratch, "matrix.json");
+      /** @type {any} */
+      let matrix = null;
+      try { matrix = existsSync(matrixPath) ? JSON.parse(readFileSync(matrixPath, "utf8")) : null; } catch { /* left null */ }
+      const dispatches = matrix?.dispatches;
+      s.check("G83 ab-review.mjs plan runs end to end against the real manifest and writes >= 48 dispatch(es)",
+        r.status === 0 && Array.isArray(dispatches) && dispatches.length >= 48,
+        `exit ${r.status}, ${Array.isArray(dispatches) ? dispatches.length : "no"} dispatches`);
+      s.check("G83 every planned dispatch is general-purpose, absolute-path, and carries --dry-run --isolated --review-sha",
+        Array.isArray(dispatches) && dispatches.every((/** @type {any} */ d) => {
+          const p = JSON.stringify(d);
+          return d.subagent_type === "general-purpose" && p.includes(REPO_ROOT)
+            && /--dry-run/.test(p) && /--isolated/.test(p) && /--review-sha [0-9a-f]{40}/.test(p)
+            && !/subagent_type\W+pr-reviewer/.test(p);
+        }));
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+
+  const README_PATH = join(REPO_ROOT, "scripts/eval/benchmarks/README.md");
+  s.check("G83 scripts/eval/benchmarks/README.md exists", existsSync(README_PATH));
+  if (existsSync(README_PATH)) {
+    const readme = readFileSync(README_PATH, "utf8");
+    const ANCHORS = [
+      ["names pick-review-sha", /pick-review-sha/],
+      ["names ab-review.mjs plan", /ab-review\.mjs plan/],
+      ["names ab-review.mjs score", /ab-review\.mjs score/],
+      ["names general-purpose as the arm dispatch type", /general-purpose/],
+      ["states the absolute-path arm rule", /absolute path/i],
+      ["cites the measured #205 cost figure (~2.8M tokens, arm C)", /2,?80[0-9],?[0-9]{3}|2\.8 ?M/],
+      ["states the read-only safety contract", /read-only/i],
+      ["states the zero-write dry-run contract", /zero.*write/i],
+    ];
+    for (const [label, re] of ANCHORS) {
+      s.check(`G83 runbook ${label}`, re.test(readme));
+    }
   }
 }
 

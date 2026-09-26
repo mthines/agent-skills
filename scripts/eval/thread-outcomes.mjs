@@ -32,8 +32,15 @@
  * labeled and still useful to `ab-review.mjs score`'s path/line-proximity
  * fallback match, per l2-detection.mjs's own `LINE_TOLERANCE` precedent.
  *
+ * `--at-sha <sha>` (D13) keeps only root comments whose `original_commit_id === sha` —
+ * the reviewed-commit boundary the A/B harness scores against — and every emitted label
+ * reports `original_line` (the anchor line AS OF that commit, distinct from `line`,
+ * which GitHub rewrites to the current-diff position and which a historical label must
+ * never use). Comments from any other commit are counted and reported as
+ * `excluded_other_commits`, never silently dropped.
+ *
  * Usage:
- *   node thread-outcomes.mjs --repo <owner/repo> --pr <number> --out <path.json>
+ *   node thread-outcomes.mjs --repo <owner/repo> --pr <number> --out <path.json> [--at-sha <sha>]
  *   node thread-outcomes.mjs --self-test
  */
 
@@ -67,6 +74,7 @@ export function classifyThread({ root, threadReplies, thread, touch, thumbsDownB
     fingerprint: fpInfo?.source === "marker" ? fpInfo.fp : null,
     path: commentPath || null,
     line: commentLine || null,
+    original_line: root.original_line ?? null,
     author: root.user?.login ?? null,
     is_bot: root.user?.type === "Bot",
   };
@@ -94,17 +102,32 @@ export function classifyThread({ root, threadReplies, thread, touch, thumbsDownB
 }
 
 /**
- * @param {{ repo: string, prNumber: string|number }} args
- * @returns {{ complete: boolean, labels: any[] }}
+ * Pure — D13's `--at-sha` boundary. A comment's `original_commit_id` is the commit its
+ * anchor was drawn against; keeping only the ones that equal `atSha` is what makes the
+ * label set describe the SAME commit the A/B harness dispatched a run against. Absent
+ * `atSha`, every root passes through untouched (the live-review path, unchanged).
+ * @param {any[]} roots @param {string|null|undefined} atSha
+ * @returns {{ kept: any[], excluded: number }}
  */
-export function extractOutcomes({ repo, prNumber }) {
+export function filterRootsAtSha(roots, atSha) {
+  if (!atSha) return { kept: roots, excluded: 0 };
+  const kept = roots.filter((r) => r.original_commit_id === atSha);
+  return { kept, excluded: roots.length - kept.length };
+}
+
+/**
+ * @param {{ repo: string, prNumber: string|number, atSha?: string }} args
+ * @returns {{ complete: boolean, labels: any[], at_sha: string|null, excluded_other_commits: number }}
+ */
+export function extractOutcomes({ repo, prNumber, atSha }) {
   const { complete, byRootComment } = fetchReviewThreads({ repo, prNumber });
   if (!complete) {
-    return { complete: false, labels: [] };
+    return { complete: false, labels: [], at_sha: atSha || null, excluded_other_commits: 0 };
   }
 
   const allComments = ghApiAll(`/repos/${repo}/pulls/${prNumber}/comments`);
-  const roots = allComments.filter((c) => !c.in_reply_to_id);
+  const allRoots = allComments.filter((c) => !c.in_reply_to_id);
+  const { kept: roots, excluded: excludedOtherCommits } = filterRootsAtSha(allRoots, atSha);
   const replies = allComments.filter((c) => !!c.in_reply_to_id);
 
   /** @type {any[]} */
@@ -129,7 +152,7 @@ export function extractOutcomes({ repo, prNumber }) {
     labels.push(classifyThread({ root, threadReplies, thread, touch, thumbsDownBy: null }));
   }
 
-  return { complete: true, labels };
+  return { complete: true, labels, at_sha: atSha || null, excluded_other_commits: excludedOtherCommits };
 }
 
 // ── CLI ──
@@ -199,6 +222,28 @@ async function selfTest() {
     check("a human comment with no marker still yields a record with fingerprint: null, not a crash", r.fingerprint === null && r.is_bot === false);
   }
 
+  // --at-sha filtering (D13, AC-22)
+  {
+    const root = { id: 8, path: "a.ts", line: 10, original_line: 7, body: "issue: x", user: { login: "cursor", type: "Bot" }, created_at: "2026-01-01T00:00:00Z" };
+    const thread = { isResolved: false, isOutdated: false };
+    const r = classifyThread({ root, threadReplies: [], thread, touch: { touched: false, granularity: "file" }, thumbsDownBy: null });
+    check("classifyThread's record reports original_line distinct from the rewritten current-diff line", r.original_line === 7 && r.line === 10);
+  }
+  {
+    const roots = [
+      { id: 1, original_commit_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", original_line: 5 },
+      { id: 2, original_commit_id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", original_line: 9 },
+    ];
+    const { kept, excluded } = filterRootsAtSha(roots, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    check("--at-sha filtering keeps only roots whose original_commit_id matches and counts the rest as excluded_other_commits",
+      kept.length === 1 && kept[0].original_line === 5 && excluded === 1);
+  }
+  {
+    const roots = [{ id: 1, original_commit_id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }];
+    const { kept, excluded } = filterRootsAtSha(roots, null);
+    check("no --at-sha leaves every root untouched (the live-review path)", kept.length === 1 && excluded === 0);
+  }
+
   // Read-only surface: no mutation verb anywhere in this file's own source.
   {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
@@ -214,7 +259,7 @@ async function selfTest() {
 }
 
 function usage() {
-  console.error("usage: thread-outcomes.mjs --repo <owner/repo> --pr <number> --out <path.json> | --self-test");
+  console.error("usage: thread-outcomes.mjs --repo <owner/repo> --pr <number> --out <path.json> [--at-sha <sha>] | --self-test");
 }
 
 async function main() {
@@ -228,17 +273,21 @@ async function main() {
     process.exit(2);
   }
 
-  const { complete, labels } = extractOutcomes({ repo: /** @type {string} */(opts.repo), prNumber: /** @type {string} */(opts.pr) });
+  const atSha = /** @type {string|undefined} */ (opts["at-sha"]);
+  const { complete, labels, excluded_other_commits: excludedOtherCommits } = extractOutcomes({
+    repo: /** @type {string} */(opts.repo), prNumber: /** @type {string} */(opts.pr), atSha,
+  });
   if (!complete) {
     console.error("thread-outcomes: thread-state walk incomplete — refusing to write a partial labels file (mirrors record-comment-relevance.mjs's own sweep guard).");
     process.exit(1);
   }
 
-  writeFileSync(/** @type {string} */(opts.out), JSON.stringify({ repo: opts.repo, pr: opts.pr, labels }, null, 2));
+  writeFileSync(/** @type {string} */(opts.out), JSON.stringify({ repo: opts.repo, pr: opts.pr, at_sha: atSha || null, labels }, null, 2));
   const fixed = labels.filter((l) => l.outcome === "fixed").length;
   const declined = labels.filter((l) => l.outcome === "declined").length;
   const unlabeled = labels.filter((l) => l.outcome === null).length;
-  console.log(`thread-outcomes: ${labels.length} thread(s) — ${fixed} fixed, ${declined} declined, ${unlabeled} unlabeled → ${opts.out}`);
+  const atShaSuffix = atSha ? `, at-sha ${atSha} (${excludedOtherCommits} excluded_other_commits)` : "";
+  console.log(`thread-outcomes: ${labels.length} thread(s) — ${fixed} fixed, ${declined} declined, ${unlabeled} unlabeled${atShaSuffix} → ${opts.out}`);
 }
 
 import { readFileSync } from "node:fs";
