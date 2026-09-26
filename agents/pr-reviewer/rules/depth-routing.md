@@ -245,10 +245,24 @@ behaviour, on every lever but two (noted below):
 | Measurability lens | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
 | Holistic broad pass (Step 2.4) | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
 | Holistic escalation cap | `round(10t)` | *(same formula, every column)* | | | | |
+| Tool-call budget multiplier | ×1 | *(same)* | *(same)* | *(same)* | **×1.5** | **×2** |
 
 `round(10t)` is the one lever that does **not** land on the old flat "cap 10" at deep's 0.8 default —
 it gives 8. That is a deliberate, reported deviation: proportional scaling is what "escalation SCALES
 with thoroughness" means, and `--effort high` (`t = 1`) restores the old flat 10 exactly.
+
+**Tool-call budget (A/B iterations 1–3).** `pr-reviewer.md § Stop conditions` sizes the run's
+tool-call budget by changed-file count — 30 for ≤ 10 files, 60 for 11–30, 100 for > 30 — and
+`resolveBudget({ …, changedFiles })` multiplies that band by `budget.toolCallMultiplier` and returns
+the result as `budget.toolCalls`, which `prepare-review.mjs` writes into `context.json`.
+Before this lever, every thoroughness paid for its extra finders, votes, and lenses out of the same
+calls.
+On sync-tray#72 (22 files), arms at `t = 0.8` skipped whole files to stay inside 60: one declared a
+partial review after reading 13 of 22 files, and the file it only grepped held the
+highest-severity corroborated defect, which the `t = 0.8` arm missed in all three rounds.
+This is the third deliberate, reported deviation from the pre-delta defaults: `deep`'s default
+(`t = 0.8`) now allows 90 calls on an 11–30-file diff instead of 60.
+The budget is a ceiling, never a target, so a run that finishes early spends nothing extra.
 
 **Holistic broad pass (item 3).** Step 2.4 used to run unconditionally — gated only by
 [`holistic-review.md`](../../shared/rules/holistic-review.md)'s five `TRIVIAL_SKIP` conditions, never

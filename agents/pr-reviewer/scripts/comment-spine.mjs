@@ -54,6 +54,10 @@ export const PROSE_MAX = 200;
 export const UNVERIFIED_MAX = 40;
 export const EVIDENCE_MAX = 180;
 export const EVIDENCE_REFS_MAX = 3;
+/** Words in one evidence reference's parenthetical note. A/B rounds 3 and 5: render-comment.mjs
+ *  enforced 5 as a literal that `--shape-caps` never printed, so verifiers that pasted the caps
+ *  still wrote 6–9-word notes and spent a self-check round on each (7 rejections in round 5). */
+export const EVIDENCE_NOTE_MAX_WORDS = 5;
 export const FENCE_MAX_LINES = 10;
 export const GATE_DETAILS_MAX = 120;
 
@@ -514,7 +518,8 @@ export function shapeCapsBlock() {
       + " followed by whitespace or end-of-string — a dotted filename or version number"
       + " (`foo.md`, `3.2.6`) does not count, in backticks or bare; this is a reader-facing style"
       + " rule now (backtick code symbols for readability), not a counting workaround.",
-    `- EVIDENCE line: <= ${EVIDENCE_MAX} chars, <= ${EVIDENCE_REFS_MAX} references.`,
+    `- EVIDENCE line: <= ${EVIDENCE_MAX} chars, <= ${EVIDENCE_REFS_MAX} references; each reference's`
+      + ` note is a parenthetical of <= ${EVIDENCE_NOTE_MAX_WORDS} words.`,
     `- Fix fence: <= ${FENCE_MAX_LINES} lines, one per comment, must declare a language.`,
     `- UNVERIFIED reason: <= ${UNVERIFIED_MAX} chars.`,
     "- No markdown heading or list marker opening the body. No markdown link inside TITLE/BODY —",

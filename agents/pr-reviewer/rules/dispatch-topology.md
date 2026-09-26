@@ -132,6 +132,12 @@ unaffected by dispatch availability and is read straight off `context.json`.
 `plan-dispatch.mjs --verifier-batches` planned — at most `VERIFY_BATCH_MAX` (8) candidates, no two
 sharing a `path` — sent at most `PR_REVIEW_MAX_PARALLEL` (6) per message.
 **When `budget.topology == "in-context"`:** sequential, in the orchestrator's own turn.
+The orchestrator is then its own verifier, so it takes the same two steps a verifier dispatch does:
+read `comment-spine.mjs --shape-caps` once before writing any candidate's `title`, `body`, or
+`evidence_anchors`, and run `validate-judgments.mjs --shape-only` on its candidates before
+`finalize.mjs`, under the same 2-round bound.
+In A/B rounds 3–5 the in-context arms skipped both and spent up to four validate rounds on
+evidence notes over the cap.
 
 **No-dispatch fallback is a degrade, not a silent equivalence — name it.** `resolveBudget()` already
 returns `topology: "in-context"` whenever `dispatchAvailable` is `false`, whatever thoroughness

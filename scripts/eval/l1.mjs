@@ -9698,6 +9698,48 @@ const isPollBlock = (block) =>
     s.check("G84j dispatch-topology.md says to pass --no-dispatch to finalize.mjs rather than hand-write the line",
       /Set it by passing \*\*`--no-dispatch`\*\* to `finalize\.mjs`, never by hand-writing it\./.test(dt));
   }
+  // G84k (A/B round 5 → iteration 3): the tool-call budget scales with thoroughness. It scaled
+  // with file count only, so t=0.8/1.0 arms paid for extra finders, votes and lenses out of the
+  // same 60 calls and skipped whole files — the t=0.8 arm missed the highest-severity corroborated
+  // defect in all three rounds, and in round 5 had only grepped the file that holds it.
+  {
+    const RD = join(REPO_ROOT, "agents/pr-reviewer/scripts/route-depth.mjs");
+    const rdSrc = readFileSync(RD, "utf8");
+    s.check("G84k route-depth.mjs exports TOOL_CALL_BANDS (30/60/100) and returns toolCallMultiplier + toolCalls",
+      /export const TOOL_CALL_BANDS/.test(rdSrc) && /\{ maxFiles: 10, calls: 30 \}/.test(rdSrc)
+        && /\{ maxFiles: 30, calls: 60 \}/.test(rdSrc) && /\{ maxFiles: Infinity, calls: 100 \}/.test(rdSrc)
+        && /toolCallMultiplier,\n\s+toolCalls:/.test(rdSrc));
+    const st = spawnSync(process.execPath, [RD, "--self-test"], { encoding: "utf8" });
+    s.check("G84k route-depth.mjs --self-test passes, including the tool-call budget case and its monotonicity",
+      st.status === 0 && !/tool-call budget drifted|toolCallMultiplier regressed/.test(st.stdout || ""),
+      (st.stdout || st.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+    const pr = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
+    s.check("G84k prepare-review.mjs passes changedFiles into resolveBudget, so context.budget.toolCalls is a number",
+      /changedFiles: files\.length,\n\s+\}\);/.test(pr));
+    const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+    s.check("G84k pr-reviewer.md's Stop conditions read budget.toolCalls rather than a fixed band",
+      /- Tool-call budget: \*\*30\*\* calls[^\n]*read `budget\.toolCalls` off `context\.json`/.test(body));
+    const dr = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md"), "utf8");
+    s.check("G84k depth-routing.md's breakpoint table carries the tool-call multiplier row (×1 / ×1.5 at 0.8 / ×2 at 0.95)",
+      /\| Tool-call budget multiplier \| ×1 \| \*\(same\)\* \| \*\(same\)\* \| \*\(same\)\* \| \*\*×1\.5\*\* \| \*\*×2\*\* \|/.test(dr));
+
+    // Second iteration-3 fix: render-comment.mjs enforced a 5-word evidence-note cap that
+    // `--shape-caps` never printed, so verifiers that pasted the caps still broke it (7 rejections
+    // in round 5). One constant, printed by --shape-caps, enforced by the renderer.
+    const cs = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "utf8");
+    const rc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-comment.mjs"), "utf8");
+    s.check("G84k the evidence-note word cap is one exported constant the renderer uses (no literal 5)",
+      /export const EVIDENCE_NOTE_MAX_WORDS = \d+;/.test(cs) && /length > EVIDENCE_NOTE_MAX_WORDS\)/.test(rc)
+        && !/split\(\/\\s\+\/\)\.length > 5\)/.test(rc));
+    const caps = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "--shape-caps"], { encoding: "utf8" });
+    const capWords = /export const EVIDENCE_NOTE_MAX_WORDS = (\d+);/.exec(cs)?.[1];
+    s.check("G84k --shape-caps prints the evidence-note word cap verifiers are held to",
+      caps.status === 0 && Boolean(capWords) && (caps.stdout || "").includes(`note is a parenthetical of <= ${capWords} words`));
+    const dt2 = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
+    s.check("G84k dispatch-topology.md makes an in-context orchestrator read --shape-caps and self-check like a verifier",
+      /The orchestrator is then its own verifier/.test(dt2) && /read `comment-spine\.mjs --shape-caps` once/.test(dt2));
+  }
+
 
 
 }

@@ -33,7 +33,7 @@ import { readFileSync } from "node:fs";
 import { marker, isFingerprintV2 } from "./fingerprint.mjs";
 import {
   TIERS, TIER_GLYPH, CONV_PREFIXES, CLAIM_PREFIXES,
-  TITLE_MAX, PROSE_MAX, EVIDENCE_MAX, EVIDENCE_REFS_MAX, FENCE_MAX_LINES, SHA7, UNVERIFIED_MAX,
+  TITLE_MAX, PROSE_MAX, EVIDENCE_MAX, EVIDENCE_REFS_MAX, EVIDENCE_NOTE_MAX_WORDS, FENCE_MAX_LINES, SHA7, UNVERIFIED_MAX,
   footerLine, fixButton, anchor, assertPlain, assertNoStructure, assertAbsent, sentenceCount,
   assertPostable,
 } from "./comment-spine.mjs";
@@ -220,10 +220,11 @@ function build(data) {
       if (e.note !== undefined && e.note !== null && String(e.note).trim() !== "") {
         const note = String(e.note).trim();
         assertPlain(`${where}.note`, note);
-        // A parenthetical, not a second argument. Five words is the bound the rule states; a
-        // longer one turns the citation list into the prose it was carved out of.
-        if (note.split(/\s+/).length > 5) {
-          bad(`${where}.note is ${note.split(/\s+/).length} words, over the 5-word parenthetical`
+        // A parenthetical, not a second argument. EVIDENCE_NOTE_MAX_WORDS is the bound the rule
+        // states (and `--shape-caps` prints); a longer one turns the citation list into the prose
+        // it was carved out of.
+        if (note.split(/\s+/).length > EVIDENCE_NOTE_MAX_WORDS) {
+          bad(`${where}.note is ${note.split(/\s+/).length} words, over the ${EVIDENCE_NOTE_MAX_WORDS}-word parenthetical`
             + ` cap (got: ${note})`);
         }
         ref += ` (${note})`;

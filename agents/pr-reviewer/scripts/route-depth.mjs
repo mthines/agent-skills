@@ -213,6 +213,20 @@ const T_MEASURABILITY = 0.4;
  *  forces it on regardless of any override, same shape as the risk floor. */
 const T_HOLISTIC_BROAD = 0.4;
 
+/** A/B iterations 1–3 (sync-tray#72, 22 files): the tool-call budget scaled with FILE COUNT only
+ *  (pr-reviewer.md § Stop conditions), so every thoroughness paid for its extra finders, votes and
+ *  lenses out of the same 60 calls. Arms at t=0.8 skipped whole files to stay inside it — one
+ *  declared a partial review after reading 13 of 22 files, and the file it only grepped held the
+ *  highest-severity corroborated defect, which that arm missed in all three rounds. The budget is
+ *  a ceiling, not a target, so raising it costs nothing on a run that does not need it. */
+export const TOOL_CALL_BANDS = Object.freeze([
+  { maxFiles: 10, calls: 30 },
+  { maxFiles: 30, calls: 60 },
+  { maxFiles: Infinity, calls: 100 },
+]);
+const T_TOOLCALLS_1_5 = 0.8;
+const T_TOOLCALLS_2 = 0.95;
+
 /** @param {string[]} shape @param {string} band */
 function highStakesReason(shape, band) {
   const hit = (shape ?? []).find((s) => HIGH_STAKES_SHAPES.has(s));
@@ -224,7 +238,7 @@ function highStakesReason(shape, band) {
  * @typedef {{
  *   thoroughness?: number, routedTier?: "deep"|"standard"|"quick",
  *   shape?: string[], band?: string, depthCapability?: string,
- *   dispatchAvailable?: boolean, effortHigh?: boolean,
+ *   dispatchAvailable?: boolean, effortHigh?: boolean, changedFiles?: number,
  * }} ResolveBudgetInput
  * @typedef {{
  *   effectiveThoroughness: number, requestedThoroughness: number,
@@ -235,6 +249,7 @@ function highStakesReason(shape, band) {
  *   correctnessVotes: 1|3|5, topology: "in-context"|"parallel",
  *   maxVerificationTier: 1|2|3, holisticEscalationCap: number,
  *   optimalityLens: boolean, measurabilityLens: boolean, holisticBroadPass: boolean,
+ *   toolCallMultiplier: 1|1.5|2, toolCalls: number|null,
  *   capabilityNotes: string[],
  * }} Budget
  */
@@ -297,6 +312,9 @@ export function resolveBudget(i = {}) {
     );
   }
 
+  /** @type {1|1.5|2} */
+  const toolCallMultiplier = t >= T_TOOLCALLS_2 ? 2 : t >= T_TOOLCALLS_1_5 ? 1.5 : 1;
+
   return {
     effectiveThoroughness: t,
     requestedThoroughness: base,
@@ -322,8 +340,17 @@ export function resolveBudget(i = {}) {
     optimalityLens: t >= T_OPTIMALITY,
     measurabilityLens: t >= T_MEASURABILITY,
     holisticBroadPass: t >= T_HOLISTIC_BROAD || i.routedTier === "deep",
+    toolCallMultiplier,
+    toolCalls: typeof i.changedFiles === "number" && Number.isFinite(i.changedFiles) && i.changedFiles >= 0
+      ? Math.round(toolCallBand(i.changedFiles) * toolCallMultiplier) : null,
     capabilityNotes,
   };
+}
+
+/** @param {number} changedFiles @returns {number} the base call budget for that many files */
+export function toolCallBand(changedFiles) {
+  const band = TOOL_CALL_BANDS.find((b) => changedFiles <= b.maxFiles);
+  return (band ?? TOOL_CALL_BANDS[TOOL_CALL_BANDS.length - 1]).calls;
 }
 
 /* --------------------------------- self-test --------------------------------- */
@@ -480,6 +507,22 @@ function selfTest() {
   if (noInput.effectiveThoroughness === 1 && typeof noInput.inputError === "string") passed++;
   else fails.push(`no thoroughness and no routedTier did not fail closed to maximum scrutiny: ${JSON.stringify(noInput)}`);
 
+  // ---- resolveBudget: tool-call budget scales with thoroughness (A/B iterations 1–3) ----
+  total++;
+  {
+    const q22 = resolveBudget({ routedTier: "quick", changedFiles: 22 });
+    const s22 = resolveBudget({ routedTier: "standard", changedFiles: 22 });
+    const d22 = resolveBudget({ routedTier: "deep", changedFiles: 22 });
+    const c22 = resolveBudget({ effortHigh: true, routedTier: "deep", changedFiles: 22 });
+    const d5 = resolveBudget({ routedTier: "deep", changedFiles: 5 });
+    const d40 = resolveBudget({ routedTier: "deep", changedFiles: 40 });
+    const unknown = resolveBudget({ routedTier: "deep" });
+    if (q22.toolCalls === 60 && s22.toolCalls === 60 && d22.toolCalls === 90 && c22.toolCalls === 120
+      && d5.toolCalls === 45 && d40.toolCalls === 150 && unknown.toolCalls === null
+      && q22.toolCallMultiplier === 1 && d22.toolCallMultiplier === 1.5 && c22.toolCallMultiplier === 2) passed++;
+    else fails.push(`tool-call budget drifted: ${JSON.stringify({ q: q22.toolCalls, s: s22.toolCalls, d: d22.toolCalls, c: c22.toolCalls, d5: d5.toolCalls, d40: d40.toolCalls, u: unknown.toolCalls })}`);
+  }
+
   // ---- resolveBudget: monotonicity — for any t1 < t2, budget(t2) is a
   // superset of budget(t1) on every lever. No lever may ever regress as
   // thoroughness rises. ----
@@ -504,6 +547,7 @@ function selfTest() {
         [!lo.optimalityLens || hi.optimalityLens, "optimalityLens regressed"],
         [!lo.measurabilityLens || hi.measurabilityLens, "measurabilityLens regressed"],
         [!lo.holisticBroadPass || hi.holisticBroadPass, "holisticBroadPass regressed"],
+        [lo.toolCallMultiplier <= hi.toolCallMultiplier, "toolCallMultiplier regressed"],
       ];
       const broke = checks.find(([ok]) => !ok);
       if (broke) monotonicityBroken = `t=${grid[a]} -> t=${grid[b]}: ${broke[1]}`;
