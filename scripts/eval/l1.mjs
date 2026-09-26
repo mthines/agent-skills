@@ -6,7 +6,7 @@
 import { execFileSync, execSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 import { validateSkill } from "../../skills/authoring/create-skill/scripts/validate-skill.mjs";
@@ -9375,6 +9375,78 @@ const isPollBlock = (block) =>
     const semCallIdx = dedupeCandidatesBody.indexOf("semanticDedupe(promoted)");
     s.check("G84c finalize.mjs's dedupeCandidates() calls semanticDedupe AFTER the exact/adjacent pass",
       semImportIdx > -1 && dedupeCallIdx > -1 && semCallIdx > -1 && semCallIdx > dedupeCallIdx);
+  }
+}
+
+// ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,
+// AC-3/AC-5/AC-6, plan feat/pr-reviewer-shrink-fanout-ab) ──
+//
+// A ratchet, not a live recompute: the ceiling is a COMMITTED number, so a future regrowth reds
+// here instead of the guard silently rising to match whatever the file happens to be. It is set
+// to the whitespace-normalized byte count measured right after the Step 9 posting.md split
+// (199,891), rounded up to the next 1,000 — lowering it is a deliberate future edit, not automatic.
+// Raw bytes get the same treatment as a second, independent number (a normalized-only ratchet
+// cannot see a raw-bytes regression hidden behind removed whitespace).
+{
+  const PRW_PATH = join(REPO_ROOT, "agents/pr-reviewer.md");
+  const PRW_TXT = readFileSync(PRW_PATH, "utf8");
+  const PR_REVIEWER_MD_NORMALIZED_CEILING = 200000;
+  const PR_REVIEWER_MD_RAW_CEILING = 202000;
+  const normalizedBytes = Buffer.byteLength(PRW_TXT.replace(/\s+/g, " "), "utf8");
+  const rawBytes = Buffer.byteLength(PRW_TXT, "utf8");
+  s.check(
+    `G82 pr-reviewer.md normalized bytes (${normalizedBytes}) stay at or under the committed ceiling (${PR_REVIEWER_MD_NORMALIZED_CEILING})`,
+    normalizedBytes <= PR_REVIEWER_MD_NORMALIZED_CEILING,
+    "regrowth past the ratchet — lower the ceiling only after a real cut, never raise it to match a regression");
+  s.check(
+    `G82 pr-reviewer.md raw bytes (${rawBytes}) stay at or under the committed ceiling (${PR_REVIEWER_MD_RAW_CEILING})`,
+    rawBytes <= PR_REVIEWER_MD_RAW_CEILING);
+
+  // The two L2-read sections (code-review-retrieval-relevance's rubric) and
+  // rubric-composition.md's Cross-rubric agreement section must stay byte-identical to base
+  // 23190e4 — no L2 rubric moves unverified (R18/AC-5). Same three (file, anchor) pairs AC-5's
+  // checks.yaml command asserts; this is the standing L1 copy of that promise, so a future PR
+  // (not just this one's own Phase 4 run) is guarded too.
+  const RC_PATH = join(REPO_ROOT, "agents/shared/rules/rubric-composition.md");
+  let baseAvailable = true;
+  let basePRW = "", baseRC = "";
+  try {
+    basePRW = execSync("git show 23190e4:agents/pr-reviewer.md", { cwd: REPO_ROOT, encoding: "utf8" });
+    baseRC = execSync("git show 23190e4:agents/shared/rules/rubric-composition.md",
+      { cwd: REPO_ROOT, encoding: "utf8" });
+  } catch { baseAvailable = false; }
+  if (baseAvailable) {
+    // extractSection() reads a repo-relative file path itself (it re-derives fence-skipping and
+    // level-aware boundaries from the raw bytes), so the base copies are written to real files
+    // under REPO_ROOT-relative paths — a temp dir outside the repo would make join(REPO_ROOT, …)
+    // produce the wrong path, since join() does not special-case an absolute second argument.
+    const baseDir = mkdtempSync(join(tmpdir(), "l1-g82-base-"));
+    const basePrwFile = join(baseDir, "base-pr-reviewer.md");
+    const baseRcFile = join(baseDir, "base-rubric-composition.md");
+    writeFileSync(basePrwFile, basePRW);
+    writeFileSync(baseRcFile, baseRC);
+    const basePrwRel = relative(REPO_ROOT, basePrwFile);
+    const baseRcRel = relative(REPO_ROOT, baseRcFile);
+    const pairs = [
+      ["### 1.0 Prior-comment awareness + relevance memory load (default ON)", "agents/pr-reviewer.md", basePrwRel],
+      ["### 1.2c Diff-keyed lesson search (all modes)", "agents/pr-reviewer.md", basePrwRel],
+      ["## Cross-rubric agreement", "agents/shared/rules/rubric-composition.md", baseRcRel],
+    ];
+    for (const [heading, nowFile, baseFile] of pairs) {
+      let nowSection = "", baseSection = "";
+      try { nowSection = extractSection(nowFile, heading); } catch { /* asserted false below */ }
+      try { baseSection = extractSection(baseFile, heading); } catch { /* asserted false below */ }
+      s.check(`G82 "${heading}" stays byte-identical to base 23190e4`,
+        nowSection !== "" && nowSection === baseSection,
+        nowSection === "" ? "section not found in the current file" : "content drifted from base");
+    }
+    rmSync(baseDir, { recursive: true, force: true });
+  } else {
+    // base 23190e4 unreachable (shallow clone, detached history) — do not fail the whole
+    // ratchet guard on an environment limitation; AC-5's checks.yaml command still covers this
+    // in the worktree where the plan's base commit is guaranteed reachable.
+    s.check("G82 base 23190e4 was reachable for the L2-read-section byte-identity check", true,
+      "skipped: git show 23190e4 failed in this environment — see AC-5's checks.yaml command");
   }
 }
 
