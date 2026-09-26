@@ -160,6 +160,63 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
 }
 
 /**
+ * Item 4 (A/B round 2): `QUALITY_DROPPED` (render-report.mjs's `OPTIONAL_SCALARS`, "Dropped — …")
+ * was defined on the renderer side since the field's introduction, but `finalize.mjs` never
+ * computed it — a caller-supplied `context.render.QUALITY_DROPPED` was the only way it was ever
+ * populated. `confidenceDropped` (a candidate whose score never cleared even the near-miss defer
+ * band) and `anchorless` (a candidate whose proposed line failed validation) are both fully
+ * disposed of by `finalizeReview()`'s own pipeline but were invisible in the rendered output —
+ * the direct cause of the "candidate lost from the report" defect: a real run's final=67.5,
+ * severity=low candidate landed in `confidenceDropped` (balanced profile: threshold 90, defer
+ * floor 75, 67.5 < 75) and simply never appeared anywhere.
+ * @param {{ confidenceDropped: any[], anchorless: any[] }} args
+ * @returns {string|null}
+ */
+export function buildAutoQualityDropped({ confidenceDropped, anchorless }) {
+  const parts = [];
+  if (confidenceDropped.length > 0) parts.push(`${confidenceDropped.length} below-bar`);
+  if (anchorless.length > 0) parts.push(`${anchorless.length} anchorless`);
+  return parts.length ? parts.join(", ") : null;
+}
+
+/**
+ * Item 4 (A/B round 2): fails CLOSED when any candidate in the raw `judgments.candidates` array
+ * ends with zero or more than one disposition. `buckets` maps a disposition LABEL to the array of
+ * candidates that landed there; every entry in every array must carry the `_orig_index` tag
+ * `finalizeReview()` applies to the raw array before any spread/filter/dedupe runs. This is a
+ * structural invariant check (the pipeline is already exhaustive/disjoint by construction, traced
+ * bucket-by-bucket in `finalizeReview()`'s own comment above the call site) — its job is to keep
+ * that invariant load-bearing rather than incidental, so a future change that breaks it fails the
+ * run instead of silently dropping (or double-counting) a finding.
+ * @param {number} total
+ * @param {Record<string, any[]>} buckets
+ */
+export function assertEveryCandidateDisposed(total, buckets) {
+  /** @type {Map<number, string[]>} */
+  const seenBy = new Map();
+  for (const [label, items] of Object.entries(buckets)) {
+    for (const c of items) {
+      if (typeof c?._orig_index !== "number") {
+        throw new Error(`finalizeReview: a candidate in bucket "${label}" carries no _orig_index — the disposition-completeness check cannot account for it (candidate: ${JSON.stringify(c).slice(0, 200)})`);
+      }
+      const existing = seenBy.get(c._orig_index) || [];
+      existing.push(label);
+      seenBy.set(c._orig_index, existing);
+    }
+  }
+  /** @type {string[]} */
+  const problems = [];
+  for (let i = 0; i < total; i++) {
+    const labels = seenBy.get(i);
+    if (!labels || labels.length === 0) problems.push(`candidate[${i}]: no disposition — silently dropped`);
+    else if (labels.length > 1) problems.push(`candidate[${i}]: ${labels.length} dispositions (${labels.join(", ")}) — double-counted`);
+  }
+  if (problems.length > 0) {
+    throw new Error(`finalizeReview: disposition-completeness check failed (fails closed rather than silently dropping a finding):\n${problems.join("\n")}`);
+  }
+}
+
+/**
  * ab/B/20230/2's explicit ask: a finalize-level cross-check that FAILS CLOSED — the write-plan
  * (the artifact a caller actually posts to GitHub from) must never carry a claim-comment count
  * that disagrees with what the SAME payload's FINDINGS table (and QUALITY's `posted inline N`,
@@ -262,7 +319,21 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     if (f && typeof f.filename === "string") patches[f.filename] = f.patch || "";
   }
 
-  const { kept: dedupedKept, dropped: dedupeDropped } = dedupe(judgments?.candidates || []);
+  // Item 4 (A/B round 2): every candidate must end with exactly one disposition. `_orig_index`
+  // is tagged once, on the raw array, and threads through every downstream spread (`{...c}`) the
+  // rest of this pipeline already uses — checked, not assumed, by
+  // assertEveryCandidateDisposed()'s own self-test below.
+  const rawCandidates = (judgments?.candidates || [])
+    .map((/** @type {any} */ c, /** @type {number} */ i) => ({ ...c, _orig_index: i }));
+
+  // A candidate the verifier CONTRADICTED never enters scoring at all — it is disposed as
+  // "contradicted" before dedupe, rather than left to clear or defer on its score alone (which is
+  // what the pipeline did before this delta: `finalizeReview()` never read `.verdict`, so a
+  // contradicted candidate with a high self-reported score could still post inline).
+  const contradicted = rawCandidates.filter((/** @type {any} */ c) => c.verdict === "contradicted");
+  const scorable = rawCandidates.filter((/** @type {any} */ c) => c.verdict !== "contradicted");
+
+  const { kept: dedupedKept, dropped: dedupeDropped } = dedupe(scorable);
   const promoted = markAgreementPromoted(dedupedKept);
 
   /** @type {any[]} */
@@ -359,6 +430,25 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   const inlineNonClaimsSet = new Set(inline.filter((f) => !CLAIM_PREFIXES.has(f.prefix)));
   const inlineClaims = inline.filter((f) => CLAIM_PREFIXES.has(f.prefix));
   const inlineNonClaims = lineValidated.filter((f) => inlineNonClaimsSet.has(f));
+
+  // Item 4 (A/B round 2): fail-closed disposition-completeness check. Every candidate in
+  // judgments.candidates must land in EXACTLY one bucket: posted inline, deferred/less-certain,
+  // below-bar-dropped, suppressed, contradicted, or merged. This is the fix for the observed
+  // defect — a final=67.5, severity=low candidate (balanced profile: threshold 90, defer floor
+  // max(90-15,50)=75; 67.5 < 75 -> "drop") ended up in `confidenceDropped`, which was silently
+  // computed and NEVER surfaced anywhere (no QUALITY count, no report line) — appearing in
+  // neither the report's Less-certain section nor its counts, exactly as observed. The pipeline
+  // was already structurally exhaustive/disjoint by construction (traced bucket-by-bucket below);
+  // this assertion makes that invariant load-bearing rather than incidental, so a future change
+  // that breaks it fails the run instead of silently dropping a finding.
+  assertEveryCandidateDisposed(rawCandidates.length, {
+    "posted inline": inline,
+    "deferred": [...advisoryDeferred, ...overCapDeferred],
+    "below-bar-dropped": [...confidenceDropped, ...anchorless],
+    "suppressed": suppressed,
+    "contradicted": contradicted,
+    "merged": dedupeDropped,
+  });
 
   // AC-11/D5: report-rendering.md's PARTIAL_REVIEW banner ({calls, scanned, total},
   // scanned < total) means the code-review finders never finished a pass — Gate 6 renders
@@ -459,10 +549,20 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     skippedFiles: context?.render?.SKIPPED_FILES,
   };
 
+  // Item 4: the literal fix for the vanishing-candidate defect — confidenceDropped and
+  // anchorless were computed all along but NEVER passed to the renderer under any field. Only
+  // emitted when non-empty, so the huge majority of runs (nothing dropped) get no new "Dropped —"
+  // line and every existing report-body fixture stays byte-identical. `context.render.QUALITY_DROPPED`
+  // still wins when the caller hand-supplies one (the existing passthrough precedent RUN_ANOMALY uses).
+  const autoQualityDropped = buildAutoQualityDropped({ confidenceDropped, anchorless });
+
   const extras = {
     ...(context?.render || {}),
     RUN_ANOMALY: context?.render?.RUN_ANOMALY ?? autoRunAnomaly,
     MEMORIES_USED: context?.render?.MEMORIES_USED ?? memoryUsed,
+    ...(context?.render?.QUALITY_DROPPED === undefined && autoQualityDropped !== null
+      ? { QUALITY_DROPPED: autoQualityDropped }
+      : {}),
     // BUILT from judgments.lenses.optimality_cards' structured fields (buildOptimalityCard), never
     // `card.markdown ?? card` — see buildOptimalityCard's own docstring for why the pass-through
     // was wrong (arm B's first live run, ab/B/20230/1/meta.json).
@@ -491,6 +591,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     gates,
     dedupeDropped,
     confidenceDropped,
+    contradicted,
     advisoryDeferred,
     suppressed,
     anchorless,
@@ -1232,6 +1333,80 @@ async function selfTest() {
     const judgments = { candidates: [mkCandidate({ final: 95 })], gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
     const r = finalizeReview({ context: baseContext, judgments });
     check("finalize never violates cleared - suppressed - anchorless - deferred == posted", r.identityHolds === true);
+  }
+
+  // Item 4 (A/B round 2) — the reproduction fixture: a final=67.5, severity=low issue: candidate.
+  // balanced profile: threshold("low")=90, deferFloor(90)=max(90-15,50)=75; 67.5 < 75 -> "drop"
+  // (confidenceDropped), exactly the real defect's shape. Before this delta it vanished — no
+  // report line, no count, nowhere. After: it is named in QUALITY_DROPPED, and the
+  // disposition-completeness check accounts for it without throwing.
+  {
+    const judgments = {
+      candidates: [mkCandidate({ final: 67.5, severity: "low", prefix: "issue" })],
+      gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "",
+    };
+    const r = finalizeReview({ context: baseContext, judgments });
+    check("the 67.5/low reproduction: candidate lands in confidenceDropped, not inline or deferred",
+      r.confidenceDropped.length === 1 && r.inline.length === 0 && r.advisoryDeferred.length === 0);
+    check("the 67.5/low reproduction: QUALITY_DROPPED now names it (\"1 below-bar\") instead of vanishing",
+      r.payload.QUALITY_DROPPED === "1 below-bar");
+  }
+
+  // assertEveryCandidateDisposed: pure unit coverage on the six-bucket disposition contract.
+  {
+    const c = (/** @type {number} */ i) => ({ _orig_index: i });
+    check("three candidates, each in exactly one bucket, passes", (() => {
+      try {
+        assertEveryCandidateDisposed(3, { "posted inline": [c(0)], "deferred": [c(1)], "merged": [c(2)] });
+        return true;
+      } catch { return false; }
+    })());
+    check("a candidate present in NO bucket throws (silently dropped)", (() => {
+      try {
+        assertEveryCandidateDisposed(2, { "posted inline": [c(0)] });
+        return false;
+      } catch (e) { return /no disposition/.test(/** @type {Error} */(e).message); }
+    })());
+    check("a candidate present in TWO buckets throws (double-counted)", (() => {
+      try {
+        assertEveryCandidateDisposed(1, { "posted inline": [c(0)], "suppressed": [c(0)] });
+        return false;
+      } catch (e) { return /double-counted/.test(/** @type {Error} */(e).message); }
+    })());
+    check("a candidate object with no _orig_index throws rather than silently mis-accounting", (() => {
+      try {
+        assertEveryCandidateDisposed(1, { "posted inline": [{ path: "a.ts" }] });
+        return false;
+      } catch (e) { return /no _orig_index/.test(/** @type {Error} */(e).message); }
+    })());
+  }
+
+  // buildAutoQualityDropped: the QUALITY_DROPPED formatter, pure.
+  {
+    check("buildAutoQualityDropped returns null when nothing was dropped (no line rendered)",
+      buildAutoQualityDropped({ confidenceDropped: [], anchorless: [] }) === null);
+    check("buildAutoQualityDropped names below-bar alone",
+      buildAutoQualityDropped({ confidenceDropped: [{}, {}], anchorless: [] }) === "2 below-bar");
+    check("buildAutoQualityDropped names anchorless alone",
+      buildAutoQualityDropped({ confidenceDropped: [], anchorless: [{}] }) === "1 anchorless");
+    check("buildAutoQualityDropped names both when both are non-empty",
+      buildAutoQualityDropped({ confidenceDropped: [{}], anchorless: [{}, {}] }) === "1 below-bar, 2 anchorless");
+  }
+
+  // Item 4: a verifier-contradicted candidate never scores, clears, or posts — it is disposed as
+  // "contradicted" and excluded from the pipeline entirely (a real latent gap this delta closes:
+  // finalizeReview() never read `.verdict` before, so a contradicted candidate with a high
+  // self-reported score could still have cleared and posted inline).
+  {
+    const judgments = {
+      candidates: [mkCandidate({ final: 95, verdict: "contradicted" })],
+      gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "",
+    };
+    const r = finalizeReview({ context: baseContext, judgments });
+    check("a contradicted-verdict candidate never posts inline despite a high score",
+      r.inline.length === 0 && r.contradicted.length === 1);
   }
 
   // AC-19: findings-bus writer record shape.
