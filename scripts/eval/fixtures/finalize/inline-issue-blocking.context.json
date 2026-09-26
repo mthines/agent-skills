@@ -1,0 +1,12 @@
+{
+  "mode": "full",
+  "head_sha": "7389036",
+  "delta_lines": 10,
+  "files": [
+    {
+      "filename": "src/triggers/kinds.ts",
+      "patch": "@@ -5,1 +5,1 @@\n+x"
+    }
+  ],
+  "threads": []
+}

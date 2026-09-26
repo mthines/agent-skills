@@ -398,10 +398,28 @@ function main() {
     // A report claiming a deep review while rendering an incremental mode is the exact class of
     // internal contradiction this renderer exists to make unrepresentable. zero-delta is exempt:
     // it is a mode with no tier of its own (the gates ran, no finder did).
+    //
+    // ONE carve-out, and it is the capability cap's own mirror image: DEPTH_CAPABILITY ==
+    // diff-only caps an otherwise-`deep` tier at `standard` (route-depth.mjs's `capApplied`,
+    // depth-routing.md § Capability cap) — a `full`-mode first run against a fork PR whose
+    // workspace ladder never materialized a checkout is the ordinary way this fires, not an
+    // edge case. Without the carve-out this check and the `RUN.depth diff-only cannot carry
+    // RUN.tier deep` check below are jointly unsatisfiable: EVERY tier value fails one or the
+    // other, so a legitimately capped run can never be rendered at all (pr-reviewer deterministic
+    // pipeline, R4/D10, Risk "diff-only cap unrenderable in full mode"). The carve-out is narrow
+    // by construction — exactly `expected: deep, actual: standard, depth: diff-only` — so it
+    // cannot be used to smuggle an unrelated tier/mode mismatch through, and it MUST be
+    // accompanied by RUN_ANOMALY naming the cap (checked below): a capped depth is not a silent
+    // one.
     const expected = TIER_FOR_MODE[run.mode];
-    if (expected && String(run.tier) !== expected) {
+    const cappedFromDeep = expected === "deep" && String(run.tier) === "standard" && String(run.depth) === "diff-only";
+    if (expected && String(run.tier) !== expected && !cappedFromDeep) {
       fail(`RUN.tier ${JSON.stringify(run.tier)} contradicts RUN.mode ${JSON.stringify(run.mode)}`
         + ` — mode ${run.mode} is tier ${expected}`);
+    }
+    if (cappedFromDeep && !data.RUN_ANOMALY) {
+      fail("RUN.tier=standard capped from the mode's usual deep under RUN.depth=diff-only requires"
+        + " RUN_ANOMALY naming the capability cap — a capped depth is not a silent one");
     }
     runLine += ` · tier ${run.tier}`;
   }
@@ -988,8 +1006,22 @@ function main() {
     headline = "### ✅ No issues found";
   } else {
     const gates = failing + warning;
+    // ab/B/20230/2: "No findings" is correct on its own terms (FINDINGS is the claim-severity
+    // table, and zero `issue:`/`suggestion:` findings cleared) — but rendered alone, next to a
+    // real write-plan comment for a cleared `nitpick:`/`question:` one-liner that earns no table
+    // row, it reads as "nothing happened" when something did. `ADDITIONAL_FINDINGS_SECTION`
+    // already renders right below this headline whenever that array is non-empty (report-
+    // rendering.md's own placeholder-omission rule) — this only makes the headline itself point at
+    // it, rather than leaving a reader to notice the accordion on their own. No fixture exercises
+    // this exact combination (verdict FAIL/WARN, zero FINDINGS, non-empty ADDITIONAL_FINDINGS) —
+    // every existing FAIL/WARN report-body fixture has FINDINGS.length > 0 — so this is additive,
+    // never a change to a pinned byte.
+    const additionalCount = arr("ADDITIONAL_FINDINGS").length;
+    const additionalNote = additionalCount > 0
+      ? ` (${additionalCount} more note${additionalCount === 1 ? "" : "s"} below)`
+      : "";
     headline = `### ${VERDICT_GLYPH[verdict]} No findings — ${gates} gate${gates === 1 ? "" : "s"}`
-      + " need attention";
+      + ` need attention${additionalNote}`;
   }
 
   const summary = String(data.SUMMARY).trim();

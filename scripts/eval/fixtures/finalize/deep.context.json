@@ -1,0 +1,131 @@
+{
+  "mode": "full",
+  "head_sha": "a1b2c3d",
+  "delta_lines": 12,
+  "routing": {
+    "tier": "deep"
+  },
+  "workspace": {
+    "depthCapability": "checkout"
+  },
+  "files": [
+    {
+      "filename": "src/store/local.ts",
+      "patch": "@@ -96,1 +96,1 @@\n+x"
+    },
+    {
+      "filename": "src/store/index.ts",
+      "patch": "@@ -18,1 +18,1 @@\n+x"
+    },
+    {
+      "filename": "src/store/filter.ts",
+      "patch": "@@ -235,1 +235,1 @@\n+x"
+    },
+    {
+      "filename": "src/store/index.test.ts",
+      "patch": "@@ -12,1 +12,1 @@\n+x"
+    },
+    {
+      "filename": "src/legacy",
+      "patch": "@@ -1,1 +1,1 @@\n+x"
+    }
+  ],
+  "threads": [
+    {
+      "thread_id": "t9",
+      "path": "src/jobs/sync.ts",
+      "line": 88,
+      "url": "https://github.com/o/r/pull/1#discussion_r9",
+      "root_body": "issue: `retryRequest` now throws where it returned `null` (blocking)",
+      "author": "cursor",
+      "is_bot": true,
+      "replies": [
+        {
+          "author": "human-author"
+        }
+      ]
+    }
+  ],
+  "render": {
+    "at": "2026-09-03T09:12:00Z",
+    "RUN_NOTE": "blast_radius=high \u00b7 semver_delta=major",
+    "RUN_ANOMALY": "a base-branch merge polluted the compare range; reviewed the PR's own 44-file diff, not the 130-commit range",
+    "IMPACT": {
+      "telemetry": "production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`)",
+      "symbols": [
+        {
+          "name": "retryRequest",
+          "path": "src/api/client.ts",
+          "change": "signature",
+          "consumer_files": 14,
+          "verified_unaffected": 13,
+          "findings": 1
+        },
+        {
+          "name": "parseConfig",
+          "path": "src/config/load.ts",
+          "change": "body",
+          "consumer_files": 4,
+          "verified_unaffected": 4,
+          "findings": 0
+        }
+      ],
+      "dependencies": [
+        {
+          "name": "stripe",
+          "from": "14.2.0",
+          "to": "16.0.1",
+          "delta": "major",
+          "usage_sites": 6,
+          "url": "https://github.com/stripe/stripe-node/releases/tag/v16.0.0"
+        }
+      ],
+      "overlaps": [
+        {
+          "pr": 212,
+          "author": "alice",
+          "path": "src/api/client.ts",
+          "symbol": "retryRequest",
+          "url": "https://github.com/o/r/pull/212"
+        }
+      ]
+    },
+    "WITHHELD": [
+      {
+        "prefix": "suggestion",
+        "path": "src/auth/session.ts",
+        "line": 22,
+        "body": "`internal-sdk` 3.1.0 \u2192 4.0.0 is a major bump; the 4 usage sites are worth confirming against the upgrade notes before merge.",
+        "reason": "upstream release notes unreachable from this runner"
+      }
+    ],
+    "MEMORIES_SUMMARY": "48 indexed",
+    "MEMORIES_USED": [
+      {
+        "kind": "knowledge",
+        "key": "knowledge::retryRequest@src/api/client.ts",
+        "url": "https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22",
+        "note": "4 facts, verified at 9f8e7d6 (re-verified this run: 4/4)"
+      },
+      {
+        "kind": "hotspot",
+        "key": "hotspot::src/api/client.ts",
+        "note": "hot \u2014 5 confirmed, 1 missed, 90 d"
+      },
+      {
+        "kind": "rule",
+        "key": "rule::correctness:nil-deref:-@src/legacy",
+        "note": "suppress, active",
+        "evidence": [
+          88,
+          91,
+          97
+        ]
+      }
+    ],
+    "CI_NOTE": "3 checks pending on `a1b2c3d`.",
+    "QUALITY_DROPPED": "relevance 1 \u00b7 dedupe 2 \u00b7 grounding 0 \u00b7 verifier contradicted 2 \u00b7 shape 0",
+    "INTEGRATIONS": "not activated",
+    "SKIPPED_FILES": "none"
+  }
+}

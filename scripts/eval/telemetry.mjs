@@ -13,6 +13,14 @@
 // over `fetch` is a small enough surface to own — the same call this repo's sibling
 // projects make from their own self-contained exporters.
 //
+// The wire-format encoder and the exporter mechanics (span tree, sum/gauge/
+// histogram metrics, the flush) live in `agents/pr-reviewer/scripts/otlp.mjs`
+// (pr-reviewer deterministic pipeline, D7) — `review-telemetry.mjs` shares the
+// same encoder rather than a second copy. This file keeps its own API and its
+// own `--self-test` unchanged; it now BUILDS on the shared exporter instead of
+// implementing it, so it owns only what is eval-specific: the GitHub Actions /
+// VCS resource attributes and the eval-specific histogram bucket bounds.
+//
 // SHAPE (one flush, at exit — a batch process has no reason to stream):
 //
 //   trace   eval.run                     (INTERNAL) whole invocation
@@ -45,49 +53,10 @@
 // FAILURE POLICY: every export error is swallowed and reported to stderr only. An
 // eval must never go red because a telemetry backend was unreachable — the accuracy
 // number is the product, the span is the receipt.
-import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
+import { attrs, parseKv, OtlpExporter } from "../../agents/pr-reviewer/scripts/otlp.mjs";
 
-const HEX = (bytes) => randomBytes(bytes).toString("hex");
-const nowNs = () => String(BigInt(Date.now()) * 1_000_000n);
-
-/** Per-request export budget. Two posts per flush (traces, then metrics), so the
- *  worst case a dead ingress can cost the run is twice this. */
-const POST_TIMEOUT_MS = 10_000;
-
-/** OTLP/JSON AnyValue. Numbers split on integer-ness: an intValue for a count, a
- *  doubleValue for a rate — collapsing both to double loses the distinction and
- *  makes token counts render as 1.0e4 downstream. */
-function anyValue(v) {
-  if (typeof v === "boolean") return { boolValue: v };
-  if (typeof v === "number") {
-    if (!Number.isFinite(v)) return null; // NaN/Infinity has no OTLP encoding — omit.
-    return Number.isInteger(v) ? { intValue: String(v) } : { doubleValue: v };
-  }
-  if (typeof v === "string") return { stringValue: v };
-  return { stringValue: String(v) };
-}
-
-/** Encode an attribute bag, DROPPING null/undefined keys rather than emitting a
- *  placeholder — an absent attribute is queryable as absent, "unknown" is not. */
-export function attrs(bag) {
-  const out = [];
-  for (const [key, raw] of Object.entries(bag)) {
-    if (raw === null || raw === undefined || raw === "") continue;
-    const value = anyValue(raw);
-    if (value) out.push({ key, value });
-  }
-  return out;
-}
-
-function parseKv(s) {
-  const out = {};
-  for (const pair of (s || "").split(",")) {
-    const i = pair.indexOf("=");
-    if (i > 0) out[pair.slice(0, i).trim()] = pair.slice(i + 1).trim();
-  }
-  return out;
-}
+export { attrs };
 
 const HIST_BOUNDS = {
   // seconds — a classification call is ~0.5–5s; the tail is what a timeout looks like
@@ -96,32 +65,12 @@ const HIST_BOUNDS = {
   "gen_ai.client.token.usage": [16, 64, 256, 1024, 4096, 16384, 65536],
 };
 
-class Histogram {
-  constructor(bounds) { this.bounds = bounds; this.count = 0; this.sum = 0; this.buckets = new Array(bounds.length + 1).fill(0); this.min = null; this.max = null; }
-  record(v) {
-    this.count++; this.sum += v;
-    this.min = this.min === null ? v : Math.min(this.min, v);
-    this.max = this.max === null ? v : Math.max(this.max, v);
-    let i = 0;
-    while (i < this.bounds.length && v > this.bounds[i]) i++;
-    this.buckets[i]++;
-  }
-}
-
-export class EvalTelemetry {
+export class EvalTelemetry extends OtlpExporter {
   constructor(env = process.env) {
-    this.endpoint = (env.OTEL_EXPORTER_OTLP_ENDPOINT || "").replace(/\/+$/, "");
-    this.enabled = this.endpoint !== "";
-    this.headers = { "content-type": "application/json", ...parseKv(env.OTEL_EXPORTER_OTLP_HEADERS) };
-    this.traceId = HEX(16);
-    this.spans = [];
-    this.sums = new Map();      // key -> { name, unit, points: Map<attrKey, {attributes, value}> }
-    this.gauges = [];
-    this.hists = new Map();     // "name|attrKey" -> { name, unit, attributes, hist }
-    this.startNs = nowNs();
-
+    const endpoint = env.OTEL_EXPORTER_OTLP_ENDPOINT || "";
+    const headers = parseKv(env.OTEL_EXPORTER_OTLP_HEADERS);
     const svc = env.OTEL_SERVICE_NAME || "evals";
-    this.resource = attrs({
+    const resource = {
       "service.name": svc,
       "service.namespace": "agent-skills",
       "service.version": env.GITHUB_SHA ? env.GITHUB_SHA.slice(0, 7) : null,
@@ -135,145 +84,11 @@ export class EvalTelemetry {
       "vcs.ref.head.name": env.GITHUB_HEAD_REF || env.GITHUB_REF_NAME,
       "vcs.ref.head.revision": env.GITHUB_SHA,
       ...parseKv(env.OTEL_RESOURCE_ATTRIBUTES),
-    });
-  }
-
-  /** Open a span. Returns a handle; call `.end({...attrs})` to close it.
-   *  A no-op handle is returned when telemetry is off, so callers need no `if`. */
-  span(name, { parent = null, kind = 1, attributes = {} } = {}) {
-    if (!this.enabled) return { spanId: null, end: () => {}, fail: () => {} };
-    const spanId = HEX(8);
-    const rec = {
-      traceId: this.traceId, spanId, parentSpanId: parent || undefined,
-      name, kind, startTimeUnixNano: nowNs(), endTimeUnixNano: null,
-      attributes: attrs(attributes), status: { code: 0 },
     };
-    this.spans.push(rec);
-    const t0 = performance.now();
-    return {
-      spanId,
-      durationS: () => (performance.now() - t0) / 1000,
-      end: (extra = {}) => {
-        rec.endTimeUnixNano = nowNs();
-        rec.attributes = rec.attributes.concat(attrs(extra));
-      },
-      fail: (message, extra = {}) => {
-        rec.endTimeUnixNano = nowNs();
-        rec.attributes = rec.attributes.concat(attrs({ "error.type": "export_or_api_error", ...extra }));
-        rec.status = { code: 2, message: String(message).slice(0, 300) };
-      },
-    };
+    super({ endpoint, headers, resource, scopeName: "agent-skills/evals", histBounds: HIST_BOUNDS });
   }
 
-  count(name, value, attributes = {}, unit = "1") {
-    if (!this.enabled) return;
-    if (!this.sums.has(name)) this.sums.set(name, { name, unit, points: new Map() });
-    const s = this.sums.get(name);
-    const encoded = attrs(attributes);
-    const k = JSON.stringify(encoded);
-    if (!s.points.has(k)) s.points.set(k, { attributes: encoded, value: 0 });
-    s.points.get(k).value += value;
-  }
-
-  gauge(name, value, attributes = {}, unit = "1") {
-    if (!this.enabled || !Number.isFinite(value)) return;
-    this.gauges.push({ name, unit, attributes: attrs(attributes), value });
-  }
-
-  histogram(name, value, attributes = {}, unit = "1") {
-    if (!this.enabled || !Number.isFinite(value)) return;
-    const encoded = attrs(attributes);
-    const k = `${name}|${JSON.stringify(encoded)}`;
-    if (!this.hists.has(k)) this.hists.set(k, { name, unit, attributes: encoded, hist: new Histogram(HIST_BOUNDS[name] || [1, 10, 100, 1000]) });
-    this.hists.get(k).hist.record(value);
-  }
-
-  /** OTLP ExportTraceServiceRequest. Exposed for the self-test. */
-  tracePayload() {
-    return {
-      resourceSpans: [{
-        resource: { attributes: this.resource },
-        scopeSpans: [{
-          scope: { name: "agent-skills/evals", version: "1" },
-          // A span left open by a crash gets closed at flush time rather than
-          // dropped: a truncated trace still shows where the run died.
-          spans: this.spans.map((s) => ({ ...s, endTimeUnixNano: s.endTimeUnixNano || nowNs() })),
-        }],
-      }],
-    };
-  }
-
-  /** OTLP ExportMetricsServiceRequest. Exposed for the self-test. */
-  metricPayload() {
-    const time = nowNs();
-    const metrics = [];
-    for (const s of this.sums.values()) {
-      metrics.push({
-        name: s.name, unit: s.unit,
-        sum: {
-          // DELTA: this process reports its own run's counts, not a running total.
-          aggregationTemporality: 1, isMonotonic: true,
-          dataPoints: [...s.points.values()].map((p) => ({
-            attributes: p.attributes, startTimeUnixNano: this.startNs, timeUnixNano: time, asInt: String(p.value),
-          })),
-        },
-      });
-    }
-    for (const g of this.gauges) {
-      metrics.push({ name: g.name, unit: g.unit, gauge: { dataPoints: [{ attributes: g.attributes, timeUnixNano: time, asDouble: g.value }] } });
-    }
-    for (const h of this.hists.values()) {
-      metrics.push({
-        name: h.name, unit: h.unit,
-        histogram: {
-          aggregationTemporality: 1,
-          dataPoints: [{
-            attributes: h.attributes, startTimeUnixNano: this.startNs, timeUnixNano: time,
-            count: String(h.hist.count), sum: h.hist.sum,
-            bucketCounts: h.hist.buckets.map(String), explicitBounds: h.hist.bounds,
-            min: h.hist.min, max: h.hist.max,
-          }],
-        },
-      });
-    }
-    if (metrics.length === 0) return null;
-    return { resourceMetrics: [{ resource: { attributes: this.resource }, scopeMetrics: [{ scope: { name: "agent-skills/evals", version: "1" }, metrics }] }] };
-  }
-
-  async #post(path, body) {
-    // Node's fetch has no default timeout, and `flush()` is awaited BEFORE the gate
-    // exit — so an unresponsive ingress would hold the whole run open until the
-    // job's own cap killed it, losing the accuracy verdict the run exists to
-    // produce. A timeout turns that into what it already is everywhere else here:
-    // an export failure, caught by flush(), never an eval failure.
-    const res = await fetch(`${this.endpoint}${path}`, {
-      method: "POST",
-      headers: this.headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(POST_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`${path} → ${res.status} ${(await res.text()).slice(0, 160)}`);
-  }
-
-  /** Ship everything. Never throws, never rejects — a dead backend is not an eval failure. */
-  async flush() {
-    if (!this.enabled) return { exported: false, reason: "OTEL_EXPORTER_OTLP_ENDPOINT unset" };
-    const jobs = [["/v1/traces", this.tracePayload()]];
-    const m = this.metricPayload();
-    if (m) jobs.push(["/v1/metrics", m]);
-    const errors = [];
-    for (const [path, body] of jobs) {
-      try { await this.#post(path, body); }
-      catch (e) { errors.push(e.message); }
-    }
-    if (errors.length) {
-      console.error(`⚠ telemetry export failed (evals still valid): ${errors.join(" | ")}`);
-      return { exported: false, reason: errors.join(" | ") };
-    }
-    return { exported: true, traceId: this.traceId, spans: this.spans.length };
-  }
-
-  /** Dash0/Grafana-agnostic pointer for the log, so a run links to its own trace. */
+  /** Backend-agnostic pointer for the log, so a run links to its own trace. */
   traceNote() {
     return this.enabled ? `trace_id=${this.traceId} → ${this.endpoint}` : "telemetry off (no OTEL_EXPORTER_OTLP_ENDPOINT)";
   }
@@ -369,7 +184,11 @@ function selfTest() {
   return { fails };
 }
 
-if (process.argv.includes("--self-test")) {
+// Entry-point-gated for the same reason otlp.mjs's own block is: `process.argv`
+// is process-global, so importing otlp.mjs must not let ITS `--self-test` block
+// fire as a side effect of this file's `--self-test` run.
+const isEntryPoint = process.argv[1] && process.argv[1].endsWith("telemetry.mjs");
+if (isEntryPoint && process.argv.includes("--self-test")) {
   const { fails } = selfTest();
   // The transport half of the failure policy, exercised for real against a port
   // nothing is listening on — the whole point is that this resolves, not rejects.

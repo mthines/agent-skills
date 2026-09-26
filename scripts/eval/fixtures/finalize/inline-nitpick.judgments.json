@@ -1,0 +1,34 @@
+{
+  "candidates": [
+    {
+      "finder": "quality",
+      "defect_class": "naming",
+      "symbol": "ids",
+      "prefix": "nitpick",
+      "severity": "low",
+      "final": 95,
+      "body": "`userIds` reads clearer than `ids` in this scope.",
+      "path": "src/x.ts",
+      "line": 9
+    }
+  ],
+  "gates": {
+    "description": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "self_review": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "documentation": {
+      "status": "PASS",
+      "details": "ok"
+    }
+  },
+  "memory": {
+    "relevance_rules": [],
+    "lessons_used": []
+  },
+  "threads": []
+}

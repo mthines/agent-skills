@@ -1,0 +1,53 @@
+{
+  "candidates": [
+    {
+      "finder": "consumer-impact",
+      "defect_class": "contract-break",
+      "symbol": "triggerKinds",
+      "prefix": "issue",
+      "severity": "high",
+      "final": 95,
+      "title": "Check-run variables rejected at runtime",
+      "body": "The exhaustive `Record<TriggerKind>` maps `TRIGGER_VARIABLES` and `DESCRIPTIONS` both omit the new kind, so both fail `tsc`.",
+      "blocking": true,
+      "evidence_anchors": [
+        {
+          "path": "src/triggers/variables.ts",
+          "line": 12,
+          "note": "map"
+        },
+        {
+          "path": "src/ui/hover-card.tsx",
+          "line": 40
+        }
+      ],
+      "fence": {
+        "lang": "ts",
+        "code": "\"github.check_run\": [\"conclusion\", \"name\", \"started_at\"],"
+      },
+      "fp": "consumer-impact:contract-break:triggerKinds@src/triggers/kinds.ts",
+      "fix_url": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%20finding&utm_source=pr-reviewer-fix-this",
+      "path": "src/triggers/kinds.ts",
+      "line": 5
+    }
+  ],
+  "gates": {
+    "description": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "self_review": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "documentation": {
+      "status": "PASS",
+      "details": "ok"
+    }
+  },
+  "memory": {
+    "relevance_rules": [],
+    "lessons_used": []
+  },
+  "threads": []
+}

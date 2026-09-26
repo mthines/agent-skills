@@ -1,0 +1,12 @@
+{
+  "mode": "full",
+  "head_sha": "7389036",
+  "delta_lines": 10,
+  "files": [
+    {
+      "filename": "src/y.ts",
+      "patch": "@@ -20,1 +20,1 @@\n+x"
+    }
+  ],
+  "threads": []
+}

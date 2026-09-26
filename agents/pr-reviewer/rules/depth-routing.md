@@ -51,8 +51,16 @@ The agent body owns the binding — see its `Bind DEPTH_TIER` step — and an un
 must be read as `0`, which disables the override rather than crashing the routing.
 
 That failure is quiet by construction, so it is worth stating where the guards do **not** reach it:
-the `shape-depth-routing` L2 suite hands every record its `THREAD_OVERLAP` value in the prompt, so
-it measures whether the table orders correctly, never whether the input exists.
+this rule file's rationale stays the single source of truth for WHY the routing works this way, but
+the EXECUTABLE home of the table is
+[`route-depth.mjs`](../scripts/route-depth.mjs)'s `routeDepth(i)` — a pure function taking every
+input already bound (`threadOverlap` included) as a plain value. Its `--self-test` runs the 22
+hand-converted records from `depth-routing.md`'s retired `shape-depth-routing` L2 suite
+(`scripts/eval/fixtures/route-depth/cases.json`) on every L1 pass, and an L1 guard asserts this
+file's D-IDs and refresh thresholds equal the script's constants (R4/D11). None of that reaches the
+BINDING failure described above — a script executes correctly on whatever `threadOverlap` value it
+is handed, so an unbound `THREAD_OVERLAP` silently read as `0` is a caller defect the routing table
+itself has no way to see, executable or not.
 
 ## The three tiers
 

@@ -103,8 +103,18 @@ them re-parsing the other. See [Cost](#cost) below.
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
 | `reviewer-agreement-bump` | is the surviving finding agreement-promoted? | reviewer `## Cross-rubric agreement` | promoted / not-promoted |
 | `optimize-approach-optimality` | is this approach optimal or suboptimal? | optimize-approach `optimality-rubric.md` (whole file) | optimal / suboptimal |
-| `shape-depth-routing` | given the computed delta, shapes, and impact graph, which depth tier does Phase C pick? | `agents/pr-reviewer/rules/depth-routing.md` (whole file) | deep / standard / quick |
 | `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `### 1.0` + `### 1.2c` (the two-section `rubric.sections` form — deliberately **not** the `## Step 1` parent, see the methodology note) | surface / skip |
+
+**`shape-depth-routing` is retired (pr-reviewer deterministic pipeline, D11).** Phase C's depth
+decision is now executable — [`route-depth.mjs`](../../agents/pr-reviewer/scripts/route-depth.mjs)'s
+`routeDepth(i)` is a pure function implementing `depth-routing.md`'s rules — so an LLM classification
+eval of it measures nothing a unit test can't measure for free. Its 22 golden records were
+hand-converted into structured cases at
+[`fixtures/route-depth/cases.json`](./fixtures/route-depth/cases.json), which
+`route-depth.mjs --self-test` runs on every L1 pass; the `SUITES` entry and
+`golden/shape-depth-routing.jsonl` were deleted in the same commit. The baseline notes and cost
+table further down keep the suite's run history for the record — those numbers describe the retired
+LLM eval, not the current executable one.
 
 ```bash
 node scripts/eval/l2.mjs                          # all suites

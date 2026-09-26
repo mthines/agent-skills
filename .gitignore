@@ -50,3 +50,7 @@ dist
 .env*
 .next
 
+# pr-reviewer's scratchRoot() fallback (prepare-review.mjs) — transient scratch
+# for checkouts/clones/tarballs and finalize.mjs --replay-fixtures's scratch dir;
+# never committed content.
+.pr-reviewer-scratch/
