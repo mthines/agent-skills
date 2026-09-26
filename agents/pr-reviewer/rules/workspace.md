@@ -103,7 +103,11 @@ if [ -z "$DEPTH_CAPABILITY" ]; then
 
   # Rung 1 — a real checkout. Depth 50 is enough for blame and for a base..head diff
   # on any PR a human would review, and bounded so a monorepo does not cost minutes.
-  if git "${GIT_CRED[@]}" clone --depth 50 --branch "$HEAD_REF" \
+  # `--filter=blob:none` (a partial clone — trees/commits eagerly, blob content lazily on
+  # checkout) and a >= 300s timeout floor are A/B round 2 item 1(a): 4 concurrent clones of a
+  # 368 MB repo hit the old 120s floor at ~145s with an EMPTY error, the tarball rung then
+  # exhausted too, and depth routing paid 205s discovering DEPTH_CAPABILITY=diff-only.
+  if git "${GIT_CRED[@]}" clone --filter=blob:none --depth 50 --branch "$HEAD_REF" \
        "https://github.com/$RESOLVED_REPO.git" "$WORKDIR" 2>/dev/null; then
     DEPTH_CAPABILITY=checkout
 
@@ -124,6 +128,13 @@ fi
 The rule is that the run continues, degraded, and says so.
 
 **Never fabricate the rung.** If the clone failed, the capability is not `checkout` because a later step happened to read one file successfully.
+
+**A killed process is not an empty error (A/B round 2 item 1(a)).** [`prepare-review.mjs`](../scripts/prepare-review.mjs)'s `run()`
+distinguishes a real timeout (`err.killed === true`, no stderr because the process never got to
+write one) from an ordinary non-zero exit, and `describeFailure()` reports the former as `timed out
+after Ns` — never as a blank anomaly line a reader has to guess the cause of. The same >= 300s
+timeout floor and `--filter=blob:none` applied to rung 1's clone apply identically to rung 2's
+tarball fetch, since a tarball of the same repo is no smaller than the clone it falls back from.
 
 ## Rung 0 — a worktree over the local object store
 
@@ -187,6 +198,19 @@ git -C "$WORKDIR" rev-parse HEAD         # must equal $HEAD_SHA
 - **`HEAD != HEAD_SHA`** → `git "${GIT_CRED[@]}" fetch origin "pull/$PR_NUMBER/head" && git merge --ff-only FETCH_HEAD` once, then re-check; still mismatched → fall through. `HEAD_SHA` was bound once at Step 1.1 and is the commit this whole run is about, so reviewing a different tree would silently break the one-read-one-head rule.
 
 Never `git checkout <branch>` in the user's main worktree to reach the PR's head — that mutates their working state without consent. A worktree, or a rung below.
+
+**Reuse is keyed to the run under `--isolated` (A/B round 2 item 1(b)).** [`prepare-review.mjs`](../scripts/prepare-review.mjs)'s
+own executable form of rung 0 (its `materializeWorkspace()`) checks `git worktree list --porcelain`
+for an existing detached worktree at `$HEAD_SHA` *before* fetching and creating one — a retry, a
+second pass, or an ordinary re-review of the same head reuses what an earlier invocation already
+made, rather than leaking one registered worktree per invocation. Under `--isolated`, D10 (A/B
+round 2) observed a run reuse a worktree ANOTHER run had created — `git worktree list` has no
+notion of which run made which, so any prior invocation's checkout at the same head was fair game,
+breaking `--isolated`'s own independence promise. Every worktree a run may create now lands under
+one run-scoped scratch directory generated fresh per invocation, and `isReusableWorktreeDir()`
+(pure, self-tested) refuses a candidate outside it whenever `isolated` is true — a directory
+outside `runScratchDir` is refused even when it is a lookalike prefix, and a null `runScratchDir`
+fails closed to "never reuse", never to "reuse anything".
 
 ### `--no-hooks` is not optional here
 

@@ -90,9 +90,31 @@ export function scratchRoot() {
 export function run(cmd, args, { timeoutMs = 60000, cwd = process.cwd(), maxBuffer = 64 * 1024 * 1024, env } = {}) {
   return new Promise((res) => {
     execFile(cmd, args, { timeout: timeoutMs, cwd, maxBuffer, encoding: "utf8", env: env || process.env }, (err, stdout, stderr) => {
-      res({ ok: !err, code: err ? (err.code ?? 1) : 0, stdout: stdout ?? "", stderr: stderr ?? "" });
+      // A/B round 2 item 1(a): `execFile`'s own `timeout` kills the child with `err.killed ===
+      // true` and a signal, but reports NO stderr of its own — the process never got to write
+      // one. Losing that distinction is exactly what produced "workspace rung 1 clone failed: "
+      // with an empty message: a caller reading `stderr` alone cannot tell a killed process from
+      // one that failed fast and silently. `timedOut` makes the distinction explicit so a caller
+      // can report "timed out after Ns" instead of nothing.
+      const timedOut = !!(err && err.killed === true);
+      res({ ok: !err, code: err ? (err.code ?? 1) : 0, stdout: stdout ?? "", stderr: stderr ?? "", timedOut });
     });
   });
+}
+
+/**
+ * Turns a failed `run()` result into a caller-facing anomaly string, never blank. A/B round 2
+ * item 1(a): "report a killed or timed-out process explicitly (`timed out after Ns`), never as
+ * empty stderr" — and the same fix closes the more general case of ANY failure with empty
+ * stderr (not only a timeout), which read exactly the same way before this: nothing.
+ * @param {{ ok: boolean, code: number, stderr: string, timedOut?: boolean }} result
+ * @param {number} timeoutMs
+ * @returns {string}
+ */
+export function describeFailure(result, timeoutMs) {
+  if (result.timedOut) return `timed out after ${Math.round(timeoutMs / 1000)}s`;
+  const stderr = (result.stderr || "").trim();
+  return stderr ? stderr.slice(0, 200) : `failed with exit code ${result.code}`;
 }
 
 /**
@@ -652,6 +674,15 @@ export function readStateFile(path) {
 
 /* ---------------------------- workspace ladder ---------------------------- */
 
+// A/B round 2 item 1(a): rung 1's clone was observed timing out at ~145s under 4 CONCURRENT
+// clones of a 368 MB repo against the old 120s floor, with the tarball rung then ALSO exhausted
+// and depth routing paying 205s to discover DEPTH_CAPABILITY=diff-only. Two fixes, both applied
+// to rung 1 and rung 2 alike: a clone timeout floor of >= 300s (never the caller's shorter
+// `timeoutMs`), and `--filter=blob:none` (a partial clone — trees and commits eagerly, blob
+// content lazily on checkout) to cut the bytes a slow/contended clone has to move before it can
+// even fail informatively.
+const CLONE_TIMEOUT_FLOOR_MS = 300000;
+
 /**
  * Walk the Phase A capability ladder once and bind DEPTH_CAPABILITY.
  *
@@ -665,8 +696,15 @@ export function readStateFile(path) {
  * temp clone or tarball: on a worktree it leaves a stale entry in the parent
  * repo's `.git/worktrees`, so the review breaks the repo it was reviewing.
  */
-async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies }) {
+async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies, isolated = false }) {
   const originRepo = await currentRepoSlug();
+  const cloneTimeoutMs = Math.max(timeoutMs, CLONE_TIMEOUT_FLOOR_MS);
+
+  // A/B round 2 item 1(b): every worktree this ladder can create lands under ONE run-scoped
+  // scratch directory, generated fresh per `materializeWorkspace()` call. Under `--isolated`
+  // this is what makes reuse impossible across separate runs — a sibling run's `wt-XXXX` never
+  // falls under THIS run's own `run-<id>/` prefix, however identical the PR/head/repo are.
+  const runScratchDir = join(scratchRoot(), `run-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
   // Rung 0 — worktree over the local object store.
   if (originRepo && originRepo.toLowerCase() === repo.toLowerCase()) {
@@ -675,7 +713,12 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
     // parent repo carrying one registered worktree per invocation. Reusing one
     // already checked out at this exact head is also the only disposal-safe
     // answer: the reused one is not ours to remove, so it is `cleanup: none`.
-    const existing = await findWorktreeAt(headSha);
+    //
+    // `--isolated` narrows this: D10 (A/B round 2) observed one isolated run reuse a WORKTREE
+    // ANOTHER RUN (arm B) had created, because reuse scanned every worktree registered against
+    // the shared repo with no notion of which run made which — breaking `--isolated`'s own
+    // independence promise. `runScratchDir` below is this scoping.
+    const existing = await findWorktreeAt(headSha, { isolated, runScratchDir });
     if (existing) {
       return {
         dir: existing,
@@ -692,7 +735,8 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
       { timeoutMs, env: GIT_NONINTERACTIVE_ENV },
     );
     if (fetched.ok) {
-      const parent = mkdtempSync(join(scratchRoot(), "wt-"));
+      mkdirSync(runScratchDir, { recursive: true });
+      const parent = mkdtempSync(join(runScratchDir, "wt-"));
       const dir = join(parent, "w");
       const added = await run("git", ["worktree", "add", "--detach", dir, headSha], { timeoutMs });
       if (added.ok) {
@@ -704,22 +748,23 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
           cleanup: "worktree",
         };
       }
-      anomalies.push(`workspace rung 0 failed: ${(added.stderr || "").trim().slice(0, 200)}`);
+      anomalies.push(`workspace rung 0 failed: ${describeFailure(added, timeoutMs)}`);
     } else {
       anomalies.push(`workspace rung 0 skipped: could not fetch pull/${number}/head`);
     }
   }
 
-  // Rung 1 — shallow clone of the head ref.
+  // Rung 1 — shallow, partial clone of the head ref. `--filter=blob:none` (trees/commits eagerly,
+  // blob content lazily) and a >= 300s timeout floor — see CLONE_TIMEOUT_FLOOR_MS's docstring.
   const cloneDir = mkdtempSync(join(scratchRoot(), "clone-"));
   const cloned = await run(
     "git",
-    [...GIT_CREDENTIAL_ARGS, "clone", "-q", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
-    { timeoutMs: Math.max(timeoutMs, 120000), env: GIT_NONINTERACTIVE_ENV },
+    [...GIT_CREDENTIAL_ARGS, "clone", "-q", "--filter=blob:none", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
+    { timeoutMs: cloneTimeoutMs, env: GIT_NONINTERACTIVE_ENV },
   );
   if (cloned.ok) {
     await run("git", [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "--depth", "50", "origin", `pull/${number}/head`], {
-      timeoutMs,
+      timeoutMs: cloneTimeoutMs,
       cwd: cloneDir,
       env: GIT_NONINTERACTIVE_ENV,
     });
@@ -733,15 +778,17 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
         cleanup: "rm",
       };
     }
-    anomalies.push(`workspace rung 1 checkout failed: ${(co.stderr || "").trim().slice(0, 200)}`);
+    anomalies.push(`workspace rung 1 checkout failed: ${describeFailure(co, timeoutMs)}`);
   } else {
-    anomalies.push(`workspace rung 1 clone failed: ${(cloned.stderr || "").trim().slice(0, 200)}`);
+    anomalies.push(`workspace rung 1 clone failed: ${describeFailure(cloned, cloneTimeoutMs)}`);
   }
 
-  // Rung 2 — tarball at the head.
+  // Rung 2 — tarball at the head. Same extended timeout floor as rung 1 ("apply the same to the
+  // tarball rung", A/B round 2 item 1(a)) — a tarball fetch of the same repo is no smaller than
+  // the clone it falls back from, and the old 120s-floor-less timeout starved it identically.
   const tarDir = mkdtempSync(join(scratchRoot(), "tar-"));
   const tarball = join(tarDir, "head.tgz");
-  const got = await run("gh", ["api", `repos/${repo}/tarball/${headSha}`], { timeoutMs });
+  const got = await run("gh", ["api", `repos/${repo}/tarball/${headSha}`], { timeoutMs: cloneTimeoutMs });
   if (got.ok && got.stdout.length > 0) {
     writeFileSync(tarball, got.stdout, "binary");
     const untarred = await run("tar", ["-xzf", tarball, "-C", tarDir, "--strip-components", "1"], { timeoutMs });
@@ -754,11 +801,31 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
         cleanup: "rm",
       };
     }
+    anomalies.push(`workspace rung 2 untar failed: ${describeFailure(untarred, timeoutMs)}`);
+  } else if (!got.ok) {
+    anomalies.push(`workspace rung 2 tarball fetch failed: ${describeFailure(got, cloneTimeoutMs)}`);
   }
   anomalies.push("workspace ladder exhausted — DEPTH_CAPABILITY=diff-only, tier capped at standard");
 
   // A failed ladder is not a failed run.
   return { dir: null, worktreeParent: null, depthCapability: "diff-only", rung: "none", cleanup: "none" };
+}
+
+/**
+ * A/B round 2 item 1(b): pure predicate behind rung-0 reuse. Not isolated — any matching
+ * worktree in the repo is fair game (today's behaviour, a retry/re-review reusing its own prior
+ * checkout). Isolated — only a directory that falls under THIS run's own `runScratchDir` may be
+ * reused; a null `runScratchDir` (nothing bound yet) fails closed to "never reuse", never to
+ * "reuse anything".
+ * @param {string} dir @param {{ isolated?: boolean, runScratchDir?: string|null }} opts
+ * @returns {boolean}
+ */
+export function isReusableWorktreeDir(dir, { isolated = false, runScratchDir = null } = {}) {
+  if (!isolated) return true;
+  if (!runScratchDir) return false;
+  const normalizedDir = pathResolve(dir);
+  const normalizedRoot = pathResolve(runScratchDir);
+  return normalizedDir === normalizedRoot || normalizedDir.startsWith(`${normalizedRoot}/`);
 }
 
 /**
@@ -769,7 +836,7 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
  * worktree is excluded: reviewing inside it would put the review in the tree the
  * user is sitting in, and disposal there is never ours.
  */
-async function findWorktreeAt(sha) {
+async function findWorktreeAt(sha, { isolated = false, runScratchDir = null } = {}) {
   if (!sha) return null;
   const r = await run("git", ["worktree", "list", "--porcelain"], { timeoutMs: 10000 });
   if (!r.ok) return null;
@@ -793,7 +860,8 @@ async function findWorktreeAt(sha) {
   }
   if (dir) records.push({ dir, head, detached });
   // records[0] is the main worktree; only the detached ones we could have made.
-  const hit = records.slice(1).find((w) => w.detached && sameCommit(w.head, sha) && existsSync(w.dir));
+  const hit = records.slice(1).find((w) => w.detached && sameCommit(w.head, sha) && existsSync(w.dir)
+    && isReusableWorktreeDir(w.dir, { isolated, runScratchDir }));
   return hit ? hit.dir : null;
 }
 
@@ -1040,7 +1108,7 @@ async function prepare(opts) {
   if (opts.workspace && checkoutSha) {
     workspace = opts.workdir
       ? { dir: opts.workdir, worktreeParent: null, depthCapability: "checkout", rung: "caller-supplied", cleanup: "none" }
-      : await materializeWorkspace({ repo, number, headSha: checkoutSha, timeoutMs, anomalies });
+      : await materializeWorkspace({ repo, number, headSha: checkoutSha, timeoutMs, anomalies, isolated: runMode.isolated });
   }
   const tier2Checker = detectTier2Checker(workspace.dir);
   timing.end(); // workspace
@@ -1302,8 +1370,15 @@ async function prepare(opts) {
     thoroughness: thoroughnessOverride,
     routedTier: routing.tier,
     shape: (deltaShape && deltaShape.shapes) || [],
+    band: impact?.blast_radius?.band ?? "none",
+    depthCapability: workspace.depthCapability,
     effortHigh: opts.effort === "high",
   });
+
+  // Item 3: a capability-deactivated finder is exactly the class of "something changed what this
+  // run actually reviewed" RUN_ANOMALY exists for — folded into the same anomalies[] every other
+  // workspace/routing degrade already flows through, rather than a second, easy-to-miss channel.
+  for (const note of budget.capabilityNotes) anomalies.push(note);
 
   const gate4Precandidates = scanGate4(deltaFiles);
 
@@ -1461,7 +1536,7 @@ async function prepare(opts) {
 
 /* ------------------------------- self-test ------------------------------- */
 
-function selfTest() {
+async function selfTest() {
   const cases = [];
   const t = (name, fn) => cases.push([name, fn]);
 
@@ -1830,6 +1905,66 @@ function selfTest() {
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
   });
 
+  // A/B round 2 item 1(a): real timeout detection, not a source-grep — proves `run()` bites.
+  // `sleep` needs no network and is present on every runner this pipeline executes on.
+  t("run(): a real timeout reports timedOut:true, never a bare ok:false with no signal", async () => {
+    const r = await run("sleep", ["2"], { timeoutMs: 100 });
+    return r.ok === false && r.timedOut === true;
+  });
+  t("run(): a process that exits non-zero on its own (no kill) is NOT reported as a timeout", async () => {
+    const r = await run("node", ["-e", "process.exit(3)"], { timeoutMs: 5000 });
+    return r.ok === false && r.timedOut === false && r.code === 3;
+  });
+  t("describeFailure(): a timed-out result reports 'timed out after Ns', never empty stderr", () => {
+    return describeFailure({ ok: false, code: 1, stderr: "", timedOut: true }, 300000) === "timed out after 300s";
+  });
+  t("describeFailure(): a non-timeout failure with empty stderr names its exit code rather than blanking", () => {
+    return describeFailure({ ok: false, code: 7, stderr: "", timedOut: false }, 60000) === "failed with exit code 7";
+  });
+  t("describeFailure(): a non-timeout failure WITH stderr still prefers the real message", () => {
+    return describeFailure({ ok: false, code: 1, stderr: "  fatal: repository not found\n", timedOut: false }, 60000)
+      === "fatal: repository not found";
+  });
+  t("materializeWorkspace's source passes --filter=blob:none and a >= 300s timeout floor on rung 1's clone", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    return src.includes("--filter=blob:none") && src.includes("CLONE_TIMEOUT_FLOOR_MS = 300000")
+      && /clone.*"-q", "--filter=blob:none"/.test(src.replace(/\n/g, " "));
+  });
+  t("materializeWorkspace's source applies the same extended timeout floor to the tarball rung", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    const tarballBlock = src.slice(src.indexOf("// Rung 2"), src.indexOf("anomalies.push(\"workspace ladder exhausted"));
+    return tarballBlock.includes("cloneTimeoutMs") && tarballBlock.includes("describeFailure(got, cloneTimeoutMs)");
+  });
+
+  // A/B round 2 item 1(b): rung-0/worktree reuse keyed to the run — pure predicate, no git calls.
+  t("isReusableWorktreeDir: non-isolated reuse is unrestricted (today's behaviour)", () => {
+    return isReusableWorktreeDir("/tmp/workspace/.pr-reviewer-scratch/wt-anything/w", { isolated: false, runScratchDir: null }) === true;
+  });
+  t("isReusableWorktreeDir: isolated + exact runScratchDir match is reusable", () => {
+    return isReusableWorktreeDir("/tmp/ws/.pr-reviewer-scratch/run-123", { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123" }) === true;
+  });
+  t("isReusableWorktreeDir: isolated + nested under this run's own scratch dir is reusable", () => {
+    return isReusableWorktreeDir(
+      "/tmp/ws/.pr-reviewer-scratch/run-123/wt-abcd/w",
+      { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123" },
+    ) === true;
+  });
+  t("isReusableWorktreeDir: isolated + ANOTHER run's scratch dir (arm B's D10 leak) is refused", () => {
+    return isReusableWorktreeDir(
+      "/tmp/ws/.pr-reviewer-scratch/run-456-arm-b/wt-zzzz/w",
+      { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123-arm-d" },
+    ) === false;
+  });
+  t("isReusableWorktreeDir: isolated + a lookalike sibling PREFIX (run-123x) is refused, not string-matched", () => {
+    return isReusableWorktreeDir(
+      "/tmp/ws/.pr-reviewer-scratch/run-123x/wt-zzzz/w",
+      { isolated: true, runScratchDir: "/tmp/ws/.pr-reviewer-scratch/run-123" },
+    ) === false;
+  });
+  t("isReusableWorktreeDir: isolated with no runScratchDir bound fails closed to never-reuse", () => {
+    return isReusableWorktreeDir("/anything", { isolated: true, runScratchDir: null }) === false;
+  });
+
   // Every case's name is echoed on PASS too, not only on failure — this is the one self-test
   // in the pipeline a standing L1 guard (or a checks.yaml AC) greps for a case NAME in the
   // OUTPUT rather than only in the source, so a silent-on-success run would read as though
@@ -1838,7 +1973,7 @@ function selfTest() {
   for (const [name, fn] of cases) {
     let ok = false;
     try {
-      ok = fn() === true;
+      ok = (await fn()) === true;
     } catch (err) {
       process.stderr.write(`self-test THREW: ${name}: ${err.message}\n`);
     }
