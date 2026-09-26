@@ -2400,11 +2400,11 @@ casualty count.
 
 ## Step 4: Post the review
 
-**Every run reaching Step 3 reaches Step 4** — `--dry-run`/`--review-sha` still build the payload
-and run every assertion, only skipping the final `POST`/`PATCH` (4c/4d go to scratch instead), and
-`--isolated` alone only changes Step 0.7's prior-state read. Only a `--fanout` worker never reaches
-Step 4 — posting is the orchestrator's job, and G81's preamble already forbids a worker from
-reading this agent's own body at all.
+**Every run reaching Step 3 reaches Step 4** — `--dry-run` (which `--review-sha` requires) still
+builds the payload and runs every assertion: 4a/4b render to scratch, never posted, and 4c/4d are
+not written. `--isolated` skips Step 0.7's prior-state read, forces `full`, and requires
+`--pin-head` unless `--review-sha` is set (`rules/pipeline.md`). A `--fanout` worker never reaches
+Step 4 — posting is the orchestrator's job.
 
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) before writing anything in this
 step** — it owns the full procedure below, in order, with every incident narrative and
