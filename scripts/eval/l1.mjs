@@ -1972,6 +1972,11 @@ function checksInSync(plan, checks) {
   const reportRendering = read("agents/pr-reviewer/rules/report-rendering.md");
   const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
   const ingest = read("agents/shared/rules/reviewer-report-ingest.md");
+  // Step 4 (4a-4d + "The shapes") moved verbatim to rules/posting.md (plan
+  // feat/pr-reviewer-shrink-fanout-ab, Step 9 split). Every literal anchor a check below slices
+  // out of Step 4's WRITE procedure now lives here; Step 0.7's prior-run-detection anchors
+  // (step07, "### First run") are untouched and still read off prReviewer.
+  const postingMd = read("agents/pr-reviewer/rules/posting.md");
 
   // G24a: Step 1.8 grades on BOTH discriminants and enumerates all three states. A revert to
   // the old binary gate drops the `blocking`/`answered` conjunct and reds here.
@@ -2418,21 +2423,24 @@ function checksInSync(plan, checks) {
     }
 
     // (d) The agent must delegate, not hand-render. The old three-template shape is gone and
-    // must not come back; the payload contract and the renderer call must be present.
-    s.check("G25 pr-reviewer.md no longer embeds report templates",
-      (prReviewer.match(/```markdown\n<!-- PR_REVIEWER_REPORT -->/g) || []).length === 0,
+    // must not come back; the payload contract and the renderer call must be present. Step 4a
+    // moved to rules/posting.md (Step 9 split), so this scans both files — the embedded-template
+    // absence is a property of everything a run can read, and the renderer call + no-hand-render
+    // rule now live in posting.md only.
+    s.check("G25 pr-reviewer.md / posting.md no longer embed report templates",
+      ((prReviewer + postingMd).match(/```markdown\n<!-- PR_REVIEWER_REPORT -->/g) || []).length === 0,
       "an embedded REPORT_BODY template is back — layout belongs to the template file");
-    s.check("G25 pr-reviewer.md calls the renderer at Step 4a",
-      /render-report\.mjs/.test(prReviewer) && /REPORT_BODY payload/.test(prReviewer));
-    s.check("G25 pr-reviewer.md forbids hand-rendering as a fallback",
-      /do not fall back to composing the body by hand/.test(prReviewer));
+    s.check("G25 rules/posting.md calls the renderer at Step 4a",
+      /render-report\.mjs/.test(postingMd) && /REPORT_BODY payload/.test(postingMd));
+    s.check("G25 rules/posting.md forbids hand-rendering as a fallback",
+      /do not fall back to composing the body by hand/.test(postingMd));
     // (e) A provenance-independent pre-write net — EXECUTED, not text-matched. The previous
     // version of this guard used preWrite.includes(needle) and was green over an assertion that
     // could never fire: `grep -qz '<details>\n<summary>…'` treats \n as the letter n inside a
     // plain-quoted BRE, so it matched only the literal "<details>n<summary>…" and would have
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
-      const preWrite = sliceBetween(prReviewer,
+      const preWrite = sliceBetween(postingMd,
         // Anchored on the invariant half of the sentence, never the count: the count changes every
         // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
         // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
@@ -2524,7 +2532,7 @@ function checksInSync(plan, checks) {
     // plain-quoted BRE, so it matched only the literal "<details>n<summary>…" and would have
     // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
     {
-      const preWrite = sliceBetween(prReviewer,
+      const preWrite = sliceBetween(postingMd,
         // Anchored on the invariant half of the sentence, never the count: the count changes every
         // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
         // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
@@ -2593,9 +2601,11 @@ function checksInSync(plan, checks) {
   s.check("G24f execute-write-plan.mjs's payloadIsSafe rejects a review body carrying the report marker",
     /payload\.body\.includes\("<!-- PR_REVIEWER_REPORT -->"\)/.test(
       readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8")));
-  s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
-    /When the sticky cannot be written/.test(prReviewer) &&
-    /DEGRADED_POINTER_BODY/.test(prReviewer));
+  s.check("G24f rules/posting.md documents the un-writable-sticky path without a second report",
+    /When the sticky cannot be written/.test(postingMd) &&
+    /DEGRADED_POINTER_BODY/.test(postingMd));
+  s.check("G24f pr-reviewer.md's Step 4 router points at rules/posting.md before any write",
+    /rules\/posting\.md/.test(sliceBetween(prReviewer, "## Step 4: Post the review", "## Step 5: Report")));
   // G24h: prior-run detection reads the PR-state record, and its ONE GitHub fallback rung must
   // not be login-keyed — an unresolvable `/user` would otherwise read as "no prior report" and
   // duplicate the sticky on every run. Assert on the WHOLE fetch region rather than on one clause
@@ -2628,9 +2638,9 @@ function checksInSync(plan, checks) {
   // guards on the change that moved it: the read, the write, their agreement, and the absence of
   // every mechanism that used to serialise state into a comment.
   {
-    const step4c = sliceBetween(prReviewer, "### 4c. Record the run state",
+    const step4c = sliceBetween(postingMd, "### 4c. Record the run state",
       "### The shapes: report body, headlines, sections, inline comments");
-    const step4b = sliceBetween(prReviewer, "### 4b. Post the review (conditionally)",
+    const step4b = sliceBetween(postingMd, "### 4b. Post the review (conditionally)",
       "### 4c. Record the run state");
 
     // The read and the write must address the SAME record. Two independently-written scope/key
@@ -2684,7 +2694,7 @@ function checksInSync(plan, checks) {
     // the whole file — the file still EXPLAINS them, and forbidding the explanation would delete
     // the record of why they are gone.
     s.check("G24i Step 4a appends no ledger to the report body",
-      !/PR_REVIEWER_LEDGER/.test(sliceBetween(prReviewer, "#### Build the payload, then run the renderer",
+      !/PR_REVIEWER_LEDGER/.test(sliceBetween(postingMd, "#### Build the payload, then run the renderer",
         "#### The report has exactly one host")));
     // Phase 5 moved `payload_is_safe` out of Step 4b into `payloadIsSafe()`
     // (execute-write-plan.mjs) — the executable home the check now reads; Step 4b's own prose
@@ -3405,14 +3415,16 @@ const isPollBlock = (block) =>
     const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
     return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
   };
-  const prReviewer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  // Step 4b (the pointer-renderer call site) moved to rules/posting.md with the rest of Step 4
+  // (Step 9 split) — read it there rather than off the agent body.
+  const prReviewer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
 
-  s.check("G29a the pointer renderer exists and pr-reviewer.md invokes it, not a hand-authored body",
+  s.check("G29a the pointer renderer exists and rules/posting.md invokes it, not a hand-authored body",
     existsSync(RENDER) &&
     /render-pointer\.mjs/.test(prReviewer) &&
     prReviewer.includes("`POINTER_BODY` is not written by hand either"));
 
-  s.check("G29b pr-reviewer.md defines the caller-policy-refusal branch, distinct from access-path incapability",
+  s.check("G29b rules/posting.md defines the caller-policy-refusal branch, distinct from access-path incapability",
     /STICKY_WRITE_FORBIDDEN/.test(prReviewer) &&
     /Two different reasons the sticky can go unwritten/.test(prReviewer) &&
     /caller policy refusal/.test(prReviewer));
@@ -3633,6 +3645,11 @@ const isPollBlock = (block) =>
   // condition deleted. Both owners are asserted — the agent body routes, the rule file explains —
   // because the two said different things and only the rule file was wrong-in-prose.
   const routingBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  // The report-site --relay-check call (G32p below) moved to rules/posting.md with Step 4a
+  // (Step 9 split) — the inline-site call (Step 2.8) did not move, so scanning the union covers
+  // both without disturbing the pr-reviewer.md-only checks above/below that read routingBody alone.
+  const postingBodyForButtons = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
+  const routingAndPosting = routingBody + "\n" + postingBodyForButtons;
   const fallbackBullet = /\*\*When `\{bot_login\}` is unresolved\*\*[^\n]*/.exec(routingBody)?.[0] ?? "";
   s.check("G32l the Fix-all login fallback is gated on OPEN_FINDING_COUNT, not on identity alone",
     /OPEN_FINDING_COUNT` is non-zero/.test(fallbackBullet),
@@ -3732,7 +3749,7 @@ const isPollBlock = (block) =>
   // shell asked unconditionally, and the inline block had neither. So this asserts the guard
   // condition sits in the same fenced block as the call, not that a sentence about it exists.
   for (const [site, marker] of [["report", "/tmp/report-body.md"], ["inline", "/tmp/finding-$i.md"]]) {
-    const blocks = [...routingBody.matchAll(/```bash\n([\s\S]*?)```/g)]
+    const blocks = [...routingAndPosting.matchAll(/```bash\n([\s\S]*?)```/g)]
       .map((m) => m[1])
       .filter((b) => b.includes(`--relay-check ${marker}`));
     s.check(`G32p the ${site} --relay-check call sits behind a write-path condition`,
@@ -3759,7 +3776,7 @@ const isPollBlock = (block) =>
   // The exit-3 re-check is meaningless without a re-render: asking the SAME file returns the same
   // 1 forever, so the branch reads as coverage while being dead. Its own comment said "re-render
   // first" while the shell only re-asked — the identical prose-vs-shell split as the gate above.
-  const reportBlock = [...routingBody.matchAll(/```bash\n([\s\S]*?)```/g)]
+  const reportBlock = [...routingAndPosting.matchAll(/```bash\n([\s\S]*?)```/g)]
     .map((m) => m[1])
     .find((b) => b.includes("--relay-check /tmp/report-body.md"));
   s.check("G32p the report's exit-3 re-check re-renders before re-asking",
@@ -3988,7 +4005,11 @@ const isPollBlock = (block) =>
   // Step 4a (FINALIZE) — each with an edit-them-together note. This asserts the bodies have not
   // drifted; the regression that shipped was defining it at only one.
   const RESOLVE_SITES = 3;
-  const resolves = [...readRepo("agents/pr-reviewer.md")
+  // Step 4a's (FINALIZE's) call site moved to rules/posting.md with Step 4a (Step 9 split) — the
+  // other two (Step 0.1, Step 1.2 CLASSIFY) stay in the agent body, so scan the union for the count.
+  const resolveSource = readRepo("agents/pr-reviewer.md") + "\n"
+    + readRepo("agents/pr-reviewer/rules/posting.md");
+  const resolves = [...resolveSource
     .matchAll(/resolve\(\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
   const allSame = resolves.length > 0 && resolves.every((r) => r === resolves[0]);
   s.check("G33i resolve() is defined at every call site and the bodies are identical",
@@ -4134,11 +4155,13 @@ const isPollBlock = (block) =>
   // RENDER invocation (render-report.mjs now runs inside finalize.mjs), so the guard's own
   // "same as ___" anchor moved with it; re-anchoring here is the guard tracking the code
   // instead of restating a call site that no longer exists.
+  // BUILD_LINK is bound in the agent body (§ Fix-with-Agent0 buttons); FINALIZE moved to
+  // rules/posting.md with Step 4a (Step 9 split) — assert each in its own home.
   s.check("G37b pr-reviewer.md derives BUILD_LINK from $AGENT_SUPPORT, same as FINALIZE",
     /BUILD_LINK="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
       readRepo("agents/pr-reviewer.md"))
     && /FINALIZE="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/finalize\.mjs"/.test(
-      readRepo("agents/pr-reviewer.md")));
+      readRepo("agents/pr-reviewer/rules/posting.md")));
 
   // G37c: every once-per-run destination argument must be named at BOTH button sites. This is the
   // exact drift `--env` already took — the Fix-this bullet never named it, so a `development`-
@@ -4670,7 +4693,11 @@ const isPollBlock = (block) =>
     // Read once, up front: the (j) / (k) / (l) / (m) groups all cross-check the same three
     // documents against the spine's live exports.
     const fixRule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
-    const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+    // The sticky (report) call site moved to rules/posting.md with Step 4a (Step 9 split); the
+    // inline call site (Step 2.8) did not. Scan the union so every (j)/(k)/(l)/(m) check below
+    // finds whichever call site it targets without needing a per-check repoint.
+    const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8") + "\n"
+      + readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
     const assetMod = await import(pathToFileURL(SPINE).href);
     const relay = (body) => {
       const f = join(tmpdir(), `l1-relay-${Math.random().toString(36).slice(2)}.md`);
@@ -5077,6 +5104,9 @@ const isPollBlock = (block) =>
 
   // (e) The sticky-write not-a-reason list. The run stood down on two invented rules — the
   // sticky's author login, and an unchanged verdict — and left the delta baseline pinned.
+  // This table (§ 4a "The table above is exhaustive") moved to rules/posting.md with Step 4a
+  // (Step 9 split); read it there rather than off the agent body.
+  const bodyE = read("agents/pr-reviewer/rules/posting.md");
   for (const phrase of [
     /is \*\*diagnostic only\*\*/,
     /The sticky's author login is not this run's `ME`/,
@@ -5086,10 +5116,10 @@ const isPollBlock = (block) =>
     /It is the caller's own PR \(self relation\)/,
   ]) {
     s.check(`G41e the sticky not-a-reason list names ${phrase.source.slice(0, 46)}`,
-      phrase.test(body));
+      phrase.test(bodyE));
   }
   s.check("G41e the not-a-reason list closes with the imperative",
-    /If a\s*\nsituation is not a row in the table above, \*\*write the sticky\*\*/.test(body));
+    /If a\s*\nsituation is not a row in the table above, \*\*write the sticky\*\*/.test(bodyE));
 
   // (f) No brace-escaped STICKY default survives. The expression was correct; its escaped brace
   // did not survive being retyped, and the run took four jq parse errors on the one rung that
@@ -5446,7 +5476,9 @@ const isPollBlock = (block) =>
   // `hotspot::` has two producers (the recorder and Step 4d); `knowledge::` has only
   // Step 4d, which is why its absence went unnoticed for so long. Require the agent body
   // to name a write for each — a match table pointed at rows nothing writes is the defect.
-  const step4d = BODY.split(/### 4d\./)[1]?.split(/\n### |\n## /)[0] ?? "";
+  // Step 4d moved to rules/posting.md with the rest of Step 4 (Step 9 split) — read it there.
+  const step4dSource = read("agents/pr-reviewer/rules/posting.md");
+  const step4d = step4dSource.split(/### 4d\./)[1]?.split(/\n### |\n## /)[0] ?? "";
   s.check("G44c Step 4d exists and routes to the write section that holds the calls",
     step4d !== "" && /#write--the-two-calls-this-agent-makes-itself/.test(step4d));
   for (const record of ["knowledge", "hotspot"]) {
@@ -5569,7 +5601,7 @@ const isPollBlock = (block) =>
     /Merge, never clobber — on both writes/.test(MEMORY_MD)
     && !/Four rules on the knowledge write/.test(MEMORY_MD));
   s.check("G45b Step 4d tells the run to merge rather than write the literals",
-    /never write the rule file's literals/.test(BODY));
+    /never write the rule file's literals/.test(step4dSource));
 
   // ---- G45c: `indexed` and `used` count one population ----
   //
@@ -8473,7 +8505,11 @@ const isPollBlock = (block) =>
     const step0 = sliceBetween(readFileSync(PRW, "utf8"), "## Step 0: Read raw arguments", "## Step 0.5");
     s.check("G60d Step 0's flag table documents --dry-run, --isolated, and --pin-head, pointing at rules/pipeline.md",
       /--dry-run/.test(step0) && /--isolated/.test(step0) && /--pin-head/.test(step0) && /rules\/pipeline\.md/.test(step0));
-    const step4c = sliceBetween(readFileSync(PRW, "utf8"), "### 4c. Record the run state", "### 4d.");
+    // Step 4c moved verbatim to rules/posting.md (Step 9 split) — read it there.
+    const POSTING = join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md");
+    const step4c = existsSync(POSTING)
+      ? sliceBetween(readFileSync(POSTING, "utf8"), "### 4c. Record the run state", "### 4d.")
+      : "";
     s.check("G60d Step 4c states the --dry-run carve-out from its own \"unconditional\" state write",
       /unconditional/.test(step4c) && /--dry-run/.test(step4c) && /exception/.test(step4c));
   }
