@@ -47,7 +47,7 @@ Lessons here are **procedural** and about *this skill's own judgment*, never abo
 - The plan-time judgment (a plan-mode proposal that duplicated the Existing Code Survey / `critical`, or a re-plan the planner rejected).
 
 The **Applies when** line must be concrete (file globs, stack, axis, caller) so the O0 read matches mechanically.
-Record the `caller` in every lesson's **Applies when** line (`reviewer` / `pr-reviewer` / `polish` / `aw-planner`) so a plan-mode lesson does not wrongly bias a diff-mode run and vice versa.
+Record the `caller` in every lesson's **Applies when** line (`reviewer` / `pr-reviewer` / `user` / `aw-planner`) so a plan-mode lesson does not wrongly bias a diff-mode run and vice versa.
 
 ## Fast tier — read (Phase O0)
 

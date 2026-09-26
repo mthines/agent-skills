@@ -10,8 +10,8 @@ description: >
   and holistic-review. Stays silent when the approach is already optimal
   (quiet early-exit). A `plan` mode reviews a drafted plan's approach at plan
   time (aw-planner Phase 1) — the cheapest moment to switch. Called by the
-  reviewer and pr-reviewer agents, the polish skill, and aw-planner as a
-  default-on lens; also runnable standalone. Triggers on
+  reviewer and pr-reviewer agents and aw-planner as a default-on lens;
+  also runnable standalone (`apply` is standalone-only). Triggers on
   "is this the best approach", "better way to do this", "is this optimal",
   "optimize this approach", "rethink the approach", "/optimize-approach".
 disable-model-invocation: false
@@ -63,16 +63,16 @@ Parse the **first token** of `$ARGUMENTS`.
 
 | Flag | Applies to | Effect |
 | --- | --- | --- |
-| `--no-confidence-gate` | `apply` | **Human-only override.** Bypasses the `confidence(code) ≥ 90 %` gate for a single `apply` run. Reserved for explicit human slash invocations — a calling agent (`pr-reviewer`, `polish`, `aw-planner`) **never** sets it. The other apply-mode guards are **not** waived: `apply_safe`, the forbidden-targets list, the scoped check, and revert-on-failure all still apply. See [`rules/apply-mode.md`](./rules/apply-mode.md). |
+| `--no-confidence-gate` | `apply` | **Human-only override.** Bypasses the `confidence(code) ≥ 90 %` gate for a single `apply` run. Reserved for explicit human slash invocations — a calling agent (`pr-reviewer`, `aw-planner`) **never** sets it. The other apply-mode guards are **not** waived: `apply_safe`, the forbidden-targets list, the scoped check, and revert-on-failure all still apply. See [`rules/apply-mode.md`](./rules/apply-mode.md). |
 
 ## Inputs
 
-When a calling agent (reviewer / pr-reviewer / polish) invokes this skill, it passes:
+When a calling agent (reviewer / pr-reviewer / aw-planner) invokes this skill, it passes:
 
 - `intent_summary` — 2–3 line intent (the caller's Step 1.3 output).
 - `diff` — the full unified diff under review.
 - `changed_files` — list of `{path, patch}` entries.
-- `caller` — `pr-reviewer` | `polish` | `aw-planner` (affects framing and whether apply is allowed). For `pr-reviewer`, also pass `review_relation: "self" | "cross"` — self uses assertive framing, cross uses question framing.
+- `caller` — `pr-reviewer` | `aw-planner` | `user` (affects framing; only a standalone `user` run may `apply`). For `pr-reviewer`, also pass `review_relation: "self" | "cross"` — self uses assertive framing, cross uses question framing.
 
 For `plan` mode the caller (`aw-planner`) passes a drafted plan's approach and its Existing Code Survey verdicts instead of a diff — see [`rules/plan-mode.md`](./rules/plan-mode.md) for that input shape.
 

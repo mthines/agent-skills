@@ -8231,8 +8231,10 @@ const isPollBlock = (block) =>
     for (const m of t.matchAll(/(?:\$AGENT_SKILLS_ROOT|\/tmp\/workspace\/pr-reviewer)\/skills\/([a-z0-9-]+\/[A-Za-z0-9._/-]+\.(?:md|mjs))/g)) named.add(m[1]);
   }
   const unverified = [...named].filter((n) => !setup.includes(`"$S/${n}"`));
+  // Floor is 5, not 6: the `polish` entry left with the skill (restructure PR 3a) and its file
+  // with it. The floor only proves the regex still finds the rules' mentions at all.
   s.check("G58e the installer verifies every installed file the Agent0 rules name",
-    named.size >= 6 && unverified.length === 0,
+    named.size >= 5 && unverified.length === 0,
     `named=${[...named].join(",") || "∅"}; unverified by ${SETUP_REL}: ${unverified.join(",") || "none"}`);
 
   // G58f — the top-level constraints do not forbid what the loop does, and a refusal has a token.

@@ -3,7 +3,7 @@ name: review-loop
 description: >
   Bounded review-apply-resolve convergence loop for a GitHub PR, drafts
   included. Runs up to N=5 iterations of pr-reviewer → implement-suggestion
-  (--resolve-all) → polish simplify, converging until every review thread is
+  (--resolve-all) → code-quality simplify, converging until every review thread is
   resolved through a fix OR a reply, so the PR ends with zero open threads and
   only genuine human-judgment flags left open. Convergence also means CI is
   not red: each push is check-read and a red mechanical failure delegated to
@@ -20,7 +20,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interv
 license: MIT
 metadata:
   author: mthines
-  version: '1.10.0'
+  version: '1.11.0'
   workflow_type: command
   tags:
     - review
@@ -38,7 +38,7 @@ metadata:
 # review-loop — Bounded Review-Apply-Resolve Convergence
 
 Drive a PR from its initial draft state to a clean, review-ready state by
-iterating `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`
+iterating `pr-reviewer` → `implement-suggestion --resolve-all` → `code-quality simplify`
 until **every review thread is resolved** or the cap is reached, then refresh the
 PR description to match the shipped diff.
 
@@ -56,7 +56,7 @@ It sequences existing pieces, each owning its own domain:
 
 1. `pr-reviewer` — finds issues (read-only; posts one `COMMENT` review; on a re-review resolves its own addressed threads).
 2. `implement-suggestion --resolve-all` — applies actionable findings **and** replies-to-and-resolves the non-fix threads it can honestly close (single-shot, no `--watch`).
-3. `Skill("polish", "simplify")` — applies Class M mechanical refactors behind a confidence gate.
+3. `Skill("code-quality", "simplify")` — applies Class M mechanical refactors behind a confidence gate; this loop commits what it applied.
 4. `ci-auto-fix` — diagnoses and fixes a red check after the iteration's push (skipped under `--no-ci`).
 5. On convergence — refreshes the PR description (via the shared description-contract) and, best-effort, notes the linked Linear ticket.
 
@@ -163,7 +163,7 @@ you cannot tell them apart, report the harness line:
 
 Return that skip as the loop's terminal result. Do **not** retry the dispatch and
 do **not** silently continue to sub-steps B and C — without a review pass there are
-no findings to apply, and running `polish simplify` alone would misreport an
+no findings to apply, and running `code-quality simplify` alone would misreport an
 unreviewed PR as converged.
 
 **`--external-review` is the exception, and the graceful-degradation path.** In
@@ -188,7 +188,7 @@ a refused dispatch may surface as an uncatchable harness error. Its value is
 **placement** — one clean logged deviation at Step 0 instead of a mid-Phase-6 error
 the caller has to interpret.
 
-`implement-suggestion` and `polish` **are** skills — invoke them with `Skill(...)`.
+`implement-suggestion` and `code-quality` **are** skills — invoke them with `Skill(...)`.
 If a given install has `implement-suggestion` set `disable-model-invocation: true`
 (so `Skill("implement-suggestion")` is refused), fall back to applying its
 contract inline: resolve a worktree at the PR head, apply the findings as
@@ -468,9 +468,10 @@ while ITERATION < CAP:
     # discussions / declined suggestions; leaves only human-judgment flags open.
     APPLIED_TOTAL += (applies + answers this iteration, from its report)
 
-    # Sub-step C: simplify
-    Skill("polish", "simplify")
-    # Applies Class M mechanical refactors; never runs the reviewer pass.
+    # Sub-step C: simplify, then commit what it applied (code-quality never commits)
+    Skill("code-quality", "simplify")
+    git diff --quiet || { git add -u && git commit -m "chore: simplify pass (mechanical refactors)"; }
+    # Class M refactors only; dispatches no reviewer, so C can never re-enter A.
 
     push any local changes:
     git push
@@ -627,10 +628,12 @@ surface the failing checks — never extend it, and never converge a red PR sile
 holds transitively: no `--no-verify`, no `continue-on-error`, no skipped suites, no
 weakened assertions to reach green.
 
-**Hard rule: the only permitted `polish` invocation is `Skill("polish", "simplify")`.**
-The `simplify` mode applies Class M mechanical refactors and dispatches no pr-reviewer.
-All other `polish` modes trigger an internal agent pass, which would create a dispatch cycle.
-This is the anti-circularity guarantee.
+**Sub-step C is `Skill("code-quality", "simplify")` and nothing broader.** It applies
+Class M mechanical refactors and dispatches no reviewer, which is what keeps the loop
+acyclic: the only reviewer pass is sub-step A. (Up to v1.9 this was `polish simplify`, a
+wrapper whose other modes did dispatch `pr-reviewer`; `polish` was removed, and the
+guarantee now holds by construction.) `code-quality` does not commit, so this loop
+commits its edits as one `chore: simplify pass` commit before the push.
 
 ### Step 1.6: UI-verify run (report-only, once, on exit)
 
@@ -827,7 +830,7 @@ threads over a red build is not a review-ready PR.
 
 ## Hard rules
 
-- **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Non-simplify modes trigger an internal agent pass and create a dispatch cycle.
+- **Sub-step C is `code-quality simplify`, committed by this loop.** It never dispatches a reviewer, so sub-step A stays the loop's only review pass.
 - **This loop runs at the top level, never inside a sub-agent.** Its first sub-step is a delegation, so a caller that dispatches the loop instead of running it spends the delegation budget one level too high and the loop can only skip at iteration 0 ([Caller contract](#caller-contract--run-this-loop-at-the-top-level-never-inside-a-sub-agent)). A caller limited to one dispatch passes `--external-review` **deliberately** — the loop never adds that flag to itself.
 - **In an Agent0 sandbox the review is a `general` dispatch, never an in-context review.** Detect the host by the presence of `/tmp/workspace/agent-skills/env.sh`, never from a failed call, and follow [`rules/agent0-runtime.md`](./rules/agent0-runtime.md). A reviewer reply that refuses is `reviewer-refused`, never a clean pass.
 - **The dispatch precondition tests a capability, never a tool name.** `Task` and `Agent` are two spellings of the same capability; concluding "no dispatch available" because the name `Task` is absent skips the review on every harness that spells it otherwise ([The dispatch tool is a capability, not a fixed name](#the-dispatch-tool-is-a-capability-not-a-fixed-name)).
@@ -852,9 +855,8 @@ threads over a red build is not a review-ready PR.
 | --- | --- |
 | `pr-reviewer` | Sub-step A: the find pass (read-only); resolves its own addressed threads on re-review; this skill drives re-review between iterations. |
 | `implement-suggestion --resolve-all` | Sub-step B: the apply + resolve pass; invoked single-shot (no `--watch`) with `--resolve-all` so non-fix threads (questions, discussions, declines) are answered and resolved. |
-| `polish simplify` | Sub-step C: the cleanup pass; only the simplify mode, never full `polish`. |
+| `code-quality simplify` | Sub-step C: the cleanup pass (Class M refactors, confidence-gated). This loop commits its edits. |
 | `create-pr` description-contract | Step 2 reuses [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md) for the PR-description refresh — single source of truth with `create-pr`. |
-| `polish` (bare) | **Downstream, not a caller.** `polish`'s Pass A invokes `pr-reviewer` directly and never calls `review-loop`; this loop only invokes `Skill("polish", "simplify")`. |
 | `create-pr` | Upstream caller — delegates post-draft review to `review-loop` after opening the draft PR. |
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
 | `ci-auto-fix` | Sub-step D: dispatched as a subagent on a red check, capped at 2 handoffs per run. Owns the fix; this loop only classifies and delegates. Skipped under `--no-ci`. |

@@ -182,7 +182,7 @@ graceful-skip rule applies to the optional **agent companions** (e.g.
 | 6 (UI)| `ui-verify`         | Via `create-pr` Step 6.4 on a UI diff — injects the PR-body verification spec, seeded from `.agent/{branch}/specs.md` when present | `author` |
 | 7     | `ci-auto-fix`          | CI run completes with status `failure`                               | `<run-id\|pr-url>` |
 | 7 (UI)| `aw-tester` *(agent)*  | After CI green — spec rehearsal against preview URL (advisory; skips if no preview URL or no specs.md) | `specs.md + preview-aw-target + --all` |
-| 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
+| 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `code-quality simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
 | 7     | `measurable`           | Once, after Auto Fix + Auto Review settle, if the Phase 3 trigger matched — recheck against the current head, since both prior steps can mutate code | `audit --diff --base $(git merge-base HEAD main) [--strict]` |
 | 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
 

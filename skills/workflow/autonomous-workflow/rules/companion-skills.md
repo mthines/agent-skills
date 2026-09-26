@@ -128,7 +128,7 @@ A second class of optional companions exists: **agents** (definitions in `agents
 | ---------- | ----- | ------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `feature-pr-verifier` | PR open (dispatched by `aw`, not by a phase) | Full Mode AND `plan.md` exists AND the executor returned a PR URL (independent green/red verdict; a done-condition via `aw`'s `Verified:` line) | — | The dispatch tool accepts `feature-pr-verifier` as an agent type | Remove § *Verify at PR open* in the `aw` dispatcher skill |
 
-The review passes in Phase 6 and Phase 7 are now delegated to `review-loop` (the bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence skill) rather than the retired `reviewer` agent.
+The review passes in Phase 6 and Phase 7 are now delegated to `review-loop` (the bounded `pr-reviewer` → `implement-suggestion` → `code-quality simplify` convergence skill) rather than the retired `reviewer` agent.
 Phase 6 invokes `review-loop` (or `pr-reviewer` directly via `create-pr` Step 6.5) after the draft PR is open.
 Phase 7 invokes `review-loop` against the PR after CI green (self-review relation; `pr-reviewer` detects authorship automatically via `REVIEW_RELATION`).
 Both passes keep the graceful-skip contract — log one line and continue if `review-loop` or `pr-reviewer` is absent.

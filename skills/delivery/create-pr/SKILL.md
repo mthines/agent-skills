@@ -3,7 +3,7 @@ name: create-pr
 description: >
   Generates a short, narrative GitHub pull request description (≤ 25 lines,
   hard ceiling 40), pushes the branch, opens the PR as a draft, then runs
-  review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 5
+  review-loop (pr-reviewer → implement-suggestion → code-quality simplify, up to 5
   iterations) until every review thread is resolved via fix or reply. Scale
   down with --no-review, --no-simplify, --quick (light mechanical pass only),
   or --no-quality (skip the loop). On a UI diff, injects a preview
@@ -36,14 +36,14 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 
 | Mode / Flag    | Trigger                                            | Behaviour                                                                                                                                                                     |
 | -------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`      | No flag                                            | One PR for the whole branch. After opening the draft PR (Step 6), Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")` — up to 5 iterations of `pr-reviewer` → `implement-suggestion` → `polish simplify`, converging until every review thread is resolved (fix or reply) and refreshing the PR description. |
+| `default`      | No flag                                            | One PR for the whole branch. After opening the draft PR (Step 6), Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")` — up to 5 iterations of `pr-reviewer` → `implement-suggestion` → `code-quality simplify`, converging until every review thread is resolved (fix or reply) and refreshing the PR description. |
 | `split`        | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after the description-contract step. |
-| `no-review`    | `--no-review`                                       | Step 6.5 drops the `pr-reviewer` pass from the loop → runs only `polish simplify` once.                                                                                     |
+| `no-review`    | `--no-review`                                       | Step 6.5 drops the `pr-reviewer` pass from the loop → runs only `code-quality simplify` once.                                                                                     |
 | `no-simplify`  | `--no-simplify`                                     | Step 6.5 drops the simplify pass from the loop → runs only `pr-reviewer` (one-shot, no apply).                                                                              |
-| `quick`        | `--quick`                                           | Step 6.5 runs only the light mechanical pass → `Skill("polish", "quick")` (no pr-reviewer, no structural refactors).                                                        |
+| `quick`        | `--quick`                                           | Step 6.5 runs only the light mechanical pass → `Skill("code-quality", "quick")` (no pr-reviewer, no structural refactors).                                                        |
 | `no-quality`   | `--no-quality` anywhere in arguments               | Skip Step 6.5 entirely. Wins over every other quality flag.                                                                  |
 | `no-ui-verify` | `--no-ui-verify` (or the legacy alias `--no-preview-spec`) anywhere in arguments | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything. `--no-preview-spec` is the pre-rename spelling, still honoured so existing scripts and muscle memory keep working. |
-| `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip the **default-on** Step 5.5 — `Skill("review-branch", …)` **before** the push, which opens the draft already converged. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.        |
+| `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip the **default-on** Step 5.5 — `Skill("review-branch", …)` **before** the push, which opens the draft already converged. Split mode then falls back to the review-less `Skill("code-quality", "simplify")` pre-split pass.        |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. `--no-feedback` is accepted and ignored: the background external-bot watch it disabled was removed in v4.0.0 (see [Step 6.5](#step-65-post-draft-quality-loop-delegated-to-review-loop)). Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
@@ -52,7 +52,7 @@ Each resulting sub-PR must still pass it on its own.
 
 Split mode depends on Step 5.5 more than default mode does: Step 6.5 is post-draft and its `review-loop` needs an open PR, which does not exist before S1, so nothing else reviews the whole branch there. Step 5.5 runs on the full branch before computing the split, and each sub-PR inherits reviewed-and-converged code rather than merely simplified code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
 
-Until now that pre-split slot ran `Skill("polish", "simplify")` — mechanical refactors and **no review at all**, because no reviewer could run without a PR. That is now the *fallback*, taken only when Step 5.5 reports a skip (no sub-agent dispatch) or `--no-pre-review` was passed. Say which one ran; a split whose sub-PRs were never reviewed must not be reported as one whose sub-PRs were.
+Until now that pre-split slot ran a simplify pass — mechanical refactors and **no review at all**, because no reviewer could run without a PR. That is now the *fallback*, taken only when Step 5.5 reports a skip (no sub-agent dispatch) or `--no-pre-review` was passed. Say which one ran; a split whose sub-PRs were never reviewed must not be reported as one whose sub-PRs were.
 
 ## Step 0: Resolve your GitHub access path
 
@@ -95,7 +95,7 @@ differ, what to do with each return, and the outcome value to record for Step 10
 it are load-bearing enough to restate here:
 
 - **Surface every `flagged` finding to the user before pushing.** Pushing past them silently converts the safety valve into a green-wash.
-- **Absent sub-agent dispatch is `NOT REVIEWED`, never a skip.** In split mode, fall back to `Skill("polish", "simplify")` and say which one ran — it is the difference between sub-PRs that were reviewed and sub-PRs that were only simplified.
+- **Absent sub-agent dispatch is `NOT REVIEWED`, never a skip.** In split mode, fall back to `Skill("code-quality", "simplify")` (then commit) and say which one ran — it is the difference between sub-PRs that were reviewed and sub-PRs that were only simplified.
 - **Record the outcome now**, before continuing. Step 10's slot for it is mandatory on every run.
 
 ## Step 6: Push and Create Draft PR
@@ -160,12 +160,18 @@ Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in 
 
 | # | Flags present                                            | Invoke                                           | What runs                                                       |
 | - | -------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------- |
-| 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")`                      | Light mechanical pass (comments, naming, dead code).            |
-| 2 | `--no-review` (or legacy `--simplify` alone)             | `Skill("polish", "simplify")`                   | code-quality simplify — apply Class M refactors once.           |
+| 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("code-quality", "quick")`, then commit    | Light mechanical pass (comments, naming, dead code).            |
+| 2 | `--no-review` (or legacy `--simplify` alone)             | `Skill("code-quality", "simplify")`, then commit | Apply Class M refactors once.                                   |
 | 3 | `--no-simplify` (or legacy `--review` alone)             | `Task(subagent_type="pr-reviewer", prompt="<pr-url>")` | `pr-reviewer` **agent** (Task tool, not `Skill()`) one-shot only — findings surfaced, not applied. |
-| 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url> --no-ci")`      | Full loop: `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations; converges until every review thread is resolved (fix or reply) and refreshes the PR description. |
+| 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url> --no-ci")`      | Full loop: `pr-reviewer` → `implement-suggestion` → `code-quality simplify`, up to 5 iterations; converges until every review thread is resolved (fix or reply) and refreshes the PR description. |
 
 (`--no-quality` is handled above as an outright skip and never reaches this table.)
+
+`code-quality` edits the working tree and never commits. After rows 1 and 2, commit what it applied as its own commit, then push:
+
+```bash
+git diff --quiet || { git add -u && git commit -m "chore: code-quality pass" && git push; }
+```
 
 Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it to `create-pr`.
 
@@ -306,7 +312,7 @@ Final report shape:
 PR: <pr-url>
 Title: <imperative title>
 
-Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
+Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <code-quality simplify | none>)>
 
 UI verify (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-ui-verify) | skipped (--no-quality) | skipped (ui-verify not available) | failed (<reason>)>
 

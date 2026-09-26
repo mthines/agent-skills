@@ -19,7 +19,7 @@ argument-hint: '[--base <ref>] [--head <ref>] [--cap N] [--effort high] [--no-si
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.1'
+  version: '1.1.0'
   workflow_type: command
   tags:
     - review
@@ -62,7 +62,7 @@ reviewer sees what the agent already handled. Reach for `review-loop` the moment
 | `--head <ref>` | Head of the comparison. Default: **the working tree**, so uncommitted work is reviewed. |
 | `--cap N` | Iteration cap. Default 5. |
 | `--effort high` | Forces the `deep` tier and raises diversify-then-vote from 3 finders to 5. |
-| `--no-simplify` | Skip sub-step C (`polish simplify`). |
+| `--no-simplify` | Skip sub-step C (`code-quality simplify`). |
 | `--no-checks` | Skip sub-step D. Convergence then means findings-clean only, and the report says so. |
 | `--report` | Report-only. Forces `CAP=1`, skips B/C/D, applies nothing. The local counterpart of `review-loop`'s `--no-feedback`. |
 | `--include-untracked` | Treat untracked, non-ignored files as added. Off by default. |
@@ -153,9 +153,10 @@ while ITERATION < CAP:
     #     Each finding leaves `open` through a fix OR a written rationale.
     apply_findings(BUS)          # → appends `applied` / `declined` / `flagged`
 
-    # C — simplify
+    # C — simplify, then commit what it applied (code-quality never commits)
     if not NO_SIMPLIFY:
-        Skill("polish", "simplify")
+        Skill("code-quality", "simplify")
+        git diff --quiet || { git add -u && git commit -m "chore: simplify pass (mechanical refactors)"; }
 
     # D — the local green gate
     if not NO_CHECKS:
@@ -257,8 +258,8 @@ run that buries them has converted the safety valve back into a green-wash.
   ([`findings-bus.md`](./rules/findings-bus.md#append-only-and-why)).
 - **Never edit a reviewer-written field.** Claim, score, severity, and verdict are immutable to this
   loop — the same discipline `checks.yaml` applies to the executor.
-- **Only `Skill("polish", "simplify")`.** Any other `polish` mode dispatches a reviewer pass and
-  creates a cycle — the same anti-circularity guarantee `review-loop` holds.
+- **Sub-step C is `code-quality simplify` and nothing broader.** It dispatches no reviewer, so
+  sub-step A stays the only review pass — the same acyclicity `review-loop` holds.
 - **Cap is a hard limit.** Surface what is open and stop; never extend it silently.
 - **Hand off at the PR boundary.** Once a PR exists, `review-loop` owns convergence. Do not re-run
   this loop against a branch whose PR is open and being read.
@@ -269,7 +270,7 @@ run that buries them has converted the safety valve back into a green-wash.
 | --- | --- |
 | [`branch-reviewer`](../../../agents/branch-reviewer.md) | Sub-step A — the PR-less reviewer, dispatched per iteration. Composes the detection core by reference. |
 | [`review-loop`](../review-loop/SKILL.md) | **Sibling, never nested.** Same loop shape over a different bus. This one runs pre-PR; that one runs once a PR exists. |
-| [`polish`](../polish/SKILL.md) | Sub-step C (`simplify` only). `polish`'s own review pass needs a PR; this loop is what makes a pre-PR review possible at all. |
-| [`create-pr`](../../delivery/create-pr/SKILL.md) | **Caller**, at its pre-push Step 5.5 — default-on in both modes (`--no-pre-review` opts out), and load-bearing under `--split`, where its post-draft `review-loop` cannot run at all and the slot otherwise gets `polish simplify` with no review. Converge here, then open the PR with less left for the post-draft loop to find. |
+| [`code-quality`](../code-quality/SKILL.md) | Sub-step C (`simplify`). Commits nothing itself; this loop commits its edits. |
+| [`create-pr`](../../delivery/create-pr/SKILL.md) | **Caller**, at its pre-push Step 5.5 — default-on in both modes (`--no-pre-review` opts out), and load-bearing under `--split`, where its post-draft `review-loop` cannot run at all and the slot otherwise gets `code-quality simplify` with no review. Converge here, then open the PR with less left for the post-draft loop to find. |
 | [`pr-review`](../pr-review/SKILL.md) | The one-shot read-only counterpart, for a PR. `--report` is this skill's equivalent for a branch. |
 | [`findings-bus.md`](./rules/findings-bus.md) | Owns the record, the lifecycle, and the convergence predicate. Read it; never restate it. |

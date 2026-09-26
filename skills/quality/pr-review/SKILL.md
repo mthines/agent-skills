@@ -272,7 +272,7 @@ Both exemptions are the agent's, not this command's, so this refusal is a restat
 | **`/pr-review <PR>`** | yes | **no** | no | no — one dispatch |
 | [`/implement-suggestion <PR>`](../../workflow/implement-suggestion/SKILL.md) | no — applies existing comments | yes | yes | no (`--watch` repeats) |
 | [`review-loop`](../review-loop/SKILL.md) | yes | yes | yes | yes, cap 5, converges on threads + CI |
-| [`/polish`](../polish/SKILL.md) | yes | mechanical only | no | no — one pass each |
+| [`code-quality simplify`](../code-quality/SKILL.md) | no | mechanical only | no | no — one pass |
 
 `/pr-review <PR>` is the one read-only entry point, and it is what the agent's own description,
 `depth-routing.md`, and `memory.md` all already tell the user to type. Inside the loop,

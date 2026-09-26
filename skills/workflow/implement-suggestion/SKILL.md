@@ -552,8 +552,8 @@ Templates:
 | Skill | Relationship |
 | --- | --- |
 | `ci-auto-fix` | **Owns red CI. This skill never fixes it.** The worker's pre-push checks (Phase 6) are local and gate the push; post-push check state is only ever read as a *stop reason* under `--watch`. No `ci-auto-fix` dispatch happens here, and none of its 2-handoff budget is spent. |
-| `review-loop` | **The composition point.** "Apply the review comments **and** get CI green" is `review-loop` (or `polish`), which sequences `pr-reviewer` → this skill → `polish simplify` → `ci-auto-fix`. Invoked standalone, this skill leaves red CI to the caller — deliberately. |
-| `review-loop --external-review` | Overlaps `--watch`: both wait on an out-of-process reviewer. `--watch` is the thin one (apply + push + stop). `review-loop --external-review` adds `--resolve-all`, `polish simplify`, the CI sub-step, and the description refresh. Both call the shared [review-activity poll](../../../agents/shared/rules/review-activity-poll.md). They never nest — `review-loop`'s hard rule forbids invoking this skill with `--watch`. |
+| `review-loop` | **The composition point.** "Apply the review comments **and** get CI green" is `review-loop`, which sequences `pr-reviewer` → this skill → `code-quality simplify` → `ci-auto-fix`. Invoked standalone, this skill leaves red CI to the caller — deliberately. |
+| `review-loop --external-review` | Overlaps `--watch`: both wait on an out-of-process reviewer. `--watch` is the thin one (apply + push + stop). `review-loop --external-review` adds `--resolve-all`, `code-quality simplify`, the CI sub-step, and the description refresh. Both call the shared [review-activity poll](../../../agents/shared/rules/review-activity-poll.md). They never nest — `review-loop`'s hard rule forbids invoking this skill with `--watch`. |
 | `pr-reviewer` | Upstream producer of the findings this skill consumes; read-only, never invoked from here. |
 
 ## Key Principles
