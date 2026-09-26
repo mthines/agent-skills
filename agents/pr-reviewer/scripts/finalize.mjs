@@ -1232,8 +1232,8 @@ async function selfTest() {
       r.inline.length === 1 && r.payload.ADDITIONAL_FINDINGS.length === 1);
     const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-nitpick-only-headline");
     check("the payload renders through render-report.mjs with zero manual edits", rendered.ok, rendered.stderr.trim());
-    check("the headline now points at the note below instead of reading as if nothing happened",
-      rendered.ok && /No findings — \d+ gates? need attention \(1 more note below\)/.test(rendered.stdout));
+    check("the headline counts the posted note instead of reading as if nothing happened",
+      rendered.ok && /^### ⚠️ No findings — \d+ gates? needs? attention · 1 note$/m.test(rendered.stdout));
   }
 
   // AC-10 case: suppression >=3/>=2 + never-suppressible.

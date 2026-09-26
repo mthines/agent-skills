@@ -120,7 +120,7 @@ finding.
 
 | Section | Literal marker in the body | Extractable unit | Anchored? |
 | --- | --- | --- | --- |
-| Headline | first non-marker, non-banner line, always a `### ` heading | the count-forward verdict line — `### <glyph> <N> findings — <K> blocking`, or `### ✅ No issues found`, or `### <glyph> No findings — <M> gates need attention`. The `SUMMARY` sentence about the change is the **next** non-empty line. | n/a |
+| Headline | first non-marker, non-banner line, always a `### ` heading | the count-forward verdict line — `### <glyph> <N> findings — <K> blocking`, or `### ✅ No issues found`, or `### <glyph> No findings — <M> gates need attention`. Any of the three may end in ` · <M> note(s)`, the count of posted one-liners listed under *Additional findings*, so match the forms as prefixes. The `SUMMARY` sentence about the change is the **next** non-empty line. | n/a |
 | Partial-review banner | `⚠️ **Partial review — tool budget exhausted` | boolean: the run was truncated | n/a |
 | Gate-status table | the `\| Gate \| Status \| Details \|` table inside `<details><summary>Review details…` | one unit per row whose Status is `❌` or `⚠️`: `{gate, status, details}`. `✅` rows carry no finding. | **No** — gate findings have no `path:line` |
 | Optimality cards | `<summary>Is there a better approach? (<N>)</summary>` | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |

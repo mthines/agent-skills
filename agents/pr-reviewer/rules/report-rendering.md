@@ -313,6 +313,21 @@ optional advisory note:
 | empty, `VERDICT: PASS` | `### ✅ No issues found` |
 | empty, `VERDICT: WARN` / `FAIL` | `### <verdict glyph> No findings — <M> gates need attention` |
 
+**Notes are counted, never folded into findings.**
+A cleared `nitpick:` / `question:` / `praise:` one-liner posts inline but earns no `FINDINGS` row,
+because a one-liner carries no title, so it is listed in `ADDITIONAL_FINDINGS` instead.
+Every heading form appends ` · <M> notes` (` · 1 note` when singular), counting the
+`ADDITIONAL_FINDINGS` entries whose `prefix` is a one-liner prefix, and drops the clause at `M == 0`.
+Without it, six comments at the code sat under a heading reading `5 findings`.
+The clause is appended after the whole form, so each form in the table stays a prefix of the
+rendered heading:
+
+```markdown
+### 🟠 5 findings — 1 blocking · 1 note
+### ✅ No issues found · 2 notes
+### ⚠️ No findings — 1 gate needs attention · 1 note
+```
+
 **It counts findings, not gates.** The old headline counted gate statuses (`1 error, 2 warnings`)
 while the inline comments were findings, with nothing reconciling the two numbers — which is most of
 why the report and the inline surface read as unrelated. The number a PR author acts on is the

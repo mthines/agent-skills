@@ -30,11 +30,14 @@ import { dirname, join } from "node:path";
 import {
   TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX, TITLE_MAX,
   worstTier, tierTally, footerLine, fixButton, anchor, assertPostable,
-  assertNoStructure, sentenceCount, assertPlain as spineAssertPlain,
+  assertNoStructure, sentenceCount, assertPlain as spineAssertPlain, CONV_PREFIXES, CLAIM_PREFIXES,
 } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE = join(HERE, "..", "templates", "report-body.md");
+
+/** One-liner prefixes. A posted one of these counts as a NOTE in the headline, never a finding. */
+const NOTE_PREFIXES = CONV_PREFIXES.filter((p) => !CLAIM_PREFIXES.includes(p));
 
 const VALID_STATUS = new Set(["✅", "⚠️", "❌", "⏭️"]);
 const VALID_MODES = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
@@ -1008,32 +1011,34 @@ function main() {
   // The count-forward headline. `<N> findings` is the number the author acts on, so it leads; the
   // gate state follows in the reasons line. A run with no findings still has a state to report,
   // which is what the two zero-finding forms are for.
+  //
+  // Notes (A/B round 2 item 7). A cleared `nitpick:`/`question:` one-liner posts inline but earns
+  // no FINDINGS row — a title is forbidden on a one-liner and required on a row — so it lands in
+  // ADDITIONAL_FINDINGS instead. A reader who counted six comments at the code under a heading
+  // saying `5 findings` had no way to reconcile the two; ab/B/20230/2 was the zero-finding case of
+  // the same gap ("No findings" next to a posted comment). Every heading form now appends
+  // ` · <M> note(s)`, counted from ADDITIONAL_FINDINGS entries whose prefix is a one-liner prefix
+  // (comment-spine.mjs's CONV_PREFIXES minus CLAIM_PREFIXES), so the count is derived from the array
+  // it describes. APPENDED, never inserted: `### <glyph> <N> findings — <K> blocking` stays a
+  // prefix of the heading, the same append-after-the-parseable-part rule the Run line follows, so
+  // a consumer matching the documented forms by prefix keeps working
+  // (reviewer-report-ingest.md § Headline).
   const n = findings.length;
+  const notes = arr("ADDITIONAL_FINDINGS")
+    .filter((a) => isPlainObject(a) && NOTE_PREFIXES.includes(String(a.prefix))).length;
+  const notesSuffix = notes > 0 ? ` · ${notes} note${notes === 1 ? "" : "s"}` : "";
   let headline;
   if (n > 0) {
     const glyph = TIER_GLYPH[worstTier(findings)];
     headline = `### ${glyph} ${n} finding${n === 1 ? "" : "s"}`
-      + (blockingFindings > 0 ? ` — ${blockingFindings} blocking` : "");
+      + (blockingFindings > 0 ? ` — ${blockingFindings} blocking` : "")
+      + notesSuffix;
   } else if (verdict === "PASS") {
-    headline = "### ✅ No issues found";
+    headline = `### ✅ No issues found${notesSuffix}`;
   } else {
     const gates = failing + warning;
-    // ab/B/20230/2: "No findings" is correct on its own terms (FINDINGS is the claim-severity
-    // table, and zero `issue:`/`suggestion:` findings cleared) — but rendered alone, next to a
-    // real write-plan comment for a cleared `nitpick:`/`question:` one-liner that earns no table
-    // row, it reads as "nothing happened" when something did. `ADDITIONAL_FINDINGS_SECTION`
-    // already renders right below this headline whenever that array is non-empty (report-
-    // rendering.md's own placeholder-omission rule) — this only makes the headline itself point at
-    // it, rather than leaving a reader to notice the accordion on their own. No fixture exercises
-    // this exact combination (verdict FAIL/WARN, zero FINDINGS, non-empty ADDITIONAL_FINDINGS) —
-    // every existing FAIL/WARN report-body fixture has FINDINGS.length > 0 — so this is additive,
-    // never a change to a pinned byte.
-    const additionalCount = arr("ADDITIONAL_FINDINGS").length;
-    const additionalNote = additionalCount > 0
-      ? ` (${additionalCount} more note${additionalCount === 1 ? "" : "s"} below)`
-      : "";
-    headline = `### ${VERDICT_GLYPH[verdict]} No findings — ${gates} gate${gates === 1 ? "" : "s"}`
-      + ` need attention${additionalNote}`;
+    headline = `### ${VERDICT_GLYPH[verdict]} No findings — ${gates} gate${gates === 1 ? " needs" : "s need"}`
+      + ` attention${notesSuffix}`;
   }
 
   const summary = String(data.SUMMARY).trim();

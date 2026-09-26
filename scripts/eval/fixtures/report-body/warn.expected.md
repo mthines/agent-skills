@@ -1,5 +1,5 @@
 <!-- PR_REVIEWER_REPORT -->
-### 🟠 3 findings
+### 🟠 3 findings · 2 notes
 
 Reworks the retry path so `retryRequest` throws instead of returning `null`.
 

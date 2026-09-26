@@ -9572,6 +9572,54 @@ const isPollBlock = (block) =>
       hdr === -1 ? "table header not found in depth-routing.md"
         : `first differing row: ${got.find((l, i) => l !== want[i]) ?? want[got.length] ?? "(length)"}`);
   }
+
+  // G84h (A/B round 2 item 7): posted one-liners are counted as NOTES in the headline. A cleared
+  // nitpick/question posts inline but earns no FINDINGS row, so six comments at the code sat under
+  // `5 findings`. The clause is derived from ADDITIONAL_FINDINGS by prefix (never a hand-supplied
+  // number), never counts a claim, and is APPENDED so every documented form stays a prefix.
+  // Executed against the real renderer, like G19.
+  {
+    const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+    const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/pass.json"), "utf8"));
+    const render = (fn) => {
+      const c = structuredClone(base); fn(c);
+      const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(c), encoding: "utf8" });
+      return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+    };
+    const note = (prefix, line) => ({ path: "n.ts", line, prefix, body: "A short note.", confidence: 91 });
+    const withBoth = render((c) => {
+      c.QUALITY = "produced 4 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
+      c.FINDINGS = [
+        { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
+        { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
+      ];
+      c.ADDITIONAL_FINDINGS = [note("nitpick", 3)];
+    });
+    s.check("G84h findings + a posted note: the note clause is appended after the blocking clause",
+      withBoth.ok && /^### 🟠 2 findings — 1 blocking · 1 note$/m.test(withBoth.out), withBoth.err);
+    const passNotes = render((c) => { c.ADDITIONAL_FINDINGS = [note("nitpick", 3), note("question", 4)]; });
+    s.check("G84h a PASS with posted notes counts them rather than reading as if nothing was posted",
+      passNotes.ok && /^### ✅ No issues found · 2 notes$/m.test(passNotes.out), passNotes.err);
+    const claimOnly = render((c) => {
+      c.QUALITY = "produced 2 → posted inline 1 · cleared 2 · carried forward 0 · deferred 1 · below-bar 0";
+      c.FINDINGS = [{ title: "A quieter one", path: "b.ts", line: 2, tier: "low" }];
+      c.ADDITIONAL_FINDINGS = [note("suggestion", 5)];
+    });
+    s.check("G84h an over-cap claim in ADDITIONAL_FINDINGS is never counted as a note",
+      claimOnly.ok && /^### ⚪ 1 finding$/m.test(claimOnly.out) && !/ note/.test(claimOnly.out.split("\n")[1] || ""),
+      claimOnly.err);
+    const warnFixture = readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md"), "utf8");
+    s.check("G84h the warn snapshot (3 findings, a nitpick and a question) renders `3 findings · 2 notes`",
+      /^### 🟠 3 findings · 2 notes$/m.test(warnFixture));
+    const rrTxt = readFileSync(RENDER, "utf8");
+    s.check("G84h the renderer derives note prefixes from comment-spine.mjs (CONV_PREFIXES minus CLAIM_PREFIXES), never a local list",
+      /const NOTE_PREFIXES = CONV_PREFIXES\.filter\(\(p\) => !CLAIM_PREFIXES\.includes\(p\)\)/.test(rrTxt));
+    const rrDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/report-rendering.md"), "utf8");
+    const ingest = readFileSync(join(REPO_ROOT, "agents/shared/rules/reviewer-report-ingest.md"), "utf8");
+    s.check("G84h report-rendering.md documents the appended note clause; reviewer-report-ingest.md says to match the forms as prefixes",
+      /Notes are counted, never folded into findings/.test(rrDoc) && rrDoc.includes("### 🟠 5 findings — 1 blocking · 1 note")
+        && /may end in ` · <M> note\(s\)`/.test(ingest) && /match the forms as prefixes/.test(ingest));
+  }
 }
 
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,
