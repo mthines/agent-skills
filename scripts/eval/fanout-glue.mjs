@@ -166,6 +166,53 @@ async function runGlue({ verbose = false } = {}) {
     { kept: deduped.kept.length, dropped: deduped.dropped.length }) && ok;
   log(`[step d] deduped 3 raw candidate(s) -> ${deduped.kept.length} kept, ${deduped.dropped.length} dropped`);
 
+  // step d (extra, D5/AC-12) — a semantic-duplicate group (the same defect filed under a
+  // DIFFERENT defect_class per finder — the real dash0hq/dash0#20230 failure mode, which the
+  // exact/adjacent pass above can never catch by construction) plus a decoy that must survive,
+  // through the REAL finalize.mjs --dedupe-candidates end to end (dedupe() -> semanticDedupe()).
+  const semanticRawPath = join(dir, "semantic-raw-candidates.json");
+  const semanticRaw = [
+    {
+      finder: "correctness", defect_class: "edge-case", path: "src/pay.ts", line: 10, symbol: "processPayment",
+      claim: "processPayment does not handle a zero amount refund correctly",
+      bad_outcome: "a zero amount refund silently succeeds without reversing the charge",
+      evidence: ["src/pay.ts:10"], severity_hint: "high", verify_by: "trace the refund branch",
+    },
+    {
+      finder: "consumer-impact", defect_class: "contract-break", path: "src/pay.ts", line: 11, symbol: "processPayment",
+      claim: "processPayment silently succeeds on a zero amount refund",
+      bad_outcome: "callers assume the refund reversed the charge but it does not",
+      evidence: ["src/pay.ts:11"], severity_hint: "high", verify_by: "check callers",
+    },
+    // The decoy: same path, same symbol, a nearby line — but a disjoint topic. Proximity and
+    // symbol alone must never be enough to merge.
+    {
+      finder: "quality", defect_class: "maintainability", path: "src/pay.ts", line: 12, symbol: "processPayment",
+      claim: "this function is 140 lines long and mixes three concerns",
+      bad_outcome: "hard to test in isolation",
+      evidence: ["src/pay.ts:12"], severity_hint: "low", verify_by: "read the function",
+    },
+  ];
+  writeFileSync(semanticRawPath, JSON.stringify(semanticRaw, null, 2));
+  const semanticDedupedPath = join(dir, "semantic-deduped.json");
+  const semanticDedupeRun = spawnSync(process.execPath, [
+    FINALIZE, "--dedupe-candidates", semanticRawPath, "--out", semanticDedupedPath,
+  ], { encoding: "utf8" });
+  ok = assert("[step d, semantic] finalize.mjs --dedupe-candidates exits 0",
+    semanticDedupeRun.status === 0, semanticDedupeRun.stderr) && ok;
+  if (existsSync(semanticDedupedPath)) {
+    const semanticDeduped = JSON.parse(readFileSync(semanticDedupedPath, "utf8"));
+    ok = assert("[step d, semantic] the differently-worded, differently-classed duplicate merges via semanticDedupe",
+      semanticDeduped.kept.length === 2 && semanticDeduped.dropped.length === 1
+        && semanticDeduped.dropped[0]._dedupe_reason === "semantic",
+      { kept: semanticDeduped.kept.length, dropped: semanticDeduped.dropped.length }) && ok;
+    ok = assert("[step d, semantic] the maintainability decoy survives — never semantically merged",
+      semanticDeduped.kept.some((/** @type {any} */ c) => c.defect_class === "maintainability"),
+      semanticDeduped.kept.map((/** @type {any} */ c) => c.defect_class)) && ok;
+    log(`[step d, semantic] semantic dedupe: ${semanticRaw.length} raw -> ${semanticDeduped.kept.length} kept, `
+      + `${semanticDeduped.dropped.length} dropped (1 semantic decoy correctly kept)`);
+  }
+
   // step e (stubbed) — one verifier pass per surviving candidate.
   const verified = deduped.kept.map(mockVerify);
   log(`[step e] mock-verified ${verified.length} surviving candidate(s)`);
@@ -212,6 +259,45 @@ async function runGlue({ verbose = false } = {}) {
   ], { encoding: "utf8" });
   ok = assert("[step f] finalize.mjs --context/--judgments/--out-dir exits 0",
     finalizeRun.status === 0, finalizeRun.stderr) && ok;
+
+  // step f (extra, D4/AC-12) — a cap-violating stub verdict (a > 60-char title, the exact shape
+  // that failed closed live on arm C: "verifier-authored title/body exceeded comment-shape caps,
+  // not in fan-out prompt") caught by the REAL finalize.mjs --check-shape pre-flight.
+  const capViolatingPath = join(dir, "cap-violating-judgments.json");
+  const capViolatingJudgments = {
+    v: 1,
+    head_sha: "a1b2c3d",
+    candidates: [{
+      finder: "correctness", defect_class: "nil-deref", path: "a.ts", line: 12, symbol: "foo",
+      claim: "foo may be null here", bad_outcome: "crash", evidence: ["a.ts:12"], verify_by: "trace",
+      verdict: "confirmed", R: 90, A: 88, Ac: 88, final: 89, severity: "high", prefix: "issue",
+      blocking: true,
+      title: "x".repeat(70),
+      body: "foo may be null before this call and callers do not guard it.",
+      materiality: true, category: "nil-deref",
+    }],
+    gates: {
+      gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
+      gate5: { status: "PASS", details: "" },
+    },
+    threads: [],
+    lenses: {
+      optimality_cards: [], optimality_log: "skipped", standards_log: "skipped",
+      measurability_log: "skipped", holistic_log: "skipped",
+    },
+    summary: "cap-violating stub for --check-shape", memory: { relevance_rules: [], lessons_used: [] },
+  };
+  writeFileSync(capViolatingPath, JSON.stringify(capViolatingJudgments, null, 2));
+  const checkShapeRun = spawnSync(process.execPath, [FINALIZE, "--check-shape", capViolatingPath], { encoding: "utf8" });
+  ok = assert("[step f, check-shape] finalize.mjs --check-shape exits non-zero on a cap-violating stub verdict",
+    checkShapeRun.status !== 0, checkShapeRun.status) && ok;
+  let shapeResult = null;
+  try { shapeResult = JSON.parse(checkShapeRun.stdout); } catch { /* reported below */ }
+  ok = assert("[step f, check-shape] the violation names index 0 and field TITLE",
+    Boolean(shapeResult) && shapeResult.ok === false
+      && shapeResult.violations[0]?.index === 0 && shapeResult.violations[0]?.field === "TITLE",
+    shapeResult) && ok;
+  log("[step f, check-shape] cap-violating stub verdict caught by the real finalize.mjs --check-shape");
 
   let result = null;
   const resultPath = join(outDir, "finalize-result.json");

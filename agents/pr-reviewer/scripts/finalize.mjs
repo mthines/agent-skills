@@ -44,6 +44,7 @@ import {
   toFindingBullet, toAdvisoryFinding, toOpenThreadBullet, toInlineCommentPayload,
   buildOptimalityCard,
 } from "./finalize/payload.mjs";
+import { renderComment } from "./render-comment.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
@@ -519,6 +520,38 @@ export function dedupeCandidates(candidates) {
   return { kept: semKept.map(strip), dropped: [...dropped, ...semDropped].map(strip) };
 }
 
+/**
+ * D4 / AC-10: the `--fanout` orchestrator's post-synthesis pre-flight (Step f, one repair round).
+ * Maps every judgments.json candidate through the REAL `toInlineCommentPayload` -> `renderComment`
+ * path — the exact code the posting run itself calls, not a second hand-rolled shape validator —
+ * and reports which candidates would fail to render, naming the candidate's index and the FIELD
+ * `render-comment.mjs`'s rejection names (its error messages open with the field, e.g. `TITLE is
+ * 61 chars, over the 60-char cap`). A candidate that fails here failed closed live on arm C
+ * (dash0hq/dash0#20230): "verifier-authored title/body exceeded comment-shape caps (not in
+ * fan-out prompt)" — this is the mechanical check that would have caught it before verification
+ * spend, not after.
+ * @param {any} judgments
+ * @returns {{ok: boolean, violations: {index: number, finder: string, field: string, reason: string}[]}}
+ */
+export function checkShape(judgments) {
+  const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
+  const shaSrc = String(judgments?.head_sha || "");
+  const sha = /^[0-9a-f]{7,40}$/.test(shaSrc) ? shaSrc.slice(0, 7) : "0000000";
+  /** @type {{index: number, finder: string, field: string, reason: string}[]} */
+  const violations = [];
+  candidates.forEach((/** @type {any} */ c, /** @type {number} */ index) => {
+    try {
+      const payload = toInlineCommentPayload(c, { sha });
+      renderComment(payload);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const m = /^([A-Z][A-Z_]{1,24})\b/.exec(msg);
+      violations.push({ index, finder: c?.finder, field: m ? m[1] : "UNKNOWN", reason: msg });
+    }
+  });
+  return { ok: violations.length === 0, violations };
+}
+
 // ── CLI ──
 
 /** @param {string[]} argv */
@@ -535,7 +568,8 @@ function parseArgs(argv) {
 
 function usage() {
   console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]\n"
-    + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]");
+    + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
+    + "   or: finalize.mjs --check-shape <judgments.json>");
 }
 
 // AC-11: the 5 report-body fixtures this replay drives — each backed by a
@@ -1178,6 +1212,42 @@ async function selfTest() {
       r2.status === 0 && (() => { try { const p = JSON.parse(r2.stdout); return p.kept.length === 1 && p.dropped.length === 1; } catch { return false; } })());
   }
 
+  // D4 / AC-10: checkShape() — the pure function, called directly.
+  {
+    const conforming = { candidates: [mkCandidate({ title: "Handle the null case", final: 90 })] };
+    const okResult = checkShape(conforming);
+    check("checkShape passes a conforming candidate", okResult.ok === true && okResult.violations.length === 0);
+
+    const overLong = { candidates: [mkCandidate({ title: "x".repeat(61), final: 90 })] };
+    const badResult = checkShape(overLong);
+    check("checkShape catches a 61-char title, naming the index and field TITLE",
+      badResult.ok === false && badResult.violations.length === 1
+        && badResult.violations[0].index === 0 && badResult.violations[0].field === "TITLE");
+  }
+
+  // D4 / AC-10 CLI: `--check-shape <judgments.json>` through the real process boundary.
+  {
+    const shapeDir = join(scratchRoot(), "finalize-check-shape-cli");
+    rmSync(shapeDir, { recursive: true, force: true });
+    mkdirSync(shapeDir, { recursive: true });
+
+    const goodPath = join(shapeDir, "good.json");
+    writeFileSync(goodPath, JSON.stringify({ head_sha: "abc1234def", candidates: [mkCandidate({ title: "Handle the null case", final: 90 })] }));
+    const rGood = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--check-shape", goodPath], { encoding: "utf8" });
+    check("finalize.mjs --check-shape exits 0 on a conforming judgments.json",
+      rGood.status === 0, (rGood.stderr || "").trim().slice(0, 300));
+    check("finalize.mjs --check-shape prints {ok:true, violations:[]} on stdout",
+      (() => { try { const p = JSON.parse(rGood.stdout); return p.ok === true && p.violations.length === 0; } catch { return false; } })());
+
+    const badPath = join(shapeDir, "bad.json");
+    writeFileSync(badPath, JSON.stringify({ head_sha: "abc1234def", candidates: [mkCandidate({ title: "x".repeat(61), final: 90 })] }));
+    const rBad = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--check-shape", badPath], { encoding: "utf8" });
+    check("finalize.mjs --check-shape exits 1 on a shape-violating judgments.json",
+      rBad.status === 1);
+    check("finalize.mjs --check-shape's violation names index 0 and field TITLE",
+      (() => { try { const p = JSON.parse(rBad.stdout); return p.ok === false && p.violations[0]?.index === 0 && p.violations[0]?.field === "TITLE"; } catch { return false; } })());
+  }
+
   // End-to-end CLI replay, shaped like ab/B/20230/1's real inputs (multi-line/markdown-link
   // thread asks, a thread this run resolves, a claim needing a built FP, an optimality card) —
   // spawns `finalize.mjs --context … --judgments … --out-dir …` as a REAL subprocess (the only
@@ -1399,6 +1469,17 @@ async function main() {
 
   if (opts["self-test"]) { await selfTest(); return; }
   if (opts["replay-fixtures"]) { await runReplayFixtures(); return; }
+
+  // D4: --check-shape <judgments.json> — the --fanout Step f pre-flight. Exit 0 (ok) or 1, with
+  // {ok, violations} on stdout either way, so the orchestrator can parse the violations to decide
+  // which verifier to re-dispatch for the one repair round.
+  if (opts["check-shape"]) {
+    const inPath = /** @type {string} */(opts["check-shape"]);
+    const judgments = JSON.parse(readFileSync(inPath, "utf8"));
+    const result = checkShape(judgments);
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(result.ok ? 0 : 1);
+  }
 
   // D17: the --fanout orchestrator's candidate-merge step (skills/quality/pr-review/SKILL.md's
   // `--fanout` orchestration, step d). Reads a JSON file — a raw array, or {candidates:[...]} —

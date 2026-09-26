@@ -495,14 +495,49 @@ export function assertAbsent(where, v, why) {
   }
 }
 
+/**
+ * The comment-shape caps, sourced LIVE from the constants above — never restated as bare numbers.
+ * (plan D4/AC-9): a `--fanout` run's verifier sub-agents get no chance to read this file's source
+ * (the worker preamble forbids it), so this is the one way they learn the real caps rather than a
+ * hand-typed `60-char` / `200-char` that drifts the moment `TITLE_MAX`/`PROSE_MAX` change. `--shape-
+ * caps` pastes this block VERBATIM into every verifier prompt (`skills/quality/pr-review/SKILL.md
+ * § --fanout`, Step e).
+ * @returns {string}
+ */
+export function shapeCapsBlock() {
+  return [
+    "## Comment shape caps (source of truth: comment-spine.mjs — do not restate these numbers)",
+    "",
+    `- TITLE: required on \`issue:\`/\`suggestion:\`, forbidden on a one-liner. <= ${TITLE_MAX} chars,`
+      + " a noun phrase (no sentence punctuation outside backticks), no pipe `|`.",
+    `- BODY: <= ${PROSE_MAX} chars, <= 2 sentences. A sentence is a run of \`.\`/\`!\`/\`?\` immediately`
+      + " followed by whitespace or end-of-string — a dotted filename or version number"
+      + " (`foo.md`, `3.2.6`) does not count, in backticks or bare; this is a reader-facing style"
+      + " rule now (backtick code symbols for readability), not a counting workaround.",
+    `- EVIDENCE line: <= ${EVIDENCE_MAX} chars, <= ${EVIDENCE_REFS_MAX} references.`,
+    `- Fix fence: <= ${FENCE_MAX_LINES} lines, one per comment, must declare a language.`,
+    `- UNVERIFIED reason: <= ${UNVERIFIED_MAX} chars.`,
+    "- No markdown heading or list marker opening the body. No markdown link inside TITLE/BODY —",
+    "  supply a bare url in its own field.",
+    "- Backtick every code symbol mentioned in prose (filenames, identifiers, version numbers).",
+  ].join("\n");
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────────────────────────
 //
 // `node comment-spine.mjs --check <file>` runs `assertPostable` over a final body and exits
 // non-zero with the reason on stderr. This is the only executable form of the "post the renderer's
 // bytes verbatim" rule, and it exists so the pre-write assertion blocks in `pr-reviewer.md` can
 // call the same code the renderers do instead of re-deriving the signatures as greps that drift.
+//
+// `--shape-caps` prints `shapeCapsBlock()` and exits 0 — no file argument, since it reads nothing
+// but this module's own constants.
 if (import.meta.url === `file://${process.argv[1]}`) {
   const argv = process.argv.slice(2);
+  if (argv.includes("--shape-caps")) {
+    process.stdout.write(`${shapeCapsBlock()}\n`);
+    process.exit(0);
+  }
   const flags = { check: null, relayCheck: null, assetsCheck: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -512,7 +547,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     else {
       process.stderr.write(`unknown argument: ${a}\n`
         + "usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>"
-        + " | --assets-check <body-file>\n");
+        + " | --assets-check <body-file> | --shape-caps\n");
       process.exit(2);
     }
   }
@@ -591,7 +626,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   }
   if (!flags.check) {
     process.stderr.write("usage: comment-spine.mjs --check <body-file> | --relay-check <body-file>"
-      + " | --assets-check <body-file>\n");
+      + " | --assets-check <body-file> | --shape-caps\n");
     process.exit(2);
   }
   const { readFileSync } = await import("node:fs");
