@@ -8760,24 +8760,18 @@ const isPollBlock = (block) =>
     }
   }
 
-  // AC-12: the byte-unchanged file set really is unchanged versus origin/main — reproduces
-  // checks.yaml's own AC-12 command as a standing L1 guard, so Phase 5's prose-slimming (which
-  // touches many agents/pr-reviewer/rules/*.md files) cannot silently drift one of these too.
-  {
-    const AC12_PATHS = [
-      "agents/pr-reviewer/scripts/fingerprint.mjs",
-      "agents/pr-reviewer/scripts/comment-spine.mjs",
-      "agents/pr-reviewer/templates",
-      "scripts/eval/fixtures/report-body",
-      "scripts/eval/fixtures/inline-comment",
-      "scripts/eval/fixtures/report-pointer",
-      "scripts/eval/fixtures/posted-bodies",
-      "agents/shared/rules/reviewer-report-ingest.md",
-    ];
-    const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ...AC12_PATHS], { cwd: REPO_ROOT, encoding: "utf8" });
-    s.check("G63d AC-12's byte-unchanged file set (fingerprint/comment-spine/templates/report fixtures/reviewer-report-ingest.md) is unchanged vs. origin/main",
-      r.status === 0, r.status === null ? "git not found" : `git diff exit ${r.status}`);
-  }
+  // G63d — RETIRED (plan feat/pr-reviewer-shrink-fanout-ab, D14). It asserted that AC-12's
+  // byte-unchanged file set (fingerprint.mjs / comment-spine.mjs / templates / report fixtures /
+  // reviewer-report-ingest.md) was unchanged versus origin/main. That was a property of #205's own
+  // diff at merge time, not a standing invariant this repo owes forever — and this PR intentionally
+  // changes agents/pr-reviewer/scripts/comment-spine.mjs (D7's sentenceCount rewrite, from a naive
+  // per-character `.`/`!`/`?` count to a terminal-punctuation-run regex, so `3.2.6` and `foo.md`
+  // stop scoring as sentences), so the asserted property reds by construction the moment that
+  // change lands. AC-12 stays enforced in #205's own checks.yaml, which is unaffected by this
+  // worktree. The comment-spine.mjs behaviour change this guard would have blocked is now covered
+  // by G84 (shape semantics: terminal-punctuation sentenceCount, single optimality heading,
+  // semantic-dedupe decoys) instead. Do not resurrect this check without first re-deriving whether
+  // comment-spine.mjs is meant to be frozen again.
 
   // Gate 2 (CI) structurally never participates: finalizeReview's own signature carries no ci
   // parameter, so a red/pending CI status has no path into the verdict at all — not merely a
