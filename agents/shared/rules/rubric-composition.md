@@ -70,8 +70,11 @@ pre-verification candidate pool only (`dedupeCandidates()`, never `finalizeRevie
 post-verification path): two candidates merge iff same `path`, both `symbol` non-null and equal,
 both `line` within 3 of each other, and a claim-token Jaccard similarity `>= 0.24` (calibrated on
 the real run: true duplicates scored 0.23–0.46, every distinct pair on the same path scored
-`<= 0.19`). Grouping is single-linkage, order-deterministic, and the kept record carries a
-`_semantic_merged` entry per merged candidate so the verifier sees every finder's framing.
+`<= 0.19`). Grouping is the single-linkage transitive closure of those pairwise matches
+(union-find), so a candidate bridging two clusters merges both and the partition does not depend
+on input order; the kept representative is picked by a total order (highest `severity_hint`, then
+earliest `line`, then lexical `finder` / `defect_class` / `claim`), so it does not either. The kept
+record carries a `_semantic_merged` entry per merged candidate so the verifier sees every finder's framing.
 **Never agreement-promoted** — a semantic merge is a lower-confidence, threshold-calibrated
 heuristic match, not the exact `(file, line, prefix)` agreement the section below defines, and
 promoting it would change `## Cross-rubric agreement`'s threshold semantics on the strength of a

@@ -170,6 +170,28 @@ function semanticMatch(a, b) {
   return jaccard(claimTokens(a), claimTokens(b)) >= SEMANTIC_JACCARD_MIN;
 }
 
+const SEVERITY_RANK = /** @type {Record<string, number>} */ ({ critical: 4, high: 3, medium: 2, low: 1 });
+
+/**
+ * Total order used to pick a semantic group's representative independently of input order:
+ * highest `severity_hint` (or `severity`) first, then the earliest numeric `line`, then lexical
+ * `finder`, `defect_class`, and `claim`.
+ * @param {any} a @param {any} b
+ */
+function representativeOrder(a, b) {
+  const sev = (/** @type {any} */ c) => SEVERITY_RANK[String(c.severity_hint || c.severity || "").toLowerCase()] || 0;
+  if (sev(a) !== sev(b)) return sev(b) - sev(a);
+  const la = typeof a.line === "number" ? a.line : Infinity;
+  const lb = typeof b.line === "number" ? b.line : Infinity;
+  if (la !== lb) return la < lb ? -1 : 1;
+  for (const k of ["finder", "defect_class", "claim"]) {
+    const x = String(a[k] ?? "");
+    const y = String(b[k] ?? "");
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
 /**
  * The semantic pass (D5), called by `dedupeCandidates()` AFTER the existing exact/adjacent pass —
  * never inside `finalizeReview()`'s post-verification path, and never agreement-promoted (a
@@ -177,37 +199,60 @@ function semanticMatch(a, b) {
  * having verified that behaviour, which `rubric-composition.md ## Dedupe` documents explicitly as
  * out of scope for this pass).
  *
- * Grouping is single-linkage: a candidate joins the first existing group with which it matches ANY
- * member (not only the group's head), walked in input order, so the result partition is
- * order-deterministic regardless of which candidate happens to arrive first within a cluster. The
- * first member added to a group is kept; the rest are dropped and recorded on the kept record's
- * `_semantic_merged` array (`{finder, defect_class, line, claim}` each) — so the verifier sees
- * every framing the finders raised, not only the one that happened to survive.
+ * Grouping is single-linkage TRANSITIVE CLOSURE (union-find over every matching pair): two
+ * candidates land in the same group iff a chain of pairwise `semanticMatch`es connects them, so a
+ * candidate that bridges two otherwise-disjoint clusters merges both, and the partition is
+ * independent of input order. The representative kept for each group is chosen by
+ * `representativeOrder` — highest `severity_hint`, then earliest `line`, then lexical
+ * `finder` / `defect_class` / `claim` — so it too is independent of input order. The other members
+ * are dropped and recorded on the kept record's `_semantic_merged` array
+ * (`{finder, defect_class, line, claim}` each), so every framing the finders raised is recorded.
+ * `kept` is emitted in the input position of
+ * each group's first-seen member, so an ungrouped candidate keeps its place.
  * @param {any[]} candidates - in finder load order
  * @returns {{ kept: any[], dropped: any[] }}
  */
 export function semanticDedupe(candidates) {
-  /** @type {any[][]} */
-  const groups = [];
-  for (const c of candidates) {
-    const target = groups.find((g) => g.some((member) => semanticMatch(member, c)));
-    if (target) target.push(c);
-    else groups.push([c]);
+  const parent = candidates.map((_, i) => i);
+  /** @param {number} i @returns {number} */
+  const find = (i) => {
+    while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+    return i;
+  };
+  for (let i = 0; i < candidates.length; i++) {
+    for (let j = i + 1; j < candidates.length; j++) {
+      if (semanticMatch(candidates[i], candidates[j])) {
+        const ri = find(i);
+        const rj = find(j);
+        if (ri !== rj) parent[Math.max(ri, rj)] = Math.min(ri, rj);
+      }
+    }
   }
+
+  /** @type {Map<number, any[]>} */
+  const groups = new Map();
+  candidates.forEach((c, i) => {
+    const root = find(i);
+    const g = groups.get(root);
+    if (g) g.push(c);
+    else groups.set(root, [c]);
+  });
 
   /** @type {any[]} */
   const kept = [];
   /** @type {any[]} */
   const dropped = [];
-  for (const g of groups) {
-    const head = { ...g[0] };
-    if (g.length > 1) {
-      head._semantic_merged = g.slice(1).map((m) => ({
+  for (const g of groups.values()) {
+    const ordered = [...g].sort(representativeOrder);
+    const head = { ...ordered[0] };
+    const rest = ordered.slice(1);
+    if (rest.length > 0) {
+      head._semantic_merged = rest.map((m) => ({
         finder: m.finder, defect_class: m.defect_class, line: m.line, claim: m.claim,
       }));
     }
     kept.push(head);
-    for (const m of g.slice(1)) {
+    for (const m of rest) {
       dropped.push({ ...m, _dedupe_dropped_for: head.finder, _dedupe_reason: "semantic" });
     }
   }
@@ -336,6 +381,26 @@ async function selfTest() {
     // semanticDedupe's output, and no kept record from a semantic-only merge carries the field.
     check("(f) a semantic merge never sets agreement_promoted",
       qKept.every((k) => k.agreement_promoted === undefined));
+
+    // (g) A BRIDGING candidate: A and B share no claim tokens, C overlaps both. Single-linkage
+    // closure must put all three in ONE group for every input permutation — a first-match walk
+    // over [A,B,C] opens two groups and C joins only the first. And the kept representative must
+    // be the same record for every permutation.
+    const bA = { finder: "correctness", defect_class: "edge-case", path: "src/br.ts", line: 20, symbol: "bridge", severity_hint: "medium",
+      claim: "alpha bravo charlie delta", bad_outcome: "" };
+    const bB = { finder: "quality", defect_class: "maintainability", path: "src/br.ts", line: 21, symbol: "bridge", severity_hint: "high",
+      claim: "echo foxtrot golf hotel", bad_outcome: "" };
+    const bC = { finder: "intent", defect_class: "scope-creep", path: "src/br.ts", line: 22, symbol: "bridge", severity_hint: "low",
+      claim: "alpha bravo charlie delta echo foxtrot golf hotel", bad_outcome: "" };
+    /** @param {any[]} xs @returns {any[][]} */
+    const perms = (xs) => xs.length <= 1 ? [xs] : xs.flatMap((x, i) => perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p]));
+    const results = perms([bA, bB, bC]).map((p) => semanticDedupe(p));
+    check("(g) a bridging candidate merges all three into one group for every permutation",
+      results.every((r) => r.kept.length === 1 && r.dropped.length === 2),
+      results.map((r) => `kept=${r.kept.length}`).join(" "));
+    check("(g) the representative is the same record for every permutation (highest severity_hint)",
+      results.every((r) => r.kept.length === 1 && r.kept[0].finder === "quality"),
+      results.map((r) => r.kept.map((k) => k.finder).join("+")).join(" "));
 
     // Explicit decoy pair at the plan's own calibration floor (0.08 observed on the real run):
     // near-zero overlap must never merge even with every other precondition satisfied.
