@@ -9513,6 +9513,65 @@ const isPollBlock = (block) =>
         && /CLI: --shape-only exits 1 and names the cap/.test(out),
       (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
   }
+
+  // G84g (A/B round 2 item 6): sub-agent packing. Round 2 measured cost as driven by sub-agent
+  // COUNT (~110-160k base tokens each; 22 at t=0.8, 33 at t=1.0). plan-dispatch.mjs is the one
+  // executable grouping — verifier batches of VERIFY_BATCH_MAX with no two same-path candidates
+  // in one batch, one lens-bundle dispatch for holistic/optimality/measurability, finders and
+  // correctness votes never packed — and the two constants plus the per-band table are stated in
+  // three files, so this holds the prose to the code rather than trusting either to stay put.
+  {
+    const PD = join(REPO_ROOT, "agents/pr-reviewer/scripts/plan-dispatch.mjs");
+    const pdSrc = existsSync(PD) ? readFileSync(PD, "utf8") : "";
+    s.check("G84g plan-dispatch.mjs exists and is // @ts-check",
+      pdSrc !== "" && /^\/\/ @ts-check/m.test(pdSrc.split("\n").slice(0, 3).join("\n")));
+    const tsTxt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/tsconfig.json"), "utf8");
+    s.check("G84g tsconfig.json's files[] lists plan-dispatch.mjs", tsTxt.includes('"plan-dispatch.mjs"'));
+    const st = spawnSync(process.execPath, [PD, "--self-test"], { encoding: "utf8" });
+    s.check("G84g plan-dispatch.mjs --self-test passes (partition, path-distinct batches, bundle, packing never costs a dispatch)",
+      st.status === 0 && /^✓ plan-dispatch self-test: all \d+ cases passed$/m.test(st.stdout || ""),
+      (st.stdout || st.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+
+    const maxParallel = Number(/export const PR_REVIEW_MAX_PARALLEL = (\d+);/.exec(pdSrc)?.[1]);
+    const batchMax = Number(/export const VERIFY_BATCH_MAX = (\d+);/.exec(pdSrc)?.[1]);
+    const dtTxt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
+    const skTxt = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
+    const dtCap = Number(/The concurrency cap for this pipeline is \*\*(\d+)\*\* sub-agent dispatches per message/.exec(dtTxt)?.[1]);
+    const skCap = Number(/`PR_REVIEW_MAX_PARALLEL` — default (\d+)/.exec(skTxt)?.[1]);
+    s.check(`G84g PR_REVIEW_MAX_PARALLEL is one number in plan-dispatch.mjs (${maxParallel}), dispatch-topology.md (${dtCap}), and SKILL.md (${skCap})`,
+      Number.isInteger(maxParallel) && maxParallel === dtCap && maxParallel === skCap);
+    const dtBatch = Number(/\*\*`VERIFY_BATCH_MAX` \((\d+)\)\*\*/.exec(dtTxt)?.[1]);
+    const skBatch = Number(/`VERIFY_BATCH_MAX` \((\d+)\) candidates/.exec(skTxt)?.[1]);
+    s.check(`G84g VERIFY_BATCH_MAX is one number in plan-dispatch.mjs (${batchMax}), dispatch-topology.md (${dtBatch}), and SKILL.md (${skBatch})`,
+      Number.isInteger(batchMax) && batchMax === dtBatch && batchMax === skBatch);
+
+    s.check("G84g dispatch-topology.md bundles holistic/optimality/measurability and keeps standards-conformance out",
+      /\| holistic broad pass, optimality, measurability \| \*\*one lens-bundle dispatch\*\*/.test(dtTxt)
+        && /\| standards-conformance lens \| one, never in the bundle \|/.test(dtTxt));
+    s.check("G84g dispatch-topology.md keeps finders and correctness votes at one dispatch each",
+      /\| each active finder \| one each \|/.test(dtTxt) && /\| each `correctness` vote \| one each \|/.test(dtTxt));
+    s.check("G84g dispatch-topology.md states the queue rules: one message per cap, each unit once, one retry at most",
+      /Send the next message only after every dispatch in the current one has returned/.test(dtTxt)
+        && /Dispatch each unit exactly once/.test(dtTxt) && /never retried a third time/.test(dtTxt));
+    s.check("G84g both paths plan verification with plan-dispatch.mjs --verifier-batches",
+      dtTxt.includes("plan-dispatch.mjs --verifier-batches") && /plan-dispatch\.mjs \\\n\s+--verifier-batches/.test(skTxt));
+    s.check("G84g SKILL.md Step c runs the three lenses in one lens-bundle dispatch",
+      /one\s+lens-bundle dispatch/.test(skTxt) && /\| standards-conformance \| `deep` and `standard` \| its own \|/.test(skTxt));
+
+    // The per-band table is GENERATED: the doc block must equal `--table`'s output line for line.
+    const tbl = spawnSync(process.execPath, [PD, "--table"], { encoding: "utf8" });
+    const want = (tbl.stdout || "").trimEnd().split("\n");
+    const drTxt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md"), "utf8");
+    const drLines = drTxt.split("\n");
+    const hdr = drLines.indexOf(want[0]);
+    const got = [];
+    for (let i = hdr; hdr !== -1 && i < drLines.length && drLines[i].startsWith("|"); i++) got.push(drLines[i]);
+    s.check("G84g depth-routing.md § Expected sub-agents per band equals `plan-dispatch.mjs --table`, line for line",
+      tbl.status === 0 && /### Expected sub-agents per band/.test(drTxt) && want.length > 2
+        && JSON.stringify(got) === JSON.stringify(want),
+      hdr === -1 ? "table header not found in depth-routing.md"
+        : `first differing row: ${got.find((l, i) => l !== want[i]) ?? want[got.length] ?? "(length)"}`);
+  }
 }
 
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,

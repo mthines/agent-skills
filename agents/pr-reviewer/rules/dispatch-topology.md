@@ -29,13 +29,65 @@ and in what grouping* is prescribed here.
 
 ## `PR_REVIEW_MAX_PARALLEL`
 
-The verification concurrency cap for this pipeline is **6**. Batch surviving candidates into waves
-of at most `PR_REVIEW_MAX_PARALLEL` (6) concurrent verifier dispatches, grouped so that **no wave
-puts two candidates sharing a `path` in the same dispatch** — same rule `skills/quality/pr-review/SKILL.md`
-Step e states for `--fanout`, restated here because it is load-bearing for the single-dispatch path
-too: batching same-path candidates together is the shared-summary problem `finders.md`'s independence
-rule forbids at the finder stage, moved one step downstream, and it makes the verifier quieter on
-each claim in the batch instead of adversarial on one.
+The concurrency cap for this pipeline is **6** sub-agent dispatches per message.
+Never put two candidates sharing a `path` in the same verifier dispatch.
+That is the same rule `skills/quality/pr-review/SKILL.md` Step e states for `--fanout`, restated here
+because it is load-bearing for the single-dispatch path too: batching same-path candidates together
+is the shared-summary problem `finders.md`'s independence rule forbids at the finder stage, moved one
+step downstream, and it makes the verifier quieter on each claim in the batch instead of adversarial
+on one.
+
+## Packing — how units become dispatches
+
+A/B round 2 measured wall-clock and tokens as driven by **sub-agent count**: every dispatch pays a
+base of roughly 110–160k tokens before it reads a line of the diff, and round 2's arms ran 22
+(`t = 0.8`) and 33 (`t = 1.0`) sub-agents.
+[`plan-dispatch.mjs`](../scripts/plan-dispatch.mjs) is the executable form of the grouping below;
+never group by hand.
+
+| Unit | Dispatches | Why |
+| --- | --- | --- |
+| each active finder | one each | A/B round 1: the arm that ran `intent`/`standards`/`quality` in one context missed the best-corroborated bug. |
+| each `correctness` vote | one each | Diversify-then-vote needs each vote in its own context, or it is one opinion counted `N` times. |
+| holistic broad pass, optimality, measurability | **one lens-bundle dispatch** for whichever of the three are active | The three lenses read the same whole-change context and none reads another's output, so separate contexts buy nothing. |
+| standards-conformance lens | one, never in the bundle | `SKILL.md` Step c: the lens and the `standards` finder are two separate dispatches. |
+| verification | one per batch of at most **`VERIFY_BATCH_MAX` (8)** candidates, no two sharing a `path` | One dispatch per candidate paid the full base for each verdict. |
+
+Plan the verification batches from the deduped candidates, then dispatch one verifier per batch:
+
+```bash
+node agents/pr-reviewer/scripts/plan-dispatch.mjs --verifier-batches <deduped-candidates.json>
+```
+
+It prints each batch's candidate indexes and paths, plus the messages to send them in.
+The batch count is `max(⌈V / 8⌉, largest same-path group)`, so a file carrying many candidates still
+gets one dispatch per candidate on it.
+A batched verifier judges each candidate as if it were the only one: it writes one verdict per
+candidate, in the order given, and never lets one candidate's evidence or verdict inform another's.
+The expected count per thoroughness band is
+[`depth-routing.md § Expected sub-agents per band`](./depth-routing.md#expected-sub-agents-per-band).
+
+**Messages, queueing, and no re-dispatch.**
+
+1. A message carries at most `PR_REVIEW_MAX_PARALLEL` (6) dispatches.
+   Units beyond the cap wait in the queue `plan-dispatch.mjs` printed.
+2. Send the next message only after every dispatch in the current one has returned.
+   Phase D (finders, the lens bundle, the standards lens) goes first; Phase E (verifier batches)
+   starts after dedupe, because its input is Phase D's output.
+3. Dispatch each unit exactly once.
+   A unit that returned a readable output path is done and is never re-dispatched.
+4. The only second dispatch of a unit is one retry when it returned no readable output file.
+   A second failure is recorded as a `RUN_ANOMALY` naming the unit, never retried a third time.
+   Step f's one shape-repair round in `SKILL.md` is a separate, already-bounded case.
+
+```text
+# correct: 12 Phase D units at a cap of 6
+message 1: correctness#1..#5, consumer-impact    → wait for all 6
+message 2: dependency, intent, standards, quality, lens-bundle, standards-conformance
+
+# incorrect: 12 dispatches in one message, then re-dispatching the ones the harness queued
+message 1: all 12 → 4 come back late → dispatch those 4 again
+```
 
 ## Reading a budget into dispatch
 
@@ -54,7 +106,8 @@ reads it, never re-derives it:
   `3`/`5` mean `N` diversify-then-vote sub-agents over permuted file order — see below.
 - **`budget.topology`** — `"in-context"` or `"parallel"`. This is the field that replaces the old
   fixed per-tier table: `"parallel"` means every active finder (correctness's `N` votes included)
-  dispatches as its own sub-agent in **one message**; `"in-context"` means every active finder runs
+  dispatches as its own sub-agent, in as few messages as the cap allows (see *Packing* above);
+  `"in-context"` means every active finder runs
   sequentially in the orchestrator's own turn, no sub-agent dispatch, `votes` always `1`. `budget`
   already folds `dispatchAvailable` into this field — a caller never checks `Task` separately.
 - **`budget.maxVerificationTier`** — the ceiling on `verify-behavior`'s Tier 1–3 evidence ladder a
@@ -65,6 +118,9 @@ reads it, never re-derives it:
   is unchanged and still decides *whether* 2.4b runs at all in incremental mode.
 - **`budget.optimalityLens`** / **`budget.measurabilityLens`** — replace the flat `DEPTH_TIER ==
   "deep"` / `DEPTH_TIER != "quick"` gates at 2.4c/2.4e with these booleans directly.
+  Under `"parallel"`, the active ones and the holistic broad pass (`budget.holisticBroadPass`) run
+  together in **one lens-bundle dispatch** that writes each lens's output separately; the
+  standards-conformance lens is its own dispatch (see *Packing* above).
 
 **`prepare-review.mjs` cannot know whether the agent reading `context.json` holds `Task`**, so the
 `budget` it writes there always assumes `dispatchAvailable: true`. The agent re-derives the real
@@ -72,9 +128,10 @@ value itself: `topology = <Task held?> ? context.budget.topology : "in-context"`
 on `budget` (finders, scope, votes, verifier tier, the two lens booleans, the escalation cap) is
 unaffected by dispatch availability and is read straight off `context.json`.
 
-**Verification dispatch, when `budget.topology == "parallel"`:** parallel batches of surviving
-candidates, grouped by `path`, capped at `PR_REVIEW_MAX_PARALLEL` (6) concurrent dispatches per
-wave. **When `budget.topology == "in-context"`:** sequential, in the orchestrator's own turn.
+**Verification dispatch, when `budget.topology == "parallel"`:** one verifier per batch that
+`plan-dispatch.mjs --verifier-batches` planned — at most `VERIFY_BATCH_MAX` (8) candidates, no two
+sharing a `path` — sent at most `PR_REVIEW_MAX_PARALLEL` (6) per message.
+**When `budget.topology == "in-context"`:** sequential, in the orchestrator's own turn.
 
 **No-dispatch fallback is a degrade, not a silent equivalence — name it.** `resolveBudget()` already
 returns `topology: "in-context"` whenever `dispatchAvailable` is `false`, whatever thoroughness

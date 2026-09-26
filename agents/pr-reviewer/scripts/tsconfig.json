@@ -15,6 +15,7 @@
     "otlp.mjs",
     "review-telemetry.mjs",
     "route-depth.mjs",
+    "plan-dispatch.mjs",
     "delta-triage.mjs",
     "gate4-scan.mjs",
     "validate-judgments.mjs",

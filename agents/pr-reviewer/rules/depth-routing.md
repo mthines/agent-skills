@@ -238,7 +238,7 @@ behaviour, on every lever but two (noted below):
 | Lever | `t < 0.4` | `0.4 ≤ t < 0.5` | `0.5 ≤ t < 0.7` | `0.7 ≤ t < 0.8` | `0.8 ≤ t < 0.95` | `t ≥ 0.95` |
 | --- | --- | --- | --- | --- | --- | --- |
 | Active finders | correctness, intent, quality | *(same)* | + consumer-impact (delta), dependency, standards (delta) | *(same)* | consumer-impact/standards widen to **all** files | *(same)* |
-| Topology | in-context | **parallel**, one message per finder | *(same)* | *(same)* | *(same)* | *(same)* |
+| Topology | in-context | **parallel**, one sub-agent per finder | *(same)* | *(same)* | *(same)* | *(same)* |
 | `correctness` votes | 1 | *(same)* | *(same)* | *(same)* | **3** | **5** |
 | Max verifier evidence tier | 1 | *(same)* | **2** | *(same)* | *(same)* | **3** |
 | Optimality lens | off | *(same)* | *(same)* | **on** | *(same)* | *(same)* |
@@ -273,7 +273,43 @@ carry no such exclusion in their own rule files today and are unaffected. A/B ro
 gap directly: under diff-only the pipeline still activated `consumer-impact`, which the finder's own
 rule excludes, and produced a fully wasted dispatch.
 
-**Topology and dispatch mechanics** — what "parallel, one message per finder" and "verification in
+### Expected sub-agents per band
+
+A band's cost is mostly how many sub-agents it dispatches.
+Each one pays a base of roughly 110–160k tokens before it reads a line of the diff (A/B round 2), so
+the dispatch count is the number to watch, not the prompt size.
+[`plan-dispatch.mjs`](../scripts/plan-dispatch.mjs) turns a budget into that count, and
+`node agents/pr-reviewer/scripts/plan-dispatch.mjs --table` prints the table below.
+L1 `G84g` fails when the two differ, so regenerate the table rather than editing a cell.
+
+| Band | Finder dispatches | Lens dispatches | Verifier dispatches | Total at 10 candidates | Before packing |
+| --- | --- | --- | --- | --- | --- |
+| `t < 0.4` | 0 | 0 | 0 (in-context) | 0 | 0 |
+| `0.4 ≤ t < 0.5` | 3 | 1 (holistic + measurability) | ⌈V / 8⌉ | 6 | 15 |
+| `0.5 ≤ t < 0.7` | 6 | 2 (holistic + measurability; standards-conformance) | ⌈V / 8⌉ | 10 | 19 |
+| `0.7 ≤ t < 0.8` | 6 | 2 (holistic + optimality + measurability; standards-conformance) | ⌈V / 8⌉ | 10 | 20 |
+| `0.8 ≤ t < 0.95` | 8 | 2 (holistic + optimality + measurability; standards-conformance) | ⌈V / 8⌉ | 12 | 22 |
+| `t ≥ 0.95` | 10 | 2 (holistic + optimality + measurability; standards-conformance) | ⌈V / 8⌉ | 14 | 24 |
+
+How to read it:
+
+- `V` is the number of candidates that survive dedupe.
+  `⌈V / 8⌉` holds when every candidate sits on its own path.
+  When several share a path, the count is the larger of that and the biggest same-path group,
+  because two candidates on one path never share a verifier dispatch.
+- The two total columns assume 10 candidates on distinct paths.
+- *Before packing* is the same budget with one dispatch per lens and one per candidate — the shape
+  this pipeline dispatched before [`dispatch-topology.md § Packing`](./dispatch-topology.md#packing--how-units-become-dispatches).
+- The finder column never shrinks under packing: finders and `correctness` votes each keep their own
+  context.
+- A lens turned off by its own gate (`--no-holistic`, the incremental-mode 2.4 skip, `TRIVIAL_SKIP`)
+  leaves the bundle, and an empty bundle is not dispatched.
+- Holistic escalation (Step 2.4b) is not in the table: its traces are `Skill()` calls in the
+  orchestrator's own turn, not sub-agents.
+- Under `DEPTH_CAPABILITY = diff-only`, `consumer-impact` is not dispatched, so the finder column is
+  one lower from `t ≥ 0.5` up.
+
+**Topology and dispatch mechanics** — what "parallel, one sub-agent per finder" and "verification in
 `PR_REVIEW_MAX_PARALLEL`-capped batches" mean operationally, and the `RUN_ANOMALY` line for a run
 that requested parallel but held no `Task` — are
 [`dispatch-topology.md`](./dispatch-topology.md#reading-a-budget-into-dispatch)'s job, not this

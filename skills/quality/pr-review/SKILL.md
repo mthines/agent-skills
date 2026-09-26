@@ -249,7 +249,7 @@ one run directory:
   context.json
   candidates/<finder>.json         # step c
   lenses/<lens>.json                # step c
-  verdicts/<n>.json                 # step e
+  verdicts/<batch-id>.json          # step e, one file per verifier batch
   judgments.json                    # step f
   finalize/…                        # finalize.mjs --out-dir
 ```
@@ -314,17 +314,23 @@ independent dispatch counted against the same concurrency cap below, with agreem
 `votes` on the merged candidate.
 
 **Lenses ride the same parallel wave**, each self-gating on the tier `route-depth.mjs` already
-resolved — no separate wave, no separate cap accounting:
+resolved — no separate wave. Holistic review, optimality, and measurability run together in **one
+lens-bundle dispatch** for whichever of the three are active; standards-conformance is its own
+dispatch ([`dispatch-topology.md § Packing`](../../../agents/pr-reviewer/rules/dispatch-topology.md#packing--how-units-become-dispatches)
+owns the grouping and why):
 
-| Lens | Runs at | Rule |
-| --- | --- | --- |
-| holistic review | default ON in `full` mode; shape-gated in incremental | [`holistic-review.md`](../../../agents/shared/rules/holistic-review.md) |
-| optimality | `deep` only | [`optimality-review.md`](../../../agents/shared/rules/optimality-review.md) |
-| standards-conformance | `deep` and `standard` | [`standards-conformance.md`](../../../agents/shared/rules/standards-conformance.md) |
-| measurability | `deep` and `standard` | [`measurability-review.md`](../../../agents/shared/rules/measurability-review.md) |
+| Lens | Runs at | Dispatch | Rule |
+| --- | --- | --- | --- |
+| holistic review | default ON in `full` mode; shape-gated in incremental | lens bundle | [`holistic-review.md`](../../../agents/shared/rules/holistic-review.md) |
+| optimality | `deep` only | lens bundle | [`optimality-review.md`](../../../agents/shared/rules/optimality-review.md) |
+| measurability | `deep` and `standard` | lens bundle | [`measurability-review.md`](../../../agents/shared/rules/measurability-review.md) |
+| standards-conformance | `deep` and `standard` | its own | [`standards-conformance.md`](../../../agents/shared/rules/standards-conformance.md) |
 
-Each lens's output lands at `lenses/<lens>.json` and feeds `judgments.lenses.*` at assembly (Step f)
-— unchanged from how `pr-reviewer.md` already shapes that object.
+The lens bundle receives each active lens's rule file and runs them one after another, never letting
+one lens's output inform another's.
+Each lens's output lands at `lenses/<lens>.json` — the bundle writes one file per lens it ran — and
+feeds `judgments.lenses.*` at assembly (Step f), unchanged from how `pr-reviewer.md` already shapes
+that object.
 
 **`standards-conformance` (a lens, Step c) and `standards` (a finder, also Step c) are two separate
 dispatches, never one folded into the other.** One live arm-C run merged them — ran the
@@ -386,22 +392,33 @@ cross-finder promotion `rubric-composition.md ## Dedupe` forbids for a heuristic
 
 ### Step e — parallel verification
 
-Dispatch one verifier sub-agent per surviving candidate (batch small groups of unrelated candidates
-together where the concurrency cap makes that necessary — never batch candidates that share a path,
-since [`finding-verifier.md`](../../../agents/shared/rules/finding-verifier.md)'s adversarial framing
-depends on seeing one claim at a time). **This is a hard rule, not a preference: one live arm-C run
+Plan the verifier batches from `deduped.json`'s `kept[]`, then dispatch one verifier sub-agent per
+batch:
+
+```bash
+node agents/pr-reviewer/scripts/plan-dispatch.mjs \
+  --verifier-batches "<scratchRoot()>/<run-id>/deduped.json"
+```
+
+Each batch holds at most `VERIFY_BATCH_MAX` (8) candidates.
+**Never batch candidates that share a path** into one dispatch, since
+[`finding-verifier.md`](../../../agents/shared/rules/finding-verifier.md)'s adversarial framing
+depends on seeing one claim at a time.
+A batched verifier judges each candidate as if it were the only one, in the order given, and writes
+`verdicts/<batch-id>.json` as `{ "candidates": [...] }` — one entry per candidate in its batch. **This is a hard rule, not a preference: one live arm-C run
 batched several same-path candidates into one verifier dispatch to save a wave, and it is a
 deviation from the pipeline this section documents — batching by path is exactly the shared-summary
 problem `finders.md`'s independence rule already forbids at the finder stage, moved one step
 downstream, and it makes the verifier quieter on each claim in the batch instead of adversarial on
-one.** Every candidate — including two that share a path — gets its own verifier dispatch, batched
-with *unrelated-path* candidates only, never with each other. Each verifier receives **only** the
+one.** Two candidates that share a path always land in different verifier dispatches, each batched with
+*unrelated-path* candidates only, never with each other; `plan-dispatch.mjs` guarantees it. Each verifier receives **only** the
 candidate record, the workspace, and `impact.json` — never the finder's reasoning, never the other
 candidates, per `finding-verifier.md`'s own exclusion table; a semantically merged candidate is
 verified as its representative alone, its `_semantic_merged` members withheld. Each returns the
 four-way verdict (`confirmed`/`contradicted`/`ambiguous`/`unobtainable`) plus the `R`/`A`/`Ac`
 scores, `severity`, `prefix`, `blocking`, `title`, `body`, `materiality`, and `category` — the
-remaining fields `judgments.schema.json`'s candidate shape requires — written to `verdicts/<n>.json`.
+remaining fields `judgments.schema.json`'s candidate shape requires — written to its batch's
+`verdicts/<batch-id>.json`.
 A `contradicted` candidate is dropped here and never reaches `judgments.json`, with its
 contradicting evidence logged per `finding-verifier.md`'s own rule.
 
@@ -538,9 +555,15 @@ Batch every dispatch wave (finders + lenses in Step c, verifiers in Step e) in g
 This exists for the same reason `diversify-then-vote`'s N is a small fixed number rather than
 "as many as helpful": a PR review dispatching one sub-agent per finding on a large diff can burst
 past a harness's or GitHub's own rate limits, and a burst that gets throttled mid-run is worse than
-a queued batch that finishes slightly later. Six finders plus up to four lenses is already at the
-default cap for Step c's own wave on a `deep`-tier run; Step e's verifier wave batches similarly for
-a diff with more than six surviving candidates.
+a queued batch that finishes slightly later.
+Step c's wave on a `deep`-tier run is up to eight finder dispatches (three `correctness` votes) plus
+the lens bundle and the standards-conformance lens, so it already spans two messages; Step e's
+verifier batches queue the same way.
+Send the next message only after every dispatch in the current one has returned, dispatch each unit
+exactly once, and retry a unit only once when it returned no readable output file —
+[`dispatch-topology.md § Packing`](../../../agents/pr-reviewer/rules/dispatch-topology.md#packing--how-units-become-dispatches)
+owns those rules and the expected sub-agent count per thoroughness band.
+`plan-dispatch.mjs` prints the messages in the order to send them.
 
 ### The default-flip gate
 
