@@ -240,6 +240,101 @@ export function resolvePriorRun({ isolated, stickyBody, headSha }) {
   return { priorSha, zeroDelta: sameCommit(headSha, priorSha) };
 }
 
+/**
+ * `--review-sha <sha>` resolution (D8/D9, plan feat/pr-reviewer-shrink-fanout-ab, AC-15/16).
+ *
+ * A pure prefix-resolution helper over a candidate list — the SAME shape `git` itself uses
+ * to resolve an abbreviated SHA — never a live network call. The caller supplies the
+ * candidate list (this PR's own commit OIDs, read from the SAME `gh pr view --json commits`
+ * fetch the metadata read already makes, at no extra round trip) so this function is fully
+ * self-testable without `gh`.
+ *
+ * Three ways a `--review-sha` can fail to name exactly one commit, each refused rather than
+ * guessed: too short to disambiguate (below `MIN_SHA_LEN`), matching nothing in the PR's own
+ * history (not-in-list), or matching more than one commit (ambiguous — an 8-char prefix can
+ * collide on a large enough PR). Only an exact match or a UNIQUE prefix match resolves.
+ * @param {string} reviewSha
+ * @param {string[]} candidates - full-length commit OIDs, e.g. this PR's own commit list
+ * @returns {{ ok: boolean, resolved: string|null, message: string }}
+ */
+const MIN_SHA_LEN = 7;
+export function verifyReviewSha(reviewSha, candidates) {
+  const sha = String(reviewSha || "").trim().toLowerCase();
+  if (!sha) return { ok: false, resolved: null, message: "--review-sha is empty" };
+  if (sha.length < MIN_SHA_LEN) {
+    return {
+      ok: false,
+      resolved: null,
+      message: `--review-sha ${sha} is shorter than ${MIN_SHA_LEN} chars — cannot prove which commit this names`,
+    };
+  }
+  const list = (candidates || []).map((c) => String(c || "").toLowerCase()).filter(Boolean);
+  const exact = list.find((c) => c === sha);
+  if (exact) return { ok: true, resolved: exact, message: "exact match" };
+  const matches = [...new Set(list.filter((c) => c.startsWith(sha)))];
+  if (matches.length === 1) return { ok: true, resolved: matches[0], message: "unique prefix match" };
+  if (matches.length > 1) {
+    return {
+      ok: false,
+      resolved: null,
+      message: `--review-sha ${sha} is ambiguous — matches ${matches.length} commits on this PR (${matches.map((m) => m.slice(0, 10)).join(", ")})`,
+    };
+  }
+  return {
+    ok: false,
+    resolved: null,
+    message: `--review-sha ${sha} does not match any commit on this PR — cannot prove it exists`,
+  };
+}
+
+/**
+ * Filter a list of GitHub-sourced, timestamped items to only those that existed AS OF a
+ * given instant — used to keep a historical (`--review-sha`) run from reading anything that
+ * postdates the commit it is reviewing. Absent or unparseable `asOf`/item timestamps fail
+ * closed: no cutoff means nothing is filtered (the live-review path, where this is never
+ * called with a real cutoff), and an item with no readable own timestamp is dropped rather
+ * than assumed to qualify.
+ * @param {any[]} items
+ * @param {string|null} asOfIso - ISO 8601 instant, e.g. review_sha's commit timestamp
+ * @param {string} [dateField]
+ * @returns {any[]}
+ */
+export function filterAsOf(items, asOfIso, dateField = "created_at") {
+  if (!asOfIso) return items || [];
+  const cutoff = Date.parse(asOfIso);
+  if (Number.isNaN(cutoff)) return items || [];
+  return (items || []).filter((it) => {
+    const t = Date.parse(it?.[dateField]);
+    return Number.isNaN(t) ? false : t <= cutoff;
+  });
+}
+
+/**
+ * The `historical` block embedded in `context.json` whenever `--review-sha` is set (D8/D9).
+ * Every field either IS `review_sha` or is explicitly marked `"now"` / `"not-read"` — never
+ * silently presented as contemporaneous with `review_sha`:
+ *
+ *   - `thread_state_as_of` / `description_as_of` are `"now"`: GitHub's API has no way to
+ *     reconstruct either as of an arbitrary past commit, so a historical run reads the
+ *     CURRENT thread state and CURRENT description against the PAST code — an honest
+ *     mixed-time view, not a simulated past PR page.
+ *   - `ci` is `"not-read"`: `gh pr checks` reports the CURRENT check run for the CURRENT
+ *     head, which has no relationship to `review_sha`'s own (likely long-superseded) check
+ *     runs — reporting it would silently misattribute today's CI result to a commit reviewed
+ *     days or weeks ago. `finalize.mjs` and `execute-write-plan.mjs` both refuse to POST
+ *     anything for a context carrying this block outside `--dry-run` (D9, AC-17/AC-18).
+ * @param {{ reviewSha: string }} args
+ * @returns {{ review_sha: string, thread_state_as_of: string, description_as_of: string, ci: string }}
+ */
+export function historicalBlock({ reviewSha }) {
+  return {
+    review_sha: reviewSha,
+    thread_state_as_of: "now",
+    description_as_of: "now",
+    ci: "not-read",
+  };
+}
+
 /** Total changed lines across the patch list. */
 export function deltaLines(files) {
   return (files || []).reduce((n, f) => n + (f.additions || 0) + (f.deletions || 0), 0);
@@ -733,9 +828,17 @@ async function prepare(opts) {
 
   const runMode = resolveRunMode({ isolated: opts.isolated, full: opts.full, statePath: opts.state || null });
 
-  // Step 1.1 — the five fetches, concurrently. One await, one moment in time.
+  // `--review-sha` (D8/D9): live pr-diff / pr-checks / pulls-files are all tied to the
+  // CURRENT head, not an arbitrary past commit, so a historical run skips them here and
+  // fetches a compare-based equivalent below, once `review_sha` is verified against this
+  // PR's own commit list — which is why `commits` rides the SAME metadata read rather than
+  // a second round trip.
+  const wantHistorical = Boolean(opts.reviewSha);
+
+  // Step 1.1 — the five (six under --review-sha) fetches, concurrently. One await, one
+  // moment in time.
   timing.start("fetch");
-  const [metaR, diffR, checksR, reviewsR, commentsR, filesR] = await Promise.all([
+  const [metaR, diffR0, checksR0, reviewsR, commentsR, filesR0] = await Promise.all([
     ghJson(
       [
         "pr",
@@ -744,12 +847,16 @@ async function prepare(opts) {
         "--repo",
         repo,
         "--json",
-        "title,body,headRefName,baseRefName,headRefOid,baseRefOid,author,additions,deletions,changedFiles,state,labels,isDraft,createdAt,url",
+        "title,body,headRefName,baseRefName,headRefOid,baseRefOid,author,additions,deletions,changedFiles,state,labels,isDraft,createdAt,url,commits",
       ],
       { timeoutMs },
     ),
-    run("gh", ["pr", "diff", String(number), "--repo", repo], { timeoutMs }),
-    run("gh", ["pr", "checks", String(number), "--repo", repo], { timeoutMs }),
+    wantHistorical
+      ? Promise.resolve({ ok: false, code: 0, stdout: "", stderr: "" })
+      : run("gh", ["pr", "diff", String(number), "--repo", repo], { timeoutMs }),
+    wantHistorical
+      ? Promise.resolve({ ok: false, code: 0, stdout: "", stderr: "not-read (historical — gh pr checks reports the current head, not review_sha)" })
+      : run("gh", ["pr", "checks", String(number), "--repo", repo], { timeoutMs }),
     ghNdjson(
       [
         "api",
@@ -770,8 +877,11 @@ async function prepare(opts) {
       ],
       timeoutMs,
     ),
-    fetchFiles(repo, number, timeoutMs),
+    wantHistorical ? Promise.resolve({ ok: false, error: null, value: [] }) : fetchFiles(repo, number, timeoutMs),
   ]);
+  /** @type {any} */ let diffR = diffR0;
+  /** @type {any} */ let checksR = checksR0;
+  /** @type {any} */ let filesR = filesR0;
 
   timing.end(); // fetch
 
@@ -796,8 +906,37 @@ async function prepare(opts) {
     throw new Error(pinCheck.message);
   }
 
+  // `--review-sha` (D8/D9): resolve the historical review target against this PR's own
+  // commit list, then fetch the compare-based diff/files it needs in place of the
+  // live-head fetches skipped above. `checkoutSha` is what the workspace ladder and the
+  // impact graph materialize/diff against below — `headSha` above stays the LIVE head
+  // throughout (still what `--pin-head` compares against, still what a non-historical
+  // run's `context.headSha` reports).
+  let historical = null;
+  let checkoutSha = headSha;
+  if (wantHistorical) {
+    const commitShas = (meta.commits || []).map((/** @type {any} */ c) => c.oid).filter(Boolean);
+    const verified = verifyReviewSha(opts.reviewSha, commitShas);
+    if (!verified.ok) {
+      throw new Error(`--review-sha ${opts.reviewSha}: ${verified.message}`);
+    }
+    checkoutSha = /** @type {string} */ (verified.resolved);
+    historical = { ...historicalBlock({ reviewSha: checkoutSha }), live_head_sha: headSha };
+
+    const compareRange = `${baseSha}...${checkoutSha}`;
+    const [cDiff, cFiles] = await Promise.all([
+      run("gh", ["api", "-H", "Accept: application/vnd.github.v3.diff", `repos/${repo}/compare/${compareRange}`], { timeoutMs }),
+      ghNdjson(
+        ["api", `repos/${repo}/compare/${compareRange}`, "--jq", ".files[] | {filename, patch, status, additions, deletions, sha}"],
+        timeoutMs,
+      ),
+    ]);
+    diffR = cDiff;
+    filesR = cFiles;
+  }
+
   if (!filesR.ok) anomalies.push(`patch list unreadable: ${filesR.error}`);
-  if (!checksR.ok) anomalies.push("gh pr checks unreadable — CI state is informational only, so this never grades");
+  if (!checksR.ok && !wantHistorical) anomalies.push("gh pr checks unreadable — CI state is informational only, so this never grades");
   if (!reviewsR.ok) anomalies.push(`prior reviews unreadable: ${reviewsR.error}`);
   if (!commentsR.ok) anomalies.push(`issue comments unreadable: ${commentsR.error} — prior-run detection degrades to first run`);
 
@@ -833,13 +972,17 @@ async function prepare(opts) {
     );
   }
 
-  // Step 1.1b — the workspace ladder.
+  // Step 1.1b — the workspace ladder. `checkoutSha` is `headSha` on a live run and
+  // `review_sha` on a historical one (D9) — the impact graph below diffs whatever this
+  // workspace is checked out to, so materializing it at the historical target is the whole
+  // fix for "merge-base impact graph": build-impact-graph.mjs needs no separate awareness
+  // of `--review-sha` at all.
   timing.start("workspace");
   let workspace = { dir: null, worktreeParent: null, depthCapability: "diff-only", rung: "skipped", cleanup: "none" };
-  if (opts.workspace && headSha) {
+  if (opts.workspace && checkoutSha) {
     workspace = opts.workdir
       ? { dir: opts.workdir, worktreeParent: null, depthCapability: "checkout", rung: "caller-supplied", cleanup: "none" }
-      : await materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies });
+      : await materializeWorkspace({ repo, number, headSha: checkoutSha, timeoutMs, anomalies });
   }
   const tier2Checker = detectTier2Checker(workspace.dir);
   timing.end(); // workspace
@@ -1127,8 +1270,15 @@ async function prepare(opts) {
       changedFiles: meta.changedFiles,
       createdAt: meta.createdAt,
     },
-    headSha,
+    // `headSha` is the SHA under review — `checkoutSha` on every run, which equals the LIVE
+    // head unless `--review-sha` is set (D8/D9), in which case `historical.live_head_sha`
+    // below still carries the live head for reference. Every downstream consumer (the
+    // renderer's "reviewed for commit" footer, line-validity, the impact graph) reads THIS
+    // field, never `headRefOid` directly, so a historical run's report never claims to have
+    // reviewed a commit it did not.
+    headSha: checkoutSha,
     baseSha,
+    historical,
     reviewRelation,
     reviewerLogin: me || null,
     identitySource: me ? (opts.reviewerLogin ? "--reviewer-login" : "PR_REVIEWER_LOGIN") : "unknown",
@@ -1378,6 +1528,70 @@ function selfTest() {
     return r.priorSha === null && r.zeroDelta === false;
   });
 
+  // ── verifyReviewSha (D8/D9, AC-15/AC-16) — exact / prefix / not-in-list / ambiguous / truncated ──
+  const REVIEW_SHA_CANDIDATES = [
+    "906a74781990f75607f0234de963fdbbc3953f2",
+    "906a74799990f75607f0234de963fdbbc3953f2",
+    "deadbeef00000000000000000000000000000000".slice(0, 40),
+  ];
+  t("verifyReviewSha: an exact 40-char match resolves", () => {
+    const r = verifyReviewSha(REVIEW_SHA_CANDIDATES[0], REVIEW_SHA_CANDIDATES);
+    return r.ok === true && r.resolved === REVIEW_SHA_CANDIDATES[0];
+  });
+  t("verifyReviewSha: a unique short prefix resolves to the full SHA", () => {
+    const r = verifyReviewSha("deadbeef", REVIEW_SHA_CANDIDATES);
+    return r.ok === true && r.resolved === REVIEW_SHA_CANDIDATES[2];
+  });
+  t("verifyReviewSha: a prefix matching nothing in this PR's commit list is refused — cannot prove it exists", () => {
+    const r = verifyReviewSha("cafef00d", REVIEW_SHA_CANDIDATES);
+    return r.ok === false && r.resolved === null && /cannot prove/i.test(r.message);
+  });
+  t("verifyReviewSha: a prefix matching more than one commit is ambiguous, never guessed", () => {
+    const r = verifyReviewSha("906a747", REVIEW_SHA_CANDIDATES);
+    return r.ok === false && r.resolved === null && /ambiguous/i.test(r.message) && r.message.includes("2 commits");
+  });
+  t("verifyReviewSha: shorter than the minimum length is refused as unable to disambiguate — cannot prove", () => {
+    const r = verifyReviewSha("90", REVIEW_SHA_CANDIDATES);
+    return r.ok === false && r.resolved === null && /cannot prove/i.test(r.message);
+  });
+  t("verifyReviewSha: case-insensitive and whitespace-tolerant", () => {
+    const r = verifyReviewSha(`  ${REVIEW_SHA_CANDIDATES[0].toUpperCase()}  `, REVIEW_SHA_CANDIDATES);
+    return r.ok === true && r.resolved === REVIEW_SHA_CANDIDATES[0];
+  });
+
+  // ── filterAsOf (D9) — the historical-run "never read the future" filter ──
+  t("filterAsOf: keeps items at or before the cutoff, drops items after it", () => {
+    const items = [
+      { id: 1, created_at: "2026-01-01T00:00:00Z" },
+      { id: 2, created_at: "2026-01-05T00:00:00Z" },
+      { id: 3, created_at: "2026-01-10T00:00:00Z" },
+    ];
+    const out = filterAsOf(items, "2026-01-05T00:00:00Z");
+    return out.length === 2 && out.every((/** @type {any} */ i) => i.id !== 3);
+  });
+  t("filterAsOf: an item with an unparseable own timestamp is dropped, never assumed to qualify", () => {
+    const items = [{ id: 1, created_at: "not-a-date" }, { id: 2, created_at: "2026-01-01T00:00:00Z" }];
+    const out = filterAsOf(items, "2026-01-05T00:00:00Z");
+    return out.length === 1 && out[0].id === 2;
+  });
+  t("filterAsOf: no cutoff (the live-review path) filters nothing", () => {
+    const items = [{ id: 1, created_at: "2026-01-01T00:00:00Z" }];
+    return filterAsOf(items, null).length === 1 && filterAsOf(items, "").length === 1;
+  });
+  t("filterAsOf: a custom date field is honored", () => {
+    const items = [{ id: 1, submitted_at: "2026-01-01T00:00:00Z" }, { id: 2, submitted_at: "2026-01-10T00:00:00Z" }];
+    const out = filterAsOf(items, "2026-01-05T00:00:00Z", "submitted_at");
+    return out.length === 1 && out[0].id === 1;
+  });
+
+  // ── historicalBlock (D8/D9) — the context.json block finalize.mjs/execute-write-plan.mjs
+  // refuse to post anything for outside --dry-run ──
+  t("historicalBlock: carries review_sha plus the explicit thread_state_as_of/description_as_of=now, ci=not-read markers", () => {
+    const b = historicalBlock({ reviewSha: "906a74781990f75607f0234de963fdbbc3953f2" });
+    return b.review_sha === "906a74781990f75607f0234de963fdbbc3953f2"
+      && b.thread_state_as_of === "now" && b.description_as_of === "now" && b.ci === "not-read";
+  });
+
   t("scratchRoot prefers the agent workspace over os.tmpdir()", () => {
     // The whole point is that a sub-agent can read the checkout. `/tmp/workspace`
     // exists on the host this runs on; `PR_REVIEWER_SCRATCH` overrides it, and the
@@ -1477,6 +1691,10 @@ function selfTest() {
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
   });
 
+  // Every case's name is echoed on PASS too, not only on failure — this is the one self-test
+  // in the pipeline a standing L1 guard (or a checks.yaml AC) greps for a case NAME in the
+  // OUTPUT rather than only in the source, so a silent-on-success run would read as though
+  // that coverage did not exist (AC-16).
   let failed = 0;
   for (const [name, fn] of cases) {
     let ok = false;
@@ -1485,7 +1703,9 @@ function selfTest() {
     } catch (err) {
       process.stderr.write(`self-test THREW: ${name}: ${err.message}\n`);
     }
-    if (!ok) {
+    if (ok) {
+      process.stderr.write(`  ✓ ${name}\n`);
+    } else {
       failed++;
       process.stderr.write(`self-test FAIL: ${name}\n`);
     }
@@ -1519,6 +1739,7 @@ async function main(argv) {
     state: "",
     effort: "",
     threads: true,
+    reviewSha: "",
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -1539,6 +1760,7 @@ async function main(argv) {
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
     else if (a === "--no-threads") opts.threads = false;
+    else if (a === "--review-sha") opts.reviewSha = argv[++i]; // D8/D9: historical read-only review target
     else {
       process.stderr.write(`unknown argument: ${a}\n`);
       process.exit(2);
@@ -1550,9 +1772,40 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
         "[--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--effort high] [--no-threads] | --self-test\n",
+        "[--state file] [--effort high] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
+  }
+
+  // `--review-sha` write-refusal gate (D8/D9, AC-15) — checked BEFORE `prepare()` spawns any
+  // `gh` process, so a caller who got the combination wrong never spends a network round trip
+  // (or, on a PATH-shim test double, ever writes to the shim's argv log) finding that out.
+  // Two refusals, never combined into one message, so each names the exact flag to change:
+  //   1. `--review-sha` without `--isolated` — a historical review must not read live PR
+  //      state (Step 0.7, the sticky footer fallback) that postdates the commit it reviews.
+  //   2. `--review-sha` together with `--pin-head` — `--review-sha` already pins the review
+  //      to a specific (historical) commit; `--pin-head` compares against the LIVE head,
+  //      which is a different, live-head-only comparability contract this run does not need.
+  //      (`--isolated` runs WITHOUT `--review-sha` still require `--pin-head`, per
+  //      pipeline.md § --isolated item 3 — that requirement is unchanged and does not apply
+  //      here.)
+  if (opts.reviewSha) {
+    if (!opts.isolated) {
+      process.stderr.write(
+        "prepare-review.mjs: --review-sha requires --isolated — a historical review must not read " +
+          "live PR state that postdates the commit it is reviewing. Pass --isolated.\n",
+      );
+      process.exit(2);
+    }
+    if (opts.pinHead) {
+      process.stderr.write(
+        "prepare-review.mjs: --review-sha and --pin-head are mutually exclusive — --review-sha " +
+          "already pins this review to a specific (historical) commit, and --pin-head compares " +
+          "against the LIVE head, a different comparability contract this run does not need. " +
+          "Drop --pin-head.\n",
+      );
+      process.exit(2);
+    }
   }
 
   try {

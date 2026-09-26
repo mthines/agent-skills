@@ -301,7 +301,8 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--effort high` | Force `DEPTH_TIER = deep`, enable Tier-2/3 receipts where the toolchain allows, and widen diversify-then-vote to N=5 ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)). Also settable as `effort: high` in the review config. `--full` is the narrower alias — it forces `deep` and nothing else |
 | `--dry-run` | Run the full pipeline through the rendered artifacts, then **stop**: zero GitHub writes (no sticky, no review, no thread resolve/reply) and zero LoreKit writes (no state record, no knowledge/hotspot writes). `REPORT_BODY`, the inline comment bodies, and the pointer body are written to scratch (`$(scratchRoot())/<run-id>/` — see [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--dry-run)) instead of posted. The **one** stated exception to Step 4c's "unconditional" state write |
 | `--isolated` | Comparable repeat run for the A/B harness and the shadow run (pr-reviewer deterministic pipeline, D13): skip the Step 0.7 LoreKit state-record read entirely (first-run semantics on every invocation — `PRIOR_RUN=none` unconditionally), force `RUN_MODE=full` (the D1/D6 first-run trigger), and require `--pin-head <sha>`. See [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated) |
-| `--pin-head <sha>` | Required with `--isolated`. `prepare-review.mjs` compares it against the live `headRefOid` and **hard-stops with no review** (`head moved: pinned <a> live <b>`) on a mismatch — a pinned run silently reviewing a moved head would poison every metric an A/B or shadow comparison computes from it |
+| `--pin-head <sha>` | Required with `--isolated` **unless `--review-sha` is also set** (a historical run pins to `review_sha` instead — see below). `prepare-review.mjs` compares it against the live `headRefOid` and **hard-stops with no review** (`head moved: pinned <a> live <b>`) on a mismatch — a pinned run silently reviewing a moved head would poison every metric an A/B or shadow comparison computes from it |
+| `--review-sha <sha>` | Review a specific past commit on this PR, not the live head — read-only historical mode. Requires `--isolated`; refuses `--pin-head` (mutually exclusive — see the table row above). CI is never read (`gh pr checks` reports the current head, unrelated to a past commit's own runs); the review must never reach a GitHub write regardless of any other flag, so pair with `--dry-run` (`prepare-review.mjs`/`finalize.mjs`/`execute-write-plan.mjs` all refuse otherwise — see [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--review-sha)) |
 
 Parse the PR reference:
 
@@ -335,8 +336,23 @@ FLAG_ISOLATED=false
 [[ " $ARG " == *" --isolated "* ]] && FLAG_ISOLATED=true
 PIN_HEAD=""
 [[ "$ARG" =~ --pin-head[[:space:]]+([0-9a-f]+) ]] && PIN_HEAD="${BASH_REMATCH[1]}"
-if [[ "$FLAG_ISOLATED" == true && -z "$PIN_HEAD" ]]; then
-  echo "pr-reviewer: --isolated requires --pin-head <sha> — comparable runs cannot compare against a moving target" >&2
+
+# --review-sha (D8/D9): read-only historical review of a past commit, never the live head.
+# prepare-review.mjs/finalize.mjs/execute-write-plan.mjs each re-derive and enforce this same
+# refusal from their own inputs (rules/pipeline.md#--review-sha) — this binding exists so a run
+# invoked with the wrong flag combination stops HERE, at Step 0, rather than mid-pipeline.
+REVIEW_SHA=""
+[[ "$ARG" =~ --review-sha[[:space:]]+([0-9a-f]+) ]] && REVIEW_SHA="${BASH_REMATCH[1]}"
+if [[ -n "$REVIEW_SHA" && "$FLAG_ISOLATED" != true ]]; then
+  echo "pr-reviewer: --review-sha requires --isolated — a historical review must not read live PR state that postdates the commit it is reviewing" >&2
+  exit 2
+fi
+if [[ -n "$REVIEW_SHA" && -n "$PIN_HEAD" ]]; then
+  echo "pr-reviewer: --review-sha and --pin-head are mutually exclusive — --review-sha already pins this review to a specific (historical) commit" >&2
+  exit 2
+fi
+if [[ "$FLAG_ISOLATED" == true && -z "$PIN_HEAD" && -z "$REVIEW_SHA" ]]; then
+  echo "pr-reviewer: --isolated requires --pin-head <sha> (or --review-sha <sha> for a historical run) — comparable runs cannot compare against a moving target" >&2
   exit 2
 fi
 ```

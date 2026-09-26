@@ -148,6 +148,28 @@ export async function probeGhAccess(repo, runner = defaultRun) {
 }
 
 /**
+ * A write-plan self-identifying as historical or dry_run must never be executed (D8/D9,
+ * AC-18) — checked purely from the plan's own fields, never a caller-supplied flag. Returns a
+ * human-readable reason string when the plan should be refused, or `null` when it is clear to
+ * execute. Two independent markers, either one sufficient: `historical` (finalize.mjs attaches
+ * this whenever context.historical was set, i.e. `--review-sha` was in play upstream) and
+ * `dry_run` (finalize.mjs's own `--dry-run` marker, carried through so a plan built under
+ * `--dry-run` stays refused even if handed to this script without repeating the flag).
+ * @param {any} writePlan
+ * @returns {string|null}
+ */
+export function refusalReason(writePlan) {
+  if (writePlan?.historical) {
+    const sha = writePlan.historical.review_sha || "unknown";
+    return `plan is historical (review_sha ${sha}) — a historical review must never reach a GitHub write`;
+  }
+  if (writePlan?.dry_run) {
+    return "plan is marked dry_run — refusing to execute a plan that identifies itself as a rehearsal";
+  }
+  return null;
+}
+
+/**
  * Pure: decides what steps WOULD run, in order, from a write-plan. No I/O.
  * Used by --dry-run and by the self-test to assert ordering without
  * spawning anything.
@@ -183,6 +205,20 @@ export async function executeWritePlan(writePlan, opts = {}) {
   const dryRun = Boolean(opts.dryRun);
   const repo = opts.repo || writePlan.repo;
   const lorekitOps = writePlan.lorekit_write || [];
+
+  // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-18): refuse a plan that self-identifies as
+  // historical or dry_run — checked from the PLAN FILE'S OWN fields, never the caller's `--dry-run`
+  // CLI flag, and BEFORE `probeGhAccess` (which itself spawns `gh`) or any runner call. This is
+  // defense in depth behind finalize.mjs's own historical-without-dry-run refusal (AC-17): a plan
+  // that reached this script some other way — hand-assembled, replayed from an old run, a future
+  // caller that skips finalize.mjs — still gets refused on the plan's own markers, not on trusting
+  // that whatever wrote it got the CLI flags right.
+  if (refusalReason(writePlan)) {
+    return {
+      executed: [], dryRun: true, refused: true, reason: refusalReason(writePlan),
+      plannedSteps: [], lorekitOps, ghAccess: null, code: 5,
+    };
+  }
 
   if (dryRun) {
     return { executed: [], dryRun: true, plannedSteps: planExecutionSteps(writePlan), lorekitOps, ghAccess: null };
@@ -369,6 +405,34 @@ async function selfTest() {
       (result.plannedSteps || []).map((/** @type {any} */ s) => s.kind).join(",") === "thread.reply,sticky.upsert,review.create");
   }
 
+  // refusalReason (D8/D9, AC-18) — pure unit coverage of the plan-self-identifies check itself.
+  {
+    check("refusalReason: a plain live plan is clear to execute", refusalReason({ repo: "o/r" }) === null);
+    check("refusalReason: a historical plan is refused, naming its review_sha",
+      /historical/i.test(refusalReason({ historical: { review_sha: "abc1234" } }) || "")
+      && (refusalReason({ historical: { review_sha: "abc1234" } }) || "").includes("abc1234"));
+    check("refusalReason: a dry_run plan is refused even with no historical block",
+      /dry_run/i.test(refusalReason({ dry_run: true }) || ""));
+  }
+
+  // AC-18 case: a HISTORICAL or dry_run write-plan is refused BEFORE any runner call — proven
+  // against the exact minimal (non-schema-shaped) plan the checks.yaml PATH-shim test uses, so the
+  // shape here is deliberately sparse (thread_ops/lorekit.write, not thread_reply/lorekit_write) —
+  // the refusal must fire on `historical`/`dry_run` alone, never by first parsing the rest of the
+  // plan's shape.
+  {
+    const { spy, calls } = mkSpy();
+    const historicalPlan = {
+      dry_run: true,
+      historical: { review_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
+      thread_ops: [], lorekit: { write: [] },
+    };
+    const result = await executeWritePlan(historicalPlan, { runner: spy, repo: "o/r" });
+    check("a historical/dry_run plan is refused with code 5, zero runner calls, even with dryRun NOT passed",
+      result.refused === true && result.code === 5 && calls.length === 0, JSON.stringify(result));
+    check("the refusal reason names the historical review_sha", /historical/i.test(result.reason || ""));
+  }
+
   // AC-3 case: a plan with empty inline comments emits no review.create.
   {
     const { spy, calls } = mkSpy();
@@ -504,6 +568,10 @@ async function main() {
   }
   const writePlan = JSON.parse(readFileSync(/** @type {string} */(opts.plan), "utf8"));
   const result = await executeWritePlan(writePlan, { repo: /** @type {string} */(opts.repo), dryRun: Boolean(opts["dry-run"]) });
+  if (result.code === 5) {
+    console.error(`execute-write-plan: refused — ${result.reason}`);
+    process.exit(5);
+  }
   if (result.code === 3) {
     console.error(result.error);
     process.exit(3);

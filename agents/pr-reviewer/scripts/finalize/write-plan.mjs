@@ -55,17 +55,28 @@ export function buildThreadOps(threads) {
  *   pointerBodyPath: string,
  *   inlineComments?: Array<{path: string, line?: number|null, body: string}>,
  *   lorekitWrite?: any[],
+ *   dryRun?: boolean,
+ *   historical?: {review_sha: string}|null,
  * }} args
  * @returns {any}
  */
 export function buildWritePlan({
   repo, prNumber, commitSha, threads, stickyCommentId,
   reportBodyPath, pointerBodyPath, inlineComments, lorekitWrite,
+  dryRun = false, historical = null,
 }) {
   const { thread_reply, thread_resolve } = buildThreadOps(threads || []);
   return {
     repo,
     pr_number: prNumber,
+    // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab): a historical (`--review-sha`) run's
+    // write-plan carries both markers explicitly, even though `main()` above already refuses
+    // to reach this function at all for a historical context without `--dry-run` — a plan
+    // that reached execute-write-plan.mjs some other way (a hand-assembled one, a future
+    // caller) still self-identifies as historical/dry-run so that script's OWN refusal
+    // (AC-18) does not have to trust a caller that got here correctly.
+    dry_run: Boolean(dryRun),
+    historical: historical || null,
     thread_reply,
     thread_resolve,
     sticky_upsert: {
@@ -150,6 +161,22 @@ async function selfTest() {
     check("review comment fields match execute-write-plan.mjs's payloadIsSafe shape exactly (path/line/side/body)",
       JSON.stringify(Object.keys(plan.review_create.comments[0]).sort()) === JSON.stringify(["body", "line", "path", "side"]));
     check("lorekit_write defaults to an empty array — this pipeline queues no ops yet, and D9 forbids executing them here regardless",
+      Array.isArray(plan.lorekit_write) && plan.lorekit_write.length === 0);
+    check("dry_run and historical both default to false/null on an ordinary (live, non-historical) plan",
+      plan.dry_run === false && plan.historical === null);
+  }
+  {
+    // A historical (--review-sha) plan under --dry-run (D8/D9, AC-17): dry_run true, historical
+    // names review_sha, lorekit_write stays empty (no caller-supplied ops in this case either).
+    const plan = buildWritePlan({
+      repo: "o/r", prNumber: 1, commitSha: "abc1234",
+      reportBodyPath: "/tmp/report-body.md", pointerBodyPath: "/tmp/pointer-body.md",
+      dryRun: true, historical: { review_sha: "906a74781990f75607f0234de963fdbbc3953f2" },
+    });
+    check("a historical, dry-run plan carries dry_run: true", plan.dry_run === true);
+    check("a historical, dry-run plan carries historical.review_sha verbatim",
+      plan.historical && plan.historical.review_sha === "906a74781990f75607f0234de963fdbbc3953f2");
+    check("a historical, dry-run plan's lorekit_write is still empty (no ops queued, no ops executed)",
       Array.isArray(plan.lorekit_write) && plan.lorekit_write.length === 0);
   }
   {

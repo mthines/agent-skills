@@ -21,6 +21,7 @@ own where the flags are read and where the carve-outs apply.
 
 - [`--dry-run`](#--dry-run)
 - [`--isolated`](#--isolated)
+- [`--review-sha`](#--review-sha)
 - [Artifact flow](#artifact-flow)
 - [Write-plan op → MCP tool map](#write-plan-op--mcp-tool-map)
 
@@ -96,6 +97,55 @@ or accepting and noting the shared-memory caveat in the comparison), and
 every dispatch prompt in a multi-arm run must state the SAME LoreKit-read
 instruction — a difference in what each arm's prompt tells it to read is a
 confound `--isolated` cannot detect or prevent.
+
+## `--review-sha`
+
+Read-only review of a **specific past commit** on a PR, not the live head — the historical mode
+the A/B harness needs to score arms against a fixed point in a PR's life without waiting for a
+fresh PR (D8/D9, plan `feat/pr-reviewer-shrink-fanout-ab`). `prepare-review.mjs --review-sha <sha>`
+resolves `<sha>` against the PR's own commit list (`verifyReviewSha` — exact match, or a UNIQUE
+prefix; a prefix matching zero or more-than-one commit is refused, never guessed) and reviews that
+commit instead of `headRefOid`.
+
+**Two preconditions, both refused BEFORE any `gh` process spawns** (never a partial run that
+discovers the conflict mid-fetch):
+
+1. **Requires `--isolated`.** A historical review must not read live PR state that postdates the
+   commit it is reviewing — Step 0.7's state-record read and its sticky-footer fallback are both
+   about "what did a prior run leave behind," which is meaningless (and actively misleading) for a
+   review of a commit from before that state existed.
+2. **Refuses `--pin-head`.** `--review-sha` already pins the review to a specific (historical)
+   commit; `--pin-head` is a different contract — it compares against the LIVE head, which
+   `--review-sha` runs do not care about at all. `--isolated` runs WITHOUT `--review-sha` still
+   REQUIRE `--pin-head` (item 3 above); that requirement does not apply once `--review-sha` is set.
+
+**What changes downstream of a verified `--review-sha`:**
+
+| Object | Live-head behavior | Under `--review-sha` |
+| --- | --- | --- |
+| Diff / files | `gh pr diff` / `pulls/{n}/files` (always the current head) | Compare-based: `repos/{repo}/compare/{base}...{review_sha}` |
+| Workspace checkout | Materialized at `headRefOid` | Materialized at the verified `review_sha` (same ladder, same script — only the target SHA differs) |
+| Impact graph | Diffs the checked-out workspace against `--base-ref` | Identical — it diffs whatever the workspace is checked out to, so pointing the checkout at `review_sha` is the entire fix; `build-impact-graph.mjs` needs no `--review-sha` awareness of its own |
+| CI | `gh pr checks` (the CURRENT check run) | **Not read at all** — `context.historical.ci = "not-read"`. Today's CI result has no relationship to a commit reviewed days or weeks ago; reporting it would misattribute one to the other |
+| Thread state / PR description | Read live, as of now | Still read live, as of now (`thread_state_as_of` / `description_as_of` = `"now"`) — GitHub has no API to reconstruct either as of an arbitrary past commit, so a historical run is an honest MIXED-time view (past code, present metadata), never a simulated past PR page |
+
+`context.json` carries a `historical: {review_sha, thread_state_as_of, description_as_of, ci}`
+block (`prepare-review.mjs`'s `historicalBlock()`) whenever `--review-sha` was set, `null`
+otherwise. **Every downstream stage refuses a write once this block is present, unless `--dry-run`
+is also passed — and the refusal is redundant by design, checked independently at each stage
+rather than trusted from the stage before it:**
+
+- `finalize.mjs` refuses (non-zero exit, no `write-plan.json` written) when `context.historical` is
+  set and `--dry-run` was not passed — checked before any rendering happens.
+- A `--dry-run` run's `write-plan.json` self-identifies (`dry_run: true`, `historical: {review_sha}`,
+  `lorekit_write: []`) — never silently indistinguishable from an ordinary plan.
+- `execute-write-plan.mjs` refuses (`refusalReason()`, exit 5, zero `gh` calls) on a plan carrying
+  either marker — from the PLAN FILE's own fields, never from a caller-supplied `--dry-run` CLI
+  flag, so a plan that reached this script some other way (hand-assembled, replayed, a future
+  caller) is still refused on what it says about itself.
+
+A historical run is therefore, by construction, **never** anything other than
+`--isolated --dry-run --review-sha <sha>` together — there is no supported way to make one post.
 
 ## Artifact flow
 

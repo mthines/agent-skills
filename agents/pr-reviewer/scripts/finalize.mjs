@@ -1390,6 +1390,57 @@ async function selfTest() {
         && !reportBody.includes("[the retry doc](https://example.com/retry)"));
     }
 
+    // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-17): a HISTORICAL context.json (the
+    // context.historical block prepare-review.mjs's --review-sha attaches) must refuse a real
+    // finalize.mjs run unless --dry-run is also passed, and once it is, the write-plan.json it
+    // writes self-identifies as historical/dry-run. Two real subprocess spawns against the SAME
+    // historical context — never a unit-level stand-in, since AC-17 is about main()'s own I/O
+    // boundary (the exit code and the presence/absence of write-plan.json on disk), the exact
+    // thing only spawning the real CLI proves.
+    {
+      const histDir = join(e2eDir, "historical-test");
+      rmSync(histDir, { recursive: true, force: true });
+      mkdirSync(histDir, { recursive: true });
+      const histContext = withRenderAt({
+        ...e2eContext,
+        historical: {
+          review_sha: "906a74781990f75607f0234de963fdbbc3953f2",
+          thread_state_as_of: "now", description_as_of: "now", ci: "not-read",
+          live_head_sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        },
+      }, "2026-09-25T12:00:00Z");
+      const histContextPath = join(histDir, "context.json");
+      writeFileSync(histContextPath, JSON.stringify(histContext, null, 2));
+
+      const noDryOutDir = join(histDir, "out-no-dry-run");
+      const rNoDry = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", histContextPath, "--judgments", judgmentsPath, "--out-dir", noDryOutDir,
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      check("a HISTORICAL context without --dry-run: finalize.mjs exits non-zero",
+        rNoDry.status !== 0, `exit ${rNoDry.status}`);
+      check("a HISTORICAL context without --dry-run: no write-plan.json is written",
+        !existsSync(join(noDryOutDir, "write-plan.json")));
+
+      const dryOutDir = join(histDir, "out-dry-run");
+      const rDry = spawnSync(process.execPath, [
+        join(HERE, "finalize.mjs"),
+        "--context", histContextPath, "--judgments", judgmentsPath, "--out-dir", dryOutDir, "--dry-run",
+      ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      check("a HISTORICAL context WITH --dry-run: finalize.mjs exits 0",
+        rDry.status === 0, (rDry.stderr || "").trim().slice(0, 300));
+      if (existsSync(join(dryOutDir, "write-plan.json"))) {
+        const histPlan = JSON.parse(readFileSync(join(dryOutDir, "write-plan.json"), "utf8"));
+        check("a HISTORICAL, --dry-run write-plan.json carries dry_run: true", histPlan.dry_run === true);
+        check("a HISTORICAL, --dry-run write-plan.json carries historical.review_sha verbatim",
+          Boolean(histPlan.historical) && histPlan.historical.review_sha === "906a74781990f75607f0234de963fdbbc3953f2");
+        check("a HISTORICAL, --dry-run write-plan.json's lorekit_write stays empty",
+          Array.isArray(histPlan.lorekit_write) && histPlan.lorekit_write.length === 0);
+      } else {
+        check("a HISTORICAL, --dry-run write-plan.json is written", false, "file missing");
+      }
+    }
+
     // D16 CLI-level coverage: `--writer findings-bus` is branch-reviewer's entire output path, and
     // until now only finalizeReview()'s pure `findingsBusRecords` array was self-tested — the CLI
     // main() branch that skips the GitHub-shaped artifacts and appends the bus file was exercised
@@ -1517,6 +1568,21 @@ async function main() {
   const context = withRenderAt(hydrateFilePatches(contextRaw));
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
+
+  // D8/D9 (plan feat/pr-reviewer-shrink-fanout-ab, AC-17): a historical context (`--review-sha`
+  // set upstream in prepare-review.mjs, carried here as context.historical) must never reach a
+  // GitHub write. Refused BEFORE any rendering or write-plan work, and before out-dir is even
+  // created, so a caller that got the flags wrong gets nothing on disk to mistake for a result.
+  const isDryRun = Boolean(opts["dry-run"]);
+  if (context?.historical && !isDryRun) {
+    console.error(
+      "finalize: refusing — context is historical (review_sha "
+      + `${context.historical.review_sha || "unknown"}) but --dry-run was not passed. `
+      + "A historical review must never reach a GitHub write. Pass --dry-run.",
+    );
+    process.exit(1);
+  }
+
   mkdirSync(outDir, { recursive: true });
 
   const result = finalizeReview({
@@ -1623,6 +1689,8 @@ async function main() {
     reportBodyPath: join(outDir, "report-body.md"),
     pointerBodyPath,
     inlineComments: renderedInlineComments,
+    dryRun: isDryRun,
+    historical: context?.historical || null,
   });
   writeFileSync(join(outDir, "write-plan.json"), JSON.stringify(writePlan, null, 2));
   console.log(`finalize: wrote write-plan.json (${writePlan.thread_reply.length} replies, `

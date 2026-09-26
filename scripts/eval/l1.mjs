@@ -9122,6 +9122,88 @@ const isPollBlock = (block) =>
   }
 }
 
+// ── G80: --review-sha historical write refusals, executed end to end
+// (plan feat/pr-reviewer-shrink-fanout-ab, D8/D9, AC-15/AC-17/AC-18/AC-19) ──
+// Reproduces checks.yaml's AC-15 and AC-18 PATH-shim proofs AS A STANDING L1 GUARD, the same
+// "checks.yaml is the acceptance test, L1 re-derives it so drift is caught on every run, not only
+// at Phase-4 checks.yaml time" pattern G66/G81 already use — except these two ACs are themselves
+// live subprocess spawns with a fake `gh` on PATH, so reproducing them here means actually running
+// the same spawns rather than grepping text, which is what "executed end-to-end" in this block's
+// own name promises. A PATH-shim `gh` that only ever appends its argv to a log file is the
+// evidence: an empty log after a refusal proves the refusal fired BEFORE any `gh` process, not
+// merely that the command exited non-zero for some other reason.
+{
+  const PREPARE_REVIEW_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs");
+  const EXECUTE_WRITE_PLAN_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs");
+  s.check("G80 prepare-review.mjs exists", existsSync(PREPARE_REVIEW_PATH));
+  s.check("G80 execute-write-plan.mjs exists", existsSync(EXECUTE_WRITE_PLAN_PATH));
+
+  if (existsSync(PREPARE_REVIEW_PATH)) {
+    const shimDir = mkdtempSync(join(tmpdir(), "g80-gh-shim-"));
+    const shimGh = join(shimDir, "gh");
+    const logPath = join(shimDir, "log");
+    writeFileSync(shimGh, `#!/bin/sh\necho "$@" >> ${JSON.stringify(logPath)}\n`, { mode: 0o755 });
+    writeFileSync(logPath, "");
+    const env = { ...process.env, PATH: `${shimDir}:${process.env.PATH}` };
+    const sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+
+    const rNoIsolated = spawnSync(process.execPath, [
+      PREPARE_REVIEW_PATH, "--pr", "o/r#1", "--review-sha", sha, "--out", join(shimDir, "c1.json"),
+    ], { encoding: "utf8", env });
+    s.check("G80 --review-sha without --isolated exits 2", rNoIsolated.status === 2, rNoIsolated.stderr);
+    s.check("G80 --review-sha without --isolated names --isolated in its refusal", /--isolated/.test(rNoIsolated.stderr || ""));
+
+    const rWithPinHead = spawnSync(process.execPath, [
+      PREPARE_REVIEW_PATH, "--pr", "o/r#1", "--review-sha", sha, "--isolated", "--pin-head", sha,
+      "--out", join(shimDir, "c2.json"),
+    ], { encoding: "utf8", env });
+    s.check("G80 --review-sha with --pin-head exits 2", rWithPinHead.status === 2, rWithPinHead.stderr);
+    s.check("G80 --review-sha with --pin-head names --pin-head in its refusal", /--pin-head/.test(rWithPinHead.stderr || ""));
+
+    s.check("G80 neither refusal ever spawned the PATH-shim gh (empty log)",
+      readFileSync(logPath, "utf8").trim() === "", readFileSync(logPath, "utf8"));
+
+    rmSync(shimDir, { recursive: true, force: true });
+  }
+
+  if (existsSync(EXECUTE_WRITE_PLAN_PATH)) {
+    const shimDir = mkdtempSync(join(tmpdir(), "g80-gh-shim-"));
+    const shimGh = join(shimDir, "gh");
+    const logPath = join(shimDir, "log");
+    writeFileSync(shimGh, `#!/bin/sh\necho "$@" >> ${JSON.stringify(logPath)}\n`, { mode: 0o755 });
+    writeFileSync(logPath, "");
+    const env = { ...process.env, PATH: `${shimDir}:${process.env.PATH}` };
+
+    const planPath = join(shimDir, "plan.json");
+    writeFileSync(planPath, JSON.stringify({
+      dry_run: true,
+      historical: { review_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
+      thread_ops: [], lorekit: { write: [] },
+    }));
+    const r = spawnSync(process.execPath, [
+      EXECUTE_WRITE_PLAN_PATH, "--plan", planPath, "--repo", "o/r",
+    ], { encoding: "utf8", env });
+    s.check("G80 execute-write-plan.mjs refuses a historical/dry_run plan with a non-zero exit",
+      r.status !== 0 && r.status !== null, `exit ${r.status}`);
+    s.check("G80 the refusal never spawned the PATH-shim gh (empty log)",
+      readFileSync(logPath, "utf8").trim() === "", readFileSync(logPath, "utf8"));
+
+    rmSync(shimDir, { recursive: true, force: true });
+  }
+
+  // finalize.mjs's own historical-without-dry-run refusal (AC-17) is already end-to-end proven by
+  // its own --self-test (two real CLI spawns) — re-run it here rather than duplicating the fixture
+  // setup a third time; a regression there fails THIS check the same run it fails finalize.mjs's own.
+  const FINALIZE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
+  if (existsSync(FINALIZE_PATH)) {
+    const r = spawnSync(process.execPath, [FINALIZE_PATH, "--self-test"], { encoding: "utf8" });
+    const out = (r.stdout || "") + (r.stderr || "");
+    s.check("G80 finalize.mjs --self-test passes, including its own historical/--dry-run cases",
+      r.status === 0 && /historical/i.test(out) && /dry_run/i.test(out),
+      out.split("\n").slice(-6).join(" | "));
+  }
+}
+
 // ── G84: shape semantics (plan feat/pr-reviewer-shrink-fanout-ab, D5/D6/D7) ──
 //
 // Three independent behaviour fixes bundled under one guard because they share one theme — a
