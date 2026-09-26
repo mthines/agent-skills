@@ -43,14 +43,23 @@ export function measure(text) {
  * earlier work already split out — those are unconditionally read on every path today and are
  * out of scope for this measurement, which is scoped to what Step 9 controls.
  *
- * Four paths (mirrors the agent body's Step 4 router condition):
- *   (a) full write run with a prior state   — agent body + posting.md (Step 0.7's prior-state vs
- *       first-run branching is prose INSIDE the agent body in this PR, not a separate file, so
- *       (a) and (b) load the same bytes; they differ in which branch of that prose the run reads,
- *       not in what it loads. Recorded as its own path anyway because the plan named it as one.)
- *   (b) first-run write                     — agent body + posting.md (see above)
- *   (c) dry-run / --isolated / --review-sha — agent body only; the Step 4 router explicitly says
- *       these never reach Step 4 and never load posting.md
+ * CORRECTED FINDING (this PR, post-review of the router text): an earlier draft of the Step 4
+ * router claimed `--dry-run`, `--isolated`, and `--review-sha` never reach Step 4. That was
+ * false — `--dry-run` (which `--review-sha` requires) still builds `REPORT_BODY` /
+ * `INLINE_COMMENTS_JSON` and runs every assertion in `rules/posting.md`, only skipping the final
+ * `POST`/`PATCH`; `--isolated` alone only changes Step 0.7's prior-state read. So paths (a), (b),
+ * and (c) below all load IDENTICAL bytes — every orchestrator-side run loads `rules/posting.md`.
+ * The only path that genuinely never loads it is (d): a `--fanout` worker, which G81's preamble
+ * forbids from reading `agents/pr-reviewer.md` at all. This is the honest result the delta asked
+ * for when it said "if ... a write run still loads ~100%, say so plainly": the real per-run-path
+ * win from this split is confined to fan-out workers, not to dry-run/isolated/review-sha.
+ *
+ * Four paths (mirrors the plan's naming, kept even though (a)/(b)/(c) now collapse to one value):
+ *   (a) full write run with a prior state   — agent body + posting.md
+ *   (b) first-run write                     — agent body + posting.md (identical to (a); Step 0.7's
+ *       prior-state vs first-run branching is prose INSIDE the agent body, not a separate file)
+ *   (c) dry-run / --isolated / --review-sha — agent body + posting.md (identical to (a)/(b) — see
+ *       "CORRECTED FINDING" above; these flags change what Step 4 DOES, not whether it loads)
  *   (d) fan-out worker role                 — does NOT read agents/pr-reviewer.md at all (the
  *       --fanout worker preamble, G81, forbids it); `agent_bytes` is reported as 0 for this path
  *       on that basis, not measured against a worker prompt this tool has no access to
@@ -68,13 +77,17 @@ export function pathMeasures(agentText, postingText) {
     words: ms.reduce((a, m) => a + m.words, 0),
     approx_tokens: ms.reduce((a, m) => a + m.approx_tokens, 0),
   });
+  const writeRun = { loads: ["pr-reviewer.md", "rules/posting.md"], ...sum(agent, posting) };
   return {
     agent_only: agent,
     posting_only: posting,
     paths: {
-      "a_full_write_prior_state": { loads: ["pr-reviewer.md", "rules/posting.md"], ...sum(agent, posting) },
-      "b_first_run_write": { loads: ["pr-reviewer.md", "rules/posting.md"], ...sum(agent, posting) },
-      "c_dry_run_isolated_review_sha": { loads: ["pr-reviewer.md"], ...agent },
+      "a_full_write_prior_state": writeRun,
+      "b_first_run_write": writeRun,
+      "c_dry_run_isolated_review_sha": {
+        ...writeRun,
+        note: "corrected: these flags skip Step 4's POST/PATCH, not the Step 4 load — identical bytes to (a)/(b)",
+      },
       "d_fanout_worker": {
         loads: [],
         note: "worker preamble (G81) forbids reading agents/pr-reviewer.md — not measured here",
@@ -145,15 +158,17 @@ function selfTest() {
   const cmp = compare("aaaa bbbb cccc dddd", "aaaa bbbb");
   check("compare() reports next as a % of base", cmp.normalized_bytes_pct < 100 && cmp.normalized_bytes_pct > 0);
 
-  // pathMeasures: (a)/(b) load agent+posting, (c) loads agent only, (d) loads nothing.
+  // pathMeasures (corrected model): (a)/(b)/(c) ALL load agent+posting — --dry-run/--isolated/
+  // --review-sha skip Step 4's POST/PATCH, not the Step 4 load itself. Only (d) loads nothing.
   const pm = pathMeasures("agent body text", "posting body text");
   const aBytes = pm.paths.a_full_write_prior_state.raw_bytes;
   const cBytes = pm.paths.c_dry_run_isolated_review_sha.raw_bytes;
-  check("pathMeasures: (a) full-write loads strictly more than (c) dry-run", aBytes > cBytes);
   check("pathMeasures: (a) and (b) load identical bytes (Step 0.7 stays inline this PR)",
     aBytes === pm.paths.b_first_run_write.raw_bytes);
-  check("pathMeasures: (c) equals agent_only exactly (no posting.md loaded)",
-    cBytes === pm.agent_only.raw_bytes);
+  check("pathMeasures: (c) loads identical bytes to (a)/(b) — dry-run/isolated/review-sha still load posting.md",
+    cBytes === aBytes);
+  check("pathMeasures: (a)/(b)/(c) all load strictly more than agent_only alone (posting.md IS loaded)",
+    aBytes > pm.agent_only.raw_bytes && cBytes > pm.agent_only.raw_bytes);
   check("pathMeasures: (d) fan-out worker measures zero agent-body bytes",
     pm.paths.d_fanout_worker.raw_bytes === 0 && pm.paths.d_fanout_worker.loads.length === 0);
 

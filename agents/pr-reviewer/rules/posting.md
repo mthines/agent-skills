@@ -10,15 +10,10 @@ tags:
 
 # pr-reviewer — posting (Step 4)
 
-**Read this before Step 4 only when this run is going to write.** Under `--dry-run`,
-`--isolated`, `--review-sha`, and inside a `--fanout` finder/lens/verifier/synthesis worker, this
-run never posts anything and never needs to load this file — the write procedure, the sticky
-report, the review object, the run-state record, and the code-learned memory writes below are
-gated on an actual `POST`/`PATCH` happening. The agent body's own Step 4 router names this
-condition explicitly.
-
-This file owns 4a–4d verbatim, including every incident narrative and access-path branch: moving
-them out of the agent body does not condense or drop any of the protection they encode.
+**Loaded by every run reaching Step 3** — including `--dry-run`/`--isolated`/`--review-sha`, which
+skip only the final `POST`/`PATCH`, not the load (see the agent body's Step 4 router for why). Only
+a `--fanout` worker skips this file, since G81 forbids a worker from reading `agents/pr-reviewer.md`
+at all. Owns 4a–4d verbatim — every incident narrative and access-path branch, unshortened.
 
 ---
 
