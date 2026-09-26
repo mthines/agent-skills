@@ -6,11 +6,11 @@ description: >
   for "review this PR" when you do not want an apply-and-converge loop. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`. Invoke with /pr-review.
 disable-model-invocation: true
-argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--fanout] [--critical] [--full] [--effort high] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: command
 ---
 
@@ -31,6 +31,7 @@ rather than one of them: you get a review, and your working tree is exactly wher
 - [Step 1: Resolve the PR](#step-1-resolve-the-pr)
 - [Step 2: Dispatch the agent](#step-2-dispatch-the-agent)
 - [Step 3: Report](#step-3-report)
+- [`--fanout` — opt-in parallel orchestration](#--fanout--opt-in-parallel-orchestration)
 - [`remember` — write a maintainer relevance rule](#remember--write-a-maintainer-relevance-rule)
 - [Which review command do I want?](#which-review-command-do-i-want)
 - [Hard rules](#hard-rules)
@@ -54,6 +55,11 @@ A request to fix what the review found is [`/review-changes`](../review-changes/
 Everything after the PR reference is a **pass-through flag**: forward it verbatim and interpret
 none of it.
 The agent owns its own flag grammar, so a flag this skill has never heard of must still reach it.
+
+**One exception: `--fanout`.** It is the one flag this skill reads for itself, because it changes
+which dispatch this skill performs (Step 2's single `pr-reviewer` dispatch vs. the parallel
+orchestration below) rather than something the agent interprets. Strip it from the tail before
+forwarding the rest — see [`--fanout`](#--fanout--opt-in-parallel-orchestration).
 
 ```bash
 # Known agent flags, listed for the argument-hint only — NOT a validation allowlist.
@@ -110,6 +116,10 @@ Dispatch **once**. This command does not loop: a second pass over an unchanged h
 same code and re-posts the same report, and iterating a review against fixes is what
 [`review-loop`](../review-loop/SKILL.md) exists for.
 
+**This is the default and the fallback.** If `--fanout` was passed, run
+[`--fanout`](#--fanout--opt-in-parallel-orchestration) instead of this single dispatch — unless that
+section's own quick-tier or no-dispatch conditions send you back here.
+
 ### When sub-agent dispatch is unavailable
 
 Some harnesses expose no sub-agent dispatch tool at all. Establish that by
@@ -160,6 +170,216 @@ Report the verdict **as returned**. Do not soften a `FAIL` because the findings 
 and do not upgrade a `PASS` because the diff looks risky: the gates and the verifier already made
 that call with evidence, and re-adjudicating it here would make two disagreeing verdicts for one
 run.
+
+## `--fanout` — opt-in parallel orchestration
+
+**Default OFF.** Pass `--fanout` to run the review as a parallel orchestration *from this skill*
+instead of the single `pr-reviewer` dispatch in [Step 2](#step-2-dispatch-the-agent). Everything
+else in this document — argument parsing, PR resolution, the terminal report, `remember` — is
+unchanged; `--fanout` only replaces how the review itself gets done.
+
+**Why this skill, and not the agent.** `pr-reviewer` runs as a sub-agent and holds no dispatch
+tool, so it cannot fan further work out — a sub-agent cannot dispatch a sub-agent (the same
+nested-dispatch ceiling `review-loop`'s caller contract and the `aw` dispatcher document). `/pr-review`
+runs at the **top level**, wherever a session's own sub-agent dispatch tool lives, so it is the one
+place in this pipeline that *can* be the orchestrator rather than another leaf.
+
+### The capability test, first
+
+Before doing anything else, establish **by capability** whether this session can dispatch a
+sub-agent at all — **never** by checking for the literal tool name `Task`. The dispatch tool is
+spelled `Task` in the Claude Code CLI and `Agent` in the Claude Agent SDK harness behind Claude Code
+on the web; a name-literal check reports "unavailable" on every session that spells it the other
+way, even though the capability is present. Use whichever tool this session exposes that takes a
+`subagent_type` (or equivalent agent-name) parameter.
+
+| Capability | Action |
+| --- | --- |
+| present | run the orchestration below |
+| **absent** | **fall back to [Step 2](#step-2-dispatch-the-agent)'s single `pr-reviewer` dispatch — this is a fallback, not a skip.** Say so in the terminal report: `` `--fanout` requested but no sub-agent dispatch tool is available — ran the single-dispatch `pr-reviewer` review instead. `` A caller that asked for the parallel path and silently got the serial one without being told has no way to know its concurrency assumptions did not hold. |
+
+This is the one place `--fanout`'s fallback differs from Step 2's own no-dispatch case: Step 2 with
+no `--fanout` has nothing to fall back to and reports a **skip**, because performing the review
+in-context would be a self-review wearing a reviewer's label. Here, the single-context `pr-reviewer`
+dispatch *is* the fallback and still runs — dispatching that one agent needs the same capability
+`--fanout` needed and just failed to find, so if the capability is genuinely absent both paths report
+the same skip; the distinction only matters when read carefully: `--fanout`'s absence-of-dispatch
+case degrades one rung, not to nothing.
+
+### Step a — build the review context
+
+Run [`prepare-review.mjs`](../../../agents/pr-reviewer/scripts/prepare-review.mjs) exactly as
+`pr-reviewer.md` Step 1 does, writing `context.json` under
+[`scratchRoot()`](../../../agents/pr-reviewer/scripts/prepare-review.mjs#L75) — `/tmp/workspace/.pr-reviewer-scratch/`
+on Agent0 hosts (the workspace directory every dispatched sub-agent's file tools can read; a bare
+`os.tmpdir()` path is refused for exactly that reason, per the script's own docstring), falling
+back to `<cwd>/.pr-reviewer-scratch/` locally. Every artifact this orchestration writes lives under
+one run directory:
+
+```text
+<scratchRoot()>/<run-id>/
+  context.json
+  candidates/<finder>.json         # step c
+  lenses/<lens>.json                # step c
+  verdicts/<n>.json                 # step e
+  judgments.json                    # step f
+  finalize/…                        # finalize.mjs --out-dir
+```
+
+Each dispatched sub-agent **writes its JSON to that path and returns only the path** — never the
+payload inline. A finder or verifier's full output can run to tens of KB; returning it as the
+dispatch result would spend the orchestrator's own context on data it only needs to hand to the next
+mechanical step, exactly the cost this whole pipeline exists to cut.
+
+### Step b — route: `quick` tier skips the fan-out
+
+Read `context.routing.tier` off the `context.json` Step a just wrote
+([`route-depth.mjs`](../../../agents/pr-reviewer/scripts/route-depth.mjs), per
+[`depth-routing.md`](../../../agents/pr-reviewer/rules/depth-routing.md)).
+
+**At `quick` tier, skip the fan-out entirely and fall back to [Step 2](#step-2-dispatch-the-agent)'s
+single dispatch.** A `quick`-tier diff is, by `depth-routing.md`'s own override rule, one that
+reaches nothing and needs no deep pass (`THREAD_OVERLAP ≥ 0.8` and `band == none`) — six parallel
+sub-agent dispatches plus a verification wave to review a diff the routing already decided needs the
+cheapest pass is concurrency spent on a review that was never going to be expensive. This is a
+**routing decision**, not a capability fallback, and the terminal report should say which one fired
+(`quick tier — ran single-dispatch pr-reviewer` vs. the no-dispatch wording above).
+
+`standard` and `deep` tiers proceed to Step c.
+
+### Step c — parallel finder + lens dispatch
+
+Dispatch one sub-agent per finder, from [`finders.md`](../../../agents/pr-reviewer/rules/finders.md)'s
+own table — the same six every `pr-reviewer` run uses, no more and no fewer:
+
+```text
+correctness · consumer-impact · dependency · intent · standards · quality
+```
+
+Each finder sub-agent receives **only**:
+
+- its own finder rule file(s) — `finders.md` plus, for `consumer-impact` and `dependency`, their
+  dedicated rule ([`finder-consumer-impact.md`](../../../agents/pr-reviewer/rules/finder-consumer-impact.md),
+  [`finder-dependency.md`](../../../agents/pr-reviewer/rules/finder-dependency.md));
+- `context.json`;
+- the workspace path.
+
+Never the other finders' output, never a running count of candidates so far — `finders.md`'s own
+independence rule (a shared summary makes the next finder quieter). Each finder returns candidate
+records in [`finders.md`](../../../agents/pr-reviewer/rules/finders.md#the-candidate-record)'s
+**pre-verification** shape (`finder`, `defect_class`, `path`, `line`, `symbol`, `claim`,
+`bad_outcome`, `evidence`, `severity_hint`, `fix`, `verify_by` — no `prefix`, no `body`; those are
+the verifier's fields, added in Step e), written to `candidates/<finder>.json`.
+
+**`--effort high` runs `correctness` as diversify-then-vote** exactly per `finders.md`'s existing
+rule: N = 5 sub-agents (N = 3 by default) over the same hunks in permuted file order, each an
+independent dispatch counted against the same concurrency cap below, with agreement recorded as
+`votes` on the merged candidate.
+
+**Lenses ride the same parallel wave**, each self-gating on the tier `route-depth.mjs` already
+resolved — no separate wave, no separate cap accounting:
+
+| Lens | Runs at | Rule |
+| --- | --- | --- |
+| holistic review | default ON in `full` mode; shape-gated in incremental | [`holistic-review.md`](../../../agents/shared/rules/holistic-review.md) |
+| optimality | `deep` only | [`optimality-review.md`](../../../agents/shared/rules/optimality-review.md) |
+| standards-conformance | `deep` and `standard` | [`standards-conformance.md`](../../../agents/shared/rules/standards-conformance.md) |
+| measurability | `deep` and `standard` | [`measurability-review.md`](../../../agents/shared/rules/measurability-review.md) |
+
+Each lens's output lands at `lenses/<lens>.json` and feeds `judgments.lenses.*` at assembly (Step f)
+— unchanged from how `pr-reviewer.md` already shapes that object.
+
+### Step d — deterministic dedupe
+
+Concatenate every `candidates/<finder>.json` file and run:
+
+```bash
+node agents/pr-reviewer/scripts/finalize.mjs \
+  --dedupe-candidates "<scratchRoot()>/<run-id>/all-candidates.json" \
+  --out "<scratchRoot()>/<run-id>/deduped.json"
+```
+
+This is the **same** [`finalize/dedupe.mjs`](../../../agents/pr-reviewer/scripts/finalize/dedupe.mjs)
+module `finalize.mjs` runs internally on the post-verification pool, adapted (never re-implemented)
+to the finder-stage record shape: an exact `(path, line, defect_class)` match, or an adjacent-line
+`(path, line±2, defect_class, same 40-char claim prefix)` fuzzy match, merges two finders'
+candidates into one, recording every finder that flagged it in `_also_flagged_by` for the
+cross-rubric agreement boost `thresholds.mjs` already applies. Feed the finders' outputs in
+`finders.md`'s own table order (`correctness, consumer-impact, dependency, intent, standards,
+quality`) so the kept record is deterministic across runs. Only `deduped.json`'s `kept[]` proceeds to
+verification — the `dropped[]` are cross-finder duplicates, not findings the run is discarding.
+
+### Step e — parallel verification
+
+Dispatch one verifier sub-agent per surviving candidate (batch small groups of unrelated candidates
+together where the concurrency cap makes that necessary — never batch candidates that share a path,
+since [`finding-verifier.md`](../../../agents/shared/rules/finding-verifier.md)'s adversarial framing
+depends on seeing one claim at a time). Each verifier receives **only** the candidate record, the
+workspace, and `impact.json` — never the finder's reasoning, never the other candidates, per
+`finding-verifier.md`'s own exclusion table. Each returns the four-way verdict
+(`confirmed`/`contradicted`/`ambiguous`/`unobtainable`) plus the `R`/`A`/`Ac` scores, `severity`,
+`prefix`, `blocking`, `title`, `body`, `materiality`, and `category` — the remaining fields
+`judgments.schema.json`'s candidate shape requires — written to `verdicts/<n>.json`. A `contradicted`
+candidate is dropped here and never reaches `judgments.json`, with its contradicting evidence logged
+per `finding-verifier.md`'s own rule.
+
+### Step f — assemble, validate, finalize, write
+
+One synthesis pass — a dedicated sub-agent, or the orchestrator itself; both are permitted, and
+which one ran belongs in the run-mode line the same way `finding-verifier.md`'s own sub-agent
+question does — does the parts of `judgments.json` no finder or verifier produces: `gate1`
+(description-vs-diff), `gate5` (docs), `gate4` (the AI-stub pre-candidate dispositions, via
+[`gate4-scan.mjs`](../../../agents/pr-reviewer/scripts/gate4-scan.mjs)'s own output already sitting
+in `context.json`), and the open-thread classifications
+([`thread-resolution.md`](../../../agents/shared/rules/thread-resolution.md), Step 2.9c). Assemble
+these together with every surviving verified candidate into one `judgments.json` matching
+[`judgments.schema.json`](../../../agents/pr-reviewer/schemas/judgments.schema.json).
+
+Then the same three steps every `pr-reviewer` run takes, unchanged:
+
+```bash
+node agents/pr-reviewer/scripts/validate-judgments.mjs "<scratchRoot()>/<run-id>/judgments.json"
+node agents/pr-reviewer/scripts/finalize.mjs \
+  --context "<scratchRoot()>/<run-id>/context.json" \
+  --judgments "<scratchRoot()>/<run-id>/judgments.json" \
+  --out-dir "<scratchRoot()>/<run-id>/finalize"
+```
+
+`validate-judgments.mjs` exits non-zero on a schema violation and stops the run there — a malformed
+`judgments.json` is a synthesis bug, not something `finalize.mjs` should try to interpret. Once
+`finalize.mjs` has written `write-plan.json`, execute it exactly as `pr-reviewer.md` Step 4 does:
+`execute-write-plan.mjs` where a `gh` access path exists, or the write-plan's ops walked one by one
+against the `mcp__github__*` / `mcp__lorekit__*` mapping in
+[`rules/pipeline.md`](../../../agents/pr-reviewer/rules/pipeline.md#write-plan-op--mcp-tool-map)
+where it does not — resolved once, per [`github-access.md`](../../../agents/shared/rules/github-access.md)
+Step 0, never per op.
+
+**`--dry-run` stops before this execution step, exactly as it does for the agent.** The rendered
+`report-body.md`, `inline/*.md`, and `write-plan.json` are written to scratch and nothing is posted —
+[`rules/pipeline.md`](../../../agents/pr-reviewer/rules/pipeline.md#--dry-run) owns the full contract
+this orchestration inherits unchanged.
+
+### Step g — concurrency cap
+
+Batch every dispatch wave (finders + lenses in Step c, verifiers in Step e) in groups of
+**`PR_REVIEW_MAX_PARALLEL` — default 6** — concurrent sub-agent dispatches at a time, never more.
+This exists for the same reason `diversify-then-vote`'s N is a small fixed number rather than
+"as many as helpful": a PR review dispatching one sub-agent per finding on a large diff can burst
+past a harness's or GitHub's own rate limits, and a burst that gets throttled mid-run is worse than
+a queued batch that finishes slightly later. Six finders plus up to four lenses is already at the
+default cap for Step c's own wave on a `deep`-tier run; Step e's verifier wave batches similarly for
+a diff with more than six surviving candidates.
+
+### The default-flip gate
+
+Single-dispatch `pr-reviewer` stays the default, and `--fanout` stays opt-in, until the fan-out
+topology has been shown not to cost detection quality — fan-out is the one change in this pipeline
+that moves the **judgment topology** itself (each finder now reasons in an isolated context instead
+of one model producing all six passes in sequence), which can move recall and precision in either
+direction and cannot be waved through by inspection. The documented gate: **arm B's (fan-out) recall
+is ≥ arm A's (single-dispatch) and precision is ≥ arm A's − 0.05, measured across ≥ 8 manifest PRs at
+N ≥ 3 runs each.** Flipping the default is a follow-up once that evidence exists, not a decision made
+in this document.
 
 ## `remember` — write a maintainer relevance rule
 
