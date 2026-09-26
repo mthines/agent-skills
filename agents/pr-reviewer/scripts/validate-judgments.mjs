@@ -41,9 +41,10 @@
  *   node validate-judgments.mjs --self-test
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { checkShape } from "./finalize.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -210,16 +211,14 @@ function validateNode(root, schema, data, path, errors) {
 }
 
 /**
- * Hand-coded domain rules the fixed keyword subset cannot express as
- * schema-level conditionals. Defensive against a partially-shaped `data`
- * (missing/wrong-typed fields already reported by schema validation) —
- * always runs, never throws.
- * @param {any} data
+ * The candidate-level slice of `domainRules()`, extracted so `--shape-only` (A/B round 2 item 5)
+ * can run it against a verifier worker's OWN candidates array without requiring the full
+ * judgments wrapper (`gates`/`threads`/`memory`) that array will only ever exist inside once the
+ * orchestrator merges every worker's output back together.
+ * @param {any[]} candidates
  * @param {string[]} errors
  */
-export function domainRules(data, errors) {
-  /** @type {any[]} */
-  const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+export function candidateDomainRules(candidates, errors) {
   candidates.forEach((/** @type {any} */ c, /** @type {number} */ i) => {
     if (c === null || typeof c !== "object") return;
     const path = `#.candidates[${i}]`;
@@ -239,6 +238,20 @@ export function domainRules(data, errors) {
       errors.push(`${path}: "unverified_reason" is only valid when verdict is "unobtainable" (got ${JSON.stringify(c.verdict)})`);
     }
   });
+}
+
+/**
+ * Hand-coded domain rules the fixed keyword subset cannot express as
+ * schema-level conditionals. Defensive against a partially-shaped `data`
+ * (missing/wrong-typed fields already reported by schema validation) —
+ * always runs, never throws.
+ * @param {any} data
+ * @param {string[]} errors
+ */
+export function domainRules(data, errors) {
+  /** @type {any[]} */
+  const candidates = Array.isArray(data?.candidates) ? data.candidates : [];
+  candidateDomainRules(candidates, errors);
 
   /** @type {any[]} */
   const dispositions = Array.isArray(data?.gates?.gate4?.precandidate_dispositions)
@@ -305,6 +318,44 @@ export function validateJudgments(schema, data) {
   validateNode(schema, schema, data, "#", errors);
   domainRules(data, errors);
   errors.push(...renderLegalityErrors(data));
+  return errors;
+}
+
+/**
+ * A/B round 2 item 5 — `--shape-only`: validates a VERIFIER WORKER'S OWN OUTPUT FILE (a bare
+ * candidates array, or `{ candidates: [...] }`) before the worker returns it to the orchestrator,
+ * so a shape violation is caught and fixed at the source instead of surfacing only once the
+ * orchestrator's own `finalize.mjs --check-shape` runs over the merged judgments file — which is
+ * how A/B round 1 needed the orchestrator to hand-trim 6 (D08) and 16 (D10) verifier bodies over
+ * cap, work `finding-verifier.md` itself should never have produced.
+ *
+ * Deliberately NOT the same validation `validateJudgments()` runs: there is no `gates`/`threads`/
+ * `memory` wrapper on a single verifier's own output, so this validates each candidate against
+ * `$defs.candidate` directly (never the full top-level schema, which would fail closed on every
+ * missing wrapper field a worker was never asked to produce), runs the same candidate-level
+ * `candidateDomainRules()` `validateJudgments()` uses, and the same render-legality check
+ * (`checkShape()`, imported — never a second, hand-rolled copy of finalize.mjs's caps).
+ * @param {any} schema - a schema already passed through loadSchema/checkSchemaKeywords
+ * @param {any} data - a bare array of candidates, or `{ candidates: [...] }`
+ * @returns {string[]} errors — empty means shape-legal
+ */
+export function validateShapeOnly(schema, data) {
+  /** @type {string[]} */
+  const errors = [];
+  const candidates = Array.isArray(data) ? data : Array.isArray(data?.candidates) ? data.candidates : null;
+  if (candidates === null) {
+    errors.push("#: --shape-only expects a JSON array of candidates, or an object with a top-level \"candidates\" array");
+    return errors;
+  }
+  const candidateSchema = schema?.$defs?.candidate;
+  if (!candidateSchema) {
+    errors.push("#: judgments.schema.json has no $defs.candidate to validate --shape-only input against");
+    return errors;
+  }
+  candidates.forEach((/** @type {any} */ c, /** @type {number} */ i) =>
+    validateNode(schema, candidateSchema, c, `#.candidates[${i}]`, errors));
+  candidateDomainRules(candidates, errors);
+  errors.push(...renderLegalityErrors({ candidates }));
   return errors;
 }
 
@@ -448,6 +499,57 @@ async function selfTest() {
         validateErrs.length === 0 && shapeResult.ok === true,
         `validate errors: ${validateErrs.length}, checkShape violations: ${JSON.stringify(shapeResult.violations)}`);
     }
+
+    // A/B round 2 item 5: --shape-only, exercised as validateShapeOnly() against the SAME
+    // candidate fixtures — a verifier worker's own output has no gates/threads/memory wrapper.
+    {
+      const validCandidates = loadFixture("valid.json").candidates;
+      const errsBare = validateShapeOnly(schema, validCandidates);
+      check("validateShapeOnly accepts a BARE array of valid candidates", errsBare.length === 0, errsBare.join(" | "));
+      const errsWrapped = validateShapeOnly(schema, { candidates: validCandidates });
+      check("validateShapeOnly accepts the same candidates wrapped as { candidates: [...] }", errsWrapped.length === 0, errsWrapped.join(" | "));
+    }
+    {
+      const errs = validateShapeOnly(schema, "not an array or object");
+      check("validateShapeOnly rejects input that is neither an array nor { candidates: [...] }",
+        errs.length > 0 && errs.some(e => e.includes("expects a JSON array of candidates")));
+    }
+    {
+      // Same overlong body the full-document test above catches (A/B round 1's workaround),
+      // reached through the shape-only entry point a verifier worker actually calls.
+      const overlongBody = loadFixture("invalid-render-overlong-body.json").candidates;
+      const errs = validateShapeOnly(schema, overlongBody);
+      check("validateShapeOnly catches an over-200-char BODY with the exact cap in the message",
+        errs.length > 0 && errs.some(e => e.includes("fails finalize's render step (BODY)") && e.includes("200-char cap")));
+    }
+    {
+      // Domain rule reachable through shape-only: title/prefix mismatch, no threads/gate4 needed.
+      const titleMismatch = loadFixture("invalid-title-mismatch.json").candidates;
+      const errs = validateShapeOnly(schema, titleMismatch);
+      check("validateShapeOnly enforces the title/prefix domain rule with no gates/threads wrapper",
+        errs.length > 0 && errs.some(e => e.includes("title")));
+    }
+    {
+      // A schema-type violation (candidate-level) is caught even with no full-document wrapper.
+      const [firstValid] = loadFixture("valid.json").candidates;
+      const badType = [{ ...firstValid, path: 123 }];
+      const errs = validateShapeOnly(schema, badType);
+      check("validateShapeOnly catches a candidate-level schema type violation (path: 123)",
+        errs.length > 0 && errs.some(e => e.includes("expected type")));
+    }
+    {
+      // A verifier's own CLI entry point, through the real process boundary.
+      const candidatesPath = join(FIXTURES_DIR, "..", "shape-only-probe.json");
+      writeFileSync(candidatesPath, JSON.stringify(loadFixture("valid.json").candidates), "utf8");
+      const validOut = spawnSync("node", [fileURLToPath(import.meta.url), "--shape-only", candidatesPath], { encoding: "utf8" });
+      check("CLI: --shape-only exits 0 and prints OK on a conforming candidates file",
+        validOut.status === 0 && validOut.stdout.trim() === "OK", `status=${validOut.status} stdout=${validOut.stdout} stderr=${validOut.stderr}`);
+      writeFileSync(candidatesPath, JSON.stringify(loadFixture("invalid-render-overlong-body.json").candidates), "utf8");
+      const badOut = spawnSync("node", [fileURLToPath(import.meta.url), "--shape-only", candidatesPath], { encoding: "utf8" });
+      check("CLI: --shape-only exits 1 and names the cap on a violating candidates file",
+        badOut.status === 1 && badOut.stderr.includes("200-char cap"), `status=${badOut.status} stderr=${badOut.stderr}`);
+      rmSync(candidatesPath, { force: true });
+    }
   }
 
   if (failed > 0) {
@@ -463,9 +565,14 @@ async function main() {
     await selfTest();
     return;
   }
-  const file = args[0];
+  // A/B round 2 item 5: `--shape-only` runs against a verifier worker's own candidates array —
+  // no gates/threads/memory wrapper, so `assertEnumsMatchFingerprint`'s finder/defect_class enum
+  // check still applies (candidates carry both) but full-document validation does not.
+  const shapeOnlyIdx = args.indexOf("--shape-only");
+  const shapeOnly = shapeOnlyIdx !== -1;
+  const file = shapeOnly ? args[shapeOnlyIdx + 1] : args[0];
   if (!file) {
-    console.error("usage: validate-judgments.mjs <judgments.json> | --self-test");
+    console.error("usage: validate-judgments.mjs <judgments.json> | --shape-only <candidates.json> | --self-test");
     process.exit(2);
   }
   let schema;
@@ -482,7 +589,7 @@ async function main() {
     process.exit(1);
   }
   const data = JSON.parse(readFileSync(file, "utf8"));
-  const errors = validateJudgments(schema, data);
+  const errors = shapeOnly ? validateShapeOnly(schema, data) : validateJudgments(schema, data);
   if (errors.length) {
     console.error(errors.join("\n"));
     process.exit(1);
