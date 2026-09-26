@@ -142,7 +142,7 @@ export function hydrateFilePatches(context) {
  * this run actually reviewed". Pure (D18): the caller resolves `capApplied`/`depthCapability`/
  * `contextAnomalies` from the context; this only formats them, and never begins with a glyph
  * (the renderer prepends its own ⚠️ — a value that did would double it).
- * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[] }} args
+ * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number }} args
  * @returns {string|undefined}
  */
 export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt }) {
@@ -176,6 +176,7 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
  * @returns {string|undefined}
  */
 export function mergeRunAnomaly(supplied, computed) {
+  /** @type {string[]} */
   const parts = [];
   for (const v of [supplied, computed]) {
     if (typeof v !== "string") continue;
