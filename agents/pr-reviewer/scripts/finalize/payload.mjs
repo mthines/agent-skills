@@ -18,6 +18,7 @@
 
 import { buildFingerprint } from "../fingerprint.mjs";
 import { CLAIM_PREFIXES } from "./thresholds.mjs";
+import { TERMINAL_PUNCT_RE } from "../comment-spine.mjs";
 
 const GATE_FIELD = { g1: "GATE_DESCRIPTION", g3: "GATE_PRIOR", g4: "GATE_SELFREVIEW", g5: "GATE_DOCS", g6: "GATE_CODEREVIEW" };
 const BLOCKING_DECORATION_RE = /\(blocking\)|(?:^|\n)\s*issue:|severity:\s*(?:critical|high)/i;
@@ -84,15 +85,22 @@ function unwrapMarkdownLinks(s) {
 }
 
 /**
- * The first non-empty line, then its first sentence (`.`/`!`/`?`) if one is found before the
- * line ends — matching pr-reviewer.md's own "take its first sentence (or its suggestion:/issue:
- * line)" prose. Falls back to the whole first line when no sentence-ending punctuation appears.
+ * The first non-empty line, then its first sentence if one is found before the line ends —
+ * matching pr-reviewer.md's own "take its first sentence (or its suggestion:/issue: line)" prose.
+ * Falls back to the whole first line when no sentence-ending punctuation appears.
+ *
+ * Uses `comment-spine.mjs`'s `TERMINAL_PUNCT_RE` (D7) rather than a hand-rolled `.`/`!`/`?` scan —
+ * the old `/^[^.!?]*[.!?]/` cut at the FIRST dot character, which sliced a thread root like
+ * "See `foo.md` for context, it changed." at "See `foo.md" and dropped everything after it. A run
+ * of terminal punctuation only counts as a sentence end when it is followed by whitespace or the
+ * end of the string, matching `sentenceCount`'s own rule.
  * @param {string} s
  */
 function firstSentenceOrLine(s) {
   const firstLine = String(s).split(/\r?\n/).find((l) => l.trim() !== "") || "";
-  const m = firstLine.match(/^[^.!?]*[.!?]/);
-  return (m ? m[0] : firstLine).trim();
+  TERMINAL_PUNCT_RE.lastIndex = 0;
+  const m = TERMINAL_PUNCT_RE.exec(firstLine);
+  return (m ? firstLine.slice(0, m.index + m[0].length) : firstLine).trim();
 }
 
 /**

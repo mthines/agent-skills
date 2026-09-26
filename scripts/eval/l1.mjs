@@ -4474,6 +4474,25 @@ const isPollBlock = (block) =>
       ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("—"))
         .join("; ").slice(0, 400));
 
+    // (a2) D7: a second witness on sentenceCount, independent of the renderer's own self-test —
+    // the four pinned cases from plan AC-14, imported and called directly against the shared
+    // spine so a regression here fails even if the self-test's own accepts()/rejects() cases were
+    // edited alongside it.
+    {
+      const mod = await import(pathToFileURL(SPINE).href);
+      const cases = [
+        ["Bump `x` to 3.2.6 in foo.md", 0],
+        ["One. Two. Three.", 3],
+        ["Really?! Yes.", 2],
+        ["See foo.md.", 1],
+      ];
+      const results = cases.map(([input, want]) => ({ input, want, got: mod.sentenceCount(input) }));
+      s.check("G46n sentenceCount counts terminal-punctuation RUNS, not characters — a dotted"
+        + " filename or version number scores 0, never one sentence per dot",
+        results.every((r) => r.got === r.want),
+        results.filter((r) => r.got !== r.want).map((r) => `${JSON.stringify(r.input)}->${r.got} (want ${r.want})`).join("; "));
+    }
+
     // (b) Snapshot parity, discovered from disk so a new fixture is never silently exempt.
     const fixtures = existsSync(FIX)
       ? readdirSync(FIX).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort()

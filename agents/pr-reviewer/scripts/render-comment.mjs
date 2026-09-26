@@ -515,6 +515,17 @@ function selfTest() {
   accepts("a title naming a backticked dotted symbol",
     { ...ISSUE, TITLE: "`render-report.mjs` rejects a caged link" },
     (out) => out.includes("**`render-report.mjs` rejects a caged link**"));
+  // D7: sentenceCount now counts terminal-punctuation RUNS followed by whitespace or
+  // end-of-string, not every `.`/`!`/`?` character — so a bare (unbackticked) dotted filename
+  // in a title no longer scores as a sentence. `3.2.6`/`foo.md` never had a legal spelling in a
+  // title before this: backticked read as markup (a code span cannot sit inside `**…**` and
+  // survive as the report's plain FINDINGS[].title), bare tripped the per-character count.
+  accepts("a title naming a bare dotted filename",
+    { ...ISSUE, TITLE: "Handle foo.md paths" },
+    (out) => out.includes("**Handle foo.md paths**"));
+  accepts("a title naming a bare dotted version number",
+    { ...ISSUE, TITLE: "Bump dependency to 3.2.6" },
+    (out) => out.includes("**Bump dependency to 3.2.6**"));
   rejects("an over-long unverified reason",
     { ...ISSUE, PREFIX: "suggestion", BLOCKING: false, EVIDENCE: [],
       UNVERIFIED: "the upstream release notes are unreachable from this runner and no cached copy exists" },

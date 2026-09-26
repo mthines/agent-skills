@@ -445,12 +445,36 @@ export function assertPlain(where, v, { allowCode = false } = {}) {
 }
 
 /**
- * Sentence count over prose, matching `comment-shape.md § Mechanical pre-emit check`: `.`, `!`, `?`
- * count, and punctuation inside backticks or a fenced block does not.
+ * A run of `.`/`!`/`?` that ends a sentence: one or more terminal-punctuation characters
+ * immediately followed by whitespace or the end of the string. `comment-shape.md § Mechanical
+ * pre-emit check` carries the same rule in its Python reference; `payload.mjs`'s
+ * `firstSentenceOrLine` reuses this regex directly rather than re-deriving it.
+ *
+ * Exported (not inlined into `sentenceCount`) because it is the one home for the rule — a second
+ * hand-copied regex is exactly how the report and the inline surface drifted apart before
+ * `comment-spine.mjs` existed.
+ */
+export const TERMINAL_PUNCT_RE = /[.!?]+(?=\s|$)/g;
+
+/**
+ * Sentence count over prose, matching `comment-shape.md § Mechanical pre-emit check`.
+ *
+ * Counts RUNS of terminal punctuation immediately followed by whitespace or end-of-string, not
+ * every `.`/`!`/`?` character — a per-character count scored a version number or a filename as a
+ * sentence (`3.2.6` as 2, `foo.md` as 1), which fails a perfectly good noun-phrase title closed:
+ * `render-comment.mjs` had no legal form for a title naming a dotted symbol, because the backticked
+ * spelling was rejected as markup and the bare spelling tripped this count on the dot. Punctuation
+ * inside backticks or a fenced block is stripped first and never counted either way.
+ *
+ * Known strict-side residue, left in place deliberately (documented in `comment-shape.md`): an
+ * abbreviation like `e.g. foo` still counts as one sentence, because its dot is followed by a
+ * space exactly like a real sentence boundary. Splitting that case needs a dictionary of
+ * abbreviations, which is the "NLP sentence splitting" alternative D7 rejects — one regex, one
+ * home, a residue that fails closed rather than open.
  */
 export function sentenceCount(prose) {
   const bare = String(prose).replace(/`[^`]*`/g, "");
-  return [...bare].filter((c) => ".!?".includes(c)).length;
+  return (bare.match(TERMINAL_PUNCT_RE) ?? []).length;
 }
 
 /** The structural shapes a body may never open with (`comment-shape.md § Hard caps`). */
