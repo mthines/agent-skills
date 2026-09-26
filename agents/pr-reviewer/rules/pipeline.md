@@ -127,9 +127,9 @@ discovers the conflict mid-fetch):
 | Workspace checkout | Materialized at `headRefOid` | Materialized at the verified `review_sha` (same ladder, same script — only the target SHA differs) |
 | Impact graph | Diffs the checked-out workspace against `--base-ref` | Identical — it diffs whatever the workspace is checked out to, so pointing the checkout at `review_sha` is the entire fix; `build-impact-graph.mjs` needs no `--review-sha` awareness of its own |
 | CI | `gh pr checks` (the CURRENT check run) | **Not read at all** — `context.historical.ci = "not-read"`. Today's CI result has no relationship to a commit reviewed days or weeks ago; reporting it would misattribute one to the other |
-| Thread state / PR description | Read live, as of now | Still read live, as of now (`thread_state_as_of` / `description_as_of` = `"now"`) — GitHub has no API to reconstruct either as of an arbitrary past commit, so a historical run is an honest MIXED-time view (past code, present metadata), never a simulated past PR page |
+| Thread state / PR description | Read live, as of now | The thread SET is filtered to the reviewed commit's committer date — a thread whose root comment, or a reply, postdates it is dropped (`historicalThreads()`, `historical.threads_created_as_of`; a missing commit date drops every thread, fail closed). Resolution/outdated flags and the description are still read as of now (`thread_state_as_of` / `description_as_of` = `"now"`) — GitHub has no API to reconstruct either as of an arbitrary past commit, so a historical run is an honest MIXED-time view (past code, present metadata), never a simulated past PR page |
 
-`context.json` carries a `historical: {review_sha, thread_state_as_of, description_as_of, ci}`
+`context.json` carries a `historical: {review_sha, thread_state_as_of, description_as_of, ci, threads_created_as_of}`
 block (`prepare-review.mjs`'s `historicalBlock()`) whenever `--review-sha` was set, `null`
 otherwise. **Every downstream stage refuses a write once this block is present, unless `--dry-run`
 is also passed — and the refusal is redundant by design, checked independently at each stage

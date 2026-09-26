@@ -290,10 +290,13 @@ export function verifyReviewSha(reviewSha, candidates) {
 /**
  * Filter a list of GitHub-sourced, timestamped items to only those that existed AS OF a
  * given instant — used to keep a historical (`--review-sha`) run from reading anything that
- * postdates the commit it is reviewing. Absent or unparseable `asOf`/item timestamps fail
- * closed: no cutoff means nothing is filtered (the live-review path, where this is never
- * called with a real cutoff), and an item with no readable own timestamp is dropped rather
- * than assumed to qualify.
+ * postdates the commit it is reviewing (`historicalThreads()` below is the caller). Three
+ * cases, stated separately because they fail in different directions:
+ *   - no cutoff (`null` / `""`) filters NOTHING — the live-review path. This is a pass-through,
+ *     not a fail-closed default, so a historical caller must never reach it: `historicalThreads()`
+ *     refuses to call this without a resolved cutoff.
+ *   - a non-empty but unparseable cutoff fails CLOSED: nothing is returned.
+ *   - an item with no readable own timestamp is dropped rather than assumed to qualify.
  * @param {any[]} items
  * @param {string|null} asOfIso - ISO 8601 instant, e.g. review_sha's commit timestamp
  * @param {string} [dateField]
@@ -302,11 +305,38 @@ export function verifyReviewSha(reviewSha, candidates) {
 export function filterAsOf(items, asOfIso, dateField = "created_at") {
   if (!asOfIso) return items || [];
   const cutoff = Date.parse(asOfIso);
-  if (Number.isNaN(cutoff)) return items || [];
+  if (Number.isNaN(cutoff)) return [];
   return (items || []).filter((it) => {
     const t = Date.parse(it?.[dateField]);
     return Number.isNaN(t) ? false : t <= cutoff;
   });
+}
+
+/**
+ * `--review-sha` thread state (D9): keep only the threads whose ROOT comment existed at the
+ * reviewed commit's committer date, and within them only the replies that did. The cutoff is
+ * the resolved commit's `committedDate` from the SAME `gh pr view --json commits` read that
+ * `verifyReviewSha` used. A missing or unparseable date fails CLOSED — zero threads plus an
+ * anomaly — because reading present-day threads into a past review is exactly the leak this
+ * exists to stop. Resolution / outdated flags cannot be reconstructed from the API and stay
+ * as of now (`historical.thread_state_as_of: "now"`); only the thread SET and its replies are
+ * filtered (`historical.threads_created_as_of`).
+ * @param {{ threads: any[], commits: any[], reviewSha: string }} args
+ * @returns {{ threads: any[], asOf: string|null, anomaly: string|null }}
+ */
+export function historicalThreads({ threads, commits, reviewSha }) {
+  const sha = String(reviewSha || "").toLowerCase();
+  const commit = (commits || []).find((c) => String(c?.oid || "").toLowerCase() === sha);
+  const asOf = commit?.committedDate || null;
+  if (!asOf || Number.isNaN(Date.parse(asOf))) {
+    return {
+      threads: [],
+      asOf: null,
+      anomaly: `--review-sha ${sha.slice(0, 7)}: no committedDate for the reviewed commit — thread state dropped (fail closed) rather than read as of now`,
+    };
+  }
+  const kept = filterAsOf(threads, asOf).map((t) => ({ ...t, replies: filterAsOf(t.replies || [], asOf) }));
+  return { threads: kept, asOf, anomaly: null };
 }
 
 /**
@@ -516,6 +546,7 @@ export function buildThreads(rawNodes) {
       is_outdated: !!node.isOutdated,
       url: root.url ?? null,
       author: root.author ? root.author.login : null,
+      created_at: root.createdAt ?? null,
       is_bot: !!(root.author && root.author.__typename === "Bot"),
       root_body: root.body ?? null,
       replies: replies.map((r) => ({ author: r.author ? r.author.login : null, created_at: r.createdAt ?? null })),
@@ -1101,6 +1132,14 @@ async function prepare(opts) {
     if (!tr.complete) {
       anomalies.push("review threads read incomplete — THREAD_OVERLAP and open-thread data may undercount");
     }
+    // `--review-sha` (D9): never read the future — only threads (and replies) that existed at
+    // the reviewed commit's committer date survive into THREAD_OVERLAP and context.threads[].
+    if (historical) {
+      const ht = historicalThreads({ threads, commits: meta.commits || [], reviewSha: historical.review_sha });
+      threads = ht.threads;
+      historical = { ...historical, threads_created_as_of: ht.asOf };
+      if (ht.anomaly) anomalies.push(ht.anomaly);
+    }
   }
 
   let deltaFiles = diffable.length ? files.filter((f) => diffable.includes(f.filename)) : files;
@@ -1582,6 +1621,38 @@ function selfTest() {
     const items = [{ id: 1, submitted_at: "2026-01-01T00:00:00Z" }, { id: 2, submitted_at: "2026-01-10T00:00:00Z" }];
     const out = filterAsOf(items, "2026-01-05T00:00:00Z", "submitted_at");
     return out.length === 1 && out[0].id === 1;
+  });
+
+  t("filterAsOf: an unparseable non-empty cutoff fails CLOSED (drops everything)", () => {
+    const items = [{ id: 1, created_at: "2026-01-01T00:00:00Z" }];
+    return filterAsOf(items, "not-a-date").length === 0;
+  });
+
+  // ── historicalThreads (D9) — --review-sha filters thread state to the reviewed commit's
+  // committer date; it is what prepare() calls on the historical path ──
+  const HT_SHA = "906a74781990f75607f0234de963fdbbc3953f2a";
+  const HT_THREADS = [
+    { thread_id: "old", created_at: "2026-01-01T00:00:00Z", replies: [
+      { author: "a", created_at: "2026-01-02T00:00:00Z" }, { author: "b", created_at: "2026-01-09T00:00:00Z" }] },
+    { thread_id: "future", created_at: "2026-01-08T00:00:00Z", replies: [] },
+  ];
+  t("historicalThreads: drops threads opened after the reviewed commit's committedDate and later replies", () => {
+    const r = historicalThreads({ threads: HT_THREADS, commits: [{ oid: HT_SHA, committedDate: "2026-01-05T00:00:00Z" }], reviewSha: HT_SHA });
+    return r.asOf === "2026-01-05T00:00:00Z" && r.anomaly === null
+      && r.threads.length === 1 && r.threads[0].thread_id === "old" && r.threads[0].replies.length === 1;
+  });
+  t("historicalThreads: no committedDate for the reviewed commit fails CLOSED (zero threads + anomaly)", () => {
+    const r = historicalThreads({ threads: HT_THREADS, commits: [{ oid: HT_SHA }], reviewSha: HT_SHA });
+    return r.threads.length === 0 && r.asOf === null && /committedDate/.test(r.anomaly || "");
+  });
+  t("prepare() wires historicalThreads into the --review-sha path (not merely exported)", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+    return /historicalThreads\(\{/.test(body) && /threads_created_as_of/.test(body);
+  });
+  t("buildThreads: carries the root comment's createdAt as created_at (the as-of filter's key)", () => {
+    const out = buildThreads([{ id: "T", comments: { nodes: [{ databaseId: 1, createdAt: "2026-01-01T00:00:00Z" }] } }]);
+    return out[0].created_at === "2026-01-01T00:00:00Z";
   });
 
   // ── historicalBlock (D8/D9) — the context.json block finalize.mjs/execute-write-plan.mjs
