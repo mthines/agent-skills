@@ -153,7 +153,6 @@ produce a self-review wearing a reviewer's label, which is worse than no review.
 What that rules out is the **context**, not the agent **type**.
 A `general` sub-agent that reads the `pr-reviewer` definition runs the same procedure in its own fresh context, so it is a reviewer route ([Step 0](#step-0-resolve-the-pr-and-preconditions) rows 2 and 4), not a substitute.
 Only a review performed in the loop's own context is forbidden.
-A run that finds the dispatch tool present but `pr-reviewer` missing from its agent types therefore resolves a route at Step 0 — it never skips for that reason alone.
 
 Check for it in [Step 0](#step-0-resolve-the-pr-and-preconditions) and **self-report
 a clean skip** rather than letting the caller discover it as a mid-loop tool error:
@@ -172,6 +171,8 @@ you cannot tell the first two apart, report the harness line:
 ```markdown
 - [TIMESTAMP] review-loop — skipped (nested dispatch — review-loop must run at the top level; the caller consumed the delegation budget). Have the caller run the loop itself, or dispatch it with --external-review.
 - [TIMESTAMP] review-loop — skipped (sub-agent dispatch unavailable; pr-reviewer requires it)
+- [TIMESTAMP] review-loop — skipped (pr-reviewer is not a dispatchable agent type here). Install the agent, or re-run with --external-review.
+- [TIMESTAMP] review-loop — skipped (Agent0 install failed: could not download scripts/agent0-setup.sh)
 ```
 
 Return that skip as the loop's terminal result. Do **not** retry the dispatch and
@@ -289,7 +290,7 @@ How to evaluate each row:
    it — never test-dispatch to find out. When no list is visible at all,
    dispatch `pr-reviewer` once: a rejection that names the agent type
    (`Unknown agent type`, `not a valid agent type`) is that list's answer arriving
-   late, so continue at row 4. It is never a row-1 skip, because the tool worked.
+   late, so continue at rows 4–5. It is never a row-1 skip, because the tool worked.
 4. **Row 4 — the install.** Run it once, in this context. The file
    `/tmp/workspace/agent-skills/env.sh` existing afterwards is the only success
    test; when it does not exist, emit the install-failed skip line and return —
