@@ -8113,6 +8113,42 @@ const isPollBlock = (block) =>
   s.check("G58g the installer parses, defaults PIN to main, and carries a cache-key line",
     syn.status === 0 && setup.includes('PIN="${PIN:-main}"') && /^# cache-key: \S+/m.test(setup),
     `bash -n=${syn.status}; PIN default or cache-key line missing`);
+
+  // G58h — a dispatch tool WITHOUT the pr-reviewer type is a route to resolve, never a skip. The
+  // generic Agent0 automation (no setup script, `task` offering only explore/general) skipped every
+  // /review-loop at iteration 0 because Step 0 only asked whether a dispatch tool existed. Asserts
+  // the route table exists, the marker row precedes the named row (a prepared sandbox keeps the
+  // validated bundle route), the install row links to an anchor the rule actually has, and both new
+  // skips are reportable Step 3 tokens rather than prose-only.
+  const step0 = (loop.match(/### Step 0:[\s\S]*?(?=\n### Step 1:)/) || [""])[0];
+  const iMarkerRow = step0.search(/^\| 2 \| `\/tmp\/workspace\/agent-skills\/env\.sh` exists \| `agent0`/m);
+  const iNamedRow = step0.search(/^\| 3 \|[^\n]*`pr-reviewer`[^\n]*\| `named` \|/m);
+  const iInstallRow = step0.search(/^\| 4 \|[^\n]*\(\.\/rules\/agent0-runtime\.md#install-on-demand-when-the-marker-is-absent\)/m);
+  const stopLine = (loop.match(/^Stop reason: <[^\n]*/m) || [""])[0];
+  s.check("G58h review-loop Step 0 resolves REVIEWER_ROUTE: marker row, then named row, then on-demand install; both skips reportable",
+    step0.includes("REVIEWER_ROUTE") && iMarkerRow > 0 && iNamedRow > iMarkerRow && iInstallRow > iNamedRow
+      && /^## Install on demand when the marker is absent$/m.test(rule)
+      && stopLine.includes("skipped (pr-reviewer is not a dispatchable agent type here)")
+      && stopLine.includes("skipped (Agent0 install failed: <reason>)"),
+    `REVIEWER_ROUTE=${step0.includes("REVIEWER_ROUTE")} rows(marker,named,install)=${iMarkerRow},${iNamedRow},${iInstallRow}; `
+      + "install anchor heading or a Step 3 skip token missing");
+
+  // G58i — the on-demand install is the SETUP SCRIPT, run safely: the block parses, downloads the
+  // exact file this repo ships as the setup script (derived from SETUP_REL, never re-encoded), skips
+  // the browser, leaves the workspace AGENTS.md as found, and removes the marker on a failed exit
+  // (the setup script writes env.sh BEFORE its own verification, so a failed run would otherwise
+  // leave a marker that sends the next run down row 2 on an unverified install).
+  const installSec = (rule.match(/## Install on demand when the marker is absent[\s\S]*?(?=\n## )/) || [""])[0];
+  const installBlock = (installSec.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
+  const synI = installBlock ? spawnSync("bash", ["-n"], { input: installBlock, encoding: "utf8" }) : { status: -1 };
+  s.check("G58i the on-demand install runs the shipped setup script without a browser, restores AGENTS.md, and drops the marker on failure",
+    synI.status === 0
+      && installBlock.includes(`https://raw.githubusercontent.com/mthines/agent-skills/main/${SETUP_REL}`)
+      && /WITH_PLAYWRIGHT=0 [^\n]*bash "\$B\/agent0-setup\.sh"/.test(installBlock)
+      && installBlock.includes(`M=${DETECT}`) && /\[ "\$rc" = 0 \] \|\| rm -f "\$M"/.test(installBlock)
+      && /cp -p "\$B\/AGENTS\.md\.before" \/tmp\/workspace\/AGENTS\.md/.test(installBlock)
+      && installBlock.includes("rm -f /tmp/workspace/AGENTS.md"),
+    `bash -n=${synI.status}; the install block must fetch ${SETUP_REL}, pass WITH_PLAYWRIGHT=0, restore AGENTS.md, and rm the marker when rc != 0`);
 }
 
 // ── G59: ui-verify on an Agent0 Automation sandbox ──

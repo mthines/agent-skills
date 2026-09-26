@@ -48,6 +48,9 @@ try Task(subagent_type="aw-tester") except "not found": AGENT0 = 1
 The failed-call form is the `F6` anti-pattern ([`diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md)): it spends a round trip to learn what the filesystem already states, and a host that fails differently is misclassified.
 When the file is absent, none of this rule applies.
 
+A session that ran no setup script can create the file mid-run by running the [setup script](#the-setup-script) itself; [`review-loop`'s on-demand install](../../../skills/quality/review-loop/rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent) does, when the dispatch tool's published agent types omit `pr-reviewer` and `/tmp/workspace` exists.
+Detection is unchanged by it: the file still decides, and the install is triggered by the agent-type list the tool publishes, never by a failed call.
+
 ## The substitutions
 
 | A skill writes | Under `AGENT0 = 1`, do instead |
