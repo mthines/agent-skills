@@ -9,8 +9,7 @@ description: >
   suggestion-pack, and dispatches a worker subagent that applies each approved
   change as its own commit, pushes to the existing branch, and resolves the
   addressed thread — so every handled comment ends resolved and the PR is left
-  clean. Fast lane for mechanical edits, standard lane via aw-planner for
-  architectural ones. Free-text mode applies a single pasted suggestion in
+  clean. Free-text mode applies a single pasted suggestion in
   place. --watch re-applies on one PR until the reviewers go quiet (max 5
   iterations); --resolve-all also replies to and resolves every non-fix thread
   it can honestly close. Triggers on "implement suggestion", "apply review
@@ -21,14 +20,12 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '2.4.1'
+  version: '3.0.0'
   workflow_type: orchestrator
-  architecture: parse/resolve/fetch/classify/validate/pack/handoff(fast|standard)/commit-per-comment+resolve-thread/report
+  architecture: parse/resolve/fetch/classify/validate/pack/handoff(worker)/commit-per-comment+resolve-thread/report
   composes:
     - critical
     - confidence
-  agents:
-    planner: aw-planner
   tags:
     - pr
     - review
@@ -37,7 +34,6 @@ metadata:
     - worktree
     - autonomous
     - validation
-    - fast-lane
     - confidence-gated
 ---
 
@@ -51,8 +47,7 @@ opening a new PR.
 
 This skill is a **thin orchestrator**. The heavy reasoning lives in
 `/critical` and `/confidence`. Per-PR worktree isolation comes from `gw`.
-Plan authoring for architectural changes is delegated to `aw-planner`.
-The mechanical apply / commit / push runs inside a dispatched worker.
+The mechanical apply / commit / push runs inside one dispatched worker per PR.
 
 > **Source of truth.** This `SKILL.md` is a thin index. Detailed procedures live
 > in `rules/*.md`, literal artefacts in `templates/*.md`. Load only what the
@@ -124,9 +119,7 @@ Phase 2:  Comment fetch          → per-PR ledger (parallel across PRs)
 Phase 3:  Classify               → actionable / nit / discussion / praise
 Phase 4:  Two-gate validation    → /critical → /confidence per actionable comment
 Phase 5:  Build suggestion-pack  → .agent/<branch>/suggestion-pack.md per PR
-Phase 6:  Handoff (lane-split)         → worker: commit-per-comment, push, resolve thread
-            ├── Fast-lane (simple):     dispatch worker subagent with pack
-            └── Standard-lane (complex): aw-planner → plan.md → worker subagent
+Phase 6:  Handoff                → one worker per PR: commit-per-comment, full check, push, resolve thread
 Phase 7:  Report                 → per-PR table: applied / surfaced / skipped / resolved
 ```
 
@@ -265,17 +258,16 @@ exactly those paths and fold the matches into the pack as apply-time constraints
 known hotspot → tighter change + more coverage; a recorded invariant / consumer
 count → preserve it). This is the cross-bucket read specified in
 [`rules/self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./rules/self-improvement-loop.md#cross-bucket-read--codebase-knowledge-phase-5-apply-seam);
-it is read-only, structural, and bounded to the pack (the fast lane needs it most,
-since it skips `aw-planner`, which reads the same bucket on the standard lane).
+it is read-only, structural, and bounded to the pack — the worker reads no other
+memory, so the pack is where these constraints reach it.
 
-### Phase 6 — Handoff (lane-split)
+### Phase 6 — Handoff (one worker per PR)
 
-Lane is picked from the pack's complexity signals:
-
-| Lane | Trigger | Plan authored by |
-|------|---------|------------------|
-| **Fast-lane** | All `apply` changes are single-file mechanical edits AND no `/critical` finding raised Must-fix; AND total file count ≤ 3 | Skill writes the pack directly |
-| **Standard-lane** | Any change spans ≥ 2 files; OR `/critical` raised Must-fix on any change; OR ≥ 4 files affected across the PR | Skill dispatches `aw-planner` with the pack as `plan.md` seed |
+There is one lane. Every PR's pack goes to one worker — no planner in between
+([`rules/handoff.md § Why there is no planner lane`](./rules/handoff.md#why-there-is-no-planner-lane)).
+Before dispatching, the pack must already order dependent comments (B builds on
+A ⇒ A first); two `apply` comments that contradict each other are both moved to
+`surface`, because no ordering makes both true.
 
 For each PR, dispatch the worker subagent (one message, parallel across PRs):
 
@@ -321,10 +313,10 @@ Emit one summary table:
 ```markdown
 ## Implement-Suggestion Results
 
-| PR | Branch | Lane | Applied | Surfaced | Skipped | Commits | Pushed | Resolved |
-|----|--------|------|---------|----------|---------|---------|--------|----------|
-| dash0/console#1234 | fix/foo | fast | 3 | 1 | 2 | abc1234, def5678, 9a0bcde | ✓ | 3/3 |
-| dash0/console#1278 | feat/bar | standard | 0 | 2 | 1 | — | — | 0/0 |
+| PR | Branch | Applied | Surfaced | Skipped | Commits | Pushed | Resolved |
+|----|--------|---------|----------|---------|---------|--------|----------|
+| dash0/console#1234 | fix/foo | 3 | 1 | 2 | abc1234, def5678, 9a0bcde | ✓ | 3/3 |
+| dash0/console#1278 | feat/bar | 0 | 2 | 1 | — | — | 0/0 |
 ```
 
 `Commits` lists one SHA per applied comment (commit-per-comment). `Resolved`
@@ -349,7 +341,7 @@ Then per PR list:
 <a id="lessons-write"></a>
 **After the report — write lessons.** Run the retrospective and capture any
 durable lesson from the run (a Phase 3 misclassification, a Phase 4 gate
-mis-score, a Phase 6 lane misfire, an apply that needed a scoped-check fix).
+mis-score, a Phase 6 apply that rippled past its own files, an apply that needed a scoped-check fix).
 Full contract, tier classification, and the applied-lesson UPDATE rule in
 [`rules/self-improvement-loop.md#write-lessons`](./rules/self-improvement-loop.md#write-lessons):
 
@@ -480,13 +472,12 @@ suggestion I just pasted" path with no PR plumbing.
 `autonomous-workflow` and `fix-bug`. It **reads** `implement-suggestion-lessons` at Phase 3
 and **writes** at Phase 7 (and on a `--watch` re-flag), keyed by reviewer source
 + comment topic. Lessons are **advisory** — they bias classification, gate
-calibration, and lane selection, but never relax a gate or a hard rule. A lesson
+calibration, and pack ordering, but never relax a gate or a hard rule. A lesson
 that recurs (`seen_count >= 3`) is promotion-eligible to a permanent skill guard
 via `/create-skill diagnose implement-suggestion`.
 
-The loop owns implement-suggestion's **own** decision phases only; the
-standard-lane `aw-planner` dispatch already contributes to `aw-lessons` for the
-planning of architectural changes — this loop does not duplicate that.
+The loop owns implement-suggestion's decision phases and the worker's apply
+outcomes; there is no planner dispatch contributing elsewhere.
 LoreKit (the `lorekit-memory` skill's `memory.*` tools) is an **optional
 companion**: if those tools are not connected the whole loop is a silent no-op.
 Full contract:
@@ -535,7 +526,6 @@ The reviewers consume `review-outcomes` only at promotion/consolidation time; th
 | `git` | Commit + push | **Yes** |
 | `/critical` skill | Adversarial pre-mortem per comment | **Yes** |
 | `/confidence` skill | Gate scoring per comment | **Yes** |
-| `aw-planner` agent | Standard-lane plan authoring | Required when standard-lane fires |
 | `lorekit-memory` skill (LoreKit `memory.*` tools) | `implement-suggestion-lessons` self-improvement loop (read Phase 3, write Phase 7 / watch re-flag); `reviewer-comment-relevance` per-repo relevance memory (write Phase 7 / watch); `review-outcomes` bus (write Phase 7 / watch) | Optional — all three loops are silent no-ops if not connected |
 
 If `gh` is missing in multi-PR mode, stop and tell the user to install it.
@@ -549,7 +539,7 @@ If `gh` is missing in multi-PR mode, stop and tell the user to install it.
 | [`comment-fetching`](./rules/comment-fetching.md) | Phase 2 |
 | [`comment-classification`](./rules/comment-classification.md) | Phase 3 |
 | [`validation-gates`](./rules/validation-gates.md) | Phase 4 |
-| [`handoff`](./rules/handoff.md) | Phase 6 — worker prompt + standard-lane planner dispatch |
+| [`handoff`](./rules/handoff.md) | Phase 6 — worker dispatch + prompt |
 | [`watch-mode`](./rules/watch-mode.md) | When `--watch` is set — the post-push feedback loop |
 | [`self-improvement-loop`](./rules/self-improvement-loop.md) | Cross-cutting — `implement-suggestion-lessons` fast tier (read Phase 3 / write Phase 7 + watch re-flag) + promotion to `diagnose` |
 
@@ -565,7 +555,6 @@ Templates:
 | `review-loop` | **The composition point.** "Apply the review comments **and** get CI green" is `review-loop` (or `polish`), which sequences `pr-reviewer` → this skill → `polish simplify` → `ci-auto-fix`. Invoked standalone, this skill leaves red CI to the caller — deliberately. |
 | `review-loop --external-review` | Overlaps `--watch`: both wait on an out-of-process reviewer. `--watch` is the thin one (apply + push + stop). `review-loop --external-review` adds `--resolve-all`, `polish simplify`, the CI sub-step, and the description refresh. Both call the shared [review-activity poll](../../../agents/shared/rules/review-activity-poll.md). They never nest — `review-loop`'s hard rule forbids invoking this skill with `--watch`. |
 | `pr-reviewer` | Upstream producer of the findings this skill consumes; read-only, never invoked from here. |
-| `aw-planner` | Standard-lane plan author (Phase 6) when the pack proposes architectural moves. |
 
 ## Key Principles
 
@@ -573,14 +562,15 @@ Templates:
    Workers only apply pre-validated changes.
 2. **Two-gate validation is non-skippable.** Every actionable comment goes through both.
    `/critical` runs first so its findings feed `/confidence`.
-3. **Lane split mirrors `/fix-bug`.** Fast-lane skips `aw-planner` when changes are mechanical.
-   Standard-lane invokes `aw-planner` when the pack proposes architectural moves.
+3. **One worker, no planner lane.** Each comment was already judged by `/critical` + `/confidence`;
+   the worker's unscoped pre-push check catches the cross-file ripple a planner was meant to
+   foresee. See [`rules/handoff.md § Why there is no planner lane`](./rules/handoff.md#why-there-is-no-planner-lane).
 4. **Existing PR is the contract.** This skill never opens a new PR. The worker pushes to the
    existing branch and Phase 7's report links to the existing PR URL.
 5. **Parallelize per PR, sequentialize per comment.** PR-level work fans out; per-PR validation
    stays linear so the gates see consistent state.
 6. **Learn across runs, but only advisory.** `implement-suggestion-lessons` (read Phase 3, write Phase 7)
-   biases classification, gate calibration, and lane selection from prior runs — but a lesson
+   biases classification, gate calibration, and pack ordering from prior runs — but a lesson
    never relaxes a gate or a hard rule. Only a recurrence-proven lesson (`seen_count >= 3`) earns
    a confidence-gated, user-approved change to the skill's source.
 7. **A review is a report, not a comment.** A `pr-reviewer` body carries findings that exist

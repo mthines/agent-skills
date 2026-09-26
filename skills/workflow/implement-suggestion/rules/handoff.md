@@ -1,44 +1,62 @@
 ---
-title: Handoff — Lane Split and Worker Dispatch
+title: Handoff — Worker Dispatch
 impact: HIGH
 tags:
   - handoff
   - dispatch
   - subagent
-  - fast-lane
-  - standard-lane
 ---
 
 # Handoff
 
-Phase 6 dispatches the per-PR work to a worker subagent. The fast-lane
-hands the pack directly to the worker; the standard-lane routes through
-`aw-planner` first to author a `plan.md` from the pack.
+Phase 6 dispatches each PR's pack to **one worker sub-agent**. There is one lane:
+no planner runs between the pack and the worker.
 
-## Lane selection
+## Before dispatching — order the pack
 
-Pick lane per PR using the complexity signals captured in Phase 5's pack.
-**All `apply`-tagged comments must agree on lane** — one architectural
-change forces the whole PR into standard-lane.
+The worker applies `apply` entries sequentially, in pack order, so ordering is
+decided here, not by the worker:
 
-### Fast-lane preconditions (all must hold)
+- **B builds on A** (B's edit assumes A's) → A comes first in the pack.
+- **B contradicts A** (no order makes both true) → move **both** to `surface`
+  with the contradiction named; never pick a winner silently.
+- Everything else keeps Phase 4's order.
 
-- Every `apply` comment edits a **single file**.
-- No `/critical` finding raised `Must-fix`.
-- Across the PR, ≤ 3 files are touched in total.
-- No `apply` comment proposes a rename / move / signature change (any
-  cross-file ripple).
+## Why there is no planner lane
 
-### Standard-lane triggers (any one)
+Up to v2.4 a PR whose comments spanned ≥ 2 files, touched ≥ 4 files, or proposed
+a rename / signature change went through `aw-planner` first ("standard lane").
+It was removed in v3.0.0:
 
-- Any `apply` comment spans ≥ 2 files.
-- Any `/critical` finding tagged `Must-fix` (which also forces `surface` in Phase 4 — a standard-lane plan is authored only for the surviving `apply` comments).
-- ≥ 4 files touched across the PR.
-- Any `apply` comment proposes a rename / signature change / API surface change.
-- Pack contains contradictory `apply` comments (B references A; the worker
-  cannot decide ordering without a plan).
+1. **Every change is already judged.** Each `apply` entry passed `/critical` and
+   `/confidence` in Phase 4; a planner's `confidence(plan)` gate re-scored the same
+   decisions a second time.
+2. **The ripple it guarded against is caught mechanically.** The worker's step 3.5
+   runs the repo's fast checks unscoped before the single push, which is what sees
+   a consumer broken in a file no comment listed — and it stops the push instead
+   of predicting.
+3. **It was unreachable where the loop runs unattended.** `aw-planner` is a custom
+   agent type that Dash0 Agent0 cannot dispatch, and a `review-loop` iteration's
+   apply step already sits one dispatch deep.
+4. **Two lanes meant two contracts** (pack vs `plan.md`) for one worker prompt.
 
-Record the chosen lane in the pack's frontmatter as `lane: fast | standard`.
+A `/critical` `Must-fix` still forces `surface` in Phase 4, exactly as before.
+
+## Dispatch
+
+```
+Agent(
+  description: "Apply suggestion-pack to PR #<n>",
+  subagent_type: "general-purpose",   # or "general" — see Generic sub-agent type
+  prompt: <worker prompt — see below>
+)
+```
+
+The worker reads the pack at `.agent/<branch>/suggestion-pack.md`, then for
+each `apply` comment: applies the edit, runs the project's fast checks, and
+makes one commit citing that comment. After all commits it runs the unscoped
+pre-push check, pushes once, then resolves each addressed review thread (reply
+with the commit SHA, then `resolveReviewThread`) so the PR is left clean.
 
 ## Generic sub-agent type
 
@@ -55,54 +73,7 @@ if "general-purpose" not in subagent_types: skip
 TYPE = "general-purpose" if "general-purpose" in subagent_types else "general"
 ```
 
-The blocks below write `"general-purpose"`; read it as `TYPE`.
-
-## Fast-lane dispatch
-
-Skip `aw-planner`. Dispatch the worker directly with the pack:
-
-```
-Agent(
-  description: "Apply suggestion-pack to PR #<n>",
-  subagent_type: "general-purpose",   # or "general" — see Generic sub-agent type
-  prompt: <worker prompt — see below>
-)
-```
-
-The worker reads the pack at `.agent/<branch>/suggestion-pack.md`, then for
-each `apply` comment: applies the edit, runs the project's fast checks, and
-makes one commit citing that comment. After all commits it pushes once, then
-resolves each addressed review thread (reply with the commit SHA, then
-`resolveReviewThread`) so the PR is left clean.
-
-## Standard-lane dispatch
-
-Step A — `aw-planner`:
-
-```
-Agent(
-  description: "Plan suggestion implementation for PR #<n>",
-  subagent_type: "aw-planner",
-  prompt: <planner prompt — see below>
-)
-```
-
-The planner consumes the pack, authors `.agent/<branch>/plan.md` with full
-acceptance criteria, gates on `confidence(plan) ≥ 90%`, and either returns
-"plan ready" or "below gate".
-
-- **Plan ready** → continue to Step B.
-- **Below gate** → surface the planner's concerns, do **not** auto-apply.
-
-Step B — worker:
-
-```
-Agent(
-  description: "Apply suggestion-plan to PR #<n>",
-  subagent_type: "general-purpose",   # or "general" — see Generic sub-agent type
-  prompt: <worker prompt, with plan.md cited as source of truth>
-)
-```
+The dispatch block writes `"general-purpose"`; read it as `TYPE`.
 
 ## Worker prompt template
 
@@ -115,21 +86,17 @@ Apply reviewer suggestions to an existing pull request.
 ## Context
 - PR: <owner>/<repo>#<n> (<branch>)
 - Worktree: <absolute-path>
-- Lane: <fast | standard>
 - Pack: <absolute-path>/.agent/<branch>/suggestion-pack.md
-- Plan (standard-lane only): <absolute-path>/.agent/<branch>/plan.md
 
 ## Inputs you will read
-1. The pack (every lane).
-2. The plan (standard-lane only).
+1. The pack — the only input. Its `apply` entries are already ordered.
 
 ## What to do
 1. cd <worktree>.
 2. Verify git status --porcelain is empty and HEAD == <head-sha-from-pack>.
    If either fails, STOP and report — do not auto-stash or auto-rebase.
-3. Process each `apply` entry in the pack SEQUENTIALLY, in pack order (for
-   standard-lane, iterate the Acceptance Criteria, each of which cites a
-   comment ID). This is ONE COMMIT PER COMMENT — do not batch multiple
+3. Process each `apply` entry in the pack SEQUENTIALLY, in pack order. This is
+   ONE COMMIT PER COMMENT — do not batch multiple
    comments into a single commit. For each entry:
 
    a. Apply that comment's proposed edit using Edit / Write. Touch only the
@@ -280,33 +247,6 @@ A short report, one row per `apply` comment:
 - Full pre-push check status (step 3.5): passed / failed-with-excerpt / skipped (no command wired up).
 ```
 
-## Planner prompt template (standard-lane only)
-
-```text
-Plan the implementation of reviewer suggestions for an existing pull request.
-
-## Context
-- PR: <owner>/<repo>#<n> (<branch>)
-- Worktree: <absolute-path>
-- Pack: <absolute-path>/.agent/<branch>/suggestion-pack.md
-
-## Constraints unique to this task
-- The PR already exists at <pr-url>. The executor will commit and push to
-  the existing branch — do NOT include a "create draft PR" step in the plan.
-- The plan must address every `apply`-tagged comment in the pack.
-- Acceptance Criteria must be one-per-comment, testable, and traceable.
-- The plan must respect the worktree's current HEAD (<head-sha>) — no rebase.
-
-## Required plan sections
-- Goal (one sentence per comment cluster)
-- Acceptance Criteria (one per applied comment, with comment ID + test)
-- File Changes (every file touched, with rationale)
-- Risk and Rollback
-- Test Plan
-
-Gate on confidence(plan) ≥ 90%. Below-gate returns concerns; no force-proceed.
-```
-
 ## Parallelization
 
 Per-PR dispatches in Phase 6 run in **parallel across PRs** (one message,
@@ -335,6 +275,6 @@ misclassified, not that the agent needs more attempts.
   reporting bug. Without `resolve-all`, `surface` / `skip` threads stay open.
   With `resolve-all`, the step-6 pass also closes reply-only threads (answered
   question, taken discussion, declined change); only `flag` entries stay open.
-- **Standard-lane below-gate stops.** No silent fallback to fast-lane.
+- **Contradictory `apply` comments are surfaced, never ordered by guess.** See [Before dispatching](#before-dispatching--order-the-pack).
 - **Main agent does not edit files in Phase 6** — all `Edit` / `Write` calls
   happen inside the worker subagent.
