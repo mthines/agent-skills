@@ -86,10 +86,11 @@ export function markAgreementPromoted(kept) {
 // and is never committed, plan.md Background & Context): same-symbol same-line TRUE duplicates
 // scored 0.23–0.46 on claim+bad_outcome token Jaccard; every DISTINCT pair on the same path scored
 // <= 0.19, including a same-symbol same-line decoy at 0.08 and a no-symbol `standards` finding at
-// the same line. 0.24 sits just above the highest observed distinct-pair score and just below the
-// lowest observed duplicate score.
+// the same line. The floor is the midpoint of that gap, (0.19 + 0.23) / 2 = 0.21: it admits the
+// lowest observed duplicate (0.23) and rejects the highest observed distinct pair (0.19) with the
+// same 0.02 margin on each side. Self-test (h) pins both edges.
 
-export const SEMANTIC_JACCARD_MIN = 0.24;
+export const SEMANTIC_JACCARD_MIN = 0.21;
 export const SEMANTIC_LINE_WINDOW = 3;
 
 /**
@@ -402,6 +403,23 @@ async function selfTest() {
       results.every((r) => r.kept.length === 1 && r.kept[0].finder === "quality"),
       results.map((r) => r.kept.map((k) => k.finder).join("+")).join(" "));
 
+    // (h) Calibration edges: the lowest observed TRUE duplicate scored 0.23 and the highest
+    // observed DISTINCT same-path pair 0.19, so the floor must admit the first and reject the second.
+    const words = (/** @type {string} */ p, /** @type {number} */ n) => Array.from({ length: n }, (_, i) => `${p}word${String.fromCharCode(97 + i)}`);
+    const shared3 = words("shared", 3);
+    const dupA = { finder: "correctness", defect_class: "edge-case", path: "src/cal.ts", line: 5, symbol: "calib",
+      claim: [...shared3, ...words("aaa", 5)].join(" "), bad_outcome: "" };
+    const dupB = { finder: "quality", defect_class: "maintainability", path: "src/cal.ts", line: 6, symbol: "calib",
+      claim: [...shared3, ...words("bbb", 5)].join(" "), bad_outcome: "" };
+    const jDup = jaccard(claimTokens(dupA), claimTokens(dupB));
+    check(`(h) a 0.23-Jaccard pair (the lowest calibrated duplicate, got ${jDup.toFixed(3)}) merges`,
+      semanticDedupe([dupA, dupB]).kept.length === 1);
+    const disA = { ...dupA, claim: [...shared3, ...words("ccc", 6)].join(" ") };
+    const disB = { ...dupB, claim: [...shared3, ...words("ddd", 7)].join(" ") };
+    const jDis = jaccard(claimTokens(disA), claimTokens(disB));
+    check(`(h) a 0.19-Jaccard pair (the highest calibrated distinct pair, got ${jDis.toFixed(3)}) stays separate`,
+      semanticDedupe([disA, disB]).kept.length === 2);
+
     // Explicit decoy pair at the plan's own calibration floor (0.08 observed on the real run):
     // near-zero overlap must never merge even with every other precondition satisfied.
     const lowOverlap1 = { finder: "correctness", defect_class: "edge-case", path: "src/pay.ts", line: 10, symbol: "processPayment",
@@ -411,7 +429,7 @@ async function selfTest() {
       claim: "this function is 140 lines long and mixes three concerns",
       bad_outcome: "hard to test in isolation" };
     const { kept: lowKept } = semanticDedupe([lowOverlap1, lowOverlap2]);
-    check("low-overlap same-symbol/nearby-line pair is kept separately (below the 0.24 floor)",
+    check("low-overlap same-symbol/nearby-line pair is kept separately (below the 0.21 floor)",
       lowKept.length === 2, `kept=${lowKept.length}`);
   }
 

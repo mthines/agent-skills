@@ -68,9 +68,9 @@ where one issue posted as four separate findings). `finalize/dedupe.mjs`'s `sema
 as a SECOND pass, after the exact/adjacent pass above, over the `--fanout` orchestrator's
 pre-verification candidate pool only (`dedupeCandidates()`, never `finalizeReview()`'s
 post-verification path): two candidates merge iff same `path`, both `symbol` non-null and equal,
-both `line` within 3 of each other, and a claim-token Jaccard similarity `>= 0.24` (calibrated on
+both `line` within 3 of each other, and a claim-token Jaccard similarity `>= 0.21` (calibrated on
 the real run: true duplicates scored 0.23–0.46, every distinct pair on the same path scored
-`<= 0.19`). Grouping is the single-linkage transitive closure of those pairwise matches
+`<= 0.19`; 0.21 is the midpoint of that gap). Grouping is the single-linkage transitive closure of those pairwise matches
 (union-find), so a candidate bridging two clusters merges both and the partition does not depend
 on input order; the kept representative is picked by a total order (highest `severity_hint`, then
 earliest `line`, then lexical `finder` / `defect_class` / `claim`), so it does not either. The kept
