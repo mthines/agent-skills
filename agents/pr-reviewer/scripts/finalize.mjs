@@ -28,7 +28,7 @@
  * separate deliverable — see the plan's Progress Log.
  */
 
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -488,7 +488,7 @@ function parseArgs(argv) {
 }
 
 function usage() {
-  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]");
+  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]");
 }
 
 // AC-11: the 5 report-body fixtures this replay drives — each backed by a
@@ -1217,6 +1217,62 @@ async function selfTest() {
           + "silently dropping buffered…")
         && !reportBody.includes("[the retry doc](https://example.com/retry)"));
     }
+
+    // D16 CLI-level coverage: `--writer findings-bus` is branch-reviewer's entire output path, and
+    // until now only finalizeReview()'s pure `findingsBusRecords` array was self-tested — the CLI
+    // main() branch that skips the GitHub-shaped artifacts and appends the bus file was exercised
+    // only by a live branch-reviewer run. Spawn the SAME e2e fixture pair with --writer findings-bus
+    // to prove the real I/O boundary: no write-plan.json, no report/pointer/inline render, and a
+    // findings.jsonl record with the documented field set.
+    const busTestDir = join(e2eDir, "bus-test");
+    rmSync(busTestDir, { recursive: true, force: true });
+    mkdirSync(busTestDir, { recursive: true });
+    const busOutDir = join(busTestDir, "out");
+
+    const busRun = spawnSync(process.execPath, [
+      join(HERE, "finalize.mjs"),
+      "--context", contextPath, "--judgments", judgmentsPath, "--out-dir", busOutDir,
+      "--writer", "findings-bus",
+    ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+    check("finalize.mjs --writer findings-bus exits 0 against the same real-shaped input",
+      busRun.status === 0, (busRun.stderr || "").trim().slice(0, 500));
+
+    check("--writer findings-bus writes NO GitHub write plan (write-plan.json absent)",
+      !existsSync(join(busOutDir, "write-plan.json")));
+    check("--writer findings-bus renders no report/pointer/inline artifacts",
+      !existsSync(join(busOutDir, "report-body.md"))
+      && !existsSync(join(busOutDir, "pointer-body.md"))
+      && !existsSync(join(busOutDir, "inline")));
+    check("--writer findings-bus still writes finalize-result.json (local diagnostic, not a GitHub write)",
+      existsSync(join(busOutDir, "finalize-result.json")));
+
+    const busPath = join(busTestDir, "findings.jsonl");
+    check("findings.jsonl is written as a sibling of --out-dir (the branch dir)", existsSync(busPath));
+    if (existsSync(busPath)) {
+      const lines = readFileSync(busPath, "utf8").trim().split("\n").filter(Boolean);
+      check("findings.jsonl carries exactly one record for the one cleared candidate", lines.length === 1);
+      if (lines.length === 1) {
+        const rec = JSON.parse(lines[0]);
+        const { FINDINGS_BUS_FIELDS: fields } = await import(pathToFileURL(join(HERE, "finalize/findings-bus.mjs")).href);
+        check("the record's fp is built via fingerprint.mjs from the finding's finder/defect-class/symbol/path",
+          rec.fp === "correctness:logic:earlyReturn@src/api/client.ts");
+        check("the record carries findings-bus.md's documented field set, exactly",
+          JSON.stringify(Object.keys(rec).sort()) === JSON.stringify([...fields].sort()));
+      }
+    }
+
+    // `--bus-path` override: branch-reviewer's own `--out <path>` grammar names an arbitrary
+    // file, which `dirname(--out-dir)/findings.jsonl` cannot express on its own.
+    const customBusPath = join(busTestDir, "custom", "my-findings.jsonl");
+    const busOutDir2 = join(busTestDir, "out2");
+    const busRun2 = spawnSync(process.execPath, [
+      join(HERE, "finalize.mjs"),
+      "--context", contextPath, "--judgments", judgmentsPath, "--out-dir", busOutDir2,
+      "--writer", "findings-bus", "--bus-path", customBusPath,
+    ], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+    check("finalize.mjs --writer findings-bus --bus-path exits 0", busRun2.status === 0, (busRun2.stderr || "").trim().slice(0, 500));
+    check("--bus-path writes to the exact named file, not the dirname(--out-dir) default",
+      existsSync(customBusPath) && !existsSync(join(busTestDir, "out2", "findings.jsonl")));
   }
 
   // Run every finalize/*.mjs module's own --self-test too (each is independently
@@ -1259,6 +1315,30 @@ async function main() {
   });
 
   writeFileSync(join(outDir, "finalize-result.json"), JSON.stringify(result, null, 2));
+
+  // D16: --writer findings-bus is branch-reviewer's entire output path. There is no PR, no
+  // sticky, no review, no thread, so report-body.md / inline/*.md / pointer-body.md /
+  // write-plan.json are GitHub-shaped artifacts nothing downstream reads — the findings-bus
+  // records are plain fields (findings-bus.md's worked example), never rendered markdown, so
+  // render-report.mjs / render-comment.mjs / render-pointer.mjs / buildWritePlan have nothing to
+  // contribute here. Writing findings.jsonl INSTEAD OF the write plan (never in addition to it)
+  // is what keeps this a local-only writer: it is the one branch of this file that appends to
+  // disk and calls no renderer and builds no GitHub payload.
+  if (opts.writer === "findings-bus") {
+    // `--bus-path` overrides the default `<dirname(--out-dir)>/findings.jsonl` — branch-reviewer's
+    // own `--out <path>` grammar (skills/quality/review-branch/rules/findings-bus.md) lets a caller
+    // name an arbitrary file, and finalize.mjs cannot infer that filename from `--out-dir` alone.
+    const busPath = typeof opts["bus-path"] === "string"
+      ? /** @type {string} */(opts["bus-path"])
+      : join(dirname(outDir), "findings.jsonl");
+    mkdirSync(dirname(busPath), { recursive: true });
+    for (const rec of result.findingsBusRecords) {
+      appendFileSync(busPath, `${JSON.stringify(rec)}\n`);
+    }
+    console.log(`finalize: wrote ${result.findingsBusRecords.length} record(s) to ${busPath} (findings-bus writer, no GitHub write plan built)`);
+    console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
+    return;
+  }
 
   // Render the sticky report body with the SAME renderer --replay-fixtures spawns — this is where
   // "finalize.mjs renders with zero manual edits" becomes literally true for a live run: the seven
@@ -1337,14 +1417,6 @@ async function main() {
   writeFileSync(join(outDir, "write-plan.json"), JSON.stringify(writePlan, null, 2));
   console.log(`finalize: wrote write-plan.json (${writePlan.thread_reply.length} replies, `
     + `${writePlan.thread_resolve.length} resolves, ${writePlan.review_create.comments.length} inline comments)`);
-
-  if (opts.writer === "findings-bus") {
-    const branchDir = dirname(outDir);
-    const busPath = join(branchDir, "findings.jsonl");
-    for (const rec of result.findingsBusRecords) {
-      appendFileSync(busPath, `${JSON.stringify(rec)}\n`);
-    }
-  }
 
   console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
 

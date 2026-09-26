@@ -177,12 +177,43 @@ lifecycle, and the no-green-wash rule are owned by
 [`findings-bus.md`](../skills/quality/review-branch/rules/findings-bus.md) — read it before your
 first write.
 
+**Dedupe, the threshold/defer-band dispose, memory suppression, line-validity retarget, the
+per-file/total cap placement, and the gates are not yours to hand-compute.** Those are the same
+mechanical steps [`finalize.mjs`](./pr-reviewer/scripts/finalize.mjs) exists to take off
+`pr-reviewer`'s plate (`rules/pipeline.md`'s artifact flow), and re-deriving them here would be the
+exact fork this agent's own opening rule forbids — a second, hand-run copy of logic that has one
+executable home. Once Phase E has verified every candidate, assemble the same two documents
+`pr-reviewer` builds:
+
+- `context.json` — locally shaped: the PR-only fields `finalize.mjs` never reads from you
+  (`target`, `priorRun`, thread URLs) are simply absent; supply `files[]` (from
+  `local-files.json`), `headSha`, `routing.tier` (Phase C′'s result), and
+  `workspace.depthCapability: "checkout"`.
+- `judgments.json` — the verified candidates, shaped per
+  [`judgments.schema.json`](./pr-reviewer/schemas/judgments.schema.json) and checked with
+  `validate-judgments.mjs`, exactly as [`pr-reviewer.md`](./pr-reviewer.md)'s own REPORT_BODY
+  section documents.
+
+Then run:
+
+```bash
+node agents/pr-reviewer/scripts/finalize.mjs \
+  --context "$TMP/context.json" --judgments "$TMP/judgments.json" \
+  --out-dir "$TMP/finalize" --writer findings-bus --bus-path "$OUT"
+```
+
+`--writer findings-bus` makes `finalize.mjs` write `findings-bus.md`'s record shape to `--bus-path`
+(defaulting, if omitted, to `<dirname(--out-dir)>/findings.jsonl`) **instead of** a GitHub write
+plan — it never renders a report, pointer, or inline comment, and it never writes `write-plan.json`,
+because there is no PR to post any of that to. `--out-dir` is scratch (any writable temp path); only
+`--bus-path` (or its default) is the durable artifact.
+
 The **prose** rules in [`comment-shape.md`](./shared/rules/comment-shape.md) still apply to the
 `title` and `body` fields: a ≤ 60-character noun-phrase title on a claim, ≤ 200 characters of prose,
 ≤ 2 sentences, grounded on a real `path:line`. What does not apply is everything about *rendering* —
 no glyphs, no `<sup>` footer, no theme-aware buttons, no accordion. Those exist to make a GitHub
-comment legible, and there is no comment here. Do not import them, and do not invent a local
-substitute for them.
+comment legible, and there is no comment here. `finalize.mjs`'s findings-bus writer already knows
+this and skips them; do not import them yourself, and do not invent a local substitute for them.
 
 ---
 
