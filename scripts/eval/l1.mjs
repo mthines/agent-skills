@@ -9088,8 +9088,32 @@ const isPollBlock = (block) =>
       echoed.includes("Use a Map."));
   }
 
-  // D5 (semantic-dedupe decoy suite) lands as G84c once finalize/dedupe.mjs's semanticDedupe
-  // exists — see the D5 implementation step for that addition.
+  // D5: the semantic-dedupe decoy suite (AC-11) is present in dedupe.mjs's own self-test — a
+  // reproduction here, same rationale as G63c/G66h/G66j, so a Phase-9-only checks.yaml run isn't
+  // the only thing standing between a decoy-suite deletion and a merged PR.
+  const DEDUPE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/dedupe.mjs");
+  if (existsSync(DEDUPE_PATH)) {
+    const dedupeSrc = readFileSync(DEDUPE_PATH, "utf8");
+    s.check("G84c dedupe.mjs exports SEMANTIC_JACCARD_MIN and semanticDedupe (D5)",
+      /export const SEMANTIC_JACCARD_MIN/.test(dedupeSrc) && /export function semanticDedupe\(/.test(dedupeSrc));
+    const r = spawnSync(process.execPath, [DEDUPE_PATH, "--self-test"], { encoding: "utf8" });
+    s.check("G84c dedupe.mjs --self-test passes, including the semantic-merge and decoy cases",
+      r.status === 0 && /semantic/i.test(r.stdout || "") && /decoy|low-overlap/i.test(r.stdout || ""),
+      (r.stdout || r.stderr || "").split("\n").slice(-6).join(" | "));
+  }
+  // AND: finalize.mjs's own dedupeCandidates() actually WIRES semanticDedupe in — a source-level
+  // check that the pass is called, not merely importable, and that it runs AFTER the exact pass
+  // (D5's ordering rule) — asserted positionally, same idiom as G38's finder/verifier ordering.
+  const G84_FINALIZE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
+  if (existsSync(G84_FINALIZE_PATH)) {
+    const finSrc = readFileSync(G84_FINALIZE_PATH, "utf8");
+    const semImportIdx = finSrc.indexOf("semanticDedupe");
+    const dedupeCandidatesBody = finSrc.match(/export function dedupeCandidates\([\s\S]*?\n\}/)?.[0] || "";
+    const dedupeCallIdx = dedupeCandidatesBody.indexOf("dedupe(adapted)");
+    const semCallIdx = dedupeCandidatesBody.indexOf("semanticDedupe(promoted)");
+    s.check("G84c finalize.mjs's dedupeCandidates() calls semanticDedupe AFTER the exact/adjacent pass",
+      semImportIdx > -1 && dedupeCallIdx > -1 && semCallIdx > -1 && semCallIdx > dedupeCallIdx);
+  }
 }
 
 process.exit(s.report() ? 0 : 1);

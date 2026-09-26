@@ -72,6 +72,148 @@ export function markAgreementPromoted(kept) {
   }));
 }
 
+// ── semantic dedupe (plan D5) ───────────────────────────────────────────────────────────────────
+//
+// `dedupe()` above only catches an EXACT (path, line, prefix) match or an adjacent-line match with
+// the same first-40-characters of body. Neither catches the shape the live `/pr-review --fanout`
+// run on dash0hq/dash0#20230 actually produced: the same defect filed FOUR times, once per finder,
+// each under its own `defect_class` — `edge-case` / `contract-break` / `scope-creep` /
+// `missing-update` — with each finder wording the claim differently. `dedupe()`'s `prefix` equality
+// requirement (pre-verification, `prefix` stands in for `defect_class`) can never catch this: the
+// defect classes are different BY CONSTRUCTION, one per finder's own taxonomy.
+//
+// Calibrated on that run's real `deduped.json` (numbers only — the text itself is dash0 content
+// and is never committed, plan.md Background & Context): same-symbol same-line TRUE duplicates
+// scored 0.23–0.46 on claim+bad_outcome token Jaccard; every DISTINCT pair on the same path scored
+// <= 0.19, including a same-symbol same-line decoy at 0.08 and a no-symbol `standards` finding at
+// the same line. 0.24 sits just above the highest observed distinct-pair score and just below the
+// lowest observed duplicate score.
+
+export const SEMANTIC_JACCARD_MIN = 0.24;
+export const SEMANTIC_LINE_WINDOW = 3;
+
+/**
+ * Common English words that would otherwise dominate the token overlap of any two findings about
+ * the same file/function regardless of whether they describe the same defect — "without", "there",
+ * "should" appear in almost every finding's prose and carry no discriminating signal.
+ */
+const STOPWORDS = new Set([
+  "this", "that", "with", "from", "into", "have", "has", "had", "been", "being", "were", "will",
+  "would", "could", "should", "there", "their", "they", "when", "where", "which", "while", "about",
+  "after", "before", "because", "never", "every", "only", "also", "then", "than", "over", "under",
+  "both", "each", "same", "here", "what", "does", "doesn", "cannot", "without", "still", "just",
+  "some", "more", "most", "less", "these", "those", "upon", "onto", "across", "between", "during",
+  "through", "such", "itself", "other", "your", "yours", "really", "actually", "instead", "rather",
+]);
+
+/** @param {any} symbol */
+function normalizeSymbol(symbol) {
+  return String(symbol || "").trim().toLowerCase();
+}
+
+/**
+ * The token set a candidate's `claim` + `bad_outcome` reduce to for the Jaccard comparison:
+ * backticked spans are split on non-word characters and kept at >= 3 chars (an identifier is
+ * discriminating even when short, e.g. `db`, `id`); everything else is lowercased and kept at
+ * >= 4 chars, minus the stopword list; the candidate's own `symbol` is removed either way, since
+ * every finding about the same symbol mentions it and it would otherwise inflate every pair's
+ * overlap regardless of whether they describe the same defect.
+ * @param {any} candidate
+ * @returns {Set<string>}
+ */
+export function claimTokens(candidate) {
+  const text = `${candidate.claim || ""} ${candidate.bad_outcome || ""}`;
+  /** @type {Set<string>} */
+  const tokens = new Set();
+  const backtickRe = /`([^`]+)`/g;
+  let m;
+  while ((m = backtickRe.exec(text)) !== null) {
+    for (const piece of m[1].split(/[^A-Za-z0-9_]+/)) {
+      const p = piece.toLowerCase();
+      if (p.length >= 3) tokens.add(p);
+    }
+  }
+  const bare = text.replace(/`[^`]*`/g, " ");
+  for (const word of bare.split(/[^A-Za-z0-9_]+/)) {
+    const w = word.toLowerCase();
+    if (w.length >= 4 && !STOPWORDS.has(w)) tokens.add(w);
+  }
+  const sym = normalizeSymbol(candidate.symbol);
+  if (sym) tokens.delete(sym);
+  return tokens;
+}
+
+/** @param {Set<string>} a @param {Set<string>} b */
+function jaccard(a, b) {
+  if (a.size === 0 || b.size === 0) return 0;
+  let intersection = 0;
+  for (const x of a) if (b.has(x)) intersection += 1;
+  const union = a.size + b.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Two candidates are the same underlying defect iff ALL of: same `path`; both `symbol` non-null
+ * and equal (case-insensitive) — a `null`-symbol finding (a `standards` finding with no specific
+ * symbol, or a whole-file concern) never semantically merges, since there is nothing to anchor the
+ * "same defect" claim to; both `line` numeric with `|Δline| <= SEMANTIC_LINE_WINDOW`; and the
+ * claim-token Jaccard similarity is `>= SEMANTIC_JACCARD_MIN`.
+ * @param {any} a @param {any} b
+ */
+function semanticMatch(a, b) {
+  if (a.path !== b.path) return false;
+  const symA = normalizeSymbol(a.symbol);
+  const symB = normalizeSymbol(b.symbol);
+  if (!symA || !symB || symA !== symB) return false;
+  if (typeof a.line !== "number" || typeof b.line !== "number") return false;
+  if (Math.abs(a.line - b.line) > SEMANTIC_LINE_WINDOW) return false;
+  return jaccard(claimTokens(a), claimTokens(b)) >= SEMANTIC_JACCARD_MIN;
+}
+
+/**
+ * The semantic pass (D5), called by `dedupeCandidates()` AFTER the existing exact/adjacent pass —
+ * never inside `finalizeReview()`'s post-verification path, and never agreement-promoted (a
+ * semantic merge changes the `reviewer-agreement-bump` rubric's threshold semantics without a run
+ * having verified that behaviour, which `rubric-composition.md ## Dedupe` documents explicitly as
+ * out of scope for this pass).
+ *
+ * Grouping is single-linkage: a candidate joins the first existing group with which it matches ANY
+ * member (not only the group's head), walked in input order, so the result partition is
+ * order-deterministic regardless of which candidate happens to arrive first within a cluster. The
+ * first member added to a group is kept; the rest are dropped and recorded on the kept record's
+ * `_semantic_merged` array (`{finder, defect_class, line, claim}` each) — so the verifier sees
+ * every framing the finders raised, not only the one that happened to survive.
+ * @param {any[]} candidates - in finder load order
+ * @returns {{ kept: any[], dropped: any[] }}
+ */
+export function semanticDedupe(candidates) {
+  /** @type {any[][]} */
+  const groups = [];
+  for (const c of candidates) {
+    const target = groups.find((g) => g.some((member) => semanticMatch(member, c)));
+    if (target) target.push(c);
+    else groups.push([c]);
+  }
+
+  /** @type {any[]} */
+  const kept = [];
+  /** @type {any[]} */
+  const dropped = [];
+  for (const g of groups) {
+    const head = { ...g[0] };
+    if (g.length > 1) {
+      head._semantic_merged = g.slice(1).map((m) => ({
+        finder: m.finder, defect_class: m.defect_class, line: m.line, claim: m.claim,
+      }));
+    }
+    kept.push(head);
+    for (const m of g.slice(1)) {
+      dropped.push({ ...m, _dedupe_dropped_for: head.finder, _dedupe_reason: "semantic" });
+    }
+  }
+  return { kept, dropped };
+}
+
 async function selfTest() {
   let failed = 0;
   const check = (/** @type {string} */ label, /** @type {boolean} */ cond, /** @type {string} */ detail = "") => {
@@ -122,6 +264,90 @@ async function selfTest() {
     const { kept } = dedupe([c1]);
     const promoted = markAgreementPromoted(kept);
     check("a single-rubric finding is NOT agreement-promoted", promoted[0].agreement_promoted === false);
+  }
+
+  // ── semantic dedupe (D5, AC-11) ──────────────────────────────────────────────────────────────
+  {
+    // (a) Four same-path, same-symbol, nearby-line candidates, each a different defect_class
+    // (mirroring the real dash0hq/dash0#20230 run's edge-case/contract-break/scope-creep/
+    // missing-update quadruplicate), with overlapping-but-differently-worded claims. All four
+    // merge into one group via single-linkage; the head carries three _semantic_merged entries.
+    const q1 = { finder: "correctness", defect_class: "edge-case", path: "src/pay.ts", line: 10, symbol: "processPayment",
+      claim: "processPayment does not handle a zero amount refund correctly",
+      bad_outcome: "a zero amount refund silently succeeds without reversing the charge" };
+    const q2 = { finder: "consumer-impact", defect_class: "contract-break", path: "src/pay.ts", line: 11, symbol: "processPayment",
+      claim: "processPayment silently succeeds on a zero amount refund",
+      bad_outcome: "callers assume the refund reversed the charge but it does not" };
+    const q3 = { finder: "quality", defect_class: "scope-creep", path: "src/pay.ts", line: 12, symbol: "processPayment",
+      claim: "the zero amount refund path in processPayment succeeds without reversing charge",
+      bad_outcome: "refund silently succeeds" };
+    const q4 = { finder: "standards", defect_class: "missing-update", path: "src/pay.ts", line: 10, symbol: "processPayment",
+      claim: "processPayment's zero amount refund case succeeds silently, charge not reversed",
+      bad_outcome: "silent success without reversal" };
+    const { kept: qKept, dropped: qDropped } = semanticDedupe([q1, q2, q3, q4]);
+    check("(a) four same-symbol, nearby-line, differently-worded candidates merge into one group",
+      qKept.length === 1 && qDropped.length === 3,
+      `kept=${qKept.length} dropped=${qDropped.length}`);
+    check("(a) the kept head carries a _semantic_merged entry for each of the other three",
+      Array.isArray(qKept[0]._semantic_merged) && qKept[0]._semantic_merged.length === 3);
+    check("(a) every dropped record is tagged semantic, not exact/adjacent",
+      qDropped.every((d) => d._dedupe_reason === "semantic"));
+
+    // (b) A same-path, same-line, same-symbol candidate whose claim is about a DIFFERENT topic
+    // (disjoint token set) never merges — proximity + symbol alone is not enough.
+    const decoy = { finder: "correctness", defect_class: "edge-case", path: "src/pay.ts", line: 10, symbol: "processPayment",
+      claim: "the retry loop never applies exponential backoff between attempts",
+      bad_outcome: "a transient network blip triggers a tight retry storm" };
+    const { kept: bKept } = semanticDedupe([q1, decoy]);
+    check("(b) a same-path/line/symbol candidate with a disjoint claim is kept separately (not merged)",
+      bKept.length === 2, `kept=${bKept.length}`);
+
+    // (c) A null-symbol candidate at the same line, even with an overlapping claim, is never
+    // merged — there is nothing to anchor the "same defect" claim to.
+    const noSymbol = { finder: "standards", defect_class: "standards", path: "src/pay.ts", line: 10, symbol: null,
+      claim: "zero amount refund handling silently succeeds without reversing the charge",
+      bad_outcome: "silent success" };
+    const { kept: cKept } = semanticDedupe([q1, noSymbol]);
+    check("(c) a null-symbol candidate at the same line is kept, never semantically merged",
+      cKept.length === 2, `kept=${cKept.length}`);
+
+    // (d) A different path never merges, even with an identical symbol and claim.
+    const otherPath = { ...q1, path: "src/other.ts" };
+    const { kept: dKept } = semanticDedupe([q1, otherPath]);
+    check("(d) a different path never merges", dKept.length === 2, `kept=${dKept.length}`);
+
+    // (e) Reversing the input order yields the same partition — order-determinism from
+    // single-linkage grouping, not from which candidate happened to arrive first.
+    const forward = semanticDedupe([q1, q2, q3, q4, decoy, noSymbol, otherPath]);
+    const reversed = semanticDedupe([otherPath, noSymbol, decoy, q4, q3, q2, q1]);
+    check("(e) reversing input order yields the same kept/dropped cardinality",
+      forward.kept.length === reversed.kept.length && forward.dropped.length === reversed.dropped.length,
+      `forward kept=${forward.kept.length} dropped=${forward.dropped.length}; reversed kept=${reversed.kept.length} dropped=${reversed.dropped.length}`);
+    const groupSizeMultiset = (/** @type {{kept:any[],dropped:any[]}} */ r) => {
+      const sizes = r.kept.map((k) => 1 + r.dropped.filter((d) => d._dedupe_dropped_for === k.finder
+        && d.path === k.path).length);
+      return sizes.sort().join(",");
+    };
+    check("(e) reversing input order yields the same group-size partition",
+      groupSizeMultiset(forward) === groupSizeMultiset(reversed),
+      `forward=${groupSizeMultiset(forward)} reversed=${groupSizeMultiset(reversed)}`);
+
+    // (f) A semantic merge is never agreement-promoted — markAgreementPromoted is never called on
+    // semanticDedupe's output, and no kept record from a semantic-only merge carries the field.
+    check("(f) a semantic merge never sets agreement_promoted",
+      qKept.every((k) => k.agreement_promoted === undefined));
+
+    // Explicit decoy pair at the plan's own calibration floor (0.08 observed on the real run):
+    // near-zero overlap must never merge even with every other precondition satisfied.
+    const lowOverlap1 = { finder: "correctness", defect_class: "edge-case", path: "src/pay.ts", line: 10, symbol: "processPayment",
+      claim: "the amount field accepts a negative value with no validation",
+      bad_outcome: "a negative amount overdraws the account" };
+    const lowOverlap2 = { finder: "quality", defect_class: "maintainability", path: "src/pay.ts", line: 11, symbol: "processPayment",
+      claim: "this function is 140 lines long and mixes three concerns",
+      bad_outcome: "hard to test in isolation" };
+    const { kept: lowKept } = semanticDedupe([lowOverlap1, lowOverlap2]);
+    check("low-overlap same-symbol/nearby-line pair is kept separately (below the 0.24 floor)",
+      lowKept.length === 2, `kept=${lowKept.length}`);
   }
 
   if (failed > 0) {

@@ -33,7 +33,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { dedupe, markAgreementPromoted } from "./finalize/dedupe.mjs";
+import { dedupe, markAgreementPromoted, semanticDedupe } from "./finalize/dedupe.mjs";
 import { resolveThreshold, dispose, deferFloor, recomputeFinal, CLAIM_PREFIXES } from "./finalize/thresholds.mjs";
 import { applySuppression } from "./finalize/suppression.mjs";
 import { validateLine } from "./finalize/line-validity.mjs";
@@ -491,6 +491,16 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
  * responsibility, not this function's: pass finder outputs in the table order
  * (`finders.md`'s `correctness, consumer-impact, dependency, intent, standards, quality`) so the
  * kept record is deterministic across runs.
+ *
+ * D5: after the exact/adjacent pass, `semanticDedupe()` runs a SECOND pass over the survivors —
+ * the same defect filed under a DIFFERENT `defect_class` per finder (the live dash0hq/dash0#20230
+ * run's real failure: one issue filed four times as `edge-case` / `contract-break` / `scope-creep`
+ * / `missing-update`) can never match on `prefix` equality by construction, since each finder's
+ * taxonomy differs. Order matters: semantic dedupe runs AFTER exact/adjacent, never before it, so
+ * an exact duplicate is still caught by the cheaper, higher-precision rule first. Never
+ * agreement-promoted (`markAgreementPromoted` runs once, on the exact/adjacent survivors only,
+ * before the semantic pass sees them) — see `finalize/dedupe.mjs`'s own docstring on
+ * `semanticDedupe` for why.
  * @param {any[]} candidates
  * @returns {{ kept: any[], dropped: any[] }}
  */
@@ -498,6 +508,7 @@ export function dedupeCandidates(candidates) {
   const adapted = candidates.map((c) => ({ ...c, prefix: c.defect_class, body: c.claim }));
   const { kept, dropped } = dedupe(adapted);
   const promoted = markAgreementPromoted(kept);
+  const { kept: semKept, dropped: semDropped } = semanticDedupe(promoted);
   /** @param {any} c */
   const strip = (c) => {
     const rest = { ...c };
@@ -505,7 +516,7 @@ export function dedupeCandidates(candidates) {
     delete rest.body;
     return rest;
   };
-  return { kept: promoted.map(strip), dropped: dropped.map(strip) };
+  return { kept: semKept.map(strip), dropped: [...dropped, ...semDropped].map(strip) };
 }
 
 // ── CLI ──

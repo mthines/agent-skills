@@ -59,6 +59,24 @@ Walk findings in load order. For each new finding, if a prior finding has:
 
 Dedupe runs **before** the per-comment confidence check (`per-comment-confidence.md`) — no point scoring a duplicate.
 
+**`/pr-review --fanout`'s SEMANTIC pass (plan feat/pr-reviewer-shrink-fanout-ab, D5).** The rule
+above requires the SAME Conventional-Comments prefix, which a fan-out run's finders can never
+satisfy for the same underlying defect: pre-verification, the prefix stand-in is each finder's own
+`defect_class`, and finders name the same issue differently by construction (`edge-case` vs.
+`contract-break` vs. `scope-creep` vs. `missing-update` — the real failure on dash0hq/dash0#20230,
+where one issue posted as four separate findings). `finalize/dedupe.mjs`'s `semanticDedupe()` runs
+as a SECOND pass, after the exact/adjacent pass above, over the `--fanout` orchestrator's
+pre-verification candidate pool only (`dedupeCandidates()`, never `finalizeReview()`'s
+post-verification path): two candidates merge iff same `path`, both `symbol` non-null and equal,
+both `line` within 3 of each other, and a claim-token Jaccard similarity `>= 0.24` (calibrated on
+the real run: true duplicates scored 0.23–0.46, every distinct pair on the same path scored
+`<= 0.19`). Grouping is single-linkage, order-deterministic, and the kept record carries a
+`_semantic_merged` entry per merged candidate so the verifier sees every finder's framing.
+**Never agreement-promoted** — a semantic merge is a lower-confidence, threshold-calibrated
+heuristic match, not the exact `(file, line, prefix)` agreement the section below defines, and
+promoting it would change `## Cross-rubric agreement`'s threshold semantics on the strength of a
+pass no live run has verified against that rubric.
+
 ## Cross-rubric agreement
 
 After the dedupe pass, walk the surviving findings. For each finding that was
