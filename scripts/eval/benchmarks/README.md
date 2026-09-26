@@ -76,9 +76,14 @@ two artifacts per run under `<runs-dir>/<arm>/<pr-number>/run-<n>/`:
 
 - `inline-comments.json` — the array a `--dry-run` review would have POSTed
   to `/pulls/{n}/reviews` (per `pipeline.md`'s artifact-flow table).
-- `dispatch-meta.json` — `{tokens_used, wall_clock_ms, reviewed_sha}`, written
-  by the dispatcher (only it sees the Agent-tool result). `reviewed_sha` must
-  equal the manifest's `review_sha` for that PR, or `score` excludes the run.
+- `dispatch-meta.json` — `{tokens_used, wall_clock_ms, reviewed_sha}`. Write it
+  with `node scripts/eval/ab-review.mjs record-meta --matrix <out>/matrix.json
+  --index <i> --runs <runs-dir> --tokens <n> --wall-clock-ms <n>`: the
+  dispatcher supplies the two figures (only it sees the Agent-tool result) and
+  `reviewed_sha` is copied from that matrix entry's own `--review-sha` pin.
+  `reviewed_sha` must equal the manifest's `review_sha` for that PR; `score`
+  excludes a run whose `reviewed_sha` differs **or is missing**, and reports
+  both counts.
 
 ### 4. Extract labels per PR (read-only, `dash0hq/dash0`)
 
@@ -105,7 +110,7 @@ node scripts/eval/ab-review.mjs score \
 
 Emits, per arm: recall, precision, run-to-run stability (Jaccard), severity
 agreement, mean tokens, mean wall-clock, and how many runs were excluded for
-a `reviewed_sha` mismatch — plus the **D1 gate verdict**: `insufficient`
+a `reviewed_sha` mismatch or a missing `reviewed_sha` — plus the **D1 gate verdict**: `insufficient`
 below 8 PRs x 3 runs per arm with matched data, else `pass` when
 `B.recall >= A.recall` and `B.precision >= A.precision - 0.05`, else `fail`.
 

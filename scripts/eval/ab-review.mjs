@@ -29,6 +29,11 @@
  *     dispatches anything itself — the caller (a top-level session holding the Agent/
  *     Task tool) reads `matrix.json` and issues the dispatches.
  *
+ *   record-meta --matrix <matrix.json> --index <i> --runs <dir> --tokens <n> --wall-clock-ms <n>
+ *     Writes `<runs>/<dispatch.run_dir>/dispatch-meta.json` for the i-th dispatch after it
+ *     finishes: `{tokens_used, wall_clock_ms, reviewed_sha}`, with `reviewed_sha` taken from the
+ *     matrix entry's own `--review-sha` pin (`buildDispatchMeta`), never typed by the caller.
+ *
  *   shadow-report <dir>
  *     AC-13. Reads `<dir>/judgments.json` (the model's real candidates for one
  *     PR) and `<dir>/prose-dispositions.json` (the SAME agent's own
@@ -48,14 +53,15 @@
  *     per run (`run-1`, `run-2`, ...). Every run directory is expected to
  *     contain `inline-comments.json` (the array a `--dry-run` review would
  *     have POSTed to `/pulls/{n}/reviews`, per pipeline.md's artifact-flow
- *     table — `[{path, line, body, ...}]`) and MAY contain
- *     `dispatch-meta.json` (`{tokens_used, wall_clock_ms}`, written by
- *     whoever dispatched the sub-agent, since only the dispatcher sees the
- *     Agent-tool result — this script never estimates either figure).
+ *     table — `[{path, line, body, ...}]`) and MUST contain
+ *     `dispatch-meta.json` (`{tokens_used, wall_clock_ms, reviewed_sha}`, written
+ *     by `record-meta` from the dispatcher's figures, since only the dispatcher
+ *     sees the Agent-tool result — this script never estimates either figure).
  *     `--labels <dir>` holds one `<pr>.json` per PR — `thread-outcomes.mjs`'s
  *     own output shape (`{repo, pr, labels: [...]}`). A run whose
  *     `dispatch-meta.json` `reviewed_sha` does not match the manifest's
- *     `review_sha` for that PR is EXCLUDED from scoring entirely (D13) — labels
+ *     `review_sha` for that PR — or that carries no `reviewed_sha` at all — is
+ *     EXCLUDED from scoring entirely and counted (D13) — labels
  *     were extracted at the manifest SHA, and grading a different commit's
  *     findings against them would compare two different diffs. Emits per-arm
  *     recall, precision, run-to-run stability (Jaccard over each PR's own
@@ -188,12 +194,50 @@ export function buildMatrix({ entries, worktree, arms, runs }) {
           subagent_type: "general-purpose",
           worktree,
           flags,
+          // The SHA this dispatch's own `--review-sha` flag pins, and the run directory its
+          // artifacts land in — `record-meta` reads both to write dispatch-meta.json, so the
+          // dispatcher never hand-copies a SHA.
+          reviewed_sha: entry.review_sha,
+          run_dir: `${arm}/${entry.number}/run-${run}`,
           prompt,
         });
       }
     }
   }
   return { dispatches, skipped };
+}
+
+/**
+ * Pure — the dispatch-meta.json record for one finished dispatch. `reviewed_sha` comes from the
+ * matrix entry's own pin (the SHA its `--review-sha` flag named), never from the caller, so a
+ * run's meta can only ever claim the commit it was actually dispatched against.
+ * @param {{ dispatch: any, tokensUsed: number, wallClockMs: number }} args
+ */
+export function buildDispatchMeta({ dispatch, tokensUsed, wallClockMs }) {
+  const sha = dispatch?.reviewed_sha;
+  if (!/^[0-9a-f]{40}$/.test(sha || "")) {
+    throw new Error(`dispatch ${dispatch?.run_dir || "?"} carries no 40-hex reviewed_sha — re-run \`plan\``);
+  }
+  return { tokens_used: tokensUsed, wall_clock_ms: wallClockMs, reviewed_sha: sha };
+}
+
+async function runRecordMeta(/** @type {Record<string,string|boolean>} */ opts) {
+  const matrix = JSON.parse(readFileSync(/** @type {string} */ (opts.matrix), "utf8"));
+  const index = Number(opts.index);
+  const dispatch = (matrix.dispatches ?? [])[index];
+  if (!dispatch) {
+    console.error(`record-meta: no dispatch at index ${opts.index} in ${opts.matrix}`);
+    process.exit(2);
+  }
+  const meta = buildDispatchMeta({
+    dispatch, tokensUsed: Number(opts.tokens), wallClockMs: Number(opts["wall-clock-ms"]),
+  });
+  const runDir = join(/** @type {string} */ (opts.runs), dispatch.run_dir);
+  if (!existsSync(runDir)) mkdirSync(runDir, { recursive: true });
+  const metaPath = join(runDir, "dispatch-meta.json");
+  writeFileSync(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
+  console.log(`record-meta: wrote ${metaPath} (reviewed_sha ${meta.reviewed_sha})`);
+  process.exit(0);
 }
 
 async function runPlan(/** @type {Record<string,string|boolean>} */ opts) {
@@ -396,17 +440,25 @@ export function scoreArm({ runsDir, labelsDir, arm, reviewShaByPr }) {
   let tp = 0, fp = 0, fn = 0, matchedSeverityAgreements = 0, matchedTotal = 0;
   let tokensSum = 0, tokensCount = 0, wallClockSum = 0, wallClockCount = 0;
   let excludedReviewedShaMismatch = 0;
+  let excludedMissingReviewedSha = 0;
   /** @type {Map<string, any[][]>} */
   const byPr = new Map();
 
   for (const run of runs) {
     const meta = readJsonIfExists(join(run.dir, "dispatch-meta.json"));
     const expectedSha = reviewShaByPr?.get(String(run.pr));
+    // A run with NO reviewed_sha (no dispatch-meta.json, or a meta written before `record-meta`
+    // stamped one) cannot prove which commit it graded, so it is excluded and counted exactly
+    // like a mismatch — never scored on the assumption that it happened to match.
+    if (!meta?.reviewed_sha) {
+      excludedMissingReviewedSha++;
+      continue;
+    }
     // D13: a run's findings were dispatched at meta.reviewed_sha — grading them against
     // labels extracted at the manifest's review_sha only holds when the two agree. A
     // mismatch (the manifest was re-picked, or the dispatch ran stale) is EXCLUDED from
     // scoring entirely, before its findings are ever read, never silently mixed in.
-    if (expectedSha && meta?.reviewed_sha && meta.reviewed_sha !== expectedSha) {
+    if (expectedSha && meta.reviewed_sha !== expectedSha) {
       excludedReviewedShaMismatch++;
       continue;
     }
@@ -442,6 +494,7 @@ export function scoreArm({ runsDir, labelsDir, arm, reviewShaByPr }) {
     arm,
     runs: runs.length,
     excluded_reviewed_sha_mismatch: excludedReviewedShaMismatch,
+    excluded_missing_reviewed_sha: excludedMissingReviewedSha,
     pr_count: prCount,
     min_runs_per_pr: minRunsPerPr,
     recall: tp + fn > 0 ? tp / (tp + fn) : null,
@@ -727,7 +780,38 @@ async function selfTest() {
       result.excluded_reviewed_sha_mismatch === 1 && result.tp === 1 && result.fp === 0);
     check("scoreArm computes mean tokens and mean wall-clock only from the kept (matching-reviewed_sha) run",
       result.mean_tokens === 1000 && result.mean_wall_clock_ms === 5000);
+
+    // run-3 has NO reviewed_sha at all (a pre-`--review-sha` stale run, or a hand-written meta):
+    // the README says reviewed_sha must equal the manifest's, so it is excluded and counted, never scored.
+    mkdirSync(join(runsDir, "A", "42", "run-3"), { recursive: true });
+    writeFileSync(join(runsDir, "A", "42", "run-3", "inline-comments.json"), JSON.stringify([{ path: "q.ts", line: 3, body: "issue: stale" }]));
+    writeFileSync(join(runsDir, "A", "42", "run-3", "dispatch-meta.json"), JSON.stringify({ tokens_used: 7, wall_clock_ms: 7 }));
+    // run-4 has no dispatch-meta.json at all — same exclusion.
+    mkdirSync(join(runsDir, "A", "42", "run-4"), { recursive: true });
+    writeFileSync(join(runsDir, "A", "42", "run-4", "inline-comments.json"), JSON.stringify([{ path: "r.ts", line: 4, body: "issue: stale" }]));
+    const withMissing = scoreArm({ runsDir, labelsDir, arm: "A", reviewShaByPr });
+    check("scoreArm excludes (and counts) runs lacking reviewed_sha, never scoring them",
+      withMissing.excluded_missing_reviewed_sha === 2 && withMissing.tp === 1 && withMissing.fp === 0
+      && withMissing.mean_tokens === 1000,
+      JSON.stringify(withMissing));
     rmSync(scratch, { recursive: true, force: true });
+  }
+
+  // The harness itself writes reviewed_sha: every matrix entry carries the SHA its flags pin plus
+  // its run directory, and buildDispatchMeta stamps that SHA into the meta record.
+  {
+    const sha = "1111111111111111111111111111111111111111";
+    const { dispatches } = buildMatrix({ entries: [{ repo: "o/r", number: 7, review_sha: sha }], worktree: "/abs/w", arms: ["A"], runs: 2 });
+    check("buildMatrix stamps reviewed_sha (== the --review-sha it pins) and run_dir on every dispatch",
+      dispatches.every((d) => d.reviewed_sha === sha && d.flags.includes(`--review-sha ${sha}`))
+      && dispatches.map((d) => d.run_dir).join(",") === "A/7/run-1,A/7/run-2",
+      JSON.stringify(dispatches.map((d) => [d.reviewed_sha, d.run_dir])));
+    const meta = buildDispatchMeta({ dispatch: dispatches[0], tokensUsed: 12, wallClockMs: 34 });
+    check("buildDispatchMeta writes {tokens_used, wall_clock_ms, reviewed_sha} from the dispatch's own pin",
+      meta.reviewed_sha === sha && meta.tokens_used === 12 && meta.wall_clock_ms === 34, JSON.stringify(meta));
+    let threw = false;
+    try { buildDispatchMeta({ dispatch: { run_dir: "A/7/run-1" }, tokensUsed: 1, wallClockMs: 1 }); } catch { threw = true; }
+    check("buildDispatchMeta refuses a dispatch carrying no 40-hex reviewed_sha", threw);
   }
 
   // evaluateGate — the D1 flip gate verdict (AC-22)
@@ -774,6 +858,7 @@ function usage() {
   console.error(
     "usage: ab-review.mjs pick-review-sha --manifest <m> [--write]"
       + " | plan --manifest <m> --worktree <abs> --arms A,B --runs 3 --out <dir>"
+      + " | record-meta --matrix <matrix.json> --index <i> --runs <dir> --tokens <n> --wall-clock-ms <n>"
       + " | shadow-report <dir>"
       + " | score --manifest <m> --runs <dir> --labels <dir> [--out <json>] [--lorekit-out <json>]"
       + " | --self-test",
@@ -795,6 +880,11 @@ async function main() {
   if (sub === "plan") {
     if (!opts.manifest || !opts.worktree || !opts.out) { usage(); process.exit(2); }
     await runPlan(opts);
+    return;
+  }
+  if (sub === "record-meta") {
+    if (!opts.matrix || opts.index == null || !opts.runs || opts.tokens == null || opts["wall-clock-ms"] == null) { usage(); process.exit(2); }
+    await runRecordMeta(opts);
     return;
   }
   if (sub === "shadow-report") {
