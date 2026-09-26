@@ -123,12 +123,17 @@ export function gate6(placement, partialReview = false) {
   const inline = placement?.inline || [];
   const deferred = placement?.deferred || [];
   const blockingInline = inline.filter((f) => f.blocking === true);
-  if (blockingInline.length > 0) {
-    const n = blockingInline.length;
+  // place() never defers a blocking finding; the only way one reaches `deferred` is finalize's
+  // shape fallback (a verified blocker no truncation could make render inline) — it is still a
+  // blocker, so it still FAILs, pointed at the report instead of an inline comment.
+  const blockingDeferred = deferred.filter((f) => f.blocking === true);
+  if (blockingInline.length > 0 || blockingDeferred.length > 0) {
+    const n = blockingInline.length + blockingDeferred.length;
+    const where = blockingDeferred.length > 0 ? "report" : "inline";
     return {
       status: "FAIL",
-      details: `${n} blocking finding${n === 1 ? "" : "s"} — see inline comments.`,
-      reason: `${n} blocking finding${n === 1 ? "" : "s"} (see inline)`,
+      details: `${n} blocking finding${n === 1 ? "" : "s"} — see ${where === "inline" ? "inline comments" : "the report"}.`,
+      reason: `${n} blocking finding${n === 1 ? "" : "s"} (see ${where})`,
     };
   }
   if (inline.length > 0 || deferred.length > 0) {
@@ -266,6 +271,11 @@ async function selfTest() {
   {
     const g = gate6({ inline: [{ blocking: false }], deferred: [] });
     check("Gate 6 WARNs on a non-blocking inline finding", g.status === "WARN");
+  }
+  {
+    // finalize's shape fallback can put a verified blocker in `deferred`; it must still FAIL.
+    const g = gate6({ inline: [], deferred: [{ blocking: true }] });
+    check("Gate 6 FAILs when a blocking finding was routed to the report body", g.status === "FAIL" && /report/.test(g.details));
   }
   {
     const g = gate6({ inline: [], deferred: [] });

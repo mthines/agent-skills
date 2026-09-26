@@ -9148,6 +9148,11 @@ const isPollBlock = (block) =>
       && stepFSection.indexOf("--check-shape") < stepFSection.indexOf("node agents/pr-reviewer/scripts/validate-judgments.mjs"));
     s.check("G81 --check-shape failures get exactly one repair round, not an unbounded loop",
       /one repair round/i.test(fanoutSection));
+    // A candidate still failing shape after that round is routed by finalize.mjs, never dropped —
+    // a verified blocker must not vanish over a title length.
+    s.check("G81 a still-shape-failing candidate is never dropped (routed by finalize.mjs coerceShape)",
+      /never\s+dropped/i.test(fanoutSection) && fanoutSection.includes("coerceShape()")
+        && !/is dropped\s+the same way a `contradicted` candidate is/.test(fanoutSection));
 
     // D6: the optimality lens's card_body carries no heading.
     s.check("G81 the optimality lens instruction states card_body carries no heading",

@@ -45,6 +45,7 @@ import {
   buildOptimalityCard,
 } from "./finalize/payload.mjs";
 import { renderComment } from "./render-comment.mjs";
+import { TITLE_MAX, PROSE_MAX, UNVERIFIED_MAX, EVIDENCE_REFS_MAX, sentenceCount } from "./comment-spine.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
@@ -300,13 +301,41 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
       continue;
     }
     if (r.retarget !== null) {
-      lineValidated.push({ ...f, line: r.retarget, body: `${f.body}\n\n(originally proposed for line ${f.line} — moved to nearest hunk line)` });
+      // Appended on the SAME paragraph: render-comment.mjs rejects a multi-paragraph BODY, so a
+      // `\n\n`-joined note made every retargeted finding fail to render at the write step.
+      lineValidated.push({ ...f, line: r.retarget, body: `${f.body} (originally proposed for line ${f.line} — moved to nearest hunk line)` });
     } else {
       lineValidated.push(f);
     }
   }
 
-  const { inline, deferred: overCapDeferred } = place(lineValidated, { profile });
+  const placed = place(lineValidated, { profile });
+  const overCapDeferred = placed.deferred;
+
+  // --fanout Step f's shape fallback: a verified finding that still fails render-comment.mjs's
+  // shape after its one repair round is NEVER dropped. A non-blocking one moves to the report
+  // body's deferred section (it cannot post inline as-is, and a mechanically truncated
+  // non-blocker is worth less than its full text in the report); a blocking one posts inline with
+  // a renderer-legal truncated title/body (`coerceShape`), and only if even that cannot render
+  // does it join the deferred section — where Gate 6 still counts it as blocking.
+  const shaForShape = sha7(sha || context?.headSha || context?.head_sha || judgments?.head_sha || "0000000");
+  /** @type {any[]} */
+  const inline = [];
+  /** @type {any[]} */
+  const shapeCoerced = [];
+  for (const f of placed.inline) {
+    if (rendersInline(f, shaForShape)) { inline.push(f); continue; }
+    if (f.blocking === true) {
+      const coerced = coerceShape(f);
+      if (rendersInline(coerced, shaForShape)) {
+        inline.push(coerced);
+        shapeCoerced.push({ path: f.path, line: f.line, finder: f.finder, action: "truncated-inline" });
+        continue;
+      }
+    }
+    overCapDeferred.push(f);
+    shapeCoerced.push({ path: f.path, line: f.line, finder: f.finder, action: "report-body" });
+  }
 
   // AC-11/D5: the REPORT's FINDINGS table (and the Code review gate it feeds) is for
   // claim-prefix findings — the same `issue:`/`suggestion:` split dispose()/thresholds.mjs
@@ -467,6 +496,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     anchorless,
     inline,
     deferred: overCapDeferred,
+    shapeCoerced,
     identityHolds,
     quality,
     payload,
@@ -518,6 +548,62 @@ export function dedupeCandidates(candidates) {
     return rest;
   };
   return { kept: semKept.map(strip), dropped: [...dropped, ...semDropped].map(strip) };
+}
+
+/**
+ * Whether a finding renders as an inline comment through the REAL payload -> render path.
+ * @param {any} f @param {string} sha
+ */
+function rendersInline(f, sha) {
+  try {
+    renderComment(toInlineCommentPayload(f, { sha: /^[0-9a-f]{7}$/.test(sha) ? sha : "0000000" }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Cut `text` to at most `max` chars at a word boundary, keeping backtick spans balanced.
+ * @param {string} text @param {number} max
+ */
+function cutAtWord(text, max) {
+  let t = String(text || "").replace(/\s+/g, " ").trim();
+  if (t.length > max) {
+    t = t.slice(0, max);
+    const sp = t.lastIndexOf(" ");
+    if (sp > max / 2) t = t.slice(0, sp);
+  }
+  if ((t.match(/`/g) || []).length % 2 === 1) t = t.replace(/`/g, "");
+  return t.trim();
+}
+
+/**
+ * The renderer-legal fallback for a verified BLOCKING finding whose verifier-authored prose still
+ * breaks render-comment.mjs's caps after the one repair round: the title becomes a noun phrase
+ * (no sentence punctuation, no pipe) of at most TITLE_MAX chars — synthesized from the body when
+ * absent — and the body keeps at most two sentences within PROSE_MAX. Evidence past the ref cap,
+ * an over-long UNVERIFIED reason, and a fix FENCE (a truncated patch would be a wrong patch) are
+ * trimmed or removed. The claim itself, its severity, and its blocking flag never change.
+ * @param {any} f
+ * @returns {any}
+ */
+export function coerceShape(f) {
+  const out = { ...f };
+  const bodyFlat = String(f.body || "").replace(/\s+/g, " ").trim();
+  const sentences = bodyFlat.match(/[^.!?]+[.!?]+(?=\s|$)|[^.!?]+$/g) || [bodyFlat];
+  let body = cutAtWord(sentences.slice(0, 2).join(" "), PROSE_MAX - 1);
+  if (!/[.!?]$/.test(body)) body = `${body.replace(/[,;:\s-]+$/, "")}.`;
+  out.body = body;
+  const titleSrc = f.title ? String(f.title) : bodyFlat;
+  let title = titleSrc.replace(/\|/g, "/").replace(/[.!?;:]+(\s|$)/g, " ").replace(/\s+/g, " ").trim();
+  title = cutAtWord(title, TITLE_MAX).replace(/[,\s-]+$/, "");
+  if (sentenceCount(title) > 0) title = title.replace(/[.!?]/g, "");
+  out.title = title;
+  if (Array.isArray(f.evidence_anchors)) out.evidence_anchors = f.evidence_anchors.slice(0, EVIDENCE_REFS_MAX);
+  if (f.unverified_reason) out.unverified_reason = cutAtWord(f.unverified_reason, UNVERIFIED_MAX);
+  delete out.fence;
+  return out;
 }
 
 /**
@@ -1223,6 +1309,37 @@ async function selfTest() {
     check("checkShape catches a 61-char title, naming the index and field TITLE",
       badResult.ok === false && badResult.violations.length === 1
         && badResult.violations[0].index === 0 && badResult.violations[0].field === "TITLE");
+  }
+
+  // --fanout Step f: a verified candidate that STILL fails --check-shape after its one repair
+  // round is never dropped. finalizeReview() coerces it: a blocking finding posts inline with a
+  // renderer-legal truncated title/body (and still FAILs Gate 6); a non-blocking one that cannot
+  // render inline lands in the report body's deferred section.
+  {
+    const shapeJ = (/** @type {any[]} */ cands) => ({
+      candidates: cands,
+      gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "s",
+    });
+    const longTitle = "Unguarded null dereference of the session token in the refresh path of the handler";
+    const longBody = `${"The refresh handler reads session.token before the guard runs ".repeat(5)}and crashes.`;
+    const blocker = mkCandidate({ final: 95, severity: "high", blocking: true, title: longTitle, body: longBody });
+    const rb = finalizeReview({ context: baseContext, judgments: shapeJ([blocker]) });
+    const posted = rb.inline.find((/** @type {any} */ f) => f.blocking === true);
+    let renders = false;
+    try { if (posted) { renderComment(toInlineCommentPayload(posted, { sha: "a1b2c3d" })); renders = true; } } catch { renders = false; }
+    check("a shape-violating BLOCKING finding stays inline with a renderer-legal truncated title/body",
+      Boolean(posted) && renders && posted.title.length <= 60 && posted.body.length <= 200,
+      JSON.stringify(posted && { t: posted.title, b: posted.body?.length }));
+    check("the coerced blocking finding still FAILs the verdict (Gate 6)", rb.verdict === "FAIL", rb.verdict);
+    check("the coercion is recorded (shape_coerced) rather than silent", Array.isArray(rb.shapeCoerced) && rb.shapeCoerced.length === 1);
+
+    const nonBlocker = mkCandidate({ final: 95, blocking: false, title: longTitle, body: longBody });
+    const rn = finalizeReview({ context: baseContext, judgments: shapeJ([nonBlocker]) });
+    check("a shape-violating NON-blocking finding is routed to the report body's deferred section, never dropped",
+      rn.inline.length === 0 && rn.deferred.length === 1 && rn.payload?.ADDITIONAL_FINDINGS?.length === 1,
+      JSON.stringify({ inline: rn.inline.length, deferred: rn.deferred.length }));
+    check("the identity invariant still holds after the shape routing", rn.identityHolds === true && rb.identityHolds === true);
   }
 
   // D4 / AC-10 CLI: `--check-shape <judgments.json>` through the real process boundary.

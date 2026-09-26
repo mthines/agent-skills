@@ -441,11 +441,17 @@ node agents/pr-reviewer/scripts/finalize.mjs --check-shape "<scratchRoot()>/<run
 `render-comment.mjs` shape validation and reports each violation's `index`, `finder`, and `field`
 without writing anything. **On a violation, re-dispatch only the named verifier(s)** — one repair
 round, with the caps pasted (Step e) and the specific violation named in the prompt — then re-run
-`--check-shape` once more. A candidate still violating shape after that one repair round is dropped
-the same way a `contradicted` candidate is (never posted, logged with its violation), rather than
-looping a second time: one repair round catches a verifier that miscounted against a cap it was
-given; a second would be chasing a verifier that cannot follow the instruction, and the right
-response to that is dropping the candidate, not a longer loop.
+`--check-shape` once more. There is exactly one repair round, never a loop — one catches a
+verifier that miscounted against a cap it was given; a second would be chasing a verifier that
+cannot follow the instruction. **A candidate still violating shape after that round is never
+dropped**: a verified
+finding is not less true for a 61-char title. Proceed to `finalize.mjs`, which routes it
+mechanically — a **non-blocking** one lands in the report body's deferred section (`N more
+findings`) instead of inline, and a **blocking** one posts inline with a renderer-legal truncated
+title and body (`coerceShape()`: the claim, severity, and blocking flag never change; a fix fence
+is removed rather than truncated into a wrong patch). If even that cannot render, the blocker joins
+the deferred section and Gate 6 still FAILs on it. Every such routing is listed in
+`finalize`'s `shapeCoerced[]`.
 
 Then the same three steps every `pr-reviewer` run takes, unchanged:
 
