@@ -229,6 +229,8 @@ check "shared rules"     "$ROOT/shared/rules/finding-verifier.md"
 check "lens rule"        "$ROOT/shared/rules/lens-invocation.md"
 check "prepare script"   "$ROOT/pr-reviewer/scripts/prepare-review.mjs"
 check "renderer"         "$ROOT/pr-reviewer/scripts/render-report.mjs"
+check "finalize script"  "$ROOT/pr-reviewer/scripts/finalize.mjs"
+check "write-plan executor" "$ROOT/pr-reviewer/scripts/execute-write-plan.mjs"
 check "constraints"      "$ROOT/RUN-CONSTRAINTS.md"
 
 LENSES=0

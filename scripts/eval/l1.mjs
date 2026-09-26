@@ -1630,20 +1630,39 @@ function checksInSync(plan, checks) {
   {
     const telRel = "scripts/eval/telemetry.mjs";
     const telAbs = join(REPO_ROOT, telRel);
+    // The encoder/exporter mechanics (enabled-gate, no-op span, flush) were
+    // extracted into agents/pr-reviewer/scripts/otlp.mjs (pr-reviewer
+    // deterministic pipeline, D7) so review-telemetry.mjs can share one
+    // encoder. telemetry.mjs keeps its own API and self-test unchanged (still
+    // executed and behaviorally proven below); the three SOURCE-pattern
+    // checks that used to read telemetry.mjs's own text now read otlp.mjs's,
+    // since that is the file that now contains those literal lines.
+    const otlpRel = "agents/pr-reviewer/scripts/otlp.mjs";
+    const otlpAbs = join(REPO_ROOT, otlpRel);
     s.check("G21k the eval telemetry module exists", existsSync(telAbs));
+    s.check("G21k the shared otlp encoder module exists", existsSync(otlpAbs));
     if (existsSync(telAbs)) {
       const tel = read(telRel);
+      s.check("G21k telemetry.mjs imports its exporter from the shared otlp.mjs, not a second copy",
+        /from\s+"\.\.\/\.\.\/agents\/pr-reviewer\/scripts\/otlp\.mjs"/.test(tel));
       const r = spawnSync(process.execPath, [telAbs, "--self-test"], { encoding: "utf8" });
       s.check("G21k the telemetry self-test passes (OTLP encoding, span tree, metric shapes)",
         r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
+    }
+    if (existsSync(otlpAbs)) {
+      const otlp = read(otlpRel);
+      const ro = spawnSync(process.execPath, [otlpAbs, "--self-test"], { encoding: "utf8" });
+      s.check("G21k the shared otlp encoder's own self-test passes",
+        ro.status === 0, (ro.stdout || "").trim().split("\n").slice(-4).join(" | ") || ro.stderr?.slice(0, 200));
 
       s.check("G21k telemetry is off unless an OTLP endpoint is configured",
-        /this\.enabled\s*=\s*this\.endpoint\s*!==\s*""/.test(tel));
+        /this\.enabled\s*=\s*this\.endpoint\s*!==\s*""/.test(otlp));
       s.check("G21k a disabled harness hands back a no-op span so callers need no conditional",
-        /if\s*\(!this\.enabled\)\s*return\s*\{\s*spanId:\s*null/.test(tel));
+        /if\s*\(!this\.enabled\)\s*return\s*\{\s*spanId:\s*null/.test(otlp));
       s.check("G21k flush never throws — it reports the failure and returns",
-        /console\.error\(`⚠ telemetry export failed/.test(tel) && /async flush\(\)/.test(tel));
-
+        /console\.error\(`⚠ telemetry export failed/.test(otlp) && /async flush\(\)/.test(otlp));
+    }
+    if (existsSync(telAbs)) {
       // l2.mjs is the only producer today; assert the wiring rather than trusting it.
       s.check("G21k l2.mjs imports the telemetry harness", /from "\.\/telemetry\.mjs"/.test(l2runner));
       s.check("G21k l2.mjs opens a run span, a suite span and a per-case span",
@@ -2569,8 +2588,11 @@ function checksInSync(plan, checks) {
 
   // G24f: the report has exactly one host. A review body carrying the report marker is the
   // regression that leaves one full report per run on the PR; the pre-flight must reject it.
-  s.check("G24f pr-reviewer.md rejects a review body carrying the report marker",
-    /"<!-- PR_REVIEWER_REPORT -->" in payload\["body"\]/.test(prReviewer));
+  // Phase 5 moved `payload_is_safe` out of the agent body into `payloadIsSafe()`
+  // (execute-write-plan.mjs) — the executable home the check now reads.
+  s.check("G24f execute-write-plan.mjs's payloadIsSafe rejects a review body carrying the report marker",
+    /payload\.body\.includes\("<!-- PR_REVIEWER_REPORT -->"\)/.test(
+      readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8")));
   s.check("G24f pr-reviewer.md documents the un-writable-sticky path without a second report",
     /When the sticky cannot be written/.test(prReviewer) &&
     /DEGRADED_POINTER_BODY/.test(prReviewer));
@@ -2664,8 +2686,12 @@ function checksInSync(plan, checks) {
     s.check("G24i Step 4a appends no ledger to the report body",
       !/PR_REVIEWER_LEDGER/.test(sliceBetween(prReviewer, "#### Build the payload, then run the renderer",
         "#### The report has exactly one host")));
-    s.check("G24i Step 4b rejects a review body carrying a ledger",
-      /PR_REVIEWER_LEDGER" in payload\["body"\]/.test(step4b));
+    // Phase 5 moved `payload_is_safe` out of Step 4b into `payloadIsSafe()`
+    // (execute-write-plan.mjs) — the executable home the check now reads; Step 4b's own prose
+    // just needs to still POINT at it, asserted a few checks below (G46i/G46l).
+    s.check("G24i execute-write-plan.mjs's payloadIsSafe rejects a review body carrying a ledger",
+      /payload\.body\.includes\("<!-- PR_REVIEWER_LEDGER"\)/.test(
+        readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8")));
     s.check("G24i Step 0.7 does not fetch pulls/reviews for prior state",
       !/pulls\/\$PR_NUMBER\/reviews|pulls\/\{n\}\/reviews`/.test(step07Fetches));
 
@@ -3443,8 +3469,9 @@ const isPollBlock = (block) =>
 }
 
 // G30: the tier-tolerant Conventional-Comments prefix / severity-label regex is hand-mirrored
-// across three sites — the rule (conventional-comments.md PREFIX_RE), the agent's Step 4b
-// payload pre-flight (pr-reviewer.md), and the relevance script (record-comment-relevance.mjs).
+// across three sites — the rule (conventional-comments.md PREFIX_RE), the Step 4b payload
+// pre-flight (Phase 5: `payloadIsSafe()` in execute-write-plan.mjs, no longer the agent body
+// itself), and the relevance script (record-comment-relevance.mjs).
 // A drift (a tier renamed/reordered/removed in one) would let a tiered comment pass one gate and
 // abort another — exactly the hand-mirror the #136 review flagged. Assert the four-tier alternation
 // is spelled identically wherever that regex lives. (render-report.mjs uses the array form, so it
@@ -3453,7 +3480,7 @@ const isPollBlock = (block) =>
   const TIER = "critical|high|medium|low";
   for (const m of [
     "agents/shared/rules/conventional-comments.md",
-    "agents/pr-reviewer.md",
+    "agents/pr-reviewer/scripts/execute-write-plan.mjs",
     "scripts/record-comment-relevance.mjs",
   ]) {
     const body = readFileSync(join(REPO_ROOT, m), "utf8");
@@ -3958,7 +3985,7 @@ const isPollBlock = (block) =>
 
   // Shell state does not persist between the agent's tool calls, so resolve() is defined at
   // EVERY call site — § Locating this agent's own files / Step 0.1, Step 1.2 (CLASSIFY), and
-  // Step 4a (RENDER) — each with an edit-them-together note. This asserts the bodies have not
+  // Step 4a (FINALIZE) — each with an edit-them-together note. This asserts the bodies have not
   // drifted; the regression that shipped was defining it at only one.
   const RESOLVE_SITES = 3;
   const resolves = [...readRepo("agents/pr-reviewer.md")
@@ -4034,23 +4061,27 @@ const isPollBlock = (block) =>
 }
 
 // ── G36: weekly lesson-promotion sweep (2026-08-31) — three reviewer-lessons clusters ──
-// (a) Step 4b's review POST must use `--input`, never `--field`/`--raw-field`, for the
+// (a) The review.create POST must use `--input`, never `--field`/`--raw-field`, for the
 //     `comments` array (gh's raw-field flags always serialize a value as a JSON string, so a
 //     `comments` array 422s as "is not an array" — 5 independent lessons converged on this fix).
+//     Phase 5 moved the POST itself into execute-write-plan.mjs's `review.create` step (its own
+//     self-test mutation-tests the fix at runtime); this static lock re-anchors there rather than
+//     at the now-slimmed Step 4b prose, which keeps only a one-paragraph pointer to it.
 // (b) Step 1.2/3.5 must partition undiffable (binary) paths and route their findings to the
 //     gate table as ANCHORLESS-BY-CONSTRUCTION, never as an ordinary line-validity casualty.
 // (c) The dependency finder must name the cross-owner `gh api` 401 as scoping (not breakage) and pivot to a
 //     `webfetch` HTTP fallback for any pin/spec verification outside the PR's own repository.
 {
   const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+  const ewp = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8");
 
   // (a) --input POST regression lock.
-  s.check("G36a Step 4b posts the review with --input, not --field/--raw-field",
-    /--method POST \\\s*\n\s*--input \/tmp\/review-payload\.json/.test(prm));
-  s.check("G36a-neg Step 4b's review POST command no longer carries a --raw-field comments= flag",
-    !/^\s*--raw-field comments=/m.test(prm));
+  s.check("G36a execute-write-plan.mjs's review.create posts with --input, not --field/--raw-field",
+    /"--input",\s*reviewPayloadPath/.test(ewp));
+  s.check("G36a-neg execute-write-plan.mjs's review.create no longer carries a -f comments= flag",
+    !/"-f",\s*`comments=/.test(ewp));
   s.check("G36a the payload is built as one JSON document with commit_id, body, event, and comments",
-    /json\.dump\(\s*\n\s*\{"commit_id": head_sha, "body": body, "event": "COMMENT", "comments": json\.loads\(comments_json\)\}/.test(prm));
+    /commit_id: writePlan\.review_create\.commit_id,[\s\S]{0,80}body: writePlan\.review_create\.body[\s\S]{0,80}event: "COMMENT",[\s\S]{0,80}comments: writePlan\.review_create\.comments,/.test(ewp));
 
   // (b) ANCHORLESS-BY-CONSTRUCTION regression lock.
   s.check("G36b Step 1.2 computes /tmp/pr-undiffable-paths.json from patch == null entries",
@@ -4080,7 +4111,7 @@ const isPollBlock = (block) =>
 }
 
 // ── G37: the Fix-with-Agent0 scripts are never invoked by a bare relative path ──
-// build-agent0-link.mjs must be resolved from $AGENT_MD the same way RENDER/CLASSIFY/POINTER
+// build-agent0-link.mjs must be resolved from $AGENT_MD the same way FINALIZE/CLASSIFY/POINTER
 // already are — a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs` only happens to
 // resolve when the shell's cwd is this repo's own checkout, which silently breaks on a
 // cross-repo dispatch (observed live: mthines/lorekit#318 still linked to app.dash0.com hours
@@ -4099,10 +4130,14 @@ const isPollBlock = (block) =>
   // that re-derives `${AGENT_MD%/pr-reviewer.md}` inline is drift: it works, but it puts the
   // support-tree contract in N places, which is how the rule-file paths came to be bare
   // repo-relative in the first place.
-  s.check("G37b pr-reviewer.md derives BUILD_LINK from $AGENT_SUPPORT, same as RENDER",
+  // FINALIZE is the current call-site sibling of BUILD_LINK — Phase 5 retired the direct
+  // RENDER invocation (render-report.mjs now runs inside finalize.mjs), so the guard's own
+  // "same as ___" anchor moved with it; re-anchoring here is the guard tracking the code
+  // instead of restating a call site that no longer exists.
+  s.check("G37b pr-reviewer.md derives BUILD_LINK from $AGENT_SUPPORT, same as FINALIZE",
     /BUILD_LINK="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
       readRepo("agents/pr-reviewer.md"))
-    && /RENDER="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/render-report\.mjs"/.test(
+    && /FINALIZE="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/finalize\.mjs"/.test(
       readRepo("agents/pr-reviewer.md")));
 
   // G37c: every once-per-run destination argument must be named at BOTH button sites. This is the
@@ -4562,34 +4597,33 @@ const isPollBlock = (block) =>
       /`\$\{TIER_GLYPH\[t\]\} \$\{counts\[t\]\} \$\{t\}`/.test(spine));
 
     // (e2) The Step 4b pre-flight and the renderer must agree about what a well-formed body is.
-    // They are two implementations of one contract in two languages, and the pre-flight aborts the
-    // WHOLE post rather than dropping one comment — so a disagreement does not lose a finding, it
-    // loses the review. Caught exactly that while writing this: the <picture> button markup is
-    // ~430 chars and was being measured as prose, which rejected every rendered claim.
+    // They are two implementations of one contract, and the pre-flight aborts the WHOLE post
+    // rather than dropping one comment — so a disagreement does not lose a finding, it loses the
+    // review. Caught exactly that while writing this: the <picture> button markup is ~430 chars
+    // and was being measured as prose, which rejected every rendered claim.
     //
-    // Executed, not text-matched: extract `payload_is_safe` from the agent body and run the
-    // committed reference renderings through it.
+    // Executed, not text-matched. Phase 5 moved the pre-flight out of the agent body (it was
+    // `payload_is_safe`, a hand-mirrored Python re-implementation model-composed at review time)
+    // into `payloadIsSafe()`, a real, imported, self-tested JS function in
+    // execute-write-plan.mjs — so this now imports and calls the SAME function the write path
+    // runs, rather than extracting a fenced code block and shelling out to python3 to run a copy
+    // of it. A drift between this check and production is no longer possible by construction.
     {
-      const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-      const m = agentBody.match(/^def payload_is_safe\([\s\S]*?\n    return \(True, ""\)$/m);
-      s.check("G46i the Step 4b pre-flight is extractable from the agent body", !!m,
-        "payload_is_safe not found — the fence shape changed");
-      if (m) {
+      const ewpMod = await import(
+        pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs")).href);
+      s.check("G46i execute-write-plan.mjs exports payloadIsSafe",
+        typeof ewpMod.payloadIsSafe === "function",
+        "payloadIsSafe not found — the Phase 5 migration target moved or was renamed");
+      if (typeof ewpMod.payloadIsSafe === "function") {
         const comments = fixtures.map((name) => {
           const body = readFileSync(join(FIX, `${name}.expected.md`), "utf8");
           return { path: "a.ts", line: 1, side: "RIGHT", body };
         });
-        const prog = `${m[0]}\nimport json,sys\n`
-          + `ok, why = payload_is_safe({"event":"COMMENT","body":"<!-- PR_REVIEWER_POINTER -->",`
-          + `"comments": json.loads(sys.argv[1])})\nprint(json.dumps([ok, why]))\n`;
-        const r = spawnSync("python3", ["-c", prog, JSON.stringify(comments)], { encoding: "utf8" });
-        s.check("G46i the pre-flight runs", r.status === 0, (r.stderr || "").slice(0, 300));
-        if (r.status === 0) {
-          let verdict = [null, ""];
-          try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
-          s.check("G46i the pre-flight accepts every rendered reference body", verdict[0] === true,
-            `rejected: ${verdict[1]}`);
-        }
+        const verdict = ewpMod.payloadIsSafe({
+          event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->", comments,
+        });
+        s.check("G46i the pre-flight accepts every rendered reference body", verdict.ok === true,
+          `rejected: ${verdict.reason}`);
       }
     }
 
@@ -4709,40 +4743,21 @@ const isPollBlock = (block) =>
     // `UNVERIFIED_MAX` was added to the spine and this ceiling did not move, so a finding legal
     // under every per-field cap tripped a predicate that ABORTS THE WHOLE POST — one maximal
     // finding took the entire batch down. The guard renders the maximal legal payload for each
-    // shape and applies the pre-flight's own documented strips, so the next cap added to the spine
-    // fails a check here instead of a review in production.
-    const ceilingM = agentBody.match(/if len\(_prose\) > (\d+):/);
+    // shape and runs it through the REAL `payloadIsSafe()` (execute-write-plan.mjs, Phase 5's
+    // migration target) — calling the function itself rather than re-deriving its ceilings and
+    // strips as a parallel copy, so the next cap added to the spine fails a check here instead of
+    // a review in production, and this guard cannot silently drift from what actually runs.
+    const ewpPath = join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs");
+    const ewpSrc = readFileSync(ewpPath, "utf8");
+    const { payloadIsSafe } = await import(pathToFileURL(ewpPath).href);
+    const ceilingM = ewpSrc.match(/if \(prose\.length > (\d+)\)/);
     s.check("G46l the post pre-flight states its prose ceiling as a number L1 can read",
-      !!ceilingM, "payload_is_safe must keep the `if len(_prose) > N:` form");
+      !!ceilingM, "payloadIsSafe must keep the `if (prose.length > N)` form");
     const ceiling = Number(ceilingM?.[1] ?? 0);
-    // Exactly the strips payload_is_safe performs, in its order.
-    const preflightProse = (body) => body
-      .replace(/```[a-zA-Z0-9_+-]*\n[\s\S]*?\n```/g, "")
-      .replace(/^Evidence:.*$/gm, "")
-      .replace(/^<sup>`pr-reviewer`.*$/gm, "")
-      .replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
-      .replace(/^_Pseudo-code — verify before applying\._$/gm, "")
-      .replace(/\s*\(unverified: [^)]*\)/g, "")
-      .replace(/<!--\s*fp:v\d+:[^\s>]+?\s*-->/g, "")
-      .trim();
-    // The SECOND ceiling in the same predicate, on the whole body rather than the prose. It had no
-    // coverage at all while the prose one did, which is how it came to describe the fix button as
-    // "~430 chars" long after the theme split doubled that element into two <source> plus an <img>.
-    // Measured: a legal `issue:` at every cap with a 10-line fence and a 408-char link renders 2208
-    // chars, 933 of it button — over a 2000 ceiling that ABORTS THE WHOLE POST. Both ceilings are
-    // read out of the source and both are measured here, so neither can drift alone again.
-    const bodyCeilingM = agentBody.match(/if len\(_body\) > (\d+):/);
+    const bodyCeilingM = ewpSrc.match(/if \(body2000\.length > (\d+)\)/);
     s.check("G46l the post pre-flight states its whole-body ceiling as a number L1 can read",
-      !!bodyCeilingM, "payload_is_safe must keep the `if len(_body) > N:` form");
+      !!bodyCeilingM, "payloadIsSafe must keep the `if (body2000.length > N)` form");
     const bodyCeiling = Number(bodyCeilingM?.[1] ?? 0);
-    // The one strip the body measurement performs: the button, whose length is the deep link's.
-    // Applied HERE only if the source actually applies it — a hand-copied strip would make this
-    // measurement pass on a predicate that no longer strips anything, which is a guard measuring
-    // its own copy of the rule. Conditioning on the source makes the measurement the real gate.
-    const bodyStripsButton = /_body = _re\.sub\(\s*r'\^<a href="https:\/\/app\\\.dash0/.test(agentBody);
-    const preflightBody = (body) => bodyStripsButton
-      ? body.replace(/^<a href="https:\/\/app\.dash0(?:-dev)?\.com\/.*$/gm, "")
-      : body;
     // A real link through the real builder, at a realistic prompt length — the encoding and the
     // `<picture>` markup around it are what this measures, so neither may be approximated here.
     const { buildLink } = await import(
@@ -4770,21 +4785,23 @@ const isPollBlock = (block) =>
       const r = run([], JSON.stringify(payload));
       s.check(`G46l ${label} renders`, r.ok, (r.err || "").slice(0, 140));
       if (!r.ok) continue;
-      const n = preflightProse(r.out).length;
-      s.check(`G46l ${label} fits the ${ceiling}-char prose pre-flight (${n})`, n <= ceiling,
-        `${n} > ${ceiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
-      const b = preflightBody(r.out).length;
-      s.check(`G46l ${label} fits the ${bodyCeiling}-char body pre-flight (${b})`, b <= bodyCeiling,
-        `${b} > ${bodyCeiling} — payload_is_safe aborts the WHOLE post, so this drops every finding`);
+      const verdict = payloadIsSafe({
+        event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->",
+        comments: [{ path: "a.ts", line: 1, side: "RIGHT", body: r.out }],
+      });
+      s.check(`G46l ${label} passes payloadIsSafe (prose <= ${ceiling}, body <= ${bodyCeiling})`,
+        verdict.ok === true,
+        `rejected: ${verdict.reason} — payloadIsSafe aborts the WHOLE post, so this drops every finding`);
     }
     s.check("G46l the pre-flight strips the unverified tag it does not bound",
-      /_prose = _re\.sub\(r"\\s\*\\\(unverified: \[\^\)\]\*\\\)"/.test(agentBody),
+      /prose = prose\.replace\(\/\\s\*\\\(unverified: \[\^\)\]\*\\\)\/g, ""\)/.test(ewpSrc),
       "the tag is a rendered decoration like the fence and the button — strip it, do not re-bound it");
     // The body measurement is only survivable because the button is stripped from it too: the
     // element is ~525 chars of boilerplate plus a URL `build-agent0-link.mjs` bounds at 4000, so a
     // maximal button alone can exceed any ceiling this predicate could name.
+    const bodyStripsButton = /const body2000 = cBody\.replace\(\/\^<a href="https:\\\/\\\/app\\\.dash0/.test(ewpSrc);
     s.check("G46l the whole-body ceiling excludes the fix button",
-      bodyStripsButton && /fix button excluded/.test(agentBody),
+      bodyStripsButton && /fix button excluded/.test(ewpSrc),
       "measure the body without the button, exactly as the prose measurement does");
 
     // (m) The finding title is one string on two surfaces, so one cap governs both. The report
@@ -8390,6 +8407,628 @@ const isPollBlock = (block) =>
   s.check("G56i diagnostic-surface.md names silent lens degradation as a failure mode",
     existsSync(DS) && /lens.*degrad|degrad.*lens|F-lens/i.test(readFileSync(DS, "utf8")),
     "no F-lens-degraded-silently (or equivalent) row found");
+}
+
+// ── G60: pr-reviewer deterministic pipeline, Phase 0 (measurement + comparability) ──
+//
+// R1/D7: review-telemetry.mjs shares otlp.mjs's encoder rather than a second copy.
+// R2/R3: --dry-run and --isolated exist as real flags with a stated carve-out from
+// Step 4c's "unconditional" state write, and prepare-review.mjs enforces --pin-head
+// comparability. Every sub-check below executes the real script rather than grepping
+// prose for a promise, per this file's own self-test-execution pattern (G21k, G39).
+{
+  const REL_RT = "agents/pr-reviewer/scripts/review-telemetry.mjs";
+  const RT = join(REPO_ROOT, REL_RT);
+  s.check("G60a review-telemetry.mjs exists", existsSync(RT));
+  if (existsSync(RT)) {
+    const rt = readFileSync(RT, "utf8");
+    s.check("G60a review-telemetry.mjs is // @ts-check", /^\/\/ @ts-check/m.test(rt.split("\n").slice(0, 3).join("\n")));
+    s.check("G60a review-telemetry.mjs imports its encoder from otlp.mjs, not a second copy",
+      /from\s+"\.\/otlp\.mjs"/.test(rt));
+    const r = spawnSync(process.execPath, [RT, "--self-test"], { encoding: "utf8" });
+    s.check("G60a the review-telemetry self-test passes (timing block + the four telemetry rules)",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  const REL_PR = "agents/pr-reviewer/scripts/prepare-review.mjs";
+  const PR = join(REPO_ROOT, REL_PR);
+  if (existsSync(PR)) {
+    const pr = readFileSync(PR, "utf8");
+    s.check("G60b prepare-review.mjs accepts --pin-head, --isolated, and --full",
+      /--pin-head/.test(pr) && /--isolated/.test(pr) && /["']--full["']/.test(pr));
+    const r = spawnSync(process.execPath, [PR, "--self-test"], { encoding: "utf8" });
+    s.check("G60b the prepare-review self-test passes (incl. verifyPinnedHead and resolveRunMode cases)",
+      r.status === 0, (r.stderr || "").trim().split("\n").slice(-6).join(" | ") || r.stdout?.slice(0, 200));
+  }
+
+  const REL_PIPE = "agents/pr-reviewer/rules/pipeline.md";
+  s.check("G60c agents/pr-reviewer/rules/pipeline.md exists and defines both flags",
+    existsSync(join(REPO_ROOT, REL_PIPE))
+      && /--dry-run/.test(readFileSync(join(REPO_ROOT, REL_PIPE), "utf8"))
+      && /--isolated/.test(readFileSync(join(REPO_ROOT, REL_PIPE), "utf8")));
+
+  // Step 0/4 of the agent body carry the carve-out prose — grepped, not re-executed,
+  // since the agent body is prose the model reads rather than a script this file runs.
+  const PRW = join(REPO_ROOT, "agents/pr-reviewer.md");
+  if (existsSync(PRW)) {
+    const step0 = sliceBetween(readFileSync(PRW, "utf8"), "## Step 0: Read raw arguments", "## Step 0.5");
+    s.check("G60d Step 0's flag table documents --dry-run, --isolated, and --pin-head, pointing at rules/pipeline.md",
+      /--dry-run/.test(step0) && /--isolated/.test(step0) && /--pin-head/.test(step0) && /rules\/pipeline\.md/.test(step0));
+    const step4c = sliceBetween(readFileSync(PRW, "utf8"), "### 4c. Record the run state", "### 4d.");
+    s.check("G60d Step 4c states the --dry-run carve-out from its own \"unconditional\" state write",
+      /unconditional/.test(step4c) && /--dry-run/.test(step4c) && /exception/.test(step4c));
+  }
+
+  const REL_TS = "agents/pr-reviewer/scripts/tsconfig.json";
+  const TS = join(REPO_ROOT, REL_TS);
+  s.check("G60e agents/pr-reviewer/scripts/tsconfig.json exists with strict:true and checkJs:false",
+    existsSync(TS) && /"strict":\s*true/.test(readFileSync(TS, "utf8")) && /"checkJs":\s*false/.test(readFileSync(TS, "utf8")));
+  const l1yml = join(REPO_ROOT, ".github/workflows/evals-l1.yml");
+  s.check("G60e evals-l1.yml runs the pr-reviewer scripts tsconfig project in its own typecheck job",
+    existsSync(l1yml) && readFileSync(l1yml, "utf8").includes("agents/pr-reviewer/scripts/tsconfig.json"));
+}
+
+// ── G61: pr-reviewer deterministic pipeline, Phase 1 (delta triage + depth routing + Gate 4) ──
+//
+// R4/D10/D11: route-depth.mjs, delta-triage.mjs, and gate4-scan.mjs exist, are typed, and their
+// self-tests pass; prepare-review.mjs wires all three (plus the graphql threads fetch) into the
+// context; the shape-depth-routing L2 suite is gone; and depth-routing.md's D-IDs and refresh
+// thresholds equal route-depth.mjs's constants, so the rationale doc cannot drift from the
+// executable home without failing here (AC-7, AC-8, AC-25 in part).
+{
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const NEW_SCRIPTS = ["route-depth.mjs", "delta-triage.mjs", "gate4-scan.mjs"];
+
+  for (const name of NEW_SCRIPTS) {
+    const p = join(REPO_ROOT, SCRIPTS_DIR, name);
+    s.check(`G61a ${name} exists`, existsSync(p));
+    if (!existsSync(p)) continue;
+    const src = readFileSync(p, "utf8");
+    s.check(`G61a ${name} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [p, "--self-test"], { encoding: "utf8" });
+    s.check(`G61a ${name} --self-test passes`,
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  // D-ID and threshold cross-file equality — depth-routing.md's own D1-D13 table against
+  // route-depth.mjs's exported TRIGGERS/FULL_REFRESH_DELTA/FULL_REFRESH_RUNS. Executed via a
+  // real dynamic import, not a second regex over the script's source, so a rename that keeps
+  // the string "150" somewhere else in the file cannot fake this check green.
+  const DR = join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md");
+  const RD = join(REPO_ROOT, SCRIPTS_DIR, "route-depth.mjs");
+  if (existsSync(DR) && existsSync(RD)) {
+    const drText = readFileSync(DR, "utf8");
+    const dIds = [...new Set([...drText.matchAll(/\*\*D(\d+)\*\*/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+    s.check("G61b depth-routing.md documents exactly D1..D13 (contiguous, no gap, no extra)",
+      dIds.length === 13 && dIds.every((n, i) => n === i + 1), JSON.stringify(dIds));
+    s.check("G61b depth-routing.md states FULL_REFRESH_DELTA = 150 lines",
+      /FULL_REFRESH_DELTA.{0,20}150/.test(drText));
+    s.check("G61b depth-routing.md states FULL_REFRESH_RUNS = 3",
+      /FULL_REFRESH_RUNS.{0,20}3\b/.test(drText));
+
+    const mod = await import(pathToFileURL(RD).href);
+    s.check("G61b route-depth.mjs's TRIGGERS is exactly D1..D13, in order",
+      Array.isArray(mod.TRIGGERS) && mod.TRIGGERS.length === 13
+        && mod.TRIGGERS.every((t, i) => t === `D${i + 1}`),
+      JSON.stringify(mod.TRIGGERS));
+    s.check("G61b route-depth.mjs's FULL_REFRESH_DELTA/FULL_REFRESH_RUNS equal depth-routing.md's stated values",
+      mod.FULL_REFRESH_DELTA === 150 && mod.FULL_REFRESH_RUNS === 3);
+
+    // Cross-check the SAME two constants against delta-triage.mjs, which independently exports
+    // FULL_REFRESH_DELTA for its own churnState() — a single number restated in two files must
+    // never drift, since D10 requires delta-triage's cumulative-churn input to feed the exact
+    // threshold route-depth's D4 trigger tests against.
+    const DT = join(REPO_ROOT, SCRIPTS_DIR, "delta-triage.mjs");
+    if (existsSync(DT)) {
+      const dtMod = await import(pathToFileURL(DT).href);
+      s.check("G61b delta-triage.mjs's FULL_REFRESH_DELTA equals route-depth.mjs's (one threshold, two consumers, never two copies)",
+        dtMod.FULL_REFRESH_DELTA === mod.FULL_REFRESH_DELTA);
+    }
+  }
+
+  // prepare-review.mjs wiring (D10): imports the three new scripts, the graphql threads fetch,
+  // --state/--effort flags, and the routing/threads/gate4_precandidates context fields.
+  const PR = join(REPO_ROOT, SCRIPTS_DIR, "prepare-review.mjs");
+  if (existsSync(PR)) {
+    const pr = readFileSync(PR, "utf8");
+    s.check("G61c prepare-review.mjs imports classifyDivergence/blobDelta/deltaCounts/churnState from delta-triage.mjs",
+      /from\s+"\.\/delta-triage\.mjs"/.test(pr) && /classifyDivergence/.test(pr) && /blobDelta/.test(pr) && /churnState/.test(pr));
+    s.check("G61c prepare-review.mjs imports routeDepth from route-depth.mjs",
+      /from\s+"\.\/route-depth\.mjs"/.test(pr) && /routeDepth/.test(pr));
+    s.check("G61c prepare-review.mjs imports scanGate4 from gate4-scan.mjs",
+      /from\s+"\.\/gate4-scan\.mjs"/.test(pr) && /scanGate4/.test(pr));
+    s.check("G61c prepare-review.mjs runs a reviewThreads graphql fetch",
+      /reviewThreads/.test(pr) && /THREADS_QUERY/.test(pr));
+    s.check("G61c prepare-review.mjs accepts --state and --effort",
+      /["']--state["']/.test(pr) && /["']--effort["']/.test(pr));
+    s.check("G61c prepare-review.mjs's context carries routing, threads, and gate4_precandidates",
+      /\brouting,/.test(pr) && /\bthreads,/.test(pr) && /gate4_precandidates:/.test(pr));
+    const r = spawnSync(process.execPath, [PR, "--self-test"], { encoding: "utf8" });
+    s.check("G61c the prepare-review self-test passes (incl. buildThreads/hunksOf/computeThreadOverlap/readStateFile cases)",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  // tsconfig.json carries all three new scripts under strict typechecking.
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G61d tsconfig.json's files[] lists route-depth.mjs, delta-triage.mjs, and gate4-scan.mjs",
+      NEW_SCRIPTS.every((n) => tsText.includes(`"${n}"`)));
+  }
+
+  // The retired shape-depth-routing L2 suite is fully gone (D11, AC-7) — no SUITES entry, no
+  // golden file, no dangling reference from suites.mjs itself.
+  const SUITES_FILE = join(REPO_ROOT, "scripts/eval/suites.mjs");
+  const GOLDEN = join(REPO_ROOT, "scripts/eval/golden/shape-depth-routing.jsonl");
+  s.check("G61e golden/shape-depth-routing.jsonl no longer exists", !existsSync(GOLDEN));
+  if (existsSync(SUITES_FILE)) {
+    s.check("G61e suites.mjs carries no shape-depth-routing SUITES entry",
+      !/name:\s*"shape-depth-routing"/.test(readFileSync(SUITES_FILE, "utf8")));
+  }
+  s.check("G61e fixtures/route-depth/cases.json exists with all 22 hand-converted records",
+    (() => {
+      const p = join(REPO_ROOT, "scripts/eval/fixtures/route-depth/cases.json");
+      if (!existsSync(p)) return false;
+      try { return JSON.parse(readFileSync(p, "utf8")).length === 22; } catch { return false; }
+    })());
+
+  // Item 1.7: the diff-only capability cap (route-depth.mjs's capApplied, deep -> standard) must
+  // be RENDERABLE — TIER_FOR_MODE's mode=full-implies-tier=deep rule and the diff-only-cannot-
+  // carry-deep rule below it are jointly unsatisfiable for a capped run unless the first carries
+  // an explicit carve-out (Risk "diff-only cap unrenderable in full mode", R4/D10). Executed
+  // end-to-end against real render-report.mjs invocations, not grepped, because the defect this
+  // guards is exactly a case no fixture happened to cover.
+  const RR = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+  const DEEP_FIXTURE = join(REPO_ROOT, "scripts/eval/fixtures/report-body/deep.json");
+  if (existsSync(RR) && existsSync(DEEP_FIXTURE)) {
+    const base = JSON.parse(readFileSync(DEEP_FIXTURE, "utf8"));
+
+    const withAnomaly = { ...base, RUN: { ...base.RUN, tier: "standard", depth: "diff-only" },
+      RUN_ANOMALY: "workspace ladder exhausted — DEPTH_CAPABILITY=diff-only, tier capped at standard" };
+    const pCapped = join(tmpdir(), `g61f-capped-${process.pid}.json`);
+    writeFileSync(pCapped, JSON.stringify(withAnomaly));
+    const rCapped = spawnSync(process.execPath, [RR, pCapped], { encoding: "utf8" });
+    s.check("G61f a capped run (mode=full, tier=standard, depth=diff-only, RUN_ANOMALY set) renders",
+      rCapped.status === 0, (rCapped.stderr || "").trim().slice(0, 200));
+    rmSync(pCapped, { force: true });
+
+    const noAnomaly = { ...base, RUN: { ...base.RUN, tier: "standard", depth: "diff-only" } };
+    delete noAnomaly.RUN_ANOMALY;
+    const pNoAnomaly = join(tmpdir(), `g61f-no-anomaly-${process.pid}.json`);
+    writeFileSync(pNoAnomaly, JSON.stringify(noAnomaly));
+    const rNoAnomaly = spawnSync(process.execPath, [RR, pNoAnomaly], { encoding: "utf8" });
+    s.check("G61f the SAME capped run with no RUN_ANOMALY is rejected — a capped depth is never silent",
+      rNoAnomaly.status !== 0 && /RUN_ANOMALY naming the capability cap/.test(rNoAnomaly.stderr || ""));
+    rmSync(pNoAnomaly, { force: true });
+
+    const wrongTier = { ...base, RUN: { ...base.RUN, tier: "quick", depth: "diff-only" },
+      RUN_ANOMALY: "workspace ladder exhausted" };
+    const pWrongTier = join(tmpdir(), `g61f-wrong-tier-${process.pid}.json`);
+    writeFileSync(pWrongTier, JSON.stringify(wrongTier));
+    const rWrongTier = spawnSync(process.execPath, [RR, pWrongTier], { encoding: "utf8" });
+    s.check("G61f the carve-out stays narrow — mode=full + tier=quick is still rejected, never widened by the cap",
+      rWrongTier.status !== 0 && /contradicts RUN\.mode/.test(rWrongTier.stderr || ""));
+    rmSync(pWrongTier, { force: true });
+  }
+}
+
+// ── G62: pr-reviewer deterministic pipeline, Phase 2 (judgments contract) ──
+//
+// R5/D4/AC-9: judgments.schema.json is the single SSOT, validate-judgments.mjs interprets only
+// the documented fixed keyword subset and fails closed on anything else, the fixture set proves
+// the three AC-9-named rejection cases plus the domain rules the fixed subset cannot express, and
+// the schema's finder/defect_class enums equal fingerprint.mjs's live FINDERS/DEFECT_CLASSES —
+// checked here via a real dynamic import of BOTH files, not by trusting the self-test alone.
+{
+  const SCHEMAS_DIR = "agents/pr-reviewer/schemas";
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const SCHEMA_PATH = join(REPO_ROOT, SCHEMAS_DIR, "judgments.schema.json");
+  const VALIDATOR_PATH = join(REPO_ROOT, SCRIPTS_DIR, "validate-judgments.mjs");
+  const FIXTURES_DIR = join(REPO_ROOT, "scripts/eval/fixtures/judgments");
+
+  s.check("G62a judgments.schema.json exists and is valid JSON", (() => {
+    if (!existsSync(SCHEMA_PATH)) return false;
+    try { JSON.parse(readFileSync(SCHEMA_PATH, "utf8")); return true; } catch { return false; }
+  })());
+
+  s.check("G62a validate-judgments.mjs exists", existsSync(VALIDATOR_PATH));
+  if (existsSync(VALIDATOR_PATH)) {
+    const src = readFileSync(VALIDATOR_PATH, "utf8");
+    s.check("G62a validate-judgments.mjs is // @ts-check", /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [VALIDATOR_PATH, "--self-test"], { encoding: "utf8" });
+    s.check("G62a validate-judgments.mjs --self-test passes",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
+  }
+
+  if (existsSync(SCHEMA_PATH) && existsSync(VALIDATOR_PATH)) {
+    const mod = await import(pathToFileURL(VALIDATOR_PATH).href);
+    const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
+
+    // AC-9 case 1: an unsupported schema keyword is rejected — probed directly against the
+    // interpreter's own keyword-checking function, not just against the (currently clean) real
+    // schema, so this guard bites even if judgments.schema.json itself never regresses.
+    const badKeyword = { type: "object", minProperties: 1, properties: { a: { type: "string" } } };
+    const kwErrors = mod.checkSchemaKeywords(badKeyword);
+    s.check("G62b an unsupported schema keyword (minProperties) is rejected",
+      kwErrors.length > 0 && kwErrors.some((e) => e.includes("minProperties")));
+
+    // The real, committed schema uses ONLY the supported subset.
+    const realKwErrors = mod.checkSchemaKeywords(schema);
+    s.check("G62b judgments.schema.json itself uses only the supported keyword subset",
+      realKwErrors.length === 0, realKwErrors.join(" | "));
+
+    // Cross-file enum equality — schema vs. fingerprint.mjs, by real dynamic import of both
+    // rather than a duplicated literal, so a FINDERS/DEFECT_CLASSES rename cannot drift silently.
+    const FP = join(REPO_ROOT, SCRIPTS_DIR, "fingerprint.mjs");
+    if (existsSync(FP)) {
+      const fp = await import(pathToFileURL(FP).href);
+      const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+      s.check("G62c schema $defs.finder.enum equals fingerprint.mjs FINDERS",
+        sortedEq(schema.$defs?.finder?.enum ?? [], fp.FINDERS));
+      s.check("G62c schema $defs.defect_class.enum equals fingerprint.mjs DEFECT_CLASSES",
+        sortedEq(schema.$defs?.defect_class?.enum ?? [], fp.DEFECT_CLASSES));
+    }
+
+    // AC-9 case 2 + 3, and the domain rules the fixed keyword subset cannot express — read
+    // straight off the committed fixtures rather than re-deriving payloads, so a fixture that
+    // regresses to no-longer-actually-invalid is caught here too.
+    const loadFixture = (name) => JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8"));
+
+    s.check("G62d fixtures/judgments/valid.json exists and validates with zero errors", (() => {
+      const p = join(FIXTURES_DIR, "valid.json");
+      if (!existsSync(p)) return false;
+      const errs = mod.validateJudgments(schema, loadFixture("valid.json"));
+      return errs.length === 0;
+    })());
+
+    const invalidCases = [
+      ["invalid-unknown-top-level-key.json", "unknown property"],
+      ["invalid-secret-exempt.json", "secret"],
+      ["invalid-title-mismatch.json", "title"],
+      ["invalid-unverified-reason.json", "unverified_reason"],
+      ["invalid-thread-reply.json", "reply"],
+    ];
+    for (const [name, needle] of invalidCases) {
+      const p = join(FIXTURES_DIR, name);
+      s.check(`G62d fixtures/judgments/${name} exists and is rejected (mentions "${needle}")`, (() => {
+        if (!existsSync(p)) return false;
+        const errs = mod.validateJudgments(schema, loadFixture(name));
+        return errs.length > 0 && errs.some((e) => e.includes(needle));
+      })());
+    }
+  }
+
+  // tsconfig.json carries the new validator under strict typechecking.
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    s.check("G62e tsconfig.json's files[] lists validate-judgments.mjs",
+      readFileSync(TS, "utf8").includes('"validate-judgments.mjs"'));
+  }
+}
+
+// ── G63: pr-reviewer deterministic pipeline, Phase 3 (finalize) ──
+//
+// R6/D5/D18/AC-10/AC-12/AC-19: finalize.mjs and its finalize/*.mjs pure-core library exist, are
+// typed, and self-test; the findings-bus writer's field set is re-derived against
+// findings-bus.md's own worked example (not just trusted from the self-test); the AC-12
+// byte-unchanged file set really is unchanged versus origin/main, reproduced here as a standing
+// guard so a later phase cannot silently touch it; and Gate 2 (CI) structurally has no input to
+// the orchestration at all, matching agents/pr-reviewer.md's "informational-in-Run" invariant.
+{
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const FINALIZE_SCRIPTS = [
+    "finalize.mjs",
+    "finalize/dedupe.mjs", "finalize/thresholds.mjs", "finalize/suppression.mjs",
+    "finalize/placement.mjs", "finalize/line-validity.mjs", "finalize/gates.mjs",
+    "finalize/payload.mjs", "finalize/findings-bus.mjs", "finalize/write-plan.mjs",
+  ];
+
+  for (const name of FINALIZE_SCRIPTS) {
+    const p = join(REPO_ROOT, SCRIPTS_DIR, name);
+    s.check(`G63a ${name} exists`, existsSync(p));
+    if (!existsSync(p)) continue;
+    const src = readFileSync(p, "utf8");
+    s.check(`G63a ${name} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [p, "--self-test"], { encoding: "utf8" });
+    s.check(`G63a ${name} --self-test passes`,
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+  }
+
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G63b tsconfig.json's files[] lists finalize.mjs and all 9 finalize/*.mjs modules",
+      FINALIZE_SCRIPTS.every((n) => tsText.includes(`"${n}"`)));
+  }
+
+  // AC-19: the findings-bus record's field set, re-derived against findings-bus.md's own worked
+  // example JSON — a second witness independent of findings-bus.mjs's own self-test.
+  const FB_RULE = join(REPO_ROOT, "skills/quality/review-branch/rules/findings-bus.md");
+  const FB_MOD = join(REPO_ROOT, SCRIPTS_DIR, "finalize/findings-bus.mjs");
+  if (existsSync(FB_RULE) && existsSync(FB_MOD)) {
+    const ruleText = readFileSync(FB_RULE, "utf8");
+    const jsonMatch = /```json\n(\{[\s\S]*?\n\})\n```/.exec(ruleText);
+    if (jsonMatch) {
+      const worked = JSON.parse(jsonMatch[1]);
+      const mod = await import(pathToFileURL(FB_MOD).href);
+      const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+      s.check("G63c findings-bus.mjs's FINDINGS_BUS_FIELDS equals findings-bus.md's own worked-example key set",
+        sortedEq(mod.FINDINGS_BUS_FIELDS, Object.keys(worked)),
+        `mjs=${JSON.stringify([...mod.FINDINGS_BUS_FIELDS].sort())} md=${JSON.stringify(Object.keys(worked).sort())}`);
+    } else {
+      s.check("G63c findings-bus.md carries a parseable worked-example JSON block", false);
+    }
+  }
+
+  // AC-12: the byte-unchanged file set really is unchanged versus origin/main — reproduces
+  // checks.yaml's own AC-12 command as a standing L1 guard, so Phase 5's prose-slimming (which
+  // touches many agents/pr-reviewer/rules/*.md files) cannot silently drift one of these too.
+  {
+    const AC12_PATHS = [
+      "agents/pr-reviewer/scripts/fingerprint.mjs",
+      "agents/pr-reviewer/scripts/comment-spine.mjs",
+      "agents/pr-reviewer/templates",
+      "scripts/eval/fixtures/report-body",
+      "scripts/eval/fixtures/inline-comment",
+      "scripts/eval/fixtures/report-pointer",
+      "scripts/eval/fixtures/posted-bodies",
+      "agents/shared/rules/reviewer-report-ingest.md",
+    ];
+    const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ...AC12_PATHS], { cwd: REPO_ROOT, encoding: "utf8" });
+    s.check("G63d AC-12's byte-unchanged file set (fingerprint/comment-spine/templates/report fixtures/reviewer-report-ingest.md) is unchanged vs. origin/main",
+      r.status === 0, r.status === null ? "git not found" : `git diff exit ${r.status}`);
+  }
+
+  // Gate 2 (CI) structurally never participates: finalizeReview's own signature carries no ci
+  // parameter, so a red/pending CI status has no path into the verdict at all — not merely a
+  // behavioral property the self-test happens to exercise.
+  const FIN = join(REPO_ROOT, SCRIPTS_DIR, "finalize.mjs");
+  if (existsSync(FIN)) {
+    const finSrc = readFileSync(FIN, "utf8");
+    const sigMatch = /export function finalizeReview\(\{([^}]*)\}/.exec(finSrc);
+    s.check("G63e finalizeReview()'s own parameter list carries no ci/CI field",
+      Boolean(sigMatch) && !/\bci\b/i.test(sigMatch[1]), sigMatch ? sigMatch[1] : "signature not found");
+  }
+}
+
+// ── G64: pr-reviewer deterministic pipeline, Phase 4 (execute-write-plan) ──
+//
+// R2/R7/D9/AC-3/AC-14: execute-write-plan.mjs exists, is typed and self-tests (including the
+// four named AC-3 cases); rules/pipeline.md's write-plan op -> MCP tool map names every op and
+// both tool families; AC-14's "no which/auth-status" static scan is reproduced here as a
+// standing guard, independent of checks.yaml's own copy of the same command, so a later phase
+// cannot silently reintroduce either forbidden invocation.
+{
+  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
+  const EWP = join(REPO_ROOT, SCRIPTS_DIR, "execute-write-plan.mjs");
+
+  s.check("G64a execute-write-plan.mjs exists", existsSync(EWP));
+  if (existsSync(EWP)) {
+    const src = readFileSync(EWP, "utf8");
+    s.check("G64a execute-write-plan.mjs is // @ts-check", /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [EWP, "--self-test"], { encoding: "utf8" });
+    s.check("G64a execute-write-plan.mjs --self-test passes",
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+
+    // AC-14's exact static scan, reproduced as a standing guard independent of checks.yaml's own
+    // copy — a same-file self-test check cannot assert this (its own check labels would have to
+    // name the forbidden phrases in prose and would then trip on themselves), so this is the
+    // guard that actually holds the invariant, read from the OUTSIDE.
+    s.check("G64c execute-write-plan.mjs contains no literal `which gh` or `gh auth status`",
+      !/which gh|gh auth status/.test(src));
+  }
+
+  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G64b tsconfig.json's files[] lists execute-write-plan.mjs", tsText.includes('"execute-write-plan.mjs"'));
+  }
+
+  // AC-14: rules/pipeline.md maps every write-plan op to an MCP tool (or an explicitly named
+  // gap), and names both tool families.
+  const PIPELINE = join(REPO_ROOT, "agents/pr-reviewer/rules/pipeline.md");
+  if (existsSync(PIPELINE)) {
+    const pText = readFileSync(PIPELINE, "utf8");
+    const OPS = ["sticky.upsert", "review.create", "thread.reply", "thread.resolve", "lorekit.write"];
+    s.check("G64d pipeline.md's op map names every write-plan op", OPS.every((op) => pText.includes(op)),
+      OPS.filter((op) => !pText.includes(op)).join(", "));
+    s.check("G64d pipeline.md's op map names an mcp__github__ tool", pText.includes("mcp__github__"));
+    s.check("G64d pipeline.md's op map names mcp__lorekit__memory_write for lorekit.write", pText.includes("mcp__lorekit__memory_write"));
+  }
+}
+
+// ── G65: pr-reviewer deterministic pipeline, Phase 0b (A/B benchmark harness) ──
+//
+// R11/AC-13/AC-20-23: thread-outcomes.mjs and ab-review.mjs exist, are typed, self-test, and are
+// wired into agents/pr-reviewer/scripts/tsconfig.json; both are read-only per AC-23 (no write
+// verb anywhere in their own source, reproduced here as a standing guard independent of each
+// script's own --self-test, for the same reason G64c holds AC-14's scan from the outside); the
+// reused record-comment-relevance.mjs additions (isMain guard, the three new exports) hold and
+// its own self-test still passes; and the benchmark manifest matches AC-22's allowlist shape.
+{
+  const EVAL_DIR = "scripts/eval";
+  const TO = join(REPO_ROOT, EVAL_DIR, "thread-outcomes.mjs");
+  const AB = join(REPO_ROOT, EVAL_DIR, "ab-review.mjs");
+  const RCR = join(REPO_ROOT, "scripts/record-comment-relevance.mjs");
+  const WRITE_VERB_RE = /-X\s+(?:POST|PATCH|PUT|DELETE)|--method[\s=]+(?:POST|PATCH|PUT|DELETE)|\bmutation\s*[({]/i;
+
+  for (const [id, path, label] of [
+    ["G65a", TO, "thread-outcomes.mjs"],
+    ["G65b", AB, "ab-review.mjs"],
+  ]) {
+    s.check(`${id} ${label} exists`, existsSync(path));
+    if (!existsSync(path)) continue;
+    const src = readFileSync(path, "utf8");
+    s.check(`${id} ${label} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
+    const r = spawnSync(process.execPath, [path, "--self-test"], { encoding: "utf8" });
+    s.check(`${id} ${label} --self-test passes`,
+      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+    s.check(`${id} ${label} contains no GitHub write verb (AC-23: no -X POST/PATCH/PUT/DELETE, no --method, no graphql mutation)`,
+      !WRITE_VERB_RE.test(src));
+  }
+
+  s.check("G65c record-comment-relevance.mjs exists", existsSync(RCR));
+  if (existsSync(RCR)) {
+    const rcrSrc = readFileSync(RCR, "utf8");
+    s.check("G65c record-comment-relevance.mjs has an isMain guard around its CLI entry point",
+      /const isMain\s*=\s*process\.argv\[1\]\s*&&\s*import\.meta\.url\s*===\s*pathToFileURL\(process\.argv\[1\]\)\.href/.test(rcrSrc));
+    s.check("G65c record-comment-relevance.mjs exports ghApi, fetchReviewThreads, and hasFixCommit",
+      ["ghApi", "fetchReviewThreads", "hasFixCommit"].every((fn) => new RegExp(`export function ${fn}\\(`).test(rcrSrc)));
+    s.check("G65c record-comment-relevance.mjs's ghGraphql uses execFileSync (argv array), not execSync with string interpolation",
+      /execFileSync\(\s*["']gh["']/.test(rcrSrc));
+    const r = spawnSync(process.execPath, [RCR, "--self-test"], { encoding: "utf8" });
+    s.check("G65c record-comment-relevance.mjs --self-test still passes (37 cases)",
+      r.status === 0 && /37 cases/.test((r.stdout || "") + (r.stderr || "")),
+      ((r.stdout || "") + (r.stderr || "")).trim().split("\n").slice(-4).join(" | "));
+  }
+
+  const TS = join(REPO_ROOT, "agents/pr-reviewer/scripts/tsconfig.json");
+  if (existsSync(TS)) {
+    const tsText = readFileSync(TS, "utf8");
+    s.check("G65d tsconfig.json's files[] lists thread-outcomes.mjs, ab-review.mjs, and record-comment-relevance.mjs",
+      ["thread-outcomes.mjs", "ab-review.mjs", "record-comment-relevance.mjs"].every((f) => tsText.includes(f)));
+  }
+
+  // AC-22: manifest allowlist, reproduced as a standing guard independent of checks.yaml's own
+  // copy of the same check (same rationale as G64c/G65a-b: the check definition is
+  // executor-immutable, but a standing L1 guard catches drift the moment the file changes,
+  // without waiting for a Phase-4 checks.yaml run).
+  const MANIFEST = join(REPO_ROOT, EVAL_DIR, "benchmarks/reviewer-ab.manifest.json");
+  s.check("G65e reviewer-ab.manifest.json exists", existsSync(MANIFEST));
+  if (existsSync(MANIFEST)) {
+    /** @type {any} */
+    const m = JSON.parse(readFileSync(MANIFEST, "utf8"));
+    const entries = Array.isArray(m) ? m : m.entries;
+    const ALLOW = new Set(["repo", "number", "head_sha", "base_sha", "class", "status"]);
+    s.check("G65e manifest has 8-12 entries", Array.isArray(entries) && entries.length >= 8 && entries.length <= 12,
+      String(entries?.length));
+    s.check("G65e manifest covers >=5 of the 6 shape classes",
+      new Set(entries.map((/** @type {any} */ e) => e.class)).size >= 5);
+    s.check("G65e every manifest entry has only the allowed keys (no titles, excerpts, or paths)",
+      entries.every((/** @type {any} */ e) => Object.keys(e).every((k) => ALLOW.has(k))));
+    s.check("G65e every head_sha/base_sha is a full 40-char lowercase hex SHA",
+      entries.every((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.head_sha) && /^[0-9a-f]{40}$/.test(e.base_sha)));
+  }
+}
+
+// ── G66: pr-reviewer deterministic pipeline, Phase 6 (--fanout) ──
+//
+// D17/AC-17/R9: skills/quality/pr-review/SKILL.md's --fanout orchestration is opt-in and
+// documents the contract that keeps it safe to dispatch — default OFF, a quick-tier route that
+// skips the fan-out, a capability test for sub-agent dispatch that never checks the literal tool
+// name `Task`, a stated concurrency cap, and a fallback (not a silent skip) when no dispatch tool
+// is available. Reproduced here as a standing guard, independent of checks.yaml's own AC-17
+// command, for the same reason G64c/G65a-b/G65e are: the check definition is
+// executor-immutable, but a standing L1 guard catches drift the moment the file changes, without
+// waiting for a Phase-4 checks.yaml run.
+{
+  const SKILL_PATH = join(REPO_ROOT, "skills/quality/pr-review/SKILL.md");
+  s.check("G66a skills/quality/pr-review/SKILL.md exists", existsSync(SKILL_PATH));
+  if (existsSync(SKILL_PATH)) {
+    const text = readFileSync(SKILL_PATH, "utf8");
+    const fanoutSection = (() => {
+      const start = text.indexOf("## `--fanout`");
+      if (start === -1) return "";
+      const rest = text.slice(start);
+      const next = rest.indexOf("\n## ", 1);
+      return next === -1 ? rest : rest.slice(0, next);
+    })();
+
+    s.check("G66a a `## `--fanout`` section exists", fanoutSection.length > 0);
+    s.check("G66a --fanout is named in the frontmatter argument-hint",
+      /argument-hint:.*--fanout/.test(text));
+
+    // Default OFF: stated explicitly, not merely inferable from the flag's absence elsewhere.
+    s.check("G66b --fanout is documented as default OFF / opt-in",
+      /\*\*Default OFF\*\*/.test(fanoutSection) || /default\s+off/i.test(fanoutSection));
+
+    // Quick-tier skip: keyed on the SAME field route-depth.mjs/prepare-review.mjs actually
+    // produce (context.routing.tier), not a re-described concept with no wire to the real field.
+    s.check("G66c the quick-tier skip reads context.routing.tier and names the `quick` tier",
+      /context\.routing\.tier/.test(fanoutSection) && /`quick`/.test(fanoutSection)
+      && /skip/i.test(fanoutSection));
+
+    // Capability test, never a literal `Task` name check — the exact F6 anti-pattern this repo
+    // already removed from `aw`'s own dispatch-availability check (autonomous-workflow CLAUDE.md
+    // v3.25). Assert the disclaiming sentence survives, not just that "Task" appears somewhere.
+    s.check("G66d the capability test explicitly rejects a literal-name (`Task`-only) check",
+      /never\*\*\s*by checking for the literal tool name\s*`Task`/i.test(fanoutSection));
+    s.check("G66d both harness spellings (`Task` and `Agent`) are named",
+      /\bTask\b/.test(fanoutSection) && /\bAgent\b/.test(fanoutSection));
+
+    // Concurrency cap: the named constant AND its stated default, not just the bare word
+    // "concurrency".
+    s.check("G66e PR_REVIEW_MAX_PARALLEL is named with its default of 6",
+      /PR_REVIEW_MAX_PARALLEL/.test(fanoutSection) && /default\s*6\b/i.test(fanoutSection));
+
+    // Fallback, not a skip: the no-dispatch-capability branch must say it FALLS BACK to the
+    // single dispatch and runs it, never that it skips — the same distinction that keeps a
+    // caller from mistaking "ran the cheaper path" for "did not review at all".
+    s.check("G66f the no-dispatch-capability branch is a documented fallback, not a skip",
+      /fallback, not a skip/i.test(fanoutSection));
+    s.check("G66f the fallback states the exact terminal-report sentence a caller reads",
+      /--fanout` requested but no sub-agent dispatch tool is available — ran the single-dispatch `pr-reviewer` review instead/.test(fanoutSection));
+
+    // The default-flip gate from D1 — the numeric bar itself, not just a promise that one
+    // exists, so a later edit cannot silently soften it.
+    s.check("G66g the D1 default-flip gate states recall >= arm A and precision >= arm A - 0.05 at N>=3 over >=8 PRs",
+      /recall/i.test(fanoutSection) && /0\.05/.test(fanoutSection)
+      && /N\s*(≥|>=)\s*3/.test(fanoutSection) && /8/.test(fanoutSection));
+
+    // The six finder names AC-17 requires, reproduced as a standing guard (same rationale as
+    // G65e's manifest-allowlist reproduction). Pinned to the literal one-line finder list, not a
+    // loose "does this word appear anywhere" scan — several of these six are common enough
+    // English words ("quality", "intent", "standards") to appear elsewhere in the section's own
+    // prose even after the actual finder list is edited, which would leave this check unable to
+    // fail on exactly the regression it exists to catch.
+    s.check("G66h finders.md's own six-finder list is named verbatim, in table order",
+      fanoutSection.includes("correctness · consumer-impact · dependency · intent · standards · quality"));
+  }
+
+  // Second witness (independent of finalize.mjs's own --self-test) that the CLI subcommand the
+  // --fanout orchestration's Step d invokes really exists — same pattern as G63c re-deriving
+  // findings-bus.mjs's field set from findings-bus.md rather than trusting the self-test alone.
+  const FINALIZE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
+  if (existsSync(FINALIZE_PATH)) {
+    const finSrc = readFileSync(FINALIZE_PATH, "utf8");
+    s.check("G66i finalize.mjs exports dedupeCandidates", /export function dedupeCandidates\(/.test(finSrc));
+    s.check("G66i finalize.mjs's CLI wires up --dedupe-candidates", /opts\["dedupe-candidates"\]/.test(finSrc));
+    s.check("G66i finalize.mjs's usage string documents --dedupe-candidates", /--dedupe-candidates/.test(finSrc.match(/function usage\(\)[\s\S]*?\n\}/)?.[0] || ""));
+  }
+
+  // AC-18, reproduced as a standing guard for the same reason G63d reproduces AC-12: a later
+  // phase editing one of these four caller skills would otherwise only be caught by a
+  // Phase-6-specific checks.yaml run, not by every L1 pass in between.
+  {
+    const AC18_PATHS = [
+      "skills/quality/review-loop", "skills/delivery/create-pr",
+      "skills/quality/polish", "skills/quality/review-changes",
+    ];
+    const r = spawnSync("git", ["diff", "--quiet", "origin/main", "--", ...AC18_PATHS], { cwd: REPO_ROOT, encoding: "utf8" });
+    s.check("G66j AC-18's caller skills (review-loop/create-pr/polish/review-changes) are byte-unchanged vs. origin/main",
+      r.status === 0, r.status === null ? "git not found" : `git diff exit ${r.status}`);
+  }
+
+  // The offline proof of the --fanout glue chain (D17): a raw finder-candidate fixture through
+  // finalize.mjs --dedupe-candidates, a mocked verifier pass, an assembled judgments.json,
+  // validate-judgments.mjs, and finalize.mjs itself — self-tested exactly like every other new
+  // script in this pipeline, so it cannot silently rot unexecuted between the day it was added
+  // and the day someone next reads it.
+  {
+    const GLUE = join(REPO_ROOT, "scripts/eval/fanout-glue.mjs");
+    s.check("G66k scripts/eval/fanout-glue.mjs exists", existsSync(GLUE));
+    if (existsSync(GLUE)) {
+      s.check("G66k fanout-glue.mjs is // @ts-check", /^\/\/ @ts-check/m.test(readFileSync(GLUE, "utf8").split("\n").slice(0, 3).join("\n")));
+      const r = spawnSync(process.execPath, [GLUE, "--self-test"], { encoding: "utf8" });
+      s.check("G66k fanout-glue.mjs --self-test passes (dedupe -> mock-verify -> validate -> finalize, both writers)",
+        r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
+    }
+    const TS = join(REPO_ROOT, "agents/pr-reviewer/scripts/tsconfig.json");
+    if (existsSync(TS)) {
+      s.check("G66k tsconfig.json's files[] lists fanout-glue.mjs",
+        readFileSync(TS, "utf8").includes("fanout-glue.mjs"));
+    }
+  }
 }
 
 process.exit(s.report() ? 0 : 1);

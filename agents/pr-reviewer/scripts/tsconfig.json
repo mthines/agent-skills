@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "allowJs": true,
+    "checkJs": false,
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node"]
+  },
+  "files": [
+    "otlp.mjs",
+    "review-telemetry.mjs",
+    "route-depth.mjs",
+    "delta-triage.mjs",
+    "gate4-scan.mjs",
+    "validate-judgments.mjs",
+    "finalize.mjs",
+    "finalize/dedupe.mjs",
+    "finalize/thresholds.mjs",
+    "finalize/suppression.mjs",
+    "finalize/placement.mjs",
+    "finalize/line-validity.mjs",
+    "finalize/gates.mjs",
+    "finalize/payload.mjs",
+    "finalize/findings-bus.mjs",
+    "finalize/write-plan.mjs",
+    "execute-write-plan.mjs",
+    "../../../scripts/eval/thread-outcomes.mjs",
+    "../../../scripts/eval/ab-review.mjs",
+    "../../../scripts/eval/fanout-glue.mjs",
+    "../../../scripts/record-comment-relevance.mjs"
+  ]
+}

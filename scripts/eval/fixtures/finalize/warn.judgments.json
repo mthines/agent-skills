@@ -1,0 +1,203 @@
+{
+  "summary": "Reworks the retry path so `retryRequest` throws instead of returning `null`.",
+  "candidates": [
+    {
+      "finder": "correctness",
+      "defect_class": "nil-deref",
+      "path": "src/api/client.ts",
+      "line": 214,
+      "symbol": "retryRequest",
+      "claim": "c1",
+      "bad_outcome": "b1",
+      "evidence": [
+        "e"
+      ],
+      "verify_by": "v",
+      "verdict": "confirmed",
+      "R": 90,
+      "A": 90,
+      "Ac": 90,
+      "final": 90,
+      "severity": "high",
+      "prefix": "issue",
+      "blocking": false,
+      "title": "Retry exhaustion now throws where it returned null",
+      "body": "B1",
+      "materiality": true,
+      "category": "c",
+      "url": "https://github.com/o/r/pull/1#discussion_r11"
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "nil-deref",
+      "path": "src/api/backoff.ts",
+      "line": 41,
+      "symbol": "backoff",
+      "claim": "c2",
+      "bad_outcome": "b2",
+      "evidence": [
+        "e"
+      ],
+      "verify_by": "v",
+      "verdict": "confirmed",
+      "R": 85,
+      "A": 85,
+      "Ac": 85,
+      "final": 85,
+      "severity": "medium",
+      "prefix": "issue",
+      "blocking": false,
+      "title": "Backoff jitter is seeded once per process",
+      "body": "B2",
+      "materiality": true,
+      "category": "c",
+      "url": "https://github.com/o/r/pull/1#discussion_r12"
+    },
+    {
+      "finder": "consumer-impact",
+      "defect_class": "contract-break",
+      "path": "src/jobs/sync.ts",
+      "line": 88,
+      "symbol": "sync",
+      "claim": "c3",
+      "bad_outcome": "b3",
+      "evidence": [
+        "e"
+      ],
+      "verify_by": "v",
+      "verdict": "confirmed",
+      "R": 85,
+      "A": 85,
+      "Ac": 85,
+      "final": 85,
+      "severity": "medium",
+      "prefix": "issue",
+      "blocking": false,
+      "title": "`sync.ts` still branches on the old null contract",
+      "body": "B3",
+      "materiality": true,
+      "category": "c",
+      "url": "https://github.com/o/r/pull/1#discussion_r13"
+    },
+    {
+      "finder": "quality",
+      "defect_class": "maintainability",
+      "path": "packages/web/src/lib/queries/explorer-stats.ts",
+      "line": 16,
+      "claim": "c4",
+      "bad_outcome": "b4",
+      "evidence": [
+        "e"
+      ],
+      "verify_by": "v",
+      "verdict": "confirmed",
+      "R": 84,
+      "A": 84,
+      "Ac": 84,
+      "final": 84,
+      "severity": "high",
+      "prefix": "nitpick",
+      "blocking": false,
+      "body": "the header table still says GET /memories/activity",
+      "materiality": true,
+      "category": "c"
+    },
+    {
+      "finder": "quality",
+      "defect_class": "maintainability",
+      "path": "packages/web/src/lib/filters.ts",
+      "line": 713,
+      "claim": "c5",
+      "bad_outcome": "b5",
+      "evidence": [
+        "e"
+      ],
+      "verify_by": "v",
+      "verdict": "confirmed",
+      "R": 78,
+      "A": 78,
+      "Ac": 78,
+      "final": 78,
+      "severity": "high",
+      "prefix": "question",
+      "blocking": false,
+      "body": "no production call site remains for filtersToFacetParams",
+      "materiality": true,
+      "category": "c"
+    },
+    {
+      "finder": "quality",
+      "defect_class": "maintainability",
+      "path": "z1.ts",
+      "line": 1,
+      "claim": "c6",
+      "bad_outcome": "b6",
+      "evidence": [
+        "e"
+      ],
+      "verify_by": "v",
+      "verdict": "contradicted",
+      "R": 10,
+      "A": 10,
+      "Ac": 10,
+      "final": 10,
+      "severity": "low",
+      "prefix": "issue",
+      "blocking": false,
+      "title": "T6",
+      "body": "B6",
+      "materiality": true,
+      "category": "c"
+    },
+    {
+      "finder": "quality",
+      "defect_class": "maintainability",
+      "path": "z2.ts",
+      "line": 1,
+      "claim": "c7",
+      "bad_outcome": "b7",
+      "evidence": [
+        "e"
+      ],
+      "verify_by": "v",
+      "verdict": "contradicted",
+      "R": 10,
+      "A": 10,
+      "Ac": 10,
+      "final": 10,
+      "severity": "low",
+      "prefix": "issue",
+      "blocking": false,
+      "title": "T7",
+      "body": "B7",
+      "materiality": true,
+      "category": "c"
+    }
+  ],
+  "gates": {
+    "gate1": {
+      "status": "PASS",
+      "details": "The description matches what the diff does."
+    },
+    "gate4": {
+      "precandidate_dispositions": [],
+      "ai_stub_findings": []
+    },
+    "gate5": {
+      "status": "PASS",
+      "details": "The change is documented well enough to follow."
+    }
+  },
+  "threads": [],
+  "memory": {
+    "relevance_rules": [],
+    "lessons_used": []
+  },
+  "lenses": {
+    "optimality_cards": [],
+    "optimality_log": "ran \u00b7 3 judged \u00b7 3 optimal \u00b7 0 proposal(s) \u00b7 0 inline pointer(s) \u00b7 0 withheld",
+    "standards_log": "ran \u00b7 1 doc \u00b7 0 finding(s)",
+    "measurability_log": "ran \u00b7 2 paths classified \u00b7 1 missing \u00b7 0 unlinked",
+    "holistic_log": "skipped"
+  }
+}

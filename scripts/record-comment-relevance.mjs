@@ -54,8 +54,9 @@
  *   1  Never returned in production — every path degrades to a logged no-op.
  */
 
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { extractFingerprint, isFingerprintV2, parseFingerprint } from "../agents/pr-reviewer/scripts/fingerprint.mjs";
 
 /** Relevance-signal TTL. Mirrored in CLAUDE.md, comment-relevance-memory.md, the plugin
@@ -72,7 +73,7 @@ function log(...args) {
   console.log("[record-comment-relevance]", ...args);
 }
 
-function ghApi(path) {
+export function ghApi(path) {
   const raw = execSync(`gh api "${path}"`, {
     env: { ...process.env, GH_TOKEN: process.env.GITHUB_TOKEN },
     encoding: "utf8",
@@ -122,9 +123,25 @@ export function ghApiAll(path, fetch = ghApi) {
   );
 }
 
+/**
+ * Found (thread-outcomes.mjs's first live run against a real PR) and fixed: the prior
+ * implementation built one shell command STRING via template-literal interpolation of
+ * `JSON.stringify(query)` and ran it through `execSync` (which spawns `/bin/sh -c
+ * <string>`). A JSON-escaped newline (`\n`, two literal characters) inside a
+ * double-quoted shell argument is NOT interpreted as a real newline by the shell — bash
+ * only special-cases `\"`, `\\`, `` \` ``, and `$` inside double quotes — so the
+ * multi-line GraphQL document text reached `gh api graphql -f query=` corrupted,
+ * producing `gh: Expected one of SCHEMA, ... actual: UNKNOWN_CHAR ("n")` and silently
+ * routing every caller into `fetchReviewThreads`'s `{complete:false}` abort path. This
+ * was never caught by `--self-test`, which only exercises the pure decision functions
+ * offline. `execFileSync` with an argv ARRAY (no shell re-parsing of the query text at
+ * all) is the fix — the same class of bug `ghApiAll`'s own doc comment already
+ * diagnoses for `--paginate`'s multi-document output, one layer up the stack.
+ */
 function ghGraphql(query, vars) {
-  const args = Object.entries(vars).map(([k, v]) => `-F ${k}=${JSON.stringify(String(v))}`).join(" ");
-  const raw = execSync(`gh api graphql -f query=${JSON.stringify(query)} ${args}`, {
+  const args = ["api", "graphql", "-f", `query=${query}`];
+  for (const [k, v] of Object.entries(vars)) args.push("-F", `${k}=${String(v)}`);
+  const raw = execFileSync("gh", args, {
     env: { ...process.env, GH_TOKEN: process.env.GITHUB_TOKEN },
     encoding: "utf8",
     timeout: 20_000,
@@ -221,7 +238,7 @@ function hasWontFixReply(replies) {
  * stream of false `ignored-at-merge` records, which is the failure this whole file
  * exists to avoid.
  */
-function fetchReviewThreads({ repo, prNumber }) {
+export function fetchReviewThreads({ repo, prNumber }) {
   const [owner, name] = String(repo).split("/");
   const query = `
     query($owner:String!,$repo:String!,$pr:Int!,$cursor:String){
@@ -267,7 +284,7 @@ function fetchReviewThreads({ repo, prNumber }) {
  * defect 2: an untouched file proves no fix, a touched file proves nothing.
  * Returns `{touched, granularity}`.
  */
-function hasFixCommit({ repo, prNumber, path, line, since }) {
+export function hasFixCommit({ repo, prNumber, path, line, since }) {
   const granularity = line > 0 ? "line" : "file";
   try {
     const commits = ghApiAll(`/repos/${repo}/pulls/${prNumber}/commits`);
@@ -1014,20 +1031,32 @@ function selfTest() {
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────────
+//
+// Guarded by the repo's standard `isMain` idiom (as of thread-outcomes.mjs's reuse of
+// this file's exports, purely additive): without it, IMPORTING this module — e.g. as a
+// library, per the "extract reusable, delegate from orchestrators" precedent — would
+// re-execute this CLI entry point as an unconditional side effect of the import itself,
+// reading the IMPORTING script's own `process.argv` (so a caller invoked with
+// `--self-test` on ITS OWN CLI would silently trigger a second, nested self-test run of
+// this file too). No behavior change for direct invocation (`node
+// record-comment-relevance.mjs --mode=... | --self-test`), which is still `isMain` here.
 
-const mode = process.argv.find((a) => a.startsWith("--mode="))?.split("=")[1];
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  const mode = process.argv.find((a) => a.startsWith("--mode="))?.split("=")[1];
 
-if (process.argv.includes("--self-test")) {
-  selfTest();
-} else if (mode === "thread-resolved") {
-  modeThreadResolved().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
-} else if (mode === "pr-merged") {
-  modePrMerged().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
-} else if (mode === "human-comment") {
-  modeHumanComment().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
-} else if (mode === "deploy-regression") {
-  modeDeployRegression().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
-} else {
-  log(`Unknown mode: ${mode ?? "(none)"}. Pass --mode=thread-resolved|pr-merged|human-comment|deploy-regression, or --self-test.`);
-  process.exit(0);
+  if (process.argv.includes("--self-test")) {
+    selfTest();
+  } else if (mode === "thread-resolved") {
+    modeThreadResolved().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
+  } else if (mode === "pr-merged") {
+    modePrMerged().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
+  } else if (mode === "human-comment") {
+    modeHumanComment().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
+  } else if (mode === "deploy-regression") {
+    modeDeployRegression().catch((err) => { log("Unexpected error:", err.message); process.exit(0); });
+  } else {
+    log(`Unknown mode: ${mode ?? "(none)"}. Pass --mode=thread-resolved|pr-merged|human-comment|deploy-regression, or --self-test.`);
+    process.exit(0);
+  }
 }
