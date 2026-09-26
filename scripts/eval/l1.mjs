@@ -9660,6 +9660,45 @@ const isPollBlock = (block) =>
     s.check("G84i pipeline.md states --isolated requires --dry-run; rubric-composition.md states distinct claims never merge",
       /\*\*`--isolated` requires `--dry-run`\.\*\*/.test(pipe) && /\*\*Distinct claims never merge\.\*\*/.test(rc));
   }
+  // G84j (A/B round 4 → iteration 2): report-correctness defects the round-4 arms hit.
+  // (1) A caller-supplied RUN_ANOMALY replaced finalize's computed one (prepare-time anomalies
+  //     vanished; arms re-merged by hand); `--no-dispatch` now computes dispatch-topology.md's line.
+  // (2) A reason copied from a gate's Details sentence rendered "….; …".
+  // (3) QUALITY counted posted notes as "deferred" under a heading that counted them as notes.
+  {
+    const FIN = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
+    const finSrc = readFileSync(FIN, "utf8");
+    s.check("G84j finalize.mjs merges a supplied RUN_ANOMALY with the computed one and parses --no-dispatch",
+      /RUN_ANOMALY: mergeRunAnomaly\(context\?\.render\?\.RUN_ANOMALY, autoRunAnomaly\)/.test(finSrc)
+        && /a === "--no-dispatch"/.test(finSrc) && /context\.dispatchUnavailable = true/.test(finSrc));
+    const fin = spawnSync(process.execPath, [FIN, "--self-test"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    s.check("G84j finalize.mjs --self-test proves the merge and the no-dispatch line end to end",
+      fin.status === 0 && /finalizeReview merges caller note, the no-dispatch line, and prepare-time anomalies/.test(fin.stdout || ""),
+      (fin.stdout || fin.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
+    const rep = spawnSync(process.execPath, [FIN, "--replay-fixtures"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+    s.check("G84j finalize.mjs --replay-fixtures reproduces the report-body and inline snapshots (notes no longer counted as deferred)",
+      // Exits 1 by design while deep.json's documented fixture defect stands; an UNEXPLAINED
+      // mismatch is what this guard is for.
+      !/unexplained mismatch/.test(rep.stderr || "") && /report-body\/warn\.expected\.md — byte-identical/.test(rep.stdout || "")
+        && /8\/9 byte-identical, 1 known fixture defect/.test(rep.stdout || ""),
+      (rep.stdout || rep.stderr || "").split("\n").filter((l) => /✗|FAIL|differ/.test(l)).join(" | ").slice(0, 300));
+    const warnSnap = readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md"), "utf8");
+    s.check("G84j the warn snapshot's quality line counts its 2 posted notes as notes, not deferred",
+      warnSnap.includes("posted inline 3 · notes 2 · cleared 3 · carried forward 0 · deferred 0"));
+    const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+    const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/pass.json"), "utf8"));
+    base.VERDICT = "WARN"; base.GATE_DOCS_STATUS = "⚠️"; base.GATE_DOCS_DETAILS = "x";
+    base.GATE_DESC_STATUS = base.GATE_DESC_STATUS === undefined ? base.GATE_DESC_STATUS : "⚠️";
+    base.WARN_REASONS = ["probe cadence is 5 s, not 2 minutes."];
+    const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(base), encoding: "utf8" });
+    s.check("G84j a reason ending in a full stop renders without it (no \".;\" in the reasons line)",
+      r.status === 0 && /\*\*Warnings:\*\* probe cadence is 5 s, not 2 minutes$/m.test(r.stdout || ""),
+      (r.stderr || "").trim().slice(0, 200));
+    const dt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
+    s.check("G84j dispatch-topology.md says to pass --no-dispatch to finalize.mjs rather than hand-write the line",
+      /Set it by passing \*\*`--no-dispatch`\*\* to `finalize\.mjs`, never by hand-writing it\./.test(dt));
+  }
+
 
 }
 

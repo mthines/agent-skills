@@ -194,7 +194,7 @@ deduped.json → (verified, per candidate) → judgments.json   (same as the dia
 ```
 
 `finalize.mjs --dedupe-candidates <file> [--out <file>]` and
-`finalize.mjs --context … --judgments … --out-dir … --writer github|findings-bus [--bus-path <file>]`
+`finalize.mjs --context … --judgments … --out-dir … --writer github|findings-bus [--bus-path <file>] [--dry-run] [--no-dispatch]`
 are both documented in `finalize.mjs`'s own `usage()` string; the latter is also
 `branch-reviewer`'s entire output path (D16) — `--writer findings-bus` writes
 `findings.jsonl` **instead of** `write-plan.json`, never both.

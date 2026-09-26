@@ -143,6 +143,21 @@ RUN_ANOMALY: no sub-agent dispatch available — finders and verification ran in
 at effective thoroughness <t>, instead of the parallel topology that value would otherwise dispatch
 ```
 
+Set it by passing **`--no-dispatch`** to `finalize.mjs`, never by hand-writing it.
+`finalize.mjs` renders the line from `context.budget` (only when the budget's topology was
+`parallel`, with its own effective thoroughness) and merges it with every other anomaly it computes.
+A value you also supply in `context.render.RUN_ANOMALY` is merged in, never a replacement: in A/B
+iteration 2 every in-context arm hand-wrote this line there, which dropped `prepare-review.mjs`'s
+own anomalies until the arm noticed and re-merged them.
+
+```text
+# correct
+finalize.mjs --context … --judgments … --out-dir … --dry-run --no-dispatch
+
+# incorrect: the hand-written line replaced finalize's computed anomalies before iteration 2
+jq '.render.RUN_ANOMALY = "no sub-agent dispatch available — …"' context.json
+```
+
 This is the same `RUN_ANOMALY` slot every other capability cap in this pipeline uses
 ([`report-rendering.md § Run slots`](./report-rendering.md)) — never a quiet downgrade a reader has
 to infer from a shorter run.

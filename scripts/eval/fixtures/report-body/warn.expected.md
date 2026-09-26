@@ -41,7 +41,7 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
 **Found**
 
-Quality — produced 7 → posted inline 3 · cleared 3 · carried forward 0 · deferred 2 · below-bar 0
+Quality — produced 7 → posted inline 3 · notes 2 · cleared 3 · carried forward 0 · deferred 0 · below-bar 0
 Dropped — relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0
 Severity — 🟠 1 high · 🟡 2 medium
 Measurability — ran · 2 paths classified · 1 missing · 0 unlinked

@@ -145,8 +145,16 @@ export function hydrateFilePatches(context) {
  * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[] }} args
  * @returns {string|undefined}
  */
-export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies }) {
+export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt }) {
   const parts = [];
+  // A/B iteration 2: every in-context arm hand-wrote dispatch-topology.md's no-dispatch line into
+  // context.render.RUN_ANOMALY, which REPLACED this function's output and dropped prepare-review's
+  // own anomalies (two arms re-merged them by hand, one re-ran finalize three times). `--no-dispatch`
+  // makes the line computed, with the budget's own effective thoroughness.
+  if (typeof noDispatchAt === "number") {
+    parts.push("no sub-agent dispatch available — finders and verification ran in-context, serially,"
+      + ` at effective thoroughness ${noDispatchAt}, instead of the parallel topology that value would otherwise dispatch`);
+  }
   if (capApplied) {
     parts.push(`depth capability (${depthCapability || "diff-only"}) capped this run below the deep tier its mode would otherwise require`);
   }
@@ -155,6 +163,26 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
     const n = anomalies.length;
     const lead = String(anomalies[0]).replace(/\s+/g, " ").trim();
     parts.push(`${n} prepare-time anomal${n === 1 ? "y" : "ies"} (${lead}${n > 1 ? `, +${n - 1} more` : ""})`);
+  }
+  return parts.length ? parts.join(" — ") : undefined;
+}
+
+/**
+ * A caller-supplied RUN_ANOMALY is MERGED with the computed one, never a replacement for it: a
+ * supplied value used to win outright, silently dropping a capability cap or a prepare-time
+ * anomaly the caller never saw. Parts are joined with " — " and exact repeats are dropped, so a
+ * caller that already copied the computed text does not see it twice.
+ * @param {string|undefined|null} supplied @param {string|undefined} computed
+ * @returns {string|undefined}
+ */
+export function mergeRunAnomaly(supplied, computed) {
+  const parts = [];
+  for (const v of [supplied, computed]) {
+    if (typeof v !== "string") continue;
+    for (const p of v.split(" — ")) {
+      const t = p.trim();
+      if (t && !parts.includes(t)) parts.push(t);
+    }
   }
   return parts.length ? parts.join(" — ") : undefined;
 }
@@ -478,7 +506,11 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     confidenceDeferred: advisoryDeferred.length,
     suppressed: suppressed.length,
     cleared: inlineClaims.length,
-    deferredOverCap: overCapDeferred.length + inlineNonClaims.length,
+    // A/B iteration 2: a cleared one-liner is POSTED inline as a note; counting it as "deferred"
+    // made the quality line read "posted inline 5 · deferred 1" under a heading of
+    // "5 findings · 1 note" on a run that posted 6 comments (two arms flagged the mismatch).
+    deferredOverCap: overCapDeferred.length,
+    notes: inlineNonClaims.length,
     posted: inlineClaims.length,
     carriedForward: context?.render?.carriedForward ?? 0,
   });
@@ -507,10 +539,14 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // duplicating the renderer's own prefix). Computed here, a live run never hand-authors this
   // and can never reintroduce the glyph.
   const capApplied = context?.routing?.capApplied === true;
+  const noDispatchAt = context?.dispatchUnavailable === true && context?.budget?.topology === "parallel"
+    && typeof context?.budget?.effectiveThoroughness === "number"
+    ? context.budget.effectiveThoroughness : undefined;
   const autoRunAnomaly = buildAutoRunAnomaly({
     capApplied,
     depthCapability: context?.workspace?.depthCapability || context?.depthCapability,
     contextAnomalies: context?.anomalies,
+    noDispatchAt,
   });
 
   // MEMORIES_USED / MEMORIES_SUMMARY — computed from judgments.memory's two arrays (D4:
@@ -558,7 +594,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
 
   const extras = {
     ...(context?.render || {}),
-    RUN_ANOMALY: context?.render?.RUN_ANOMALY ?? autoRunAnomaly,
+    RUN_ANOMALY: mergeRunAnomaly(context?.render?.RUN_ANOMALY, autoRunAnomaly),
     MEMORIES_USED: context?.render?.MEMORIES_USED ?? memoryUsed,
     ...(context?.render?.QUALITY_DROPPED === undefined && autoQualityDropped !== null
       ? { QUALITY_DROPPED: autoQualityDropped }
@@ -747,14 +783,14 @@ function parseArgs(argv) {
   const opts = { writer: "github" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates") { opts[a.slice(2)] = true; continue; }
+    if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch") { opts[a.slice(2)] = true; continue; }
     if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; continue; }
   }
   return opts;
 }
 
 function usage() {
-  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--skip-gates] [--self-test] [--replay-fixtures]\n"
+  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-dispatch] [--skip-gates] [--self-test] [--replay-fixtures]\n"
     + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
     + "   or: finalize.mjs --check-shape <judgments.json>");
 }
@@ -1028,6 +1064,36 @@ async function selfTest() {
     const both = buildAutoRunAnomaly({ capApplied: true, depthCapability: "diff-only", contextAnomalies: ["a", "b", "c"] });
     check("buildAutoRunAnomaly combines the cap note and the anomaly count when both apply",
       typeof both === "string" && both.includes("diff-only") && both.includes("3 prepare-time anomalies"));
+    // A/B iteration 2: --no-dispatch renders dispatch-topology.md's line from the budget.
+    const noDispatch = buildAutoRunAnomaly({ capApplied: false, contextAnomalies: [], noDispatchAt: 0.8 });
+    check("buildAutoRunAnomaly renders the no-dispatch line with the effective thoroughness",
+      typeof noDispatch === "string" && noDispatch.startsWith("no sub-agent dispatch available")
+        && noDispatch.includes("at effective thoroughness 0.8"));
+    // A/B iteration 2: a supplied RUN_ANOMALY used to REPLACE the computed one.
+    const merged = mergeRunAnomaly("reviewer identity unknown", "1 prepare-time anomaly (x)");
+    check("mergeRunAnomaly keeps a supplied anomaly AND the computed one",
+      merged === "reviewer identity unknown — 1 prepare-time anomaly (x)");
+    check("mergeRunAnomaly drops an exact repeat, so copying the computed text does not double it",
+      mergeRunAnomaly("1 prepare-time anomaly (x)", "1 prepare-time anomaly (x)") === "1 prepare-time anomaly (x)");
+    check("mergeRunAnomaly returns undefined when neither side has anything",
+      mergeRunAnomaly(undefined, undefined) === undefined);
+  }
+  {
+    // End to end through finalizeReview: a parallel budget + dispatchUnavailable + a caller-supplied
+    // RUN_ANOMALY all reach the payload, none replacing another.
+    const ctx = {
+      mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, workspace: { depthCapability: "checkout" },
+      budget: { topology: "parallel", effectiveThoroughness: 0.5 }, dispatchUnavailable: true,
+      anomalies: ["reviewer identity unknown (/user 401) — relation defaulted to cross"],
+      render: { RUN_ANOMALY: "caller note" },
+    };
+    const j = { candidates: [], gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+    let anomaly = "";
+    try { anomaly = String(finalizeReview({ context: ctx, judgments: j }).payload.RUN_ANOMALY || ""); } catch (e) { anomaly = `threw: ${/** @type {Error} */ (e).message}`; }
+    check("finalizeReview merges caller note, the no-dispatch line, and prepare-time anomalies",
+      anomaly.startsWith("caller note") && anomaly.includes("at effective thoroughness 0.5")
+        && anomaly.includes("1 prepare-time anomaly"), anomaly.slice(0, 200));
   }
 
   // checkPostedInlineMatchesClaims — ab/B/20230/2's explicit ask for a cross-check proving this
@@ -1892,6 +1958,10 @@ async function main() {
 
   const contextRaw = JSON.parse(readFileSync(/** @type {string} */(opts.context), "utf8"));
   const context = withRenderAt(hydrateFilePatches(contextRaw));
+  // `--no-dispatch`: the reviewer held no sub-agent dispatch tool, so a `parallel` budget ran
+  // in-context (rules/dispatch-topology.md § No-dispatch fallback). finalizeReview() renders the
+  // prescribed RUN_ANOMALY part from the budget itself.
+  if (opts["no-dispatch"]) context.dispatchUnavailable = true;
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
 

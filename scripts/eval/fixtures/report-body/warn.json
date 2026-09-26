@@ -94,7 +94,7 @@
   ],
   "CI_NOTE": "`Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.",
   "VERIFIED_NOTE": "`node scripts/sync-edge-schemas.mjs --check` in sync (15 files).",
-  "QUALITY": "produced 7 → posted inline 3 · cleared 3 · carried forward 0 · deferred 2 · below-bar 0",
+  "QUALITY": "produced 7 → posted inline 3 · notes 2 · cleared 3 · carried forward 0 · deferred 0 · below-bar 0",
   "QUALITY_DROPPED": "relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0",
   "INTEGRATIONS": "not activated",
   "OPTIMALITY_LOG": "ran · 3 judged · 3 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",

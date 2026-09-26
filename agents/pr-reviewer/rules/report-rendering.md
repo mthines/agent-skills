@@ -90,7 +90,7 @@ of those was a real defect before it became derived.
 | `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️`. Gate 2 (CI) is not a row — it renders via `CI_NOTE`. |
 | `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
 | `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. It counts all three record families (relevance rules, knowledge, hotspot), because `MEMORIES_USED` does. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
-| `QUALITY` | Must begin `produced <N> → posted inline <N> …`. |
+| `QUALITY` | Must begin `produced <N> → posted inline <N> …`. `posted inline <N>` counts claims only; cleared one-liners posted as notes follow it as ` · notes <M>` when `M > 0`, and are never counted as `deferred`. |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (<reason>)` — e.g. `skipped (tier: quick)`. |
 | `OPTIMALITY_LOG` · `STANDARDS_LOG` · `MEASURABILITY_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
 | `SKIPPED_FILES` | A list, or `none`. |
@@ -160,7 +160,7 @@ rode at the tail of the longest line in the accordion, after `depth checkout`, a
 | Slot | Renders | Use it for |
 | --- | --- | --- |
 | `RUN_NOTE` | appended to the run line after the parseable prefix | why the router chose this tier — `blast_radius=high · semver_delta=major`, `27 files touched` |
-| `RUN_ANOMALY` | its own line directly under the run line, prefixed `⚠️` by the renderer | something that changed what this run reviewed — a polluted compare range, a capability cap, a truncated fetch |
+| `RUN_ANOMALY` | its own line directly under the run line, prefixed `⚠️` by the renderer | something that changed what this run reviewed — a polluted compare range, a capability cap, a truncated fetch. `finalize.mjs` merges a value supplied in `context.render` with the anomalies it computes itself, never replacing them |
 
 The renderer rejects a `RUN_NOTE` containing `⚠️` (that is an anomaly wearing colour's clothes) and
 a `RUN_ANOMALY` that supplies its own leading glyph (the renderer owns it, so a supplied one

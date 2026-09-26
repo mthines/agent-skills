@@ -982,7 +982,11 @@ function main() {
     });
     // Two phrases plus a count, never a paragraph. The cap is the same one the prose spec set at
     // ~140 chars, expressed as a list bound so it cannot be exceeded by wording.
-    return v.length <= 2 ? v.join("; ") : `${v.slice(0, 2).join("; ")}; +${v.length - 2} more`;
+    // Each entry is a noun phrase, so trailing sentence punctuation is dropped before joining —
+    // A/B iteration 2: a reason copied from a gate's Details sentence rendered "…minutes.; …".
+    const phrases = v.map((r) => String(r).trim().replace(/[.;:,]+$/u, ""));
+    return phrases.length <= 2 ? phrases.join("; ")
+      : `${phrases.slice(0, 2).join("; ")}; +${phrases.length - 2} more`;
   };
   if (verdict === "FAIL" && arr("FAIL_REASONS").length === 0) {
     fail("VERDICT FAIL with no FAIL_REASONS — a failing gate names why in one noun phrase"

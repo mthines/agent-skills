@@ -40,13 +40,16 @@ const RUN_FIELDS = ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "de
  * `carried forward` tracks findings still open from a PRIOR iteration of the
  * same PR (multi-run continuity) — genuinely out of a single `finalizeReview()`
  * pass's scope, so it defaults to 0 unless the caller supplies one (D5).
- * @param {{ produced: number, cleared: number, deferredOverCap: number, confidenceDeferred: number, posted: number, suppressed: number, carriedForward?: number }} counters
+ * `notes` (A/B iteration 2) counts the cleared one-liners that posted inline as notes. It renders
+ * right after `posted inline <N>` only when non-zero, so `posted inline (\d+)` still reads the
+ * claim count and every existing zero-note line keeps its exact bytes.
+ * @param {{ produced: number, cleared: number, deferredOverCap: number, confidenceDeferred: number, posted: number, suppressed: number, carriedForward?: number, notes?: number }} counters
  */
 export function buildQualitySummary(counters) {
   const {
-    produced, cleared, deferredOverCap, confidenceDeferred, posted, suppressed, carriedForward = 0,
+    produced, cleared, deferredOverCap, confidenceDeferred, posted, suppressed, carriedForward = 0, notes = 0,
   } = counters;
-  const line = `produced ${produced} → posted inline ${posted} · cleared ${cleared}`
+  const line = `produced ${produced} → posted inline ${posted}${notes > 0 ? ` · notes ${notes}` : ""} · cleared ${cleared}`
     + ` · carried forward ${carriedForward} · deferred ${deferredOverCap} · below-bar ${confidenceDeferred}`;
   return suppressed > 0 ? `${line} · memory suppressions ${suppressed}` : line;
 }
