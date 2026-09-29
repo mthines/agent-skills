@@ -19,7 +19,7 @@ tags:
 - [Core Principles](#core-principles)
 - [Procedure (Order of Operations)](#procedure-order-of-operations)
 - [Post-Draft Review](#post-draft-review)
-- [Findings Quality Gate](#findings-quality-gate)
+- [Review Output](#review-output)
 - [Walkthrough](#walkthrough)
 - [PR Creation](#pr-creation)
 - [Delivery Checklist](#delivery-checklist)
@@ -83,39 +83,19 @@ The `review-loop` skill gracefully skips if not installed — log one line and c
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — if `review-loop` and `pr-reviewer` are absent, log and continue with manual diff review |
+| If missing | Report `skipped (not installed)`, then if `review-loop` and `pr-reviewer` are absent, log and continue with manual diff review |
 | Disable                   | Pass `--no-quality` to `create-pr` (not recommended; you lose the post-draft safety net) |
 
-## Findings Quality Gate
+## Review Output
 
-**Anchor:** `findings-quality-gate`
+**Anchor:** `findings-quality-gate` (kept so older links resolve)
 
-`create-pr`'s `review-loop` handles the review → apply → simplify cycle.
-If needed, run the optional false-positive filter over the final findings list:
+`create-pr`'s `review-loop` handles the review → apply → simplify cycle, and
+`pr-reviewer`'s own Phase E verifier is the false-positive filter — every
+finding it posts has already survived verification. Act on its output directly;
+there is no second filter pass.
 
-```
-Skill("aw-review-quality-gate")     # skips silently if not installed
-```
-
-The gate runs its six-question checklist per finding, drops findings that fail two or more checks, downgrades findings that fail exactly one, and emits a `### Quality Gate` summary (reviewed / dropped / downgraded / passed).
-Act on the **filtered** findings list, not the raw one.
-The gate is advisory — it filters review noise; it never blocks the phase.
-
-| Property                  | Value                                                                  |
-| ------------------------- | ---------------------------------------------------------------------- |
-| Runs in Full Mode         | Yes                                                                    |
-| Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — act on the raw findings list, log and continue                   |
-| Disable                   | Remove this section; the raw `pr-reviewer` output is used directly     |
-
-Log to Progress Log:
-
-```markdown
-- [TIMESTAMP] Phase 6: aw-review-quality-gate — N reviewed, X dropped, Y downgraded
-- [TIMESTAMP] Phase 6: aw-review-quality-gate — not available, continuing
-```
-
-Handle the (filtered) review output:
+Handle the review output:
 
 | Verdict                | Action                                                                              |
 | ---------------------- | ----------------------------------------------------------------------------------- |
@@ -126,13 +106,13 @@ Handle the (filtered) review output:
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: review-loop — invoked (N iterations; M findings applied; 0 blocking remaining)
+- [TIMESTAMP] Phase 6: review-loop — ran (N iterations; M findings applied; 0 blocking remaining)
 ```
 
 Or, if `review-loop` is missing:
 
 ```markdown
-- [TIMESTAMP] Phase 6: review-loop — not available, continuing (install review-loop skill from agent-skills.git)
+- [TIMESTAMP] Phase 6: review-loop — skipped (not installed) (install review-loop skill from agent-skills.git)
 ```
 
 ## Walkthrough
@@ -151,13 +131,13 @@ The skill gathers context from `plan.md`, git history, and test results to produ
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | **No** — Lite skips this step entirely                                 |
-| Skips silently if missing | Yes — log and continue without the walkthrough artifact                |
+| If missing | Report `skipped (not installed)`, then log and continue without the walkthrough artifact                |
 | Disable                   | Switch the task to Lite Mode                                           |
 
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: aw-create-walkthrough — invoked (.agent/{branch}/walkthrough.md generated)
+- [TIMESTAMP] Phase 6: aw-create-walkthrough — ran (.agent/{branch}/walkthrough.md generated)
 ```
 
 ## PR Creation
@@ -170,7 +150,7 @@ Invoke `create-pr` to handle the rest of the delivery in one go: narrative descr
 Skill("create-pr")
 ```
 
-A bare `create-pr` runs its FULL default pipeline: push → open draft PR → Step 6.5 delegates to `Skill("review-loop", "<pr-url> --no-ci")` (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved) → Step 6.7 runs the external-bot reviewer-feedback loop. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, `--no-quality`, or `--no-feedback`** unless the user explicitly asked to skip a pass.
+A bare `create-pr` runs its FULL default pipeline: push → open draft PR → Step 6.5 delegates to `Skill("review-loop", "<pr-url> --no-ci")` (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved) → Steps 7–8 watch CI and hand red CI to `ci-auto-fix`. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, or `--no-quality`** unless the user explicitly asked to skip a pass.
 
 > **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It does NOT let you skip the quality passes. `create-pr`'s `review-loop` (`pr-reviewer`, `implement-suggestion`, `polish simplify`) and the Phase 6 quality gate are sequential reasoning passes — the single-sequential-loop variant is explicitly permitted. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5).
 
@@ -184,7 +164,7 @@ What `create-pr` handles:
 | Post-draft review loop        | `create-pr` Step 6.5 → `review-loop` (always with `--no-ci`) → `pr-reviewer` + `implement-suggestion` + `polish simplify` |
 | Preview verification spec (UI diffs) | `create-pr` Step 6.4 → `ui-verify` (see below) |
 | Watch initial CI              | `create-pr` |
-| External-bot reviewer-feedback | `create-pr` Step 6.7 |
+| Red CI                        | `create-pr` Step 8 → `ci-auto-fix` |
 
 ### UI-verify
 
@@ -194,11 +174,11 @@ You do not invoke `ui-verify` here — `create-pr` owns the call. Two workflow-s
 - **It seeds from the planner's specs.** When this task emitted `.agent/{branch}/specs.md` (Phase 1, UI tasks), `ui-verify` lifts those already-locally-verified specs into the PR block rather than regenerating from the diff — so the PR-embedded spec matches what Phase 4 ran. `specs.md` is gitignored, but the lift works because `author` runs here in the same worktree; it copies the content into the **committed** PR body, and `specs.md` itself is never committed. Contract: [`ui-verify/rules/spec-sources.md`](../../../testing/ui-verify/rules/spec-sources.md).
 - **It is distinct from Phase 7 Spec Rehearsal — two artifacts, two lifetimes.** Phase 7 re-runs the gitignored `.agent/{branch}/specs.md` against the preview *during this run* (local, in-worktree). The ui-verify block *persists in the committed PR description*, so `ui-verify run` and any on-demand agent can repeat the check on a fresh checkout after this run ends. Both are supported; they read different files.
 
-Skips silently if `ui-verify` is not installed (`create-pr` catches and logs). Disable by passing `--no-ui-verify` — but only when the user asked to skip it.
+A missing `ui-verify` is reported `companion: ui-verify — skipped (not installed)` (`create-pr` catches and logs). Disable by passing `--no-ui-verify` — but only when the user asked to skip it.
 
 ### Phase 6 Delivery Receipt (GATE — Full + Lite)
 
-Phase 6 is NOT complete until you emit this receipt. It is the mechanical proof the quality passes ran; an empty/`skipped`-only receipt without a `companion … not available` line is a Phase 6 collapse — stop and run the missing pass before declaring delivery done.
+Phase 6 is NOT complete until you emit this receipt. It is the mechanical proof the quality passes ran. These passes are **required**, so only a reason the run cannot fix may excuse one: `skipped (not installed)`, `skipped (not dispatchable on this host)`, `skipped (tool unavailable: <tool>)`, or `skipped (disabled (<flag>))` for a flag **the user** passed. `trigger not met` is never admissible here — a required pass has no trigger to miss. A receipt line carrying any other reason, or no line at all, is a Phase 6 collapse — stop and run the missing pass before declaring delivery done.
 
 ```bash
 # Deterministic check (Full Mode): the walkthrough MUST exist on disk.
@@ -207,24 +187,23 @@ test -f ".agent/$(git branch --show-current)/walkthrough.md" \
   || echo "receipt: walkthrough.md MISSING — Phase 6 incomplete, run aw-create-walkthrough"
 ```
 
-Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per required sub-step, each either a real result or an explicit `not available, continuing` (never silently omitted):
+Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per required sub-step, each either a real result or an explicit `skipped (<reason>)` (never silently omitted):
 
 ```
 ### Phase 6 Delivery Receipt
-- aw-create-walkthrough: <walkthrough.md present | Lite Mode — skipped | not available, continuing>
-- create-pr → review-loop (pr-reviewer pass): <N iterations, M findings, B blocking remaining | not available, continuing>
-- create-pr → review-loop (implement-suggestion): <N findings applied | not available, continuing>
-- create-pr → review-loop (polish simplify): <recipe IDs applied | none | not available, continuing>
-- create-pr → external-reviewer-feedback loop: <stop reason + iterations | --no-feedback (only if user asked) | not available, continuing>
+- aw-create-walkthrough: <walkthrough.md present | Lite Mode — skipped | skipped (<reason>)>
+- create-pr → review-loop (pr-reviewer pass): <N iterations, M findings, B blocking remaining | skipped (<reason>)>
+- create-pr → review-loop (implement-suggestion): <N findings applied | skipped (<reason>)>
+- create-pr → review-loop (polish simplify): <recipe IDs applied | none | skipped (<reason>)>
 ```
 
-If any line above would be blank because the pass did not run AND no `not available` reason applies, the pass was skipped in error: run it, then re-emit the receipt.
+If any line above would be blank, or would carry a reason outside the admissible four, the pass was skipped in error: run it, then re-emit the receipt.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
 | Runs in Full Mode         | Yes                                                                    |
 | Runs in Lite Mode         | Yes                                                                    |
-| Skips silently if missing | Yes — fall back to the manual flow below                               |
+| If missing | Report `skipped (not installed)`, then fall back to the manual flow below                               |
 | Disable                   | Remove this section and use the manual `gh pr create --draft` fallback |
 
 **Manual fallback** (used only when `create-pr` is unavailable or explicitly disabled):
@@ -272,7 +251,7 @@ EOF
 Log to Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 6: create-pr — invoked (PR #XX opened as draft, CI watch started)
+- [TIMESTAMP] Phase 6: create-pr — ran (PR #XX opened as draft, CI watch started)
 ```
 
 ### Step 5: Show the Walkthrough Inline (BLOCKING)
@@ -312,6 +291,5 @@ Then move to Phase 7 to watch CI to green.
 - Related rule: [phase-5-documentation](./phase-5-documentation.md)
 - Related rule: [phase-7-ci-gate](./phase-7-ci-gate.md)
 - Companion registry: [companion-skills.md](./companion-skills.md)
-- Related skill: [review-changes](../../../quality/review-changes/SKILL.md)
 - Related skill: [aw-create-walkthrough](../../aw-create-walkthrough/SKILL.md)
 - Related skill: [create-pr](../../../delivery/create-pr/SKILL.md)

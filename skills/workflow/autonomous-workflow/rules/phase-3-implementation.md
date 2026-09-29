@@ -75,7 +75,7 @@ Incremental implementation with continuous verification. Work in the isolated
 worktree created in Phase 2. Follow existing patterns, commit at logical
 milestones, and invoke companions per task signal.
 
-Companions invoked from this phase **skip silently if not installed** — see
+Companions invoked from this phase **never block, and are always reported** (`ran` or `skipped (<reason>)`) — see
 [`companion-skills.md`](./companion-skills.md) for the full registry.
 
 ## Prerequisite
@@ -176,7 +176,7 @@ invocation, and disable instructions live in:
 - [Observability Trigger](#observability-trigger) — API/handler or user-facing files touched
 - [Code Quality Trigger](#code-quality-trigger) — once at end of phase
 
-**All companions skip silently if not installed** — log the result and continue.
+**No companion blocks the workflow, and every one is reported `ran` or `skipped (<reason>)`** — log the result and continue.
 
 ### Step 4: Commit at Milestones
 
@@ -213,8 +213,8 @@ Progress Log in `.agent/{branch}/plan.md`:
 ```markdown
 - [2026-04-29T15:42:10Z] Phase 3: Implemented ThemeContext + ThemeToggle
 - [2026-04-29T15:48:33Z] Phase 3: Updated Tailwind config for dark mode classes
-- [2026-04-29T15:51:05Z] Phase 3: ux() — invoked (2 contrast suggestions integrated)
-- [2026-04-29T15:55:12Z] Phase 3: code-quality(code) — not available, continuing
+- [2026-04-29T15:51:05Z] Phase 3: ux() — ran (2 contrast suggestions integrated)
+- [2026-04-29T15:55:12Z] Phase 3: code-quality(code) — skipped (not installed)
 ```
 
 **(b) Drift write-back.** When implementation reveals that a *decision* or
@@ -289,8 +289,8 @@ Skill("tdd")
 | ------------------------------ | ------------------------------------------------------------------- |
 | Owns the inner loop            | TDD drives RED-GREEN-REFACTOR cycle; you do not run code-quality per file while TDD is active |
 | Replaces verify-after-editing  | TDD's GREEN step is the verification                                |
-| If skill missing               | Log `tdd() — not available, continuing` and fall back to verify-after-editing in Step 2 |
-| Progress Log entry             | `[TIMESTAMP] Phase 3: tdd() — invoked` (or `not available, continuing`) |
+| If skill missing               | Log `tdd() — skipped (not installed)` and fall back to verify-after-editing in Step 2 |
+| Progress Log entry             | `[TIMESTAMP] Phase 3: tdd() — ran` (or `skipped (<reason>)`) |
 
 Disable: remove the `Skill("tdd")` invocation from this section. Registry:
 [`companion-skills.md`](./companion-skills.md#registry).
@@ -318,8 +318,8 @@ Skill("ux")
 | ------------------------------ | ------------------------------------------------------------------- |
 | When to invoke                 | After the UI files are written, before Phase 4 testing              |
 | Purpose                        | Catch accessibility / design issues while changes are fresh         |
-| If skill missing               | Log `ux() — not available, continuing`; do a manual a11y scan if confident |
-| Progress Log entry             | `[TIMESTAMP] Phase 3: ux() — invoked` (or `not available, continuing`) |
+| If skill missing               | Log `ux() — skipped (not installed)`; do a manual a11y scan if confident |
+| Progress Log entry             | `[TIMESTAMP] Phase 3: ux() — ran` (or `skipped (<reason>)`) |
 
 **Locator stability note.** Accessible names also serve E2E test stability.
 When implementing UI, prefer semantic HTML and accessible names (`getByRole`,
@@ -356,8 +356,8 @@ Skill("measurable", "implement")
 | When to invoke                 | After the relevant files are written, before Phase 4 testing        |
 | Purpose                        | Ensure the change ships with traces/metrics/logs (API) or a RUM event (user-facing), and that every new error/warning path is visible instead of silent |
 | Delegation                     | Frontend event design delegates further to `rum-tracking`; backend spans/metrics delegate to `otel-instrumentation`/`otel-semantic-conventions` when installed, else the skill's own fallback rules |
-| If skill missing               | Log `measurable() — not available, continuing`          |
-| Progress Log entry             | `[TIMESTAMP] Phase 3: measurable(implement) — invoked` (or `not available, continuing`) |
+| If skill missing               | Log `measurable() — skipped (not installed)`          |
+| Progress Log entry             | `[TIMESTAMP] Phase 3: measurable(implement) — ran` (or `skipped (<reason>)`) |
 
 This is the authoring half of the pair with the [Observability Gate](./phase-4-testing.md#observability-gate)
 in Phase 4, which verifies the coverage this step adds before the loop can
@@ -384,8 +384,8 @@ Skill("code-quality", "code")
 | ------------------------------ | ------------------------------------------------------------------- |
 | Frequency                      | Exactly once per phase                                              |
 | Purpose                        | Catch cognitive complexity, naming, structural smells, and **comment hygiene** (apply **R35** to trim any verbose multi-paragraph block) that emerged during implementation. Walks the full `code-quality` review checklist, not just one pass. |
-| If skill missing               | Log `code-quality(code) — not available, continuing`                |
-| Progress Log entry             | `[TIMESTAMP] Phase 3: code-quality(code) — invoked` (or `not available, continuing`) |
+| If skill missing               | Log `code-quality(code) — skipped (not installed)`                |
+| Progress Log entry             | `[TIMESTAMP] Phase 3: code-quality(code) — ran` (or `skipped (<reason>)`) |
 
 Disable: remove the `Skill("code-quality", "code")` invocation from this section.
 Registry: [`companion-skills.md`](./companion-skills.md#registry).

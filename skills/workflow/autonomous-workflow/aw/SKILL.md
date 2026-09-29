@@ -16,7 +16,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -191,6 +191,68 @@ Either way, record the outcome in `Degraded:` — name `--external-review` when 
 used it, and say plainly when no review happened. A green-CI draft PR is not a
 reviewed one.
 
+#### Verify at PR open — you dispatch `feature-pr-verifier`
+
+**You own the independent verification, not the executor.** In the local
+transcripts the restructure plan analysed (`~/.claude/projects`, 2026-08-20 →
+2026-09-25), `feature-pr-verifier` was never dispatched by an `aw-executor` run.
+Two things explain it: the old trigger was "after CI is green", while the
+executor's done-condition only needs the Phase 7 gate to have *run once*, so it
+routinely handed back before CI settled; and a dispatched executor holds no
+sub-agent dispatch tool to reach the verifier with anyway. You are one rung above
+it and still running when it returns, so you dispatch it, once, **as soon as the
+executor returns a PR URL**. Do not wait for CI: each of the verifier's four
+checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough
+integrity) runs its own commands against the PR head, and none reads CI.
+
+**Everything the verifier reads lives in the planner's worktree**, not in the
+checkout you are running in: `.agent/` is gitignored and was written there
+(`Worktree: <path>` in the planner's handoff message). Resolve the inputs first,
+from that worktree:
+
+```bash
+WT=<the Worktree: path from the planner's handoff>
+PR=<the PR URL the executor returned>
+gh pr view "$PR" --json headRefOid,baseRefOid -q '.headRefOid + " " + .baseRefOid'
+# test command: the one checks.yaml / plan.md name for the full suite — never guessed
+```
+
+Preconditions — all four, else record `not run (<reason>)`:
+
+1. Tier is **Full** and `$WT/.agent/<branch>/plan.md` exists (Micro and Lite have
+   no plan to verify against — they emit no `Verified:` line).
+2. The executor returned a PR URL, and `gh pr view` returned both SHAs.
+3. `checks.yaml` or `plan.md` names the project's test command.
+4. Some available tool dispatches a sub-agent **and** accepts `feature-pr-verifier`
+   as its agent type — a capability check, never a check for a file at an install
+   path. A host that lists no such type is `not run (feature-pr-verifier not
+   dispatchable on this host)`, never a silent skip.
+
+```
+Task(subagent_type="feature-pr-verifier", prompt="""
+Verify this feature PR. Run every command from the worktree <WT>, never from any other checkout.
+Inputs:
+- plan.md path: <WT>/.agent/<branch>/plan.md
+- walkthrough.md path: <WT>/.agent/<branch>/walkthrough.md
+- PR head SHA: <headRefOid>
+- Base SHA: <baseRefOid>
+- Project test command: <from checks.yaml / plan.md>
+Follow the feature-pr-verifier agent's procedure end-to-end. Run all four checks.
+Return the verdict block in the exact format specified. Do not propose fixes.
+""")
+```
+
+One dispatch, no retry loop — the verifier returns a single terminal verdict.
+Run it **after** the review recovery above when that ran, so it grades the head
+the review left. The verdict is **advisory** and never undrafts anything, but it
+is a **done-condition**: a Full run is not complete until the `Verified:` line of
+the terminal contract carries `green`, `red (<check>: <reason>)`, or
+`not run (<reason>)`. A `red` verdict also goes into `Needs you:`.
+
+In the single-context Full fallback below there is no second context to verify
+from, so record `Verified: not run (sub-agent dispatch unavailable)` — grading
+your own work in your own window is the self-grading this agent exists to remove.
+
 #### When sub-agent dispatch is unavailable (e.g. Claude Code on the web)
 
 Some harnesses expose no sub-agent dispatch tool at all, so the dispatch above
@@ -309,6 +371,7 @@ AW RUN COMPLETE
 - Tier: [Micro | Lite | Full]
 - Path: [split | single-context Full | single-pass]
 - Delivered: [PR URL | branch | artifact paths | nothing]
+- Verified: [green | red (<check>: <reason>) | not run (<reason>)]   # Full only
 - Degraded: [companions/agents skipped and why, or "none"]
 - Needs you: [blockers or decisions, or "nothing"]
 ```

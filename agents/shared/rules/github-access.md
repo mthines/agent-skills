@@ -94,7 +94,31 @@ A repo-scoped `GET /repos/{owner}/{repo}` is the narrowest call that proves what
 
 ### Identity (`ME` / the bot login)
 
-`gh api user --jq .login` (MCP: `get_me`) is the documented way to learn who you are posting as, and it is **allowed to fail** — see the two cases above. When it does:
+Learn who you are posting as from GraphQL `viewer`, never from `/user` (MCP: `get_me`):
+
+```bash
+ME=$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null || echo "")
+```
+
+`viewer` answers for whatever the credential is — a user token, a GitHub App installation token, or a per-call credential proxy — where `/user` 401s on the last two (measured in a Dash0 Agent0 sandbox: `/user` → 401, `viewer.login` → `dash0-dev[bot]`).
+
+**Compare logins normalized, never raw.** One GitHub App reads `dash0-dev[bot]` from `viewer` and from REST `.user.login`, but `dash0-dev` from GraphQL `author.login`, and a human configuring an automation types either.
+Lowercase both sides and strip one trailing `[bot]` before any equality test:
+
+```bash
+norm() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/\[bot\]$//'; }
+# jq:  def norm: ascii_downcase | sub("\\[bot\\]$"; "");
+```
+
+```text
+❌ WRONG — raw equality; a GraphQL author never matches the REST/viewer login of the same App
+select(.author.login == "dash0-dev[bot]")
+
+✅ RIGHT — both sides normalized
+select((.author.login | norm) == ("dash0-dev[bot]" | norm))
+```
+
+Identity resolution is still **allowed to fail**. When it does:
 
 1. Treat the identity as **unknown**, never as the empty string. `ME=""` silently turns every `select(.user.login == env.ME)` filter into "matches nothing", which reads downstream as "no prior comment / no prior report exists" and produces duplicate posts.
 2. **Never key idempotency off the login.** Find your own prior artifacts by the marker you wrote into them (`<!-- PR_REVIEWER_REPORT -->`, and see [`reviewer-report-ingest.md`](./reviewer-report-ingest.md)), which works regardless of identity resolution.
@@ -133,7 +157,7 @@ The verbs actually used across this repo, in frequency order. Anything not liste
 | `gh run list` | `actions_list` |
 | `gh run rerun <id>` | `actions_run_trigger` |
 | `gh repo view --json nameWithOwner` | you already know `owner` / `repo`; pass them directly |
-| `gh api user --jq .login` | `get_me` |
+| `gh api graphql -f query='{ viewer { login } }'` (never `gh api user`) | `get_me` |
 
 **Two habits that avoid most friction:** MCP tools take `owner` and `repo` as separate parameters — parse them from the PR URL once and reuse — and they return JSON objects, so the `--jq` filters in the skills become ordinary field access.
 

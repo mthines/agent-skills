@@ -37,7 +37,7 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 
 | Phase | Name | Rule / section | Gate |
 | --- | --- | --- | --- |
-| O0 | Read lessons | [self-improvement-loop.md](./self-improvement-loop.md) | Fast-tier read; skips silently if LoreKit `memory.*` not connected |
+| O0 | Read lessons | [self-improvement-loop.md](./self-improvement-loop.md) | Fast-tier read; skipped with one report line if LoreKit `memory.*` not connected |
 | O1 | Intent capture | [SKILL.md § O1](../SKILL.md) | 1–2 line intent per approach unit |
 | O2 | Optimality judgment | [optimality-rubric.md](./optimality-rubric.md) | Verdict `optimal`/`suboptimal` per 4-axis rubric + anti-overlap guards + materiality bar |
 | O3 | Quiet early-exit | [optimality-rubric.md](./optimality-rubric.md) | All units `optimal` → empty return |

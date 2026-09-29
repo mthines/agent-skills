@@ -13,7 +13,7 @@ tags:
 
 How to give an orchestrator skill a **two-tier self-improvement loop** so it
 gets better across runs. This is the reusable recipe behind the loops in
-`autonomous-workflow`, `fix-bug`, and `batch-linear-tickets` — follow it instead
+`autonomous-workflow`, `fix-bug`, and `implement-suggestion` — follow it instead
 of hand-copying one of those.
 
 ## Contents
@@ -135,7 +135,7 @@ For a skill named `<skill>` in category `<cat>`:
       scope-appropriate: `global` → `/create-skill diagnose <skill>`;
       `repo::` → `Skill("docs", "update --add-rule …")`.
 - [ ] `lorekit-memory` (LoreKit `memory.*` tools) added to the skill's companion
-      registry / prerequisites as **optional** (loop skips silently if the
+      registry / prerequisites as **optional** (loop is skipped with one report line if the
       `memory.*` tools are not connected).
 - [ ] `## Lessons scope` section added to the skill's `rules/diagnostic-surface.md`
       (so `diagnose` Step 2 loads it as evidence).

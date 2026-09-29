@@ -394,10 +394,11 @@ With `FIX_LINKS=off` supply no `FIX_ALL_URL` and pass no `FIX_URL` in any inline
 ## Step 0.5: Authorship pre-check — set review relation
 
 ```bash
-# /user is NOT repo-scoped, so it 401s under a GitHub App installation token and under a
-# wrapped `gh` that injects a per-call repo-scoped credential — both of which are ordinary
-# hosted-runner setups, not exotic ones. Treat a failure as "identity unknown", never as "".
-ME=$(gh api user --jq .login 2>/dev/null || echo "")
+# Never /user: it is NOT repo-scoped, so it 401s under a GitHub App installation token and under
+# a wrapped `gh` that injects a per-call repo-scoped credential — both ordinary hosted-runner
+# setups. GraphQL `viewer` answers for all of them (`github-access.md § Identity`). Treat a
+# failure as "identity unknown", never as "".
+ME=$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null || echo "")
 # One call, three values: the author decides the relation, the head branch is the
 # PR-state record's scope (Step 0.7), and headRefOid is folded in here — at zero extra
 # cost — so a HEAD_SHA reading is already available before Step 1 spends anything, which
@@ -413,7 +414,9 @@ EARLY_HEAD_SHA=$(jq -r '.headRefOid' <<< "$PR_META")
 
 if [[ -z "$ME" ]]; then
   REVIEW_RELATION="cross"
-elif [[ "$ME" == "$AUTHOR" ]]; then
+# Normalized: an App reads `x[bot]` from viewer but `x` from GraphQL author.login.
+elif [[ "$(printf '%s' "$ME" | tr '[:upper:]' '[:lower:]' | sed 's/\[bot\]$//')" == \
+        "$(printf '%s' "$AUTHOR" | tr '[:upper:]' '[:lower:]' | sed 's/\[bot\]$//')" ]]; then
   REVIEW_RELATION="self"
 else
   REVIEW_RELATION="cross"
@@ -722,7 +725,7 @@ of reasoning that breaks when a fourth path is added.
 
 `ME` is **not** read in this step. The sticky is matched on its marker alone, so prior-run
 detection keeps working on an access path where `/user` is unreachable. Do not reintroduce a
-`.user.login` filter here, and do not call `gh api user` again anywhere in the run. Reading
+`.user.login` filter here, and never call `gh api user` anywhere in the run. Reading
 `.user.login` **off** a found object is a different thing and is required — see
 `PRIOR_REPORT_AUTHOR`, which Step 1.0 consumes.
 

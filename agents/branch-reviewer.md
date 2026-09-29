@@ -53,6 +53,73 @@ rest.** You never substitute your own judgment for a rule you could have read.
 
 ---
 
+## Locating this agent's own files
+
+Every `./…` link and every script path in this file names a file in the **support tree** beside this
+definition — `branch-reviewer/scripts/`, `pr-reviewer/rules/`, `pr-reviewer/scripts/`, and
+`shared/rules/`. None of them is a path to read or run as written. Bare, a path resolves against the
+cwd, which during a review is the **reviewed** repository, so `node agents/…` exits
+`MODULE_NOT_FOUND` in every repository except this one and the impact graph comes back empty — a
+review that finds nothing and reads exactly like a clean branch.
+
+Resolve the root **once, before Phase A′**, with the same block `pr-reviewer` uses, and print it:
+
+```bash
+resolve() {  # portable readlink -f
+  [ -e "$1" ] || return 1
+  ( cd "$(dirname "$1")" && t=$(basename "$1")
+    while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+    printf '%s/%s\n' "$(pwd -P)" "$t" )
+}
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md}" || echo "")
+AGENT_SUPPORT="${AGENT_MD%/branch-reviewer.md}"
+[ -n "$AGENT_MD" ] || { echo "branch-reviewer: support tree unresolved (tried ${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md})" >&2; exit 1; }
+echo "AGENT_SUPPORT=$AGENT_SUPPORT"   # print it: later tool calls need the literal string
+```
+
+Shell state does not survive between tool calls — not the variable, and not an `export` either.
+So **pin the printed string** and reuse it: in every later `Read`
+(`Read "<printed value>/pr-reviewer/rules/finders.md"`), and as the first line of every later Bash
+call that runs a script, followed by the same emptiness guard:
+
+```bash
+AGENT_SUPPORT='<the value printed above>'
+[ -n "$AGENT_SUPPORT" ] && [ -d "$AGENT_SUPPORT/pr-reviewer/scripts" ] \
+  || { echo "branch-reviewer: support tree unresolved (AGENT_SUPPORT='$AGENT_SUPPORT')" >&2; exit 1; }
+```
+
+Re-running the `resolve()` block instead is only correct on the install path: on a by-path
+dispatch (below) it silently falls back to the `$HOME` default, resolves nothing, and the script
+call becomes `node "/branch-reviewer/scripts/…"`.
+
+The mapping covers every `agents/…` or `./…` path you meet **while running this agent** — in this
+file and in every rule file you read through it (`finders.md`, `memory.md`, `findings-bus.md`, …),
+whichever file wrote it:
+
+| Path as written | Read or run it as |
+| --- | --- |
+| `./pr-reviewer/rules/<file>` | `$AGENT_SUPPORT/pr-reviewer/rules/<file>` |
+| `./shared/rules/<file>` | `$AGENT_SUPPORT/shared/rules/<file>` |
+| `agents/branch-reviewer/scripts/<file>` | `$AGENT_SUPPORT/branch-reviewer/scripts/<file>` |
+| `agents/pr-reviewer/scripts/<file>` | `$AGENT_SUPPORT/pr-reviewer/scripts/<file>` |
+| `../skills/quality/review-branch/rules/findings-bus.md` | `$AGENT_SUPPORT/../skills/quality/review-branch/rules/findings-bus.md` |
+
+**Dispatched by file path?** When the harness has no named `branch-reviewer` agent type, the caller
+dispatches a generic sub-agent and tells it to read this file and follow it. That sub-agent is not
+on the install path, so it **MUST** name the file it was told to read in the resolve call itself —
+in the same Bash call, since an `export` would not outlive it:
+
+```bash
+AGENT_MD=$(resolve "/path/to/this/branch-reviewer.md" || echo "")   # the exact path you were told to read
+```
+
+**When `AGENT_SUPPORT` does not resolve** (empty `AGENT_MD`), stop and report
+`branch-reviewer: support tree unresolved — <what was tried>`. Never run the scripts by their bare
+paths, and never review without the impact graph: an empty graph is indistinguishable from a
+branch that reaches nothing.
+
+---
+
 ## Arguments
 
 | Argument | Default | Meaning |
@@ -97,14 +164,17 @@ not create this worktree and you must never remove it. There is no temp clone, n
 likely sitting in this tree with uncommitted work — that work is usually the *subject* of the
 review. A reviewer that moves the tree it is reviewing destroys the thing it was asked to look at.
 
-Build the graph input from the local range, then build the graph with the **unmodified** builder:
+Build the graph input from the local range, then build the graph with the **unmodified** builder.
+Both scripts are addressed through `$AGENT_SUPPORT` ([Locating this agent's own files](#locating-this-agents-own-files)),
+never by a bare `agents/…` path:
 
 ```bash
-node agents/branch-reviewer/scripts/local-diff-files.mjs \
+AGENT_SUPPORT='<printed value>'   # pinned — § Locating this agent's own files, with its guard
+node "$AGENT_SUPPORT/branch-reviewer/scripts/local-diff-files.mjs" \
   --base "$BASE" ${HEAD:+--head "$HEAD"} ${UNTRACKED:+--include-untracked} \
   --merge-base > "$TMP/local-files.json"
 
-node agents/pr-reviewer/scripts/build-impact-graph.mjs "$TMP/local-files.json" \
+node "$AGENT_SUPPORT/pr-reviewer/scripts/build-impact-graph.mjs" "$TMP/local-files.json" \
   --workdir . --base-ref "$BASE" > "$TMP/impact.json"
 ```
 

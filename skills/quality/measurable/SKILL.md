@@ -20,7 +20,7 @@ argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.1.1'
   workflow_type: gate-and-applied
   tags:
     - observability
@@ -53,7 +53,7 @@ every time.
 > Backend span/metric semantic conventions belong to the `otel-instrumentation`
 > and `otel-semantic-conventions` skills (from the
 > [dash0 agent-skills repo](https://github.com/dash0hq/agent-skills)) when
-> installed — invoked via `Skill()`, skipped silently otherwise, with
+> installed — invoked via `Skill()`, otherwise skipped with a one-line report, with
 > [`rules/backend-instrumentation.md`](./rules/backend-instrumentation.md) as
 > the built-in fallback. Persistence for the Observability Profile is
 > [`persistent-memory`](../../authoring/persistent-memory/SKILL.md)'s
@@ -168,7 +168,7 @@ instrumentation written.
    the **parent it actually attached to**, which a `startSpan` call site alone does not determine.
    Phrase every expectation as one of those seven: the list is closed, and an expectation outside it
    is refused rather than graded. Cardinality is also the check `measurable` most needs here, since
-   a new unbounded attribute is exactly what makes a signal unsafe as a metric dimension. Advisory and skips silently when
+   a new unbounded attribute is exactly what makes a signal unsafe as a metric dimension. Advisory, and skipped with one report line when
    `observe-run` (or its Observability Profile dev target) is unavailable, consistent with Core
    Principle 6 above — this step never blocks `implement` mode on the companion's absence.
 
@@ -254,10 +254,10 @@ Load on demand — do not preload.
    skill writes application-level instrumentation. It never creates or edits
    dashboards, alerts, or SLOs directly — those are proposed through Dash0
    chat (the `dash0` agent) so a human reviews and creates them there.
-6. **Companions skip silently.** `rum-tracking`, `otel-instrumentation`,
+6. **Companions never block, and never skip silently.** `rum-tracking`, `otel-instrumentation`,
    `otel-semantic-conventions`, `persistent-memory`, and the `weaver` CLI are
-   all optional — degrade to the built-in rule files and say so in one line,
-   never block.
+   all optional — degrade to the built-in rule files and say so in one line
+   (`<name> — skipped (<reason>)`), never block.
 7. **The signal's name is part of its contract.** A renamed metric or
    attribute breaks every dashboard and check rule reading the old name, and
    it breaks them *quietly* — no error, no failing test, just a panel that

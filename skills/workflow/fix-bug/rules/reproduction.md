@@ -98,7 +98,7 @@ checked against the shape of that same span before it is trusted as the `FAIL_TO
    check was inconclusive and the repro proceeds on its own merits (layer routing below still
    governs validity).
 
-This step is **advisory to repro validity, not a gate**: it skips silently when `observe-run` (or
+This step is **advisory to repro validity, not a gate**: it is skipped with one report line when `observe-run` (or
 its Observability Profile dev target) is unavailable, or when the input class is not
 telemetry-sourced, and the four [validity criteria](#what-counts-as-a-valid-repro) below remain
 the only mechanical gate Phase 5 checks. It never touches Phase 8 — Phase 8's post-deploy polling

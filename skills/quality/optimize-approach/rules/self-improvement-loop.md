@@ -35,7 +35,7 @@ Two scopes, used together, exactly as the canonical contract defines them:
 - **`global`** — universal lessons that follow the user across every repo. Always read; default write target. LoreKit creates the scope lazily on first write.
 - **`repo::{owner}/{repo}`** — project-bound lessons specific to the cwd repo. Derive `{owner}/{repo}` from the `origin` remote, lowercased, `.git` stripped. LoreKit's mode (remote / local `.lorekit/`) — not a filesystem opt-in — decides whether a `repo::` lesson is private, synced, or committed.
 
-`lorekit-memory` (the LoreKit `memory.*` tools) is an **optional companion** — if the `memory.*` tools are not connected, the whole fast tier skips silently (log one line, continue). The slow tier (`diagnose`) is unaffected.
+`lorekit-memory` (the LoreKit `memory.*` tools) is an **optional companion** — if the `memory.*` tools are not connected, the whole fast tier is skipped with one report line (never silently), and the run continues. The slow tier (`diagnose`) is unaffected.
 
 ## What the loop calibrates
 
@@ -51,7 +51,7 @@ Record the `caller` in every lesson's **Applies when** line (`reviewer` / `pr-re
 
 ## Fast tier — read (Phase O0)
 
-Narrow-to-broad fan-out at the start of the run — `repo::` first, then `global` (skips silently if `memory.*` not connected):
+Narrow-to-broad fan-out at the start of the run — `repo::` first, then `global` (skipped with one report line if `memory.*` not connected):
 
 ```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::optimize-approach-lessons"], limit: 50 }
@@ -86,7 +86,7 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit
 The read is **read-only, structural, bounded to the plan, advisory, and raises care
 without suppressing** — the full contract is
 [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
-Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+Skip with one report line when `memory.*` is not connected, there is no git remote, or nothing
 matches. `optimize-approach` is a **reader only** here — it never writes this bucket.
 Never wholesale-read another host's `loop::<host>-lessons`.
 

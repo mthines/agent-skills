@@ -10,7 +10,7 @@ argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--with a,
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.1.1'
   workflow_type: command
 ---
 
@@ -47,7 +47,7 @@ Parse the **first token** of `$ARGUMENTS`.
 | anything else (or empty) | [review](#step-2-dispatch-the-agent) | one `pr-reviewer` dispatch, read-only |
 
 There is no third operation, and no mode flag that turns this command into an apply pass.
-A request to fix what the review found is [`/review-changes`](../review-changes/SKILL.md), below.
+A request to fix what the review found is `review-loop` (convergence) or [`/implement-suggestion`](../../workflow/implement-suggestion/SKILL.md), below.
 
 ## Step 0: Parse the argument
 
@@ -149,7 +149,7 @@ Gates: <one line naming any non-passing gate, or "all passing">
 <one line per blocking finding: path:line — the ask>
 
 Report: <URL of the sticky comment>
-Apply these: /review-changes <PR>   (or /implement-suggestion <PR>)
+Apply these: /implement-suggestion <PR>   (or Skill("review-loop", "<PR>") to converge)
 ```
 
 Surface **blocking findings and non-passing gates prominently**.
@@ -181,10 +181,31 @@ Classify the direction from the wording:
 The reviewer matches rules **by fingerprint** at read time, so a rule stored under any other key is
 never read again.
 
+The script lives in the `pr-reviewer` agent's support tree, not in the repository you are standing
+in, so a bare `node agents/…` exits `MODULE_NOT_FOUND` everywhere but this skill's own repository.
+Resolve the tree in the same Bash call. A Dash0 Agent0 install exports it from its `env.sh`;
+everywhere else resolve it the way the agent does (its § Locating this agent's own files):
+
 ```bash
-node agents/pr-reviewer/scripts/fingerprint.mjs build \
+[ -f /tmp/workspace/agent-skills/env.sh ] && . /tmp/workspace/agent-skills/env.sh   # Agent0: exports AGENT_SUPPORT
+if [ -z "$AGENT_SUPPORT" ]; then
+  resolve() {  # portable readlink -f
+    [ -e "$1" ] || return 1
+    ( cd "$(dirname "$1")" && t=$(basename "$1")
+      while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
+      printf '%s/%s\n' "$(pwd -P)" "$t" )
+  }
+  AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+  AGENT_SUPPORT="${AGENT_MD%/pr-reviewer.md}"
+fi
+[ -f "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" ] || {
+  echo "pr-review remember: support tree unresolved (tried env.sh, ${CLAUDE_AGENT_FILE:-\$HOME/.claude/agents/pr-reviewer.md})" >&2; exit 1; }
+node "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" build \
   --finder <finder> --defect-class <class> --symbol <symbol|-> --path <repo-relative path>
 ```
+
+An unresolved tree stops the write: without the script there is no `fp`, and a hand-built key is the
+failure the next paragraph forbids.
 
 That needs three things the prose may not carry: a `finder`, a `defect-class`, and a `path`
 (`--symbol -` covers a whole-file rule).
@@ -254,15 +275,13 @@ Both exemptions are the agent's, not this command's, so this refusal is a restat
 | Command | Reviews | Applies findings | Pushes | Loops |
 | --- | --- | --- | --- | --- |
 | **`/pr-review <PR>`** | yes | **no** | no | no — one dispatch |
-| [`/review-changes <PR>`](../review-changes/SKILL.md) | yes | yes | yes | yes, via `review-loop` |
-| [`/review-changes <PR> --report`](../review-changes/SKILL.md) | yes | no | no | no |
+| [`/implement-suggestion <PR>`](../../workflow/implement-suggestion/SKILL.md) | no — applies existing comments | yes | yes | no (`--watch` repeats) |
 | [`review-loop`](../review-loop/SKILL.md) | yes | yes | yes | yes, cap 5, converges on threads + CI |
 | [`/polish`](../polish/SKILL.md) | yes | mechanical only | no | no — one pass each |
 
-`/pr-review <PR>` and `/review-changes <PR> --report` reach the same place by design.
-This command is the direct name for it, and it is what the agent's own description, `depth-routing.md`,
-and `memory.md` all already tell the user to type; `--report` stays a flag on the convergence
-command for people already there.
+`/pr-review <PR>` is the one read-only entry point, and it is what the agent's own description,
+`depth-routing.md`, and `memory.md` all already tell the user to type. Inside the loop,
+`review-loop --no-feedback` is its report-only counterpart.
 
 ## Hard rules
 

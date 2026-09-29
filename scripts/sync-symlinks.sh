@@ -65,13 +65,13 @@ AW_SKILLS=(
   tdd
   ux
   docs
-  review-changes
+  review-loop
+  implement-suggestion
   create-pr
   ci-auto-fix
   persistent-memory
 )
 AW_AGENTS=(
-  reviewer.md
   pr-reviewer.md
 )
 

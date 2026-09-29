@@ -115,7 +115,7 @@ project (Claude returns an error from the Skill tool).
 **Recovery:**
 
 1. Log one line in the conversation:
-   `companion: <name> — not available, continuing`
+   `companion: <name> — skipped (not installed)`
 2. Append the same line to `plan.md` Progress Log (Full Mode).
 3. Continue the workflow. **Never block on a missing companion.**
 
@@ -145,7 +145,7 @@ When CI runs complete with status `failure`:
 3. Up to 2 parallel `ci-auto-fix` handoffs per PR (see
    [parallel-coordination](./parallel-coordination.md)).
 4. If `ci-auto-fix` is not installed: log
-   `companion: ci-auto-fix — not available, continuing` and surface the failed
+   `companion: ci-auto-fix — skipped (not installed)` and surface the failed
    checks to the user with reproduction commands.
 
 See [phase-7-ci-gate](./phase-7-ci-gate.md) for details.

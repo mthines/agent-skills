@@ -105,7 +105,7 @@ description: Does everything related to code reviews and refactoring
 
 Why bad: "everything" is not a trigger. Claude cannot decide whether this
 skill applies. Split into focused skills (`code-quality`,
-`review-changes`, `refactor`).
+`pr-review`, `refactor`).
 
 ## Voice
 

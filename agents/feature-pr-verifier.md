@@ -1,6 +1,6 @@
 ---
 name: feature-pr-verifier
-description: Independent fresh-context verifier for feature PRs produced by /autonomous-workflow. Receives only the plan.md (Acceptance Criteria, Requirements, File Changes), walkthrough.md, the PR diff, and the project test command — explicitly NOT the planner's reasoning, the executor's reasoning, or any chat history. Runs ACCEPTANCE_CRITERIA_MATCH (every criterion is verifiable from the diff), PASS_TO_PASS (existing tests still pass), diff sanity (no catch-all exception swallows, no debug statements left in, no test deletions or .skip / .only flags), and walkthrough integrity (the walkthrough describes what the diff actually does, with no claims about features absent from the diff and no hunks missing from the walkthrough). Returns green / red with evidence. Used by /autonomous-workflow Phase 7 — feature-PR counterpart to bug-fix-verifier.
+description: Independent fresh-context verifier for feature PRs produced by /autonomous-workflow. Receives only the plan.md (Acceptance Criteria, Requirements, File Changes), walkthrough.md, the PR diff, and the project test command — explicitly NOT the planner's reasoning, the executor's reasoning, or any chat history. Runs ACCEPTANCE_CRITERIA_MATCH (every criterion is verifiable from the diff), PASS_TO_PASS (existing tests still pass), diff sanity (no catch-all exception swallows, no debug statements left in, no test deletions or .skip / .only flags), and walkthrough integrity (the walkthrough describes what the diff actually does, with no claims about features absent from the diff and no hunks missing from the walkthrough). Returns green / red with evidence. Dispatched by the `aw` dispatcher when the executor returns a PR URL — feature-PR counterpart to bug-fix-verifier.
 tools: Read, Glob, Grep, Bash
 model: opus
 ---
@@ -30,7 +30,7 @@ Skill("verify-behavior", "change")
   caller: "feature-pr-verifier"
 ```
 
-If the skill is unavailable, log `verify-behavior — not available, continuing` and run the
+If the skill is unavailable, log `verify-behavior — skipped (not installed)` and run the
 commands below directly, exactly as before this delegation existed. This agent is not deleted and
 its grading logic is unchanged either way.
 
@@ -183,4 +183,4 @@ Return a verdict in this exact format:
 <green: all four passed | red: check N failed because <reason>>
 ```
 
-Be terse. The orchestrator (`/autonomous-workflow` Phase 7) consumes this verbatim. Do not editorialise; do not propose fixes — that is the executor's job. Your job is to decide green or red.
+Be terse. The orchestrator (the `aw` dispatcher, which reports it as its `Verified:` line) consumes this verbatim. Do not editorialise; do not propose fixes — that is the executor's job. Your job is to decide green or red.

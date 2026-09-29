@@ -112,7 +112,7 @@ restating its rules.
 | New stories or visual-regression coverage                      | `Skill("storybook")` — scaffold a Playground story for the component under design.            |
 | Foundational mechanics: contrast math, size minimums, dark-mode, icon consistency, ARIA | Defer to `/ux/rules/visual-design.md` + `/ux/rules/accessibility.md`. Do not re-derive. |
 
-Skills skip silently if not installed; log one line and continue.
+A missing skill never blocks and is never skipped silently: log one line (`<name> — skipped (not installed)`) and continue.
 
 ### Phase 4 — Output
 

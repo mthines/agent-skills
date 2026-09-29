@@ -99,6 +99,13 @@ installed and `--no-interview` was not passed, delegate the restate-and-diff
 
     Skill("interview")
 
+Report the outcome either way, per
+[`companion-skills.md § The companion report`](./companion-skills.md#the-companion-report):
+`companion: interview — ran`, or `skipped (<reason>)` — `disabled (--no-interview)`,
+`not installed`, or `tool unavailable: AskUserQuestion` when this context cannot
+ask. Falling back to the inline Steps 3b/3c without that line is the silent skip
+the report exists to end.
+
 `interview` is the single source of truth for those two mechanisms. It restates
 and diffs the request, researches the codebase so questions are specific,
 classifies every unknown `blocking` vs `advisory`, interviews the user only for

@@ -85,7 +85,7 @@ selection and the run itself (so a lesson can bias the rung, the run-identity
 mechanism, and the reader choice — the three things a lesson most often corrects).
 
 ```text
-memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::observe-run-lessons"], limit: 50 }   # skips silently if memory.* not connected
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::observe-run-lessons"], limit: 50 }   # skipped with one report line if memory.* not connected
 memory.list { scope: "global",               tags: ["loop::observe-run-lessons"], limit: 50 }
 # when the expectation set or command names a package/service/error, add:
 memory.search { q: "<keywords>", scopes: ["repo::{owner}/*", "global"], limit: 10 }

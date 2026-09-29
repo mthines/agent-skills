@@ -54,7 +54,7 @@ When the cap is hit, the **auto-replan protocol** (see [Stuck-Loop Detection](#s
 fires automatically — confidence gate, then conditional holistic-analysis, then
 mandatory user escalation if recovery fails.
 
-Companions invoked from this phase **skip silently if not installed** — see
+Companions invoked from this phase **never block, and are always reported** (`ran` or `skipped (<reason>)`) — see
 [`companion-skills.md`](./companion-skills.md) for the full registry.
 
 ## Core Principles
@@ -293,7 +293,7 @@ The "run `setup` + `run`, compare against `expect`" mechanic delegates to
 mode-aware iteration cap, the check-integrity rules, and the `unsatisfiable`
 abort affordance below are unchanged; only the run-and-compare mechanic moves
 to the shared skill. If the skill is unavailable, log
-`verify-behavior — not available, continuing` and run `setup`/`run` directly,
+`verify-behavior — skipped (not installed)` and run `setup`/`run` directly,
 exactly as before this delegation existed.
 
 ```
@@ -430,9 +430,9 @@ the next cap hit goes straight to user escalation.
 | Skill                       | Behavior                                                                            |
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `confidence("analysis")` installed | Returns confidence score + root-cause / outcome-confidence findings      |
-| `confidence` missing        | Logs `not available, continuing`; treat as confidence < 90% (conservative default)  |
+| `confidence` missing        | Logs `skipped (not installed)`; treat as confidence < 90% (conservative default)  |
 | `holistic-analysis` installed | Re-traces execution path end-to-end; output feeds the next `aw-create-plan` invocation, which overwrites `plan.md` at the next version (v{N+1}) |
-| `holistic-analysis` missing | Logs `not available, continuing`; perform a manual end-to-end trace yourself        |
+| `holistic-analysis` missing | Logs `skipped (not installed)`; perform a manual end-to-end trace yourself        |
 
 ### Mandatory User Escalation
 
@@ -468,7 +468,7 @@ Exactly three options, plain language:
 
 **Step 4: Capture the lesson.** Before or immediately after escalation, write a
 lesson per [Lessons Write](#lessons-write) so the failing area, the hypotheses
-tried, and the resolution are available to future runs. Skip silently if
+tried, and the resolution are available to future runs. Skip with one report line if
 LoreKit's `memory.*` tools are not connected.
 
 ### Logging
@@ -477,7 +477,7 @@ Log every step of the auto-replan protocol in `plan.md` Progress Log:
 
 ```markdown
 - [2026-04-29T16:35:10Z] Phase 4: cap hit (3 iterations on ThemeToggle initial state, Lite Mode)
-- [2026-04-29T16:35:42Z] Phase 4: confidence(analysis) — invoked (74%, suspects provider boundary)
+- [2026-04-29T16:35:42Z] Phase 4: confidence(analysis) — ran (74%, suspects provider boundary)
 - [2026-04-29T16:35:55Z] Phase 4: confidence < 90% — auto-replan triggered
 - [2026-04-29T16:36:30Z] Phase 4: holistic-analysis() — re-traced provider chain, identified missing context default
 - [2026-04-29T16:37:05Z] Phase 4: plan.v2.md created (auto-replan); plan.md updated; counter reset; auto_replan_used=True
@@ -519,7 +519,7 @@ Skill("holistic-analysis")
 | Purpose                        | Step back, re-trace the **entire** execution path end-to-end before any further fix attempts |
 | When invoked here              | After the mandatory user escalation, when the user requested a fresh analysis path |
 | Also invoked automatically     | Inside the [auto-replan protocol](#auto-replan-protocol-at-the-cap) when `confidence(analysis) < 90%` |
-| If skill missing               | Log `not available, continuing`; perform a manual end-to-end trace yourself: entry point → each contract boundary → data flow → exit |
+| If skill missing               | Log `skipped (not installed)`; perform a manual end-to-end trace yourself: entry point → each contract boundary → data flow → exit |
 
 ### After Holistic Analysis
 
@@ -541,7 +541,7 @@ approach, or stop.
 ### Logging
 
 ```markdown
-- [2026-04-29T16:42:18Z] Phase 4: holistic-analysis() — invoked (user-driven, re-traced provider chain, identified missing context default)
+- [2026-04-29T16:42:18Z] Phase 4: holistic-analysis() — ran (user-driven, re-traced provider chain, identified missing context default)
 - [2026-04-29T16:45:50Z] Phase 4: plan.v3.md created — ThemeProvider must mount above StoreProvider; plan.md updated; counter reset to 0
 ```
 
@@ -657,7 +657,7 @@ Skill("test-provenance-guard", "--diff --base $(git merge-base HEAD main) --fix"
 | Self-heal authority            | **Confidence-gated autofix.** `--fix` is allowed in the autonomous loop, but the skill must clear `confidence(code) ≥ 90 %` before mutating files and the three post-heal mechanical gates after. Either failure ⇒ no autonomous refactor; the finding is reported to the Progress Log and the stuck-loop protocol handles it |
 | If pre-heal confidence < 90 %  | Emit `heal-skipped-low-confidence`; do not write any files. Stuck-loop protocol takes over |
 | If a post-heal gate fails      | Revert the heal with `git restore`; emit `heal-failed`. Stuck-loop protocol takes over     |
-| If skill missing               | Log `test-provenance-guard() — not available, continuing` and proceed |
+| If skill missing               | Log `test-provenance-guard() — skipped (not installed)` and proceed |
 | Progress Log entry             | `[TIMESTAMP] Phase 4: test-provenance-guard — N file(s), M finding(s), K healed (confidence X%), L skipped-low-confidence` |
 
 The skill addresses the failure mode where an LLM-authored test re-implements
@@ -709,7 +709,7 @@ Skill("measurable", "audit --diff --base $(git merge-base HEAD main) --strict")
 | Default gate behavior          | **Advisory.** `missing` and `unlinked` findings are both surfaced in the Progress Log and folded into the Phase 6 walkthrough's Observability summary — neither blocks Step 6 |
 | `--observability-strict` behavior | `missing` findings on `web`/`mobile`/`api`/`worker` paths **block** — treat like a failing test and route through the [Stuck-Loop Detection](#stuck-loop-detection) protocol (fix the instrumentation, don't relax the gate). `unlinked` findings stay advisory even under `--strict` |
 | Read-only                      | This gate never writes files. Under `--observability-strict`, if it reports `missing`, Phase 4 goes back to Step 5 to add the instrumentation, then re-runs the gate — it does not call `measurable implement` itself |
-| If skill missing               | Log `measurable() — not available, continuing`          |
+| If skill missing               | Log `measurable() — skipped (not installed)`          |
 | Progress Log entry             | `[TIMESTAMP] Phase 4: measurable(audit) — N missing, M unlinked, K pass (advisory)` (or `, strict — blocking on N missing` when `--observability-strict` is set) |
 
 This is the verification half of the pair with the

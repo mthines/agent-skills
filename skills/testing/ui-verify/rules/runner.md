@@ -69,7 +69,7 @@ dispatch blocks below carry `--auto-capture` unless `--no-screenshots` was given
 The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs an available tool that dispatches one (`Task`, `Agent`, or another spelling). Pick:
 
 1. If the `mcp__claude-in-chrome__*` tools are available and `tabs_context_mcp` returns a connected browser → **chrome**.
-2. Else Chrome is unavailable. Do **not** auto-select Playwright — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run Playwright only if they accept; if they decline, report `NOT RUN (chrome unavailable, user declined Playwright)` and stop. If no available tool dispatches a sub-agent either, there is nothing to offer — report `NOT RUN (no Chrome extension and no sub-agent dispatch available)` and stop without prompting.
+2. Else Chrome is unavailable. **Under `--unattended`**, select Playwright without asking when some available tool dispatches a sub-agent; when none does, report `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` and stop. **Otherwise** do **not** auto-select Playwright — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run Playwright only if they accept; if they decline, report `NOT RUN (chrome unavailable, user declined Playwright)` and stop. If no available tool dispatches a sub-agent either, there is nothing to offer — report `NOT RUN (no Chrome extension and no sub-agent dispatch available)` and stop without prompting.
 
 **Driver `chrome` — invoke [`aw-tester-chrome`](../../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) in-session:**
 
@@ -82,7 +82,7 @@ Skill("aw-tester-chrome", "
 ")
 ```
 
-If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode do **not** fall through automatically — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run the Playwright driver only if they accept; if they decline, report the chrome `inconclusive` verdict as-is and stop. A forced `--driver chrome` never falls back — report its verdict as-is, no prompt.
+If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode under `--unattended` run the Playwright driver without asking (report the chrome `inconclusive` as-is when no tool dispatches a sub-agent). Without `--unattended`, do **not** fall through automatically — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run the Playwright driver only if they accept; if they decline, report the chrome `inconclusive` verdict as-is and stop. A forced `--driver chrome` never falls back — report its verdict as-is, no prompt.
 
 **Driver `playwright` — dispatch [`aw-tester`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md) as a sub-agent** ([`§ Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)):
 
@@ -102,7 +102,9 @@ If `--driver playwright` is forced and no available tool dispatches a sub-agent,
 
 ### The auto-mode Playwright prompt
 
-This prompt fires **only in `auto` mode**, at the two points above where Chrome cannot produce a verdict: Chrome unavailable at driver selection, or a Chrome run that came back `inconclusive` with `fallback: playwright`. A forced `--driver chrome` or `--driver playwright` never reaches this prompt — an explicit driver is the user's decision already, so honor it without asking.
+This prompt fires **only in `auto` mode without `--unattended`**, at the two points above where Chrome cannot produce a verdict: Chrome unavailable at driver selection, or a Chrome run that came back `inconclusive` with `fallback: playwright`. A forced `--driver chrome` or `--driver playwright` never reaches this prompt — an explicit driver is the user's decision already, so honor it without asking.
+
+**Never under `--unattended`** — that flag means nobody is present to answer, and each of the two points already took its fixed answer above.
 
 Ask with `AskUserQuestion`:
 

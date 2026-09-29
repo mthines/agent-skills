@@ -5,17 +5,16 @@ prUrl: https://github.com/<owner>/<repo>/pull/<n>
 branch: <branch-name>
 headSha: <head-sha>
 worktree: <absolute-path-to-worktree>
-lane: <fast | standard>
 resolve-all: <true | false>   # true only when --resolve-all was passed; enables the worker's step-6 reply-only pass
 generatedAt: <ISO-8601-timestamp>
-generatedBy: implement-suggestion v2.3.0
+generatedBy: implement-suggestion v3.0.0
 ---
 
 # Suggestion Pack — <owner>/<repo>#<n>
 
-This pack is the contract handed to the worker subagent (fast-lane) or to
-`aw-planner` (standard-lane). The worker commits and pushes to the existing
-PR branch — it does **not** open a new PR.
+This pack is the contract handed to the worker subagent. Its `apply` entries
+are in the order the worker applies them (dependencies first). The worker
+commits and pushes to the existing PR branch — it does **not** open a new PR.
 
 ## Summary
 
@@ -31,11 +30,10 @@ PR branch — it does **not** open a new PR.
 | Decision `surface` | <n> |
 | Decision `skip` | <n> |
 | Files affected by `apply` | <n> |
-| Lane | <fast \| standard> |
 
 ## Acceptance Criteria
 
-One criterion per `apply` decision. The worker / planner uses these as the
+One criterion per `apply` decision. The worker uses these as the
 gate for "done":
 
 - [ ] Comment <#1234567890> by @<author>: <one-line summary of expected outcome, in testable terms>

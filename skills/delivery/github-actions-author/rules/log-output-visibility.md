@@ -16,7 +16,7 @@ This rule applies to every step of every workflow this skill scaffolds or review
 
 **Why:** downstream automation reads a failure with `gh run view <run-id> --log-failed`.
 That command returns the raw job log — nothing else.
-Output that went only to a file, only to an artifact, only to `$GITHUB_STEP_SUMMARY`, or to `/dev/null` does not exist as far as `/ci-auto-fix`, `/test-auto-fix`, `/implement-suggestion`, or a human on-call reading the log is concerned.
+Output that went only to a file, only to an artifact, only to `$GITHUB_STEP_SUMMARY`, or to `/dev/null` does not exist as far as `/ci-auto-fix`, `/implement-suggestion`, or a human on-call reading the log is concerned.
 A failing step that printed nothing is unactionable: the agent cannot classify the failure, cannot locate the file and line, and escalates or no-ops instead of fixing it.
 
 ## Decision flow

@@ -173,7 +173,7 @@ The read is **read-only, structural, bounded to the plan, advisory, and raises c
 without suppressing** — it can never relax the Phase 3 verdict gate or shrink the
 Phase 8 regression check. The full contract is
 [`../../../../agents/shared/rules/codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md).
-Skip silently when `memory.*` is not connected, there is no git remote, or nothing
+Skip with one report line when `memory.*` is not connected, there is no git remote, or nothing
 matches. Never wholesale-read another host's `loop::<host>-lessons`.
 
 ---
