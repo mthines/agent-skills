@@ -27,6 +27,7 @@ rather than one of them: you get a review, and your working tree is exactly wher
 ## Contents
 
 - [Operations](#operations)
+- [Before Step 0: on a Dash0 Agent0 host](#before-step-0-on-a-dash0-agent0-host)
 - [Step 0: Parse the argument](#step-0-parse-the-argument)
 - [Step 1: Resolve the PR](#step-1-resolve-the-pr)
 - [Step 2: Dispatch the agent](#step-2-dispatch-the-agent)
@@ -48,6 +49,19 @@ Parse the **first token** of `$ARGUMENTS`.
 
 There is no third operation, and no mode flag that turns this command into an apply pass.
 A request to fix what the review found is `review-loop` (convergence) or [`/implement-suggestion`](../../workflow/implement-suggestion/SKILL.md), below.
+
+## Before Step 0: on a Dash0 Agent0 host
+
+Agent0 cannot dispatch the custom `pr-reviewer` type, and its import can hold this `SKILL.md` alone.
+Settle this before Step 0 and before any dispatch, by file presence and never from a failed dispatch.
+It governs the review operation; `remember` dispatches nothing and resolves its tree on its own.
+
+- **Prepared** — `/tmp/workspace/agent-skills/env.sh` exists. Source it (`. /tmp/workspace/agent-skills/env.sh`) in every Bash call; it exports `AGENT_SUPPORT`, `AGENT_SKILLS_ROOT`, and `AGENT_SKILLS_COMMIT`.
+  **Read linked files from the install, never from the imported folder:** a sibling skill from `$AGENT_SKILLS_ROOT/skills/<name>/`, and every `agents/<path>` link from `$AGENT_SKILLS_ROOT/<path>`.
+  When `$AGENT_SKILLS_ROOT/skills/pr-review/SKILL.md` differs from the copy you are running, or you cannot compare them, follow the installed copy: **the installed copy at `$AGENT_SKILLS_COMMIT` wins**, because the files it links come from that commit.
+  Then make the dispatch substitutions in `$AGENT_SKILLS_ROOT/shared/rules/agent0-host.md`: `pr-reviewer` becomes a `general` sub-agent that reads `$AGENT_SKILLS_ROOT/pr-reviewer.agent0.md`, and the intent worker's type is `general`.
+- **Unprepared** — no `env.sh`, but `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md` exists. This skill does not install. Stop with `/pr-review — skipped (Agent0 sandbox not prepared; run /review-loop <PR> --no-feedback, which installs on demand and reviews once)`. After that install, `/pr-review` takes the prepared branch.
+- **Neither** — not Agent0. Continue with Step 0.
 
 ## Step 0: Parse the argument
 
@@ -219,18 +233,6 @@ topology, settled before any code is read, so a retry costs a round trip and ret
 Where another process reviews the PR instead (a review bot, a CI-triggered agent), the supported
 path is `Skill("review-loop", "<PR> --external-review")`, which waits on that reviewer rather than
 dispatching one.
-
-### On a Dash0 Agent0 host
-
-Agent0 cannot dispatch the custom `pr-reviewer` type, and its import can hold this `SKILL.md` alone.
-Settle this before step 1 above, by file presence and never from a failed dispatch:
-
-- **Prepared** — `/tmp/workspace/agent-skills/env.sh` exists. Source it (`. /tmp/workspace/agent-skills/env.sh`) in every Bash call; it exports `AGENT_SUPPORT`, `AGENT_SKILLS_ROOT`, and `AGENT_SKILLS_COMMIT`.
-  **Read linked files from the install, never from the imported folder:** a sibling skill from `$AGENT_SKILLS_ROOT/skills/<name>/`, and every `agents/<path>` link from `$AGENT_SKILLS_ROOT/<path>`.
-  When `$AGENT_SKILLS_ROOT/skills/pr-review/SKILL.md` differs from the copy you are running, or you cannot compare them, follow the installed copy: **the installed copy at `$AGENT_SKILLS_COMMIT` wins**, because the files it links come from that commit.
-  Then make the dispatch substitutions in `$AGENT_SKILLS_ROOT/shared/rules/agent0-host.md`: `pr-reviewer` becomes a `general` sub-agent that reads `$AGENT_SKILLS_ROOT/pr-reviewer.agent0.md`, and the intent worker's type is `general`.
-- **Unprepared** — no `env.sh`, but `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md` exists. This skill does not install. Stop with `/pr-review — skipped (Agent0 sandbox not prepared; run /review-loop <PR> --no-feedback, which installs on demand and reviews once)`. After that install, `/pr-review` takes the prepared branch.
-- **Neither** — not Agent0. Continue as above.
 
 ## Step 3: Report
 
