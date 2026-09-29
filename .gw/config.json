@@ -6,5 +6,8 @@
   "autoClean": true,
   "protectedBranches": [
     "feat/aw-tester-spec-verification"
+  ],
+  "autoCopyFiles": [
+    ".mcp.json"
   ]
 }

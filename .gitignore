@@ -7,6 +7,7 @@ __pycache__/
 
 # Agent workflow artifacts
 .agent
+.mcp.json
 
 # Agent/tool config directories
 .claude
