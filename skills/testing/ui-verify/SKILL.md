@@ -121,7 +121,10 @@ When `$AGENT_SKILLS_ROOT/skills/ui-verify/SKILL.md` differs from the copy you ar
 
 **An unprepared Agent0 host** has no `env.sh` but has `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md`.
 `ui-verify` does not install on demand: it needs a Playwright browser, which only the setup script installs.
+Check for this host first, before Step 0 and before running any script this skill links.
 There, `run` and `verify` stop with `NOT RUN (Agent0 sandbox not prepared: add scripts/agent0-setup.sh as the automation's sandbox.setupScript)`, never a question and never a `red`.
+There, `author` stops with `not authored (Agent0 sandbox not prepared: add scripts/agent0-setup.sh as the automation's sandbox.setupScript)`, because its Step 0 runs `scripts/is-ui-diff.mjs`, which a `SKILL.md`-only import does not contain.
+`verify` therefore never reaches its author-if-needed step on this host.
 
 ## Step 0: Resolve your GitHub access path
 
