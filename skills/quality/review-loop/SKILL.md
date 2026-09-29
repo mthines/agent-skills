@@ -20,7 +20,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interv
 license: MIT
 metadata:
   author: mthines
-  version: '1.10.0'
+  version: '1.11.0'
   workflow_type: command
   tags:
     - review
@@ -74,6 +74,14 @@ errors with `Unknown skill: pr-reviewer`.
 
 #### Dash0 Agent0 sandboxes
 
+**Read linked files from the install, never from the imported folder.**
+Agent0 can import a skill as its `SKILL.md` alone, with no `rules/`, `scripts/`, or sibling skills next to it.
+So whenever `/tmp/workspace/agent-skills/env.sh` exists, whether it existed at start or the Step 0 row 4 install just wrote it:
+
+1. Source it (`. /tmp/workspace/agent-skills/env.sh`) at the start of every Bash call. It exports `AGENT_SKILLS_ROOT` and `AGENT_SKILLS_COMMIT`.
+2. Read every `rules/…` or `scripts/…` file this skill links from `$AGENT_SKILLS_ROOT/skills/review-loop/`, every sibling skill from `$AGENT_SKILLS_ROOT/skills/<name>/`, and every `agents/<path>` link from `$AGENT_SKILLS_ROOT/<path>`. Never read them relative to the folder this `SKILL.md` was loaded from.
+3. When `$AGENT_SKILLS_ROOT/skills/review-loop/SKILL.md` differs from the copy you are running, or you cannot compare the two, re-read the installed copy and follow it from Step 0. **The installed copy at `$AGENT_SKILLS_COMMIT` wins**, even when that commit is older than the import, because the rules it links come from that same commit. An import is a snapshot and goes stale. Once you are following the installed copy, this check is satisfied and you do not re-read it again.
+
 When `/tmp/workspace/agent-skills/env.sh` exists, the loop is running in an Agent0
 Automation sandbox, where `pr-reviewer` cannot be dispatched and `Skill()` cannot
 see a repo-owned skill. **Read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md)
@@ -88,7 +96,9 @@ An Agent0 session that ran **no** setup script has neither that file nor the bun
 That is the generic automation answering a `/review-loop` comment, and any chat thread whose sandbox was not prepared.
 Its dispatch tool offers `explore` and `general`, not `pr-reviewer`.
 Step 0 does **not** skip there.
-It installs the bundle into `/tmp/workspace` itself ([`rules/agent0-runtime.md` § Install on demand](./rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent)), which takes seconds with no browser, and continues on the same `general` route.
+It recognises the host by `/tmp/workspace`, or by the `/tmp/.opencode/skills/` import tree (also `/tmp/.opencode/agents/general.md`) when `/tmp/workspace` does not exist yet.
+It installs the bundle into `/tmp/workspace` itself, creating that directory when needed, with the [on-demand install block](#on-demand-install--step-0-row-4) in Step 0, which takes seconds with no browser, and continues on the same `general` route.
+That block lives in this file, so a `SKILL.md`-only import still reaches it.
 
 #### The dispatch tool is a capability, not a fixed name
 
@@ -165,8 +175,8 @@ you cannot tell the first two apart, report the harness line:
 | --- | --- | --- |
 | **Nested dispatch** (caller error, fixable today) | You are running as a dispatched sub-agent — the caller's prompt dispatched this loop rather than running it | `skipped (nested dispatch — review-loop must run at the top level; the caller consumed the delegation budget)` |
 | **Harness exposes no dispatch tool** (environment) | This is the top-level session and no tool that dispatches a sub-agent is present under any name — `Task`, `Agent`, or another spelling | `skipped (sub-agent dispatch unavailable; pr-reviewer requires it)` |
-| **`pr-reviewer` is not an agent type here, and there is no Agent0 workspace** (install) | Step 0 row 5: a dispatch tool exists, its agent types omit `pr-reviewer`, and `/tmp/workspace` does not exist | `skipped (pr-reviewer is not a dispatchable agent type here). Install the agent, or re-run with --external-review.` |
-| **The Agent0 on-demand install failed** (environment) | Step 0 row 4 ran the [install](./rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent) and `/tmp/workspace/agent-skills/env.sh` still does not exist | `skipped (Agent0 install failed: <the setup log's last line>)` |
+| **`pr-reviewer` is not an agent type here, and there is no Agent0 workspace** (install) | Step 0 row 5: a dispatch tool exists, its agent types omit `pr-reviewer`, and none of the Agent0 host signals (`/tmp/workspace`, `/tmp/.opencode/skills`, `/tmp/.opencode/agents/general.md`) exists | `skipped (pr-reviewer is not a dispatchable agent type here). Install the agent, or re-run with --external-review.` |
+| **The Agent0 on-demand install failed** (environment) | Step 0 row 4 ran the [install](#on-demand-install--step-0-row-4) and `/tmp/workspace/agent-skills/env.sh` still does not exist | `skipped (Agent0 install failed: <the setup log's last line>)` |
 
 ```markdown
 - [TIMESTAMP] review-loop — skipped (nested dispatch — review-loop must run at the top level; the caller consumed the delegation budget). Have the caller run the loop itself, or dispatch it with --external-review.
@@ -265,10 +275,10 @@ never from a tool name. Take the **first** row that matches:
 | Row | Condition | `REVIEWER_ROUTE` | Sub-step A dispatches |
 | --- | --- | --- | --- |
 | 1 | No available tool dispatches a sub-agent | `none` | Nothing — emit the dispatch-unavailable or nested-dispatch skip line and return |
-| 2 | `/tmp/workspace/agent-skills/env.sh` exists | `agent0` | A `general` sub-agent reading the `pr-reviewer` bundle — [`rules/agent0-runtime.md`](./rules/agent0-runtime.md) |
+| 2 | `/tmp/workspace/agent-skills/env.sh` exists | `agent0` | A `general` sub-agent reading the `pr-reviewer` bundle — [`rules/agent0-runtime.md`](./rules/agent0-runtime.md), read from the install per [Dash0 Agent0 sandboxes](#dash0-agent0-sandboxes) |
 | 3 | The dispatch tool's own list of agent types includes `pr-reviewer` | `named` | `pr-reviewer` |
-| 4 | That list omits `pr-reviewer`, and `/tmp/workspace` exists | `agent0`, after the [on-demand install](./rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent) | As row 2 |
-| 5 | That list omits `pr-reviewer`, and `/tmp/workspace` does not exist | `none` | Nothing — emit `skipped (pr-reviewer is not a dispatchable agent type here)` and return |
+| 4 | That list omits `pr-reviewer`, and the host is Agent0: `/tmp/workspace` or `/tmp/.opencode/skills` exists, or `/tmp/.opencode/agents/general.md` does | `agent0`, after the [on-demand install](#on-demand-install--step-0-row-4), which creates `/tmp/workspace` when absent | As row 2 |
+| 5 | That list omits `pr-reviewer`, and none of row 4's Agent0 signals exists | `none` | Nothing — emit `skipped (pr-reviewer is not a dispatchable agent type here)` and return |
 
 How to evaluate each row:
 
@@ -282,7 +292,9 @@ How to evaluate each row:
    retry: one absent-capability return is conclusive.
 2. **Row 2 — the marker.** A sandbox that ran the setup script keeps the bundle
    route even if its setup also registered `pr-reviewer` as an agent type: that
-   route is the one validated on the host.
+   route is the one validated on the host. Source `env.sh` and apply the
+   [installed-copy rule](#dash0-agent0-sandboxes) before sub-step A: every
+   `rules/…` file this route reads comes from `$AGENT_SKILLS_ROOT/skills/review-loop/`.
 3. **Rows 3–5 — the agent type.** Read the list of agent types the dispatch tool
    itself publishes, in its description or its `subagent_type` parameter. Claude
    Code's `Task` lists them under "Available agent types"; Agent0's `task` lists
@@ -291,10 +303,55 @@ How to evaluate each row:
    dispatch `pr-reviewer` once: a rejection that names the agent type
    (`Unknown agent type`, `not a valid agent type`) is that list's answer arriving
    late, so continue at rows 4–5. It is never a row-1 skip, because the tool worked.
-4. **Row 4 — the install.** Run it once, in this context. The file
-   `/tmp/workspace/agent-skills/env.sh` existing afterwards is the only success
-   test; when it does not exist, emit the install-failed skip line and return —
-   never retry the install, and never review in this context instead.
+4. **Row 4 — the install.** Run the [block below](#on-demand-install--step-0-row-4)
+   once, in this context. The file `/tmp/workspace/agent-skills/env.sh` existing
+   afterwards is the only success test; when it does not exist, emit the
+   install-failed skip line and return — never retry the install, and never
+   review in this context instead.
+
+#### On-demand install — Step 0 row 4
+
+This block is owned here, not in a linked file, because a `SKILL.md`-only import
+must still reach it. Why each line is there:
+[`rules/agent0-runtime.md` § Install on demand](./rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent).
+
+```bash
+# review-loop Step 0 row 4: the marker is absent, the host is Agent0, and the
+# dispatch tool's agent types omit pr-reviewer. Run once; never retry.
+M=/tmp/workspace/agent-skills/env.sh
+B=/tmp/workspace/.agent-skills-install
+# Agent0 host: the workspace dir, or the opencode import tree of an unprepared
+# sandbox. Neither present means a local machine: never install into /tmp there.
+if [ -d /tmp/workspace ] || [ -d /tmp/.opencode/skills ] || [ -f /tmp/.opencode/agents/general.md ]; then A0=1; else A0=0; fi
+if [ ! -f "$M" ] && [ "$A0" = 1 ]; then
+  mkdir -p /tmp/workspace "$B" && rm -f "$B/AGENTS.md.before"
+  # Leave the workspace AGENTS.md exactly as found.
+  [ -e /tmp/workspace/AGENTS.md ] && cp -p /tmp/workspace/AGENTS.md "$B/AGENTS.md.before"
+  rc=1
+  if curl -fsSL --max-time 30 -o "$B/agent0-setup.sh" \
+       https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-setup.sh; then
+    WITH_PLAYWRIGHT=0 timeout 300 bash "$B/agent0-setup.sh" > "$B/setup.log" 2>&1
+    rc=$?
+  else
+    echo "could not download scripts/agent0-setup.sh" > "$B/setup.log"
+  fi
+  if [ -e "$B/AGENTS.md.before" ]; then
+    cp -p "$B/AGENTS.md.before" /tmp/workspace/AGENTS.md
+  else
+    rm -f /tmp/workspace/AGENTS.md
+  fi
+  # A half-verified install must not leave the marker behind for the next run.
+  [ "$rc" = 0 ] || rm -f "$M"
+fi
+if [ -f "$M" ]; then echo "INSTALL: ok"; else echo "INSTALL: failed — $(tail -n 1 "$B/setup.log" 2>/dev/null)"; fi
+```
+
+Read the outcome from the last line:
+
+| Last line | Do |
+| --- | --- |
+| `INSTALL: ok` | Set `REVIEWER_ROUTE = agent0`, apply the [installed-copy rule](#dash0-agent0-sandboxes), read `/tmp/workspace/agent-skills/CONSTRAINTS.md` (this session loaded no `AGENTS.md` pointing at it), and continue as if the sandbox had been prepared. Report the review source as `installed on demand` |
+| `INSTALL: failed — <reason>` | Emit `skipped (Agent0 install failed: <reason>)` and return. Never retry, and never review in this context instead |
 
 **Never conclude "no dispatch" from the absence of the single name `Task`.** That
 misread is what this step exists to prevent: the harness behind Claude Code on
@@ -902,7 +959,7 @@ threads over a red build is not a review-ready PR.
 - **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Non-simplify modes trigger an internal agent pass and create a dispatch cycle.
 - **This loop runs at the top level, never inside a sub-agent.** Its first sub-step is a delegation, so a caller that dispatches the loop instead of running it spends the delegation budget one level too high and the loop can only skip at iteration 0 ([Caller contract](#caller-contract--run-this-loop-at-the-top-level-never-inside-a-sub-agent)). A caller limited to one dispatch passes `--external-review` **deliberately** — the loop never adds that flag to itself.
 - **In an Agent0 sandbox the review is a `general` dispatch, never an in-context review.** Detect the host by the presence of `/tmp/workspace/agent-skills/env.sh`, never from a failed call, and follow [`rules/agent0-runtime.md`](./rules/agent0-runtime.md). A reviewer reply that refuses is `reviewer-refused`, never a clean pass.
-- **A dispatch tool without the `pr-reviewer` type is a route to resolve, never a skip.** Step 0 reads the tool's own list of agent types; when `pr-reviewer` is absent and `/tmp/workspace` exists, it installs the bundle on demand and dispatches the `general` reviewer. The only skips on that path are row 5 (no Agent0 workspace) and a failed install, each with its own line.
+- **A dispatch tool without the `pr-reviewer` type is a route to resolve, never a skip.** Step 0 reads the tool's own list of agent types; when `pr-reviewer` is absent and the host is Agent0 (`/tmp/workspace` or the `/tmp/.opencode` import tree exists), it installs the bundle on demand and dispatches the `general` reviewer. The only skips on that path are row 5 (no Agent0 workspace) and a failed install, each with its own line.
 - **The dispatch precondition tests a capability, never a tool name.** `Task` and `Agent` are two spellings of the same capability; concluding "no dispatch available" because the name `Task` is absent skips the review on every harness that spells it otherwise ([The dispatch tool is a capability, not a fixed name](#the-dispatch-tool-is-a-capability-not-a-fixed-name)).
 - **One absent-dispatch skip is terminal.** Never retry the dispatch and never work around it: the capability's absence is fixed by the dispatch topology before any code is read, so a retry costs a round trip and returns the same answer.
 - **A skip is never reported as convergence, and never as report-only.** Zero open threads plus green CI is not convergence when no review pass produced a verdict; say plainly that the loop did not run and the PR was not reviewed.

@@ -8385,7 +8385,7 @@ const isPollBlock = (block) =>
   const step0 = (loop.match(/### Step 0:[\s\S]*?(?=\n### Step 1:)/) || [""])[0];
   const iMarkerRow = step0.search(/^\| 2 \| `\/tmp\/workspace\/agent-skills\/env\.sh` exists \| `agent0`/m);
   const iNamedRow = step0.search(/^\| 3 \|[^\n]*`pr-reviewer`[^\n]*\| `named` \|/m);
-  const iInstallRow = step0.search(/^\| 4 \|[^\n]*\(\.\/rules\/agent0-runtime\.md#install-on-demand-when-the-marker-is-absent\)/m);
+  const iInstallRow = step0.search(/^\| 4 \|[^\n]*\(#on-demand-install--step-0-row-4\)/m);
   const stopLine = (loop.match(/^Stop reason: <[^\n]*/m) || [""])[0];
   s.check("G58h review-loop Step 0 resolves REVIEWER_ROUTE: marker row, then named row, then on-demand install; both skips reportable",
     step0.includes("REVIEWER_ROUTE") && iMarkerRow > 0 && iNamedRow > iMarkerRow && iInstallRow > iNamedRow
@@ -8399,9 +8399,16 @@ const isPollBlock = (block) =>
   // exact file this repo ships as the setup script (derived from SETUP_REL, never re-encoded), skips
   // the browser, leaves the workspace AGENTS.md as found, and removes the marker on a failed exit
   // (the setup script writes env.sh BEFORE its own verification, so a failed run would otherwise
-  // leave a marker that sends the next run down row 2 on an unverified install).
-  const installSec = (rule.match(/## Install on demand when the marker is absent[\s\S]*?(?=\n## )/) || [""])[0];
+  // leave a marker that sends the next run down row 2 on an unverified install). The block lives in
+  // SKILL.md Step 0 (a SKILL.md-only Agent0 import must reach it), and ONLY there: the rule file's
+  // install section keeps the rationale and carries no second copy of the block.
+  const installSec = (step0.match(/#### On-demand install — Step 0 row 4\n[\s\S]*?\n```bash\n[\s\S]*?\n```/) || [""])[0];
   const installBlock = (installSec.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
+  const ruleInstallSec = (rule.match(/## Install on demand when the marker is absent[\s\S]*?(?=\n## )/) || [""])[0];
+  s.check("G58i2 the on-demand install block has one owner: SKILL.md, and the rule file points there",
+    installBlock !== "" && !/```bash/.test(ruleInstallSec) && !ruleInstallSec.includes("agent0-setup.sh; then")
+      && ruleInstallSec.includes("(../SKILL.md#on-demand-install--step-0-row-4)"),
+    "the install block is missing from review-loop SKILL.md Step 0, or rules/agent0-runtime.md still carries a copy / no pointer");
   const synI = installBlock ? spawnSync("bash", ["-n"], { input: installBlock, encoding: "utf8" }) : { status: -1 };
   s.check("G58i the on-demand install runs the shipped setup script without a browser, restores AGENTS.md, and drops the marker on failure",
     synI.status === 0
@@ -8411,6 +8418,79 @@ const isPollBlock = (block) =>
       && /cp -p "\$B\/AGENTS\.md\.before" \/tmp\/workspace\/AGENTS\.md/.test(installBlock)
       && installBlock.includes("rm -f /tmp/workspace/AGENTS.md"),
     `bash -n=${synI.status}; the install block must fetch ${SETUP_REL}, pass WITH_PLAYWRIGHT=0, restore AGENTS.md, and rm the marker when rc != 0`);
+}
+
+// ── G85: Agent0 flat import — each entry-point skill works from its SKILL.md ALONE ──
+//
+// Agent0's Settings → Skills import copies SKILL.md and nothing else (observed: the imported
+// review-loop folder held exactly one file, so rules/agent0-runtime.md and its install block were
+// unreachable and every run fell to the "not a dispatchable agent type" skip). This simulates that
+// import literally — each SKILL.md is copied ALONE into an empty temp dir and only that copy is read
+// — and asserts what an Agent0 run needs is in it: review-loop's install block (by its key commands,
+// derived from SETUP_REL/DETECT where possible), the unprepared-host signals that let it install
+// before /tmp/workspace exists (and that no signal means no install), and in every entry point the
+// rule that sends linked-file reads to $AGENT_SKILLS_ROOT and lets the installed copy win.
+{
+  const SETUP_URL = "https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-setup.sh";
+  const ENTRY = { "review-loop": "skills/quality/review-loop/SKILL.md", "ui-verify": "skills/testing/ui-verify/SKILL.md", "pr-review": "skills/quality/pr-review/SKILL.md" };
+  const flat = {};
+  const dir = mkdtempSync(join(tmpdir(), "l1-flat-import-"));
+  try {
+    for (const [name, relp] of Object.entries(ENTRY)) {
+      const d = join(dir, name);
+      mkdirSync(d);
+      writeFileSync(join(d, "SKILL.md"), readFileSync(join(REPO_ROOT, relp), "utf8"));
+      const listing = readdirSync(d);
+      flat[name] = listing.length === 1 ? readFileSync(join(d, "SKILL.md"), "utf8") : "";
+    }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+
+  // G85a — review-loop's install block is in SKILL.md itself, with its key commands and outcome lines.
+  const rl = flat["review-loop"];
+  const blk = ((rl.match(/#### On-demand install — Step 0 row 4\n[\s\S]*?```bash\n([\s\S]*?)\n```/) || ["", ""])[1]);
+  s.check("G85a flat import: review-loop SKILL.md alone carries the install block (setup URL, WITH_PLAYWRIGHT=0, INSTALL: lines)",
+    blk.includes(SETUP_URL) && /WITH_PLAYWRIGHT=0 timeout 300 bash/.test(blk)
+      && blk.includes('echo "INSTALL: ok"') && blk.includes('echo "INSTALL: failed')
+      && /^\| `INSTALL: ok` \|/m.test(rl) && /^\| `INSTALL: failed — <reason>` \|/m.test(rl),
+    "review-loop SKILL.md alone lacks the install block's URL, WITH_PLAYWRIGHT=0, or the INSTALL: ok/failed lines and their outcome rows");
+
+  // G85b — the install works before /tmp/workspace exists: the opencode import tree is an Agent0
+  // signal, the block creates /tmp/workspace, and with NO signal the block installs nothing. The
+  // last half is EXECUTED: the block's host test runs against a fake root with and without signals.
+  const hostLine = (blk.match(/^if \[ -d \/tmp\/workspace \][^\n]*A0=0; fi$/m) || [""])[0];
+  const probe = (mk) => {
+    const root = mkdtempSync(join(tmpdir(), "l1-a0-"));
+    try {
+      for (const m of mk) mkdirSync(join(root, m), { recursive: true });
+      if (mk.includes(".opencode/agents")) writeFileSync(join(root, ".opencode/agents/general.md"), "x");
+      const sh = hostLine.replaceAll("/tmp/", `${root}/`) + "\necho $A0";
+      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout.trim();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  };
+  const hostOk = hostLine !== "" && probe([]) === "0" && probe(["workspace"]) === "1"
+    && probe([".opencode/skills"]) === "1" && probe([".opencode/agents"]) === "1";
+  s.check("G85b flat import: review-loop installs on an unprepared Agent0 host (opencode signals, mkdir /tmp/workspace) and never without a signal",
+    hostOk && /if \[ ! -f "\$M" \] && \[ "\$A0" = 1 \]; then\n\s*mkdir -p \/tmp\/workspace /.test(blk)
+      && /^\| 4 \|[^\n]*`\/tmp\/\.opencode\/skills`/m.test(rl) && /^\| 5 \|[^\n]*none of row 4's Agent0 signals/m.test(rl),
+    `host test ${hostLine ? "found" : "missing"}; probes none/ws/skills/agents=${hostLine ? [probe([]), probe(["workspace"]), probe([".opencode/skills"]), probe([".opencode/agents"])].join("/") : "-"} (want 0/1/1/1); or mkdir / row 4-5 wording drifted`);
+
+  // G85c — every entry point, from SKILL.md alone, sends linked-file reads to the install and lets the
+  // installed copy win. Keyed per skill name, so a rule copied without renaming its path reds.
+  const noRule = Object.entries(flat).filter(([name, t]) => !(
+    t.includes(`$AGENT_SKILLS_ROOT/skills/${name}/SKILL.md`) && t.includes("$AGENT_SKILLS_ROOT/skills/<name>/")
+      && /Read linked files from the install, never from the imported folder/.test(t)
+      && /the installed copy at `\$AGENT_SKILLS_COMMIT` wins/i.test(t)
+      && t.includes(". /tmp/workspace/agent-skills/env.sh"))).map(([n]) => n);
+  s.check("G85c flat import: every Agent0 entry point reads linked files from $AGENT_SKILLS_ROOT/skills/<name>/ and follows the installed copy",
+    Object.values(flat).every(Boolean) && noRule.length === 0,
+    `missing the installed-copy rule: ${noRule.join(",") || "none"}`);
+
+  // G85d — ui-verify and pr-review recognise the unprepared host by the same signals and name it,
+  // rather than falling through to a dispatch Agent0 cannot make.
+  const noHost = ["ui-verify", "pr-review"].filter((n) => !(flat[n].includes("/tmp/.opencode/skills/")
+    && flat[n].includes("/tmp/.opencode/agents/general.md") && /Agent0 sandbox not prepared/.test(flat[n])));
+  s.check("G85d flat import: ui-verify and pr-review recognise an unprepared Agent0 host and report it by name",
+    noHost.length === 0, `missing unprepared-host handling: ${noHost.join(",") || "none"}`);
 }
 
 // ── G59: ui-verify on an Agent0 Automation sandbox ──

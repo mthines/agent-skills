@@ -34,8 +34,16 @@ Two of them, plus one property of every automation, decide everything below:
 
 ## Detect the host by the install, never by a failed call
 
-The host is Agent0 **iff** `/tmp/workspace/agent-skills/env.sh` exists.
-Source it at the start of every Bash call that needs a path — shell state does not persist between tool calls.
+Two file signals, checked before any call, answer two different questions:
+
+| Signal | Answers | Used by |
+| --- | --- | --- |
+| `/tmp/workspace/agent-skills/env.sh` | **A prepared Agent0 sandbox**: the install exists, so `AGENT0 = 1` and every substitution below applies | every repo-owned skill |
+| `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md` | **An unprepared Agent0 host**: no install yet. The opencode paths are the host's own import tree (a flat skill import lands at `/tmp/.opencode/skills/custom/<name>/SKILL.md`) and exist even before `/tmp/workspace` does | only an on-demand install, which creates `/tmp/workspace` and then writes `env.sh` |
+
+`AGENT0 = 1` still means the marker, and only the marker.
+An unprepared-host signal never turns the substitutions on by itself; it only permits an install, and a machine with none of the signals never gets an install into `/tmp`.
+Source `env.sh` at the start of every Bash call that needs a path — shell state does not persist between tool calls.
 
 ```text
 ✅ RIGHT — file presence, evaluated before any call
@@ -48,7 +56,7 @@ try Task(subagent_type="aw-tester") except "not found": AGENT0 = 1
 The failed-call form is the `F6` anti-pattern ([`diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md)): it spends a round trip to learn what the filesystem already states, and a host that fails differently is misclassified.
 When the file is absent, none of this rule applies.
 
-A session that ran no setup script can create the file mid-run by running the [setup script](#the-setup-script) itself; [`review-loop`'s on-demand install](../../../skills/quality/review-loop/rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent) does, when the dispatch tool's published agent types omit `pr-reviewer` and `/tmp/workspace` exists.
+A session that ran no setup script can create the file mid-run by running the [setup script](#the-setup-script) itself; [`review-loop`'s on-demand install](../../../skills/quality/review-loop/rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent) does, when the dispatch tool's published agent types omit `pr-reviewer` and an unprepared-host signal exists. The block itself lives in `review-loop`'s `SKILL.md`, so a `SKILL.md`-only import reaches it.
 Detection is unchanged by it: the file still decides, and the install is triggered by the agent-type list the tool publishes, never by a failed call.
 
 ## The substitutions
@@ -63,6 +71,8 @@ Detection is unchanged by it: the file still decides, and the install is trigger
 | `AskUserQuestion(…)` | The skill's documented automation answer — [below](#no-user-to-ask) |
 
 `$AGENT_SKILLS_ROOT` is `/tmp/workspace/pr-reviewer`, exported by `env.sh`.
+Read every linked file from there, never relative to the folder a `SKILL.md` was loaded from: an Agent0 import can hold `SKILL.md` alone.
+When the installed `SKILL.md` differs from the imported one, follow the installed copy; it is at `$AGENT_SKILLS_COMMIT`, the same commit as the files it links.
 A skill whose file is absent is reported as `not installed (<name>)`, never skipped silently.
 
 ## A custom agent becomes a `general` sub-agent that reads its definition

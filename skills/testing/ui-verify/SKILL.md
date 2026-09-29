@@ -21,7 +21,7 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.6.0'
+  version: '1.6.1'
   workflow_type: slash-command
   tags:
     - playwright
@@ -113,6 +113,15 @@ Skill("ui-verify", "run <PR-URL> --unattended")    # Playwright, or an inconclus
 It works from a checkout of the PR head, resolves `auto` to Playwright without the prompt (no user is present, and the automation's setup script installing Playwright is that decision), checks the browser the setup installed, and dispatches `aw-tester` as a `general` sub-agent that reads its definition file — the host cannot dispatch the custom type.
 `setup` is interactive and stops there as `blocked (needs a human …)`.
 Agent0 mode implies [`--unattended`](#--unattended--never-ask-never-hang) whether or not the caller passed it.
+
+**Read linked files from the install, never from the imported folder.**
+An Agent0 import can hold this `SKILL.md` alone, with no `rules/` or `scripts/` beside it.
+Whenever `/tmp/workspace/agent-skills/env.sh` exists, source it (`. /tmp/workspace/agent-skills/env.sh`) in every Bash call, and read every `rules/…` or `scripts/…` file this skill links from `$AGENT_SKILLS_ROOT/skills/ui-verify/`, every sibling skill from `$AGENT_SKILLS_ROOT/skills/<name>/`, and every `agents/<path>` link from `$AGENT_SKILLS_ROOT/<path>`.
+When `$AGENT_SKILLS_ROOT/skills/ui-verify/SKILL.md` differs from the copy you are running, or you cannot compare them, follow the installed copy: **the installed copy at `$AGENT_SKILLS_COMMIT` wins**, because the rules it links come from that commit, and an import is a snapshot that goes stale.
+
+**An unprepared Agent0 host** has no `env.sh` but has `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md`.
+`ui-verify` does not install on demand: it needs a Playwright browser, which only the setup script installs.
+There, `run` and `verify` stop with `NOT RUN (Agent0 sandbox not prepared: add scripts/agent0-setup.sh as the automation's sandbox.setupScript)`, never a question and never a `red`.
 
 ## Step 0: Resolve your GitHub access path
 

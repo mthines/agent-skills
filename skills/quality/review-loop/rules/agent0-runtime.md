@@ -36,48 +36,27 @@ Only an automation that pastes [`scripts/agent0-setup.sh`](../../../../scripts/a
 The generic automation that answers a `/review-loop` comment does not, and neither does a chat thread whose sandbox was not prepared.
 There the dispatch tool offers `explore` and `general`, and the loop used to skip at iteration 0 with the PR unreviewed.
 
-Step 0 row 4 installs the same files the setup script would, from the same script, in this context:
+Step 0 row 4 installs the same files the setup script would, from the same script, in this context.
+**The block and its outcome table live in [`SKILL.md` § On-demand install — Step 0 row 4](../SKILL.md#on-demand-install--step-0-row-4), not here.**
+Agent0 can import a skill as its `SKILL.md` alone, and an import without `rules/` would never reach a block kept in this file; that is exactly how the install was skipped before.
+This section keeps only why the block is shaped the way it is.
 
-```bash
-# review-loop Step 0 row 4: the marker is absent, /tmp/workspace exists, and the
-# dispatch tool's agent types omit pr-reviewer. Run once; never retry.
-M=/tmp/workspace/agent-skills/env.sh
-B=/tmp/workspace/.agent-skills-install
-if [ ! -f "$M" ] && [ -d /tmp/workspace ]; then
-  mkdir -p "$B" && rm -f "$B/AGENTS.md.before"
-  # Leave the workspace AGENTS.md exactly as found (see below).
-  [ -e /tmp/workspace/AGENTS.md ] && cp -p /tmp/workspace/AGENTS.md "$B/AGENTS.md.before"
-  rc=1
-  if curl -fsSL --max-time 30 -o "$B/agent0-setup.sh" \
-       https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-setup.sh; then
-    WITH_PLAYWRIGHT=0 timeout 300 bash "$B/agent0-setup.sh" > "$B/setup.log" 2>&1
-    rc=$?
-  else
-    echo "could not download scripts/agent0-setup.sh" > "$B/setup.log"
-  fi
-  if [ -e "$B/AGENTS.md.before" ]; then
-    cp -p "$B/AGENTS.md.before" /tmp/workspace/AGENTS.md
-  else
-    rm -f /tmp/workspace/AGENTS.md
-  fi
-  # A half-verified install must not leave the marker behind for the next run.
-  [ "$rc" = 0 ] || rm -f "$M"
-fi
-if [ -f "$M" ]; then echo "INSTALL: ok"; else echo "INSTALL: failed — $(tail -n 1 "$B/setup.log" 2>/dev/null)"; fi
-```
+### Which hosts install
 
-Read the outcome from the last line:
+The block installs only on an Agent0 host. The prepared-sandbox marker and the unprepared-host signals are independent:
 
-| Last line | Do |
+| Signal | Means |
 | --- | --- |
-| `INSTALL: ok` | Set `REVIEWER_ROUTE = agent0`, read `/tmp/workspace/agent-skills/CONSTRAINTS.md` (this session loaded no `AGENTS.md` pointing at it), and continue with everything below as if the sandbox had been prepared. Report the review source as `installed on demand` |
-| `INSTALL: failed — <reason>` | Emit `skipped (Agent0 install failed: <reason>)` and return. Never retry, and never review in this context instead |
+| `/tmp/workspace/agent-skills/env.sh` | A **prepared** sandbox: the setup script already ran. Row 2, no install |
+| `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md` exists | An **unprepared** Agent0 sandbox. The opencode paths are the host's import tree (a flat import lands at `/tmp/.opencode/skills/custom/review-loop/SKILL.md`) and exist even before `/tmp/workspace` does, so the block creates `/tmp/workspace` itself |
+| None of them | Not Agent0 — a local machine. Row 5 skips, and nothing is ever installed into `/tmp` |
 
-Four properties of the block are load-bearing:
+Five properties of the block are load-bearing:
 
 - **It runs the setup script, not a second installer.** One install procedure, so an on-demand install and a prepared sandbox cannot drift apart. The script comes from the repository this skill is published from, at `main`, which is also the setup script's own default `PIN`.
 - **It passes `WITH_PLAYWRIGHT=0`.** The install then takes seconds rather than minutes. `ui-verify` at Step 1.6 reads `UI_VERIFY_BROWSER=skipped` and reports `not run` with that reason, which never affects convergence.
 - **It leaves `/tmp/workspace/AGENTS.md` as it found it.** The setup script writes one for sessions that load it at start. Written mid-run it would change the instructions of every sub-agent dispatched afterwards, and nothing here needs it: sub-step A's prompt names `RUN-CONSTRAINTS.md`, and every writing sub-agent is handed `CONSTRAINTS.md` in its prompt.
+- **It needs an Agent0 signal, and `/tmp/workspace` is not required to exist.** The opencode import tree identifies an unprepared sandbox on its own, so the skill works out of the box after a flat import; a machine with none of the signals never gets an install into `/tmp`.
 - **The marker is the only success test.** The setup script writes `env.sh` before its own verification, so a failed exit removes it; otherwise the next run in the same sandbox would take row 2 on an install that never verified.
 
 ## Sub-step A — dispatch a `general` reviewer pointed at the bundle
