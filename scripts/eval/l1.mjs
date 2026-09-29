@@ -3612,9 +3612,15 @@ const isPollBlock = (block) =>
   const fallback = implementTpls.find((t) => t.includes("{report_comment_url}"));
   const ciOnly = templates.find((t) => t.includes("{failing_checks}"));
 
-  s.check("G32a the Fix-all template is a /pr-fix call carrying the PR URL and the reviewer's login",
-    !!fixAll && /^\/pr-fix https:\/\/github\.com\/\{owner\}\/\{repo\}\/pull\/\{n\} \{bot_login\}$/.test(fixAll.trim()),
-    `no text-fenced template is a bare "/pr-fix <pr-url> {bot_login}" — got ${JSON.stringify(fixAll ?? null)}`);
+  // The PR is addressed by its short reference, never its URL: `https://github.com/…/pull/` is
+  // most of the percent-escapes in the encoded link (`%3A%2F%2F…%2Fpull%2F`) and says nothing the
+  // short form does not. G32r holds the builder to the same shape the rule file shows.
+  s.check("G32a the Fix-all template is a /pr-fix call carrying the PR's short reference and the reviewer's login",
+    !!fixAll && /^\/pr-fix \{owner\}\/\{repo\}#\{n\} \{bot_login\}$/.test(fixAll.trim()),
+    `no text-fenced template is a bare "/pr-fix {owner}/{repo}#{n} {bot_login}" — got ${JSON.stringify(fixAll ?? null)}`);
+  s.check("G32a no /pr-fix template addresses the PR by its full URL",
+    !implementTpls.some((t) => /https:\/\/github\.com\/\{owner\}\/\{repo\}\/pull\//.test(t)),
+    "a /pr-fix template is back to the full PR URL — the short reference {owner}/{repo}#{n} names the same PR without the escaped scaffolding");
 
   s.check("G32b no template sends Agent0 to the report comment by marker first",
     !templates.some((t) => t.includes("PR_REVIEWER_REPORT")),
@@ -3623,6 +3629,24 @@ const isPollBlock = (block) =>
   s.check("G32c the Fix-this template is a /pr-fix call scoping to one {path}:{line}",
     !!fixThis && fixThis.includes("/pr-fix ") && fixThis.includes("{bot_login}"),
     "the fix-this template lost its /pr-fix call, its {path}:{line} scope, or its {bot_login} author argument — without the scope it duplicates Fix-all, and without the author /pr-fix skips a bot reviewer's own findings");
+
+  // G32r: the rule file's templates and the code that fills them are two copies of one prompt —
+  // finalize/fix-links.mjs builds every default-run button — so fill each template with the same
+  // PR and assert the builder emits it byte for byte. Without this, the prose could show the short
+  // reference while the buttons kept posting the full URL, and every other G32 check stays green.
+  {
+    const fx = await import(pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/fix-links.mjs")).href);
+    const PR_URL = "https://github.com/mthines/agent-skills/pull/215";
+    const fill = (t) => (t ?? "").trim()
+      .replaceAll("{owner}", "mthines").replaceAll("{repo}", "agent-skills").replaceAll("{n}", "215")
+      .replaceAll("{bot_login}", "dash0-dev[bot]").replaceAll("{path}", "src/a.ts").replaceAll("{line}", "88");
+    s.check("G32r the Fix-all builder emits the rule file's Fix-all template",
+      !!fixAll && fx.fixAllPrompt({ prUrl: PR_URL, login: "dash0-dev[bot]", openCount: 1, stickyCommentId: null }) === fill(fixAll),
+      `builder: ${JSON.stringify(fx.fixAllPrompt({ prUrl: PR_URL, login: "dash0-dev[bot]", openCount: 1, stickyCommentId: null }))} · template: ${JSON.stringify(fill(fixAll))}`);
+    s.check("G32r the Fix-this builder emits the rule file's Fix-this template",
+      !!fixThis && fx.fixThisPrompt(PR_URL, "dash0-dev[bot]", "src/a.ts", 88) === fill(fixThis),
+      `builder: ${JSON.stringify(fx.fixThisPrompt(PR_URL, "dash0-dev[bot]", "src/a.ts", 88))} · template: ${JSON.stringify(fill(fixThis))}`);
+  }
 
   // The login fallback is what narrowed the omit-the-button rule: an unresolved {bot_login} used to
   // drop the Fix-all button outright, and now the report comment's own permalink names the author by

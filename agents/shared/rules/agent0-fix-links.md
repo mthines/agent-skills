@@ -204,13 +204,18 @@ no embedded query, and no method. Agent0's `/pr-fix` skill owns everything the p
 spell out: gathering the PR's comments, filtering them to one author, applying the actionable ones,
 committing, and pushing. The prompt's whole job is to say *which* PR and *whose* comments.
 
-That is what took **Fix all** from ~1100 encoded chars to **~190** (flat) and **Fix this** from ~880
-to **~360** at its worst case — a 94-char path; a typical path lands nearer 250. Both are flat in the
+That is what took **Fix all** from ~1100 encoded chars to **~155** (flat) and **Fix this** from ~880
+to **~320** at its worst case — a 96-char path; a typical path lands nearer 230. Both are flat in the
 finding count: neither carries per-finding data beyond the one `{path}:{line}` **Fix this** exists to
 name. The figures are not guesses: L1 `G32d` fills the live templates and measures them against the
 2500 design target, and `G32k` holds both under a **500**-char regression bound so a re-added clause
 is caught as a length regression rather than absorbed into 2000+ chars of headroom (the
 `&utm_source=...` tag from § Click attribution is a small, fixed addition on top of each).
+
+The last ~35 of those chars came from addressing the PR by its **short reference**,
+`{owner}/{repo}#{n}`, instead of its full URL (§ Prompt templates). The URL spent them on escapes:
+`https://github.com/` encodes to `https%3A%2F%2Fgithub.com%2F` and `/pull/` to `%2Fpull%2F`, while
+the short form costs one `%2F` and one `%23`.
 
 ## Click attribution
 
@@ -240,8 +245,23 @@ round trip before the first edit. A prompt carries only what Agent0 cannot infer
 **Both fix prompts invoke Agent0's `/pr-fix` skill and pass it an address.** `/pr-fix` is the
 skill that gathers a PR's comments, filters them to one author, applies the actionable ones, commits,
 and pushes — so the prompt no longer describes that method, it names the target. Its argument grammar
-is `/pr-fix [<pr>] [<author>|all]`, both optional and in any order, where `<pr>` is a PR number or
-URL and `<author>` is a GitHub login. Fill exactly those two slots; do not narrate around them.
+is `/pr-fix [<pr>] [<author>|all]`, both optional and in any order, where `<pr>` is a PR number, a
+short reference (`{owner}/{repo}#{n}`), a URL, or a comment permalink, and `<author>` is a GitHub
+login. Fill exactly those two slots; do not narrate around them.
+
+**Fill `<pr>` with the short reference, `{owner}/{repo}#{n}`, not the PR URL.** It names the same PR
+in one token — GitHub's own cross-repo reference form, and the one the CI-only template below already
+uses — and it drops the `https://github.com/…/pull/` scaffolding whose `:` and `/` characters are
+most of the percent-escapes in the encoded link (§ Deep-link format). `finalize/fix-links.mjs`'s
+`prRef()` derives it from the PR URL. Like the rest of `/pr-fix`'s grammar, its acceptance of the
+short form is asserted here and not verifiable from this repo — the skill's own **Arguments** section
+must list `{owner}/{repo}#{n}` as a `<pr>` form. Two cases keep a full URL:
+
+- **A PR that is not on `github.com`** (a GitHub Enterprise host). The short reference implies
+  `github.com`, so `prRef()` returns such a URL unchanged — a longer link that resolves beats a
+  shorter one that points `/pr-fix` at the wrong host.
+- **The login fallback below**, which must name one comment, and a short reference has no way to
+  carry a comment id.
 
 Three consequences of delegating to the skill, all of them the point of this design:
 
@@ -265,7 +285,7 @@ code-review finding…", the `<finding>` wrapper, an embedded `{body}`). `{branc
 **Fix this** (per inline finding) — the PR, the reviewer's login, and the one location to scope to:
 
 ```text
-/pr-fix https://github.com/{owner}/{repo}/pull/{n} {bot_login} — apply only the comment at {path}:{line}.
+/pr-fix {owner}/{repo}#{n} {bot_login} — apply only the comment at {path}:{line}.
 ```
 
 The trailing clause is the one thing outside `/pr-fix`'s two-argument grammar, and it is there
@@ -283,7 +303,7 @@ itself. `{path}:{line}` is known at build time and addresses the same comment.
 **Fix all** (report) — the PR and the reviewer's login, and nothing else:
 
 ```text
-/pr-fix https://github.com/{owner}/{repo}/pull/{n} {bot_login}
+/pr-fix {owner}/{repo}#{n} {bot_login}
 ```
 
 - `{bot_login}` — this agent's own login, already resolved earlier in the run by the same identity
@@ -547,8 +567,9 @@ on a branch that gets deleted.
 `ACCESS_PATH == "mcp"`
 ([`github-access.md § Step 0`](./github-access.md#step-0--resolve-your-path-once-before-any-github-step)),
 which is also where a caller learns whether its body travels as a file or as a tool-call argument.
-Every fix link exceeds the 140-char budget by construction — the floor below is 164 — so a check run
-**unconditionally** withholds the buttons on every run of every repo, `gh` runs included, where
+Every realistic fix link exceeds the 140-char budget — **Fix this** always (its floor is 188), and
+**Fix all** unless the owner, repo, PR number, and login total 14 characters or fewer (see below) — so
+a check run **unconditionally** withholds the buttons on practically every run of every repo, `gh` runs included, where
 nothing would have been rewritten. That is not a conservative default; it is a silent, permanent
 opt-out of a default-on affordance, indistinguishable from the feature being off. It shipped exactly
 that way: the consumer's report block carried *"on the `gh` path the buttons post intact and stay"*
@@ -592,36 +613,43 @@ design the link around. A `fix-this` link spends ~110 body chars before the prom
 ~30 — enough for `Fix <basename>:<line>` and not the repo, the PR, or the finding. A button that
 opens a session with no idea what to fix is worse than no button.
 
-**On a relayed write the buttons are unreachable by construction — the floor is above the ceiling.**
-The deep-link scaffold alone (`https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=`
+**On a relayed write the buttons are unreachable for every realistic PR — the floor sits at or above
+the ceiling.** The deep-link scaffold alone (`https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=`
 plus `&utm_source=pr-reviewer-fix-all`) is **105 body chars** empty, leaving 35 for the encoded
-prompt. The shortest conceivable filled Fix-all — a one-character owner, repo and login, PR #1 —
-measures **164**, and every realistic fill lands in **189–204**. Re-derive rather than trust those:
+prompt. A filled Fix-all measures **126 plus the owner, repo, PR number, and encoded login** — the
+21 fixed chars are `%2Fpr-fix%20`, the `%2F` and `%23` of the short reference, and the `%20` before
+the login, and a `[` or `]` in a bot login encodes to three chars. It fits under 140 only when those
+four total 14 or fewer: the degenerate fill — a one-character owner, repo and login, PR #1 — measures
+**130**, and every realistic fill lands in **155–192**. Fix this never fits: its scaffold is one char
+longer and its scope clause alone is ~50 encoded chars, so even the degenerate fill measures **188**.
+Re-derive rather than trust those:
 
 ```bash
 node agents/pr-reviewer/scripts/build-agent0-link.mjs --env production --source fix-all \
-  "/pr-fix https://github.com/mthines/agent-skills/pull/168 <login>" \
+  "/pr-fix mthines/agent-skills#168 <login>" \
   | perl -pe 's/&/&amp;/g' | tr -d '\n' | wc -c
 ```
 
-The login moves the figure by its own length: `mthines` gives 189, `claude[bot]` 197,
-`dash0-dev[bot]` 200, each **+4** on `development` (a longer host). A configured `agent0_org`
+The login moves the figure by its own encoded length: `mthines` gives 155, `claude[bot]` 163,
+`dash0-dev[bot]` 166, each **+4** on `development` (a longer host). A configured `agent0_org`
 (§ Organization) adds `&org=<slug>` as `&amp;org=<slug>` in the body — **+9 plus the slug**, so
-`dash0-development` costs 26 and takes the `mthines` fill to 215. Add `--org <slug>` to the command
-above when re-deriving for a repo that sets one. Quote the fill, never just the PR — an earlier
-revision cited `mthines/agent-skills#168` for **195**, which is that PR with a 13-character bot login
-and not the 189 its actual reviewer login produces.
+`dash0-development` costs 26 and takes the `mthines` fill to 181. Add `--org <slug>` to the command
+above when re-deriving for a repo that sets one. Quote the fill, never just the PR — the login alone
+moves the figure by 11 chars across those three.
 
-Every one of those is over 140 before any prompt content is chosen. That is why *"do not shorten the
-prompt to fit"* is an absolute rather than a preference: no prompt exists that fits, so shortening
-trades the affordance's usefulness for nothing. It also bounds what the `/pr-fix` rewrite bought.
-Taking Fix-all from ~1100 to ~190 is a large win against the **2500 design target** and `MAX_URL`,
-and **no** win against the relay budget, which it still exceeds by ~50. **The remedy is the write
-path, not the link:** post
+Every realistic fill is over 140 before any prompt content is chosen. That is why *"do not shorten
+the prompt to fit"* is an absolute rather than a preference: no prompt that still names the PR, the
+author, and — for Fix this — the location fits, so shortening trades the affordance's usefulness for
+nothing. A tiny repo whose Fix all happens to measure 140 or less passes `--relay-check` with exit 0
+and posts its button as rendered; that is the check answering correctly, not an exception to this
+rule, because nothing was shortened to get there. It also bounds what the `/pr-fix` rewrite and the
+short reference bought. Taking Fix-all from ~1100 to ~155 is a large win against the **2500 design
+target** and `MAX_URL`, and **no** win against the relay budget on any realistic PR, which it still
+exceeds by ~15–50. **The remedy is the write path, not the link:** post
 the body from a **file** (`gh api … --field body=@file`, `gh pr review --body-file`) and no rewrite
 happens, so the buttons render intact. A caller that can only pass the body as a tool-call argument
-gets a correctly-withheld button on every run, permanently — worth knowing before reading a missing
-button as a bug in the renderer.
+gets a correctly-withheld button on every realistic run, permanently — worth knowing before reading a
+missing button as a bug in the renderer.
 
 **The rule:**
 
@@ -666,7 +694,7 @@ bytes* remains the backstop for whatever this check does not predict.
 
 - The buttons only *prepare* a prompt; a human clicks, and Agent0 runs under its own guardrails and
   commits to the PR the human is already looking at. The reviewer never triggers a fix itself.
-- **Neither `/pr-fix` prompt embeds any comment text.** They carry a PR URL, the reviewer's own
+- **Neither `/pr-fix` prompt embeds any comment text.** They carry a PR reference, the reviewer's own
   login, and — for **Fix this** — one `{path}:{line}` this agent authored. Bodies are read live by
   `/pr-fix` from GitHub, so a hostile comment from a third party cannot ride into the URL.
 - Both name the author explicitly, so `/pr-fix` acts on **this reviewer's** comments and no one

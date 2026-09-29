@@ -34,22 +34,42 @@ export function resolveFixLinks({ noFixLinks = false, fixLinks = false, config =
   return { on: true, env, org, reason: config?.fixLinks === true ? "agent0_fix_links: true" : "default" };
 }
 
+// A github.com pull-request URL, optionally with a trailing slash, query, or fragment.
+const GITHUB_PR_URL_RE = /^https:\/\/github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)\/pull\/(\d+)(?:[/?#].*)?$/;
+
+/**
+ * The PR address a fix prompt carries: `{owner}/{repo}#{n}` — GitHub's own short reference —
+ * instead of the full URL (§ Prompt templates). The short form drops `https://github.com/` and
+ * `/pull/`, which are the bulk of the percent-escapes in the encoded link (`%3A%2F%2F…%2Fpull%2F`).
+ *
+ * The short form implies github.com, so any URL that is not a github.com PR URL (a GitHub
+ * Enterprise host, an unexpected shape) is returned unchanged: a longer link that resolves beats a
+ * shorter one that points `/pr-fix` at the wrong host.
+ *
+ * @param {string} prUrl
+ */
+export function prRef(prUrl) {
+  const m = GITHUB_PR_URL_RE.exec(String(prUrl || "").trim());
+  return m ? `${m[1]}/${m[2]}#${m[3]}` : prUrl;
+}
+
 /** @param {string} prUrl @param {string} login @param {string} path @param {number} line */
 export function fixThisPrompt(prUrl, login, path, line) {
-  return `/pr-fix ${prUrl} ${login} — apply only the comment at ${path}:${line}.`;
+  return `/pr-fix ${prRef(prUrl)} ${login} — apply only the comment at ${path}:${line}.`;
 }
 
 /**
  * The Fix-all prompt, or null when the button must be omitted (§ Prompt templates):
- * - a non-zero count and a login → `/pr-fix <pr> <login>`;
- * - a non-zero count, no login, a prior sticky id → `/pr-fix <report comment permalink>`;
+ * - a non-zero count and a login → `/pr-fix <owner>/<repo>#<n> <login>`;
+ * - a non-zero count, no login, a prior sticky id → `/pr-fix <report comment permalink>` — the
+ *   one prompt that keeps a full URL, because the short reference has no way to name a comment;
  * - otherwise null. A zero count is never a `/pr-fix` call (the CI-only variant is caller-supplied).
  *
  * @param {{ prUrl: string, login: string|null, openCount: number, stickyCommentId: number|string|null }} input
  */
 export function fixAllPrompt({ prUrl, login, openCount, stickyCommentId }) {
   if (!(openCount > 0)) return null;
-  if (login) return `/pr-fix ${prUrl} ${login}`;
+  if (login) return `/pr-fix ${prRef(prUrl)} ${login}`;
   if (stickyCommentId) return `/pr-fix ${prUrl}#issuecomment-${stickyCommentId}`;
   return null;
 }
@@ -135,8 +155,18 @@ async function selfTest() {
     && String(inline[1].fix_url).includes(encodeURIComponent("b.ts:9")));
   check("Fix this is never built for a nitpick", inline[2].fix_url === undefined);
   check("a caller-supplied fix_url is kept", inline[3].fix_url === "https://app.dash0.com/goto/agent0?keep" && r.fixThis === 2);
-  check("Fix all names the PR and the login", r.fixAllUrl !== null && r.fixAllUrl.includes("utm_source=pr-reviewer-fix-all")
-    && r.fixAllUrl.includes(encodeURIComponent(`/pr-fix ${PR} bot`)) && r.fixAllUrl.startsWith("https://app.dash0.com/"));
+  check("Fix all names the PR by its short reference and the login", r.fixAllUrl !== null && r.fixAllUrl.includes("utm_source=pr-reviewer-fix-all")
+    && r.fixAllUrl.includes(encodeURIComponent("/pr-fix o/r#7 bot")) && r.fixAllUrl.startsWith("https://app.dash0.com/"));
+  check("neither prompt carries the full PR URL", !String(r.fixAllUrl).includes(encodeURIComponent("https://github.com"))
+    && !String(inline[0].fix_url).includes(encodeURIComponent("https://github.com")));
+  check("Fix this names the PR by its short reference", String(inline[0].fix_url).includes(encodeURIComponent("/pr-fix o/r#7 bot — apply only the comment at a.ts:3.")));
+
+  check("prRef shortens a github.com PR URL to owner/repo#n", prRef("https://github.com/mthines/agent-skills/pull/215") === "mthines/agent-skills#215");
+  check("prRef ignores a trailing slash, query, or fragment", prRef("https://github.com/o/r.js/pull/7/") === "o/r.js#7"
+    && prRef("https://github.com/o/r/pull/7#issuecomment-1") === "o/r#7" && prRef("https://github.com/o/r/pull/7?x=1") === "o/r#7");
+  check("prRef keeps a non-github.com URL unchanged (the short form would imply the wrong host)",
+    prRef("https://ghe.example.com/o/r/pull/7") === "https://ghe.example.com/o/r/pull/7");
+  check("prRef keeps a non-PR github.com URL unchanged", prRef("https://github.com/o/r/issues/7") === "https://github.com/o/r/issues/7");
 
   const dev = applyFixLinks({ settings: resolveFixLinks({ config: { environment: "development", org: "acme" } }), prUrl: PR, login: "bot", inline: [{ prefix: "issue", path: "a.ts", line: 1 }] });
   check("development host and org reach the Fix-all link", String(dev.fixAllUrl).startsWith("https://app.dash0-dev.com/") && String(dev.fixAllUrl).endsWith("&org=acme"));

@@ -1818,8 +1818,8 @@ async function selfTest() {
       check("default run with a login: the inline claim carries a Fix this button scoped to its path:line",
         on.status === 0 && Boolean(on.plan?.review_create?.comments?.[0]?.body.includes("utm_source=pr-reviewer-fix-this"))
         && Boolean(on.plan?.review_create?.comments?.[0]?.body.includes(encodeURIComponent("src/api/client.ts:88"))));
-      check("default run with a login: Fix all names the reviewer's login",
-        on.report.includes(encodeURIComponent("/pr-fix https://github.com/o/r/pull/205 rev-bot")));
+      check("default run with a login: Fix all names the PR by its short reference and the reviewer's login",
+        on.report.includes(encodeURIComponent("/pr-fix o/r#205 rev-bot")));
       const off = spawnFx("off", ["--no-fix-links"]);
       check("--no-fix-links builds neither placement",
         off.status === 0 && !off.report.includes("goto/agent0")
