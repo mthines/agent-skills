@@ -50,13 +50,23 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 profile: chill | balanced | assertive   # default: balanced
 
 effort: high                             # repo-wide default for the depth lever — equivalent to
-                                         # always passing --effort high: forces DEPTH_TIER = deep,
-                                         # enables Tier-2/3 receipts where the toolchain allows,
-                                         # and widens diversify-then-vote to N=5. Omit for the
-                                         # routed default. `high` is the only accepted value; the
-                                         # routed tiers are not settable here, because pinning a
-                                         # repo to `quick` would silently cap every review on it.
+                                         # always passing --effort high: forces DEPTH_TIER = deep
+                                         # AND thoroughness = 1 (the ceiling on every dispatch/scope
+                                         # lever below). Omit for the routed default. `high` is the
+                                         # only accepted value; the routed tiers are not settable
+                                         # here, because pinning a repo to `quick` would silently cap
+                                         # every review on it. Takes precedence over `thoroughness:`
+                                         # when both are set.
                                          # See agents/pr-reviewer/rules/depth-routing.md#--effort
+
+thoroughness: 0.8                        # repo-wide default for the continuous 0..1 dispatch/scope
+                                         # knob resolveBudget() reads — equivalent to always passing
+                                         # --thoroughness <n>. Omit for the routed-tier default
+                                         # (quick=0.2, standard=0.5, deep=0.8). A high-stakes shape
+                                         # (auth, payments, schema-migration, secrets, infra) floors
+                                         # the EFFECTIVE value at 0.5 regardless of this setting, so
+                                         # a repo cannot configure its way under-reviewing those.
+                                         # See agents/pr-reviewer/rules/depth-routing.md#thoroughness-budget
 
 severity_thresholds:                     # DEFAULT — values shown are the `balanced` defaults.
   critical: 65                           # The reviewer tiers every finding via

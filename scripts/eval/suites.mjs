@@ -118,17 +118,6 @@ export const SUITES = [
     choices: ["critical", "high", "medium", "low"],
   },
   {
-    name: "shape-depth-routing",
-    golden: "golden/shape-depth-routing.jsonl",
-    // The routing table moved into its own rule file with the Phase C split, so the rubric reads
-    // the file that OWNS the decision. Reading pr-reviewer.md § 1.2b instead would extract the
-    // step that routes here and none of the rows the labels are derived from.
-    rubric: { file: "agents/pr-reviewer/rules/depth-routing.md", section: null }, // whole file
-    instruction: "You are pr-reviewer at Step 1.2b Phase C, after the delta, its shape classification, and the impact graph are computed. Using ONLY the depth-routing rules below, pick the tier. Apply the two pre-table rules first (the quick override, then the size exclusion), then the three-tier table first-match-wins top to bottom.",
-    inputKey: "input", inputLabel: "Delta",
-    choices: ["deep", "standard", "quick"],
-  },
-  {
     name: "code-review-retrieval-relevance",
     golden: "golden/code-review-retrieval-relevance.jsonl",
     // 14 cases, 8 `surface` / 6 `skip` — a 57.1% majority-class baseline, asserted by L1 `G21h`
@@ -153,8 +142,10 @@ export const SUITES = [
     // Step 1.0 list + Step 1.2c search, and CLAUDE.md's charter for this suite says the same;
     // `## Step 1` is heading-level-aware and so captured all ten `### 1.x` subsections —
     // 67,630 chars of impact graph, depth routing and divergence pre-check against the 27,568
-    // these two hold. Same lesson as shape-depth-routing above: feed the section that OWNS the
-    // decision.
+    // these two hold. Same lesson the retired shape-depth-routing suite learned (its own rubric
+    // read `agents/pr-reviewer/rules/depth-routing.md`, the file that OWNS the decision, rather
+    // than the pr-reviewer.md step that only routes there — see route-depth.mjs, R4/D11):
+    // feed the section that OWNS the decision.
     //
     // What this deliberately EXCLUDES, and why re-adding it would be a regression: `### 1.2d`
     // shortlists the Step 1.0 index by changed directory / basename / symbol / integration /

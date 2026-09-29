@@ -1,0 +1,35 @@
+{
+  "candidates": [
+    {
+      "finder": "correctness",
+      "defect_class": "error-path",
+      "symbol": "fetchThing",
+      "prefix": "question",
+      "severity": "medium",
+      "final": 85,
+      "body": "Is the empty `catch {}` here deliberate, or should a `NotFoundError` still surface to the caller?",
+      "unverified_reason": "no test runner in this workspace",
+      "path": "src/y.ts",
+      "line": 20
+    }
+  ],
+  "gates": {
+    "description": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "self_review": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "documentation": {
+      "status": "PASS",
+      "details": "ok"
+    }
+  },
+  "memory": {
+    "relevance_rules": [],
+    "lessons_used": []
+  },
+  "threads": []
+}

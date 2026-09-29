@@ -97,6 +97,16 @@ See `agents/shared/rules/review-config.md` § Standards for the full schema.
 
 ### Token budget
 
+**In `pr-reviewer`, `prepare-review.mjs` runs Source 1 itself** (`discover-standards.mjs`) and hands
+the model only the extracted normative lines, each with its `doc:line`, in the
+`context.paths.standards` sidecar. The 30,000-character cap then applies to that **normative text**,
+not to the raw documents — and so the root `CLAUDE.md` is scanned whole rather than as the (d) slice,
+because the slice existed only to stop one large file from spending the budget when documents were
+read into context whole. On sync-tray#72 that surfaces a rule on line 1,011 of a 77 KB `CLAUDE.md`
+that the 8,000-character slice could not reach, for 8,133 characters of normative text in total.
+Nearest-first ordering and the drop log below are unchanged. A review-config `standards:` block
+(Source 2) is detected and reported, and merged by hand.
+
 The combined standards text (Source 1 + Source 2, nearest-first) is capped at **30,000
 characters** total across all loaded documents for the entire review run.
 A document that governs several changed files is listed under each of them but loaded and counted

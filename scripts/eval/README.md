@@ -103,8 +103,18 @@ them re-parsing the other. See [Cost](#cost) below.
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
 | `reviewer-agreement-bump` | is the surviving finding agreement-promoted? | reviewer `## Cross-rubric agreement` | promoted / not-promoted |
 | `optimize-approach-optimality` | is this approach optimal or suboptimal? | optimize-approach `optimality-rubric.md` (whole file) | optimal / suboptimal |
-| `shape-depth-routing` | given the computed delta, shapes, and impact graph, which depth tier does Phase C pick? | `agents/pr-reviewer/rules/depth-routing.md` (whole file) | deep / standard / quick |
 | `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `### 1.0` + `### 1.2c` (the two-section `rubric.sections` form — deliberately **not** the `## Step 1` parent, see the methodology note) | surface / skip |
+
+**`shape-depth-routing` is retired (pr-reviewer deterministic pipeline, D11).** Phase C's depth
+decision is now executable — [`route-depth.mjs`](../../agents/pr-reviewer/scripts/route-depth.mjs)'s
+`routeDepth(i)` is a pure function implementing `depth-routing.md`'s rules — so an LLM classification
+eval of it measures nothing a unit test can't measure for free. Its 22 golden records were
+hand-converted into structured cases at
+[`fixtures/route-depth/cases.json`](./fixtures/route-depth/cases.json), which
+`route-depth.mjs --self-test` runs on every L1 pass; the `SUITES` entry and
+`golden/shape-depth-routing.jsonl` were deleted in the same commit. The baseline notes and cost
+table further down keep the suite's run history for the record — those numbers describe the retired
+LLM eval, not the current executable one.
 
 ```bash
 node scripts/eval/l2.mjs                          # all suites
@@ -1106,3 +1116,18 @@ for n in pass warn fail; do
     scripts/eval/fixtures/report-body/$n.json > scripts/eval/fixtures/report-body/$n.expected.md
 done
 ```
+
+## The reviewer A/B quality benchmark
+
+`scripts/eval/benchmarks/README.md` is the runbook for the A/B harness that compares two
+revisions of the single-dispatch `pr-reviewer` — Arm A from `--worktree`, Arm B from
+`--worktree-b` — on a fixed set of historical PR reviews, graded against the commit each PR was actually reviewed at (`--review-sha`, D8/D13 —
+never the live head, so the labels and the diff describe the same moment). It covers the exact
+commands (`ab-review.mjs pick-review-sha` / `plan` / `score`, `thread-outcomes.mjs --at-sha`), the
+safety contract (every GitHub call against the private benchmark repo is read-only; every dispatch
+carries `--dry-run --isolated`, which is a proven zero-write guarantee, not a convention — L1
+`G80`), and the measured per-arm cost table. `scripts/eval/benchmarks/reviewer-ab.manifest.json`
+is the public-safe manifest (SHAs and a shape `class` only — no titles, excerpts, or comment
+counts, enforced by L1 `G65e`'s allowlist). Running the dispatch step (Step 3 in that runbook) is a
+paid A/B and requires explicit authorization; every other step is either read-only or local-only
+and safe to run any time.

@@ -1,0 +1,60 @@
+# INSTALL: copy this file to .github/workflows/review-telemetry-smoke.yml. It lives here because the
+# app that authored it has no `workflows` permission and cannot push under .github/workflows/.
+name: pr-reviewer · telemetry smoke
+
+# Exports one synthetic pr-reviewer run to Dash0 whenever the run-telemetry code changes, so the
+# trace shape (agents/pr-reviewer/rules/run-telemetry.md) is proven against the real backend and
+# not only against the self-test's local OTLP receiver. The run carries pr_review.smoke=true.
+# Uses the same endpoint variable and token secret as the L2 eval telemetry (evals-l2.yml).
+
+on:
+  pull_request:
+    paths:
+      - agents/pr-reviewer/scripts/review-telemetry.mjs
+      - agents/pr-reviewer/scripts/otlp.mjs
+      - .github/workflows/review-telemetry-smoke.yml
+      - agents/pr-reviewer/templates/review-telemetry-smoke.workflow.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      HAS_TOKEN: ${{ secrets.DASH0_AUTH_TOKEN != '' && vars.OTEL_EXPORTER_OTLP_ENDPOINT != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Self-test
+        run: node agents/pr-reviewer/scripts/review-telemetry.mjs --self-test
+      - name: Skip notice (no Dash0 token on this run)
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::warning::DASH0_AUTH_TOKEN or OTEL_EXPORTER_OTLP_ENDPOINT is unset (a fork, or not configured) — self-test only, nothing exported."
+      - name: Export one synthetic run to Dash0
+        if: env.HAS_TOKEN == 'true'
+        env:
+          PR_REVIEWER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          PR_REVIEWER_OTLP_HEADERS: Authorization=Bearer ${{ secrets.DASH0_AUTH_TOKEN }},Dash0-Dataset=${{ vars.DASH0_DATASET || 'default' }}
+          PR_REVIEWER_HARNESS: github-actions
+          PR_REVIEWER_OMIT_USER_INFO: "true"
+          RUN_DIR: ${{ runner.temp }}/pr-reviewer-smoke
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          S=agents/pr-reviewer/scripts/review-telemetry.mjs
+          node "$S" begin --run-dir "$RUN_DIR" --repo "$GITHUB_REPOSITORY" --pr "${PR_NUMBER:-0}" \
+            --head "$HEAD_SHA" --head-ref "$HEAD_REF" --mode full --tier standard --thoroughness 0.5 --topology hybrid
+          node "$S" step prepare --run-dir "$RUN_DIR"; sleep 2
+          node "$S" worker intent start --run-dir "$RUN_DIR"
+          node "$S" step finders --run-dir "$RUN_DIR"; sleep 3
+          node "$S" worker intent end --run-dir "$RUN_DIR" --attr candidates=2
+          node "$S" step verify --run-dir "$RUN_DIR" --attr candidates=3; sleep 2
+          node "$S" step finalize --run-dir "$RUN_DIR"; sleep 1
+          node "$S" finish --run-dir "$RUN_DIR" --attr smoke=true --attr verdict=PASS
+          jq -e '.exported == true' "$RUN_DIR/telemetry-summary.json" > /dev/null
+          jq -r '"exported trace_id=\(.trace_id) run_id=\(.run_id) total_s=\(.total_s)"' "$RUN_DIR/telemetry-summary.json"

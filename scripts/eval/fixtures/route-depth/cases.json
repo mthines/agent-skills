@@ -1,0 +1,134 @@
+[
+  {
+    "id": "auth-small-delta",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 20, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": ["src/auth/session.ts"], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 8, "newFiles": 0, "deltaShapes": ["auth", "high-stakes-path"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "HIGH_STAKES_FILES non-empty is a deep trigger (D7) regardless of size."
+  },
+  {
+    "id": "big-delta",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 340, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "low", "semverDeltas": [], "symbols": [], "deltaLines": 320, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "DELTA_LINES > 100 (D12) on ordinary source — the size exclusion does not apply because the shapes are not docs/test-only/generated."
+  },
+  {
+    "id": "mutex-small-delta",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 30, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 12, "newFiles": 0, "deltaShapes": ["concurrency"], "deltaRiskyShapes": ["concurrency"], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "standard",
+    "notes": "A risky content shape with no deep trigger — small but dangerous still gets the middle tier."
+  },
+  {
+    "id": "readme-fix",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 10, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 6, "newFiles": 0, "deltaShapes": ["docs-only"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "quick",
+    "notes": "Docs-only with band=none is excused from the size triggers and matches no other row."
+  },
+  {
+    "id": "generated-client-refresh",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 90, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 412, "newFiles": 0, "deltaShapes": ["generated"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "quick",
+    "notes": "The size-exclusion case the phase exists for: 412 lines that reach nothing must not buy a deep pass on line count. cumDeltaLines set below FULL_REFRESH_DELTA (the original golden JSONL's own CUM_DELTA_LINES=412 would independently fire D4 in a strict implementation — a fixture-authoring artifact the L2 suite's narrative grading never caught; depth-routing.md's own worked example for this exact shape states \"no counter fired\", which is what this case now encodes)."
+  },
+  {
+    "id": "propagation-claude-md",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 25, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": true, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 14, "newFiles": 0, "deltaShapes": ["docs-only", "propagation"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "Docs-only is excused from size, never from the other rows — PROPAGATION (D8) still fires."
+  },
+  {
+    "id": "new-file",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 40, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 22, "newFiles": 1, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "NEW_FILES > 0 (D13) on ordinary source: nothing has ever been reviewed in this file."
+  },
+  {
+    "id": "plain-logic",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 60, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 40, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "standard",
+    "notes": "11-100 lines of ordinary source with no risk signal — the middle tier's default population."
+  },
+  {
+    "id": "payment-rounding",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 15, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": ["billing/payment_processor.go"], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 9, "newFiles": 0, "deltaShapes": ["payments", "high-stakes-path"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "High-stakes path floor (D7)."
+  },
+  {
+    "id": "proto-field-rename",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 20, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 15, "newFiles": 0, "deltaShapes": ["api-contract"], "deltaRiskyShapes": ["api-contract"], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "standard",
+    "notes": "Risky content shape, no deep trigger."
+  },
+  {
+    "id": "sql-alter-outside-migrations",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 35, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 30, "newFiles": 0, "deltaShapes": ["schema-migration"], "deltaRiskyShapes": ["schema-migration"], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "standard",
+    "notes": "Schema statement arrived by content rather than by a high-stakes path — risky shape, middle tier."
+  },
+  {
+    "id": "refresh-runs",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 90, "incrRunsSinceFull": 3, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 5, "newFiles": 0, "deltaShapes": ["docs-only"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "The refresh counter fired (D5, 3 of 3) — a deep trigger, and the size exclusion has no bearing on it."
+  },
+  {
+    "id": "refresh-cumulative",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 200, "incrRunsSinceFull": 2, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 8, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "Cumulative churn since the last deep pass crossed FULL_REFRESH_DELTA=150 (D4)."
+  },
+  {
+    "id": "dep-minor-bump-used",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 70, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [{ "delta": "minor", "usageSites": 11 }], "symbols": [], "deltaLines": 60, "newFiles": 0, "deltaShapes": ["dependency-bump"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "standard",
+    "notes": "A minor semver delta with live usage sites earns the dependency finder (standard row), not a whole-PR deep pass."
+  },
+  {
+    "id": "router-endpoint",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 18, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 10, "newFiles": 0, "deltaShapes": ["api-contract"], "deltaRiskyShapes": ["api-contract"], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "standard",
+    "notes": "Risky content shape."
+  },
+  {
+    "id": "test-only",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 30, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 25, "newFiles": 0, "deltaShapes": ["test-only"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "quick",
+    "notes": "Test-only with band=none is excused from the size band, so 25 lines does not pull it to standard."
+  },
+  {
+    "id": "no-deep-pass-on-record",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 4, "incrRunsSinceFull": 2, "priorDeepRecorded": false, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 4, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "No prior deep pass recorded is itself a refresh trigger (D6) — the deep lenses have never run on this PR."
+  },
+  {
+    "id": "blast-radius-high-small-delta",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 25, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "high", "semverDeltas": [], "symbols": [], "deltaLines": 14, "newFiles": 0, "deltaShapes": ["api-contract"], "deltaRiskyShapes": ["api-contract"], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "The case the phase exists for in the other direction — 14 lines that reach 14 consumer files (band=high, D9)."
+  },
+  {
+    "id": "blast-radius-none-medium-delta",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 80, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 70, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "standard",
+    "notes": "Ordinary source, so the size exclusion does not apply and the 11-100 band holds it at standard — reaching nothing keeps it out of deep, it does not drop it to quick."
+  },
+  {
+    "id": "dep-major-bump-used",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 12, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "medium", "semverDeltas": [{ "delta": "major", "usageSites": 6 }], "symbols": [], "deltaLines": 6, "newFiles": 0, "deltaShapes": ["dependency-bump"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "deep",
+    "notes": "A major semver delta (D10) is a deep trigger: 6 lines of lockfile can move two majors of behaviour across 6 call sites."
+  },
+  {
+    "id": "dep-patch-bump-unused",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 8, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [{ "delta": "patch", "usageSites": 0 }], "symbols": [], "deltaLines": 4, "newFiles": 0, "deltaShapes": ["dependency-bump"], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.0, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "quick",
+    "notes": "The semver row is qualified by usage: a bump this repo imports nowhere has an empty intersection, so it must not buy a finder pass."
+  },
+  {
+    "id": "thread-answering-push",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 28, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 18, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.9, "depthCapability": "checkout", "zeroDelta": false },
+    "expected": "quick",
+    "notes": "The quick override: a push answering the review, reaching nothing. It beats the 11-100 standard band because the override is stated as always."
+  }
+]

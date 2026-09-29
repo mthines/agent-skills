@@ -1,0 +1,353 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-skills.internal/pr-reviewer/judgments.schema.json",
+  "title": "pr-reviewer judgments.json",
+  "description": "SSOT for the model's per-run verdicts, consumed by finalize.mjs (R5, D4). validate-judgments.mjs is a hand-written interpreter that supports a FIXED keyword subset of JSON Schema: $schema, $id, $defs, $ref, type, enum, const, properties, required, additionalProperties (boolean only), items, minItems, maxItems, minLength, maxLength, minimum, maximum, pattern, title, description. Any other keyword anywhere in this document must make validate-judgments.mjs fail closed — that is deliberate, not a gap to fill in later.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "head_sha", "candidates", "gates", "threads", "lenses", "summary", "memory"],
+  "properties": {
+    "v": {
+      "description": "Schema version. Bump on any breaking shape change so finalize.mjs can refuse a stale judgments.json instead of misreading it.",
+      "type": "integer",
+      "const": 1
+    },
+    "head_sha": {
+      "description": "The commit SHA the model reviewed. finalize.mjs cross-checks this against the workspace HEAD before trusting anything else in the file.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "candidates": {
+      "description": "Every finder candidate, carrying both the original finder record (finders.md) and the verifier's disposition (finding-verifier.md) in one row.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/candidate" }
+    },
+    "gates": { "$ref": "#/$defs/gates" },
+    "threads": {
+      "description": "One entry per open review thread the model classified this run (thread-resolution.md, Step 2.9c).",
+      "type": "array",
+      "items": { "$ref": "#/$defs/thread" }
+    },
+    "lenses": { "$ref": "#/$defs/lenses" },
+    "summary": {
+      "description": "The report's top-level SUMMARY scalar, authored by the model.",
+      "type": "string",
+      "maxLength": 240
+    },
+    "memory": { "$ref": "#/$defs/memory" }
+  },
+  "$defs": {
+    "finder": {
+      "type": "string",
+      "enum": [
+        "correctness",
+        "consumer-impact",
+        "dependency",
+        "intent",
+        "standards",
+        "quality",
+        "ux",
+        "critical",
+        "optimality"
+      ]
+    },
+    "defect_class": {
+      "type": "string",
+      "enum": [
+        "logic", "edge-case", "error-path", "race", "nil-deref", "resource-leak",
+        "security", "data-loss", "perf",
+        "contract-break", "missing-update", "pattern-divergence",
+        "dep-breaking-change", "dep-deprecated", "dep-unverified",
+        "intent-mismatch", "scope-creep",
+        "standards",
+        "maintainability", "test-gap", "naming",
+        "live-error-signature", "missing-signal",
+        "a11y", "ux",
+        "optimality"
+      ]
+    },
+    "severity_tier": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "verdict": {
+      "description": "finding-verifier.md's four-way verdict. unobtainable is distinct from a null verification receipt and is capped below issue:/suggestion: severity by the verifier rule, not by this schema.",
+      "type": "string",
+      "enum": ["confirmed", "contradicted", "ambiguous", "unobtainable"]
+    },
+    "prefix": {
+      "type": "string",
+      "enum": ["praise", "nitpick", "suggestion", "issue", "question"]
+    },
+    "fence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["lang", "code"],
+      "properties": {
+        "lang": { "type": "string", "minLength": 1 },
+        "code": { "type": "string", "minLength": 1 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finder", "defect_class", "path", "claim", "bad_outcome", "evidence", "verify_by",
+        "verdict", "R", "A", "Ac", "final",
+        "severity", "prefix", "blocking", "body", "materiality", "category"
+      ],
+      "properties": {
+        "finder": { "$ref": "#/$defs/finder" },
+        "defect_class": { "$ref": "#/$defs/defect_class" },
+        "path": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "symbol": { "type": "string", "minLength": 1 },
+        "claim": {
+          "description": "finders.md's candidate claim — what the finder asserts is wrong.",
+          "type": "string",
+          "minLength": 1
+        },
+        "bad_outcome": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "description": "finders.md's raw evidence strings, pre-verification. The verifier's OWN evidence (if any) rides in body/fence, not here.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "severity_hint": {
+          "description": "The finder's own severity guess, prior to the verifier's severity assignment below.",
+          "$ref": "#/$defs/severity_tier"
+        },
+        "fix": { "type": "string" },
+        "verify_by": {
+          "description": "finders.md's verify_by — what a verifier should check to confirm or refute this candidate.",
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict": { "$ref": "#/$defs/verdict" },
+        "R": {
+          "description": "finding-verifier.md Reproducible axis, 0-100.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "A": {
+          "description": "finding-verifier.md Attributable axis, 0-100.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "Ac": {
+          "description": "finding-verifier.md Actionable axis, 0-100.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "final": {
+          "description": "0.4*R + 0.3*A + 0.3*Ac, per finding-verifier.md. finalize.mjs recomputes and cross-checks this rather than trusting it blindly.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "severity": { "$ref": "#/$defs/severity_tier" },
+        "prefix": { "$ref": "#/$defs/prefix" },
+        "blocking": {
+          "description": "Whether this finding is (blocking) per conventional-comments.md / severity's crosswalk.",
+          "type": "boolean"
+        },
+        "title": {
+          "description": "render-comment.mjs's TITLE — required on a claim (issue:/suggestion:), forbidden on a one-liner (praise:/nitpick:/question:). That prefix-conditional rule is a domain rule validate-judgments.mjs enforces in code, since additionalProperties/required alone cannot express an if/then across sibling fields in the supported keyword subset.",
+          "type": "string",
+          "maxLength": 60
+        },
+        "body": { "type": "string", "minLength": 1 },
+        "fence": { "$ref": "#/$defs/fence" },
+        "materiality": {
+          "description": "review-config.md / diagnostic-surface.md's materiality gate — false means the finder's own judgment is that this is too minor to be worth surfacing even if verified.",
+          "type": "boolean"
+        },
+        "category": {
+          "description": "A free-form, filter-matchable tag (review-config.md filters:), distinct from the fixed defect_class enum above.",
+          "type": "string",
+          "minLength": 1
+        },
+        "unverified_reason": {
+          "description": "Required in spirit whenever verdict is unobtainable — enforced as a domain rule in validate-judgments.mjs, not expressible as a schema-level conditional in the supported keyword subset.",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "AC-11/D5: the GitHub discussion permalink for this finding, when already known (e.g. a re-review reading its own prior comment back). finalize.mjs never invents this — it is a fact carried through, never computed — and a first-review candidate omits it (execute-write-plan.mjs's own review.create response is the real source on a first post, out of finalize.mjs's scope).",
+          "type": "string",
+          "minLength": 1
+        },
+        "fix_url": {
+          "description": "AC-11/D5: the pre-built Agent0 `/pr-fix` deep link for this one finding, when already assembled upstream. finalize.mjs relays it verbatim into render-comment.mjs's FIX_URL — the URL-building grammar itself stays out of scope (agents/pr-reviewer's own report-rendering.md owns it).",
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_anchors": {
+          "description": "AC-11/D5: render-comment.mjs's structured EVIDENCE — additional grounding locations beyond this candidate's own path/line (e.g. a consumer site a contract break also touches). Distinct from the pre-verification `evidence` string array above.",
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "line"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "line": { "type": "integer", "minimum": 1 },
+              "note": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "pseudo": {
+          "description": "AC-11/D5: render-comment.mjs's PSEUDO — the FENCE is illustrative pseudo-code, not a literal patch.",
+          "type": "boolean"
+        }
+      }
+    },
+    "gate4_disposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line", "category", "disposition", "reason"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "category": {
+          "description": "Must equal one of gate4-scan.mjs's CATEGORIES exactly — a pre-candidate's own category, echoed back with the model's disposition.",
+          "type": "string",
+          "enum": [
+            "debug-leftover", "commented-out-code", "unfinished-marker", "conflict-marker",
+            "test-focus", "unexplained-suppression", "secret", "local-path"
+          ]
+        },
+        "disposition": {
+          "type": "string",
+          "enum": ["confirm", "exempt"]
+        },
+        "reason": {
+          "description": "The prose-vs-code exemption rationale, or the confirmation rationale.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ai_stub_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line", "description"],
+      "properties": {
+        "file": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "description": { "type": "string", "minLength": 1 }
+      }
+    },
+    "gate1": {
+      "description": "Description vs. code — two-state, never FAIL (a soft warning gate). `details` renders verbatim as render-report.mjs's GATE_DESCRIPTION_DETAILS table cell, which fails closed over 120 chars (report-rendering.md: 'Single line, no |, <= 120 chars') — capped here so an over-length judgment is rejected with a clear validator error before it ever reaches the renderer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "details"],
+      "properties": {
+        "status": { "type": "string", "enum": ["PASS", "WARN"] },
+        "details": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "gate5": {
+      "description": "Documentation adequacy — two-state, no WARN. `details` renders verbatim as render-report.mjs's GATE_DOCS_DETAILS table cell — same 120-char cap and rationale as gate1.details.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "details"],
+      "properties": {
+        "status": { "type": "string", "enum": ["PASS", "FAIL"] },
+        "details": { "type": "string", "maxLength": 120 }
+      }
+    },
+    "gate4": {
+      "description": "Self-review signals — Gate 4's PASS/FAIL is computed by finalize.mjs from these raw dispositions/findings (D6), never asserted directly by the model.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["precandidate_dispositions", "ai_stub_findings"],
+      "properties": {
+        "precandidate_dispositions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/gate4_disposition" }
+        },
+        "ai_stub_findings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ai_stub_finding" }
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate1", "gate5", "gate4"],
+      "properties": {
+        "gate1": { "$ref": "#/$defs/gate1" },
+        "gate5": { "$ref": "#/$defs/gate5" },
+        "gate4": { "$ref": "#/$defs/gate4" }
+      }
+    },
+    "thread": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thread_id", "classification"],
+      "properties": {
+        "thread_id": { "type": "string", "minLength": 1 },
+        "classification": {
+          "type": "string",
+          "enum": ["fixed", "declined", "acknowledged", "obsolete", "persisting", "unaddressed"]
+        },
+        "reply": {
+          "description": "Present only for fixed/declined/acknowledged/obsolete (Resolve-with-reply classes); persisting/unaddressed leave the thread open with no reply.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "optimality_card": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["path", "verdict", "analysis_confidence", "card_body"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "verdict": { "type": "string", "enum": ["optimal", "suboptimal"] },
+        "analysis_confidence": { "type": "number", "minimum": 0, "maximum": 100 },
+        "card_body": { "type": "string", "minLength": 1 }
+      }
+    },
+    "lenses": {
+      "description": "One log field per default-on lens (optimize-approach, standards-conformance, measurability-review, holistic-review), each render-report.mjs's ^(ran|skipped) grammar, plus the optimality proposal cards.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["optimality_cards", "optimality_log", "standards_log", "measurability_log", "holistic_log"],
+      "properties": {
+        "optimality_cards": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/optimality_card" }
+        },
+        "optimality_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
+        "standards_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
+        "measurability_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
+        "holistic_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 }
+      }
+    },
+    "memory": {
+      "description": "Copied verbatim from MCP reads (D4) — finalize.mjs decides the lifecycle; the model never decides suppression, so these sub-objects stay permissive.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relevance_rules", "lessons_used"],
+      "properties": {
+        "relevance_rules": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        },
+        "lessons_used": {
+          "type": "array",
+          "items": { "type": "object", "additionalProperties": true }
+        }
+      }
+    }
+  }
+}

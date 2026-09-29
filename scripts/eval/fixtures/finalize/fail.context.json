@@ -1,0 +1,60 @@
+{
+  "mode": "full",
+  "head_sha": "69b0de8",
+  "delta_lines": 2172,
+  "files": [
+    {
+      "filename": "src/triggers/variables.ts",
+      "patch": "@@ -12,1 +12,1 @@\n+x"
+    },
+    {
+      "filename": "src/ui/hover-card.tsx",
+      "patch": "@@ -40,1 +40,1 @@\n+x"
+    },
+    {
+      "filename": "src/triggers/kinds.test.ts",
+      "patch": "@@ -64,1 +64,1 @@\n+x"
+    },
+    {
+      "filename": "db/migrations/0042.sql",
+      "patch": "@@ -7,1 +7,1 @@\n+x"
+    },
+    {
+      "filename": "src/api/client.ts",
+      "patch": "@@ -88,1 +88,1 @@\n+x"
+    },
+    {
+      "filename": "z1.ts",
+      "patch": "@@ -1,1 +1,1 @@\n+x"
+    },
+    {
+      "filename": "z2.ts",
+      "patch": "@@ -1,1 +1,1 @@\n+x"
+    }
+  ],
+  "threads": [
+    {
+      "thread_id": "t3",
+      "path": "supabase/functions/memories/handlers/list.ts",
+      "line": 235,
+      "url": "https://github.com/o/r/pull/1#discussion_r3",
+      "root_body": "issue: applyScalarFilter still puts the whole dimension into a PostgREST URL operand (blocking)",
+      "author": "cursor",
+      "is_bot": true,
+      "replies": []
+    }
+  ],
+  "render": {
+    "at": "2026-08-22T03:05:00Z",
+    "PARTIAL_REVIEW": {
+      "calls": 180,
+      "scanned": 22,
+      "total": 31
+    },
+    "CI_NOTE": "`Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) \u2014 the open thread above. Reported, not blocking.",
+    "MEMORIES_SUMMARY": "not connected",
+    "QUALITY_DROPPED": "relevance 0 \u00b7 dedupe 0 \u00b7 grounding 0 \u00b7 confidence 2 \u00b7 shape 0",
+    "INTEGRATIONS": "skipped (incremental-quick)",
+    "SKIPPED_FILES": "packages/legacy/**"
+  }
+}

@@ -96,7 +96,7 @@ REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
 # Rung order is identical to prior-comment-awareness.md § fetch existing PR comment state —
 # caller-bound, then GraphQL viewer, then this agent's own prior artifact. Two rules that resolve
 # the identity differently can attribute the same comment to two logins inside one run.
-BOT_LOGIN="${BOT_LOGIN:-$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null || echo "")}"
+BOT_LOGIN="${BOT_LOGIN:-$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null)}" || BOT_LOGIN=""
 [ -z "$BOT_LOGIN" ] && BOT_LOGIN="${PRIOR_REPORT_AUTHOR:-}"
 if [ -z "$BOT_LOGIN" ]; then
   # Standalone (no caller-bound PRIOR_REPORT_AUTHOR): look in BOTH hosts. The sticky lives on

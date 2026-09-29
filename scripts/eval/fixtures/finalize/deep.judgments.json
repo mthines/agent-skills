@@ -1,0 +1,161 @@
+{
+  "summary": "Replaces the in-process memory index with a `LocalStore` backed search path.",
+  "candidates": [
+    {
+      "finder": "correctness",
+      "defect_class": "logic",
+      "symbol": "localStoreSearch",
+      "path": "src/store/local.ts",
+      "line": 96,
+      "title": "`LocalStore.search` drops the tenant filter",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "high",
+      "final": 95,
+      "blocking": true,
+      "url": "https://github.com/o/r/pull/2#discussion_r31"
+    },
+    {
+      "finder": "quality",
+      "defect_class": "perf",
+      "symbol": "indexRebuild",
+      "path": "src/store/index.ts",
+      "line": 18,
+      "title": "Index rebuild runs on every cold start",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 90,
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/2#discussion_r32"
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "security",
+      "symbol": "scalarFilter",
+      "path": "src/store/filter.ts",
+      "line": 235,
+      "title": "Scalar filter is interpolated into a PostgREST operand",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 85,
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/2#discussion_r33"
+    },
+    {
+      "finder": "quality",
+      "defect_class": "test-gap",
+      "symbol": "indexRebuild",
+      "path": "src/store/index.test.ts",
+      "line": 12,
+      "title": "Cold-start rebuild has no covering test",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 80,
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/2#discussion_r34"
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "nil-deref",
+      "symbol": "-",
+      "path": "src/legacy",
+      "line": 1,
+      "title": "legacy nil-deref pattern",
+      "body": "B",
+      "prefix": "issue",
+      "severity": "high",
+      "final": 92,
+      "blocking": false
+    },
+    {
+      "finder": "quality",
+      "defect_class": "maintainability",
+      "symbol": "thing",
+      "path": "src/misc/thing.ts",
+      "line": 5,
+      "title": "minor maintainability concern",
+      "body": "b",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 70
+    },
+    {
+      "finder": "quality",
+      "defect_class": "naming",
+      "symbol": "drop1",
+      "path": "z1.ts",
+      "line": 1,
+      "title": "t",
+      "body": "b",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 10
+    },
+    {
+      "finder": "quality",
+      "defect_class": "naming",
+      "symbol": "drop2",
+      "path": "z2.ts",
+      "line": 1,
+      "title": "t",
+      "body": "b",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 10
+    },
+    {
+      "finder": "quality",
+      "defect_class": "naming",
+      "symbol": "drop3",
+      "path": "z3.ts",
+      "line": 1,
+      "title": "t",
+      "body": "b",
+      "prefix": "issue",
+      "severity": "medium",
+      "final": 10
+    }
+  ],
+  "gates": {
+    "gate1": {
+      "status": "PASS",
+      "details": "The description matches what the diff does."
+    },
+    "gate5": {
+      "status": "PASS",
+      "details": "The change is documented well enough to follow."
+    }
+  },
+  "memory": {
+    "relevance_rules": [
+      {
+        "fp": "correctness:nil-deref:-@src/legacy",
+        "kind": "suppress",
+        "evidence": [
+          {
+            "pr": 101,
+            "concordant": true
+          },
+          {
+            "pr": 102,
+            "concordant": true
+          },
+          {
+            "pr": 103,
+            "concordant": true
+          }
+        ]
+      }
+    ],
+    "lessons_used": []
+  },
+  "threads": [],
+  "lenses": {
+    "optimality_log": "ran \u00b7 3 judged \u00b7 2 optimal \u00b7 1 proposal(s) \u00b7 0 inline pointer(s) \u00b7 0 withheld",
+    "standards_log": "ran \u00b7 2 docs \u00b7 3 finding(s)",
+    "measurability_log": "ran \u00b7 5 paths classified \u00b7 2 missing \u00b7 1 unlinked \u00b7 no profile"
+  }
+}

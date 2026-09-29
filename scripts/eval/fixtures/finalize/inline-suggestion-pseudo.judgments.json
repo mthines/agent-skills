@@ -1,0 +1,47 @@
+{
+  "candidates": [
+    {
+      "finder": "quality",
+      "defect_class": "maintainability",
+      "symbol": "jitter",
+      "prefix": "suggestion",
+      "severity": "medium",
+      "final": 85,
+      "title": "Backoff jitter is seeded once per process",
+      "body": "Every worker shares one seed, so retries across the pool collide instead of spreading.",
+      "evidence_anchors": [
+        {
+          "path": "src/api/backoff.ts",
+          "line": 41
+        }
+      ],
+      "fence": {
+        "lang": "ts",
+        "code": "const jitter = () => Math.random() * base;"
+      },
+      "pseudo": true,
+      "fp": "quality:maintainability:jitter@src/api/backoff.ts",
+      "path": "src/api/backoff.ts",
+      "line": 41
+    }
+  ],
+  "gates": {
+    "description": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "self_review": {
+      "status": "PASS",
+      "details": "ok"
+    },
+    "documentation": {
+      "status": "PASS",
+      "details": "ok"
+    }
+  },
+  "memory": {
+    "relevance_rules": [],
+    "lessons_used": []
+  },
+  "threads": []
+}

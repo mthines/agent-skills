@@ -38,7 +38,8 @@
 # files instead; this script only has to make the files exist.
 #
 # Requires: networkLevel >= trusted_only (codeload.github.com, github.com).
-# Optional envVars: PIN, REPO, PR_REVIEWER_LOGIN.
+# Optional envVars: PIN, REPO, PR_REVIEWER_LOGIN. Run-telemetry export settings
+# are never persisted here — see § 6 and rules/run-telemetry.md.
 
 set -uo pipefail
 
@@ -194,6 +195,12 @@ cp "$ROOT/RUN-CONSTRAINTS.md" "$WS/AGENTS.md"
 #    So: write the file unconditionally, append to the env channel only when it
 #    is actually present, and SAY which channels were used, because a run that
 #    reads the wrong one is a run that cannot find the pipeline.
+#
+#    Run telemetry (rules/run-telemetry.md) is never written to this file: its
+#    headers carry an ingest token, and review-telemetry.mjs reads the export
+#    settings from the run's own environment only. On an Agent0 Automation a
+#    setup script puts them there through $DASH0_AGENT_ENV. An envVar handed to
+#    THIS script reaches no run, so seeing one gets a note — never its value.
 # ---------------------------------------------------------------------------
 ENV_FILE="$ROOT/env.sh"
 {
@@ -205,6 +212,9 @@ ENV_FILE="$ROOT/env.sh"
   echo "export PR_REVIEWER_PIN=$PIN"
   echo "export PR_REVIEWER_LOGIN=${PR_REVIEWER_LOGIN:-}"
 } > "$ENV_FILE"
+if [ -n "${PR_REVIEWER_OTLP_ENDPOINT:-}${PR_REVIEWER_OTLP_HEADERS:-}${PR_REVIEWER_TELEMETRY:-}" ]; then
+  echo "telemetry: export settings seen here are not written to env.sh — a run exports only when a setup script appended them to \$DASH0_AGENT_ENV (rules/run-telemetry.md)"
+fi
 
 if [ -n "${DASH0_AGENT_ENV:-}" ]; then
   cat "$ENV_FILE" >> "$DASH0_AGENT_ENV" 2>/dev/null \
@@ -229,6 +239,9 @@ check "shared rules"     "$ROOT/shared/rules/finding-verifier.md"
 check "lens rule"        "$ROOT/shared/rules/lens-invocation.md"
 check "prepare script"   "$ROOT/pr-reviewer/scripts/prepare-review.mjs"
 check "renderer"         "$ROOT/pr-reviewer/scripts/render-report.mjs"
+check "finalize script"  "$ROOT/pr-reviewer/scripts/finalize.mjs"
+check "write-plan executor" "$ROOT/pr-reviewer/scripts/execute-write-plan.mjs"
+check "run telemetry"    "$ROOT/pr-reviewer/scripts/review-telemetry.mjs"
 check "constraints"      "$ROOT/RUN-CONSTRAINTS.md"
 
 LENSES=0

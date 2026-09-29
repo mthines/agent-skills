@@ -62,6 +62,11 @@ const CORE_RULES = [
   // it is the rule that stops all six composed lenses from silently degrading.
   // Deferring it would mean the one host that needs it reads it last.
   "shared/rules/lens-invocation.md",
+  // Not a phase rule either: it carries the step markers the run chains in front of the commands it
+  // runs anyway. Only the scripts' own steps (prepare, finalize, post) are recorded without it, so a
+  // run that never opens a deferred rule — every A/B arm skipped most of them — exports one big
+  // `unmarked` block where the per-step breakdown should be.
+  "pr-reviewer/rules/run-telemetry.md",
 ];
 
 /** Anchor for an inlined rule. Stable, derived from the path, no collisions. */

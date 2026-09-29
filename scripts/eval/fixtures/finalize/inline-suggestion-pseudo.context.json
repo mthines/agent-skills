@@ -1,0 +1,12 @@
+{
+  "mode": "full",
+  "head_sha": "7389036",
+  "delta_lines": 10,
+  "files": [
+    {
+      "filename": "src/api/backoff.ts",
+      "patch": "@@ -41,1 +41,1 @@\n+x"
+    }
+  ],
+  "threads": []
+}

@@ -86,7 +86,7 @@ NON_TEST_FILES=$(git diff --name-only origin/main...HEAD | grep -vE '(\.test\.|\
 
 Any single trivial-skip condition triggers skip. If in doubt, run holistic — the cost of a redundant run is bounded; the cost of a missed system-fit bug is not.
 
-This section owns the **conditions**; it does not own their evaluation point. In `pr-reviewer` the set is evaluated exactly once, at Step 1.7b (the earliest consumer), and cached as `TRIVIAL_SKIP`; Steps 2.4, 2.4c, and 2.4d read that cache and never recompute the heuristic. The snippet above is the reference implementation of the conditions, not a per-step recomputation.
+This section owns the **conditions**; it does not own their evaluation point. In `pr-reviewer` the set is evaluated exactly once, by `prepare-review.mjs` (`discover-standards.mjs`'s `trivialSkip()`), bound at Step 1.7b (the earliest consumer) from `context.trivialSkip`, and cached as `TRIVIAL_SKIP`; Steps 2.4, 2.4c, and 2.4d read that cache and never recompute the heuristic. The snippet above is the reference implementation of the conditions, not a per-step recomputation.
 
 ## When to run (the call)
 

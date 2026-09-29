@@ -90,7 +90,7 @@ of those was a real defect before it became derived.
 | `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️`. Gate 2 (CI) is not a row — it renders via `CI_NOTE`. |
 | `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
 | `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. It counts all three record families (relevance rules, knowledge, hotspot), because `MEMORIES_USED` does. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
-| `QUALITY` | Must begin `produced <N> → posted inline <N> …`. |
+| `QUALITY` | Must begin `produced <N> → posted inline <N> …`. `posted inline <N>` counts claims only; cleared one-liners posted as notes follow it as ` · notes <M>` when `M > 0`, and are never counted as `deferred`. |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (<reason>)` — e.g. `skipped (tier: quick)`. |
 | `OPTIMALITY_LOG` · `STANDARDS_LOG` · `MEASURABILITY_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
 | `SKIPPED_FILES` | A list, or `none`. |
@@ -160,7 +160,7 @@ rode at the tail of the longest line in the accordion, after `depth checkout`, a
 | Slot | Renders | Use it for |
 | --- | --- | --- |
 | `RUN_NOTE` | appended to the run line after the parseable prefix | why the router chose this tier — `blast_radius=high · semver_delta=major`, `27 files touched` |
-| `RUN_ANOMALY` | its own line directly under the run line, prefixed `⚠️` by the renderer | something that changed what this run reviewed — a polluted compare range, a capability cap, a truncated fetch |
+| `RUN_ANOMALY` | its own line directly under the run line, prefixed `⚠️` by the renderer | something that changed what this run reviewed — a polluted compare range, a capability cap, a truncated fetch. `finalize.mjs` merges a value supplied in `context.render` with the anomalies it computes itself, never replacing them |
 
 The renderer rejects a `RUN_NOTE` containing `⚠️` (that is an anomaly wearing colour's clothes) and
 a `RUN_ANOMALY` that supplies its own leading glyph (the renderer owns it, so a supplied one
@@ -208,9 +208,10 @@ length**, so there is no count to supply and none to get wrong:
 | `MEMORIES_USED` | `[{key, url?, note?, kind?, evidence?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. `kind` is `knowledge` · `hotspot` · `rule` ([`memory.md`](./memory.md)) and renders as a bold prefix; when any entry supplies one, the summary's `used` half gains a per-kind breakdown (`3 used (1 knowledge · 1 hotspot · 1 rule)`) derived from the array. `evidence` is an array of the PR numbers a `rule` was learned from, rendered `<sup>evidence #88 #91 #97</sup>`; a `rule`-kind entry with an empty `evidence` array is **rejected** — a suppression rule with no evidence trail is exactly the unauditable suppression `memory.md` forbids. Omit `evidence` entirely on the other two kinds. |
 | `IMPACT` | `{telemetry?, symbols?, dependencies?, overlaps?}` | The consequence-note accordion from [`impact-graph.md`](./impact-graph.md). `symbols` is `[{name, path, change, consumer_files, verified_unaffected, findings}]` — `change` is `signature` · `body` · `removed`; `dependencies` is `[{name, from, to, delta, usage_sites, url?}]`; `overlaps` is `[{pr, author, path, symbol?, url?}]`; `telemetry` is one plain line ([`telemetry.md`](./telemetry.md)). The renderer derives the `<summary>` counts, builds every link from `url`, and joins the three bullet groups into **one** list. It rejects `verified_unaffected + findings > consumer_files` and states any untraced remainder in the bullet, so a partial trace can never render as a complete one. |
 | `WITHHELD` | `[{prefix, body, reason, path?, line?, url?}]` | The `unobtainable` findings from [`verification-receipt.md`](../../shared/rules/verification-receipt.md) — re-framed, not dropped. `reason` is **required** (which rung was unavailable); `prefix` must be `suggestion` or `question` and any other value is rejected, because nothing was verified so nothing is asserted. Renders in its own collapsed accordion with `<sup>(unverified: <reason>)</sup>`. |
-| `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. |
+| `NOTES` | `[{path, line, url?, prefix, body, confidence}]` | The cleared one-liners (`nitpick` / `question` / `praise`) that **posted inline**. Renders as the `Notes (<M>) — posted inline` accordion and drives the heading's ` · <M> notes` clause. A claim prefix (`issue` / `suggestion`) is rejected here — a posted claim is a `FINDINGS` row. |
+| `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | Findings that cleared review but did **not** post (over the inline caps). `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. A posted note never belongs here — the accordion calls this list "too minor to comment on". |
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
-| `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. |
+| `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. The heading itself is BUILT by `finalize/payload.mjs`'s `buildOptimalityCard()` from the judgment's own `path`/`line`, never taken from the model — `card_body` (the field the optimality lens actually supplies) is expected to EXCLUDE the heading, and `buildOptimalityCard()` strips a leading one if the model echoes its own `proposal.template.md` (which opens with the same heading) rather than starting its content after it, so a card never renders the heading twice. |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
 | `FINDINGS` | `[{title, path, line?, url?, tier, blocking?}]` — the findings this run **posted inline**. Three renderings come from this one array: the headline's count and glyph (`### 🟠 4 findings — 1 blocking`), the visible findings index above the accordions, and the `Severity — ` tally (`🔴 1 critical · 🟠 2 high`, glyph paired with its word per WCAG 1.4.1). `title` is the **same string `render-comment.mjs` put on that comment's first line**, which is what makes an index row and the comment it links to recognisably the same finding. `tier` is required and enumerated (`critical` · `high` · `medium` · `low`); a `\|` in `title` is rejected (it would split the row). The renderer also rejects a `FINDINGS` length that disagrees with `QUALITY`'s `posted inline <N>` — they are the same number stated twice. |
 
@@ -312,6 +313,23 @@ optional advisory note:
 | `FINDINGS` non-empty | `### <worst-tier glyph> <N> findings — <K> blocking` (the ` — <K> blocking` clause is dropped at `K == 0`, never rendered as `0 blocking`) |
 | empty, `VERDICT: PASS` | `### ✅ No issues found` |
 | empty, `VERDICT: WARN` / `FAIL` | `### <verdict glyph> No findings — <M> gates need attention` |
+
+**Notes are counted, never folded into findings.**
+A cleared `nitpick:` / `question:` / `praise:` one-liner posts inline but earns no `FINDINGS` row,
+because a one-liner carries no title, so it is listed in `NOTES` instead — its own
+`Notes (<M>) — posted inline` accordion, never the `too minor to comment on` one, which holds only
+findings that did not post.
+Every heading form appends ` · <M> notes` (` · 1 note` when singular), where `<M>` is
+`NOTES.length`, and drops the clause at `M == 0`.
+Without it, six comments at the code sat under a heading reading `5 findings`.
+The clause is appended after the whole form, so each form in the table stays a prefix of the
+rendered heading:
+
+```markdown
+### 🟠 5 findings — 1 blocking · 1 note
+### ✅ No issues found · 2 notes
+### ⚠️ No findings — 1 gate needs attention · 1 note
+```
 
 **It counts findings, not gates.** The old headline counted gate statuses (`1 error, 2 warnings`)
 while the inline comments were findings, with nothing reconciling the two numbers — which is most of

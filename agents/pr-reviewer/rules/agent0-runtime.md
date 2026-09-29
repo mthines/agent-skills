@@ -27,7 +27,7 @@ gate: the review is the same review. It changes only how the pipeline is
 - [The install lives in the workspace, not in `$HOME`](#the-install-lives-in-the-workspace-not-in-home)
 - [The setup script, not a first prompt step](#the-setup-script-not-a-first-prompt-step)
 - [Enter at Step 1.2c, from a prepared context](#enter-at-step-12c-from-a-prepared-context)
-- [Fan out Phase D; never expect a second rung](#fan-out-phase-d-never-expect-a-second-rung)
+- [Phase D: two workers in one message; never expect a second rung](#phase-d-two-workers-in-one-message-never-expect-a-second-rung)
 - [The dispatch prompt is short on purpose](#the-dispatch-prompt-is-short-on-purpose)
 - [Budget](#budget)
 - [What this rule does not do](#what-this-rule-does-not-do)
@@ -43,7 +43,7 @@ recorded failure behind it.
 |---|---|---|
 | 1 | The native file reader is scoped to the **workspace**. `$HOME/.claude/**` is outside it. | Every read of an installed file degrades to `sed -n 'a,bp'` through Bash against a ~50 KB output cap. `pr-reviewer.md` alone is ~277 KB, and a single `cat` is silently truncated — costing Steps 0 through 1.8. |
 | 2 | The host's **skill tool resolves a fixed enum** of its own built-ins, never the filesystem. | Five of the six composed lenses error with `Skill "<name>" not found`; `measurable` silently name-collides with an unrelated built-in and returns the wrong recipe **with no error at all**. A week of runs showed 20/29 hitting this and a mandated retry recovering **0 of 26** across two weeks — because no retry can repopulate an enum that is not filesystem-derived. |
-| 3 | **Custom agent types are not dispatchable.** `general` sub-agents are, and delegation is exactly **one level deep**. | A pipeline that plans to dispatch `pr-reviewer` and let it fan out further has no second rung. Fan out from the top-level run or not at all. |
+| 3 | **Custom agent types are not dispatchable.** `general` sub-agents are, and delegation is exactly **one level deep**. | A pipeline that plans to dispatch `pr-reviewer` and let it fan out further has no second rung. Dispatch from the top-level run or not at all. |
 | 4 | The GitHub credential is **injected per request and repo-scoped**. `gh api /user` and `/rate_limit` return 401. | Identity comes from GraphQL `viewer { login }` (measured: `dash0-dev[bot]`), never `/user`. If that read fails too, treat it as *identity unknown* — never as an empty login, and never as a reason to retry. |
 
 Fact 2's full resolution algorithm is
@@ -133,30 +133,71 @@ A degraded rung is never a non-zero exit. It is an entry in `anomalies[]`, which
 the run carries into `RUN_ANOMALY`: a review that could not materialize a
 checkout is a narrower review, not a failed one.
 
-## Fan out Phase D; never expect a second rung
+## Phase D: two workers in one message; never expect a second rung
 
-With the bootstrap gone, the serial finders are what is left. Dispatch them as
-multiple `general` sub-agents **in one message** so they run concurrently. The
-sandbox filesystem is shared with the parent, so each one reads its own rule
-file from `$PR_REVIEWER_ROOT` rather than being handed a copy of it inline.
+The topology is [`dispatch-topology.md`](./dispatch-topology.md)'s, read from `context.budget`
+exactly as on any other host: `in-context` below thoroughness 0.4, `hybrid` from 0.4. This host
+changes only how `hybrid` runs. A sub-agent here runs while this run waits on it — the only
+concurrency is several dispatches in one message — so `hybrid`'s "run the other finders while the
+intent finder runs" cannot happen in this context, and dispatching the intent finder alone and
+waiting would add its whole runtime (5–6 minutes on a 22-file PR) in series, against a timeout
+whose stop gate fires at ~9 minutes.
 
-Give each sub-agent, explicitly: the path to its rule file, the path to
-`review-context.json`, the path to `RUN-CONSTRAINTS.md`, its scoped task, and
-the instruction to return its findings **in its final message** — that message
-is the only content the parent receives.
+So under `hybrid`, send **exactly two `general` sub-agents in one message**:
 
-Fact 3 binds here: a sub-agent cannot dispatch a further sub-agent. Phase E's
-per-candidate verifier dispatches and Step 2.4b's targeted holistic traces are
-therefore also **top-level** fan-outs, issued by the orchestrator, never nested
-inside a finder.
+| Worker | Finders | Writes |
+|---|---|---|
+| intent | `intent` only | `<scratch>/intent.json` |
+| other finders | every other finder active in `context.budget.finders` — `correctness` and `quality` always, `consumer-impact`, `dependency` and `standards` when the budget turns them on — in one context | `<scratch>/others.json` |
 
-**When `review-loop` dispatched you, there is no fan-out at all.** In a loop
+That keeps `hybrid`'s isolation — the intent finder alone, the other finders sharing one context —
+and costs the slower worker's runtime instead of the sum. Everything after Phase D stays in this
+run: read both files, pool their candidates for Step 2.5, run the lenses, and verify every candidate
+here, under [`dispatch-topology.md § Verification — in your own context`](./dispatch-topology.md#verification--in-your-own-context),
+shape self-check included. A candidate is not trusted because a worker raised it.
+
+**Never dispatch anything else.** Phase E verifies one candidate at a time in this turn, and Step
+2.4b's targeted holistic traces are `Skill()` calls in this turn too. Neither is a fan-out, on this
+host or any other: a dispatch per candidate pays a sub-agent's whole base cost for one verdict.
+
+Each worker's prompt is short, for the reason in
+[the next section](#the-dispatch-prompt-is-short-on-purpose), and names only absolute paths:
+
+- its task — which finders to run, from `/tmp/workspace/pr-reviewer/pr-reviewer/rules/finders.md`,
+  plus `finder-consumer-impact.md` and `finder-dependency.md` beside it for the other-finders
+  worker when the budget turns those finders on;
+- the prepared context (`review-context.json`) and the review packet it names (`packet.path`):
+  read the packet first, and open a workspace file only for what the packet does not show;
+- `/tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md`;
+- its output path: write the candidates there as a JSON array of `finders.md` candidate records,
+  and return only that path in the final message;
+- do not read `pr-reviewer.md` or the bundle, and do not call the skill tool.
+
+That is the discipline of `/pr-review`'s
+[worker preamble](../../../skills/quality/pr-review/SKILL.md#worker-preamble--the-intent-worker),
+which is not installed on this host, so the list above is the copy a run here uses. The sandbox
+filesystem is shared with this run, so a worker reads its files itself rather than receiving them
+inline.
+
+Mark both workers on commands you already run ([`run-telemetry.md`](./run-telemetry.md)):
+`worker intent start` and `worker other-finders start` on the command before the message, and the
+two `end` markers on the command that reads the files. The `worker intent end` record is what tells
+`finalize.mjs` the intent finder ran isolated.
+
+If a worker returns no readable file, **do not dispatch it again**: here a retry runs in series,
+against the same timeout. Run that worker's finders in this context and add
+`<worker> worker returned no readable candidates — ran its finders in-context` to `RUN_ANOMALY`
+through `context.render.RUN_ANOMALY`. The review never loses a finder.
+
+Fact 3 still binds: a worker cannot dispatch further, so no worker prompt may ask it to.
+
+**When `review-loop` dispatched you, there is no dispatch at all.** In a loop
 automation the top-level run is the loop, and this review is its one `general`
 sub-agent ([`review-loop/rules/agent0-runtime.md`](../../../skills/quality/review-loop/rules/agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)).
-Run the finders serially and the verifier in-agent — both shapes the pipeline
-already permits — and return the verdict, the new-finding count, and the sticky
-URL in the final message. Never attempt a dispatch to recover the parallelism:
-the second rung does not exist.
+Run every finder, the intent finder included, and the verifier in this context — the `in-context`
+topology, which the pipeline already permits — and return the verdict, the new-finding count, and
+the sticky URL in the final message. Never attempt a dispatch to recover the isolation: the second
+rung does not exist.
 
 ## The dispatch prompt is short on purpose
 
@@ -188,7 +229,7 @@ Two consequences:
 | install | every run, in session | cached, `0 s` after the first |
 | ingest the pipeline | ~16 bash slices | 3 native reads |
 | Steps 0 → Phase B | ~20 model round-trips | 1 call, ~6 s measured |
-| Phase D | serial | concurrent fan-out |
+| Phase D | serial | two workers in one message (intent; the other finders) |
 
 Set the automation `timeout` to the budget you actually want rather than to a
 ceiling: the agent's own stop condition fires at 75 % of the wall-clock budget,

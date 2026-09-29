@@ -35,7 +35,8 @@
 # Requires: networkLevel >= trusted_only (codeload.github.com, github.com, npm).
 #           The Chromium download may need its CDN allowed; see step 3's output.
 # envVars:  PIN, REPO, PR_REVIEWER_LOGIN, SRC_DIR (a local checkout; no download),
-#           WITH_PLAYWRIGHT, REQUIRE_PLAYWRIGHT.
+#           WITH_PLAYWRIGHT, REQUIRE_PLAYWRIGHT. Run-telemetry export settings reach a
+#           run only through $DASH0_AGENT_ENV (agents/pr-reviewer/rules/run-telemetry.md).
 
 set -uo pipefail
 
