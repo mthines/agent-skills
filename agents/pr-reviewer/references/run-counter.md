@@ -21,6 +21,7 @@ About 17 runs a week times four verdicts is negligible cardinality.
 The verdict is known only at the end, so every verdict the run can end on needs its `0` from the start; an attribute that first appears at the end has no baseline.
 When a window boundary falls inside a run, the baseline is the last sample before that boundary, and it must lie within the query's lookback; a `0` at most 30 s old always does.
 Dash0's `$__rate_interval` floor is 1 minute, and a range needs two samples, so the spacing must be 30 s or less.
+A series keeps at most 480 points, so a run longer than 4 hours keeps its first `0` and the last 478 before its end: the dense tail still covers almost 4 hours before the end, where a window holding the end places its baseline, and one run's payload stays bounded.
 
 ## Why the points are written at `finish`, not by a live exporter
 
