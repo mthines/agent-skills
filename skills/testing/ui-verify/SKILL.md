@@ -127,11 +127,9 @@ There, `author` stops with `not authored (Agent0 sandbox not prepared: add scrip
 
 #### On-demand browser install — run and verify
 
-This block is owned here, not in a linked file, because a `SKILL.md`-only
-import must still reach it. It runs only for `run` and `verify`, never under
-`--driver chrome` and never for `author` — none of those need a Playwright
-browser. Why each line here is shaped the way it is:
-[`references/agent0-browser-install.md`](./references/agent0-browser-install.md).
+This block is owned here, not in a linked file, because a `SKILL.md`-only import must still reach it.
+It runs only for `run` and `verify`, never under `--driver chrome` and never for `author` — none of those need a Playwright browser.
+Why each line here is shaped the way it is: [`references/agent0-browser-install.md`](./references/agent0-browser-install.md).
 Run it with the Bash tool's `timeout: 600000` — the worst case sits close to it.
 
 ```bash
@@ -173,19 +171,38 @@ if [ "$A0" = 1 ]; then
     else
       mkdir -p "$B"
       start=$SECONDS
-      rc=1
-      if curl -fsSL --max-time 30 -o "$B/agent0-playwright.sh" \
-           https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-playwright.sh; then
-        BUDGET=280 timeout 300 bash "$B/agent0-playwright.sh" > "$B/playwright.log" 2>&1
-        rc=$?
-      else
-        echo "could not download scripts/agent0-playwright.sh" > "$B/playwright.log"
+      # Prefer the $HOST copy agent0-setup.sh already placed and verified
+      # (D-B) — a prepared-then-degraded sandbox needs no second download.
+      # Fall back to curling from main only when that copy is absent (an
+      # install from an older commit).
+      SCRIPT=/tmp/workspace/agent-skills/agent0-playwright.sh
+      if [ ! -f "$SCRIPT" ]; then
+        SCRIPT="$B/agent0-playwright.sh"
+        if ! curl -fsSL --max-time 30 -o "$SCRIPT" \
+             https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-playwright.sh; then
+          echo "could not download scripts/agent0-playwright.sh" > "$B/playwright.log"
+          SCRIPT=""
+        fi
       fi
-      . "$M"
-      if [ "$UI_VERIFY_BROWSER" = ok ]; then
+      if [ -n "$SCRIPT" ]; then
+        BUDGET=280 timeout 300 bash "$SCRIPT" > "$B/playwright.log" 2>&1
+        rc=$?
+        . "$M"
+      else
+        rc=1
+      fi
+      if [ "$rc" = 0 ] && [ "$UI_VERIFY_BROWSER" = ok ]; then
         echo "BROWSER: ok (installed on demand, $((SECONDS - start))s)"
       else
-        reason="${UI_VERIFY_BROWSER_REASON:-$(tail -n 1 "$B/playwright.log" 2>/dev/null)}"
+        # rc != 0 means agent0-playwright.sh never ran (no script) or the
+        # outer `timeout 300` killed it before it rewrote $M — either way
+        # $M's reason (if any) is stale, so never trust it here: read the
+        # run log directly instead of falling back to a leftover env value.
+        if [ "$rc" = 0 ]; then
+          reason="${UI_VERIFY_BROWSER_REASON:-$(tail -n 1 "$B/playwright.log" 2>/dev/null)}"
+        else
+          reason="$(tail -n 1 "$B/playwright.log" 2>/dev/null)"
+        fi
         echo "$reason" > "$SENT"
         echo "BROWSER: unavailable — $reason"
       fi

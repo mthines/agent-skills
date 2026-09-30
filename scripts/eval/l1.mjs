@@ -8471,7 +8471,7 @@ const isPollBlock = (block) =>
       && /BROWSER: unavailable —/.test(uvBlk) && /BROWSER: not prepared —/.test(uvBlk)
       && /^\| `BROWSER: ok \(prepared\)` \|/m.test(uv) && /^\| `BROWSER: ok \(installed on demand, <N>s\)` \|/m.test(uv)
       && /^\| `BROWSER: unavailable — <reason>` \|/m.test(uv) && /^\| `BROWSER: not prepared — <reason>` \|/m.test(uv)
-      && /runs only for `run` and `verify`, never under\n?`--driver chrome`/.test(uv) && uv.includes("timeout: 600000"),
+      && /runs only for `run` and `verify`, never under\s*`--driver chrome`/.test(uv) && uv.includes("timeout: 600000"),
     `on-demand BROWSER block missing an element (host probes none/ws/skills/agents=${uvProbes.join("/")}, want 0/1/1/1)`);
 }
 

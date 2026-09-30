@@ -106,7 +106,7 @@ cft_fallback() {
   ch_dir="$PLAYWRIGHT_BROWSERS_PATH/chromium-$rev"
   mkdir -p "$hs_dir" "$ch_dir"
   hs_url="https://storage.googleapis.com/chrome-for-testing-public/$ver/linux64/chrome-headless-shell-linux64.zip"
-  if ! timeout "$cap" curl -fsSL --max-time 30 -o "$T/hs.zip" "$hs_url" 2>"$T/cft.log"; then
+  if ! timeout "$cap" curl -fsSL --max-time "$cap" -o "$T/hs.zip" "$hs_url" 2>"$T/cft.log"; then
     echo "download failed: $hs_url ($(tail -n 1 "$T/cft.log" 2>/dev/null))"
     return 1
   fi
