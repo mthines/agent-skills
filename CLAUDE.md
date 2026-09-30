@@ -231,7 +231,8 @@ The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory use
 
 1. Pick a category (`workflow/`, `quality/`, `delivery/`, `testing/`, `design/`, `analysis/`, `authoring/`) and create `skills/<category>/<name>/SKILL.md`.
 2. Run `bash scripts/sync-symlinks.sh` to wire up the two-tier chain for every new or missing skill/agent in one pass.
-3. Add a one-line hook (≤ 300 chars) to the inventory in `CLAUDE.md` and an entry to `README.md`. Rules go in the skill's `rules/`, their rationale in its `references/` — see [Where knowledge goes](#where-knowledge-goes-mandatory-on-every-change).
+3. Add a one-line hook (≤ 300 chars) to the inventory in `CLAUDE.md` and an entry to `README.md`.
+   Rules go in the skill's `rules/`, their rationale in its `references/` — see [Where knowledge goes](#where-knowledge-goes-mandatory-on-every-change).
 
 For agents, write `agents/<name>.md` in this repo and rerun `bash scripts/sync-symlinks.sh`.
 
@@ -263,9 +264,12 @@ All applicable hops must resolve. If any is missing, the harness will not see th
 Regression evals for the skills live in [`scripts/eval/`](./scripts/eval/README.md), in three layers.
 The full annotated description, including the recorded run history, is [`docs/evals.md`](./docs/evals.md).
 
-- **L1 — deterministic contract checks** (`node scripts/eval/l1.mjs`): no LLM, no cost, gated in CI on every PR. Add or extend an `s.check` for any mechanical contract, and prove it bites by breaking what it guards.
-- **L2 — behavioral evals** (`ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs [--suite a,b]`): one suite per labelled decision, golden sets in `scripts/eval/golden/`, suites declared in `scripts/eval/suites.mjs`. Opt-in in CI via the `run-evals` PR label; require the aggregator check `evals · L2 (behavioral) / l2`.
-- **L2-detection** (`ANTHROPIC_API_KEY=… node scripts/eval/l2-detection.mjs`, `--self-test` offline): replays finder → verifier over `golden/bug-detection.jsonl`; hard-gated on `recall ≥ 0.7` and `fp ≤ 0.2`. Never lower a gate or loosen the parse to meet the current core.
+- **L1 — deterministic contract checks** (`node scripts/eval/l1.mjs`): no LLM, no cost, gated in CI on every PR.
+  Add or extend an `s.check` for any mechanical contract, and prove it bites by breaking what it guards.
+- **L2 — behavioral evals** (`ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs [--suite a,b]`): one suite per labelled decision, golden sets in `scripts/eval/golden/`, suites declared in `scripts/eval/suites.mjs`.
+  Opt-in in CI via the `run-evals` PR label; require the aggregator check `evals · L2 (behavioral) / l2`.
+- **L2-detection** (`ANTHROPIC_API_KEY=… node scripts/eval/l2-detection.mjs`, `--self-test` offline): replays finder → verifier over `golden/bug-detection.jsonl`; hard-gated on `recall ≥ 0.7` and `fp ≤ 0.2`.
+  Never lower a gate or loosen the parse to meet the current core.
 
 
 ### Keeping the evals honest (mandatory on every change)
