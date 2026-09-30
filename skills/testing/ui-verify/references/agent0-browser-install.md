@@ -14,9 +14,9 @@ Read [`rules/agent0-runtime.md`](../rules/agent0-runtime.md) and the [`SKILL.md`
 
 ## Why two stages, not one
 
-`review-loop`'s existing on-demand install (its `rules/agent0-runtime.md § Install on demand when the marker is absent`) runs the setup script with `WITH_PLAYWRIGHT=1` when a marker is entirely absent.
-That path serialises npm install (up to 300 s), a chromium download (up to 300 s, possibly twice for the `--with-deps` retry), and a smoke test (60 s) — a worst case north of 900 s, well past the Bash tool's 600 s call cap.
-`ui-verify` needs the browser on **every** unprepared or `WITH_PLAYWRIGHT=0` host, not only the rare marker-absent one review-loop handles, so a single fused stage would exceed the cap far more often.
+`review-loop`'s existing on-demand install (its `rules/agent0-runtime.md § Install on demand when the marker is absent`) runs the setup script with `WITH_PLAYWRIGHT=0` when a marker is entirely absent — it installs the base bundle only and never installs the browser itself.
+`ui-verify` needs the browser on **every** unprepared or `WITH_PLAYWRIGHT=0` host — which is every host review-loop's own on-demand install leaves behind — so it cannot simply reuse that call unmodified.
+Fusing the browser into that same call would risk exceeding the Bash tool's 600 s call cap: npm install (up to 300 s), a chromium download (up to 300 s, possibly twice for the `--with-deps` retry), and a smoke test (60 s) sum to a worst case north of 900 s.
 
 Splitting into two stages keeps each within budget: stage (a) is the existing fast base install (`WITH_PLAYWRIGHT=0`, seconds), and stage (b) is a dedicated, separately-bounded top-up that installs only the browser.
 Both stages call the same script (`agent0-setup.sh`, then `agent0-playwright.sh`), so there is still exactly one install procedure — never a second implementation that can drift from the first.

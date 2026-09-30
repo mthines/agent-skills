@@ -123,7 +123,7 @@ When `$AGENT_SKILLS_ROOT/skills/ui-verify/SKILL.md` differs from the copy you ar
 `run` and `verify` install the Playwright browser themselves on this host — see [On-demand browser install — run and verify](#on-demand-browser-install--run-and-verify) below — and report `NOT RUN (Agent0 sandbox not prepared: …)` only when that install itself fails, never a question and never a `red`.
 Check for this host first, before Step 0 and before running any script this skill links.
 There, `author` stops with `not authored (Agent0 sandbox not prepared: add scripts/agent0-setup.sh as the automation's sandbox.setupScript)`, because its Step 0 runs `scripts/is-ui-diff.mjs`, which a `SKILL.md`-only import does not contain, and `author` needs no browser, so it never runs the on-demand block.
-`verify` therefore never reaches its author-if-needed step on an unprepared host with no working sandbox setup — it fails at the `author` gate above before the browser install would even matter.
+`verify` runs the on-demand block's stage (a) — the base install — before Step 0, so by the time `author`'s own `is-ui-diff.mjs` gate would run, the host already has `env.sh` and the scripts that install copies alongside it: `author`'s `not authored (Agent0 sandbox not prepared: …)` line above fires only when that base install itself fails, not on every unprepared host.
 
 #### On-demand browser install — run and verify
 
