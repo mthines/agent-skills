@@ -148,8 +148,35 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
 | every span | `gen_ai.agent.name`, `gen_ai.conversation.id`, `dash0.gen_ai.vcs.*` (repository, owner, PR URL, head ref and revision), `user.name` |
 
-Two histograms carry the numbers across runs: `pr_review.step.duration` (by step and kind) and `pr_review.run.duration` (by tier, topology, and verdict).
-Neither carries a run id, a PR number, or a user, so their cardinality stays flat.
+Two histograms carry the durations across runs: `pr_review.step.duration` (by step and kind) and `pr_review.run.duration` (by tier, topology, and verdict).
+Neither carries a run id, a PR number, or a user as an attribute.
+
+### The run counter
+
+Count runs with `pr_review.runs`, never with `histogram_count` of `pr_review.run.duration`: that histogram is DELTA with one point per run, so `increase()` finds no baseline and drops runs.
+
+| Property | Value |
+| --- | --- |
+| Type | monotonic Sum, CUMULATIVE (`aggregationTemporality: 2`), unit `{run}` |
+| Series | one per verdict per run — the resource's `service.instance.id` is the run's trace id |
+| Verdicts | `PASS`, `WARN`, `FAIL`, and `none` for a run that finished without one (`finish --status error` before a finalize rendered) |
+| Attributes | `pr_review.verdict`, `pr_review.dry_run` (omitted when the run finished before finalize), `pr_review.tier` |
+| Points | a `0` on every series 1 ms after the run's start and every 30 s after that, then the final point at the run's end: `1` on the run's verdict, `0` on the rest; every point's `startTimeUnixNano` is the run's start |
+
+`finish` writes every point in the same export as the trace, backdated to the times it describes.
+A run that never reaches `finish` exports neither, so the counter's total equals the number of `invoke_agent pr-reviewer` spans.
+
+Query it with an anchored `increase` whose window equals the step, summed over the instances:
+
+```promql
+# correct: one point per 5-minute step, each run counted in the step its end falls in
+sum by (pr_review_verdict) (increase({otel_metric_name="pr_review.runs", service_name="pr-reviewer"}[5m] anchored))
+
+# incorrect: a DELTA histogram with one point per run has no baseline, so runs go missing
+histogram_count(increase({otel_metric_name="pr_review.run.duration"}[5m] anchored))
+```
+
+**Why:** [`references/run-counter.md`](../references/run-counter.md).
 
 Three things the trace never contains:
 
