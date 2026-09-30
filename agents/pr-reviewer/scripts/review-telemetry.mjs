@@ -23,6 +23,11 @@
 // Identity and VCS attributes go on EVERY span, as the plugin does: gen_ai.agent.name,
 // gen_ai.conversation.id, dash0.gen_ai.vcs.* (repository, owner, PR url, head ref and revision).
 //
+// THE RUN COUNTER. `pr_review.runs` is what a dashboard counts runs with: a CUMULATIVE sum, one
+// series per verdict per run (the resource's service.instance.id is the run's trace id). `finish`
+// writes its 0 points backdated across the run and the final 1 in the same export as the trace
+// (runCounterPoints), because no process lives for the whole run.
+//
 // THREE THINGS THIS FILE NEVER EMITS, and why:
 //   - no `chat` span and no token counts — the harness owns model usage (the Dash0 agent plugin
 //     reads it from the transcript); a script cannot see it, and a guessed number is worse than
@@ -204,6 +209,52 @@ const HIST_BOUNDS = {
   "pr_review.run.duration": [60, 180, 300, 600, 900, 1200, 1800, 3600],
   "pr_review.step.tool_calls": [1, 2, 4, 8, 16, 32, 64],
 };
+
+/** The run counter (rules/run-telemetry.md § The run counter): what a dashboard counts runs with. */
+export const RUN_COUNTER = "pr_review.runs";
+/** Every verdict a run can end with; `none` is a run that finished without one. Each gets a 0
+ *  series, so the verdict a run ends on always has a baseline before its 1. */
+export const RUN_VERDICTS = Object.freeze(["PASS", "WARN", "FAIL", "none"]);
+/** The counter's 0 points are this far apart across a run: a window boundary that falls inside the
+ *  run then has a 0 at most this long before it, within any PromQL lookback. */
+export const RUN_COUNTER_STEP_NS = 30n * 1_000_000_000n;
+/** At most this many points per series (4 hours at 30 s); a longer run keeps its first 0 and the
+ *  last ones before its end. */
+const RUN_COUNTER_MAX_POINTS = 480;
+
+/**
+ * The run counter's points for one run, pure. A 0 on every verdict's series just after the run's
+ * start and every RUN_COUNTER_STEP_NS after that, then the final point at the run's end: 1 on the
+ * run's own verdict, 0 on the rest. Every point shares the run's start as its start time, and the
+ * attributes are only what every point knows, so no series ever lacks its baseline.
+ * `finish` writes them all at once, backdated: no process lives for the whole run, and the ledger
+ * already holds every time a live exporter would have sampled.
+ * @param {BuiltRun} run
+ * @returns {{ startNs: bigint, verdict: string, points: Array<{ attributes: Record<string, any>, timeNs: bigint, value: number }> }}
+ */
+export function runCounterPoints(run) {
+  const recorded = run.runAttrs.verdict;
+  const verdict = typeof recorded === "string" && recorded !== "" ? recorded : "none";
+  const verdicts = RUN_VERDICTS.includes(verdict) ? [...RUN_VERDICTS] : [...RUN_VERDICTS, verdict];
+  const labels = (/** @type {string} */ v) => ({
+    "pr_review.verdict": v,
+    "pr_review.dry_run": typeof run.runAttrs.dry_run === "boolean" ? run.runAttrs.dry_run : null,
+    "pr_review.tier": run.facts.tier || null,
+  });
+  // The first 0 sits 1 ms after the start time, so no point has time == start.
+  const first = run.startNs + 1_000_000n;
+  const last = run.endNs > first ? run.endNs : first + 1_000_000n;
+  const steps = Number((last - 1n - first) / RUN_COUNTER_STEP_NS) + 1;
+  const skip = Math.max(0, steps - (RUN_COUNTER_MAX_POINTS - 2));
+  /** @type {bigint[]} */
+  const zeros = [first];
+  for (let k = Math.max(1, skip); k < steps; k++) zeros.push(first + BigInt(k) * RUN_COUNTER_STEP_NS);
+  const points = verdicts.flatMap((v) => [
+    ...zeros.map((timeNs) => ({ attributes: labels(v), timeNs, value: 0 })),
+    { attributes: labels(v), timeNs: last, value: v === verdict ? 1 : 0 },
+  ]);
+  return { startNs: run.startNs, verdict, points };
+}
 
 const nowNs = () => BigInt(Date.now()) * 1_000_000n;
 
@@ -539,13 +590,14 @@ function ns(bag) {
 }
 
 /**
- * The exporter for a built run: the trace (root + steps + workers) and two low-cardinality
- * histograms. Returns the exporter unflushed.
+ * The exporter for a built run: the trace (root + steps + workers), the duration histograms, and
+ * the run counter. Returns the exporter unflushed.
  * @param {BuiltRun} run @param {NodeJS.ProcessEnv} env
  */
 export function toExporter(run, env) {
   const { endpoint, headers } = exportTarget(env);
   const f = run.facts;
+  const traceId = traceIdFor(run.runId);
   const ex = new OtlpExporter({
     endpoint,
     headers,
@@ -556,11 +608,14 @@ export function toExporter(run, env) {
       "service.name": env.OTEL_SERVICE_NAME || AGENT_NAME,
       "service.namespace": "agent-skills",
       "service.version": f.version || null,
+      // One instance per run: without it two runs with the same version and labels share a metric
+      // series, and a counter that ends on the same value again reads as no change.
+      "service.instance.id": traceId,
       "gen_ai.agent.name": AGENT_NAME,
       "gen_ai.harness.name": identityAttributes(run, env)["gen_ai.harness.name"],
     },
   });
-  ex.traceId = traceIdFor(run.runId);
+  ex.traceId = traceId;
   const identity = identityAttributes(run, env);
   const rootId = spanIdFor(run.runId, "root");
   ex.spans.push({
@@ -640,6 +695,8 @@ export function toExporter(run, env) {
     "pr_review.tier": f.tier, "pr_review.topology": run.runAttrs.topology ?? f.topology,
     "pr_review.verdict": run.runAttrs.verdict,
   }, "s");
+  const counter = runCounterPoints(run);
+  ex.cumulativeSum(RUN_COUNTER, { unit: "{run}", startNs: counter.startNs, points: counter.points });
   return ex;
 }
 
@@ -1112,6 +1169,70 @@ async function selfTest() {
   ok("one pr_review.step.duration series per step name, keyed by step and kind only (no run id)",
     stepHist.length === 5 && stepHist.every((/** @type {any} */ m) => m.histogram.dataPoints[0].attributes.every((/** @type {any} */ a) => ["pr_review.step.name", "pr_review.step.kind", "gen_ai.agent.name"].includes(a.key))));
 
+  // The run counter: countable with increase() because every series has its own 0 baseline.
+  {
+    const pointVal = (/** @type {any} */ p, /** @type {string} */ k) => {
+      const a = p.attributes.find((/** @type {any} */ x) => x.key === k);
+      return a ? (a.value.stringValue ?? a.value.boolValue) : undefined;
+    };
+    /** @param {any} m @returns {Map<string, any[]>} */
+    const byVerdict = (m) => {
+      const out = new Map();
+      for (const p of m.sum.dataPoints) {
+        const v = String(pointVal(p, "pr_review.verdict"));
+        out.set(v, [...(out.get(v) || []), p]);
+      }
+      return out;
+    };
+    const counter = metrics.find((/** @type {any} */ m) => m.name === RUN_COUNTER);
+    ok("pr_review.runs is a monotonic CUMULATIVE sum with unit {run}",
+      counter?.unit === "{run}" && counter?.sum?.aggregationTemporality === 2 && counter?.sum?.isMonotonic === true);
+    const series = byVerdict(counter);
+    ok("one counter series per verdict: PASS, WARN, FAIL, and none",
+      [...series.keys()].sort().join() === "FAIL,PASS,WARN,none", [...series.keys()].join());
+    ok("every counter point starts at the run's start",
+      counter.sum.dataPoints.every((/** @type {any} */ p) => p.startTimeUnixNano === String(run.startNs)));
+    const gapsOk = [...series.values()].every((pts) => pts.every((/** @type {any} */ p, /** @type {number} */ i) => {
+      const t = BigInt(p.timeUnixNano);
+      const prev = i === 0 ? run.startNs : BigInt(pts[i - 1].timeUnixNano);
+      return t > prev && t - prev <= 30n * S; // 30 s literally, not the constant: raising the constant must fail here
+    }));
+    ok("each series has a 0 just after the start and then at most every 30 s, so a window boundary inside the run always has a baseline",
+      gapsOk && [...series.values()].every((pts) => pts[0].asInt === "0" && BigInt(pts[pts.length - 1].timeUnixNano) === run.endNs));
+    ok("the final point is 1 on the run's verdict and 0 on the others; every earlier point is 0",
+      [...series.entries()].every(([v, pts]) => pts.slice(0, -1).every((/** @type {any} */ p) => p.asInt === "0")
+        && pts[pts.length - 1].asInt === (v === "FAIL" ? "1" : "0")));
+    ok("counter attributes are only verdict, dry run, and tier — nothing that first appears at the end",
+      counter.sum.dataPoints.every((/** @type {any} */ p) => p.attributes.every((/** @type {any} */ a) => ["pr_review.verdict", "pr_review.dry_run", "pr_review.tier"].includes(a.key))
+        && pointVal(p, "pr_review.tier") === "deep"));
+    const res = /** @type {any} */ (ex.metricPayload()).resourceMetrics[0].resource.attributes;
+    const instanceOf = (/** @type {any[]} */ r) => r.find((a) => a.key === "service.instance.id")?.value?.stringValue;
+    const otherRun = toExporter(/** @type {BuiltRun} */ (failedStep), env);
+    ok("the resource's service.instance.id is the run's trace id, so no two runs share a series",
+      instanceOf(res) === traceIdFor("r1") && instanceOf(/** @type {any} */ (otherRun.metricPayload()).resourceMetrics[0].resource.attributes) === traceIdFor("r3"));
+    const noVerdict = runCounterPoints(/** @type {BuiltRun} */ (failedStep));
+    ok("a run that finished without a verdict counts once under `none`",
+      noVerdict.verdict === "none" && noVerdict.points.filter((p) => p.value === 1).length === 1
+        && noVerdict.points.filter((p) => p.value === 1)[0].attributes["pr_review.verdict"] === "none");
+    const dry = runCounterPoints(/** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...ledger.slice(0, -1), at(110, { t: "attr", target: "run", attrs: { dry_run: true } }), ledger[ledger.length - 1]]))));
+    ok("a dry run's points all carry pr_review.dry_run=true; a run with no dry-run fact omits it",
+      dry.points.every((p) => p.attributes["pr_review.dry_run"] === true)
+        && runCounterPoints(run).points.every((p) => p.attributes["pr_review.dry_run"] === null));
+    const odd = runCounterPoints({ ...run, runAttrs: { ...run.runAttrs, verdict: "SKIP" } });
+    const oddSeries = odd.points.filter((p) => p.attributes["pr_review.verdict"] === "SKIP");
+    ok("a verdict outside the known set still gets its own 0 before its 1",
+      oddSeries.length >= 2 && oddSeries[0].value === 0 && oddSeries[oddSeries.length - 1].value === 1);
+    const long = runCounterPoints({ ...run, endNs: run.startNs + 10n * 3600n * S });
+    const longPass = long.points.filter((p) => p.attributes["pr_review.verdict"] === "PASS");
+    ok("a 10-hour run keeps at most 480 points per series: its first 0 and the last ones before its end",
+      longPass.length === 480 && longPass[0].timeNs === run.startNs + 1_000_000n
+        && longPass[longPass.length - 1].timeNs - longPass[longPass.length - 2].timeNs <= 30n * S);
+    const instant = runCounterPoints({ ...run, endNs: run.startNs });
+    ok("a run that ends the moment it starts still writes a 0 before its 1",
+      instant.points.filter((p) => p.attributes["pr_review.verdict"] === "FAIL").map((p) => `${p.value}`).join() === "0,1"
+        && instant.points.every((p) => p.timeNs > run.startNs));
+  }
+
   // The harness rule.
   const withHarness = (/** @type {RunFacts} */ extra) => identityAttributes({ ...run, facts: { ...facts, ...extra } }, {})["gen_ai.harness.name"];
   ok("inside a plugin-covered harness with no joined session, no gen_ai.harness.name (no phantom session)",
@@ -1174,6 +1295,15 @@ async function selfTest() {
     const rootSpan = tr?.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
     ok("the received trace's root carries the model's provider once `begin` supplied the model",
       rootSpan?.name === "invoke_agent pr-reviewer" && get(rootSpan, "gen_ai.provider.name") === "anthropic" && get(rootSpan, "gen_ai.request.model") === "claude-opus-5-5");
+    const rm = received.find((r) => r.path === "/v1/metrics")?.body?.resourceMetrics?.[0];
+    const rc = rm?.scopeMetrics?.[0]?.metrics?.find((/** @type {any} */ m) => m.name === RUN_COUNTER);
+    const rcFinal = (rc?.sum?.dataPoints || []).filter((/** @type {any} */ p) => p.asInt === "1");
+    // This run's first finish carried no verdict, so its root has none: the counter must agree.
+    const rootVerdict = get(rootSpan, "pr_review.verdict") ?? "none";
+    ok("the received metrics carry pr_review.runs with the run's instance id, and exactly one 1 — on the root span's verdict",
+      rm?.resource?.attributes?.some((/** @type {any} */ a) => a.key === "service.instance.id" && a.value.stringValue === on.trace_id)
+        && rcFinal.length === 1 && rcFinal[0].attributes.some((/** @type {any} */ a) => a.key === "pr_review.verdict" && a.value.stringValue === rootVerdict),
+      `root=${rootVerdict} ones=${JSON.stringify(rcFinal.map((/** @type {any} */ p) => p.attributes))}`);
     const before = received.length;
     const again = await finishRun(runDir, {}, { PR_REVIEWER_OTLP_ENDPOINT: `http://127.0.0.1:${port}` });
     ok("finish is idempotent: an exported run is not exported twice", received.length === before && again.skipped === "already exported");

@@ -114,6 +114,9 @@ export class Histogram {
  * @typedef {{name: string, unit: string, points: Map<string, {attributes: Attribute[], value: number}>}} SumMetric
  * @typedef {{name: string, unit: string, attributes: Attribute[], value: number}} GaugePoint
  * @typedef {{name: string, unit: string, attributes: Attribute[], hist: Histogram}} HistMetric
+ * @typedef {{attributes: Attribute[], timeNs: string, value: number}} CumulativePoint
+ * @typedef {{name: string, unit: string, startNs: string, points: CumulativePoint[]}} CumulativeMetric
+ * @typedef {{attributes?: AttrBag, timeNs: bigint|string, value: number}} CumulativePointInput
  * @typedef {{endpoint?: string, headers?: Record<string,string>,
  *   resource?: AttrBag, scopeName?: string, scopeVersion?: string,
  *   histBounds?: Record<string, number[]>}} OtlpExporterOpts
@@ -149,6 +152,8 @@ export class OtlpExporter {
     this.gauges = [];
     /** @type {Map<string, HistMetric>} */
     this.hists = new Map();
+    /** @type {CumulativeMetric[]} */
+    this.cumulatives = [];
     this.startNs = nowNs();
     this.resource = attrs(resource);
     this.scopeName = scopeName;
@@ -221,6 +226,22 @@ export class OtlpExporter {
     /** @type {HistMetric} */ (this.hists.get(k)).hist.record(value);
   }
 
+  /** A monotonic CUMULATIVE sum whose points the caller has already timed: every point is the
+   *  running total at its own `timeNs`, and all of them share `startNs` as their start. Unlike
+   *  `count()` (DELTA, one point at flush), a series written this way carries its own 0 baseline,
+   *  which is what PromQL `increase()` needs to see an increment. A point whose value is not a
+   *  non-negative integer is dropped; points are sent in time order.
+   *  @param {string} name
+   *  @param {{unit?: string, startNs: bigint|string, points: CumulativePointInput[]}} opts */
+  cumulativeSum(name, { unit = "1", startNs, points }) {
+    if (!this.enabled) return;
+    const kept = points
+      .filter((p) => Number.isInteger(p.value) && p.value >= 0)
+      .map((p) => ({ attributes: attrs(p.attributes || {}), timeNs: String(p.timeNs), value: p.value }))
+      .sort((a, b) => (BigInt(a.timeNs) < BigInt(b.timeNs) ? -1 : BigInt(a.timeNs) > BigInt(b.timeNs) ? 1 : 0));
+    if (kept.length) this.cumulatives.push({ name, unit, startNs: String(startNs), points: kept });
+  }
+
   /** OTLP ExportTraceServiceRequest. Exposed for self-tests. */
   tracePayload() {
     return {
@@ -255,6 +276,20 @@ export class OtlpExporter {
           isMonotonic: true,
           dataPoints: [...s.points.values()].map((p) => ({
             attributes: p.attributes, startTimeUnixNano: this.startNs, timeUnixNano: time, asInt: String(p.value),
+          })),
+        },
+      });
+    }
+    for (const c of this.cumulatives) {
+      metrics.push({
+        name: c.name,
+        unit: c.unit,
+        sum: {
+          // CUMULATIVE: each point is the running total since startTimeUnixNano.
+          aggregationTemporality: 2,
+          isMonotonic: true,
+          dataPoints: c.points.map((p) => ({
+            attributes: p.attributes, startTimeUnixNano: c.startNs, timeUnixNano: p.timeNs, asInt: String(p.value),
           })),
         },
       });
@@ -389,6 +424,22 @@ function selfTest() {
   ok("histogram counted both observations", h.count === "2");
   ok("bucketCounts is bounds+1 long", h.bucketCounts.length === h.explicitBounds.length + 1);
   ok("empty metric set exports nothing", new OtlpExporter({ endpoint: "https://x" }).metricPayload() === null);
+
+  const cu = new OtlpExporter({ endpoint: "https://x" });
+  cu.cumulativeSum("runs", {
+    unit: "{run}", startNs: 1000n,
+    points: [
+      { attributes: { v: "a" }, timeNs: 3000n, value: 1 },
+      { attributes: { v: "a" }, timeNs: 2000n, value: 0 },
+      { attributes: { v: "a" }, timeNs: 2500n, value: 0.5 },
+    ],
+  });
+  const cm = /** @type {any} */ (cu.metricPayload()).resourceMetrics[0].scopeMetrics[0].metrics[0];
+  ok("cumulativeSum is CUMULATIVE and monotonic", cm.name === "runs" && cm.unit === "{run}" && cm.sum.aggregationTemporality === 2 && cm.sum.isMonotonic === true);
+  ok("cumulativeSum sends its points in time order, all sharing the given start, dropping a non-integer",
+    cm.sum.dataPoints.map((/** @type {any} */ p) => `${p.timeUnixNano}=${p.asInt}`).join(",") === "2000=0,3000=1"
+      && cm.sum.dataPoints.every((/** @type {any} */ p) => p.startTimeUnixNano === "1000"));
+  ok("cumulativeSum is a no-op without an endpoint", (off.cumulativeSum("runs", { startNs: 1n, points: [{ timeNs: 2n, value: 0 }] }), off.metricPayload() === null));
 
   return { fails };
 }
