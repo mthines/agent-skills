@@ -120,7 +120,10 @@ cft_fallback() {
   # Best-effort only: the full chrome build shares the revision/version, so a
   # later `install chromium` (a different browser entry) is also a no-op.
   ch_url="https://storage.googleapis.com/chrome-for-testing-public/$ver/linux64/chrome-linux64.zip"
-  if timeout 30 curl -fsSL --max-time 30 -o "$T/ch.zip" "$ch_url" 2>/dev/null; then
+  # Reserve rung 4's smoke-test cap (left 60) so this optional download can
+  # never starve it; skip the fetch when there is no headroom.
+  c2=$(( $(left 90) - 60 ))
+  if [ "$c2" -gt 0 ] && timeout "$c2" curl -fsSL --max-time "$c2" -o "$T/ch.zip" "$ch_url" 2>/dev/null; then
     if command -v unzip >/dev/null 2>&1; then
       unzip -q -o "$T/ch.zip" -d "$ch_dir" 2>/dev/null && { chmod -R a+rx "$ch_dir"; touch "$ch_dir/INSTALLATION_COMPLETE"; }
     else
