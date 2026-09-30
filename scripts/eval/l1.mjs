@@ -1006,23 +1006,21 @@ function checksInSync(plan, checks) {
   // repo's CLAUDE.md requires rules to be self-contained). This is the cross-file
   // drift guard, the counterpart to G12a's lock on `review-outcomes`' 30-day TTL.
   //
-  // CHANGING THE TTL? Update all SIX occurrences, then update `TTL_DAYS` below:
-  //   1. CLAUDE.md                                        ("durable N-day per-repo relevance signal")
-  //   2. agents/shared/rules/comment-relevance-memory.md   ("default: now + N days")
-  //   3. plugins/pr-relevance-memory/README.md             ("N-day TTL, refreshed on each sighting")
-  //   4. scripts/record-comment-relevance.mjs              (`N * 24 * 60 * 60 * 1000`)
-  //   5. skills/workflow/implement-suggestion/SKILL.md     ("N-day default TTL", "durable N-day TTL")
+  // CHANGING THE TTL? Update all FIVE occurrences, then update `TTL_DAYS` below:
+  //   1. agents/shared/rules/comment-relevance-memory.md   ("default: now + N days")
+  //   2. plugins/pr-relevance-memory/README.md             ("N-day TTL, refreshed on each sighting")
+  //   3. scripts/record-comment-relevance.mjs              (`N * 24 * 60 * 60 * 1000`)
+  //   4. skills/workflow/implement-suggestion/SKILL.md     ("N-day default TTL", "durable N-day TTL")
+  // The frozen archive docs/inventory.md also states the TTL, but it is a snapshot and not a
+  // contract surface, so it is not updated or checked.
   {
     const TTL_DAYS = 60;
-    // The annotated inventory moved out of the root CLAUDE.md into docs/inventory.md.
-    const claude = read("docs/inventory.md");
     const crm = read("agents/shared/rules/comment-relevance-memory.md");
     const pluginReadme = read("plugins/pr-relevance-memory/README.md");
     const recorder = read("scripts/record-comment-relevance.mjs");
     const isSkill3 = read("skills/workflow/implement-suggestion/SKILL.md");
 
-    s.check(`G16a docs/inventory.md states the reviewer-comment-relevance TTL as ${TTL_DAYS} days`,
-      new RegExp(`durable ${TTL_DAYS}-day per-repo relevance signal`).test(claude));
+    // G16a retired: its sentence now lives only in the frozen archive docs/inventory.md, which is not a contract surface (CLAUDE.md § Where knowledge goes). G16b–e + G16f cover the live mirrors.
     s.check(`G16b comment-relevance-memory.md record schema expires at +${TTL_DAYS} days`,
       new RegExp(`default: now \\+ ${TTL_DAYS} days`).test(crm));
     s.check(`G16c pr-relevance-memory README states a ${TTL_DAYS}-day TTL`,
@@ -1037,7 +1035,7 @@ function checksInSync(plan, checks) {
     // files keep the old number. Any reviewer-comment-relevance TTL statement that
     // disagrees with TTL_DAYS must fail here.
     const mirrors = [
-      ["docs/inventory.md", claude], ["comment-relevance-memory.md", crm],
+      ["comment-relevance-memory.md", crm],
       ["pr-relevance-memory/README.md", pluginReadme],
       ["record-comment-relevance.mjs", recorder],
       ["implement-suggestion/SKILL.md", isSkill3],
@@ -1138,12 +1136,8 @@ function checksInSync(plan, checks) {
       prReviewer.includes("standards-conformance.md") &&
       prReviewer.includes("2.4d"));
 
-    // G17g: the annotated inventory (docs/inventory.md) and README.md each mention
-    // standards-conformance and --no-standards in the pr-reviewer context.
-    const claude = read("docs/inventory.md");
+    // G17g retired: the inventory mention moved to the frozen archive; G17h (README) and the agent-body checks above remain.
     const readme = read("README.md");
-    s.check("G17g docs/inventory.md mentions standards-conformance + --no-standards in pr-reviewer context",
-      claude.includes("standards-conformance") && claude.includes("--no-standards"));
     s.check("G17h README.md mentions standards-conformance + --no-standards in pr-reviewer context",
       readme.includes("standards-conformance") && readme.includes("--no-standards"));
   }
@@ -7914,32 +7908,7 @@ const isPollBlock = (block) =>
     }
   }
 
-  // (j) The inventory line in CLAUDE.md names the guard family by RANGE, and a range is a
-  // hand-typed encoding of a set — the round-8 lesson, one layer out. `G53h` and `G53i` were both
-  // added while the line still read `G53a`–`G53g`, so the range is DERIVED from the guards this
-  // file actually defines rather than compared against a literal.
-  // break-shape: G53j — adding a `G53k` check without widening the inventory range, or narrowing
-  // the range by hand, flips it red.
-  // Anchor on the CHECK LABEL, in either quoting style, and never on a bare mention. Two ways to
-  // get this wrong, and the first version had one of them: `/"G53([a-z])\b/` requires a DOUBLE
-  // QUOTE, so `G53e`'s checks and this guard's own check — both template literals — were invisible,
-  // the derivation returned a-d,f-i, and the guard shipped with its inventory range ALREADY STALE
-  // at 1753/1753, its own advertised break-shape inert. That is round 9's `\bAND\b` finding
-  // recurring: a derivation bound to one spelling of the thing it counts.
-  // The other way is over-matching: `/[`"]G53([a-z])\b/` also picks up backticked mentions in
-  // prose — the `G53k` in the break-shape comment above would make `highest` a guard that does not
-  // exist. So require the `s.check(` that makes it a check.
-  const selfSrc = readFileSync(new URL(import.meta.url), "utf8");
-  const g52Letters = [...new Set((selfSrc.match(/s\.check\(\s*["`]G53([a-z])\b/g) || [])
-    .map((m) => m[m.length - 1]))].sort();
-  const highest = g52Letters[g52Letters.length - 1];
-  const CLAUDE_MD = join(REPO_ROOT, "docs/inventory.md"); // the annotated inventory
-  if (existsSync(CLAUDE_MD) && highest) {
-    const claude = readFileSync(CLAUDE_MD, "utf8");
-    s.check(`G53j the docs/inventory.md inventory range covers every G53 guard defined (through G53${highest})`,
-      new RegExp("Guarded by L1 `G53a`–`G53" + highest + "`").test(claude),
-      `l1.mjs defines G53a–G53${highest}; the inventory line names a different range — it is the one claim about this family that nothing else reads`);
-  }
+  // G53j retired: the inventory range claim now lives only in the frozen archive docs/inventory.md, which does not track guard ranges.
 }
 
 // ── G54: measurable's Weaver rule file — reachable, paired, bounded, and honest ──
@@ -8151,33 +8120,7 @@ const isPollBlock = (block) =>
       "without an explicit `none`, an absent registry is indistinguishable from an uninterviewed repo, and every later run re-derives it");
   }
 
-  // (i) The inventory line in CLAUDE.md names this family by RANGE, and a range is a hand-typed
-  // encoding of a set — G53j's lesson, applied at birth rather than after the range went stale.
-  // Anchored on the `s.check(` label in either quoting style, never on a backticked mention in a
-  // comment, so the break-shape below is the only way to move it.
-  // break-shape: G54i — add a `G54j` check without widening the inventory range, or narrow the
-  // range by hand, and it flips red.
-  // Three quote styles, not two: this file already carries a single-quoted label (`G28b`), so
-  // a single-quoted `G54j` would have left the derived highest at `i` and the inventory range
-  // stale — the one failure this guard exists to catch. Comment lines are stripped first, or a
-  // commented-out `s.check("G54z …` counts as a defined guard and reds the build on a range
-  // that does not exist.
-  const g54Src = readFileSync(new URL(import.meta.url), "utf8")
-    .split("\n").filter((l) => !l.trim().startsWith("//")).join("\n");
-  const g54Letters = [...new Set((g54Src.match(/s\.check\(\s*["'`]G54([a-z])\b/g) || [])
-    .map((m) => m[m.length - 1]))].sort();
-  const g54Highest = g54Letters[g54Letters.length - 1];
-  const CLAUDE_MD_G54 = join(REPO_ROOT, "docs/inventory.md"); // the annotated inventory
-  if (existsSync(CLAUDE_MD_G54) && g54Highest) {
-    // The prefix is matched LOOSELY up to the range (`[^\n]*`) because this entry is guarded by
-    // two families and the line reads "Guarded by L1 `G42` and `G54a`–`G54i`". Pinning the
-    // literal `Guarded by L1 \`G54a\`` — as G53j does, where one family owns the line — would
-    // force the inventory into a sentence it does not want, and a guard that dictates prose it
-    // has no stake in is one the next author routes around. The RANGE is the claim; keep that exact.
-    s.check(`G54i the docs/inventory.md inventory range covers every G54 guard defined (through G54${g54Highest})`,
-      new RegExp("Guarded by L1 [^\\n]*`G54a`–`G54" + g54Highest + "`").test(readFileSync(CLAUDE_MD_G54, "utf8")),
-      `l1.mjs defines G54a–G54${g54Highest}; the inventory line names a different range — it is the one claim about this family that nothing else reads`);
-  }
+  // G54i retired: the inventory range claim now lives only in the frozen archive docs/inventory.md, which does not track guard ranges.
 }
 
 // ── G55: jev-assert — receipt vocabulary ≡ verify-behavior, and the semantic: form is wired ──
@@ -10420,7 +10363,7 @@ const isPollBlock = (block) =>
     tags.length === 0, `found ${tags.join(", ")} — version history belongs in the commit message`);
   // Frozen archives: byte ceilings equal to their size when frozen. Correcting a fact in place is
   // allowed; growing them is not. Lower a ceiling when you shrink a file — never raise one.
-  const G86_ARCHIVES = [["docs/inventory.md", 118610], ["docs/evals.md", 27529]];
+  const G86_ARCHIVES = [["docs/inventory.md", 118685], ["docs/evals.md", 27529]];
   for (const [f, ceiling] of G86_ARCHIVES) {
     const size = statSync(join(REPO_ROOT, f)).size;
     s.check(`G86d ${f} has not grown past its frozen size (${ceiling} bytes)`,

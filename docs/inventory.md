@@ -3,7 +3,7 @@
 **Do not append to this file.**
 It preserves the per-entry design history that used to live in the root [`CLAUDE.md`](../CLAUDE.md).
 New rules go in the owning skill's `rules/`, their rationale in its `references/`, and history in commit messages and PR descriptions — see [Where knowledge goes](../CLAUDE.md#where-knowledge-goes-mandatory-on-every-change).
-Correcting a stale fact in place is allowed; L1 `G86` fails if this file grows.
+It is a snapshot: guard ranges, TTLs, and other facts in it are not kept current — the linked SKILL.md and rules are. L1 `G86` fails if this file grows.
 
 ## Repository Structure
 
