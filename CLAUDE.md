@@ -34,7 +34,7 @@ Before writing anything about a change, classify it and write it only where the 
 `rules/` is what an agent loads to act, so it carries the rule and nothing else; `references/` is read only on demand, so rationale costs nothing until someone needs it.
 Keep only what changes how an agent acts next time.
 Drop a sentence when deleting it would not change any agent's behaviour: narrative ("this used to…", "the first version…"), release-version tags, and incident retellings fail that test.
-[`docs/inventory.md`](./docs/inventory.md) and [`docs/evals.md`](./docs/evals.md) are **frozen archives** from before this rule — read them, correct a stale fact in place, never append to them.
+[`docs/inventory.md`](./docs/inventory.md) and [`docs/evals.md`](./docs/evals.md) are **frozen archives** from before this rule — read them, never append to them; they are snapshots and are not kept current.
 
 ```markdown
 <!-- ✗ Wrong — history in the root inventory -->
