@@ -8486,10 +8486,8 @@ const isPollBlock = (block) =>
   const uvRule = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
   const setup = readOr("scripts/agent0-setup.sh");
   const pwInstaller = readOr("scripts/agent0-playwright.sh");
-  // The four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines and the browser install now live
-  // in agent0-playwright.sh, not agent0-setup.sh directly (agent0-setup.sh delegates — G59f). A
-  // check that reads only setup.sh for them would pin the stale half of a moved contract, so G59d
-  // and G59e read the union of both scripts.
+  // The four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines and the browser install live in
+  // agent0-playwright.sh (agent0-setup.sh delegates — G59f), so G59d and G59e read both scripts.
   const setupOrPw = setup + "\n" + pwInstaller;
   const awt = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
 
@@ -8547,7 +8545,7 @@ const isPollBlock = (block) =>
   // agent0-playwright.sh with WITH_PLAYWRIGHT=0 twice against a temp ENV_FILE holding other lines
   // plus stale UI_VERIFY_* lines must leave exactly one of each of the four export lines, keep
   // every other line, and exit 0 both times. Only the WITH_PLAYWRIGHT=0 path runs here — no
-  // timeout/npm/network — so this is identical on macOS and ubuntu-latest (see AC-1, Risks table).
+  // timeout/npm/network — so this is identical on macOS and ubuntu-latest.
   {
     const d = mkdtempSync(join(tmpdir(), "l1-pw-env-"));
     const envFile = join(d, "env.sh");

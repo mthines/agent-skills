@@ -105,7 +105,8 @@ cft_fallback() {
   hs_dir="$PLAYWRIGHT_BROWSERS_PATH/chromium_headless_shell-$rev"
   ch_dir="$PLAYWRIGHT_BROWSERS_PATH/chromium-$rev"
   mkdir -p "$hs_dir" "$ch_dir"
-  hs_url="https://storage.googleapis.com/chrome-for-testing-public/$ver/linux64/chrome-headless-shell-linux64.zip"
+  cft_base="https://storage.googleapis.com/chrome-for-testing-public/$ver/linux64"
+  hs_url="$cft_base/chrome-headless-shell-linux64.zip"
   if ! timeout "$cap" curl -fsSL --max-time "$cap" -o "$T/hs.zip" "$hs_url" 2>"$T/cft.log"; then
     echo "download failed: $hs_url ($(tail -n 1 "$T/cft.log" 2>/dev/null))"
     return 1
@@ -119,7 +120,7 @@ cft_fallback() {
   touch "$hs_dir/INSTALLATION_COMPLETE"
   # Best-effort only: the full chrome build shares the revision/version, so a
   # later `install chromium` (a different browser entry) is also a no-op.
-  ch_url="https://storage.googleapis.com/chrome-for-testing-public/$ver/linux64/chrome-linux64.zip"
+  ch_url="$cft_base/chrome-linux64.zip"
   # Reserve rung 4's smoke-test cap (left 60) so this optional download can
   # never starve it; skip the fetch when there is no headroom.
   c2=$(( $(left 90) - 60 ))
