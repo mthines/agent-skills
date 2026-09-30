@@ -3769,8 +3769,9 @@ const isPollBlock = (block) =>
   }
 
   // G32p: --relay-check must be GATED ON THE WRITE PATH, in the shell, at both call sites.
-  // Every fix link is over the 140 budget by construction (floor 164), so an unconditional check
-  // withholds the buttons on every run of every repo — including `gh` runs that rewrite nothing —
+  // Every Fix-this link is over the 140 budget (floor 188), and so is every realistic Fix all
+  // (155 and up — only a degenerate one-character fill reaches 130), so an unconditional check
+  // withholds the buttons on practically every run of every repo — including `gh` runs that rewrite nothing —
   // which is a silent permanent opt-out of a default-on affordance. It shipped that way: the
   // report block carried "on the `gh` path the buttons post intact and stay" as PROSE while the
   // shell asked unconditionally, and the inline block had neither. So this asserts the guard
