@@ -120,11 +120,91 @@ Whenever `/tmp/workspace/agent-skills/env.sh` exists, source it (`. /tmp/workspa
 When `$AGENT_SKILLS_ROOT/skills/ui-verify/SKILL.md` differs from the copy you are running, or you cannot compare them, follow the installed copy: **the installed copy at `$AGENT_SKILLS_COMMIT` wins**, because the rules it links come from that commit, and an import is a snapshot that goes stale.
 
 **An unprepared Agent0 host** has no `env.sh` but has `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md`.
-`ui-verify` does not install on demand: it needs a Playwright browser, which only the setup script installs.
+`run` and `verify` install the Playwright browser themselves on this host — see [On-demand browser install — run and verify](#on-demand-browser-install--run-and-verify) below — and report `NOT RUN (Agent0 sandbox not prepared: …)` only when that install itself fails, never a question and never a `red`.
 Check for this host first, before Step 0 and before running any script this skill links.
-There, `run` and `verify` stop with `NOT RUN (Agent0 sandbox not prepared: add scripts/agent0-setup.sh as the automation's sandbox.setupScript)`, never a question and never a `red`.
-There, `author` stops with `not authored (Agent0 sandbox not prepared: add scripts/agent0-setup.sh as the automation's sandbox.setupScript)`, because its Step 0 runs `scripts/is-ui-diff.mjs`, which a `SKILL.md`-only import does not contain.
-`verify` therefore never reaches its author-if-needed step on this host.
+There, `author` stops with `not authored (Agent0 sandbox not prepared: add scripts/agent0-setup.sh as the automation's sandbox.setupScript)`, because its Step 0 runs `scripts/is-ui-diff.mjs`, which a `SKILL.md`-only import does not contain, and `author` needs no browser, so it never runs the on-demand block.
+`verify` therefore never reaches its author-if-needed step on an unprepared host with no working sandbox setup — it fails at the `author` gate above before the browser install would even matter.
+
+#### On-demand browser install — run and verify
+
+This block is owned here, not in a linked file, because a `SKILL.md`-only
+import must still reach it. It runs only for `run` and `verify`, never under
+`--driver chrome` and never for `author` — none of those need a Playwright
+browser. Why each line here is shaped the way it is:
+[`references/agent0-browser-install.md`](./references/agent0-browser-install.md).
+Run it with the Bash tool's `timeout: 600000` — the worst case sits close to it.
+
+```bash
+# ui-verify run/verify: the host is Agent0 and the recorded browser isn't ok
+# (or there is no marker at all). Two stages: a fast base install when the
+# marker is entirely absent, then a bounded top-up that installs the browser
+# itself — at most once per sandbox (the sentinel below).
+M=/tmp/workspace/agent-skills/env.sh
+B=/tmp/workspace/.agent-skills-install
+SENT=/tmp/workspace/.agent-skills-install/playwright.attempted
+if [ -d /tmp/workspace ] || [ -d /tmp/.opencode/skills ] || [ -f /tmp/.opencode/agents/general.md ]; then A0=1; else A0=0; fi
+if [ "$A0" = 1 ]; then
+  if [ ! -f "$M" ]; then
+    mkdir -p /tmp/workspace "$B" && rm -f "$B/AGENTS.md.before"
+    [ -e /tmp/workspace/AGENTS.md ] && cp -p /tmp/workspace/AGENTS.md "$B/AGENTS.md.before"
+    rc=1
+    if curl -fsSL --max-time 30 -o "$B/agent0-setup.sh" \
+         https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-setup.sh; then
+      WITH_PLAYWRIGHT=0 timeout 200 bash "$B/agent0-setup.sh" > "$B/setup.log" 2>&1
+      rc=$?
+    else
+      echo "could not download scripts/agent0-setup.sh" > "$B/setup.log"
+    fi
+    if [ -e "$B/AGENTS.md.before" ]; then
+      cp -p "$B/AGENTS.md.before" /tmp/workspace/AGENTS.md
+    else
+      rm -f /tmp/workspace/AGENTS.md
+    fi
+    [ "$rc" = 0 ] || rm -f "$M"
+  fi
+  if [ ! -f "$M" ]; then
+    echo "BROWSER: not prepared — $(tail -n 1 "$B/setup.log" 2>/dev/null)"
+  else
+    . "$M"
+    if [ "$UI_VERIFY_BROWSER" = ok ]; then
+      echo "BROWSER: ok (prepared)"
+    elif [ -f "$SENT" ]; then
+      echo "BROWSER: unavailable — $(cat "$SENT")"
+    else
+      mkdir -p "$B"
+      start=$SECONDS
+      rc=1
+      if curl -fsSL --max-time 30 -o "$B/agent0-playwright.sh" \
+           https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-playwright.sh; then
+        BUDGET=280 timeout 300 bash "$B/agent0-playwright.sh" > "$B/playwright.log" 2>&1
+        rc=$?
+      else
+        echo "could not download scripts/agent0-playwright.sh" > "$B/playwright.log"
+      fi
+      . "$M"
+      if [ "$UI_VERIFY_BROWSER" = ok ]; then
+        echo "BROWSER: ok (installed on demand, $((SECONDS - start))s)"
+      else
+        reason="${UI_VERIFY_BROWSER_REASON:-$(tail -n 1 "$B/playwright.log" 2>/dev/null)}"
+        echo "$reason" > "$SENT"
+        echo "BROWSER: unavailable — $reason"
+      fi
+    fi
+  fi
+else
+  echo "BROWSER: not run (not an Agent0 host)"
+fi
+```
+
+Read the outcome from the last line:
+
+| Last line | Do |
+| --- | --- |
+| `BROWSER: ok (prepared)` | Continue exactly as the prepared-host path already does. |
+| `BROWSER: ok (installed on demand, <N>s)` | Continue the same way, and report the browser source as `installed on demand (<N>s)`. |
+| `BROWSER: unavailable — <reason>` | Stop with `NOT RUN (playwright browser unavailable in this sandbox: <reason>)`. The sentinel means a second `run`/`verify` in the same sandbox reports this immediately — never a second multi-minute attempt. |
+| `BROWSER: not prepared — <reason>` | Stop with `NOT RUN (Agent0 sandbox not prepared: on-demand install failed: <reason>)`. |
+| `BROWSER: not run (not an Agent0 host)` | Not Agent0 — continue the local, non-sandbox path unchanged. |
 
 ## Step 0: Resolve your GitHub access path
 

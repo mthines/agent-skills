@@ -56,8 +56,8 @@ try Task(subagent_type="aw-tester") except "not found": AGENT0 = 1
 The failed-call form is the `F6` anti-pattern ([`diagnostic-surface.md`](../../../skills/workflow/autonomous-workflow/rules/diagnostic-surface.md)): it spends a round trip to learn what the filesystem already states, and a host that fails differently is misclassified.
 When the file is absent, none of this rule applies.
 
-A session that ran no setup script can create the file mid-run by running the [setup script](#the-setup-script) itself; [`review-loop`'s on-demand install](../../../skills/quality/review-loop/rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent) does, when the dispatch tool's published agent types omit `pr-reviewer` and an unprepared-host signal exists. The block itself lives in `review-loop`'s `SKILL.md`, so a `SKILL.md`-only import reaches it.
-Detection is unchanged by it: the file still decides, and the install is triggered by the agent-type list the tool publishes, never by a failed call.
+A session that ran no setup script can create the file mid-run by running the [setup script](#the-setup-script) itself; [`review-loop`'s on-demand install](../../../skills/quality/review-loop/rules/agent0-runtime.md#install-on-demand-when-the-marker-is-absent) does, when the dispatch tool's published agent types omit `pr-reviewer` and an unprepared-host signal exists. `ui-verify`'s own [on-demand browser install](../../../skills/testing/ui-verify/SKILL.md#on-demand-browser-install--run-and-verify) does too, on `run`/`verify`, whenever the recorded `UI_VERIFY_BROWSER` isn't `ok` (including a marker that is entirely absent). Each block lives in its own skill's `SKILL.md`, so a `SKILL.md`-only import reaches it.
+Detection is unchanged by it: the file still decides, and an install is triggered by what the file (or its absence) says, never by a failed call.
 
 ## The substitutions
 
@@ -112,6 +112,7 @@ Each skill that asks one states its automation answer in its own Agent0 rule, an
 | Skill | Question | Automation answer |
 | --- | --- | --- |
 | `ui-verify run` | Chrome unavailable — run Playwright instead? | Yes: the setup script installing Playwright is the consent ([rule](../../../skills/testing/ui-verify/rules/agent0-runtime.md#driver-selection-playwright-without-the-prompt)) |
+| `ui-verify run`/`verify` | (no question asked — a decision, not a prompt) install the browser on demand when it isn't `ok`? | Yes: an explicit `run`/`verify` invocation on an Agent0 host is itself the consent, capped at one attempt per sandbox by a sentinel ([rule](../../../skills/testing/ui-verify/SKILL.md#on-demand-browser-install--run-and-verify)) |
 
 A question with no documented answer stops the run with `blocked (needs a human: <question>)`.
 
@@ -131,7 +132,7 @@ The [setup script](#the-setup-script) overwrites it after that installer runs.
 ## The setup script
 
 [`scripts/agent0-setup.sh`](../../../scripts/agent0-setup.sh) is the source of truth for an automation's `sandbox.setupScript`.
-It installs the repo at `PIN` (default: the latest `main`, with the resolved commit printed), delegates the reviewer install to [`pr-reviewer/scripts/agent0-setup.sh`](../../pr-reviewer/scripts/agent0-setup.sh), installs a Playwright Chromium for `ui-verify`, writes the files above, and fails closed.
+It installs the repo at `PIN` (default: the latest `main`, with the resolved commit printed), delegates the reviewer install to [`pr-reviewer/scripts/agent0-setup.sh`](../../pr-reviewer/scripts/agent0-setup.sh), installs a Playwright Chromium for `ui-verify` by delegating to [`scripts/agent0-playwright.sh`](../../../scripts/agent0-playwright.sh) (copied into `$HOST` so a later on-demand top-up can run the identical installer without a second download), writes the files above, and fails closed.
 
 The automation's prompt then names the top-level procedure by path, because `Skill()` cannot resolve it:
 

@@ -8442,6 +8442,37 @@ const isPollBlock = (block) =>
     && flat[n].includes("/tmp/.opencode/agents/general.md") && /Agent0 sandbox not prepared/.test(flat[n])));
   s.check("G85d flat import: ui-verify and pr-review recognise an unprepared Agent0 host and report it by name",
     noHost.length === 0, `missing unprepared-host handling: ${noHost.join(",") || "none"}`);
+
+  // G85e — ui-verify's own on-demand BROWSER top-up (distinct from review-loop's reviewer
+  // install) is also reachable from a SKILL.md-only import: both raw script URLs, both stage
+  // budgets, the byte-identical host-test line (EXECUTED against fake roots, same as G85b), all
+  // four BROWSER: outcome lines plus their table rows, and the prose scoping it to run/verify,
+  // never --driver chrome, with the required Bash timeout.
+  const uv = flat["ui-verify"];
+  const PW_URL = "https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-playwright.sh";
+  const uvBlk = ((uv.match(/#### On-demand browser install — run and verify\n[\s\S]*?```bash\n([\s\S]*?)\n```/) || ["", ""])[1]);
+  const uvHostLine = (uvBlk.match(/^if \[ -d \/tmp\/workspace \][^\n]*A0=0; fi$/m) || [""])[0];
+  const uvProbe = (mk) => {
+    const root = mkdtempSync(join(tmpdir(), "l1-a0e-"));
+    try {
+      for (const m of mk) mkdirSync(join(root, m), { recursive: true });
+      if (mk.includes(".opencode/agents")) writeFileSync(join(root, ".opencode/agents/general.md"), "x");
+      const sh = uvHostLine.replaceAll("/tmp/", `${root}/`) + "\necho $A0";
+      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout.trim();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  };
+  const uvProbes = uvHostLine ? [uvProbe([]), uvProbe(["workspace"]), uvProbe([".opencode/skills"]), uvProbe([".opencode/agents"])] : ["-", "-", "-", "-"];
+  const uvHostOk = uvHostLine !== "" && uvProbes.join("/") === "0/1/1/1";
+  s.check("G85e flat import: ui-verify SKILL.md alone carries the on-demand BROWSER install block (both raw URLs, both stage budgets, the executed host-test probe, all four outcome lines + table rows, run/verify + --driver chrome scoping, timeout: 600000)",
+    uvBlk.includes(SETUP_URL) && uvBlk.includes(PW_URL)
+      && /WITH_PLAYWRIGHT=0 timeout 200 bash/.test(uvBlk) && /BUDGET=280 timeout 300 bash/.test(uvBlk)
+      && uvHostOk
+      && uvBlk.includes('echo "BROWSER: ok (prepared)"') && /BROWSER: ok \(installed on demand/.test(uvBlk)
+      && /BROWSER: unavailable —/.test(uvBlk) && /BROWSER: not prepared —/.test(uvBlk)
+      && /^\| `BROWSER: ok \(prepared\)` \|/m.test(uv) && /^\| `BROWSER: ok \(installed on demand, <N>s\)` \|/m.test(uv)
+      && /^\| `BROWSER: unavailable — <reason>` \|/m.test(uv) && /^\| `BROWSER: not prepared — <reason>` \|/m.test(uv)
+      && /runs only for `run` and `verify`, never under\n?`--driver chrome`/.test(uv) && uv.includes("timeout: 600000"),
+    `on-demand BROWSER block missing an element (host probes none/ws/skills/agents=${uvProbes.join("/")}, want 0/1/1/1)`);
 }
 
 // ── G59: ui-verify on an Agent0 Automation sandbox ──
@@ -8454,6 +8485,12 @@ const isPollBlock = (block) =>
   const runner = readOr("skills/testing/ui-verify/rules/runner.md");
   const uvRule = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
   const setup = readOr("scripts/agent0-setup.sh");
+  const pwInstaller = readOr("scripts/agent0-playwright.sh");
+  // The four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines and the browser install now live
+  // in agent0-playwright.sh, not agent0-setup.sh directly (agent0-setup.sh delegates — G59f). A
+  // check that reads only setup.sh for them would pin the stale half of a moved contract, so G59d
+  // and G59e read the union of both scripts.
+  const setupOrPw = setup + "\n" + pwInstaller;
   const awt = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
 
   // G59a — both entry points route to the rule: SKILL.md, and runner.md Step 4 (which owns the
@@ -8481,19 +8518,62 @@ const isPollBlock = (block) =>
     "agent0-runtime.md's driver table no longer states the auto→playwright no-prompt answer or the chrome NOT RUN");
 
   // G59d — the browser precondition reads the status the installer writes, and a missing browser
-  // is NOT RUN, never red.
-  s.check("G59d the browser precondition reads UI_VERIFY_BROWSER, which the installer exports",
+  // is NOT RUN, never red. Reads the union of setup.sh and agent0-playwright.sh (see setupOrPw).
+  s.check("G59d the browser precondition reads UI_VERIFY_BROWSER, which the installer (setup.sh or agent0-playwright.sh) exports",
     /\[ "\$UI_VERIFY_BROWSER" = ok \]/.test(uvRule) && /NOT RUN \(playwright browser unavailable/.test(uvRule)
-      && setup.includes("export UI_VERIFY_BROWSER=") && setup.includes("export UI_VERIFY_BROWSER_REASON="),
+      && setupOrPw.includes("export UI_VERIFY_BROWSER=") && setupOrPw.includes("export UI_VERIFY_BROWSER_REASON="),
     "the UI_VERIFY_BROWSER precondition and the installer's export have drifted apart");
 
   // G59e — no run-time download: the link target and browser path the rule uses are the ones the
-  // installer exports, and the installer installs the package aw-tester's spec imports.
+  // installer exports, and the installer installs the package aw-tester's spec imports. Reads the
+  // union of setup.sh and agent0-playwright.sh (see setupOrPw).
   const imports = /from '@playwright\/test'/.test(awt);
   s.check("G59e the installer provides the module link, browser path, and @playwright/test aw-tester imports",
-    uvRule.includes('"$UI_VERIFY_PLAYWRIGHT_NODE_MODULES"') && setup.includes("export UI_VERIFY_PLAYWRIGHT_NODE_MODULES=")
-      && setup.includes("export PLAYWRIGHT_BROWSERS_PATH=") && imports && /npm install[^\n]*@playwright\/test/.test(setup),
+    uvRule.includes('"$UI_VERIFY_PLAYWRIGHT_NODE_MODULES"') && setupOrPw.includes("export UI_VERIFY_PLAYWRIGHT_NODE_MODULES=")
+      && setupOrPw.includes("export PLAYWRIGHT_BROWSERS_PATH=") && imports && /npm install[^\n]*@playwright\/test/.test(setupOrPw),
     `link var / browser path / @playwright/test install drifted (aw-tester imports @playwright/test: ${imports})`);
+
+  // G59f — agent0-setup.sh delegates the Playwright install to agent0-playwright.sh (one
+  // procedure, not two), copies it into $HOST so the on-demand top-up can run the identical
+  // installer, verifies it with a check line, and holds no npm-install-playwright of its own.
+  s.check("G59f agent0-setup.sh delegates Playwright to agent0-playwright.sh, copies + verifies it, and holds no npm install of its own",
+    /bash "\$SRC\/scripts\/agent0-playwright\.sh"/.test(setup)
+      && /cp "\$SRC\/scripts\/agent0-playwright\.sh" "\$HOST\/agent0-playwright\.sh"/.test(setup)
+      && /check "playwright installer"\s+"\$HOST\/agent0-playwright\.sh"/.test(setup)
+      && !/npm install[^\n]*playwright/.test(setup),
+    "agent0-setup.sh's delegation, copy, or verify line drifted, or it re-acquired its own npm install");
+
+  // G59g — EXECUTED, not grepped (a negative assertion must be shown to fail): running
+  // agent0-playwright.sh with WITH_PLAYWRIGHT=0 twice against a temp ENV_FILE holding other lines
+  // plus stale UI_VERIFY_* lines must leave exactly one of each of the four export lines, keep
+  // every other line, and exit 0 both times. Only the WITH_PLAYWRIGHT=0 path runs here — no
+  // timeout/npm/network — so this is identical on macOS and ubuntu-latest (see AC-1, Risks table).
+  {
+    const d = mkdtempSync(join(tmpdir(), "l1-pw-env-"));
+    const envFile = join(d, "env.sh");
+    writeFileSync(envFile, "export AGENT_SKILLS_ROOT=/x\nexport UI_VERIFY_BROWSER=ok\nexport PLAYWRIGHT_BROWSERS_PATH=/old\n");
+    let allOk = true;
+    for (let i = 0; i < 2; i++) {
+      const r = spawnSync("bash", [join(REPO_ROOT, "scripts/agent0-playwright.sh")], {
+        encoding: "utf8",
+        env: { ...process.env, ENV_FILE: envFile, PW: join(d, "pw"), WITH_PLAYWRIGHT: "0" },
+      });
+      if (r.status !== 0) allOk = false;
+    }
+    const out = (() => { try { return readFileSync(envFile, "utf8"); } catch { return ""; } })();
+    // "g" is load-bearing: without it, String.match returns only the first hit, so .length is
+    // always 1 (or the capture-group count) regardless of how many times the line repeats — a
+    // duplicate-line regression would read as "once" and this check would never go red.
+    const once = (re) => (out.match(re) || []).length === 1;
+    const keepsOtherLines = once(/^export AGENT_SKILLS_ROOT=\/x$/gm);
+    const fourOnce = ["UI_VERIFY_BROWSER", "UI_VERIFY_BROWSER_REASON", "UI_VERIFY_PLAYWRIGHT_NODE_MODULES", "PLAYWRIGHT_BROWSERS_PATH"]
+      .every((v) => once(new RegExp(`^export ${v}=`, "gm")));
+    const skippedValue = once(/^export UI_VERIFY_BROWSER=skipped$/gm);
+    rmSync(d, { recursive: true, force: true });
+    s.check("G59g agent0-playwright.sh WITH_PLAYWRIGHT=0 rewrites the four export lines idempotently across two runs, keeping every other line (executed)",
+      allOk && keepsOtherLines && fourOnce && skippedValue,
+      `exit-ok=${allOk} keeps-other-lines=${keepsOtherLines} four-lines-once=${fourOnce} skipped-value=${skippedValue}`);
+  }
 }
 
 // ── G56: lens-invocation.md — the shared cross-harness resolution rule for pr-reviewer's six

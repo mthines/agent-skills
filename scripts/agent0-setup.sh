@@ -7,7 +7,7 @@
 # `sandbox.setupScript`. Change this file and the automation together.
 # Rule: agents/shared/rules/agent0-host.md.
 #
-# cache-key: 2026-09-25
+# cache-key: 2026-09-30
 #   The host caches this script's RESULT while the script TEXT is unchanged. With
 #   the default PIN (latest main) that means the install freezes at the commit
 #   it first resolved. To pick up a newer main, change this line — any edit to
@@ -21,10 +21,14 @@
 #      (SRC_DIR rung 0), so the reviewer install is byte-identical to a
 #      review-only automation's. That script copies every skill in the repo into
 #      /tmp/workspace/pr-reviewer/skills/ and writes pr-reviewer/env.sh.
-#   3. Installs Playwright + Chromium for ui-verify's aw-tester, and smoke-tests
-#      a headless launch. Non-fatal: a failure is recorded as
-#      UI_VERIFY_BROWSER=missing and ui-verify reports NOT RUN with the reason.
-#      WITH_PLAYWRIGHT=0 skips it; REQUIRE_PLAYWRIGHT=1 makes it fatal.
+#   3. Delegates to scripts/agent0-playwright.sh for a Playwright + Chromium
+#      install for ui-verify's aw-tester (smoke-tested). Non-fatal by default: a
+#      failure is recorded as UI_VERIFY_BROWSER=missing and ui-verify reports
+#      NOT RUN with the reason. WITH_PLAYWRIGHT=0 skips the install (still
+#      records the four export lines, marked skipped); REQUIRE_PLAYWRIGHT=1
+#      makes a failed install fatal here. The script is also copied into
+#      $HOST so ui-verify's own on-demand top-up can run the identical
+#      installer without a second download.
 #   4. Writes the writer-role constraints and overwrites /tmp/workspace/AGENTS.md.
 #      The reviewer's installer copies its read-only constraints ("never push a
 #      commit") there; a host that auto-loads AGENTS.md would then forbid
@@ -99,38 +103,17 @@ SRC_DIR="$SRC" PIN="$COMMIT" REPO="$REPO" PR_REVIEWER_LOGIN="${PR_REVIEWER_LOGIN
 ROOT="$WS/pr-reviewer"
 
 # ---------------------------------------------------------------------------
-# 3. Playwright for ui-verify. aw-tester's generated spec imports
+# 3. Playwright for ui-verify, delegated to scripts/agent0-playwright.sh — the
+#    one writer of the four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines,
+#    shared with ui-verify's own on-demand top-up (SKILL.md), so the two
+#    install paths cannot drift apart. aw-tester's generated spec imports
 #    @playwright/test, and ui-verify links this node_modules into aw-tester's
-#    run directory so both the binary and the import resolve without a download
-#    at run time. Browsers live under the workspace so the cached result keeps
-#    them.
+#    run directory so both the binary and the import resolve without a
+#    download at run time.
 # ---------------------------------------------------------------------------
-UI_VERIFY_BROWSER="skipped"
-UI_VERIFY_BROWSER_REASON="WITH_PLAYWRIGHT=0"
-
-if [ "$WITH_PLAYWRIGHT" = 1 ]; then
-  rm -rf "$PW" && mkdir -p "$PW/browsers"
-  export PLAYWRIGHT_BROWSERS_PATH="$PW/browsers"
-  if ! ( cd "$PW" && echo '{"private":true}' > package.json \
-         && timeout 300 npm install --no-audit --no-fund --silent playwright @playwright/test ) >"$T/npm.log" 2>&1; then
-    UI_VERIFY_BROWSER="missing"
-    UI_VERIFY_BROWSER_REASON="npm install playwright failed: $(tail -n 1 "$T/npm.log")"
-  elif ! timeout 300 "$PW/node_modules/.bin/playwright" install --with-deps chromium >"$T/pw.log" 2>&1 \
-       && ! timeout 300 "$PW/node_modules/.bin/playwright" install chromium >"$T/pw.log" 2>&1; then
-    UI_VERIFY_BROWSER="missing"
-    UI_VERIFY_BROWSER_REASON="chromium download failed (allow the Playwright CDN, or networkLevel full): $(tail -n 1 "$T/pw.log")"
-  elif ! ( cd "$PW" && timeout 60 node -e "require('playwright').chromium.launch().then(b => b.close())" ) >"$T/smoke.log" 2>&1; then
-    UI_VERIFY_BROWSER="missing"
-    UI_VERIFY_BROWSER_REASON="headless launch failed (missing system libraries?): $(tail -n 1 "$T/smoke.log")"
-  else
-    UI_VERIFY_BROWSER="ok"
-    UI_VERIFY_BROWSER_REASON="$("$PW/node_modules/.bin/playwright" --version 2>/dev/null)"
-  fi
-  echo "playwright: $UI_VERIFY_BROWSER — $UI_VERIFY_BROWSER_REASON"
-  if [ "$UI_VERIFY_BROWSER" != ok ] && [ "$REQUIRE_PLAYWRIGHT" = 1 ]; then
-    fail "REQUIRE_PLAYWRIGHT=1 and no working Playwright browser."
-  fi
-fi
+PW="$WS/playwright" ENV_FILE="$T/playwright.env" WITH_PLAYWRIGHT="$WITH_PLAYWRIGHT" REQUIRE_PLAYWRIGHT="$REQUIRE_PLAYWRIGHT" \
+  bash "$SRC/scripts/agent0-playwright.sh" \
+  || fail "playwright install failed and REQUIRE_PLAYWRIGHT=1; see output above."
 
 # ---------------------------------------------------------------------------
 # 4. Constraints for every role that writes (the top-level session and any
@@ -138,6 +121,8 @@ fi
 #    that routes each role.
 # ---------------------------------------------------------------------------
 rm -rf "$HOST" && mkdir -p "$HOST"
+
+cp "$SRC/scripts/agent0-playwright.sh" "$HOST/agent0-playwright.sh"
 
 cat > "$HOST/CONSTRAINTS.md" <<'CONSTRAINTS'
 # agent-skills — standing constraints for this automation's writing roles
@@ -200,10 +185,7 @@ AGENTS
   echo "export AGENT_SKILLS_ROOT=$ROOT"
   echo "export AGENT_SKILLS_COMMIT=$COMMIT"
   echo "export AGENT_SKILLS_CONSTRAINTS=$HOST/CONSTRAINTS.md"
-  echo "export UI_VERIFY_BROWSER=$UI_VERIFY_BROWSER"
-  printf 'export UI_VERIFY_BROWSER_REASON=%q\n' "$UI_VERIFY_BROWSER_REASON"
-  echo "export UI_VERIFY_PLAYWRIGHT_NODE_MODULES=$PW/node_modules"
-  echo "export PLAYWRIGHT_BROWSERS_PATH=$PW/browsers"
+  cat "$T/playwright.env"
 } > "$HOST/env.sh"
 
 if [ -n "${DASH0_AGENT_ENV:-}" ]; then
@@ -234,6 +216,8 @@ check "is-ui-diff"            "$S/ui-verify/scripts/is-ui-diff.mjs"
 check "aw-tester definition"  "$S/autonomous-workflow/templates/aw-tester.agent.md"
 check "spec-run contract"     "$S/autonomous-workflow/rules/spec-run-contract.md"
 check "constraints"           "$HOST/CONSTRAINTS.md"
+check "playwright installer"  "$HOST/agent0-playwright.sh"
+. "$T/playwright.env"
 echo "  ui-verify browser: $UI_VERIFY_BROWSER"
 
 cleanup
