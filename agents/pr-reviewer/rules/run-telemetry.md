@@ -163,8 +163,8 @@ Count runs with `pr_review.runs`, never with `histogram_count` of `pr_review.run
 | Attributes | `pr_review.verdict`, `pr_review.dry_run` (omitted when the run finished before finalize), `pr_review.tier` |
 | Points | a `0` on every series 1 ms after the run's start and every 30 s after that, then the final point at the run's end: `1` on the run's verdict, `0` on the rest; every point's `startTimeUnixNano` is the run's start |
 
-`finish` writes every point in the same export as the trace, backdated to the times it describes.
-A run that never reaches `finish` exports neither, so the counter's total equals the number of `invoke_agent pr-reviewer` spans.
+`finish` writes every point in the same export as the trace, backdated to the times it describes: two requests, `/v1/traces` then `/v1/metrics`, and `telemetry-summary.json` says `exported: true` only when both returned 2xx.
+A run that never reaches `finish` exports neither, so the counter's total equals the number of `invoke_agent pr-reviewer` spans whenever both requests were accepted in full; an OTLP partial success that drops points is not detected.
 
 Query it with an anchored `increase` whose window equals the step, summed over the instances:
 

@@ -27,7 +27,9 @@ Dash0's `$__rate_interval` floor is 1 minute, and a range needs two samples, so 
 A review is not one process: `prepare-review.mjs`, each marker, `finalize.mjs`, and `execute-write-plan.mjs` are separate short commands, and none of them lives for the whole run.
 A live 30-second exporter would need a detached background process in every harness, with its own exit and crash handling.
 The ledger already holds the run's start and end, so `finish` writes the same points a live exporter would have sent, backdated, in the export that carries the trace.
-The trace and the counter then succeed or fail together, which keeps the counter's total equal to the `invoke_agent pr-reviewer` span count.
+The trace and the counter leave in the same `finish`, but as two requests: `/v1/traces`, then `/v1/metrics`.
+`telemetry-summary.json` says `exported: true` only when both returned 2xx, so a run whose metrics request failed is flagged, and a later `finish` sends both again.
+A 2xx is not inspected for an OTLP partial success, so a backend that accepts the request but drops the backdated points breaks the equality with the `invoke_agent pr-reviewer` span count without any signal; only reading the raw `pr_review.runs` series in the backend shows it.
 
 ## Why CUMULATIVE and not a PromQL workaround
 
