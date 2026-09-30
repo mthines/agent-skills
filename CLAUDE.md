@@ -200,12 +200,15 @@ Validate with `claude plugin validate plugins/agent-tasks-hooks`.
 ### Plugin: pr-reviewer-shape-guard
 
 `plugins/pr-reviewer-shape-guard/` — reusable GitHub Actions workflow that validates a **posted** `pr-reviewer` body against the report shape contract, from outside the agent.
-Logic: `scripts/validate-report-shape.mjs`. Guarded by L1 `G26`. Details: [`docs/inventory.md`](./docs/inventory.md#plugin-pr-reviewer-shape-guard).
+Logic: `scripts/validate-report-shape.mjs`.
+Guarded by L1 `G26`.
+Details: [`docs/inventory.md`](./docs/inventory.md#plugin-pr-reviewer-shape-guard).
 
 ### Plugin: pr-relevance-memory
 
 `plugins/pr-relevance-memory/` — caller template that wires PR comment-resolution signals into the `reviewer-comment-relevance` LoreKit bucket via `.github/workflows/reviewer-comment-relevance.yml`.
-Requires the `LOREKIT_API_KEY` secret. See [`plugins/pr-relevance-memory/README.md`](./plugins/pr-relevance-memory/README.md).
+Requires the `LOREKIT_API_KEY` secret.
+See [`plugins/pr-relevance-memory/README.md`](./plugins/pr-relevance-memory/README.md).
 
 ### VS Code extension internals
 
