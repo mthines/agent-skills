@@ -12,6 +12,12 @@ import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, e
 import { validateSkill } from "../../skills/authoring/create-skill/scripts/validate-skill.mjs";
 import { escapingLinks, counts as escapingCounts, readBaseline as escapingBaseline } from "./escaping-links.mjs";
 
+// Frozen archives (CLAUDE.md § Where knowledge goes): snapshots that are never kept current, so
+// no walk that asserts LIVE facts (links, Skill() names) reads them. The value is the G86d byte
+// ceiling — one table, so the walks and G86d cannot disagree about which files are frozen.
+const FROZEN_ARCHIVES = { "docs/inventory.md": 118685, "docs/evals.md": 27529 };
+const docsWalk = () => walk(join(REPO_ROOT, "docs")).filter((f) => !(rel(f) in FROZEN_ARCHIVES));
+
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
 
@@ -61,7 +67,7 @@ const REPORT_FIXTURES = (() => {
     ...walk(join(REPO_ROOT, "memory")),
     join(REPO_ROOT, "CLAUDE.md"),
     join(REPO_ROOT, "README.md"),
-    ...walk(join(REPO_ROOT, "docs")),
+    ...docsWalk(),
   ];
   let newBroken = 0, baselined = 0;
   for (const f of files) {
@@ -6859,7 +6865,7 @@ const isPollBlock = (block) =>
   ]);
   const PROHIBITION = /never|do not|don't|not a skill|unknown skill|❌|wrong/i;
   const bad = [];
-  const files = [...walk(join(REPO_ROOT, "skills")), ...walk(join(REPO_ROOT, "agents")), join(REPO_ROOT, "CLAUDE.md"), join(REPO_ROOT, "README.md"), ...walk(join(REPO_ROOT, "docs"))];
+  const files = [...walk(join(REPO_ROOT, "skills")), ...walk(join(REPO_ROOT, "agents")), join(REPO_ROOT, "CLAUDE.md"), join(REPO_ROOT, "README.md"), ...docsWalk()];
   for (const f of files) {
     const lines = readFileSync(f, "utf8").split("\n");
     lines.forEach((line, i) => {
@@ -10364,8 +10370,7 @@ const isPollBlock = (block) =>
   // Frozen archives: byte ceilings equal to their size when frozen. They are snapshots that are
   // never kept current, and they never grow. Lower a ceiling when you shrink a file. Raise one
   // only when the archive's own freeze-notice header changes, and state the byte delta in the commit.
-  const G86_ARCHIVES = [["docs/inventory.md", 118685], ["docs/evals.md", 27529]];
-  for (const [f, ceiling] of G86_ARCHIVES) {
+  for (const [f, ceiling] of Object.entries(FROZEN_ARCHIVES)) {
     const size = statSync(join(REPO_ROOT, f)).size;
     s.check(`G86d ${f} has not grown past its frozen size (${ceiling} bytes)`,
       size <= ceiling, `${size} bytes — this archive is frozen; write the rule to the owning skill's rules/ and its rationale to references/ instead`);
