@@ -3,7 +3,8 @@
 **Do not append to this file.**
 It preserves the annotated eval-layer history that used to live in the root [`CLAUDE.md`](../CLAUDE.md).
 Operational instructions live in [`scripts/eval/README.md`](../scripts/eval/README.md); the mandatory change checklist lives in the root [`CLAUDE.md`](../CLAUDE.md#keeping-the-evals-honest-mandatory-on-every-change).
-Run results go in the PR description — see [Where knowledge goes](../CLAUDE.md#where-knowledge-goes-mandatory-on-every-change). L1 `G86` fails if this file grows.
+Run results go in the PR description — see [Where knowledge goes](../CLAUDE.md#where-knowledge-goes-mandatory-on-every-change).
+L1 `G86` fails if this file grows.
 
 Regression evals for the skills live in [`scripts/eval/`](../scripts/eval/README.md), in three layers:
 
