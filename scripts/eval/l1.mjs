@@ -10362,7 +10362,8 @@ const isPollBlock = (block) =>
   s.check("G86c root CLAUDE.md carries no version-tag narrative",
     tags.length === 0, `found ${tags.join(", ")} — version history belongs in the commit message`);
   // Frozen archives: byte ceilings equal to their size when frozen. Correcting a fact in place is
-  // allowed; growing them is not. Lower a ceiling when you shrink a file — never raise one.
+  // allowed; growing them is not. Lower a ceiling when you shrink a file. Raise one only when the
+  // archive's own freeze-notice header changes, and state the byte delta in the commit.
   const G86_ARCHIVES = [["docs/inventory.md", 118685], ["docs/evals.md", 27529]];
   for (const [f, ceiling] of G86_ARCHIVES) {
     const size = statSync(join(REPO_ROOT, f)).size;
