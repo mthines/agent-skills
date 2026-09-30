@@ -110,7 +110,7 @@ Skill("ui-verify", "run <PR-URL> --unattended")    # Playwright, or an inconclus
 ```
 
 **In a Dash0 Agent0 Automation sandbox** (`/tmp/workspace/agent-skills/env.sh` exists), read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md) before Step 0.
-It works from a checkout of the PR head, resolves `auto` to Playwright without the prompt (no user is present, and the automation's setup script installing Playwright is that decision), checks the browser the setup installed, and dispatches `aw-tester` as a `general` sub-agent that reads its definition file — the host cannot dispatch the custom type.
+It works from a checkout of the PR head, resolves `auto` to Playwright without the prompt (no user is present, and Playwright is the only driver on an Agent0 host — installed by the automation's setup script or by the [on-demand install below](#on-demand-browser-install--run-and-verify)), checks the browser the setup installed, and dispatches `aw-tester` as a `general` sub-agent that reads its definition file — the host cannot dispatch the custom type.
 `setup` is interactive and stops there as `blocked (needs a human …)`.
 Agent0 mode implies [`--unattended`](#--unattended--never-ask-never-hang) whether or not the caller passed it.
 

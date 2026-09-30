@@ -48,7 +48,7 @@ A clone that fails is `inconclusive: no checkout of <owner>/<repo> (<error>)` �
 
 | `--driver` | Agent0 outcome |
 | --- | --- |
-| `auto` (default) | **`playwright`, with no `AskUserQuestion`.** The prompt in [`runner.md § The auto-mode Playwright prompt`](./runner.md#the-auto-mode-playwright-prompt) exists so a person is never surprised by a headless run they did not ask for. Here nobody is present to ask, and the automation's setup script installing Playwright is that decision, made in advance |
+| `auto` (default) | **`playwright`, with no `AskUserQuestion`.** The prompt in [`runner.md § The auto-mode Playwright prompt`](./runner.md#the-auto-mode-playwright-prompt) exists so a person is never surprised by a headless run they did not ask for. Here nobody is present to ask, and Playwright is the only driver on an Agent0 host — provided by the setup script or by [the on-demand install](../SKILL.md#on-demand-browser-install--run-and-verify) — so choosing it is a decision already made |
 | `playwright` | `playwright` |
 | `chrome` | `NOT RUN (chrome driver unavailable on this host — no browser extension)`. A forced driver is never substituted |
 
