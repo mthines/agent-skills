@@ -10192,12 +10192,12 @@ const isPollBlock = (block) =>
   // no plugin records, exports under it; a plugin-covered run keeps agent-skills/pr-reviewer, or the
   // plugin's invoke_agent pr-reviewer and the reviewer's would count every review twice.
   s.check("G84p an agent0 run exports under the AI SDLC Insights scope; every other run, and a plugin harness above all, keeps agent-skills/pr-reviewer",
-    /an agent0 run exports its trace and metrics under the AI SDLC Insights scope/.test(out)
-      && /every other run keeps agent-skills\/pr-reviewer/.test(out)
-      && /no harness is both a session harness and a plugin harness/.test(out));
+    /✓ an agent0 run exports its trace and metrics under the AI SDLC Insights scope/.test(out)
+      && /✓ every other run keeps agent-skills\/pr-reviewer/.test(out)
+      && /✓ no harness is both a session harness and a plugin harness/.test(out));
   s.check("G84p the root records the OpenCode tool call that started the run, and a later begin never replaces it",
-    /the root carries pr_review\.opencode\.parent_tool_call_id/.test(out)
-      && /a later begin adds facts but keeps the tool call that started the run/.test(out));
+    /✓ the root carries pr_review\.opencode\.parent_tool_call_id/.test(out)
+      && /✓ a later begin adds facts but keeps the tool call that started the run/.test(out));
 
   const bdir = mkdtempSync(join(tmpdir(), "l1-bundle-"));
   let bundle = "";
