@@ -84,7 +84,7 @@ ADV-07 | Spec-1 | data       | 500-row mocked list                          | (S
 
 Run only the rows that apply.
 Every persisted string a probe types carries the `ui-verify-adv` marker, so test data is findable and removable.
-The literal probe values live in the [harness template](../templates/adversarial-probes.spec.ts.template) (`PROBE_TEXT`, `PROBE_NUMBERS`).
+The literal probe values live in the [harness template](../templates/adversarial-probes.spec.ts.template) (`PROBE_TEXT`, `markupProbe()`, `PROBE_NUMBERS`).
 
 | Category | Applies when the spec has… | Probes | Priority |
 | --- | --- | --- | --- |
@@ -111,7 +111,7 @@ A probe is a **finding** only when one of these oracles fires.
 | `false-success` | the spec's success state is visible while the action's request failed, was aborted, or ran offline | high |
 | `crash` | a `pageerror` fired, or the page shows no heading and no landmark, or an error-boundary message replaced the screen | high |
 | `back-resubmit` | Back, Forward, or reload re-sent a mutating request | high |
-| `markup-rendered` | the text `ui-verify-adv` is visible while the literal `<b data-adv="1">` is not | high |
+| `markup-rendered` | the probe's own marker `ui-verify-adv-<probe id>` is visible while the literal `<b data-adv="1">` is not | high |
 | `server-error-from-input` | a probe input produced a 5xx response | high |
 | `keyboard-unreachable` | the primary action cannot be focused within 50 Tab presses, or Enter and Space both fail to activate it | high |
 | `silent-failure` | the action's request failed and no `alert`, `status`, or error text is visible within 5 s | medium |

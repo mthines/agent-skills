@@ -49,11 +49,12 @@ export const PROBE_TEXT = {
   padded: `  ${MARK}  `,
   long: `${MARK}-` + 'x'.repeat(986), // 1000 characters
   unicode: `${MARK} Zoë 名前 👩‍👩‍👧 مرحبا a\u200Bb`,
-  markup: `<b data-adv="1">${MARK}</b>`, // escaped → literal text visible; rendered → only MARK visible
   script: `"><img src=x onerror="console.log('${XSS_MARK}')">`, // benign: logs a marker, nothing else
   templating: `${MARK} {{7*7}} \${7*7} %s`,
 };
 export const PROBE_NUMBERS = ['0', '-1', '1e21', '0.0000001', '1,5', 'abc'];
+/** Markup probe with a per-probe marker, so text earlier probes saved to the same field never matches it. */
+export const markupProbe = (id: string) => `<b data-adv="1">${MARK}-${id}</b>`;
 
 // ── Signals collected during one probe ──────────────────────────────────────────
 type Signals = {
@@ -234,14 +235,15 @@ test('ADV-01 input: markup and script probe in the name field', async ({ page, c
       steps.push('open /dashboards/abc');
       await page.getByRole('button', { name: 'Rename' }).click();
       steps.push('click {role: "button", name: "Rename"}');
-      await page.getByRole('textbox', { name: 'Dashboard name' }).fill(PROBE_TEXT.markup + PROBE_TEXT.script);
+      await page.getByRole('textbox', { name: 'Dashboard name' }).fill(markupProbe('ADV-01') + PROBE_TEXT.script);
       steps.push('fill {role: "textbox", name: "Dashboard name"} with the markup + script probe');
       await before();
       await page.getByRole('button', { name: 'Save' }).click();
       steps.push('click {role: "button", name: "Save"}');
       await settle(page);
-      const literalShown = await page.getByText('<b data-adv="1">', { exact: false }).count();
-      const markShown = await page.getByText(MARK, { exact: false }).count();
+      const own = `${MARK}-ADV-01`;
+      const literalShown = await page.getByText(`<b data-adv="1">${own}`, { exact: false }).count();
+      const markShown = await page.getByText(own, { exact: false }).count();
       if (!literalShown && markShown) {
         return { finding: { oracle: 'markup-rendered', expected: 'the name shows the literal <b …> text', actual: 'the <b> tag rendered as HTML' } };
       }
