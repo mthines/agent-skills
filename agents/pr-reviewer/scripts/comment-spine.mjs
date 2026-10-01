@@ -110,6 +110,23 @@ export function tierBadge(tier) {
   return `${TIER_GLYPH[tier]} ${tier}`;
 }
 
+/**
+ * The review worklist a run leaves behind: every review thread still open after it posted.
+ *
+ * `openThreads` are the threads open BEFORE this run posted (Step 1.0, after Step 2.9c resolved
+ * what it could); `findings` and `notes` are the threads this run just opened. Blocking counts the
+ * blocking subset of the first two — a note is never blocking. One formula, imported by both the
+ * report renderer (the `**Progress:**` line's current point) and finalize.mjs (the `round` the
+ * PR-state record stores for the next run's line), so the two cannot drift.
+ * @param {{ openThreads?: any[], findings?: any[], notes?: any[] }} lists
+ * @returns {{ open: number, blocking: number }}
+ */
+export function worklistCounts({ openThreads = [], findings = [], notes = [] } = {}) {
+  const blocking = openThreads.filter((t) => t?.blocking === true).length
+    + findings.filter((f) => f?.blocking === true).length;
+  return { open: openThreads.length + findings.length + notes.length, blocking };
+}
+
 /** `🔴 3 critical · 🟠 1 high` — zero tiers omitted, order fixed by TIERS. */
 export function tierTally(counts) {
   return TIERS

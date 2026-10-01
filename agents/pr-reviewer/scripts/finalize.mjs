@@ -46,7 +46,7 @@ import {
 } from "./finalize/payload.mjs";
 import { renderComment } from "./render-comment.mjs";
 import { resolveFixLinks, applyFixLinks } from "./finalize/fix-links.mjs";
-import { TITLE_MAX, PROSE_MAX, UNVERIFIED_MAX, EVIDENCE_REFS_MAX, SHA7, sentenceCount } from "./comment-spine.mjs";
+import { TITLE_MAX, PROSE_MAX, UNVERIFIED_MAX, EVIDENCE_REFS_MAX, SHA7, sentenceCount, worklistCounts } from "./comment-spine.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
@@ -622,6 +622,11 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     ...(judgments?.lenses?.optimality_cards?.length
       ? { OPTIMALITY_CARDS: judgments.lenses.optimality_cards.map((/** @type {any} */ c) => buildOptimalityCard(c)) }
       : {}),
+    // The `**Progress:**` line's history: the worklist each earlier run left, read off the PR-state
+    // record by prepare-review.mjs (empty under --isolated, so a comparability run shows none).
+    ...(context?.render?.ROUNDS === undefined && Array.isArray(context?.priorRun?.rounds) && context.priorRun.rounds.length
+      ? { ROUNDS: context.priorRun.rounds }
+      : {}),
   };
 
   const payload = buildReportPayload({
@@ -635,6 +640,9 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     extras,
   });
   payload.OPEN_THREADS = (gates.g3?.open || []).map(toOpenThreadBullet);
+  // What this run leaves open, computed from the same arrays and by the same function the report's
+  // `**Progress:**` line uses — Step 4c stores it as this run's `open`/`blocking` in runs[].
+  const round = worklistCounts({ openThreads: payload.OPEN_THREADS, findings: payload.FINDINGS, notes: payload.NOTES || [] });
 
   const findingsBusRecords = toFindingsBusRecords(inline.concat(overCapDeferred), {
     iteration, sha: runSha,
@@ -655,6 +663,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     identityHolds,
     quality,
     payload,
+    round,
     findingsBusRecords,
   };
 }
@@ -1105,6 +1114,20 @@ async function selfTest() {
       const kept = String(finalizeReview({ context: { ...hctx, intentIsolated: true }, judgments: j0 }).payload.RUN_ANOMALY || "");
       check("a delivered hybrid intent worker suppresses the no-dispatch line; a missing one keeps it",
         lost.includes("the intent finder ran in-context") && !kept.includes("the intent finder ran in-context"), `${lost} | ${kept}`);
+    }
+    // The `**Progress:**` line: history comes from context.priorRun.rounds, and finalize reports this
+    // run's own point as `round`, the value Step 4c stores in runs[].
+    {
+      const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
+        threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+      const base = { mode: "incremental", headSha: "abc1234def", priorRun: { priorSha: "70cf147aaaa" }, routing: { tier: "standard" }, anomalies: [] };
+      const rounds = [{ sha: "70cf147", open: 4, blocking: 1 }];
+      const withHistory = finalizeReview({ context: { ...base, priorRun: { ...base.priorRun, rounds } }, judgments: j0 });
+      const without = finalizeReview({ context: base, judgments: j0 });
+      check("ROUNDS reaches the payload from context.priorRun.rounds, and is absent with no history",
+        JSON.stringify(withHistory.payload.ROUNDS) === JSON.stringify(rounds) && without.payload.ROUNDS === undefined);
+      check("finalize reports this run's worklist as `round` for the PR-state record",
+        JSON.stringify(withHistory.round) === JSON.stringify({ open: 0, blocking: 0 }));
     }
     // A/B iteration 2: a supplied RUN_ANOMALY used to REPLACE the computed one.
     const merged = mergeRunAnomaly("reviewer identity unknown", "1 prepare-time anomaly (x)");

@@ -230,6 +230,7 @@ export function toInlineCommentPayload(c, { sha }) {
 const RENDER_EXTRAS = [
   "RUN_NOTE", "RUN_ANOMALY", "CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "FIX_ALL_URL",
   "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED", "IMPACT", "WITHHELD", "OPTIMALITY_CARDS",
+  "COVERAGE", "ROUNDS",
 ];
 
 /**

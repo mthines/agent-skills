@@ -813,7 +813,10 @@ export function checksReadable(r) {
  * depth-routing.md's D6 ("no prior full review is recorded").
  * Accepts the record as Step 4c writes it (`{v, commit, data: {runs[]}}`, or a LoreKit read's
  * `{value: "<that JSON>"}`), or the flat `{priorSha, lastFullSha, incrRunsSinceFull}` shape.
- * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null}}
+ * `rounds` is the worklist each recorded run left (`runs[].open`/`.blocking`, Step 4c), oldest
+ * first and capped at the last four; a run recorded before those fields existed is skipped, never
+ * guessed. It feeds the report's `**Progress:**` line.
+ * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null, rounds?: {sha: string, open: number, blocking: number}[]}}
  */
 export function readStateFile(path) {
   const none = { priorSha: null, lastFullSha: null, incrRunsSinceFull: 0 };
@@ -837,6 +840,12 @@ export function readStateFile(path) {
         priorSha: runs.length ? String(runs[runs.length - 1]?.sha || "") || null : null,
         lastFullSha: lastFull < 0 ? null : String(runs[lastFull]?.sha || "") || null,
         incrRunsSinceFull: lastFull < 0 ? runs.length : runs.length - 1 - lastFull,
+        rounds: runs
+          .filter((r) => /^[0-9a-f]{7,40}$/.test(String(r?.sha || "").toLowerCase())
+            && Number.isInteger(r?.open) && r.open >= 0
+            && Number.isInteger(r?.blocking) && r.blocking >= 0 && r.blocking <= r.open)
+          .map((r) => ({ sha: String(r.sha).toLowerCase().slice(0, 7), open: r.open, blocking: r.blocking }))
+          .slice(-4),
       };
     }
     return {
@@ -1927,6 +1936,9 @@ async function prepare(opts) {
       stickyKind: sticky ? sticky.kind : null,
       priorSha,
       zeroDelta,
+      // The report's `**Progress:**` history. Empty under --isolated: a comparability run is judged
+      // as a first run, so it must not show a trend from runs it is pretending not to know about.
+      rounds: runMode.isolated ? [] : (state.rounds || []),
       priorDiagnostics: null,
       note: runMode.isolated
         ? "--isolated: first-run semantics — no prior-run diagnostics, no delta triage, no fallback-rung priorSha (pipeline.md § --isolated)."
@@ -2629,6 +2641,25 @@ async function selfTest() {
   t("readStateFile: absent path defaults to no prior deep pass on record (the safe direction)", () => {
     const s = readStateFile(null);
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
+  });
+  t("readStateFile: rounds carry each run's open/blocking worklist, skip runs without one, cap at 4", () => {
+    const p = join(tmpdir(), `prr-state-rounds-${process.pid}.json`);
+    const runs = [
+      { sha: "1111111aaaa", mode: "full", verdict: "FAIL", at: "2026-09-01T00:00:00Z" },
+      { sha: "2222222", mode: "incremental", verdict: "FAIL", at: "2026-09-02T00:00:00Z", open: 6, blocking: 2 },
+      { sha: "3333333", mode: "incremental", verdict: "WARN", at: "2026-09-03T00:00:00Z", open: 5, blocking: 1 },
+      { sha: "4444444", mode: "incremental", verdict: "WARN", at: "2026-09-04T00:00:00Z", open: 4, blocking: 9 },
+      { sha: "5555555", mode: "full", verdict: "WARN", at: "2026-09-05T00:00:00Z", open: 3, blocking: 0 },
+      { sha: "6666666", mode: "incremental", verdict: "WARN", at: "2026-09-06T00:00:00Z", open: 2, blocking: 0 },
+      { sha: "7777777", mode: "incremental", verdict: "PASS", at: "2026-09-07T00:00:00Z", open: 1, blocking: 0 },
+    ];
+    writeFileSync(p, JSON.stringify({ v: 1, commit: "7777777", data: { runs } }), "utf8");
+    const s = readStateFile(p);
+    // run 1 has no counts and run 4's blocking > open — both skipped; the last four survivors kept.
+    return JSON.stringify(s.rounds) === JSON.stringify([
+      { sha: "3333333", open: 5, blocking: 1 }, { sha: "5555555", open: 3, blocking: 0 },
+      { sha: "6666666", open: 2, blocking: 0 }, { sha: "7777777", open: 1, blocking: 0 },
+    ]);
   });
   t("readStateFile: reads a real state file's lastFullSha and incrRunsSinceFull", () => {
     const p = join(tmpdir(), `prr-state-probe-${process.pid}.json`);

@@ -31,6 +31,7 @@ import {
   TIERS, TIER_GLYPH, VERDICT_GLYPH, VERDICTS, SHA7, GATE_DETAILS_MAX, TITLE_MAX,
   worstTier, tierTally, footerLine, fixButton, anchor, assertPostable,
   assertNoStructure, sentenceCount, assertPlain as spineAssertPlain, CONV_PREFIXES, CLAIM_PREFIXES,
+  worklistCounts,
 } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -81,7 +82,7 @@ const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NO
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
   "FINDINGS", "FAIL_REASONS", "WARN_REASONS",
   "OPEN_THREADS", "NOTES", "ADDITIONAL_FINDINGS", "LOW_CONFIDENCE_FINDINGS", "OPTIMALITY_CARDS",
-  "IMPACT", "WITHHELD"];
+  "IMPACT", "WITHHELD", "COVERAGE", "ROUNDS"];
 
 function fail(msg) {
   process.stderr.write(`render-report: ${msg}\n`);
@@ -107,11 +108,213 @@ const SHAPES = {
   // row and the comment it links to recognisably the same finding.
   "FINDINGS[]": ["title", "path", "line", "url", "tier", "blocking"],
   IMPACT: ["telemetry", "symbols", "dependencies", "overlaps"],
-  "IMPACT.symbols[]": ["name", "path", "change", "consumer_files", "verified_unaffected", "findings"],
+  "IMPACT.symbols[]": ["name", "path", "change", "consumer_files", "verified_unaffected", "findings",
+    "consumers"],
+  // One entry per consumer FILE the trace has a status for. Every verified and every flagged file
+  // is listed (the counts above must equal the list's), so an unlisted remainder is untraced.
+  "IMPACT.symbols[].consumers[]": ["path", "line", "status"],
   "IMPACT.dependencies[]": ["name", "from", "to", "delta", "usage_sites", "url"],
   "IMPACT.overlaps[]": ["pr", "author", "path", "symbol", "url"],
   "WITHHELD[]": ["path", "line", "url", "prefix", "body", "reason"],
+  // Files this run read, out of the changed files in scope (the whole PR on a full run, the delta on
+  // an incremental one) — the one input the `**Checked:**` line cannot derive from another slot.
+  COVERAGE: ["files_read", "files_total"],
+  // Earlier runs of this review on this PR, oldest first, read from the PR-state record's runs[]:
+  // the review worklist each one left behind. The current run's point is derived, never supplied.
+  "ROUNDS[]": ["sha", "open", "blocking"],
 };
+
+const CONSUMER_STATUSES = ["finding", "verified", "untraced"];
+
+/**
+ * Validate one symbol's optional `consumers[]` against the counts it must agree with.
+ * @returns {{path: string, line: number|null, status: string}[]|null} null when the list is absent
+ */
+function consumerList(where, raw, { files, ok, found }) {
+  if (raw === undefined || raw === null) return null;
+  if (!Array.isArray(raw)) fail(`${where}.consumers must be an array`);
+  const seen = new Set();
+  const list = raw.map((c, j) => {
+    const w = `${where}.consumers[${j}]`;
+    if (!isPlainObject(c)) fail(`${w} must be an object {path, line, status}`);
+    assertNoStrayFields(w, c, SHAPES["IMPACT.symbols[].consumers[]"]);
+    if (!c.path || String(c.path).trim() === "") fail(`${w}.path is required`);
+    assertPlain(`${w}.path`, c.path);
+    if (c.line !== undefined && c.line !== null && (!Number.isInteger(c.line) || c.line < 1)) {
+      fail(`${w}.line must be a positive integer, got ${JSON.stringify(c.line)}`);
+    }
+    if (!CONSUMER_STATUSES.includes(String(c.status))) {
+      fail(`${w}.status must be one of ${CONSUMER_STATUSES.join(" | ")} — got ${JSON.stringify(c.status)}`);
+    }
+    const path = String(c.path).trim();
+    if (seen.has(path)) fail(`${where}.consumers lists ${path} twice — one entry per consumer file`);
+    seen.add(path);
+    return { path, line: c.line ?? null, status: String(c.status) };
+  });
+  if (list.length > files) {
+    fail(`${where}.consumers lists ${list.length} files but consumer_files is ${files}`);
+  }
+  // The list and the counts are the same facts stated twice, so they must agree: a diagram drawn
+  // from one and a bullet written from the other would otherwise tell two stories.
+  const nOk = list.filter((c) => c.status === "verified").length;
+  const nFound = list.filter((c) => c.status === "finding").length;
+  if (nOk !== ok) {
+    fail(`${where}.consumers marks ${nOk} file(s) verified but verified_unaffected is ${ok} — every`
+      + " verified file is listed, so the two are the same number");
+  }
+  if (nFound !== found) {
+    fail(`${where}.consumers marks ${nFound} file(s) as a finding but findings is ${found} — every`
+      + " flagged file is listed, so the two are the same number");
+  }
+  return list;
+}
+
+// ── The reach diagram ─────────────────────────────────────────────────────────────────────────
+//
+// Built from IMPACT alone, never authored: a diagram a model drew would be a claim nothing checks.
+// Node text carries the status in words (✓ checked, ✗ finding, ? not checked); colour repeats it.
+// Folders, not files, are the unit, because fourteen file nodes is noise and "src/jobs/ · 6 files ·
+// ✓ checked" reads at a glance — a file gets its own node only when it carries a finding.
+const REACH_MAX_SYMBOLS = 6;
+const REACH_MAX_NODES_PER_SYMBOL = 6;
+// Below this many edges the bullet list already says everything the picture would.
+const REACH_MIN_EDGES = 3;
+const CHANGE_LABEL = { signature: "signature changed", body: "body changed", removed: "removed", added: "added" };
+const REACH_CLASSES = [
+  "classDef changed fill:#eef2ff,stroke:#6366f1,color:#1e1b4b",
+  "classDef ok fill:#e7f6ec,stroke:#16a34a,color:#14532d",
+  "classDef partial fill:#fef9c3,stroke:#ca8a04,color:#713f12",
+  "classDef unknown fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:4 3,color:#374151",
+  "classDef bad fill:#fde8e8,stroke:#dc2626,color:#7f1d1d",
+  "classDef warn fill:#fff4e5,stroke:#d97706,color:#78350f",
+];
+
+/** A Mermaid node label body: quoted-string safe, single line, entity-escaped. */
+function mermaidText(s) {
+  return String(s)
+    .replace(/#/g, "#35;")
+    .replace(/"/g, "#quot;")
+    .replace(/</g, "#lt;")
+    .replace(/>/g, "#gt;")
+    .replace(/`/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+/** The status words + class for a group of consumer files. */
+function groupStatus({ found, ok, untraced }) {
+  const parts = [];
+  if (found) parts.push(`✗ ${found} flagged`);
+  if (ok) parts.push(found || untraced ? `✓ ${ok} checked` : "✓ checked");
+  if (untraced) parts.push(found || ok ? `? ${untraced} not checked` : "? not checked");
+  const cls = found ? "bad" : untraced === 0 ? "ok" : ok === 0 ? "unknown" : "partial";
+  return { text: parts.join(" · "), cls, solid: found + ok > 0 };
+}
+
+/** The consumer-side nodes for one symbol, in display order, capped. */
+function consumerNodes(sy) {
+  const untracedTotal = sy.files - sy.ok - sy.found;
+  if (!sy.consumers) {
+    // No per-file list: one node per status, which is still the whole truth the counts carry.
+    const nodes = [];
+    if (sy.found) nodes.push({ label: `${plural(sy.found, "file")}<br/>✗ flagged — see findings`, cls: "bad", solid: true });
+    if (sy.ok) nodes.push({ label: `${plural(sy.ok, "file")}<br/>✓ checked`, cls: "ok", solid: true });
+    if (untracedTotal) nodes.push({ label: `${plural(untracedTotal, "file")}<br/>? not checked`, cls: "unknown", solid: false });
+    return nodes;
+  }
+  const flagged = sy.consumers.filter((c) => c.status === "finding")
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map((c) => ({ files: 1, found: 1, ok: 0, untraced: 0, label: `${mermaidText(c.line ? `${c.path}:${c.line}` : c.path)}<br/>✗ finding`, cls: "bad", solid: true }));
+  const groups = new Map();
+  for (const c of sy.consumers.filter((x) => x.status !== "finding")) {
+    const cut = c.path.lastIndexOf("/");
+    const dir = cut === -1 ? "./" : c.path.slice(0, cut + 1);
+    const g = groups.get(dir) || { dir, paths: [], ok: 0, untraced: 0 };
+    g.paths.push(c.path);
+    if (c.status === "verified") g.ok += 1; else g.untraced += 1;
+    groups.set(dir, g);
+  }
+  // Checked folders first, then partly checked, then unchecked — the order a reader asks in.
+  const RANK = { ok: 0, partial: 1, unknown: 2 };
+  const grouped = [...groups.values()]
+    .map((g) => {
+      const st = groupStatus({ found: 0, ok: g.ok, untraced: g.untraced });
+      const where = g.paths.length === 1 ? g.paths[0] : `${g.dir} · ${g.paths.length} files`;
+      return { dir: g.dir, files: g.paths.length, found: 0, ok: g.ok, untraced: g.untraced, label: `${mermaidText(where)}<br/>${st.text}`, cls: st.cls, solid: st.solid };
+    })
+    .sort((a, b) => RANK[a.cls] - RANK[b.cls] || b.files - a.files || a.dir.localeCompare(b.dir));
+  const unlisted = sy.files - sy.consumers.length;
+  const nodes = [...flagged, ...grouped];
+  if (unlisted > 0) {
+    nodes.push({ files: unlisted, found: 0, ok: 0, untraced: unlisted, label: `+${plural(unlisted, "more file")}<br/>? not checked`, cls: "unknown", solid: false });
+  }
+  if (nodes.length <= REACH_MAX_NODES_PER_SYMBOL) return nodes;
+  // Fold the tail into one node that keeps every count, so the cap never hides a status.
+  const kept = nodes.slice(0, REACH_MAX_NODES_PER_SYMBOL - 1);
+  const rest = nodes.slice(REACH_MAX_NODES_PER_SYMBOL - 1);
+  const sum = (k) => rest.reduce((n, x) => n + x[k], 0);
+  const st = groupStatus({ found: sum("found"), ok: sum("ok"), untraced: sum("untraced") });
+  kept.push({ label: `+${plural(sum("files"), "more file")}<br/>${st.text}`, cls: st.cls, solid: st.solid });
+  return kept;
+}
+
+/**
+ * The fenced Mermaid block for IMPACT, or "" when the graph is too small to be worth a picture.
+ * Deterministic: ids are positional and every ordering has a tie-breaker, so G25 can byte-diff it.
+ */
+function reachDiagram({ symbols, deps, overlaps }) {
+  const prNodes = [];
+  const outNodes = [];
+  const edges = [];
+  const symbolIds = [];
+  symbols.slice(0, REACH_MAX_SYMBOLS).forEach((sy, i) => {
+    const id = `s${i + 1}`;
+    symbolIds.push({ id, name: sy.name, path: sy.path });
+    prNodes.push(`    ${id}["${mermaidText(sy.name)}<br/>${CHANGE_LABEL[sy.change]}"]:::changed`);
+    consumerNodes(sy).forEach((n, j) => {
+      const cid = `${id}c${j + 1}`;
+      outNodes.push(`  ${cid}["${n.label}"]:::${n.cls}`);
+      edges.push(`  ${id} ${n.solid ? "-->" : "-.->"} ${cid}`);
+    });
+  });
+  if (symbols.length > REACH_MAX_SYMBOLS) {
+    const more = symbols.length - REACH_MAX_SYMBOLS;
+    prNodes.push(`    smore["+${plural(more, "more changed export")}<br/>listed below"]:::changed`);
+  }
+  deps.forEach((d, i) => {
+    const id = `d${i + 1}`;
+    prNodes.push(`    ${id}["${mermaidText(`${d.name} ${d.from} → ${d.to}`)}<br/>${d.delta} bump"]:::changed`);
+    if (d.sites > 0) {
+      outNodes.push(`  ${id}u["${plural(d.sites, "usage site")}<br/>✓ checked"]:::ok`);
+      edges.push(`  ${id} --> ${id}u`);
+    }
+  });
+  overlaps.forEach((o, i) => {
+    const id = `o${i + 1}`;
+    let target = symbolIds.find((s) => o.symbol && s.name === o.symbol)
+      || symbolIds.find((s) => s.path === o.path);
+    if (!target) {
+      target = { id: `${id}f` };
+      prNodes.push(`    ${id}f["${mermaidText(o.path)}"]:::changed`);
+    }
+    outNodes.push(`  ${id}["${mermaidText(`PR ${o.pr} · ${o.author}`)}<br/>also changes ${mermaidText(o.symbol || o.path)}"]:::warn`);
+    edges.push(`  ${id} -.- ${target.id}`);
+  });
+  if (edges.length < REACH_MIN_EDGES) return "";
+  return [
+    "```mermaid",
+    "flowchart LR",
+    '  subgraph pr["Changed in this PR"]',
+    ...prNodes,
+    "  end",
+    ...outNodes,
+    ...edges,
+    ...REACH_CLASSES.map((c) => `  ${c}`),
+    "```",
+  ].join("\n");
+}
 
 function assertNoStrayFields(where, obj, allowed) {
   const stray = Object.keys(obj).filter((k) => !allowed.includes(k));
@@ -670,16 +873,25 @@ function main() {
       + " so one of them is wrong");
   }
 
-  // ── IMPACT → the consequence-note section ──────────────────────────────────────────────────
+  // ── IMPACT → "What this change reaches" ────────────────────────────────────────────────────
   //
   // "Note me about the consequences of changing this code" renders here, and it is also the only
   // checkable record of what a deep trace actually covered: "14 consumers, 13 verified unaffected"
   // can be audited, silence cannot. Every count is derived from an array or summed from the rows,
   // so the summary cannot overstate the work — which matters more here than anywhere else in the
   // report, because a note claiming a trace that did not happen forecloses the question.
+  //
+  // The section is its own top-level accordion, under the findings index: what a change reaches
+  // and how much of it was checked is the first thing a human reviewer asks, and it was two clicks
+  // deep inside `Review details`. A Mermaid diagram leads it when the graph has enough edges to be
+  // worth drawing; the bullets below it stay the authoritative text (email and the ingest grammar
+  // read raw markdown, where a diagram is source code).
   let impactSection = "";
   let impactSummary = "";
   let telemetryLine = "";
+  // Feeds the `**Checked:**` line below: consumer files the trace reached, out of how many.
+  let consumerFilesTotal = 0;
+  let consumerFilesChecked = 0;
   if (data.IMPACT !== undefined && data.IMPACT !== null) {
     const im = data.IMPACT;
     if (!isPlainObject(im)) fail("IMPACT must be an object {telemetry, symbols, dependencies, overlaps}");
@@ -700,6 +912,8 @@ function main() {
 
     const CHANGES = ["added", "removed", "signature", "body"];
     const symbols = list("symbols");
+    /** @type {{name: string, path: string, change: string, files: number, ok: number, found: number, consumers: any[]|null}[]} */
+    const symbolFacts = [];
     const symbolBullets = symbols.map((sy, i) => {
       const where = `IMPACT.symbols[${i}]`;
       if (!isPlainObject(sy)) fail(`${where} must be an object`);
@@ -723,6 +937,10 @@ function main() {
         fail(`${where}: verified_unaffected + findings (${ok + found}) exceeds consumer_files`
           + ` (${files}) — a consumer cannot be both`);
       }
+      const consumers = consumerList(where, sy.consumers, { files, ok, found });
+      symbolFacts.push({ name: String(sy.name).trim(), path: String(sy.path).trim(), change: String(sy.change), files, ok, found, consumers });
+      consumerFilesTotal += files;
+      consumerFilesChecked += ok + found;
       const parts = [`${sy.change} change`, `${files} consumer file${files === 1 ? "" : "s"}`];
       if (ok) parts.push(`${ok} verified unaffected`);
       if (found) parts.push(`${found} finding${found === 1 ? "" : "s"} inline`);
@@ -781,12 +999,19 @@ function main() {
       telemetryLine = `**Telemetry:** ${im.telemetry}`;
     }
 
-    const consumersChecked = symbols.reduce((n, sy) => n + (sy.verified_unaffected ?? 0)
-      + (sy.findings ?? 0), 0);
+    // The summary is the closed accordion's whole message, so it leads with the reach and states
+    // the unchecked remainder in words — "7 not checked" — rather than leaving it to subtraction.
+    const consumersFlagged = symbolFacts.reduce((n, sy) => n + sy.found, 0);
+    const consumersUntraced = consumerFilesTotal - consumerFilesChecked;
     const bits = [];
     if (symbols.length) bits.push(`${symbols.length} changed export${symbols.length === 1 ? "" : "s"}`);
-    if (consumersChecked) bits.push(`${consumersChecked} consumer${consumersChecked === 1 ? "" : "s"} checked`);
-    if (deps.length) bits.push(`${deps.length} dependency delta${deps.length === 1 ? "" : "s"}`);
+    if (consumerFilesTotal) {
+      bits.push(`${consumerFilesTotal} dependent file${consumerFilesTotal === 1 ? "" : "s"}`);
+      bits.push(`${consumerFilesChecked} checked`);
+      if (consumersFlagged) bits.push(`${consumersFlagged} flagged`);
+      if (consumersUntraced) bits.push(`${consumersUntraced} not checked`);
+    }
+    if (deps.length) bits.push(`${deps.length} dependency bump${deps.length === 1 ? "" : "s"}`);
     if (overlaps.length) bits.push(`${overlaps.length} open-PR overlap${overlaps.length === 1 ? "" : "s"}`);
     impactSummary = bits.join(" · ");
 
@@ -794,12 +1019,57 @@ function main() {
     // separate `<ul>`s, and with no heading between them the gap reads as a missing label rather
     // than as grouping — the bullets are already self-labelling (symbol / dependency / overlap).
     const bulletBlock = [...symbolBullets, ...depBullets, ...overlapBullets].join("\n");
-    const blocks = [telemetryLine, bulletBlock].filter((b) => b !== "");
+    const diagram = reachDiagram({
+      symbols: symbolFacts,
+      deps: deps.map((d) => ({ name: String(d.name), from: String(d.from), to: String(d.to), delta: String(d.delta), sites: d.usage_sites })),
+      overlaps: overlaps.map((o) => ({ pr: o.pr, author: String(o.author), path: String(o.path), symbol: o.symbol ? String(o.symbol) : null })),
+    });
+    const blocks = [diagram, telemetryLine, bulletBlock].filter((b) => b !== "");
     // A section with a summary but no rows would render an empty accordion; a section with rows
     // but no summary would render an unlabelled one. Either way, suppress it.
     if (blocks.length && impactSummary) impactSection = blocks.join("\n\n");
     else { impactSection = ""; impactSummary = ""; }
   }
+
+  // ── `**Checked:**` — how far the review got, in one visible line ───────────────────────────────
+  //
+  // A review's silence is read as coverage, so the coverage is stated where a reader looks first:
+  // files read, dependent files traced, and the candidate funnel. The funnel is parsed from QUALITY
+  // (its grammar is fixed by finalize/payload.mjs's buildQualitySummary) and the trace from IMPACT,
+  // so the only new input is COVERAGE's file counts.
+  const coverageParts = [];
+  if (data.COVERAGE !== undefined && data.COVERAGE !== null) {
+    const c = data.COVERAGE;
+    if (!isPlainObject(c)) fail("COVERAGE must be an object {files_read, files_total}");
+    for (const f of ["files_read", "files_total"]) {
+      if (!Number.isInteger(c[f]) || c[f] < 0) {
+        fail(`COVERAGE.${f} must be a non-negative integer, got ${JSON.stringify(c[f])}`);
+      }
+    }
+    if (c.files_read > c.files_total) fail("COVERAGE.files_read cannot exceed COVERAGE.files_total");
+    const p = data.PARTIAL_REVIEW;
+    if (isPlainObject(p) && (p.scanned !== c.files_read || p.total !== c.files_total)) {
+      fail(`COVERAGE says ${c.files_read} of ${c.files_total} files read but PARTIAL_REVIEW says`
+        + ` ${p.scanned} of ${p.total} — the banner and the Checked line state the same two numbers`);
+    }
+    if (c.files_total > 0) {
+      coverageParts.push(`${c.files_read} of ${c.files_total} changed file${c.files_total === 1 ? "" : "s"} read`);
+    }
+  }
+  if (consumerFilesTotal > 0) {
+    coverageParts.push(`${consumerFilesChecked} of ${consumerFilesTotal} dependent file`
+      + `${consumerFilesTotal === 1 ? "" : "s"} traced`);
+  }
+  const funnel = /^produced (\d+) → posted inline (\d+)(?: · notes \d+)?(?: · cleared (\d+))?/
+    .exec(String(data.QUALITY).trim());
+  const produced = funnel ? Number(funnel[1]) : 0;
+  if (produced > 0) {
+    const confirmed = funnel[3] === undefined ? "" : ` → ${funnel[3]} confirmed`;
+    coverageParts.push(`${produced} possible issue${produced === 1 ? "" : "s"}${confirmed} → ${funnel[2]} posted`);
+  } else if (coverageParts.length) {
+    coverageParts.push("no possible issues found");
+  }
+  const coverageLine = coverageParts.length ? `**Checked:** ${coverageParts.join(" · ")}` : "";
 
   // ── WITHHELD → the unverified-hypothesis section ───────────────────────────────────────────
   //
@@ -1095,11 +1365,43 @@ function main() {
     } catch (e) { fail(`FIX_ALL_URL: ${e.message}`); }
   }
 
+  // ── `**Progress:**` — is the PR converging? ─────────────────────────────────────────────────────
+  //
+  // From the second review on, the worklist each run left behind (open review threads, blocking
+  // subset), oldest first, ending with this run's. The current point is derived from this payload's
+  // own arrays by the same worklistCounts() finalize.mjs stores in the PR-state record, so the next
+  // run's history and this run's line are one number.
+  const ROUNDS_SHOWN = 4;
+  const rounds = arr("ROUNDS").map((r, i) => {
+    const where = `ROUNDS[${i}]`;
+    if (!SHA7.test(String(r.sha))) {
+      fail(`${where}.sha must be exactly 7 lowercase hex chars, got ${JSON.stringify(r.sha)}`);
+    }
+    for (const f of ["open", "blocking"]) {
+      if (!Number.isInteger(r[f]) || r[f] < 0) {
+        fail(`${where}.${f} must be a non-negative integer, got ${JSON.stringify(r[f])}`);
+      }
+    }
+    if (r.blocking > r.open) fail(`${where}.blocking (${r.blocking}) exceeds open (${r.open})`);
+    return r;
+  }).slice(-ROUNDS_SHOWN);
+  let progressLine = "";
+  if (rounds.length) {
+    const now = worklistCounts({ openThreads, findings, notes: arr("NOTES") });
+    const opens = [...rounds.map((r) => r.open), now.open];
+    const blocks = [...rounds.map((r) => r.blocking), now.blocking];
+    progressLine = `**Progress:** open review threads ${opens.join(" → ")}`
+      + (blocks.some((b) => b > 0) ? ` · blocking ${blocks.join(" → ")}` : "")
+      + ` across the last ${opens.length} reviews`;
+  }
+
   const derived = {
     HEADLINE: headline,
     SUMMARY_LINE: summary,
     REASONS_LINE: reasonsLine,
     ADVISORY_LINE: advisoryLine,
+    COVERAGE_LINE: coverageLine,
+    PROGRESS_LINE: progressLine,
     FINDINGS_INDEX: findingsIndex,
     FIX_ALL_BUTTON: fixAllButton,
     // One footer, both surfaces, and outside the accordion so a reader of the collapsed report can
@@ -1211,8 +1513,26 @@ function main() {
   // body) the missing-accordion check above has already fired.
   for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**", "**Run**",
     "**Open review threads (", "<sup>Nothing to report —",
-    "<summary>Impact —", "<summary>Withheld (", "**Telemetry:**"]) {
+    "<summary>Withheld (", "**Telemetry:**"]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);
+  }
+  // The reach section is collapsed and sits above `Review details`, and the diagram lives only
+  // inside it: a Mermaid block anywhere else would be a picture with no summary line to read
+  // instead of it — which is what an email notification shows.
+  if (impactSection) {
+    const reachAt = body.indexOf("<details>\n<summary>What this change reaches — ");
+    if (reachAt === -1) fail("the IMPACT section did not render as its own `What this change reaches` accordion");
+    if (reachAt > body.indexOf("<details>\n<summary>Review details")) {
+      fail("the `What this change reaches` accordion rendered inside or below `Review details`");
+    }
+  }
+  const mermaidAt = body.indexOf("```mermaid");
+  if (mermaidAt !== -1) {
+    const reachAt = body.indexOf("<summary>What this change reaches — ");
+    const reachEnd = reachAt === -1 ? -1 : body.indexOf("</details>", reachAt);
+    if (reachAt === -1 || mermaidAt < reachAt || mermaidAt > reachEnd || body.indexOf("```mermaid", mermaidAt + 1) !== -1) {
+      fail("a Mermaid block rendered outside the `What this change reaches` accordion");
+    }
   }
   // The findings index is the one thing that MUST be above it: a worklist inside a collapsed
   // accordion is a worklist nobody reads.
