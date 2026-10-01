@@ -160,7 +160,8 @@ type Body = (ctx: {
   signals: Signals;
   steps: string[];
   before: () => Promise<void>;
-}) => Promise<{ finding?: Finding; observed?: string; restore?: () => Promise<void> }>;
+  restoreWith: (restore: () => Promise<void>) => void;
+}) => Promise<{ finding?: Finding; observed?: string }>;
 
 /**
  * Run one probe: guard the context, collect signals, capture `before` (call it right
@@ -170,8 +171,10 @@ type Body = (ctx: {
  * earlier probe: it is recorded as `storedXss` for triage and does not mask this probe's
  * own oracle. A pageerror is a finding when the body flagged none. A body that throws is
  * a probe-error — the probe was wrong, not the app. Images are written to disk only for a
- * finding or a probe-error, or for a pass when PASS_SHOTS is on. A body that overwrote a
- * record this run did not create returns `restore`, which runs after the `after` image.
+ * finding or a probe-error, or for a pass when PASS_SHOTS is on.
+ * A body that is about to overwrite a record this run did not create registers its undo
+ * with `restoreWith` BEFORE the overwrite, so the restore runs even when the body throws.
+ * It runs last, after the `after` image.
  */
 export async function probe({ page, context }: { page: Page; context: BrowserContext }, meta: Meta, body: Body) {
   const signals = watch(page);
@@ -195,10 +198,12 @@ export async function probe({ page, context }: { page: Page; context: BrowserCon
         xssAtBefore = xssCount();
         beforeImage = await capture(page, meta.fullPage ?? false);
       },
+      restoreWith: (fn) => {
+        restore = fn;
+      },
     });
     finding = r.finding;
     observed = r.observed ?? '';
-    restore = r.restore;
     if (xssCount() > xssAtBefore) {
       finding = { oracle: 'xss-executed', expected: 'probe input rendered as inert text', actual: 'injected handler ran (console marker fired)' };
     }
@@ -210,12 +215,13 @@ export async function probe({ page, context }: { page: Page; context: BrowserCon
     outcome = 'probe-error';
     error = String(e).slice(0, 300);
   }
+  const afterImage = await capture(page, meta.fullPage ?? false);
   const evidence: string[] = [];
   if (outcome !== 'pass' || PASS_SHOTS) {
     evidence.push(save(`${prefix}-before`, beforeImage));
-    evidence.push(save(`${prefix}-after`, await capture(page, meta.fullPage ?? false)));
+    evidence.push(save(`${prefix}-after`, afterImage));
   }
-  // Guardrail 8: undo the overwrite only now, so the image shows the probe's result and
+  // Guardrail 8: undo the overwrite only now, so the images show the probe's result and
   // the recorded signals are the ones the oracle judged, not the restore's own requests.
   const judged: Signals = JSON.parse(JSON.stringify(signals));
   let restoreError = '';
@@ -241,7 +247,7 @@ export async function probe({ page, context }: { page: Page; context: BrowserCon
 // One test() per planned probe. The two below are worked examples for a spec
 // that renames a dashboard — replace them with the probes in plan.md. Both
 // overwrite /dashboards/abc, a record this run did not create, so each reads the
-// current name first and returns a `restore` that renames it back (guardrail 8).
+// current name first and registers a restore that renames it back (guardrail 8).
 
 async function currentName(page: Page): Promise<string> {
   return (await page.getByRole('heading', { level: 1 }).textContent()) ?? '';
@@ -258,11 +264,11 @@ test('ADV-01 input: markup and script probe in the name field', async ({ page, c
   await probe(
     { page, context },
     { id: 'ADV-01', spec: 'Spec-1', category: 'input', probe: 'markup + script probe in "Dashboard name"', slug: 'markup-name' },
-    async ({ page, steps, before }) => {
+    async ({ page, steps, before, restoreWith }) => {
       await page.goto('/dashboards/abc');
       steps.push('open /dashboards/abc');
       const original = await currentName(page);
-      const restore = () => rename(page, original);
+      restoreWith(() => rename(page, original));
       await page.getByRole('button', { name: 'Rename' }).click();
       steps.push('click {role: "button", name: "Rename"}');
       await page.getByRole('textbox', { name: 'Dashboard name' }).fill(markupProbe('ADV-01') + PROBE_TEXT.script);
@@ -275,9 +281,9 @@ test('ADV-01 input: markup and script probe in the name field', async ({ page, c
       const literalShown = await page.getByText(`<b data-adv="1">${own}`, { exact: false }).count();
       const markShown = await page.getByText(own, { exact: false }).count();
       if (!literalShown && markShown) {
-        return { finding: { oracle: 'markup-rendered', expected: 'the name shows the literal <b …> text', actual: 'the <b> tag rendered as HTML' }, restore };
+        return { finding: { oracle: 'markup-rendered', expected: 'the name shows the literal <b …> text', actual: 'the <b> tag rendered as HTML' } };
       }
-      return { observed: literalShown ? 'probe text rendered as literal, inert text' : 'name rejected; probe text not shown', restore };
+      return { observed: literalShown ? 'probe text rendered as literal, inert text' : 'name rejected; probe text not shown' };
     },
   );
 });
@@ -286,11 +292,11 @@ test('ADV-02 timing: double-click Save sends one request', async ({ page, contex
   await probe(
     { page, context },
     { id: 'ADV-02', spec: 'Spec-1', category: 'timing', probe: 'double-click "Save"', slug: 'double-click-save' },
-    async ({ page, signals, steps, before }) => {
+    async ({ page, signals, steps, before, restoreWith }) => {
       await page.goto('/dashboards/abc');
       steps.push('open /dashboards/abc');
       const original = await currentName(page);
-      const restore = () => rename(page, original);
+      restoreWith(() => rename(page, original));
       await page.getByRole('button', { name: 'Rename' }).click();
       await page.getByRole('textbox', { name: 'Dashboard name' }).fill(`${MARK} Q3`);
       steps.push(`fill {role: "textbox", name: "Dashboard name"} with "${MARK} Q3"`);
@@ -300,9 +306,9 @@ test('ADV-02 timing: double-click Save sends one request', async ({ page, contex
       await settle(page);
       const patches = signals.mutations.filter((m) => m.startsWith('PATCH /api/dashboards/'));
       if (patches.length > 1) {
-        return { finding: { oracle: 'duplicate-mutation', expected: 'one PATCH /api/dashboards/abc', actual: `${patches.length} PATCH requests from one double-click` }, restore };
+        return { finding: { oracle: 'duplicate-mutation', expected: 'one PATCH /api/dashboards/abc', actual: `${patches.length} PATCH requests from one double-click` } };
       }
-      return { observed: `${patches.length} PATCH request(s); one success state`, restore };
+      return { observed: `${patches.length} PATCH request(s); one success state` };
     },
   );
 });
