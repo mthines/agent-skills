@@ -512,7 +512,7 @@ The value is one JSON object with a version stamp:
     "sticky_comment_id": 2145678901,
     "sticky_url": "https://github.com/o/r/pull/123#issuecomment-2145678901",
     "bot_login": "claude[bot]",
-    "runs": [{ "sha": "70cf147", "mode": "full", "verdict": "FAIL", "at": "2026-08-15T09:12:00Z" }],
+    "runs": [{ "sha": "70cf147", "mode": "full", "verdict": "FAIL", "at": "2026-08-15T09:12:00Z", "open": 4, "blocking": 1 }],
     "open_thread_ids": [123, 456],
     "carried_findings": [
       { "path": "src/api/client.ts", "line": 214, "prefix": "issue", "body": "retry loop re-sends the request body after a 413.", "confidence": 92, "first_seen_sha": "70cf147" }
@@ -534,15 +534,14 @@ The value is one JSON object with a version stamp:
 | `commit` | provenance | The `HEAD_SHA` the writing run reviewed; same value as `runs[-1].sha`. |
 | `sticky_comment_id` · `sticky_url` | Step 4a | A **cache, never an authority** — Step 4a re-scans by marker when absent or the `PATCH` 404s (a human can delete a comment any time). |
 | `bot_login` | the identity ladder | This agent's own login, read off its own sticky — rung 2 of `prior-comment-awareness.md § fetch existing PR comment state`, keeping dedup and Step 2.9c working when `/user` 401s. |
-| `runs[]` | `PRIOR_SHA`, `LAST_FULL_SHA`, `INCR_RUNS_SINCE_FULL`, Step 5 | Oldest first, **capped at 50** — drop from the front. `verdict` only feeds Step 5's report line; nothing branches on it. |
+| `runs[]` | `PRIOR_SHA`, `LAST_FULL_SHA`, `INCR_RUNS_SINCE_FULL`, Step 5, the report's `**Progress:**` line | Oldest first, **capped at 50** — drop from the front. `open`/`blocking` are finalize's `round` (Step 4c). Nothing branches on `verdict`. |
 | `open_thread_ids` | `RESOLVED_SINCE_PRIOR` | Gate 3's open set after the writing run's Step 2.9c. **Top-level, not per-run** — current state, not history. |
-| `carried_findings[]` | `CARRIED_FINDINGS` | The deferred findings from Step 2.9b, **structured** — no `(confidence 84)` to re-parse out of a bullet. Capped at 50. |
+| `carried_findings[]` | `CARRIED_FINDINGS` | The deferred findings from Step 2.9b, **structured**. Capped at 50. |
 | `diagnostics` | `PRIOR_DIAGNOSTICS` | The anchorless outputs, structured. `optimality_cards` holds each card's markdown verbatim; capped at 2, same as Step 2.4c's proposal cap. |
 
-**The record is bounded by construction**, which is why there is no truncation ladder here: 50
-runs at ~80 bytes, 50 findings at ~200 bytes, and 2 cards at ~1 KB sit an order of magnitude
-under the 64 KB value cap. Enforce the three caps on write (Step 4c) and the size takes care of
-itself.
+**The record is bounded by construction**, so there is no truncation ladder: 50 runs at ~110
+bytes, 50 findings at ~200 bytes, and 2 cards at ~1 KB sit an order of magnitude under the 64 KB
+value cap. Enforce the three caps on write (Step 4c).
 
 ### Read the record
 

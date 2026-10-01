@@ -149,7 +149,7 @@ With `--overlaps`, the script asks GitHub for the 30 most recently updated open 
 
 | `kind` | Meaning | Effect |
 | --- | --- | --- |
-| `same-symbol` | both PRs change the same exported symbol | a `standard`-tier trigger, and a consequence note in `Impact` |
+| `same-symbol` | both PRs change the same exported symbol | a `standard`-tier trigger, and a consequence note in `What this change reaches` |
 | `same-file` | both touch the file, different symbols | a note only |
 
 ```markdown
@@ -173,6 +173,25 @@ Static search under-counts dynamic dispatch, reflection, string-keyed registries
 ```
 
 A finding cites the code the graph pointed at. The graph itself is never the evidence.
+
+## In the report
+
+The trace renders as the report's `What this change reaches` accordion, a Mermaid diagram above the
+bullets ([`report-rendering.md` § What a reader sees first](./report-rendering.md#what-a-reader-sees-first--reach-coverage-progress)).
+Supply `IMPACT.symbols[].consumers` so the diagram can show folders rather than counts:
+
+1. One entry per consumer **file** from `symbols[].consumers[]` (dedupe call sites to files).
+2. `status` is what the trace established for that file: `finding` (an inline finding anchors there), `verified` (read and holds), or `untraced` (in the graph, not read).
+3. List every `finding` and `verified` file. The counts must equal `findings` and `verified_unaffected`, so an unlisted file reads as `? not checked`.
+
+```json
+{ "name": "retryRequest", "path": "src/api/client.ts", "change": "signature",
+  "consumer_files": 14, "verified_unaffected": 5, "findings": 1,
+  "consumers": [ { "path": "src/jobs/sync.ts", "line": 88, "status": "finding" },
+                 { "path": "src/jobs/export.ts", "status": "verified" } ] }
+```
+
+❌ WRONG — marking a file `verified` because the graph found no break in it: only a file the trace read is `verified`.
 
 ## Degradation
 

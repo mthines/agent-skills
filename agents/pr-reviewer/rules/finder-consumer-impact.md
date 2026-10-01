@@ -74,7 +74,7 @@ It is also why the workspace is a hard requirement: without it, step 4 is guessw
 | --- | --- | --- |
 | A caller's expectation is broken and unguarded | `issue` candidate | inline, at the caller |
 | The change requires a follow-up the diff does not make (a migration, a doc, a version bump) | `suggestion` candidate | inline |
-| The change is **safe but wide** | a **consequence note** — report-only, not a finding, never inline | the `Impact` section |
+| The change is **safe but wide** | a **consequence note** — report-only, not a finding, never inline | the `What this change reaches` section, with each traced file in `consumers[]` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)) |
 
 The third one is new, and it is the point.
 
@@ -115,7 +115,7 @@ Be explicit about the limits, because a confident trace over a boundary it canno
 
 | Boundary | Behavior |
 | --- | --- |
-| A consumer in another repository | out of scope. Note it in `Impact` as "consumers outside this repo were not traced". |
+| A consumer in another repository | out of scope. Note it in `What this change reaches` as "consumers outside this repo were not traced". |
 | Dynamic dispatch, reflection, a string-keyed registry, DI | the graph under-counts here. If the symbol looks registry-registered, say the consumer list may be incomplete rather than reporting it as complete. |
 | A generated file | trace it, but do not emit a finding on generated output — emit on the generator's input. |
 | `DEPTH_CAPABILITY = diff-only` | the finder does not run. It cannot; and a version of it that guesses from the diff is the thing this rule exists to prevent. |
