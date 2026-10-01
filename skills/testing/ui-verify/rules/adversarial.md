@@ -64,20 +64,22 @@ Why it is shaped this way, and the sources behind the catalog: [`references/adve
    - **dialogs** — a `dialog` or `alertdialog` role;
    - **auth** — whether the overlay's `auth.strategy` is anything but `none`.
 2. Select every catalog row whose **Applies when** matches that surface. Never plan a probe on a control [guardrail 2](#guardrails) forbids, unless it targets a record this run created. Name every unselected row in `categories_skipped` with reason `not applicable: <which surface is missing>`.
-3. Order the selected probes by the catalog's **Priority**, then cut at the [budget](#budget).
+3. Plan **breadth-first**: take the first probe of every selected row in **Priority** order, then the second probe of every row, and so on, until the [probe caps](#budget) are reached. Each row lists its probes most-severe-first. Every applicable probe the caps left out is named in `notes` — a planning cut does not make the pass `partial`.
 4. Write `<output dir>/plan.md`, one line per probe: `ADV-NN | Spec-N | category | probe | oracle`.
 
 ```text
-✅ RIGHT — derived from Spec 1 ("rename a dashboard": a textbox, a Save button, network: PATCH … returned 200)
+✅ RIGHT — derived from Spec 1 ("rename a dashboard": a textbox, a Save button, network: PATCH … returned 200), breadth-first, first 8 of 24
 ADV-01 | Spec-1 | input      | markup + script probe in "Dashboard name"   | xss-executed, markup-rendered
 ADV-02 | Spec-1 | timing     | double-click "Save"                          | duplicate-mutation
 ADV-03 | Spec-1 | network    | PATCH /api/dashboards/* answers 500          | false-success, silent-failure, input-lost
-ADV-04 | Spec-1 | input      | whitespace-only name                         | accepted-invalid
+ADV-04 | Spec-1 | navigation | Back after Save, then Forward                | back-resubmit, crash
 ADV-05 | Spec-1 | keyboard   | reach and activate "Save" by keyboard only   | keyboard-unreachable
 ADV-06 | Spec-1 | layout     | 320 px viewport after the rename             | overflow
+ADV-07 | Spec-1 | input      | whitespace-only name                         | accepted-invalid
+ADV-08 | Spec-1 | timing     | 5 rapid clicks on "Save"                     | duplicate-mutation
 
 ❌ WRONG — the whole catalog, mechanically, against a spec with no collection, no dialog, and no auth
-ADV-07 | Spec-1 | data       | 500-row mocked list                          | (Spec 1 shows no list)
+ADV-09 | Spec-1 | data       | 500-row mocked list                          | (Spec 1 shows no list)
 ```
 
 ## Step 2: Probe catalog and oracles
@@ -88,7 +90,7 @@ The literal probe values live in the [harness template](../templates/adversarial
 
 | Category | Applies when the spec has… | Probes | Priority |
 | --- | --- | --- | --- |
-| `input` | an input | empty; whitespace-only; padded `  value  `; 1000 characters (and `maxlength` + 1 when set); unicode (accents, CJK, ZWJ emoji, RTL, zero-width); markup probe; script probe; template probe `{{7*7}}` | 1 |
+| `input` | an input | markup + script probe (one value); whitespace-only; 1000 characters (and `maxlength` + 1 when set); empty; unicode (accents, CJK, ZWJ emoji, RTL, zero-width); padded `  value  `; template probe `{{7*7}}` | 1 |
 | `timing` | a mutating action | double-click; 5 rapid clicks; click then navigate away before the response | 1 |
 | `network` | a request (Playwright only) | the action's request answers 500; aborts with `timedout`; is delayed 3 s; returns malformed JSON; `context.setOffline(true)` before the action. A probe's own `page.route` ends with `route.fulfill`, `route.abort`, or `route.fallback()`, never `route.continue()`, which bypasses the guard | 2 |
 | `navigation` | a route or a mutating action | Back after submit, then Forward; reload between fill and submit; open the spec `url:` in a fresh page; replace a `{placeholder}` with `ui-verify-adv-missing` | 2 |
@@ -231,7 +233,7 @@ adversarial:
 
 Hard rules for the block:
 
-- `status: ran` when every planned probe ran; `partial` when the budget or a blocked origin cut probes (say which in `reason`); `skipped` when nothing ran.
+- `status: ran` when every planned probe ran; `partial` when the wall clock, the image cap, a blocked origin, or a 429 stopped planned probes mid-run (say which in `reason`); `skipped` when nothing ran. Probes the probe caps left out at planning are listed in `notes` and never make the pass `partial`.
 - `findings` and `passed` together list every probe that ran — the passes are the coverage story, not filler.
 - Omit `trace` when there are no findings. Omit `evidence` paths that failed to write, and say so in `notes`.
 - The block never contains a `verdict` key. The happy-path verdict is not yours to state.
@@ -255,11 +257,11 @@ These hold on every probe, under both drivers. Guardrails 1 and 3 are enforced b
 | Limit | Default | Override |
 | --- | --- | --- |
 | Probes per run | 24 | `adversarial.max_probes` |
-| Probes per spec | 8 | none |
+| Probes per spec | `max_probes` ÷ the number of probed specs, rounded up — 24 for one spec, 8 for three | follows `adversarial.max_probes` |
 | Wall clock for the pass | 10 minutes | `adversarial.time_budget_minutes` |
 | Images per run | 60 | none — drop passed-probe images first |
 
-Stop at the first limit reached, return `status: partial`, and name the limit in `reason`.
+The two probe caps apply at planning ([Step 1](#step-1-plan-probes-from-the-spec)). The wall clock and the image cap apply while probes run: stop at the first one reached, return `status: partial`, and name the limit in `reason`.
 
 ## Driver capabilities
 
