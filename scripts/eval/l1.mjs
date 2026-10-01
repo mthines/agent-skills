@@ -10533,7 +10533,10 @@ const isPollBlock = (block) =>
     "ui-verify SKILL.md lost --no-adversarial in argument-hint or its link to rules/adversarial.md");
 
   // G87b — never verdict-changing: stated in Step 4b and Step 5, and the block schema has no verdict key.
-  const advBlock = (ADV.match(/```yaml\nadversarial:\n[\s\S]*?\n```/) || [""])[0];
+  // Scoped to § Step 6: § Configuration also opens a ```yaml adversarial: block, so a
+  // whole-file first match would read whichever section happens to come first.
+  const STEP6 = sectionOr("skills/testing/ui-verify/rules/adversarial.md", "## Step 6: Return the adversarial block");
+  const advBlock = (STEP6.match(/```yaml\nadversarial:\n[\s\S]*?\n```/) || [""])[0];
   s.check("G87b the guard found adversarial.md's return-block schema", advBlock.length > 200,
     "the ```yaml adversarial: block in rules/adversarial.md § Step 6 is missing");
   s.check("G87b the adversarial block schema carries no verdict key",
