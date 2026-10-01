@@ -23,6 +23,12 @@
 // Identity and VCS attributes go on EVERY span, as the plugin does: gen_ai.agent.name,
 // gen_ai.conversation.id, dash0.gen_ai.vcs.* (repository, owner, PR url, head ref and revision).
 //
+// THE SCOPE. AI SDLC Insights lists a span as a coding session only under the instrumentation scope
+// the Dash0 agent plugin emits (INSIGHTS_SCOPE_NAME). Where no plugin records the session and the
+// run IS the session (SESSION_HARNESSES: agent0), the run exports under that scope; everywhere else
+// under SCOPE_NAME, because there the plugin already emits `invoke_agent pr-reviewer` and a second
+// one under its scope would count every review twice (scopeNameFor).
+//
 // THE RUN COUNTER. `pr_review.runs` is what a dashboard counts runs with: a CUMULATIVE sum, one
 // series per verdict per run (the resource's service.instance.id is the run's trace id). `finish`
 // writes its 0 points backdated across the run and the final 1 in the same export as the trace
@@ -193,6 +199,30 @@ const GAP_MIN_NS = 1_000_000_000n;
 /** Harnesses the Dash0 agent plugin already records as coding sessions. */
 export const PLUGIN_HARNESSES = new Set(["claude-code", "cursor", "codex", "github-copilot-cli"]);
 
+/** The instrumentation scope AI SDLC Insights reads coding sessions from: the one the Dash0 agent
+ *  plugin emits under (dash0-agent-plugin internal/otlp/trace.go). A span under any other scope is
+ *  never listed as a session there. */
+export const INSIGHTS_SCOPE_NAME = "dash0-agent-plugin";
+
+/** Harnesses where this run IS the coding session — no harness plugin records one — so the run
+ *  exports under INSIGHTS_SCOPE_NAME. Never a PLUGIN_HARNESSES member, and never a CI or smoke
+ *  harness, which would list synthetic runs as sessions. */
+export const SESSION_HARNESSES = new Set(["agent0"]);
+
+/** The scope a run exports under, from the harness its spans name (identityAttributes).
+ *  @param {string|null|undefined} harness @returns {string} */
+export function scopeNameFor(harness) {
+  return harness && SESSION_HARNESSES.has(harness) ? INSIGHTS_SCOPE_NAME : SCOPE_NAME;
+}
+
+/** The OpenCode tool call a command runs in (OpenCode sets OPENCODE_PARENT_TOOL_CALL_ID per tool
+ *  call; an Agent0 sandbox runs OpenCode). Anything else is not an id and is ignored.
+ *  @param {NodeJS.ProcessEnv} env @returns {string|null} */
+export function detectOpencodeToolCallId(env) {
+  const v = String(env.OPENCODE_PARENT_TOOL_CALL_ID || "");
+  return /^[A-Za-z0-9_.:-]{1,128}$/.test(v) ? v : null;
+}
+
 /** Every attribute key a span may carry. The self-test holds every emitted span to it, so a new
  *  key is a deliberate edit here rather than a drift into Dash0's views. */
 export const ALLOWED_SPAN_KEY = (/** @type {string} */ k) =>
@@ -347,7 +377,8 @@ function spanIdFor(runId, key) {
  * @typedef {{ t: string, ns: string, [k: string]: any }} LedgerRecord
  * @typedef {{ repo?: string, number?: number, head_sha?: string, head_ref?: string, mode?: string,
  *   tier?: string, thoroughness?: number, topology?: string, model?: string,
- *   conversation_id?: string, harness?: string, user_name?: string, version?: string }} RunFacts
+ *   conversation_id?: string, harness?: string, user_name?: string, version?: string,
+ *   opencode_parent_tool_call_id?: string }} RunFacts
  */
 
 /** @param {string} runDir @returns {string} */
@@ -396,6 +427,8 @@ export function beginRun(runDir, facts, opts = {}) {
     const prev = /** @type {RunFacts} */ (existing.facts || {});
     const otherPr = (clean.repo && prev.repo && clean.repo !== prev.repo) || (clean.number && prev.number && clean.number !== prev.number);
     if (!records.some((r) => r.t === "finish") && !otherPr) {
+      // The tool call that STARTED the run stays: a later begin runs in a later tool call.
+      if (prev.opencode_parent_tool_call_id) delete clean.opencode_parent_tool_call_id;
       appendRecord(runDir, { t: "facts", facts: clean });
       return String(existing.run_id);
     }
@@ -598,10 +631,12 @@ export function toExporter(run, env) {
   const { endpoint, headers } = exportTarget(env);
   const f = run.facts;
   const traceId = traceIdFor(run.runId);
+  const identity = identityAttributes(run, env);
   const ex = new OtlpExporter({
     endpoint,
     headers,
-    scopeName: SCOPE_NAME,
+    // Insights' scope only where this run is the session (SESSION_HARNESSES); the metrics share it.
+    scopeName: scopeNameFor(identity["gen_ai.harness.name"]),
     scopeVersion: f.version || "1",
     histBounds: HIST_BOUNDS,
     resource: {
@@ -612,11 +647,10 @@ export function toExporter(run, env) {
       // series, and a counter that ends on the same value again reads as no change.
       "service.instance.id": traceId,
       "gen_ai.agent.name": AGENT_NAME,
-      "gen_ai.harness.name": identityAttributes(run, env)["gen_ai.harness.name"],
+      "gen_ai.harness.name": identity["gen_ai.harness.name"],
     },
   });
   ex.traceId = traceId;
-  const identity = identityAttributes(run, env);
   const rootId = spanIdFor(run.runId, "root");
   ex.spans.push({
     traceId: ex.traceId,
@@ -634,7 +668,10 @@ export function toExporter(run, env) {
       "gen_ai.conversation.name": f.conversation_id ? null : conversationName(f),
       ...ns({
         mode: f.mode, tier: f.tier, thoroughness: f.thoroughness, topology: f.topology,
-        "pr.number": f.number, ...run.runAttrs,
+        "pr.number": f.number,
+        // The OpenCode tool call that started the run — the handle back to the Agent0 run.
+        "opencode.parent_tool_call_id": f.opencode_parent_tool_call_id,
+        ...run.runAttrs,
       }),
       ...(run.status === 2 ? { "error.type": "review_failed" } : {}),
     }),
@@ -779,10 +816,11 @@ export async function finishRun(runDir, opts = {}, env = process.env) {
  * The facts a script knows about the reviewer itself: its version and the git identity, the same
  * source the Dash0 agent plugin reads for `user.name`.
  * @param {NodeJS.ProcessEnv} env @returns {{ version?: string, user_name?: string, harness?: string,
- *   conversation_id?: string }}
+ *   conversation_id?: string, opencode_parent_tool_call_id?: string }}
  */
 export function hostFacts(env = process.env) {
-  /** @type {{ version?: string, user_name?: string, harness?: string, conversation_id?: string }} */
+  /** @type {{ version?: string, user_name?: string, harness?: string, conversation_id?: string,
+   *   opencode_parent_tool_call_id?: string }} */
   const out = {};
   const here = dirname(fileURLToPath(import.meta.url));
   // The checkout this script runs from first; AGENT_SKILLS_COMMIT (the Agent0 setup script's pin)
@@ -799,6 +837,8 @@ export function hostFacts(env = process.env) {
   if (harness) out.harness = harness;
   const conv = detectConversationId(env);
   if (conv) out.conversation_id = conv;
+  const toolCall = detectOpencodeToolCallId(env);
+  if (toolCall) out.opencode_parent_tool_call_id = toolCall;
   return out;
 }
 
@@ -1240,6 +1280,31 @@ async function selfTest() {
   ok("joined to the harness session through gen_ai.conversation.id, the harness is named",
     withHarness({ harness: "claude-code", conversation_id: "sess-1" }) === "claude-code");
   ok("a harness the plugin does not cover (agent0, CI) is always named", withHarness({ harness: "agent0" }) === "agent0");
+
+  // The scope rule: AI SDLC Insights' scope only where the run IS the session.
+  const scopeOf = (/** @type {RunFacts} */ extra) => {
+    const e = toExporter({ ...run, facts: { ...facts, ...extra } }, env);
+    return [/** @type {any} */ (e.tracePayload()).resourceSpans[0].scopeSpans[0].scope.name,
+      /** @type {any} */ (e.metricPayload()).resourceMetrics[0].scopeMetrics[0].scope.name];
+  };
+  ok("an agent0 run exports its trace and metrics under the AI SDLC Insights scope",
+    scopeOf({ harness: "agent0" }).every((n) => n === INSIGHTS_SCOPE_NAME), scopeOf({ harness: "agent0" }).join());
+  ok("every other run keeps agent-skills/pr-reviewer: a plugin harness joined or not, CI, smoke, and no harness",
+    [{ harness: "claude-code" }, { harness: "claude-code", conversation_id: "sess-1" }, { harness: "cursor", conversation_id: "s" },
+      { harness: "github-actions" }, { harness: "local-smoke" }, {}].every((x) => scopeOf(x).every((n) => n === SCOPE_NAME)));
+  ok("no harness is both a session harness and a plugin harness (a review is never counted twice)",
+    [...SESSION_HARNESSES].every((h) => !PLUGIN_HARNESSES.has(h)));
+
+  // The OpenCode tool call that started the run: the handle back to the Agent0 run.
+  ok("hostFacts records OPENCODE_PARENT_TOOL_CALL_ID and ignores a value that is not an id",
+    hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "toolu_vrtx_01abc" }).opencode_parent_tool_call_id === "toolu_vrtx_01abc"
+      && hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "x; rm -rf /" }).opencode_parent_tool_call_id === undefined
+      && hostFacts({}).opencode_parent_tool_call_id === undefined);
+  const tcSpans = /** @type {any} */ (toExporter({ ...run, facts: { ...facts, opencode_parent_tool_call_id: "toolu_1" } }, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans;
+  ok("the root carries pr_review.opencode.parent_tool_call_id, no other span does, and a run without one omits it",
+    get(tcSpans[0], "pr_review.opencode.parent_tool_call_id") === "toolu_1"
+      && tcSpans.slice(1).every((/** @type {any} */ s) => get(s, "pr_review.opencode.parent_tool_call_id") === undefined)
+      && get(root, "pr_review.opencode.parent_tool_call_id") === undefined);
   ok("providerForModel follows the plugin's mapping",
     providerForModel("claude-opus-5-5") === "anthropic" && providerForModel("o3") === "openai" && providerForModel("gemini-2") === "gcp.gemini" && providerForModel("x") === null);
   ok("parseHeaders decodes percent-encoded values (the OTel spec form)",
@@ -1277,6 +1342,12 @@ async function selfTest() {
     const id1 = beginRun(runDir, facts);
     const id2 = beginRun(runDir, { model: "claude-opus-5-5" });
     ok("begin is idempotent: a second begin adds facts to the same run", id1 === id2 && readLedger(runDir).filter((r) => r.t === "run").length === 1);
+    const tcDir = join(dir, "toolcall");
+    beginRun(tcDir, { ...facts, opencode_parent_tool_call_id: "toolu_first" });
+    beginRun(tcDir, { opencode_parent_tool_call_id: "toolu_later", model: "claude-opus-5-5" });
+    const tcRun = buildRun(readLedger(tcDir));
+    ok("a later begin adds facts but keeps the tool call that started the run",
+      tcRun?.facts.opencode_parent_tool_call_id === "toolu_first" && tcRun?.facts.model === "claude-opus-5-5");
     appendRecord(runDir, { t: "step", phase: "start", name: "prepare" });
     appendRecord(runDir, { t: "step", phase: "end" });
     const otherDir = join(dir, "shared");
