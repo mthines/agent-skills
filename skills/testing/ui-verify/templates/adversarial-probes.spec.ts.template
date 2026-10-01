@@ -154,7 +154,15 @@ export async function overflowsHorizontally(page: Page): Promise<boolean> {
 }
 
 type Finding = { oracle: string; expected: string; actual: string };
-type Meta = { id: string; spec: string; category: string; probe: string; slug: string; fullPage?: boolean };
+type Meta = {
+  id: string;
+  spec: string;
+  category: string;
+  probe: string;
+  slug: string;
+  fullPage?: boolean;
+  injection?: boolean; // the probe typed the script probe: reload once to catch STORED injection
+};
 type Body = (ctx: {
   page: Page;
   signals: Signals;
@@ -174,7 +182,8 @@ type Body = (ctx: {
  * finding or a probe-error, or for a pass when PASS_SHOTS is on.
  * A body that is about to overwrite a record this run did not create registers its undo
  * with `restoreWith` BEFORE the overwrite, so the restore runs even when the body throws.
- * It runs last, after the `after` image.
+ * It runs last: after the `after` image and, for an `injection` probe, after the reload
+ * that catches a payload which only runs on a fresh load.
  */
 export async function probe({ page, context }: { page: Page; context: BrowserContext }, meta: Meta, body: Body) {
   const signals = watch(page);
@@ -216,10 +225,27 @@ export async function probe({ page, context }: { page: Page; context: BrowserCon
     error = String(e).slice(0, 300);
   }
   const afterImage = await capture(page, meta.fullPage ?? false);
+  // Stored injection: reload once BEFORE the restore removes the payload, so a script that
+  // only runs on a fresh load is caught by the probe that typed it.
+  let reloadImage: Buffer | null = null;
+  if (meta.injection && outcome !== 'probe-error') {
+    const firedBeforeReload = xssCount();
+    await page.reload().catch(() => {});
+    await settle(page);
+    if (xssCount() > firedBeforeReload) {
+      reloadImage = await capture(page, meta.fullPage ?? false);
+      finding =
+        finding?.oracle === 'xss-executed'
+          ? { ...finding, actual: `${finding.actual}, and again on a fresh load (stored)` }
+          : { oracle: 'xss-executed', expected: 'probe input rendered as inert text', actual: 'stored: injected handler ran on a fresh load' };
+      outcome = 'finding';
+    }
+  }
   const evidence: string[] = [];
   if (outcome !== 'pass' || PASS_SHOTS) {
     evidence.push(save(`${prefix}-before`, beforeImage));
     evidence.push(save(`${prefix}-after`, afterImage));
+    if (reloadImage) evidence.push(save(`${prefix}-reload`, reloadImage));
   }
   // Guardrail 8: undo the overwrite only now, so the images show the probe's result and
   // the recorded signals are the ones the oracle judged, not the restore's own requests.
@@ -263,7 +289,7 @@ async function rename(page: Page, name: string) {
 test('ADV-01 input: markup and script probe in the name field', async ({ page, context }) => {
   await probe(
     { page, context },
-    { id: 'ADV-01', spec: 'Spec-1', category: 'input', probe: 'markup + script probe in "Dashboard name"', slug: 'markup-name' },
+    { id: 'ADV-01', spec: 'Spec-1', category: 'input', probe: 'markup + script probe in "Dashboard name"', slug: 'markup-name', injection: true },
     async ({ page, steps, before, restoreWith }) => {
       await page.goto('/dashboards/abc');
       steps.push('open /dashboards/abc');

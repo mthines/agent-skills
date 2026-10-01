@@ -157,7 +157,7 @@ Classify every probe that did not pass before reporting it.
 1. **Probe error, not a finding** — the probe acted on the wrong element, asserted behaviour the spec never implied (clicking a deliberately disabled button), or timed out on its own locator. Fix the probe once; when it fails a second time, record it as `probe-error` in `notes` and move on.
 2. **Confirm** — replay the probe once. A finding that reproduces is reported with `reproduced: 2/2`. One that does not goes to `unconfirmed`, never to `findings`.
 3. **Name the oracle** — every finding cites exactly one oracle from the table, the most severe when several fired, and its `expected` and `actual` lines state observable facts.
-4. **Re-attribute stored injection** — a result with `storedXss: true` saw the `ui-verify-adv-xss` marker fire on page load, before its own hostile action. That is stored injection from the earlier probe that typed the script probe: report it once, under that earlier probe, as `xss-executed` with `stored` in `actual`, and judge the later probe on its own oracle.
+4. **Re-attribute stored injection** — a result with `storedXss: true` saw the `ui-verify-adv-xss` marker fire on page load, before its own hostile action. That is stored injection from the earlier probe that typed the script probe: report it once, under that earlier probe, as `xss-executed` with `stored` in `actual`, and judge the later probe on its own oracle. An `injection: true` probe already reloads once before its restore, so stored injection normally surfaces on the probe that typed it, with a `-reload.png` image; `storedXss: true` on a later probe means that reload missed it or the restore failed.
 
 ```yaml
 # ❌ WRONG — no oracle, a taste judgment, no reproduction
@@ -174,7 +174,7 @@ Classify every probe that did not pass before reporting it.
 
 ## Step 5: Write the evidence report
 
-- **Images.** `<output dir>/captures/adv-<NN>-<category>-<slug>-before.png` (right before the hostile action) and `-after.png` (the state the oracle judged).
+- **Images.** `<output dir>/captures/adv-<NN>-<category>-<slug>-before.png` (right before the hostile action) and `-after.png` (the state the oracle judged), plus `-reload.png` when an `injection` probe's payload ran again on a fresh load.
   Every finding carries both, and so does every passed probe, unless `--no-screenshots`, which drops passed-probe images only — a finding always keeps its evidence.
   Full-page for `layout` probes, viewport otherwise.
   Always `animations: 'disabled'`, `caret: 'hide'`, and the configured `mask_testids`, as the template already does.
