@@ -43,6 +43,15 @@ Apply matched lessons as authoring constraints:
 
 Lessons are **advisory**. They shape the spec; they never make you skip authoring a spec or invent a step you cannot justify from the diff.
 
+## Read at run time
+
+Before [`runner.md` Step 4b](./runner.md#step-4b-adversarial-pass--try-to-break-it), list `ui-verify-lessons` narrow-to-broad and pass the bodies whose **Applies when** line matches the probed specs on the adversarial pass's `Lessons:` input line — `none` when nothing matches or `memory.*` is not connected:
+
+```text
+memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::ui-verify-lessons"], limit: 50 }
+memory.list { scope: "global",               tags: ["loop::ui-verify-lessons"], limit: 50 }
+```
+
 ## Write at run time
 
 After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons` entry **only** when a spec failed for a reason a better spec would have avoided:
@@ -56,7 +65,7 @@ After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons`
 **Do not write** when:
 
 - The only failure was a locator miss `aw-tester` healed — that is `aw-tester-lessons`, and `aw-tester` writes it.
-- Every spec passed cleanly.
+- Every spec passed cleanly and no adversarial probe hit a repeated `probe-error`.
 - The run stopped at `inconclusive` because the preview was not deployed — that is a timing outcome, not a lesson.
 - `memory.*` is not connected.
 

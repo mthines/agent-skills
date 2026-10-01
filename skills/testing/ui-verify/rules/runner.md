@@ -161,7 +161,7 @@ Task(
 )
 ```
 
-Append `--no-screenshots` to the `Mode:` line when the caller passed it.
+Fill `Lessons:` per [`memory.md § Read at run time`](./memory.md#read-at-run-time), and append `--no-screenshots` to the `Mode:` line when the caller passed it.
 On a Dash0 Agent0 sandbox, dispatch it as [`agent0-runtime.md § Dispatch the adversarial pass`](./agent0-runtime.md#dispatch-the-adversarial-pass) shows instead.
 A reply with no `adversarial:` block is `adversarial: not run (<first line of the reply>)` — never an empty findings list.
 
