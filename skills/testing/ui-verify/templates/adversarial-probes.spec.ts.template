@@ -12,7 +12,7 @@
 // NAMES — this file never holds a secret.
 
 import { test, type Page, type BrowserContext } from '@playwright/test';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const OUT = process.env.ADV_OUT!;                          // <output dir>, absolute
@@ -112,19 +112,27 @@ async function guard(context: BrowserContext, s: Signals) {
   });
 }
 
-async function shot(page: Page, name: string, fullPage: boolean): Promise<string> {
-  const path = join(CAPTURES, `${name}.png`);
+async function capture(page: Page, fullPage: boolean): Promise<Buffer | null> {
   try {
-    await page.screenshot({
-      path,
+    return await page.screenshot({
       fullPage,
       animations: 'disabled',
       caret: 'hide',
       mask: MASK_TESTIDS.map((id) => page.getByTestId(id)),
     });
+  } catch {
+    return null; // a capture that cannot be taken is a note, never a finding
+  }
+}
+
+function save(name: string, image: Buffer | null): string {
+  if (!image) return '';
+  const path = join(CAPTURES, `${name}.png`);
+  try {
+    writeFileSync(path, image);
     return path;
   } catch {
-    return ''; // a capture that cannot be written is a note, never a finding
+    return '';
   }
 }
 
@@ -148,17 +156,23 @@ type Body = (ctx: {
 }) => Promise<{ finding?: Finding; observed?: string }>;
 
 /**
- * Run one probe: guard the context, collect signals, shoot `before` (call it right
+ * Run one probe: guard the context, collect signals, capture `before` (call it right
  * before the hostile action) and `after`, and append one result line to results.jsonl.
- * A pageerror or a fired XSS marker is a finding even when the body did not flag one.
- * A body that throws is a probe-error — the probe was wrong, not the app.
+ * An XSS marker that fires AFTER `before()` is always the finding (critical outranks the
+ * body's oracle). One that fires earlier, on page load, is STORED injection from an
+ * earlier probe: it is recorded as `storedXss` for triage and does not mask this probe's
+ * own oracle. A pageerror is a finding when the body flagged none. A body that throws is
+ * a probe-error — the probe was wrong, not the app. Images are written to disk only for a
+ * finding or a probe-error, or for a pass when PASS_SHOTS is on.
  */
 export async function probe({ page, context }: { page: Page; context: BrowserContext }, meta: Meta, body: Body) {
   const signals = watch(page);
   await guard(context, signals);
   const steps: string[] = [];
-  const evidence: string[] = [];
   const prefix = `adv-${meta.id.replace(/^ADV-/, '').padStart(2, '0')}-${meta.category}-${meta.slug}`;
+  const xssCount = () => signals.console.filter((c) => c.includes(XSS_MARK)).length;
+  let xssAtBefore = 0;
+  let beforeImage: Buffer | null = null;
   let outcome: 'pass' | 'finding' | 'probe-error' = 'pass';
   let finding: Finding | undefined;
   let observed = '';
@@ -169,13 +183,13 @@ export async function probe({ page, context }: { page: Page; context: BrowserCon
       signals,
       steps,
       before: async () => {
-        const p = await shot(page, `${prefix}-before`, meta.fullPage ?? false);
-        if (p) evidence.push(p);
+        xssAtBefore = xssCount();
+        beforeImage = await capture(page, meta.fullPage ?? false);
       },
     });
     finding = r.finding;
     observed = r.observed ?? '';
-    if (!finding && signals.console.some((c) => c.includes(XSS_MARK))) {
+    if (xssCount() > xssAtBefore) {
       finding = { oracle: 'xss-executed', expected: 'probe input rendered as inert text', actual: 'injected handler ran (console marker fired)' };
     }
     if (!finding && signals.pageErrors.length) {
@@ -186,13 +200,24 @@ export async function probe({ page, context }: { page: Page; context: BrowserCon
     outcome = 'probe-error';
     error = String(e).slice(0, 300);
   }
+  const evidence: string[] = [];
   if (outcome !== 'pass' || PASS_SHOTS) {
-    const p = await shot(page, `${prefix}-after`, meta.fullPage ?? false);
-    if (p) evidence.push(p);
+    evidence.push(save(`${prefix}-before`, beforeImage));
+    evidence.push(save(`${prefix}-after`, await capture(page, meta.fullPage ?? false)));
   }
   appendFileSync(
     RESULTS,
-    JSON.stringify({ ...meta, outcome, ...finding, observed, error, steps, signals, evidence }) + '\n',
+    JSON.stringify({
+      ...meta,
+      outcome,
+      ...finding,
+      observed,
+      error,
+      storedXss: xssAtBefore > 0,
+      steps,
+      signals,
+      evidence: evidence.filter(Boolean),
+    }) + '\n',
   );
 }
 

@@ -130,7 +130,7 @@ A probe is a **finding** only when one of these oracles fires.
 **Playwright driver.**
 
 1. Copy [`templates/adversarial-probes.spec.ts.template`](../templates/adversarial-probes.spec.ts.template) to `<output dir>/probes.spec.ts`.
-   Keep everything above its `PROBES` marker unchanged; replace the two worked examples with one `test()` per line of `plan.md`.
+   Keep everything above its `PROBES` marker unchanged; replace the two worked examples with one `test()` per line of `plan.md`, titled `ADV-NN <category>: <probe>` so `--grep` selects a category.
 2. Write `<output dir>/playwright.config.ts`, so the project's own Playwright config and `testDir` never apply:
 
    ```ts
@@ -141,10 +141,11 @@ A probe is a **finding** only when one of these oracles fires.
 3. When the repo has no `node_modules/@playwright/test`, link `aw-tester`'s branch-local install so the probe file's import resolves: `ln -sfn "$(pwd)/.agent/{branch}/.aw-tester/node_modules" "<output dir>/node_modules"`.
    When neither exists, return `status: skipped` with reason `no playwright install` — never install into the project.
 4. Export the `ADV_*` variables the template reads from the overlay — `ADV_OUT`, `ADV_BASE_URL`, `ADV_STORAGE_STATE`, `ADV_BYPASS_NAME`, `ADV_BYPASS_ENV` (the env var **name**, never its value), `ADV_ALLOWED_ORIGINS`, `ADV_MOCK_ENDPOINTS`, `ADV_MASK_TESTIDS`, and `ADV_PASS_SHOTS=0` under `--no-screenshots`.
-5. Run one category at a time with `"$(cat "<Playwright bin>")" test --config "<output dir>/playwright.config.ts" --grep "<category>"`, then read the new lines of `results.jsonl` **and open every `after` image** before planning the next batch.
+5. Run one category at a time with `"$(cat "<Playwright bin>")" test --config "<output dir>/playwright.config.ts" --grep "<category>"`, then read the new lines of `results.jsonl` **and open every `after` image written** before planning the next batch.
    A DOM signal alone does not prove what the user sees; the `overflow`, `silent-failure`, and `stuck-loading` oracles are judged from the image.
-6. When `results.jsonl` lists a `blocked` request, the app sent a mutation to an origin outside the allow-list.
-   Do not widen the list yourself. Mark that spec's dependent probes `skipped` with reason `blocked <origin> — add it to adversarial.allowed_origins in preview.yml if it is the app's own API`.
+6. A non-empty `signals.blocked` means the app sent a mutation to an origin outside the allow-list, and the guard aborted it. Never widen the list yourself.
+   When the probe's flow still completed (its success state appeared), the request was incidental — analytics, a beacon: keep the result and name the origin in `notes`.
+   When the flow did not complete, mark the probe `skipped` with reason `blocked <origin> — add it to adversarial.allowed_origins in preview.yml if it is the app's own API`.
 
 **Chrome driver.** Run the same plan in-session through the extension: act with `computer` and `form_input`, read console output and requests after each probe, screenshot before the hostile action and after it, and save each image to the same `captures/` path.
 Run only the categories [§ Driver capabilities](#driver-capabilities) marks available to Chrome.
@@ -155,7 +156,8 @@ Classify every probe that did not pass before reporting it.
 
 1. **Probe error, not a finding** — the probe acted on the wrong element, asserted behaviour the spec never implied (clicking a deliberately disabled button), or timed out on its own locator. Fix the probe once; when it fails a second time, record it as `probe-error` in `notes` and move on.
 2. **Confirm** — replay the probe once. A finding that reproduces is reported with `reproduced: 2/2`. One that does not goes to `unconfirmed`, never to `findings`.
-3. **Name the oracle** — every finding cites exactly one oracle from the table, and its `expected` and `actual` lines state observable facts.
+3. **Name the oracle** — every finding cites exactly one oracle from the table, the most severe when several fired, and its `expected` and `actual` lines state observable facts.
+4. **Re-attribute stored injection** — a result with `storedXss: true` saw the `ui-verify-adv-xss` marker fire on page load, before its own hostile action. That is stored injection from the earlier probe that typed the script probe: report it once, under that earlier probe, as `xss-executed` with `stored` in `actual`, and judge the later probe on its own oracle.
 
 ```yaml
 # ❌ WRONG — no oracle, a taste judgment, no reproduction
@@ -173,7 +175,7 @@ Classify every probe that did not pass before reporting it.
 ## Step 5: Write the evidence report
 
 - **Images.** `<output dir>/captures/adv-<NN>-<category>-<slug>-before.png` (right before the hostile action) and `-after.png` (the state the oracle judged).
-  Every finding carries both. Every passed probe carries its `after` image, unless `--no-screenshots`, which drops passed-probe images only — a finding always keeps its evidence.
+  Every finding carries both, and so does every passed probe, unless `--no-screenshots`, which drops passed-probe images only — a finding always keeps its evidence.
   Full-page for `layout` probes, viewport otherwise.
   Always `animations: 'disabled'`, `caret: 'hide'`, and the configured `mask_testids`, as the template already does.
 - **Signals.** Per finding, keep at most 10 lines from the console, page errors, failed requests, and 4xx/5xx responses the probe produced.
