@@ -10562,6 +10562,16 @@ const isPollBlock = (block) =>
   s.check("G87c the harness template aborts off-origin mutations and shoots deterministic images",
     /route\.abort\('blockedbyclient'\)/.test(TPL) && /animations: 'disabled'/.test(TPL) && /caret: 'hide'/.test(TPL),
     "templates/adversarial-probes.spec.ts.template lost its off-origin abort or its deterministic screenshot options");
+  // Guardrail 8's restore runs LAST in probe(): after the `after` image and the stored-injection
+  // reload, so the images show the probe's result and the reload still sees the payload.
+  const probeFn = (TPL.match(/export async function probe\([\s\S]*?\n}\n/) || [""])[0];
+  const iAfter = probeFn.indexOf("const afterImage = await capture(");
+  const iReload = probeFn.indexOf("await page.reload()");
+  const iRestore = probeFn.indexOf("await restore()");
+  const hasG8 = /\*\*Restore what you overwrote\.\*\*/.test(guards);
+  s.check("G87c the harness runs a probe's restore after its after image and its stored-injection reload",
+    /restoreWith:/.test(TPL) && iAfter > 0 && iReload > iAfter && iRestore > iReload && hasG8,
+    `probe(): afterImage@${iAfter}, reload@${iReload}, restore@${iRestore}; guardrail 8 present: ${hasG8}`);
 
   // G87d — every oracle has exactly one tier from the severity skill's vocabulary.
   const oracleRows = ADV.split("\n").filter((l) => /^\| `[a-z0-9-]+` \| .* \| (critical|high|medium|low|\S+) \|$/.test(l) && !/^\| `(input|timing|network|navigation|keyboard|numeric|session|data|layout|preferences|locale)`/.test(l));
