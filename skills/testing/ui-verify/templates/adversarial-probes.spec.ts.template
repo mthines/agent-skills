@@ -97,7 +97,13 @@ function globMatches(rule: string, method: string, path: string): boolean {
 
 // Guardrail (rules/adversarial.md § Guardrails): configured side-effect endpoints get
 // a stub; a mutating request to an origin outside ALLOWED is aborted and recorded.
-// A page.route() a probe adds for fault injection takes precedence over this.
+// A page.route() a probe adds for fault injection takes precedence over this, so it
+// must end every request it does not fault with route.fallback() — never
+// route.continue(), which sends it straight to the network past this guard:
+//   await page.route('**/api/dashboards/*', async (route) => {
+//     await new Promise((r) => setTimeout(r, 3000)); // the 3 s delay probe
+//     return route.fallback();
+//   });
 async function guard(context: BrowserContext, s: Signals) {
   await context.route('**/*', async (route) => {
     const req = route.request();

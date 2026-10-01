@@ -90,7 +90,7 @@ The literal probe values live in the [harness template](../templates/adversarial
 | --- | --- | --- | --- |
 | `input` | an input | empty; whitespace-only; padded `  value  `; 1000 characters (and `maxlength` + 1 when set); unicode (accents, CJK, ZWJ emoji, RTL, zero-width); markup probe; script probe; template probe `{{7*7}}` | 1 |
 | `timing` | a mutating action | double-click; 5 rapid clicks; click then navigate away before the response | 1 |
-| `network` | a request (Playwright only) | the action's request answers 500; aborts with `timedout`; is delayed 3 s; returns malformed JSON; `context.setOffline(true)` before the action | 2 |
+| `network` | a request (Playwright only) | the action's request answers 500; aborts with `timedout`; is delayed 3 s; returns malformed JSON; `context.setOffline(true)` before the action. A probe's own `page.route` ends with `route.fulfill`, `route.abort`, or `route.fallback()`, never `route.continue()`, which bypasses the guard | 2 |
 | `navigation` | a route or a mutating action | Back after submit, then Forward; reload between fill and submit; open the spec `url:` in a fresh page; replace a `{placeholder}` with `ui-verify-adv-missing` | 2 |
 | `keyboard` | any spec | reach the spec's primary action with Tab only (≤ 50 presses) and activate it with Enter and Space; Escape closes a dialog and focus returns to its trigger | 2 |
 | `numeric` | a `spinbutton`, or a number or date input | `0`, `-1`, `1e21`, `0.0000001`, `1,5`, `abc`; Feb 30 for a date | 3 |
