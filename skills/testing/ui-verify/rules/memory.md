@@ -51,6 +51,7 @@ After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons`
 - A route that needs a query param or path segment to render the changed component.
 - A preview-deployment access quirk (a protection-bypass header, an auth-refresh step specific to the preview environment).
 - The spec's `Target: preview` resolved but the app required a navigation the spec did not encode.
+- An adversarial probe ([`adversarial.md`](./adversarial.md)) hit a `probe-error` twice because of an app-wide quirk the next pass should plan around — inputs that debounce, an optimistic success toast that reverts on failure, a route that needs a query param. Pass the matched lessons to the next pass on its `Lessons:` input line.
 
 **Do not write** when:
 

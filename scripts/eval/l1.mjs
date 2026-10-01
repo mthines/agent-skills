@@ -10496,4 +10496,90 @@ const isPollBlock = (block) =>
     /^## Where knowledge goes/m.test(root) && root.includes("`G86`"));
 }
 
+// ── G87: ui-verify adversarial pass — reachable, never verdict-changing, guarded, evidenced ──
+//
+// `ui-verify run` tries to break every passing spec after the happy-path run and documents each
+// probe with screenshots (rules/adversarial.md). Four properties hold it together, each spanning
+// files no single edit sees at once:
+//   1. it is REACHABLE — runner.md Step 4b dispatches it and SKILL.md advertises the opt-out;
+//   2. it NEVER changes the verdict — its block carries no `verdict` key, and every caller that
+//      relays it (runner.md Step 5, review-loop Step 1.6) says so;
+//   3. it is GUARDED — the rule's destructive pattern and benign-injection rules exist, and the
+//      harness template actually aborts off-origin mutations and uses the rule's XSS marker;
+//   4. the Agent0 dispatch keeps runner.md's input lines, and sits AFTER the aw-tester block so
+//      G59b's first-match read still lands on aw-tester.
+// break-shape: delete Step 4b's `adversarial.md` link, add `verdict:` inside the block schema,
+// rename XSS_MARK in the template, drop an input line from the Agent0 block, or move that block
+// above the aw-tester one — the matching sub-check flips red.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
+  const UV = readOr("skills/testing/ui-verify/SKILL.md");
+  const ADV = readOr("skills/testing/ui-verify/rules/adversarial.md");
+  const TPL = readOr("skills/testing/ui-verify/templates/adversarial-probes.spec.ts.template");
+  const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
+  const STEP4B = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 4b: Adversarial pass — try to break it");
+  const STEP5 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 5: Report the verdict");
+  const RL16 = sectionOr("skills/quality/review-loop/SKILL.md", "### Step 1.6: UI-verify run (report-only, once, on exit)");
+
+  // G87a — reachable: Step 4b exists, delegates to the rule, and records the opt-out.
+  s.check("G87a the guard reads runner.md's Step 4b section", STEP4B.length > 400,
+    "a renamed, removed, or demoted Step 4b heading yields an empty slice, and every check below would read nothing");
+  s.check("G87a runner.md Step 4b delegates to adversarial.md and records the --no-adversarial skip",
+    /\(\.\/adversarial\.md\)/.test(STEP4B) && STEP4B.includes("`adversarial: skipped (--no-adversarial)`"),
+    "Step 4b no longer links rules/adversarial.md or no longer records the opt-out line");
+  s.check("G87a SKILL.md advertises --no-adversarial and links the rule",
+    /argument-hint:[^\n]*--no-adversarial/.test(UV) && UV.includes("(./rules/adversarial.md)"),
+    "ui-verify SKILL.md lost --no-adversarial in argument-hint or its link to rules/adversarial.md");
+
+  // G87b — never verdict-changing: stated in Step 4b and Step 5, and the block schema has no verdict key.
+  const advBlock = (ADV.match(/```yaml\nadversarial:\n[\s\S]*?\n```/) || [""])[0];
+  s.check("G87b the guard found adversarial.md's return-block schema", advBlock.length > 200,
+    "the ```yaml adversarial: block in rules/adversarial.md § Step 6 is missing");
+  s.check("G87b the adversarial block schema carries no verdict key",
+    advBlock.length > 200 && !/^\s*verdict:/m.test(advBlock),
+    "a `verdict:` key inside the adversarial block lets the pass restate — and so change — the happy-path verdict");
+  s.check("G87b runner.md Step 4b and Step 5 both state the pass never changes the verdict",
+    /never changes the verdict/i.test(STEP4B) && /never by rewriting `verdict`/.test(STEP5),
+    "Step 4b or Step 5 no longer keeps the verdict separate from adversarial findings");
+  s.check("G87b review-loop Step 1.6 relays the adversarial summary and keeps it report-only",
+    RL16.includes("adversarial: …") && /never turns a\s+`green` into a `red`/.test(RL16),
+    "review-loop Step 1.6 drops the adversarial summary line or lets it gate");
+
+  // G87c — guarded: the rule's guardrails exist, and the harness enforces the ones code can.
+  const guards = sectionOr("skills/testing/ui-verify/rules/adversarial.md", "## Guardrails");
+  s.check("G87c adversarial.md § Guardrails keeps the destructive pattern, the created-record exception, and the no-alert rule",
+    /delete\|remove\|destroy/.test(guards) && guards.includes("ui-verify-adv") && /Never `alert\(\)`/.test(guards),
+    "a guardrail the pass depends on was removed from rules/adversarial.md § Guardrails");
+  const tplMark = (TPL.match(/export const XSS_MARK = '([^']+)'/) || [])[1];
+  s.check("G87c the harness template's XSS marker is the one the rule's oracle names",
+    !!tplMark && ADV.includes(`contains \`${tplMark}\``),
+    `template XSS_MARK=${tplMark}; the xss-executed oracle in rules/adversarial.md must name the same marker`);
+  s.check("G87c the harness template aborts off-origin mutations and shoots deterministic images",
+    /route\.abort\('blockedbyclient'\)/.test(TPL) && /animations: 'disabled'/.test(TPL) && /caret: 'hide'/.test(TPL),
+    "templates/adversarial-probes.spec.ts.template lost its off-origin abort or its deterministic screenshot options");
+
+  // G87d — every oracle has exactly one tier from the severity skill's vocabulary.
+  const oracleRows = ADV.split("\n").filter((l) => /^\| `[a-z0-9-]+` \| .* \| (critical|high|medium|low|\S+) \|$/.test(l) && !/^\| `(input|timing|network|navigation|keyboard|numeric|session|data|layout|preferences|locale)`/.test(l));
+  const badTier = oracleRows.filter((l) => !/\| (critical|high|medium|low) \|$/.test(l));
+  s.check("G87d every adversarial oracle carries a critical/high/medium/low severity",
+    oracleRows.length >= 10 && badTier.length === 0,
+    `oracle rows: ${oracleRows.length}; rows with a tier outside the severity vocabulary: ${badTier.map((l) => l.slice(0, 40)).join(" | ") || "none"}`);
+
+  // G87e — the Agent0 dispatch is general, reads the installed rule, keeps Step 4b's input lines,
+  // and comes AFTER the aw-tester block (G59b reads the first <dispatch>( block).
+  const blocks = A0.match(/<dispatch>\(\n[\s\S]*?\n\)/g) || [];
+  const advA0 = blocks.find((b) => b.includes("rules/adversarial.md")) || "";
+  const step4bTask = (STEP4B.match(/subagent_type: "general-purpose"[\s\S]*?\n\)/) || [""])[0];
+  const inputs = ["Aw-Target file:", "Specs file:", "Probe specs:", "Playwright bin:", "Output dir:", "Lessons:", "Mode:"]
+    .map((k) => (step4bTask.match(new RegExp(`${k}[^\\n]*`)) || [""])[0].trim());
+  const drift = inputs.filter((l) => !l || !advA0.includes(l));
+  s.check("G87e the Agent0 adversarial dispatch is general, reads the installed rule, and keeps Step 4b's inputs",
+    /subagent_type: "general"/.test(advA0) && advA0.includes("/skills/ui-verify/rules/adversarial.md") && drift.length === 0,
+    `input lines missing from the Agent0 adversarial block: ${drift.join(" | ") || "none"}`);
+  s.check("G87e the aw-tester dispatch stays the FIRST <dispatch>( block in agent0-runtime.md",
+    blocks.length >= 2 && blocks[0].includes("templates/aw-tester.agent.md") && blocks.indexOf(advA0) > 0,
+    "G59b reads the first <dispatch>( block as aw-tester's; the adversarial block must come after it");
+}
+
 process.exit(s.report() ? 0 : 1);

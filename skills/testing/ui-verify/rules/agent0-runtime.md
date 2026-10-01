@@ -24,6 +24,7 @@ Rationale for the on-demand browser install below — the two-stage design, the 
 - [Driver selection: Playwright, without the prompt](#driver-selection-playwright-without-the-prompt)
 - [The browser precondition](#the-browser-precondition)
 - [Dispatch `aw-tester` as a `general` sub-agent](#dispatch-aw-tester-as-a-general-sub-agent)
+- [Dispatch the adversarial pass](#dispatch-the-adversarial-pass)
 - [Preview auth comes from the automation's secrets](#preview-auth-comes-from-the-automations-secrets)
 - [`setup` needs a human](#setup-needs-a-human)
 
@@ -107,6 +108,32 @@ Drop `--auto-capture` under `--no-screenshots`, exactly as there.
 The sub-agent is one level deep and dispatches nothing; `aw-tester` never does.
 
 A reply that opens with a refusal or a `BLOCKED` line is `inconclusive: aw-tester refused (<first line>)`, never a verdict.
+
+## Dispatch the adversarial pass
+
+In place of the `Task(subagent_type: "general-purpose", …)` block in [`runner.md § Step 4b`](./runner.md#step-4b-adversarial-pass--try-to-break-it), after the `aw-tester` dispatch above has returned:
+
+```text
+<dispatch>(
+  subagent_type: "general",
+  description: "ui-verify adversarial pass against PR preview",
+  prompt: |
+    Try to break the change these specs describe on the live preview, and document every probe with screenshots.
+    Your procedure is /tmp/workspace/pr-reviewer/skills/ui-verify/rules/adversarial.md — read it and follow it.
+    Run `. /tmp/workspace/agent-skills/env.sh` at the start of every Bash call.
+    Work in <the checkout directory>.
+    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Specs file: .agent/{branch}/.ui-verify/specs.md
+    Probe specs: <ids of the specs whose result was pass>
+    Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
+    Output dir: .agent/{branch}/.ui-verify/adversarial/
+    Lessons: <matched ui-verify-lessons bodies, or none>
+    Mode: --driver playwright
+)
+```
+
+The `.aw-tester/node_modules` link from [§ The browser precondition](#the-browser-precondition) is what the probe file's `@playwright/test` import resolves through, so the pass downloads nothing.
+The Chrome categories never apply here — this host has no extension.
 
 ## Preview auth comes from the automation's secrets
 

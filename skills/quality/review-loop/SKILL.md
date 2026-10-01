@@ -822,8 +822,17 @@ Map its outcome into the report:
 | `ui-verify` not installed / `Skill()` refused | `skipped (ui-verify not available)` — log one line and continue; it is a non-load-bearing companion |
 | anything else | `not run (unrecognised outcome: <verbatim>)` — quote what it returned and continue. An unmapped return is never recorded as `green` and never as a skip; the delegate gaining an outcome this table has no row for is exactly how a permanently-false note reached a report once already |
 
+**Relay the adversarial summary.** After the spec run, `ui-verify run` tries to break
+every passing spec and reports one `adversarial: …` summary line beside the verdict
+(`<N> probes, <F> findings (<C> critical, …)`, or a `skipped (…)` / `not run (…)` line).
+Append that line verbatim to the `green` or `red` line recorded above, so adversarial
+findings — and the `report.md` path with their screenshots — reach the human. It is
+report-only like the verdict: it never gates, never reopens the loop, and never turns a
+`green` into a `red`.
+
 Run it **at most once** per `review-loop` invocation — it is an exit signal, not a
-per-iteration check, and each run spends a full `aw-tester` Playwright dispatch.
+per-iteration check, and each run spends a full `aw-tester` Playwright dispatch plus
+the adversarial pass's own dispatch.
 
 ### Step 2: Refresh the PR description and Linear note (on convergence)
 
