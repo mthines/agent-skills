@@ -266,7 +266,7 @@ Stop at the first limit reached, return `status: partial`, and name the limit in
 | Category | Playwright | Chrome |
 | --- | --- | --- |
 | `input`, `timing`, `keyboard`, `numeric` | yes | yes — except probes that activate a mutating action when guardrail 1 or 3 needs interception |
-| `navigation` | yes | yes — "fresh page" is a new tab in the same session |
+| `navigation` | yes | yes — "fresh page" is a new tab in the same session; except probes that activate a mutating action when guardrail 1 or 3 needs interception |
 | `layout` | yes | yes, when the extension can resize the window; otherwise skipped |
 | `network`, `session`, `data`, `preferences`, `locale` | yes | no — skipped with reason `chrome driver: no network, storage, or emulation control` |
 
