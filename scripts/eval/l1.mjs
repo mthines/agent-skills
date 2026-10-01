@@ -9728,6 +9728,13 @@ const isPollBlock = (block) =>
         /## Thoroughness budget/.test(drSrc) && Boolean(tierDefaults)
           && drSrc.includes(`**quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}.**`),
         tierDefaults ? `expected "quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}" in depth-routing.md` : "TIER_DEFAULT_THOROUGHNESS not found in route-depth.mjs");
+      // standard's default (0.7) sets optimalityLens, so § 2.4c's incremental-mode skip is the only
+      // thing keeping the lens off delta re-reviews, where its own rationale says it answers wrong.
+      const bodyFor24c = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+      const sec24c = (bodyFor24c.split(/^### 2\.4c /m)[1] || "").split(/^### /m)[0];
+      s.check("G84e pr-reviewer.md § 2.4c skips the optimality lens on incremental re-reviews whatever budget.optimalityLens says",
+        /`RUN_MODE` is `incremental` or `incremental-quick` \(logged `skipped \(incremental\)`\)/.test(sec24c)
+          && /whatever\s+`budget\.optimalityLens` says/.test(sec24c));
       const reviewCfg = readFileSync(join(REPO_ROOT, "agents/shared/rules/review-config.md"), "utf8");
       s.check("G84e review-config.md's thoroughness comment names the same three tier defaults",
         Boolean(tierDefaults) && reviewCfg.includes(`(quick=${tierDefaults[1]}, standard=${tierDefaults[2]}, deep=${tierDefaults[3]})`));

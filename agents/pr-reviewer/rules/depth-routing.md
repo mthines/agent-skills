@@ -226,9 +226,9 @@ continuously instead of jumping at two tier boundaries.
 
    | Tier | Default `t` | What the default turns on, over the band below it |
    | --- | --- | --- |
-   | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode) |
-   | `standard` | 0.7 | optimality lens |
-   | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2 |
+   | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode); holistic escalation cap 2 → 4 |
+   | `standard` | 0.7 | optimality lens lever — the lens itself runs on `full`-mode runs only, because [`pr-reviewer.md` § 2.4c](../../pr-reviewer.md) skips it on incremental re-reviews; holistic escalation cap 5 → 7 |
+   | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2; holistic escalation cap 8 → 10 |
 
    **Why:** a review's silence is read as coverage, so the default spends one band more than the minimum for its tier.
 

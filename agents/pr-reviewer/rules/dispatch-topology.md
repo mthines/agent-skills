@@ -133,7 +133,9 @@ reads it, never re-derives it:
   `budget.holisticEscalationCap` directly; `2.4b`'s own incremental-mode gate (`ESCALATE_IN_INCREMENTAL`)
   is unchanged and still decides *whether* 2.4b runs at all in incremental mode.
 - **`budget.optimalityLens`** / **`budget.measurabilityLens`** — replace the flat `DEPTH_TIER ==
-  "deep"` / `DEPTH_TIER != "quick"` gates at 2.4c/2.4e with these booleans directly.
+  "deep"` / `DEPTH_TIER != "quick"` gates at 2.4c/2.4e with these booleans directly. 2.4c's own
+  incremental-mode skip is unchanged and still wins: `standard`'s 0.7 default sets
+  `optimalityLens`, and the lens still never runs on an incremental re-review.
 
 **`prepare-review.mjs` cannot know whether the agent reading `context.json` holds `Task`**, so the
 `budget` it writes there always assumes `dispatchAvailable: true` — so it says `hybrid` at `t ≥ 0.4`. The agent re-derives the real value itself:

@@ -163,8 +163,9 @@ export function routeDepth(i) {
 
 /** Tier -> default thoroughness when no explicit override is given. Each default sits one band
  *  above the bottom of its tier's range (depth-routing.md § Thoroughness budget): quick 0.4 turns on
- *  the measurability lens, standard 0.7 the optimality lens, deep 0.95 tier-3 (execution)
- *  verification and the x2 tool-call budget. */
+ *  the measurability lens, standard 0.7 the optimality lens lever (pr-reviewer.md § 2.4c still
+ *  skips the lens on every incremental re-review), deep 0.95 tier-3 (execution) verification and
+ *  the x2 tool-call budget. */
 export const TIER_DEFAULT_THOROUGHNESS = { quick: 0.4, standard: 0.7, deep: 0.95 };
 
 /** `--effort high` / `effort: high` is an alias for the ceiling. */
