@@ -54,7 +54,7 @@ memory.list { scope: "global",               tags: ["loop::ui-verify-lessons"], 
 
 ## Write at run time
 
-After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons` entry **only** when a spec failed for a reason a better spec would have avoided:
+After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons` entry **only** when a spec failed for a reason a better spec would have avoided, or an adversarial probe hit a `probe-error` twice because of an app-wide quirk:
 
 - A missing precondition every page needs (cookie banner, feature-flag cookie, org selector).
 - A route that needs a query param or path segment to render the changed component.
