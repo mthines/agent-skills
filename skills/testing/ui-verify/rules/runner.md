@@ -174,7 +174,7 @@ Relay it to the user as-is plus the resolved preview URL and which driver ran it
 
 **Surface the adversarial pass** under an **Adversarial pass** heading, after the screenshots:
 
-1. One summary line, which callers relay verbatim: `adversarial: <probes_run> probes, <N> findings (<C> critical, <H> high, <M> medium, <L> low)`, or the `skipped (…)` / `not run (…)` line from Step 4b.
+1. One summary line, which callers relay verbatim: `adversarial: <probes_run> probes, <N> findings (<C> critical, <H> high, <M> medium, <L> low)`, followed by ` — partial: <reason>` when the block's `status` is `partial`; or the `skipped (…)` / `not run (…)` line from Step 4b.
 2. Each finding, most severe first: its id, severity, oracle, probe, expected vs actual, and its before and after image paths.
 3. The passed probes, one line each, then `categories_skipped` with their reasons.
 4. The path of `report.md` — the document with every probe and its images inline.
