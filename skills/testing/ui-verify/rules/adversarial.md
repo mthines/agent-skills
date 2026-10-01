@@ -57,13 +57,13 @@ Why it is shaped this way, and the sources behind the catalog: [`references/adve
 
 1. For each spec in `Probe specs:`, list its **surface** from the spec text and the files the PR changed:
    - **inputs** — every `is filled with` step, and every `textbox`, `searchbox`, `combobox`, or `spinbutton` role;
-   - **mutating actions** — a `WHEN … is clicked` followed by a `network: POST|PUT|PATCH|DELETE …` assertion, or a button named Save, Submit, Create, Add, Update, or Send;
+   - **mutating actions** — a `WHEN … is clicked` followed by a `network: POST|PUT|PATCH|DELETE …` assertion, or a button named Save, Submit, Create, Add, or Update;
    - **requests** — every `network:` assertion;
    - **routes** — the `url:`, and whether it carries a `{placeholder}`;
    - **collections** — a `list`, `table`, `grid`, `listbox`, or `row` role in a `THEN` step;
    - **dialogs** — a `dialog` or `alertdialog` role;
    - **auth** — whether the overlay's `auth.strategy` is anything but `none`.
-2. Select every catalog row whose **Applies when** matches that surface. Name every unselected row in `categories_skipped` with reason `not applicable: <which surface is missing>`.
+2. Select every catalog row whose **Applies when** matches that surface. Never plan a probe on a control [guardrail 2](#guardrails) forbids, unless it targets a record this run created. Name every unselected row in `categories_skipped` with reason `not applicable: <which surface is missing>`.
 3. Order the selected probes by the catalog's **Priority**, then cut at the [budget](#budget).
 4. Write `<output dir>/plan.md`, one line per probe: `ADV-NN | Spec-N | category | probe | oracle`.
 
