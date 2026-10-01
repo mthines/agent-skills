@@ -105,7 +105,7 @@ A probe is a **finding** only when one of these oracles fires.
 
 | Oracle | Fires when | Severity |
 | --- | --- | --- |
-| `xss-executed` | a console message contains `ui-verify-adv-xss` after the probe's hostile action | critical |
+| `xss-executed` | a console message whose text is exactly `ui-verify-adv-xss` appears after the probe's hostile action (an app that logs the submitted value echoes the whole payload, which never matches) | critical |
 | `data-loss` | a record other than the action's own target changed or disappeared | critical |
 | `duplicate-mutation` | one intended action sent more than one mutating request to the same method and path | high |
 | `false-success` | the spec's success state is visible while the action's request failed, was aborted, or ran offline | high |

@@ -10553,8 +10553,8 @@ const isPollBlock = (block) =>
     "a guardrail the pass depends on was removed from rules/adversarial.md § Guardrails");
   const tplMark = (TPL.match(/export const XSS_MARK = '([^']+)'/) || [])[1];
   s.check("G87c the harness template's XSS marker is the one the rule's oracle names",
-    !!tplMark && ADV.includes(`contains \`${tplMark}\``),
-    `template XSS_MARK=${tplMark}; the xss-executed oracle in rules/adversarial.md must name the same marker`);
+    !!tplMark && ADV.includes(`exactly \`${tplMark}\``) && TPL.includes("m.text() === XSS_MARK"),
+    `template XSS_MARK=${tplMark}; the xss-executed oracle in rules/adversarial.md must name the same marker as an exact match, and the template must compare with ===`);
   s.check("G87c the harness template aborts off-origin mutations and shoots deterministic images",
     /route\.abort\('blockedbyclient'\)/.test(TPL) && /animations: 'disabled'/.test(TPL) && /caret: 'hide'/.test(TPL),
     "templates/adversarial-probes.spec.ts.template lost its off-origin abort or its deterministic screenshot options");

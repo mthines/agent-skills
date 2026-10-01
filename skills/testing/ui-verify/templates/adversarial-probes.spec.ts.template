@@ -71,7 +71,7 @@ const READ_ONLY = ['GET', 'HEAD', 'OPTIONS'];
 function watch(page: Page): Signals {
   const s: Signals = { console: [], pageErrors: [], failed: [], httpErrors: [], mutations: [], blocked: [] };
   page.on('console', (m) => {
-    if (m.type() === 'error' || m.text().includes(XSS_MARK)) s.console.push(m.text().slice(0, 300));
+    if (m.type() === 'error' || m.text() === XSS_MARK) s.console.push(m.text().slice(0, 300)); // exact: an app echoing the payload logs more than the marker
   });
   page.on('pageerror', (e) => s.pageErrors.push(e.message.slice(0, 300)));
   page.on('requestfailed', (r) => s.failed.push(`${r.method()} ${r.url()} — ${r.failure()?.errorText}`));
@@ -171,7 +171,7 @@ export async function probe({ page, context }: { page: Page; context: BrowserCon
   await guard(context, signals);
   const steps: string[] = [];
   const prefix = `adv-${meta.id.replace(/^ADV-/, '').padStart(2, '0')}-${meta.category}-${meta.slug}`;
-  const xssCount = () => signals.console.filter((c) => c.includes(XSS_MARK)).length;
+  const xssCount = () => signals.console.filter((c) => c === XSS_MARK).length;
   let xssAtBefore = 0;
   let beforeImage: Buffer | null = null;
   let outcome: 'pass' | 'finding' | 'probe-error' = 'pass';
