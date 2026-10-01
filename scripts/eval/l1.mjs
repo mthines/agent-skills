@@ -10315,11 +10315,11 @@ const isPollBlock = (block) =>
   const topo = probe(`import { resolveBudget } from "./agents/pr-reviewer/scripts/route-depth.mjs";
     const b = (i) => { const r = resolveBudget(i); return r.topology + "/" + r.topologyReason; };
     console.log(JSON.stringify([
-      b({ routedTier: "standard", runMode: "incremental" }), b({ routedTier: "quick", runMode: "incremental-quick" }), // quick's 0.2 is already below 0.4
+      b({ routedTier: "standard", runMode: "incremental" }), b({ routedTier: "quick", runMode: "incremental-quick" }), // quick's 0.4 default reaches the hybrid breakpoint, so the carve-out is what keeps it in-context
       b({ routedTier: "standard", runMode: "full" }), b({ routedTier: "deep", runMode: "incremental" }),
       b({ routedTier: "standard", runMode: "incremental", thoroughness: 0.8 })]));`);
   s.check("G84r resolveBudget: a small incremental re-review (standard/quick, defaulted thoroughness) is in-context; a full run, a deep tier, or an explicit thoroughness stays hybrid",
-    topo.status === 0 && (topo.stdout || "").trim() === JSON.stringify(["in-context/small-incremental", "in-context/below-breakpoint", "hybrid/hybrid", "hybrid/hybrid", "hybrid/hybrid"]),
+    topo.status === 0 && (topo.stdout || "").trim() === JSON.stringify(["in-context/small-incremental", "in-context/small-incremental", "hybrid/hybrid", "hybrid/hybrid", "hybrid/hybrid"]),
     (topo.stdout || topo.stderr || "").trim().slice(0, 300));
   s.check("G84r prepare-review.mjs hands resolveBudget the context's run mode",
     /const budget = resolveBudget\(\{\n\s+runMode: contextMode,/.test(PRSRC) && /mode: contextMode,/.test(PRSRC));
