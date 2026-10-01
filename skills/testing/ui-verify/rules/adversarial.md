@@ -105,7 +105,7 @@ A probe is a **finding** only when one of these oracles fires.
 
 | Oracle | Fires when | Severity |
 | --- | --- | --- |
-| `xss-executed` | a console message contains `ui-verify-adv-xss` | critical |
+| `xss-executed` | a console message contains `ui-verify-adv-xss` after the probe's hostile action | critical |
 | `data-loss` | a record the probe did not create changed or disappeared | critical |
 | `duplicate-mutation` | one intended action sent more than one mutating request to the same method and path | high |
 | `false-success` | the spec's success state is visible while the action's request failed, was aborted, or ran offline | high |
@@ -141,7 +141,7 @@ A probe is a **finding** only when one of these oracles fires.
 3. When the repo has no `node_modules/@playwright/test`, link `aw-tester`'s branch-local install so the probe file's import resolves: `ln -sfn "$(pwd)/.agent/{branch}/.aw-tester/node_modules" "<output dir>/node_modules"`.
    When neither exists, return `status: skipped` with reason `no playwright install` — never install into the project.
 4. Export the `ADV_*` variables the template reads from the overlay — `ADV_OUT`, `ADV_BASE_URL`, `ADV_STORAGE_STATE`, `ADV_BYPASS_NAME`, `ADV_BYPASS_ENV` (the env var **name**, never its value), `ADV_ALLOWED_ORIGINS`, `ADV_MOCK_ENDPOINTS`, `ADV_MASK_TESTIDS`, and `ADV_PASS_SHOTS=0` under `--no-screenshots`.
-5. Run one category at a time with `"$(cat "<Playwright bin>")" test --config "<output dir>/playwright.config.ts" --grep "<category>"`, then read the new lines of `results.jsonl` **and open every `after` image written** before planning the next batch.
+5. Run one category at a time with `"$(cat "<Playwright bin>")" test --config "<output dir>/playwright.config.ts" --grep "<category>:"`, then read the new lines of `results.jsonl` **and open every `after` image written** before planning the next batch.
    A DOM signal alone does not prove what the user sees; the `overflow`, `silent-failure`, and `stuck-loading` oracles are judged from the image.
 6. A non-empty `signals.blocked` means the app sent a mutation to an origin outside the allow-list, and the guard aborted it. Never widen the list yourself.
    When the probe's flow still completed (its success state appeared), the request was incidental — analytics, a beacon: keep the result and name the origin in `notes`.

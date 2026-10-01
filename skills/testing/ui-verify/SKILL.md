@@ -48,7 +48,7 @@ A reviewer verifies a UI change by clicking through the preview.
 
 ## What this skill reuses
 
-This skill owns three things and reuses the rest.
+This skill owns four things and reuses the rest.
 
 | Concern | Owner |
 | --- | --- |
