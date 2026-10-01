@@ -10496,4 +10496,93 @@ const isPollBlock = (block) =>
     /^## Where knowledge goes/m.test(root) && root.includes("`G86`"));
 }
 
+// ── G87: what a reader sees first — reach diagram, Checked line, Progress line ──
+// The report states coverage where a reader looks first. These execute the renderer (and the
+// pieces that feed it) rather than grepping prose, and each was proven to bite by breaking what
+// it guards: drop the consumers cross-check, emit the diagram outside its accordion, unescape a
+// label quote, stop finalize from forwarding ROUNDS, or drop the round from Step 4c's jq.
+{
+  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+  const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/reach-progress.json"), "utf8"));
+  const render = (payload) => {
+    const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(payload), encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+  };
+  const clone = () => JSON.parse(JSON.stringify(base));
+
+  const good = render(base);
+  const reachAt = good.out.indexOf("<details>\n<summary>What this change reaches — ");
+  const detailsAt = good.out.indexOf("<details>\n<summary>Review details");
+  const fenceAt = good.out.indexOf("```mermaid");
+  s.check("G87a the reach accordion renders above Review details and holds the only Mermaid block",
+    good.ok && reachAt !== -1 && reachAt < detailsAt && fenceAt > reachAt
+      && fenceAt < good.out.indexOf("</details>", reachAt) && good.out.split("```mermaid").length === 2, good.err);
+  s.check("G87b the Checked and Progress lines render above every accordion",
+    good.ok && /^\*\*Checked:\*\* 22 of 22 changed files read · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted$/m.test(good.out.split("<details>")[0])
+      && /^\*\*Progress:\*\* open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews$/m.test(good.out.split("<details>")[0]));
+
+  const mismatch = clone();
+  mismatch.IMPACT.symbols[0].verified_unaffected = 6;
+  s.check("G87c a consumers list that disagrees with verified_unaffected is rejected",
+    !render(mismatch).ok);
+
+  const quoted = clone();
+  // A flagged file gets its own node and a single-file folder shows its path, so both reach a label.
+  quoted.IMPACT.symbols[0].consumers[0].path = 'src/jobs/we"ird.ts';
+  quoted.IMPACT.symbols[0].consumers[5].path = "src/x#y/poll.ts";
+  const q = render(quoted);
+  const fence = (q.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
+  s.check("G87d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
+    q.ok && fence.includes("we#quot;ird") && !fence.includes('we"ird')
+      && fence.includes("x#35;y") && !fence.includes("x#y"), q.err);
+
+  const smallGraph = clone();
+  smallGraph.IMPACT = { symbols: [{ name: "f", path: "a.ts", change: "body", consumer_files: 1, verified_unaffected: 1, findings: 0 }] };
+  const sg = render(smallGraph);
+  s.check("G87e a graph with fewer than 3 edges renders the bullets without a diagram",
+    sg.ok && sg.out.includes("<summary>What this change reaches — ") && !sg.out.includes("```mermaid"), sg.err);
+
+  const badRound = clone();
+  badRound.ROUNDS[0].blocking = 9;
+  const partialMismatch = clone();
+  partialMismatch.PARTIAL_REVIEW = { calls: 60, scanned: 13, total: 22 };
+  s.check("G87f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
+    !render(badRound).ok && !render(partialMismatch).ok);
+
+  const noRounds = clone();
+  delete noRounds.ROUNDS;
+  s.check("G87g a first review renders no Progress line",
+    render(noRounds).ok && !render(noRounds).out.includes("**Progress:**"));
+
+  const FIN = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
+  const SPINE = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "utf8");
+  const RR = readFileSync(RENDER, "utf8");
+  s.check("G87h the Progress line and the PR-state round use one worklistCounts() from the spine",
+    /export function worklistCounts\(/.test(SPINE) && /worklistCounts\(\{ openThreads, findings, notes: arr\("NOTES"\) \}\)/.test(RR)
+      && /const round = worklistCounts\(/.test(FIN) && /\n\s+round,\n\s+findingsBusRecords,/.test(FIN));
+  const fst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "--self-test"], { encoding: "utf8" });
+  s.check("G87i finalize forwards context.priorRun.rounds as ROUNDS and reports its own round (self-test)",
+    fst.status === 0 && /✓ ROUNDS reaches the payload from context\.priorRun\.rounds/.test(fst.stdout || "")
+      && /✓ finalize reports this run's worklist as `round`/.test(fst.stdout || ""));
+  const POST = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
+  s.check("G87j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
+    /--argjson round "\$\(jq -c '\.round \/\/ \{open: null, blocking: null\}' \/tmp\/finalize\/finalize-result\.json/.test(POST)
+      && /open: \$round\.open, blocking: \$round\.blocking\}/.test(POST));
+  // Executed directly (an import, not the 60 s self-test G84r already runs): a record with one
+  // legacy run (no counts), one malformed run (blocking > open), and two good ones.
+  const rsf = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { readStateFile } from "./agents/pr-reviewer/scripts/prepare-review.mjs";
+    import { writeFileSync } from "node:fs"; import { join } from "node:path"; import { tmpdir } from "node:os";
+    const p = join(tmpdir(), "g87k-" + process.pid + ".json");
+    writeFileSync(p, JSON.stringify({ v: 1, data: { runs: [
+      { sha: "1111111", mode: "full" },
+      { sha: "2222222", mode: "incremental", open: 1, blocking: 4 },
+      { sha: "3333333aaaa", mode: "incremental", open: 4, blocking: 1 },
+      { sha: "4444444", mode: "full", open: 2, blocking: 0 } ] } }));
+    console.log(JSON.stringify(readStateFile(p).rounds));`], { encoding: "utf8", cwd: REPO_ROOT });
+  s.check("G87k prepare-review reads runs[] open/blocking into rounds, skipping legacy and malformed runs",
+    rsf.status === 0 && (rsf.stdout || "").trim() === JSON.stringify([{ sha: "3333333", open: 4, blocking: 1 }, { sha: "4444444", open: 2, blocking: 0 }]),
+    (rsf.stdout || rsf.stderr || "").trim().slice(0, 200));
+}
+
 process.exit(s.report() ? 0 : 1);
