@@ -9721,9 +9721,16 @@ const isPollBlock = (block) =>
 
       const drPath = join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md");
       const drSrc = existsSync(drPath) ? readFileSync(drPath, "utf8") : "";
+      // Exact, not substring: the three values are read off the code and must appear verbatim in
+      // the doc's defaults line, so a default changed on one side only fails here.
+      const tierDefaults = /export const TIER_DEFAULT_THOROUGHNESS = \{ quick: ([\d.]+), standard: ([\d.]+), deep: ([\d.]+) \};/.exec(rdSrc);
       s.check("G84e depth-routing.md's Thoroughness budget section exists and states the same three tier defaults route-depth.mjs's TIER_DEFAULT_THOROUGHNESS carries",
-        /## Thoroughness budget/.test(drSrc)
-          && /quick.*0\.2/.test(drSrc) && /standard.*0\.5/.test(drSrc) && /deep.*0\.8/.test(drSrc));
+        /## Thoroughness budget/.test(drSrc) && Boolean(tierDefaults)
+          && drSrc.includes(`**quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}.**`),
+        tierDefaults ? `expected "quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}" in depth-routing.md` : "TIER_DEFAULT_THOROUGHNESS not found in route-depth.mjs");
+      const reviewCfg = readFileSync(join(REPO_ROOT, "agents/shared/rules/review-config.md"), "utf8");
+      s.check("G84e review-config.md's thoroughness comment names the same three tier defaults",
+        Boolean(tierDefaults) && reviewCfg.includes(`(quick=${tierDefaults[1]}, standard=${tierDefaults[2]}, deep=${tierDefaults[3]})`));
 
       const dtPath = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
       const dtSrc = existsSync(dtPath) ? readFileSync(dtPath, "utf8") : "";

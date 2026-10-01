@@ -62,7 +62,7 @@ effort: high                             # repo-wide default for the depth lever
 thoroughness: 0.8                        # repo-wide default for the continuous 0..1 dispatch/scope
                                          # knob resolveBudget() reads — equivalent to always passing
                                          # --thoroughness <n>. Omit for the routed-tier default
-                                         # (quick=0.2, standard=0.5, deep=0.8). A high-stakes shape
+                                         # (quick=0.4, standard=0.7, deep=0.95). A high-stakes shape
                                          # (auth, payments, schema-migration, secrets, infra) floors
                                          # the EFFECTIVE value at 0.5 regardless of this setting, so
                                          # a repo cannot configure its way under-reviewing those.
