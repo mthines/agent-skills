@@ -135,6 +135,7 @@ fi
 3. When the installer sees these variables in its own environment it prints a note that it did not write them, never their values.
 
 The harness is named `agent0` when either `/tmp/workspace/agent-skills/env.sh` or `/tmp/workspace/pr-reviewer/env.sh` exists; an automation that installs only the reviewer writes the second.
+An `agent0` run exports under the AI SDLC Insights scope ([§ The scope](#the-scope)), so it is listed there as an `agent0` session.
 
 ### The trace
 
@@ -142,7 +143,7 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 | Span | Attributes |
 | --- | --- |
-| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), the outcome under `pr_review.*` |
+| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` |
 | `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`; ERROR with `error.type=step_failed` when the step failed |
 | `pr_review.phase <name>` | child of a script step: `pr_review.step.name`, `pr_review.phase.name` |
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
@@ -150,6 +151,20 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 Two histograms carry the durations across runs: `pr_review.step.duration` (by step and kind) and `pr_review.run.duration` (by tier, topology, and verdict).
 Neither carries a run id, a PR number, or a user as an attribute.
+
+### The scope
+
+The run's trace and metrics export under one instrumentation scope, picked by the harness its spans name:
+
+| Harness | Scope |
+| --- | --- |
+| `agent0` (`SESSION_HARNESSES`) | `dash0-agent-plugin` — the scope AI SDLC Insights lists sessions from |
+| every other harness, and none | `agent-skills/pr-reviewer` |
+
+Add a harness to `SESSION_HARNESSES` only when no Dash0 agent plugin records its sessions.
+Never add a `PLUGIN_HARNESSES` member — the plugin already emits `invoke_agent pr-reviewer` there, and a second one under its scope counts every review twice — and never a CI or smoke harness, which would list synthetic runs as sessions.
+
+**Why:** [`references/insights-scope.md`](../references/insights-scope.md).
 
 ### The run counter
 
@@ -191,6 +206,6 @@ Three things the trace never contains:
 
 ### Proof
 
-`review-telemetry.mjs --self-test` builds a run from a synthetic ledger and asserts the tree, the contract, the harness rule, and an export into a real local OTLP receiver.
+`review-telemetry.mjs --self-test` builds a run from a synthetic ledger and asserts the tree, the contract, the harness rule, the scope rule, and an export into a real local OTLP receiver.
 The `pr-reviewer · telemetry smoke` workflow exports one synthetic run to Dash0 whenever the telemetry code changes, with `pr_review.smoke=true`, and fails if the export did not succeed.
 It ships as [`templates/review-telemetry-smoke.workflow.yml`](../templates/review-telemetry-smoke.workflow.yml); copy it to `.github/workflows/` to turn it on.

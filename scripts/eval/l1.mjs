@@ -10188,6 +10188,16 @@ const isPollBlock = (block) =>
     out.split("\n").filter((l) => l.includes("✗")).join(" | "));
   s.check("G84p the reviewer-only Agent0 install (pr-reviewer/env.sh) names the harness agent0",
     /detectHarness: the reviewer-only Agent0 install \(pr-reviewer\/env\.sh\) is agent0/.test(out));
+  // AI SDLC Insights lists sessions only under the Dash0 agent plugin's scope. An Agent0 run, which
+  // no plugin records, exports under it; a plugin-covered run keeps agent-skills/pr-reviewer, or the
+  // plugin's invoke_agent pr-reviewer and the reviewer's would count every review twice.
+  s.check("G84p an agent0 run exports under the AI SDLC Insights scope; every other run, and a plugin harness above all, keeps agent-skills/pr-reviewer",
+    /an agent0 run exports its trace and metrics under the AI SDLC Insights scope/.test(out)
+      && /every other run keeps agent-skills\/pr-reviewer/.test(out)
+      && /no harness is both a session harness and a plugin harness/.test(out));
+  s.check("G84p the root records the OpenCode tool call that started the run, and a later begin never replaces it",
+    /the root carries pr_review\.opencode\.parent_tool_call_id/.test(out)
+      && /a later begin adds facts but keeps the tool call that started the run/.test(out));
 
   const bdir = mkdtempSync(join(tmpdir(), "l1-bundle-"));
   let bundle = "";
@@ -10205,6 +10215,10 @@ const isPollBlock = (block) =>
     /### On an Agent0 Automation/.test(rtDoc) && rtDoc.includes("sandbox.envVars")
       && rtDoc.includes(`printf 'export PR_REVIEWER_OTLP_HEADERS=%q\\n'`) && rtDoc.includes('>> "$DASH0_AGENT_ENV"')
       && /Use an ingest-only token limited to one dataset/.test(rtDoc) && !/writes `PR_REVIEWER_OTLP_ENDPOINT`/.test(rtDoc));
+  s.check("G84p run-telemetry.md states the scope per harness, forbids a plugin harness in SESSION_HARNESSES, and links its reasons",
+    /### The scope/.test(rtDoc) && /\| `agent0` \(`SESSION_HARNESSES`\) \| `dash0-agent-plugin`/.test(rtDoc)
+      && /Never add a `PLUGIN_HARNESSES` member/.test(rtDoc) && rtDoc.includes("(../references/insights-scope.md)")
+      && existsSync(join(REPO_ROOT, "agents/pr-reviewer/references/insights-scope.md")));
 }
 
 // ── G84q: on a Dash0 Agent0 Automation, hybrid runs as two workers in one message ──
