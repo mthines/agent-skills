@@ -46,9 +46,10 @@ import {
 } from "./finalize/payload.mjs";
 import { renderComment } from "./render-comment.mjs";
 import { resolveFixLinks, applyFixLinks } from "./finalize/fix-links.mjs";
-import { TITLE_MAX, PROSE_MAX, UNVERIFIED_MAX, EVIDENCE_REFS_MAX, SHA7, sentenceCount } from "./comment-spine.mjs";
+import { TITLE_MAX, PROSE_MAX, UNVERIFIED_MAX, EVIDENCE_REFS_MAX, SHA7, sentenceCount, worklistCounts } from "./comment-spine.mjs";
 import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
+import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
 import { MARKER_RE } from "./fingerprint.mjs";
 import { appendRecord, finishRun, readLedger } from "./review-telemetry.mjs";
@@ -58,7 +59,7 @@ const FINALIZE_SELF_TESTS = [
   "finalize/dedupe.mjs", "finalize/thresholds.mjs", "finalize/suppression.mjs",
   "finalize/placement.mjs", "finalize/line-validity.mjs", "finalize/gates.mjs",
   "finalize/payload.mjs", "finalize/findings-bus.mjs", "finalize/write-plan.mjs",
-  "finalize/fix-links.mjs",
+  "finalize/fix-links.mjs", "finalize/reach.mjs",
 ];
 
 // render-report.mjs's SHA7 check requires RUN.sha/RUN.prior_sha to be EXACTLY 7 lowercase hex
@@ -138,6 +139,24 @@ export function hydrateFilePatches(context) {
         : f
     )),
   };
+}
+
+/**
+ * The report's `What this change reaches` section is built from impact.json (finalize/reach.mjs),
+ * which prepare-review.mjs parks in a sidecar unless --inline-payloads was passed. Same I/O
+ * boundary and the same degrade-don't-throw rule as hydrateFilePatches above.
+ * @param {any} context @returns {any}
+ */
+export function hydrateImpact(context) {
+  if (context?.impact && typeof context.impact === "object") return context;
+  const impactPath = context?.paths?.impact;
+  if (!impactPath) return context;
+  try {
+    return { ...context, impact: JSON.parse(readFileSync(impactPath, "utf8")) };
+  } catch {
+    // An unreadable impact graph degrades to no auto-built reach section, never a failed run.
+    return context;
+  }
 }
 
 /**
@@ -706,6 +725,16 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // still wins when the caller hand-supplies one (the existing passthrough precedent RUN_ANOMALY uses).
   const autoQualityDropped = buildAutoQualityDropped({ confidenceDropped, anchorless });
 
+  const autoCoverage = buildCoverage({
+    scopePaths: context?.scopePaths, scanned: judgments?.scanned_files, partial: context?.render?.PARTIAL_REVIEW,
+    skipped: context?.render?.SKIPPED_FILES,
+  });
+  const autoImpact = buildImpact({
+    impact: context?.impact,
+    inlineClaims,
+    trace: judgments?.impact_trace,
+    repo: context?.target?.repo ?? null,
+  });
   const extras = {
     ...(context?.render || {}),
     RUN_ANOMALY: mergeRunAnomaly(context?.render?.RUN_ANOMALY, autoRunAnomaly),
@@ -719,6 +748,10 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     ...(judgments?.lenses?.optimality_cards?.length
       ? { OPTIMALITY_CARDS: judgments.lenses.optimality_cards.map((/** @type {any} */ c) => buildOptimalityCard(c)) }
       : {}),
+    // The `**Checked:**` line and the `What this change reaches` section, built from what the run
+    // recorded (finalize/reach.mjs). A caller-supplied context.render value always wins.
+    ...(context?.render?.COVERAGE === undefined && autoCoverage ? { COVERAGE: autoCoverage } : {}),
+    ...(context?.render?.IMPACT === undefined && autoImpact ? { IMPACT: autoImpact } : {}),
   };
 
   const payload = buildReportPayload({
@@ -732,6 +765,13 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     extras,
   });
   payload.OPEN_THREADS = (gates.g3?.open || []).map(toOpenThreadBullet);
+  // The `**Progress:**` line's history: the worklist each earlier run left, read off the PR-state
+  // record by prepare-review.mjs (empty under --isolated, so a comparability run shows none). Set
+  // here, never relayed from context.render: the history is the record's, not the run's to supply.
+  if (Array.isArray(context?.priorRun?.rounds) && context.priorRun.rounds.length) payload.ROUNDS = context.priorRun.rounds;
+  // What this run leaves open, computed from the same arrays and by the same function the report's
+  // `**Progress:**` line uses — Step 4c stores it as this run's `open`/`blocking` in runs[].
+  const round = worklistCounts({ openThreads: payload.OPEN_THREADS, findings: payload.FINDINGS, notes: payload.NOTES || [] });
 
   const findingsBusRecords = toFindingsBusRecords(inline.concat(overCapDeferred), {
     iteration, sha: runSha,
@@ -752,6 +792,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     identityHolds,
     quality,
     payload,
+    round,
     findingsBusRecords,
     // The Step 4c state write's `cited` (posting.md § 4c) — copied from finalize-result.json.
     citedRefs: citedRefs(judgments?.memory, suppressed),
@@ -1205,6 +1246,65 @@ async function selfTest() {
       check("a delivered hybrid intent worker suppresses the no-dispatch line; a missing one keeps it",
         lost.includes("the intent finder ran in-context") && !kept.includes("the intent finder ran in-context"), `${lost} | ${kept}`);
     }
+    // The `**Progress:**` line: history comes from context.priorRun.rounds, and finalize reports this
+    // run's own point as `round`, the value Step 4c stores in runs[].
+    {
+      const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
+        threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+      const base = { mode: "incremental", headSha: "abc1234def", priorRun: { priorSha: "70cf147aaaa" }, routing: { tier: "standard" }, anomalies: [] };
+      const rounds = [{ sha: "70cf147", open: 4, blocking: 1 }];
+      const withHistory = finalizeReview({ context: { ...base, priorRun: { ...base.priorRun, rounds } }, judgments: j0 });
+      const without = finalizeReview({ context: base, judgments: j0 });
+      check("ROUNDS reaches the payload from context.priorRun.rounds, and is absent with no history",
+        JSON.stringify(withHistory.payload.ROUNDS) === JSON.stringify(rounds) && without.payload.ROUNDS === undefined);
+      const handSupplied = finalizeReview({ context: { ...base, render: { ROUNDS: [{ sha: "1234567", open: 9, blocking: 9 }] } }, judgments: j0 });
+      check("a hand-supplied context.render.ROUNDS is ignored — the history comes from the PR-state record only",
+        handSupplied.payload.ROUNDS === undefined);
+      check("finalize reports this run's worklist as `round` for the PR-state record",
+        JSON.stringify(withHistory.round) === JSON.stringify({ open: 0, blocking: 0 }));
+    }
+    // The `**Checked:**` line and the reach section build themselves from the run's own records
+    // (finalize/reach.mjs); a caller-supplied context.render value still wins.
+    {
+      const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
+        threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "",
+        scanned_files: ["src/r.ts", "src/a.ts"],
+        impact_trace: [{ symbol: "retry", path: "src/r.ts", verified: ["src/a.ts"] }] };
+      const impact = { symbols: [{ name: "retry", path: "src/r.ts", change: "signature", exported: true, consumer_files: 3,
+        consumers: [{ path: "src/a.ts", line: 4 }, { path: "src/b.ts", line: 9 }] }], dependencies: [], overlaps: [] };
+      const ctx = { mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, anomalies: [],
+        scopePaths: ["src/r.ts", "src/a.ts", "src/c.ts"], impact, target: { repo: "o/r" } };
+      const auto = finalizeReview({ context: ctx, judgments: j0 }).payload;
+      check("COVERAGE is derived from scanned_files against scopePaths",
+        JSON.stringify(auto.COVERAGE) === JSON.stringify({ files_read: 2, files_total: 3 }));
+      check("IMPACT is built from impact.json and impact_trace, one entry per consumer file",
+        auto.IMPACT?.symbols?.[0]?.verified_unaffected === 1
+          && JSON.stringify(auto.IMPACT?.symbols?.[0]?.consumers) === JSON.stringify([{ path: "src/a.ts", status: "verified" }, { path: "src/b.ts", status: "untraced" }]));
+      const supplied = finalizeReview({ context: { ...ctx, render: { COVERAGE: { files_read: 1, files_total: 1 }, IMPACT: { symbols: [] } } }, judgments: j0 }).payload;
+      // The auto-built slots must render with zero edits — a rejected IMPACT would cost the whole
+      // report, so this goes through the real renderer with every IMPACT branch populated.
+      {
+        mkdirSync(scratchRoot(), { recursive: true });
+        const wide = { ...impact,
+          dependencies: [{ name: "stripe", from: "14.2.0", to: "16.0.1", semver_delta: "major", usage_sites: [{}, {}] },
+            { name: "qs", from: "6.11.0", to: "6.12.1", semver_delta: "minor", direct: false, usage_sites: [] }],
+          overlaps: [{ pr: 212, author: "alice", files: ["src/r.ts"], symbols: ["retry"] }, { pr: 9, author: "bob", files: ["docs/x.md"], symbols: [] }] };
+        const e2e = finalizeReview({ context: { ...ctx, impact: wide, budget: { finders: { dependency: true } }, render: { at: "2026-10-02T06:00:00Z" } },
+          judgments: { ...j0, summary: "Makes retry throw on exhaustion." } }).payload;
+        const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, e2e, "self-test-auto-reach");
+        check("an auto-built COVERAGE + IMPACT renders through render-report.mjs, diagram and all",
+          rendered.ok && rendered.stdout.includes("<summary>What this change reaches — ") && rendered.stdout.includes("```mermaid")
+            && rendered.stdout.includes("**Checked:** 2 of 3 changed files read")
+          && rendered.stdout.includes("1 open-PR overlap</summary>") && !rendered.stdout.includes("docs/x.md"), rendered.stderr.trim());
+        check("an unused transitive bump renders as the omitted-count bullet and in the summary, never as its own row",
+          rendered.ok && rendered.stdout.includes("- 1 more dependency bump — transitive, no usage sites in this repo, not listed")
+            && rendered.stdout.includes("2 dependency bumps (1 transitive, not listed) · 1 open-PR overlap</summary>")
+            && !rendered.stdout.includes("`qs`"), rendered.stderr.trim());
+      }
+      check("a caller-supplied COVERAGE / IMPACT wins over the auto-built one",
+        JSON.stringify(supplied.COVERAGE) === JSON.stringify({ files_read: 1, files_total: 1 })
+          && JSON.stringify(supplied.IMPACT) === JSON.stringify({ symbols: [] }));
+    }
     // A/B iteration 2: a supplied RUN_ANOMALY used to REPLACE the computed one.
     const merged = mergeRunAnomaly("reviewer identity unknown", "1 prepare-time anomaly (x)");
     check("mergeRunAnomaly keeps a supplied anomaly AND the computed one",
@@ -1442,6 +1542,16 @@ async function selfTest() {
     check("hydrateFilePatches is a no-op when every file already carries a patch (--inline-payloads)",
       alreadyInline.files[0].patch === "already here");
 
+    {
+      mkdirSync(scratchRoot(), { recursive: true });
+      const impactSidecar = join(scratchRoot(), `finalize-impact-${process.pid}.json`);
+      writeFileSync(impactSidecar, JSON.stringify({ symbols: [{ name: "f" }] }));
+      const hydrated = hydrateImpact({ paths: { impact: impactSidecar } });
+      const missing = hydrateImpact({ paths: { impact: join(scratchRoot(), "finalize-impact-missing.json") } });
+      check("hydrateImpact loads paths.impact, and a missing sidecar degrades to no impact (no throw)",
+        hydrated.impact?.symbols?.[0]?.name === "f" && missing.impact === undefined);
+      rmSync(impactSidecar, { force: true });
+    }
     const noSidecar = hydrateFilePatches({ files: [{ filename: "a.ts" }] });
     check("hydrateFilePatches degrades to the pre-fix behavior (patch-less) when no sidecar path is given, never throws",
       noSidecar.files[0].patch === undefined);
@@ -2326,7 +2436,7 @@ async function main() {
   }
 
   const contextRaw = JSON.parse(readFileSync(/** @type {string} */(opts.context), "utf8"));
-  const context = withRenderAt(hydrateFilePatches(contextRaw));
+  const context = withRenderAt(hydrateImpact(hydrateFilePatches(contextRaw)));
   // `--no-dispatch`: the reviewer held no sub-agent dispatch tool, so a `hybrid` budget ran
   // in-context (rules/dispatch-topology.md § No-dispatch fallback). finalizeReview() renders the
   // prescribed RUN_ANOMALY part from the budget itself.

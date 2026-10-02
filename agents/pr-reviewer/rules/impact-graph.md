@@ -149,11 +149,11 @@ With `--overlaps`, the script asks GitHub for the 30 most recently updated open 
 
 | `kind` | Meaning | Effect |
 | --- | --- | --- |
-| `same-symbol` | both PRs change the same exported symbol | a `standard`-tier trigger, and a consequence note in `Impact` |
+| `same-symbol` | both PRs change the same exported symbol | a `standard`-tier trigger, and a consequence note in `What this change reaches` |
 | `same-file` | both touch the file, different symbols | a note only |
 
 ```markdown
-`retryRequest` is also changed on #212 by @alice (`feat/retry-budget`) — a semantic
+`retryRequest` is also changed on #212 by `alice` — a semantic
 conflict is likely even if git merges both cleanly.
 ```
 
@@ -173,6 +173,31 @@ Static search under-counts dynamic dispatch, reflection, string-keyed registries
 ```
 
 A finding cites the code the graph pointed at. The graph itself is never the evidence.
+
+## In the report
+
+The trace renders as the report's `What this change reaches` accordion, a Mermaid diagram above the
+bullets ([`report-rendering.md` § What a reader sees first](./report-rendering.md#what-a-reader-sees-first--reach-coverage-progress)).
+`finalize.mjs` builds it (`finalize/reach.mjs`) from three inputs, so the run supplies only the
+trace:
+
+| Input | Source | Becomes |
+| --- | --- | --- |
+| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); `same-symbol` overlaps; each dependency delta that is direct or has a usage site, plus `dependencies_omitted` — the count of transitive deltas with no usage site, rendered as one bullet, never dropped |
+| `judgments.impact_trace` | the consumer-impact and dependency finders | `verified` for each consumer file read and found holding — kept even past impact.json's 25-file list; for a dependency (`symbol` = package name, `path` = its manifest), the usage sites in the files listed become `checked_sites` |
+| a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set; with `symbol` set, kept even past the 25-file list) |
+
+Every other listed consumer renders as `? not checked`. Record the trace as you go:
+
+```json
+"impact_trace": [
+  { "symbol": "retryRequest", "path": "src/api/client.ts",
+    "verified": ["src/jobs/export.ts", "src/jobs/import.ts", "src/api/batch.ts"] },
+  { "symbol": "stripe", "path": "package-lock.json", "verified": ["src/billing/charge.ts"] }
+]
+```
+
+❌ WRONG — listing a file in `verified` because the graph found no break in it: only a file the trace read is `verified`.
 
 ## Degradation
 

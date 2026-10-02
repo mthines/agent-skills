@@ -805,6 +805,29 @@ export function checksReadable(r) {
 }
 
 /**
+ * The report's `**Progress:**` history for this run: the state record's rounds, or none under
+ * --isolated — a comparability run is judged as a first run and must not show a trend from runs it
+ * is pretending not to know about.
+ * @param {{ isolated?: boolean }} runMode @param {{ rounds?: unknown }} state
+ * @returns {{sha: string, open: number, blocking: number}[]}
+ */
+export function priorRunRounds(runMode, state) {
+  return runMode?.isolated ? [] : (Array.isArray(state?.rounds) ? state.rounds : []);
+}
+
+/**
+ * The changed files this run reviews, for the report's `Checked` line: none on zero-delta, every
+ * diffable PR file on a `full` run — including a re-review the routing promoted to full, whose
+ * `deltaFiles` still hold only the delta — and the delta otherwise.
+ * @param {{ mode: string, deltaFiles: {filename: string}[], prFiles: {filename: string}[] }} args
+ * @returns {string[]}
+ */
+export function scopePathsFor({ mode, deltaFiles, prFiles }) {
+  if (mode === "zero-delta") return [];
+  return (mode === "full" ? prFiles : deltaFiles).map((f) => f.filename);
+}
+
+/**
  * Reads the `--state` file (D10) — the caller's already-fetched LoreKit
  * state record `data`, read by the AGENT before invoking this script
  * (Steps 0.7/1.0; this script does no LoreKit I/O itself, per its own
@@ -813,7 +836,10 @@ export function checksReadable(r) {
  * depth-routing.md's D6 ("no prior full review is recorded").
  * Accepts the record as Step 4c writes it (`{v, commit, data: {runs[]}}`, or a LoreKit read's
  * `{value: "<that JSON>"}`), or the flat `{priorSha, lastFullSha, incrRunsSinceFull}` shape.
- * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null}}
+ * `rounds` is the worklist each recorded run left (`runs[].open`/`.blocking`, Step 4c), oldest
+ * first and capped at the last four; a run recorded before those fields existed is skipped, never
+ * guessed. It feeds the report's `**Progress:**` line.
+ * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null, rounds?: {sha: string, open: number, blocking: number}[]}}
  */
 export function readStateFile(path) {
   const none = { priorSha: null, lastFullSha: null, incrRunsSinceFull: 0 };
@@ -837,6 +863,12 @@ export function readStateFile(path) {
         priorSha: runs.length ? String(runs[runs.length - 1]?.sha || "") || null : null,
         lastFullSha: lastFull < 0 ? null : String(runs[lastFull]?.sha || "") || null,
         incrRunsSinceFull: lastFull < 0 ? runs.length : runs.length - 1 - lastFull,
+        rounds: runs
+          .filter((r) => /^[0-9a-f]{7,40}$/.test(String(r?.sha || "").toLowerCase())
+            && Number.isInteger(r?.open) && r.open >= 0
+            && Number.isInteger(r?.blocking) && r.blocking >= 0 && r.blocking <= r.open)
+          .map((r) => ({ sha: String(r.sha).toLowerCase().slice(0, 7), open: r.open, blocking: r.blocking }))
+          .slice(-4),
       };
     }
     return {
@@ -1896,6 +1928,10 @@ async function prepare(opts) {
     },
     files: opts.inlinePayloads ? files : files.map(({ patch, ...rest }) => rest),
     filesPath: prFilesPath,
+    // The changed files this run reviews — the delta on an incremental run, the PR's diffable files
+    // on a full one, none on zero-delta. finalize.mjs counts judgments.scanned_files against it for
+    // the report's `Checked` line, so a file outside the scope can never inflate "N of M read".
+    scopePaths: scopePathsFor({ mode: contextMode, deltaFiles, prFiles: diffable.length ? files.filter((f) => diffable.includes(f.filename)) : files }),
     diffablePaths: diffable,
     undiffablePaths: undiffable,
     // The delta's own count on an incremental run (what RUN.delta_lines renders as "N lines in
@@ -1927,6 +1963,9 @@ async function prepare(opts) {
       stickyKind: sticky ? sticky.kind : null,
       priorSha,
       zeroDelta,
+      // The report's `**Progress:**` history. Empty under --isolated: a comparability run is judged
+      // as a first run, so it must not show a trend from runs it is pretending not to know about.
+      rounds: priorRunRounds(runMode, state),
       priorDiagnostics: null,
       note: runMode.isolated
         ? "--isolated: first-run semantics — no prior-run diagnostics, no delta triage, no fallback-rung priorSha (pipeline.md § --isolated)."
@@ -2634,6 +2673,38 @@ async function selfTest() {
   t("readStateFile: absent path defaults to no prior deep pass on record (the safe direction)", () => {
     const s = readStateFile(null);
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
+  });
+  t("priorRunRounds: the state record's rounds reach the context, and none under --isolated", () => {
+    const rounds = [{ sha: "1234567", open: 2, blocking: 1 }];
+    return JSON.stringify(priorRunRounds({ isolated: false }, { rounds })) === JSON.stringify(rounds)
+      && priorRunRounds({ isolated: true }, { rounds }).length === 0
+      && priorRunRounds({}, {}).length === 0;
+  });
+  t("scopePathsFor: full mode reviews every PR file, a delta mode its delta, zero-delta nothing", () => {
+    const prFiles = [{ filename: "a.ts" }, { filename: "b.ts" }, { filename: "c.ts" }];
+    const deltaFiles = [{ filename: "c.ts" }];
+    return JSON.stringify(scopePathsFor({ mode: "full", deltaFiles, prFiles })) === JSON.stringify(["a.ts", "b.ts", "c.ts"])
+      && JSON.stringify(scopePathsFor({ mode: "incremental", deltaFiles, prFiles })) === JSON.stringify(["c.ts"])
+      && scopePathsFor({ mode: "zero-delta", deltaFiles, prFiles }).length === 0;
+  });
+  t("readStateFile: rounds carry each run's open/blocking worklist, skip runs without one, cap at 4", () => {
+    const p = join(tmpdir(), `prr-state-rounds-${process.pid}.json`);
+    const runs = [
+      { sha: "1111111aaaa", mode: "full", verdict: "FAIL", at: "2026-09-01T00:00:00Z" },
+      { sha: "2222222", mode: "incremental", verdict: "FAIL", at: "2026-09-02T00:00:00Z", open: 6, blocking: 2 },
+      { sha: "3333333", mode: "incremental", verdict: "WARN", at: "2026-09-03T00:00:00Z", open: 5, blocking: 1 },
+      { sha: "4444444", mode: "incremental", verdict: "WARN", at: "2026-09-04T00:00:00Z", open: 4, blocking: 9 },
+      { sha: "5555555", mode: "full", verdict: "WARN", at: "2026-09-05T00:00:00Z", open: 3, blocking: 0 },
+      { sha: "6666666", mode: "incremental", verdict: "WARN", at: "2026-09-06T00:00:00Z", open: 2, blocking: 0 },
+      { sha: "7777777", mode: "incremental", verdict: "PASS", at: "2026-09-07T00:00:00Z", open: 1, blocking: 0 },
+    ];
+    writeFileSync(p, JSON.stringify({ v: 1, commit: "7777777", data: { runs } }), "utf8");
+    const s = readStateFile(p);
+    // run 1 has no counts and run 4's blocking > open — both skipped; the last four survivors kept.
+    return JSON.stringify(s.rounds) === JSON.stringify([
+      { sha: "3333333", open: 5, blocking: 1 }, { sha: "5555555", open: 3, blocking: 0 },
+      { sha: "6666666", open: 2, blocking: 0 }, { sha: "7777777", open: 1, blocking: 0 },
+    ]);
   });
   t("readStateFile: reads a real state file's lastFullSha and incrRunsSinceFull", () => {
     const p = join(tmpdir(), `prr-state-probe-${process.pid}.json`);

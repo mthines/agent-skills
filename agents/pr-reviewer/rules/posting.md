@@ -106,9 +106,11 @@ REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 | `gates.gate4` | Self-review-signals judgment (Gate 4). |
 | `gates.gate5` | Docs judgment (Gate 5). |
 | `candidates[]`, `threads[]`, `lenses[]`, `memory` | Everything Steps 2/2.4–2.9c produced. `finalize.mjs` computes thresholds, the defer band, suppression, placement, caps, and the gates/verdict from these — it invents none of it. |
+| `scanned_files` | `SCANNED_FILES` (Step 2), as repo-relative paths. `finalize.mjs` counts it against `context.scopePaths` for the report's `**Checked:**` line. Omitted, the line drops its files-read part. |
+| `impact_trace` | Per changed export the consumer-impact finder traced, and per dependency the dependency finder read (`symbol` = package, `path` = manifest), `{symbol, path, verified: [<files read that still hold>]}` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)). `finalize.mjs` builds the `What this change reaches` section from it, `impact.json`, and the posted consumer-impact claims. |
 | `memory.relevance_rules[]`, `memory.lessons_used[]`, `memory.read[]` | Copy `id`, `scope`, and `key` onto every entry. Take `id` from the `memory_list` / `memory_search` entry that surfaced the key — `memory_read` returns none. Take `scope` from the entry, or from the scope the call was made with when the entry omits it — a `scope="global"` `memory_list` does, and a ref without a scope is never cited. `read[]` lists `{ id, scope, key }` for every body this run fetched with `memory_read` (Steps 1.2a, 1.2d, 2.7b). The run trace opens each memory by these ([`run-telemetry.md § The memory`](./run-telemetry.md#the-memory)). |
 
-There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
+There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`, and — only to override what `finalize/reach.mjs` builds from `scanned_files` / `impact_trace` — `COVERAGE` and `IMPACT`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
 
 **Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
 The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
@@ -495,13 +497,17 @@ NEW_STATE=$(jq -c \
   --argjson sticky_id "${STICKY_COMMENT_ID:-null}" \
   --argjson ids "$OPEN_BOT_COMMENT_IDS_JSON" \
   --argjson carried "$CARRIED_FINDINGS_JSON" \
-  --argjson diag "$DIAGNOSTICS_JSON" '
+  --argjson diag "$DIAGNOSTICS_JSON" \
+  --argjson round "$(jq -c --arg sha "${HEAD_SHA:0:7}" \
+                       'if .payload.RUN.sha == $sha then (.round // {open: null, blocking: null}) else {open: null, blocking: null} end' \
+                       /tmp/finalize/finalize-result.json 2>/dev/null || echo '{"open": null, "blocking": null}')" '
   {v: 1, commit: $sha, data: {
      pr: $pr,
      sticky_comment_id: $sticky_id,
      sticky_url: $sticky_url,
      bot_login: $login,
-     runs: (((.data.runs // []) + [{sha: $sha, mode: $mode, verdict: $verdict, at: $at}]) | .[-50:]),
+     runs: (((.data.runs // []) + [{sha: $sha, mode: $mode, verdict: $verdict, at: $at,
+                                     open: $round.open, blocking: $round.blocking}]) | .[-50:]),
      open_thread_ids: $ids,
      carried_findings: ($carried | .[:50]),
      diagnostics: ($diag | .optimality_cards = ((.optimality_cards // []) | .[:2]))
@@ -515,6 +521,7 @@ even when the input is already short — a cap that only fires when someone reme
 
 | Field | Source | Note |
 | --- | --- | --- |
+| `runs[-1].open` · `runs[-1].blocking` | `finalize-result.json`'s `round` | The review threads this run leaves open, and the blocking subset — the next run's `**Progress:**` line. Copied, never recounted: finalize computes it with the report's own formula. `null` when finalize did not run, or when the file's `payload.RUN.sha` is not this run's head (a result left by an earlier run); the next run then skips this point. |
 | `carried_findings` | Step 2.9b's `Additional findings`, plus any surviving Step 0.7 entry | Posted-inline or resolved findings are dropped — they'd come back as duplicates. |
 | `diagnostics.gate_rows` | Step 1.8's ⚠️/❌ rows | `✅` rows are not recorded. |
 | `diagnostics.optimality_cards` | Step 2.4c's cards verbatim, or entries Step 2.5c dispositioned `CARRY` | Verbatim — a card is a multi-line block with its own table. |

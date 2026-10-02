@@ -146,10 +146,10 @@ whose stop gate fires at ~9 minutes.
 
 So under `hybrid`, send **exactly two `general` sub-agents in one message**:
 
-| Worker | Finders | Writes |
-|---|---|---|
-| intent | `intent` only | `<scratch>/intent.json` |
-| other finders | every other finder active in `context.budget.finders` — `correctness` and `quality` always, `consumer-impact`, `dependency` and `standards` when the budget turns them on — in one context | `<scratch>/others.json` |
+| Worker | Finders | Writes | Trace |
+|---|---|---|---|
+| intent | `intent` only | `<scratch>/intent.json` | none |
+| other finders | every other finder active in `context.budget.finders` — `correctness` and `quality` always, `consumer-impact`, `dependency` and `standards` when the budget turns them on — in one context | `<scratch>/others.json` | `<scratch>/others.trace.json` — an `impact_trace` array, `[]` when neither `consumer-impact` nor `dependency` is on |
 
 That keeps `hybrid`'s isolation — the intent finder alone, the other finders sharing one context —
 and costs the slower worker's runtime instead of the sum. Both workers read the context this run
@@ -158,6 +158,12 @@ exist when the message returns, so there is no intent wait to mark here. Everyth
 run: read both files, pool their candidates for Step 2.5, run the lenses, and verify every candidate
 here — marking `verify` with the pooled `--attr candidates=<n>` on the first verification command — under [`dispatch-topology.md § Verification — in your own context`](./dispatch-topology.md#verification--in-your-own-context),
 shape self-check included. A candidate is not trusted because a worker raised it.
+
+Fold `<scratch>/others.trace.json` into `judgments.impact_trace` when you write `judgments.json`,
+beside any entry this run traced itself ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)).
+A worker's trace is coverage, never a finding: it marks consumer files and usage sites as checked,
+and nothing in it is posted. A missing or unreadable trace file folds as `[]`, so its consumers
+render as not checked, never as verified.
 
 **Never dispatch anything else.** Phase E verifies one candidate at a time in this turn, and Step
 2.4b's targeted holistic traces are `Skill()` calls in this turn too. Neither is a fan-out, on this
@@ -174,6 +180,8 @@ Each worker's prompt is short, for the reason in
 - `/tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md`;
 - its output path: write the candidates there as a JSON array of `finders.md` candidate records,
   and return only that path in the final message;
+- for the other-finders worker, its trace path beside it: write `<scratch>/others.trace.json` as
+  a JSON array of `impact_trace` entries, `[]` when neither `consumer-impact` nor `dependency` ran;
 - do not read `pr-reviewer.md` or the bundle, and do not call the skill tool.
 
 That is the discipline of `/pr-review`'s

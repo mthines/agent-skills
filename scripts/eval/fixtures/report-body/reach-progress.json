@@ -1,0 +1,167 @@
+{
+  "VERDICT": "WARN",
+  "SUMMARY": "Makes `retryRequest` throw on exhaustion and moves the backoff policy into one module.",
+  "WARN_REASONS": [
+    "1 open review thread",
+    "1 non-blocking finding"
+  ],
+  "FINDINGS": [
+    {
+      "title": "`sync.ts` still branches on the old null contract",
+      "path": "src/jobs/sync.ts",
+      "line": 88,
+      "url": "https://github.com/o/r/pull/7#discussion_r71",
+      "tier": "medium"
+    }
+  ],
+  "RUN": {
+    "mode": "full",
+    "sha": "9b1f0c2",
+    "delta_lines": 164,
+    "at": "2026-09-30T10:05:00Z",
+    "tier": "deep",
+    "depth": "checkout",
+    "thoroughness": 0.95
+  },
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "⚠️",
+  "GATE_PRIOR_DETAILS": "1 unresolved review thread(s) — see the thread list below",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "⚠️",
+  "GATE_CODEREVIEW_DETAILS": "1 non-blocking finding — see inline comments.",
+  "OPEN_THREADS": [
+    {
+      "path": "src/api/backoff.ts",
+      "line": 41,
+      "url": "https://github.com/o/r/pull/7#discussion_r52",
+      "ask": "jitter is still seeded once per process",
+      "author": "cursor",
+      "is_bot": true
+    }
+  ],
+  "RESOLVED_SINCE": {
+    "count": 2,
+    "sha": "8d2e4a1"
+  },
+  "COVERAGE": {
+    "files_read": 22,
+    "files_total": 22,
+    "files_skipped": 1
+  },
+  "ROUNDS": [
+    {
+      "sha": "70cf147",
+      "open": 5,
+      "blocking": 2
+    },
+    {
+      "sha": "8d2e4a1",
+      "open": 3,
+      "blocking": 1
+    }
+  ],
+  "IMPACT": {
+    "symbols": [
+      {
+        "name": "retryRequest",
+        "path": "src/api/client.ts",
+        "change": "signature",
+        "consumer_files": 14,
+        "verified_unaffected": 5,
+        "findings": 1,
+        "consumers": [
+          {
+            "path": "src/jobs/sync.ts",
+            "line": 88,
+            "status": "finding"
+          },
+          {
+            "path": "src/jobs/export.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/jobs/import.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/jobs/reindex.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/api/batch.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/api/poll.ts",
+            "status": "verified"
+          },
+          {
+            "path": "packages/billing/src/charge.ts",
+            "status": "untraced"
+          },
+          {
+            "path": "packages/billing/src/refund.ts",
+            "status": "untraced"
+          }
+        ]
+      },
+      {
+        "name": "backoffDelay",
+        "path": "src/api/backoff.ts",
+        "change": "added",
+        "consumer_files": 2,
+        "verified_unaffected": 2,
+        "findings": 0,
+        "consumers": [
+          {
+            "path": "src/api/client.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/jobs/export.ts",
+            "status": "verified"
+          }
+        ]
+      }
+    ],
+    "overlaps": [
+      {
+        "pr": 212,
+        "author": "alice",
+        "path": "src/api/client.ts",
+        "symbol": "retryRequest",
+        "url": "https://github.com/o/r/pull/212"
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "p-retry",
+        "from": "5.1.2",
+        "to": "6.2.0",
+        "delta": "major",
+        "usage_sites": 3,
+        "checked_sites": 2
+      }
+    ]
+  },
+  "MEMORIES_SUMMARY": "31 indexed",
+  "QUALITY": "produced 11 → posted inline 1 · cleared 2 · carried forward 0 · deferred 1 · below-bar 0",
+  "INTEGRATIONS": "not activated",
+  "OPTIMALITY_LOG": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
+  "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
+  "MEASURABILITY_LOG": "ran · 2 paths classified · 0 missing · 0 unlinked",
+  "SKIPPED_FILES": "pnpm-lock.yaml",
+  "ADDITIONAL_FINDINGS": [
+    {
+      "path": "src/api/backoff.ts",
+      "line": 12,
+      "prefix": "suggestion",
+      "body": "name the 250 ms base delay so the two clients share it.",
+      "confidence": 83
+    }
+  ]
+}

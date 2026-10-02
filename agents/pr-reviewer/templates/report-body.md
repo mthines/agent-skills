@@ -8,11 +8,22 @@
 {{REASONS_LINE}}
 {{/REASONS_LINE}}{{#ADVISORY_LINE}}
 {{ADVISORY_LINE}}
-{{/ADVISORY_LINE}}{{#FINDINGS_INDEX}}
+{{/ADVISORY_LINE}}{{#COVERAGE_LINE}}
+{{COVERAGE_LINE}}
+{{/COVERAGE_LINE}}{{#PROGRESS_LINE}}
+{{PROGRESS_LINE}}
+{{/PROGRESS_LINE}}{{#FINDINGS_INDEX}}
 {{FINDINGS_INDEX}}
 {{/FINDINGS_INDEX}}{{#FIX_ALL_BUTTON}}
 {{FIX_ALL_BUTTON}}
-{{/FIX_ALL_BUTTON}}{{#OPTIMALITY_CARDS}}
+{{/FIX_ALL_BUTTON}}{{#IMPACT_SECTION}}
+<details>
+<summary>What this change reaches — {{IMPACT_SUMMARY}}</summary>
+
+{{IMPACT_SECTION}}
+
+</details>
+{{/IMPACT_SECTION}}{{#OPTIMALITY_CARDS}}
 <details>
 <summary>Is there a better approach? ({{OPTIMALITY_COUNT}})</summary>
 
@@ -58,14 +69,7 @@
 
 {{OPEN_THREADS}}
 {{/OPEN_THREADS}}
-{{#IMPACT_SECTION}}<details>
-<summary>Impact — {{IMPACT_SUMMARY}}</summary>
-
-{{IMPACT_SECTION}}
-
-</details>
-
-{{/IMPACT_SECTION}}{{#WITHHELD}}<details>
+{{#WITHHELD}}<details>
 <summary>Withheld ({{WITHHELD_COUNT}}) — could not be verified from this runner</summary>
 
 {{WITHHELD}}
