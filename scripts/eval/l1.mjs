@@ -10751,18 +10751,23 @@ const isPollBlock = (block) =>
 // says zero-delta, at least one thread is open, no open thread has a reply, and --no-feedback is
 // off. Each condition guards a failure: with no open thread the skip sends a finished PR to
 // polish simplify; with a reply the skip loses the zero-delta pass's only resolver (`declined`).
+// The check is a LITERAL bash block an agent runs as its own tool call, where no function or
+// variable from another call survives — so it must carry its own thread query and print the
+// decision itself.
 // Guarded:
 //   a. the section carries all five condition rows;
-//   b. its bash block, EXECUTED against stub thread counts and a stub context.json, sets
-//      APPLY_FIRST=1 only when every condition holds and fails closed on every failed read;
+//   b. its bash block, EXECUTED with nothing but `gh` stubbed (no helper, no counter, no echo
+//      supplied by the harness), sets APPLY_FIRST=1 only when every condition holds and fails
+//      closed on every failed read (the thread query, and the reply count on its own) — so a block that leans on Step 0's helpers or stops printing
+//      its decision goes red, which is what a harness that pre-defined them could never see;
 //   c. the loop's skip branch is gated on iteration 1 + APPLY_FIRST and sets NEW_FINDINGS = true
 //      ahead of the convergence exit (a skipped review can never converge or merge);
-//   d. the replied-thread helper selects open threads holding more than one comment (executed
-//      against a fixture with jq), and the report + hard rule name the skip;
+//   d. the report + hard rule name the skip;
 //   e. --external-review / --interval are gone from review-loop and every caller that named them.
-// break-shape: drop a condition row; flip `-ge 1` to `-ge 0` or `-eq 0` to `-le 1`; default
-// REPLIED to 0; set NEW_FINDINGS = false in the skip branch; widen the helper to `>= 1`; or put
-// `--external-review` back into aw/SKILL.md — the matching sub-check flips red.
+// break-shape: drop a condition row; flip `-ge 1` to `-ge 0`; default REPLIED to 0; count a
+// resolved thread as open; call `unresolved_thread_count` from the block; delete the block's
+// `echo "APPLY_FIRST=…"`; set NEW_FINDINGS = false in the skip branch; or put `--external-review`
+// back into aw/SKILL.md — the matching sub-check flips red.
 {
   const RL_PATH = "skills/quality/review-loop/SKILL.md";
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
@@ -10772,48 +10777,54 @@ const isPollBlock = (block) =>
   const S3 = sectionOr("### Step 3: Report");
 
   // a. the five conditions, each a row of the section's condition table.
-  const conds = ["`ITERATION == 1`", "`NO_FEEDBACK == 0`", "`.mode == \"zero-delta\"`",
-    "`unresolved_thread_count() >= 1`", "`replied_open_thread_count() == 0`"];
+  const conds = ["`ITERATION == 1`", "`NO_FEEDBACK == 0`", "`.mode == \"zero-delta\"`", "`OPEN >= 1`", "`REPLIED == 0`"];
   const missing = conds.filter((c) => !AF.split("\n").some((l) => l.startsWith(`| ${c} |`)));
   s.check("G89a review-loop's apply-first section carries all five condition rows",
     AF.length > 400 && missing.length === 0,
     `section ${AF.length ? "found" : "missing"}; condition rows missing: ${missing.join(" · ") || "none"}`);
 
-  // b. the block, executed. Stubs replace the two gh helpers; a temp file replaces <dir>/context.json.
+  // b. the block, executed exactly as an agent's own tool call would run it: placeholders filled,
+  //    `gh` the only stub (it prints what the real `--jq` filter would), and the decision read off
+  //    the block's OWN stdout. A resolved thread with replies rides along in every fixture.
   const blk = (AF.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
   const run = (c) => {
     const dir = mkdtempSync(join(tmpdir(), "l1-g89-"));
     try {
       const ctx = join(dir, "context.json");
       if (c.mode !== null) writeFileSync(ctx, JSON.stringify({ mode: c.mode, priorRun: { priorSha: "abc1234" } }));
-      const stub = (name, v) => v === null
-        ? `${name}() { echo "HTTP 502" >&2; return 1; }`
-        : `${name}() { echo ${v}; }`;
-      const sh = [
-        stub("unresolved_thread_count", c.open), stub("replied_open_thread_count", c.replied),
-        `ITERATION=${c.iter}; NO_FEEDBACK=${c.nofb}`,
-        blk.replaceAll("<dir>/context.json", ctx),
-        'echo "APPLY_FIRST=$APPLY_FIRST PRIOR_SHA=$PRIOR_SHA"',
-      ].join("\n");
-      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout.trim();
+      // `malformed` keeps the open count readable but breaks the reply count (jq cannot index a
+      // string), so REPLIED's own fail-closed default is exercised rather than masked by OPEN's.
+      const nodes = c.open === null ? null : [
+        ...Array.from({ length: c.open }, (_, i) => ({ isResolved: false, comments: c.malformed ? "unreadable" : { totalCount: i < c.replied ? 2 : 1 } })),
+        { isResolved: true, comments: { totalCount: 3 } }];
+      const gh = nodes === null
+        ? 'gh() { echo "HTTP 502" >&2; return 1; }'
+        : `gh() { printf '%s\\n' '${JSON.stringify(nodes)}'; }`;
+      const sh = [gh, blk
+        .replaceAll("<ITERATION>", String(c.iter)).replaceAll("<NO_FEEDBACK>", String(c.nofb))
+        .replaceAll("<OWNER>", "o").replaceAll("<REPO>", "r").replaceAll("<PR_NUMBER>", "1")
+        .replaceAll("<dir>/context.json", ctx)].join("\n");
+      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout;
     } finally { rmSync(dir, { recursive: true, force: true }); }
   };
+  const decision = (out) => (out.match(/^APPLY_FIRST=(\d)\b/m) || ["", "∅"])[1];
   const base = { iter: 1, nofb: 0, mode: "zero-delta", open: 2, replied: 0 };
   const cases = [
     ["all five hold", {}, "1"],
     ["iteration 2", { iter: 2 }, "0"],
     ["--no-feedback", { nofb: 1 }, "0"],
     ["mode incremental", { mode: "incremental" }, "0"],
-    ["no open thread", { open: 0 }, "0"],
+    ["no open thread (only a resolved one)", { open: 0 }, "0"],
     ["an open thread has a reply", { replied: 1 }, "0"],
     ["context.json missing", { mode: null }, "0"],
-    ["open-thread query fails", { open: null }, "0"],
-    ["replied-thread query fails", { replied: null }, "0"],
+    ["thread query fails", { open: null }, "0"],
+    ["reply count unreadable", { malformed: true }, "0"],
   ];
-  const wrong = cases.filter(([, d, want]) => !run({ ...base, ...d }).startsWith(`APPLY_FIRST=${want} `)).map(([n]) => n);
-  s.check("G89b the apply-first block skips only when all five conditions hold, and fails closed on every failed read (executed)",
-    blk !== "" && wrong.length === 0 && run(base).endsWith("PRIOR_SHA=abc1234"),
-    blk === "" ? "no ```bash block in the apply-first section" : `wrong outcome for: ${wrong.join(" · ") || "none"} (or PRIOR_SHA not read)`);
+  const wrong = cases.map(([n, d, want]) => [n, want, decision(run({ ...base, ...d }))]).filter(([, want, got]) => got !== want);
+  s.check("G89b the apply-first block runs alone (only `gh` stubbed), prints its decision, skips only when all five conditions hold, and fails closed on every failed read (executed)",
+    blk !== "" && wrong.length === 0 && /PRIOR_SHA=abc1234/.test(run(base)),
+    blk === "" ? "no ```bash block in the apply-first section"
+      : `wrong decision for: ${wrong.map(([n, want, got]) => `${n} (want ${want}, got ${got})`).join(" · ") || "none"}${/PRIOR_SHA=abc1234/.test(run(base)) ? "" : "; PRIOR_SHA not printed"}`);
 
   // c. the loop's skip branch: gated, sets NEW_FINDINGS = true, and sits ahead of the convergence exit.
   const loop = (RL.match(/^while ITERATION < CAP:\n[\s\S]*?(?=\n# Post-loop)/m) || [""])[0];
@@ -10824,15 +10835,7 @@ const isPollBlock = (block) =>
     iCheck >= 0 && iSkip > iCheck && iConv > iSkip,
     `check@${iCheck} skip@${iSkip} convergence@${iConv} — a skipped review must never reach the convergence exit with NEW_FINDINGS false`);
 
-  // d. the helper, executed against a fixture; the report slot and the hard rule.
-  const helper = (RL.match(/^replied_open_thread_count\(\) \{[\s\S]*?--jq '([^']+)'\n\}/m) || ["", ""])[1];
-  const fixture = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [
-    { isResolved: false, comments: { totalCount: 1 } }, { isResolved: false, comments: { totalCount: 3 } },
-    { isResolved: true, comments: { totalCount: 2 } }, { isResolved: false, comments: { totalCount: 2 } }] } } } } });
-  const jq = helper ? spawnSync("jq", [helper], { input: fixture, encoding: "utf8" }) : { status: -1, stdout: "" };
-  s.check("G89d replied_open_thread_count counts open threads holding more than one comment (executed against a fixture)",
-    jq.status === 0 && jq.stdout.trim() === "2" && /comments\{ totalCount \}/.test(RL),
-    `helper ${helper ? "found" : "missing"}; jq exit ${jq.status}, got ${(jq.stdout || "").trim() || "∅"} (want 2 of 4 threads)`);
+  // d. the report slot and the hard rule.
   s.check("G89d the report renders a skipped iteration-1 review, and a hard rule names the apply-first conditions",
     /^ {2}Iteration 1: <verdict \| review skipped \(prior review at <PRIOR_SHA> still stands\)>/m.test(S3)
       && /^Final pr-reviewer verdict: <[^\n]*n\/a \(no review this run — prior review at <PRIOR_SHA>\)>/m.test(S3)

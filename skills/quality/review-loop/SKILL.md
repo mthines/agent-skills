@@ -407,9 +407,7 @@ if [ "$MERGE" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
 fi
 ```
 
-Two helpers read the PR's review threads.
-`unresolved_thread_count` is the exit check — the count of **unresolved** review threads.
-`replied_open_thread_count` is the [apply-first](#iteration-1--apply-first-when-the-last-review-still-stands) check — the count of unresolved threads holding more than one comment, that is, a finding someone has replied to:
+A helper for the exit check — the count of **unresolved** review threads:
 
 ```bash
 unresolved_thread_count() {
@@ -422,18 +420,6 @@ unresolved_thread_count() {
       }
     }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" \
     --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false)] | length'
-}
-
-replied_open_thread_count() {
-  gh api graphql -f query='
-    query($owner:String!,$repo:String!,$pr:Int!){
-      repository(owner:$owner,name:$repo){
-        pullRequest(number:$pr){
-          reviewThreads(first:100){ nodes{ isResolved comments{ totalCount } } }
-        }
-      }
-    }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" \
-    --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved==false and .comments.totalCount > 1)] | length'
 }
 ```
 
@@ -470,14 +456,15 @@ while ITERATION < CAP:
     ITERATION += 1
 
     # Iteration 1 only: when the last pr-reviewer review still stands, apply its
-    # open threads before re-reviewing. The check reads context.json from one
-    # prepare-review.mjs run and the two thread helpers; any read that fails
-    # fails the check, and the iteration reviews first as usual. See
+    # open threads before re-reviewing. The check is one self-contained Bash
+    # call: it reads context.json from one prepare-review.mjs run, makes its own
+    # thread query, and prints APPLY_FIRST. Any read that fails fails the check,
+    # and the iteration reviews first as usual. See
     # "Iteration 1 — apply first when the last review still stands".
     if ITERATION == 1 and NO_FEEDBACK == 0:
         APPLY_FIRST = (context.json .mode == "zero-delta"
-                       AND unresolved_thread_count() >= 1
-                       AND replied_open_thread_count() == 0)
+                       AND OPEN >= 1       # unresolved threads
+                       AND REPLIED == 0)   # unresolved threads holding more than one comment
 
     # Sub-step A: review — the FIRST thing every iteration runs except an
     # iteration 1 that passed the apply-first check, so a review pass validates
@@ -626,8 +613,8 @@ Skip sub-step A in iteration 1 when **all** of these hold, and review first othe
 | `ITERATION == 1` | the loop counter | Every later iteration must review the previous iteration's push |
 | `NO_FEEDBACK == 0` | Step 0 | Report-only runs only sub-step A; skipping it leaves the run nothing to do |
 | `.mode == "zero-delta"` | `context.json` from one `prepare-review.mjs` run | The head is the commit the last review judged, so a re-review would take its zero-delta path and re-read nothing |
-| `unresolved_thread_count() >= 1` | GraphQL | With no open thread, the zero-delta review is what lets iteration 1 converge without pushing; skipped, a finished PR goes to `polish simplify` and gets new commits |
-| `replied_open_thread_count() == 0` | GraphQL | A reply is the one thing a zero-delta review acts on — it resolves a thread the author declined; skipped, sub-step B meets that thread still open |
+| `OPEN >= 1` | the block's thread query — unresolved threads | With no open thread, the zero-delta review is what lets iteration 1 converge without pushing; skipped, a finished PR goes to `polish simplify` and gets new commits |
+| `REPLIED == 0` | the block's thread query — unresolved threads holding more than one comment, that is, a finding someone replied to | A reply is the one thing a zero-delta review acts on — it resolves a thread the author declined; skipped, sub-step B meets that thread still open |
 
 Read the mode from the prepare sub-step A runs anyway, never from a second one:
 
@@ -636,17 +623,32 @@ Read the mode from the prepare sub-step A runs anyway, never from a second one:
 | `named` | The `prepare-review.mjs` run of [the named dispatch](#sub-step-a--the-named-dispatch), item 1 — run it before the check | Passed: run its `--cleanup` and dispatch nothing. Failed: hand the same `context.json` to the dispatch |
 | `agent0` | `node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json`, run in the loop's context | Run its `--cleanup` either way; the `general` reviewer runs its own prepare ([`rules/agent0-runtime.md`](./rules/agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)) |
 
+Run the block below as **one** Bash call, with the loop's values written in for `<ITERATION>`, `<NO_FEEDBACK>`, `<OWNER>`, `<REPO>`, `<PR_NUMBER>`, and `<dir>`.
+Shell state does not survive between tool calls, so the block calls no helper defined elsewhere, makes its own thread query, and prints the decision.
+Read `APPLY_FIRST` from that printed line, never from a variable set in another call.
+
 ```bash
 # Iteration 1 only. Every failed read leaves APPLY_FIRST=0, so the iteration reviews first.
+ITERATION=<ITERATION>; NO_FEEDBACK=<NO_FEEDBACK>; OWNER=<OWNER>; REPO=<REPO>; PR_NUMBER=<PR_NUMBER>
 MODE=$(jq -r '.mode // empty' "<dir>/context.json" 2>/dev/null)
 PRIOR_SHA=$(jq -r '.priorRun.priorSha // empty' "<dir>/context.json" 2>/dev/null)
-OPEN=$(unresolved_thread_count 2>/dev/null)
-REPLIED=$(replied_open_thread_count 2>/dev/null)
+THREADS=$(gh api graphql -f query='
+  query($owner:String!,$repo:String!,$pr:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$pr){
+        reviewThreads(first:100){ nodes{ isResolved comments{ totalCount } } }
+      }
+    }
+  }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" \
+  --jq '.data.repository.pullRequest.reviewThreads.nodes' 2>/dev/null)
+OPEN=$(printf '%s' "$THREADS" | jq '[.[] | select(.isResolved==false)] | length' 2>/dev/null)
+REPLIED=$(printf '%s' "$THREADS" | jq '[.[] | select(.isResolved==false and .comments.totalCount > 1)] | length' 2>/dev/null)
 APPLY_FIRST=0
 if [ "$ITERATION" -eq 1 ] && [ "$NO_FEEDBACK" -eq 0 ] && [ "$MODE" = "zero-delta" ] \
    && [ "${OPEN:-0}" -ge 1 ] && [ "${REPLIED:-1}" -eq 0 ]; then
   APPLY_FIRST=1
 fi
+echo "APPLY_FIRST=$APPLY_FIRST MODE=${MODE:-none} OPEN=${OPEN:-unread} REPLIED=${REPLIED:-unread} PRIOR_SHA=${PRIOR_SHA:-none}"
 ```
 
 A prepare that exits non-zero, a `context.json` with no `.mode`, and a thread query that fails all leave `APPLY_FIRST=0`.
