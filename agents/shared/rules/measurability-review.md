@@ -42,14 +42,15 @@ rule owns only when to call it, how to turn its output into review findings, and
 
 ## Default-on, opt-out via `--no-measurable`
 
-The lens runs on every invocation at the `deep` and `standard` tiers unless disabled, with a
-**quiet early-exit**: when neither gate below passes, the step is a silent no-op and renders as a
-footnote entry rather than a line.
+The lens runs on every invocation whose budget sets `budget.measurabilityLens` — `t ≥ 0.4`, which
+every tier's default thoroughness meets ([`depth-routing.md` § Thoroughness budget](../../pr-reviewer/rules/depth-routing.md#thoroughness-budget)) —
+unless disabled, with a **quiet early-exit**: when neither gate below passes, the step is a silent
+no-op and renders as a footnote entry rather than a line.
 
 | Condition | Behaviour |
 | --- | --- |
 | `--no-measurable` passed | Skip. Logged `skipped (flag)`. |
-| `DEPTH_TIER == "quick"` | Skip. Logged `skipped (tier: quick)`. A `quick` tier means ≤ 10 delta lines, no new files, and no high-stakes paths — a shape that by construction adds no new observable behaviour. |
+| `!budget.measurabilityLens` (`t < 0.4` — only an explicit `--thoroughness` / `thoroughness:` override reaches it) | Skip. Logged `skipped (t=<t>)`. A `quick` re-review is **not** skipped by tier: when its delta adds no observable behaviour, Gate 2 below makes it a quiet no-op. |
 | `TRIVIAL_SKIP` (Step 1.7b) is true | Skip. Logged `skipped (trivial)`. |
 | Both gates below pass | Run. |
 | Either gate below fails | Quiet no-op. Logged `ran · 0 missing · 0 unlinked`. |
@@ -266,5 +267,5 @@ report's `Nothing to report` footnote ([`report-rendering.md`](../../pr-reviewer
 - **It does not gate on test coverage.** A well-tested change with no production signal is exactly
   the case this lens exists for; conflating the two would let a green suite answer a question tests
   cannot.
-- **It does not run at `quick` tier or on a `pass`-only audit**, and it produces no line in the
-  report when it has nothing to say.
+- **It does not run below `t = 0.4` (`!budget.measurabilityLens`) or on a `pass`-only audit**, and
+  it produces no line in the report when it has nothing to say.

@@ -1764,7 +1764,7 @@ possible, and a candidate missing either is malformed, not modest.
 | **consumer-impact** — [`finder-consumer-impact.md`](./pr-reviewer/rules/finder-consumer-impact.md) | ✅ all changed exports | ✅ delta exports only | ✗ skipped |
 | **dependency** — [`finder-dependency.md`](./pr-reviewer/rules/finder-dependency.md) | ✅ | ✅ | ✗ skipped |
 | **standards** — [`standards-conformance.md`](./shared/rules/standards-conformance.md) (Step 2.4d) | ✅ all files | ✅ delta files | ✗ skipped |
-| **measurability** — [`measurability-review.md`](./shared/rules/measurability-review.md) (Step 2.4e) | ✅ all files | ✅ delta files | ✗ skipped |
+| **measurability** — [`measurability-review.md`](./shared/rules/measurability-review.md) (Step 2.4e) | ✅ all files | ✅ delta files | ✅ delta files |
 
 The **correctness finder** keeps the shape checklists verbatim — when the reviewed diff carries a
 shape below, it additionally walks that shape's checklist against every touched hunk. The
