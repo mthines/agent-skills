@@ -247,6 +247,24 @@ export const SUITES = [
     inputKey: "input", inputLabel: "Expectation",
     choices: ["admit", "refuse"],
   },
+  {
+    name: "intent-grading",
+    golden: "golden/intent-grading.jsonl",
+    // 14 cases: 4 pass / 6 fail / 4 skipped. Five are decoys whose surface points at the
+    // wrong label — a route that differs from the written steps (pass), every item observed
+    // but the must-follow step taken another way (fail), an unreachable item beside a real
+    // non-observation (fail), a suspected flag the preconditions never name (fail), and a
+    // named flag that stopped the run before the Changed target (skipped). The decision this
+    // measures is the first-match grading table, which reads the closed unreachable list, so
+    // both sections are the rubric.
+    rubric: {
+      file: "skills/workflow/autonomous-workflow/rules/spec-run-contract.md",
+      sections: ["### 6.4 Unreachable — the closed list", "### 6.5 Grading"],
+    },
+    instruction: "You are a UI spec runner grading ONE intent spec after running it. Using ONLY the rules below, pick the spec's result.",
+    inputKey: "input", inputLabel: "What the run observed",
+    choices: ["pass", "fail", "skipped"],
+  },
 ];
 
 /** Repo-relative path of a suite's golden file (the `golden` field is relative to scripts/eval/). */
