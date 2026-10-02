@@ -2,8 +2,8 @@
 name: aw-tester-chrome
 description: >
   Runs UI verification specs in-session through the claude-in-chrome extension —
-  the Chrome sibling of the aw-tester agent. Reads the same specs.md and
-  aw-target.yml, drives Chrome interactively (navigate → read → act → assert,
+  the Chrome sibling of the aw-tester agent. Reads the same specs.md (WHEN/THEN
+  grammar or a Markdown intent spec) and aw-target.yml, drives Chrome interactively (navigate → read → act → assert,
   seeing the page between steps), and emits the same compact verdict block. Runs
   in the current session against an already-logged-in Chrome, so it is faster
   than the Playwright sub-agent for local runs, but it needs the browser
@@ -16,7 +16,7 @@ argument-hint: '[specs-path] [aw-target] [--all|--bail-on-first-red]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: skill
   tags:
     - aw-tester
@@ -102,6 +102,9 @@ Parse the aw-target (`base_url`, `auth.*`, `fixtures.references`,
 `constraints.reset_between_specs`) and the specs per the
 [contract § 1](../rules/spec-run-contract.md#1-spec-parsing). Resolve every
 `{placeholder}` in a `url` against `fixtures.references`.
+When the specs file's header carries the line `Format: intent`, it is an intent
+spec: run it per [Intent specs](#intent-specs-format-intent) below instead of the
+grammar execution.
 
 ---
 
@@ -215,6 +218,57 @@ rest `skipped` with reason `bail`. `--all`: run every spec regardless.
 
 ---
 
+## Intent specs (`Format: intent`)
+
+An intent spec names what the user does and what must be true; you work out the
+route. Section 6 of the spec-run contract owns every rule — parsing, the
+must-follow and detour rules, the evidence forms, the closed `unreachable` list,
+grading, the route cache, and the verdict keys. This section is how Chrome
+carries them out. Auth, auto-capture, bail mode, and lessons work exactly as for
+a grammar spec.
+
+For each `## Spec N:` block, in order:
+
+1. **Look up its route** — `.agent/{branch}/.aw-tester/routes/Spec-N-<sha8>.md`,
+   with `<sha8>` computed by the command in contract § 6.6. A hit is replayed
+   through the grammar execution above; each `# uncompiled:` item is then judged
+   by reading the page. A replay that passes is `route: replayed`. A replay that
+   fails is explored once (step 2) and reported as `route: healed`.
+2. **Explore.** Navigate to `start`. For each step, `read_page`, resolve the
+   step's target by the ladder (try `hints` first), act, and `read_page` again.
+   You see the page after every action, so this is the grammar loop with the
+   step's intent in place of a fixed locator.
+   - A locator must match exactly one element; when the tree shows several,
+     name the instance (role and name, or the container it sits in).
+   - A plain step that cannot be done as written gets at most 3 detour actions,
+     recorded as a deviation (`adapted`); an action no step names is `added`; a
+     step whose state already holds is `skipped`.
+   - A `[must-follow]` step gets no detour. Its target missing from the tree is
+     a fail with reason `must-follow step <n>: …`, unless an `unreachable` cause
+     from the contract's closed list applies.
+   - Detours only navigate, open, expand, close, dismiss, scroll, or focus —
+     never submit, save, create, delete, or send unless the step says so.
+   - Stop at 25 actions per spec: the rest is `unreachable: explore budget exhausted`.
+3. **Judge every `expected` item** from the current page: `read_page` for a
+   `locator:` line, `get_page_text` scoped to a container for a `text:` line,
+   `read_network_requests` for a network item, and the auto-final capture for a
+   layout-only item. Record `changed: exercised` with the evidence line that
+   touched the `**Changed:**` target, else `not-exercised`.
+4. **Grade by the contract's table** — a `not-observed` item, a must-follow
+   deviation, or `changed: not-exercised` is `fail`; an `unreachable` cause is
+   `skipped`; otherwise `pass`, with deviations listed.
+5. **On a pass by exploration, write the compiled route** — one grammar block
+   with a `WHEN` per action you took (the locator that resolved), a `THEN` per
+   item with a `locator:` or `network:` evidence line, and the four comment
+   lines (`# route-for:`, `# source-sha:`, `# deviations:`, `# uncompiled:`).
+   Either runner can replay it.
+
+Add the intent keys (`format`, `route`, `changed`, `changed_evidence`,
+`expected`, `deviations`) to the spec's verdict entry, as the contract's § 6.7
+shows. Never report an `observed` item without an evidence line.
+
+---
+
 ## Verdict
 
 Emit the exact shared verdict block from
@@ -245,9 +299,9 @@ a credential, token, or customer datum in a lesson.
 
 ## Hard Rules
 
-- **Same contract, different engine.** Never fork the grammar, the ladder, the
-  auth semantics, or the verdict schema — they live in the
-  [spec-run contract](../rules/spec-run-contract.md).
+- **Same contract, different engine.** Never fork either spec format, the
+  ladder, the auth semantics, the intent-spec rules, or the verdict schema —
+  they live in the [spec-run contract](../rules/spec-run-contract.md).
 - **See between steps.** Re-read the page after every action. Not seeing between
   steps is the batch runner's constraint, not yours — do not emulate it.
 - **Fall back honestly.** No extension, or a login screen on a `storage-state`

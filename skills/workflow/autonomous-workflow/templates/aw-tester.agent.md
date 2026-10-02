@@ -4,6 +4,8 @@ description: >
   Spec-driven UI verification agent for the autonomous-workflow (`aw-` namespace).
   Reads a specs.md file and an aw-target.yml, runs each spec against a live app
   via Playwright (headless by default), and returns a compact pass/fail verdict.
+  Runs both spec formats: the WHEN/THEN grammar, and Markdown intent specs
+  (`Format: intent`), whose route it explores, caches, replays, and heals.
   Designed to run inside the executor's Phase 4 iteration loop — before
   lint/type/test gates — so the executor can verify UI correctness autonomously.
   Invoke with a specs.md path and an aw-target name or path. Use `--bail-on-first-red`
@@ -45,8 +47,8 @@ semantics, and the verdict schema below are the **engine-agnostic spec-run
 contract** ([`rules/spec-run-contract.md`](../rules/spec-run-contract.md)) that
 both runners implement — keep them engine-neutral. Everything else in this file
 is Playwright-specific: the binary resolution, the batch-compiled `last-run.spec.ts`,
-the one-context-per-batch run, and the `hot_loop:` handoff. The `hot_loop:` block
-is yours alone; the Chrome runner omits it.
+the one-context-per-batch run, the intent-spec probe loop, and the `hot_loop:`
+handoff. The `hot_loop:` block is yours alone; the Chrome runner omits it.
 
 ---
 
@@ -92,6 +94,11 @@ Read the aw-target file at `aw_target_path` — the explicit `Aw-Target file:` p
 - `constraints.parallelism` and `constraints.reset_between_specs`
 
 ### 4. Parse specs.md
+
+**Detect the format first.** When the file's header — the lines before the first
+`## Spec N:` heading — carries the line `Format: intent`, it is an intent spec:
+parse and run it per [Intent specs](#intent-specs-format-intent) below and skip
+the rest of this step. Otherwise it is a grammar spec.
 
 Parse each `## Spec N:` block. Extract:
 - title
@@ -444,6 +451,146 @@ error/warning lines for the diagnostic blob.
 
 ---
 
+## Intent specs (`Format: intent`)
+
+An intent spec names what the user does and what must be true; you work out the
+route. The engine-agnostic rules — parsing, the must-follow and detour rules, the
+evidence forms, the closed `unreachable` list, grading, the route cache, and the
+verdict keys — are [contract § 6](../rules/spec-run-contract.md#6-intent-specs).
+This section is how Playwright carries them out. Auth, the bypass header, bail
+mode, auto-capture, and lessons work exactly as for a grammar spec.
+
+For each `## Spec N:` block, in order:
+
+1. **Look up its route.** Compute its `<sha8>` with the command in
+   [contract § 6.6](../rules/spec-run-contract.md#66-route-cache--replay-first-heal-on-failure)
+   and look for `$AW_DIR/routes/Spec-N-<sha8>.md`.
+2. **Hit → replay.** Compile that grammar block into `last-run.spec.ts` with the
+   rest of this file's grammar path and run it. Then judge each `# uncompiled:`
+   item with one probe (below) that replays the route's actions and checks the
+   item. All pass → `route: replayed`, copy the file's `# deviations:` line into
+   `deviations`. Any fail → heal: go to step 3 once, and report `route: healed`.
+3. **Miss (or heal) → explore with the probe loop below**, grade per contract
+   § 6.5, and on a pass write the compiled route to
+   `$AW_DIR/routes/Spec-N-<sha8>.md` with its four comment lines.
+
+After every spec ran, rebuild `last-run.spec.ts` from the compiled routes so the
+`hot_loop:` handle re-runs the passing specs deterministically. A spec with no
+route (it failed or was skipped) is absent from that file; say so in `notes`.
+
+### The probe loop
+
+You cannot see the page between steps of a batch script, so explore by
+re-launching a small probe: it replays the actions resolved so far, then reports
+the page. Write the probe once per run:
+
+```ts
+// $AW_DIR/probe.spec.ts — reads $AW_PROBE_DIR/probe-in.json on every launch
+import { test } from '@playwright/test';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const DIR = process.env.AW_PROBE_DIR as string;
+const cfg = JSON.parse(readFileSync(join(DIR, 'probe-in.json'), 'utf8'));
+const rx = (v: any) => {
+  const m = typeof v === 'string' ? v.match(/^\/(.*)\/([a-z]*)$/) : null;
+  return m ? new RegExp(m[1], m[2]) : v;
+};
+
+test('probe', async ({ browser }) => {
+  const bypass = cfg.bypassHeader; // { name, env } — the value is read from the env, never written to disk
+  const context = await browser.newContext({
+    baseURL: cfg.baseURL,
+    storageState: cfg.storageState || undefined,
+    extraHTTPHeaders: bypass ? { [bypass.name]: process.env[bypass.env] ?? '' } : undefined,
+  });
+  const page = await context.newPage();
+  const requests: string[] = [];
+  page.on('response', (r) =>
+    requests.push(`${r.request().method()} ${new URL(r.url()).pathname} → ${r.status()}`));
+  const find = (l: any): any => {
+    const root = l.within ? find(l.within) : page;
+    if (l.role) return root.getByRole(l.role, { name: rx(l.name), exact: l.exact ?? true });
+    if (l.label) return root.getByLabel(rx(l.label));
+    if (l.placeholder) return root.getByPlaceholder(rx(l.placeholder));
+    if (l.text) return root.getByText(rx(l.text));
+    if (l.testid) return root.getByTestId(l.testid);
+    throw new Error(`unsupported locator ${JSON.stringify(l)}`);
+  };
+  const steps: any[] = [];
+  await page.goto(cfg.start);
+  for (const s of cfg.steps ?? []) {
+    try {
+      if (s.action === 'goto') { await page.goto(s.value); steps.push({ ok: true }); continue; }
+      const t = find(s.locator);
+      const n = await t.count();
+      if (n !== 1) throw new Error(`locator matched ${n} elements — name the instance`);
+      if (s.action === 'click') await t.click({ timeout: 5000 });
+      else if (s.action === 'fill') await t.fill(s.value, { timeout: 5000 });
+      else if (s.action === 'press') await t.press(s.value, { timeout: 5000 });
+      else if (s.action === 'select') await t.selectOption(s.value, { timeout: 5000 });
+      else if (s.action === 'check') await t.check({ timeout: 5000 });
+      else if (s.action === 'hover') await t.hover({ timeout: 5000 });
+      else throw new Error(`unsupported action ${s.action}`);
+      await page.waitForLoadState('domcontentloaded');
+      steps.push({ ok: true });
+    } catch (e) { steps.push({ ok: false, error: String(e).slice(0, 300) }); break; }
+  }
+  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+  const checks: any[] = [];
+  for (const c of cfg.checks ?? []) {
+    try {
+      const t = find(c);
+      const n = await t.count();
+      checks.push({ n, visible: n === 1 ? await t.isVisible() : null,
+        text: n === 1 ? (await t.innerText()).slice(0, 200) : null });
+    } catch (e) { checks.push({ error: String(e).slice(0, 200) }); }
+  }
+  const body = page.locator('body');
+  const aria = typeof body.ariaSnapshot === 'function' ? await body.ariaSnapshot() : await body.innerText();
+  if (cfg.shot) await page.screenshot({ path: cfg.shot, fullPage: true }).catch(() => {});
+  writeFileSync(join(DIR, 'probe-out.json'), JSON.stringify(
+    { url: page.url(), steps, checks, aria: aria.slice(0, 20000), requests: requests.slice(-100) }, null, 2));
+  await context.close();
+});
+```
+
+Each launch: write `$AW_DIR/probe-in.json`, run the probe, read `probe-out.json`.
+
+```bash
+# probe-in.json: { baseURL, storageState, bypassHeader, start, steps: [{action, locator, value}],
+#                  checks: [locator, …], shot }
+# A locator is the single-braces form as JSON, optionally scoped:
+#   {"role": "button", "name": "Rename", "within": {"role": "banner"}}
+AW_PROBE_DIR="$AW_DIR" "$PLAYWRIGHT_BIN" test --reporter=line --workers=1 "$AW_DIR/probe.spec.ts"
+```
+
+Walk the spec's steps with it:
+
+1. Probe with `steps: []` to see the `start` page.
+2. For each step, choose the action and locator from the `aria` snapshot by the
+   ladder (try `hints` first), append it to `steps`, and probe again. A step
+   that comes back `ok: true` and changes the page as the step intends is done.
+   A `locator matched N elements` error means you must name the instance — add a
+   `name`, or scope it with `within`.
+3. A plain step that cannot be done as written gets at most 3 detour actions,
+   each one probe, recorded as a deviation. A `[must-follow]` step gets none: if
+   its target is not in the snapshot, the spec fails (unless contract § 6.4
+   applies).
+4. After the last step, probe once more with every candidate evidence locator in
+   `checks` and `shot` set to the auto-final capture path when `--auto-capture`
+   is on. Grade each `expected` item from `checks` (a `locator:` line needs
+   `n: 1` and the state the item claims), `requests` (a network item needs the
+   exact `METHOD /path → NNN`), or the `text` of a check (a `text:` line).
+
+**Probe budget:** at most **20 probe launches per spec**. Hitting it is
+`unreachable: explore budget exhausted`, exactly like the contract's 25-action
+budget — whichever runs out first.
+
+Delete `probe-in.json` and `probe-out.json` when the run ends; keep `routes/`.
+
+---
+
 ## Output Schema (MANDATORY — do not deviate)
 
 Your final message MUST be this exact YAML block and nothing else after it
@@ -463,6 +610,21 @@ specs:
       attempted healing: getByText('X') — found 0 elements
       last network response: POST /api/foo → 500 {"error":"db timeout"}
       console errors: TypeError: Cannot read property 'id' of undefined (app.js:142)
+  - id: Spec-2                   # an intent spec (Format: intent) adds the contract § 6.7 keys
+    title: <one-line from spec header>
+    result: pass
+    format: intent
+    route: explored | replayed | healed
+    changed: exercised | not-exercised
+    changed_evidence: 'locator: {role: "button", name: "Rename"} — clicked'
+    expected:
+      - id: E1
+        result: observed | not-observed | unreachable
+        evidence: 'locator: {role: "heading", name: "Q3 revenue"} — visible'
+    deviations:                  # omit when none
+      - step: 1
+        kind: adapted | added | skipped
+        note: dismissed the cookie banner before opening the dashboard
 captures:                       # omit the key when nothing was written
   - spec: Spec-1                 # (no CAPTURE step ran AND auto-capture is off)
     label: dashboard with new widget
@@ -497,6 +659,10 @@ notes: <optional one-paragraph context; omit if nothing notable>
   `CAPTURE` step or an auto-capture (`--auto-capture`); an auto-capture entry
   carries `auto: true`. A capture never appears as a spec result and never
   changes `verdict`.
+- An intent spec's `result` comes from the contract § 6.5 grading table, never
+  from judgment: a `not-observed` item, a must-follow deviation, or
+  `changed: not-exercised` is `fail`; an `observed` item with no evidence line
+  is `not-observed`.
 
 ---
 
@@ -510,6 +676,8 @@ After delivering the verdict, write lessons for any of the following:
 | Auth refresh triggered | Aw-Target name, command, whether it succeeded |
 | `inconclusive` verdict | Why specs were skipped and what would unblock them |
 | New failure pattern | The failing step shape that didn't appear in prior lessons |
+| Intent route healed | The route action that stopped replaying and the one that replaced it |
+| Intent locator needed a detour | The control the step named and the detour that reached it |
 
 ```
 # Dedup first, then write to the classified scope (universal → global; repo-bound → repo::).

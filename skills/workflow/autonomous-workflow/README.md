@@ -83,6 +83,7 @@ each is reported `ran` or `skipped (<reason>)`.
 | [`templates/aw-tester.agent.md`](./templates/aw-tester.agent.md) | `aw-tester` spec-driven UI verification agent. |
 | [`templates/aw-target.yml.template`](./templates/aw-target.yml.template) | Aw-Target schema (base URL, auth strategy, fixtures, constraints). |
 | [`templates/specs.md.template`](./templates/specs.md.template)   | Specs file format with example blocks for new features and refactors. |
+| [`templates/intent-spec.md.template`](./templates/intent-spec.md.template) | Markdown intent spec format (`Format: intent`): plain steps guide the runner, `[must-follow]` steps and `**Expected:**` items are checked strictly. Both runners run it and cache the route. |
 | [`aw-setup/SKILL.md`](./aw-setup/SKILL.md) | Interactive one-time aw-target scaffolding skill (`/aw-setup`). |
 | [`references/`](./references/)     | Lazy-loaded examples (full execution trace, error scenarios).   |
 

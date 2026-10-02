@@ -15,7 +15,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '3.27.0'
+  version: '3.28.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -371,6 +371,7 @@ exists — do not auto-scaffold.
 | [routing.rule.md](./templates/routing.rule.md)                   | Auto-trigger rule for `.claude/rules/`   |
 | [aw-target.yml.template](./templates/aw-target.yml.template)     | Aw-Target schema (base URL, auth, fixtures) |
 | [specs.md.template](./templates/specs.md.template)               | Specs file schema with example blocks    |
+| [intent-spec.md.template](./templates/intent-spec.md.template)   | Markdown intent spec format (`Format: intent`) — steps guide the runner, Expected is checked with evidence; rules in `rules/spec-run-contract.md` § 6 |
 
 ---
 
