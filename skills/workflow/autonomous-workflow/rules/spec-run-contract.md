@@ -358,7 +358,8 @@ An `expected` item or a `[must-follow]` step is `unreachable` only for one of th
 2. **feature flag** — a flag the `preconditions` name is off on the target.
 3. **seed data** — a record the `preconditions` name does not exist, and no step creates it.
 4. **environment** — the target origin is unreachable, or an endpoint the change does not touch returned a 5xx.
-5. **budget** — `explore budget exhausted` (§ 6.2), or `transient state lost`: a step after a performed mutation acts on UI the mutation left open — a toast's action, a success dialog — which a runner that re-launches cannot reach again without repeating the mutation.
+5. **budget** — `explore budget exhausted` (§ 6.2).
+6. **transient state** — `transient state lost`: a step after a performed mutation acts on UI the mutation left open — a toast's action, a success dialog — which a runner that re-launches cannot reach again without repeating the mutation. A runner that never restarts the page (the Chrome driver) never reports it.
 
 Every other reason the runner could not observe an item is `not-observed`, and fails the spec.
 

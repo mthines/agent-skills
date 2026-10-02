@@ -35,7 +35,8 @@ Deviations on guidance steps are reported, never failed, so a reviewer still see
 ## Why `unreachable` is a closed list
 
 The easiest way for a flexible runner to avoid a red verdict is to call a failure "unreachable".
-The list is closed — auth, a named feature flag, named seed data, an environment fault outside the change, the action budget — so every other inability to observe an outcome is a fail.
+The list is closed — auth, a named feature flag, named seed data, an environment fault outside the change, the action budget, and UI a performed mutation left open that a re-launching runner cannot reach again — so every other inability to observe an outcome is a fail.
+The last cause is a limit of the Playwright runner's re-launching probe, named on its own so a reader can see it and re-run that spec with the Chrome driver, which never restarts the page.
 This keeps `inconclusive` meaning "could not be checked here", never "probably broken".
 
 ## Why the grammar stays, as the compiled form

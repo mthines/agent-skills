@@ -10794,9 +10794,11 @@ const isPollBlock = (block) =>
     `grading rows missing or out of order: ${missingGrade.join(" · ") || "none"}`);
   const unreach = sectionOr(CONTRACT_FILE, "### 6.4 Unreachable — the closed list");
   const causes = (unreach.match(/^[1-9]\. \*\*/gm) || []).length;
-  s.check("G89b contract § 6.4's unreachable list is closed at exactly five causes, and everything else fails",
-    causes === 5 && /Every other reason[^\n]*`not-observed`, and fails the spec/.test(unreach),
-    `found ${causes} cause(s); a sixth cause widens what can hide a failure as inconclusive`);
+  // Pinned at the live count, not a floor: a cause folded into another's bullet would stay green
+  // under a floor, so a new cause must be numbered — and must move this number on purpose.
+  s.check("G89b contract § 6.4's unreachable list is closed at exactly six causes, and everything else fails",
+    causes === 6 && /Every other reason[^\n]*`not-observed`, and fails the spec/.test(unreach),
+    `found ${causes} cause(s); the list is pinned at six — another cause widens what can hide a failure as inconclusive, so add it here deliberately`);
   s.check("G89b contract § 6 carries the evidence forms, the route-cache path, and the verdict keys",
     ["`locator: <single-braces locator> — <state>`", "`network: METHOD /path → NNN`", ".agent/{branch}/.aw-tester/routes/<spec-id>-<sha8>.md",
       "route: explored | replayed | healed", "changed: exercised | not-exercised", "result: observed | not-observed | unreachable"].every((t) => C6.includes(t)),
