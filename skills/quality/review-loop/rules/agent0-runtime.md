@@ -88,6 +88,9 @@ Three properties of that prompt are load-bearing:
 A reply that opens with a refusal or a `BLOCKED` line is **not** a review.
 Set `STOP_REASON = "reviewer-refused"`, report the reply's first line verbatim, and stop — never read it as `NEW_FINDINGS == false`, which would converge an unreviewed PR.
 
+Step 2.5's [post-refresh re-review](../SKILL.md#post-refresh-re-review--before-the-gates) is a sub-step A dispatch and uses this same prompt.
+A refusal there is `MERGE_REREVIEW = refused` and the PR is not merged; the loop has already converged, so `STOP_REASON` stays as it was.
+
 ## Where each other sub-step reads its procedure
 
 | Sub-step | `SKILL.md` call | Agent0 file |
