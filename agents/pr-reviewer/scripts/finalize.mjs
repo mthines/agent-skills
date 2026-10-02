@@ -377,6 +377,36 @@ export function memoryTelemetryItems(memory, suppressed = []) {
     .sort((a, b) => Number(b.used) - Number(a.used));
 }
 
+/** LoreKit truncates a `cited` list past this many refs (`MEMORY_CITED_MAX`); stop at it ourselves. */
+export const CITED_MAX = 32;
+
+/**
+ * The LoreKit `cited` refs the Step 4c state write passes (posting.md § 4c): `scope::key` for
+ * every memory that shaped this review — each `lessons_used[]` entry, and each `relevance_rules[]`
+ * entry that acted (it carries an applied `action`, or suppressed a finding this run). A rule that
+ * was loaded and changed nothing is not credited. An entry with no scope cannot be referenced, so
+ * a ref is never built from a key alone. Deduped, acting rules first, at most CITED_MAX.
+ * @param {any} memory judgments.memory @param {any[]} [suppressed] finalizeReview's `suppressed`
+ * @returns {string[]}
+ */
+export function citedRefs(memory, suppressed = []) {
+  const suppressedFps = new Set((Array.isArray(suppressed) ? suppressed : [])
+    .map((/** @type {any} */ f) => f?._suppressed_by_fp).filter((fp) => typeof fp === "string"));
+  /** @type {string[]} */
+  const refs = [];
+  const add = (/** @type {any} */ r) => {
+    const scope = typeof r?.scope === "string" ? r.scope.trim() : "";
+    const key = typeof r?.key === "string" ? r.key.trim() : "";
+    if (scope && key && !refs.includes(`${scope}::${key}`)) refs.push(`${scope}::${key}`);
+  };
+  for (const r of Array.isArray(memory?.relevance_rules) ? memory.relevance_rules : []) {
+    const fp = typeof r?.fp === "string" ? r.fp : r?.fingerprint;
+    if ((typeof r?.action === "string" && r.action) || (typeof fp === "string" && suppressedFps.has(fp))) add(r);
+  }
+  for (const r of Array.isArray(memory?.lessons_used) ? memory.lessons_used : []) add(r);
+  return refs.slice(0, CITED_MAX);
+}
+
 /**
  * render-report.mjs requires MEMORIES_SUMMARY to be exactly `<N> indexed` (with `N >=` the
  * MEMORIES_USED count) whenever MEMORIES_USED is non-empty, and rejects any string carrying the
@@ -708,6 +738,8 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     quality,
     payload,
     findingsBusRecords,
+    // The Step 4c state write's `cited` (posting.md § 4c) — copied from finalize-result.json.
+    citedRefs: citedRefs(judgments?.memory, suppressed),
   };
 }
 
@@ -1311,6 +1343,42 @@ async function selfTest() {
     check("memoryTelemetryItems: the same key in another scope is another memory",
       memoryTelemetryItems({ relevance_rules: [], lessons_used: [{ scope: "global", key: "k" }], read: [{ scope: "repo::o/r", key: "k" }] }).length === 2);
     check("memoryTelemetryItems: an empty memory is no items", memoryTelemetryItems({ relevance_rules: [], lessons_used: [] }).length === 0);
+  }
+
+  // citedRefs — the Step 4c state write's LoreKit `cited`: only memories that shaped the review,
+  // as `scope::key`, never a ref built from a key alone.
+  {
+    const FP = "correctness:nil-deref:-@src/a.ts";
+    const memory = {
+      relevance_rules: [
+        { scope: "repo::o/r", key: `reviewer-comment-relevance::rule::${FP}`, fp: FP, kind: "suppress" },
+        { scope: "repo::o/r", key: "reviewer-comment-relevance::rule::idle", fp: "x:y:-@b.ts", kind: "suppress" },
+        { scope: "global", key: "reviewer-comment-relevance::nitpick:map-vs-record", fingerprint: "nitpick:map-vs-record", action: "downgrade" },
+      ],
+      lessons_used: [
+        { scope: "repo::o/r", key: "hotspot::src/a.ts", used_as: "finder pointer" },
+        { key: "orphan-lesson", used_as: "no scope" },
+        { scope: "repo::o/r", key: "hotspot::src/a.ts", used_as: "named twice" },
+      ],
+      read: [{ scope: "repo::o/r", key: "knowledge::retry@src/b.ts" }],
+    };
+    const refs = citedRefs(memory, [{ _suppressed_by_fp: FP }]);
+    check("citedRefs: a rule that suppressed a finding or carries an applied action is cited; a rule that changed nothing is not",
+      refs.includes(`repo::o/r::reviewer-comment-relevance::rule::${FP}`) && refs.includes("global::reviewer-comment-relevance::nitpick:map-vs-record")
+        && !refs.some((r) => r.endsWith("::idle")), JSON.stringify(refs));
+    check("citedRefs: every used lesson is cited once, as scope::key; one with no scope and a read-only memory are not",
+      refs.filter((r) => r === "repo::o/r::hotspot::src/a.ts").length === 1 && !refs.some((r) => r.includes("orphan-lesson"))
+        && !refs.some((r) => r.includes("knowledge::retry")) && refs.length === 3, JSON.stringify(refs));
+    check("citedRefs: at most CITED_MAX refs, and an empty memory cites nothing",
+      citedRefs({ relevance_rules: [], lessons_used: Array.from({ length: 40 }, (_, i) => ({ scope: "global", key: `k${i}` })) }).length === CITED_MAX
+        && CITED_MAX === 32 && citedRefs({ relevance_rules: [], lessons_used: [] }).length === 0 && citedRefs(undefined).length === 0);
+    const rCited = finalizeReview({
+      context: withRenderAt({ mode: "full", headSha: "906a74781990f75607f0234de963fdbbc3953f2c", deltaLines: 3, routing: { tier: "deep" }, workspace: { depthCapability: "checkout" }, files: [], threads: [] }, "2026-09-25T12:00:00Z"),
+      judgments: { candidates: [], gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } }, threads: [],
+        memory: { relevance_rules: [], lessons_used: [{ scope: "repo::o/r", key: "hotspot::x.tsx", used_as: "finder pointer" }] }, summary: "s" },
+    });
+    check("finalizeReview returns citedRefs, so finalize-result.json carries what Step 4c cites",
+      JSON.stringify(rCited.citedRefs) === JSON.stringify(["repo::o/r::hotspot::x.tsx"]));
   }
 
   // hydrateFilePatches — the real "context.files has empty patch" gap (ab/B/20230/1/meta.json).
@@ -2406,6 +2474,10 @@ async function main() {
     + `${writePlan.thread_resolve.length} resolves, ${writePlan.review_create.comments.length} inline comments)`);
 
   console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
+  // What Step 4c passes as `cited` on the state write (posting.md § 4c) — never rebuilt by hand.
+  console.log(isDryRun
+    ? `finalize: --dry-run — no state write, so no LoreKit memory is cited (citedRefs: ${result.citedRefs.length})`
+    : `finalize: Step 4c cites ${result.citedRefs.length} LoreKit memor${result.citedRefs.length === 1 ? "y" : "ies"} — cited = $(jq -c '.citedRefs' ${JSON.stringify(join(outDir, "finalize-result.json"))})`);
 
   if (renderFailed) process.exit(1);
 }

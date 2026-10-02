@@ -468,6 +468,21 @@ mcp__lorekit__memory_write:
   origin_pr   = <PR_NUMBER>
   origin_commit = "<HEAD_SHA>"
   origin_branch = "<HEAD_REF>"
+  cited    = <finalize-result.json's citedRefs, verbatim>   # jq -c '.citedRefs' <out-dir>/finalize-result.json
+```
+
+**`cited` credits the memories that shaped this review.**
+LoreKit records each ref as a citation of that memory by this PR's state record, and the memory's detail sheet shows it as `Cited · credited N×`.
+Pass `finalize.mjs`'s `citedRefs` exactly as written — it holds `scope::key` for every `memory.lessons_used[]` entry and every relevance rule that acted this run, and nothing else.
+Never build the list by hand, never add a memory you only read, and pass `[]` when it is empty.
+A ref LoreKit cannot resolve is dropped silently and never fails the write.
+
+```text
+# correct: the refs finalize computed from judgments.memory
+cited = ["repo::acme/widget::hotspot::src/api/client.ts", "repo::acme/widget::reviewer-comment-relevance::rule::correctness:nil-deref:-@src/jobs/sync.ts"]
+
+# incorrect: every memory the run loaded — a citation means "this shaped the review", not "this was in context"
+cited = ["repo::acme/widget::hotspot::src/api/client.ts", "global::reviewer-lessons::prefer-guard-clauses", "repo::acme/widget::knowledge::retryRequest@src/api/client.ts"]
 ```
 
 ```bash

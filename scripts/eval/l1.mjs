@@ -10131,6 +10131,21 @@ const isPollBlock = (block) =>
       && /t: "memory",\n\s+items: memoryTelemetryItems\(judgments\.memory, result\?\.suppressed\),/.test(fin)
       && /### The memory/.test(rtDocEarly) && /`pr_review\.memory\.used_ids`/.test(rtDocEarly)
       && /`memory\.read\[\]`[^\n]*Copy `id`, `scope`, and `key` onto every entry/.test(postingDoc));
+  // The state write credits those memories in LoreKit (`cited`), from finalize's own list — the
+  // model copies citedRefs, it never assembles the refs, and a memory that changed nothing is
+  // never credited. Executed here, not just grepped.
+  const { citedRefs } = await import(pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs")).href);
+  const citedCase = citedRefs({
+    relevance_rules: [{ scope: "repo::o/r", key: "reviewer-comment-relevance::rule::a", fp: "a" }, { scope: "repo::o/r", key: "reviewer-comment-relevance::rule::b", fp: "b" }],
+    lessons_used: [{ scope: "global", key: "lesson-x", used_as: "u" }, { key: "no-scope", used_as: "u" }],
+    read: [{ scope: "repo::o/r", key: "hotspot::read-only.ts" }],
+  }, [{ _suppressed_by_fp: "a" }]);
+  const step4cDoc = postingDoc.slice(postingDoc.indexOf("### 4c. Record the run state"), postingDoc.indexOf("### 4d."));
+  s.check("G84o the Step 4c state write passes finalize's citedRefs as LoreKit `cited` — acting rules and used lessons only, never a key alone",
+    JSON.stringify(citedCase) === JSON.stringify(["repo::o/r::reviewer-comment-relevance::rule::a", "global::lesson-x"])
+      && /citedRefs: citedRefs\(judgments\?\.memory, suppressed\),/.test(fin)
+      && /^\s+cited\s+= <finalize-result\.json's citedRefs, verbatim>/m.test(step4cDoc) && /Never build the list by hand/.test(step4cDoc),
+    JSON.stringify(citedCase));
   const rtDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
   const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
   s.check("G84o run-telemetry.md states the marker rule and the opt-in, and the agent body routes to it",
