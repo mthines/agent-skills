@@ -62,7 +62,13 @@ export function buildImpact({ impact, inlineClaims = [], trace, dependencyFinder
   const traceList = Array.isArray(trace) ? trace : [];
   const consumerClaims = inlineClaims.filter((c) => c && c.finder === "consumer-impact" && safe(c.path));
 
-  const symbols = (Array.isArray(impact.symbols) ? impact.symbols : [])
+  /** @type {any[]} */
+  const rawSymbols = Array.isArray(impact.symbols) ? impact.symbols : [];
+  /** @type {any[]} */
+  const rawDeps = Array.isArray(impact.dependencies) ? impact.dependencies : [];
+  /** @type {any[]} */
+  const rawOverlaps = Array.isArray(impact.overlaps) ? impact.overlaps : [];
+  const symbols = rawSymbols
     .filter((s) => s && s.exported !== false && Number.isInteger(s.consumer_files) && s.consumer_files > 0
       && safe(s.name) && safe(s.path) && CHANGE_RANK[s.change] !== undefined)
     // Breaking changes first, then the widest; names and paths break ties, so the order is stable.
@@ -105,7 +111,7 @@ export function buildImpact({ impact, inlineClaims = [], trace, dependencyFinder
   // "N usage sites checked" is the bullet's claim, so a dependency is listed only when the
   // dependency finder — the step that reads those sites — actually ran this time.
   const dependencies = dependencyFinderRan
-    ? (Array.isArray(impact.dependencies) ? impact.dependencies : [])
+    ? rawDeps
       .filter((d) => d && safe(d.name) && safe(String(d.from ?? "")) && safe(String(d.to ?? ""))
         && RENDERABLE_DELTAS.has(d.semver_delta))
       .map((d) => ({
@@ -117,7 +123,7 @@ export function buildImpact({ impact, inlineClaims = [], trace, dependencyFinder
       }))
     : [];
 
-  const overlaps = (Array.isArray(impact.overlaps) ? impact.overlaps : [])
+  const overlaps = rawOverlaps
     .filter((o) => o && Number.isInteger(o.pr) && o.pr > 0 && safe(o.author)
       && Array.isArray(o.files) && safe(o.files[0]))
     .map((o) => {

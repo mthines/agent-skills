@@ -178,20 +178,25 @@ A finding cites the code the graph pointed at. The graph itself is never the evi
 
 The trace renders as the report's `What this change reaches` accordion, a Mermaid diagram above the
 bullets ([`report-rendering.md` § What a reader sees first](./report-rendering.md#what-a-reader-sees-first--reach-coverage-progress)).
-Supply `IMPACT.symbols[].consumers` so the diagram can show folders rather than counts:
+`finalize.mjs` builds it (`finalize/reach.mjs`) from three inputs, so the run supplies only the
+trace:
 
-1. One entry per consumer **file** from `symbols[].consumers[]` (dedupe call sites to files).
-2. `status` is what the trace established for that file: `finding` (an inline finding anchors there), `verified` (read and holds), or `untraced` (in the graph, not read).
-3. List every `finding` and `verified` file. The counts must equal `findings` and `verified_unaffected`, so an unlisted file reads as `? not checked`.
+| Input | Source | Becomes |
+| --- | --- | --- |
+| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); open-PR overlaps; dependency deltas when the dependency finder ran |
+| `judgments.impact_trace` | the consumer-impact finder | `verified` for each consumer file it read and found holding |
+| a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set) |
+
+Every other listed consumer renders as `? not checked`. Record the trace as you go:
 
 ```json
-{ "name": "retryRequest", "path": "src/api/client.ts", "change": "signature",
-  "consumer_files": 14, "verified_unaffected": 5, "findings": 1,
-  "consumers": [ { "path": "src/jobs/sync.ts", "line": 88, "status": "finding" },
-                 { "path": "src/jobs/export.ts", "status": "verified" } ] }
+"impact_trace": [
+  { "symbol": "retryRequest", "path": "src/api/client.ts",
+    "verified": ["src/jobs/export.ts", "src/jobs/import.ts", "src/api/batch.ts"] }
+]
 ```
 
-❌ WRONG — marking a file `verified` because the graph found no break in it: only a file the trace read is `verified`.
+❌ WRONG — listing a file in `verified` because the graph found no break in it: only a file the trace read is `verified`.
 
 ## Degradation
 

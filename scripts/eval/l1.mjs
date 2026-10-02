@@ -10568,6 +10568,18 @@ const isPollBlock = (block) =>
   s.check("G87j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
     /--argjson round "\$\(jq -c '\.round \/\/ \{open: null, blocking: null\}' \/tmp\/finalize\/finalize-result\.json/.test(POST)
       && /open: \$round\.open, blocking: \$round\.blocking\}/.test(POST));
+  s.check("G87l finalize builds COVERAGE and IMPACT from scanned_files / impact_trace / impact.json, and a supplied value wins (self-test)",
+    fst.status === 0 && /✓ COVERAGE is derived from scanned_files against scopePaths/.test(fst.stdout || "")
+      && /✓ IMPACT is built from impact\.json and impact_trace/.test(fst.stdout || "")
+      && /✓ a caller-supplied COVERAGE \/ IMPACT wins over the auto-built one/.test(fst.stdout || ""));
+  const SCHEMA = JSON.parse(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/schemas/judgments.schema.json"), "utf8"));
+  s.check("G87m judgments.schema.json accepts scanned_files and impact_trace, and posting.md tells the run to supply them",
+    Boolean(SCHEMA.properties?.scanned_files) && Boolean(SCHEMA.properties?.impact_trace)
+      && !(SCHEMA.required || []).includes("scanned_files") && !(SCHEMA.required || []).includes("impact_trace")
+      && /^\| `scanned_files` \|/m.test(POST) && /^\| `impact_trace` \|/m.test(POST));
+  const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
+  s.check("G87n prepare-review.mjs writes scopePaths (empty on zero-delta) for the Checked line",
+    /scopePaths: contextMode === "zero-delta" \? \[\] : deltaFiles\.map\(\(f\) => f\.filename\),/.test(PRSRC));
   // Executed directly (an import, not the 60 s self-test G84r already runs): a record with one
   // legacy run (no counts), one malformed run (blocking > open), and two good ones.
   const rsf = spawnSync(process.execPath, ["--input-type=module", "-e", `
