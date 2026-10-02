@@ -107,6 +107,25 @@ A comment on `package-lock.json` line 4021 is unactionable; a comment on the cal
 Quote the changelog line verbatim in the evidence.
 A finding that says "stripe 16 removed this" is an assertion; one that quotes the upstream's own sentence is a citation, and the author can act on it without going to look.
 
+### Record every file you read in `judgments.impact_trace`
+
+The report's `checked_sites` counts only the usage sites in files the trace names, so a read you do not record renders as `not checked` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)).
+
+1. For each dependency delta, list every file whose usage sites you read against the changelogs.
+2. Write one `judgments.impact_trace` entry per delta: `symbol` is the package name, `path` is that delta's `manifest` from `impact.json.dependencies[]`, and `verified` is the file list.
+
+```json
+"impact_trace": [
+  { "symbol": "stripe", "path": "package-lock.json",
+    "verified": ["src/billing/charge.ts", "src/billing/refund.ts"] }
+]
+```
+
+```text
+✅ RIGHT — read charge.ts and refund.ts against the v15 and v16 changelogs → both files in `verified`
+❌ WRONG — read them and recorded nothing → the report says "`stripe` 14.2.0 → 16.0.1 (major) — 3 usage sites, not checked"
+```
+
 ## Three outcomes, and never a fourth
 
 | Outcome | Output |
