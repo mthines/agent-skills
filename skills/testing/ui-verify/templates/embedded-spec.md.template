@@ -1,27 +1,33 @@
-<!-- This is the block `preview-spec author` injects into a PR description.
-     The markers, the collapsed <details>, and Target: preview are fixed.
-     The spec body uses aw-tester's grammar verbatim — see
-     skills/workflow/autonomous-workflow/templates/specs.md.template.
-     Replace the Spec blocks with the behaviors the diff actually changes
-     (1–3 specs). Delete this comment when injecting. -->
-<!-- preview-spec:v1 -->
+<!-- This is the block `ui-verify author` injects into a PR description.
+     The markers, the collapsed <details>, `Target: preview`, and
+     `Format: intent` are fixed. The body is a Markdown intent spec — field
+     rules in rules/spec-format.md § Writing an intent spec (v2); the format's
+     single source of truth is autonomous-workflow's
+     templates/intent-spec.md.template. Replace the Spec blocks with the
+     behaviors the diff actually changes (1–3 specs). Delete this comment when
+     injecting. A lifted grammar spec uses the v1 markers instead — see
+     rules/spec-format.md § Which format to write. -->
+<!-- ui-verify:v2 -->
 <details>
 <summary>🧪 UI verification spec — run against the preview deployment</summary>
 
 Target: preview
-Refactor: no
+Format: intent
 
 ## Spec 1: <one-line user goal for the changed screen>
-url: /<changed-route>
-preconditions:
-  - <any state the app needs first; handled by the preview target's auth/seed>
-flow:
-  - WHEN {role: "button", name: "<Action>"} is clicked
-    THEN {role: "dialog", name: "<Result>"} is visible
-  - WHEN {role: "textbox", name: "<Field>"} is filled with "<value>"
-    AND {role: "button", name: "Save"} is clicked
-    THEN {text: "<expected result>"} is visible on the page
-    AND network: POST /api/<endpoint> returned 201
+**Changed:** <the control, component, or region this PR adds or changes, as a user sees it>
+**Start:** /<changed-route>
+**Preconditions:**
+- <a feature flag or seeded record the run needs, named so an absence reads as unreachable>
+**Steps:**
+1. <imperative user action — guidance>
+2. [must-follow] <the action that exercises the changed target>
+3. <imperative user action — guidance>
+**Expected:**
+- <user-observable outcome on the changed target — concrete text, value, or count>
+- `POST /api/<endpoint>` returns 201
+**Hints:**
+- <a locator or navigation quirk from lessons, e.g. {role: "dialog", name: "<Result>"}>
 
 </details>
-<!-- /preview-spec:v1 -->
+<!-- /ui-verify:v2 -->

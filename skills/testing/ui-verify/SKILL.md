@@ -1,13 +1,14 @@
 ---
 name: ui-verify
 description: >
-  Makes a UI pull request autonomously verifiable. `author` writes a
-  step-by-step UI verification spec for the PR's visual change into the PR
-  description as a collapsed, machine-findable block (delegated to by
-  `create-pr` on UI diffs). `run` extracts it, resolves the PR's live preview
-  URL via the GitHub deployments API, runs the spec there through `aw-tester`,
-  and reports a verdict plus full-page screenshots (`--no-screenshots` opts
-  out). It then runs an adversarial pass that tries to break the same change —
+  Makes a UI pull request autonomously verifiable. `author` writes a Markdown
+  intent spec for the PR's visual change — the steps a reviewer would take and
+  the outcomes that must hold — into the PR description as a collapsed,
+  machine-findable block (delegated to by `create-pr` on UI diffs). `run`
+  extracts it, resolves the PR's live preview URL via the GitHub deployments
+  API, runs it there through `aw-tester`, which may adapt the route but checks
+  every expected outcome with evidence, and reports a verdict plus full-page
+  screenshots (`--no-screenshots` opts out). It then runs an adversarial pass that tries to break the same change —
   hostile input, double submits, failed requests, interrupted navigation,
   keyboard-only use, small viewports — and documents every probe with
   screenshots, never changing the verdict (`--no-adversarial` opts out).
@@ -22,7 +23,7 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.8.0'
+  version: '1.9.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -40,7 +41,8 @@ metadata:
 Attach an executable UI verification spec to a pull request, then run it against the live preview deployment.
 
 A reviewer verifies a UI change by clicking through the preview.
-`ui-verify` turns that click-through into an artifact an agent can follow: a short spec in the PR description, run against the deployed preview by `aw-tester`, reporting pass or fail.
+`ui-verify` turns that click-through into an artifact an agent can follow: a short Markdown spec in the PR description, run against the deployed preview by `aw-tester`, reporting pass or fail.
+The runner may take a different route than the written steps — it records each deviation — but it passes a spec only when every expected outcome was observed, with evidence, on the component the PR changed.
 
 > **This `SKILL.md` is a thin index.**
 > Detailed procedures live in [`rules/*.md`](./rules) and [`templates/*.md`](./templates).
@@ -52,8 +54,8 @@ This skill owns four things and reuses the rest.
 
 | Concern | Owner |
 | --- | --- |
-| The spec grammar (`WHEN/THEN/AND`, the locator mini-grammar, `url:`, `network:`, `semantic:`) | `aw-tester` — [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template). This skill references it and never forks it. The `semantic:` assertion (delegated to [`jev-assert`](../../quality/jev-assert/SKILL.md)) flows through unchanged because it lives in the shared grammar the runner parses. |
-| The spec-run contract (locator ladder, auth semantics, verdict schema) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) — the engine-agnostic contract both runners implement. |
+| The two spec formats — the **intent** format this skill writes (`Format: intent`: `**Changed:**`, `**Start:**`, `**Steps:**` with `[must-follow]`, `**Expected:**`), and the **grammar** it lifts (`WHEN/THEN/AND`, the locator mini-grammar, `url:`, `network:`, `semantic:`) | `aw-tester` — `templates/intent-spec.md.template` and [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template), side by side. This skill references both and never forks either. The `semantic:` assertion (delegated to [`jev-assert`](../../quality/jev-assert/SKILL.md)) flows through unchanged because it lives in the shared grammar the runner parses. |
+| The spec-run contract (locator ladder, auth semantics, verdict schema, and how an intent spec is explored, graded, cached, and replayed — § 6) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) — the engine-agnostic contract both runners implement. |
 | The runners + the compact verdict | Two, one contract: [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) (Playwright sub-agent) and [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) (in-session Chrome). `run --driver` picks one. |
 | The browser context (`base_url`, auth, fixtures) | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template). |
 | Scaffolding the committed preview aw-target (auth detection, the two walls, the confirming login, the repo-scoped records) | `aw-setup` — the `setup` operation is a thin delegator (`aw-setup --target preview`); this skill never reimplements it. |
@@ -70,7 +72,7 @@ Parse `$ARGUMENTS`. The first token selects the operation.
 | Operation | Trigger | What it does |
 | --- | --- | --- |
 | `setup` | first token `setup` | Scaffold the committed **preview** aw-target (`.claude/aw-targets/preview.yml`) this skill runs against — auth strategy, the two walls, the confirming login, the repo-scoped LoreKit auth profile + UI surface. A thin delegator to `aw-setup --target preview`; the discoverable front door so you never need the `aw` namespace. |
-| `author` | first token `author`, or delegated from `create-pr` | Seed the spec from an existing source (the aw planner's `specs.md`, a `/fix-bug` repro) or generate it from the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
+| `author` | first token `author`, or delegated from `create-pr` | Lift an existing grammar spec verbatim (the aw planner's `specs.md`), or write a Markdown intent spec from a `/fix-bug` repro or the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
 | `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, then run the **adversarial pass** against every passing spec, report the verdict, the adversarial findings, **and the screenshots it captured**, write lessons. Screenshots are on by default (`--auto-capture`): full-page, each spec's final state plus each navigating step, into `.agent/{branch}/.aw-tester/captures/` for the PR description; `--no-screenshots` opts out. |
 | `verify` | first token `verify` | One-shot composite for a PR with no spec: author-if-needed (author only when the block is absent — never overwrite a hand-written one), then `run` (with screenshots on, as above), then report a single combined verdict. The autonomous entry point for others' PRs and CI / agent0 automation. |
 
@@ -301,10 +303,10 @@ With no record the broad defaults apply, so a repo with no learnings yet still g
 
 1. **Read memory first.** Load spec-authoring lessons and locator lessons per [`rules/memory.md § Read at author time`](./rules/memory.md). These tell you the app's navigation quirks and stable locators before you write a single step.
 2. **Reuse an existing spec source when present.** Before writing anything, check for a spec artifact the surrounding flow already produced, in priority order (full contract: [`rules/spec-sources.md`](./rules/spec-sources.md)):
-   - `.agent/{branch}/specs.md` — the autonomous-workflow planner's `aw-tester` specs, already run locally at Phase 4. Same grammar: lift its `## Spec N:` blocks verbatim.
-   - A `/fix-bug` reproduction artifact for a UI or visual bug — an `e2e-testing` flow or a `repro/<id>.md` checklist. Adapt its steps into the grammar.
+   - `.agent/{branch}/specs.md` — the autonomous-workflow planner's `aw-tester` specs, already run locally at Phase 4. Lift its `## Spec N:` blocks verbatim into a `<!-- ui-verify:v1 -->` block — never translate them.
+   - A `/fix-bug` reproduction artifact for a UI or visual bug — an `e2e-testing` flow or a `repro/<id>.md` checklist. Rewrite it as an intent spec whose `**Expected:**` items are the fixed behavior.
    Both sources are gitignored, local-only files. This works because `author` runs in the same worktree that wrote them, and it copies their content into the **committed** PR body — the durable artifact `run` later reads. The gitignored file is never committed; only its lifted content reaches GitHub. See [`rules/spec-sources.md § Two artifacts, two lifetimes`](./rules/spec-sources.md#two-artifacts-two-lifetimes). When a source is found, seed the block from it and skip step 3, so the PR block matches what was verified locally rather than a second, divergent description of the same behavior.
-3. **Otherwise, write the spec from the diff.** Read the diff (`git diff <base>...HEAD --name-status` plus the relevant files), then write one `## Spec N:` block per user-visible behavior the diff changes, in `aw-tester`'s grammar. Prefer role-and-name locators; use `{testid: …}` only as an escape hatch. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
+3. **Otherwise, write an intent spec from the diff.** Read the diff (`git diff <base>...HEAD --name-status` plus the relevant files), then write one `## Spec N:` block per user-visible behavior the diff changes, per [`rules/spec-format.md § Writing an intent spec (v2)`](./rules/spec-format.md#writing-an-intent-spec-v2): name the `**Changed:**` target, start the step that exercises it with `[must-follow]`, and list each outcome under `**Expected:**` on that target. Put locators you know from lessons under `**Hints:**` in the role-and-name form. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
 4. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with the body-write call for your resolved [access path](#step-0-resolve-your-github-access-path), preserving everything already there.
 Writing the block into the PR body is this operation's **only** deliverable, so a run that could not perform that write has not authored a spec.
 Report it as `failed (no GitHub access path)` rather than reporting the specs you drafted — a drafted spec that never reached the PR is indistinguishable from none to every later reader, including `run`.
@@ -319,12 +321,13 @@ Run the embedded spec against the live preview.
 
 Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
 
-1. **Get the spec.** Extract it from the PR body between the `<!-- ui-verify:v1 -->` markers — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
+1. **Get the spec.** Extract it from the PR body between the `<!-- ui-verify:v2 -->` markers, else the `<!-- ui-verify:v1 -->` markers, else the legacy `<!-- preview-spec:v1 -->` ones — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
 2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`, and required on the `mcp` path). Any `inconclusive: …` outcome from that file is terminal — report it and stop, without a pass or a fail. Its two commonest are `inconclusive: no access path for deployment lookup (pass --url)` (no lookup was possible) and `inconclusive: preview not deployed` (the lookup ran and found nothing). For a repo whose previews aren't GitHub-integrated (CLI-deployed in the repo's own CI, surfaced by a `github-actions[bot]` comment or a stable alias that isn't `*-git-*`), commit a `preview_url` block in `.claude/aw-targets/preview.yml` so resolution finds the URL without a manual `--url` each run — see [Repo-configured resolution](./rules/preview-url-resolution.md#repo-configured-resolution-when-previews-arent-github-integrated).
 3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.ui-verify/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
 4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it prints a one-line fallback notice and runs the `aw-tester` sub-agent — no question, attended or under [`--unattended`](#--unattended--never-ask-never-hang). A forced `--driver chrome` never falls back; a forced `--driver playwright` skips Chrome. Mode `--all`.
+   An intent spec (`Format: intent`) needs nothing extra from this skill: the runner replays a cached route when one matches the spec's text, otherwise explores the route from the steps, adapts plain steps, follows `[must-follow]` steps exactly, and grades every `**Expected:**` item with an evidence line (contract § 6).
    - **Then try to break it** ([`runner.md § Step 4b`](./rules/runner.md#step-4b-adversarial-pass--try-to-break-it)). Run the adversarial pass per [`rules/adversarial.md`](./rules/adversarial.md) against every spec that passed: hostile input, double submits, failed and slow requests, interrupted navigation, keyboard-only use, small viewports — only the categories the spec's surface exposes. Each probe leaves before/after screenshots under `.agent/{branch}/.ui-verify/adversarial/captures/` and a line in `report.md`; each finding carries steps, expected vs actual, and a severity. It **never changes the verdict** from step 4. `--no-adversarial` (or `adversarial.enabled: false` in `preview.yml`) skips it.
-5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver — then the adversarial summary line and its findings.
+5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver — then, for an intent spec, each spec's route, its `Expected` items with their evidence, and its deviations ([`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict)), then the adversarial summary line and its findings.
 6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.
 
 ## Operation `verify`
@@ -335,8 +338,9 @@ agent0 / CI automation is checking against a Vercel-style preview — where no
 spec exists yet.
 
 1. **Author if, and only if, the block is absent.** Read the PR body. If it
-   already carries a `<!-- ui-verify:v1 -->` block, keep it verbatim — never
-   overwrite a hand-written or previously-authored spec. If it is absent, run
+   already carries a ui-verify block of any version — `<!-- ui-verify:v2 -->`,
+   `<!-- ui-verify:v1 -->`, or the legacy `<!-- preview-spec:v1 -->` — keep it
+   verbatim — never overwrite a hand-written or previously-authored spec. If it is absent, run
    Operation `author` (including its Step 0 `is-ui-diff` gate): a `no` from the
    gate ends `verify` here with `not verified (no UI files in diff)`, and a
    `failed (no GitHub access path)` from `author` ends it with that same reason —
@@ -358,7 +362,8 @@ a second `verify` on the same PR reuses the block authored by the first.
 
 ## Hard rules
 
-- **Never fork the spec grammar.** It is `aw-tester`'s single source of truth. If a step cannot be expressed in it, say so — do not invent syntax.
+- **Never fork either spec format.** Both are `aw-tester`'s: the grammar in `specs.md.template`, the intent format in `intent-spec.md.template`. If a behavior cannot be expressed in them, say so — do not invent syntax or fields.
+- **A route may change; an outcome may not.** An intent spec passes only when every `**Expected:**` item was observed with an evidence line, every `[must-follow]` step was performed as written, and the `**Changed:**` target was exercised — the contract's grading table decides, never judgment. Deviations on plain steps are reported, never failed.
 - **Never weaken a spec to make it pass.** A red verdict is a finding, not a failure of this skill.
 - **Never store a secret in the spec, the target file, or a lesson.** Preview-auth credentials live in the committed `preview.yml`'s refresh command or in the environment, never in the PR body — the spec is public.
 - **On Agent0, `aw-tester` is still a dispatched sub-agent.** Never run the spec in the orchestrating context; dispatch a `general` sub-agent pointed at its definition file ([`rules/agent0-runtime.md`](./rules/agent0-runtime.md)). A missing sandbox browser is `NOT RUN (…)` with the setup script's reason, never `red`.

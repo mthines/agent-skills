@@ -130,7 +130,7 @@ When the diff touches the UI, attach a collapsed, machine-findable verification 
 Skill("ui-verify", "author <pr-url>")
 ```
 
-`ui-verify` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- ui-verify:v1 -->` block. The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
+`ui-verify` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- ui-verify:v2 -->` block (a Markdown intent spec). The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
 
 **Record which branch you took, now, before continuing.** The Step 10 report has a mandatory ui-verify slot, and a slot whose value is reconstructed from memory at the end of a long run is the blind spot this step's own history demonstrates. Write down exactly one of the six values as you leave this step:
 

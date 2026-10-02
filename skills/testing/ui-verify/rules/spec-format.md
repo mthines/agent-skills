@@ -1,10 +1,11 @@
 ---
-title: Embedded spec format — the marker, the collapsed block, the ceiling exemption
+title: Embedded spec format — the markers, the two spec formats, the ceiling exemption
 impact: HIGH
 tags:
   - ui-verify
   - pr-description
   - marker
+  - intent-spec
   - single-source-of-truth
 ---
 
@@ -16,96 +17,145 @@ The markers make the block **machine-findable** — the runner and `review-loop`
 ## Contents
 
 - [The marker contract](#the-marker-contract)
-- [The spec grammar is `aw-tester`'s — do not fork it](#the-spec-grammar-is-aw-testers--do-not-fork-it)
+- [Which format to write](#which-format-to-write)
+- [Writing an intent spec (v2)](#writing-an-intent-spec-v2)
 - [Two host-contract rules](#two-host-contract-rules)
 - [Good and bad](#good-and-bad)
 
 ## The marker contract
 
-The block is exactly this shape.
-`author` starts from the literal boilerplate in [`templates/embedded-spec.md.template`](../templates/embedded-spec.md.template) and fills in the `Spec N:` blocks for the diff at hand.
+Three marker versions exist.
+`author` writes v2, or v1 only when lifting a grammar source verbatim; `run` reads all three, in this order:
+
+| Marker pair | Body format | Written by `author` | Read by `run` |
+| --- | --- | --- | --- |
+| `<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->` | **Intent** — Markdown, header `Format: intent` | yes — the default | first |
+| `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` | **Grammar** — `WHEN/THEN/AND` | only when lifting `.agent/{branch}/specs.md` verbatim ([`spec-sources.md`](./spec-sources.md)) | second |
+| `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` | Grammar (the skill's former name) | never | last, read-only |
+
+`author` starts a v2 block from the literal boilerplate in [`templates/embedded-spec.md.template`](../templates/embedded-spec.md.template):
 
 ```markdown
-<!-- ui-verify:v1 -->
+<!-- ui-verify:v2 -->
 <details>
 <summary>🧪 UI verification spec — run against the preview deployment</summary>
 
 Target: preview
-Refactor: no
+Format: intent
 
 ## Spec 1: <one-line user goal>
-url: /path/to/changed/screen
-flow:
-  - WHEN {role: "button", name: "Save"} is clicked
-    THEN {role: "dialog", name: "Saved"} is visible
+**Changed:** <the control or region the diff adds or changes>
+**Start:** /path/to/changed/screen
+**Steps:**
+1. [must-follow] <the action that exercises the change>
+**Expected:**
+- <user-observable outcome on the changed target>
 
 </details>
-<!-- /ui-verify:v1 -->
+<!-- /ui-verify:v2 -->
 ```
 
 Rules:
 
-- **The open marker is `<!-- ui-verify:v1 -->` and the close marker is `<!-- /ui-verify:v1 -->`, verbatim.** The runner extracts the region between them. Match them exactly, including the version token `v1`.
-- **Legacy marker (read-only back-compat).** This skill was formerly `preview-spec`, and PRs authored then carry `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->`. The **runner reads both**: it looks for `ui-verify:v1` first, then falls back to `preview-spec:v1`, so an already-embedded legacy block still runs. **`author` only ever writes the current `ui-verify:v1` marker** — when it finds a legacy-marked block on a PR it is re-authoring, it replaces the whole legacy region with a `ui-verify:v1` region (a silent in-place migration), never leaving both. The body grammar is byte-identical across the two markers, so the fallback is a marker-string match, nothing more.
-- **There is at most one block per PR.** `author` on a PR that already has one replaces the region in place — it never appends a second. A legacy block counts as "one" for this rule: migrate it, do not add a second.
+- **Match the markers verbatim, including the version token.** The runner extracts the region between an open marker and its own close marker; a `v2` open with a `v1` close is no block.
+- **The body format follows the marker.** A v2 body carries `Format: intent` in its header; a v1 body never does.
+- **There is at most one block per PR, of any version.** `author` on a PR that already has one replaces the whole region in place — it never appends a second.
+  Replacing a `preview-spec:v1` region is a silent migration: write the new block where the old one was, never leaving both.
 - **The `<details>` opens collapsed.** Never `<details open>` — the block is for the runner, not the reader.
 - **The content between the markers is the spec body**, not prose. `author` writes it; the runner reads it; no other step edits it.
+- **One field is fixed for this skill: `Target: preview`.** The runner resolves it to the PR's live preview deployment (see [`preview-url-resolution.md`](./preview-url-resolution.md)).
 
-## The spec grammar is `aw-tester`'s — do not fork it
+## Which format to write
 
-The body inside the block uses `aw-tester`'s spec grammar **verbatim**: the `Target:` / `Refactor:` header fields, the `## Spec N: <goal>` blocks, `url:`, `preconditions:`, the `WHEN … THEN … AND …` flow steps, the single-braces locator mini-grammar, `continues-from:`, `network: METHOD /path returned NNN`, and the `CAPTURE "<label>" [fullPage]` documentation-screenshot step.
-Its single source of truth is [`specs.md.template`](../../../workflow/autonomous-workflow/templates/specs.md.template).
+| Spec source ([`spec-sources.md`](./spec-sources.md)) | Marker and format |
+| --- | --- |
+| `.agent/{branch}/specs.md` — the aw planner's grammar spec, already run at Phase 4 | v1, its `## Spec N:` blocks lifted verbatim — no translation |
+| A `/fix-bug` reproduction artifact | v2 intent |
+| The diff | v2 intent |
 
-Do not redefine, extend, or abbreviate that grammar here.
-If a behavior cannot be expressed in it, say so in the author report — do not invent syntax the runner cannot parse.
+Never translate a lifted grammar spec into intent form: it already ran green against a local target, and the PR block must be that same contract.
+Never mix formats in one block.
 
-One field is fixed for this skill: **`Target: preview`**.
-The runner resolves that target to the PR's live preview deployment (see [`preview-url-resolution.md`](./preview-url-resolution.md)).
+## Writing an intent spec (v2)
+
+The format's single source of truth is `autonomous-workflow`'s `templates/intent-spec.md.template`; how the runners execute and grade it is `rules/spec-run-contract.md` § 6 of the same skill.
+The rules below are what an author needs, restated so this file stands alone — when the two disagree, the template wins.
+Do not add fields, tokens, or syntax the template does not define.
+
+Write one `## Spec N:` block per user-visible behavior the diff changes — 1 to 3 specs, the behaviors a reviewer would click through.
+Each block carries, in this order:
+
+| Field | Required | Rule |
+| --- | --- | --- |
+| `**Changed:**` | yes | Name the control, component, or region the diff adds or changes, the way a user sees it: "the Rename button in the dashboard header". The run fails when it never touches this target. |
+| `**Start:**` | yes | A path relative to the preview's base URL; `{placeholders}` resolve from the preview target's `fixtures.references`. |
+| `**Preconditions:**` | no | Bullets naming the state the run needs — a feature flag, a seeded record. Name each one: the runner may call an item unreachable only for a flag or record named here. |
+| `**Steps:**` | yes | A numbered list of imperative user actions, one per step. Plain steps are guidance the runner may adapt. Start the step that exercises the `Changed` target with `[must-follow]` — at least one per spec. |
+| `**Expected:**` | yes | Bullets, one user-observable outcome each, observable on the `Changed` target or its direct effect. Name concrete text, values, or counts. A network outcome uses exactly `` `METHOD /path` returns NNN ``. |
+| `**Hints:**` | no | Bullets carrying locators and navigation quirks from lessons ([`memory.md`](./memory.md)), in the single-braces locator form: `{role: "textbox", name: "Dashboard name"}`. |
+| `**Out of scope:**` | no | Bullets naming what the spec deliberately does not check. |
+
+Four authoring rules decide whether the run can prove anything:
+
+1. **Mark the change, not the scaffolding, as `[must-follow]`.** When the diff adds a button, the click on that button is must-follow; opening the page that holds it is guidance.
+2. **Expect what the changed component itself renders.** An outcome visible before the change could run — a picker entry, a menu item that reveals the new widget — proves a flag or a route, not the change. Expect the widget's own content.
+3. **Name the instance.** When several elements share a name or test id, say which one: "the tool step titled *List all services in catalog*", never "the tool step".
+4. **Keep each `Expected` item checkable.** "Works correctly" and "looks good" cannot be observed. "The header shows *Q3 revenue*" can.
+
+Never put a CSS selector, `nth-child`, or XPath in any field, and never a credential — the block is public.
 
 ## Two host-contract rules
 
 Both are owned jointly with the [description contract](../../../delivery/create-pr/rules/description-contract.md); this file is the authority for the ui-verify side.
+They apply to every marker version.
 
 1. **The marked region is exempt from the description length ceiling.** `create-pr`'s body target is ≤ 25 rendered lines (hard 40), counting every line. The ui-verify block is collapsed and machine-oriented, so it does **not** count toward that budget. `create-pr`'s Step 5 length self-check skips everything between the markers.
-2. **The marked region is preserved verbatim on refresh.** When `review-loop` refreshes the PR body to match the shipped diff, it carries the whole `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` region forward unchanged. The refresh rewrites narrative sections only. Re-authoring the spec is `ui-verify author`'s job, not the refresh's — the same owned-region principle as the `pr-reviewer` sticky comment.
+2. **The marked region is preserved verbatim on refresh.** When `review-loop` refreshes the PR body to match the shipped diff, it carries the whole marked region forward unchanged. The refresh rewrites narrative sections only. Re-authoring the spec is `ui-verify author`'s job, not the refresh's — the same owned-region principle as the `pr-reviewer` sticky comment.
 
 ## Good and bad
 
-**Good** — one behavior, role-and-name locators, exact markers:
+**Good** — v2, the change marked must-follow, outcomes on the changed target:
 
 ```markdown
-<!-- ui-verify:v1 -->
+<!-- ui-verify:v2 -->
 <details>
 <summary>🧪 UI verification spec — run against the preview deployment</summary>
 
 Target: preview
-Refactor: no
+Format: intent
 
 ## Spec 1: A user renames a dashboard from the header
-url: /dashboards/{dashboardId}
-flow:
-  - WHEN {role: "button", name: "Rename"} is clicked
-    THEN {role: "textbox", name: "Dashboard name"} is visible
-  - WHEN {role: "textbox", name: "Dashboard name"} is filled with "Q3 revenue"
-    AND {role: "button", name: "Save"} is clicked
-    THEN {text: "Q3 revenue"} is visible on the page
-    AND network: PATCH /api/dashboards/{dashboardId} returned 200
+**Changed:** the Rename button in the dashboard header (new in this PR)
+**Start:** /dashboards/{dashboardId}
+**Steps:**
+1. Open the dashboard.
+2. [must-follow] Click **Rename** in the dashboard header.
+3. Replace the name with "Q3 revenue" and save.
+**Expected:**
+- The header shows "Q3 revenue" without a page reload.
+- `PATCH /api/dashboards/{dashboardId}` returns 200
+**Hints:**
+- The name field is {role: "textbox", name: "Dashboard name"}.
+
+</details>
+<!-- /ui-verify:v2 -->
+```
+
+**Bad** — no `Changed`, no must-follow step, an outcome nobody can observe, a CSS selector, mismatched markers:
+
+```markdown
+<!-- ui-verify:v2 -->
+<details open>
+<summary>Test spec</summary>
+
+## Spec 1: Rename
+**Steps:**
+1. Click ".btn-primary".          <!-- CSS selector is never valid -->
+**Expected:**
+- Renaming works correctly.       <!-- not observable -->
 
 </details>
 <!-- /ui-verify:v1 -->
 ```
 
-**Bad** — invented syntax, CSS selector, no markers, expanded:
-
-```markdown
-<details open>
-<summary>Test spec</summary>
-
-## Spec 1
-click ".btn-primary"            <!-- CSS selector is never a valid locator -->
-assert page.title == "Saved"    <!-- not the WHEN/THEN grammar -->
-
-</details>
-```
-
-(Why it is bad: no markers so the runner cannot find it, `<details open>` shouts at the reader, `.btn-primary` is a CSS selector the grammar forbids, and `click …` / `assert …` is invented syntax `aw-tester` cannot parse.)
+(Why it is bad: the close marker's version does not match the open, so the runner finds no block; `<details open>` shouts at the reader; the header has no `Format: intent`; the spec has no `Changed`, no `Start`, and no `[must-follow]` step, so the runner skips it as malformed; `.btn-primary` is a CSS selector; and "works correctly" names nothing the runner can observe.)

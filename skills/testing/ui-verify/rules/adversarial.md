@@ -63,6 +63,14 @@ Why it is shaped this way, and the sources behind the catalog: [`references/adve
    - **collections** — a `list`, `table`, `grid`, `listbox`, or `row` role in a `THEN` step;
    - **dialogs** — a `dialog` or `alertdialog` role;
    - **auth** — whether the overlay's `auth.strategy` is anything but `none`.
+
+   For an intent spec (`Format: intent`), read the same surface from its fields and from the happy-path verdict's evidence, which names the controls that actually resolved:
+   - **inputs** — a step that types, fills, enters, or selects, and every input role in an `expected` item's or step's evidence;
+   - **mutating actions** — the `[must-follow]` step when it saves, submits, creates, adds, or updates, or any step followed by a network item with `POST|PUT|PATCH|DELETE`;
+   - **requests** — every network item (`` `METHOD /path` returns NNN ``);
+   - **routes** — the `**Start:**` path, and whether it carries a `{placeholder}`;
+   - **collections** and **dialogs** — the roles named in the evidence lines and `**Hints:**`;
+   - the spec's **primary action** is its first `[must-follow]` step, and its **success state** is its `**Expected:**` items.
 2. Select every catalog row whose **Applies when** matches that surface. Never plan a probe on a control [guardrail 2](#guardrails) forbids, unless it targets a record this run created. Name every unselected row in `categories_skipped` with reason `not applicable: <which surface is missing>`.
 3. Plan **breadth-first**: take the first probe of every selected row in **Priority** order, then the second probe of every row, and so on, until the [probe caps](#budget) are reached. Each row lists its probes most-severe-first. Every applicable probe the caps left out is named in `notes` — a planning cut does not make the pass `partial`.
 4. Write `<output dir>/plan.md`, one line per probe: `ADV-NN | Spec-N | category | probe | oracle`.

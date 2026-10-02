@@ -27,16 +27,22 @@ The runner is an **on-demand orchestrator** — it resolves once, dispatches the
 
 **From the PR (default).** Read the PR body with the call for your resolved access path ([`SKILL.md` Step 0](../SKILL.md#step-0-resolve-your-github-access-path) holds the mapping): `gh pr view <pr> --json body -q .body` on the `gh` path, `mcp__github__pull_request_read` with `method: "get"` on the `mcp` path.
 Unlike the deployment lookup in Step 2, this read has an mcp equivalent, so an absent `gh` never blocks it.
-Extract the region between `<!-- ui-verify:v1 -->` and `<!-- /ui-verify:v1 -->` (see [`spec-format.md`](./spec-format.md)).
-**Legacy fallback:** if that marker is absent, look for the former `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` region — a block authored before this skill was renamed — and run it identically (the body grammar is unchanged). Only when *neither* marker is present is there no spec.
+Extract the first region found, in this order (see [`spec-format.md § The marker contract`](./spec-format.md#the-marker-contract)):
+
+1. `<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->` — a Markdown intent spec (header `Format: intent`).
+2. `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` — a grammar spec.
+3. **Legacy fallback:** `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` — a grammar block authored before this skill was renamed; run it identically.
+
+Only when none of the three is present is there no spec.
+A v2 region whose header lacks `Format: intent` is still run as an intent spec: add the line when materializing it in Step 3, and say so in the report.
 The committed PR body is the **only** source the PR path reads. It never reads `.agent/{branch}/specs.md` — that file is gitignored and absent on a fresh checkout ([`spec-sources.md § Two artifacts, two lifetimes`](./spec-sources.md#two-artifacts-two-lifetimes)). Verifying against the PR is therefore independent of any local aw run.
 
 - No markers → report `no spec — nothing to run` and stop. The PR has no embedded spec; `author` never ran, or the diff was not UI.
 - Markers present but empty body → report `empty spec` and stop.
 
-Strip the `<details>` / `<summary>` wrapper and the markers. What remains is the `specs.md` body (the `Target:` / `Refactor:` header plus the `## Spec N:` blocks).
+Strip the `<details>` / `<summary>` wrapper and the markers. What remains is the `specs.md` body: the header (`Target:` plus `Format: intent` for v2, or `Target:` / `Refactor:` for v1) and the `## Spec N:` blocks.
 
-**From a local path (shortcut).** When the run argument is a filesystem path to a `specs.md` (a local author→run loop, before any PR exists), read it verbatim and skip extraction. A local path requires `--url <preview-url>` — there is no PR to resolve a deployment from. This path is for fast local iteration; the durable, checkout-independent source is still the PR body.
+**From a local path (shortcut).** When the run argument is a filesystem path to a `specs.md` (a local author→run loop, before any PR exists), read it verbatim and skip extraction — either format; the `Format: intent` header line decides which. A local path requires `--url <preview-url>` — there is no PR to resolve a deployment from. This path is for fast local iteration; the durable, checkout-independent source is still the PR body.
 
 ## Step 2: Resolve the preview URL
 
@@ -49,6 +55,7 @@ That resolution also consults the committed `.claude/aw-targets/preview.yml`'s o
 Write two files under `.agent/{branch}/.ui-verify/` (the branch is the PR's head ref; the directory is git-ignored scratch):
 
 1. **`specs.md`** — the extracted spec body from Step 1, verbatim.
+   Never touch `.agent/{branch}/.aw-tester/routes/`: it is the runners' route cache for intent specs (spec-run contract § 6.6), and a later run in this worktree replays from it.
 2. **`aw-target.yml`** — the browser context, built as follows:
    - If `.claude/aw-targets/preview.yml` exists in the repo, start from it (auth, fixtures, constraints) and set `base_url` to the resolved URL. This is how a preview behind Vercel deployment protection or an app login gets authenticated — the committed file carries the auth **strategy**, never the credentials. The full flow (the two walls, the CI env-var path, the Google-SSO caveat) is [`preview-auth.md`](./preview-auth.md).
    - If it does not exist, first look for an existing repo auth convention the way `aw-setup` does ([aw-setup § Reuse before you scaffold](../../../workflow/autonomous-workflow/aw-setup/SKILL.md#reuse-before-you-scaffold)) — a `.claude/aw-targets/*.yml` with `auth.storage_state`, a captured `.browser/auth-state*.json`, or a `refresh-auth*.mjs` login script — and reuse it: point `storage_state` / `refresh.command` at it, capturing against the resolved `PREVIEW_URL`. Only when no convention exists, scaffold from [`templates/preview-target.yml.template`](../templates/preview-target.yml.template) with `auth.strategy: none` and note in the report that authed specs will be skipped by `aw-tester`.
@@ -64,6 +71,9 @@ Never write the resolved URL or any credential into the committed `.claude/aw-ta
 ## Step 4: Select the driver and run
 
 Resolve `--driver` (default `auto`), then run the spec through the chosen runner. Both read the target from the `Aw-Target file:` path and the spec from the `Specs file:` path — the ephemeral overlay from Step 3, not the committed `preview.yml` placeholder. Both emit the identical verdict block ([spec-run contract § 4](../../../workflow/autonomous-workflow/rules/spec-run-contract.md#4-verdict-schema-mandatory--do-not-deviate)). `--all` runs every spec (not `--bail-on-first-red`) — an on-demand verification wants the full picture.
+
+Both runners detect the format from the `Format: intent` header line themselves, so the dispatch blocks below are the same for both formats.
+For an intent spec each runner replays a cached route when one matches the spec's text, otherwise explores the route, and returns each spec with the intent keys (`route`, `changed`, `expected`, `deviations`).
 
 **Screenshots are on by default.** A `ui-verify run` always passes
 `--auto-capture` to the runner, so every run yields full-page screenshots — each
@@ -188,6 +198,19 @@ A reply with no `adversarial:` block is `adversarial: not run (<first line of th
 The runner returns a compact YAML verdict (`verdict: green | red | inconclusive`, one entry per spec with `result` and, on failure, `diagnostics` capped at 30 lines) — identical shape from either driver.
 Relay it to the user as-is plus the resolved preview URL and which driver ran it. Do not re-run (beyond the one documented chrome→playwright fallback), and do not paste browser logs beyond the diagnostics the runner already trimmed.
 
+**Surface an intent spec's evidence.** For each spec carrying `format: intent`, print one line, then its items:
+
+```text
+Spec-1 pass — route: explored — changed: exercised — 2/2 expected observed — 1 deviation
+  E1 observed — locator: {role: "heading", name: "Q3 revenue"} — visible
+  E2 observed — network: PATCH /api/dashboards/d-42 → 200
+  deviation step 1 (added): dismissed the cookie banner before opening the dashboard
+```
+
+Print every `expected` item with its `evidence`, and every deviation, exactly as the runner returned them.
+Never shorten a pass to its verdict word: the evidence lines are what lets a reviewer trust it.
+When `changed` is `not-exercised` or an item is `not-observed`, the spec is `fail` — relay the runner's `reason`, never a softer word.
+
 **Surface the screenshots.** When the verdict carries a `captures:` array (it does on every default run, since `--auto-capture` is on — see Step 4), list each `path` in the report under a **Screenshots** heading so the user can attach them to the PR description. State the count and the directory (`.agent/{branch}/.aw-tester/captures/`); if `captures:` is absent, say `no screenshots (--no-screenshots)`. Never inline the image bytes — the paths are the deliverable.
 
 **Surface the adversarial pass** under an **Adversarial pass** heading, after the screenshots:
@@ -203,6 +226,6 @@ Optionally, when the caller asked for it, post the verdict as a PR comment. Off 
 
 ## Step 6: Write lessons
 
-Write to `ui-verify-lessons` **only** when a spec failed for a navigation or precondition reason that a better spec would have avoided — see [`memory.md § Write at run time`](./memory.md) for exactly what qualifies and what does not.
+Write to `ui-verify-lessons` **only** when a spec failed for a navigation or precondition reason that a better spec would have avoided, or an intent spec passed with an `adapted` or `added` deviation the author could have written as a step or hint — see [`memory.md § Write at run time`](./memory.md) for exactly what qualifies and what does not.
 A locator miss that the runner healed is the runner's lesson (`aw-tester-lessons`), not this skill's; do not duplicate it.
 An adversarial probe error caused by an app-wide quirk (debounced inputs, an optimistic toast that reverts) also qualifies — see [`memory.md § Write at run time`](./memory.md#write-at-run-time).

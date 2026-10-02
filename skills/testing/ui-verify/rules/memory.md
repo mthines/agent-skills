@@ -38,8 +38,8 @@ memory.list { scope: "global",               tags: ["loop::aw-tester-lessons"], 
 
 Apply matched lessons as authoring constraints:
 
-- A `ui-verify-lessons` navigation lesson → write its step into the spec's `preconditions:` or `flow:` (e.g. dismiss the cookie banner first, add `?tab=settings` to the `url:`).
-- An `aw-tester-lessons` locator lesson → prefer the locator form that healed reliably; avoid the one that drifted.
+- A `ui-verify-lessons` navigation lesson → write its step into an intent spec's `**Steps:**` or `**Preconditions:**`, or its path into `**Start:**` (e.g. dismiss the cookie banner first, add `?tab=settings` to the start path); in a lifted grammar spec, the same lesson belongs in `preconditions:` or `flow:`.
+- An `aw-tester-lessons` locator lesson → put the locator form that healed reliably under the intent spec's `**Hints:**`; never the one that drifted.
 
 Lessons are **advisory**. They shape the spec; they never make you skip authoring a spec or invent a step you cannot justify from the diff.
 
@@ -61,11 +61,12 @@ After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons`
 - A preview-deployment access quirk (a protection-bypass header, an auth-refresh step specific to the preview environment).
 - The spec's `Target: preview` resolved but the app required a navigation the spec did not encode.
 - An adversarial probe ([`adversarial.md`](./adversarial.md)) hit a `probe-error` twice because of an app-wide quirk the next pass should plan around — inputs that debounce, an optimistic success toast that reverts on failure, a route that needs a query param. Pass the matched lessons to the next pass on its `Lessons:` input line.
+- An intent spec passed with an `adapted` or `added` deviation the author could have written — a step the page always needs, or the real route to the changed control. Record the route the runner took, so the next author writes it as a step or a `**Hints:**` line.
 
 **Do not write** when:
 
 - The only failure was a locator miss `aw-tester` healed — that is `aw-tester-lessons`, and `aw-tester` writes it.
-- Every spec passed cleanly and no adversarial probe hit a repeated `probe-error`.
+- Every spec passed cleanly — no failure, no `adapted` or `added` deviation — and no adversarial probe hit a repeated `probe-error`.
 - The run stopped at `inconclusive` because the preview was not deployed — that is a timing outcome, not a lesson.
 - `memory.*` is not connected.
 
