@@ -29,7 +29,7 @@ and in what grouping* is prescribed here.
 
 | Topology | When | Sub-agents | Why |
 | --- | --- | --- | --- |
-| `in-context` | `t < 0.4`, or no dispatch capability | none | A quick review is cheaper than one dispatch's base cost. |
+| `in-context` | `t < 0.4`, or no dispatch capability | none | A review this light — below `quick`'s 0.4 default, so only an explicit override — is cheaper than one dispatch's base cost. |
 | `in-context` | a small incremental re-review: run mode `incremental`, `incremental-quick`, or `zero-delta`, tier `standard` or `quick`, thoroughness **defaulted** (`budget.topologyReason: "small-incremental"`) | none | **Unmeasured.** The A/B evidence in the next row is one deep, full, 22-file review; no A/B round ran an incremental re-review. On dash0#20655 the reviewer idled ~125 s waiting for the worker. An explicit `--thoroughness` or `--effort high` keeps `hybrid`. |
 | `hybrid` | **the default at `t ≥ 0.4`**, except the row above | the intent finder only (`budget.isolatedFinders`) | A/B rounds 7–8 on sync-tray#72: isolated, the intent finder flagged the highest-severity agreed defect in 3 of 3 runs, in 5–6 minutes each; in one context with the other finders, the default setting had missed it in 4 of 4 rounds. |
 
@@ -53,7 +53,8 @@ not wait. Your own candidates never wait on the intent worker's.
    ([`agent0-runtime.md`](./agent0-runtime.md#phase-d-two-workers-in-one-message-never-expect-a-second-rung)).
 2. Run every other active finder, every lens, Step 2.5 consolidation, and Step 2.6b verification of
    **your own** candidates in your own context, exactly as `in-context` does — including the
-   self-check under *Verification* below.
+   self-check under *Verification* below. Mark `verify` with `--attr candidates=<n>` on the first
+   verification command ([`run-telemetry.md`](./run-telemetry.md#verify-opens-before-the-verification-it-measures)).
 3. Only then read the intent finder's output file.
    Dedupe its candidates against the verified pool by Step 2.5's rules
    ([`rubric-composition.md § Dedupe`](../../shared/rules/rubric-composition.md#dedupe), the
@@ -76,7 +77,9 @@ reads the context; the caller ran prepare, so the caller owns the workspace clea
 With `--intent-from <path>`:
 
 1. Do not run the intent finder in this context.
-2. Run every other finder, lens, and gate, then Step 2.5 and Step 2.6b over your own candidates.
+2. Run every other finder, lens, and gate, then Step 2.5 and Step 2.6b over your own candidates,
+   marking `verify` with `--attr candidates=<n>` on the first verification command — never chained
+   onto the `intent-wait` marker below.
 3. Then wait for `<path>` and fold the worker into this run's telemetry on one command, marking the
    wait as its own step:
 
@@ -133,7 +136,9 @@ reads it, never re-derives it:
   `budget.holisticEscalationCap` directly; `2.4b`'s own incremental-mode gate (`ESCALATE_IN_INCREMENTAL`)
   is unchanged and still decides *whether* 2.4b runs at all in incremental mode.
 - **`budget.optimalityLens`** / **`budget.measurabilityLens`** — replace the flat `DEPTH_TIER ==
-  "deep"` / `DEPTH_TIER != "quick"` gates at 2.4c/2.4e with these booleans directly.
+  "deep"` / `DEPTH_TIER != "quick"` gates at 2.4c/2.4e with these booleans directly. 2.4c's own
+  incremental-mode skip is unchanged and still wins: `standard`'s 0.7 default sets
+  `optimalityLens`, and the lens still never runs on an incremental re-review.
 
 **`prepare-review.mjs` cannot know whether the agent reading `context.json` holds `Task`**, so the
 `budget` it writes there always assumes `dispatchAvailable: true` — so it says `hybrid` at `t ≥ 0.4`. The agent re-derives the real value itself:

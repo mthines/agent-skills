@@ -29,6 +29,11 @@
 // under SCOPE_NAME, because there the plugin already emits `invoke_agent pr-reviewer` and a second
 // one under its scope would count every review twice (scopeNameFor).
 //
+// THE MEMORY. Which LoreKit memories the review used and read rides the root span: counts plus the
+// used memories' ids as attributes, and one `pr_review.memory.used` / `pr_review.memory.read` event
+// per memory carrying its id, scope, key, LoreKit deep link, and what it did (memoryEvents).
+// finalize.mjs records them from judgments.memory as one `memory` ledger record; the last one wins.
+//
 // THE RUN COUNTER. `pr_review.runs` is what a dashboard counts runs with: a CUMULATIVE sum, one
 // series per verdict per run (the resource's service.instance.id is the run's trace id). `finish`
 // writes its 0 points backdated across the run and the final 1 in the same export as the trace
@@ -196,6 +201,56 @@ export function markerCommand(runDir) {
 /** A gap shorter than this between two marked steps is bookkeeping, not an unmarked step. */
 const GAP_MIN_NS = 1_000_000_000n;
 
+/** Attributes a step's marker carries beyond `tool_calls_so_far`. `verify`'s count is what tells a
+ *  verification that is slow because it held many candidates from one slow on a few. */
+export const STEP_REQUIRED_ATTRS = Object.freeze({ verify: Object.freeze(["candidates"]) });
+
+/**
+ * What a `step <name>` marker should be told, given the ledger so far. Pure; a note never blocks.
+ *
+ * Two misuses of the `verify` marker, each of which moves time to the wrong step:
+ *   1. `verify` without a non-negative integer `candidates`.
+ *   2. A marker that closes an open `verify` after under a second, or after zero tool calls, while
+ *      that verify held candidates (or never said how many): `verify` was issued alongside the next
+ *      marker instead of on its first verification command, so the verification is booked to the
+ *      next step. `emptyVerify` tells the caller to flag the closing step `empty=true`.
+ * A `verify` with `candidates=0` may close at once — there was nothing to verify.
+ * @param {LedgerRecord[]} records @param {string} name @param {Record<string, any>} attrs
+ * @param {bigint} [now] @returns {{ notes: string[], emptyVerify: boolean }}
+ */
+export function markerNotes(records, name, attrs, now = nowNs()) {
+  /** @type {string[]} */
+  const notes = [];
+  if (name === "verify" && !(Number.isInteger(attrs.candidates) && attrs.candidates >= 0)) {
+    notes.push("verify marked without --attr candidates=<n> — pass how many of your own consolidated"
+      + " candidates you are about to verify (0 when there are none)");
+  }
+  /** @type {LedgerRecord|null} */
+  let open = null;
+  for (const r of records) {
+    if (r.t !== "step") continue;
+    open = r.phase === "start" ? r : null;
+  }
+  let emptyVerify = false;
+  if (open && open.name === "verify" && name !== "verify") {
+    const held = open.attrs?.candidates;
+    if (held !== 0) {
+      const elapsed = now - BigInt(open.ns);
+      const before = open.attrs?.tool_calls_so_far;
+      const after = attrs.tool_calls_so_far;
+      const noCalls = typeof before === "number" && typeof after === "number" && after <= before;
+      if (elapsed < GAP_MIN_NS || noCalls) {
+        emptyVerify = true;
+        notes.push(`verify closed after ${Number(elapsed / 1_000_000n) / 1000}s`
+          + `${noCalls ? " and 0 tool calls" : ""} — your verification is being booked to \`${name}\`.`
+          + " Mark verify on the first command that verifies one of your own candidates, never on the"
+          + " same command as the next marker");
+      }
+    }
+  }
+  return { notes, emptyVerify };
+}
+
 /** Harnesses the Dash0 agent plugin already records as coding sessions. */
 export const PLUGIN_HARNESSES = new Set(["claude-code", "cursor", "codex", "github-copilot-cli"]);
 
@@ -239,6 +294,107 @@ const HIST_BOUNDS = {
   "pr_review.run.duration": [60, 180, 300, 600, 900, 1200, 1800, 3600],
   "pr_review.step.tool_calls": [1, 2, 4, 8, 16, 32, 64],
 };
+
+/** The dashboard a memory's deep link opens when LOREKIT_APP_URL is unset (LoreKit § Deep links). */
+export const LOREKIT_APP_URL = "https://lorekit.io";
+/** At most this many memory events on one run: the read budget is ≤ 15 bodies, so 50 is a bound,
+ *  not a budget. Used memories are recorded first, so a cap never drops one for a read-only one. */
+export const MEMORY_EVENTS_MAX = 50;
+/** Every kind a memory event may name — the report's three plus `lesson` (rules/memory.md). */
+export const MEMORY_KINDS = Object.freeze(["rule", "knowledge", "hotspot", "lesson"]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The LoreKit deep link that opens one memory: `/lore?memoryId=<uuid>` when the run kept the
+ * memory's id, else `/lore?scope=…&lesson={scope,key}` (both forms from LoreKit's deep-link
+ * contract), else null — a link is never fabricated from a key alone.
+ * @param {{ id?: string, scope?: string, key?: string }} m @param {string} [base]
+ * @returns {string|null}
+ */
+export function memoryUrl(m, base = LOREKIT_APP_URL) {
+  const root = String(base || LOREKIT_APP_URL).replace(/\/+$/, "");
+  if (typeof m.id === "string" && UUID_RE.test(m.id)) return `${root}/lore?memoryId=${m.id}`;
+  if (m.scope && m.key) {
+    const enc = (/** @type {unknown} */ v) => encodeURIComponent(JSON.stringify(v));
+    return `${root}/lore?scope=${enc(m.scope)}&lesson=${enc({ scope: m.scope, key: m.key })}`;
+  }
+  return null;
+}
+
+/**
+ * @typedef {{ used: boolean, read: boolean, kind: string, id?: string, scope?: string, key?: string,
+ *   action?: string, note?: string, fingerprint?: string, seen_count?: number, suppressed?: number }} MemoryItem
+ * @typedef {{ items: MemoryItem[], readReported: boolean, ns: bigint }} RunMemory
+ */
+
+/**
+ * A `memory` ledger record's items, sanitized: a malformed entry, one nothing identifies (no id and
+ * no key), or one neither used nor read is dropped; strings are trimmed and bounded; at most
+ * MEMORY_EVENTS_MAX survive.
+ * @param {unknown} list @returns {MemoryItem[]}
+ */
+export function memoryItems(list) {
+  if (!Array.isArray(list)) return [];
+  const str = (/** @type {unknown} */ v, /** @type {number} */ max) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+  const count = (/** @type {unknown} */ v) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined);
+  /** @type {MemoryItem[]} */
+  const out = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const m = /** @type {Record<string, any>} */ (raw);
+    const kind = MEMORY_KINDS.includes(m.kind) ? m.kind : "lesson";
+    /** @type {MemoryItem} */
+    const item = {
+      used: m.used === true, read: m.read === true, kind,
+      id: str(m.id, 64), scope: str(m.scope, 512), key: str(m.key, 512),
+      action: str(m.action, 40), note: str(m.note, 300), fingerprint: str(m.fingerprint, 512),
+      seen_count: count(m.seen_count), suppressed: count(m.suppressed),
+    };
+    if ((!item.id && !item.key) || (!item.used && !item.read)) continue;
+    out.push(item);
+    if (out.length >= MEMORY_EVENTS_MAX) break;
+  }
+  return out;
+}
+
+/** The root span's memory attributes; none at all when finalize recorded no memory (rule 3).
+ *  @param {RunMemory|null} memory @returns {Record<string, any>} */
+export function memoryRootAttributes(memory) {
+  if (!memory) return {};
+  const used = memory.items.filter((m) => m.used);
+  return {
+    "pr_review.memory.used": used.length,
+    "pr_review.memory.read": memory.readReported ? memory.items.filter((m) => m.read).length : null,
+    "pr_review.memory.used_ids": used.map((m) => m.id).filter(Boolean).join(",") || null,
+  };
+}
+
+/**
+ * One span event per memory: `pr_review.memory.used` for a memory that influenced the review,
+ * `pr_review.memory.read` for one whose body was read and that changed nothing. Stamped when
+ * finalize recorded them, inside the run.
+ * @param {BuiltRun} run @param {string} [base] @returns {import("./otlp.mjs").SpanEvent[]}
+ */
+export function memoryEvents(run, base) {
+  if (!run.memory) return [];
+  const at = run.memory.ns < run.startNs ? run.startNs : run.memory.ns > run.endNs ? run.endNs : run.memory.ns;
+  return run.memory.items.map((m) => ({
+    timeUnixNano: String(at),
+    name: m.used ? "pr_review.memory.used" : "pr_review.memory.read",
+    attributes: attrs({
+      "pr_review.memory.kind": m.kind,
+      "pr_review.memory.id": m.id,
+      "pr_review.memory.scope": m.scope,
+      "pr_review.memory.key": m.key,
+      "pr_review.memory.url": memoryUrl(m, base),
+      "pr_review.memory.action": m.action,
+      "pr_review.memory.note": m.note,
+      "pr_review.memory.fingerprint": m.fingerprint,
+      "pr_review.memory.seen_count": m.seen_count,
+      "pr_review.memory.suppressed": m.suppressed,
+    }),
+  }));
+}
 
 /** The run counter (rules/run-telemetry.md § The run counter): what a dashboard counts runs with. */
 export const RUN_COUNTER = "pr_review.runs";
@@ -452,7 +608,7 @@ export function beginRun(runDir, facts, opts = {}) {
  * @typedef {{ unit: string, startNs: bigint, endNs: bigint, attrs: Record<string, any> }} WorkerSpan
  * @typedef {{ runId: string, facts: RunFacts, startNs: bigint, endNs: bigint, steps: StepSpan[],
  *   workers: WorkerSpan[], runAttrs: Record<string, any>, status: 0|2, message?: string,
- *   finished: boolean }} BuiltRun
+ *   finished: boolean, memory: RunMemory|null }} BuiltRun
  */
 
 /** Pure: a ledger → the run's spans. `now` closes whatever is still open when there is no finish.
@@ -489,6 +645,8 @@ export function buildRun(records, now = nowNs()) {
   const openWorkers = new Map();
   /** @type {WorkerSpan[]} */
   const workers = [];
+  /** @type {RunMemory|null} */
+  let memory = null;
   const close = (/** @type {bigint} */ at) => {
     if (open) { open.endNs = at < open.startNs ? open.startNs : at; steps.push(open); open = null; }
   };
@@ -508,6 +666,9 @@ export function buildRun(records, now = nowNs()) {
     } else if (r.t === "attr") {
       if (r.target === "step" && open) Object.assign(open.attrs, r.attrs || {});
       else Object.assign(runAttrs, r.attrs || {});
+    } else if (r.t === "memory") {
+      // A finalize re-run records the memory again from its own judgments: the last one wins.
+      memory = { items: memoryItems(r.items), readReported: r.read_reported === true, ns };
     } else if (r.t === "worker") {
       const unit = String(r.unit);
       if (r.phase === "start") {
@@ -561,6 +722,7 @@ export function buildRun(records, now = nowNs()) {
     status: failed ? 2 : 0,
     ...(failed && finish?.r.message ? { message: String(finish.r.message).slice(0, 300) } : {}),
     finished: Boolean(finish),
+    memory,
   };
 }
 
@@ -673,9 +835,11 @@ export function toExporter(run, env) {
         "opencode.parent_tool_call_id": f.opencode_parent_tool_call_id,
         ...run.runAttrs,
       }),
+      ...memoryRootAttributes(run.memory),
       ...(run.status === 2 ? { "error.type": "review_failed" } : {}),
     }),
     status: run.status === 2 ? { code: 2, message: run.message || "review failed" } : { code: 0 },
+    ...(run.memory && run.memory.items.length ? { events: memoryEvents(run, env.LOREKIT_APP_URL) } : {}),
   });
   run.steps.forEach((s, i) => {
     const stepId = spanIdFor(run.runId, `step:${i}:${s.name}`);
@@ -738,10 +902,11 @@ export function toExporter(run, env) {
 }
 
 /**
- * The per-step breakdown — written to SUMMARY_FILE on every finish, endpoint or not.
- * @param {BuiltRun} run
+ * The per-step breakdown — written to SUMMARY_FILE on every finish, endpoint or not. `memory` is
+ * present only when finalize recorded the run's memory.
+ * @param {BuiltRun} run @param {NodeJS.ProcessEnv} [env]
  */
-export function summarize(run) {
+export function summarize(run, env = {}) {
   const total = Number(run.endNs - run.startNs) / 1e9;
   const round = (/** @type {number} */ n) => Math.round(n * 10) / 10;
   return {
@@ -757,6 +922,8 @@ export function summarize(run) {
         share: total > 0 ? Math.round((d / total) * 100) : 0,
         ...(s.status === 2 ? { failed: true } : {}),
         ...(typeof s.attrs.tool_calls === "number" ? { tool_calls: s.attrs.tool_calls } : {}),
+        ...(typeof s.attrs.candidates === "number" ? { candidates: s.attrs.candidates } : {}),
+        ...(s.attrs.empty === true ? { empty: true } : {}),
         ...(s.sub && s.sub.length ? { phases: s.sub.map((g) => ({ name: g.name, duration_s: round(Number(g.endNs - g.startNs) / 1e9) })) } : {}),
       };
     }),
@@ -765,17 +932,33 @@ export function summarize(run) {
       start_offset_s: round(Number(w.startNs - run.startNs) / 1e9),
       duration_s: round(Number(w.endNs - w.startNs) / 1e9),
     })),
+    ...(run.memory ? {
+      memory: {
+        used: run.memory.items.filter((m) => m.used).length,
+        ...(run.memory.readReported ? { read: run.memory.items.filter((m) => m.read).length } : {}),
+        items: run.memory.items.map((m) => ({
+          use: m.used ? "used" : "read", kind: m.kind,
+          ...(m.id ? { id: m.id } : {}), ...(m.scope ? { scope: m.scope } : {}), ...(m.key ? { key: m.key } : {}),
+          ...(memoryUrl(m, env.LOREKIT_APP_URL) ? { url: memoryUrl(m, env.LOREKIT_APP_URL) } : {}),
+        })),
+      },
+    } : {}),
   };
 }
 
 /** @param {ReturnType<typeof summarize>} s @returns {string} */
 export function renderSummary(s) {
   const rows = s.steps.flatMap((x) => [
-    `  ${x.name.padEnd(16)} ${x.kind.padEnd(8)} ${String(x.duration_s).padStart(7)}s ${String(x.share).padStart(4)}%${"tool_calls" in x ? `  ${x.tool_calls} calls` : ""}${x.failed ? "  FAILED" : ""}`,
+    `  ${x.name.padEnd(16)} ${x.kind.padEnd(8)} ${String(x.duration_s).padStart(7)}s ${String(x.share).padStart(4)}%${"tool_calls" in x ? `  ${x.tool_calls} calls` : ""}${"candidates" in x ? `  ${x.candidates} candidates` : ""}${x.empty ? "  EMPTY (marked late)" : ""}${x.failed ? "  FAILED" : ""}`,
     ...(x.phases || []).map((g) => `    · ${g.name.padEnd(13)} ${"".padEnd(8)} ${String(g.duration_s).padStart(7)}s`),
   ]);
   const wrows = s.workers.map((w) => `  worker ${w.unit.padEnd(9)} ${"sub-agent".padEnd(8)} ${String(w.duration_s).padStart(7)}s  (from +${w.start_offset_s}s)`);
-  return [`review ${s.run_id} · ${s.total_s}s · trace ${s.trace_id}`, ...rows, ...wrows].join("\n");
+  const m = s.memory;
+  const mrows = m ? [
+    `  memory ${m.used} used${"read" in m ? ` · ${m.read} read` : ""}`,
+    ...m.items.filter((x) => x.use === "used").map((x) => `    · ${x.kind.padEnd(13)} ${x.url || [x.scope, x.key].filter(Boolean).join(" · ")}`),
+  ] : [];
+  return [`review ${s.run_id} · ${s.total_s}s · trace ${s.trace_id}`, ...rows, ...wrows, ...mrows].join("\n");
 }
 
 /**
@@ -801,7 +984,7 @@ export async function finishRun(runDir, opts = {}, env = process.env) {
     }
     const run = buildRun(readLedger(runDir));
     if (!run) return { exported: false, reason: "ledger has no run" };
-    const summary = summarize(run);
+    const summary = summarize(run, env);
     const ex = toExporter(run, env);
     const result = await ex.flush();
     const out = { ...summary, exported: result.exported, ...(result.reason ? { reason: result.reason } : {}) };
@@ -988,7 +1171,11 @@ async function main(argv) {
     if (cmd === "step") {
       const name = positional[1] || "";
       if (!STEP_NAME_RE.test(name)) { warn(`step name ${JSON.stringify(name)} must match ${STEP_NAME_RE}`); return; }
+      const { notes, emptyVerify } = markerNotes(readLedger(runDir), name, attrBag);
+      // The flag lands on the still-open verify step (attr records apply to the open step).
+      if (emptyVerify) appendRecord(runDir, { t: "attr", target: "step", attrs: { empty: true } });
       appendRecord(runDir, { t: "step", phase: "start", name, attrs: attrBag });
+      for (const n of notes) process.stderr.write(`review-telemetry: note — ${n}\n`);
     } else if (cmd === "end") {
       appendRecord(runDir, { t: "step", phase: "end", ...(positional[1] ? { name: positional[1] } : {}), attrs: attrBag });
     } else if (cmd === "dispatch") {
@@ -1064,7 +1251,7 @@ async function main(argv) {
       process.stderr.write(`review-telemetry: ${"skipped" in out && out.skipped ? "already exported earlier — nothing sent" : out.exported ? "exported" : `not exported (${out.reason || "?"})`}\n`);
     } else if (cmd === "summary") {
       const run = buildRun(readLedger(runDir));
-      if (run) console.log(renderSummary(summarize(run)));
+      if (run) console.log(renderSummary(summarize(run, process.env)));
     } else {
       warn(`unknown command ${JSON.stringify(cmd)}`);
     }
@@ -1129,7 +1316,7 @@ async function selfTest() {
   const payload = /** @type {any} */ (ex.tracePayload());
   const spans = payload.resourceSpans[0].scopeSpans[0].spans;
   const get = (/** @type {any} */ s, /** @type {string} */ k) => {
-    const a = s.attributes.find((/** @type {any} */ x) => x.key === k);
+    const a = s?.attributes?.find((/** @type {any} */ x) => x.key === k);
     return a ? (a.value.stringValue ?? a.value.intValue ?? a.value.doubleValue ?? a.value.boolValue) : undefined;
   };
   const root = spans[0];
@@ -1198,6 +1385,71 @@ async function selfTest() {
       && get(fsSpans.find((/** @type {any} */ s) => s.status.code === 2), "error.type") === "step_failed");
   const badKeys = spans.flatMap((/** @type {any} */ s) => s.attributes.map((/** @type {any} */ a) => a.key)).filter((/** @type {string} */ k) => !ALLOWED_SPAN_KEY(k));
   ok("every attribute key is in the declared contract", badKeys.length === 0, [...new Set(badKeys)].join(","));
+  ok("rule 3 — a run with no memory record carries no memory attribute and no event",
+    run.memory === null && root.events === undefined && spans.every((/** @type {any} */ s) => s.attributes.every((/** @type {any} */ a) => !a.key.startsWith("pr_review.memory."))));
+
+  // The memory: which LoreKit memories the review used and read, each pointing back at LoreKit.
+  {
+    const UUID_A = "9b2c1d34-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    const UUID_B = "1bf3d1ed-7663-479b-be61-a01cfc0073c4";
+    const memLedger = [
+      ...ledger.slice(0, -1),
+      at(105, { t: "memory", read_reported: true, items: [{ used: true, read: false, kind: "rule", key: "stale" }] }),
+      at(108, { t: "memory", read_reported: true, items: [
+        { used: true, read: true, kind: "rule", id: UUID_A, scope: "repo::mthines/sync-tray", key: "reviewer-comment-relevance::rule::correctness:nil-deref:-@src/a.ts",
+          action: "suppress", fingerprint: "correctness:nil-deref:-@src/a.ts", seen_count: 4, suppressed: 1 },
+        { used: true, read: false, kind: "hotspot", scope: "repo::mthines/sync-tray", key: "hotspot::src/a.ts", note: "finder pointer (re-verified)" },
+        { used: false, read: true, kind: "knowledge", id: UUID_B, scope: "repo::mthines/sync-tray", key: "knowledge::retry@src/b.ts" },
+        { used: true, read: false, kind: "lesson", key: "orphan-lesson" },
+        { used: false, read: false, kind: "lesson", id: UUID_A, key: "neither" },
+        { used: true, read: true, kind: "made-up", note: "no id and no key" },
+        "not an object",
+      ] }),
+      ledger[ledger.length - 1],
+    ];
+    const memRun = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ (memLedger)));
+    ok("the last memory record wins, and an entry nothing identifies or neither used nor read is dropped",
+      memRun.memory !== null && memRun.memory.items.length === 4 && memRun.memory.items.every((m) => m.key !== "stale" && m.key !== "neither"));
+    const mRoot = /** @type {any} */ (toExporter(memRun, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans[0];
+    ok("the root counts used and read memories and lists the used ones' LoreKit ids",
+      get(mRoot, "pr_review.memory.used") === "3" && get(mRoot, "pr_review.memory.read") === "2" && get(mRoot, "pr_review.memory.used_ids") === UUID_A);
+    const events = mRoot.events || [];
+    const ev = (/** @type {string} */ key) => events.find((/** @type {any} */ e) => get(e, "pr_review.memory.key") === key);
+    ok("one event per memory on the root: pr_review.memory.used for a used one, pr_review.memory.read for a read-only one",
+      events.length === 4 && events.filter((/** @type {any} */ e) => e.name === "pr_review.memory.used").length === 3
+        && ev("knowledge::retry@src/b.ts")?.name === "pr_review.memory.read");
+    const rule = ev("reviewer-comment-relevance::rule::correctness:nil-deref:-@src/a.ts");
+    ok("a memory event carries its LoreKit id, scope, key, kind, and what it did",
+      get(rule, "pr_review.memory.id") === UUID_A && get(rule, "pr_review.memory.scope") === "repo::mthines/sync-tray"
+        && get(rule, "pr_review.memory.kind") === "rule" && get(rule, "pr_review.memory.action") === "suppress"
+        && get(rule, "pr_review.memory.suppressed") === "1" && get(rule, "pr_review.memory.seen_count") === "4"
+        && get(ev("hotspot::src/a.ts"), "pr_review.memory.note") === "finder pointer (re-verified)");
+    ok("the deep link opens the memory by id, falls back to scope + key, and is omitted when neither is known",
+      get(rule, "pr_review.memory.url") === `https://lorekit.io/lore?memoryId=${UUID_A}`
+        && get(ev("hotspot::src/a.ts"), "pr_review.memory.url") === "https://lorekit.io/lore?scope=%22repo%3A%3Amthines%2Fsync-tray%22&lesson=%7B%22scope%22%3A%22repo%3A%3Amthines%2Fsync-tray%22%2C%22key%22%3A%22hotspot%3A%3Asrc%2Fa.ts%22%7D"
+        && get(ev("orphan-lesson"), "pr_review.memory.url") === undefined);
+    ok("memoryUrl matches LoreKit's documented scope + key example, and honours LOREKIT_APP_URL",
+      memoryUrl({ scope: "global", key: "prefer-guard-clauses" }) === "https://lorekit.io/lore?scope=%22global%22&lesson=%7B%22scope%22%3A%22global%22%2C%22key%22%3A%22prefer-guard-clauses%22%7D"
+        && get((/** @type {any} */ (toExporter(memRun, { ...env, LOREKIT_APP_URL: "https://lore.example.com/" }).tracePayload())).resourceSpans[0].scopeSpans[0].spans[0].events?.[0], "pr_review.memory.url") === `https://lore.example.com/lore?memoryId=${UUID_A}`
+        && memoryUrl({ id: "not-a-uuid", key: "k" }) === null);
+    ok("every memory event sits inside the run and every event attribute key is in the declared contract",
+      events.every((/** @type {any} */ e) => BigInt(e.timeUnixNano) >= memRun.startNs && BigInt(e.timeUnixNano) <= memRun.endNs
+        && e.attributes.every((/** @type {any} */ a) => ALLOWED_SPAN_KEY(a.key))));
+    ok("memory events ride the root only — no step or worker span carries one",
+      /** @type {any} */ (toExporter(memRun, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans.slice(1).every((/** @type {any} */ s) => s.events === undefined));
+    const unreported = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...ledger.slice(0, -1), at(108, { t: "memory", items: [] }), ledger[ledger.length - 1]])));
+    const uRoot = /** @type {any} */ (toExporter(unreported, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans[0];
+    ok("a recorded memory with nothing used is a real 0; a read list the run never reported is omitted, not 0",
+      get(uRoot, "pr_review.memory.used") === "0" && get(uRoot, "pr_review.memory.read") === undefined
+        && get(uRoot, "pr_review.memory.used_ids") === undefined && uRoot.events === undefined);
+    const many = memoryItems(Array.from({ length: 80 }, (_, i) => ({ used: true, key: `k${i}` })));
+    ok("at most MEMORY_EVENTS_MAX memories are kept", many.length === MEMORY_EVENTS_MAX && MEMORY_EVENTS_MAX === 50);
+    const sumMem = summarize(memRun, {});
+    ok("the summary lists the memory: counts, and each memory with its deep link",
+      sumMem.memory?.used === 3 && sumMem.memory?.read === 2 && sumMem.memory?.items[0].url === `https://lorekit.io/lore?memoryId=${UUID_A}`
+        && /memory 3 used · 2 read/.test(renderSummary(sumMem)) && renderSummary(sumMem).includes(`lore?memoryId=${UUID_A}`)
+        && summarize(run).memory === undefined);
+  }
   const verifySpan = spans.find((/** @type {any} */ s) => s.name === "pr_review.step verify");
   ok("rule 2 — a step that found nothing stays UNSET", verifySpan?.status.code === 0 && get(verifySpan, "pr_review.candidates") === "0");
   ok("marker attributes are namespaced under pr_review.* on the root",
@@ -1357,6 +1609,7 @@ async function selfTest() {
       a !== b && existsSync(join(otherDir, `telemetry.${a}.jsonl`)) && readLedger(otherDir).filter((r) => r.t === "run").length === 1);
     appendFileSync(ledgerPath(runDir), "{torn line\n");
     ok("a torn ledger line is skipped, never fatal", readLedger(runDir).length === 4);
+    appendRecord(runDir, { t: "memory", read_reported: true, items: [{ used: true, read: true, kind: "knowledge", id: "cb10f4e2-eaf1-48e1-933c-e633a23e2716", scope: "repo::mthines/sync-tray", key: "knowledge::retry@src/b.ts" }] });
     const off = await finishRun(runDir, {}, {});
     ok("rule 1 — no endpoint: nothing exported, but the summary is written", off.exported === false && existsSync(join(runDir, SUMMARY_FILE)));
     const on = await finishRun(runDir, { force: true, attrs: { verdict: "PASS" } }, { PR_REVIEWER_OTLP_ENDPOINT: `http://127.0.0.1:${port}` });
@@ -1366,6 +1619,10 @@ async function selfTest() {
     const rootSpan = tr?.resourceSpans?.[0]?.scopeSpans?.[0]?.spans?.[0];
     ok("the received trace's root carries the model's provider once `begin` supplied the model",
       rootSpan?.name === "invoke_agent pr-reviewer" && get(rootSpan, "gen_ai.provider.name") === "anthropic" && get(rootSpan, "gen_ai.request.model") === "claude-opus-5-5");
+    ok("the received root carries the memory the run used, as an event with its LoreKit id and deep link",
+      get(rootSpan, "pr_review.memory.used_ids") === "cb10f4e2-eaf1-48e1-933c-e633a23e2716" && rootSpan?.events?.length === 1
+        && rootSpan.events[0].name === "pr_review.memory.used"
+        && get(rootSpan.events[0], "pr_review.memory.url") === "https://lorekit.io/lore?memoryId=cb10f4e2-eaf1-48e1-933c-e633a23e2716");
     const rm = received.find((r) => r.path === "/v1/metrics")?.body?.resourceMetrics?.[0];
     const rc = rm?.scopeMetrics?.[0]?.metrics?.find((/** @type {any} */ m) => m.name === RUN_COUNTER);
     const rcFinal = (rc?.sum?.dataPoints || []).filter((/** @type {any} */ p) => p.asInt === "1");
@@ -1540,6 +1797,34 @@ async function selfTest() {
     const mRecs = readLedger(mRun).filter((r) => r.t === "step" && r.name === "verify");
     ok("markerCommand, filled and run in a fresh shell, records the step and lets the next command run",
       ran.stdout.trim() === "after" && mRecs.length === 1 && mRecs[0].attrs?.tool_calls_so_far === 7, ran.stderr);
+
+    // The verify marker opens before the verification it measures, and carries its count.
+    {
+      const v0 = 1_000_000_000_000n;
+      const vRec = (/** @type {Record<string, any>} */ a) => /** @type {any} */ ({ t: "step", phase: "start", name: "verify", ns: String(v0), attrs: a });
+      ok("markerNotes: a verify marker without --attr candidates gets a note",
+        markerNotes([], "verify", { tool_calls_so_far: 3 }).notes.some((n) => n.includes("candidates=<n>")));
+      ok("markerNotes: a verify marker with a count gets no note",
+        markerNotes([], "verify", { candidates: 4, tool_calls_so_far: 3 }).notes.length === 0);
+      const chained = markerNotes([vRec({ candidates: 4, tool_calls_so_far: 30 })], "intent-wait", { tool_calls_so_far: 30 }, v0 + 200_000_000n);
+      ok("markerNotes: closing a verify after 0.2 s and 0 tool calls flags it empty and names the step it leaked into",
+        chained.emptyVerify && chained.notes.some((n) => n.includes("booked to `intent-wait`")));
+      const worked = markerNotes([vRec({ candidates: 4, tool_calls_so_far: 30 })], "intent-wait", { tool_calls_so_far: 34 }, v0 + 90_000_000_000n);
+      ok("markerNotes: a verify that spent calls and time is not flagged",
+        !worked.emptyVerify && worked.notes.length === 0);
+      const nothing = markerNotes([vRec({ candidates: 0, tool_calls_so_far: 30 })], "intent-wait", { tool_calls_so_far: 30 }, v0 + 100_000_000n);
+      ok("markerNotes: a verify with candidates=0 may close at once", !nothing.emptyVerify && nothing.notes.length === 0);
+      const eRun = join(dir, "empty-verify");
+      beginRun(eRun, facts);
+      const selfPath = fileURLToPath(import.meta.url);
+      const r1 = spawnSync(process.execPath, [selfPath, "step", "verify", "--attr", "tool_calls_so_far=30", "--run-dir", eRun], { encoding: "utf8" });
+      const r2 = spawnSync(process.execPath, [selfPath, "step", "intent-wait", "--attr", "tool_calls_so_far=30", "--run-dir", eRun], { encoding: "utf8" });
+      const eBuilt = buildRun(readLedger(eRun));
+      const eVerify = eBuilt ? summarize(/** @type {BuiltRun} */ (eBuilt)).steps.find((x) => x.name === "verify") : undefined;
+      ok("CLI: a count-less verify and a chained next marker each print a note, exit 0, and flag verify empty in the summary",
+        r1.status === 0 && r2.status === 0 && /candidates=<n>/.test(r1.stderr) && /booked to `intent-wait`/.test(r2.stderr)
+          && eVerify?.empty === true, `${r1.stderr}|${r2.stderr}`);
+    }
   } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });

@@ -118,6 +118,14 @@ export const SUITES = [
     choices: ["critical", "high", "medium", "low"],
   },
   {
+    name: "behavioral-barrier",
+    golden: "golden/behavioral-barrier.jsonl",
+    rubric: { file: "skills/design/behavioral-design/rules/diagnosis.md", section: "## Classification procedure" },
+    instruction: "You are the behavioral-design skill at diagnosis. Using ONLY the classification procedure below, classify the scenario's primary barrier into exactly one COM-B component.",
+    inputKey: "input", inputLabel: "Scenario",
+    choices: ["physical-capability", "psychological-capability", "physical-opportunity", "social-opportunity", "reflective-motivation", "automatic-motivation"],
+  },
+  {
     name: "code-review-retrieval-relevance",
     golden: "golden/code-review-retrieval-relevance.jsonl",
     // 14 cases, 8 `surface` / 6 `skip` — a 57.1% majority-class baseline, asserted by L1 `G21h`

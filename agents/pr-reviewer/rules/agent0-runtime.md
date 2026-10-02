@@ -156,7 +156,7 @@ and costs the slower worker's runtime instead of the sum. Both workers read the 
 prepared; neither runs `prepare-review.mjs`, and the workspace cleanup stays this run's. Both files
 exist when the message returns, so there is no intent wait to mark here. Everything after Phase D stays in this
 run: read both files, pool their candidates for Step 2.5, run the lenses, and verify every candidate
-here, under [`dispatch-topology.md § Verification — in your own context`](./dispatch-topology.md#verification--in-your-own-context),
+here — marking `verify` with the pooled `--attr candidates=<n>` on the first verification command — under [`dispatch-topology.md § Verification — in your own context`](./dispatch-topology.md#verification--in-your-own-context),
 shape self-check included. A candidate is not trusted because a worker raised it.
 
 Fold `<scratch>/others.trace.json` into `judgments.impact_trace` when you write `judgments.json`,

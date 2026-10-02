@@ -45,7 +45,7 @@ On dash0#20655 a deep run that read this rule before Step 1 marked `memory`, `ga
 | `finders` | Phase D, the first finder |
 | `lenses` | Step 2.4, the holistic broad pass |
 | `consolidate` | Step 2.5 |
-| `verify` | Step 2.6b, your own candidates |
+| `verify` | Step 2.6b, your own candidates — on the first command that verifies one, with `--attr candidates=<n>` ([below](#verify-opens-before-the-verification-it-measures)) |
 | `intent-wait` | hybrid only: after `verify`, waiting for the intent file; `--wait` records the wait as `intent_wait_ms` |
 | `intent-verify` | hybrid only: deduping and verifying the intent candidates the verified pool did not already hold |
 | `judgments` | writing `judgments.json` |
@@ -62,10 +62,10 @@ A marker always exits 0 — a misuse is a stderr warning — so it can never sto
 
 ```bash
 # correct: the marker rides on the command the step needed anyway
-node "$TELEMETRY" step verify --run-dir "$RUN_DIR"; rg -n "pendingCount" "$WORKDIR"
+node "$TELEMETRY" step verify --attr candidates=6 --run-dir "$RUN_DIR"; rg -n "pendingCount" "$WORKDIR"
 
 # incorrect: a turn spent on the marker alone
-node "$TELEMETRY" step verify --run-dir "$RUN_DIR"
+node "$TELEMETRY" step verify --attr candidates=6 --run-dir "$RUN_DIR"
 ```
 
 **When a step starts with a Read or Write tool call**, which cannot carry a marker, put the marker on that step's first shell command instead.
@@ -80,8 +80,28 @@ The count is yours, so it is approximate; the trace labels it as reported.
 node /abs/review-telemetry.mjs step verify --attr tool_calls_so_far=34 --attr candidates=20 --run-dir /abs/run; rg -n "pendingCount" /abs/workdir
 ```
 
-Attach a count to the open step with `--attr`, for example `--attr candidates=14` on `verify`.
+Attach a count to the open step with `--attr`; `verify` requires one (below).
 Keys are prefixed `pr_review.` automatically, so a marker can never overwrite a `gen_ai.*` or VCS attribute.
+
+### `verify` opens before the verification it measures
+
+1. Put the `verify` marker on the **first command that verifies one of your own candidates**.
+2. Give it `--attr candidates=<n>`: the consolidated candidates you are about to verify, `0` when there are none.
+3. Never put it on the same command as `intent-wait`, `intent-verify`, or `judgments`, and never issue it after the verification ran.
+
+`review-telemetry.mjs` prints a stderr note for a `verify` marker without a count, and for a marker that closes `verify` after under a second or zero tool calls while it held candidates; that `verify` is flagged `pr_review.empty=true` in the trace and `EMPTY` in the summary.
+A `verify` with `candidates=0` may close at once.
+`prepare-review.mjs` lists the requirement on its `markers` line and in `telemetry.markers.attrs`.
+
+```bash
+# correct: verify rides on the first verification command, with its count
+node "$TELEMETRY" step verify --attr tool_calls_so_far=34 --attr candidates=6 --run-dir "$RUN_DIR"; sed -n 80,120p "$WORKDIR/src/jobs/sync.ts"
+
+# incorrect: verify chained onto the next marker — the whole verification is booked to intent-wait
+node "$TELEMETRY" step verify --attr tool_calls_so_far=34 --run-dir "$RUN_DIR"; node "$TELEMETRY" step intent-wait --attr tool_calls_so_far=34 --run-dir "$RUN_DIR"
+```
+
+**Why:** a `verify` closed early books its verification to the next step, so the trace blames the wrong step and hides how many candidates the time bought.
 
 **Sub-agents.**
 In the hybrid default, fold the intent worker in when you read its file, on the same command, after `verify`.
@@ -143,7 +163,7 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 | Span | Attributes |
 | --- | --- |
-| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` |
+| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*`, and the memory the review used and read ([§ The memory](#the-memory)) |
 | `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`; ERROR with `error.type=step_failed` when the step failed |
 | `pr_review.phase <name>` | child of a script step: `pr_review.step.name`, `pr_review.phase.name` |
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
@@ -151,6 +171,34 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 Two histograms carry the durations across runs: `pr_review.step.duration` (by step and kind) and `pr_review.run.duration` (by tier, topology, and verdict).
 Neither carries a run id, a PR number, or a user as an attribute.
+
+### The memory
+
+The root span says which LoreKit memories the review used and read, and links each one back to LoreKit.
+`finalize.mjs` records them from `judgments.memory` as one `memory` ledger record; a finalize re-run replaces it.
+You supply the inputs only: copy `id`, `scope`, and `key` onto every `memory.relevance_rules[]` and `memory.lessons_used[]` entry — `id` from the `memory_list` / `memory_search` entry, since `memory_read` returns none, and `scope` from the call when the entry omits it — and list every body you fetched with `memory_read` in `memory.read[]` ([`posting.md`](./posting.md)).
+
+| Where | Attribute | Value |
+| --- | --- | --- |
+| root | `pr_review.memory.used` | memories that shaped the review — every `lessons_used[]` entry and every relevance rule that acted (an applied action, or a finding it suppressed), the same set Step 4c cites. The report's `Memories — … used` also lists idle rules, so the two counts can differ |
+| root | `pr_review.memory.read` | memories whose body the run fetched; omitted when `memory.read` is absent |
+| root | `pr_review.memory.used_ids` | the used memories' LoreKit ids, comma-separated — filter runs by one with `contains` |
+| root | `pr_review.memory.suppressed` | findings a relevance rule suppressed this run |
+| event `pr_review.memory.used` · `pr_review.memory.read` | `pr_review.memory.id`, `.scope`, `.key`, `.kind` (`rule` · `knowledge` · `hotspot` · `lesson`) | one event per memory; `used` when it shaped the review, `read` when it was only read — an idle relevance rule included |
+| event | `pr_review.memory.url` | `<LOREKIT_APP_URL>/lore?memoryId=<id>`, else `/lore?scope=…&lesson={scope,key}`; omitted when neither is known — never fabricated |
+| event | `pr_review.memory.action`, `.note`, `.fingerprint`, `.seen_count`, `.suppressed` | what it did: a rule's direction or applied action, a lesson's `used_as`, and the findings it suppressed |
+
+A memory named in more than one array is one event, matched by `id`, else by `key` in the same scope.
+At most 50 events are kept, used memories first.
+A run whose finalize never ran carries none of these, so "no memory attributes" means unknown and `pr_review.memory.used=0` means none was used.
+
+```text
+# correct: id, scope, and key from the list or search entry — the trace links it by id
+{ "id": "cb10f4e2-eaf1-48e1-933c-e633a23e2716", "scope": "repo::acme/widget", "key": "hotspot::src/api/client.ts", "used_as": "finder pointer (re-verified)" }
+
+# incorrect: the id dropped — the trace falls back to the scope + key link, and a key alone gets none
+{ "key": "hotspot::src/api/client.ts", "used_as": "finder pointer (re-verified)" }
+```
 
 ### The scope
 

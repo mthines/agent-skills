@@ -344,6 +344,103 @@ export function buildMemoriesUsed(memory) {
   ];
 }
 
+/** How many findings each relevance rule suppressed this run, keyed by fingerprint.
+ *  @param {any[]} [suppressed] finalizeReview's `suppressed` @returns {Map<string, number>} */
+function suppressedCounts(suppressed = []) {
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  for (const f of Array.isArray(suppressed) ? suppressed : []) {
+    if (typeof f?._suppressed_by_fp === "string") counts.set(f._suppressed_by_fp, (counts.get(f._suppressed_by_fp) || 0) + 1);
+  }
+  return counts;
+}
+
+/** A relevance rule shaped the review iff it carries an applied `action` or suppressed a finding
+ *  this run. The one predicate the trace's `used` and Step 4c's `cited` share, so the two sets
+ *  of rules cannot drift apart. @param {any} r @param {Map<string, number>} counts @returns {boolean} */
+function ruleActed(r, counts) {
+  const fp = typeof r?.fp === "string" && r.fp ? r.fp : typeof r?.fingerprint === "string" ? r.fingerprint : "";
+  return (typeof r?.action === "string" && r.action !== "") || (fp !== "" && (counts.get(fp) || 0) > 0);
+}
+
+/**
+ * The run trace's memory (review-telemetry.mjs `memory` record): one item per LoreKit memory the
+ * review used or read, from the same `judgments.memory` arrays MEMORIES_USED renders, plus the
+ * optional `read[]`. A memory named in more than one array is one item, matched by `id`, else by
+ * `key` within the same scope. A relevance rule's item counts the findings it suppressed this run.
+ * A relevance rule is used only when it acted (ruleActed — the same rules Step 4c cites); an idle
+ * one is a read item.
+ * Used memories come first, so the telemetry cap never drops one for a read-only one.
+ * @param {any} memory judgments.memory @param {any[]} [suppressed] finalizeReview's `suppressed`
+ * @returns {Record<string, any>[]}
+ */
+export function memoryTelemetryItems(memory, suppressed = []) {
+  /** @type {Record<string, any>[]} */
+  const items = [];
+  const kindOf = (/** @type {any} */ key, /** @type {string} */ fallback) =>
+    String(key || "").startsWith("reviewer-comment-relevance::") ? "rule" : deriveMemoryKind(key, fallback);
+  const str = (/** @type {any} */ v) => (typeof v === "string" && v ? v : undefined);
+  /** @param {any} r @param {Record<string, any>} facts */
+  const add = (r, facts) => {
+    if (!r || typeof r !== "object") return;
+    /** @type {Record<string, any>} */
+    const entry = { id: str(r.id), scope: str(r.scope), key: str(r.key), ...facts };
+    if (!entry.id && !entry.key) return;
+    const same = items.find((it) => (entry.id && it.id === entry.id)
+      || (entry.key && it.key === entry.key && (!entry.scope || !it.scope || entry.scope === it.scope)));
+    if (!same) { items.push(Object.fromEntries(Object.entries(entry).filter(([, v]) => v !== undefined))); return; }
+    for (const [k, v] of Object.entries(entry)) {
+      if (k === "used" || k === "read") same[k] = same[k] === true || v === true;
+      else if (v !== undefined && same[k] === undefined) same[k] = v;
+    }
+  };
+  const suppressedBy = suppressedCounts(suppressed);
+  for (const r of Array.isArray(memory?.relevance_rules) ? memory.relevance_rules : []) {
+    const fp = str(r?.fp) || str(r?.fingerprint);
+    const direction = ["suppress", "amplify"].includes(r?.direction) ? r.direction : ["suppress", "amplify"].includes(r?.kind) ? r.kind : undefined;
+    add(r, {
+      used: ruleActed(r, suppressedBy), read: true, kind: "rule", fingerprint: fp,
+      action: str(r?.action) || direction,
+      seen_count: Number.isInteger(r?.seen_count) ? r.seen_count : undefined,
+      suppressed: fp ? (suppressedBy.get(fp) || 0) : undefined,
+    });
+  }
+  for (const r of Array.isArray(memory?.lessons_used) ? memory.lessons_used : []) {
+    add(r, { used: true, kind: kindOf(r?.key, "lesson"), note: str(r?.used_as) || str(r?.note) });
+  }
+  for (const r of Array.isArray(memory?.read) ? memory.read : []) add(r, { read: true, kind: kindOf(r?.key, "lesson") });
+  return items.map((it) => ({ used: it.used === true, read: it.read === true, ...it }))
+    .sort((a, b) => Number(b.used) - Number(a.used));
+}
+
+/** LoreKit truncates a `cited` list past this many refs (`MEMORY_CITED_MAX`); stop at it ourselves. */
+export const CITED_MAX = 32;
+
+/**
+ * The LoreKit `cited` refs the Step 4c state write passes (posting.md § 4c): `scope::key` for
+ * every memory that shaped this review — each `lessons_used[]` entry, and each `relevance_rules[]`
+ * entry that acted (it carries an applied `action`, or suppressed a finding this run). A rule that
+ * was loaded and changed nothing is not credited. An entry with no scope cannot be referenced, so
+ * a ref is never built from a key alone. Deduped, acting rules first, at most CITED_MAX.
+ * @param {any} memory judgments.memory @param {any[]} [suppressed] finalizeReview's `suppressed`
+ * @returns {string[]}
+ */
+export function citedRefs(memory, suppressed = []) {
+  const counts = suppressedCounts(suppressed);
+  /** @type {string[]} */
+  const refs = [];
+  const add = (/** @type {any} */ r) => {
+    const scope = typeof r?.scope === "string" ? r.scope.trim() : "";
+    const key = typeof r?.key === "string" ? r.key.trim() : "";
+    if (scope && key && !refs.includes(`${scope}::${key}`)) refs.push(`${scope}::${key}`);
+  };
+  for (const r of Array.isArray(memory?.relevance_rules) ? memory.relevance_rules : []) {
+    if (ruleActed(r, counts)) add(r);
+  }
+  for (const r of Array.isArray(memory?.lessons_used) ? memory.lessons_used : []) add(r);
+  return refs.slice(0, CITED_MAX);
+}
+
 /**
  * render-report.mjs requires MEMORIES_SUMMARY to be exactly `<N> indexed` (with `N >=` the
  * MEMORIES_USED count) whenever MEMORIES_USED is non-empty, and rejects any string carrying the
@@ -697,6 +794,8 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     payload,
     round,
     findingsBusRecords,
+    // The Step 4c state write's `cited` (posting.md § 4c) — copied from finalize-result.json.
+    citedRefs: citedRefs(judgments?.memory, suppressed),
   };
 }
 
@@ -1312,6 +1411,99 @@ async function selfTest() {
       rMem.payload.MEMORIES_USED.length === 1 && rMem.payload.MEMORIES_USED[0].kind === "hotspot");
     const memRenderCheck = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, rMem.payload, "self-test-memories");
     check("the memories payload renders through render-report.mjs with zero manual edits", memRenderCheck.ok, memRenderCheck.stderr.trim());
+  }
+
+  // memoryTelemetryItems — the run trace's memory events: every memory the review used or read,
+  // one item each, carrying the LoreKit id the user opens it by.
+  {
+    const ID_RULE = "9b2c1d34-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+    const ID_KNOW = "cb10f4e2-eaf1-48e1-933c-e633a23e2716";
+    const FP = "correctness:nil-deref:-@src/a.ts";
+    const memory = {
+      relevance_rules: [
+        { id: ID_RULE, scope: "repo::o/r", key: `reviewer-comment-relevance::rule::${FP}`, fp: FP, kind: "suppress", seen_count: 4, evidence: [{ pr: 1 }] },
+        { id: "22222222-3333-4444-8555-666666666666", scope: "repo::o/r", key: "reviewer-comment-relevance::rule::idle", fp: "x:y:-@idle.ts", kind: "suppress" },
+      ],
+      lessons_used: [
+        { key: "hotspot::src/a.ts", used_as: "finder pointer (re-verified)" },
+        { id: ID_KNOW, scope: "repo::o/r", key: "knowledge::retry@src/b.ts", used_as: "contract checked against callers" },
+      ],
+      read: [
+        { id: ID_KNOW, scope: "repo::o/r", key: "knowledge::retry@src/b.ts" },
+        { scope: "repo::o/r", key: "hotspot::src/a.ts" },
+        { id: "11111111-2222-4333-8444-555555555555", scope: "global", key: "reviewer-lessons::prefer-guard-clauses" },
+        { scope: "repo::o/r", key: "reviewer-comment-relevance::rule::x" },
+        { note: "nothing identifies me" },
+      ],
+    };
+    const suppressedFindings = [{ _suppressed_by_fp: FP }, { _suppressed_by_fp: FP }, { _suppressed_by_fp: "other" }];
+    const items = memoryTelemetryItems(memory, suppressedFindings);
+    const by = (/** @type {string} */ key) => items.find((it) => it.key === key);
+    check("memoryTelemetryItems: one item per memory across the three arrays, an entry with no id and no key dropped",
+      items.length === 6, JSON.stringify(items.map((it) => it.key)));
+    check("memoryTelemetryItems: a rule carries its id, fingerprint, direction, seen count, and the findings it suppressed this run",
+      by(`reviewer-comment-relevance::rule::${FP}`)?.id === ID_RULE && by(`reviewer-comment-relevance::rule::${FP}`)?.kind === "rule"
+        && by(`reviewer-comment-relevance::rule::${FP}`)?.action === "suppress" && by(`reviewer-comment-relevance::rule::${FP}`)?.suppressed === 2
+        && by(`reviewer-comment-relevance::rule::${FP}`)?.seen_count === 4 && by(`reviewer-comment-relevance::rule::${FP}`)?.fingerprint === FP);
+    check("memoryTelemetryItems: a used memory that was also read is one item, used and read, gaining the scope the read entry knew",
+      by("knowledge::retry@src/b.ts")?.used === true && by("knowledge::retry@src/b.ts")?.read === true
+        && by("hotspot::src/a.ts")?.used === true && by("hotspot::src/a.ts")?.read === true && by("hotspot::src/a.ts")?.scope === "repo::o/r"
+        && by("hotspot::src/a.ts")?.note === "finder pointer (re-verified)");
+    check("memoryTelemetryItems: a read-only memory is read, not used, with its kind from its key",
+      by("reviewer-lessons::prefer-guard-clauses")?.used === false && by("reviewer-lessons::prefer-guard-clauses")?.read === true
+        && by("reviewer-lessons::prefer-guard-clauses")?.kind === "lesson" && by("reviewer-comment-relevance::rule::x")?.kind === "rule");
+    check("memoryTelemetryItems: used memories come first",
+      items.slice(0, 3).every((it) => it.used) && items.slice(3).every((it) => !it.used));
+    check("memoryTelemetryItems: a relevance rule that changed nothing is read, not used",
+      by("reviewer-comment-relevance::rule::idle")?.used === false && by("reviewer-comment-relevance::rule::idle")?.read === true
+        && by("reviewer-comment-relevance::rule::idle")?.kind === "rule");
+    {
+      const usedRules = items.filter((it) => it.kind === "rule" && it.used).map((it) => `${it.scope}::${it.key}`).sort();
+      const ruleRefs = new Set(memory.relevance_rules.map((r) => `${r.scope}::${r.key}`));
+      const citedRules = citedRefs(memory, suppressedFindings).filter((ref) => ruleRefs.has(ref)).sort();
+      check("memoryTelemetryItems and citedRefs agree on which rules shaped the review",
+        usedRules.length > 0 && JSON.stringify(usedRules) === JSON.stringify(citedRules),
+        `used=${JSON.stringify(usedRules)} cited=${JSON.stringify(citedRules)}`);
+    }
+    check("memoryTelemetryItems: the same key in another scope is another memory",
+      memoryTelemetryItems({ relevance_rules: [], lessons_used: [{ scope: "global", key: "k" }], read: [{ scope: "repo::o/r", key: "k" }] }).length === 2);
+    check("memoryTelemetryItems: an empty memory is no items", memoryTelemetryItems({ relevance_rules: [], lessons_used: [] }).length === 0);
+  }
+
+  // citedRefs — the Step 4c state write's LoreKit `cited`: only memories that shaped the review,
+  // as `scope::key`, never a ref built from a key alone.
+  {
+    const FP = "correctness:nil-deref:-@src/a.ts";
+    const memory = {
+      relevance_rules: [
+        { scope: "repo::o/r", key: `reviewer-comment-relevance::rule::${FP}`, fp: FP, kind: "suppress" },
+        { scope: "repo::o/r", key: "reviewer-comment-relevance::rule::idle", fp: "x:y:-@b.ts", kind: "suppress" },
+        { scope: "global", key: "reviewer-comment-relevance::nitpick:map-vs-record", fingerprint: "nitpick:map-vs-record", action: "downgrade" },
+      ],
+      lessons_used: [
+        { scope: "repo::o/r", key: "hotspot::src/a.ts", used_as: "finder pointer" },
+        { key: "orphan-lesson", used_as: "no scope" },
+        { scope: "repo::o/r", key: "hotspot::src/a.ts", used_as: "named twice" },
+      ],
+      read: [{ scope: "repo::o/r", key: "knowledge::retry@src/b.ts" }],
+    };
+    const refs = citedRefs(memory, [{ _suppressed_by_fp: FP }]);
+    check("citedRefs: a rule that suppressed a finding or carries an applied action is cited; a rule that changed nothing is not",
+      refs.includes(`repo::o/r::reviewer-comment-relevance::rule::${FP}`) && refs.includes("global::reviewer-comment-relevance::nitpick:map-vs-record")
+        && !refs.some((r) => r.endsWith("::idle")), JSON.stringify(refs));
+    check("citedRefs: every used lesson is cited once, as scope::key; one with no scope and a read-only memory are not",
+      refs.filter((r) => r === "repo::o/r::hotspot::src/a.ts").length === 1 && !refs.some((r) => r.includes("orphan-lesson"))
+        && !refs.some((r) => r.includes("knowledge::retry")) && refs.length === 3, JSON.stringify(refs));
+    check("citedRefs: at most CITED_MAX refs, and an empty memory cites nothing",
+      citedRefs({ relevance_rules: [], lessons_used: Array.from({ length: 40 }, (_, i) => ({ scope: "global", key: `k${i}` })) }).length === CITED_MAX
+        && CITED_MAX === 32 && citedRefs({ relevance_rules: [], lessons_used: [] }).length === 0 && citedRefs(undefined).length === 0);
+    const rCited = finalizeReview({
+      context: withRenderAt({ mode: "full", headSha: "906a74781990f75607f0234de963fdbbc3953f2c", deltaLines: 3, routing: { tier: "deep" }, workspace: { depthCapability: "checkout" }, files: [], threads: [] }, "2026-09-25T12:00:00Z"),
+      judgments: { candidates: [], gates: { gate1: { status: "PASS", details: "d" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "d" } }, threads: [],
+        memory: { relevance_rules: [], lessons_used: [{ scope: "repo::o/r", key: "hotspot::x.tsx", used_as: "finder pointer" }] }, summary: "s" },
+    });
+    check("finalizeReview returns citedRefs, so finalize-result.json carries what Step 4c cites",
+      JSON.stringify(rCited.citedRefs) === JSON.stringify(["repo::o/r::hotspot::x.tsx"]));
   }
 
   // hydrateFilePatches — the real "context.files has empty patch" gap (ab/B/20230/1/meta.json).
@@ -2159,8 +2351,18 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         deferred: Array.isArray(result?.deferred) ? result.deferred.length : undefined,
         dry_run: how.dryRun,
         topology: how.topology,
+        "memory.suppressed": Array.isArray(result?.suppressed) ? result.suppressed.length : undefined,
       },
     });
+    // Which LoreKit memories the review used and read, each with its id — the root span's memory
+    // events (review-telemetry.mjs § THE MEMORY). `read_reported` keeps an absent read list absent.
+    if (judgments?.memory && typeof judgments.memory === "object") {
+      appendRecord(runDir, {
+        t: "memory",
+        items: memoryTelemetryItems(judgments.memory, result?.suppressed),
+        read_reported: Array.isArray(judgments.memory.read),
+      });
+    }
     // A failed render is a failed STEP, not a finished run: every A/B arm that hit one fixed its
     // judgments and re-ran finalize, and finishing here exported a trace that ended on the failure
     // and then skipped the successful re-run as "already exported". The run finishes on the
@@ -2407,6 +2609,10 @@ async function main() {
     + `${writePlan.thread_resolve.length} resolves, ${writePlan.review_create.comments.length} inline comments)`);
 
   console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
+  // What Step 4c passes as `cited` on the state write (posting.md § 4c) — never rebuilt by hand.
+  console.log(isDryRun
+    ? `finalize: --dry-run — no state write, so no LoreKit memory is cited (citedRefs: ${result.citedRefs.length})`
+    : `finalize: Step 4c cites ${result.citedRefs.length} LoreKit memor${result.citedRefs.length === 1 ? "y" : "ies"} — cited = $(jq -c '.citedRefs' ${JSON.stringify(join(outDir, "finalize-result.json"))})`);
 
   if (renderFailed) process.exit(1);
 }

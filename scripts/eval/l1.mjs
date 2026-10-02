@@ -6805,15 +6805,24 @@ const isPollBlock = (block) =>
     /Compare logins normalized, never raw/.test(read("agents/shared/rules/github-access.md")));
 
   // --unattended: an automated caller must never reach AskUserQuestion. review-loop Step 1.6 is
-  // the named caller, and the runner's prompt section must exclude the flag, or the prompt fires
-  // at the end of a loop nobody is watching (and errors on a host with no ask-user tool).
+  // the named caller. The runner's `auto` driver falls back from Chrome to Playwright with a
+  // one-line notice and no question in either mode, so Step 4 must state that, carry the notice
+  // section, and never regrow an ask-the-user instruction (which would fire at the end of a loop
+  // nobody is watching, and error on a host with no ask-user tool).
   const RL = read("skills/quality/review-loop/SKILL.md");
   const RN = read("skills/testing/ui-verify/rules/runner.md");
   const UV = read("skills/testing/ui-verify/SKILL.md");
+  const RN_STEP4 = (RN.match(/\n## Step 4:[\s\S]*?(?=\n## Step 4b|\n## Step 5)/) || [""])[0];
+  // Step 4 with its ```text example fences and the "never calls" sentence removed: any mention of
+  // AskUserQuestion or asking the user left in that remainder is an instruction to ask, however worded.
+  const RN_STEP4_REST = RN_STEP4.replace(/`{3}text[\s\S]*?`{3}/g, "")
+    .replace(/`auto` never calls `AskUserQuestion`[^\n]*/, "");
   s.check("G70g review-loop Step 1.6 invokes ui-verify run with --unattended",
     /Skill\("ui-verify", "run <PR-URL> --unattended"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
-  s.check("G70g ui-verify's auto-mode prompt is excluded under --unattended, and the flag is advertised",
-    /\*\*Never under `--unattended`\*\*/.test(RN) && /only in `auto` mode without `--unattended`/.test(RN)
+  s.check("G70g ui-verify's auto driver never asks (attended or --unattended), falls back with a notice, and the flag is advertised",
+    /`auto` never calls `AskUserQuestion`, attended or under `--unattended`/.test(RN_STEP4)
+    && /^### The auto-mode fallback notice$/m.test(RN_STEP4)
+    && !/AskUserQuestion|ask the user/i.test(RN_STEP4_REST)
     && /argument-hint:[^\n]*--unattended/.test(UV));
 
   // The companion report. `interview`, `tdd`, and `test-provenance-guard` had 0 invocations in
@@ -9721,9 +9730,23 @@ const isPollBlock = (block) =>
 
       const drPath = join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md");
       const drSrc = existsSync(drPath) ? readFileSync(drPath, "utf8") : "";
+      // Exact, not substring: the three values are read off the code and must appear verbatim in
+      // the doc's defaults line, so a default changed on one side only fails here.
+      const tierDefaults = /export const TIER_DEFAULT_THOROUGHNESS = \{ quick: ([\d.]+), standard: ([\d.]+), deep: ([\d.]+) \};/.exec(rdSrc);
       s.check("G84e depth-routing.md's Thoroughness budget section exists and states the same three tier defaults route-depth.mjs's TIER_DEFAULT_THOROUGHNESS carries",
-        /## Thoroughness budget/.test(drSrc)
-          && /quick.*0\.2/.test(drSrc) && /standard.*0\.5/.test(drSrc) && /deep.*0\.8/.test(drSrc));
+        /## Thoroughness budget/.test(drSrc) && Boolean(tierDefaults)
+          && drSrc.includes(`**quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}.**`),
+        tierDefaults ? `expected "quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}" in depth-routing.md` : "TIER_DEFAULT_THOROUGHNESS not found in route-depth.mjs");
+      // standard's default (0.7) sets optimalityLens, so § 2.4c's incremental-mode skip is the only
+      // thing keeping the lens off delta re-reviews, where its own rationale says it answers wrong.
+      const bodyFor24c = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
+      const sec24c = (bodyFor24c.split(/^### 2\.4c /m)[1] || "").split(/^### /m)[0];
+      s.check("G84e pr-reviewer.md § 2.4c skips the optimality lens on incremental re-reviews whatever budget.optimalityLens says",
+        /`RUN_MODE` is `incremental` or `incremental-quick` \(logged `skipped \(incremental\)`\)/.test(sec24c)
+          && /whatever\s+`budget\.optimalityLens` says/.test(sec24c));
+      const reviewCfg = readFileSync(join(REPO_ROOT, "agents/shared/rules/review-config.md"), "utf8");
+      s.check("G84e review-config.md's thoroughness comment names the same three tier defaults",
+        Boolean(tierDefaults) && reviewCfg.includes(`(quick=${tierDefaults[1]}, standard=${tierDefaults[2]}, deep=${tierDefaults[3]})`));
 
       const dtPath = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
       const dtSrc = existsSync(dtPath) ? readFileSync(dtPath, "utf8") : "";
@@ -10120,6 +10143,32 @@ const isPollBlock = (block) =>
     /noDispatchTopology === "hybrid" && context\?\.intentIsolated !== true/.test(fin) && /context\.intentIsolated = true/.test(fin));
   s.check("G84o execute-write-plan.mjs records `post` and finishes a real run",
     /name: "post", ns: PROCESS_START_NS/.test(ewp) && /await finishRun\(runDir/.test(ewp));
+  // The memory: a trace that says which LoreKit memories shaped the review, each openable in
+  // LoreKit by its id. finalize records them from judgments.memory; the root span carries them.
+  const postingDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
+  s.check("G84o the root carries the memories the review used and read, one event each with its LoreKit id and deep link, recorded by finalize",
+    /one event per memory on the root/.test(out) && /a memory event carries its LoreKit id, scope, key, kind, and what it did/.test(out)
+      && /the deep link opens the memory by id, falls back to scope \+ key/.test(out)
+      && /rule 3 — a run with no memory record carries no memory attribute and no event/.test(out)
+      && /the received root carries the memory the run used/.test(out)
+      && /t: "memory",\n\s+items: memoryTelemetryItems\(judgments\.memory, result\?\.suppressed\),/.test(fin)
+      && /### The memory/.test(rtDocEarly) && /`pr_review\.memory\.used_ids`/.test(rtDocEarly)
+      && /`memory\.read\[\]`[^\n]*Copy `id`, `scope`, and `key` onto every entry/.test(postingDoc));
+  // The state write credits those memories in LoreKit (`cited`), from finalize's own list — the
+  // model copies citedRefs, it never assembles the refs, and a memory that changed nothing is
+  // never credited. Executed here, not just grepped.
+  const { citedRefs } = await import(pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs")).href);
+  const citedCase = citedRefs({
+    relevance_rules: [{ scope: "repo::o/r", key: "reviewer-comment-relevance::rule::a", fp: "a" }, { scope: "repo::o/r", key: "reviewer-comment-relevance::rule::b", fp: "b" }],
+    lessons_used: [{ scope: "global", key: "lesson-x", used_as: "u" }, { key: "no-scope", used_as: "u" }],
+    read: [{ scope: "repo::o/r", key: "hotspot::read-only.ts" }],
+  }, [{ _suppressed_by_fp: "a" }]);
+  const step4cDoc = postingDoc.slice(postingDoc.indexOf("### 4c. Record the run state"), postingDoc.indexOf("### 4d."));
+  s.check("G84o the Step 4c state write passes finalize's citedRefs as LoreKit `cited` — acting rules and used lessons only, never a key alone",
+    JSON.stringify(citedCase) === JSON.stringify(["repo::o/r::reviewer-comment-relevance::rule::a", "global::lesson-x"])
+      && /citedRefs: citedRefs\(judgments\?\.memory, suppressed\),/.test(fin)
+      && /^\s+cited\s+= <finalize-result\.json's citedRefs, verbatim>/m.test(step4cDoc) && /Never build the list by hand/.test(step4cDoc),
+    JSON.stringify(citedCase));
   const rtDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
   const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
   s.check("G84o run-telemetry.md states the marker rule and the opt-in, and the agent body routes to it",
@@ -10308,11 +10357,11 @@ const isPollBlock = (block) =>
   const topo = probe(`import { resolveBudget } from "./agents/pr-reviewer/scripts/route-depth.mjs";
     const b = (i) => { const r = resolveBudget(i); return r.topology + "/" + r.topologyReason; };
     console.log(JSON.stringify([
-      b({ routedTier: "standard", runMode: "incremental" }), b({ routedTier: "quick", runMode: "incremental-quick" }), // quick's 0.2 is already below 0.4
+      b({ routedTier: "standard", runMode: "incremental" }), b({ routedTier: "quick", runMode: "incremental-quick" }), // quick's 0.4 default reaches the hybrid breakpoint, so the carve-out is what keeps it in-context
       b({ routedTier: "standard", runMode: "full" }), b({ routedTier: "deep", runMode: "incremental" }),
       b({ routedTier: "standard", runMode: "incremental", thoroughness: 0.8 })]));`);
   s.check("G84r resolveBudget: a small incremental re-review (standard/quick, defaulted thoroughness) is in-context; a full run, a deep tier, or an explicit thoroughness stays hybrid",
-    topo.status === 0 && (topo.stdout || "").trim() === JSON.stringify(["in-context/small-incremental", "in-context/below-breakpoint", "hybrid/hybrid", "hybrid/hybrid", "hybrid/hybrid"]),
+    topo.status === 0 && (topo.stdout || "").trim() === JSON.stringify(["in-context/small-incremental", "in-context/small-incremental", "hybrid/hybrid", "hybrid/hybrid", "hybrid/hybrid"]),
     (topo.stdout || topo.stderr || "").trim().slice(0, 300));
   s.check("G84r prepare-review.mjs hands resolveBudget the context's run mode",
     /const budget = resolveBudget\(\{\n\s+runMode: contextMode,/.test(PRSRC) && /mode: contextMode,/.test(PRSRC));
@@ -10379,6 +10428,59 @@ const isPollBlock = (block) =>
     telOut.split("\n").filter((l) => l.includes("✗")).join(" | ").slice(0, 300));
   s.check("G84r run-telemetry.md names intent_wait_ms and the late intent-wait / intent-verify steps",
     RTD.includes("`pr_review.intent_wait_ms`") && /\| `intent-wait` \| hybrid only: after `verify`/.test(RTD) && /\| `intent-verify` \|/.test(RTD));
+}
+
+// ── G84s: the verify marker opens before the verification it measures, and carries its count ──
+// A `verify` issued alongside the next marker books the whole verification to that step, so the
+// trace blames the wrong step. Executed, not grepped: the CLI's notes and the summary's empty flag
+// are what a run actually sees.
+// break-shape: drop the markerNotes call from `step`, its empty-verify check, or the verify rule in
+// run-telemetry.md / dispatch-topology.md, and the matching sub-check flips red.
+{
+  const TEL = join(REPO_ROOT, "agents/pr-reviewer/scripts/review-telemetry.mjs");
+  const telSrc = readFileSync(TEL, "utf8");
+  s.check("G84s review-telemetry.mjs requires a candidates count on verify and checks every marker before recording it",
+    /export const STEP_REQUIRED_ATTRS = Object\.freeze\(\{ verify: Object\.freeze\(\["candidates"\]\) \}\);/.test(telSrc)
+      && /const \{ notes, emptyVerify \} = markerNotes\(readLedger\(runDir\), name, attrBag\);/.test(telSrc));
+
+  const probeDir = mkdtempSync(join(tmpdir(), "g84s-"));
+  try {
+    const mark = (/** @type {string[]} */ args) => spawnSync(process.execPath, [TEL, ...args, "--run-dir", probeDir], { encoding: "utf8" });
+    mark(["begin", "--repo", "o/r", "--pr", "1"]);
+    const a = mark(["step", "verify", "--attr", "tool_calls_so_far=30"]);
+    const b = mark(["step", "intent-wait", "--attr", "tool_calls_so_far=30"]);
+    const c = mark(["step", "verify", "--attr", "tool_calls_so_far=31", "--attr", "candidates=0"]);
+    const d = mark(["step", "judgments", "--attr", "tool_calls_so_far=31"]);
+    s.check("G84s a count-less verify and a verify chained onto the next marker each get a note, a verify with candidates=0 none, and every marker exits 0",
+      [a, b, c, d].every((x) => x.status === 0) && /candidates=<n>/.test(a.stderr) && /booked to `intent-wait`/.test(b.stderr)
+        && !/note —/.test(c.stderr) && !/note —/.test(d.stderr),
+      `${a.stderr}|${b.stderr}|${c.stderr}|${d.stderr}`.slice(0, 400));
+    const sum = spawnSync(process.execPath, ["--input-type=module", "-e",
+      `import { buildRun, summarize, readLedger } from ${JSON.stringify(pathToFileURL(TEL).href)};`
+      + ` const r = buildRun(readLedger(${JSON.stringify(probeDir)}));`
+      + ` console.log(JSON.stringify(summarize(r).steps.filter((x) => x.name === "verify").map((x) => ({ empty: x.empty === true, candidates: x.candidates ?? null }))));`],
+      { encoding: "utf8" });
+    s.check("G84s the chained verify is flagged empty in the run summary, and the verify with candidates=0 is not",
+      sum.status === 0 && (sum.stdout || "").trim() === JSON.stringify([{ empty: true, candidates: null }, { empty: false, candidates: 0 }]),
+      (sum.stdout || sum.stderr || "").trim().slice(0, 300));
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+
+  const RT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
+  const DT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
+  const verifyRule = (RT.split(/^### `verify` opens before the verification it measures$/m)[1] || "").split(/^#{2,3} /m)[0];
+  s.check("G84s run-telemetry.md's verify rule names the first verification command, the count, and never chaining it onto the next marker",
+    /^\| `verify` \| Step 2\.6b, your own candidates — on the first command that verifies one, with `--attr candidates=<n>`/m.test(RT)
+      && /first command that verifies one of your own candidates/.test(verifyRule)
+      && /--attr candidates=<n>/.test(verifyRule)
+      && /Never put it on the same command as `intent-wait`, `intent-verify`, or `judgments`/.test(verifyRule));
+  s.check("G84s dispatch-topology.md applies the verify rule on both hybrid paths (the reviewer's own dispatch and --intent-from)",
+    (DT.match(/Mark `verify` with `--attr candidates=<n>` on the first\s+verification command|marking `verify` with `--attr candidates=<n>` on the first verification command/g) || []).length === 2);
+  const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
+  s.check("G84s prepare-review.mjs hands the run the required marker attributes and prints the verify rule on its markers line",
+    /attrs: STEP_REQUIRED_ATTRS,/.test(PRSRC)
+      && PRSRC.includes("verify: on its first verification command, never chained onto the next marker, adding --attr candidates=<n>"));
 }
 
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,
@@ -10596,7 +10698,53 @@ const isPollBlock = (block) =>
     "G59b reads the first <dispatch>( block as aw-tester's; the adversarial block must come after it");
 }
 
-// ── G88: what a reader sees first — reach diagram, Checked line, Progress line ──
+// ── G88: review-loop --merge re-reviews after the description refresh ──
+// The loop's last review judges the PR body as it was BEFORE Step 2 rewrote it, so a
+// `Description vs. code` WARN the refresh fixed blocked every --merge run that applied code
+// (observed on mthines/agent-skills#224). Step 2.5 now runs one gates-only re-review first, when
+// the refresh changed the body after a non-PASS verdict, and gates on that verdict instead.
+// Guarded:
+//   a. the re-review subsection lives inside Step 2.5, BEFORE the gate table, and its condition
+//      table carries all four rows (a row dropped widens or narrows when it runs);
+//   b. Step 2 sets the flag the subsection reads, and the loop state initialises it;
+//   c. the re-review sets FINAL_VERDICT (the Approval gate's input) and is never an iteration;
+//   d. the report and the --merge hard rule name it, and the Agent0 rule routes it.
+// break-shape: delete one condition row, move the subsection below the gate table, drop Step 2's
+// `DESCRIPTION_REFRESHED = 1` item, drop "Set `FINAL_VERDICT`", or drop the `Merge re-review:`
+// report slot — the matching sub-check flips red.
+{
+  const sectionOr = (heading) => { try { return extractSection("skills/quality/review-loop/SKILL.md", heading); } catch { return ""; } };
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const RL = readOr("skills/quality/review-loop/SKILL.md");
+  const S25 = sectionOr("### Step 2.5: Merge (under `--merge`, on approval)");
+  const S2 = sectionOr("### Step 2: Refresh the PR description and Linear note (on convergence)");
+  const S3 = sectionOr("### Step 3: Report");
+  const A0 = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
+  const iSub = S25.indexOf("#### Post-refresh re-review — before the gates");
+  const iGates = S25.indexOf("| Gate | Merge requires | Read from |");
+  const sub = iSub >= 0 && iGates > iSub ? S25.slice(iSub, iGates) : "";
+  const rows = ["`MERGE == 1` and `EXTERNAL_REVIEW == 0`", "`STOP_REASON == \"all-threads-resolved\"`", "`DESCRIPTION_REFRESHED == 1`", "`FINAL_VERDICT != \"PASS\"`"];
+  const missingRows = rows.filter((r) => !sub.split("\n").some((l) => l.startsWith(`| ${r} |`)));
+  s.check("G88a review-loop Step 2.5 runs the post-refresh re-review before its gate table, on all four conditions",
+    sub.length > 400 && missingRows.length === 0,
+    `subsection@${iSub}, gate table@${iGates}; condition rows missing: ${missingRows.join(" · ") || "none"}`);
+  s.check("G88b Step 2 sets DESCRIPTION_REFRESHED only for a changed body, and the loop state initialises it to 0",
+    /^3\. Set `DESCRIPTION_REFRESHED = 1` when the edit succeeded and the new body differs/m.test(S2)
+      && /^DESCRIPTION_REFRESHED = 0\b/m.test(RL),
+    "the flag the re-review reads is never set (or never initialised), so the re-review either never runs or runs on a stale value");
+  s.check("G88c the re-review feeds the Approval gate and is never an iteration",
+    /Set `FINAL_VERDICT` to the verdict it returns/.test(sub)
+      && /does not count against `CAP`, it never runs sub-steps B, C, or D/.test(sub)
+      && /the post-refresh re-review when one ran/.test(S25.slice(iGates)),
+    "the re-review's verdict no longer reaches the Approval gate, or it can now apply or count as an iteration");
+  s.check("G88d the report, the --merge hard rule, and the Agent0 rule all name the post-refresh re-review",
+    /^Merge re-review: <PASS \| WARN \| FAIL \| refused \|/m.test(S3)
+      && /The final verdict is the post-refresh re-review's when Step 2 changed the body/.test(RL)
+      && A0.includes("(../SKILL.md#post-refresh-re-review--before-the-gates)"),
+    "a run that re-reviewed cannot report it, or the hard rule / Agent0 route lost it");
+}
+
+// ── G89: what a reader sees first — reach diagram, Checked line, Progress line ──
 // The report states coverage where a reader looks first. These execute the renderer (and the
 // pieces that feed it) rather than grepping prose, and each was proven to bite by breaking what
 // it guards: drop the consumers cross-check, emit the diagram outside its accordion, unescape a
@@ -10614,16 +10762,16 @@ const isPollBlock = (block) =>
   const reachAt = good.out.indexOf("<details>\n<summary>What this change reaches — ");
   const detailsAt = good.out.indexOf("<details>\n<summary>Review details");
   const fenceAt = good.out.indexOf("```mermaid");
-  s.check("G88a the reach accordion renders above Review details and holds the only Mermaid block",
+  s.check("G89a the reach accordion renders above Review details and holds the only Mermaid block",
     good.ok && reachAt !== -1 && reachAt < detailsAt && fenceAt > reachAt
       && fenceAt < good.out.indexOf("</details>", reachAt) && good.out.split("```mermaid").length === 2, good.err);
-  s.check("G88b the Checked and Progress lines render above every accordion",
+  s.check("G89b the Checked and Progress lines render above every accordion",
     good.ok && /^\*\*Checked:\*\* 22 of 22 changed files read \(1 skipped\) · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted$/m.test(good.out.split("<details>")[0])
       && /^\*\*Progress:\*\* open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews$/m.test(good.out.split("<details>")[0]));
 
   const mismatch = clone();
   mismatch.IMPACT.symbols[0].verified_unaffected = 6;
-  s.check("G88c a consumers list that disagrees with verified_unaffected is rejected",
+  s.check("G89c a consumers list that disagrees with verified_unaffected is rejected",
     !render(mismatch).ok);
 
   const quoted = clone();
@@ -10632,59 +10780,59 @@ const isPollBlock = (block) =>
   quoted.IMPACT.symbols[0].consumers[5].path = "src/x#y/poll.ts";
   const q = render(quoted);
   const fence = (q.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
-  s.check("G88d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
+  s.check("G89d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
     q.ok && fence.includes("we#quot;ird") && !fence.includes('we"ird')
       && fence.includes("x#35;y") && !fence.includes("x#y"), q.err);
 
   const smallGraph = clone();
   smallGraph.IMPACT = { symbols: [{ name: "f", path: "a.ts", change: "body", consumer_files: 1, verified_unaffected: 1, findings: 0 }] };
   const sg = render(smallGraph);
-  s.check("G88e a graph with fewer than 3 edges renders the bullets without a diagram",
+  s.check("G89e a graph with fewer than 3 edges renders the bullets without a diagram",
     sg.ok && sg.out.includes("<summary>What this change reaches — ") && !sg.out.includes("```mermaid"), sg.err);
 
   const badRound = clone();
   badRound.ROUNDS[0].blocking = 9;
   const partialMismatch = clone();
   partialMismatch.PARTIAL_REVIEW = { calls: 60, scanned: 13, total: 22 };
-  s.check("G88f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
+  s.check("G89f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
     !render(badRound).ok && !render(partialMismatch).ok);
 
   const noRounds = clone();
   delete noRounds.ROUNDS;
-  s.check("G88g a first review renders no Progress line",
+  s.check("G89g a first review renders no Progress line",
     render(noRounds).ok && !render(noRounds).out.includes("**Progress:**"));
 
   const FIN = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
   const SPINE = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "utf8");
   const RR = readFileSync(RENDER, "utf8");
-  s.check("G88h the Progress line and the PR-state round use one worklistCounts() from the spine",
+  s.check("G89h the Progress line and the PR-state round use one worklistCounts() from the spine",
     /export function worklistCounts\(/.test(SPINE) && /worklistCounts\(\{ openThreads, findings, notes: arr\("NOTES"\) \}\)/.test(RR)
       && /const round = worklistCounts\(/.test(FIN) && /\n\s+round,\n\s+findingsBusRecords,/.test(FIN));
   const fst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "--self-test"], { encoding: "utf8" });
-  s.check("G88i finalize forwards context.priorRun.rounds as ROUNDS and reports its own round (self-test)",
+  s.check("G89i finalize forwards context.priorRun.rounds as ROUNDS and reports its own round (self-test)",
     fst.status === 0 && /✓ ROUNDS reaches the payload from context\.priorRun\.rounds/.test(fst.stdout || "")
       && /✓ finalize reports this run's worklist as `round`/.test(fst.stdout || ""));
   const POST = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
-  s.check("G88j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
+  s.check("G89j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
     /--argjson round "\$\(jq -c --arg sha "\$\{HEAD_SHA:0:7\}"/.test(POST)
       && /'if \.payload\.RUN\.sha == \$sha then \(\.round \/\/ \{open: null, blocking: null\}\) else \{open: null, blocking: null\} end'/.test(POST)
       && /open: \$round\.open, blocking: \$round\.blocking\}/.test(POST));
-  s.check("G88l finalize builds COVERAGE and IMPACT from scanned_files / impact_trace / impact.json, and a supplied value wins (self-test)",
+  s.check("G89l finalize builds COVERAGE and IMPACT from scanned_files / impact_trace / impact.json, and a supplied value wins (self-test)",
     fst.status === 0 && /✓ COVERAGE is derived from scanned_files against scopePaths/.test(fst.stdout || "")
       && /✓ IMPACT is built from impact\.json and impact_trace/.test(fst.stdout || "")
       && /✓ a caller-supplied COVERAGE \/ IMPACT wins over the auto-built one/.test(fst.stdout || ""));
   const SCHEMA = JSON.parse(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/schemas/judgments.schema.json"), "utf8"));
-  s.check("G88m judgments.schema.json accepts scanned_files and impact_trace, and posting.md tells the run to supply them",
+  s.check("G89m judgments.schema.json accepts scanned_files and impact_trace, and posting.md tells the run to supply them",
     Boolean(SCHEMA.properties?.scanned_files) && Boolean(SCHEMA.properties?.impact_trace)
       && !(SCHEMA.required || []).includes("scanned_files") && !(SCHEMA.required || []).includes("impact_trace")
       && /^\| `scanned_files` \|/m.test(POST) && /^\| `impact_trace` \|/m.test(POST));
   const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-  s.check("G88n prepare-review.mjs writes scopePaths and the review history through its tested helpers",
+  s.check("G89n prepare-review.mjs writes scopePaths and the review history through its tested helpers",
     /scopePaths: scopePathsFor\(\{ mode: contextMode, deltaFiles, prFiles: /.test(PRSRC)
       && /rounds: priorRunRounds\(runMode, state\),/.test(PRSRC));
   const pst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "--self-test"], { encoding: "utf8" });
   const pOut = `${pst.stdout}${pst.stderr}`;
-  s.check("G88o scopePathsFor reviews every PR file on a full run (a promoted re-review included) and priorRunRounds drops history under --isolated (self-test)",
+  s.check("G89o scopePathsFor reviews every PR file on a full run (a promoted re-review included) and priorRunRounds drops history under --isolated (self-test)",
     pst.status === 0 && /✓ scopePathsFor: full mode reviews every PR file/.test(pOut) && /✓ priorRunRounds: the state record's rounds reach the context/.test(pOut));
 
   // The funnel counts confirmed and posted from the arrays it renders, never from QUALITY's
@@ -10694,7 +10842,7 @@ const isPollBlock = (block) =>
   funnelProbe.QUALITY = "produced 11 → posted inline 1 · cleared 99 · carried forward 0 · deferred 1 · below-bar 0";
   funnelProbe.NOTES = [{ path: "src/a.ts", line: 3, prefix: "nitpick", body: "rename the constant", confidence: 82 }];
   const fp = render(funnelProbe);
-  s.check("G88p the Checked funnel derives confirmed and posted from FINDINGS + NOTES + ADDITIONAL_FINDINGS, not QUALITY's cleared",
+  s.check("G89p the Checked funnel derives confirmed and posted from FINDINGS + NOTES + ADDITIONAL_FINDINGS, not QUALITY's cleared",
     fp.ok && /11 possible issues → 3 confirmed → 2 posted/.test(fp.out), fp.err || fp.out.split("\n").find((l) => l.startsWith("**Checked:**")));
   // A zero-delta run dispatches no finder, so the Checked line must not claim a search came up
   // empty; the traced-files part still renders. Proven to bite by dropping the zero-delta guard.
@@ -10709,7 +10857,7 @@ const isPollBlock = (block) =>
   zeroDelta.GATE_CODEREVIEW_DETAILS = "No code changes since the last review.";
   delete zeroDelta.COVERAGE;
   const zd = render(zeroDelta);
-  s.check("G88u a zero-delta Checked line keeps the traced-files part and never says \"no possible issues found\"",
+  s.check("G89u a zero-delta Checked line keeps the traced-files part and never says \"no possible issues found\"",
     zd.ok && /^\*\*Checked:\*\* 7 of 15 dependent files traced$/m.test(zd.out) && !zd.out.includes("no possible issues found"),
     zd.err || zd.out.split("\n").find((l) => l.startsWith("**Checked:**")));
   const shared = clone();
@@ -10719,20 +10867,20 @@ const isPollBlock = (block) =>
     { name: "b", path: "src/b.ts", change: "body", consumer_files: 2, verified_unaffected: 1, findings: 0,
       consumers: [{ path: "src/x.ts", status: "verified" }, { path: "src/y.ts", status: "untraced" }] } ] };
   const sh = render(shared);
-  s.check("G88q a file that uses two changed exports is one dependent file, checked only when every export it uses was",
+  s.check("G89q a file that uses two changed exports is one dependent file, checked only when every export it uses was",
     sh.ok && /<summary>What this change reaches — 2 changed exports · 2 dependent files · 1 checked · 1 not checked<\/summary>/.test(sh.out),
     sh.err || (sh.out.match(/<summary>What this change reaches[^<]*/) || [""])[0]);
   const dep = clone();
   dep.IMPACT.dependencies[0].checked_sites = 0;
   const overRead = clone();
   overRead.IMPACT.dependencies[0].checked_sites = 9;
-  s.check("G88r a dependency renders its evidenced checked_sites (\"not checked\" at 0), and more checked than exist is rejected",
+  s.check("G89r a dependency renders its evidenced checked_sites (\"not checked\" at 0), and more checked than exist is rejected",
     render(dep).ok && /`p-retry` 5\.1\.2 → 6\.2\.0 \(major\) — 3 usage sites, not checked/.test(render(dep).out) && !render(overRead).ok);
-  s.check("G88s finalize ignores a hand-supplied context.render.ROUNDS (self-test), and RENDER_EXTRAS no longer relays it",
+  s.check("G89s finalize ignores a hand-supplied context.render.ROUNDS (self-test), and RENDER_EXTRAS no longer relays it",
     fst.status === 0 && /✓ a hand-supplied context\.render\.ROUNDS is ignored/.test(fst.stdout || "")
       && !/"ROUNDS"/.test(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/payload.mjs"), "utf8")));
   const rst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/reach.mjs"), "--self-test"], { encoding: "utf8" });
-  s.check("G88t reach keeps bracketed paths, keeps flagged or traced consumers past the 25-file list, and takes skipped files out of the denominator (self-test)",
+  s.check("G89t reach keeps bracketed paths, keeps flagged or traced consumers past the 25-file list, and takes skipped files out of the denominator (self-test)",
     rst.status === 0 && /✓ breaking changes sort first; unexported, consumer-less and unsafe symbols are left out; a bracketed path stays/.test(rst.stdout || "")
       && /✓ a flagged or traced consumer past impact\.json's list cap is kept with its status, not dropped/.test(rst.stdout || "")
       && /✓ files triage skipped leave the denominator and are counted on their own/.test(rst.stdout || "")
@@ -10750,7 +10898,7 @@ const isPollBlock = (block) =>
       { sha: "3333333aaaa", mode: "incremental", open: 4, blocking: 1 },
       { sha: "4444444", mode: "full", open: 2, blocking: 0 } ] } }));
     console.log(JSON.stringify(readStateFile(p).rounds)); rmSync(p, { force: true });`], { encoding: "utf8", cwd: REPO_ROOT });
-  s.check("G88k prepare-review reads runs[] open/blocking into rounds, skipping legacy and malformed runs",
+  s.check("G89k prepare-review reads runs[] open/blocking into rounds, skipping legacy and malformed runs",
     rsf.status === 0 && (rsf.stdout || "").trim() === JSON.stringify([{ sha: "3333333", open: 4, blocking: 1 }, { sha: "4444444", open: 2, blocking: 0 }]),
     (rsf.stdout || rsf.stderr || "").trim().slice(0, 200));
 }

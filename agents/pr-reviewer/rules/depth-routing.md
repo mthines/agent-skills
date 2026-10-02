@@ -221,19 +221,28 @@ continuously instead of jumping at two tier boundaries.
 2. `--thoroughness <n>` / `thoroughness: <n>` (CLI wins over config) → `t = clamp(n, 0, 1)`. A
    non-finite or garbage value **fails closed to `t = 1`** — the safe direction for a broken override
    is maximum scrutiny, never a silent under-review.
-3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.2, standard → 0.5, deep → 0.8.**
+3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.95.**
+   Each default sits one band past a breakpoint, so a defaulted review buys the next lever up:
+
+   | Tier | Default `t` | What the default turns on, over the band below it |
+   | --- | --- | --- |
+   | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode); holistic escalation cap 2 → 4; `hybrid` topology lever — a defaulted quick run still dispatches nothing, because `prepare-review.mjs` gives a quick routing the `incremental-quick` mode (unless `--full`/`--isolated` forces `full`) and [`dispatch-topology.md`](./dispatch-topology.md#the-two-topologies)'s small-incremental row keeps that mode `in-context` |
+   | `standard` | 0.7 | optimality lens lever — the lens itself runs on `full`-mode runs only, because [`pr-reviewer.md` § 2.4c](../../pr-reviewer.md) skips it on incremental re-reviews; holistic escalation cap 5 → 7 |
+   | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2; holistic escalation cap 8 → 10 |
+
+   **Why:** a review's silence is read as coverage, so the default spends one band more than the minimum for its tier.
 
 **Risk floor.** A diff carrying a high-stakes shape (`auth`, `payments`, `schema-migration`,
 `secrets`, `infra`) **or** `impact.json`'s `blast_radius.band == "high"` floors the *effective*
 thoroughness at **0.5**, whatever `t` resolved to above — this guards only the override path:
-D7/D9 already route these shapes/bands to `deep` (default `t = 0.8`) through `routeDepth()`, so the
+D7/D9 already route these shapes/bands to `deep` (default `t = 0.95`) through `routeDepth()`, so the
 floor matters exactly when a low `--thoroughness` override or a repo-wide config default would
 otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.3` on a band-high PR
 (61 exports), `consumer-impact` never activated (its own breakpoint is 0.5) and the run found nothing
 — the floor now catches this exactly as it already caught a high-stakes shape.
 
-**Breakpoints.** Chosen so the three tier defaults (0.2 / 0.5 / 0.8) reproduce today's per-tier
-behaviour, on every lever but two (noted below):
+**Breakpoints.** The three tier defaults (0.4 / 0.7 / 0.95) fall in the `0.4 ≤ t < 0.5`,
+`0.7 ≤ t < 0.8`, and `t ≥ 0.95` columns:
 
 | Lever | `t < 0.4` | `0.4 ≤ t < 0.5` | `0.5 ≤ t < 0.7` | `0.7 ≤ t < 0.8` | `0.8 ≤ t < 0.95` | `t ≥ 0.95` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -247,9 +256,10 @@ behaviour, on every lever but two (noted below):
 | Holistic escalation cap | `round(10t)` | *(same formula, every column)* | | | | |
 | Tool-call budget multiplier | ×1 | *(same)* | *(same)* | *(same)* | **×1.5** | **×2** |
 
-`round(10t)` is the one lever that does **not** land on the old flat "cap 10" at deep's 0.8 default —
-it gives 8. That is a deliberate, reported deviation: proportional scaling is what "escalation SCALES
-with thoroughness" means, and `--effort high` (`t = 1`) restores the old flat 10 exactly.
+`round(10t)` gives 4 / 7 / 10 at the three defaults: proportional scaling is what "escalation SCALES
+with thoroughness" means.
+At deep's 0.95 default every lever already sits at its ceiling, so on a `deep`-routed PR
+`--effort high` (`t = 1`) changes nothing; it still raises a `standard` or `quick` routing to `deep`.
 
 **Tool-call budget (A/B iterations 1–3).** `pr-reviewer.md § Stop conditions` sizes the run's
 tool-call budget by changed-file count — 30 for ≤ 10 files, 60 for 11–30, 100 for > 30 — and
@@ -260,8 +270,7 @@ calls.
 On sync-tray#72 (22 files), arms at `t = 0.8` skipped whole files to stay inside 60: one declared a
 partial review after reading 13 of 22 files, and the file it only grepped held the
 highest-severity corroborated defect, which the `t = 0.8` arm missed in all three rounds.
-This is the third deliberate, reported deviation from the pre-delta defaults: `deep`'s default
-(`t = 0.8`) now allows 90 calls on an 11–30-file diff instead of 60.
+At `deep`'s default (`t = 0.95`) an 11–30-file diff gets 120 calls.
 The budget is a ceiling, never a target, so a run that finishes early spends nothing extra.
 
 **Holistic broad pass (item 3).** Step 2.4 used to run unconditionally — gated only by
@@ -269,13 +278,13 @@ The budget is a ceiling, never a target, so a run that finishes early spends not
 by thoroughness — so whether a given budget intended it to run was ambiguous. `budget.holisticBroadPass`
 is the explicit lever: `t ≥ 0.4` (reusing the topology breakpoint — below it the review dispatches
 nothing), **or always `true` when `routedTier == "deep"`**, regardless
-of any thoroughness override, the same "always on" carve-out the risk floor uses. This is a second
-deliberate, reported deviation from the pre-delta behaviour: at the very bottom of the quick tier
-(`t = 0.2`) the pass is now off where it previously always ran.
+of any thoroughness override, the same "always on" carve-out the risk floor uses. Below `t = 0.4` —
+reachable only through an explicit override, since `quick` defaults to 0.4 — the pass is off.
+The lever does not override [`pr-reviewer.md` § 2.4](../../pr-reviewer.md)'s own skip list, which
+skips the broad pass in every incremental mode.
 
-Every other row reproduces the pre-delta quick/standard/deep behaviour bit-for-bit at `t = 0.2/0.5/0.8`,
-which is what `route-depth.mjs --self-test` asserts directly (fixture-free — the assertions are inline,
-since the whole point is that they never drift from the table above without the guard noticing).
+`route-depth.mjs --self-test` asserts each tier default's full budget directly (fixture-free — the
+assertions are inline, so the defaults never drift from the table above without the guard noticing).
 
 **Budget vs. capability (item 3).** A `deep`-thoroughness budget whose materialized workspace cannot
 support a finder is not a smaller budget — it is the same budget with that finder turned off, and the

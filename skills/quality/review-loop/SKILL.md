@@ -20,7 +20,7 @@ argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--external-review] [--interv
 license: MIT
 metadata:
   author: mthines
-  version: '1.11.0'
+  version: '1.12.0'
   workflow_type: command
   tags:
     - review
@@ -234,7 +234,7 @@ Everything else is a flag.
 | `--interval S` | Poll interval in seconds for `--external-review`, default `300`, **clamped to `540`**. Ignored without `--external-review`. |
 | `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–8) and `autonomous-workflow` (Phase 7) both do. |
 | `--no-preview-run` | Skip [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit), the report-only ui-verify run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
-| `--merge` | Merge the PR (squash) on the first agent approval. After the loop, [Step 2.5](#step-25-merge-under---merge-on-approval) merges **only** when the run reached clean convergence (`all-threads-resolved` — every non-blocking comment fixed or answered), the final review is an approval (pr-reviewer `PASS`, or a GitHub `reviewDecision == APPROVED` under `--external-review`), and CI is green. It undrafts first (the one case that overrides *never undraft*). It never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI — it reports why and stops. |
+| `--merge` | Merge the PR (squash) on the first agent approval. After the loop, [Step 2.5](#step-25-merge-under---merge-on-approval) merges **only** when the run reached clean convergence (`all-threads-resolved` — every non-blocking comment fixed or answered), the final review is an approval (pr-reviewer `PASS`, or a GitHub `reviewDecision == APPROVED` under `--external-review`), and CI is green. It undrafts first (the one case that overrides *never undraft*). When Step 2 rewrote the description after a non-PASS final review, it first runs one gates-only [post-refresh re-review](#post-refresh-re-review--before-the-gates) and gates on that verdict instead. It never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI — it reports why and stops. |
 
 **Incompatible combinations**, refused or downgraded at Step 0:
 
@@ -504,6 +504,7 @@ APPLIED_TOTAL = 0
 CI_HANDOFFS   = 0
 CI_STATE      = "unread"     # no check state observed yet this run
 FINAL_VERDICT = "n/a"       # last pr-reviewer verdict seen; stays n/a under --external-review
+DESCRIPTION_REFRESHED = 0   # Step 2 sets 1 when it changed the PR body; Step 2.5's re-review reads it
 STOP_REASON   = "cap-reached"  # the default is only correct if the WHILE CONDITION
                                # ends the loop; every break below overwrites it.
                                # ITERATION == CAP is NOT the cap test — a run that
@@ -780,9 +781,9 @@ Skill("ui-verify", "run <PR-URL> --unattended")
 ```
 
 `--unattended` is mandatory here, not a host-specific choice: this step runs at the end of a
-loop the caller expects to finish on its own, and without the flag `ui-verify`'s `auto` driver
-stops to ask `AskUserQuestion` whenever Chrome is absent — blocking forever in an automation, and
-failing outright on a host that has no ask-user tool. Under the flag it runs Playwright or returns
+loop the caller expects to finish on its own, and the flag is `ui-verify`'s guarantee that no path
+calls `AskUserQuestion` — a question would block forever in an automation and fail outright on a
+host that has no ask-user tool. Under the flag it runs Chrome or Playwright, or returns
 `inconclusive: no driver available (…)`, never a question.
 
 `ui-verify run` owns the whole procedure: it reads the committed
@@ -816,7 +817,7 @@ Map its outcome into the report:
 | `inconclusive: no access path for deployment lookup (pass --url)` | `inconclusive (no deployment lookup on this access path)` — note `re-run /ui-verify run <PR-URL> --url <preview-url>`. Never a red, and never recorded as `preview not deployed`: no lookup ran, so waiting for the build fixes nothing and only an explicit URL changes the outcome |
 | any other `inconclusive: <reason>` (`preview building`, `no preview environment`, `preview deploy failed`, `preview URL not published`, `no driver available (unattended — …)`) | `inconclusive (<reason> at exit)` — log the reason verbatim and continue. Never a red |
 | `empty spec` (markers present, body empty) | `not run (empty ui-verify block)` — log and continue. Distinct from `no spec` on purpose: `author` **did** run and embedded nothing, which is a spec-authoring bug worth naming, not a PR that needed no spec |
-| `NOT RUN (<reason>)` (`chrome unavailable, user declined Playwright`, `sub-agent dispatch unavailable`, `no Chrome extension and no sub-agent dispatch available`) | `not run (<reason>)` — log the reason verbatim and continue. Never a red: no driver executed, so there is no verdict to be red about |
+| `NOT RUN (<reason>)` (`sub-agent dispatch unavailable`, `no Chrome extension and no sub-agent dispatch available`) | `not run (<reason>)` — log the reason verbatim and continue. Never a red: no driver executed, so there is no verdict to be red about |
 | `green` | `green (<N> specs on <preview-url>)` |
 | `red` | `red (<N> failing on <preview-url>) — review before undrafting`. Report-only; does not reopen the loop |
 | `ui-verify` not installed / `Skill()` refused | `skipped (ui-verify not available)` — log one line and continue; it is a non-load-bearing companion |
@@ -856,6 +857,10 @@ the loop's fixes:
    )"
    ```
 
+3. Set `DESCRIPTION_REFRESHED = 1` when the edit succeeded and the new body differs from the one you read in item 1.
+   Leave it `0` when this step was skipped, the edit failed, or the body came out unchanged.
+   [Step 2.5](#post-refresh-re-review--before-the-gates) reads it: the loop's last review judged the old body.
+
 Then, **best-effort**, note the linked Linear ticket (skip with one report line if any part is absent):
 
 - Detect a ticket from the branch name (`.../ABC-123-...`), the PR title/body, or `gh pr view`.
@@ -873,14 +878,50 @@ that did not pass the flag never reaches this step.
 Merge on the **first agent approval**, meaning: the loop already ran to clean
 convergence (every non-blocking comment fixed or answered — that is the "fixing
 them before merging" half), and the review that ended the loop was an approval.
-Merge if and **only if all** of the following hold — any single failure means
+
+#### Post-refresh re-review — before the gates
+
+The loop's last review judged the PR body as it was **before** Step 2 rewrote it.
+So when that review's verdict is not `PASS` and Step 2 changed the body, its verdict is stale: a `Description vs. code` warning the refresh fixed would still block the merge.
+Run **exactly one** more review pass before reading the gates, when **all** of these hold:
+
+| Condition | Why |
+| --- | --- |
+| `MERGE == 1` and `EXTERNAL_REVIEW == 0` | Under `--external-review` the approval is GitHub's `reviewDecision`, not a `pr-reviewer` verdict |
+| `STOP_REASON == "all-threads-resolved"` | Any other stop reason fails the first gate whatever the verdict says |
+| `DESCRIPTION_REFRESHED == 1` | An unchanged body cannot change the verdict |
+| `FINAL_VERDICT != "PASS"` | A `PASS` needs no second look |
+
+How it runs:
+
+1. Dispatch it exactly as [sub-step A](#step-1-loop--review--applyresolve--simplify) does, on the same `REVIEWER_ROUTE` with the same flags (`--critical` included).
+   The head has not moved since the last review, so `pr-reviewer` takes its zero-delta path: gates and threads only, with the description re-read from the live PR.
+2. Set `FINAL_VERDICT` to the verdict it returns, and record it as `MERGE_REREVIEW`.
+3. It is not an iteration: it does not count against `CAP`, it never runs sub-steps B, C, or D, and nothing is pushed after it.
+   At most one per run, never retried.
+4. Do not merge when it does not come back clean:
+   - a refusal or `BLOCKED` reply → `MERGE_REREVIEW = refused`, report `not merged (post-refresh re-review refused)`;
+   - new actionable findings → report `not merged (post-refresh re-review found <N> new findings)` and leave them for the next run;
+   - `WARN` or `FAIL` → the Approval gate below reports it as usual.
+
+```text
+# correct: the refresh changed the body after a WARN, so the gates read a verdict on the new body
+Iteration 2: WARN (Description vs. code: body omits a new attribute), 0 new findings → all-threads-resolved
+Step 2:   body refreshed → DESCRIPTION_REFRESHED = 1
+Step 2.5: post-refresh re-review → PASS → FINAL_VERDICT = PASS → gates pass → merged (squash)
+
+# incorrect: gating on the verdict that predates the refresh
+Step 2.5: FINAL_VERDICT == WARN (iteration 2) → not merged — the warning it carried was fixed by Step 2
+```
+
+Then merge if and **only if all** of the following hold — any single failure means
 *do not merge*, record the reason, and stop with the PR left review-ready:
 
 | Gate | Merge requires | Read from |
 | --- | --- | --- |
 | **Clean convergence** | `STOP_REASON == "all-threads-resolved"` | the loop's exit. `no-progress` (human-judgment flags remain), `cap-reached`, `ci-red`, `ci-error`, and `poll error` are all **not** merge-eligible |
 | **Zero open threads** | `unresolved_thread_count() == 0` | re-read now, do not trust the loop's last value — implied by clean convergence, but confirm, because merging is irreversible |
-| **Approval** | pr-reviewer mode: `FINAL_VERDICT == "PASS"`. `--external-review` mode: `gh pr view "$PR_NUMBER" --repo "$RESOLVED_REPO" --json reviewDecision -q .reviewDecision` is `APPROVED` | the last review pass / GitHub |
+| **Approval** | pr-reviewer mode: `FINAL_VERDICT == "PASS"`. `--external-review` mode: `gh pr view "$PR_NUMBER" --repo "$RESOLVED_REPO" --json reviewDecision -q .reviewDecision` is `APPROVED` | the last review pass — the post-refresh re-review when one ran — / GitHub |
 | **CI green** | CI is actually **green**, or the repo genuinely has no CI. Pending is **not** green — the loop never waits for CI, so a converged-but-pending run stops here without merging | a fresh stateless `gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"` read (**run this even under `--no-ci`** — `--no-ci` only skips the in-loop `ci-auto-fix` delegation; a merge still confirms green first) |
 
 A non-`PASS` final verdict (`WARN` or `FAIL`) is **not** an approval: report
@@ -947,11 +988,15 @@ UI verify: <green (<N> specs on <url>) | red (<N> failing on <url>) — review b
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
 
-Merge: <merged (squash) | not merged (verdict <V> — not a clean approval) | not merged (converged, awaiting CI) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
+Merge re-review: <PASS | WARN | FAIL | refused | not needed (final verdict PASS) | not needed (description unchanged) | not run (--external-review) | not run (<STOP_REASON>) | not requested (no --merge)>
+# Step 2.5's post-refresh re-review. "not needed" names which condition made it unnecessary.
+
+Merge: <merged (squash) | not merged (verdict <V> — not a clean approval) | not merged (post-refresh re-review refused) | not merged (post-refresh re-review found <N> new findings) | not merged (converged, awaiting CI) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
 # Only ever "merged" when Step 2.5's four gates all passed. Any other outcome
 # names why, and the PR is left converged and review-ready for a human.
 
 Final pr-reviewer verdict: <PASS | WARN | FAIL | n/a (external review)>
+# The post-refresh re-review's verdict when it ran, else the loop's last review pass.
 Head commit: <sha>
 ```
 
@@ -975,7 +1020,7 @@ threads over a red build is not a review-ready PR.
 - **Convergence never green-washes.** The loop resolves a thread only via a fix or an honest reply. A live finding the agent cannot fix or honestly decline stays open and is surfaced — the loop never resolves it to terminate. This is `implement-suggestion --resolve-all`'s safety valve, inherited here.
 - **Never write to GitHub directly, except the Step 2 description refresh.** `pr-reviewer` posts the `COMMENT` review and `implement-suggestion` resolves threads; this skill orchestrates. The one direct write it owns is the final `gh pr edit --body` refresh.
 - **Never undraft the PR — except under `--merge`.** By default this skill converges and the user makes the final undraft decision. `--merge` is the one scoped override: Step 2.5 undrafts (`gh pr ready`) as the mandatory first move of a merge, and only when every merge gate has already passed.
-- **`--merge` merges only on a clean approval, never green-washes a merge.** Step 2.5 merges **iff** `STOP_REASON == "all-threads-resolved"`, zero open threads, the final verdict is an approval (`PASS`, or GitHub `APPROVED` under `--external-review`), **and** CI is actually green. A non-`PASS` verdict, any open thread, a non-clean stop reason, or pending/red CI leaves the PR unmerged and review-ready with the reason reported. It merges by squash and never with `--admin` or `--force`; a failed `gh pr merge` is reported verbatim, never retried around.
+- **`--merge` merges only on a clean approval, never green-washes a merge.** Step 2.5 merges **iff** `STOP_REASON == "all-threads-resolved"`, zero open threads, the final verdict is an approval (`PASS`, or GitHub `APPROVED` under `--external-review`), **and** CI is actually green. The final verdict is the post-refresh re-review's when Step 2 changed the body after a non-`PASS` review — one gates-only pass, never an iteration, never followed by an apply. A non-`PASS` verdict, any open thread, a non-clean stop reason, or pending/red CI leaves the PR unmerged and review-ready with the reason reported. It merges by squash and never with `--admin` or `--force`; a failed `gh pr merge` is reported verbatim, never retried around.
 - **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
 - **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
 - **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.

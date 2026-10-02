@@ -137,8 +137,8 @@ whose `HEAD_SHA` has not moved):
 | Mode | When | What runs |
 |---|---|---|
 | `full` | No prior review found, OR `--full` passed, OR delta > 100 lines, OR new files in delta, OR high-stakes paths touched (classifier-owned list + repo `high_stakes_paths:`), OR **a propagation shape in the delta** (governing doc + restatements — Step 1.2b), OR **cumulative delta since the last full review > `FULL_REFRESH_DELTA` (150) lines**, OR **≥ `FULL_REFRESH_RUNS` (3) incremental reviews since the last full review**, OR **no prior full review is recorded** (including every run on the Step 0.7 fallback rung, which recovers a baseline but no history) | Tier `deep`: every finder, holistic broad + targeted escalation (budget-capped), optimality. Gate 4 and inline review scan the full PR diff. |
-| `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths, no propagation shape | Tier `standard`: every finder, holistic broad pass (2.4) skipped; **targeted escalation (2.4b) runs on the delta findings (cap 3) when the delta carries a risky content shape** (`ESCALATE_IN_INCREMENTAL`, Step 1.2b). Optimality (2.4c) skipped — it is `deep`-tier only; measurability (2.4e) runs on the delta files. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
-| `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths, no propagation shape | Tier `quick`: correctness, quality, and description finders only. Holistic broad pass (2.4), optimality (2.4c), measurability (2.4e), and the consumer-impact and dependency finders skipped; **targeted escalation (2.4b) still runs (cap 3) when the delta carries a risky content shape**. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
+| `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths, no propagation shape | Tier `standard`: every finder, holistic broad pass (2.4) skipped; **targeted escalation (2.4b) runs on the delta findings (cap 3) when the delta carries a risky content shape** (`ESCALATE_IN_INCREMENTAL`, Step 1.2b). Optimality (2.4c) skipped — whole changes only, whatever the budget says (§ 2.4c); measurability (2.4e) runs on the delta files. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
+| `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths, no propagation shape | Tier `quick`: correctness, quality, and description finders only. Holistic broad pass (2.4), optimality (2.4c), and the consumer-impact and dependency finders skipped; measurability (2.4e) runs on the delta files; **targeted escalation (2.4b) still runs (cap 3) when the delta carries a risky content shape**. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
 | *(zero-delta)* | Prior review found, zero lines changed, no new files | Gate checks only (no inline review). Announced and handled as a special case of `incremental-quick`. Detected at Step 0.8 (identical `HEAD_SHA`, no fetch pipeline spent) or, on a rebase/amend that changes `HEAD_SHA` without an authored delta, at Step 1.2b. |
 
 Findings carried forward from a prior run's `Additional findings` list are re-admitted in **every** mode, including the incremental ones — they were already found on the full diff, so scanning only the delta does not lose them (`prior-comment-awareness.md § Carry-forward of deferred findings`).
@@ -1763,7 +1763,7 @@ possible, and a candidate missing either is malformed, not modest.
 | **consumer-impact** — [`finder-consumer-impact.md`](./pr-reviewer/rules/finder-consumer-impact.md) | ✅ all changed exports | ✅ delta exports only | ✗ skipped |
 | **dependency** — [`finder-dependency.md`](./pr-reviewer/rules/finder-dependency.md) | ✅ | ✅ | ✗ skipped |
 | **standards** — [`standards-conformance.md`](./shared/rules/standards-conformance.md) (Step 2.4d) | ✅ all files | ✅ delta files | ✗ skipped |
-| **measurability** — [`measurability-review.md`](./shared/rules/measurability-review.md) (Step 2.4e) | ✅ all files | ✅ delta files | ✗ skipped |
+| **measurability** — [`measurability-review.md`](./shared/rules/measurability-review.md) (Step 2.4e) | ✅ all files | ✅ delta files | ✅ delta files |
 
 The **correctness finder** keeps the shape checklists verbatim — when the reviewed diff carries a
 shape below, it additionally walks that shape's checklist against every touched hunk. The
@@ -1905,13 +1905,14 @@ from), highest-severity first. This is the depth lever for a small-but-dangerous
 `ESCALATE_IN_INCREMENTAL` false, incremental runs skip 2.4b exactly as before
 (`holistic-review.md § Risky-shape incremental escalation`).
 
-### 2.4c Optimality review (default ON at the `deep` tier)
+### 2.4c Optimality review (default ON in `full` mode)
 
 See `agents/shared/rules/optimality-review.md`. Cross-review is **report-only** — never
-apply. Skip via `--no-optimize`, when the `TRIVIAL_SKIP` cache from Step 1.7b is true, or when
-`!budget.optimalityLens`, logged `skipped (t=<t>)`.
+apply. Skip via `--no-optimize`, when the `TRIVIAL_SKIP` cache from Step 1.7b is true, when
+`RUN_MODE` is `incremental` or `incremental-quick` (logged `skipped (incremental)`) — whatever
+`budget.optimalityLens` says — or when `!budget.optimalityLens`, logged `skipped (t=<t>)`.
 
-The lens is `deep`-tier only because approach analysis needs the whole change to judge: an
+The lens runs on full reviews only because approach analysis needs the whole change to judge: an
 approach question asked of a delta is asked of a fragment of the approach, and the answer is
 either unanswerable or wrong. It is exactly the lens the deep-lens refresh exists to bring back —
 a long series of small commits gets it on every refreshed full pass, not never.
@@ -1954,7 +1955,7 @@ not silently enforced.
 Emit the `Standards conformance (2.4d)` log block in the Quality Gate summary even when no findings
 are emitted, so a skipped run and a silent run are distinguishable.
 
-### 2.4e Measurability review (default ON at the `deep` and `standard` tiers)
+### 2.4e Measurability review (default ON at every tier)
 
 See [`agents/shared/rules/measurability-review.md`](./shared/rules/measurability-review.md).
 The question is the one no other lens asks: **will this change's impact be provable, and will its
@@ -2121,7 +2122,7 @@ being won't-fixed.
 Announce, now that the figures exist: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 For every memory that fires (suppress / downgrade / promote), append a record —
-`{ fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
+`{ id, fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
 `comment-relevance-memory.md § Linking applied memories in the report`. Its `scope` + `key`
 build the pressable deep link in the Step 4 review-body diagnostics (`MEMORIES_SECTION`).
 

@@ -128,7 +128,7 @@ When a standards finding conflicts with author-stated intent or an explicit revi
 the author intent and config win; the conflict is surfaced in the diagnostics, not silently enforced.
 
 Measurability review (2.4e):
-  Status:             ran | skipped (trivial diff) | skipped (--no-measurable) | skipped (tier: quick) | skipped (skill not installed)
+  Status:             ran | skipped (trivial diff) | skipped (--no-measurable) | skipped (t=<t>) | skipped (skill not installed)
   Gate 1 (path kind): pass (<kinds>) | fail (<kinds>)
   Gate 2 (behaviour): pass (<trigger>) | fail (no new observable behaviour)
   Paths classified:   <N>
