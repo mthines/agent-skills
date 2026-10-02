@@ -730,7 +730,7 @@ Design rules that keep this from rotting:
   path, both of which report as legitimate outcomes. This is **not** the rejected
   capability probe below — it decides nothing about *whether* to run a companion,
   it only reads the name of a tool the context already holds, and every branch it
-  feeds fails closed (toward `--external-review`, toward single-context Full),
+  feeds fails closed (toward a named `NOT REVIEWED`, toward single-context Full),
   never toward a silent skip.
 - **Micro reuses the Lite phase path.** Micro is a routing tier, not a fourth
   set of phase rules — it follows Lite's phase behavior with planning and quality

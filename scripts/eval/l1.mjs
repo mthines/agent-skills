@@ -10723,7 +10723,7 @@ const isPollBlock = (block) =>
   const iSub = S25.indexOf("#### Post-refresh re-review — before the gates");
   const iGates = S25.indexOf("| Gate | Merge requires | Read from |");
   const sub = iSub >= 0 && iGates > iSub ? S25.slice(iSub, iGates) : "";
-  const rows = ["`MERGE == 1` and `EXTERNAL_REVIEW == 0`", "`STOP_REASON == \"all-threads-resolved\"`", "`DESCRIPTION_REFRESHED == 1`", "`FINAL_VERDICT != \"PASS\"`"];
+  const rows = ["`MERGE == 1`", "`STOP_REASON == \"all-threads-resolved\"`", "`DESCRIPTION_REFRESHED == 1`", "`FINAL_VERDICT != \"PASS\"`"];
   const missingRows = rows.filter((r) => !sub.split("\n").some((l) => l.startsWith(`| ${r} |`)));
   s.check("G88a review-loop Step 2.5 runs the post-refresh re-review before its gate table, on all four conditions",
     sub.length > 400 && missingRows.length === 0,
@@ -10742,6 +10742,113 @@ const isPollBlock = (block) =>
       && /The final verdict is the post-refresh re-review's when Step 2 changed the body/.test(RL)
       && A0.includes("(../SKILL.md#post-refresh-re-review--before-the-gates)"),
     "a run that re-reviewed cannot report it, or the hard rule / Agent0 route lost it");
+}
+
+// ── G89: review-loop applies first on iteration 1 when the last review still stands ──
+// A run that starts on a PR whose last pr-reviewer review judged the current head re-reviewed
+// anyway: a zero-delta pass that re-reads nothing and carries the same findings forward, before
+// implement-suggestion could start on them. Iteration 1 now skips sub-step A when context.json
+// says zero-delta, at least one thread is open, no open thread has a reply, and --no-feedback is
+// off. Each condition guards a failure: with no open thread the skip sends a finished PR to
+// polish simplify; with a reply the skip loses the zero-delta pass's only resolver (`declined`).
+// Guarded:
+//   a. the section carries all five condition rows;
+//   b. its bash block, EXECUTED against stub thread counts and a stub context.json, sets
+//      APPLY_FIRST=1 only when every condition holds and fails closed on every failed read;
+//   c. the loop's skip branch is gated on iteration 1 + APPLY_FIRST and sets NEW_FINDINGS = true
+//      ahead of the convergence exit (a skipped review can never converge or merge);
+//   d. the replied-thread helper selects open threads holding more than one comment (executed
+//      against a fixture with jq), and the report + hard rule name the skip;
+//   e. --external-review / --interval are gone from review-loop and every caller that named them.
+// break-shape: drop a condition row; flip `-ge 1` to `-ge 0` or `-eq 0` to `-le 1`; default
+// REPLIED to 0; set NEW_FINDINGS = false in the skip branch; widen the helper to `>= 1`; or put
+// `--external-review` back into aw/SKILL.md — the matching sub-check flips red.
+{
+  const RL_PATH = "skills/quality/review-loop/SKILL.md";
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const sectionOr = (heading) => { try { return extractSection(RL_PATH, heading); } catch { return ""; } };
+  const RL = readOr(RL_PATH);
+  const AF = sectionOr("### Iteration 1 — apply first when the last review still stands");
+  const S3 = sectionOr("### Step 3: Report");
+
+  // a. the five conditions, each a row of the section's condition table.
+  const conds = ["`ITERATION == 1`", "`NO_FEEDBACK == 0`", "`.mode == \"zero-delta\"`",
+    "`unresolved_thread_count() >= 1`", "`replied_open_thread_count() == 0`"];
+  const missing = conds.filter((c) => !AF.split("\n").some((l) => l.startsWith(`| ${c} |`)));
+  s.check("G89a review-loop's apply-first section carries all five condition rows",
+    AF.length > 400 && missing.length === 0,
+    `section ${AF.length ? "found" : "missing"}; condition rows missing: ${missing.join(" · ") || "none"}`);
+
+  // b. the block, executed. Stubs replace the two gh helpers; a temp file replaces <dir>/context.json.
+  const blk = (AF.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
+  const run = (c) => {
+    const dir = mkdtempSync(join(tmpdir(), "l1-g89-"));
+    try {
+      const ctx = join(dir, "context.json");
+      if (c.mode !== null) writeFileSync(ctx, JSON.stringify({ mode: c.mode, priorRun: { priorSha: "abc1234" } }));
+      const stub = (name, v) => v === null
+        ? `${name}() { echo "HTTP 502" >&2; return 1; }`
+        : `${name}() { echo ${v}; }`;
+      const sh = [
+        stub("unresolved_thread_count", c.open), stub("replied_open_thread_count", c.replied),
+        `ITERATION=${c.iter}; NO_FEEDBACK=${c.nofb}`,
+        blk.replaceAll("<dir>/context.json", ctx),
+        'echo "APPLY_FIRST=$APPLY_FIRST PRIOR_SHA=$PRIOR_SHA"',
+      ].join("\n");
+      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout.trim();
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  const base = { iter: 1, nofb: 0, mode: "zero-delta", open: 2, replied: 0 };
+  const cases = [
+    ["all five hold", {}, "1"],
+    ["iteration 2", { iter: 2 }, "0"],
+    ["--no-feedback", { nofb: 1 }, "0"],
+    ["mode incremental", { mode: "incremental" }, "0"],
+    ["no open thread", { open: 0 }, "0"],
+    ["an open thread has a reply", { replied: 1 }, "0"],
+    ["context.json missing", { mode: null }, "0"],
+    ["open-thread query fails", { open: null }, "0"],
+    ["replied-thread query fails", { replied: null }, "0"],
+  ];
+  const wrong = cases.filter(([, d, want]) => !run({ ...base, ...d }).startsWith(`APPLY_FIRST=${want} `)).map(([n]) => n);
+  s.check("G89b the apply-first block skips only when all five conditions hold, and fails closed on every failed read (executed)",
+    blk !== "" && wrong.length === 0 && run(base).endsWith("PRIOR_SHA=abc1234"),
+    blk === "" ? "no ```bash block in the apply-first section" : `wrong outcome for: ${wrong.join(" · ") || "none"} (or PRIOR_SHA not read)`);
+
+  // c. the loop's skip branch: gated, sets NEW_FINDINGS = true, and sits ahead of the convergence exit.
+  const loop = (RL.match(/^while ITERATION < CAP:\n[\s\S]*?(?=\n# Post-loop)/m) || [""])[0];
+  const iSkip = loop.search(/^ {4}if ITERATION == 1 and APPLY_FIRST == 1:\n {8}NEW_FINDINGS = true\b/m);
+  const iConv = loop.indexOf("if NEW_FINDINGS == false AND unresolved_thread_count() == 0 AND ci_is_settled():");
+  const iCheck = loop.search(/^ {4}if ITERATION == 1 and NO_FEEDBACK == 0:\n {8}APPLY_FIRST = \(context\.json \.mode == "zero-delta"/m);
+  s.check("G89c the loop evaluates the check on iteration 1 only, and its skip branch sets NEW_FINDINGS = true before the convergence exit",
+    iCheck >= 0 && iSkip > iCheck && iConv > iSkip,
+    `check@${iCheck} skip@${iSkip} convergence@${iConv} — a skipped review must never reach the convergence exit with NEW_FINDINGS false`);
+
+  // d. the helper, executed against a fixture; the report slot and the hard rule.
+  const helper = (RL.match(/^replied_open_thread_count\(\) \{[\s\S]*?--jq '([^']+)'\n\}/m) || ["", ""])[1];
+  const fixture = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [
+    { isResolved: false, comments: { totalCount: 1 } }, { isResolved: false, comments: { totalCount: 3 } },
+    { isResolved: true, comments: { totalCount: 2 } }, { isResolved: false, comments: { totalCount: 2 } }] } } } } });
+  const jq = helper ? spawnSync("jq", [helper], { input: fixture, encoding: "utf8" }) : { status: -1, stdout: "" };
+  s.check("G89d replied_open_thread_count counts open threads holding more than one comment (executed against a fixture)",
+    jq.status === 0 && jq.stdout.trim() === "2" && /comments\{ totalCount \}/.test(RL),
+    `helper ${helper ? "found" : "missing"}; jq exit ${jq.status}, got ${(jq.stdout || "").trim() || "∅"} (want 2 of 4 threads)`);
+  s.check("G89d the report renders a skipped iteration-1 review, and a hard rule names the apply-first conditions",
+    /^ {2}Iteration 1: <verdict \| review skipped \(prior review at <PRIOR_SHA> still stands\)>/m.test(S3)
+      && /^Final pr-reviewer verdict: <[^\n]*n\/a \(no review this run — prior review at <PRIOR_SHA>\)>/m.test(S3)
+      && /^- \*\*Iteration 1 skips the review only when the last review still stands\.\*\*/m.test(RL),
+    "a run that skipped iteration 1's review cannot say so in its report, or the hard rule is gone");
+
+  // e. --external-review is gone, from the loop and from every caller that named it.
+  const surfaces = [RL_PATH, "skills/quality/review-loop/rules/agent0-runtime.md",
+    "skills/workflow/autonomous-workflow/aw/SKILL.md", "skills/quality/pr-review/SKILL.md",
+    "skills/workflow/implement-suggestion/SKILL.md", "skills/quality/review-branch/SKILL.md",
+    "skills/workflow/autonomous-workflow/rules/diagnostic-surface.md",
+    "agents/shared/rules/review-activity-poll.md", "README.md"];
+  const regrown = surfaces.filter((p) => /--external-review|EXTERNAL_REVIEW|sub-step-a--external-review-mode/.test(readOr(p)));
+  s.check("G89e --external-review and --interval are gone from review-loop and every surface that named them",
+    regrown.length === 0 && !/--interval|\bINTERVAL\b|POLL_RESULT/.test(RL),
+    `still named in: ${regrown.join(", ") || "none"}${/--interval|\bINTERVAL\b|POLL_RESULT/.test(RL) ? "; review-loop still parses --interval / POLL_RESULT" : ""}`);
 }
 
 process.exit(s.report() ? 0 : 1);
