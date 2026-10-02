@@ -683,10 +683,11 @@ notes: <optional one-paragraph context; omit if nothing notable>
   `CAPTURE` step or an auto-capture (`--auto-capture`); an auto-capture entry
   carries `auto: true`. A capture never appears as a spec result and never
   changes `verdict`.
-- An intent spec's `result` comes from the contract § 6.5 grading table, never
-  from judgment: a `not-observed` item, a must-follow deviation, or
-  `changed: not-exercised` is `fail`; an `observed` item with no evidence line
-  is `not-observed`.
+- An intent spec's `result` comes from the contract § 6.5 first-match table,
+  in its order, never from judgment: a must-follow deviation outside the
+  `unreachable` list, then a `not-observed` item, are `fail`; then an
+  `unreachable` cause is `skipped`; then `changed: not-exercised` is `fail`.
+  An `observed` item with no evidence line is `not-observed`.
 
 ---
 

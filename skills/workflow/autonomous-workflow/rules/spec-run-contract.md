@@ -366,12 +366,13 @@ Grade each intent spec by the first row that matches:
 
 | # | Condition | `result` | `reason` |
 | --- | --- | --- | --- |
-| 1 | an `expected` item is `not-observed` | `fail` | `E<n> not observed: <what was seen instead>` |
-| 2 | a `[must-follow]` step was missing or not performed as written | `fail` | `must-follow step <n>: <what happened>` |
-| 3 | `changed: not-exercised` | `fail` | `changed target not exercised: <changed>` |
-| 4 | an item or must-follow step is `unreachable` | `skipped` | `unreachable: <cause>` |
+| 1 | a `[must-follow]` step was missing or not performed as written, for a cause outside § 6.4 | `fail` | `must-follow step <n>: <what happened>` |
+| 2 | an `expected` item is `not-observed` | `fail` | `E<n> not observed: <what was seen instead>` |
+| 3 | an item or must-follow step is `unreachable` | `skipped` | `unreachable: <cause>` |
+| 4 | `changed: not-exercised` | `fail` | `changed target not exercised: <changed>` |
 | 5 | otherwise | `pass` | — |
 
+A § 6.4 cause therefore grades `skipped` even when it stopped the run before the `[must-follow]` step or the `**Changed:**` target, while a real non-observation still fails whatever else was unreachable.
 Deviations on plain steps never fail a spec; they are listed so a reviewer can see the route differed from the written steps.
 The run-level `verdict` follows § 4 unchanged.
 

@@ -254,9 +254,10 @@ For each `## Spec N:` block, in order:
    `read_network_requests` for a network item, and the auto-final capture for a
    layout-only item. Record `changed: exercised` with the evidence line that
    touched the `**Changed:**` target, else `not-exercised`.
-4. **Grade by the contract's table** — a `not-observed` item, a must-follow
-   deviation, or `changed: not-exercised` is `fail`; an `unreachable` cause is
-   `skipped`; otherwise `pass`, with deviations listed.
+4. **Grade by the contract's first-match table, in its order** — a must-follow
+   deviation outside the `unreachable` list, then a `not-observed` item, are
+   `fail`; then an `unreachable` cause is `skipped`; then
+   `changed: not-exercised` is `fail`; otherwise `pass`, with deviations listed.
 5. **On a pass by exploration, write the compiled route** — one grammar block
    with a `WHEN` per action you took (the locator that resolved), a `THEN` per
    item with a `locator:` or `network:` evidence line, and the four comment
