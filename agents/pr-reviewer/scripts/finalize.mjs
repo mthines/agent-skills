@@ -1180,6 +1180,21 @@ async function selfTest() {
         auto.IMPACT?.symbols?.[0]?.verified_unaffected === 1
           && JSON.stringify(auto.IMPACT?.symbols?.[0]?.consumers) === JSON.stringify([{ path: "src/a.ts", status: "verified" }, { path: "src/b.ts", status: "untraced" }]));
       const supplied = finalizeReview({ context: { ...ctx, render: { COVERAGE: { files_read: 1, files_total: 1 }, IMPACT: { symbols: [] } } }, judgments: j0 }).payload;
+      // The auto-built slots must render with zero edits — a rejected IMPACT would cost the whole
+      // report, so this goes through the real renderer with every IMPACT branch populated.
+      {
+        mkdirSync(scratchRoot(), { recursive: true });
+        const wide = { ...impact,
+          dependencies: [{ name: "stripe", from: "14.2.0", to: "16.0.1", semver_delta: "major", usage_sites: [{}, {}] }],
+          overlaps: [{ pr: 212, author: "alice", files: ["src/r.ts"], symbols: ["retry"] }, { pr: 9, author: "bob", files: ["docs/x.md"], symbols: [] }] };
+        const e2e = finalizeReview({ context: { ...ctx, impact: wide, budget: { finders: { dependency: true } }, render: { at: "2026-10-02T06:00:00Z" } },
+          judgments: { ...j0, summary: "Makes retry throw on exhaustion." } }).payload;
+        const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, e2e, "self-test-auto-reach");
+        check("an auto-built COVERAGE + IMPACT renders through render-report.mjs, diagram and all",
+          rendered.ok && rendered.stdout.includes("<summary>What this change reaches — ") && rendered.stdout.includes("```mermaid")
+            && rendered.stdout.includes("**Checked:** 2 of 3 changed files read")
+          && rendered.stdout.includes("1 open-PR overlap</summary>") && !rendered.stdout.includes("docs/x.md"), rendered.stderr.trim());
+      }
       check("a caller-supplied COVERAGE / IMPACT wins over the auto-built one",
         JSON.stringify(supplied.COVERAGE) === JSON.stringify({ files_read: 1, files_total: 1 })
           && JSON.stringify(supplied.IMPACT) === JSON.stringify({ symbols: [] }));

@@ -123,13 +123,15 @@ export function buildImpact({ impact, inlineClaims = [], trace, dependencyFinder
       }))
     : [];
 
+  // Same-symbol overlaps only: the bullet says "a semantic conflict is likely", which holds when
+  // both PRs change one export and overstates two PRs that merely touch one file (impact-graph.md:
+  // `same-file` is a note, not a consequence).
   const overlaps = rawOverlaps
     .filter((o) => o && Number.isInteger(o.pr) && o.pr > 0 && safe(o.author)
-      && Array.isArray(o.files) && safe(o.files[0]))
+      && Array.isArray(o.files) && safe(o.files[0]) && Array.isArray(o.symbols) && safe(o.symbols[0]))
     .map((o) => {
-      /** @type {{ pr: number, author: string, path: string, symbol?: string, url?: string }} */
-      const out = { pr: o.pr, author: o.author, path: o.files[0] };
-      if (Array.isArray(o.symbols) && safe(o.symbols[0])) out.symbol = o.symbols[0];
+      /** @type {{ pr: number, author: string, path: string, symbol: string, url?: string }} */
+      const out = { pr: o.pr, author: o.author, path: o.files[0], symbol: o.symbols[0] };
       if (typeof repo === "string" && REPO_RE.test(repo)) out.url = `https://github.com/${repo}/pull/${o.pr}`;
       return out;
     });
@@ -175,7 +177,8 @@ function selfTest() {
       { name: "stripe", from: "14.2.0", to: "16.0.1", semver_delta: "major", usage_sites: [{}, {}, {}] },
       { name: "odd", from: "a", to: "b", semver_delta: "other", usage_sites: [] },
     ],
-    overlaps: [{ pr: 212, author: "alice", files: ["src/r.ts"], symbols: ["retry"], kind: "same-symbol" }],
+    overlaps: [{ pr: 212, author: "alice", files: ["src/r.ts"], symbols: ["retry"], kind: "same-symbol" },
+      { pr: 9, author: "bob", files: ["docs/x.md"], symbols: [], kind: "same-file" }],
   };
   const claims = [
     { finder: "consumer-impact", path: "src/b.ts", line: 2, symbol: "retry" },
@@ -200,7 +203,7 @@ function selfTest() {
     JSON.stringify(built?.dependencies) === JSON.stringify([{ name: "stripe", from: "14.2.0", to: "16.0.1", delta: "major", usage_sites: 3 }]));
   check("dependencies are omitted when the dependency finder did not run",
     buildImpact({ impact, inlineClaims: claims, trace, dependencyFinderRan: false, repo: "o/r" })?.dependencies === undefined);
-  check("overlaps carry the PR link built from the repo slug",
+  check("same-symbol overlaps carry the PR link built from the repo slug; a same-file overlap is left out",
     JSON.stringify(built?.overlaps) === JSON.stringify([{ pr: 212, author: "alice", path: "src/r.ts", symbol: "retry", url: "https://github.com/o/r/pull/212" }]));
   check("nothing to show is null, not an empty section",
     buildImpact({ impact: { symbols: [], dependencies: [], overlaps: [] } }) === null && buildImpact({ impact: null }) === null);

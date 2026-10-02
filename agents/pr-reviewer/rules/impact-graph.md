@@ -183,7 +183,7 @@ trace:
 
 | Input | Source | Becomes |
 | --- | --- | --- |
-| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); open-PR overlaps; dependency deltas when the dependency finder ran |
+| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); `same-symbol` overlaps; dependency deltas when the dependency finder ran |
 | `judgments.impact_trace` | the consumer-impact finder | `verified` for each consumer file it read and found holding |
 | a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set) |
 
