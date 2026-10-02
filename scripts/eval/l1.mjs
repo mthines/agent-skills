@@ -10120,6 +10120,17 @@ const isPollBlock = (block) =>
     /noDispatchTopology === "hybrid" && context\?\.intentIsolated !== true/.test(fin) && /context\.intentIsolated = true/.test(fin));
   s.check("G84o execute-write-plan.mjs records `post` and finishes a real run",
     /name: "post", ns: PROCESS_START_NS/.test(ewp) && /await finishRun\(runDir/.test(ewp));
+  // The memory: a trace that says which LoreKit memories shaped the review, each openable in
+  // LoreKit by its id. finalize records them from judgments.memory; the root span carries them.
+  const postingDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
+  s.check("G84o the root carries the memories the review used and read, one event each with its LoreKit id and deep link, recorded by finalize",
+    /one event per memory on the root/.test(out) && /a memory event carries its LoreKit id, scope, key, kind, and what it did/.test(out)
+      && /the deep link opens the memory by id, falls back to scope \+ key/.test(out)
+      && /rule 3 — a run with no memory record carries no memory attribute and no event/.test(out)
+      && /the received root carries the memory the run used/.test(out)
+      && /t: "memory",\n\s+items: memoryTelemetryItems\(judgments\.memory, result\?\.suppressed\),/.test(fin)
+      && /### The memory/.test(rtDocEarly) && /`pr_review\.memory\.used_ids`/.test(rtDocEarly)
+      && /`memory\.read\[\]`[^\n]*Copy `id`, `scope`, and `key` onto every entry/.test(postingDoc));
   const rtDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
   const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
   s.check("G84o run-telemetry.md states the marker rule and the opt-in, and the agent body routes to it",

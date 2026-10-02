@@ -1260,7 +1260,7 @@ async function selfTest() {
   const payload = /** @type {any} */ (ex.tracePayload());
   const spans = payload.resourceSpans[0].scopeSpans[0].spans;
   const get = (/** @type {any} */ s, /** @type {string} */ k) => {
-    const a = s.attributes.find((/** @type {any} */ x) => x.key === k);
+    const a = s?.attributes?.find((/** @type {any} */ x) => x.key === k);
     return a ? (a.value.stringValue ?? a.value.intValue ?? a.value.doubleValue ?? a.value.boolValue) : undefined;
   };
   const root = spans[0];
@@ -1374,7 +1374,7 @@ async function selfTest() {
         && get(ev("orphan-lesson"), "pr_review.memory.url") === undefined);
     ok("memoryUrl matches LoreKit's documented scope + key example, and honours LOREKIT_APP_URL",
       memoryUrl({ scope: "global", key: "prefer-guard-clauses" }) === "https://lorekit.io/lore?scope=%22global%22&lesson=%7B%22scope%22%3A%22global%22%2C%22key%22%3A%22prefer-guard-clauses%22%7D"
-        && get((/** @type {any} */ (toExporter(memRun, { ...env, LOREKIT_APP_URL: "https://lore.example.com/" }).tracePayload())).resourceSpans[0].scopeSpans[0].spans[0].events[0], "pr_review.memory.url") === `https://lore.example.com/lore?memoryId=${UUID_A}`
+        && get((/** @type {any} */ (toExporter(memRun, { ...env, LOREKIT_APP_URL: "https://lore.example.com/" }).tracePayload())).resourceSpans[0].scopeSpans[0].spans[0].events?.[0], "pr_review.memory.url") === `https://lore.example.com/lore?memoryId=${UUID_A}`
         && memoryUrl({ id: "not-a-uuid", key: "k" }) === null);
     ok("every memory event sits inside the run and every event attribute key is in the declared contract",
       events.every((/** @type {any} */ e) => BigInt(e.timeUnixNano) >= memRun.startNs && BigInt(e.timeUnixNano) <= memRun.endNs

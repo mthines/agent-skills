@@ -395,13 +395,14 @@ left unused. The asymmetry is deliberate — a missing relevance verdict changes
 while a missing lesson only changes emphasis. When the pool is exhausted, the unfetched entries are
 simply absent, per the rule above.
 
-**Keep the coordinates.** Retain each entry's `scope` and `key` (the LoreKit
+**Keep the coordinates.** Retain each entry's `id`, `scope`, and `key` (the LoreKit
 memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` —
 the report builds a pressable dashboard deep link from `scope` + `key` for every
 memory that actually influences the review (see
 [Linking applied memories in the report](#linking-applied-memories-in-the-report)).
-`memory.list` / `memory.read` / `memory.search` return no per-memory `id`, so
-`scope` + `key` are the only identifiers a link can be built from.
+`memory.list` / `memory.read` / `memory.search` return the memory's UUID as `id` on
+every entry; the `pr-reviewer` run trace opens each memory by it
+([`run-telemetry.md § The memory`](../../pr-reviewer/rules/run-telemetry.md#the-memory)).
 
 ### How to apply
 
@@ -433,7 +434,7 @@ DOWNGRADE, or PROMOTE against a real finding this run, append a record to an
 `APPLIED_MEMORIES[]` list:
 
 ```json
-{ "fingerprint": "<category>:<claim-gist>", "action": "drop | downgrade | promote", "seen_count": <n>, "scope": "<lorekit scope>", "key": "<lorekit key>" }
+{ "id": "<lorekit id>", "fingerprint": "<category>:<claim-gist>", "action": "drop | downgrade | promote", "seen_count": <n>, "scope": "<lorekit scope>", "key": "<lorekit key>" }
 ```
 
 A memory that was loaded but matched nothing is **not** recorded — it did not
@@ -477,10 +478,10 @@ A LoreKit memory's dashboard deep link opens its detail sheet in the `/lore`
 Explorer. It is built from the memory's `scope` + `key` per LoreKit's documented
 [deep-link contract](https://lorekit.io/docs/deep-links). That contract
 enumerates every Explorer parameter — `scope`, `q`, `range`, `owner`, `filters`,
-`tags`, `view`, `archived`, and `lesson` — and `lesson` is the only one that
-opens a single memory. There is no `?memoryId=` parameter, and the read tools
-expose no `id` to put in one, so never build a link from either. For each entry
-in `APPLIED_MEMORIES[]`, resolve its URL in this order:
+`tags`, `view`, `archived`, and `lesson` — and `lesson` opens a single memory from
+its `scope` + `key`. LoreKit also opens one by `?memoryId=<id>`, which the run trace
+uses; the report keeps the `scope` + `key` form so both rungs below build the same
+link. For each entry in `APPLIED_MEMORIES[]`, resolve its URL in this order:
 
 1. **Preferred — let the LoreKit CLI build it.** When the `lorekit` CLI is on
    `PATH`, run `lorekit link "<scope>" "<key>"` (alias `url`). It prints the exact

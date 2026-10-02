@@ -343,6 +343,7 @@ export function memoryTelemetryItems(memory, suppressed = []) {
   /** @param {any} r @param {Record<string, any>} facts */
   const add = (r, facts) => {
     if (!r || typeof r !== "object") return;
+    /** @type {Record<string, any>} */
     const entry = { id: str(r.id), scope: str(r.scope), key: str(r.key), ...facts };
     if (!entry.id && !entry.key) return;
     const same = items.find((it) => (entry.id && it.id === entry.id)

@@ -2122,7 +2122,7 @@ being won't-fixed.
 Announce, now that the figures exist: `Relevance memories active: <D> suppressions, <P> promotions (repo:<owner>/<repo>).`
 
 For every memory that fires (suppress / downgrade / promote), append a record —
-`{ fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
+`{ id, fingerprint, action, seen_count, scope, key }` — to `APPLIED_MEMORIES[]` per
 `comment-relevance-memory.md § Linking applied memories in the report`. Its `scope` + `key`
 build the pressable deep link in the Step 4 review-body diagnostics (`MEMORIES_SECTION`).
 
