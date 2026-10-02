@@ -1123,7 +1123,9 @@ function main() {
     const posted = findings.length + arr("NOTES").length;
     const confirmed = posted + arr("ADDITIONAL_FINDINGS").length;
     coverageParts.push(`${produced} possible issue${produced === 1 ? "" : "s"} → ${confirmed} confirmed → ${posted} posted`);
-  } else if (coverageParts.length) {
+  } else if (coverageParts.length && run.mode !== "zero-delta") {
+    // A zero-delta run dispatches no finder, so "no possible issues found" would claim a search
+    // that never ran; the traced-files part still renders, because the trace did record it.
     coverageParts.push("no possible issues found");
   }
   const coverageLine = coverageParts.length ? `**Checked:** ${coverageParts.join(" · ")}` : "";

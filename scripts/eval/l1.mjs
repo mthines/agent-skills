@@ -10696,6 +10696,22 @@ const isPollBlock = (block) =>
   const fp = render(funnelProbe);
   s.check("G88p the Checked funnel derives confirmed and posted from FINDINGS + NOTES + ADDITIONAL_FINDINGS, not QUALITY's cleared",
     fp.ok && /11 possible issues → 3 confirmed → 2 posted/.test(fp.out), fp.err || fp.out.split("\n").find((l) => l.startsWith("**Checked:**")));
+  // A zero-delta run dispatches no finder, so the Checked line must not claim a search came up
+  // empty; the traced-files part still renders. Proven to bite by dropping the zero-delta guard.
+  const zeroDelta = clone();
+  zeroDelta.RUN = { mode: "zero-delta", sha: base.RUN.sha, prior_sha: "8d2e4a1", at: base.RUN.at };
+  zeroDelta.QUALITY = "produced 0 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0";
+  zeroDelta.FINDINGS = [];
+  zeroDelta.NOTES = [];
+  zeroDelta.ADDITIONAL_FINDINGS = [];
+  zeroDelta.WARN_REASONS = ["1 open review thread"];
+  zeroDelta.GATE_CODEREVIEW_STATUS = "✅";
+  zeroDelta.GATE_CODEREVIEW_DETAILS = "No code changes since the last review.";
+  delete zeroDelta.COVERAGE;
+  const zd = render(zeroDelta);
+  s.check("G88u a zero-delta Checked line keeps the traced-files part and never says \"no possible issues found\"",
+    zd.ok && /^\*\*Checked:\*\* 7 of 15 dependent files traced$/m.test(zd.out) && !zd.out.includes("no possible issues found"),
+    zd.err || zd.out.split("\n").find((l) => l.startsWith("**Checked:**")));
   const shared = clone();
   shared.IMPACT = { symbols: [
     { name: "a", path: "src/a.ts", change: "signature", consumer_files: 2, verified_unaffected: 2, findings: 0,
