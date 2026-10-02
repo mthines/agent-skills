@@ -26,9 +26,9 @@ Classify every barrier into exactly one of the six components.
 
 | Component | The actor… | Typical evidence | Primary lever family |
 | --- | --- | --- | --- |
-| `physical-capability` | lacks the physical skill, access, or tooling permission to do it | "I don't have access to the dashboard", "the CLI isn't installed on my machine" | Enablement, training |
+| `physical-capability` | lacks the physical skill, strength, stamina, or dexterity in their own body to do it | "I can't type fast enough to keep up with the live chat", "after a 12-hour shift I'm too exhausted to do the handover properly" | Training through practice, physical aids, reducing the physical demand |
 | `psychological-capability` | does not know how, does not know it is expected, or cannot remember the steps | "I didn't know we had a runbook", "I always forget the flag", "how do I write a span?" | Education, training, checklists, memory aids |
-| `physical-opportunity` | is blocked by the environment: time, steps, tooling friction, missing trigger, wrong place | "it takes 12 minutes to run", "the button is three menus deep", "nobody reminds us at the moment it matters" | Environmental restructuring: remove steps, defaults, prompts at the moment |
+| `physical-opportunity` | is blocked by the environment: access, permissions, tools, time, steps, missing trigger, wrong place | "I don't have access to the dashboard", "the CLI isn't installed on my machine", "it takes 12 minutes to run", "the button is three menus deep", "nobody reminds us at the moment it matters" | Environmental restructuring: remove steps, defaults, prompts at the moment |
 | `social-opportunity` | sees peers or leaders not doing it, or doing it is socially costly | "nobody senior does it", "asking looks like I don't know", "the team norm is to skip it" | Modelling, social norms, visible champions |
 | `reflective-motivation` | does not believe it is worth it, or has a conflicting goal or incentive | "it doesn't catch real bugs", "my sprint goal is shipping, not this" | Persuasion with evidence, goal alignment, removing conflicting incentives |
 | `automatic-motivation` | has a habit, emotion, or impulse pulling the other way | "I just push out of habit", "the alert noise makes me ignore it", "it feels tedious" | Habit design, environmental restructuring, making it satisfying |
@@ -37,8 +37,8 @@ Classify every barrier into exactly one of the six components.
 
 1. List every barrier stated or observed for the target behavior, one per line.
 2. For each, ask the three questions in order and stop at the first **yes**:
-   1. Could the actor do it right now if their life depended on it? **No** → a capability component (`physical-` if the gap is access or tooling, `psychological-` if it is knowledge or memory).
-   2. Does the environment or the people around them make it hard, slow, or costly? **Yes** → an opportunity component (`physical-` for time, steps, and tooling; `social-` for norms and status).
+   1. Given full access, tools, and time, would the actor still be unable to do it because of something in themselves? **Yes** → a capability component (`physical-` for bodily skill, strength, or stamina; `psychological-` for knowledge, skill, or memory).
+   2. Does the environment or the people around them make it impossible, hard, slow, or costly? **Yes** → an opportunity component (`physical-` for access, permissions, tools, time, and steps; `social-` for norms and status).
    3. Otherwise → a motivation component (`reflective-` if they disagree it is worth it, `automatic-` if they agree but habit or feeling wins).
 3. Pick the **primary barrier**: the one that, removed alone, would most raise the behavior's frequency.
    When two tie, prefer the opportunity barrier — environment changes are cheaper and more durable than changing minds.
@@ -47,7 +47,7 @@ Classify every barrier into exactly one of the six components.
 
 ```text
 ✗ Barrier: "people are lazy"            — not a COM-B component, untestable, blames the actor
-✓ Barrier: physical-opportunity — the pre-push test run takes 11 min (CI timing, p50); engineers skip it to keep flow
+✓ Barrier: physical-opportunity — filing a deploy request takes 9 form fields (counted); engineers batch deploys to avoid it
 ```
 
 Agreeing with the goal but not acting is the most common pattern in team adoption.

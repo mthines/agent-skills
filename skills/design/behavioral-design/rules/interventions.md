@@ -25,9 +25,9 @@ Pick levers that target the primary barrier from [`diagnosis.md`](./diagnosis.md
 
 | Primary barrier | Start with | Example (team adoption) | Avoid |
 | --- | --- | --- | --- |
-| `physical-capability` | Provision access and tooling by default | Pre-install the CLI in the dev container; grant dashboard access on onboarding | Training before access exists |
+| `physical-capability` | Practice and physical aids, or reduce the physical demand | Paired practice runs before a first on-call shift; shorter shifts so the handover is not done exhausted | Assuming one demo builds a physical skill |
 | `psychological-capability` | Worked example + memory aid at the moment | A filled-in example span in the PR template; a `--help` that shows the one command | A 30-page wiki |
-| `physical-opportunity` | Remove steps, default it, prompt at the moment | Make the pre-push hook run only affected tests (90 s, not 11 min); a bot comment when a PR adds an endpoint without a span | Reminders without removing the friction |
+| `physical-opportunity` | Provision access, remove steps, default it, prompt at the moment | Grant dashboard access on onboarding; pre-install the CLI in the dev container; make the pre-push hook run only affected tests (90 s, not 11 min); a bot comment when a PR adds an endpoint without a span | Reminders without removing the friction |
 | `social-opportunity` | Visible modelling and true norms | Leads demo their own use in standup; a dashboard of adoption by team | Shaming individuals or leaderboards that rank people |
 | `reflective-motivation` | Evidence the actor trusts, remove conflicting incentives | Show the 3 incidents a span would have shortened; count the work in sprint goals | Mandates without a reason |
 | `automatic-motivation` | Habit anchoring and making it satisfying | "After I open a PR, I paste the dashboard link"; immediate visible feedback when done | Willpower appeals |
