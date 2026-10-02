@@ -520,6 +520,14 @@ test('probe', async ({ browser }) => {
   const requests: string[] = [];
   page.on('response', (r) =>
     requests.push(`${r.request().method()} ${new URL(r.url()).pathname} → ${r.status()}`));
+  // Mutating requests, recorded when ISSUED, to the app's own origins only — never telemetry.
+  const apiOrigins = new Set([new URL(cfg.baseURL).origin, ...(cfg.apiOrigins ?? [])]);
+  const mutations: string[] = [];
+  page.on('request', (q) => {
+    const u = new URL(q.url());
+    if (/^(POST|PUT|PATCH|DELETE)$/.test(q.method()) && apiOrigins.has(u.origin))
+      mutations.push(`${q.method()} ${u.pathname}`);
+  });
   const find = (l: any): any => {
     const root = l.within ? find(l.within) : page;
     if (l.role) return root.getByRole(l.role, { name: rx(l.name), exact: l.exact ?? true });
@@ -539,7 +547,7 @@ test('probe', async ({ browser }) => {
       const n = await t.count();
       if (n !== 1) throw new Error(`locator matched ${n} elements — name the instance`);
       if (s.dry) { steps.push({ ok: true, dry: true }); continue; } // resolve only — never act
-      const before = requests.length;
+      const before = mutations.length;
       if (s.action === 'click') await t.click({ timeout: 5000 });
       else if (s.action === 'fill') await t.fill(s.value, { timeout: 5000 });
       else if (s.action === 'press') await t.press(s.value, { timeout: 5000 });
@@ -548,9 +556,10 @@ test('probe', async ({ browser }) => {
       else if (s.action === 'hover') await t.hover({ timeout: 5000 });
       else throw new Error(`unsupported action ${s.action}`);
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
-      // the mutating requests this step fired — the evidence that settles "was it a mutation?"
-      steps.push({ ok: true, fired: requests.slice(before).filter((r) => /^(POST|PUT|PATCH|DELETE) /.test(r)) });
+      // An explicit settle, not networkidle: networkidle returns at once on a page that already idled.
+      await page.waitForTimeout(cfg.settleMs ?? 1500);
+      // the mutating requests this step issued — the evidence that settles "was it a mutation?"
+      steps.push({ ok: true, fired: mutations.slice(before) });
     } catch (e) { steps.push({ ok: false, error: String(e).slice(0, 300) }); break; }
   }
   await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
@@ -579,8 +588,11 @@ error — keep the tail of its output for `diagnostics`, and it counts against
 the probe budget. A `fatal` value means `start` itself did not load.
 
 ```bash
-# probe-in.json: { baseURL, storageState, bypassHeader, start, steps: [{action, locator, value, dry}],
-#                  checks: [locator, …], shot }
+# probe-in.json: { baseURL, storageState, bypassHeader, apiOrigins, settleMs, start,
+#                  steps: [{action, locator, value, dry}], checks: [locator, …], shot }
+# apiOrigins: the app's own API origins besides the preview's (it is always included) —
+#   the aw-target's adversarial.allowed_origins when set; never analytics or third-party hosts.
+# settleMs: wait after each action before reading `fired` (default 1500; raise it for a debounced control).
 # A locator is the single-braces form as JSON, optionally scoped:
 #   {"role": "button", "name": "Rename", "within": {"role": "banner"}}
 rm -f "$AW_DIR/probe-out.json"
@@ -604,7 +616,8 @@ Walk the spec's steps with it:
    probe checks that its locator matches one element and does not act. Then
    run one **commit launch** — the same `steps` with `dry` removed from that
    step, plus `checks` and `shot` (item 5) when it is the spec's last step.
-   Read that step's `fired`:
+   Read that step's `fired` — the `POST`/`PUT`/`PATCH`/`DELETE` requests it
+   issued to `apiOrigins` within `settleMs`:
    - **Empty, and the step only opened a dialog, menu, or popover** — it was
      not the mutation (its confirm is). Mark it replayable and keep exploring
      from `start` as in item 2; the next step is the one to dry-resolve.
