@@ -9,7 +9,7 @@
 ## Before the session
 
 - [ ] Follow-up check-in sent to all attendees for <date, 2 weeks after>
-- [ ] Worksheets pre-filled with the target behavior and the six COM-B rows
+- [ ] Worksheets pre-filled with the target behavior, the <COM-B | B=MAP> rows, and the EAST and ethics checklists
 - [ ] Baseline metric for the target behavior: <value | unknown>
 
 ## Agenda

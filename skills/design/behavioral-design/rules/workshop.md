@@ -51,7 +51,7 @@ Scale the blocks proportionally to the duration; the 60-minute version is the re
 | Lever | In the workshop |
 | --- | --- |
 | Default | The follow-up check-in is already in everyone's calendar when they arrive; declining is one click |
-| Ease | Exercise worksheets are pre-filled with the target behavior and the six COM-B rows |
+| Ease | Exercise worksheets are pre-filled with the target behavior, the rows of the model picked in block 2 (six COM-B components, or prompt / ability / motivation for B=MAP), and the EAST and ethics checklists |
 | Implementation intention | Block 6 uses the "When…, we will…" form, not "we should…" |
 | Social | Commitments are shared at team level, never individual scoring |
 | Timely | Schedule at a sprint or quarter start (fresh start); follow up 2 weeks later |
