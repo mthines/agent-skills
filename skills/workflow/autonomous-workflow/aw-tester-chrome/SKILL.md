@@ -261,7 +261,9 @@ For each `## Spec N:` block, in order:
    with a `WHEN` per action you took (the locator that resolved), a `THEN` per
    item with a `locator:` or `network:` evidence line, and the four comment
    lines (`# route-for:`, `# source-sha:`, `# deviations:`, `# uncompiled:`).
-   Either runner can replay it.
+   Either runner can replay it. When an action's target had to be named by the
+   container it sits in, cache nothing — the grammar cannot express that scope —
+   and note that the spec explores every run.
 
 Add the intent keys (`format`, `route`, `changed`, `changed_evidence`,
 `expected`, `deviations`) to the spec's verdict entry, as the contract's § 6.7

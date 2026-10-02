@@ -54,7 +54,7 @@ That resolution also consults the committed `.claude/aw-targets/preview.yml`'s o
 
 Write two files under `.agent/{branch}/.ui-verify/` (the branch is the PR's head ref; the directory is git-ignored scratch):
 
-1. **`specs.md`** — the extracted spec body from Step 1, verbatim.
+1. **`specs.md`** — the extracted spec body from Step 1, verbatim — plus a `Format: intent` header line when Step 1 found a v2 region without one.
    Never touch `.agent/{branch}/.aw-tester/routes/`: it is the runners' route cache for intent specs (spec-run contract § 6.6), and a later run in this worktree replays from it.
 2. **`aw-target.yml`** — the browser context, built as follows:
    - If `.claude/aw-targets/preview.yml` exists in the repo, start from it (auth, fixtures, constraints) and set `base_url` to the resolved URL. This is how a preview behind Vercel deployment protection or an app login gets authenticated — the committed file carries the auth **strategy**, never the credentials. The full flow (the two walls, the CI env-var path, the Google-SSO caveat) is [`preview-auth.md`](./preview-auth.md).
