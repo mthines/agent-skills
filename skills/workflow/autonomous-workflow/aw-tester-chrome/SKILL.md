@@ -239,7 +239,8 @@ For each `## Spec N:` block, in order:
    re-judge the failed assertions on the current page when every route step
    ran (`route: replayed`), or continue exploring in this same tab from the
    failed step when a later step failed (`route: healed`), counting the
-   replay's requests and performed steps toward the grade.
+   replay's requests and performed steps toward the grade. A heal that continued
+   in the tab writes no route: delete the route file instead (contract § 6.6).
 2. **Explore.** Navigate to `start`. For each step, `read_page`, resolve the
    step's target by the ladder (try `hints` first), act, and `read_page` again.
    You see the page after every action, so this is the grammar loop with the

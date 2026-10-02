@@ -426,6 +426,7 @@ Heal at most once per spec per run.
 Rules that keep the cache honest:
 
 - **The Markdown spec is the source of truth; the route is a speed path.** Healing may change the route, never an `expected` item and never a `[must-follow]` step.
+- **A route is written only from a full exploration from `start`.** A heal that continued from where a replay left off deletes the route file instead of writing one, so the next run explores from `start` and the cache never skips the steps before the cut.
 - **A changed spec is a cache miss.** Its block text changes, so `<sha8>` changes, and the old file is never read.
 - **Never edit a route file by hand.** Delete it to force exploration.
 - **The cache is local.** It lives in the gitignored `.agent/` of one worktree; a fresh checkout or sandbox starts empty and explores.
