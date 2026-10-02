@@ -39,10 +39,10 @@ Scale the blocks proportionally to the duration; the 60-minute version is the re
 | Block | 60 min | Purpose | Content |
 | --- | --- | --- | --- |
 | 1. Hook | 5 | Experience System 1 | Bat-and-ball question, then "when did you last skip X without deciding to?" |
-| 2. Model | 10 | Two systems, one formula | System 1 / System 2 ([`dual-process.md`](./dual-process.md)); B=MAP or COM-B — pick one for the session, not both |
+| 2. Model | 10 | Two systems, one formula | System 1 / System 2 ([`dual-process.md`](./dual-process.md)), optionally framed as Heath's Rider (System 2), Elephant (System 1), and Path (environment); then B=MAP or COM-B — pick one for the session, not both |
 | 3. Evidence | 5 | Why ease beats persuasion | One defaults example (pension auto-enrolment) and the honest caveat that most nudges are small ([`../references/frameworks.md`](../references/frameworks.md)) |
-| 4. Diagnose | 15 | Apply to their behavior | Pairs classify barriers for the real behavior with the three-question procedure in [`diagnosis.md`](./diagnosis.md) |
-| 5. Design | 15 | Pick a lever | Pairs draft one intervention per barrier, run it through EAST ([`interventions.md`](./interventions.md)) and the ethics test ([`ethics.md`](./ethics.md)) |
+| 4. Diagnose | 15 | Apply to their behavior | Pairs find barriers for the real behavior using the model picked in block 2: the three-question procedure in [`diagnosis.md`](./diagnosis.md) for COM-B, or the prompt / ability / motivation check for B=MAP |
+| 5. Design | 15 | Pick a lever | Pairs draft one intervention per barrier with concept 3 (defaults and friction), then tick the EAST checklist on the worksheet ([`interventions.md`](./interventions.md)) and the ethics test ([`ethics.md`](./ethics.md)) |
 | 6. Commit | 7 | Implementation intention | Each pair writes "When <trigger>, we will <intervention>, starting <date>, measured by <metric>" |
 | 7. Close | 3 | Peak-end | Show the committed list back to the room; announce the follow-up date |
 
@@ -61,6 +61,8 @@ Scale the blocks proportionally to the duration; the 60-minute version is the re
 ## Concept budget
 
 Teach at most three named concepts in a 60-minute session; add one per extra 30 minutes.
+A named concept is one that gets its own explanation slide.
+A checklist printed on a worksheet (EAST, the ethics test) is a tool, not a taught concept, as long as no slide explains it.
 Default three: System 1 / System 2, one barrier model (B=MAP or COM-B), and defaults / friction.
 Everything else goes in a take-away handout, not the slides.
 
