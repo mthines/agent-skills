@@ -10917,16 +10917,21 @@ const isPollBlock = (block) =>
 //   a. the section carries all five condition rows;
 //   b. its bash block, EXECUTED with nothing but `gh` stubbed (no helper, no counter, no echo
 //      supplied by the harness), sets APPLY_FIRST=1 only when every condition holds and fails
-//      closed on every failed read (the thread query, and the reply count on its own) — so a block that leans on Step 0's helpers or stops printing
-//      its decision goes red, which is what a harness that pre-defined them could never see;
+//      closed on every failed read (the thread query, and the reply count on its own) — so a
+//      block that leans on Step 0's helpers or stops printing its decision goes red, which is
+//      what a harness that pre-defined them could never see. The `gh` stub is a stand-in for
+//      the API, not for the block: it answers with a full GraphQL response and applies the
+//      block's OWN `--jq` filter to it, and it refuses a query that does not ask for
+//      `isResolved` and `comments{ totalCount }` — so a typo in either goes red too;
 //   c. the loop's skip branch is gated on iteration 1 + APPLY_FIRST and sets NEW_FINDINGS = true
 //      ahead of the convergence exit (a skipped review can never converge or merge);
 //   d. the report + hard rule name the skip;
 //   e. --external-review / --interval are gone from review-loop and every caller that named them.
 // break-shape: drop a condition row; flip `-ge 1` to `-ge 0`; default REPLIED to 0; count a
 // resolved thread as open; call `unresolved_thread_count` from the block; delete the block's
-// `echo "APPLY_FIRST=…"`; set NEW_FINDINGS = false in the skip branch; or put `--external-review`
-// back into aw/SKILL.md — the matching sub-check flips red.
+// `echo "APPLY_FIRST=…"`; typo the block's `--jq` path; drop `comments{ totalCount }` from its
+// query; set NEW_FINDINGS = false in the skip branch; or put `--external-review` back into
+// aw/SKILL.md — the matching sub-check flips red.
 {
   const RL_PATH = "skills/quality/review-loop/SKILL.md";
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
@@ -10943,11 +10948,12 @@ const isPollBlock = (block) =>
     `section ${AF.length ? "found" : "missing"}; condition rows missing: ${missing.join(" · ") || "none"}`);
 
   // b. the block, executed exactly as an agent's own tool call would run it: placeholders filled,
-  //    `gh` the only stub (it prints what the real `--jq` filter would), and the decision read off
-  //    the block's OWN stdout. A resolved thread with replies rides along in every fixture.
+  //    `gh` the only stub (a full GraphQL response, run through the block's own `--jq`), and the
+  //    decision read off the block's OWN stdout. A resolved thread with replies rides along in
+  //    every fixture.
   const blk = (AF.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
   const run = (c) => {
-    const dir = mkdtempSync(join(tmpdir(), "l1-g89-"));
+    const dir = mkdtempSync(join(tmpdir(), "l1-g90-"));
     try {
       const ctx = join(dir, "context.json");
       if (c.mode !== null) writeFileSync(ctx, JSON.stringify({ mode: c.mode, priorRun: { priorSha: "abc1234" } }));
@@ -10956,9 +10962,23 @@ const isPollBlock = (block) =>
       const nodes = c.open === null ? null : [
         ...Array.from({ length: c.open }, (_, i) => ({ isResolved: false, comments: c.malformed ? "unreadable" : { totalCount: i < c.replied ? 2 : 1 } })),
         { isResolved: true, comments: { totalCount: 3 } }];
+      const response = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } });
+      // Plain strings, not a template literal: the bash below uses `${…}` parameter expansion.
       const gh = nodes === null
         ? 'gh() { echo "HTTP 502" >&2; return 1; }'
-        : `gh() { printf '%s\\n' '${JSON.stringify(nodes)}'; }`;
+        : ['gh() {',
+          '  local q="" f=""',
+          '  while [ $# -gt 0 ]; do',
+          '    case "$1" in',
+          '      -f) case "$2" in query=*) q="${2#query=}" ;; esac; shift 2 ;;',
+          '      --jq) f="$2"; shift 2 ;;',
+          '      *) shift ;;',
+          '    esac',
+          '  done',
+          '  case "$q" in *isResolved*"comments{ totalCount }"*) ;; *) echo "stub: query lacks isResolved / comments{ totalCount }" >&2; return 1 ;; esac',
+          '  [ -n "$f" ] || { echo "stub: no --jq filter" >&2; return 1; }',
+          "  printf '%s\\n' '" + response + "' | jq \"$f\"",
+          '}'].join("\n");
       const sh = [gh, blk
         .replaceAll("<ITERATION>", String(c.iter)).replaceAll("<NO_FEEDBACK>", String(c.nofb))
         .replaceAll("<OWNER>", "o").replaceAll("<REPO>", "r").replaceAll("<PR_NUMBER>", "1")

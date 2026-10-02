@@ -616,7 +616,9 @@ Skip sub-step A in iteration 1 when **all** of these hold, and review first othe
 | `OPEN >= 1` | the block's thread query — unresolved threads | With no open thread, the zero-delta review is what lets iteration 1 converge without pushing; skipped, a finished PR goes to `polish simplify` and gets new commits |
 | `REPLIED == 0` | the block's thread query — unresolved threads holding more than one comment, that is, a finding someone replied to | A reply is the one thing a zero-delta review acts on — it resolves a thread the author declined; skipped, sub-step B meets that thread still open |
 
-Read the mode from the prepare sub-step A runs anyway, never from a second one:
+Read the mode from exactly one `prepare-review.mjs` run in the loop's own context.
+On the `named` route that is the prepare sub-step A runs anyway, so nothing is prepared twice.
+On the `agent0` route the `general` reviewer cannot be handed a context and prepares its own, so the loop's run is an extra one that it cleans up:
 
 | `REVIEWER_ROUTE` | Where `context.json` comes from | After the check |
 | --- | --- | --- |
