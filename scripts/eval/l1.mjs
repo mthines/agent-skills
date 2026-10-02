@@ -11139,7 +11139,9 @@ const isPollBlock = (block) =>
     "a probe that replays a performed mutation or reads `fired` from responses, or a runner that stops writing # mutations: or heals past a performed mutation, would pass L1");
   s.check("G91f aw-tester-chrome writes # mutations:, heals by it, never repeats a performed mutation, and never caches a continued heal",
     /heals by the route's `# mutations:` line/.test(CHR) && /never repeat it/.test(CHR) && /writes no route/.test(CHR)
-      && /and `# mutations:` — the `WHEN` positions/.test(CHR),
+      && /and `# mutations:` — the `WHEN` positions/.test(CHR)
+      && /re-judge the failed assertions on the current page when every route step\s+ran/.test(CHR)
+      && /continue exploring in this same tab from the\s+failed step/.test(CHR),
     "the Chrome runner could stop writing # mutations:, repeat a mutation on heal, or cache a route that skips the steps before the cut");
 
   // (e) ui-verify: writers and readers agree on the marker versions and their order.
