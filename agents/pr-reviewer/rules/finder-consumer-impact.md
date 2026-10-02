@@ -74,7 +74,7 @@ It is also why the workspace is a hard requirement: without it, step 4 is guessw
 | --- | --- | --- |
 | A caller's expectation is broken and unguarded | `issue` candidate | inline, at the caller |
 | The change requires a follow-up the diff does not make (a migration, a doc, a version bump) | `suggestion` candidate | inline |
-| The change is **safe but wide** | a **consequence note** — report-only, not a finding, never inline | the `What this change reaches` section: list each consumer file you read and found holding in `judgments.impact_trace` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)) |
+| The change is **safe but wide** | a **consequence note** — report-only, not a finding, never inline | the `What this change reaches` section: list each consumer file you read and found holding in `judgments.impact_trace` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)) — from a worker, in its trace file ([`agent0-runtime.md`](./agent0-runtime.md#phase-d-two-workers-in-one-message-never-expect-a-second-rung)) |
 
 The third one is new, and it is the point.
 
