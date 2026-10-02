@@ -209,7 +209,7 @@ Spec-1 pass — route: explored — changed: exercised — 2/2 expected observed
 
 Print every `expected` item with its `evidence`, and every deviation, exactly as the runner returned them.
 Never shorten a pass to its verdict word: the evidence lines are what lets a reviewer trust it.
-When `changed` is `not-exercised` or an item is `not-observed`, the spec is `fail` — relay the runner's `reason`, never a softer word.
+Relay each spec's `result` and `reason` exactly as the runner graded them: never soften a `fail`, and never harden a `skipped` — contract § 6.5 grades a closed-list `unreachable` cause `skipped` before it looks at `changed`, so `changed: not-exercised` on a preview with a named flag off is `skipped`, not `fail`.
 
 **Surface the screenshots.** When the verdict carries a `captures:` array (it does on every default run, since `--auto-capture` is on — see Step 4), list each `path` in the report under a **Screenshots** heading so the user can attach them to the PR description. State the count and the directory (`.agent/{branch}/.aw-tester/captures/`); if `captures:` is absent, say `no screenshots (--no-screenshots)`. Never inline the image bytes — the paths are the deliverable.
 
