@@ -221,28 +221,28 @@ continuously instead of jumping at two tier boundaries.
 2. `--thoroughness <n>` / `thoroughness: <n>` (CLI wins over config) → `t = clamp(n, 0, 1)`. A
    non-finite or garbage value **fails closed to `t = 1`** — the safe direction for a broken override
    is maximum scrutiny, never a silent under-review.
-3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.95.**
-   Each default sits one band past a breakpoint, so a defaulted review buys the next lever up:
+3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.8.**
+   The two re-review tiers sit one band past a breakpoint, so a defaulted re-review buys the next lever up:
 
    | Tier | Default `t` | What the default turns on, over the band below it |
    | --- | --- | --- |
    | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode); holistic escalation cap 2 → 4 |
    | `standard` | 0.7 | optimality lens lever — the lens itself runs on `full`-mode runs only, because [`pr-reviewer.md` § 2.4c](../../pr-reviewer.md) skips it on incremental re-reviews; holistic escalation cap 5 → 7 |
-   | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2; holistic escalation cap 8 → 10 |
+   | `deep` | 0.8 | unchanged — every finder on all files, tool-call budget ×1.5, holistic escalation cap 8 |
 
-   **Why:** a review's silence is read as coverage, so the default spends one band more than the minimum for its tier.
+   **Why:** a re-review's silence is read as coverage, so it spends one band more than the minimum for its tier; `deep` stays at 0.8 because 0.95's execution-tier verification and ×2 budget have no measured gain over 0.8 and lengthen every first review.
 
 **Risk floor.** A diff carrying a high-stakes shape (`auth`, `payments`, `schema-migration`,
 `secrets`, `infra`) **or** `impact.json`'s `blast_radius.band == "high"` floors the *effective*
 thoroughness at **0.5**, whatever `t` resolved to above — this guards only the override path:
-D7/D9 already route these shapes/bands to `deep` (default `t = 0.95`) through `routeDepth()`, so the
+D7/D9 already route these shapes/bands to `deep` (default `t = 0.8`) through `routeDepth()`, so the
 floor matters exactly when a low `--thoroughness` override or a repo-wide config default would
 otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.3` on a band-high PR
 (61 exports), `consumer-impact` never activated (its own breakpoint is 0.5) and the run found nothing
 — the floor now catches this exactly as it already caught a high-stakes shape.
 
-**Breakpoints.** The three tier defaults (0.4 / 0.7 / 0.95) fall in the `0.4 ≤ t < 0.5`,
-`0.7 ≤ t < 0.8`, and `t ≥ 0.95` columns:
+**Breakpoints.** The three tier defaults (0.4 / 0.7 / 0.8) fall in the `0.4 ≤ t < 0.5`,
+`0.7 ≤ t < 0.8`, and `0.8 ≤ t < 0.95` columns:
 
 | Lever | `t < 0.4` | `0.4 ≤ t < 0.5` | `0.5 ≤ t < 0.7` | `0.7 ≤ t < 0.8` | `0.8 ≤ t < 0.95` | `t ≥ 0.95` |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -256,10 +256,8 @@ otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.
 | Holistic escalation cap | `round(10t)` | *(same formula, every column)* | | | | |
 | Tool-call budget multiplier | ×1 | *(same)* | *(same)* | *(same)* | **×1.5** | **×2** |
 
-`round(10t)` gives 4 / 7 / 10 at the three defaults: proportional scaling is what "escalation SCALES
-with thoroughness" means.
-At deep's 0.95 default every lever already sits at its ceiling, so on a `deep`-routed PR
-`--effort high` (`t = 1`) changes nothing; it still raises a `standard` or `quick` routing to `deep`.
+`round(10t)` gives 4 / 7 / 8 at the three defaults: proportional scaling is what "escalation SCALES
+with thoroughness" means, and `--effort high` (`t = 1`) reaches the ceiling on every lever, cap 10 included.
 
 **Tool-call budget (A/B iterations 1–3).** `pr-reviewer.md § Stop conditions` sizes the run's
 tool-call budget by changed-file count — 30 for ≤ 10 files, 60 for 11–30, 100 for > 30 — and
@@ -270,7 +268,7 @@ calls.
 On sync-tray#72 (22 files), arms at `t = 0.8` skipped whole files to stay inside 60: one declared a
 partial review after reading 13 of 22 files, and the file it only grepped held the
 highest-severity corroborated defect, which the `t = 0.8` arm missed in all three rounds.
-At `deep`'s default (`t = 0.95`) an 11–30-file diff gets 120 calls.
+At `deep`'s default (`t = 0.8`) an 11–30-file diff gets 90 calls.
 The budget is a ceiling, never a target, so a run that finishes early spends nothing extra.
 
 **Holistic broad pass (item 3).** Step 2.4 used to run unconditionally — gated only by
