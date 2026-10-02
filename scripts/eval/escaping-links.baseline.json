@@ -19,7 +19,7 @@
   "skills/quality/optimize-approach": 8,
   "skills/quality/pr-review": 13,
   "skills/quality/review-branch": 14,
-  "skills/quality/review-loop": 21,
+  "skills/quality/review-loop": 17,
   "skills/quality/test-provenance-guard": 4,
   "skills/quality/verify-behavior": 2,
   "skills/testing/e2e-pr-stabilizer": 14,
@@ -27,10 +27,10 @@
   "skills/testing/e2e-testing-mobile": 34,
   "skills/testing/ui-verify": 26,
   "skills/workflow/autonomous-workflow": 115,
-  "skills/workflow/autonomous-workflow/aw": 9,
+  "skills/workflow/autonomous-workflow/aw": 8,
   "skills/workflow/autonomous-workflow/aw-setup": 7,
   "skills/workflow/autonomous-workflow/aw-tester-chrome": 14,
   "skills/workflow/aw-create-plan": 5,
   "skills/workflow/fix-bug": 22,
-  "skills/workflow/implement-suggestion": 19
+  "skills/workflow/implement-suggestion": 18
 }

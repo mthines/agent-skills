@@ -10,7 +10,7 @@ argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroug
 license: MIT
 metadata:
   author: mthines
-  version: '2.0.1'
+  version: '2.0.2'
   workflow_type: command
 ---
 
@@ -231,8 +231,7 @@ One absent-dispatch return is conclusive — the capability's absence is a prope
 topology, settled before any code is read, so a retry costs a round trip and returns the same answer.
 
 Where another process reviews the PR instead (a review bot, a CI-triggered agent), the supported
-path is `Skill("review-loop", "<PR> --external-review")`, which waits on that reviewer rather than
-dispatching one.
+path is `/implement-suggestion <PR> --watch`, which waits on that reviewer and applies what it posts.
 
 ## Step 3: Report
 

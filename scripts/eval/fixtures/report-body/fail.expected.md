@@ -9,6 +9,8 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
+**Checked:** 22 of 31 changed files read · 6 possible issues → 4 confirmed → 4 posted
+
 | Finding | Where | Severity |
 |---|---|---|
 | Check-run variables rejected at runtime | [`src/triggers/variables.ts:12`](https://github.com/o/r/pull/1#discussion_r21) | 🟠 high · blocking |

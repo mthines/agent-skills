@@ -94,8 +94,7 @@ it and stop:
 
 One absent-dispatch return is **conclusive**; never retry. And this loop, like `review-loop`, must
 run at the **top level** — its first sub-step is a delegation, so dispatching the loop itself into a
-sub-agent spends the budget one rung too high and leaves it nothing to review with. There is no
-`--external-review` counterpart here: an out-of-process reviewer would have nowhere to publish to.
+sub-agent spends the budget one rung too high and leaves it nothing to review with.
 
 ## Procedure
 

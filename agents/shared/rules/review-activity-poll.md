@@ -1,11 +1,10 @@
 # Review-activity poll
 
-**This file is the owner of the procedure.** Two callers consume it:
-[`implement-suggestion --watch`](../../../skills/workflow/implement-suggestion/rules/watch-mode.md#waiting-for-new-review-activity)
-and [`review-loop --external-review`](../../../skills/quality/review-loop/SKILL.md#sub-step-a--external-review-mode).
+**This file is the owner of the procedure.** One caller consumes it:
+[`implement-suggestion --watch`](../../../skills/workflow/implement-suggestion/rules/watch-mode.md#waiting-for-new-review-activity).
 
-Neither caller may edit the procedure or restate it. Change it here, then re-read
-both callers' outcome mappings. Ownership stated in prose is what prevents drift —
+The caller may not edit the procedure or restate it. Change it here, then re-read
+the caller's outcome mapping. Ownership stated in prose is what prevents drift —
 the directory only implies it.
 
 > **Why a shared file and not a copy.** This block encodes five properties that are

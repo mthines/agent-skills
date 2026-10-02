@@ -34,9 +34,33 @@
       "type": "string",
       "maxLength": 240
     },
-    "memory": { "$ref": "#/$defs/memory" }
+    "memory": { "$ref": "#/$defs/memory" },
+    "scanned_files": {
+      "description": "SCANNED_FILES (pr-reviewer.md Step 2): every changed file this run read, as repo-relative paths. finalize.mjs derives the report's `Checked` line (COVERAGE) from it against context.scopePaths. Omit it and the line drops its files-read part.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "impact_trace": {
+      "description": "The consumer-impact and dependency trace: per changed export (and per dependency, symbol = package name, path = its manifest), the consumer FILES read and found to hold. finalize.mjs builds the report's `What this change reaches` section from it and impact.json; a file not listed renders as not checked.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/impact_trace_entry" }
+    }
   },
   "$defs": {
+    "impact_trace_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["symbol", "path", "verified"],
+      "properties": {
+        "symbol": { "description": "impact.json symbols[].name", "type": "string", "minLength": 1 },
+        "path": { "description": "impact.json symbols[].path — the file that defines the symbol", "type": "string", "minLength": 1 },
+        "verified": {
+          "description": "Consumer files read, whose use of the symbol still holds (a guard counts). Never a file the trace did not read.",
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "finder": {
       "type": "string",
       "enum": [

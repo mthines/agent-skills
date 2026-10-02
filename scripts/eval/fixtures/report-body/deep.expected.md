@@ -5,12 +5,51 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 
 **Blocking:** 1 blocking finding (see inline)
 
+**Checked:** 18 of 18 dependent files traced · 9 possible issues → 4 confirmed → 4 posted
+
 | Finding | Where | Severity |
 |---|---|---|
 | `LocalStore.search` drops the tenant filter | [`src/store/local.ts:96`](https://github.com/o/r/pull/2#discussion_r31) | 🟠 high · blocking |
 | Index rebuild runs on every cold start | [`src/store/index.ts:18`](https://github.com/o/r/pull/2#discussion_r32) | 🟡 medium |
 | Scalar filter is interpolated into a PostgREST operand | [`src/store/filter.ts:235`](https://github.com/o/r/pull/2#discussion_r33) | 🟡 medium |
 | Cold-start rebuild has no covering test | [`src/store/index.test.ts:12`](https://github.com/o/r/pull/2#discussion_r34) | 🟡 medium |
+
+<details>
+<summary>What this change reaches — 2 changed exports · 18 dependent files · 18 checked · 1 flagged · 1 dependency bump · 1 open-PR overlap</summary>
+
+```mermaid
+flowchart LR
+  subgraph pr["Changed in this PR"]
+    s1["retryRequest<br/>signature changed"]:::changed
+    s2["parseConfig<br/>body changed"]:::changed
+    d1["stripe 14.2.0 → 16.0.1<br/>major bump"]:::changed
+  end
+  s1c1["1 file<br/>✗ flagged — see findings"]:::bad
+  s1c2["13 files<br/>✓ checked"]:::ok
+  s2c1["4 files<br/>✓ checked"]:::ok
+  d1u["6 usage sites<br/>✓ checked"]:::ok
+  o1["PR 212 · alice<br/>also changes retryRequest"]:::warn
+  s1 --> s1c1
+  s1 --> s1c2
+  s2 --> s2c1
+  d1 --> d1u
+  o1 -.- s1
+  classDef changed fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
+  classDef ok fill:#e7f6ec,stroke:#16a34a,color:#14532d
+  classDef partial fill:#fef9c3,stroke:#ca8a04,color:#713f12
+  classDef unknown fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:4 3,color:#374151
+  classDef bad fill:#fde8e8,stroke:#dc2626,color:#7f1d1d
+  classDef warn fill:#fff4e5,stroke:#d97706,color:#78350f
+```
+
+**Telemetry:** production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`)
+
+- `retryRequest` (`src/api/client.ts`) — signature change · 14 consumer files · 13 verified unaffected · 1 finding inline
+- `parseConfig` (`src/config/load.ts`) — body change · 4 consumer files · 4 verified unaffected
+- `stripe` 14.2.0 → 16.0.1 (major) — 6 usage sites checked · [release notes](https://github.com/stripe/stripe-node/releases/tag/v16.0.0)
+- `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by `alice` — a semantic conflict is likely even if git merges both cleanly
+
+</details>
 
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
@@ -28,18 +67,6 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 **Open review threads (1)**
 
 - [`src/jobs/sync.ts:88`](https://github.com/o/r/pull/1#discussion_r9) — `retryRequest` now throws where it returned `null` (bot · `cursor`)
-
-<details>
-<summary>Impact — 2 changed exports · 18 consumers checked · 1 dependency delta · 1 open-PR overlap</summary>
-
-**Telemetry:** production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`)
-
-- `retryRequest` (`src/api/client.ts`) — signature change · 14 consumer files · 13 verified unaffected · 1 finding inline
-- `parseConfig` (`src/config/load.ts`) — body change · 4 consumer files · 4 verified unaffected
-- `stripe` 14.2.0 → 16.0.1 (major) — 6 usage sites checked · [release notes](https://github.com/stripe/stripe-node/releases/tag/v16.0.0)
-- `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by @alice — a semantic conflict is likely even if git merges both cleanly
-
-</details>
 
 <details>
 <summary>Withheld (1) — could not be verified from this runner</summary>

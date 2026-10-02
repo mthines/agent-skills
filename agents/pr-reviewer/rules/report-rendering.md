@@ -36,6 +36,7 @@ and both the renderer and the L1 guards match some of these headings as literal 
   - [`RUN.tier` and `RUN.depth` — the depth declaration](#runtier-and-rundepth--the-depth-declaration)
   - [The three groups inside the accordion](#the-three-groups-inside-the-accordion)
   - [Headlines](#headlines)
+  - [What a reader sees first — reach, coverage, progress](#what-a-reader-sees-first--reach-coverage-progress)
 - [The Gate 3 open threads: the count on the summary, the list in the accordion](#the-gate-3-open-threads-the-count-on-the-summary-the-list-in-the-accordion)
   - [`OPEN_THREADS_SUFFIX` — the counter on the summary](#openthreadssuffix--the-counter-on-the-summary)
   - [`OPEN_THREADS_LIST` — the bullets, inside the accordion](#openthreadslist--the-bullets-inside-the-accordion)
@@ -206,13 +207,15 @@ length**, so there is no count to supply and none to get wrong:
 | `OPEN_THREADS` | `[{path, line, url?, ask, blocking?, author?, is_bot?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`, then an author tag `` (bot · `author`) `` or `` (human · `author`) `` when `is_bot`/`author` are supplied (omitted when they are not); it derives `Open review threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. `is_bot` is a boolean (thread author's GitHub type is `Bot`); `author` is the login, code-wrapped by the renderer so it does not `@mention`. A missing `url` renders unlinked inline code, never a broken link. |
 | `RESOLVED_SINCE` | `{count, sha}` | Suppressed at `count: 0`. Rejected when `OPEN_THREADS` is empty — with Gate 3 clean the counter belongs in its Details cell. |
 | `MEMORIES_USED` | `[{key, url?, note?, kind?, evidence?}]` | One bullet per applied memory, under `MEMORIES_SUMMARY`. `kind` is `knowledge` · `hotspot` · `rule` ([`memory.md`](./memory.md)) and renders as a bold prefix; when any entry supplies one, the summary's `used` half gains a per-kind breakdown (`3 used (1 knowledge · 1 hotspot · 1 rule)`) derived from the array. `evidence` is an array of the PR numbers a `rule` was learned from, rendered `<sup>evidence #88 #91 #97</sup>`; a `rule`-kind entry with an empty `evidence` array is **rejected** — a suppression rule with no evidence trail is exactly the unauditable suppression `memory.md` forbids. Omit `evidence` entirely on the other two kinds. |
-| `IMPACT` | `{telemetry?, symbols?, dependencies?, overlaps?}` | The consequence-note accordion from [`impact-graph.md`](./impact-graph.md). `symbols` is `[{name, path, change, consumer_files, verified_unaffected, findings}]` — `change` is `signature` · `body` · `removed`; `dependencies` is `[{name, from, to, delta, usage_sites, url?}]`; `overlaps` is `[{pr, author, path, symbol?, url?}]`; `telemetry` is one plain line ([`telemetry.md`](./telemetry.md)). The renderer derives the `<summary>` counts, builds every link from `url`, and joins the three bullet groups into **one** list. It rejects `verified_unaffected + findings > consumer_files` and states any untraced remainder in the bullet, so a partial trace can never render as a complete one. |
+| `IMPACT` | `{telemetry?, symbols?, dependencies?, dependencies_omitted?, overlaps?}` | The `What this change reaches` accordion from [`impact-graph.md`](./impact-graph.md) — see *What a reader sees first* below. Built by `finalize/reach.mjs` from `impact.json` and `judgments.impact_trace` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)); a `context.render.IMPACT` overrides it. `symbols` is `[{name, path, change, consumer_files, verified_unaffected, findings, consumers?}]` — `change` is `added` · `signature` · `body` · `removed`; `consumers` is `[{path, line?, status}]` with `status` `finding` · `verified` · `untraced`, one entry per consumer **file**; `dependencies` is `[{name, from, to, delta, usage_sites, url?, checked_sites?}]` — `checked_sites` is how many usage sites a read covered (the bullet then says `checked`, `not checked`, or `K checked`; absent, it says every site was checked) — `reach.mjs` lists a renderable delta only when it is direct (`direct !== false`) or has at least one usage site; `dependencies_omitted` is a non-negative integer counting the transitive deltas with no usage site left out of `dependencies`, rendered as one bullet after the dependency bullets (`- N more dependency bumps — transitive, no usage sites in this repo, not listed`) and folded into the summary (`3 dependency bumps (2 transitive, not listed)`), so an unlisted bump is never hidden; `overlaps` is `[{pr, author, path, symbol?, url?}]`; `telemetry` is one plain line ([`telemetry.md`](./telemetry.md)). The renderer derives the `<summary>` counts and the diagram, builds every link from `url`, and joins the three bullet groups into **one** list. It rejects `verified_unaffected + findings > consumer_files`, and a `consumers` list whose `verified` / `finding` entries do not equal `verified_unaffected` / `findings` (list every verified and flagged file; an unlisted file is untraced), and states any untraced remainder in the bullet, so a partial trace can never render as a complete one. |
 | `WITHHELD` | `[{prefix, body, reason, path?, line?, url?}]` | The `unobtainable` findings from [`verification-receipt.md`](../../shared/rules/verification-receipt.md) — re-framed, not dropped. `reason` is **required** (which rung was unavailable); `prefix` must be `suggestion` or `question` and any other value is rejected, because nothing was verified so nothing is asserted. Renders in its own collapsed accordion with `<sup>(unverified: <reason>)</sup>`. |
 | `NOTES` | `[{path, line, url?, prefix, body, confidence}]` | The cleared one-liners (`nitpick` / `question` / `praise`) that **posted inline**. Renders as the `Notes (<M>) — posted inline` accordion and drives the heading's ` · <M> notes` clause. A claim prefix (`issue` / `suggestion`) is rejected here — a posted claim is a `FINDINGS` row. |
 | `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | Findings that cleared review but did **not** post (over the inline caps). `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. A posted note never belongs here — the accordion calls this list "too minor to comment on". |
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
 | `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. The heading itself is BUILT by `finalize/payload.mjs`'s `buildOptimalityCard()` from the judgment's own `path`/`line`, never taken from the model — `card_body` (the field the optimality lens actually supplies) is expected to EXCLUDE the heading, and `buildOptimalityCard()` strips a leading one if the model echoes its own `proposal.template.md` (which opens with the same heading) rather than starting its content after it, so a card never renders the heading twice. |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
+| `COVERAGE` | `{files_read, files_total, files_skipped?}` | Integers: the files read and the changed files in scope (every PR file on a `full` run — a promoted re-review included — the delta on an incremental one), less the files triage skipped (`SKIPPED_FILES`), which `files_skipped` counts. Built by `finalize/reach.mjs` from `judgments.scanned_files` against `context.scopePaths`, or from `PARTIAL_REVIEW` when the walk was truncated; a `context.render.COVERAGE` overrides it. Feeds the `**Checked:**` line. Rejected when `files_read > files_total`, or when it disagrees with `PARTIAL_REVIEW`'s `scanned` / `total`. |
+| `ROUNDS` | `[{sha, open, blocking}]` | Earlier runs' worklists, oldest first — built by `finalize.mjs` from the PR-state record's `runs[]`; never hand-supplied — `finalize.mjs` ignores a `context.render.ROUNDS`. Feeds the `**Progress:**` line; the renderer shows the last 4 plus this run. Rejected when a `sha` is not 7 hex chars or `blocking > open`. |
 | `FINDINGS` | `[{title, path, line?, url?, tier, blocking?}]` — the findings this run **posted inline**. Three renderings come from this one array: the headline's count and glyph (`### 🟠 4 findings — 1 blocking`), the visible findings index above the accordions, and the `Severity — ` tally (`🔴 1 critical · 🟠 2 high`, glyph paired with its word per WCAG 1.4.1). `title` is the **same string `render-comment.mjs` put on that comment's first line**, which is what makes an index row and the comment it links to recognisably the same finding. `tier` is required and enumerated (`critical` · `high` · `medium` · `low`); a `\|` in `title` is rejected (it would split the row). The renderer also rejects a `FINDINGS` length that disagrees with `QUALITY`'s `posted inline <N>` — they are the same number stated twice. |
 
 **Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
@@ -297,6 +300,42 @@ misremembered name exits 1 and the run posts no report — so does a v1-shaped p
 
 There is no way to add a section: every rendered block comes from the template. If a run has
 something to say that no slot covers, it belongs in the Step 5 terminal output.
+
+#### What a reader sees first — reach, coverage, progress
+
+Three renderer-derived blocks answer the questions a human reviewer asks before reading any
+finding, and each is built from slots, never written by the run. Their place in the body:
+headline region → `**Checked:**` → `**Progress:**` → findings index → Fix-all button →
+`What this change reaches` (the first accordion) → the other accordions.
+
+| Block | Renders | Derived from | Rendered when |
+| --- | --- | --- | --- |
+| `**Checked:**` line | `22 of 22 changed files read · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted` | `COVERAGE` (with `(N skipped)` from `files_skipped`); `IMPACT`'s dependent files, one per file; `QUALITY`'s `produced`, then confirmed = `FINDINGS` + `NOTES` + `ADDITIONAL_FINDINGS` and posted = `FINDINGS` + `NOTES` — never `QUALITY`'s `cleared`, which is the posted count by construction | any of the three parts exists. With nothing produced, the funnel reads `no possible issues found` — except on a `zero-delta` run (`RUN.mode`), where no finder ran, so that clause is omitted and only the other parts render (e.g. `**Checked:** 7 of 15 dependent files traced`) |
+| `**Progress:**` line | `open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews` | `ROUNDS`, plus this run's point: `OPEN_THREADS` + `FINDINGS` + `NOTES`, blocking from the first two (`comment-spine.mjs`'s `worklistCounts()`) | `ROUNDS` is non-empty. The `blocking` series is dropped when every point is 0 |
+| `What this change reaches` accordion | a Mermaid diagram, then the `**Telemetry:**` line and the impact bullets | `IMPACT` | `IMPACT` yields a summary. The diagram renders only with ≥ 3 edges |
+
+```markdown
+**Checked:** 22 of 22 changed files read · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted
+
+**Progress:** open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews
+```
+
+The diagram's rules, all enforced by `render-report.mjs`'s `reachDiagram()`:
+
+1. **Built from `IMPACT`, never authored.** A diagram the model drew is a claim nothing checks.
+2. **Status in words, colour second.** Every consumer node carries `✓ checked`, `✗ finding`, or `? not checked`; colour repeats it (WCAG 1.4.1).
+3. **Folders, not files.** Consumers group by directory; a file gets its own node only when it carries a finding. Without a `consumers` list, one node per status.
+4. **Nothing hidden by a cap.** At most 6 symbols and 6 consumer nodes per symbol; the tail folds into one `+N more files` node that keeps every status count, and the unlisted remainder renders as `? not checked`.
+5. **One dependent file per file.** A file that uses two changed exports counts once — checked when every export it uses was checked there, flagged when any was. Only a symbol with no `consumers` list is summed.
+6. **The bullets stay authoritative.** Email notifications and the ingest grammar read raw markdown, where the diagram is source code, so the `<summary>` states the takeaway (`15 dependent files · 7 checked · 1 flagged · 8 not checked`) and the bullets carry every count.
+7. **Inside its accordion only.** The renderer rejects a Mermaid block anywhere else, and a reach accordion inside or below `Review details`.
+
+```text
+✅ RIGHT — IMPACT.symbols[].consumers = [{path:"src/jobs/sync.ts", line:88, status:"finding"}, …]; the renderer draws it
+❌ WRONG — a hand-written Mermaid fence in SUMMARY, a card, or any prose slot
+```
+
+**Why:** a review's silence is read as coverage, so what was read, traced, and filtered is stated where a reader looks first.
 
 #### Headlines
 
@@ -643,8 +682,9 @@ nothing here for a run to remember, get wrong, or be guarded against. `F-report-
 and `F-report-accordion-expanded` are now render-time errors rather than review-time findings.
 
 The visible surface of a report is therefore whatever the template leaves outside the accordion:
-the marker, an optional partial-review banner, the headline, and the collapsed `<summary>` lines of
-the optional `<details>` blocks. A harness-appended attribution footer may also appear; it is not
+the marker, an optional partial-review banner, the headline, the `**Checked:**` and `**Progress:**`
+lines, and the collapsed `<summary>` lines of the optional `<details>` blocks — `What this change
+reaches` first. A harness-appended attribution footer may also appear; it is not
 authored here and must not be suppressed or reproduced.
 
 Rules for table cells:
@@ -711,15 +751,17 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   rather than a count; its rendered uses are the Step 3 terminal WARN/FAIL verdict lines and the
   Step 3 terminal WARN/FAIL verdict lines. It no longer reaches the posted headline, which counts
   findings and names gate state in its reasons line instead.
-- Never add rows, sections, or prose outside the template above (except the four `<details>`
-  blocks — `Review details`, `Optimality review`, `Additional findings`, and
-  `Low-confidence findings` — the three group headings, the `MEMORIES_SECTION` and
+- Never add rows, sections, or prose outside the template above (except the `<details>`
+  blocks — `What this change reaches`, `Review details`, `Optimality review`, `Additional findings`,
+  and `Low-confidence findings` — the three group headings, the `MEMORIES_SECTION` and
   `OPEN_THREADS_LIST` slots and the `Nothing to report` footnote inside `Review details`, the
-  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`, `FINDINGS_INDEX` and
-  `FOOTER_SUP` lines — all of which are slots in the template, not added prose).
+  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`, `COVERAGE_LINE`,
+  `PROGRESS_LINE`, `FINDINGS_INDEX` and `FOOTER_SUP` lines — all of which are slots in the
+  template, not added prose).
   Besides the headline region (headline, `SUMMARY`, reasons, advisory note), the banner, the
-  findings index, and the footer — all renderer-derived or renderer-validated, never hand-composed
-  — **no** prose of the agent's own is permitted at the top level of the body.
+  `**Checked:**` and `**Progress:**` lines, the findings index, and the footer — all
+  renderer-derived or renderer-validated, never hand-composed — **no** prose of the agent's own
+  is permitted at the top level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
 
 ### INLINE_COMMENTS_JSON format

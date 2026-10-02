@@ -154,7 +154,7 @@ Under `production+preview`, one comparison per touched route or service, preview
 | Signal | Treatment |
 | --- | --- |
 | An `exception.type` or error span name on the preview that the production baseline has **never** emitted on that route | an `issue (medium)` lead, verified against the diff like any other. The one preview signal strong enough to become a finding. |
-| Error-rate rise on a route the diff touches | consequence note in `Impact` — preview traffic is a handful of requests |
+| Error-rate rise on a route the diff touches | consequence note in `What this change reaches` — preview traffic is a handful of requests |
 | Latency shift (p50 / p99) | note only, marked `preview, n=<spans>`; **never** a finding. Cold starts and region make preview latency uninformative. |
 | No spans for the head SHA | `Telemetry: production (no preview spans for <sha7>)`; nothing inferred |
 
@@ -176,7 +176,7 @@ The comparison runs **outside** the reviewer: the `reviewer-comment-relevance.ym
 
 ## Report surface
 
-Inside the `Impact` accordion, one `Telemetry` line plus one consequence note per exposed symbol:
+Inside the `What this change reaches` accordion, one `Telemetry` line plus one consequence note per exposed symbol:
 
 ```markdown
 **Telemetry:** production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`)

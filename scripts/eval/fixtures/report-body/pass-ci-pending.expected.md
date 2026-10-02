@@ -3,6 +3,8 @@
 
 Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
+**Checked:** 3 possible issues → 0 confirmed → 0 posted
+
 <details>
 <summary>Review details</summary>
 

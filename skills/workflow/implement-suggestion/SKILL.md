@@ -433,8 +433,8 @@ quiet, CI goes red, or the iteration cap (default 5) is hit. Run it on purpose f
 reviewers who comment after the automated passes; `create-pr` no longer backgrounds it.
 
 The wait is the shared
-[review-activity poll](../../../agents/shared/rules/review-activity-poll.md) —
-co-owned with `review-loop --external-review`, never restated here.
+[review-activity poll](../../../agents/shared/rules/review-activity-poll.md),
+never restated here.
 
 **CI is a stop reason, never a fix.** After each iteration's push the loop reads
 check state once; a failing check stops it with `ci red — <check names>` and names
@@ -553,7 +553,6 @@ Templates:
 | --- | --- |
 | `ci-auto-fix` | **Owns red CI. This skill never fixes it.** The worker's pre-push checks (Phase 6) are local and gate the push; post-push check state is only ever read as a *stop reason* under `--watch`. No `ci-auto-fix` dispatch happens here, and none of its 2-handoff budget is spent. |
 | `review-loop` | **The composition point.** "Apply the review comments **and** get CI green" is `review-loop` (or `polish`), which sequences `pr-reviewer` → this skill → `polish simplify` → `ci-auto-fix`. Invoked standalone, this skill leaves red CI to the caller — deliberately. |
-| `review-loop --external-review` | Overlaps `--watch`: both wait on an out-of-process reviewer. `--watch` is the thin one (apply + push + stop). `review-loop --external-review` adds `--resolve-all`, `polish simplify`, the CI sub-step, and the description refresh. Both call the shared [review-activity poll](../../../agents/shared/rules/review-activity-poll.md). They never nest — `review-loop`'s hard rule forbids invoking this skill with `--watch`. |
 | `pr-reviewer` | Upstream producer of the findings this skill consumes; read-only, never invoked from here. |
 
 ## Key Principles

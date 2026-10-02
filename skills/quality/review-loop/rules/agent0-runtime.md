@@ -91,6 +91,19 @@ Set `STOP_REASON = "reviewer-refused"`, report the reply's first line verbatim, 
 Step 2.5's [post-refresh re-review](../SKILL.md#post-refresh-re-review--before-the-gates) is a sub-step A dispatch and uses this same prompt.
 A refusal there is `MERGE_REREVIEW = refused` and the PR is not merged; the loop has already converged, so `STOP_REASON` stays as it was.
 
+The [iteration-1 apply-first check](../SKILL.md#iteration-1--apply-first-when-the-last-review-still-stands) needs `context.json` before this dispatch, and the `general` reviewer prepares its own.
+So on iteration 1 the loop runs one prepare in its own context, runs the apply-first block against the `context.json` it wrote, and cleans the prepare up whether or not the check passed:
+
+```bash
+node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json
+# then, as its own Bash call: the apply-first block from SKILL.md, which reads <dir>/context.json
+node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --cleanup <dir>/context.json
+```
+
+`--cleanup` removes the prepared checkout, not `context.json`, so the order above is safe either way.
+
+When the check fails, dispatch the prompt above unchanged.
+
 ## Where each other sub-step reads its procedure
 
 | Sub-step | `SKILL.md` call | Agent0 file |

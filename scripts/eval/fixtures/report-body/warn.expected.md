@@ -5,6 +5,8 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
 **Warnings:** 2 open review threads; 3 non-blocking findings
 
+**Checked:** 7 possible issues → 5 confirmed → 5 posted
+
 | Finding | Where | Severity |
 |---|---|---|
 | Retry exhaustion now throws where it returned null | [`src/api/client.ts:214`](https://github.com/o/r/pull/1#discussion_r11) | 🟠 high |

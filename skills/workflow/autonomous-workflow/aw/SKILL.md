@@ -16,7 +16,7 @@ argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -163,33 +163,28 @@ not need to re-read per phase.
 any name (a Claude Agent SDK sub-agent has neither `Task` nor `Agent`) — so it
 hands back a draft PR flagged `NOT REVIEWED`: correctly reported, but unreviewed.
 **When the executor reports the review as skipped, run it yourself before handing
-back** — and pick the invocation by what *your* context can do, because
+back** — and pick the action by what *your* context can do, because
 `review-loop`'s own first sub-step is a dispatch and it will skip at iteration 0
 exactly as the executor did:
 
-| Your context | Invocation | Why |
+| Your context | Action | Why |
 | --- | --- | --- |
-| You hold a sub-agent dispatch tool (`Task`, `Agent`, or another spelling) | `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` | The normal path. You are one rung above the executor, so the dispatch that failed there succeeds here. |
-| You hold none | `Skill("review-loop", "<pr-url> --no-ci --no-preview-run --external-review")` | The loop cannot produce a review, so it waits for one another process posts (a review bot, a CI-triggered agent) and still applies, resolves, and converges those threads. Drop `--critical` — it only ever configured `pr-reviewer`, and the loop warns and ignores it here. |
+| You hold a sub-agent dispatch tool (`Task`, `Agent`, or another spelling), or you cannot tell | `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` | The normal path. You are one rung above the executor, so the dispatch that failed there succeeds here. When you could not tell, the loop's own Step 0 settles it and returns a named skip line if the capability is absent. |
+| You hold none | Do not invoke the loop. Hand back the draft PR flagged `NOT REVIEWED` | The loop has no review route without a dispatch tool, so invoking it only re-runs the skip the executor already reported. |
 
 Two rules keep this honest:
 
 - **Test the capability, not the name.** "No dispatch tool" means no available
   tool dispatches a sub-agent under any spelling. Reading the absence of `Task`
   alone as unavailability sends a fully dispatchable cloud session down the
-  `--external-review` row and silently downgrades a review that would have run.
-- **Fail closed toward `--external-review`, never toward the skip.** When you
-  cannot tell whether you hold the capability, pass `--external-review`: its
-  worst case is one bounded wait that finds nothing and converges over the
-  threads already on the PR, whereas a plain invocation's worst case is
-  `skipped (nested dispatch)` and no review at all. `--external-review` is
-  passed **deliberately by you as the caller** — that is the shape
-  [`review-loop`'s caller contract](../../../quality/review-loop/SKILL.md#caller-contract--run-this-loop-at-the-top-level-never-inside-a-sub-agent)
-  sanctions; the loop must never add the flag to itself.
+  no-review row and silently drops a review that would have run.
+- **A skip is always reported by name, never silent.** When you cannot tell
+  whether you hold the capability, invoke the loop: its worst case is
+  `skipped (nested dispatch)` or `skipped (sub-agent dispatch unavailable; …)`,
+  which you relay verbatim. Never read a skip line as a review that ran.
 
-Either way, record the outcome in `Degraded:` — name `--external-review` when you
-used it, and say plainly when no review happened. A green-CI draft PR is not a
-reviewed one.
+Either way, record the outcome in `Degraded:` and say plainly when no review
+happened. A green-CI draft PR is not a reviewed one.
 
 #### Verify at PR open — you dispatch `feature-pr-verifier`
 
