@@ -1,0 +1,340 @@
+// ui-verify adversarial probe harness.
+//
+// The adversarial pass (rules/adversarial.md) copies this file to
+// <output dir>/probes.spec.ts, keeps everything above the PROBES marker as-is,
+// and writes one test() per planned probe below it. Ephemeral scratch under
+// .agent/{branch}/ — never committed, never moved into the project's own tests.
+//
+// Run (from the repo checkout):
+//   "$PW" test --config "<output dir>/playwright.config.ts"
+// Every value comes from an ADV_* environment variable the pass exports from the
+// ephemeral aw-target overlay. A credential is read from the env var the overlay
+// NAMES — this file never holds a secret.
+
+import { test, type Page, type BrowserContext } from '@playwright/test';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const OUT = process.env.ADV_OUT!;                          // <output dir>, absolute
+const BASE = process.env.ADV_BASE_URL!;                    // overlay base_url, no trailing slash
+const STORAGE = process.env.ADV_STORAGE_STATE || '';       // overlay auth.storage_state, or ''
+const BYPASS_NAME = process.env.ADV_BYPASS_NAME || '';     // overlay auth.bypass_header.name
+const BYPASS_ENV = process.env.ADV_BYPASS_ENV || '';       // overlay auth.bypass_header.env (a NAME)
+const ALLOWED = new Set([
+  new URL(BASE).origin,
+  ...(process.env.ADV_ALLOWED_ORIGINS || '').split(',').filter(Boolean),
+]);
+const MOCKED = (process.env.ADV_MOCK_ENDPOINTS || '').split(',').filter(Boolean); // "POST /api/invites/**"
+const MASK_TESTIDS = (process.env.ADV_MASK_TESTIDS || '').split(',').filter(Boolean);
+const PASS_SHOTS = process.env.ADV_PASS_SHOTS !== '0';     // '0' under --no-screenshots
+const CAPTURES = join(OUT, 'captures');
+const RESULTS = join(OUT, 'results.jsonl');
+mkdirSync(CAPTURES, { recursive: true });
+
+test.use({
+  baseURL: BASE,
+  storageState: STORAGE || undefined,
+  extraHTTPHeaders:
+    BYPASS_NAME && process.env[BYPASS_ENV] ? { [BYPASS_NAME]: process.env[BYPASS_ENV]! } : {},
+  serviceWorkers: 'block', // a service worker answers requests page.route never sees
+  viewport: { width: 1280, height: 800 },
+});
+
+// ── Probe inputs — every persisted string carries MARK so test data is findable ──
+export const MARK = 'ui-verify-adv';
+export const XSS_MARK = 'ui-verify-adv-xss';
+export const PROBE_TEXT = {
+  empty: '',
+  whitespace: '   ',
+  padded: `  ${MARK}  `,
+  long: `${MARK}-` + 'x'.repeat(986), // 1000 characters
+  unicode: `${MARK} Zoë 名前 👩‍👩‍👧 مرحبا a\u200Bb`,
+  script: `"><img src=x onerror="console.log('${XSS_MARK}')">`, // benign: logs a marker, nothing else
+  templating: `${MARK} {{7*7}} \${7*7} %s`,
+};
+export const PROBE_NUMBERS = ['0', '-1', '1e21', '0.0000001', '1,5', 'abc'];
+/** Markup probe with a per-probe marker, so text earlier probes saved to the same field never matches it. */
+export const markupProbe = (id: string) => `<b data-adv="1">${MARK}-${id}</b>`;
+
+// ── Signals collected during one probe ──────────────────────────────────────────
+type Signals = {
+  console: string[];
+  pageErrors: string[];
+  failed: string[];
+  httpErrors: string[];
+  mutations: string[];
+  blocked: string[];
+};
+
+const READ_ONLY = ['GET', 'HEAD', 'OPTIONS'];
+
+function watch(page: Page): Signals {
+  const s: Signals = { console: [], pageErrors: [], failed: [], httpErrors: [], mutations: [], blocked: [] };
+  page.on('console', (m) => {
+    if (m.type() === 'error' || m.text() === XSS_MARK) s.console.push(m.text().slice(0, 300)); // exact: an app echoing the payload logs more than the marker
+  });
+  page.on('pageerror', (e) => s.pageErrors.push(e.message.slice(0, 300)));
+  page.on('requestfailed', (r) => s.failed.push(`${r.method()} ${r.url()} — ${r.failure()?.errorText}`));
+  page.on('response', (r) => {
+    if (r.status() >= 400) s.httpErrors.push(`${r.request().method()} ${new URL(r.url()).pathname} → ${r.status()}`);
+  });
+  page.on('request', (r) => {
+    if (!READ_ONLY.includes(r.method())) s.mutations.push(`${r.method()} ${new URL(r.url()).pathname}`);
+  });
+  return s;
+}
+
+function globMatches(rule: string, method: string, path: string): boolean {
+  const [m, p] = rule.trim().split(/\s+/);
+  if (!m || !p || m.toUpperCase() !== method) return false;
+  const re = p
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '\u0000')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\u0000/g, '.*');
+  return new RegExp(`^${re}$`).test(path);
+}
+
+// Guardrail (rules/adversarial.md § Guardrails): configured side-effect endpoints get
+// a stub; a mutating request to an origin outside ALLOWED is aborted and recorded.
+// A page.route() a probe adds for fault injection takes precedence over this, so it
+// must end every request it does not fault with route.fallback() — never
+// route.continue(), which sends it straight to the network past this guard:
+//   await page.route('**/api/dashboards/*', async (route) => {
+//     await new Promise((r) => setTimeout(r, 3000)); // the 3 s delay probe
+//     return route.fallback();
+//   });
+async function guard(context: BrowserContext, s: Signals) {
+  await context.route('**/*', async (route) => {
+    const req = route.request();
+    const url = new URL(req.url());
+    if (MOCKED.some((rule) => globMatches(rule, req.method(), url.pathname))) {
+      return route.fulfill({ status: 200, json: { ok: true, stubbedBy: MARK } });
+    }
+    if (!READ_ONLY.includes(req.method()) && !ALLOWED.has(url.origin)) {
+      s.blocked.push(`${req.method()} ${url.origin}${url.pathname}`);
+      return route.abort('blockedbyclient');
+    }
+    return route.fallback();
+  });
+}
+
+async function capture(page: Page, fullPage: boolean): Promise<Buffer | null> {
+  try {
+    return await page.screenshot({
+      fullPage,
+      animations: 'disabled',
+      caret: 'hide',
+      mask: MASK_TESTIDS.map((id) => page.getByTestId(id)),
+    });
+  } catch {
+    return null; // a capture that cannot be taken is a note, never a finding
+  }
+}
+
+function save(name: string, image: Buffer | null): string {
+  if (!image) return '';
+  const path = join(CAPTURES, `${name}.png`);
+  try {
+    writeFileSync(path, image);
+    return path;
+  } catch {
+    return '';
+  }
+}
+
+/** Wait for the app to settle after a hostile action, bounded so a hung app cannot stall the run. */
+export async function settle(page: Page, ms = 5000) {
+  await page.waitForLoadState('networkidle', { timeout: ms }).catch(() => {});
+}
+
+/** True when the page scrolls horizontally — the `overflow` oracle. */
+export async function overflowsHorizontally(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+}
+
+type Finding = { oracle: string; expected: string; actual: string };
+type Meta = {
+  id: string;
+  spec: string;
+  category: string;
+  probe: string;
+  slug: string;
+  fullPage?: boolean;
+  injection?: boolean; // the probe typed the script probe: reload once to catch STORED injection
+};
+type Body = (ctx: {
+  page: Page;
+  signals: Signals;
+  steps: string[];
+  before: () => Promise<void>;
+  restoreWith: (restore: () => Promise<void>) => void;
+}) => Promise<{ finding?: Finding; observed?: string }>;
+
+/**
+ * Run one probe: guard the context, collect signals, capture `before` (call it right
+ * before the hostile action) and `after`, and append one result line to results.jsonl.
+ * An XSS marker that fires AFTER `before()` is always the finding (critical outranks the
+ * body's oracle). One that fires earlier, on page load, is STORED injection from an
+ * earlier probe: it is recorded as `storedXss` for triage and does not mask this probe's
+ * own oracle. A pageerror is a finding when the body flagged none. A body that throws is
+ * a probe-error — the probe was wrong, not the app. Images are written to disk only for a
+ * finding or a probe-error, or for a pass when PASS_SHOTS is on.
+ * A body that is about to overwrite a record this run did not create registers its undo
+ * with `restoreWith` BEFORE the overwrite, so the restore runs even when the body throws.
+ * It runs last: after the `after` image and, for an `injection` probe, after the reload
+ * that catches a payload which only runs on a fresh load.
+ */
+export async function probe({ page, context }: { page: Page; context: BrowserContext }, meta: Meta, body: Body) {
+  const signals = watch(page);
+  await guard(context, signals);
+  const steps: string[] = [];
+  const prefix = `adv-${meta.id.replace(/^ADV-/, '').padStart(2, '0')}-${meta.category}-${meta.slug}`;
+  const xssCount = () => signals.console.filter((c) => c === XSS_MARK).length;
+  let xssAtBefore = 0;
+  let beforeImage: Buffer | null = null;
+  let outcome: 'pass' | 'finding' | 'probe-error' = 'pass';
+  let finding: Finding | undefined;
+  let observed = '';
+  let error = '';
+  let restore: (() => Promise<void>) | undefined;
+  try {
+    const r = await body({
+      page,
+      signals,
+      steps,
+      before: async () => {
+        xssAtBefore = xssCount();
+        beforeImage = await capture(page, meta.fullPage ?? false);
+      },
+      restoreWith: (fn) => {
+        restore = fn;
+      },
+    });
+    finding = r.finding;
+    observed = r.observed ?? '';
+    if (xssCount() > xssAtBefore) {
+      finding = { oracle: 'xss-executed', expected: 'probe input rendered as inert text', actual: 'injected handler ran (console marker fired)' };
+    }
+    if (!finding && signals.pageErrors.length) {
+      finding = { oracle: 'crash', expected: 'no uncaught exception', actual: `pageerror: ${signals.pageErrors[0]}` };
+    }
+    if (finding) outcome = 'finding';
+  } catch (e) {
+    outcome = 'probe-error';
+    error = String(e).slice(0, 300);
+  }
+  const afterImage = await capture(page, meta.fullPage ?? false);
+  // Stored injection: reload once BEFORE the restore removes the payload, so a script that
+  // only runs on a fresh load is caught by the probe that typed it.
+  let reloadImage: Buffer | null = null;
+  if (meta.injection && outcome !== 'probe-error') {
+    const firedBeforeReload = xssCount();
+    await page.reload().catch(() => {});
+    await settle(page);
+    if (xssCount() > firedBeforeReload) {
+      reloadImage = await capture(page, meta.fullPage ?? false);
+      finding =
+        finding?.oracle === 'xss-executed'
+          ? { ...finding, actual: `${finding.actual}, and again on a fresh load (stored)` }
+          : { oracle: 'xss-executed', expected: 'probe input rendered as inert text', actual: 'stored: injected handler ran on a fresh load' };
+      outcome = 'finding';
+    }
+  }
+  const evidence: string[] = [];
+  if (outcome !== 'pass' || PASS_SHOTS) {
+    evidence.push(save(`${prefix}-before`, beforeImage));
+    evidence.push(save(`${prefix}-after`, afterImage));
+    if (reloadImage) evidence.push(save(`${prefix}-reload`, reloadImage));
+  }
+  // Guardrail 8: undo the overwrite only now, so the images show the probe's result and
+  // the recorded signals are the ones the oracle judged, not the restore's own requests.
+  const judged: Signals = JSON.parse(JSON.stringify(signals));
+  let restoreError = '';
+  if (restore) await restore().catch((e) => { restoreError = String(e).slice(0, 300); });
+  appendFileSync(
+    RESULTS,
+    JSON.stringify({
+      ...meta,
+      outcome,
+      ...finding,
+      observed,
+      error,
+      storedXss: xssAtBefore > 0,
+      restoreError,
+      steps,
+      signals: judged,
+      evidence: evidence.filter(Boolean),
+    }) + '\n',
+  );
+}
+
+// ─────────────────────────────── PROBES ───────────────────────────────
+// One test() per planned probe. The two below are worked examples for a spec
+// that renames a dashboard — replace them with the probes in plan.md. Both
+// overwrite /dashboards/abc, a record this run did not create, so each reads the
+// current name first and registers a restore that renames it back (guardrail 8).
+
+async function currentName(page: Page): Promise<string> {
+  return (await page.getByRole('heading', { level: 1 }).textContent()) ?? '';
+}
+
+async function rename(page: Page, name: string) {
+  await page.getByRole('button', { name: 'Rename' }).click();
+  await page.getByRole('textbox', { name: 'Dashboard name' }).fill(name);
+  await page.getByRole('button', { name: 'Save' }).click();
+  await settle(page);
+}
+
+test('ADV-01 input: markup and script probe in the name field', async ({ page, context }) => {
+  await probe(
+    { page, context },
+    { id: 'ADV-01', spec: 'Spec-1', category: 'input', probe: 'markup + script probe in "Dashboard name"', slug: 'markup-name', injection: true },
+    async ({ page, steps, before, restoreWith }) => {
+      await page.goto('/dashboards/abc');
+      steps.push('open /dashboards/abc');
+      const original = await currentName(page);
+      restoreWith(() => rename(page, original));
+      await page.getByRole('button', { name: 'Rename' }).click();
+      steps.push('click {role: "button", name: "Rename"}');
+      await page.getByRole('textbox', { name: 'Dashboard name' }).fill(markupProbe('ADV-01') + PROBE_TEXT.script);
+      steps.push('fill {role: "textbox", name: "Dashboard name"} with the markup + script probe');
+      await before();
+      await page.getByRole('button', { name: 'Save' }).click();
+      steps.push('click {role: "button", name: "Save"}');
+      await settle(page);
+      const own = `${MARK}-ADV-01`;
+      const literalShown = await page.getByText(`<b data-adv="1">${own}`, { exact: false }).count();
+      const markShown = await page.getByText(own, { exact: false }).count();
+      if (!literalShown && markShown) {
+        return { finding: { oracle: 'markup-rendered', expected: 'the name shows the literal <b …> text', actual: 'the <b> tag rendered as HTML' } };
+      }
+      return { observed: literalShown ? 'probe text rendered as literal, inert text' : 'name rejected; probe text not shown' };
+    },
+  );
+});
+
+test('ADV-02 timing: double-click Save sends one request', async ({ page, context }) => {
+  await probe(
+    { page, context },
+    { id: 'ADV-02', spec: 'Spec-1', category: 'timing', probe: 'double-click "Save"', slug: 'double-click-save' },
+    async ({ page, signals, steps, before, restoreWith }) => {
+      await page.goto('/dashboards/abc');
+      steps.push('open /dashboards/abc');
+      const original = await currentName(page);
+      restoreWith(() => rename(page, original));
+      await page.getByRole('button', { name: 'Rename' }).click();
+      await page.getByRole('textbox', { name: 'Dashboard name' }).fill(`${MARK} Q3`);
+      steps.push(`fill {role: "textbox", name: "Dashboard name"} with "${MARK} Q3"`);
+      await before();
+      await page.getByRole('button', { name: 'Save' }).dblclick();
+      steps.push('double-click {role: "button", name: "Save"}');
+      await settle(page);
+      const patches = signals.mutations.filter((m) => m.startsWith('PATCH /api/dashboards/'));
+      if (patches.length > 1) {
+        return { finding: { oracle: 'duplicate-mutation', expected: 'one PATCH /api/dashboards/abc', actual: `${patches.length} PATCH requests from one double-click` } };
+      }
+      return { observed: `${patches.length} PATCH request(s); one success state` };
+    },
+  );
+});

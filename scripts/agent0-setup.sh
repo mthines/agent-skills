@@ -7,7 +7,7 @@
 # `sandbox.setupScript`. Change this file and the automation together.
 # Rule: agents/shared/rules/agent0-host.md.
 #
-# cache-key: 2026-09-30
+# cache-key: 2026-10-01
 #   The host caches this script's RESULT while the script TEXT is unchanged. With
 #   the default PIN (latest main) that means the install freezes at the commit
 #   it first resolved. To pick up a newer main, change this line — any edit to
@@ -212,6 +212,8 @@ check "description contract"  "$S/create-pr/rules/description-contract.md"
 check "ui-verify"             "$S/ui-verify/SKILL.md"
 check "ui-verify agent0"      "$S/ui-verify/rules/agent0-runtime.md"
 check "ui-verify runner"      "$S/ui-verify/rules/runner.md"
+check "ui-verify adversarial" "$S/ui-verify/rules/adversarial.md"
+check "adversarial harness"   "$S/ui-verify/templates/adversarial-probes.spec.ts.template"
 check "is-ui-diff"            "$S/ui-verify/scripts/is-ui-diff.mjs"
 check "aw-tester definition"  "$S/autonomous-workflow/templates/aw-tester.agent.md"
 check "spec-run contract"     "$S/autonomous-workflow/rules/spec-run-contract.md"

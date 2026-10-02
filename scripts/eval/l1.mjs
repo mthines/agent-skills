@@ -10496,7 +10496,107 @@ const isPollBlock = (block) =>
     /^## Where knowledge goes/m.test(root) && root.includes("`G86`"));
 }
 
-// ── G87: what a reader sees first — reach diagram, Checked line, Progress line ──
+// ── G87: ui-verify adversarial pass — reachable, never verdict-changing, guarded, evidenced ──
+//
+// `ui-verify run` tries to break every passing spec after the happy-path run and documents each
+// probe with screenshots (rules/adversarial.md). Four properties hold it together, each spanning
+// files no single edit sees at once:
+//   1. it is REACHABLE — runner.md Step 4b dispatches it and SKILL.md advertises the opt-out;
+//   2. it NEVER changes the verdict — its block carries no `verdict` key, and every caller that
+//      relays it (runner.md Step 5, review-loop Step 1.6) says so;
+//   3. it is GUARDED — the rule's destructive pattern and benign-injection rules exist, and the
+//      harness template actually aborts off-origin mutations and uses the rule's XSS marker;
+//   4. the Agent0 dispatch keeps runner.md's input lines, and sits AFTER the aw-tester block so
+//      G59b's first-match read still lands on aw-tester.
+// break-shape: delete Step 4b's `adversarial.md` link, add `verdict:` inside the block schema,
+// rename XSS_MARK in the template, drop an input line from the Agent0 block, or move that block
+// above the aw-tester one — the matching sub-check flips red.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
+  const UV = readOr("skills/testing/ui-verify/SKILL.md");
+  const ADV = readOr("skills/testing/ui-verify/rules/adversarial.md");
+  const TPL = readOr("skills/testing/ui-verify/templates/adversarial-probes.spec.ts.template");
+  const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
+  const STEP4B = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 4b: Adversarial pass — try to break it");
+  const STEP5 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 5: Report the verdict");
+  const RL16 = sectionOr("skills/quality/review-loop/SKILL.md", "### Step 1.6: UI-verify run (report-only, once, on exit)");
+
+  // G87a — reachable: Step 4b exists, delegates to the rule, and records the opt-out.
+  s.check("G87a the guard reads runner.md's Step 4b section", STEP4B.length > 400,
+    "a renamed, removed, or demoted Step 4b heading yields an empty slice, and every check below would read nothing");
+  s.check("G87a runner.md Step 4b delegates to adversarial.md and records the --no-adversarial skip",
+    /\(\.\/adversarial\.md\)/.test(STEP4B) && STEP4B.includes("`adversarial: skipped (--no-adversarial)`"),
+    "Step 4b no longer links rules/adversarial.md or no longer records the opt-out line");
+  s.check("G87a SKILL.md advertises --no-adversarial and links the rule",
+    /argument-hint:[^\n]*--no-adversarial/.test(UV) && UV.includes("(./rules/adversarial.md)"),
+    "ui-verify SKILL.md lost --no-adversarial in argument-hint or its link to rules/adversarial.md");
+
+  // G87b — never verdict-changing: stated in Step 4b and Step 5, and the block schema has no verdict key.
+  // Scoped to § Step 6: § Configuration also opens a ```yaml adversarial: block, so a
+  // whole-file first match would read whichever section happens to come first.
+  const STEP6 = sectionOr("skills/testing/ui-verify/rules/adversarial.md", "## Step 6: Return the adversarial block");
+  const advBlock = (STEP6.match(/```yaml\nadversarial:\n[\s\S]*?\n```/) || [""])[0];
+  s.check("G87b the guard found adversarial.md's return-block schema", advBlock.length > 200,
+    "the ```yaml adversarial: block in rules/adversarial.md § Step 6 is missing");
+  s.check("G87b the adversarial block schema carries no verdict key",
+    advBlock.length > 200 && !/^\s*verdict:/m.test(advBlock),
+    "a `verdict:` key inside the adversarial block lets the pass restate — and so change — the happy-path verdict");
+  s.check("G87b runner.md Step 4b and Step 5 both state the pass never changes the verdict",
+    /never changes the verdict/i.test(STEP4B) && /never by rewriting `verdict`/.test(STEP5),
+    "Step 4b or Step 5 no longer keeps the verdict separate from adversarial findings");
+  s.check("G87b review-loop Step 1.6 relays the adversarial summary and keeps it report-only",
+    RL16.includes("adversarial: …") && /never turns a\s+`green` into a `red`/.test(RL16),
+    "review-loop Step 1.6 drops the adversarial summary line or lets it gate");
+
+  // G87c — guarded: the rule's guardrails exist, and the harness enforces the ones code can.
+  const guards = sectionOr("skills/testing/ui-verify/rules/adversarial.md", "## Guardrails");
+  s.check("G87c adversarial.md § Guardrails keeps the destructive pattern, the created-record exception, and the no-alert rule",
+    /delete\|remove\|destroy/.test(guards) && guards.includes("ui-verify-adv") && /Never `alert\(\)`/.test(guards),
+    "a guardrail the pass depends on was removed from rules/adversarial.md § Guardrails");
+  const tplMark = (TPL.match(/export const XSS_MARK = '([^']+)'/) || [])[1];
+  s.check("G87c the harness template's XSS marker is the one the rule's oracle names",
+    !!tplMark && ADV.includes(`exactly \`${tplMark}\``) && TPL.includes("m.text() === XSS_MARK")
+      && TPL.includes("(c) => c === XSS_MARK"),
+    `template XSS_MARK=${tplMark}; the xss-executed oracle in rules/adversarial.md must name the same marker as an exact match, and both template match sites (the console filter and xssCount) must compare with ===`);
+  s.check("G87c the harness template aborts off-origin mutations and shoots deterministic images",
+    /route\.abort\('blockedbyclient'\)/.test(TPL) && /animations: 'disabled'/.test(TPL) && /caret: 'hide'/.test(TPL),
+    "templates/adversarial-probes.spec.ts.template lost its off-origin abort or its deterministic screenshot options");
+  // Guardrail 8's restore runs LAST in probe(): after the `after` image and the stored-injection
+  // reload, so the images show the probe's result and the reload still sees the payload.
+  const probeFn = (TPL.match(/export async function probe\([\s\S]*?\n}\n/) || [""])[0];
+  const iAfter = probeFn.indexOf("const afterImage = await capture(");
+  const iReload = probeFn.indexOf("await page.reload()");
+  const iRestore = probeFn.indexOf("await restore()");
+  const hasG8 = /\*\*Restore what you overwrote\.\*\*/.test(guards);
+  s.check("G87c the harness runs a probe's restore after its after image and its stored-injection reload",
+    /restoreWith:/.test(TPL) && iAfter > 0 && iReload > iAfter && iRestore > iReload && hasG8,
+    `probe(): afterImage@${iAfter}, reload@${iReload}, restore@${iRestore}; guardrail 8 present: ${hasG8}`);
+
+  // G87d — every oracle has exactly one tier from the severity skill's vocabulary.
+  const oracleRows = ADV.split("\n").filter((l) => /^\| `[a-z0-9-]+` \| .* \| (critical|high|medium|low|\S+) \|$/.test(l) && !/^\| `(input|timing|network|navigation|keyboard|numeric|session|data|layout|preferences|locale)`/.test(l));
+  const badTier = oracleRows.filter((l) => !/\| (critical|high|medium|low) \|$/.test(l));
+  s.check("G87d every adversarial oracle carries a critical/high/medium/low severity",
+    oracleRows.length >= 10 && badTier.length === 0,
+    `oracle rows: ${oracleRows.length}; rows with a tier outside the severity vocabulary: ${badTier.map((l) => l.slice(0, 40)).join(" | ") || "none"}`);
+
+  // G87e — the Agent0 dispatch is general, reads the installed rule, keeps Step 4b's input lines,
+  // and comes AFTER the aw-tester block (G59b reads the first <dispatch>( block).
+  const blocks = A0.match(/<dispatch>\(\n[\s\S]*?\n\)/g) || [];
+  const advA0 = blocks.find((b) => b.includes("rules/adversarial.md")) || "";
+  const step4bTask = (STEP4B.match(/subagent_type: "general-purpose"[\s\S]*?\n\)/) || [""])[0];
+  const inputs = ["Aw-Target file:", "Specs file:", "Probe specs:", "Playwright bin:", "Output dir:", "Lessons:", "Mode:"]
+    .map((k) => (step4bTask.match(new RegExp(`${k}[^\\n]*`)) || [""])[0].trim());
+  const drift = inputs.filter((l) => !l || !advA0.includes(l));
+  s.check("G87e the Agent0 adversarial dispatch is general, reads the installed rule, and keeps Step 4b's inputs",
+    /subagent_type: "general"/.test(advA0) && advA0.includes("/skills/ui-verify/rules/adversarial.md") && drift.length === 0,
+    `input lines missing from the Agent0 adversarial block: ${drift.join(" | ") || "none"}`);
+  s.check("G87e the aw-tester dispatch stays the FIRST <dispatch>( block in agent0-runtime.md",
+    blocks.length >= 2 && blocks[0].includes("templates/aw-tester.agent.md") && blocks.indexOf(advA0) > 0,
+    "G59b reads the first <dispatch>( block as aw-tester's; the adversarial block must come after it");
+}
+
+// ── G88: what a reader sees first — reach diagram, Checked line, Progress line ──
 // The report states coverage where a reader looks first. These execute the renderer (and the
 // pieces that feed it) rather than grepping prose, and each was proven to bite by breaking what
 // it guards: drop the consumers cross-check, emit the diagram outside its accordion, unescape a
@@ -10514,16 +10614,16 @@ const isPollBlock = (block) =>
   const reachAt = good.out.indexOf("<details>\n<summary>What this change reaches — ");
   const detailsAt = good.out.indexOf("<details>\n<summary>Review details");
   const fenceAt = good.out.indexOf("```mermaid");
-  s.check("G87a the reach accordion renders above Review details and holds the only Mermaid block",
+  s.check("G88a the reach accordion renders above Review details and holds the only Mermaid block",
     good.ok && reachAt !== -1 && reachAt < detailsAt && fenceAt > reachAt
       && fenceAt < good.out.indexOf("</details>", reachAt) && good.out.split("```mermaid").length === 2, good.err);
-  s.check("G87b the Checked and Progress lines render above every accordion",
+  s.check("G88b the Checked and Progress lines render above every accordion",
     good.ok && /^\*\*Checked:\*\* 22 of 22 changed files read · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted$/m.test(good.out.split("<details>")[0])
       && /^\*\*Progress:\*\* open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews$/m.test(good.out.split("<details>")[0]));
 
   const mismatch = clone();
   mismatch.IMPACT.symbols[0].verified_unaffected = 6;
-  s.check("G87c a consumers list that disagrees with verified_unaffected is rejected",
+  s.check("G88c a consumers list that disagrees with verified_unaffected is rejected",
     !render(mismatch).ok);
 
   const quoted = clone();
@@ -10532,53 +10632,53 @@ const isPollBlock = (block) =>
   quoted.IMPACT.symbols[0].consumers[5].path = "src/x#y/poll.ts";
   const q = render(quoted);
   const fence = (q.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
-  s.check("G87d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
+  s.check("G88d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
     q.ok && fence.includes("we#quot;ird") && !fence.includes('we"ird')
       && fence.includes("x#35;y") && !fence.includes("x#y"), q.err);
 
   const smallGraph = clone();
   smallGraph.IMPACT = { symbols: [{ name: "f", path: "a.ts", change: "body", consumer_files: 1, verified_unaffected: 1, findings: 0 }] };
   const sg = render(smallGraph);
-  s.check("G87e a graph with fewer than 3 edges renders the bullets without a diagram",
+  s.check("G88e a graph with fewer than 3 edges renders the bullets without a diagram",
     sg.ok && sg.out.includes("<summary>What this change reaches — ") && !sg.out.includes("```mermaid"), sg.err);
 
   const badRound = clone();
   badRound.ROUNDS[0].blocking = 9;
   const partialMismatch = clone();
   partialMismatch.PARTIAL_REVIEW = { calls: 60, scanned: 13, total: 22 };
-  s.check("G87f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
+  s.check("G88f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
     !render(badRound).ok && !render(partialMismatch).ok);
 
   const noRounds = clone();
   delete noRounds.ROUNDS;
-  s.check("G87g a first review renders no Progress line",
+  s.check("G88g a first review renders no Progress line",
     render(noRounds).ok && !render(noRounds).out.includes("**Progress:**"));
 
   const FIN = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
   const SPINE = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "utf8");
   const RR = readFileSync(RENDER, "utf8");
-  s.check("G87h the Progress line and the PR-state round use one worklistCounts() from the spine",
+  s.check("G88h the Progress line and the PR-state round use one worklistCounts() from the spine",
     /export function worklistCounts\(/.test(SPINE) && /worklistCounts\(\{ openThreads, findings, notes: arr\("NOTES"\) \}\)/.test(RR)
       && /const round = worklistCounts\(/.test(FIN) && /\n\s+round,\n\s+findingsBusRecords,/.test(FIN));
   const fst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "--self-test"], { encoding: "utf8" });
-  s.check("G87i finalize forwards context.priorRun.rounds as ROUNDS and reports its own round (self-test)",
+  s.check("G88i finalize forwards context.priorRun.rounds as ROUNDS and reports its own round (self-test)",
     fst.status === 0 && /✓ ROUNDS reaches the payload from context\.priorRun\.rounds/.test(fst.stdout || "")
       && /✓ finalize reports this run's worklist as `round`/.test(fst.stdout || ""));
   const POST = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
-  s.check("G87j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
+  s.check("G88j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
     /--argjson round "\$\(jq -c '\.round \/\/ \{open: null, blocking: null\}' \/tmp\/finalize\/finalize-result\.json/.test(POST)
       && /open: \$round\.open, blocking: \$round\.blocking\}/.test(POST));
-  s.check("G87l finalize builds COVERAGE and IMPACT from scanned_files / impact_trace / impact.json, and a supplied value wins (self-test)",
+  s.check("G88l finalize builds COVERAGE and IMPACT from scanned_files / impact_trace / impact.json, and a supplied value wins (self-test)",
     fst.status === 0 && /✓ COVERAGE is derived from scanned_files against scopePaths/.test(fst.stdout || "")
       && /✓ IMPACT is built from impact\.json and impact_trace/.test(fst.stdout || "")
       && /✓ a caller-supplied COVERAGE \/ IMPACT wins over the auto-built one/.test(fst.stdout || ""));
   const SCHEMA = JSON.parse(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/schemas/judgments.schema.json"), "utf8"));
-  s.check("G87m judgments.schema.json accepts scanned_files and impact_trace, and posting.md tells the run to supply them",
+  s.check("G88m judgments.schema.json accepts scanned_files and impact_trace, and posting.md tells the run to supply them",
     Boolean(SCHEMA.properties?.scanned_files) && Boolean(SCHEMA.properties?.impact_trace)
       && !(SCHEMA.required || []).includes("scanned_files") && !(SCHEMA.required || []).includes("impact_trace")
       && /^\| `scanned_files` \|/m.test(POST) && /^\| `impact_trace` \|/m.test(POST));
   const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-  s.check("G87n prepare-review.mjs writes scopePaths (empty on zero-delta) for the Checked line",
+  s.check("G88n prepare-review.mjs writes scopePaths (empty on zero-delta) for the Checked line",
     /scopePaths: contextMode === "zero-delta" \? \[\] : deltaFiles\.map\(\(f\) => f\.filename\),/.test(PRSRC));
   // Executed directly (an import, not the 60 s self-test G84r already runs): a record with one
   // legacy run (no counts), one malformed run (blocking > open), and two good ones.
@@ -10592,7 +10692,7 @@ const isPollBlock = (block) =>
       { sha: "3333333aaaa", mode: "incremental", open: 4, blocking: 1 },
       { sha: "4444444", mode: "full", open: 2, blocking: 0 } ] } }));
     console.log(JSON.stringify(readStateFile(p).rounds));`], { encoding: "utf8", cwd: REPO_ROOT });
-  s.check("G87k prepare-review reads runs[] open/blocking into rounds, skipping legacy and malformed runs",
+  s.check("G88k prepare-review reads runs[] open/blocking into rounds, skipping legacy and malformed runs",
     rsf.status === 0 && (rsf.stdout || "").trim() === JSON.stringify([{ sha: "3333333", open: 4, blocking: 1 }, { sha: "4444444", open: 2, blocking: 0 }]),
     (rsf.stdout || rsf.stderr || "").trim().slice(0, 200));
 }
