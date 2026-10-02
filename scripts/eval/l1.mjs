@@ -10803,7 +10803,7 @@ const isPollBlock = (block) =>
   // (c) both runners detect the format, follow the contract's § 6, and use the same cache.
   for (const [label, t] of [["aw-tester.agent.md", AWT], ["aw-tester-chrome/SKILL.md", CHR]]) {
     s.check(`G89c ${label} detects Format: intent and runs it with the shared route cache and evidence keys`,
-      t.includes("`Format: intent`") && t.includes(".aw-tester/routes/") && t.includes("[must-follow]")
+      /header[\s\S]{0,120}carries the line `Format: intent`/.test(t) && t.includes(".aw-tester/routes/") && t.includes("[must-follow]")
         && t.includes("not-exercised") && /route: (explored|`replayed`|replayed)/.test(t) && /§ ?6/.test(t),
       `${label} is missing the format detection, the routes/ cache, the must-follow rule, or the route/changed keys`);
   }
@@ -10833,9 +10833,19 @@ const isPollBlock = (block) =>
   s.check("G89e ui-verify's hard rules keep the outcome strict while the route flexes",
     UV.includes("**A route may change; an outcome may not.**") && UV.includes("**Never fork either spec format.**"),
     "ui-verify SKILL.md lost the rule that an intent spec passes only with evidence for every Expected item");
-  s.check("G89e create-pr's description contract and review-loop name the v2 block",
-    DC.includes("<!-- ui-verify:v2 -->") && /ui-verify:v2/.test(RL),
-    "a downstream that only knows the v1 marker would count the v2 block against the length budget or drop it on refresh");
+  // Each of the description contract's four rule sites must know v2 on its own line — one mention
+  // elsewhere in the file must not cover for a site that still only knows v1.
+  const dcLine = (re) => DC.split("\n").find((l) => re.test(l)) ?? "";
+  const dcSites = [
+    ["the length-budget exemption", dcLine(/^\*\*One region is exempt/), (l) => l.includes("<!-- ui-verify:v2 -->")],
+    ["the single owned region", dcLine(/^- \*\*The block is a single owned region\*\*/), (l) => l.includes("<!-- ui-verify:v2 -->")],
+    ["the refresh rule", dcLine(/^\*\*On refresh \(the `review-loop` case\):\*\*/), (l) => /whichever marker version/.test(l)],
+    ["the Step 5 line count", dcLine(/Count the rendered lines of the body/), (l) => l.includes("<!-- ui-verify:v2 -->")],
+  ];
+  const dcStale = dcSites.filter(([, l, ok]) => !ok(l)).map(([n]) => n);
+  s.check("G89e create-pr's description contract knows the v2 block at every rule site, and review-loop reads it",
+    dcStale.length === 0 && /`<!-- ui-verify:v2 -->` \(or `v1`\) block/.test(RL),
+    `description-contract.md sites still v1-only: ${dcStale.join(" · ") || "none"} — a v1-only site counts the v2 block against the budget or drops it on refresh`);
 }
 
 process.exit(s.report() ? 0 : 1);
