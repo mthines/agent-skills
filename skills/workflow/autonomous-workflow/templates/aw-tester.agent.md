@@ -469,11 +469,15 @@ For each `## Spec N:` block, in order:
    and look for `$AW_DIR/routes/Spec-N-<sha8>.md` — the route cache,
    `.agent/<branch>/.aw-tester/routes/`, which persists across runs in this
    worktree like `last-run.spec.ts` does.
-2. **Hit → replay.** Compile that grammar block into `last-run.spec.ts` with the
-   rest of this file's grammar path and run it. Then judge each `# uncompiled:`
-   item with one probe (below) that replays the route's actions and checks the
-   item. All pass → `route: replayed`, copy the file's `# deviations:` line into
-   `deviations`. Any fail → heal: go to step 3 once, and report `route: healed`.
+2. **Hit → replay, in one launch.** Run the route through the probe below once:
+   its `url:` as `start`, its `WHEN` actions as `steps`, and as `checks` every
+   `THEN` locator plus a locator for each `# uncompiled:` item. Grade the spec
+   from that single launch — `THEN`s and network items from `checks` and
+   `requests`, the uncompiled items from `checks` and `aria`. Never launch a
+   second time to judge an item: the route's mutations run exactly once
+   (contract § 6.2). All pass → `route: replayed`, copy the file's
+   `# deviations:` line into `deviations`. Any fail → heal: go to step 3 once,
+   and report `route: healed`.
 3. **Miss (or heal) → explore with the probe loop below**, grade per contract
    § 6.5, and on a pass write the compiled route to
    `$AW_DIR/routes/Spec-N-<sha8>.md` with its four comment lines — unless an
