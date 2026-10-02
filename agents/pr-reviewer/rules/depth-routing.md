@@ -226,7 +226,7 @@ continuously instead of jumping at two tier boundaries.
 
    | Tier | Default `t` | What the default turns on, over the band below it |
    | --- | --- | --- |
-   | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode); holistic escalation cap 2 → 4 |
+   | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode); holistic escalation cap 2 → 4; `hybrid` topology lever — a defaulted quick run still dispatches nothing, because `prepare-review.mjs` gives a quick routing the `incremental-quick` mode (unless `--full`/`--isolated` forces `full`) and [`dispatch-topology.md`](./dispatch-topology.md#the-two-topologies)'s small-incremental row keeps that mode `in-context` |
    | `standard` | 0.7 | optimality lens lever — the lens itself runs on `full`-mode runs only, because [`pr-reviewer.md` § 2.4c](../../pr-reviewer.md) skips it on incremental re-reviews; holistic escalation cap 5 → 7 |
    | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2; holistic escalation cap 8 → 10 |
 

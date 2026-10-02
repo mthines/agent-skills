@@ -29,7 +29,7 @@ and in what grouping* is prescribed here.
 
 | Topology | When | Sub-agents | Why |
 | --- | --- | --- | --- |
-| `in-context` | `t < 0.4`, or no dispatch capability | none | A quick review is cheaper than one dispatch's base cost. |
+| `in-context` | `t < 0.4`, or no dispatch capability | none | A review this light — below `quick`'s 0.4 default, so only an explicit override — is cheaper than one dispatch's base cost. |
 | `in-context` | a small incremental re-review: run mode `incremental`, `incremental-quick`, or `zero-delta`, tier `standard` or `quick`, thoroughness **defaulted** (`budget.topologyReason: "small-incremental"`) | none | **Unmeasured.** The A/B evidence in the next row is one deep, full, 22-file review; no A/B round ran an incremental re-review. On dash0#20655 the reviewer idled ~125 s waiting for the worker. An explicit `--thoroughness` or `--effort high` keeps `hybrid`. |
 | `hybrid` | **the default at `t ≥ 0.4`**, except the row above | the intent finder only (`budget.isolatedFinders`) | A/B rounds 7–8 on sync-tray#72: isolated, the intent finder flagged the highest-severity agreed defect in 3 of 3 runs, in 5–6 minutes each; in one context with the other finders, the default setting had missed it in 4 of 4 rounds. |
 
