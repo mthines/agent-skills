@@ -11046,7 +11046,8 @@ const isPollBlock = (block) =>
 // break-shape: drop a field row from spec-format.md, swap runner.md's v2/v1 order, put
 // `preview-spec:v1` back in the embedded template, delete a grading row, swap two grading rows,
 // delete an unreachable cause, drop the probe's `locator matched` guard, drop the probe's
-// `if (s.dry)` guard, § 6.4's route-drift cause, or a runner's `# mutations:` writer or heal rule —
+// `if (s.dry)` guard, § 6.4's route-drift cause, a heal case that re-explores after a performed
+// mutation, or a runner's `# mutations:` writer or heal rule —
 // the matching sub-check flips red.
 {
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
@@ -11122,6 +11123,8 @@ const isPollBlock = (block) =>
       && /fired a `POST`, `PUT`, `PATCH`, or `DELETE` was a mutation/.test(S62)
       && S64.includes("route drifted after a mutation")
       && /on a `# mutations:` line/.test(S66) && /cause `route drifted after a mutation`/.test(S66)
+      && /every route step ran\*\* → never explore again/.test(S66)
+      && /a later route step failed\*\* → never explore again/.test(S66)
       && S66.includes("**A route is written only from a full exploration from `start`.**"),
     "contract § 6 lost the mutation-once rule, its request evidence, § 6.4's route-drift cause, the # mutations: writer or heal, or the full-exploration-only cache rule");
   s.check("G91f aw-tester's probe dry-resolves a mutation, records issued mutating requests, writes # mutations:, and heals by it",
@@ -11130,6 +11133,8 @@ const isPollBlock = (block) =>
       && AWT.includes("**commit launch**")
       && /heal by the route's\s+`# mutations:` line/.test(AWT)
       && /skipped: route drifted after a mutation/.test(AWT)
+      && /every route step ran → re-judge[\s\S]{0,120}without launching again/.test(AWT)
+      && /a later route step failed → delete the\s+route file/.test(AWT)
       && /comment lines —\s+`# mutations:` lists the `WHEN` positions/.test(AWT),
     "a probe that replays a performed mutation or reads `fired` from responses, or a runner that stops writing # mutations: or heals past a performed mutation, would pass L1");
   s.check("G91f aw-tester-chrome writes # mutations:, heals by it, never repeats a performed mutation, and never caches a continued heal",
