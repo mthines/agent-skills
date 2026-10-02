@@ -10381,6 +10381,59 @@ const isPollBlock = (block) =>
     RTD.includes("`pr_review.intent_wait_ms`") && /\| `intent-wait` \| hybrid only: after `verify`/.test(RTD) && /\| `intent-verify` \|/.test(RTD));
 }
 
+// ── G84s: the verify marker opens before the verification it measures, and carries its count ──
+// A `verify` issued alongside the next marker books the whole verification to that step, so the
+// trace blames the wrong step. Executed, not grepped: the CLI's notes and the summary's empty flag
+// are what a run actually sees.
+// break-shape: drop the markerNotes call from `step`, its empty-verify check, or the verify rule in
+// run-telemetry.md / dispatch-topology.md, and the matching sub-check flips red.
+{
+  const TEL = join(REPO_ROOT, "agents/pr-reviewer/scripts/review-telemetry.mjs");
+  const telSrc = readFileSync(TEL, "utf8");
+  s.check("G84s review-telemetry.mjs requires a candidates count on verify and checks every marker before recording it",
+    /export const STEP_REQUIRED_ATTRS = Object\.freeze\(\{ verify: Object\.freeze\(\["candidates"\]\) \}\);/.test(telSrc)
+      && /const \{ notes, emptyVerify \} = markerNotes\(readLedger\(runDir\), name, attrBag\);/.test(telSrc));
+
+  const probeDir = mkdtempSync(join(tmpdir(), "g84s-"));
+  try {
+    const mark = (/** @type {string[]} */ args) => spawnSync(process.execPath, [TEL, ...args, "--run-dir", probeDir], { encoding: "utf8" });
+    mark(["begin", "--repo", "o/r", "--pr", "1"]);
+    const a = mark(["step", "verify", "--attr", "tool_calls_so_far=30"]);
+    const b = mark(["step", "intent-wait", "--attr", "tool_calls_so_far=30"]);
+    const c = mark(["step", "verify", "--attr", "tool_calls_so_far=31", "--attr", "candidates=0"]);
+    const d = mark(["step", "judgments", "--attr", "tool_calls_so_far=31"]);
+    s.check("G84s a count-less verify and a verify chained onto the next marker each get a note, a verify with candidates=0 none, and every marker exits 0",
+      [a, b, c, d].every((x) => x.status === 0) && /candidates=<n>/.test(a.stderr) && /booked to `intent-wait`/.test(b.stderr)
+        && !/note —/.test(c.stderr) && !/note —/.test(d.stderr),
+      `${a.stderr}|${b.stderr}|${c.stderr}|${d.stderr}`.slice(0, 400));
+    const sum = spawnSync(process.execPath, ["--input-type=module", "-e",
+      `import { buildRun, summarize, readLedger } from ${JSON.stringify(pathToFileURL(TEL).href)};`
+      + ` const r = buildRun(readLedger(${JSON.stringify(probeDir)}));`
+      + ` console.log(JSON.stringify(summarize(r).steps.filter((x) => x.name === "verify").map((x) => ({ empty: x.empty === true, candidates: x.candidates ?? null }))));`],
+      { encoding: "utf8" });
+    s.check("G84s the chained verify is flagged empty in the run summary, and the verify with candidates=0 is not",
+      sum.status === 0 && (sum.stdout || "").trim() === JSON.stringify([{ empty: true, candidates: null }, { empty: false, candidates: 0 }]),
+      (sum.stdout || sum.stderr || "").trim().slice(0, 300));
+  } finally {
+    rmSync(probeDir, { recursive: true, force: true });
+  }
+
+  const RT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
+  const DT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
+  const verifyRule = (RT.split(/^### `verify` opens before the verification it measures$/m)[1] || "").split(/^#{2,3} /m)[0];
+  s.check("G84s run-telemetry.md's verify rule names the first verification command, the count, and never chaining it onto the next marker",
+    /^\| `verify` \| Step 2\.6b, your own candidates — on the first command that verifies one, with `--attr candidates=<n>`/m.test(RT)
+      && /first command that verifies one of your own candidates/.test(verifyRule)
+      && /--attr candidates=<n>/.test(verifyRule)
+      && /Never put it on the same command as `intent-wait`, `intent-verify`, or `judgments`/.test(verifyRule));
+  s.check("G84s dispatch-topology.md applies the verify rule on both hybrid paths (the reviewer's own dispatch and --intent-from)",
+    (DT.match(/Mark `verify` with `--attr candidates=<n>` on the first\s+verification command|marking `verify` with `--attr candidates=<n>` on the first verification command/g) || []).length === 2);
+  const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
+  s.check("G84s prepare-review.mjs hands the run the required marker attributes and prints the verify rule on its markers line",
+    /attrs: STEP_REQUIRED_ATTRS,/.test(PRSRC)
+      && PRSRC.includes("verify: on its first verification command, never chained onto the next marker, adding --attr candidates=<n>"));
+}
+
 // ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,
 // AC-3/AC-5/AC-6, plan feat/pr-reviewer-shrink-fanout-ab) ──
 //
