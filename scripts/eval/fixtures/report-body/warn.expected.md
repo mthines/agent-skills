@@ -5,7 +5,7 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
 **Warnings:** 2 open review threads; 3 non-blocking findings
 
-**Checked:** 7 possible issues → 3 confirmed → 3 posted
+**Checked:** 7 possible issues → 5 confirmed → 5 posted
 
 | Finding | Where | Severity |
 |---|---|---|

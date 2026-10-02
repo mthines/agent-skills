@@ -630,12 +630,12 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
 
   const autoCoverage = buildCoverage({
     scopePaths: context?.scopePaths, scanned: judgments?.scanned_files, partial: context?.render?.PARTIAL_REVIEW,
+    skipped: context?.render?.SKIPPED_FILES,
   });
   const autoImpact = buildImpact({
     impact: context?.impact,
     inlineClaims,
     trace: judgments?.impact_trace,
-    dependencyFinderRan: context?.budget?.finders?.dependency === true,
     repo: context?.target?.repo ?? null,
   });
   const extras = {
@@ -655,11 +655,6 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     // recorded (finalize/reach.mjs). A caller-supplied context.render value always wins.
     ...(context?.render?.COVERAGE === undefined && autoCoverage ? { COVERAGE: autoCoverage } : {}),
     ...(context?.render?.IMPACT === undefined && autoImpact ? { IMPACT: autoImpact } : {}),
-    // The `**Progress:**` line's history: the worklist each earlier run left, read off the PR-state
-    // record by prepare-review.mjs (empty under --isolated, so a comparability run shows none).
-    ...(context?.render?.ROUNDS === undefined && Array.isArray(context?.priorRun?.rounds) && context.priorRun.rounds.length
-      ? { ROUNDS: context.priorRun.rounds }
-      : {}),
   };
 
   const payload = buildReportPayload({
@@ -673,6 +668,10 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     extras,
   });
   payload.OPEN_THREADS = (gates.g3?.open || []).map(toOpenThreadBullet);
+  // The `**Progress:**` line's history: the worklist each earlier run left, read off the PR-state
+  // record by prepare-review.mjs (empty under --isolated, so a comparability run shows none). Set
+  // here, never relayed from context.render: the history is the record's, not the run's to supply.
+  if (Array.isArray(context?.priorRun?.rounds) && context.priorRun.rounds.length) payload.ROUNDS = context.priorRun.rounds;
   // What this run leaves open, computed from the same arrays and by the same function the report's
   // `**Progress:**` line uses — Step 4c stores it as this run's `open`/`blocking` in runs[].
   const round = worklistCounts({ openThreads: payload.OPEN_THREADS, findings: payload.FINDINGS, notes: payload.NOTES || [] });
@@ -1159,6 +1158,9 @@ async function selfTest() {
       const without = finalizeReview({ context: base, judgments: j0 });
       check("ROUNDS reaches the payload from context.priorRun.rounds, and is absent with no history",
         JSON.stringify(withHistory.payload.ROUNDS) === JSON.stringify(rounds) && without.payload.ROUNDS === undefined);
+      const handSupplied = finalizeReview({ context: { ...base, render: { ROUNDS: [{ sha: "1234567", open: 9, blocking: 9 }] } }, judgments: j0 });
+      check("a hand-supplied context.render.ROUNDS is ignored — the history comes from the PR-state record only",
+        handSupplied.payload.ROUNDS === undefined);
       check("finalize reports this run's worklist as `round` for the PR-state record",
         JSON.stringify(withHistory.round) === JSON.stringify({ open: 0, blocking: 0 }));
     }

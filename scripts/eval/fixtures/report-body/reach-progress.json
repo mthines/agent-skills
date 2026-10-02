@@ -49,11 +49,20 @@
   },
   "COVERAGE": {
     "files_read": 22,
-    "files_total": 22
+    "files_total": 22,
+    "files_skipped": 1
   },
   "ROUNDS": [
-    { "sha": "70cf147", "open": 5, "blocking": 2 },
-    { "sha": "8d2e4a1", "open": 3, "blocking": 1 }
+    {
+      "sha": "70cf147",
+      "open": 5,
+      "blocking": 2
+    },
+    {
+      "sha": "8d2e4a1",
+      "open": 3,
+      "blocking": 1
+    }
   ],
   "IMPACT": {
     "symbols": [
@@ -65,25 +74,57 @@
         "verified_unaffected": 5,
         "findings": 1,
         "consumers": [
-          { "path": "src/jobs/sync.ts", "line": 88, "status": "finding" },
-          { "path": "src/jobs/export.ts", "status": "verified" },
-          { "path": "src/jobs/import.ts", "status": "verified" },
-          { "path": "src/jobs/reindex.ts", "status": "verified" },
-          { "path": "src/api/batch.ts", "status": "verified" },
-          { "path": "src/api/poll.ts", "status": "verified" },
-          { "path": "packages/billing/src/charge.ts", "status": "untraced" },
-          { "path": "packages/billing/src/refund.ts", "status": "untraced" }
+          {
+            "path": "src/jobs/sync.ts",
+            "line": 88,
+            "status": "finding"
+          },
+          {
+            "path": "src/jobs/export.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/jobs/import.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/jobs/reindex.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/api/batch.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/api/poll.ts",
+            "status": "verified"
+          },
+          {
+            "path": "packages/billing/src/charge.ts",
+            "status": "untraced"
+          },
+          {
+            "path": "packages/billing/src/refund.ts",
+            "status": "untraced"
+          }
         ]
       },
       {
         "name": "backoffDelay",
         "path": "src/api/backoff.ts",
         "change": "added",
-        "consumer_files": 1,
-        "verified_unaffected": 1,
+        "consumer_files": 2,
+        "verified_unaffected": 2,
         "findings": 0,
         "consumers": [
-          { "path": "src/api/client.ts", "status": "verified" }
+          {
+            "path": "src/api/client.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/jobs/export.ts",
+            "status": "verified"
+          }
         ]
       }
     ],
@@ -95,6 +136,16 @@
         "symbol": "retryRequest",
         "url": "https://github.com/o/r/pull/212"
       }
+    ],
+    "dependencies": [
+      {
+        "name": "p-retry",
+        "from": "5.1.2",
+        "to": "6.2.0",
+        "delta": "major",
+        "usage_sites": 3,
+        "checked_sites": 2
+      }
     ]
   },
   "MEMORIES_SUMMARY": "31 indexed",
@@ -103,7 +154,7 @@
   "OPTIMALITY_LOG": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
   "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
   "MEASURABILITY_LOG": "ran · 2 paths classified · 0 missing · 0 unlinked",
-  "SKIPPED_FILES": "none",
+  "SKIPPED_FILES": "pnpm-lock.yaml",
   "ADDITIONAL_FINDINGS": [
     {
       "path": "src/api/backoff.ts",

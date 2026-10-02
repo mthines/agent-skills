@@ -805,6 +805,29 @@ export function checksReadable(r) {
 }
 
 /**
+ * The report's `**Progress:**` history for this run: the state record's rounds, or none under
+ * --isolated — a comparability run is judged as a first run and must not show a trend from runs it
+ * is pretending not to know about.
+ * @param {{ isolated?: boolean }} runMode @param {{ rounds?: unknown }} state
+ * @returns {{sha: string, open: number, blocking: number}[]}
+ */
+export function priorRunRounds(runMode, state) {
+  return runMode?.isolated ? [] : (Array.isArray(state?.rounds) ? state.rounds : []);
+}
+
+/**
+ * The changed files this run reviews, for the report's `Checked` line: none on zero-delta, every
+ * diffable PR file on a `full` run — including a re-review the routing promoted to full, whose
+ * `deltaFiles` still hold only the delta — and the delta otherwise.
+ * @param {{ mode: string, deltaFiles: {filename: string}[], prFiles: {filename: string}[] }} args
+ * @returns {string[]}
+ */
+export function scopePathsFor({ mode, deltaFiles, prFiles }) {
+  if (mode === "zero-delta") return [];
+  return (mode === "full" ? prFiles : deltaFiles).map((f) => f.filename);
+}
+
+/**
  * Reads the `--state` file (D10) — the caller's already-fetched LoreKit
  * state record `data`, read by the AGENT before invoking this script
  * (Steps 0.7/1.0; this script does no LoreKit I/O itself, per its own
@@ -1908,7 +1931,7 @@ async function prepare(opts) {
     // The changed files this run reviews — the delta on an incremental run, the PR's diffable files
     // on a full one, none on zero-delta. finalize.mjs counts judgments.scanned_files against it for
     // the report's `Checked` line, so a file outside the scope can never inflate "N of M read".
-    scopePaths: contextMode === "zero-delta" ? [] : deltaFiles.map((f) => f.filename),
+    scopePaths: scopePathsFor({ mode: contextMode, deltaFiles, prFiles: diffable.length ? files.filter((f) => diffable.includes(f.filename)) : files }),
     diffablePaths: diffable,
     undiffablePaths: undiffable,
     // The delta's own count on an incremental run (what RUN.delta_lines renders as "N lines in
@@ -1942,7 +1965,7 @@ async function prepare(opts) {
       zeroDelta,
       // The report's `**Progress:**` history. Empty under --isolated: a comparability run is judged
       // as a first run, so it must not show a trend from runs it is pretending not to know about.
-      rounds: runMode.isolated ? [] : (state.rounds || []),
+      rounds: priorRunRounds(runMode, state),
       priorDiagnostics: null,
       note: runMode.isolated
         ? "--isolated: first-run semantics — no prior-run diagnostics, no delta triage, no fallback-rung priorSha (pipeline.md § --isolated)."
@@ -2645,6 +2668,19 @@ async function selfTest() {
   t("readStateFile: absent path defaults to no prior deep pass on record (the safe direction)", () => {
     const s = readStateFile(null);
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
+  });
+  t("priorRunRounds: the state record's rounds reach the context, and none under --isolated", () => {
+    const rounds = [{ sha: "1234567", open: 2, blocking: 1 }];
+    return JSON.stringify(priorRunRounds({ isolated: false }, { rounds })) === JSON.stringify(rounds)
+      && priorRunRounds({ isolated: true }, { rounds }).length === 0
+      && priorRunRounds({}, {}).length === 0;
+  });
+  t("scopePathsFor: full mode reviews every PR file, a delta mode its delta, zero-delta nothing", () => {
+    const prFiles = [{ filename: "a.ts" }, { filename: "b.ts" }, { filename: "c.ts" }];
+    const deltaFiles = [{ filename: "c.ts" }];
+    return JSON.stringify(scopePathsFor({ mode: "full", deltaFiles, prFiles })) === JSON.stringify(["a.ts", "b.ts", "c.ts"])
+      && JSON.stringify(scopePathsFor({ mode: "incremental", deltaFiles, prFiles })) === JSON.stringify(["c.ts"])
+      && scopePathsFor({ mode: "zero-delta", deltaFiles, prFiles }).length === 0;
   });
   t("readStateFile: rounds carry each run's open/blocking worklist, skip runs without one, cap at 4", () => {
     const p = join(tmpdir(), `prr-state-rounds-${process.pid}.json`);

@@ -5,7 +5,7 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 
 **Warnings:** 1 open review thread; 1 non-blocking finding
 
-**Checked:** 22 of 22 changed files read · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted
+**Checked:** 22 of 22 changed files read (1 skipped) · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted
 
 **Progress:** open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews
 
@@ -14,13 +14,14 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 | `sync.ts` still branches on the old null contract | [`src/jobs/sync.ts:88`](https://github.com/o/r/pull/7#discussion_r71) | 🟡 medium |
 
 <details>
-<summary>What this change reaches — 2 changed exports · 15 dependent files · 7 checked · 1 flagged · 8 not checked · 1 open-PR overlap</summary>
+<summary>What this change reaches — 2 changed exports · 15 dependent files · 7 checked · 1 flagged · 8 not checked · 1 dependency bump · 1 open-PR overlap</summary>
 
 ```mermaid
 flowchart LR
   subgraph pr["Changed in this PR"]
     s1["retryRequest<br/>signature changed"]:::changed
     s2["backoffDelay<br/>added"]:::changed
+    d1["p-retry 5.1.2 → 6.2.0<br/>major bump"]:::changed
   end
   s1c1["src/jobs/sync.ts:88<br/>✗ finding"]:::bad
   s1c2["src/jobs/ · 3 files<br/>✓ checked"]:::ok
@@ -28,6 +29,8 @@ flowchart LR
   s1c4["packages/billing/src/ · 2 files<br/>? not checked"]:::unknown
   s1c5["+6 more files<br/>? not checked"]:::unknown
   s2c1["src/api/client.ts<br/>✓ checked"]:::ok
+  s2c2["src/jobs/export.ts<br/>✓ checked"]:::ok
+  d1u["3 usage sites<br/>✓ 2 checked · ? 1 not checked"]:::partial
   o1["PR 212 · alice<br/>also changes retryRequest"]:::warn
   s1 --> s1c1
   s1 --> s1c2
@@ -35,6 +38,8 @@ flowchart LR
   s1 -.-> s1c4
   s1 -.-> s1c5
   s2 --> s2c1
+  s2 --> s2c2
+  d1 --> d1u
   o1 -.- s1
   classDef changed fill:#eef2ff,stroke:#6366f1,color:#1e1b4b
   classDef ok fill:#e7f6ec,stroke:#16a34a,color:#14532d
@@ -45,7 +50,8 @@ flowchart LR
 ```
 
 - `retryRequest` (`src/api/client.ts`) — signature change · 14 consumer files · 5 verified unaffected · 1 finding inline · 8 not traced
-- `backoffDelay` (`src/api/backoff.ts`) — added change · 1 consumer file · 1 verified unaffected
+- `backoffDelay` (`src/api/backoff.ts`) — added change · 2 consumer files · 2 verified unaffected
+- `p-retry` 5.1.2 → 6.2.0 (major) — 3 usage sites, 2 checked
 - `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by `alice` — a semantic conflict is likely even if git merges both cleanly
 
 </details>
@@ -82,9 +88,10 @@ Severity — 🟡 1 medium
 **Run**
 
 full · 164 lines in delta · tier deep · depth checkout · thoroughness 0.95
+Skipped files — pnpm-lock.yaml
 Memories — 31 indexed · 0 used
 
-<sup>Nothing to report — standards (1 doc), optimality (2 judged), measurability (2 paths classified), integrations (not activated), 0 files skipped.</sup>
+<sup>Nothing to report — standards (1 doc), optimality (2 judged), measurability (2 paths classified), integrations (not activated).</sup>
 
 </details>
 

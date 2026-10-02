@@ -10618,7 +10618,7 @@ const isPollBlock = (block) =>
     good.ok && reachAt !== -1 && reachAt < detailsAt && fenceAt > reachAt
       && fenceAt < good.out.indexOf("</details>", reachAt) && good.out.split("```mermaid").length === 2, good.err);
   s.check("G88b the Checked and Progress lines render above every accordion",
-    good.ok && /^\*\*Checked:\*\* 22 of 22 changed files read · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted$/m.test(good.out.split("<details>")[0])
+    good.ok && /^\*\*Checked:\*\* 22 of 22 changed files read \(1 skipped\) · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted$/m.test(good.out.split("<details>")[0])
       && /^\*\*Progress:\*\* open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews$/m.test(good.out.split("<details>")[0]));
 
   const mismatch = clone();
@@ -10666,7 +10666,8 @@ const isPollBlock = (block) =>
       && /✓ finalize reports this run's worklist as `round`/.test(fst.stdout || ""));
   const POST = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
   s.check("G88j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
-    /--argjson round "\$\(jq -c '\.round \/\/ \{open: null, blocking: null\}' \/tmp\/finalize\/finalize-result\.json/.test(POST)
+    /--argjson round "\$\(jq -c --arg sha "\$\{HEAD_SHA:0:7\}"/.test(POST)
+      && /'if \.payload\.RUN\.sha == \$sha then \(\.round \/\/ \{open: null, blocking: null\}\) else \{open: null, blocking: null\} end'/.test(POST)
       && /open: \$round\.open, blocking: \$round\.blocking\}/.test(POST));
   s.check("G88l finalize builds COVERAGE and IMPACT from scanned_files / impact_trace / impact.json, and a supplied value wins (self-test)",
     fst.status === 0 && /✓ COVERAGE is derived from scanned_files against scopePaths/.test(fst.stdout || "")
@@ -10678,20 +10679,61 @@ const isPollBlock = (block) =>
       && !(SCHEMA.required || []).includes("scanned_files") && !(SCHEMA.required || []).includes("impact_trace")
       && /^\| `scanned_files` \|/m.test(POST) && /^\| `impact_trace` \|/m.test(POST));
   const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-  s.check("G88n prepare-review.mjs writes scopePaths (empty on zero-delta) for the Checked line",
-    /scopePaths: contextMode === "zero-delta" \? \[\] : deltaFiles\.map\(\(f\) => f\.filename\),/.test(PRSRC));
+  s.check("G88n prepare-review.mjs writes scopePaths and the review history through its tested helpers",
+    /scopePaths: scopePathsFor\(\{ mode: contextMode, deltaFiles, prFiles: /.test(PRSRC)
+      && /rounds: priorRunRounds\(runMode, state\),/.test(PRSRC));
+  const pst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "--self-test"], { encoding: "utf8" });
+  const pOut = `${pst.stdout}${pst.stderr}`;
+  s.check("G88o scopePathsFor reviews every PR file on a full run (a promoted re-review included) and priorRunRounds drops history under --isolated (self-test)",
+    pst.status === 0 && /✓ scopePathsFor: full mode reviews every PR file/.test(pOut) && /✓ priorRunRounds: the state record's rounds reach the context/.test(pOut));
+
+  // The funnel counts confirmed and posted from the arrays it renders, never from QUALITY's
+  // `cleared` (finalize passes the posted count there): a payload whose QUALITY says otherwise
+  // must not move the line.
+  const funnelProbe = clone();
+  funnelProbe.QUALITY = "produced 11 → posted inline 1 · cleared 99 · carried forward 0 · deferred 1 · below-bar 0";
+  funnelProbe.NOTES = [{ path: "src/a.ts", line: 3, prefix: "nitpick", body: "rename the constant", confidence: 82 }];
+  const fp = render(funnelProbe);
+  s.check("G88p the Checked funnel derives confirmed and posted from FINDINGS + NOTES + ADDITIONAL_FINDINGS, not QUALITY's cleared",
+    fp.ok && /11 possible issues → 3 confirmed → 2 posted/.test(fp.out), fp.err || fp.out.split("\n").find((l) => l.startsWith("**Checked:**")));
+  const shared = clone();
+  shared.IMPACT = { symbols: [
+    { name: "a", path: "src/a.ts", change: "signature", consumer_files: 2, verified_unaffected: 2, findings: 0,
+      consumers: [{ path: "src/x.ts", status: "verified" }, { path: "src/y.ts", status: "verified" }] },
+    { name: "b", path: "src/b.ts", change: "body", consumer_files: 2, verified_unaffected: 1, findings: 0,
+      consumers: [{ path: "src/x.ts", status: "verified" }, { path: "src/y.ts", status: "untraced" }] } ] };
+  const sh = render(shared);
+  s.check("G88q a file that uses two changed exports is one dependent file, checked only when every export it uses was",
+    sh.ok && /<summary>What this change reaches — 2 changed exports · 2 dependent files · 1 checked · 1 not checked<\/summary>/.test(sh.out),
+    sh.err || (sh.out.match(/<summary>What this change reaches[^<]*/) || [""])[0]);
+  const dep = clone();
+  dep.IMPACT.dependencies[0].checked_sites = 0;
+  const overRead = clone();
+  overRead.IMPACT.dependencies[0].checked_sites = 9;
+  s.check("G88r a dependency renders its evidenced checked_sites (\"not checked\" at 0), and more checked than exist is rejected",
+    render(dep).ok && /`p-retry` 5\.1\.2 → 6\.2\.0 \(major\) — 3 usage sites, not checked/.test(render(dep).out) && !render(overRead).ok);
+  s.check("G88s finalize ignores a hand-supplied context.render.ROUNDS (self-test), and RENDER_EXTRAS no longer relays it",
+    fst.status === 0 && /✓ a hand-supplied context\.render\.ROUNDS is ignored/.test(fst.stdout || "")
+      && !/"ROUNDS"/.test(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/payload.mjs"), "utf8")));
+  const rst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/reach.mjs"), "--self-test"], { encoding: "utf8" });
+  s.check("G88t reach keeps bracketed paths, keeps flagged or traced consumers past the 25-file list, and takes skipped files out of the denominator (self-test)",
+    rst.status === 0 && /✓ breaking changes sort first; unexported, consumer-less and unsafe symbols are left out; a bracketed path stays/.test(rst.stdout || "")
+      && /✓ a flagged or traced consumer past impact\.json's list cap is kept with its status, not dropped/.test(rst.stdout || "")
+      && /✓ files triage skipped leave the denominator and are counted on their own/.test(rst.stdout || "")
+      && /import \{ assertPlain \} from "\.\.\/comment-spine\.mjs";/.test(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/reach.mjs"), "utf8")));
   // Executed directly (an import, not the 60 s self-test G84r already runs): a record with one
   // legacy run (no counts), one malformed run (blocking > open), and two good ones.
   const rsf = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import { readStateFile } from "./agents/pr-reviewer/scripts/prepare-review.mjs";
     import { writeFileSync } from "node:fs"; import { join } from "node:path"; import { tmpdir } from "node:os";
-    const p = join(tmpdir(), "g87k-" + process.pid + ".json");
+    import { rmSync } from "node:fs";
+    const p = join(tmpdir(), "g88k-" + process.pid + ".json");
     writeFileSync(p, JSON.stringify({ v: 1, data: { runs: [
       { sha: "1111111", mode: "full" },
       { sha: "2222222", mode: "incremental", open: 1, blocking: 4 },
       { sha: "3333333aaaa", mode: "incremental", open: 4, blocking: 1 },
       { sha: "4444444", mode: "full", open: 2, blocking: 0 } ] } }));
-    console.log(JSON.stringify(readStateFile(p).rounds));`], { encoding: "utf8", cwd: REPO_ROOT });
+    console.log(JSON.stringify(readStateFile(p).rounds)); rmSync(p, { force: true });`], { encoding: "utf8", cwd: REPO_ROOT });
   s.check("G88k prepare-review reads runs[] open/blocking into rounds, skipping legacy and malformed runs",
     rsf.status === 0 && (rsf.stdout || "").trim() === JSON.stringify([{ sha: "3333333", open: 4, blocking: 1 }, { sha: "4444444", open: 2, blocking: 0 }]),
     (rsf.stdout || rsf.stderr || "").trim().slice(0, 200));

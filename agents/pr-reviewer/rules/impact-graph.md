@@ -183,16 +183,17 @@ trace:
 
 | Input | Source | Becomes |
 | --- | --- | --- |
-| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); `same-symbol` overlaps; dependency deltas when the dependency finder ran |
-| `judgments.impact_trace` | the consumer-impact finder | `verified` for each consumer file it read and found holding |
-| a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set) |
+| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); `same-symbol` overlaps; every dependency delta |
+| `judgments.impact_trace` | the consumer-impact and dependency finders | `verified` for each consumer file read and found holding — kept even past impact.json's 25-file list; for a dependency (`symbol` = package name, `path` = its manifest), the usage sites in the files listed become `checked_sites` |
+| a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set; with `symbol` set, kept even past the 25-file list) |
 
 Every other listed consumer renders as `? not checked`. Record the trace as you go:
 
 ```json
 "impact_trace": [
   { "symbol": "retryRequest", "path": "src/api/client.ts",
-    "verified": ["src/jobs/export.ts", "src/jobs/import.ts", "src/api/batch.ts"] }
+    "verified": ["src/jobs/export.ts", "src/jobs/import.ts", "src/api/batch.ts"] },
+  { "symbol": "stripe", "path": "package-lock.json", "verified": ["src/billing/charge.ts"] }
 ]
 ```
 

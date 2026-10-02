@@ -41,7 +41,7 @@
       "items": { "type": "string", "minLength": 1 }
     },
     "impact_trace": {
-      "description": "The consumer-impact trace (finder-consumer-impact.md): per changed export, the consumer FILES read and found to hold. finalize.mjs builds the report's `What this change reaches` section from it and impact.json; a file not listed renders as not checked.",
+      "description": "The consumer-impact and dependency trace: per changed export (and per dependency, symbol = package name, path = its manifest), the consumer FILES read and found to hold. finalize.mjs builds the report's `What this change reaches` section from it and impact.json; a file not listed renders as not checked.",
       "type": "array",
       "items": { "$ref": "#/$defs/impact_trace_entry" }
     }

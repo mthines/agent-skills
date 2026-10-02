@@ -113,12 +113,14 @@ const SHAPES = {
   // One entry per consumer FILE the trace has a status for. Every verified and every flagged file
   // is listed (the counts above must equal the list's), so an unlisted remainder is untraced.
   "IMPACT.symbols[].consumers[]": ["path", "line", "status"],
-  "IMPACT.dependencies[]": ["name", "from", "to", "delta", "usage_sites", "url"],
+  // `checked_sites` (optional) is how many usage sites a read covered; absent, the bullet keeps the
+  // hand-supplied form's claim that every site was checked.
+  "IMPACT.dependencies[]": ["name", "from", "to", "delta", "usage_sites", "url", "checked_sites"],
   "IMPACT.overlaps[]": ["pr", "author", "path", "symbol", "url"],
   "WITHHELD[]": ["path", "line", "url", "prefix", "body", "reason"],
   // Files this run read, out of the changed files in scope (the whole PR on a full run, the delta on
   // an incremental one) — the one input the `**Checked:**` line cannot derive from another slot.
-  COVERAGE: ["files_read", "files_total"],
+  COVERAGE: ["files_read", "files_total", "files_skipped"],
   // Earlier runs of this review on this PR, oldest first, read from the PR-state record's runs[]:
   // the review worklist each one left behind. The current run's point is derived, never supplied.
   "ROUNDS[]": ["sha", "open", "blocking"],
@@ -261,6 +263,42 @@ function consumerNodes(sy) {
 }
 
 /**
+ * Dependent-file counts across every changed export, one per FILE: a file that uses two changed
+ * exports is one dependent file, checked when every export it uses was checked there and flagged
+ * when any was. A symbol without a `consumers` list can only be summed, so it is.
+ * @param {{files: number, ok: number, found: number, consumers: {path: string, status: string}[]|null}[]} symbolFacts
+ * @returns {{ total: number, checked: number, flagged: number }}
+ */
+function dependentFiles(symbolFacts) {
+  /** @type {Map<string, {checked: boolean, flagged: boolean}>} */
+  const byPath = new Map();
+  let total = 0;
+  let checked = 0;
+  let flagged = 0;
+  for (const sy of symbolFacts) {
+    if (!sy.consumers) {
+      total += sy.files;
+      checked += sy.ok + sy.found;
+      flagged += sy.found;
+      continue;
+    }
+    total += sy.files - sy.consumers.length; // the unlisted remainder, untraced by construction
+    for (const c of sy.consumers) {
+      const e = byPath.get(c.path) || { checked: true, flagged: false };
+      if (c.status === "untraced") e.checked = false;
+      if (c.status === "finding") e.flagged = true;
+      byPath.set(c.path, e);
+    }
+  }
+  for (const e of byPath.values()) {
+    total += 1;
+    if (e.checked) checked += 1;
+    if (e.flagged) flagged += 1;
+  }
+  return { total, checked, flagged };
+}
+
+/**
  * The fenced Mermaid block for IMPACT, or "" when the graph is too small to be worth a picture.
  * Deterministic: ids are positional and every ordering has a tie-breaker, so G25 can byte-diff it.
  */
@@ -287,8 +325,9 @@ function reachDiagram({ symbols, deps, overlaps }) {
     const id = `d${i + 1}`;
     prNodes.push(`    ${id}["${mermaidText(`${d.name} ${d.from} → ${d.to}`)}<br/>${d.delta} bump"]:::changed`);
     if (d.sites > 0) {
-      outNodes.push(`  ${id}u["${plural(d.sites, "usage site")}<br/>✓ checked"]:::ok`);
-      edges.push(`  ${id} --> ${id}u`);
+      const st = groupStatus({ found: 0, ok: d.checked, untraced: d.sites - d.checked });
+      outNodes.push(`  ${id}u["${plural(d.sites, "usage site")}<br/>${st.text}"]:::${st.cls}`);
+      edges.push(`  ${id} ${st.solid ? "-->" : "-.->"} ${id}u`);
     }
   });
   overlaps.forEach((o, i) => {
@@ -939,8 +978,6 @@ function main() {
       }
       const consumers = consumerList(where, sy.consumers, { files, ok, found });
       symbolFacts.push({ name: String(sy.name).trim(), path: String(sy.path).trim(), change: String(sy.change), files, ok, found, consumers });
-      consumerFilesTotal += files;
-      consumerFilesChecked += ok + found;
       const parts = [`${sy.change} change`, `${files} consumer file${files === 1 ? "" : "s"}`];
       if (ok) parts.push(`${ok} verified unaffected`);
       if (found) parts.push(`${found} finding${found === 1 ? "" : "s"} inline`);
@@ -970,8 +1007,12 @@ function main() {
         fail(`${where}.url must be http(s), got ${JSON.stringify(d.url)}`);
       }
       const notes = d.url ? ` · [release notes](${d.url})` : "";
-      return `- \`${d.name}\` ${d.from} → ${d.to} (${d.delta}) — ${sites} usage site`
-        + `${sites === 1 ? "" : "s"} checked${notes}`;
+      const siteWord = `${sites} usage site${sites === 1 ? "" : "s"}`;
+      if (d.checked_sites === undefined || d.checked_sites === null) return `- \`${d.name}\` ${d.from} → ${d.to} (${d.delta}) — ${siteWord} checked${notes}`;
+      const read = int(`${where}.checked_sites`, d.checked_sites);
+      if (read > sites) fail(`${where}: checked_sites (${read}) exceeds usage_sites (${sites})`);
+      const how = read === sites ? "checked" : read === 0 ? "not checked" : `${read} checked`;
+      return `- \`${d.name}\` ${d.from} → ${d.to} (${d.delta}) — ${siteWord}, ${how}${notes}`;
     });
 
     const overlaps = list("overlaps");
@@ -1005,7 +1046,10 @@ function main() {
 
     // The summary is the closed accordion's whole message, so it leads with the reach and states
     // the unchecked remainder in words — "7 not checked" — rather than leaving it to subtraction.
-    const consumersFlagged = symbolFacts.reduce((n, sy) => n + sy.found, 0);
+    const reach = dependentFiles(symbolFacts);
+    consumerFilesTotal = reach.total;
+    consumerFilesChecked = reach.checked;
+    const consumersFlagged = reach.flagged;
     const consumersUntraced = consumerFilesTotal - consumerFilesChecked;
     const bits = [];
     if (symbols.length) bits.push(`${symbols.length} changed export${symbols.length === 1 ? "" : "s"}`);
@@ -1025,7 +1069,8 @@ function main() {
     const bulletBlock = [...symbolBullets, ...depBullets, ...overlapBullets].join("\n");
     const diagram = reachDiagram({
       symbols: symbolFacts,
-      deps: deps.map((d) => ({ name: String(d.name), from: String(d.from), to: String(d.to), delta: String(d.delta), sites: d.usage_sites })),
+      deps: deps.map((d) => ({ name: String(d.name), from: String(d.from), to: String(d.to), delta: String(d.delta), sites: d.usage_sites,
+        checked: d.checked_sites === undefined || d.checked_sites === null ? d.usage_sites : d.checked_sites })),
       overlaps: overlaps.map((o) => ({ pr: o.pr, author: String(o.author), path: String(o.path), symbol: o.symbol ? String(o.symbol) : null })),
     });
     const blocks = [diagram, telemetryLine, bulletBlock].filter((b) => b !== "");
@@ -1038,9 +1083,10 @@ function main() {
   // ── `**Checked:**` — how far the review got, in one visible line ───────────────────────────────
   //
   // A review's silence is read as coverage, so the coverage is stated where a reader looks first:
-  // files read, dependent files traced, and the candidate funnel. The funnel is parsed from QUALITY
-  // (its grammar is fixed by finalize/payload.mjs's buildQualitySummary) and the trace from IMPACT,
-  // so the only new input is COVERAGE's file counts.
+  // files read, dependent files traced, and the candidate funnel. `produced` is parsed from QUALITY
+  // (its grammar is fixed by finalize/payload.mjs's buildQualitySummary); confirmed and posted are
+  // counted from the arrays this payload renders — QUALITY's `cleared` is the posted count by
+  // construction, so it cannot say how many cleared the verifier.
   const coverageParts = [];
   if (data.COVERAGE !== undefined && data.COVERAGE !== null) {
     const c = data.COVERAGE;
@@ -1051,25 +1097,32 @@ function main() {
       }
     }
     if (c.files_read > c.files_total) fail("COVERAGE.files_read cannot exceed COVERAGE.files_total");
+    if (c.files_skipped !== undefined && c.files_skipped !== null
+      && (!Number.isInteger(c.files_skipped) || c.files_skipped < 0)) {
+      fail(`COVERAGE.files_skipped must be a non-negative integer, got ${JSON.stringify(c.files_skipped)}`);
+    }
     const p = data.PARTIAL_REVIEW;
     if (isPlainObject(p) && (p.scanned !== c.files_read || p.total !== c.files_total)) {
       fail(`COVERAGE says ${c.files_read} of ${c.files_total} files read but PARTIAL_REVIEW says`
         + ` ${p.scanned} of ${p.total} — the banner and the Checked line state the same two numbers`);
     }
     if (c.files_total > 0) {
-      coverageParts.push(`${c.files_read} of ${c.files_total} changed file${c.files_total === 1 ? "" : "s"} read`);
+      const skipped = c.files_skipped ? ` (${c.files_skipped} skipped)` : "";
+      coverageParts.push(`${c.files_read} of ${c.files_total} changed file${c.files_total === 1 ? "" : "s"} read${skipped}`);
     }
   }
   if (consumerFilesTotal > 0) {
     coverageParts.push(`${consumerFilesChecked} of ${consumerFilesTotal} dependent file`
       + `${consumerFilesTotal === 1 ? "" : "s"} traced`);
   }
-  const funnel = /^produced (\d+) → posted inline (\d+)(?: · notes \d+)?(?: · cleared (\d+))?/
-    .exec(String(data.QUALITY).trim());
+  const funnel = /^produced (\d+) →/.exec(String(data.QUALITY).trim());
   const produced = funnel ? Number(funnel[1]) : 0;
   if (produced > 0) {
-    const confirmed = funnel[3] === undefined ? "" : ` → ${funnel[3]} confirmed`;
-    coverageParts.push(`${produced} possible issue${produced === 1 ? "" : "s"}${confirmed} → ${funnel[2]} posted`);
+    // Posted: every comment this run left inline, claims and notes. Confirmed: those plus the
+    // verified findings held back by the inline caps. Below-bar advisories cleared nothing.
+    const posted = findings.length + arr("NOTES").length;
+    const confirmed = posted + arr("ADDITIONAL_FINDINGS").length;
+    coverageParts.push(`${produced} possible issue${produced === 1 ? "" : "s"} → ${confirmed} confirmed → ${posted} posted`);
   } else if (coverageParts.length) {
     coverageParts.push("no possible issues found");
   }
