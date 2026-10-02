@@ -10,6 +10,11 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 # Each spec describes one user goal from the outside.
 # Specs are NOT implementation tests — they describe what the user observes.
 #
+# This is the GRAMMAR format. A file whose header carries `Format: intent` is
+# the Markdown intent format instead — templates/intent-spec.md.template — and
+# a passing intent spec compiles back to this grammar as its cached route
+# (rules/spec-run-contract.md § 6.6).
+#
 # persist field:
 #   critical-path   — at end of Phase 4 aw-executor hands this spec to the
 #                     e2e-testing skill's Generator to produce a saved *.spec.ts

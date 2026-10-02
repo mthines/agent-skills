@@ -1,0 +1,74 @@
+# Specs: <Feature Title>
+
+Target: preview                    # references .claude/aw-targets/preview.yml (or local.yml)
+Format: intent                     # Markdown intent spec — Steps guide the runner, Expected is checked strictly
+
+# ---
+# INTENT SPEC FORMAT
+#
+# The Markdown sibling of specs.md.template. Same `## Spec N:` headings, same
+# aw-target, same verdict — but each spec says what the user does and what must
+# be true afterwards, and the runner works out the clicks against the live app.
+# Execution, evidence, grading, and the route cache: spec-run-contract.md § 6.
+#
+# A file is an intent spec when, and only when, its header carries the line
+# `Format: intent`. Without it the file is parsed as specs.md.template's
+# WHEN/THEN grammar. One format per file.
+#
+# Per spec, in this order:
+#
+#   **Changed:**       REQUIRED. The control, component, or region the diff adds
+#                      or changes, named the way a user sees it ("the Rename
+#                      button in the dashboard header"). The run fails when it
+#                      never interacts with or observes this target.
+#   **Start:**         REQUIRED. A path relative to base_url. {placeholders}
+#                      resolve from aw-target fixtures.references.
+#   **Preconditions:** optional bullets. State the run needs, and what makes it
+#                      unreachable ("the tab is hidden when USE_X is off").
+#   **Steps:**         REQUIRED. A numbered list of imperative user actions.
+#                      Plain steps are GUIDANCE: the runner may take another
+#                      route to the same state and records it as a deviation.
+#                      A step starting with `[must-follow]` is performed exactly
+#                      as written — at least one per spec, the step that
+#                      exercises the Changed target. Deviating from it fails.
+#   **Expected:**      REQUIRED. Bullets, one user-observable outcome each,
+#                      numbered E1, E2, … by position. Every item must be
+#                      observed, with evidence, on the Changed target or its
+#                      direct effect. Name concrete text, values, or counts.
+#                      Network form (checked mechanically):
+#                        `METHOD /path` returns NNN
+#   **Hints:**         optional bullets. Locators and navigation quirks from
+#                      lessons. Advisory — never a reason to skip an Expected.
+#   **Out of scope:**  optional bullets. What this spec deliberately ignores.
+#
+# Never put CSS selectors, nth-child, or XPath anywhere in a spec. A hint names
+# a locator in the single-braces form of specs.md.template ({role: …, name: …}).
+# Never put a credential in a spec — auth lives in the aw-target.
+# ---
+
+## Spec 1: A user renames a dashboard from its header
+**Changed:** the Rename button in the dashboard header (new in this change)
+**Start:** /dashboards/{dashboardId}
+**Preconditions:**
+- Dashboard "{dashboardId}" exists (handled by aw-target seed).
+**Steps:**
+1. Open the dashboard.
+2. [must-follow] Click **Rename** in the dashboard header.
+3. Replace the name with "Q3 revenue" and save.
+**Expected:**
+- The header shows "Q3 revenue" without a page reload.
+- `PATCH /api/dashboards/{dashboardId}` returns 200
+**Hints:**
+- The name field is {role: "textbox", name: "Dashboard name"}.
+**Out of scope:**
+- Renaming from the dashboard list.
+
+## Spec 2: A user cancels a rename
+**Changed:** the Rename button in the dashboard header
+**Start:** /dashboards/{dashboardId}
+**Steps:**
+1. [must-follow] Click **Rename** in the dashboard header.
+2. Type "Draft name", then press Escape.
+**Expected:**
+- The header still shows the original dashboard name.
+- No rename field is visible.
