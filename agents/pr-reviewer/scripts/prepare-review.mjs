@@ -51,7 +51,7 @@ import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, openSy
 import { tmpdir } from "node:os";
 import { join, dirname, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps } from "./review-telemetry.mjs";
+import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
@@ -2006,7 +2006,12 @@ async function prepare(opts) {
       // model forgets is exported as `unmarked`, which is how lenses and verify went missing.
       context.telemetry = {
         runDir, ledger: ledgerPath(runDir),
-        markers: { command: markerCommand(runDir), steps: modelSteps({ tier: routing.tier, topology: budget.topology }) },
+        markers: {
+          command: markerCommand(runDir),
+          steps: modelSteps({ tier: routing.tier, topology: budget.topology }),
+          // Per-step attributes the marker carries beyond tool_calls_so_far (run-telemetry.md).
+          attrs: STEP_REQUIRED_ATTRS,
+        },
       };
     } catch (e) {
       anomalies.push(`run telemetry not started: ${String(e && e.message || e).slice(0, 160)}`);
@@ -2985,6 +2990,7 @@ async function main(argv) {
             `  markers   put this in front of each step's first command (fill <step>, <N> = your tool calls so far):`,
             `            ${context.telemetry.markers.command}`,
             `            steps: ${context.telemetry.markers.steps.join(" → ")}`,
+            `            verify: on its first verification command, never chained onto the next marker, adding --attr candidates=<n>`,
           ] : []),
           `  anomalies ${context.anomalies.length}`,
           ...context.anomalies.map((a) => `    ⚠ ${a}`),

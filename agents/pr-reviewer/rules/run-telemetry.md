@@ -45,7 +45,7 @@ On dash0#20655 a deep run that read this rule before Step 1 marked `memory`, `ga
 | `finders` | Phase D, the first finder |
 | `lenses` | Step 2.4, the holistic broad pass |
 | `consolidate` | Step 2.5 |
-| `verify` | Step 2.6b, your own candidates |
+| `verify` | Step 2.6b, your own candidates — on the first command that verifies one, with `--attr candidates=<n>` ([below](#verify-opens-before-the-verification-it-measures)) |
 | `intent-wait` | hybrid only: after `verify`, waiting for the intent file; `--wait` records the wait as `intent_wait_ms` |
 | `intent-verify` | hybrid only: deduping and verifying the intent candidates the verified pool did not already hold |
 | `judgments` | writing `judgments.json` |
@@ -62,10 +62,10 @@ A marker always exits 0 — a misuse is a stderr warning — so it can never sto
 
 ```bash
 # correct: the marker rides on the command the step needed anyway
-node "$TELEMETRY" step verify --run-dir "$RUN_DIR"; rg -n "pendingCount" "$WORKDIR"
+node "$TELEMETRY" step verify --attr candidates=6 --run-dir "$RUN_DIR"; rg -n "pendingCount" "$WORKDIR"
 
 # incorrect: a turn spent on the marker alone
-node "$TELEMETRY" step verify --run-dir "$RUN_DIR"
+node "$TELEMETRY" step verify --attr candidates=6 --run-dir "$RUN_DIR"
 ```
 
 **When a step starts with a Read or Write tool call**, which cannot carry a marker, put the marker on that step's first shell command instead.
@@ -80,8 +80,28 @@ The count is yours, so it is approximate; the trace labels it as reported.
 node /abs/review-telemetry.mjs step verify --attr tool_calls_so_far=34 --attr candidates=20 --run-dir /abs/run; rg -n "pendingCount" /abs/workdir
 ```
 
-Attach a count to the open step with `--attr`, for example `--attr candidates=14` on `verify`.
+Attach a count to the open step with `--attr`; `verify` requires one (below).
 Keys are prefixed `pr_review.` automatically, so a marker can never overwrite a `gen_ai.*` or VCS attribute.
+
+### `verify` opens before the verification it measures
+
+1. Put the `verify` marker on the **first command that verifies one of your own candidates**.
+2. Give it `--attr candidates=<n>`: the consolidated candidates you are about to verify, `0` when there are none.
+3. Never put it on the same command as `intent-wait`, `intent-verify`, or `judgments`, and never issue it after the verification ran.
+
+`review-telemetry.mjs` prints a stderr note for a `verify` marker without a count, and for a marker that closes `verify` after under a second or zero tool calls while it held candidates; that `verify` is flagged `pr_review.empty=true` in the trace and `EMPTY` in the summary.
+A `verify` with `candidates=0` may close at once.
+`prepare-review.mjs` lists the requirement on its `markers` line and in `telemetry.markers.attrs`.
+
+```bash
+# correct: verify rides on the first verification command, with its count
+node "$TELEMETRY" step verify --attr tool_calls_so_far=34 --attr candidates=6 --run-dir "$RUN_DIR"; sed -n 80,120p "$WORKDIR/src/jobs/sync.ts"
+
+# incorrect: verify chained onto the next marker — the whole verification is booked to intent-wait
+node "$TELEMETRY" step verify --attr tool_calls_so_far=34 --run-dir "$RUN_DIR"; node "$TELEMETRY" step intent-wait --attr tool_calls_so_far=34 --run-dir "$RUN_DIR"
+```
+
+**Why:** a `verify` closed early books its verification to the next step, so the trace blames the wrong step and hides how many candidates the time bought.
 
 **Sub-agents.**
 In the hybrid default, fold the intent worker in when you read its file, on the same command, after `verify`.

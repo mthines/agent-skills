@@ -196,6 +196,56 @@ export function markerCommand(runDir) {
 /** A gap shorter than this between two marked steps is bookkeeping, not an unmarked step. */
 const GAP_MIN_NS = 1_000_000_000n;
 
+/** Attributes a step's marker carries beyond `tool_calls_so_far`. `verify`'s count is what tells a
+ *  verification that is slow because it held many candidates from one slow on a few. */
+export const STEP_REQUIRED_ATTRS = Object.freeze({ verify: Object.freeze(["candidates"]) });
+
+/**
+ * What a `step <name>` marker should be told, given the ledger so far. Pure; a note never blocks.
+ *
+ * Two misuses of the `verify` marker, each of which moves time to the wrong step:
+ *   1. `verify` without a non-negative integer `candidates`.
+ *   2. A marker that closes an open `verify` after under a second, or after zero tool calls, while
+ *      that verify held candidates (or never said how many): `verify` was issued alongside the next
+ *      marker instead of on its first verification command, so the verification is booked to the
+ *      next step. `emptyVerify` tells the caller to flag the closing step `empty=true`.
+ * A `verify` with `candidates=0` may close at once — there was nothing to verify.
+ * @param {LedgerRecord[]} records @param {string} name @param {Record<string, any>} attrs
+ * @param {bigint} [now] @returns {{ notes: string[], emptyVerify: boolean }}
+ */
+export function markerNotes(records, name, attrs, now = nowNs()) {
+  /** @type {string[]} */
+  const notes = [];
+  if (name === "verify" && !(Number.isInteger(attrs.candidates) && attrs.candidates >= 0)) {
+    notes.push("verify marked without --attr candidates=<n> — pass how many of your own consolidated"
+      + " candidates you are about to verify (0 when there are none)");
+  }
+  /** @type {LedgerRecord|null} */
+  let open = null;
+  for (const r of records) {
+    if (r.t !== "step") continue;
+    open = r.phase === "start" ? r : null;
+  }
+  let emptyVerify = false;
+  if (open && open.name === "verify" && name !== "verify") {
+    const held = open.attrs?.candidates;
+    if (held !== 0) {
+      const elapsed = now - BigInt(open.ns);
+      const before = open.attrs?.tool_calls_so_far;
+      const after = attrs.tool_calls_so_far;
+      const noCalls = typeof before === "number" && typeof after === "number" && after <= before;
+      if (elapsed < GAP_MIN_NS || noCalls) {
+        emptyVerify = true;
+        notes.push(`verify closed after ${Number(elapsed / 1_000_000n) / 1000}s`
+          + `${noCalls ? " and 0 tool calls" : ""} — your verification is being booked to \`${name}\`.`
+          + " Mark verify on the first command that verifies one of your own candidates, never on the"
+          + " same command as the next marker");
+      }
+    }
+  }
+  return { notes, emptyVerify };
+}
+
 /** Harnesses the Dash0 agent plugin already records as coding sessions. */
 export const PLUGIN_HARNESSES = new Set(["claude-code", "cursor", "codex", "github-copilot-cli"]);
 
@@ -757,6 +807,8 @@ export function summarize(run) {
         share: total > 0 ? Math.round((d / total) * 100) : 0,
         ...(s.status === 2 ? { failed: true } : {}),
         ...(typeof s.attrs.tool_calls === "number" ? { tool_calls: s.attrs.tool_calls } : {}),
+        ...(typeof s.attrs.candidates === "number" ? { candidates: s.attrs.candidates } : {}),
+        ...(s.attrs.empty === true ? { empty: true } : {}),
         ...(s.sub && s.sub.length ? { phases: s.sub.map((g) => ({ name: g.name, duration_s: round(Number(g.endNs - g.startNs) / 1e9) })) } : {}),
       };
     }),
@@ -771,7 +823,7 @@ export function summarize(run) {
 /** @param {ReturnType<typeof summarize>} s @returns {string} */
 export function renderSummary(s) {
   const rows = s.steps.flatMap((x) => [
-    `  ${x.name.padEnd(16)} ${x.kind.padEnd(8)} ${String(x.duration_s).padStart(7)}s ${String(x.share).padStart(4)}%${"tool_calls" in x ? `  ${x.tool_calls} calls` : ""}${x.failed ? "  FAILED" : ""}`,
+    `  ${x.name.padEnd(16)} ${x.kind.padEnd(8)} ${String(x.duration_s).padStart(7)}s ${String(x.share).padStart(4)}%${"tool_calls" in x ? `  ${x.tool_calls} calls` : ""}${"candidates" in x ? `  ${x.candidates} candidates` : ""}${x.empty ? "  EMPTY (marked late)" : ""}${x.failed ? "  FAILED" : ""}`,
     ...(x.phases || []).map((g) => `    · ${g.name.padEnd(13)} ${"".padEnd(8)} ${String(g.duration_s).padStart(7)}s`),
   ]);
   const wrows = s.workers.map((w) => `  worker ${w.unit.padEnd(9)} ${"sub-agent".padEnd(8)} ${String(w.duration_s).padStart(7)}s  (from +${w.start_offset_s}s)`);
@@ -988,7 +1040,11 @@ async function main(argv) {
     if (cmd === "step") {
       const name = positional[1] || "";
       if (!STEP_NAME_RE.test(name)) { warn(`step name ${JSON.stringify(name)} must match ${STEP_NAME_RE}`); return; }
+      const { notes, emptyVerify } = markerNotes(readLedger(runDir), name, attrBag);
+      // The flag lands on the still-open verify step (attr records apply to the open step).
+      if (emptyVerify) appendRecord(runDir, { t: "attr", target: "step", attrs: { empty: true } });
       appendRecord(runDir, { t: "step", phase: "start", name, attrs: attrBag });
+      for (const n of notes) process.stderr.write(`review-telemetry: note — ${n}\n`);
     } else if (cmd === "end") {
       appendRecord(runDir, { t: "step", phase: "end", ...(positional[1] ? { name: positional[1] } : {}), attrs: attrBag });
     } else if (cmd === "dispatch") {
@@ -1540,6 +1596,34 @@ async function selfTest() {
     const mRecs = readLedger(mRun).filter((r) => r.t === "step" && r.name === "verify");
     ok("markerCommand, filled and run in a fresh shell, records the step and lets the next command run",
       ran.stdout.trim() === "after" && mRecs.length === 1 && mRecs[0].attrs?.tool_calls_so_far === 7, ran.stderr);
+
+    // The verify marker opens before the verification it measures, and carries its count.
+    {
+      const v0 = 1_000_000_000_000n;
+      const vRec = (/** @type {Record<string, any>} */ a) => /** @type {any} */ ({ t: "step", phase: "start", name: "verify", ns: String(v0), attrs: a });
+      ok("markerNotes: a verify marker without --attr candidates gets a note",
+        markerNotes([], "verify", { tool_calls_so_far: 3 }).notes.some((n) => n.includes("candidates=<n>")));
+      ok("markerNotes: a verify marker with a count gets no note",
+        markerNotes([], "verify", { candidates: 4, tool_calls_so_far: 3 }).notes.length === 0);
+      const chained = markerNotes([vRec({ candidates: 4, tool_calls_so_far: 30 })], "intent-wait", { tool_calls_so_far: 30 }, v0 + 200_000_000n);
+      ok("markerNotes: closing a verify after 0.2 s and 0 tool calls flags it empty and names the step it leaked into",
+        chained.emptyVerify && chained.notes.some((n) => n.includes("booked to `intent-wait`")));
+      const worked = markerNotes([vRec({ candidates: 4, tool_calls_so_far: 30 })], "intent-wait", { tool_calls_so_far: 34 }, v0 + 90_000_000_000n);
+      ok("markerNotes: a verify that spent calls and time is not flagged",
+        !worked.emptyVerify && worked.notes.length === 0);
+      const nothing = markerNotes([vRec({ candidates: 0, tool_calls_so_far: 30 })], "intent-wait", { tool_calls_so_far: 30 }, v0 + 100_000_000n);
+      ok("markerNotes: a verify with candidates=0 may close at once", !nothing.emptyVerify && nothing.notes.length === 0);
+      const eRun = join(dir, "empty-verify");
+      beginRun(eRun, facts);
+      const selfPath = fileURLToPath(import.meta.url);
+      const r1 = spawnSync(process.execPath, [selfPath, "step", "verify", "--attr", "tool_calls_so_far=30", "--run-dir", eRun], { encoding: "utf8" });
+      const r2 = spawnSync(process.execPath, [selfPath, "step", "intent-wait", "--attr", "tool_calls_so_far=30", "--run-dir", eRun], { encoding: "utf8" });
+      const eBuilt = buildRun(readLedger(eRun));
+      const eVerify = eBuilt ? summarize(/** @type {BuiltRun} */ (eBuilt)).steps.find((x) => x.name === "verify") : undefined;
+      ok("CLI: a count-less verify and a chained next marker each print a note, exit 0, and flag verify empty in the summary",
+        r1.status === 0 && r2.status === 0 && /candidates=<n>/.test(r1.stderr) && /booked to `intent-wait`/.test(r2.stderr)
+          && eVerify?.empty === true, `${r1.stderr}|${r2.stderr}`);
+    }
   } finally {
     server.close();
     rmSync(dir, { recursive: true, force: true });
