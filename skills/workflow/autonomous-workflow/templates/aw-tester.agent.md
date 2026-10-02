@@ -531,6 +531,7 @@ test('probe', async ({ browser }) => {
       const t = find(s.locator);
       const n = await t.count();
       if (n !== 1) throw new Error(`locator matched ${n} elements — name the instance`);
+      if (s.dry) { steps.push({ ok: true, dry: true }); continue; } // resolve only — never act
       if (s.action === 'click') await t.click({ timeout: 5000 });
       else if (s.action === 'fill') await t.fill(s.value, { timeout: 5000 });
       else if (s.action === 'press') await t.press(s.value, { timeout: 5000 });
@@ -564,7 +565,7 @@ test('probe', async ({ browser }) => {
 Each launch: write `$AW_DIR/probe-in.json`, run the probe, read `probe-out.json`.
 
 ```bash
-# probe-in.json: { baseURL, storageState, bypassHeader, start, steps: [{action, locator, value}],
+# probe-in.json: { baseURL, storageState, bypassHeader, start, steps: [{action, locator, value, dry}],
 #                  checks: [locator, …], shot }
 # A locator is the single-braces form as JSON, optionally scoped:
 #   {"role": "button", "name": "Rename", "within": {"role": "banner"}}
@@ -583,9 +584,19 @@ Walk the spec's steps with it:
    each one probe, recorded as a deviation. A `[must-follow]` step gets none: if
    its target is not in the snapshot, the spec fails (unless contract § 6.4
    applies).
-4. After the last step, probe once more with every candidate evidence locator in
+4. **Never replay a mutating step** (contract § 6.2 — save, submit, create,
+   delete, send, or a persisted toggle). Append it with `"dry": true`: the
+   probe checks that its locator matches one element and does not act. Then
+   run one **commit launch** — the same `steps` with `dry` removed from that
+   step, plus `checks` and `shot` (item 5) when it is the spec's last step.
+   The mutation happens in that launch only. To explore the steps after it,
+   set `start` to the commit launch's `url` and `steps` to only the actions
+   resolved after the mutation, so no later launch replays it. Keep every
+   commit launch's `requests` for the network items.
+5. After the last step, probe once more with every candidate evidence locator in
    `checks` and `shot` set to the auto-final capture path when `--auto-capture`
-   is on. Grade each `expected` item from `checks` (a `locator:` line needs
+   is on — when the last step was mutating, its commit launch is this probe.
+   Grade each `expected` item from `checks` (a `locator:` line needs
    `n: 1` and the state the item claims), `requests` (a network item needs the
    exact `METHOD /path → NNN`), or the `text` of a check (a `text:` line).
 

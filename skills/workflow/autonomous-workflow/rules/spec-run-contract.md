@@ -311,6 +311,11 @@ Run this for a spec with no usable route-cache entry (§ 6.6):
 **Budget.** At most **25 actions per spec**, detours and `added` actions included.
 When the budget runs out, stop: the remaining items are `unreachable` with cause `explore budget exhausted` (§ 6.4).
 
+**Mutations run once.**
+A step that saves, submits, creates, deletes, sends, or changes a persisted setting — a toggle, a star, an auto-saving select — is a *mutating step*; when the wording or the control leaves it unclear, treat it as mutating.
+Perform each mutating step exactly once per exploration.
+A runner that explores by re-launching from `start` replays only the non-mutating steps since the last mutation it performed, never a mutation it already performed.
+
 The ladder's never-rung holds here too: never a CSS selector, `nth-child`, or XPath, in exploration or in a compiled route.
 Never type a credential, and never navigate off the `base_url` origin.
 
