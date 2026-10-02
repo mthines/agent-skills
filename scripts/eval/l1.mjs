@@ -6805,15 +6805,20 @@ const isPollBlock = (block) =>
     /Compare logins normalized, never raw/.test(read("agents/shared/rules/github-access.md")));
 
   // --unattended: an automated caller must never reach AskUserQuestion. review-loop Step 1.6 is
-  // the named caller, and the runner's prompt section must exclude the flag, or the prompt fires
-  // at the end of a loop nobody is watching (and errors on a host with no ask-user tool).
+  // the named caller. The runner's `auto` driver falls back from Chrome to Playwright with a
+  // one-line notice and no question in either mode, so Step 4 must state that, carry the notice
+  // section, and never regrow an ask-the-user instruction (which would fire at the end of a loop
+  // nobody is watching, and error on a host with no ask-user tool).
   const RL = read("skills/quality/review-loop/SKILL.md");
   const RN = read("skills/testing/ui-verify/rules/runner.md");
   const UV = read("skills/testing/ui-verify/SKILL.md");
+  const RN_STEP4 = (RN.match(/\n## Step 4:[\s\S]*?(?=\n## Step 4b|\n## Step 5)/) || [""])[0];
   s.check("G70g review-loop Step 1.6 invokes ui-verify run with --unattended",
     /Skill\("ui-verify", "run <PR-URL> --unattended"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
-  s.check("G70g ui-verify's auto-mode prompt is excluded under --unattended, and the flag is advertised",
-    /\*\*Never under `--unattended`\*\*/.test(RN) && /only in `auto` mode without `--unattended`/.test(RN)
+  s.check("G70g ui-verify's auto driver never asks (attended or --unattended), falls back with a notice, and the flag is advertised",
+    /`auto` never calls `AskUserQuestion`, attended or under `--unattended`/.test(RN_STEP4)
+    && /^### The auto-mode fallback notice$/m.test(RN_STEP4)
+    && !/Ask with `AskUserQuestion`|ask the user first/i.test(RN_STEP4)
     && /argument-hint:[^\n]*--unattended/.test(UV));
 
   // The companion report. `interview`, `tdd`, and `test-provenance-guard` had 0 invocations in

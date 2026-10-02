@@ -75,11 +75,13 @@ dispatch blocks below carry `--auto-capture` unless `--no-screenshots` was given
 
 **On a Dash0 Agent0 Automation sandbox, this step is replaced** by [`agent0-runtime.md`](./agent0-runtime.md#driver-selection-playwright-without-the-prompt): `auto` resolves to Playwright with no prompt, a browser precondition runs first, and `aw-tester` is dispatched as a `general` sub-agent reading its definition file. The input lines of the dispatch are the ones below, unchanged.
 
-**`auto` (default): resolve to a concrete driver — Chrome first, and never silently fall to Playwright.**
+**`auto` (default): resolve to a concrete driver — Chrome first, then Playwright, with no question asked.**
 The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs an available tool that dispatches one (`Task`, `Agent`, or another spelling). Pick:
 
 1. If the `mcp__claude-in-chrome__*` tools are available and `tabs_context_mcp` returns a connected browser → **chrome**.
-2. Else Chrome is unavailable. **Under `--unattended`**, select Playwright without asking when some available tool dispatches a sub-agent; when none does, report `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` and stop. **Otherwise** do **not** auto-select Playwright — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run Playwright only if they accept; if they decline, report `NOT RUN (chrome unavailable, user declined Playwright)` and stop. If no available tool dispatches a sub-agent either, there is nothing to offer — report `NOT RUN (no Chrome extension and no sub-agent dispatch available)` and stop without prompting.
+2. Else Chrome is unavailable. When some available tool dispatches a sub-agent → **playwright**: print the [fallback notice](#the-auto-mode-fallback-notice), then run the Playwright driver block below. When none does, there is no driver: report `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` under `--unattended`, else `NOT RUN (no Chrome extension and no sub-agent dispatch available)`, and stop.
+
+`auto` never calls `AskUserQuestion`, attended or under `--unattended`: invoking `run` is the request for a verdict, and Playwright is the engine that can produce one when Chrome cannot.
 
 **Driver `chrome` — invoke [`aw-tester-chrome`](../../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) in-session:**
 
@@ -92,7 +94,7 @@ Skill("aw-tester-chrome", "
 ")
 ```
 
-If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode under `--unattended` run the Playwright driver without asking (report the chrome `inconclusive` as-is when no tool dispatches a sub-agent). Without `--unattended`, do **not** fall through automatically — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run the Playwright driver only if they accept; if they decline, report the chrome `inconclusive` verdict as-is and stop. A forced `--driver chrome` never falls back — report its verdict as-is, no prompt.
+If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode print the [fallback notice](#the-auto-mode-fallback-notice) and run the Playwright driver; when no tool dispatches a sub-agent, report the chrome `inconclusive` as-is. This is the one chrome→playwright fallback per run — never fall back a second time. A forced `--driver chrome` never falls back — report its verdict as-is.
 
 **Driver `playwright` — dispatch [`aw-tester`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md) as a sub-agent** ([`§ Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)):
 
@@ -110,18 +112,23 @@ Task(
 
 If `--driver playwright` is forced and no available tool dispatches a sub-agent, say so and stop: the runner cannot substitute for `aw-tester` in-context, because its Playwright execution and locator-healing live in the isolated agent. Report `NOT RUN (sub-agent dispatch unavailable)`.
 
-### The auto-mode Playwright prompt
+### The auto-mode fallback notice
 
-This prompt fires **only in `auto` mode without `--unattended`**, at the two points above where Chrome cannot produce a verdict: Chrome unavailable at driver selection, or a Chrome run that came back `inconclusive` with `fallback: playwright`. A forced `--driver chrome` or `--driver playwright` never reaches this prompt — an explicit driver is the user's decision already, so honor it without asking.
+Print this notice **only in `auto` mode**, at the two points above where Chrome cannot produce a verdict and a sub-agent can be dispatched: Chrome unavailable at driver selection, or a Chrome run that came back `inconclusive` with `fallback: playwright`.
+A forced `--driver chrome` or `--driver playwright` never prints it — an explicit driver needs no explanation.
+It is one line of output, printed before the dispatch, never a question:
 
-**Never under `--unattended`** — that flag means nobody is present to answer, and each of the two points already took its fixed answer above.
+```text
+✅ RIGHT
+ui-verify: Chrome extension not connected — running with Playwright (aw-tester). Pass --driver chrome to require Chrome.
+ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester). Pass --driver chrome to require Chrome.
 
-Ask with `AskUserQuestion`:
+❌ WRONG
+AskUserQuestion("The Chrome extension isn't connected. Run with Playwright instead?")
+```
 
-- **Question.** State why Chrome can't verify (`The Chrome extension isn't connected`, or `Chrome returned inconclusive: <reason>`), then ask whether to run the spec with Playwright (the `aw-tester` sub-agent) instead.
-- **Options.** `Use Playwright` — run the Playwright driver now. `Don't run` — stop without a Playwright run.
-
-On `Use Playwright`, run the Playwright driver block above; if no available tool dispatches a sub-agent, report `NOT RUN (sub-agent dispatch unavailable)` and stop. On `Don't run`, do not dispatch: report the chrome `inconclusive` verdict when there is one, else `NOT RUN (chrome unavailable, user declined Playwright)`. Either way, stop.
+Name the reason in the first clause: `Chrome extension not connected`, or `Chrome returned inconclusive (<reason>)` with the `notes:` reason from the Chrome verdict.
+Step 5 names the driver that produced the verdict, so the report always says `playwright` after a fallback.
 
 ## Step 4b: Adversarial pass — try to break it
 

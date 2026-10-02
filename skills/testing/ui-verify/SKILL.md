@@ -22,7 +22,7 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.7.0'
+  version: '1.8.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -82,8 +82,8 @@ If no operation token is present, default to `author` when a diff or branch cont
 
 | `--driver` | Runner | When |
 | --- | --- | --- |
-| `auto` (default) | Chrome if the extension is connected; otherwise asks before using Playwright | Everyday use — fast locally, correct everywhere. |
-| `chrome` | [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md), in-session | Force the fast see→act loop against your logged-in Chrome. |
+| `auto` (default) | Chrome if the extension is connected; otherwise Playwright, announced with a one-line notice — never a question | Everyday use — fast locally, correct everywhere. |
+| `chrome` | [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md), in-session | Force the fast see→act loop against your logged-in Chrome; never falls back to Playwright. |
 | `playwright` | [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) sub-agent | CI, remote envs, or no browser extension. |
 
 `author` never touches a browser and takes no `--driver`.
@@ -92,27 +92,26 @@ If no operation token is present, default to `author` when a diff or branch cont
 
 `run` and `verify` take `--unattended` for callers with nobody to answer a question: a convergence loop (`review-loop` Step 1.6 always passes it), a CI job, or any Agent0 Automation.
 Under `--unattended` the skill **never calls `AskUserQuestion`**, because on a host with no user an unanswered question blocks forever or errors, and on a host without the tool it cannot be asked at all.
-The caller passing the flag is the consent the auto-mode prompt would have asked for, so each question point takes a fixed answer:
+Driver selection asks no question in either mode — `auto` falls back from Chrome to Playwright on its own ([`rules/runner.md § Step 4`](./rules/runner.md)) — so the flag changes only these points:
 
-| Question point | `--unattended` answer |
-| --- | --- |
-| `auto`, Chrome unavailable | Playwright, when some available tool dispatches a sub-agent |
-| `auto`, Chrome returned `inconclusive` with `fallback: playwright` | Playwright, same condition |
-| `auto`, no Chrome **and** no sub-agent dispatch | `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` — no verdict, never `red` |
-| `setup` | not accepted — `blocked (needs a human: setup is an interview)` |
+| Point | Attended | `--unattended` |
+| --- | --- | --- |
+| `auto`, Chrome unavailable or `inconclusive` with `fallback: playwright` | Playwright, with the one-line fallback notice | same |
+| `auto`, no Chrome **and** no sub-agent dispatch | `NOT RUN (no Chrome extension and no sub-agent dispatch available)` | `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` — no verdict, never `red` |
+| `setup` | runs the interview | not accepted — `blocked (needs a human: setup is an interview)` |
 
-A forced `--driver` behaves exactly as it does attended: it never prompted in the first place.
+A forced `--driver` behaves exactly as it does attended.
 
 ```text
-❌ WRONG — an automated caller that reaches the prompt
-Skill("ui-verify", "run <PR-URL>")                 # blocks on AskUserQuestion when Chrome is absent
+❌ WRONG — an automated caller that may reach an interactive step
+Skill("ui-verify", "run <PR-URL>")                 # no --unattended: nothing guarantees a question-free run
 
 ✅ RIGHT
 Skill("ui-verify", "run <PR-URL> --unattended")    # Playwright, or an inconclusive line — never a question
 ```
 
 **In a Dash0 Agent0 Automation sandbox** (`/tmp/workspace/agent-skills/env.sh` exists), read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md) before Step 0.
-It works from a checkout of the PR head, resolves `auto` to Playwright without the prompt (no user is present, and Playwright is the only driver on an Agent0 host — installed by the automation's setup script or by the [on-demand install below](#on-demand-browser-install--run-and-verify)), checks the browser the setup installed, and dispatches `aw-tester` as a `general` sub-agent that reads its definition file — the host cannot dispatch the custom type.
+It works from a checkout of the PR head, resolves `auto` straight to Playwright (no user is present, and Playwright is the only driver on an Agent0 host — installed by the automation's setup script or by the [on-demand install below](#on-demand-browser-install--run-and-verify)), checks the browser the setup installed, and dispatches `aw-tester` as a `general` sub-agent that reads its definition file — the host cannot dispatch the custom type.
 `setup` is interactive and stops there as `blocked (needs a human …)`.
 Agent0 mode implies [`--unattended`](#--unattended--never-ask-never-hang) whether or not the caller passed it.
 
@@ -323,7 +322,7 @@ Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
 1. **Get the spec.** Extract it from the PR body between the `<!-- ui-verify:v1 -->` markers — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
 2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`, and required on the `mcp` path). Any `inconclusive: …` outcome from that file is terminal — report it and stop, without a pass or a fail. Its two commonest are `inconclusive: no access path for deployment lookup (pass --url)` (no lookup was possible) and `inconclusive: preview not deployed` (the lookup ran and found nothing). For a repo whose previews aren't GitHub-integrated (CLI-deployed in the repo's own CI, surfaced by a `github-actions[bot]` comment or a stable alias that isn't `*-git-*`), commit a `preview_url` block in `.claude/aw-targets/preview.yml` so resolution finds the URL without a manual `--url` each run — see [Repo-configured resolution](./rules/preview-url-resolution.md#repo-configured-resolution-when-previews-arent-github-integrated).
 3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.ui-verify/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
-4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it asks the user before running the `aw-tester` sub-agent rather than falling back silently — except under [`--unattended`](#--unattended--never-ask-never-hang), which never asks. A forced `--driver chrome`/`playwright` never prompts. Mode `--all`.
+4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it prints a one-line fallback notice and runs the `aw-tester` sub-agent — no question, attended or under [`--unattended`](#--unattended--never-ask-never-hang). A forced `--driver chrome` never falls back; a forced `--driver playwright` skips Chrome. Mode `--all`.
    - **Then try to break it** ([`runner.md § Step 4b`](./rules/runner.md#step-4b-adversarial-pass--try-to-break-it)). Run the adversarial pass per [`rules/adversarial.md`](./rules/adversarial.md) against every spec that passed: hostile input, double submits, failed and slow requests, interrupted navigation, keyboard-only use, small viewports — only the categories the spec's surface exposes. Each probe leaves before/after screenshots under `.agent/{branch}/.ui-verify/adversarial/captures/` and a line in `report.md`; each finding carries steps, expected vs actual, and a severity. It **never changes the verdict** from step 4. `--no-adversarial` (or `adversarial.enabled: false` in `preview.yml`) skips it.
 5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver — then the adversarial summary line and its findings.
 6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.

@@ -10,7 +10,7 @@ tags:
 
 # Agent0 runtime
 
-On a Dash0 Agent0 Automation sandbox, `ui-verify` hits three obstacles at once: `aw-tester` is a custom agent type the host cannot dispatch (a measured host fact), and an automation has no Chrome extension and no user to answer the Playwright prompt (properties of any automation).
+On a Dash0 Agent0 Automation sandbox, `ui-verify` hits three obstacles at once: `aw-tester` is a custom agent type the host cannot dispatch (a measured host fact), and an automation has no Chrome extension and no user to answer a question (properties of any automation).
 This rule makes `author`, `run`, and `verify` work there anyway.
 It changes no spec grammar, no verdict mapping, and no resolution rule.
 
@@ -49,12 +49,12 @@ A clone that fails is `inconclusive: no checkout of <owner>/<repo> (<error>)` �
 
 | `--driver` | Agent0 outcome |
 | --- | --- |
-| `auto` (default) | **`playwright`, with no `AskUserQuestion`.** The prompt in [`runner.md § The auto-mode Playwright prompt`](./runner.md#the-auto-mode-playwright-prompt) exists so a person is never surprised by a headless run they did not ask for. Here nobody is present to ask, and Playwright is the only driver on an Agent0 host — provided by the setup script or by [the on-demand install](../SKILL.md#on-demand-browser-install--run-and-verify) — so choosing it is a decision already made |
+| `auto` (default) | **`playwright`, with no `AskUserQuestion`.** Skip the Chrome probe entirely: Playwright is the only driver on an Agent0 host — provided by the setup script or by [the on-demand install](../SKILL.md#on-demand-browser-install--run-and-verify) — so `auto`'s Chrome-first step in [`runner.md § Step 4`](./runner.md#step-4-select-the-driver-and-run) can only fall through, and the fallback notice there is optional here |
 | `playwright` | `playwright` |
 | `chrome` | `NOT RUN (chrome driver unavailable on this host — no browser extension)`. A forced driver is never substituted |
 
-This is the only question `ui-verify` asks, so on this host it asks none.
-It is the Agent0 case of the general `--unattended` flag (`SKILL.md § --unattended`), which Agent0 mode implies whether or not the caller passed it.
+`ui-verify` asks no question on this host.
+Agent0 mode implies the general `--unattended` flag (`SKILL.md § --unattended`) whether or not the caller passed it.
 
 ## The browser precondition
 
