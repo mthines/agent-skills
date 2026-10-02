@@ -1286,7 +1286,8 @@ async function selfTest() {
       {
         mkdirSync(scratchRoot(), { recursive: true });
         const wide = { ...impact,
-          dependencies: [{ name: "stripe", from: "14.2.0", to: "16.0.1", semver_delta: "major", usage_sites: [{}, {}] }],
+          dependencies: [{ name: "stripe", from: "14.2.0", to: "16.0.1", semver_delta: "major", usage_sites: [{}, {}] },
+            { name: "qs", from: "6.11.0", to: "6.12.1", semver_delta: "minor", direct: false, usage_sites: [] }],
           overlaps: [{ pr: 212, author: "alice", files: ["src/r.ts"], symbols: ["retry"] }, { pr: 9, author: "bob", files: ["docs/x.md"], symbols: [] }] };
         const e2e = finalizeReview({ context: { ...ctx, impact: wide, budget: { finders: { dependency: true } }, render: { at: "2026-10-02T06:00:00Z" } },
           judgments: { ...j0, summary: "Makes retry throw on exhaustion." } }).payload;
@@ -1295,6 +1296,10 @@ async function selfTest() {
           rendered.ok && rendered.stdout.includes("<summary>What this change reaches — ") && rendered.stdout.includes("```mermaid")
             && rendered.stdout.includes("**Checked:** 2 of 3 changed files read")
           && rendered.stdout.includes("1 open-PR overlap</summary>") && !rendered.stdout.includes("docs/x.md"), rendered.stderr.trim());
+        check("an unused transitive bump renders as the omitted-count bullet and in the summary, never as its own row",
+          rendered.ok && rendered.stdout.includes("- 1 more dependency bump — transitive, no usage sites in this repo, not listed")
+            && rendered.stdout.includes("2 dependency bumps (1 transitive, not listed) · 1 open-PR overlap</summary>")
+            && !rendered.stdout.includes("`qs`"), rendered.stderr.trim());
       }
       check("a caller-supplied COVERAGE / IMPACT wins over the auto-built one",
         JSON.stringify(supplied.COVERAGE) === JSON.stringify({ files_read: 1, files_total: 1 })
