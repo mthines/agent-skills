@@ -161,12 +161,12 @@ export function routeDepth(i) {
 // EXECUTION, same split as routeDepth/depth-routing.md above. An L1 guard
 // (G84e) asserts the two agree.
 
-/** Tier -> default thoroughness when no explicit override is given (depth-routing.md § Thoroughness
- *  budget). The two re-review tiers sit one band above the bottom of their range: quick 0.4 turns on
+/** Tier -> default thoroughness when no explicit override is given. Each default sits one band
+ *  above the bottom of its tier's range (depth-routing.md § Thoroughness budget): quick 0.4 turns on
  *  the measurability lens, standard 0.7 the optimality lens lever (pr-reviewer.md § 2.4c still
- *  skips the lens on every incremental re-review). deep stays at 0.8: 0.95's tier-3 verification
- *  and x2 tool-call budget have no measured gain over 0.8, and they lengthen every first review. */
-export const TIER_DEFAULT_THOROUGHNESS = { quick: 0.4, standard: 0.7, deep: 0.8 };
+ *  skips the lens on every incremental re-review), deep 0.95 tier-3 (execution) verification and
+ *  the x2 tool-call budget. */
+export const TIER_DEFAULT_THOROUGHNESS = { quick: 0.4, standard: 0.7, deep: 0.95 };
 
 /** `--effort high` / `effort: high` is an alias for the ceiling. */
 export const EFFORT_HIGH_THOROUGHNESS = 1;
@@ -174,7 +174,7 @@ export const EFFORT_HIGH_THOROUGHNESS = 1;
 /** A diff carrying any of these shapes floors the EFFECTIVE thoroughness — an
  *  explicit low override never under-reviews a high-stakes diff. This is a
  *  safety net for an override, not a duplicate of D7/D9: those already force
- *  `routedTier = "deep"` (so the default thoroughness is already 0.8) for the
+ *  `routedTier = "deep"` (so the default thoroughness is already 0.95) for the
  *  same shapes; the floor only ever matters when something (a user, a config
  *  default) asks for less than 0.5 anyway. */
 const HIGH_STAKES_SHAPES = new Set(["auth", "payments", "schema-migration", "secrets", "infra"]);
@@ -191,10 +191,10 @@ export const RISK_FLOOR = 0.5;
  *  anyway. */
 
 /** Breakpoints. Each is a `t >=` threshold. The tier defaults above
- *  (0.4 / 0.7 / 0.8) each sit on a breakpoint, so every default budget is the
- *  one depth-routing.md's breakpoint table states for that column. The
- *  holistic-escalation cap is `round(10 * t)` by design — what "escalation
- *  SCALES with thoroughness" means: 4 / 7 / 8 at the defaults. */
+ *  (0.4 / 0.7 / 0.95) each land one band past a breakpoint, so every default
+ *  budget is the one depth-routing.md's breakpoint table states for that
+ *  column. The holistic-escalation cap is `round(10 * t)` by design — what
+ *  "escalation SCALES with thoroughness" means: 4 / 7 / 10 at the defaults. */
 const T_TOPOLOGY = 0.4;
 const T_FINDERS_MID = 0.5; // consumer-impact(delta) + dependency + standards(delta) join
 const T_FINDERS_HIGH = 0.8; // consumer-impact/standards widen delta -> all
@@ -450,10 +450,10 @@ function selfTest() {
 
   total++;
   const dp = resolveBudget({ routedTier: "deep" });
-  if (dp.effectiveThoroughness === 0.8 && dp.correctnessVotes === 1 && dp.topology === "hybrid"
-    && dp.maxVerificationTier === 2 && dp.optimalityLens === true && dp.measurabilityLens === true
+  if (dp.effectiveThoroughness === 0.95 && dp.correctnessVotes === 1 && dp.topology === "hybrid"
+    && dp.maxVerificationTier === 3 && dp.optimalityLens === true && dp.measurabilityLens === true
     && dp.finderScope["consumer-impact"] === "all" && dp.finderScope.standards === "all"
-    && dp.holisticEscalationCap === 8 && dp.holisticBroadPass === true && dp.toolCallMultiplier === 1.5) passed++;
+    && dp.holisticEscalationCap === 10 && dp.holisticBroadPass === true && dp.toolCallMultiplier === 2) passed++;
   else fails.push(`resolveBudget(deep) drifted from the stated deep default budget: ${JSON.stringify(dp)}`);
 
   // ---- resolveBudget: the small-incremental carve-out keeps defaulted re-reviews in one context ----
@@ -568,10 +568,10 @@ function selfTest() {
     const d5 = resolveBudget({ routedTier: "deep", changedFiles: 5 });
     const d40 = resolveBudget({ routedTier: "deep", changedFiles: 40 });
     const unknown = resolveBudget({ routedTier: "deep" });
-    if (q22.toolCalls === 60 && s22.toolCalls === 60 && m22.toolCalls === 90 && d22.toolCalls === 90 && c22.toolCalls === 120
-      && d5.toolCalls === 45 && d40.toolCalls === 150 && unknown.toolCalls === null
+    if (q22.toolCalls === 60 && s22.toolCalls === 60 && m22.toolCalls === 90 && d22.toolCalls === 120 && c22.toolCalls === 120
+      && d5.toolCalls === 60 && d40.toolCalls === 200 && unknown.toolCalls === null
       && q22.toolCallMultiplier === 1 && s22.toolCallMultiplier === 1 && m22.toolCallMultiplier === 1.5
-      && d22.toolCallMultiplier === 1.5 && c22.toolCallMultiplier === 2) passed++;
+      && d22.toolCallMultiplier === 2 && c22.toolCallMultiplier === 2) passed++;
     else fails.push(`tool-call budget drifted: ${JSON.stringify({ q: q22.toolCalls, s: s22.toolCalls, m: m22.toolCalls, d: d22.toolCalls, c: c22.toolCalls, d5: d5.toolCalls, d40: d40.toolCalls, u: unknown.toolCalls })}`);
   }
 
