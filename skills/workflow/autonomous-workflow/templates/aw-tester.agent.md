@@ -230,6 +230,8 @@ Every cold-pass invocation works against a stable per-branch directory:
 ├── last-run.spec.ts        # Generated Playwright spec — persisted so the executor's hot loop can re-run it directly
 ├── last-run.meta.json      # { specs_mtime, aw_target_path, generated_at, failing_spec_id, last_locator_error }
 ├── playwright-bin          # Plain-text file: the resolved Playwright binary path (project / branch-local / cached install)
+├── routes/                 # Intent specs only: compiled routes, Spec-N-<sha8>.md — replayed before exploring (contract § 6.6)
+├── probe.spec.ts           # Intent specs only: the exploration probe; probe-in.json / probe-out.json are deleted after the run
 └── node_modules/           # Only populated when the project has no Playwright install and a branch-local one was needed
 ```
 
@@ -464,7 +466,9 @@ For each `## Spec N:` block, in order:
 
 1. **Look up its route.** Compute its `<sha8>` with the command in
    [contract § 6.6](../rules/spec-run-contract.md#66-route-cache--replay-first-heal-on-failure)
-   and look for `$AW_DIR/routes/Spec-N-<sha8>.md`.
+   and look for `$AW_DIR/routes/Spec-N-<sha8>.md` — the route cache,
+   `.agent/<branch>/.aw-tester/routes/`, which persists across runs in this
+   worktree like `last-run.spec.ts` does.
 2. **Hit → replay.** Compile that grammar block into `last-run.spec.ts` with the
    rest of this file's grammar path and run it. Then judge each `# uncompiled:`
    item with one probe (below) that replays the route's actions and checks the

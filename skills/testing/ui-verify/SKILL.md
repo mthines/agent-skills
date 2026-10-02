@@ -2,20 +2,19 @@
 name: ui-verify
 description: >
   Makes a UI pull request autonomously verifiable. `author` writes a Markdown
-  intent spec for the PR's visual change — the steps a reviewer would take and
-  the outcomes that must hold — into the PR description as a collapsed,
-  machine-findable block (delegated to by `create-pr` on UI diffs). `run`
-  extracts it, resolves the PR's live preview URL via the GitHub deployments
-  API, runs it there through `aw-tester`, which may adapt the route but checks
-  every expected outcome with evidence, and reports a verdict plus full-page
-  screenshots (`--no-screenshots` opts out). It then runs an adversarial pass that tries to break the same change —
-  hostile input, double submits, failed requests, interrupted navigation,
-  keyboard-only use, small viewports — and documents every probe with
-  screenshots, never changing the verdict (`--no-adversarial` opts out).
-  `verify` is author-if-needed, then run, in one call. `setup` delegates to
-  `aw-setup --target preview`. A two-way LoreKit loop feeds runner friction
-  into the next spec. Web only. Triggers on "write a preview
-  spec", "verify this PR's preview", "try to break this PR's preview",
+  intent spec (steps, and the outcomes that must hold) into the PR
+  description as a collapsed, machine-findable block (delegated to by
+  `create-pr` on UI diffs). `run` resolves the PR's live preview URL via the
+  GitHub deployments API and runs the spec there through `aw-tester`, which may
+  adapt the route but checks every expected outcome with evidence, and reports
+  a verdict plus full-page screenshots (`--no-screenshots` opts out). It then
+  tries to break the same change — hostile input, double submits, failed
+  requests, keyboard-only use, small viewports — and documents every probe
+  with screenshots, never changing the verdict
+  (`--no-adversarial` opts out). `verify` is author-if-needed, then run.
+  `setup` delegates to `aw-setup --target preview`. A two-way LoreKit loop
+  feeds runner friction into the next spec. Web only. Triggers on "write a
+  preview spec", "verify this PR's preview", "try to break this PR's preview",
   "/ui-verify".
 disable-model-invocation: false
 argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-adversarial] [--unattended]'

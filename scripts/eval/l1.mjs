@@ -10744,4 +10744,98 @@ const isPollBlock = (block) =>
     "a run that re-reviewed cannot report it, or the hard rule / Agent0 route lost it");
 }
 
+// ── G89: intent specs — one format owner, both runners, ui-verify writes v2 and still reads v1 ──
+//
+// `ui-verify author` writes a Markdown intent spec (`Format: intent`) under `<!-- ui-verify:v2 -->`;
+// both runners explore it, grade every Expected item with evidence, and cache the route. The format
+// is only one format if (a) its field tokens are DERIVED from the template that owns them and every
+// one is restated in the ui-verify authoring table, (b) the contract's § 6 carries the grading table,
+// the closed unreachable list, and the verdict keys, (c) both runners detect `Format: intent` and use
+// the route cache, (d) the Playwright probe refuses an ambiguous locator and never writes the bypass
+// secret, and (e) ui-verify's writers and readers agree on the marker order — the embedded template
+// carries the v2 markers and no legacy one.
+// break-shape: drop a field row from spec-format.md, swap runner.md's v2/v1 order, put
+// `preview-spec:v1` back in the embedded template, delete a grading row or an unreachable cause,
+// or drop the probe's `locator matched` guard — the matching sub-check flips red.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
+  const AW = "skills/workflow/autonomous-workflow";
+  const TPL = readOr(`${AW}/templates/intent-spec.md.template`);
+  const CONTRACT_FILE = `${AW}/rules/spec-run-contract.md`;
+  const C6 = sectionOr(CONTRACT_FILE, "## 6. Intent specs");
+  const AWT = readOr(`${AW}/templates/aw-tester.agent.md`);
+  const CHR = readOr(`${AW}/aw-tester-chrome/SKILL.md`);
+  const FMT = readOr("skills/testing/ui-verify/rules/spec-format.md");
+  const EMB = readOr("skills/testing/ui-verify/templates/embedded-spec.md.template");
+  const RUN1 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 1: Get the spec");
+  const UV = readOr("skills/testing/ui-verify/SKILL.md");
+  const DC = readOr("skills/delivery/create-pr/rules/description-contract.md");
+  const RL = readOr("skills/quality/review-loop/SKILL.md");
+
+  // (a) the field tokens are derived from the template's own format comment, never re-encoded here.
+  const fields = [...new Set([...TPL.matchAll(/^#\s+(\*\*[A-Z][A-Za-z ]+:\*\*)/gm)].map((m) => m[1]))];
+  s.check("G89a the intent template declares its header line and its seven fields",
+    /^Format: intent\b/m.test(TPL) && fields.length === 7 && /\[must-follow\]/.test(TPL),
+    `derived ${fields.length} field(s): ${fields.join(" ") || "none"} — the restatement check below is vacuous unless the owner defines them`);
+  const fmtTable = sectionOr("skills/testing/ui-verify/rules/spec-format.md", "## Writing an intent spec (v2)");
+  const unrestated = fields.filter((f) => !fmtTable.split("\n").some((l) => l.startsWith(`| \`${f}\` |`)));
+  s.check("G89a ui-verify's authoring table restates every field the template owns (none missing)",
+    fields.length === 7 && unrestated.length === 0 && /\[must-follow\]/.test(fmtTable),
+    `fields with no row in spec-format.md § Writing an intent spec (v2): ${unrestated.join(" ") || "none"}`);
+
+  // (b) contract § 6 — the grading table, the closed unreachable list, the evidence forms, the keys.
+  const gradeRows = ["is `not-observed`", "`[must-follow]` step was missing", "`changed: not-exercised`", "is `unreachable`", "otherwise"];
+  const missingGrade = gradeRows.filter((r) => !C6.split("\n").some((l) => /^\| [1-5] \|/.test(l) && l.includes(r)));
+  s.check("G89b contract § 6.5 grades by a first-match table with all five rows",
+    C6.length > 2000 && missingGrade.length === 0,
+    `grading rows missing: ${missingGrade.join(" · ") || "none"}`);
+  const unreach = sectionOr(CONTRACT_FILE, "### 6.4 Unreachable — the closed list");
+  const causes = (unreach.match(/^[1-9]\. \*\*/gm) || []).length;
+  s.check("G89b contract § 6.4's unreachable list is closed at exactly five causes, and everything else fails",
+    causes === 5 && /Every other reason[^\n]*`not-observed`, and fails the spec/.test(unreach),
+    `found ${causes} cause(s); a sixth cause widens what can hide a failure as inconclusive`);
+  s.check("G89b contract § 6 carries the evidence forms, the route-cache path, and the verdict keys",
+    ["`locator: <single-braces locator> — <state>`", "`network: METHOD /path → NNN`", ".agent/{branch}/.aw-tester/routes/<spec-id>-<sha8>.md",
+      "route: explored | replayed | healed", "changed: exercised | not-exercised", "result: observed | not-observed | unreachable"].every((t) => C6.includes(t)),
+    "contract § 6 lost an evidence form, the cache path, or one of the § 6.7 verdict keys");
+
+  // (c) both runners detect the format, follow the contract's § 6, and use the same cache.
+  for (const [label, t] of [["aw-tester.agent.md", AWT], ["aw-tester-chrome/SKILL.md", CHR]]) {
+    s.check(`G89c ${label} detects Format: intent and runs it with the shared route cache and evidence keys`,
+      t.includes("`Format: intent`") && t.includes(".aw-tester/routes/") && t.includes("[must-follow]")
+        && t.includes("not-exercised") && /route: (explored|`replayed`|replayed)/.test(t) && /§ ?6/.test(t),
+      `${label} is missing the format detection, the routes/ cache, the must-follow rule, or the route/changed keys`);
+  }
+
+  // (d) the probe refuses an ambiguous match and never writes the bypass secret to disk.
+  const probe = (AWT.match(/```ts\n\/\/ \$AW_DIR\/probe\.spec\.ts[\s\S]*?```/) || [""])[0];
+  s.check("G89d aw-tester's probe refuses a locator that matches more than one element and never takes the first",
+    probe.includes("locator matched ${n} elements") && !/\.first\(\)/.test(probe),
+    "the probe can silently act on the wrong instance — the false-completion intent specs exist to stop");
+  s.check("G89d aw-tester's probe reads the bypass header value from the environment, never from probe-in.json",
+    /process\.env\[bypass\.env\]/.test(probe) && !/bypass\.value/.test(probe),
+    "the bypass secret would be written to disk in probe-in.json");
+
+  // (e) ui-verify: writers and readers agree on the marker versions and their order.
+  const iV2 = RUN1.indexOf("<!-- ui-verify:v2 -->"), iV1 = RUN1.indexOf("<!-- ui-verify:v1 -->"), iLeg = RUN1.indexOf("<!-- preview-spec:v1 -->");
+  s.check("G89e runner.md Step 1 reads v2, then v1, then the legacy preview-spec:v1 marker",
+    iV2 >= 0 && iV1 > iV2 && iLeg > iV1,
+    `marker positions in Step 1 — v2@${iV2}, v1@${iV1}, legacy@${iLeg}`);
+  s.check("G89e the embedded template writes the v2 markers and the intent header, and no older marker",
+    EMB.includes("<!-- ui-verify:v2 -->") && EMB.includes("<!-- /ui-verify:v2 -->") && /^Format: intent$/m.test(EMB)
+      && /^Target: preview$/m.test(EMB) && !/<!-- \/?(preview-spec|ui-verify):v1 -->/.test(EMB),
+    "author starts from this file — a v1 or legacy marker here writes the wrong block on every PR");
+  s.check("G89e spec-format.md defines all three marker pairs and SKILL.md's verify keeps any of them",
+    ["<!-- ui-verify:v2 -->", "<!-- /ui-verify:v2 -->", "<!-- ui-verify:v1 -->", "<!-- preview-spec:v1 -->"].every((m) => FMT.includes(m))
+      && ["`<!-- ui-verify:v2 -->`", "`<!-- ui-verify:v1 -->`", "`<!-- preview-spec:v1 -->`"].every((m) => UV.includes(m)),
+    "a marker version the runner reads is undefined in spec-format.md, or verify would overwrite a block of that version");
+  s.check("G89e ui-verify's hard rules keep the outcome strict while the route flexes",
+    UV.includes("**A route may change; an outcome may not.**") && UV.includes("**Never fork either spec format.**"),
+    "ui-verify SKILL.md lost the rule that an intent spec passes only with evidence for every Expected item");
+  s.check("G89e create-pr's description contract and review-loop name the v2 block",
+    DC.includes("<!-- ui-verify:v2 -->") && /ui-verify:v2/.test(RL),
+    "a downstream that only knows the v1 marker would count the v2 block against the length budget or drop it on refresh");
+}
+
 process.exit(s.report() ? 0 : 1);
