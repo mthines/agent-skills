@@ -10684,4 +10684,50 @@ const isPollBlock = (block) =>
     "G59b reads the first <dispatch>( block as aw-tester's; the adversarial block must come after it");
 }
 
+// ── G88: review-loop --merge re-reviews after the description refresh ──
+// The loop's last review judges the PR body as it was BEFORE Step 2 rewrote it, so a
+// `Description vs. code` WARN the refresh fixed blocked every --merge run that applied code
+// (observed on mthines/agent-skills#224). Step 2.5 now runs one gates-only re-review first, when
+// the refresh changed the body after a non-PASS verdict, and gates on that verdict instead.
+// Guarded:
+//   a. the re-review subsection lives inside Step 2.5, BEFORE the gate table, and its condition
+//      table carries all four rows (a row dropped widens or narrows when it runs);
+//   b. Step 2 sets the flag the subsection reads, and the loop state initialises it;
+//   c. the re-review sets FINAL_VERDICT (the Approval gate's input) and is never an iteration;
+//   d. the report and the --merge hard rule name it, and the Agent0 rule routes it.
+// break-shape: delete one condition row, move the subsection below the gate table, drop Step 2's
+// `DESCRIPTION_REFRESHED = 1` item, drop "Set `FINAL_VERDICT`", or drop the `Merge re-review:`
+// report slot — the matching sub-check flips red.
+{
+  const sectionOr = (heading) => { try { return extractSection("skills/quality/review-loop/SKILL.md", heading); } catch { return ""; } };
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const RL = readOr("skills/quality/review-loop/SKILL.md");
+  const S25 = sectionOr("### Step 2.5: Merge (under `--merge`, on approval)");
+  const S2 = sectionOr("### Step 2: Refresh the PR description and Linear note (on convergence)");
+  const S3 = sectionOr("### Step 3: Report");
+  const A0 = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
+  const iSub = S25.indexOf("#### Post-refresh re-review — before the gates");
+  const iGates = S25.indexOf("| Gate | Merge requires | Read from |");
+  const sub = iSub >= 0 && iGates > iSub ? S25.slice(iSub, iGates) : "";
+  const rows = ["`MERGE == 1` and `EXTERNAL_REVIEW == 0`", "`STOP_REASON == \"all-threads-resolved\"`", "`DESCRIPTION_REFRESHED == 1`", "`FINAL_VERDICT != \"PASS\"`"];
+  const missingRows = rows.filter((r) => !sub.split("\n").some((l) => l.startsWith(`| ${r} |`)));
+  s.check("G88a review-loop Step 2.5 runs the post-refresh re-review before its gate table, on all four conditions",
+    sub.length > 400 && missingRows.length === 0,
+    `subsection@${iSub}, gate table@${iGates}; condition rows missing: ${missingRows.join(" · ") || "none"}`);
+  s.check("G88b Step 2 sets DESCRIPTION_REFRESHED only for a changed body, and the loop state initialises it to 0",
+    /^3\. Set `DESCRIPTION_REFRESHED = 1` when the edit succeeded and the new body differs/m.test(S2)
+      && /^DESCRIPTION_REFRESHED = 0\b/m.test(RL),
+    "the flag the re-review reads is never set (or never initialised), so the re-review either never runs or runs on a stale value");
+  s.check("G88c the re-review feeds the Approval gate and is never an iteration",
+    /Set `FINAL_VERDICT` to the verdict it returns/.test(sub)
+      && /does not count against `CAP`, it never runs sub-steps B, C, or D/.test(sub)
+      && /the post-refresh re-review when one ran/.test(S25.slice(iGates)),
+    "the re-review's verdict no longer reaches the Approval gate, or it can now apply or count as an iteration");
+  s.check("G88d the report, the --merge hard rule, and the Agent0 rule all name the post-refresh re-review",
+    /^Merge re-review: <PASS \| WARN \| FAIL \| refused \|/m.test(S3)
+      && /The final verdict is the post-refresh re-review's when Step 2 changed the body/.test(RL)
+      && A0.includes("(../SKILL.md#post-refresh-re-review--before-the-gates)"),
+    "a run that re-reviewed cannot report it, or the hard rule / Agent0 route lost it");
+}
+
 process.exit(s.report() ? 0 : 1);
