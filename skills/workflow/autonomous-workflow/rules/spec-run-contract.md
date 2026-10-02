@@ -384,7 +384,7 @@ The route a passing exploration took is compiled and cached, so the next run rep
 When a spec passes by exploration, write its route as one `## Spec N:` block in the grammar of [`specs.md.template`](../templates/specs.md.template): a `url:` of `start`, one `WHEN` per action performed (detours included, each with the locator that resolved), and one `THEN` per `expected` item whose evidence was a `locator:` or `network:` line.
 List the items judged by `text:` or `capture:` evidence on an `# uncompiled:` line.
 Write `url:` and `network:` paths with the spec's own `{placeholder}`s, never their resolved values.
-When an action's locator had to be scoped to a container to match one element, do not cache the route: the grammar has no scoping form, and an unscoped locator could replay against the wrong instance.
+When an action's locator had to be scoped to a container to match one element, or the route navigated by URL after `start` (a `goto` detour), do not cache the route: the grammar has no scoping form and no mid-flow navigation step, and an unscoped locator could replay against the wrong instance.
 That spec explores on every run; say so in `notes`.
 Write it to `.agent/{branch}/.aw-tester/routes/<spec-id>-<sha8>.md`, where `<sha8>` is the first 8 hex characters of the SHA-256 of the spec's block text — from its `## Spec N:` line through the line before the next `## ` heading, trailing blank lines removed:
 

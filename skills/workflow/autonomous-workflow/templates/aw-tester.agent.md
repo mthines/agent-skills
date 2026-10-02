@@ -477,8 +477,9 @@ For each `## Spec N:` block, in order:
 3. **Miss (or heal) → explore with the probe loop below**, grade per contract
    § 6.5, and on a pass write the compiled route to
    `$AW_DIR/routes/Spec-N-<sha8>.md` with its four comment lines — unless an
-   action needed a `within` scope, which the grammar cannot express: then cache
-   nothing and note that the spec explores every run.
+   action needed a `within` scope or was a `goto` after `start`, neither of
+   which the grammar can express: then cache nothing and note that the spec
+   explores every run.
 
 After every spec ran, rebuild `last-run.spec.ts` from the compiled routes so the
 `hot_loop:` handle re-runs the passing specs deterministically. A spec with no
