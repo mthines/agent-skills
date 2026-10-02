@@ -47,7 +47,7 @@ flowchart LR
 - `retryRequest` (`src/api/client.ts`) — signature change · 14 consumer files · 13 verified unaffected · 1 finding inline
 - `parseConfig` (`src/config/load.ts`) — body change · 4 consumer files · 4 verified unaffected
 - `stripe` 14.2.0 → 16.0.1 (major) — 6 usage sites checked · [release notes](https://github.com/stripe/stripe-node/releases/tag/v16.0.0)
-- `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by @alice — a semantic conflict is likely even if git merges both cleanly
+- `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by `alice` — a semantic conflict is likely even if git merges both cleanly
 
 </details>
 

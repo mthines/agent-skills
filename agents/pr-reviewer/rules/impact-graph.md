@@ -153,7 +153,7 @@ With `--overlaps`, the script asks GitHub for the 30 most recently updated open 
 | `same-file` | both touch the file, different symbols | a note only |
 
 ```markdown
-`retryRequest` is also changed on #212 by @alice (`feat/retry-budget`) — a semantic
+`retryRequest` is also changed on #212 by `alice` — a semantic
 conflict is likely even if git merges both cleanly.
 ```
 

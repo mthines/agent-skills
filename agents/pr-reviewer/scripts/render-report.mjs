@@ -946,7 +946,9 @@ function main() {
       if (found) parts.push(`${found} finding${found === 1 ? "" : "s"} inline`);
       // An untraced remainder is stated, never rounded away.
       const untraced = files - ok - found;
-      if (untraced > 0) parts.push(`${untraced} not traced (budget)`);
+      // "Not traced" without a cause: the budget, a below-breakpoint finder, or a diff-only workspace
+      // can each leave a consumer unread, and the bullet must not name the wrong one.
+      if (untraced > 0) parts.push(`${untraced} not traced`);
       return `- \`${sy.name}\` (\`${sy.path}\`) — ${parts.join(" · ")}`;
     });
 
@@ -989,7 +991,9 @@ function main() {
       const ref = o.url ? `[#${o.pr}](${o.url})` : `#${o.pr}`;
       // Git merges two clean edits to different lines of one function and produces code neither
       // author wrote, so this is stated as a semantic risk rather than a merge-conflict warning.
-      return `- ${target} is also changed on ${ref} by @${o.author} — a semantic conflict is`
+      // The login is code-wrapped, never an @mention: the section is now built on every run that has
+      // an overlap, and the sticky is rewritten each run, so a mention would page the other author.
+      return `- ${target} is also changed on ${ref} by \`${o.author}\` — a semantic conflict is`
         + " likely even if git merges both cleanly";
     });
 

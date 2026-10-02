@@ -40,6 +40,10 @@
     "scanned": 22,
     "total": 31
   },
+  "COVERAGE": {
+    "files_read": 22,
+    "files_total": 31
+  },
   "RUN": {
     "mode": "full",
     "sha": "69b0de8",

@@ -1905,6 +1905,10 @@ async function prepare(opts) {
     },
     files: opts.inlinePayloads ? files : files.map(({ patch, ...rest }) => rest),
     filesPath: prFilesPath,
+    // The changed files this run reviews — the delta on an incremental run, the PR's diffable files
+    // on a full one, none on zero-delta. finalize.mjs counts judgments.scanned_files against it for
+    // the report's `Checked` line, so a file outside the scope can never inflate "N of M read".
+    scopePaths: contextMode === "zero-delta" ? [] : deltaFiles.map((f) => f.filename),
     diffablePaths: diffable,
     undiffablePaths: undiffable,
     // The delta's own count on an incremental run (what RUN.delta_lines renders as "N lines in

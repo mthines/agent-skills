@@ -44,9 +44,9 @@ flowchart LR
   classDef warn fill:#fff4e5,stroke:#d97706,color:#78350f
 ```
 
-- `retryRequest` (`src/api/client.ts`) — signature change · 14 consumer files · 5 verified unaffected · 1 finding inline · 8 not traced (budget)
+- `retryRequest` (`src/api/client.ts`) — signature change · 14 consumer files · 5 verified unaffected · 1 finding inline · 8 not traced
 - `backoffDelay` (`src/api/backoff.ts`) — added change · 1 consumer file · 1 verified unaffected
-- `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by @alice — a semantic conflict is likely even if git merges both cleanly
+- `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by `alice` — a semantic conflict is likely even if git merges both cleanly
 
 </details>
 
