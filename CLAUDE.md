@@ -103,6 +103,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 
 - `animations` (`auto`) — CSS-first web animations and perceived performance
 - `animations-native` (`auto`) — React Native / Expo animations (Reanimated, gesture-handler)
+- `behavioral-design` (`auto`) — behavior-change diagnosis (COM-B, B=MAP), ethical interventions (EAST, defaults, System 1 / System 2), and team-adoption workshops. Never recommends a dark pattern or sludge
 - `charting` (`auto`) — chart type + library for web and mobile
 - `storybook` (`auto`) — visual regression, Playground, and interaction-test stories
 - `ux` (`auto`) — UX, a11y, microcopy, dark-pattern review. Never recommends a dark pattern
