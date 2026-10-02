@@ -400,8 +400,9 @@ memory coordinates) alongside its `fingerprint`, `relevance`, and `seen_count` โ
 the report builds a pressable dashboard deep link from `scope` + `key` for every
 memory that actually influences the review (see
 [Linking applied memories in the report](#linking-applied-memories-in-the-report)).
-`memory.list` / `memory.read` / `memory.search` return the memory's UUID as `id` on
-every entry; the `pr-reviewer` run trace opens each memory by it
+`memory.list` and `memory.search` return the memory's UUID as `id` on every entry;
+`memory.read` does not, so keep the `id` from the list or search entry that surfaced the
+key. The `pr-reviewer` run trace opens each memory by it
 ([`run-telemetry.md ยง The memory`](../../pr-reviewer/rules/run-telemetry.md#the-memory)).
 
 ### How to apply

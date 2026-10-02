@@ -348,7 +348,7 @@
           "items": { "type": "object", "additionalProperties": true }
         },
         "read": {
-          "description": "Optional. One { id, scope, key } per memory whose body this run fetched with memory_read (Steps 1.2a, 1.2d, 2.7b), copied from the LoreKit entry. Only the run trace reads it; omit it and the trace omits the read count rather than reporting 0.",
+          "description": "Optional. One { id, scope, key } per memory whose body this run fetched with memory_read (Steps 1.2a, 1.2d, 2.7b), with id taken from the memory_list / memory_search entry that surfaced it (memory_read returns none). Only the run trace reads it; omit it and the trace omits the read count rather than reporting 0.",
           "type": "array",
           "items": { "type": "object", "additionalProperties": true }
         }

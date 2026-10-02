@@ -156,7 +156,7 @@ Neither carries a run id, a PR number, or a user as an attribute.
 
 The root span says which LoreKit memories the review used and read, and links each one back to LoreKit.
 `finalize.mjs` records them from `judgments.memory` as one `memory` ledger record; a finalize re-run replaces it.
-You supply the inputs only: copy `id`, `scope`, and `key` onto every `memory.relevance_rules[]` and `memory.lessons_used[]` entry, and list every body you fetched with `memory_read` in `memory.read[]` ([`posting.md`](./posting.md)).
+You supply the inputs only: copy `id`, `scope`, and `key` onto every `memory.relevance_rules[]` and `memory.lessons_used[]` entry — `id` from the `memory_list` / `memory_search` entry, since `memory_read` returns none — and list every body you fetched with `memory_read` in `memory.read[]` ([`posting.md`](./posting.md)).
 
 | Where | Attribute | Value |
 | --- | --- | --- |
@@ -173,7 +173,7 @@ At most 50 events are kept, used memories first.
 A run whose finalize never ran carries none of these, so "no memory attributes" means unknown and `pr_review.memory.used=0` means none was used.
 
 ```text
-# correct: the entry as LoreKit returned it — the trace links it by id
+# correct: id, scope, and key from the list or search entry — the trace links it by id
 { "id": "cb10f4e2-eaf1-48e1-933c-e633a23e2716", "scope": "repo::acme/widget", "key": "hotspot::src/api/client.ts", "used_as": "finder pointer (re-verified)" }
 
 # incorrect: the id dropped — the trace falls back to the scope + key link, and a key alone gets none
