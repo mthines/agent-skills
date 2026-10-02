@@ -120,14 +120,25 @@ It is one line of output, printed before the dispatch, never a question:
 
 ```text
 ✅ RIGHT
-ui-verify: Chrome extension not connected — running with Playwright (aw-tester). Pass --driver chrome to require Chrome.
-ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester). Pass --driver chrome to require Chrome.
+ui-verify: Chrome extension not connected — running with Playwright (aw-tester); logs in via .claude/aw-targets/preview.yml, not your Chrome session. Pass --driver chrome to require Chrome.
+ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester); first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/; no preview login configured (run /ui-verify setup if the preview needs one). Pass --driver chrome to require Chrome.
 
 ❌ WRONG
 AskUserQuestion("The Chrome extension isn't connected. Run with Playwright instead?")
+ui-verify: running with Playwright.   # no reason, and silent about the install and the login it switches to
 ```
 
 Name the reason in the first clause: `Chrome extension not connected`, or `Chrome returned inconclusive (<reason>)` with the `notes:` reason from the Chrome verdict.
+Then append each clause whose condition holds, in this order, separated by `; `:
+
+| Append | When |
+| --- | --- |
+| `first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/` | Neither `node_modules/.bin/playwright` nor `.agent/{branch}/.aw-tester/node_modules/.bin/playwright` exists, so `aw-tester`'s binary resolution will install one |
+| `logs in via .claude/aw-targets/preview.yml, not your Chrome session` | The ephemeral `aw-target.yml` from Step 3 has `auth.strategy` `storage-state` or `env-credentials` |
+| `authed specs will be skipped (auth.strategy: manual)` | Its `auth.strategy` is `manual` |
+| `no preview login configured (run /ui-verify setup if the preview needs one)` | Its `auth.strategy` is `none` or absent |
+
+Exactly one of the three login clauses always applies, because the Playwright run never inherits the Chrome session.
 Step 5 names the driver that produced the verdict, so the report always says `playwright` after a fallback.
 
 ## Step 4b: Adversarial pass — try to break it
