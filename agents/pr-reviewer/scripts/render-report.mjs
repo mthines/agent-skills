@@ -107,7 +107,9 @@ const SHAPES = {
   // string `render-comment.mjs` put on the comment's own first line, which is what makes the index
   // row and the comment it links to recognisably the same finding.
   "FINDINGS[]": ["title", "path", "line", "url", "tier", "blocking"],
-  IMPACT: ["telemetry", "symbols", "dependencies", "overlaps"],
+  // `dependencies_omitted` (optional) counts the transitive bumps with no usage site that are not
+  // listed in `dependencies`; it renders as one bullet and in the summary, so none is hidden.
+  IMPACT: ["telemetry", "symbols", "dependencies", "dependencies_omitted", "overlaps"],
   "IMPACT.symbols[]": ["name", "path", "change", "consumer_files", "verified_unaffected", "findings",
     "consumers"],
   // One entry per consumer FILE the trace has a status for. Every verified and every flagged file
@@ -933,7 +935,7 @@ function main() {
   let consumerFilesChecked = 0;
   if (data.IMPACT !== undefined && data.IMPACT !== null) {
     const im = data.IMPACT;
-    if (!isPlainObject(im)) fail("IMPACT must be an object {telemetry, symbols, dependencies, overlaps}");
+    if (!isPlainObject(im)) fail("IMPACT must be an object {telemetry, symbols, dependencies, dependencies_omitted, overlaps}");
     assertNoStrayFields("IMPACT", im, SHAPES.IMPACT);
 
     const list = (field) => {
@@ -1014,6 +1016,14 @@ function main() {
       const how = read === sites ? "checked" : read === 0 ? "not checked" : `${read} checked`;
       return `- \`${d.name}\` ${d.from} → ${d.to} (${d.delta}) — ${siteWord}, ${how}${notes}`;
     });
+    // Transitive bumps with no usage site are a count, not rows: listed, a lockfile refresh would bury
+    // the direct bumps; dropped, a transitive major would vanish from the report.
+    const depsOmitted = im.dependencies_omitted === undefined || im.dependencies_omitted === null
+      ? 0 : int("IMPACT.dependencies_omitted", im.dependencies_omitted);
+    if (depsOmitted) {
+      depBullets.push(`- ${depsOmitted}${deps.length ? " more" : ""} dependency bump${depsOmitted === 1 ? "" : "s"} — transitive,`
+        + " no usage sites in this repo, not listed");
+    }
 
     const overlaps = list("overlaps");
     const overlapBullets = overlaps.map((o, i) => {
@@ -1059,7 +1069,11 @@ function main() {
       if (consumersFlagged) bits.push(`${consumersFlagged} flagged`);
       if (consumersUntraced) bits.push(`${consumersUntraced} not checked`);
     }
-    if (deps.length) bits.push(`${deps.length} dependency bump${deps.length === 1 ? "" : "s"}`);
+    const depsTotal = deps.length + depsOmitted;
+    if (depsTotal) {
+      bits.push(`${depsTotal} dependency bump${depsTotal === 1 ? "" : "s"}`
+        + (depsOmitted ? ` (${depsOmitted} transitive, not listed)` : ""));
+    }
     if (overlaps.length) bits.push(`${overlaps.length} open-PR overlap${overlaps.length === 1 ? "" : "s"}`);
     impactSummary = bits.join(" · ");
 

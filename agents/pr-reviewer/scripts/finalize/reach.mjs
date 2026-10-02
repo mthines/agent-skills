@@ -81,7 +81,7 @@ export function buildCoverage({ scopePaths, scanned, partial, skipped }) {
 /**
  * A render-report.mjs IMPACT object, or null when impact.json has nothing a reader needs.
  * @param {{ impact: any, inlineClaims?: any[], trace?: unknown, repo?: string | null }} args
- * @returns {{ symbols?: any[], dependencies?: any[], overlaps?: any[] } | null}
+ * @returns {{ symbols?: any[], dependencies?: any[], dependencies_omitted?: number, overlaps?: any[] } | null}
  */
 export function buildImpact({ impact, inlineClaims = [], trace, repo = null }) {
   if (!impact || typeof impact !== "object") return null;
@@ -140,12 +140,19 @@ export function buildImpact({ impact, inlineClaims = [], trace, repo = null }) {
     });
 
   // A version bump is reach whether or not anything read its call sites, so every renderable delta
-  // is listed; what was read is a separate, evidenced number. `checked_sites` counts the usage sites
-  // in files the trace names for this package (impact_trace `{symbol: <name>, path: <manifest>}`),
-  // so the bullet never says "checked" on the strength of a finder merely being scheduled.
-  const dependencies = rawDeps
+  // that is direct (`direct !== false`) or has a usage site in this repo is listed; what was read is
+  // a separate, evidenced number. `checked_sites` counts the usage sites in files the trace names for
+  // this package (impact_trace `{symbol: <name>, path: <manifest>}`), so the bullet never says
+  // "checked" on the strength of a finder merely being scheduled.
+  // A transitive delta with no usage site is counted in `dependencies_omitted`, never listed and never
+  // dropped: one lockfile refresh can move hundreds, and a hidden transitive major must stay visible.
+  const renderableDeps = rawDeps
     .filter((d) => d && safe(d.name) && safe(String(d.from ?? "")) && safe(String(d.to ?? ""))
-      && RENDERABLE_DELTAS.has(d.semver_delta))
+      && RENDERABLE_DELTAS.has(d.semver_delta));
+  const listedDeps = renderableDeps
+    .filter((d) => d.direct !== false || (Array.isArray(d.usage_sites) && d.usage_sites.length > 0));
+  const dependenciesOmitted = renderableDeps.length - listedDeps.length;
+  const dependencies = listedDeps
     .map((d) => {
       /** @type {any[]} */
       const sites = Array.isArray(d.usage_sites) ? d.usage_sites : [];
@@ -175,11 +182,12 @@ export function buildImpact({ impact, inlineClaims = [], trace, repo = null }) {
       return out;
     });
 
-  if (!symbols.length && !dependencies.length && !overlaps.length) return null;
-  /** @type {{ symbols?: any[], dependencies?: any[], overlaps?: any[] }} */
+  if (!symbols.length && !dependencies.length && !dependenciesOmitted && !overlaps.length) return null;
+  /** @type {{ symbols?: any[], dependencies?: any[], dependencies_omitted?: number, overlaps?: any[] }} */
   const out = {};
   if (symbols.length) out.symbols = symbols;
   if (dependencies.length) out.dependencies = dependencies;
+  if (dependenciesOmitted > 0) out.dependencies_omitted = dependenciesOmitted;
   if (overlaps.length) out.overlaps = overlaps;
   return out;
 }
@@ -249,6 +257,24 @@ function selfTest() {
     JSON.stringify(built?.dependencies) === JSON.stringify([{ name: "stripe", from: "14.2.0", to: "16.0.1", delta: "major", usage_sites: 3, checked_sites: 2 }]));
   check("an untraced dependency is still listed, with 0 sites checked — never assumed read",
     buildImpact({ impact, inlineClaims: claims, trace: [], repo: "o/r" })?.dependencies?.[0]?.checked_sites === 0);
+  {
+    const lock = buildImpact({ impact: { dependencies: [
+      { name: "direct-dep", manifest: "package.json", from: "1.0.0", to: "2.0.0", semver_delta: "major", direct: true, usage_sites: [] },
+      { name: "used-transitive", manifest: "package.json", from: "3.1.0", to: "3.2.0", semver_delta: "minor", direct: false,
+        usage_sites: [{ path: "src/u.ts" }] },
+      { name: "quiet-a", manifest: "package.json", from: "0.1.0", to: "0.1.1", semver_delta: "patch", direct: false, usage_sites: [] },
+      { name: "quiet-b", manifest: "package.json", from: "4.0.0", to: "5.0.0", semver_delta: "major", direct: false },
+    ] } });
+    check("a transitive bump with no usage site is counted in dependencies_omitted, never listed and never dropped",
+      JSON.stringify(lock?.dependencies?.map((/** @type {any} */ d) => d.name)) === JSON.stringify(["direct-dep", "used-transitive"])
+        && lock?.dependencies_omitted === 2);
+    const onlyQuiet = buildImpact({ impact: { dependencies: [
+      { name: "quiet-a", from: "0.1.0", to: "0.1.1", semver_delta: "patch", direct: false, usage_sites: [] }] } });
+    check("transitive bumps alone still yield an IMPACT carrying their count, not null",
+      JSON.stringify(onlyQuiet) === JSON.stringify({ dependencies_omitted: 1 }));
+    check("dependencies_omitted is absent when nothing was left out",
+      built !== null && !("dependencies_omitted" in (built ?? {})));
+  }
   {
     const past = buildImpact({
       impact: { symbols: [{ name: "f", path: "src/f.ts", change: "signature", exported: true, consumer_files: 30,
