@@ -314,7 +314,7 @@ When the budget runs out, stop: the remaining items are `unreachable` with cause
 **Mutations run once.**
 A step that saves, submits, creates, deletes, sends, or changes a persisted setting — a toggle, a star, an auto-saving select — is a *mutating step*; when the wording or the control leaves it unclear, treat it as mutating until it is performed.
 A control that only opens a confirmation, menu, or dialog is not the mutation — the confirming control is.
-Performing a step settles it: a step that fired a `POST`, `PUT`, `PATCH`, or `DELETE` was a mutation; one that fired none and only opened a dialog, menu, or popover was not, and may be replayed.
+Performing a step settles it: a step that fired a `POST`, `PUT`, `PATCH`, or `DELETE` was a mutation; one that fired none and only opened a dialog, menu, or popover was not, and may be replayed; one that fired none but did anything else is still treated as a mutation and never replayed.
 Perform each mutating step exactly once per exploration.
 A runner that explores by re-launching from `start` replays only the non-mutating steps since the last mutation it performed, never a mutation it already performed.
 

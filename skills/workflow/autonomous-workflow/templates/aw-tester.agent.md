@@ -92,6 +92,7 @@ Read the aw-target file at `aw_target_path` — the explicit `Aw-Target file:` p
 - `auth.strategy` and `auth.storage_state` (if strategy is `storage-state`)
 - `fixtures.references` (for placeholder resolution)
 - `constraints.parallelism` and `constraints.reset_between_specs`
+- `adversarial.allowed_origins`, when present — an intent spec's probe passes it as `apiOrigins`
 
 ### 4. Parse specs.md
 
@@ -621,6 +622,11 @@ Walk the spec's steps with it:
    - **Empty, and the step only opened a dialog, menu, or popover** — it was
      not the mutation (its confirm is). Mark it replayable and keep exploring
      from `start` as in item 2; the next step is the one to dry-resolve.
+   - **Empty, and the step did more than open a dialog, menu, or popover** —
+     treat it as the mutation anyway: never replay it, continue as for a
+     non-empty `fired`, and put `fired: [] — treated as a mutation` in
+     `notes` (its request went to an origin `apiOrigins` does not list, or
+     landed after `settleMs`: add the origin, or raise `settleMs`).
    - **Not empty** — the mutation happened, in that launch only. To explore
      the steps after it, set `start` to the commit launch's `url` and `steps`
      to only the actions resolved after the mutation, so no later launch
