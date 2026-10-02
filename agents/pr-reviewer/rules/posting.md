@@ -106,6 +106,7 @@ REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 | `gates.gate4` | Self-review-signals judgment (Gate 4). |
 | `gates.gate5` | Docs judgment (Gate 5). |
 | `candidates[]`, `threads[]`, `lenses[]`, `memory` | Everything Steps 2/2.4–2.9c produced. `finalize.mjs` computes thresholds, the defer band, suppression, placement, caps, and the gates/verdict from these — it invents none of it. |
+| `memory.relevance_rules[]`, `memory.lessons_used[]`, `memory.read[]` | Copy `id`, `scope`, and `key` onto every entry. Take `id` from the `memory_list` / `memory_search` entry that surfaced the key — `memory_read` returns none. Take `scope` from the entry, or from the scope the call was made with when the entry omits it — a `scope="global"` `memory_list` does, and a ref without a scope is never cited. `read[]` lists `{ id, scope, key }` for every body this run fetched with `memory_read` (Steps 1.2a, 1.2d, 2.7b). The run trace opens each memory by these ([`run-telemetry.md § The memory`](./run-telemetry.md#the-memory)). |
 
 There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
 
@@ -467,6 +468,21 @@ mcp__lorekit__memory_write:
   origin_pr   = <PR_NUMBER>
   origin_commit = "<HEAD_SHA>"
   origin_branch = "<HEAD_REF>"
+  cited    = <finalize-result.json's citedRefs, verbatim>   # jq -c '.citedRefs' <out-dir>/finalize-result.json
+```
+
+**`cited` credits the memories that shaped this review.**
+LoreKit records each ref as a citation of that memory by this PR's state record, and the memory's detail sheet shows it as `Cited · credited N×`.
+Pass `finalize.mjs`'s `citedRefs` exactly as written — it holds `scope::key` for every `memory.lessons_used[]` entry and every relevance rule that acted this run, and nothing else.
+Never build the list by hand, never add a memory you only read, and pass `[]` when it is empty.
+A ref LoreKit cannot resolve is dropped silently and never fails the write.
+
+```text
+# correct: the refs finalize computed from judgments.memory
+cited = ["repo::acme/widget::hotspot::src/api/client.ts", "repo::acme/widget::reviewer-comment-relevance::rule::correctness:nil-deref:-@src/jobs/sync.ts"]
+
+# incorrect: every memory the run loaded — a citation means "this shaped the review", not "this was in context"
+cited = ["repo::acme/widget::hotspot::src/api/client.ts", "global::reviewer-lessons::prefer-guard-clauses", "repo::acme/widget::knowledge::retryRequest@src/api/client.ts"]
 ```
 
 ```bash

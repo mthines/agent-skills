@@ -1,0 +1,16 @@
+{"query": "How do we get engineers to actually use the new feature-flag tool? Adoption is stuck at 30%.", "should_trigger": true}
+{"query": "Help me plan a workshop on nudges and System 1 vs System 2 for my team.", "should_trigger": true}
+{"query": "Why aren't people filling in the incident postmortem template?", "should_trigger": true}
+{"query": "I want to use Thinking Fast and Slow ideas to make our onboarding checklist stick.", "should_trigger": true}
+{"query": "What behavior change levers would make people update their tickets daily?", "should_trigger": true}
+{"query": "Review our rollout plan for the new code-review process — will people actually adopt it?", "should_trigger": true}
+{"query": "Make it easy for teams to adopt the shared component library instead of copy-pasting.", "should_trigger": true}
+{"query": "Design a choice architecture so users pick the annual plan without tricking them.", "should_trigger": true}
+{"query": "Is this signup form accessible and WCAG compliant?", "should_trigger": false}
+{"query": "Review this React component's UX and microcopy.", "should_trigger": false}
+{"query": "Add RUM analytics events to track adoption of the export button.", "should_trigger": false}
+{"query": "Brainstorm feature ideas for our observability dashboard.", "should_trigger": false}
+{"query": "Pick a visual style direction for the landing page.", "should_trigger": false}
+{"query": "Write the slides for my talk about OpenTelemetry semantic conventions.", "should_trigger": false}
+{"query": "Explain the difference between a mutex and a semaphore.", "should_trigger": false}
+{"query": "Why is this test flaky on CI?", "should_trigger": false}

@@ -86,6 +86,23 @@ auth:
 #   #     use, falling through to the generic resolver if it 404s.
 #   template: 'https://myapp-pr-{pr}-myscope.vercel.app'
 
+# ── Adversarial pass (optional) ──────────────────────────────────────────────
+# `ui-verify run` tries to break every passing spec after the happy-path run
+# (rules/adversarial.md). It never changes the verdict. Every key is optional;
+# an absent block means the defaults shown. `--no-adversarial` skips one run.
+# adversarial:
+#   enabled: true                 # false skips the pass for this repo
+#   max_probes: 24
+#   time_budget_minutes: 10
+#   allowed_origins:              # besides the preview, origins that may receive
+#     - https://api.staging.example.com   # mutations — the app's own API
+#   deny_actions:                 # added to the built-in destructive pattern
+#     - "/reset workspace/i"
+#   mock_endpoints:               # METHOD + path glob — stubbed, never sent
+#     - "POST /api/invites/**"
+#   mask_testids:                 # data-testid values masked in every image
+#     - user-avatar
+
 fixtures:
   # A preview usually points at a shared staging database, so seeding is often a
   # no-op. Reference dynamic ids the same way as any aw-target.

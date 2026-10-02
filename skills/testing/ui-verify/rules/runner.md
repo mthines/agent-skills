@@ -11,7 +11,17 @@ tags:
 # Runner
 
 The `run` operation: get the spec, point the selected runner at the live preview, and report its verdict.
-The runner is an **on-demand orchestrator** — it resolves and dispatches once, reads the verdict, and writes lessons. It does not watch, retry the browser, or fix code. It picks between two runners with `--driver`; both emit the same verdict per the [spec-run contract](../../../workflow/autonomous-workflow/rules/spec-run-contract.md).
+The runner is an **on-demand orchestrator** — it resolves once, dispatches the spec run and then the [adversarial pass](./adversarial.md), reads both results, and writes lessons. It does not watch, retry the browser, or fix code. It picks between two runners with `--driver`; both emit the same verdict per the [spec-run contract](../../../workflow/autonomous-workflow/rules/spec-run-contract.md).
+
+## Contents
+
+- [Step 1: Get the spec](#step-1-get-the-spec)
+- [Step 2: Resolve the preview URL](#step-2-resolve-the-preview-url)
+- [Step 3: Materialize the ephemeral files](#step-3-materialize-the-ephemeral-files)
+- [Step 4: Select the driver and run](#step-4-select-the-driver-and-run)
+- [Step 4b: Adversarial pass — try to break it](#step-4b-adversarial-pass--try-to-break-it)
+- [Step 5: Report the verdict](#step-5-report-the-verdict)
+- [Step 6: Write lessons](#step-6-write-lessons)
 
 ## Step 1: Get the spec
 
@@ -65,11 +75,13 @@ dispatch blocks below carry `--auto-capture` unless `--no-screenshots` was given
 
 **On a Dash0 Agent0 Automation sandbox, this step is replaced** by [`agent0-runtime.md`](./agent0-runtime.md#driver-selection-playwright-without-the-prompt): `auto` resolves to Playwright with no prompt, a browser precondition runs first, and `aw-tester` is dispatched as a `general` sub-agent reading its definition file. The input lines of the dispatch are the ones below, unchanged.
 
-**`auto` (default): resolve to a concrete driver — Chrome first, and never silently fall to Playwright.**
+**`auto` (default): resolve to a concrete driver — Chrome first, then Playwright, with no question asked.**
 The Chrome runner is in-session and needs the browser extension; the Playwright runner is a sub-agent and needs an available tool that dispatches one (`Task`, `Agent`, or another spelling). Pick:
 
 1. If the `mcp__claude-in-chrome__*` tools are available and `tabs_context_mcp` returns a connected browser → **chrome**.
-2. Else Chrome is unavailable. **Under `--unattended`**, select Playwright without asking when some available tool dispatches a sub-agent; when none does, report `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` and stop. **Otherwise** do **not** auto-select Playwright — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run Playwright only if they accept; if they decline, report `NOT RUN (chrome unavailable, user declined Playwright)` and stop. If no available tool dispatches a sub-agent either, there is nothing to offer — report `NOT RUN (no Chrome extension and no sub-agent dispatch available)` and stop without prompting.
+2. Else Chrome is unavailable. When some available tool dispatches a sub-agent → **playwright**: print the [fallback notice](#the-auto-mode-fallback-notice), then run the Playwright driver block below. When none does, there is no driver: report `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` under `--unattended`, else `NOT RUN (no Chrome extension and no sub-agent dispatch available)`, and stop.
+
+`auto` never calls `AskUserQuestion`, attended or under `--unattended`: invoking `run` is the request for a verdict, and Playwright is the engine that can produce one when Chrome cannot.
 
 **Driver `chrome` — invoke [`aw-tester-chrome`](../../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) in-session:**
 
@@ -82,7 +94,7 @@ Skill("aw-tester-chrome", "
 ")
 ```
 
-If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode under `--unattended` run the Playwright driver without asking (report the chrome `inconclusive` as-is when no tool dispatches a sub-agent). Without `--unattended`, do **not** fall through automatically — ask the user first per [§ The auto-mode Playwright prompt](#the-auto-mode-playwright-prompt). Run the Playwright driver only if they accept; if they decline, report the chrome `inconclusive` verdict as-is and stop. A forced `--driver chrome` never falls back — report its verdict as-is, no prompt.
+If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode print the [fallback notice](#the-auto-mode-fallback-notice) and run the Playwright driver; when no tool dispatches a sub-agent, report the chrome `inconclusive` as-is. This is the one chrome→playwright fallback per run — never fall back a second time. A forced `--driver chrome` never falls back — report its verdict as-is.
 
 **Driver `playwright` — dispatch [`aw-tester`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md) as a sub-agent** ([`§ Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)):
 
@@ -100,18 +112,76 @@ Task(
 
 If `--driver playwright` is forced and no available tool dispatches a sub-agent, say so and stop: the runner cannot substitute for `aw-tester` in-context, because its Playwright execution and locator-healing live in the isolated agent. Report `NOT RUN (sub-agent dispatch unavailable)`.
 
-### The auto-mode Playwright prompt
+### The auto-mode fallback notice
 
-This prompt fires **only in `auto` mode without `--unattended`**, at the two points above where Chrome cannot produce a verdict: Chrome unavailable at driver selection, or a Chrome run that came back `inconclusive` with `fallback: playwright`. A forced `--driver chrome` or `--driver playwright` never reaches this prompt — an explicit driver is the user's decision already, so honor it without asking.
+Print this notice **only in `auto` mode**, at the two points above where Chrome cannot produce a verdict and a sub-agent can be dispatched: Chrome unavailable at driver selection, or a Chrome run that came back `inconclusive` with `fallback: playwright`.
+A forced `--driver chrome` or `--driver playwright` never prints it — an explicit driver needs no explanation.
+It is one line of output, printed before the dispatch, never a question:
 
-**Never under `--unattended`** — that flag means nobody is present to answer, and each of the two points already took its fixed answer above.
+```text
+✅ RIGHT
+ui-verify: Chrome extension not connected — running with Playwright (aw-tester); logs in via .claude/aw-targets/preview.yml, not your Chrome session. Pass --driver chrome to require Chrome.
+ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester); first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/; no preview login configured (run /ui-verify setup if the preview needs one). Pass --driver chrome to require Chrome.
 
-Ask with `AskUserQuestion`:
+❌ WRONG
+AskUserQuestion("The Chrome extension isn't connected. Run with Playwright instead?")
+ui-verify: running with Playwright.   # no reason, and silent about the install and the login it switches to
+```
 
-- **Question.** State why Chrome can't verify (`The Chrome extension isn't connected`, or `Chrome returned inconclusive: <reason>`), then ask whether to run the spec with Playwright (the `aw-tester` sub-agent) instead.
-- **Options.** `Use Playwright` — run the Playwright driver now. `Don't run` — stop without a Playwright run.
+Name the reason in the first clause: `Chrome extension not connected`, or `Chrome returned inconclusive (<reason>)` with the `notes:` reason from the Chrome verdict.
+Then append each clause whose condition holds, in this order, separated by `; `:
 
-On `Use Playwright`, run the Playwright driver block above; if no available tool dispatches a sub-agent, report `NOT RUN (sub-agent dispatch unavailable)` and stop. On `Don't run`, do not dispatch: report the chrome `inconclusive` verdict when there is one, else `NOT RUN (chrome unavailable, user declined Playwright)`. Either way, stop.
+| Append | When |
+| --- | --- |
+| `first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/` | Neither `node_modules/.bin/playwright` nor `.agent/{branch}/.aw-tester/node_modules/.bin/playwright` exists, so `aw-tester`'s binary resolution will install one |
+| `logs in via .claude/aw-targets/preview.yml, not your Chrome session` | The ephemeral `aw-target.yml` from Step 3 has `auth.strategy` `storage-state` or `env-credentials` |
+| `authed specs will be skipped (auth.strategy: manual)` | Its `auth.strategy` is `manual` |
+| `no preview login configured (run /ui-verify setup if the preview needs one)` | Its `auth.strategy` is `none` or absent |
+
+Exactly one of the three login clauses always applies, because the Playwright run never inherits the Chrome session.
+Step 5 names the driver that produced the verdict, so the report always says `playwright` after a fallback.
+
+## Step 4b: Adversarial pass — try to break it
+
+The spec proved the happy path; this step tries to break the same change and documents every probe with screenshots.
+Full procedure, catalog, oracles, and guardrails: [`adversarial.md`](./adversarial.md).
+**It never changes the verdict from Step 4** — its findings travel in a separate `adversarial:` block.
+
+A run that already stopped (`NOT RUN …`, or a terminal `inconclusive: …` from Step 2 or Step 4) never reaches this step.
+Otherwise run it only when **all** of these hold, and when one fails, record its line and go to Step 5:
+
+| Condition | When it fails, record |
+| --- | --- |
+| `--no-adversarial` was not passed | `adversarial: skipped (--no-adversarial)` |
+| the overlay does not set `adversarial.enabled: false` | `adversarial: skipped (disabled in preview.yml)` |
+| at least one spec has `result: pass` | `adversarial: skipped (no passing spec to probe)` |
+
+Probe only the specs whose `result` is `pass`, and use the driver Step 4 actually ran:
+
+**Driver `chrome`** — follow [`adversarial.md`](./adversarial.md) in this session with the extension, running only the categories its [§ Driver capabilities](./adversarial.md#driver-capabilities) table marks available to Chrome.
+
+**Driver `playwright`** — dispatch a general-purpose sub-agent that reads the rule file, with these input lines:
+
+```text
+Task(
+  subagent_type: "general-purpose",
+  description: "ui-verify adversarial pass against PR preview",
+  prompt: |
+    Try to break the change these specs describe on the live preview, and document every probe with screenshots.
+    Your procedure is <absolute path of this skill>/rules/adversarial.md — read it and follow it.
+    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Specs file: .agent/{branch}/.ui-verify/specs.md
+    Probe specs: <ids of the specs whose result was pass>
+    Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
+    Output dir: .agent/{branch}/.ui-verify/adversarial/
+    Lessons: <matched ui-verify-lessons bodies, or none>
+    Mode: --driver playwright
+)
+```
+
+Fill `Lessons:` per [`memory.md § Read at run time`](./memory.md#read-at-run-time), and append `--no-screenshots` to the `Mode:` line when the caller passed it.
+On a Dash0 Agent0 sandbox, dispatch it as [`agent0-runtime.md § Dispatch the adversarial pass`](./agent0-runtime.md#dispatch-the-adversarial-pass) shows instead.
+A reply with no `adversarial:` block is `adversarial: not run (<first line of the reply>)` — never an empty findings list.
 
 ## Step 5: Report the verdict
 
@@ -120,9 +190,19 @@ Relay it to the user as-is plus the resolved preview URL and which driver ran it
 
 **Surface the screenshots.** When the verdict carries a `captures:` array (it does on every default run, since `--auto-capture` is on — see Step 4), list each `path` in the report under a **Screenshots** heading so the user can attach them to the PR description. State the count and the directory (`.agent/{branch}/.aw-tester/captures/`); if `captures:` is absent, say `no screenshots (--no-screenshots)`. Never inline the image bytes — the paths are the deliverable.
 
+**Surface the adversarial pass** under an **Adversarial pass** heading, after the screenshots:
+
+1. One summary line, which callers relay verbatim: `adversarial: <probes_run> probes, <N> findings (<C> critical, <H> high, <M> medium, <L> low)`, followed by ` — partial: <reason>` when the block's `status` is `partial`; or the `skipped (…)` / `not run (…)` line from Step 4b.
+2. Each finding, most severe first: its id, severity, oracle, probe, expected vs actual, and its before and after image paths.
+3. The passed probes, one line each, then `categories_skipped` with their reasons.
+4. The path of `report.md` — the document with every probe and its images inline.
+
+Keep the happy-path verdict line first and unchanged; a critical finding is stated in the summary line, never by rewriting `verdict`.
+
 Optionally, when the caller asked for it, post the verdict as a PR comment. Off by default — the runner reports to the terminal.
 
 ## Step 6: Write lessons
 
 Write to `ui-verify-lessons` **only** when a spec failed for a navigation or precondition reason that a better spec would have avoided — see [`memory.md § Write at run time`](./memory.md) for exactly what qualifies and what does not.
 A locator miss that the runner healed is the runner's lesson (`aw-tester-lessons`), not this skill's; do not duplicate it.
+An adversarial probe error caused by an app-wide quirk (debounced inputs, an optimistic toast that reverts) also qualifies — see [`memory.md § Write at run time`](./memory.md#write-at-run-time).

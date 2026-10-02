@@ -97,12 +97,13 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
 - `e2e-pr-stabilizer` (`/`) — local-first Playwright E2E stabilizer for one PR; modes `stabilize` / `optimize`
-- `ui-verify` (`Skill()` + `/`) — UI verification spec embedded in the PR body (`<!-- ui-verify:v1 -->`); operations `author` / `run` / `verify` / `setup`
+- `ui-verify` (`Skill()` + `/`) — UI verification spec embedded in the PR body (`<!-- ui-verify:v1 -->`); operations `author` / `run` / `verify` / `setup`; `run` then tries to break each passing spec (adversarial pass, screenshot evidence, never changes the verdict)
 
 ### `design/` — UI, visual, interaction
 
 - `animations` (`auto`) — CSS-first web animations and perceived performance
 - `animations-native` (`auto`) — React Native / Expo animations (Reanimated, gesture-handler)
+- `behavioral-design` (`auto`) — behavior-change diagnosis (COM-B, B=MAP), ethical interventions (EAST, defaults, System 1 / System 2), and team-adoption workshops. Never recommends a dark pattern or sludge
 - `charting` (`auto`) — chart type + library for web and mobile
 - `storybook` (`auto`) — visual regression, Playground, and interaction-test stories
 - `ux` (`auto`) — UX, a11y, microcopy, dark-pattern review. Never recommends a dark pattern

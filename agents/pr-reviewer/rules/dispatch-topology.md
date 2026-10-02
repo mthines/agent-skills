@@ -53,7 +53,8 @@ not wait. Your own candidates never wait on the intent worker's.
    ([`agent0-runtime.md`](./agent0-runtime.md#phase-d-two-workers-in-one-message-never-expect-a-second-rung)).
 2. Run every other active finder, every lens, Step 2.5 consolidation, and Step 2.6b verification of
    **your own** candidates in your own context, exactly as `in-context` does — including the
-   self-check under *Verification* below.
+   self-check under *Verification* below. Mark `verify` with `--attr candidates=<n>` on the first
+   verification command ([`run-telemetry.md`](./run-telemetry.md#verify-opens-before-the-verification-it-measures)).
 3. Only then read the intent finder's output file.
    Dedupe its candidates against the verified pool by Step 2.5's rules
    ([`rubric-composition.md § Dedupe`](../../shared/rules/rubric-composition.md#dedupe), the
@@ -76,7 +77,9 @@ reads the context; the caller ran prepare, so the caller owns the workspace clea
 With `--intent-from <path>`:
 
 1. Do not run the intent finder in this context.
-2. Run every other finder, lens, and gate, then Step 2.5 and Step 2.6b over your own candidates.
+2. Run every other finder, lens, and gate, then Step 2.5 and Step 2.6b over your own candidates,
+   marking `verify` with `--attr candidates=<n>` on the first verification command — never chained
+   onto the `intent-wait` marker below.
 3. Then wait for `<path>` and fold the worker into this run's telemetry on one command, marking the
    wait as its own step:
 

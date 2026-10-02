@@ -111,7 +111,7 @@ Each skill that asks one states its automation answer in its own Agent0 rule, an
 
 | Skill | Question | Automation answer |
 | --- | --- | --- |
-| `ui-verify run` | Chrome unavailable — run Playwright instead? | Yes: Playwright is the only driver on an Agent0 host, installed by the setup script or the on-demand install in the row below ([rule](../../../skills/testing/ui-verify/rules/agent0-runtime.md#driver-selection-playwright-without-the-prompt)) |
+| `ui-verify run` | (no question asked — a decision, not a prompt) run Playwright when Chrome is unavailable? | Yes: `auto` falls back to Playwright on every host, and Playwright is the only driver on an Agent0 host, installed by the setup script or the on-demand install in the row below ([rule](../../../skills/testing/ui-verify/rules/agent0-runtime.md#driver-selection-playwright-without-the-prompt)) |
 | `ui-verify run`/`verify` | (no question asked — a decision, not a prompt) install the browser on demand when it isn't `ok`? | Yes: an explicit `run`/`verify` invocation on an Agent0 host is itself the consent, capped at one attempt per sandbox by a sentinel ([rule](../../../skills/testing/ui-verify/SKILL.md#on-demand-browser-install--run-and-verify)) |
 
 A question with no documented answer stops the run with `blocked (needs a human: <question>)`.

@@ -10,7 +10,7 @@ tags:
 
 # Agent0 runtime
 
-On a Dash0 Agent0 Automation sandbox, `ui-verify` hits three obstacles at once: `aw-tester` is a custom agent type the host cannot dispatch (a measured host fact), and an automation has no Chrome extension and no user to answer the Playwright prompt (properties of any automation).
+On a Dash0 Agent0 Automation sandbox, `ui-verify` hits three obstacles at once: `aw-tester` is a custom agent type the host cannot dispatch (a measured host fact), and an automation has no Chrome extension and no user to answer a question (properties of any automation).
 This rule makes `author`, `run`, and `verify` work there anyway.
 It changes no spec grammar, no verdict mapping, and no resolution rule.
 
@@ -24,6 +24,7 @@ Rationale for the on-demand browser install below — the two-stage design, the 
 - [Driver selection: Playwright, without the prompt](#driver-selection-playwright-without-the-prompt)
 - [The browser precondition](#the-browser-precondition)
 - [Dispatch `aw-tester` as a `general` sub-agent](#dispatch-aw-tester-as-a-general-sub-agent)
+- [Dispatch the adversarial pass](#dispatch-the-adversarial-pass)
 - [Preview auth comes from the automation's secrets](#preview-auth-comes-from-the-automations-secrets)
 - [`setup` needs a human](#setup-needs-a-human)
 
@@ -48,12 +49,12 @@ A clone that fails is `inconclusive: no checkout of <owner>/<repo> (<error>)` �
 
 | `--driver` | Agent0 outcome |
 | --- | --- |
-| `auto` (default) | **`playwright`, with no `AskUserQuestion`.** The prompt in [`runner.md § The auto-mode Playwright prompt`](./runner.md#the-auto-mode-playwright-prompt) exists so a person is never surprised by a headless run they did not ask for. Here nobody is present to ask, and Playwright is the only driver on an Agent0 host — provided by the setup script or by [the on-demand install](../SKILL.md#on-demand-browser-install--run-and-verify) — so choosing it is a decision already made |
+| `auto` (default) | **`playwright`, with no `AskUserQuestion`.** Skip the Chrome probe entirely: Playwright is the only driver on an Agent0 host — provided by the setup script or by [the on-demand install](../SKILL.md#on-demand-browser-install--run-and-verify) — so `auto`'s Chrome-first step in [`runner.md § Step 4`](./runner.md#step-4-select-the-driver-and-run) can only fall through, and the fallback notice there is optional here |
 | `playwright` | `playwright` |
 | `chrome` | `NOT RUN (chrome driver unavailable on this host — no browser extension)`. A forced driver is never substituted |
 
-This is the only question `ui-verify` asks, so on this host it asks none.
-It is the Agent0 case of the general `--unattended` flag (`SKILL.md § --unattended`), which Agent0 mode implies whether or not the caller passed it.
+`ui-verify` asks no question on this host.
+Agent0 mode implies the general `--unattended` flag (`SKILL.md § --unattended`) whether or not the caller passed it.
 
 ## The browser precondition
 
@@ -107,6 +108,32 @@ Drop `--auto-capture` under `--no-screenshots`, exactly as there.
 The sub-agent is one level deep and dispatches nothing; `aw-tester` never does.
 
 A reply that opens with a refusal or a `BLOCKED` line is `inconclusive: aw-tester refused (<first line>)`, never a verdict.
+
+## Dispatch the adversarial pass
+
+In place of the `Task(subagent_type: "general-purpose", …)` block in [`runner.md § Step 4b`](./runner.md#step-4b-adversarial-pass--try-to-break-it), after the `aw-tester` dispatch above has returned:
+
+```text
+<dispatch>(
+  subagent_type: "general",
+  description: "ui-verify adversarial pass against PR preview",
+  prompt: |
+    Try to break the change these specs describe on the live preview, and document every probe with screenshots.
+    Your procedure is /tmp/workspace/pr-reviewer/skills/ui-verify/rules/adversarial.md — read it and follow it.
+    Run `. /tmp/workspace/agent-skills/env.sh` at the start of every Bash call.
+    Work in <the checkout directory>.
+    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Specs file: .agent/{branch}/.ui-verify/specs.md
+    Probe specs: <ids of the specs whose result was pass>
+    Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
+    Output dir: .agent/{branch}/.ui-verify/adversarial/
+    Lessons: <matched ui-verify-lessons bodies, or none>
+    Mode: --driver playwright
+)
+```
+
+The `.aw-tester/node_modules` link from [§ The browser precondition](#the-browser-precondition) is what the probe file's `@playwright/test` import resolves through, so the pass downloads nothing.
+The Chrome categories never apply here — this host has no extension.
 
 ## Preview auth comes from the automation's secrets
 
