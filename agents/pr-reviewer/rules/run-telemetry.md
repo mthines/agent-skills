@@ -156,7 +156,7 @@ Neither carries a run id, a PR number, or a user as an attribute.
 
 The root span says which LoreKit memories the review used and read, and links each one back to LoreKit.
 `finalize.mjs` records them from `judgments.memory` as one `memory` ledger record; a finalize re-run replaces it.
-You supply the inputs only: copy `id`, `scope`, and `key` onto every `memory.relevance_rules[]` and `memory.lessons_used[]` entry — `id` from the `memory_list` / `memory_search` entry, since `memory_read` returns none — and list every body you fetched with `memory_read` in `memory.read[]` ([`posting.md`](./posting.md)).
+You supply the inputs only: copy `id`, `scope`, and `key` onto every `memory.relevance_rules[]` and `memory.lessons_used[]` entry — `id` from the `memory_list` / `memory_search` entry, since `memory_read` returns none, and `scope` from the call when the entry omits it — and list every body you fetched with `memory_read` in `memory.read[]` ([`posting.md`](./posting.md)).
 
 | Where | Attribute | Value |
 | --- | --- | --- |
