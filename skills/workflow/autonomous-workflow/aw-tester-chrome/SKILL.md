@@ -236,7 +236,8 @@ For each `## Spec N:` block, in order:
    fails is explored once (step 2) and reported as `route: healed` — from the
    page the replay left, with only the steps after the last mutation it
    performed, when it had already performed one; never repeat a mutation the
-   replay ran.
+   replay ran. The replay's network requests and the steps it performed still
+   count toward the healed grade.
 2. **Explore.** Navigate to `start`. For each step, `read_page`, resolve the
    step's target by the ladder (try `hints` first), act, and `read_page` again.
    You see the page after every action, so this is the grammar loop with the

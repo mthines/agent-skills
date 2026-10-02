@@ -481,8 +481,10 @@ For each `## Spec N:` block, in order:
    and report `route: healed`. When the replay failed after a step that
    counts as a mutation — `fired` not empty, or empty on a step that did more
    than open a dialog, menu, or popover (contract § 6.2) — heal from the
-   replay's `url` with only the route actions after the last such step; never
-   commit a mutation the replay already ran (contract § 6.6).
+   replay's `url` with only the route actions after the last such step, and
+   grade with the replay's `requests` and performed steps kept, as item 4
+   keeps a commit launch's — never commit a mutation the replay already ran
+   (contract § 6.6).
 3. **Miss (or heal) → explore with the probe loop below**, grade per contract
    § 6.5, and on a pass write the compiled route to
    `$AW_DIR/routes/Spec-N-<sha8>.md` with its four comment lines — unless an
