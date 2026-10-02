@@ -325,11 +325,32 @@ export function buildMemoriesUsed(memory) {
   ];
 }
 
+/** How many findings each relevance rule suppressed this run, keyed by fingerprint.
+ *  @param {any[]} [suppressed] finalizeReview's `suppressed` @returns {Map<string, number>} */
+function suppressedCounts(suppressed = []) {
+  /** @type {Map<string, number>} */
+  const counts = new Map();
+  for (const f of Array.isArray(suppressed) ? suppressed : []) {
+    if (typeof f?._suppressed_by_fp === "string") counts.set(f._suppressed_by_fp, (counts.get(f._suppressed_by_fp) || 0) + 1);
+  }
+  return counts;
+}
+
+/** A relevance rule shaped the review iff it carries an applied `action` or suppressed a finding
+ *  this run. The one predicate the trace's `used` and Step 4c's `cited` share, so the two sets
+ *  of rules cannot drift apart. @param {any} r @param {Map<string, number>} counts @returns {boolean} */
+function ruleActed(r, counts) {
+  const fp = typeof r?.fp === "string" && r.fp ? r.fp : typeof r?.fingerprint === "string" ? r.fingerprint : "";
+  return (typeof r?.action === "string" && r.action !== "") || (fp !== "" && (counts.get(fp) || 0) > 0);
+}
+
 /**
  * The run trace's memory (review-telemetry.mjs `memory` record): one item per LoreKit memory the
  * review used or read, from the same `judgments.memory` arrays MEMORIES_USED renders, plus the
  * optional `read[]`. A memory named in more than one array is one item, matched by `id`, else by
  * `key` within the same scope. A relevance rule's item counts the findings it suppressed this run.
+ * A relevance rule is used only when it acted (ruleActed — the same rules Step 4c cites); an idle
+ * one is a read item.
  * Used memories come first, so the telemetry cap never drops one for a read-only one.
  * @param {any} memory judgments.memory @param {any[]} [suppressed] finalizeReview's `suppressed`
  * @returns {Record<string, any>[]}
@@ -354,16 +375,12 @@ export function memoryTelemetryItems(memory, suppressed = []) {
       else if (v !== undefined && same[k] === undefined) same[k] = v;
     }
   };
-  /** @type {Map<string, number>} */
-  const suppressedBy = new Map();
-  for (const f of Array.isArray(suppressed) ? suppressed : []) {
-    if (typeof f?._suppressed_by_fp === "string") suppressedBy.set(f._suppressed_by_fp, (suppressedBy.get(f._suppressed_by_fp) || 0) + 1);
-  }
+  const suppressedBy = suppressedCounts(suppressed);
   for (const r of Array.isArray(memory?.relevance_rules) ? memory.relevance_rules : []) {
     const fp = str(r?.fp) || str(r?.fingerprint);
     const direction = ["suppress", "amplify"].includes(r?.direction) ? r.direction : ["suppress", "amplify"].includes(r?.kind) ? r.kind : undefined;
     add(r, {
-      used: true, kind: "rule", fingerprint: fp,
+      used: ruleActed(r, suppressedBy), read: true, kind: "rule", fingerprint: fp,
       action: str(r?.action) || direction,
       seen_count: Number.isInteger(r?.seen_count) ? r.seen_count : undefined,
       suppressed: fp ? (suppressedBy.get(fp) || 0) : undefined,
@@ -390,8 +407,7 @@ export const CITED_MAX = 32;
  * @returns {string[]}
  */
 export function citedRefs(memory, suppressed = []) {
-  const suppressedFps = new Set((Array.isArray(suppressed) ? suppressed : [])
-    .map((/** @type {any} */ f) => f?._suppressed_by_fp).filter((fp) => typeof fp === "string"));
+  const counts = suppressedCounts(suppressed);
   /** @type {string[]} */
   const refs = [];
   const add = (/** @type {any} */ r) => {
@@ -400,8 +416,7 @@ export function citedRefs(memory, suppressed = []) {
     if (scope && key && !refs.includes(`${scope}::${key}`)) refs.push(`${scope}::${key}`);
   };
   for (const r of Array.isArray(memory?.relevance_rules) ? memory.relevance_rules : []) {
-    const fp = typeof r?.fp === "string" ? r.fp : r?.fingerprint;
-    if ((typeof r?.action === "string" && r.action) || (typeof fp === "string" && suppressedFps.has(fp))) add(r);
+    if (ruleActed(r, counts)) add(r);
   }
   for (const r of Array.isArray(memory?.lessons_used) ? memory.lessons_used : []) add(r);
   return refs.slice(0, CITED_MAX);
@@ -1310,7 +1325,10 @@ async function selfTest() {
     const ID_KNOW = "cb10f4e2-eaf1-48e1-933c-e633a23e2716";
     const FP = "correctness:nil-deref:-@src/a.ts";
     const memory = {
-      relevance_rules: [{ id: ID_RULE, scope: "repo::o/r", key: `reviewer-comment-relevance::rule::${FP}`, fp: FP, kind: "suppress", seen_count: 4, evidence: [{ pr: 1 }] }],
+      relevance_rules: [
+        { id: ID_RULE, scope: "repo::o/r", key: `reviewer-comment-relevance::rule::${FP}`, fp: FP, kind: "suppress", seen_count: 4, evidence: [{ pr: 1 }] },
+        { id: "22222222-3333-4444-8555-666666666666", scope: "repo::o/r", key: "reviewer-comment-relevance::rule::idle", fp: "x:y:-@idle.ts", kind: "suppress" },
+      ],
       lessons_used: [
         { key: "hotspot::src/a.ts", used_as: "finder pointer (re-verified)" },
         { id: ID_KNOW, scope: "repo::o/r", key: "knowledge::retry@src/b.ts", used_as: "contract checked against callers" },
@@ -1323,10 +1341,11 @@ async function selfTest() {
         { note: "nothing identifies me" },
       ],
     };
-    const items = memoryTelemetryItems(memory, [{ _suppressed_by_fp: FP }, { _suppressed_by_fp: FP }, { _suppressed_by_fp: "other" }]);
+    const suppressedFindings = [{ _suppressed_by_fp: FP }, { _suppressed_by_fp: FP }, { _suppressed_by_fp: "other" }];
+    const items = memoryTelemetryItems(memory, suppressedFindings);
     const by = (/** @type {string} */ key) => items.find((it) => it.key === key);
     check("memoryTelemetryItems: one item per memory across the three arrays, an entry with no id and no key dropped",
-      items.length === 5, JSON.stringify(items.map((it) => it.key)));
+      items.length === 6, JSON.stringify(items.map((it) => it.key)));
     check("memoryTelemetryItems: a rule carries its id, fingerprint, direction, seen count, and the findings it suppressed this run",
       by(`reviewer-comment-relevance::rule::${FP}`)?.id === ID_RULE && by(`reviewer-comment-relevance::rule::${FP}`)?.kind === "rule"
         && by(`reviewer-comment-relevance::rule::${FP}`)?.action === "suppress" && by(`reviewer-comment-relevance::rule::${FP}`)?.suppressed === 2
@@ -1340,6 +1359,17 @@ async function selfTest() {
         && by("reviewer-lessons::prefer-guard-clauses")?.kind === "lesson" && by("reviewer-comment-relevance::rule::x")?.kind === "rule");
     check("memoryTelemetryItems: used memories come first",
       items.slice(0, 3).every((it) => it.used) && items.slice(3).every((it) => !it.used));
+    check("memoryTelemetryItems: a relevance rule that changed nothing is read, not used",
+      by("reviewer-comment-relevance::rule::idle")?.used === false && by("reviewer-comment-relevance::rule::idle")?.read === true
+        && by("reviewer-comment-relevance::rule::idle")?.kind === "rule");
+    {
+      const usedRules = items.filter((it) => it.kind === "rule" && it.used).map((it) => `${it.scope}::${it.key}`).sort();
+      const ruleRefs = new Set(memory.relevance_rules.map((r) => `${r.scope}::${r.key}`));
+      const citedRules = citedRefs(memory, suppressedFindings).filter((ref) => ruleRefs.has(ref)).sort();
+      check("memoryTelemetryItems and citedRefs agree on which rules shaped the review",
+        usedRules.length > 0 && JSON.stringify(usedRules) === JSON.stringify(citedRules),
+        `used=${JSON.stringify(usedRules)} cited=${JSON.stringify(citedRules)}`);
+    }
     check("memoryTelemetryItems: the same key in another scope is another memory",
       memoryTelemetryItems({ relevance_rules: [], lessons_used: [{ scope: "global", key: "k" }], read: [{ scope: "repo::o/r", key: "k" }] }).length === 2);
     check("memoryTelemetryItems: an empty memory is no items", memoryTelemetryItems({ relevance_rules: [], lessons_used: [] }).length === 0);

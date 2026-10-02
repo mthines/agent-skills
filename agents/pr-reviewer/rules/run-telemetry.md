@@ -160,11 +160,11 @@ You supply the inputs only: copy `id`, `scope`, and `key` onto every `memory.rel
 
 | Where | Attribute | Value |
 | --- | --- | --- |
-| root | `pr_review.memory.used` | memories that influenced the review — every `relevance_rules[]` and `lessons_used[]` entry, the same population the report's `Memories — … used` counts |
+| root | `pr_review.memory.used` | memories that shaped the review — every `lessons_used[]` entry and every relevance rule that acted (an applied action, or a finding it suppressed), the same set Step 4c cites. The report's `Memories — … used` also lists idle rules, so the two counts can differ |
 | root | `pr_review.memory.read` | memories whose body the run fetched; omitted when `memory.read` is absent |
 | root | `pr_review.memory.used_ids` | the used memories' LoreKit ids, comma-separated — filter runs by one with `contains` |
 | root | `pr_review.memory.suppressed` | findings a relevance rule suppressed this run |
-| event `pr_review.memory.used` · `pr_review.memory.read` | `pr_review.memory.id`, `.scope`, `.key`, `.kind` (`rule` · `knowledge` · `hotspot` · `lesson`) | one event per memory; `used` when it influenced the review, `read` when it was only read |
+| event `pr_review.memory.used` · `pr_review.memory.read` | `pr_review.memory.id`, `.scope`, `.key`, `.kind` (`rule` · `knowledge` · `hotspot` · `lesson`) | one event per memory; `used` when it shaped the review, `read` when it was only read — an idle relevance rule included |
 | event | `pr_review.memory.url` | `<LOREKIT_APP_URL>/lore?memoryId=<id>`, else `/lore?scope=…&lesson={scope,key}`; omitted when neither is known — never fabricated |
 | event | `pr_review.memory.action`, `.note`, `.fingerprint`, `.seen_count`, `.suppressed` | what it did: a rule's direction or applied action, a lesson's `used_as`, and the findings it suppressed |
 
