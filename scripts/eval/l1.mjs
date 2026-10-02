@@ -11111,18 +11111,20 @@ const isPollBlock = (block) =>
     "the bypass secret would be written to disk in probe-in.json");
 
   // (f) mutations run once, and a heal never repeats one — the rules the probe loop depends on.
-  s.check("G91f contract § 6.2 runs each mutation once, settles it by its request, and § 6.6 heals without repeating one",
+  s.check("G91f contract § 6.2 runs each mutation once and § 6.6 heals by the route's # mutations: line without repeating one",
     C6.includes("**Mutations run once.**")
       && /fired a `POST`, `PUT`, `PATCH`, or `DELETE` was a mutation/.test(C6)
-      && C6.includes("never perform a mutation the replay already ran")
-      && /evidence carried forward/.test(C6),
-    "contract § 6 lost the mutation-once rule, its request evidence, the no-repeat heal, or the carried-forward grade");
-  s.check("G91f aw-tester's probe dry-resolves a mutation, records issued mutating requests to apiOrigins after settleMs, and heals from the last mutation",
+      && C6.includes("on a `# mutations:` line") && C6.includes("route drifted after a mutation")
+      && C6.includes("**A route is written only from a full exploration from `start`.**"),
+    "contract § 6 lost the mutation-once rule, its request evidence, the # mutations: heal, or the full-exploration-only cache rule");
+  s.check("G91f aw-tester's probe dry-resolves a mutation, records issued mutating requests to apiOrigins after settleMs, and heals by # mutations:",
     probe.includes("if (s.dry)") && probe.includes("page.on('request'") && probe.includes("apiOrigins")
       && probe.includes("settleMs") && probe.includes("fired: mutations.slice(before)")
-      && AWT.includes("**commit launch**") && /heal from the\s+replay's `url`/.test(AWT)
-      && /grade with the replay's `requests`/.test(AWT),
-    "a probe that replays a performed mutation, reads `fired` from responses, or heals from `start` would pass L1");
+      && AWT.includes("**commit launch**") && AWT.includes("`# mutations:`") && AWT.includes("route drifted after a mutation"),
+    "a probe that replays a performed mutation, reads `fired` from responses, or heals past a performed mutation would pass L1");
+  s.check("G91f aw-tester-chrome heals by # mutations:, never repeats a performed mutation, and never caches a continued heal",
+    CHR.includes("`# mutations:`") && /never repeat it/.test(CHR) && /writes no route/.test(CHR),
+    "the Chrome runner could repeat a mutation on heal, or cache a route that skips the steps before the cut");
 
   // (e) ui-verify: writers and readers agree on the marker versions and their order.
   const iV2 = RUN1.indexOf("<!-- ui-verify:v2 -->"), iV1 = RUN1.indexOf("<!-- ui-verify:v1 -->"), iLeg = RUN1.indexOf("<!-- preview-spec:v1 -->");
