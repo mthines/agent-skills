@@ -414,6 +414,7 @@ Every assertion passes → the spec passes with `route: replayed` and the route 
 **Heal.**
 A replay that fails is not yet a fail.
 Explore the spec once from its Markdown (§ 6.2), grade it (§ 6.5), and report that grade with `route: healed`; on a pass, overwrite the route file.
+When the failed replay had already performed a mutation, heal from where it left off — the page it ended on, or its final URL on a runner that re-launches — exploring only the steps after the last mutation it performed; never perform a mutation the replay already ran.
 Heal at most once per spec per run.
 
 Rules that keep the cache honest:

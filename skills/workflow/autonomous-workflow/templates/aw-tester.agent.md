@@ -478,7 +478,10 @@ For each `## Spec N:` block, in order:
    second time to judge an item: the route's mutations run exactly once
    (contract § 6.2). All pass → `route: replayed`, copy the file's
    `# deviations:` line into `deviations`. Any fail → heal: go to step 3 once,
-   and report `route: healed`.
+   and report `route: healed`. When the replay failed after a step whose
+   `fired` was not empty, heal from the replay's `url` with only the route
+   actions after that step — never commit a mutation the replay already ran
+   (contract § 6.6).
 3. **Miss (or heal) → explore with the probe loop below**, grade per contract
    § 6.5, and on a pass write the compiled route to
    `$AW_DIR/routes/Spec-N-<sha8>.md` with its four comment lines — unless an
