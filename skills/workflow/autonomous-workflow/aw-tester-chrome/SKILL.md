@@ -233,11 +233,13 @@ For each `## Spec N:` block, in order:
    with `<sha8>` computed by the command in contract § 6.6. A hit is replayed
    through the grammar execution above; each `# uncompiled:` item is then judged
    by reading the page. A replay that passes is `route: replayed`. A replay that
-   fails is explored once (step 2) and reported as `route: healed` — from the
-   page the replay left, with only the steps after the last mutation it
-   performed, when it had already performed one; never repeat a mutation the
-   replay ran. The replay's network requests and the steps it performed still
-   count toward the healed grade.
+   fails heals by the route's `# mutations:` line (contract § 6.6): if it
+   performed none of the listed mutations, explore once from `start` (step 2)
+   and report `route: healed`; if it performed one, never repeat it —
+   re-judge the failed assertions on the current page when every route step
+   ran (`route: replayed`), or continue exploring in this same tab from the
+   failed step when a later step failed (`route: healed`), counting the
+   replay's requests and performed steps toward the grade.
 2. **Explore.** Navigate to `start`. For each step, `read_page`, resolve the
    step's target by the ladder (try `hints` first), act, and `read_page` again.
    You see the page after every action, so this is the grammar loop with the
@@ -264,8 +266,9 @@ For each `## Spec N:` block, in order:
    `changed: not-exercised` is `fail`; otherwise `pass`, with deviations listed.
 5. **On a pass by exploration, write the compiled route** — one grammar block
    with a `WHEN` per action you took (the locator that resolved), a `THEN` per
-   item with a `locator:` or `network:` evidence line, and the four comment
-   lines (`# route-for:`, `# source-sha:`, `# deviations:`, `# uncompiled:`).
+   item with a `locator:` or `network:` evidence line, and the five comment
+   lines (`# route-for:`, `# source-sha:`, `# deviations:`, `# uncompiled:`,
+   and `# mutations:` — the `WHEN` positions whose step was a mutation).
    Either runner can replay it. When an action's target had to be named by the
    container it sits in, or you navigated by URL after `start`, cache nothing —
    the grammar cannot express that scope — and note that the spec explores every

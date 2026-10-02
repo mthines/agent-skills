@@ -250,7 +250,7 @@ export const SUITES = [
   {
     name: "intent-grading",
     golden: "golden/intent-grading.jsonl",
-    // 14 cases: 4 pass / 6 fail / 4 skipped. Five are decoys whose surface points at the
+    // 15 cases: 4 pass / 6 fail / 5 skipped. Five are decoys whose surface points at the
     // wrong label — a route that differs from the written steps (pass), every item observed
     // but the must-follow step taken another way (fail), an unreachable item beside a real
     // non-observation (fail), a suspected flag the preconditions never name (fail), and a

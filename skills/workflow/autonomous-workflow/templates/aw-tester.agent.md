@@ -477,20 +477,20 @@ For each `## Spec N:` block, in order:
    `requests`, the uncompiled items from `checks` and `aria`. Never launch a
    second time to judge an item: the route's mutations run exactly once
    (contract § 6.2). All pass → `route: replayed`, copy the file's
-   `# deviations:` line into `deviations`. Any fail → heal: go to step 3 once,
-   and report `route: healed`. When the replay failed after a step that
-   counts as a mutation — `fired` not empty, or empty on a step that did more
-   than open a dialog, menu, or popover (contract § 6.2) — heal from the
-   replay's `url` with only the route actions after the last such step, and
-   grade with the replay's `requests` and performed steps kept, as item 4
-   keeps a commit launch's — never commit a mutation the replay already ran
-   (contract § 6.6).
+   `# deviations:` line into `deviations`. Any fail → heal by the route's
+   `# mutations:` line (contract § 6.6): performed none of the listed
+   mutations → go to step 3 once and report `route: healed`; performed one
+   and every route step ran → re-judge the failed assertions from that
+   launch's `aria` and `checks` without launching again (`route:
+   replayed`); performed one and a later route step failed → delete the
+   route file and grade the spec `skipped: route drifted after a mutation`.
 3. **Miss (or heal) → explore with the probe loop below**, grade per contract
    § 6.5, and on a pass write the compiled route to
-   `$AW_DIR/routes/Spec-N-<sha8>.md` with its four comment lines — unless an
-   action needed a `within` scope or was a `goto` after `start`, neither of
-   which the grammar can express: then cache nothing and note that the spec
-   explores every run.
+   `$AW_DIR/routes/Spec-N-<sha8>.md` with its five comment lines —
+   `# mutations:` lists the `WHEN` positions whose step was a mutation (item
+   4's commit launches) — unless an action needed a `within` scope or was a
+   `goto` after `start`, neither of which the grammar can express: then cache
+   nothing and note that the spec explores every run.
 
 After every spec ran, rebuild `last-run.spec.ts` from the compiled routes so the
 `hot_loop:` handle re-runs the passing specs deterministically. A spec with no

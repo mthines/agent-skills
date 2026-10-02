@@ -359,7 +359,7 @@ An `expected` item or a `[must-follow]` step is `unreachable` only for one of th
 3. **seed data** — a record the `preconditions` name does not exist, and no step creates it.
 4. **environment** — the target origin is unreachable, or an endpoint the change does not touch returned a 5xx.
 5. **budget** — `explore budget exhausted` (§ 6.2).
-6. **transient state** — `transient state lost`: a step after a performed mutation acts on UI the mutation left open — a toast's action, a success dialog — which a runner that re-launches cannot reach again without repeating the mutation. A runner that never restarts the page (the Chrome driver) never reports it.
+6. **runner limit** — one of two named reasons from a runner that must not repeat a mutation it already performed: `transient state lost` (a step after a performed mutation acts on UI the mutation left open — a toast's action, a success dialog — which a runner that re-launches cannot reach again), or `route drifted after a mutation` (a cached route's step failed after the replay performed a mutation, so exploring again would repeat it — § 6.6).
 
 Every other reason the runner could not observe an item is `not-observed`, and fails the spec.
 
@@ -386,6 +386,7 @@ The route a passing exploration took is compiled and cached, so the next run rep
 **Compile on pass.**
 When a spec passes by exploration, write its route as one `## Spec N:` block in the grammar of [`specs.md.template`](../templates/specs.md.template): a `url:` of `start`, one `WHEN` per action performed (detours included, each with the locator that resolved), and one `THEN` per `expected` item whose evidence was a `locator:` or `network:` line.
 List the items judged by `text:` or `capture:` evidence on an `# uncompiled:` line.
+List the `WHEN` actions that were mutating steps (§ 6.2), by their 1-based position among the block's `WHEN`s, on a `# mutations:` line, or write `none`.
 Write `url:` and `network:` paths with the spec's own `{placeholder}`s, never their resolved values.
 When an action's locator had to be scoped to a container to match one element, or the route navigated by URL after `start` (a `goto` detour), do not cache the route: the grammar has no scoping form and no mid-flow navigation step, and an unscoped locator could replay against the wrong instance.
 That spec explores on every run; say so in `notes`.
@@ -405,6 +406,7 @@ Start the file with these comment lines:
 # source-sha: 3fa9c2e1
 # deviations: step 1 added — dismissed the cookie banner
 # uncompiled: E3
+# mutations: 3
 ```
 
 **Replay.**
@@ -412,10 +414,13 @@ On the next run, when a route file with the spec's current `<sha8>` exists, run 
 Every assertion passes → the spec passes with `route: replayed` and the route file's `deviations` copied into the verdict.
 
 **Heal.**
-A replay that fails is not yet a fail.
-Explore the spec once from its Markdown (§ 6.2), grade it (§ 6.5), and report that grade with `route: healed`; on a pass, overwrite the route file.
-When the failed replay had already performed a mutation, heal from where it left off — the page it ended on, or its final URL on a runner that re-launches — exploring only the steps after the last mutation it performed; never perform a mutation the replay already ran.
-Grade that heal with the replay's evidence carried forward: the requests the replay recorded count for network items, and the `[must-follow]` steps and detours it performed count as performed.
+A replay that fails is not yet a fail, and the route's `# mutations:` line decides how it heals:
+
+1. **The replay performed none of the listed mutations** (it failed before the first, or the line says `none`) → explore the spec once from `start` (§ 6.2), grade it (§ 6.5), and report that grade with `route: healed`; on a pass, overwrite the route file.
+2. **It performed a listed mutation, and every route step ran** → never explore again, which would repeat it. Re-judge each failed assertion by observing the replay's final page, as for an `# uncompiled:` item, grade by § 6.5, and report `route: replayed`.
+3. **It performed a listed mutation, and a later route step failed** → never explore again. Delete the route file and grade the spec `skipped` with cause `route drifted after a mutation` (§ 6.4, cause 6); the next run explores from `start`.
+
+A runner that keeps one page for the whole run (the Chrome driver) may instead, in case 3, continue exploring in that page from the failed step and report `route: healed`; the replay's requests and performed steps count toward that grade.
 Heal at most once per spec per run.
 
 Rules that keep the cache honest:
