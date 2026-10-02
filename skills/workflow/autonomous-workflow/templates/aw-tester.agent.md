@@ -504,6 +504,7 @@ const rx = (v: any) => {
 };
 
 test('probe', async ({ browser }) => {
+  test.setTimeout(120_000); // a multi-step replay outlives the 30 s default
   const bypass = cfg.bypassHeader; // { name, env } — the value is read from the env, never written to disk
   const context = await browser.newContext({
     baseURL: cfg.baseURL,
@@ -524,8 +525,9 @@ test('probe', async ({ browser }) => {
     throw new Error(`unsupported locator ${JSON.stringify(l)}`);
   };
   const steps: any[] = [];
-  await page.goto(cfg.start);
-  for (const s of cfg.steps ?? []) {
+  let fatal: string | null = null;
+  try { await page.goto(cfg.start); } catch (e) { fatal = String(e).slice(0, 300); }
+  for (const s of fatal ? [] : cfg.steps ?? []) {
     try {
       if (s.action === 'goto') { await page.goto(s.value); steps.push({ ok: true }); continue; }
       const t = find(s.locator);
@@ -557,18 +559,23 @@ test('probe', async ({ browser }) => {
   const aria = typeof body.ariaSnapshot === 'function' ? await body.ariaSnapshot() : await body.innerText();
   if (cfg.shot) await page.screenshot({ path: cfg.shot, fullPage: true }).catch(() => {});
   writeFileSync(join(DIR, 'probe-out.json'), JSON.stringify(
-    { url: page.url(), steps, checks, aria: aria.slice(0, 20000), requests: requests.slice(-100) }, null, 2));
+    { url: page.url(), fatal, steps, checks, aria: aria.slice(0, 20000), requests: requests.slice(-100) }, null, 2));
   await context.close();
 });
 ```
 
-Each launch: write `$AW_DIR/probe-in.json`, run the probe, read `probe-out.json`.
+Each launch: delete `probe-out.json`, write `$AW_DIR/probe-in.json`, run the
+probe, read `probe-out.json`. Never read a file an earlier launch left: a
+launch that writes no `probe-out.json` (it crashed or timed out) is a probe
+error — keep the tail of its output for `diagnostics`, and it counts against
+the probe budget. A `fatal` value means `start` itself did not load.
 
 ```bash
 # probe-in.json: { baseURL, storageState, bypassHeader, start, steps: [{action, locator, value, dry}],
 #                  checks: [locator, …], shot }
 # A locator is the single-braces form as JSON, optionally scoped:
 #   {"role": "button", "name": "Rename", "within": {"role": "banner"}}
+rm -f "$AW_DIR/probe-out.json"
 AW_PROBE_DIR="$AW_DIR" "$PLAYWRIGHT_BIN" test --reporter=line --workers=1 "$AW_DIR/probe.spec.ts"
 ```
 
