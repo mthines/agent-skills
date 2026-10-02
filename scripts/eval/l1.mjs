@@ -10755,8 +10755,9 @@ const isPollBlock = (block) =>
 // secret, and (e) ui-verify's writers and readers agree on the marker order — the embedded template
 // carries the v2 markers and no legacy one.
 // break-shape: drop a field row from spec-format.md, swap runner.md's v2/v1 order, put
-// `preview-spec:v1` back in the embedded template, delete a grading row or an unreachable cause,
-// or drop the probe's `locator matched` guard — the matching sub-check flips red.
+// `preview-spec:v1` back in the embedded template, delete a grading row, swap two grading rows,
+// delete an unreachable cause, or drop the probe's `locator matched` guard — the matching
+// sub-check flips red.
 {
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
   const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
@@ -10785,11 +10786,12 @@ const isPollBlock = (block) =>
     `fields with no row in spec-format.md § Writing an intent spec (v2): ${unrestated.join(" ") || "none"}`);
 
   // (b) contract § 6 — the grading table, the closed unreachable list, the evidence forms, the keys.
-  const gradeRows = ["is `not-observed`", "`[must-follow]` step was missing", "`changed: not-exercised`", "is `unreachable`", "otherwise"];
-  const missingGrade = gradeRows.filter((r) => !C6.split("\n").some((l) => /^\| [1-5] \|/.test(l) && l.includes(r)));
-  s.check("G89b contract § 6.5 grades by a first-match table with all five rows",
+  // First-match order is the contract, so each row is pinned to its number: a swap regrades specs.
+  const gradeRows = ["`[must-follow]` step was missing", "is `not-observed`", "is `unreachable`", "`changed: not-exercised`", "otherwise"];
+  const missingGrade = gradeRows.filter((r, i) => !C6.split("\n").some((l) => l.startsWith(`| ${i + 1} |`) && l.includes(r)));
+  s.check("G89b contract § 6.5 grades by a first-match table with all five rows, in order",
     C6.length > 2000 && missingGrade.length === 0,
-    `grading rows missing: ${missingGrade.join(" · ") || "none"}`);
+    `grading rows missing or out of order: ${missingGrade.join(" · ") || "none"}`);
   const unreach = sectionOr(CONTRACT_FILE, "### 6.4 Unreachable — the closed list");
   const causes = (unreach.match(/^[1-9]\. \*\*/gm) || []).length;
   s.check("G89b contract § 6.4's unreachable list is closed at exactly five causes, and everything else fails",
