@@ -312,7 +312,9 @@ Run this for a spec with no usable route-cache entry (§ 6.6):
 When the budget runs out, stop: the remaining items are `unreachable` with cause `explore budget exhausted` (§ 6.4).
 
 **Mutations run once.**
-A step that saves, submits, creates, deletes, sends, or changes a persisted setting — a toggle, a star, an auto-saving select — is a *mutating step*; when the wording or the control leaves it unclear, treat it as mutating.
+A step that saves, submits, creates, deletes, sends, or changes a persisted setting — a toggle, a star, an auto-saving select — is a *mutating step*; when the wording or the control leaves it unclear, treat it as mutating until it is performed.
+A control that only opens a confirmation, menu, or dialog is not the mutation — the confirming control is.
+Performing a step settles it: a step that fired a `POST`, `PUT`, `PATCH`, or `DELETE` was a mutation; one that fired none and only opened a dialog, menu, or popover was not, and may be replayed.
 Perform each mutating step exactly once per exploration.
 A runner that explores by re-launching from `start` replays only the non-mutating steps since the last mutation it performed, never a mutation it already performed.
 
@@ -356,7 +358,7 @@ An `expected` item or a `[must-follow]` step is `unreachable` only for one of th
 2. **feature flag** — a flag the `preconditions` name is off on the target.
 3. **seed data** — a record the `preconditions` name does not exist, and no step creates it.
 4. **environment** — the target origin is unreachable, or an endpoint the change does not touch returned a 5xx.
-5. **budget** — `explore budget exhausted` (§ 6.2).
+5. **budget** — `explore budget exhausted` (§ 6.2), or `transient state lost`: a step after a performed mutation acts on UI the mutation left open — a toast's action, a success dialog — which a runner that re-launches cannot reach again without repeating the mutation.
 
 Every other reason the runner could not observe an item is `not-observed`, and fails the spec.
 

@@ -539,6 +539,7 @@ test('probe', async ({ browser }) => {
       const n = await t.count();
       if (n !== 1) throw new Error(`locator matched ${n} elements — name the instance`);
       if (s.dry) { steps.push({ ok: true, dry: true }); continue; } // resolve only — never act
+      const before = requests.length;
       if (s.action === 'click') await t.click({ timeout: 5000 });
       else if (s.action === 'fill') await t.fill(s.value, { timeout: 5000 });
       else if (s.action === 'press') await t.press(s.value, { timeout: 5000 });
@@ -547,7 +548,9 @@ test('probe', async ({ browser }) => {
       else if (s.action === 'hover') await t.hover({ timeout: 5000 });
       else throw new Error(`unsupported action ${s.action}`);
       await page.waitForLoadState('domcontentloaded');
-      steps.push({ ok: true });
+      await page.waitForLoadState('networkidle', { timeout: 3000 }).catch(() => {});
+      // the mutating requests this step fired — the evidence that settles "was it a mutation?"
+      steps.push({ ok: true, fired: requests.slice(before).filter((r) => /^(POST|PUT|PATCH|DELETE) /.test(r)) });
     } catch (e) { steps.push({ ok: false, error: String(e).slice(0, 300) }); break; }
   }
   await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
@@ -601,10 +604,19 @@ Walk the spec's steps with it:
    probe checks that its locator matches one element and does not act. Then
    run one **commit launch** — the same `steps` with `dry` removed from that
    step, plus `checks` and `shot` (item 5) when it is the spec's last step.
-   The mutation happens in that launch only. To explore the steps after it,
-   set `start` to the commit launch's `url` and `steps` to only the actions
-   resolved after the mutation, so no later launch replays it. Keep every
-   commit launch's `requests` for the network items.
+   Read that step's `fired`:
+   - **Empty, and the step only opened a dialog, menu, or popover** — it was
+     not the mutation (its confirm is). Mark it replayable and keep exploring
+     from `start` as in item 2; the next step is the one to dry-resolve.
+   - **Not empty** — the mutation happened, in that launch only. To explore
+     the steps after it, set `start` to the commit launch's `url` and `steps`
+     to only the actions resolved after the mutation, so no later launch
+     replays it. When the next step acts on UI the mutation left open — the
+     commit launch's `aria` shows it and the re-launched page does not — stop:
+     the remaining items are `unreachable: transient state lost` (contract
+     § 6.4), never a fail. The Chrome driver, which never restarts, can run
+     such a spec.
+   Keep every commit launch's `requests` for the network items.
 5. After the last step, probe once more with every candidate evidence locator in
    `checks` and `shot` set to the auto-final capture path when `--auto-capture`
    is on — when the last step was mutating, its commit launch is this probe.
