@@ -6813,12 +6813,16 @@ const isPollBlock = (block) =>
   const RN = read("skills/testing/ui-verify/rules/runner.md");
   const UV = read("skills/testing/ui-verify/SKILL.md");
   const RN_STEP4 = (RN.match(/\n## Step 4:[\s\S]*?(?=\n## Step 4b|\n## Step 5)/) || [""])[0];
+  // Step 4 with its ```text example fences and the "never calls" sentence removed: any mention of
+  // AskUserQuestion or asking the user left in that remainder is an instruction to ask, however worded.
+  const RN_STEP4_REST = RN_STEP4.replace(/`{3}text[\s\S]*?`{3}/g, "")
+    .replace(/`auto` never calls `AskUserQuestion`[^\n]*/, "");
   s.check("G70g review-loop Step 1.6 invokes ui-verify run with --unattended",
     /Skill\("ui-verify", "run <PR-URL> --unattended"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
   s.check("G70g ui-verify's auto driver never asks (attended or --unattended), falls back with a notice, and the flag is advertised",
     /`auto` never calls `AskUserQuestion`, attended or under `--unattended`/.test(RN_STEP4)
     && /^### The auto-mode fallback notice$/m.test(RN_STEP4)
-    && !/Ask with `AskUserQuestion`|ask the user first/i.test(RN_STEP4)
+    && !/AskUserQuestion|ask the user/i.test(RN_STEP4_REST)
     && /argument-hint:[^\n]*--unattended/.test(UV));
 
   // The companion report. `interview`, `tdd`, and `test-provenance-guard` had 0 invocations in
