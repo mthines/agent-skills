@@ -187,7 +187,9 @@ trace:
 | `judgments.impact_trace` | the consumer-impact and dependency finders | `verified` for each consumer file read and found holding — kept even past impact.json's 25-file list; for a dependency (`symbol` = package name, `path` = its manifest), the usage sites in the files listed become `checked_sites` |
 | a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set; with `symbol` set, kept even past the 25-file list) |
 
-Every other listed consumer renders as `? not checked`, and every importer as `imports this file`. An impact graph that reached nothing still sends `IMPACT: {}`, so the report's footnote can say why it drew no diagram. Record the trace as you go:
+Every other listed consumer renders as `? not checked`, and every importer as `imports this file`.
+An impact graph that reached nothing still sends `IMPACT: {}`, so the report's footnote can say why it drew no diagram.
+Record the trace as you go:
 
 ```json
 "impact_trace": [
