@@ -46,6 +46,7 @@ Each proposal is a structured record the calling agent consumes (parallel to `ho
   blast_radius: <files or call sites a switch would touch>
   analysis_confidence: <confidence(analysis) score from O4>
   apply_safe: <true | false — mechanical enough to auto-apply AND contained to the diff's files AND no public-API change>
+  source_lens: <optional — only under standalone --deep, when the winning alternative came from a critical deep lens: that lens's name>
 ```
 
 The `headline` and `trade_off` fields make the card **decision-ready**: the headline gives the reader a one-line scan, and `trade_off` states the cost so "is this objectively better?" is answerable from the card alone. A proposal with no honest trade-off reads as a sales pitch — write `none material` when the switch genuinely costs nothing, never omit it.
