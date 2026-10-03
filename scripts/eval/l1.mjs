@@ -11181,7 +11181,7 @@ const isPollBlock = (block) =>
 // The step is only safe when (a) its mode table keeps six rows in order — the three skips first, then deep, then
 // the capability-checked fan-out before the in-context fallback — and decides dispatch by capability; (b) the
 // fan-out stays at five generators in one message plus one judge, none of which dispatches or calls a tool;
-// (c) every pending state meets the seven baseline moves and every spec ends in a keep-going step; (d) a written
+// (c) every pending state meets the six baseline moves, every move acts through the page alone, and every spec ends in a keep-going step; (d) a written
 // spec is titled `Out of bounds:`, has the move and the keep-going step as must-follow, and expects only recovery
 // outcomes, at most 3 and one per move; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
 // route to it, while the adversarial pass never brainstorms and the rule never asks the user.
@@ -11226,11 +11226,14 @@ const isPollBlock = (block) =>
     "the one-message rule, the 6-dispatch cap with no nested dispatch, the five personas, or the no-tools prompt line is gone");
 
   // (c) the baseline moves and the keep-going rule.
-  const moves = ["ignore", "dismiss", "reload", "leave-and-return", "second-tab", "offline", "refused-next"];
+  const moves = ["ignore", "dismiss", "reload", "leave-and-return", "second-tab", "refused-next"];
   const missingMoves = moves.filter((m) => !STEP2.split("\n").some((l) => l.startsWith(`| \`${m}\` |`)));
-  s.check("G92c every pending state meets the seven baseline moves, and every out-of-bounds spec ends in a keep-going step",
-    missingMoves.length === 0 && STEP2.includes("**Every out-of-bounds spec ends with a keep-going step.**"),
-    `missing move(s): ${missingMoves.join(", ") || "none"}`);
+  s.check("G92c every pending state meets the six baseline moves, each runs on both drivers, and every spec ends in a keep-going step",
+    missingMoves.length === 0 && !STEP2.split("\n").some((l) => l.startsWith("| `offline` |"))
+      && STEP2.includes("**Every move must run on both drivers.**")
+      && STEP4.includes("every idea whose trigger needs network interception, offline mode, or clock or storage control")
+      && STEP2.includes("**Every out-of-bounds spec ends with a keep-going step.**"),
+    `missing move(s): ${missingMoves.join(", ") || "none"}, or an offline move, the both-drivers rule, or its selection filter`);
 
   // (d) what a written spec looks like, and how many get written.
   const right = STEP5.includes("✅ RIGHT") ? STEP5.slice(STEP5.indexOf("✅ RIGHT")) : "";
@@ -11238,7 +11241,8 @@ const isPollBlock = (block) =>
   s.check("G92d an out-of-bounds spec is titled Out of bounds:, has move and keep-going as must-follow, and expects only recovery outcomes",
     STEP5.includes("Its title starts with `Out of bounds:`.") && STEP5.includes("a second `[must-follow]` step")
       && STEP5.includes("never a design choice the author cannot know") && mustFollow >= 2
-      && STEP4.includes("Take at most 3, and at most one per move."),
+      && STEP4.includes("Take at most 3, and at most one per baseline move; each `Move: new` idea counts as its own move.")
+      && STEP3.includes("run Step 4 from the start — one judge, all four axes"),
     `a convention, the cap of 3 / one per move, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
 
   // (e) the wiring: author routes to it, flags are forwarded, run and the adversarial pass never brainstorm.
@@ -11248,7 +11252,10 @@ const isPollBlock = (block) =>
       && UV.includes("**The out-of-bounds brainstorm runs only in `author`")
       && FMT.includes("(./out-of-bounds.md#step-5-write-each-selected-idea-as-an-intent-spec)")
       && A0.includes("take the `in-context` row") && A0.includes("Never brainstorm inside the `aw-tester` or adversarial-pass dispatches")
-      && RUNNER.includes("under an **Out of bounds** heading"),
+      && RUNNER.includes("under an **Out of bounds** heading")
+      && FMT.includes("the keep-going step after it is a second `[must-follow]` step")
+      && A0.includes("sends five `general` generators in one message, then one `general` judge")
+      && UV.includes("`fan-out` sends exactly five generators in one message and then one judge"),
     "SKILL.md's author step, argument hint, verify forwarding, or hard rule; spec-format's link; the Agent0 section; or the run report's grouping is gone");
   s.check("G92e the adversarial pass never brainstorms, and the brainstorm rule never asks the user",
     OOB.length > 0 && !/brainstorm/i.test(ADV) && !/AskUserQuestion/.test(OOB),
