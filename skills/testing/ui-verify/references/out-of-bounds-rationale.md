@@ -25,10 +25,7 @@ Naming the changed component's pending state in the framing points the generator
 
 ## Why `ignore`, `dismiss`, and `reload` are a floor, and severity caps the rest
 
-A fixed count cuts real dead ends.
-In a trial on an agent question-card change, a cap of 3 ranked by likelihood plus damage selected `ignore`, `reload`, and `leave-and-return`; `dismiss` tied for fourth and was cut, although a dismissed card that left the turn suspended was a known regression of that same component.
-The selected specs caught 2 of 4 known regressions of that component, while the whole candidate list caught 3.
-Those four regressions now inform this rule, so they no longer measure it blind.
+A fixed count cuts real dead ends: ranked by likelihood plus damage, it can cut `dismiss` even when a dismissed prompt is the changed component's known dead end.
 
 So the three interruptions a waiting prompt meets first are taken unconditionally, and everything else is kept or cut by how bad it would be if it broke, not by its place in a list.
 How many dead ends a change can create depends on the change, and a count cannot know that; a severity tier can.
