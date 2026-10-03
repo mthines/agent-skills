@@ -11248,7 +11248,7 @@ const isPollBlock = (block) =>
       && STEP5.includes("never a design choice the author cannot know") && mustFollow >= 2
       && STEP4.includes("**Severity gate:** add every other candidate rated `critical` or `high`. Severity is the cap — there is no fixed count — but take at most one per baseline move; each `Move: new` idea counts as its own move.")
       && STEP4.includes("**Floor:** for a pending state that waits on a user decision, take the highest-ranked `ignore`, `dismiss`, and `reload` candidate")
-      && STEP4.includes("](../../../quality/severity/SKILL.md#severity-rubric) verbatim in the judge's prompt, in `bug` mode")
+      && STEP4.includes("Load the `severity` skill and inline its `## Severity rubric` section verbatim in the judge's prompt, in `bug` mode")
       && STEP4.includes("2. Rank the rest by Severity, then Likelihood, highest first.") && STEP4.includes("| Severity | `critical` · `high` · `medium` · `low` |")
       && STEP5.includes("then every out-of-bounds spec Step 4 selected") && AUTHOR.includes("Severity is the cap, not a count")
       && FMT.includes("the out-of-bounds specs its brainstorm selects by severity") && OOB.includes("- **Severity caps the out-of-bounds specs, not a count**")

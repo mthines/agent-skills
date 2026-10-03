@@ -63,7 +63,7 @@ This skill owns four things and reuses the rest.
 | **The author + run orchestration** | this skill — this file + [`rules/runner.md`](./rules/runner.md). |
 | **The adversarial pass** (probe catalog, oracles, guardrails, evidence report) | this skill — [`rules/adversarial.md`](./rules/adversarial.md), harness [`templates/adversarial-probes.spec.ts.template`](./templates/adversarial-probes.spec.ts.template); rationale and sources in [`references/adversarial-testing.md`](./references/adversarial-testing.md). |
 | **The out-of-bounds brainstorm** (pending states, baseline moves, the `fan-out` / `in-context` modes, recovery outcomes) | this skill — [`rules/out-of-bounds.md`](./rules/out-of-bounds.md); rationale in [`references/out-of-bounds-rationale.md`](./references/out-of-bounds-rationale.md). `--brainstorm deep` delegates to the `ideate` skill. |
-| The severity tier that caps the out-of-bounds specs | `severity` — its [§ Severity rubric](../../quality/severity/SKILL.md#severity-rubric), inlined into the brainstorm judge's prompt; this skill owns only the gate (`critical` or `high`, one per move). |
+| The severity tier that caps the out-of-bounds specs | `severity` — its `## Severity rubric` section, inlined into the brainstorm judge's prompt; this skill owns only the gate (`critical` or `high`, one per move). |
 
 ## Operations
 
