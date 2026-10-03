@@ -167,7 +167,7 @@ The report names this mode, because the independence of five separate contexts i
 ### `deep` mode
 
 Invoke `Skill("ideate", "deep --no-framing <the filled framing> Every idea must use this format: <the idea format>")`.
-Take every idea that cleared ideate's admission bar as the candidate list, and continue at Step 4's selection rule 3 — ideate has already judged them.
+Add every idea that cleared ideate's admission bar to Step 4's candidate list, next to the baseline pairs, and run Step 4 from the start — one judge, all four axes. ideate's own scores have no Checkability axis, so they never replace Step 4's.
 Deep mode is opt-in: it dispatches far more sub-agents and takes far longer than `fan-out`.
 
 ## Step 4: Judge and select
