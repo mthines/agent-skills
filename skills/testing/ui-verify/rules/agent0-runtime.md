@@ -25,6 +25,7 @@ Rationale for the on-demand browser install below — the two-stage design, the 
 - [The browser precondition](#the-browser-precondition)
 - [Dispatch `aw-tester` as a `general` sub-agent](#dispatch-aw-tester-as-a-general-sub-agent)
 - [Dispatch the adversarial pass](#dispatch-the-adversarial-pass)
+- [The out-of-bounds brainstorm dispatches from `author`](#the-out-of-bounds-brainstorm-dispatches-from-author)
 - [Preview auth comes from the automation's secrets](#preview-auth-comes-from-the-automations-secrets)
 - [`setup` needs a human](#setup-needs-a-human)
 
@@ -134,6 +135,17 @@ In place of the `Task(subagent_type: "general-purpose", …)` block in [`runner.
 
 The `.aw-tester/node_modules` link from [§ The browser precondition](#the-browser-precondition) is what the probe file's `@playwright/test` import resolves through, so the pass downloads nothing.
 The Chrome categories never apply here — this host has no extension.
+
+## The out-of-bounds brainstorm dispatches from `author`
+
+On this host a dispatched sub-agent can never dispatch another: OpenCode refuses the Task tool at its default depth of 1 and denies `task` to child sessions, and the automation's configuration changes neither.
+So the brainstorm in [`out-of-bounds.md`](./out-of-bounds.md) runs where `author` runs — the top-level session — and its `fan-out` mode sends five `general` generators in one message, then one `general` judge.
+Each prompt carries everything inline, so no generator reads a file or calls a tool.
+
+When `author` itself runs inside a dispatched `general` sub-agent, the `task` tool is absent: take the `in-context` row, never a probe dispatch.
+Never brainstorm inside the `aw-tester` or adversarial-pass dispatches above; they only execute the specs `author` wrote.
+
+An automation that runs `author` or `verify` has its own run timeout, which defaults to 10 minutes; `fan-out` adds one generator round and one judge to it, and `--brainstorm deep` adds far more.
 
 ## Preview auth comes from the automation's secrets
 
