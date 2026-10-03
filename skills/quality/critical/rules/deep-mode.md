@@ -208,6 +208,8 @@ Do these in order:
 - Row <n> (<concern>): <lens> says <position>; <lens> says <position>. Kept: <class>.
 
 ### Steelman alternative
+**Lens:** <name of the lens that proposed it>
+
 <steelman structure>
 
 ### Other alternatives raised
