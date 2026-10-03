@@ -50,7 +50,7 @@ Caller agents never add `deep` on their own; it is a human or orchestrator opt-i
 | `deep` | — | Enables this mode. Recognised **only as the first token**, so free text such as `analysis deep recursion in parser` never turns it on. |
 | `plan` \| `code` \| `analysis` | `plan` | Target kind, exactly as in the single pass. Selects the taxonomy every lens walks. |
 | `--lenses <n>` | `4` | Lens count, clamped to `3..5`. Includes the baseline lens. |
-| `--lenses <a,b,c>` | unset | Explicit kebab-case lens names; skips D1 discovery. The baseline lens is prepended when absent and the list is clamped to 5 including it. A catalog name takes its catalog record; any other name gets a persona derived from the name and 2–3 probes drawn from the mode's taxonomy. No wildcard is added. |
+| `--lenses <a,b,c>` | unset | Explicit kebab-case lens names; skips D1 discovery. The baseline lens is prepended when absent; a list shorter than 3 including it is filled from the [fallback catalog](#fallback-catalog), and a longer one is clamped to 5. A catalog name takes its catalog record; any other name gets a persona derived from the name and 2–3 probes drawn from the mode's taxonomy. No wildcard is added. |
 | `--no-ideate` | off | Skip `ideate` discovery and pick lenses from the [fallback catalog](#fallback-catalog). |
 
 ```text
