@@ -101,7 +101,7 @@ These pairs are always candidates, so the common interruptions are covered even 
 | `refused-next` | takes a next action the server refuses through the page alone — an invalid value, a conflicting setting — then retries a valid one | the valid retry |
 
 **Every move must run on both drivers.**
-A spec acts through the page alone: no network interception, no offline mode, no clock or storage control — the Chrome driver has none of them, and `run --driver auto` picks Chrome when it is connected. The adversarial pass's `network`, `session`, and `data` categories already cover those disruptions under Playwright.
+A spec acts through the page alone: no network interception, no offline mode, no clock or storage control — the Chrome driver has none of them, and `run --driver auto` picks Chrome when it is connected. Network faults, offline mode, and an expired session stay with the adversarial pass's `network` and `session` categories under Playwright; nothing in this skill controls the clock.
 
 **Every out-of-bounds spec ends with a keep-going step.**
 The interruption itself usually looks fine; the dead end shows only when the user tries to carry on.
