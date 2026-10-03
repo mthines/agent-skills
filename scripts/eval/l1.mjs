@@ -11181,7 +11181,7 @@ const isPollBlock = (block) =>
 // The step is only safe when (a) its mode table keeps six rows in order — the three skips first, then deep, then
 // the capability-checked fan-out before the in-context fallback — and decides dispatch by capability; (b) the
 // fan-out stays at five generators in one message plus one judge, none of which dispatches or calls a tool;
-// (c) every pending state meets the six baseline moves, every move acts through the page alone, and every spec ends in a keep-going step; (d) a written
+// (c) a pending state too short to act on is skipped, every lasting one meets the six baseline moves, every move acts through the page alone, and every spec ends in a keep-going step; (d) a written
 // spec is titled `Out of bounds:`, has the move and the keep-going step as must-follow, and expects only recovery
 // outcomes, at most 3 and one per baseline move, with deep mode re-judged by Step 4; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
 // route to it, while the adversarial pass never brainstorms and the rule never asks the user.
@@ -11195,6 +11195,7 @@ const isPollBlock = (block) =>
   const OOB_FILE = `${UVD}/rules/out-of-bounds.md`;
   const OOB = readOr(OOB_FILE);
   const WHEN = sectionOr(OOB_FILE, "## When it runs");
+  const STEP1 = sectionOr(OOB_FILE, "## Step 1: Find the pending states");
   const STEP2 = sectionOr(OOB_FILE, "## Step 2: The baseline moves");
   const STEP3 = sectionOr(OOB_FILE, "## Step 3: Generate");
   const STEP4 = sectionOr(OOB_FILE, "## Step 4: Judge and select");
@@ -11228,14 +11229,15 @@ const isPollBlock = (block) =>
   // (c) the baseline moves and the keep-going rule.
   const moves = ["ignore", "dismiss", "reload", "leave-and-return", "second-tab", "refused-next"];
   const missingMoves = moves.filter((m) => !STEP2.split("\n").some((l) => l.startsWith(`| \`${m}\` |`)));
-  s.check("G92c every pending state meets the six baseline moves, each runs on both drivers, and every spec ends in a keep-going step",
+  s.check("G92c short pending states are skipped, every lasting one meets the six baseline moves, each runs on both drivers, and every spec ends in a keep-going step",
     missingMoves.length === 0 && !STEP2.split("\n").some((l) => l.startsWith("| `offline` |"))
+      && STEP1.includes("Skip a pending state that ends before a user could act on it")
       && STEP2.includes("**Every move must run on both drivers.**")
       && STEP4.includes("every idea whose trigger needs network interception, offline mode, or clock or storage control")
       && STEP2.includes("**Every out-of-bounds spec ends with a keep-going step.**")
       && OOB.includes("- **Every out-of-bounds spec acts through the page alone**")
       && !/already cover those disruptions/.test(STEP2) && STEP2.includes("nothing in this skill controls the clock"),
-    `missing move(s): ${missingMoves.join(", ") || "none"}, or an offline move, the both-drivers rule, or its selection filter`);
+    `missing move(s): ${missingMoves.join(", ") || "none"}, or an offline move is back, or Step 1's skip rule, the both-drivers rule or its hard rule, the selection filter, the coverage sentence, or the keep-going rule is gone`);
 
   // (d) what a written spec looks like, and how many get written.
   const right = STEP5.includes("✅ RIGHT") ? STEP5.slice(STEP5.indexOf("✅ RIGHT")) : "";
