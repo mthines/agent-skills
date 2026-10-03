@@ -69,7 +69,7 @@ Read the diff and list every pending state the changed component creates or show
 | Unsaved input | a form, editor, inline field, or draft the change adds or edits | an inline rename field |
 | In-flight operation | a submit, stream, upload, or long request with a loading or streaming state | a streaming chat reply |
 | Temporary UI | a toast with an action, an undo window, a popover with controls | an "Undo delete" toast |
-| Optimistic state | UI that updates before the server confirms | a row added before its `POST` returns |
+| Optimistic state | UI that updates before the server confirms | a card shown in its new column while a slow save confirms the move |
 
 Record each one as `surface · kind · how to reach it`.
 
