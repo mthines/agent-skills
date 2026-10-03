@@ -1805,6 +1805,29 @@ async function selfTest() {
       buildAutoQualityDropped({ confidenceDropped: [{}], anchorless: [{}, {}] }) === "1 below-bar, 2 anchorless");
   }
 
+  // A zero-delta re-review: prepare-review.mjs used to emit mode=zero-delta with deltaLines still at
+  // the full-PR count (delta triage never runs on zero-delta), and render-report.mjs rejected
+  // RUN.delta_lines for the mode. contextDeltaLines() is the value prepare-review.mjs now writes;
+  // the control case keeps the old value and must still fail, so this check bites on the defect.
+  {
+    const { contextDeltaLines } = await import(pathToFileURL(join(HERE, "prepare-review.mjs")).href);
+    const judgments = { candidates: [], gates: { gate1: { status: "PASS", details: "matches the diff" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "docs unaffected" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "no code changes since the last review" };
+    const zeroDeltaContext = (/** @type {number} */ deltaLines) => withRenderAt({
+      mode: "zero-delta", headSha: "906a74781990f75607f0234de963fdbbc3953f2c", deltaLines,
+      priorRun: { priorSha: "906a74781990f75607f0234de963fdbbc3953f2c" },
+      routing: { tier: "standard" }, workspace: { depthCapability: "checkout" }, files: [{ filename: "a.ts", patch }], threads: [],
+    }, "2026-09-25T12:00:00Z");
+    const fixed = finalizeReview({ context: zeroDeltaContext(contextDeltaLines({ mode: "zero-delta", deltaLines: 412 })), judgments });
+    const fixedRender = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, fixed.payload, "self-test-zero-delta");
+    check("a zero-delta context as prepare-review.mjs now writes it renders, with 0 lines in delta",
+      fixedRender.ok && fixed.payload.RUN.delta_lines === 0 && fixedRender.stdout.includes("incremental · 0 lines in delta"),
+      fixedRender.ok ? `delta_lines ${fixed.payload.RUN.delta_lines}` : fixedRender.stderr.trim());
+    const old = finalizeReview({ context: zeroDeltaContext(412), judgments });
+    const oldRender = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, old.payload, "self-test-zero-delta-control");
+    check("control: the full-PR count on a zero-delta context is still rejected by render-report.mjs",
+      !oldRender.ok && /delta_lines must be 0 or omitted when RUN\.mode is zero-delta/.test(oldRender.stderr), oldRender.stderr.trim());
+  }
+
   // Item 4: a verifier-contradicted candidate never scores, clears, or posts — it is disposed as
   // "contradicted" and excluded from the pipeline entirely (a real latent gap this delta closes:
   // finalizeReview() never read `.verdict` before, so a contradicted candidate with a high
