@@ -201,7 +201,8 @@ Consequences for a consumer, and they matter more than the cosmetics:
 - **A lens renders as a line xor a footnote entry, never both and never neither.** That exclusivity
   is enforced by L1, so a consumer can rely on exactly one of the two being present per lens.
 - **The footnote itself is metadata, not a section.** It has no row in the table above and carries
-  no extractable unit. Never mine it for findings.
+  no extractable unit. Never mine it for findings. A `reach diagram (…)` entry only says why the
+  `What this change reaches` accordion drew no diagram.
 
 ### Low-confidence findings are advisory, never actionable
 
