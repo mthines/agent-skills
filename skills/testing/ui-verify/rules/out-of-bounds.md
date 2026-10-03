@@ -187,7 +187,7 @@ Then select:
 
 1. Drop every idea with Checkability below 6 or Fit below 6, and every idea whose trigger needs network interception, offline mode, or clock or storage control.
 2. Rank the rest by Likelihood + Damage, highest first.
-3. Take at most 3, and at most one per move.
+3. Take at most 3, and at most one per baseline move; each `Move: new` idea counts as its own move.
 4. When nothing survives, write no out-of-bounds spec and report `brainstorm: 0 selected (<N> ideas, none checkable on this change)`.
 
 ## Step 5: Write each selected idea as an intent spec
@@ -203,7 +203,7 @@ An out-of-bounds spec is an ordinary intent spec — the same fields, no new syn
 | The user can continue | A new message sent from the composer gets an agent reply, and no error message appears. |
 | The pending item has one clear state | The question card either still accepts an answer, or shows as closed with no answer controls. |
 | Nothing is lost silently | The text typed into the answer field is still there after the reload, or the page warned before leaving. |
-| One action, one effect | Exactly one `POST /api/answers` is sent. |
+| One action, one effect | The answer appears once in the thread, not twice. |
 | Views agree | After the reload, the card shows the same state it showed before the reload. |
 
 ```markdown
