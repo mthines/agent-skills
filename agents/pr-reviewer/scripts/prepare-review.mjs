@@ -828,6 +828,18 @@ export function scopePathsFor({ mode, deltaFiles, prFiles }) {
 }
 
 /**
+ * The context's `deltaLines` — RUN.delta_lines once finalize.mjs builds the report: 0 on zero-delta,
+ * and the counted lines otherwise. A zero-delta run skips delta triage, so the count it is handed is
+ * still the full-PR total the counter was initialised to, and render-report.mjs rejects a non-zero
+ * delta_lines on a zero-delta run.
+ * @param {{ mode: string, deltaLines: number }} args
+ * @returns {number}
+ */
+export function contextDeltaLines({ mode, deltaLines }) {
+  return mode === "zero-delta" ? 0 : deltaLines;
+}
+
+/**
  * Reads the `--state` file (D10) — the caller's already-fetched LoreKit
  * state record `data`, read by the AGENT before invoking this script
  * (Steps 0.7/1.0; this script does no LoreKit I/O itself, per its own
@@ -1935,8 +1947,8 @@ async function prepare(opts) {
     diffablePaths: diffable,
     undiffablePaths: undiffable,
     // The delta's own count on an incremental run (what RUN.delta_lines renders as "N lines in
-    // delta"); the full-PR count otherwise — deltaCountsResult is initialised to it.
-    deltaLines: deltaCountsResult.deltaLines,
+    // delta"), 0 on zero-delta, and the full-PR count otherwise — deltaCountsResult is initialised to it.
+    deltaLines: contextDeltaLines({ mode: contextMode, deltaLines: deltaCountsResult.deltaLines }),
     // Which route produced the incremental delta: compare | local-git | blob-diff | full-pr | none.
     deltaRoute,
 
@@ -2172,6 +2184,12 @@ async function selfTest() {
     return deltaLines([{ additions: 3, deletions: 4 }, { additions: 1, deletions: 0 }]) === 8;
   });
   t("deltaLines is 0 for an empty list", () => deltaLines([]) === 0 && deltaLines(null) === 0);
+  // A zero-delta run never reaches delta triage, so the count it carries is the full-PR total; the
+  // context must report 0 there, or render-report.mjs rejects RUN.delta_lines for the mode.
+  t("contextDeltaLines reports 0 on zero-delta, never the full-PR count the counter still holds", () =>
+    contextDeltaLines({ mode: "zero-delta", deltaLines: 412 }) === 0);
+  t("contextDeltaLines keeps the counted lines on every other mode", () =>
+    ["full", "incremental", "incremental-quick"].every((mode) => contextDeltaLines({ mode, deltaLines: 412 }) === 412));
 
   t("extraHighStakes reads a block list and strips inline comments", () => {
     const y = ["high_stakes_paths:", "  - ^src/auth/  # money", '  - "^db/migrations/"', "other: 1"].join("\n");
@@ -2389,6 +2407,7 @@ async function selfTest() {
       && /readLocal: \(\) => localAuthoredDelta\(\{ dirs: localGitDirs, from: \/\*\* @type \{string\} \*\/ \(state\.lastFullSha\), to: headSha, baseSha,/.test(body)
       && /prFilesCompleteness\(files\.length, meta\.changedFiles, filesR\.error\)/.test(body)
       && /\n    deltaLines: deltaCountsResult\.deltaLines,\n/.test(body)
+      && /\n    deltaLines: contextDeltaLines\(\{ mode: contextMode, deltaLines: deltaCountsResult\.deltaLines \}\),\n/.test(body)
       && /files: \[\(\.files \/\/ \[\]\)\[\] \| \{filename, lines/.test(CHURN_COMPARE_JQ)
       && /history: compareHistory\(cmp\.value\),/.test(body) && /history: compareHistory\(cum\.value\),/.test(body)
       && [DELTA_COMPARE_JQ, CHURN_COMPARE_JQ].every((jq) => jq.includes(COMPARE_HISTORY_JQ));
