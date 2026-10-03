@@ -234,7 +234,7 @@ When `Must-fix` and `Should-fix` are both empty, print `No blocking concerns fou
 
 1. **Parallel, not iterative.** Deep mode is still one pass: N independent lenses in one round, no lens sees another's output, and no second round critiques the first.
 2. **Synthesis adds no findings.** It re-grounds, merges, attributes, and picks the steelman — nothing else.
-3. **No scores.** `raised_by` is a count of lenses, not a confidence; never print a percentage or grade.
+3. **No scores.** `raised_by` lists the lenses that raised a finding; it is not a confidence; never print a percentage or grade.
 4. **No fixes.** Deep mode edits no files, exactly like the single pass.
 5. **Baseline lens always runs** and alone carries the full row walk.
 6. **Independence is reported.** A single-context run, a lost lens, or an in-context baseline is stated in the header; never present it as full sub-agent independence.
