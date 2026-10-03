@@ -83,6 +83,7 @@ The rules below are what an author needs, restated so this file stands alone —
 Do not add fields, tokens, or syntax the template does not define.
 
 Write one `## Spec N:` block per user-visible behavior the diff changes — 1 to 3 specs, the behaviors a reviewer would click through.
+After them, `author` may append the out-of-bounds specs its brainstorm selects by severity ([§ Out-of-bounds specs](#out-of-bounds-specs)).
 Each block carries, in this order:
 
 | Field | Required | Rule |
@@ -103,6 +104,30 @@ Four authoring rules decide whether the run can prove anything:
 4. **Keep each `Expected` item checkable.** "Works correctly" and "looks good" cannot be observed. "The header shows *Q3 revenue*" can.
 
 Never put a CSS selector, `nth-child`, or XPath in any field, and never a credential — the block is public.
+
+### Out-of-bounds specs
+
+An out-of-bounds spec covers a user who leaves the happy path while the changed component is waiting on something.
+It uses the same fields as any intent spec — no new syntax — with three conventions, owned by [`out-of-bounds.md § Step 5`](./out-of-bounds.md#step-5-write-each-selected-idea-as-an-intent-spec):
+
+1. The title starts with `Out of bounds:`.
+2. Plain steps reach the pending state; the interruption is a `[must-follow]` step; the keep-going step after it is a second `[must-follow]` step.
+3. Every `**Expected:**` item is a recovery outcome — the user can continue, the pending item has one clear state, nothing is lost silently, one action has one effect, or views agree — never a design choice.
+
+```markdown
+## Spec 3: Out of bounds: reload while a question is pending, then answer it
+**Changed:** the question card in an Agent0 thread
+**Start:** /agent0
+**Preconditions:**
+- A seeded thread whose last turn is paused on an unanswered question
+**Steps:**
+1. Open the seeded thread.
+2. [must-follow] Reload the page.
+3. [must-follow] Pick the first answer on the question card, or send "Continue" from the composer when no card is shown.
+**Expected:**
+- After the reload, the question card shows the same state it showed before the reload.
+- The thread continues with an agent reply, and no error message appears.
+```
 
 ## Two host-contract rules
 
