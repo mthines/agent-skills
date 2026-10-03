@@ -265,6 +265,24 @@ export const SUITES = [
     inputKey: "input", inputLabel: "What the run observed",
     choices: ["pass", "fail", "skipped"],
   },
+  {
+    name: "ui-verify-brainstorm-mode",
+    golden: "golden/ui-verify-brainstorm-mode.jsonl",
+    // 14 cases: 5 skipped / 2 deep / 4 fan-out / 3 in-context. Six are decoys whose surface points
+    // at the wrong row — dispatch available but no pending state (skipped), a dispatch tool spelled
+    // `Agent` instead of `Task` (fan-out), deep requested without ideate (fan-out), a /fix-bug repro
+    // rewritten as intent rather than lifted (fan-out), deep requested with ideate but no dispatch
+    // (in-context), and a lifted block with no dispatch (skipped, because row 2 precedes row 6).
+    // The decision is the first-match mode table; Step 1 is included because row 3 asks whether the
+    // diff has a pending state.
+    rubric: {
+      file: "skills/testing/ui-verify/rules/out-of-bounds.md",
+      sections: ["## When it runs", "## Step 1: Find the pending states"],
+    },
+    instruction: "You are ui-verify author deciding how to run the out-of-bounds brainstorm. Using ONLY the rules below, pick the mode.",
+    inputKey: "input", inputLabel: "The author's situation",
+    choices: ["skipped", "deep", "fan-out", "in-context"],
+  },
 ];
 
 /** Repo-relative path of a suite's golden file (the `golden` field is relative to scripts/eval/). */
