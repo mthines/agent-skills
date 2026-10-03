@@ -83,7 +83,7 @@ The rules below are what an author needs, restated so this file stands alone —
 Do not add fields, tokens, or syntax the template does not define.
 
 Write one `## Spec N:` block per user-visible behavior the diff changes — 1 to 3 specs, the behaviors a reviewer would click through.
-After them, `author` may append up to 3 out-of-bounds specs ([§ Out-of-bounds specs](#out-of-bounds-specs)).
+After them, `author` may append up to 4 out-of-bounds specs ([§ Out-of-bounds specs](#out-of-bounds-specs)).
 Each block carries, in this order:
 
 | Field | Required | Rule |

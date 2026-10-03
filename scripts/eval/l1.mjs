@@ -11183,10 +11183,10 @@ const isPollBlock = (block) =>
 // fan-out stays at five generators in one message plus one judge, none of which dispatches or calls a tool;
 // (c) a pending state too short to act on is skipped, every lasting one meets the six baseline moves, every move acts through the page alone, and every spec ends in a keep-going step; (d) a written
 // spec is titled `Out of bounds:`, has the move and the keep-going step as must-follow, and expects only recovery
-// outcomes, at most 3 and one per baseline move, with deep mode re-judged by Step 4; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
+// outcomes, at most 4 and one per baseline move with ignore, dismiss, and reload as a floor for a pending user decision, with deep mode re-judged by Step 4; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
 // route to it, while the adversarial pass never brainstorms and the rule never asks the user.
 // break-shape: swap rows 5 and 6 of § When it runs, drop a baseline move, delete "never a dispatch from a generator
-// or the judge", drop the keep-going step from the RIGHT example, drop SKILL.md's link to the rule, or delete the
+// or the judge", drop the keep-going step from the RIGHT example, drop the selection floor, drop SKILL.md's link to the rule, or delete the
 // Agent0 section's "Never brainstorm inside" sentence — the matching sub-check flips red.
 {
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
@@ -11245,10 +11245,13 @@ const isPollBlock = (block) =>
   s.check("G92d an out-of-bounds spec is titled Out of bounds:, has move and keep-going as must-follow, and expects only recovery outcomes",
     STEP5.includes("Its title starts with `Out of bounds:`.") && STEP5.includes("a second `[must-follow]` step")
       && STEP5.includes("never a design choice the author cannot know") && mustFollow >= 2
-      && STEP4.includes("Take at most 3, and at most one per baseline move; each `Move: new` idea counts as its own move.")
+      && STEP4.includes("Take at most 4 in total, and at most one per baseline move; each `Move: new` idea counts as its own move.")
+      && STEP4.includes("**Floor:** for a pending state that waits on a user decision, take the highest-ranked `ignore`, `dismiss`, and `reload` candidate")
+      && STEP5.includes("at most 4 out-of-bounds specs") && AUTHOR.includes("Append at most 4 `Out of bounds:` intent specs")
+      && FMT.includes("may append up to 4 out-of-bounds specs") && !/at most 3 out-of-bounds|up to 3 out-of-bounds/i.test(OOB + UV + FMT)
       && STEP3.includes("run Step 4 from the start — one judge, all four axes")
       && STEP4.includes("a fresh sub-agent in `fan-out` and `deep` mode"),
-    `a Step 5 convention, Step 4's cap of 3 / one per baseline move, deep mode's Step 4 re-run, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
+    `a Step 5 convention, Step 4's cap of 4 / one per baseline move / ignore-dismiss-reload floor (or a stale cap of 3 in SKILL.md, spec-format, or the rule), deep mode's Step 4 re-run, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
 
   // (e) the wiring: author routes to it, flags are forwarded, run and the adversarial pass never brainstorm.
   s.check("G92e ui-verify author routes to the brainstorm, verify forwards its flags, and the rule is wired into format, Agent0, and run",

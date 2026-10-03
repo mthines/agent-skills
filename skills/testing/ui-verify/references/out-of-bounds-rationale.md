@@ -23,6 +23,16 @@ A brainstorm framed only as "leave the intended path" drifts toward client-side 
 Those interruptions — ignoring a prompt and doing something else, dismissing it, reloading while it is open — are exactly where post-release regressions in waiting UI come from.
 Naming the changed component's pending state in the framing points the generators at it, and the baseline moves give every pending state a coverage floor that does not depend on any generator thinking of the obvious.
 
+## Why `ignore`, `dismiss`, and `reload` are a selection floor, and the cap is 4
+
+Ranking by Likelihood + Damage alone can cut one of the three interruptions a waiting prompt meets first.
+In a trial on an agent question-card change, the judge's top three were `ignore`, `reload`, and `leave-and-return`; `dismiss` tied for fourth and was cut, although a dismissed card that leaves the turn suspended was a known regression of that same component.
+The selected specs caught 2 of 4 known regressions of that component, while the whole candidate list caught 3.
+So for a pending user decision the three are taken first, and the cap is 4 rather than 3, leaving one slot for the next-best move.
+Those four regressions now inform this rule, so they no longer measure it blind.
+
+`refused-next` names the page's main control as well as the pending item, because a prompt the server refuses while a card waits can leave the card and the server disagreeing about whether it is still open.
+
 ## Why every spec ends with a keep-going step
 
 An interruption rarely breaks the screen it happens on.

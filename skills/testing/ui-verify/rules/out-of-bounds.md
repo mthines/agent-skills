@@ -100,7 +100,7 @@ These pairs are always candidates, so the common interruptions are covered even 
 | `reload` | reloads the page | resolve the pending item if it is shown, else the page's main action |
 | `leave-and-return` | goes to another page or record, then comes back (in-app link, then Back) | resolve the pending item, else the main action |
 | `second-tab` | opens the same URL in a second tab, resolves the item there, then returns to the first tab | act on the item in the first tab |
-| `refused-next` | takes a next action the server refuses through the page alone — an invalid value, a conflicting setting — then retries a valid one | the valid retry |
+| `refused-next` | takes a next action — on the pending item, or through the page's main control — that the server refuses through the page alone (an invalid value, a conflicting setting), then retries a valid one | the valid retry |
 
 **Every move must run on both drivers.**
 A spec acts through the page alone: no network interception, no offline mode, no clock or storage control — the Chrome driver has none of them, and `run --driver auto` picks Chrome when it is connected. Network faults, offline mode, and an expired session stay with the adversarial pass's `network` and `session` categories under Playwright; nothing in this skill controls the clock.
@@ -188,9 +188,10 @@ The judge receives the ideas anonymized, shuffled, and trimmed to the idea forma
 Then select:
 
 1. Drop every idea with Checkability below 6 or Fit below 6, and every idea whose trigger needs network interception, offline mode, or clock or storage control.
-2. Rank the rest by Likelihood + Damage, highest first.
-3. Take at most 3, and at most one per baseline move; each `Move: new` idea counts as its own move.
-4. When nothing survives, write no out-of-bounds spec and report `brainstorm: 0 selected (<N> ideas, none checkable on this change)`.
+2. Rank the rest by Likelihood + Damage, highest first; break a tie by the higher Damage.
+3. **Floor:** for a pending state that waits on a user decision, take the highest-ranked `ignore`, `dismiss`, and `reload` candidate — `dismiss` only when the UI offers a way to close it.
+4. Fill the remaining slots from the top of the ranking. Take at most 4 in total, and at most one per baseline move; each `Move: new` idea counts as its own move.
+5. When nothing survives, write no out-of-bounds spec and report `brainstorm: 0 selected (<N> ideas, none checkable on this change)`.
 
 ## Step 5: Write each selected idea as an intent spec
 
@@ -232,7 +233,7 @@ An out-of-bounds spec is an ordinary intent spec — the same fields, no new syn
 - The new message gets an agent reply, and no error message appears.
 ```
 
-Number the out-of-bounds specs after the happy-path specs, so a block holds at most 3 happy-path specs and at most 3 out-of-bounds specs.
+Number the out-of-bounds specs after the happy-path specs, so a block holds at most 3 happy-path specs and at most 4 out-of-bounds specs.
 They are graded like every intent spec; a failing one is `red`, because the changed component leaves a user stuck off the happy path.
 
 ## Step 6: Report
@@ -245,7 +246,7 @@ They are graded like every intent spec; a failing one is `red`, because the chan
 - **`fan-out` dispatches exactly 6 sub-agents** — five generators in one message, then one judge — and none of them dispatches.
 - **Decide the mode from capabilities**, never from a tool name and never by attempting a dispatch.
 - **Generators get no tools and no file paths**; the framing, the pending states, the baseline moves, and the diff excerpt are inlined.
-- **At most 3 out-of-bounds specs, each ending in a keep-going step, each `**Expected:**` item a recovery outcome.**
+- **At most 4 out-of-bounds specs — `ignore`, `dismiss`, and `reload` always among them for a pending user decision — each ending in a keep-going step, each `**Expected:**` item a recovery outcome.**
 - **Never ask the user a question** — `create-pr`, `review-loop`, and automations call `author` with nobody to answer.
 - **Never reach a pending state through a non-deterministic step**; seed it under `**Preconditions:**`.
 - **Every out-of-bounds spec acts through the page alone**, so it runs on both the Playwright and the Chrome driver.
