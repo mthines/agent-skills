@@ -211,7 +211,7 @@ Do these in order:
 <steelman structure>
 
 ### Other alternatives raised
-- <lens>: <one-line approach>
+- <lens>: <one-line approach> — why better: <the lens's first why_better line>
 
 ### Skipped rows (baseline lens)
 - Row N (<concern>): <reason>
