@@ -70,7 +70,7 @@ Caller agents never add `deep` on their own; it is a human or orchestrator opt-i
 | D2 | Lens passes | Every lens returned its YAML or is listed under `Lost lenses`; no lens saw another lens's output |
 | D3 | Synthesis | Findings re-grounded, deduplicated, attributed; one steelman chosen; no new findings added |
 
-Detect dispatch by capability, not by tool name: the first dispatch call (D1 discovery, or the D2 batch with `--no-ideate` / `--lenses <names>`) is the test.
+Detect dispatch by capability, not by tool name: the first dispatch call (D1 discovery, or the D2 batch when `ideate` is missing, `--no-ideate` is set, or `--lenses <names>` was given) is the test.
 If it succeeds, run D1 and D2 in sub-agents.
 If no dispatch tool exists, or that first call is refused (nested contexts often list `Agent`/`Task` and still refuse it), run D1 and D2 in this context and record `Independence: single-context (reduced)` in the report header.
 
