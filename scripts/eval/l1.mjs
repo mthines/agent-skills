@@ -11175,4 +11175,84 @@ const isPollBlock = (block) =>
     `description-contract.md sites still v1-only: ${dcStale.join(" · ") || "none"} — a v1-only site counts the v2 block against the budget or drops it on refresh`);
 }
 
+// ── G92: ui-verify out-of-bounds brainstorm — author-only, bounded fan-out, capability-checked, recovery outcomes ──
+//
+// `ui-verify author` brainstorms out-of-bounds specs for the pending states the changed component creates.
+// The step is only safe when (a) its mode table keeps six rows in order — the three skips first, then deep, then
+// the capability-checked fan-out before the in-context fallback — and decides dispatch by capability; (b) the
+// fan-out stays at five generators in one message plus one judge, none of which dispatches or calls a tool;
+// (c) every pending state meets the seven baseline moves and every spec ends in a keep-going step; (d) a written
+// spec is titled `Out of bounds:`, has the move and the keep-going step as must-follow, and expects only recovery
+// outcomes, at most 3 and one per move; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
+// route to it, while the adversarial pass never brainstorms and the rule never asks the user.
+// break-shape: swap rows 5 and 6 of § When it runs, drop a baseline move, delete "never a dispatch from a generator
+// or the judge", drop the keep-going step from the RIGHT example, drop SKILL.md's link to the rule, or delete the
+// Agent0 section's "Never brainstorm inside" sentence — the matching sub-check flips red.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
+  const UVD = "skills/testing/ui-verify";
+  const OOB_FILE = `${UVD}/rules/out-of-bounds.md`;
+  const OOB = readOr(OOB_FILE);
+  const WHEN = sectionOr(OOB_FILE, "## When it runs");
+  const STEP2 = sectionOr(OOB_FILE, "## Step 2: The baseline moves");
+  const STEP3 = sectionOr(OOB_FILE, "## Step 3: Generate");
+  const STEP4 = sectionOr(OOB_FILE, "## Step 4: Judge and select");
+  const STEP5 = sectionOr(OOB_FILE, "## Step 5: Write each selected idea as an intent spec");
+  const UV = readOr(`${UVD}/SKILL.md`);
+  const AUTHOR = sectionOr(`${UVD}/SKILL.md`, "## Operation `author`");
+  const FMT = readOr(`${UVD}/rules/spec-format.md`);
+  const A0 = sectionOr(`${UVD}/rules/agent0-runtime.md`, "## The out-of-bounds brainstorm dispatches from `author`");
+  const RUNNER = readOr(`${UVD}/rules/runner.md`);
+  const ADV = readOr(`${UVD}/rules/adversarial.md`);
+
+  // (a) the mode table, pinned row by row so a reorder goes red, and the capability rule.
+  const modes = ["skipped", "skipped", "skipped", "deep", "fan-out", "in-context"];
+  const rows = WHEN.split("\n").filter((l) => /^\| \d \|/.test(l));
+  const wrongRows = modes.map((m, i) => (rows[i] && rows[i].startsWith(`| ${i + 1} |`) && rows[i].includes(`| \`${m}\` |`) ? null : i + 1)).filter(Boolean);
+  s.check("G92a out-of-bounds.md § When it runs keeps six mode rows in order: three skips, deep, fan-out, then in-context",
+    rows.length === 6 && wrongRows.length === 0,
+    `found ${rows.length} row(s); wrong at row(s): ${wrongRows.join(", ") || "none"} — a fan-out row below in-context would never run`);
+  s.check("G92a the brainstorm decides dispatch by capability, never by a tool name or a probe dispatch",
+    /never by attempting a dispatch/.test(WHEN) && WHEN.includes('if "Task" not in available_tools') && /Task, Agent, task, or another spelling/.test(WHEN),
+    "the capability rule, its WRONG name check, or its RIGHT spelling list is gone from § When it runs");
+
+  // (b) the fan-out is bounded and flat.
+  s.check("G92b fan-out sends five tool-less generators in one message, then one judge, and none of them dispatches",
+    STEP3.includes("Dispatch the five generators in **one message**")
+      && STEP3.includes("That is 6 dispatches in total — never more, and never a dispatch from a generator or the judge.")
+      && (STEP3.match(/^\| [1-5] \| /gm) || []).length === 5
+      && STEP3.includes("Do not call any tools; work only from this message."),
+    "the one-message rule, the 6-dispatch cap with no nested dispatch, the five personas, or the no-tools prompt line is gone");
+
+  // (c) the baseline moves and the keep-going rule.
+  const moves = ["ignore", "dismiss", "reload", "leave-and-return", "second-tab", "offline", "refused-next"];
+  const missingMoves = moves.filter((m) => !STEP2.split("\n").some((l) => l.startsWith(`| \`${m}\` |`)));
+  s.check("G92c every pending state meets the seven baseline moves, and every out-of-bounds spec ends in a keep-going step",
+    missingMoves.length === 0 && STEP2.includes("**Every out-of-bounds spec ends with a keep-going step.**"),
+    `missing move(s): ${missingMoves.join(", ") || "none"}`);
+
+  // (d) what a written spec looks like, and how many get written.
+  const right = STEP5.includes("✅ RIGHT") ? STEP5.slice(STEP5.indexOf("✅ RIGHT")) : "";
+  const mustFollow = (right.match(/^\d+\. \[must-follow\]/gm) || []).length;
+  s.check("G92d an out-of-bounds spec is titled Out of bounds:, has move and keep-going as must-follow, and expects only recovery outcomes",
+    STEP5.includes("Its title starts with `Out of bounds:`.") && STEP5.includes("a second `[must-follow]` step")
+      && STEP5.includes("never a design choice the author cannot know") && mustFollow >= 2
+      && STEP4.includes("Take at most 3, and at most one per move."),
+    `a convention, the cap of 3 / one per move, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
+
+  // (e) the wiring: author routes to it, flags are forwarded, run and the adversarial pass never brainstorm.
+  s.check("G92e ui-verify author routes to the brainstorm, verify forwards its flags, and the rule is wired into format, Agent0, and run",
+    AUTHOR.includes("(./rules/out-of-bounds.md)") && /argument-hint:[^\n]*\[--no-brainstorm\|--brainstorm deep\]/.test(UV)
+      && /honouring\s+`--no-brainstorm` and `--brainstorm deep`/.test(UV)
+      && UV.includes("**The out-of-bounds brainstorm runs only in `author`")
+      && FMT.includes("(./out-of-bounds.md#step-5-write-each-selected-idea-as-an-intent-spec)")
+      && A0.includes("take the `in-context` row") && A0.includes("Never brainstorm inside the `aw-tester` or adversarial-pass dispatches")
+      && RUNNER.includes("under an **Out of bounds** heading"),
+    "SKILL.md's author step, argument hint, verify forwarding, or hard rule; spec-format's link; the Agent0 section; or the run report's grouping is gone");
+  s.check("G92e the adversarial pass never brainstorms, and the brainstorm rule never asks the user",
+    OOB.length > 0 && !/brainstorm/i.test(ADV) && !/AskUserQuestion/.test(OOB),
+    "adversarial.md mentions a brainstorm (it must only execute specs), or out-of-bounds.md can ask a question an unattended caller cannot answer");
+}
+
 process.exit(s.report() ? 0 : 1);
