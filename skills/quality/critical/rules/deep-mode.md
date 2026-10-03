@@ -101,10 +101,10 @@ Fill exactly `n` slots (the `--lenses <n>` value) in this order:
    ```
 
    Take the Lead finalists, in rank order, until the focused slots are full.
-   `--n` only caps ideate's finalists and never adds any, so a short return is normal: fill every empty slot from the catalog.
+   `--n` only caps ideate's finalists and never adds any, so a short return is normal: fill every empty slot from the catalog, never with `wildcard-far-domain`.
    With dispatch available, run that call inside one sub-agent and return only the lens records, so ideate's pool and scoring never enter the critical context.
    Do not relay ideate's "Your verdict" question — the user invoked `critical`, not `ideate`.
-4. **Fallback.** When `ideate` is missing or `--no-ideate` is set, fill the focused slots from the catalog below: rows whose "Pick when" matches the target, in table order.
+4. **Fallback.** When `ideate` is missing or `--no-ideate` is set, fill the focused slots from the catalog below: rows whose "Pick when" matches the target, in table order, excluding `wildcard-far-domain`.
    Report `ideate — skipped (not installed | --no-ideate)` in one line.
 5. **Distinctness check.** Drop a lens whose focus probes duplicate another lens's probes, then refill that slot from the catalog.
    Two lenses that would ask the same questions are one lens with double cost.
@@ -121,7 +121,7 @@ Fill exactly `n` slots (the `--lenses <n>` value) in this order:
 | `performance-engineer` | Engineer holding the latency/cost budget | sits on a request path, loop, or batch job | What scales with input size? What new IO runs per request? |
 | `end-user` | First-time user on a slow device with a screen reader | changes UI, copy, or user-visible flow | What do I see while it loads, fails, or is empty? Can I complete the task by keyboard? |
 | `product-skeptic` | PM asked to justify the scope | is a `plan`, or a feature-sized `code` diff | Which part does the requirement not need? What simpler version ships 80 % of the value? |
-| `wildcard-far-domain` | Practitioner from a distant field (aviation checklist designer, pharmacist, accountant) | always eligible as the wildcard | How does my field prevent this class of failure, and does the change have that guard? |
+| `wildcard-far-domain` | Practitioner from a distant field (aviation checklist designer, pharmacist, accountant) | fills the wildcard slot only — never a focused slot | How does my field prevent this class of failure, and does the change have that guard? |
 
 ## D2 — Lens passes
 
