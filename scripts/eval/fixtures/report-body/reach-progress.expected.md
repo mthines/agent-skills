@@ -47,6 +47,7 @@ flowchart LR
   classDef unknown fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:4 3,color:#374151
   classDef bad fill:#fde8e8,stroke:#dc2626,color:#7f1d1d
   classDef warn fill:#fff4e5,stroke:#d97706,color:#78350f
+  classDef imports fill:#f8fafc,stroke:#64748b,stroke-dasharray:4 3,color:#1e293b
 ```
 
 - `retryRequest` (`src/api/client.ts`) — signature change · 14 consumer files · 5 verified unaffected · 1 finding inline · 8 not traced

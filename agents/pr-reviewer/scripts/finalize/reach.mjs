@@ -9,7 +9,8 @@
  *   - `scopePaths`   prepare-review.mjs — the changed files in scope (the PR on a full run, the
  *                    delta on an incremental one, none on a zero-delta run).
  *   - `scanned`      judgments.json `scanned_files` — SCANNED_FILES, the files this run read.
- *   - `impact`       impact.json (build-impact-graph.mjs) — symbols, consumers, deps, overlaps.
+ *   - `impact`       impact.json (build-impact-graph.mjs) — symbols, consumers, modules and their
+ *                    importers, deps, overlaps.
  *   - `trace`        judgments.json `impact_trace` — per changed export, the consumer files the
  *                    consumer-impact finder read and found to hold.
  *   - `inlineClaims` the claims this run posts inline; a consumer-impact one marks its file.
@@ -81,7 +82,7 @@ export function buildCoverage({ scopePaths, scanned, partial, skipped }) {
 /**
  * A render-report.mjs IMPACT object, or null when impact.json has nothing a reader needs.
  * @param {{ impact: any, inlineClaims?: any[], trace?: unknown, repo?: string | null }} args
- * @returns {{ symbols?: any[], dependencies?: any[], dependencies_omitted?: number, overlaps?: any[] } | null}
+ * @returns {{ symbols?: any[], modules?: any[], dependencies?: any[], dependencies_omitted?: number, overlaps?: any[] } | null}
  */
 export function buildImpact({ impact, inlineClaims = [], trace, repo = null }) {
   if (!impact || typeof impact !== "object") return null;
@@ -94,6 +95,8 @@ export function buildImpact({ impact, inlineClaims = [], trace, repo = null }) {
   const rawDeps = Array.isArray(impact.dependencies) ? impact.dependencies : [];
   /** @type {any[]} */
   const rawOverlaps = Array.isArray(impact.overlaps) ? impact.overlaps : [];
+  /** @type {any[]} */
+  const rawModules = Array.isArray(impact.modules) ? impact.modules : [];
   const symbols = rawSymbols
     .filter((s) => s && s.exported !== false && Number.isInteger(s.consumer_files) && s.consumer_files > 0
       && safe(s.name) && safe(s.path) && CHANGE_RANK[s.change] !== undefined)
@@ -139,6 +142,26 @@ export function buildImpact({ impact, inlineClaims = [], trace, repo = null }) {
       };
     });
 
+  // A changed file whose importers no listed export already covers: a private helper, a top-level
+  // constant, or an export whose callers the symbol search could not attribute. Its importers are
+  // reach the symbol rows miss. A file with a listed export is left to that export's consumers, so
+  // the diagram never draws the same file twice. impact.json lists at most 25 importers but
+  // `importers` counts them all, and the count is what `importer_files` carries.
+  const symbolPaths = new Set(symbols.map((s) => s.path));
+  const modules = rawModules
+    .filter((m) => m && safe(m.path) && !symbolPaths.has(m.path) && Number.isInteger(m.importers))
+    .map((m) => {
+      /** @type {unknown[]} */
+      const listedRaw = Array.isArray(m.importer_paths) ? m.importer_paths : [];
+      const selfListed = listedRaw.includes(m.path);
+      /** @type {string[]} */
+      const importers = [...new Set(listedRaw.filter((p) => safe(p) && p !== m.path))].map(String);
+      const importerFiles = Math.max(m.importers - (selfListed ? 1 : 0), importers.length);
+      return { path: String(m.path), importer_files: importerFiles, importers };
+    })
+    .filter((m) => m.importer_files > 0)
+    .sort((a, b) => b.importer_files - a.importer_files || a.path.localeCompare(b.path));
+
   // A version bump is reach whether or not anything read its call sites, so every renderable delta
   // that is direct (`direct !== false`) or has a usage site in this repo is listed; what was read is
   // a separate, evidenced number. `checked_sites` counts the usage sites in files the trace names for
@@ -182,10 +205,11 @@ export function buildImpact({ impact, inlineClaims = [], trace, repo = null }) {
       return out;
     });
 
-  if (!symbols.length && !dependencies.length && !dependenciesOmitted && !overlaps.length) return null;
-  /** @type {{ symbols?: any[], dependencies?: any[], dependencies_omitted?: number, overlaps?: any[] }} */
+  if (!symbols.length && !modules.length && !dependencies.length && !dependenciesOmitted && !overlaps.length) return null;
+  /** @type {{ symbols?: any[], modules?: any[], dependencies?: any[], dependencies_omitted?: number, overlaps?: any[] }} */
   const out = {};
   if (symbols.length) out.symbols = symbols;
+  if (modules.length) out.modules = modules;
   if (dependencies.length) out.dependencies = dependencies;
   if (dependenciesOmitted > 0) out.dependencies_omitted = dependenciesOmitted;
   if (overlaps.length) out.overlaps = overlaps;
@@ -289,6 +313,24 @@ function selfTest() {
   }
   check("same-symbol overlaps carry the PR link built from the repo slug; a same-file overlap is left out",
     JSON.stringify(built?.overlaps) === JSON.stringify([{ pr: 212, author: "alice", path: "src/r.ts", symbol: "retry", url: "https://github.com/o/r/pull/212" }]));
+  {
+    const mod = buildImpact({ impact: {
+      symbols: [{ name: "retry", path: "src/r.ts", change: "signature", exported: true, consumer_files: 1, consumers: [{ path: "src/a.ts" }] },
+        { name: "helper", path: "src/h.ts", change: "body", exported: false, consumer_files: 0, consumers: [] }],
+      modules: [
+        { path: "src/r.ts", importers: 3, importer_paths: ["src/a.ts", "src/b.ts", "src/c.ts"] },
+        { path: "src/h.ts", importers: 30, importer_paths: ["src/x/one.ts", "src/x/one.ts", "src/h.ts", "src/x/[id]/two.ts", "bad`p.ts"] },
+        { path: "src/quiet.ts", importers: 0, importer_paths: [] },
+        { path: "src/selfonly.ts", importers: 1, importer_paths: ["src/selfonly.ts"] },
+      ] } });
+    check("a changed file with importers and no listed export becomes a module; a file with a listed export does not",
+      JSON.stringify(mod?.modules?.map((/** @type {any} */ m) => m.path)) === JSON.stringify(["src/h.ts"]));
+    check("module importers are one entry per file, without the file itself or an unsafe path, and the count drops the self entry",
+      JSON.stringify(mod?.modules?.[0]) === JSON.stringify({ path: "src/h.ts", importer_files: 29, importers: ["src/x/one.ts", "src/x/[id]/two.ts"] }));
+    const modulesOnly = buildImpact({ impact: { modules: [{ path: "src/h.ts", importers: 2, importer_paths: ["src/a.ts", "src/b.ts"] }] } });
+    check("importers alone yield an IMPACT, not null",
+      JSON.stringify(modulesOnly) === JSON.stringify({ modules: [{ path: "src/h.ts", importer_files: 2, importers: ["src/a.ts", "src/b.ts"] }] }));
+  }
   check("nothing to show is null, not an empty section",
     buildImpact({ impact: { symbols: [], dependencies: [], overlaps: [] } }) === null && buildImpact({ impact: null }) === null);
 

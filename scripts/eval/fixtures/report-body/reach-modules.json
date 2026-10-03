@@ -1,0 +1,66 @@
+{
+  "VERDICT": "PASS",
+  "SUMMARY": "Reworks the private jitter helper behind every retrying client and exports `parseRetryAfter`.",
+  "FINDINGS": [],
+  "RUN": {
+    "mode": "full",
+    "sha": "4e7a91c",
+    "delta_lines": 46,
+    "at": "2026-10-03T21:40:00Z",
+    "tier": "deep",
+    "depth": "checkout"
+  },
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "✅",
+  "GATE_PRIOR_DETAILS": "Earlier review comments are resolved.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "MEMORIES_SUMMARY": "53 indexed",
+  "QUALITY": "produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0",
+  "INTEGRATIONS": "not activated",
+  "OPTIMALITY_LOG": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
+  "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
+  "MEASURABILITY_LOG": "ran · 3 paths classified · 0 missing · 0 unlinked",
+  "SKIPPED_FILES": "none",
+  "COVERAGE": {
+    "files_read": 3,
+    "files_total": 3
+  },
+  "IMPACT": {
+    "symbols": [
+      {
+        "name": "parseRetryAfter",
+        "path": "src/api/headers.ts",
+        "change": "added",
+        "consumer_files": 1,
+        "verified_unaffected": 1,
+        "findings": 0,
+        "consumers": [
+          {
+            "path": "src/api/client.ts",
+            "status": "verified"
+          }
+        ]
+      }
+    ],
+    "modules": [
+      {
+        "path": "src/api/backoff.ts",
+        "importer_files": 9,
+        "importers": [
+          "src/jobs/sync.ts",
+          "src/jobs/export.ts",
+          "src/jobs/import.ts",
+          "src/api/client.ts",
+          "src/api/batch.ts",
+          "packages/billing/src/charge.ts"
+        ]
+      }
+    ]
+  }
+}
