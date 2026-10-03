@@ -70,10 +70,10 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps the LLM score at 89%
 - `eval-iterate` (`/`) — drives a failing AI/LLM eval to a confirmed green (two consecutive passes, 5-iteration cap)
 - `severity` (`auto`) — severity/blast-radius tier (`critical`/`high`/`medium`/`low`) for a finding or bug; policy-free
-- `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates
+- `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates; `deep` runs 3–5 parallel persona lenses (found via `ideate`) and merges them
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
 - `observe-run` (`Skill() + /`) — runs a command and grades the telemetry that run emitted against behavioral assertions only
-- `optimize-approach` (`Skill()`) — approach-level optimality lens; modes `report` / `apply` / `plan`. Never blocks
+- `optimize-approach` (`Skill()`) — approach-level optimality lens; modes `report` / `apply` / `plan`; standalone `--deep` also judges `critical deep` lens alternatives. Never blocks
 - `polish` (`/`) — re-runnable pre-PR branch quality gate (review + simplify)
 - `review-loop` (`Skill()`) — bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5. Run at the top level of a session that holds a dispatch tool
 - `dx` (`/`) — CLI / shell-script DX review

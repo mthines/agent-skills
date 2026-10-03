@@ -94,6 +94,14 @@ export const SUITES = [
     choices: ["trigger", "skip"],
   },
   {
+    name: "critical-depth",
+    golden: "golden/critical-depth.jsonl",
+    rubric: { file: "skills/quality/critical/rules/deep-mode.md", section: "## When to use deep" },
+    instruction: "You are the critical skill deciding run depth. Using ONLY the table below, decide whether the described request should run critical's multi-lens 'deep' mode or the single adversarial pass. Reply 'deep' or 'single'.",
+    inputKey: "input", inputLabel: "Request",
+    choices: ["deep", "single"],
+  },
+  {
     name: "optimize-approach-optimality",
     golden: "golden/optimize-approach-optimality.jsonl",
     rubric: { file: "skills/quality/optimize-approach/rules/optimality-rubric.md", section: null }, // whole rubric
