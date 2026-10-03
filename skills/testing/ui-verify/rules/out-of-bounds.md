@@ -73,6 +73,8 @@ Read the diff and list every pending state the changed component creates or show
 
 Record each one as `surface · kind · how to reach it`.
 
+Skip a pending state that ends before a user could act on it — an optimistic row whose request returns at once — because no page action can hold it open; keep one that lasts, such as a stream, an upload, or a prompt waiting on an answer.
+
 **How to reach it must be deterministic.**
 When a pending state appears only after a non-deterministic step — a model deciding to ask a question, a race — reach it through a seeded record named under `**Preconditions:**` instead.
 A named seed that is missing grades the spec `skipped` (unreachable, seed data); a non-deterministic step that simply did not happen grades it `fail`.
@@ -173,7 +175,7 @@ Deep mode is opt-in: it dispatches far more sub-agents and takes far longer than
 ## Step 4: Judge and select
 
 First build the candidate list: write each Step 2 baseline pair in the idea format (`Move: <move>`), add the generators' ideas, and merge any two whose trigger and keep-going step are interchangeable — keep the clearer wording.
-One judge — a fresh sub-agent in `fan-out` mode, a separate pass in `in-context` mode — scores every candidate 1–10 on each axis:
+One judge — a fresh sub-agent in `fan-out` and `deep` mode, a separate pass in `in-context` mode — scores every candidate 1–10 on each axis:
 
 | Axis | Question |
 | --- | --- |
