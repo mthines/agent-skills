@@ -1,0 +1,8 @@
+{"id": "cd-end-of-feature", "input": "A human finished a 9-file feature branch adding saved searches (UI, API route, DB table) and says: 'before I open the PR, red-team this from every angle'.", "expected": "deep"}
+{"id": "cd-migration", "input": "The diff adds a one-way Postgres migration that splits the `users.name` column into first/last name and backfills 40M rows.", "expected": "deep"}
+{"id": "cd-doubt-after-clean", "input": "A single /critical code pass on an auth-token refresh change returned 'No blocking concerns found.', but the author says it still feels off and wants a harder look.", "expected": "deep"}
+{"id": "cd-multi-domain-plan", "input": "A plan.md proposes a new billing-usage meter touching the React dashboard, the ingestion pipeline, and the Terraform for a new queue.", "expected": "deep"}
+{"id": "cd-typo", "input": "The diff fixes two typos in error messages in a single file.", "expected": "single"}
+{"id": "cd-caller-agent", "input": "implement-suggestion Phase 4 is validating one review comment that asks to rename a local variable, and invokes critical on it.", "expected": "single"}
+{"id": "cd-confidence-passed", "input": "/confidence code already passed at 94 % with zero concerns on a small refactor of one helper function, and the user asks whether a critical pass is needed.", "expected": "single"}
+{"id": "cd-tight-budget", "input": "Mid-conversation the user asks for a quick challenge of a one-function retry tweak and says they need an answer in this turn.", "expected": "single"}

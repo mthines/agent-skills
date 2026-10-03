@@ -7,12 +7,13 @@ description: >
   Surfaces concerns only — does not score (delegates to `/confidence`) and does not apply fixes.
   Use during planning before autonomous execution, before opening a high-stakes PR, or when a fix "feels off".
   One adversarial pass per run — naïve self-refine loops amplify bias.
-  Modes: plan (default), code, analysis. Triggers on "critical", "challenge this", "pre-mortem", "red-team this", "/critical".
-argument-hint: '[plan|code|analysis]'
+  Modes: plan (default), code, analysis; add `deep` to run 3–5 independent persona lenses in parallel (sub-agents when available, personas found via `ideate`) and merge them — e.g. at the end of a feature.
+  Triggers on "critical", "challenge this", "pre-mortem", "red-team this", "deep critical review", "review from every angle", "/critical".
+argument-hint: '[deep] [plan|code|analysis] [--lenses <n|a,b,c>] [--no-ideate]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: advisory
   tags:
     - critical
@@ -20,6 +21,8 @@ metadata:
     - pre-mortem
     - red-team
     - steelman
+    - multi-lens
+    - personas
     - plan-validation
     - quality-gate
     - autonomous-workflow
@@ -40,6 +43,7 @@ Surface specific, grounded failure modes; force at least one steelmanned alterna
 
 - [When to use](#when-to-use)
 - [Mode detection](#mode-detection)
+- [Deep mode — multiple lenses](#deep-mode--multiple-lenses)
 - [The persona contract](#the-persona-contract)
 - [External grounding rule](#external-grounding-rule)
 - [Taxonomy — `plan` mode](#taxonomy--plan-mode)
@@ -61,6 +65,7 @@ Surface specific, grounded failure modes; force at least one steelmanned alterna
 | Right before a high-stakes PR (migrations, auth, billing, shared infra)    | As a reflex on every change — the cost outweighs the value                  |
 | Mid bug investigation when the proposed root cause feels off               | When you only need a syntactic check — `/code-quality` covers that          |
 | Slash form: `/critical [plan\|code\|analysis]`                          | When iteration is desired — this skill is single-pass by design             |
+| End of a feature, before the PR: `/critical deep code`                    | `deep` on a routine change — it costs ~5 sub-agent dispatches               |
 
 ---
 
@@ -75,7 +80,22 @@ Default to `plan` if no argument.
 | `code`          |         | A diff or set of changed files      | Reviewer agent (`--critical`), pre-PR       |
 | `analysis`  |         | A root-cause + fix proposal         | `/implement-suggestion` Phase 4 (per review comment, before the `/confidence` gate) |
 
-State the detected mode in one line before running: `Mode: critical/<mode>. Target: <one-line summary>.`
+A `deep` **first** token is a depth modifier, not a target: strip it, detect the target from the next token, and follow [Deep mode](#deep-mode--multiple-lenses).
+
+State the detected mode in one line before running: `Mode: critical/<mode>. Target: <one-line summary>.` (deep: `Mode: critical/deep/<mode>. Lenses: <n>.`)
+
+---
+
+## Deep mode — multiple lenses
+
+`/critical deep [plan|code|analysis]` runs the same pre-mortem through 3–5 independent persona lenses in parallel and merges them into one report.
+
+1. The baseline lens is this skill's hostile staff engineer; the other lenses are discovered with `Skill("ideate", "quick …")`, or picked from a fallback catalog when `ideate` is missing.
+2. Each lens runs in its own sub-agent when a dispatch tool exists; otherwise the lenses run one at a time in this context and the report says `Independence: single-context (reduced)`.
+3. Synthesis re-grounds, deduplicates, and attributes findings (`raised by: <lenses>`), picks one steelman, and lists the other alternatives — it never adds a finding of its own.
+
+Deep mode keeps every [hard rule](#hard-rules-and-non-goals): one round, no scores, no edits.
+Full procedure, lens catalog, sub-agent prompt contract, and output format: [`rules/deep-mode.md`](./rules/deep-mode.md).
 
 ---
 
@@ -245,6 +265,8 @@ If `Must-fix` and `Should-fix` are both empty, output `No blocking concerns foun
 | `/code-quality`      | A code-mode finding needs static-rule backing                        | Invoke `Skill("code-quality")` to confirm before classifying as `must-fix`           |
 | `/confidence`        | After findings are addressed                                         | Suggest `/confidence <mode>` in the `Next step` section — do not score here          |
 | `/holistic-analysis` | An `analysis` finding suggests the root cause is wrong           | Suggest the user re-run `/holistic-analysis` before the `/confidence` gate           |
+| `/ideate`            | `deep` mode, lens discovery                                          | `Skill("ideate", "quick --no-framing --n <k> …")` — see [`rules/deep-mode.md`](./rules/deep-mode.md#d1--lens-selection) |
+| `/optimize-approach` | `optimize-approach --deep` wants alternatives from many angles       | It calls `Skill("critical", "deep code")` and consumes `Other alternatives raised`  |
 
 This skill **never** invokes `/confidence` on the user's behalf and never produces a numeric score of its own.
 Scoring is `/confidence`'s job; conflating the two would re-create the bias amplification problem the literature warns against.
@@ -256,7 +278,7 @@ Scoring is `/confidence`'s job; conflating the two would re-create the bias ampl
 The following are non-negotiable.
 A run that violates any of them is incomplete.
 
-1. **One pass per run.** No iterative re-critique loops. If a second adversarial pass is desired, the user explicitly invokes the skill again on the *revised* target.
+1. **One pass per run.** No iterative re-critique loops. If a second adversarial pass is desired, the user explicitly invokes the skill again on the *revised* target. `deep` mode's lenses run in parallel within that one pass and never see each other's output.
 2. **No self-scoring.** Never output a confidence percentage, "score: X/10", or grade. Hand off to `/confidence`.
 3. **No fix application.** This skill surfaces; the user / orchestrator decides what to do. Never edit files in a `/critical` run.
 4. **Every finding cites or grounds.** A file path, a line number, or a named assumption pulled from the proposal. Findings without a citation are dropped.

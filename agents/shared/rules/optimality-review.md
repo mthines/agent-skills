@@ -226,4 +226,5 @@ Do not block the run.
 - It does not set the blocker rules — those live in each agent's verdict step (and optimality never blocks).
 - It does not apply anything in `pr-reviewer` — cross-review is report-only.
 - It does not emit a proposal's full argument as an inline comment — that surfaces only through the sections in § Where proposals surface. A qualifying high-confidence proposal additionally leaves a short inline **pointer** to its card (§ Inline pointer for high-confidence proposals); the pointer is a signpost, not the proposal.
+- It does not pass `--deep` to `optimize-approach` — not at the `deep` tier, not for a high-stakes PR, not when the human's own invocation carried it. `--deep` is standalone-only (it fans out a multi-lens `critical deep` run); drop it and log `optimize-approach --deep ignored (caller: <name>)`.
 - It does not re-run the trivial-skip computation. Under `pr-reviewer` it reads the `TRIVIAL_SKIP` cache written at Step 1.7b; under `polish` (`optimize` mode) the value is bound once at the start of the pass (§ Trivial-skip set).

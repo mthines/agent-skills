@@ -232,6 +232,70 @@ export function buildAutoQualityDropped({ confidenceDropped, anchorless }) {
   return parts.length ? parts.join(", ") : null;
 }
 
+/** The `gh pr checks` buckets that mean a check failed. A non-TTY table prints `cancel` as `fail`; both are read. */
+const CI_RED_BUCKETS = new Set(["fail", "cancel"]);
+/** How many check names one CI_NOTE list spells out before folding the rest into `+N more`. */
+export const CI_NOTE_NAMES_MAX = 5;
+
+/**
+ * Reads the non-TTY `gh pr checks` table prepare-review.mjs stores as `context.checks.raw`: one check
+ * per line, `name<TAB>bucket<TAB>elapsed<TAB>link[<TAB>description]`, where bucket is `pass`, `fail`,
+ * `pending`, `skipping`, or `cancel`. A line with no tab, no name, or another bucket is skipped. A
+ * name listed more than once in a bucket (the same job in two workflows) is kept once.
+ * @param {string|null|undefined} raw
+ * @returns {{ red: string[], pending: string[], passed: number }}
+ */
+export function parseChecksTable(raw) {
+  /** @type {string[]} */
+  const red = [];
+  /** @type {string[]} */
+  const pending = [];
+  let passed = 0;
+  for (const line of String(raw || "").split("\n")) {
+    const cols = line.split("\t");
+    if (cols.length < 2) continue;
+    // Backticks would close the code span the name renders in.
+    const name = cols[0].replace(/`/g, "'").replace(/\s+/g, " ").trim();
+    const bucket = cols[1].trim().toLowerCase();
+    if (!name) continue;
+    if (CI_RED_BUCKETS.has(bucket)) { if (!red.includes(name)) red.push(name); }
+    else if (bucket === "pending") { if (!pending.includes(name)) pending.push(name); }
+    else if (bucket === "pass") passed += 1;
+  }
+  return { red, pending, passed };
+}
+
+/** @param {string[]} names @returns {string} */
+function ciNameList(names) {
+  const shown = names.slice(0, CI_NOTE_NAMES_MAX).map((n) => `\`${n}\``).join(", ");
+  const more = names.length - CI_NOTE_NAMES_MAX;
+  return more > 0 ? `${shown}, +${more} more` : shown;
+}
+
+/**
+ * CI_NOTE — Gate 2's substance, rendered as the report's `CI — …` line in `Run`: the red checks and
+ * the still-pending checks by name, read from the `gh pr checks` table prepare-review.mjs fetched.
+ * Pure (D18). Returns null, so no CI line renders, when:
+ *   - every check passed or was skipped — CI_NOTE says which checks are red or pending;
+ *   - the table was unreadable — prepare-review.mjs already names that in `anomalies[]`, which
+ *     reaches RUN_ANOMALY;
+ *   - the context is historical (`--review-sha`) — CI was never read, because the current check run
+ *     describes a different commit (rules/pipeline.md § --review-sha).
+ * Informational only: nothing here reaches a gate, a reason phrase, or the verdict.
+ * @param {{ checks?: { raw?: string|null, readable?: boolean } | null, historical?: unknown }} args
+ * @returns {string|null}
+ */
+export function buildAutoCiNote({ checks, historical }) {
+  if (historical || checks?.readable !== true) return null;
+  const { red, pending, passed } = parseChecksTable(checks.raw);
+  if (red.length === 0 && pending.length === 0) return null;
+  const parts = [];
+  if (red.length > 0) parts.push(`red: ${ciNameList(red)}`);
+  if (pending.length > 0) parts.push(`still pending: ${ciNameList(pending)}`);
+  if (passed > 0) parts.push(`${passed} passed`);
+  return parts.join(" · ");
+}
+
 /**
  * Item 4 (A/B round 2): fails CLOSED when any candidate in the raw `judgments.candidates` array
  * ends with zero or more than one disposition. `buckets` maps a disposition LABEL to the array of
@@ -724,6 +788,9 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // line and every existing report-body fixture stays byte-identical. `context.render.QUALITY_DROPPED`
   // still wins when the caller hand-supplies one (the existing passthrough precedent RUN_ANOMALY uses).
   const autoQualityDropped = buildAutoQualityDropped({ confidenceDropped, anchorless });
+  // Gate 2's `CI — …` line, from the checks table prepare-review.mjs read. A caller-supplied
+  // context.render.CI_NOTE wins, as every other computed slot here does.
+  const autoCiNote = buildAutoCiNote({ checks: context?.checks, historical: context?.historical });
 
   const autoCoverage = buildCoverage({
     scopePaths: context?.scopePaths, scanned: judgments?.scanned_files, partial: context?.render?.PARTIAL_REVIEW,
@@ -742,6 +809,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     ...(context?.render?.QUALITY_DROPPED === undefined && autoQualityDropped !== null
       ? { QUALITY_DROPPED: autoQualityDropped }
       : {}),
+    ...(context?.render?.CI_NOTE === undefined && autoCiNote !== null ? { CI_NOTE: autoCiNote } : {}),
     // BUILT from judgments.lenses.optimality_cards' structured fields (buildOptimalityCard), never
     // `card.markdown ?? card` — see buildOptimalityCard's own docstring for why the pass-through
     // was wrong (arm B's first live run, ab/B/20230/1/meta.json).
@@ -1803,6 +1871,80 @@ async function selfTest() {
       buildAutoQualityDropped({ confidenceDropped: [], anchorless: [{}] }) === "1 anchorless");
     check("buildAutoQualityDropped names both when both are non-empty",
       buildAutoQualityDropped({ confidenceDropped: [{}], anchorless: [{}, {}] }) === "1 below-bar, 2 anchorless");
+  }
+
+  // buildAutoCiNote: Gate 2's `CI — …` line was only ever rendered when a caller hand-supplied
+  // context.render.CI_NOTE, although prepare-review.mjs already reads the checks table into
+  // context.checks.raw. The table below is `gh pr checks`'s real non-TTY shape (trailing
+  // description column included).
+  {
+    const row = (/** @type {string} */ name, /** @type {string} */ bucket) => `${name}\t${bucket}\t1m2s\thttps://github.com/o/r/actions/runs/1/job/2\t`;
+    const table = [
+      row("l1", "pass"), row("typecheck", "fail"), row("e2e", "pending"), row("lint", "cancel"),
+      row("suite", "skipping"), row("build", "pass"), row("typecheck", "fail"),
+    ].join("\n");
+    const parsed = parseChecksTable(table);
+    check("parseChecksTable reads red (fail + cancel), pending, and passed from the non-TTY table, one name per bucket",
+      JSON.stringify(parsed) === JSON.stringify({ red: ["typecheck", "lint"], pending: ["e2e"], passed: 2 }), JSON.stringify(parsed));
+    check("parseChecksTable skips a line with no tab or an unknown bucket",
+      JSON.stringify(parseChecksTable("no checks reported\nx\tneutral\t0\t\t")) === JSON.stringify({ red: [], pending: [], passed: 0 }));
+    check("buildAutoCiNote names red and still-pending checks, then the passed count",
+      buildAutoCiNote({ checks: { raw: table, readable: true } }) === "red: `typecheck`, `lint` · still pending: `e2e` · 2 passed");
+    check("buildAutoCiNote names pending-only CI without a red part",
+      buildAutoCiNote({ checks: { raw: [row("e2e", "pending"), row("l1", "pass")].join("\n"), readable: true } }) === "still pending: `e2e` · 1 passed");
+    check("buildAutoCiNote returns null when every check passed or was skipped (no CI line)",
+      buildAutoCiNote({ checks: { raw: [row("l1", "pass"), row("suite", "skipping")].join("\n"), readable: true } }) === null);
+    check("buildAutoCiNote returns null on an unreadable table — prepare-review.mjs's anomaly already names it",
+      buildAutoCiNote({ checks: { raw: null, readable: false } }) === null && buildAutoCiNote({ checks: undefined }) === null);
+    check("buildAutoCiNote returns null on a historical context, where CI is never read",
+      buildAutoCiNote({ checks: { raw: table, readable: true }, historical: { review_sha: "abc1234", ci: "not-read" } }) === null);
+    const many = Array.from({ length: CI_NOTE_NAMES_MAX + 2 }, (_, i) => row(`job-${i + 1}`, "fail")).join("\n");
+    check(`buildAutoCiNote spells out ${CI_NOTE_NAMES_MAX} names and folds the rest into +N more`,
+      buildAutoCiNote({ checks: { raw: many, readable: true } }) === `red: ${Array.from({ length: CI_NOTE_NAMES_MAX }, (_, i) => `\`job-${i + 1}\``).join(", ")}, +2 more`);
+    check("buildAutoCiNote never lets a backtick in a check name close its code span",
+      buildAutoCiNote({ checks: { raw: row("run `make`", "fail"), readable: true } }) === "red: `run 'make'`");
+
+    const judgments = { candidates: [], gates: { gate1: { status: "PASS", details: "matches the diff" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "docs unaffected" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "clean pass, no findings" };
+    const ciContext = withRenderAt({
+      mode: "full", headSha: "906a74781990f75607f0234de963fdbbc3953f2c", deltaLines: 3,
+      routing: { tier: "deep" }, workspace: { depthCapability: "checkout" },
+      files: [{ filename: "a.ts", patch }], threads: [], checks: { raw: table, readable: true },
+    }, "2026-09-25T12:00:00Z");
+    const r = finalizeReview({ context: ciContext, judgments });
+    check("finalizeReview fills CI_NOTE from context.checks with no caller-supplied value",
+      r.payload.CI_NOTE === "red: `typecheck`, `lint` · still pending: `e2e` · 2 passed", String(r.payload.CI_NOTE));
+    check("a red CI_NOTE never moves the verdict — CI is informational-in-Run", r.verdict === "PASS");
+    const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-auto-ci-note");
+    check("the computed CI_NOTE renders as the Run block's CI line",
+      rendered.ok && rendered.stdout.includes("CI — red: `typecheck`, `lint` · still pending: `e2e` · 2 passed"),
+      rendered.ok ? "no CI line in the rendered body" : rendered.stderr.trim());
+    const supplied = finalizeReview({ context: { ...ciContext, render: { ...ciContext.render, CI_NOTE: "hand-written" } }, judgments });
+    check("a caller-supplied context.render.CI_NOTE wins over the computed one", supplied.payload.CI_NOTE === "hand-written");
+    const green = finalizeReview({ context: { ...ciContext, checks: { raw: row("l1", "pass"), readable: true } }, judgments });
+    check("an all-green checks table leaves CI_NOTE unset", green.payload.CI_NOTE === undefined);
+  }
+
+  // A zero-delta re-review: prepare-review.mjs used to emit mode=zero-delta with deltaLines still at
+  // the full-PR count (delta triage never runs on zero-delta), and render-report.mjs rejected
+  // RUN.delta_lines for the mode. contextDeltaLines() is the value prepare-review.mjs now writes;
+  // the control case keeps the old value and must still fail, so this check bites on the defect.
+  {
+    const { contextDeltaLines } = await import(pathToFileURL(join(HERE, "prepare-review.mjs")).href);
+    const judgments = { candidates: [], gates: { gate1: { status: "PASS", details: "matches the diff" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "docs unaffected" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "no code changes since the last review" };
+    const zeroDeltaContext = (/** @type {number} */ deltaLines) => withRenderAt({
+      mode: "zero-delta", headSha: "906a74781990f75607f0234de963fdbbc3953f2c", deltaLines,
+      priorRun: { priorSha: "906a74781990f75607f0234de963fdbbc3953f2c" },
+      routing: { tier: "standard" }, workspace: { depthCapability: "checkout" }, files: [{ filename: "a.ts", patch }], threads: [],
+    }, "2026-09-25T12:00:00Z");
+    const fixed = finalizeReview({ context: zeroDeltaContext(contextDeltaLines({ mode: "zero-delta", deltaLines: 412 })), judgments });
+    const fixedRender = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, fixed.payload, "self-test-zero-delta");
+    check("a zero-delta context as prepare-review.mjs now writes it renders, with 0 lines in delta",
+      fixedRender.ok && fixed.payload.RUN.delta_lines === 0 && fixedRender.stdout.includes("incremental · 0 lines in delta"),
+      fixedRender.ok ? `delta_lines ${fixed.payload.RUN.delta_lines}` : fixedRender.stderr.trim());
+    const old = finalizeReview({ context: zeroDeltaContext(412), judgments });
+    const oldRender = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, old.payload, "self-test-zero-delta-control");
+    check("control: the full-PR count on a zero-delta context is still rejected by render-report.mjs",
+      !oldRender.ok && /delta_lines must be 0 or omitted when RUN\.mode is zero-delta/.test(oldRender.stderr), oldRender.stderr.trim());
   }
 
   // Item 4: a verifier-contradicted candidate never scores, clears, or posts — it is disposed as

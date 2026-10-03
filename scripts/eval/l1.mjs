@@ -11175,7 +11175,31 @@ const isPollBlock = (block) =>
     `description-contract.md sites still v1-only: ${dcStale.join(" · ") || "none"} — a v1-only site counts the v2 block against the budget or drops it on refresh`);
 }
 
-// ── G92: ui-verify out-of-bounds brainstorm — author-only, bounded fan-out, capability-checked, recovery outcomes ──
+// ── G92: critical deep ↔ optimize-approach --deep — the headings O1b harvests exist in critical's output ──
+// optimize-approach --deep finds its candidates by matching critical deep's report headings. A rename on
+// either side would silently zero the harvest while the run still reports "0 lens candidates judged".
+{
+  const read = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const CD = read("skills/quality/critical/rules/deep-mode.md");
+  const OD = read("skills/quality/optimize-approach/rules/deep-mode.md");
+  const OUT = (CD.split("\n## Output format")[1] || "").split("\n## Hard rules")[0];
+  const HARVESTED = ["Steelman alternative", "Other alternatives raised", "Must-fix", "Should-fix"];
+  const missingOut = HARVESTED.filter((h) => !new RegExp("^### " + h + "\\s*$", "m").test(OUT));
+  const missingUse = HARVESTED.filter((h) => !OD.includes("`" + h + "`"));
+  s.check("G92 critical deep's output template carries every heading optimize-approach --deep harvests",
+    missingOut.length === 0 && /\*\*Independence:\*\*/.test(OUT) && /\*\*Lens discovery:\*\*/.test(OUT),
+    `missing from critical deep output: ${missingOut.join(", ") || "none"} (plus the Independence / Lens discovery header lines)`);
+  s.check("G92 optimize-approach --deep names each harvested heading and relays the Independence line",
+    missingUse.length === 0 && OD.includes("`Independence:`"),
+    `not named in optimize-approach deep-mode.md: ${missingUse.join(", ") || "none"}`);
+  const ORV = read("agents/shared/rules/optimality-review.md");
+  const CS = read("skills/quality/critical/SKILL.md");
+  s.check("G92 callers never pass --deep, and critical recognises deep only as the first token",
+    ORV.includes("It does not pass `--deep` to `optimize-approach`") && CS.includes("A `deep` **first** token is a depth modifier"),
+    "optimality-review.md lost the caller-side --deep ban, or critical/SKILL.md widened deep detection beyond the first token");
+}
+
+// ── G93: ui-verify out-of-bounds brainstorm — author-only, bounded fan-out, capability-checked, recovery outcomes ──
 //
 // `ui-verify author` brainstorms out-of-bounds specs for the pending states the changed component creates.
 // The step is only safe when (a) its mode table keeps six rows in order — the three skips first, then deep, then
@@ -11212,15 +11236,15 @@ const isPollBlock = (block) =>
   const modes = ["skipped", "skipped", "skipped", "deep", "fan-out", "in-context"];
   const rows = WHEN.split("\n").filter((l) => /^\| \d \|/.test(l));
   const wrongRows = modes.map((m, i) => (rows[i] && rows[i].startsWith(`| ${i + 1} |`) && rows[i].includes(`| \`${m}\` |`) ? null : i + 1)).filter(Boolean);
-  s.check("G92a out-of-bounds.md § When it runs keeps six mode rows in order: three skips, deep, fan-out, then in-context",
+  s.check("G93a out-of-bounds.md § When it runs keeps six mode rows in order: three skips, deep, fan-out, then in-context",
     rows.length === 6 && wrongRows.length === 0,
     `found ${rows.length} row(s); wrong at row(s): ${wrongRows.join(", ") || "none"} — a fan-out row below in-context would never run`);
-  s.check("G92a the brainstorm decides dispatch by capability, never by a tool name or a probe dispatch",
+  s.check("G93a the brainstorm decides dispatch by capability, never by a tool name or a probe dispatch",
     /never by attempting a dispatch/.test(WHEN) && WHEN.includes('if "Task" not in available_tools') && /Task, Agent, task, or another spelling/.test(WHEN),
     "the capability rule, its WRONG name check, or its RIGHT spelling list is gone from § When it runs");
 
   // (b) the fan-out is bounded and flat.
-  s.check("G92b fan-out sends five tool-less generators in one message, then one judge, and none of them dispatches",
+  s.check("G93b fan-out sends five tool-less generators in one message, then one judge, and none of them dispatches",
     STEP3.includes("Dispatch the five generators in **one message**")
       && STEP3.includes("That is 6 dispatches in total — never more, and never a dispatch from a generator or the judge.")
       && (STEP3.match(/^\| [1-5] \| /gm) || []).length === 5
@@ -11230,7 +11254,7 @@ const isPollBlock = (block) =>
   // (c) the baseline moves and the keep-going rule.
   const moves = ["ignore", "dismiss", "reload", "leave-and-return", "second-tab", "refused-next"];
   const missingMoves = moves.filter((m) => !STEP2.split("\n").some((l) => l.startsWith(`| \`${m}\` |`)));
-  s.check("G92c short pending states are skipped, every lasting one meets the six baseline moves, each runs on both drivers, and every spec ends in a keep-going step",
+  s.check("G93c short pending states are skipped, every lasting one meets the six baseline moves, each runs on both drivers, and every spec ends in a keep-going step",
     missingMoves.length === 0 && !STEP2.split("\n").some((l) => l.startsWith("| `offline` |"))
       && STEP1.includes("Skip a pending state that ends before a user could act on it")
       && STEP2.includes("**Every move must run on both drivers.**")
@@ -11243,7 +11267,7 @@ const isPollBlock = (block) =>
   // (d) what a written spec looks like, and how many get written.
   const right = STEP5.includes("✅ RIGHT") ? STEP5.slice(STEP5.indexOf("✅ RIGHT")) : "";
   const mustFollow = (right.match(/^\d+\. \[must-follow\]/gm) || []).length;
-  s.check("G92d an out-of-bounds spec is titled Out of bounds:, has move and keep-going as must-follow, and expects only recovery outcomes",
+  s.check("G93d an out-of-bounds spec is titled Out of bounds:, has move and keep-going as must-follow, and expects only recovery outcomes",
     STEP5.includes("Its title starts with `Out of bounds:`.") && STEP5.includes("a second `[must-follow]` step")
       && STEP5.includes("never a design choice the author cannot know") && mustFollow >= 2
       && STEP4.includes("**Severity gate:** add every other candidate rated `critical` or `high`. Severity is the cap — there is no fixed count — but take at most one per baseline move; each `Move: new` idea counts as its own move.")
@@ -11260,7 +11284,7 @@ const isPollBlock = (block) =>
     `a Step 5 convention, Step 4's severity gate / severity-skill rubric / one per baseline move / ignore-dismiss-reload floor and its dismiss condition, the path-floor skip (or a stale count cap or Likelihood + Damage ranking in SKILL.md, spec-format, or the rule), deep mode's Step 4 re-run, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
 
   // (e) the wiring: author routes to it, flags are forwarded, run and the adversarial pass never brainstorm.
-  s.check("G92e ui-verify author routes to the brainstorm, verify forwards its flags, and the rule is wired into format, Agent0, and run",
+  s.check("G93e ui-verify author routes to the brainstorm, verify forwards its flags, and the rule is wired into format, Agent0, and run",
     AUTHOR.includes("(./rules/out-of-bounds.md)") && /argument-hint:[^\n]*\[--no-brainstorm\|--brainstorm deep\]/.test(UV)
       && /honouring\s+`--no-brainstorm` and `--brainstorm deep`/.test(UV)
       && UV.includes("**The out-of-bounds brainstorm runs only in `author`")
@@ -11271,7 +11295,7 @@ const isPollBlock = (block) =>
       && A0.includes("sends five `general` generators in one message, then one `general` judge")
       && UV.includes("`fan-out` sends exactly five generators in one message and then one judge"),
     "SKILL.md's author step, argument hint, verify forwarding, or hard rule; spec-format's link; the Agent0 section; or the run report's grouping is gone");
-  s.check("G92e the adversarial pass never brainstorms, and the brainstorm rule never asks the user",
+  s.check("G93e the adversarial pass never brainstorms, and the brainstorm rule never asks the user",
     OOB.length > 0 && !/brainstorm/i.test(ADV) && !/AskUserQuestion/.test(OOB),
     "adversarial.md mentions a brainstorm (it must only execute specs), or out-of-bounds.md can ask a question an unattended caller cannot answer");
 }

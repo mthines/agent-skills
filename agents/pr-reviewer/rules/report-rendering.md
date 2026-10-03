@@ -218,7 +218,10 @@ length**, so there is no count to supply and none to get wrong:
 | `ROUNDS` | `[{sha, open, blocking}]` | Earlier runs' worklists, oldest first — built by `finalize.mjs` from the PR-state record's `runs[]`; never hand-supplied — `finalize.mjs` ignores a `context.render.ROUNDS`. Feeds the `**Progress:**` line; the renderer shows the last 4 plus this run. Rejected when a `sha` is not 7 hex chars or `blocking > open`. |
 | `FINDINGS` | `[{title, path, line?, url?, tier, blocking?}]` — the findings this run **posted inline**. Three renderings come from this one array: the headline's count and glyph (`### 🟠 4 findings — 1 blocking`), the visible findings index above the accordions, and the `Severity — ` tally (`🔴 1 critical · 🟠 2 high`, glyph paired with its word per WCAG 1.4.1). `title` is the **same string `render-comment.mjs` put on that comment's first line**, which is what makes an index row and the comment it links to recognisably the same finding. `tier` is required and enumerated (`critical` · `high` · `medium` · `low`); a `\|` in `title` is rejected (it would split the row). The renderer also rejects a `FINDINGS` length that disagrees with `QUALITY`'s `posted inline <N>` — they are the same number stated twice. |
 
-**Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what),
+**Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what; built by
+`finalize.mjs` from `context.checks` as `` red: `a`, `b` · still pending: `c` · <N> passed ``, and
+omitted when every check passed or was skipped, the checks table was unreadable, or the run is
+historical; a `context.render.CI_NOTE` overrides it),
 `VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`, `RUN_ANOMALY`
 (the two are not interchangeable — see *`RUN.tier` and `RUN.depth`* above), `FIX_ALL_URL`
 (opt-in — the Agent0 "Fix all" deep link, validated `http(s)` and bare of `)`; the renderer turns
