@@ -11249,13 +11249,15 @@ const isPollBlock = (block) =>
       && STEP4.includes("**Severity gate:** add every other candidate rated `critical` or `high`. Severity is the cap — there is no fixed count — but take at most one per baseline move; each `Move: new` idea counts as its own move.")
       && STEP4.includes("**Floor:** for a pending state that waits on a user decision, take the highest-ranked `ignore`, `dismiss`, and `reload` candidate")
       && STEP4.includes("Load the `severity` skill and inline its `## Severity rubric` section verbatim in the judge's prompt, in `bug` mode")
+      && STEP4.includes("tell the judge to skip that rubric's Step 2 path floor")
+      && STEP4.includes("`dismiss` only when the UI offers a way to close it")
       && STEP4.includes("2. Rank the rest by Severity, then Likelihood, highest first.") && STEP4.includes("| Severity | `critical` · `high` · `medium` · `low` |")
       && STEP5.includes("then every out-of-bounds spec Step 4 selected") && AUTHOR.includes("Severity is the cap, not a count")
       && FMT.includes("the out-of-bounds specs its brainstorm selects by severity") && OOB.includes("- **Severity caps the out-of-bounds specs, not a count**")
       && !/(at most|up to) \d out-of-bounds|Likelihood \+ Damage/i.test(OOB + UV + FMT)
       && STEP3.includes("run Step 4 from the start — one judge, all four axes")
       && STEP4.includes("a fresh sub-agent in `fan-out` and `deep` mode"),
-    `a Step 5 convention, Step 4's severity gate / severity-skill rubric / one per baseline move / ignore-dismiss-reload floor (or a stale count cap or Likelihood + Damage ranking in SKILL.md, spec-format, or the rule), deep mode's Step 4 re-run, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
+    `a Step 5 convention, Step 4's severity gate / severity-skill rubric / one per baseline move / ignore-dismiss-reload floor and its dismiss condition, the path-floor skip (or a stale count cap or Likelihood + Damage ranking in SKILL.md, spec-format, or the rule), deep mode's Step 4 re-run, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
 
   // (e) the wiring: author routes to it, flags are forwarded, run and the adversarial pass never brainstorm.
   s.check("G92e ui-verify author routes to the brainstorm, verify forwards its flags, and the rule is wired into format, Agent0, and run",
