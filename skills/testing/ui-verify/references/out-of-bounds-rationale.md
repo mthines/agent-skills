@@ -23,13 +23,21 @@ A brainstorm framed only as "leave the intended path" drifts toward client-side 
 Those interruptions — ignoring a prompt and doing something else, dismissing it, reloading while it is open — are exactly where post-release regressions in waiting UI come from.
 Naming the changed component's pending state in the framing points the generators at it, and the baseline moves give every pending state a coverage floor that does not depend on any generator thinking of the obvious.
 
-## Why `ignore`, `dismiss`, and `reload` are a selection floor, and the cap is 4
+## Why `ignore`, `dismiss`, and `reload` are a floor, and severity caps the rest
 
-Ranking by Likelihood + Damage alone can cut one of the three interruptions a waiting prompt meets first.
-In a trial on an agent question-card change, the judge's top three were `ignore`, `reload`, and `leave-and-return`; `dismiss` tied for fourth and was cut, although a dismissed card that leaves the turn suspended was a known regression of that same component.
+A fixed count cuts real dead ends.
+In a trial on an agent question-card change, a cap of 3 ranked by likelihood plus damage selected `ignore`, `reload`, and `leave-and-return`; `dismiss` tied for fourth and was cut, although a dismissed card that left the turn suspended was a known regression of that same component.
 The selected specs caught 2 of 4 known regressions of that component, while the whole candidate list caught 3.
-So for a pending user decision the three are taken first, and the cap is 4 rather than 3, leaving one slot for the next-best move.
 Those four regressions now inform this rule, so they no longer measure it blind.
+
+So the three interruptions a waiting prompt meets first are taken unconditionally, and everything else is kept or cut by how bad it would be if it broke, not by its place in a list.
+How many dead ends a change can create depends on the change, and a count cannot know that; a severity tier can.
+The tier comes from the `severity` skill, the same `critical` / `high` / `medium` / `low` vocabulary the adversarial pass and the reviewers use, so a reader of the PR block and a reader of a review see one scale.
+The gate is `high`: on severity's rubric that is broken core behavior on a common path, which is what a user stuck after a dismiss or a reload is; a `medium` dead end has a workaround the user can find.
+Severity's Step 2 path floor is skipped because every candidate shares the diff's paths, so a floor would raise all of them together and rank none.
+
+The cost of no count is run time: every selected spec runs against the preview.
+One spec per move bounds the baseline moves at six; only new moves the generators add can push past that, and each of those has cleared both the checkability bar and the severity gate.
 
 `refused-next` names the page's main control as well as the pending item, because a prompt the server refuses while a card waits can leave the card and the server disagreeing about whether it is still open.
 

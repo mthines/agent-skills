@@ -175,22 +175,34 @@ Deep mode is opt-in: it dispatches far more sub-agents and takes far longer than
 ## Step 4: Judge and select
 
 First build the candidate list: write each Step 2 baseline pair in the idea format (`Move: <move>`), add the generators' ideas, and merge any two whose trigger and keep-going step are interchangeable — keep the clearer wording.
-One judge — a fresh sub-agent in `fan-out` and `deep` mode, a separate pass in `in-context` mode — scores every candidate 1–10 on each axis:
+One judge — a fresh sub-agent in `fan-out` and `deep` mode, a separate pass in `in-context` mode — scores every candidate on each axis:
 
-| Axis | Question |
+| Axis | Scale | Question |
+| --- | --- | --- |
+| Likelihood | 1–10 | How likely is a real user or environment to do this? |
+| Severity | `critical` · `high` · `medium` · `low` | If it breaks, how bad is the bug? |
+| Fit | 1–10 | Does it exercise the component this PR changed? |
+| Checkability | 1–10 | Can its check be observed in the page, console, or network without knowing the product's intended design? |
+
+**Severity comes from the `severity` skill.**
+Inline its [§ Severity rubric](../../../quality/severity/SKILL.md#severity-rubric) verbatim in the judge's prompt, in `bug` mode, and tell the judge to skip that rubric's Step 2 path floor: every candidate shares the diff's paths, and a tier only the floor raised never decides anything — the same exception severity's crosswalk makes for `(blocking)`.
+The judge rates every candidate in its one pass, never one call per candidate.
+When the `severity` skill is not installed, inline this restatement instead and append `(severity skill not installed)` to the report line; where the two disagree, the skill wins:
+
+| Tier | If it breaks… |
 | --- | --- |
-| Likelihood | How likely is a real user or environment to do this? |
-| Damage | If it breaks, how stuck or misled is the user? |
-| Fit | Does it exercise the component this PR changed? |
-| Checkability | Can its check be observed in the page, console, or network without knowing the product's intended design? |
+| `critical` | data is lost for good, there is a security breach, or every user is blocked |
+| `high` | the user is stuck on a common path, or data is lost or doubled on an edge path |
+| `medium` | a functional bug the user can work around and recover from |
+| `low` | cosmetic, with no functional impact |
 
 The judge receives the ideas anonymized, shuffled, and trimmed to the idea format, and returns only the score table.
 Then select:
 
 1. Drop every idea with Checkability below 6 or Fit below 6, and every idea whose trigger needs network interception, offline mode, or clock or storage control.
-2. Rank the rest by Likelihood + Damage, highest first; break a tie by the higher Damage.
+2. Rank the rest by Severity, then Likelihood, highest first.
 3. **Floor:** for a pending state that waits on a user decision, take the highest-ranked `ignore`, `dismiss`, and `reload` candidate — `dismiss` only when the UI offers a way to close it.
-4. Fill the remaining slots from the top of the ranking. Take at most 4 in total, and at most one per baseline move; each `Move: new` idea counts as its own move.
+4. **Severity gate:** add every other candidate rated `critical` or `high`. Severity is the cap — there is no fixed count — but take at most one per baseline move; each `Move: new` idea counts as its own move.
 5. When nothing survives, write no out-of-bounds spec and report `brainstorm: 0 selected (<N> ideas, none checkable on this change)`.
 
 ## Step 5: Write each selected idea as an intent spec
@@ -233,12 +245,12 @@ An out-of-bounds spec is an ordinary intent spec — the same fields, no new syn
 - The new message gets an agent reply, and no error message appears.
 ```
 
-Number the out-of-bounds specs after the happy-path specs, so a block holds at most 3 happy-path specs and at most 4 out-of-bounds specs.
+Number the out-of-bounds specs after the happy-path specs: a block holds at most 3 happy-path specs, then every out-of-bounds spec Step 4 selected.
 They are graded like every intent spec; a failing one is `red`, because the changed component leaves a user stuck off the happy path.
 
 ## Step 6: Report
 
-`author` adds one line to its report: `brainstorm: <mode> — <N> ideas, <M> specs (<title>; <title>)`, or the `skipped` line from [When it runs](#when-it-runs).
+`author` adds one line to its report: `brainstorm: <mode> — <N> ideas, <M> specs (<title> · <tier>; <title> · <tier>), <K> below high not written`, or the `skipped` line from [When it runs](#when-it-runs).
 
 ## Hard rules
 
@@ -246,7 +258,7 @@ They are graded like every intent spec; a failing one is `red`, because the chan
 - **`fan-out` dispatches exactly 6 sub-agents** — five generators in one message, then one judge — and none of them dispatches.
 - **Decide the mode from capabilities**, never from a tool name and never by attempting a dispatch.
 - **Generators get no tools and no file paths**; the framing, the pending states, the baseline moves, and the diff excerpt are inlined.
-- **At most 4 out-of-bounds specs — `ignore`, `dismiss`, and `reload` always among them for a pending user decision — each ending in a keep-going step, each `**Expected:**` item a recovery outcome.**
+- **Severity caps the out-of-bounds specs, not a count** — the `ignore`, `dismiss`, and `reload` floor for a pending user decision, then every `critical` or `high` candidate, one per move — each ending in a keep-going step, each `**Expected:**` item a recovery outcome.
 - **Never ask the user a question** — `create-pr`, `review-loop`, and automations call `author` with nobody to answer.
 - **Never reach a pending state through a non-deterministic step**; seed it under `**Preconditions:**`.
 - **Every out-of-bounds spec acts through the page alone**, so it runs on both the Playwright and the Chrome driver.
