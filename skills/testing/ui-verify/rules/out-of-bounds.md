@@ -98,8 +98,10 @@ These pairs are always candidates, so the common interruptions are covered even 
 | `reload` | reloads the page | resolve the pending item if it is shown, else the page's main action |
 | `leave-and-return` | goes to another page or record, then comes back (in-app link, then Back) | resolve the pending item, else the main action |
 | `second-tab` | opens the same URL in a second tab, resolves the item there, then returns to the first tab | act on the item in the first tab |
-| `offline` | goes offline while it is pending, then back online | resolve the pending item, else the main action |
-| `refused-next` | takes the next action while its request is refused for an unrelated reason (an error response), then retries a valid one | the valid retry |
+| `refused-next` | takes a next action the server refuses through the page alone — an invalid value, a conflicting setting — then retries a valid one | the valid retry |
+
+**Every move must run on both drivers.**
+A spec acts through the page alone: no network interception, no offline mode, no clock or storage control — the Chrome driver has none of them, and `run --driver auto` picks Chrome when it is connected. The adversarial pass's `network`, `session`, and `data` categories already cover those disruptions under Playwright.
 
 **Every out-of-bounds spec ends with a keep-going step.**
 The interruption itself usually looks fine; the dead end shows only when the user tries to carry on.
@@ -183,7 +185,7 @@ One judge — a fresh sub-agent in `fan-out` mode, a separate pass in `in-contex
 The judge receives the ideas anonymized, shuffled, and trimmed to the idea format, and returns only the score table.
 Then select:
 
-1. Drop every idea with Checkability below 6 or Fit below 6.
+1. Drop every idea with Checkability below 6 or Fit below 6, and every idea whose trigger needs network interception, offline mode, or clock or storage control.
 2. Rank the rest by Likelihood + Damage, highest first.
 3. Take at most 3, and at most one per move.
 4. When nothing survives, write no out-of-bounds spec and report `brainstorm: 0 selected (<N> ideas, none checkable on this change)`.
@@ -244,3 +246,4 @@ They are graded like every intent spec; a failing one is `red`, because the chan
 - **At most 3 out-of-bounds specs, each ending in a keep-going step, each `**Expected:**` item a recovery outcome.**
 - **Never ask the user a question** — `create-pr`, `review-loop`, and automations call `author` with nobody to answer.
 - **Never reach a pending state through a non-deterministic step**; seed it under `**Preconditions:**`.
+- **Every out-of-bounds spec acts through the page alone**, so it runs on both the Playwright and the Chrome driver.
