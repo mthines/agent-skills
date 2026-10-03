@@ -11175,4 +11175,28 @@ const isPollBlock = (block) =>
     `description-contract.md sites still v1-only: ${dcStale.join(" · ") || "none"} — a v1-only site counts the v2 block against the budget or drops it on refresh`);
 }
 
+// ── G92: critical deep ↔ optimize-approach --deep — the headings O1b harvests exist in critical's output ──
+// optimize-approach --deep finds its candidates by matching critical deep's report headings. A rename on
+// either side would silently zero the harvest while the run still reports "0 lens candidates judged".
+{
+  const read = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const CD = read("skills/quality/critical/rules/deep-mode.md");
+  const OD = read("skills/quality/optimize-approach/rules/deep-mode.md");
+  const OUT = (CD.split("\n## Output format")[1] || "").split("\n## Hard rules")[0];
+  const HARVESTED = ["Steelman alternative", "Other alternatives raised", "Must-fix", "Should-fix"];
+  const missingOut = HARVESTED.filter((h) => !new RegExp("^### " + h + "\\s*$", "m").test(OUT));
+  const missingUse = HARVESTED.filter((h) => !OD.includes("`" + h + "`"));
+  s.check("G92 critical deep's output template carries every heading optimize-approach --deep harvests",
+    missingOut.length === 0 && /\*\*Independence:\*\*/.test(OUT) && /\*\*Lens discovery:\*\*/.test(OUT),
+    `missing from critical deep output: ${missingOut.join(", ") || "none"} (plus the Independence / Lens discovery header lines)`);
+  s.check("G92 optimize-approach --deep names each harvested heading and relays the Independence line",
+    missingUse.length === 0 && OD.includes("`Independence:`"),
+    `not named in optimize-approach deep-mode.md: ${missingUse.join(", ") || "none"}`);
+  const ORV = read("agents/shared/rules/optimality-review.md");
+  const CS = read("skills/quality/critical/SKILL.md");
+  s.check("G92 callers never pass --deep, and critical recognises deep only as the first token",
+    ORV.includes("It does not pass `--deep` to `optimize-approach`") && CS.includes("A `deep` **first** token is a depth modifier"),
+    "optimality-review.md lost the caller-side --deep ban, or critical/SKILL.md widened deep detection beyond the first token");
+}
+
 process.exit(s.report() ? 0 : 1);

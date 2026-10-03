@@ -10,16 +10,18 @@ description: >
   and holistic-review. Stays silent when the approach is already optimal
   (quiet early-exit). A `plan` mode reviews a drafted plan's approach at plan
   time (aw-planner Phase 1) — the cheapest moment to switch. Called by the
-  reviewer and pr-reviewer agents, the polish skill, and aw-planner as a
-  default-on lens; also runnable standalone. Triggers on
+  pr-reviewer agent, the polish skill, and aw-planner as a
+  default-on lens; also runnable standalone, where `--deep` also judges
+  every `critical deep` lens's alternative (end-of-feature check).
+  Triggers on
   "is this the best approach", "better way to do this", "is this optimal",
   "optimize this approach", "rethink the approach", "/optimize-approach".
 disable-model-invocation: false
-argument-hint: '[report|apply|plan] [--no-confidence-gate]'
+argument-hint: '[report|apply|plan] [--deep] [--no-confidence-gate]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: advisory
   tags:
     - optimize-approach
@@ -51,7 +53,7 @@ This skill is the fourth review lens in this repo, distinct from the three that 
 
 ## Mode Detection
 
-Parse the **first token** of `$ARGUMENTS`.
+Parse the **first non-flag token** of `$ARGUMENTS` (flags such as `--deep` may appear anywhere).
 
 | Mode | Default | Trigger | What it does |
 | --- | --- | --- | --- |
@@ -63,11 +65,12 @@ Parse the **first token** of `$ARGUMENTS`.
 
 | Flag | Applies to | Effect |
 | --- | --- | --- |
+| `--deep` | all modes | **Standalone only.** Adds step O1b: runs `Skill("critical", "deep code")` (`deep plan` in `plan` mode) and feeds every lens's alternative into O2 as a candidate, through the unchanged rubric and gates. Calling agents (`pr-reviewer`, `polish`, `aw-planner`) **never** set it. See [`rules/deep-mode.md`](./rules/deep-mode.md). |
 | `--no-confidence-gate` | `apply` | **Human-only override.** Bypasses the `confidence(code) ≥ 90 %` gate for a single `apply` run. Reserved for explicit human slash invocations — a calling agent (`pr-reviewer`, `polish`, `aw-planner`) **never** sets it. The other apply-mode guards are **not** waived: `apply_safe`, the forbidden-targets list, the scoped check, and revert-on-failure all still apply. See [`rules/apply-mode.md`](./rules/apply-mode.md). |
 
 ## Inputs
 
-When a calling agent (reviewer / pr-reviewer / polish) invokes this skill, it passes:
+When a calling agent (pr-reviewer / polish / aw-planner) invokes this skill, it passes:
 
 - `intent_summary` — 2–3 line intent (the caller's Step 1.3 output).
 - `diff` — the full unified diff under review.
@@ -84,6 +87,7 @@ Standalone (`/optimize-approach [report|apply]`) derives the diff-mode inputs fr
 | --- | --- | --- | --- |
 | O0 | Read lessons | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier read; skipped with one report line if LoreKit `memory.*` not connected |
 | O1 | Intent capture | this file | 1–2 line intent per changed approach unit |
+| O1b | Lens candidates (`--deep` only) | [`rules/deep-mode.md`](./rules/deep-mode.md) | `critical deep` ran; each lens alternative mapped to an approach unit or discarded |
 | O2 | Optimality judgment | [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) | Verdict `optimal` \| `suboptimal` per the 4-axis rubric + materiality bar |
 | O3 | Quiet early-exit | [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) | If `optimal`, return empty and stop |
 | O4 | Deep understanding | this file + [`rules/optimality-rubric.md`](./rules/optimality-rubric.md) | `Skill("holistic-analysis", "refactor")` + `confidence(analysis)` on the alternative |
@@ -135,6 +139,7 @@ Load on demand — do not preload.
 | O5 (report) | [`rules/report-mode.md`](./rules/report-mode.md), [`templates/proposal.template.md`](./templates/proposal.template.md) |
 | O5 (apply) | [`rules/apply-mode.md`](./rules/apply-mode.md) |
 | plan mode | [`rules/plan-mode.md`](./rules/plan-mode.md) — approach review at plan time (aw-planner Phase 1) |
+| O1b (`--deep`) | [`rules/deep-mode.md`](./rules/deep-mode.md) — multi-lens alternatives via `critical deep` |
 | wiring | [`agents/shared/rules/optimality-review.md`](../../../agents/shared/rules/optimality-review.md) — how the review agents call this skill |
 | diagnose | [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md) |
 
