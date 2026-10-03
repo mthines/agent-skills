@@ -2,27 +2,26 @@
 name: ui-verify
 description: >
   Makes a UI pull request autonomously verifiable. `author` writes a Markdown
-  intent spec (steps, and the outcomes that must hold) into the PR
-  description as a collapsed, machine-findable block (delegated to by
-  `create-pr` on UI diffs). `run` resolves the PR's live preview URL via the
-  GitHub deployments API and runs the spec there through `aw-tester`, which may
-  adapt the route but checks every expected outcome with evidence, and reports
-  a verdict plus full-page screenshots (`--no-screenshots` opts out). It then
-  tries to break the same change — hostile input, double submits, failed
-  requests, keyboard-only use, small viewports — and documents every probe
-  with screenshots, never changing the verdict
-  (`--no-adversarial` opts out). `verify` is author-if-needed, then run.
-  `setup` delegates to `aw-setup --target preview`. A two-way LoreKit loop
-  feeds runner friction into the next spec. Web only. Triggers on "write a
-  preview spec", "verify this PR's preview", "try to break this PR's preview",
-  "/ui-verify".
+  intent spec — the happy path plus out-of-bounds cases from a PR-scoped
+  brainstorm — into the PR description as a collapsed, machine-findable block
+  (delegated to by `create-pr` on UI diffs). `run` resolves the PR's live
+  preview URL via the GitHub deployments API and runs the spec there through
+  `aw-tester`, which may adapt the route but checks every expected outcome with
+  evidence, and reports a verdict plus full-page screenshots (`--no-screenshots`
+  opts out). It then tries to break the same change — hostile input, double
+  submits, failed requests, small viewports — and documents every probe with
+  screenshots, never changing the verdict (`--no-adversarial` opts out).
+  `verify` is author-if-needed, then run. `setup` delegates to `aw-setup
+  --target preview`. A LoreKit loop feeds runner friction into the next spec.
+  Web only. Triggers on "write a preview spec", "verify this PR's preview",
+  "try to break this PR's preview", "/ui-verify".
 disable-model-invocation: false
-argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-adversarial] [--unattended]'
+argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-adversarial] [--no-brainstorm|--brainstorm deep] [--unattended]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.9.0'
+  version: '1.10.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -63,6 +62,7 @@ This skill owns four things and reuses the rest.
 | **Resolving the PR's preview URL** (GitHub deployments API) | this skill — [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). |
 | **The author + run orchestration** | this skill — this file + [`rules/runner.md`](./rules/runner.md). |
 | **The adversarial pass** (probe catalog, oracles, guardrails, evidence report) | this skill — [`rules/adversarial.md`](./rules/adversarial.md), harness [`templates/adversarial-probes.spec.ts.template`](./templates/adversarial-probes.spec.ts.template); rationale and sources in [`references/adversarial-testing.md`](./references/adversarial-testing.md). |
+| **The out-of-bounds brainstorm** (pending states, baseline moves, the `fan-out` / `in-context` modes, recovery outcomes) | this skill — [`rules/out-of-bounds.md`](./rules/out-of-bounds.md); rationale in [`references/out-of-bounds-rationale.md`](./references/out-of-bounds-rationale.md). `--brainstorm deep` delegates to the `ideate` skill. |
 
 ## Operations
 
@@ -71,7 +71,7 @@ Parse `$ARGUMENTS`. The first token selects the operation.
 | Operation | Trigger | What it does |
 | --- | --- | --- |
 | `setup` | first token `setup` | Scaffold the committed **preview** aw-target (`.claude/aw-targets/preview.yml`) this skill runs against — auth strategy, the two walls, the confirming login, the repo-scoped LoreKit auth profile + UI surface. A thin delegator to `aw-setup --target preview`; the discoverable front door so you never need the `aw` namespace. |
-| `author` | first token `author`, or delegated from `create-pr` | Lift an existing grammar spec verbatim (the aw planner's `specs.md`), or write a Markdown intent spec from a `/fix-bug` repro or the diff, then inject the marked collapsed block into the PR body. Reads memory first. |
+| `author` | first token `author`, or delegated from `create-pr` | Lift an existing grammar spec verbatim (the aw planner's `specs.md`), or write a Markdown intent spec from a `/fix-bug` repro or the diff, add up to 4 out-of-bounds specs from a PR-scoped brainstorm ([`rules/out-of-bounds.md`](./rules/out-of-bounds.md)), then inject the marked collapsed block into the PR body. Reads memory first. |
 | `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, then run the **adversarial pass** against every passing spec, report the verdict, the adversarial findings, **and the screenshots it captured**, write lessons. Screenshots are on by default (`--auto-capture`): full-page, each spec's final state plus each navigating step, into `.agent/{branch}/.aw-tester/captures/` for the PR description; `--no-screenshots` opts out. |
 | `verify` | first token `verify` | One-shot composite for a PR with no spec: author-if-needed (author only when the block is absent — never overwrite a hand-written one), then `run` (with screenshots on, as above), then report a single combined verdict. The autonomous entry point for others' PRs and CI / agent0 automation. |
 
@@ -306,13 +306,16 @@ With no record the broad defaults apply, so a repo with no learnings yet still g
    - A `/fix-bug` reproduction artifact for a UI or visual bug — an `e2e-testing` flow or a `repro/<id>.md` checklist. Rewrite it as an intent spec whose `**Expected:**` items are the fixed behavior.
    Both sources are gitignored, local-only files. This works because `author` runs in the same worktree that wrote them, and it copies their content into the **committed** PR body — the durable artifact `run` later reads. The gitignored file is never committed; only its lifted content reaches GitHub. See [`rules/spec-sources.md § Two artifacts, two lifetimes`](./rules/spec-sources.md#two-artifacts-two-lifetimes). When a source is found, seed the block from it and skip step 3, so the PR block matches what was verified locally rather than a second, divergent description of the same behavior.
 3. **Otherwise, write an intent spec from the diff.** Read the diff (`git diff <base>...HEAD --name-status` plus the relevant files), then write one `## Spec N:` block per user-visible behavior the diff changes, per [`rules/spec-format.md § Writing an intent spec (v2)`](./rules/spec-format.md#writing-an-intent-spec-v2): name the `**Changed:**` target, start the step that exercises it with `[must-follow]`, and list each outcome under `**Expected:**` on that target. Put locators you know from lessons under `**Hints:**` in the role-and-name form. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
-4. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with the body-write call for your resolved [access path](#step-0-resolve-your-github-access-path), preserving everything already there.
+4. **Brainstorm out-of-bounds specs** for the pending states the changed component creates — what a user hits after ignoring, dismissing, reloading, leaving and returning to, or acting from a second tab on something the UI is waiting on — per [`rules/out-of-bounds.md`](./rules/out-of-bounds.md).
+   Its [When it runs](./rules/out-of-bounds.md#when-it-runs) table picks the mode: `fan-out` (five generator sub-agents in one message, then one judge) whenever some available tool dispatches a sub-agent, `in-context` when none does, and `skipped` for `--no-brainstorm`, a lifted grammar block, or a diff with no pending state.
+   Append at most 4 `Out of bounds:` intent specs after the happy-path specs — for a pending user decision, `ignore`, `dismiss`, and `reload` are always among them; each ends in a keep-going step and expects only recovery outcomes.
+5. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with the body-write call for your resolved [access path](#step-0-resolve-your-github-access-path), preserving everything already there.
 Writing the block into the PR body is this operation's **only** deliverable, so a run that could not perform that write has not authored a spec.
 Report it as `failed (no GitHub access path)` rather than reporting the specs you drafted — a drafted spec that never reached the PR is indistinguishable from none to every later reader, including `run`.
 
 The block is **exempt from the `create-pr` description length ceiling** and is **preserved verbatim** by `review-loop`'s body refresh — both rules live in [`rules/spec-format.md`](./rules/spec-format.md) and in the [description contract](../../delivery/create-pr/rules/description-contract.md).
 
-Report: how many specs were authored, and the one-line goal of each.
+Report: how many specs were authored, and the one-line goal of each, then the brainstorm line from [`rules/out-of-bounds.md § Step 6`](./rules/out-of-bounds.md#step-6-report).
 
 ## Operation `run`
 
@@ -340,7 +343,8 @@ spec exists yet.
    already carries a ui-verify block of any version — `<!-- ui-verify:v2 -->`,
    `<!-- ui-verify:v1 -->`, or the legacy `<!-- preview-spec:v1 -->` — keep it
    verbatim — never overwrite a hand-written or previously-authored spec. If it is absent, run
-   Operation `author` (including its Step 0 `is-ui-diff` gate): a `no` from the
+   Operation `author` (including its Step 0 `is-ui-diff` gate, and honouring
+   `--no-brainstorm` and `--brainstorm deep` exactly as `author` does): a `no` from the
    gate ends `verify` here with `not verified (no UI files in diff)`, and a
    `failed (no GitHub access path)` from `author` ends it with that same reason —
    there is nothing to run.
@@ -366,6 +370,7 @@ a second `verify` on the same PR reuses the block authored by the first.
 - **Never weaken a spec to make it pass.** A red verdict is a finding, not a failure of this skill.
 - **Never store a secret in the spec, the target file, or a lesson.** Preview-auth credentials live in the committed `preview.yml`'s refresh command or in the environment, never in the PR body — the spec is public.
 - **On Agent0, `aw-tester` is still a dispatched sub-agent.** Never run the spec in the orchestrating context; dispatch a `general` sub-agent pointed at its definition file ([`rules/agent0-runtime.md`](./rules/agent0-runtime.md)). A missing sandbox browser is `NOT RUN (…)` with the setup script's reason, never `red`.
+- **The out-of-bounds brainstorm runs only in `author`, from the session that can dispatch.** `fan-out` sends exactly five generators in one message and then one judge, none of which dispatches; with no dispatch tool it runs `in-context`. `run` and the adversarial pass never brainstorm ([`rules/out-of-bounds.md`](./rules/out-of-bounds.md)).
 - **`--unattended` never asks.** No `AskUserQuestion` on any path; every question point takes the fixed answer in [`--unattended`](#--unattended--never-ask-never-hang), and a run with no driver is `inconclusive`, never a hang and never `red`.
 - **The runner reports; it does not fix.** Applying a fix for a failing spec is the author's job (a better spec) or the PR author's (a code change).
 - **The adversarial pass never changes the verdict, and never acts destructively.** Its findings travel in their own `adversarial:` block; it probes only specs that passed, stays on the preview origin, stubs configured side-effect endpoints, and activates a destructive control only on a record it created ([`rules/adversarial.md § Guardrails`](./rules/adversarial.md#guardrails)).

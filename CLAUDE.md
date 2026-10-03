@@ -97,7 +97,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
 - `e2e-pr-stabilizer` (`/`) — local-first Playwright E2E stabilizer for one PR; modes `stabilize` / `optimize`
-- `ui-verify` (`Skill()` + `/`) — Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`, v1 still read); `author` / `run` / `verify` / `setup`; the runner may adapt the route but checks every expected outcome with evidence, then tries to break each passing spec
+- `ui-verify` (`Skill()` + `/`) — Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); `author` adds out-of-bounds specs from a PR-scoped brainstorm; the runner adapts the route but checks every outcome with evidence, then tries to break each passing spec
 
 ### `design/` — UI, visual, interaction
 

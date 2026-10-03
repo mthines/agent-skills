@@ -1,0 +1,65 @@
+# Out-of-bounds brainstorm — why it is shaped this way
+
+The rule is [`../rules/out-of-bounds.md`](../rules/out-of-bounds.md).
+This file records why each part exists, so a later edit can tell a load-bearing choice from an incidental one.
+
+## Why it runs in `author`, at the top level
+
+Sub-agent dispatch nests to different depths on different hosts.
+
+| Host | Can a dispatched sub-agent dispatch another? |
+| --- | --- |
+| OpenCode, and Dash0 Agent0 (which runs OpenCode) | No, by default. The Task tool counts the calling session's ancestors and refuses at `subagent_depth` (default 1), and a child session is given `task: deny` unless its own agent config grants `task`. Agent0's configuration sets neither and ignores a repository's project config, so a skill cannot change it. |
+| Claude Code | Yes — up to three layers below the main conversation by default (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`). |
+
+A brainstorm built from independent generators needs one dispatch level of its own, so it has to run where that level is still free.
+`author` runs in the caller's top-level session in every normal entry point; `run`'s adversarial pass is already a dispatched sub-agent and has none left.
+So generation lives in `author`, and its output reaches `run` the only way anything does: as specs in the committed PR block.
+When `author` itself runs inside a dispatched agent, the in-context mode keeps the step working instead of skipping it.
+
+## Why the framing names the pending state, and why there are baseline moves
+
+A brainstorm framed only as "leave the intended path" drifts toward client-side robustness — forms, storage, network faults, tabs — and does not reliably reach interruptions of a state the server is holding open while it waits for the user.
+Those interruptions — ignoring a prompt and doing something else, dismissing it, reloading while it is open — are exactly where post-release regressions in waiting UI come from.
+Naming the changed component's pending state in the framing points the generators at it, and the baseline moves give every pending state a coverage floor that does not depend on any generator thinking of the obvious.
+
+## Why `ignore`, `dismiss`, and `reload` are a selection floor, and the cap is 4
+
+Ranking by Likelihood + Damage alone can cut one of the three interruptions a waiting prompt meets first.
+In a trial on an agent question-card change, the judge's top three were `ignore`, `reload`, and `leave-and-return`; `dismiss` tied for fourth and was cut, although a dismissed card that leaves the turn suspended was a known regression of that same component.
+The selected specs caught 2 of 4 known regressions of that component, while the whole candidate list caught 3.
+So for a pending user decision the three are taken first, and the cap is 4 rather than 3, leaving one slot for the next-best move.
+Those four regressions now inform this rule, so they no longer measure it blind.
+
+`refused-next` names the page's main control as well as the pending item, because a prompt the server refuses while a card waits can leave the card and the server disagreeing about whether it is still open.
+
+## Why every spec ends with a keep-going step
+
+An interruption rarely breaks the screen it happens on.
+The failure shows on the next action: the new message is refused, the reloaded page shows a card that can no longer be answered, the dismissed prompt leaves the thread unable to continue.
+A spec that stops at the interruption passes on exactly the builds it exists to catch.
+
+## Why `**Expected:**` holds only recovery outcomes
+
+What the UI should show after a user dismisses or ignores a prompt is a product decision the author usually cannot know.
+A spec that guesses it ("a toast says *Question dismissed*") fails correct builds that chose differently.
+Recovery outcomes — the user can continue, the item has one clear state, nothing is lost silently, one action has one effect, views agree — hold for every correct design, so a failure is a real dead end.
+
+## Why five generators and one judge, and deep mode only on request
+
+Independent contexts generate more distinct ideas than one context asked for the same number, which is why the generators are separate sub-agents dispatched together.
+Five personas in one message keep that independence at the cost of one dispatch round; one judge applies a fixed rubric.
+The full `ideate` deep pipeline adds evolution rounds, a panel, and a pre-mortem — many more dispatches and far more wall time — which does not fit a step that runs on every UI pull request, nor an Agent0 Automation's default 10-minute timeout.
+It stays available behind `--brainstorm deep`.
+
+## Why the pending state must be reached deterministically
+
+The intent-spec grading table treats a missing seed named under `**Preconditions:**` as unreachable, so the spec is `skipped`.
+A non-deterministic step that simply did not happen — the model did not ask its question this time — leaves the expected items unobserved, so the spec fails.
+Seeding the state turns an environment gap into an honest skip instead of a false red.
+
+## Why generators get no tools
+
+Dispatched sub-agents share the session's sandbox; on Dash0 Agent0 that is one small machine.
+Five generators each cloning, installing, or building would contend for it, and none of that improves an idea list.
+Everything a generator needs fits in the prompt: the framing, the pending states, the baseline moves, and a short diff excerpt.
