@@ -11183,7 +11183,7 @@ const isPollBlock = (block) =>
 // fan-out stays at five generators in one message plus one judge, none of which dispatches or calls a tool;
 // (c) every pending state meets the six baseline moves, every move acts through the page alone, and every spec ends in a keep-going step; (d) a written
 // spec is titled `Out of bounds:`, has the move and the keep-going step as must-follow, and expects only recovery
-// outcomes, at most 3 and one per move; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
+// outcomes, at most 3 and one per baseline move, with deep mode re-judged by Step 4; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
 // route to it, while the adversarial pass never brainstorms and the rule never asks the user.
 // break-shape: swap rows 5 and 6 of § When it runs, drop a baseline move, delete "never a dispatch from a generator
 // or the judge", drop the keep-going step from the RIGHT example, drop SKILL.md's link to the rule, or delete the
@@ -11232,7 +11232,9 @@ const isPollBlock = (block) =>
     missingMoves.length === 0 && !STEP2.split("\n").some((l) => l.startsWith("| `offline` |"))
       && STEP2.includes("**Every move must run on both drivers.**")
       && STEP4.includes("every idea whose trigger needs network interception, offline mode, or clock or storage control")
-      && STEP2.includes("**Every out-of-bounds spec ends with a keep-going step.**"),
+      && STEP2.includes("**Every out-of-bounds spec ends with a keep-going step.**")
+      && OOB.includes("- **Every out-of-bounds spec acts through the page alone**")
+      && !/already cover those disruptions/.test(STEP2) && STEP2.includes("nothing in this skill controls the clock"),
     `missing move(s): ${missingMoves.join(", ") || "none"}, or an offline move, the both-drivers rule, or its selection filter`);
 
   // (d) what a written spec looks like, and how many get written.
@@ -11242,8 +11244,9 @@ const isPollBlock = (block) =>
     STEP5.includes("Its title starts with `Out of bounds:`.") && STEP5.includes("a second `[must-follow]` step")
       && STEP5.includes("never a design choice the author cannot know") && mustFollow >= 2
       && STEP4.includes("Take at most 3, and at most one per baseline move; each `Move: new` idea counts as its own move.")
-      && STEP3.includes("run Step 4 from the start — one judge, all four axes"),
-    `a convention, the cap of 3 / one per move, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
+      && STEP3.includes("run Step 4 from the start — one judge, all four axes")
+      && STEP4.includes("a fresh sub-agent in `fan-out` and `deep` mode"),
+    `a Step 5 convention, Step 4's cap of 3 / one per baseline move, deep mode's Step 4 re-run, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
 
   // (e) the wiring: author routes to it, flags are forwarded, run and the adversarial pass never brainstorm.
   s.check("G92e ui-verify author routes to the brainstorm, verify forwards its flags, and the rule is wired into format, Agent0, and run",
