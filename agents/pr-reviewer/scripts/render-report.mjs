@@ -109,12 +109,15 @@ const SHAPES = {
   "FINDINGS[]": ["title", "path", "line", "url", "tier", "blocking"],
   // `dependencies_omitted` (optional) counts the transitive bumps with no usage site that are not
   // listed in `dependencies`; it renders as one bullet and in the summary, so none is hidden.
-  IMPACT: ["telemetry", "symbols", "dependencies", "dependencies_omitted", "overlaps"],
+  IMPACT: ["telemetry", "symbols", "modules", "dependencies", "dependencies_omitted", "overlaps"],
   "IMPACT.symbols[]": ["name", "path", "change", "consumer_files", "verified_unaffected", "findings",
     "consumers"],
   // One entry per consumer FILE the trace has a status for. Every verified and every flagged file
   // is listed (the counts above must equal the list's), so an unlisted remainder is untraced.
   "IMPACT.symbols[].consumers[]": ["path", "line", "status"],
+  // A changed file no listed export covers, and the files that import it. `importer_files` counts
+  // them all; `importers` lists at most that many, and the unlisted remainder still renders.
+  "IMPACT.modules[]": ["path", "importer_files", "importers"],
   // `checked_sites` (optional) is how many usage sites a read covered; absent, the bullet keeps the
   // hand-supplied form's claim that every site was checked.
   "IMPACT.dependencies[]": ["name", "from", "to", "delta", "usage_sites", "url", "checked_sites"],
@@ -180,9 +183,11 @@ function consumerList(where, raw, { files, ok, found }) {
 // Folders, not files, are the unit, because fourteen file nodes is noise and "src/jobs/ · 6 files ·
 // ✓ checked" reads at a glance — a file gets its own node only when it carries a finding.
 const REACH_MAX_SYMBOLS = 6;
+const REACH_MAX_MODULES = 4;
 const REACH_MAX_NODES_PER_SYMBOL = 6;
-// Below this many edges the bullet list already says everything the picture would.
-const REACH_MIN_EDGES = 3;
+// One connection is enough: a diagram that appears whenever there is anything to connect sits in the
+// same place on every report, and a missing one is explained in the footnote instead of left silent.
+const REACH_MIN_EDGES = 1;
 const CHANGE_LABEL = { signature: "signature changed", body: "body changed", removed: "removed", added: "added" };
 const REACH_CLASSES = [
   "classDef changed fill:#eef2ff,stroke:#6366f1,color:#1e1b4b",
@@ -191,6 +196,7 @@ const REACH_CLASSES = [
   "classDef unknown fill:#f3f4f6,stroke:#9ca3af,stroke-dasharray:4 3,color:#374151",
   "classDef bad fill:#fde8e8,stroke:#dc2626,color:#7f1d1d",
   "classDef warn fill:#fff4e5,stroke:#d97706,color:#78350f",
+  "classDef imports fill:#f8fafc,stroke:#64748b,stroke-dasharray:4 3,color:#1e293b",
 ];
 
 /** A Mermaid node label body: quoted-string safe, single line, entity-escaped. */
@@ -264,6 +270,38 @@ function consumerNodes(sy) {
   return kept;
 }
 
+/** "imports this file" for one file, "import this file" for several: the status is the import. */
+const importsText = (n) => `${n === 1 ? "imports" : "import"} this file`;
+
+/**
+ * The importer-side nodes for one changed file, grouped by folder like consumers, capped the same
+ * way. No finder traces an importer, so every node says what is known — that it imports the file —
+ * and never `✓ checked`.
+ */
+function importerNodes(m) {
+  const groups = new Map();
+  for (const p of m.importers) {
+    const cut = p.lastIndexOf("/");
+    const dir = cut === -1 ? "./" : p.slice(0, cut + 1);
+    const g = groups.get(dir) || { dir, paths: [] };
+    g.paths.push(p);
+    groups.set(dir, g);
+  }
+  const nodes = [...groups.values()]
+    .sort((a, b) => b.paths.length - a.paths.length || a.dir.localeCompare(b.dir))
+    .map((g) => {
+      const where = g.paths.length === 1 ? g.paths[0] : `${g.dir} · ${g.paths.length} files`;
+      return { files: g.paths.length, label: `${mermaidText(where)}<br/>${importsText(g.paths.length)}` };
+    });
+  const unlisted = m.files - m.importers.length;
+  if (unlisted > 0) nodes.push({ files: unlisted, label: `+${plural(unlisted, "more file")}<br/>${importsText(unlisted)}` });
+  if (nodes.length <= REACH_MAX_NODES_PER_SYMBOL) return nodes;
+  const kept = nodes.slice(0, REACH_MAX_NODES_PER_SYMBOL - 1);
+  const rest = nodes.slice(REACH_MAX_NODES_PER_SYMBOL - 1).reduce((n, x) => n + x.files, 0);
+  kept.push({ files: rest, label: `+${plural(rest, "more file")}<br/>${importsText(rest)}` });
+  return kept;
+}
+
 /**
  * Dependent-file counts across every changed export, one per FILE: a file that uses two changed
  * exports is one dependent file, checked when every export it uses was checked there and flagged
@@ -304,7 +342,7 @@ function dependentFiles(symbolFacts) {
  * The fenced Mermaid block for IMPACT, or "" when the graph is too small to be worth a picture.
  * Deterministic: ids are positional and every ordering has a tie-breaker, so G25 can byte-diff it.
  */
-function reachDiagram({ symbols, deps, overlaps }) {
+function reachDiagram({ symbols, modules, deps, overlaps }) {
   const prNodes = [];
   const outNodes = [];
   const edges = [];
@@ -323,6 +361,22 @@ function reachDiagram({ symbols, deps, overlaps }) {
     const more = symbols.length - REACH_MAX_SYMBOLS;
     prNodes.push(`    smore["+${plural(more, "more changed export")}<br/>listed below"]:::changed`);
   }
+  const moduleIds = [];
+  modules.slice(0, REACH_MAX_MODULES).forEach((m, i) => {
+    const id = `m${i + 1}`;
+    moduleIds.push({ id, path: m.path });
+    prNodes.push(`    ${id}["${mermaidText(m.path)}<br/>file changed"]:::changed`);
+    // Dotted, like every untraced edge: the import is known, what it does with the change is not.
+    importerNodes(m).forEach((n, j) => {
+      const cid = `${id}i${j + 1}`;
+      outNodes.push(`  ${cid}["${n.label}"]:::imports`);
+      edges.push(`  ${id} -.-> ${cid}`);
+    });
+  });
+  if (modules.length > REACH_MAX_MODULES) {
+    const more = modules.length - REACH_MAX_MODULES;
+    prNodes.push(`    mmore["+${plural(more, "more changed file")}<br/>listed below"]:::changed`);
+  }
   deps.forEach((d, i) => {
     const id = `d${i + 1}`;
     prNodes.push(`    ${id}["${mermaidText(`${d.name} ${d.from} → ${d.to}`)}<br/>${d.delta} bump"]:::changed`);
@@ -335,7 +389,8 @@ function reachDiagram({ symbols, deps, overlaps }) {
   overlaps.forEach((o, i) => {
     const id = `o${i + 1}`;
     let target = symbolIds.find((s) => o.symbol && s.name === o.symbol)
-      || symbolIds.find((s) => s.path === o.path);
+      || symbolIds.find((s) => s.path === o.path)
+      || moduleIds.find((m) => m.path === o.path);
     if (!target) {
       target = { id: `${id}f` };
       prNodes.push(`    ${id}f["${mermaidText(o.path)}"]:::changed`);
@@ -924,18 +979,21 @@ function main() {
   //
   // The section is its own top-level accordion, under the findings index: what a change reaches
   // and how much of it was checked is the first thing a human reviewer asks, and it was two clicks
-  // deep inside `Review details`. A Mermaid diagram leads it when the graph has enough edges to be
-  // worth drawing; the bullets below it stay the authoritative text (email and the ingest grammar
-  // read raw markdown, where a diagram is source code).
+  // deep inside `Review details`. A Mermaid diagram leads it whenever the graph has a connection to
+  // draw; the bullets below it stay the authoritative text (email and the ingest grammar read raw
+  // markdown, where a diagram is source code).
   let impactSection = "";
   let impactSummary = "";
   let telemetryLine = "";
+  // Why the reach section carries no diagram, for the `Nothing to report` footnote. Set only when
+  // IMPACT was supplied: an absent slot says nothing about the run, so it claims nothing.
+  let reachFootnote = "";
   // Feeds the `**Checked:**` line below: consumer files the trace reached, out of how many.
   let consumerFilesTotal = 0;
   let consumerFilesChecked = 0;
   if (data.IMPACT !== undefined && data.IMPACT !== null) {
     const im = data.IMPACT;
-    if (!isPlainObject(im)) fail("IMPACT must be an object {telemetry, symbols, dependencies, dependencies_omitted, overlaps}");
+    if (!isPlainObject(im)) fail("IMPACT must be an object {telemetry, symbols, modules, dependencies, dependencies_omitted, overlaps}");
     assertNoStrayFields("IMPACT", im, SHAPES.IMPACT);
 
     const list = (field) => {
@@ -989,6 +1047,41 @@ function main() {
       // can each leave a consumer unread, and the bullet must not name the wrong one.
       if (untraced > 0) parts.push(`${untraced} not traced`);
       return `- \`${sy.name}\` (\`${sy.path}\`) — ${parts.join(" · ")}`;
+    });
+
+    // A changed file that no listed export covers, and the files that import it. Nobody traced an
+    // importer, so the bullet says so; it never counts toward the `**Checked:**` line's dependent files.
+    const modules = list("modules");
+    /** @type {{path: string, files: number, importers: string[]}[]} */
+    const moduleFacts = [];
+    const moduleBullets = modules.map((m, i) => {
+      const where = `IMPACT.modules[${i}]`;
+      if (!isPlainObject(m)) fail(`${where} must be an object {path, importer_files, importers}`);
+      assertNoStrayFields(where, m, SHAPES["IMPACT.modules[]"]);
+      if (!m.path || String(m.path).trim() === "") fail(`${where}.path is required`);
+      assertPlain(`${where}.path`, m.path);
+      const path = String(m.path).trim();
+      const files = int(`${where}.importer_files`, m.importer_files, { min: 1 });
+      /** @type {string[]} */
+      let importers = [];
+      if (m.importers !== undefined && m.importers !== null) {
+        if (!Array.isArray(m.importers)) fail(`${where}.importers must be an array of paths`);
+        const seen = new Set();
+        importers = m.importers.map((x, j) => {
+          if (typeof x !== "string" || x.trim() === "") fail(`${where}.importers[${j}] must be a path`);
+          assertPlain(`${where}.importers[${j}]`, x);
+          const t = x.trim();
+          if (t === path) fail(`${where}.importers lists the changed file itself — a file is not its own importer`);
+          if (seen.has(t)) fail(`${where}.importers lists ${t} twice — one entry per importing file`);
+          seen.add(t);
+          return t;
+        });
+      }
+      if (importers.length > files) {
+        fail(`${where}.importers lists ${importers.length} files but importer_files is ${files}`);
+      }
+      moduleFacts.push({ path, files, importers });
+      return `- \`${path}\` — changed file · imported by ${plural(files, "file")}, not traced`;
     });
 
     const DELTAS = ["major", "minor", "patch"];
@@ -1069,6 +1162,12 @@ function main() {
       if (consumersFlagged) bits.push(`${consumersFlagged} flagged`);
       if (consumersUntraced) bits.push(`${consumersUntraced} not checked`);
     }
+    if (moduleFacts.length) {
+      // One importing file per file, like dependent files: a file importing two changed files is one.
+      const listedImporters = new Set(moduleFacts.flatMap((m) => m.importers));
+      const importing = listedImporters.size + moduleFacts.reduce((n, m) => n + m.files - m.importers.length, 0);
+      bits.push(`${plural(moduleFacts.length, "changed file")} imported by ${plural(importing, "file")}`);
+    }
     const depsTotal = deps.length + depsOmitted;
     if (depsTotal) {
       bits.push(`${depsTotal} dependency bump${depsTotal === 1 ? "" : "s"}`
@@ -1080,9 +1179,10 @@ function main() {
     // One contiguous list, not three. A blank line between bullet groups makes GitHub emit three
     // separate `<ul>`s, and with no heading between them the gap reads as a missing label rather
     // than as grouping — the bullets are already self-labelling (symbol / dependency / overlap).
-    const bulletBlock = [...symbolBullets, ...depBullets, ...overlapBullets].join("\n");
+    const bulletBlock = [...symbolBullets, ...moduleBullets, ...depBullets, ...overlapBullets].join("\n");
     const diagram = reachDiagram({
       symbols: symbolFacts,
+      modules: moduleFacts,
       deps: deps.map((d) => ({ name: String(d.name), from: String(d.from), to: String(d.to), delta: String(d.delta), sites: d.usage_sites,
         checked: d.checked_sites === undefined || d.checked_sites === null ? d.usage_sites : d.checked_sites })),
       overlaps: overlaps.map((o) => ({ pr: o.pr, author: String(o.author), path: String(o.path), symbol: o.symbol ? String(o.symbol) : null })),
@@ -1092,6 +1192,14 @@ function main() {
     // but no summary would render an unlabelled one. Either way, suppress it.
     if (blocks.length && impactSummary) impactSection = blocks.join("\n\n");
     else { impactSection = ""; impactSummary = ""; }
+    // A missing diagram is explained, never silent. diff-only first: with no workspace the graph
+    // could not look for consumers, and "nothing uses it" would read an empty list as a fact.
+    if (!impactSection) {
+      reachFootnote = String(run.depth) === "diff-only" ? "reach diagram (no workspace to trace)"
+        : "reach diagram (impact graph found no consumer or importer)";
+    } else if (!diagram) {
+      reachFootnote = "reach diagram (no connections to draw)";
+    }
   }
 
   // ── `**Checked:**` — how far the review got, in one visible line ───────────────────────────────
@@ -1285,6 +1393,7 @@ function main() {
     footnotes.MEASURABILITY_LOG,
     footnotes.INTEGRATIONS,
     tierBreakdown ? "" : "severity",
+    reachFootnote,
     footnotes.SKIPPED_FILES,
   ].filter((f) => f).join(", ");
 

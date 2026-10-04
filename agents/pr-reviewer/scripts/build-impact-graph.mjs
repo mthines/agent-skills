@@ -654,8 +654,15 @@ export function gateConsumers({ symbol, definingPath, consumers, importerPaths }
  * importing file's directory and compared to the module path, so a match is a real
  * import edge rather than a basename coincidence. Alias specifiers come from
  * `tsconfig` `paths` and the `go.mod` module path.
+ *
+ * The specifier may name one extension after the basename (`"./reach.mjs"`, or
+ * `"../api/client.js"` for a `.ts` file under NodeNext resolution), so ESM imports
+ * that spell the extension still count as importers. The extension is only allowed
+ * by the search pattern; resolution still runs through `stripExt`, which strips only
+ * a source or `.json` extension, so `"./reach.config"` resolves to `reach.config` and
+ * is never mistaken for an import of `reach`.
  */
-function importerPattern(bareOrAlt) { return `(?:from|require|import)\\s*\\(?\\s*['"\`][^'"\`]*(?:${bareOrAlt})['"\`]`; }
+function importerPattern(bareOrAlt) { return `(?:from|require|import)\\s*\\(?\\s*['"\`][^'"\`]*(?:${bareOrAlt})(?:\\.[A-Za-z0-9]+)?['"\`]`; }
 
 function importersOf(modulePath, root, aliases, opts, candidateHits) {
   const bare = basename(stripExt(modulePath));
@@ -1742,6 +1749,24 @@ async function selfTest() {
         process.stderr.write(`  batch-equivalence[${label}] MISMATCH\n  batched: ${a.slice(0, 500)}\n  legacy:  ${b.slice(0, 500)}\n`);
       }
       return a === b;
+    });
+
+    t(`[${label}] an import that names the extension is an importer; a longer basename is not`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), "impact-ext-"));
+      try {
+        writeTree(dir, {
+          "lib/reach.mjs": "export function reach() { return 1 }\n",
+          "lib/finalize.mjs": "import { reach } from \"./reach.mjs\"\nexport const f = () => reach()\n",
+          "src/a.ts": "import { reach } from '../lib/reach.js'\nexport const a = reach()\n",
+          "lib/reach.config.mjs": "export default { depth: 1 }\n",
+          "lib/other.mjs": "import cfg from \"./reach.config.mjs\"\nexport const o = cfg\n",
+        });
+        const want = JSON.stringify(["lib/finalize.mjs", "src/a.ts"]);
+        const direct = importersOf("lib/reach.mjs", dir, [], { useRg }, undefined);
+        const batched = importersOf("lib/reach.mjs", dir, [], { useRg },
+          await gatherCandidatesAsync(dir, ["reach"], importerPattern, { useRg }));
+        return JSON.stringify(direct) === want && JSON.stringify(batched) === want;
+      } finally { rmSync(dir, { recursive: true, force: true }); }
     });
   }
 

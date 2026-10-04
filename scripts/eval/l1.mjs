@@ -10784,10 +10784,12 @@ const isPollBlock = (block) =>
     q.ok && fence.includes("we#quot;ird") && !fence.includes('we"ird')
       && fence.includes("x#35;y") && !fence.includes("x#y"), q.err);
 
+  // G94 owns the threshold itself (one connection draws); this keeps the zero-connection case: a
+  // section whose only row has nothing to connect renders the bullets alone.
   const smallGraph = clone();
-  smallGraph.IMPACT = { symbols: [{ name: "f", path: "a.ts", change: "body", consumer_files: 1, verified_unaffected: 1, findings: 0 }] };
+  smallGraph.IMPACT = { dependencies: [{ name: "left-pad", from: "1.0.0", to: "2.0.0", delta: "major", usage_sites: 0 }] };
   const sg = render(smallGraph);
-  s.check("G89e a graph with fewer than 3 edges renders the bullets without a diagram",
+  s.check("G89e a graph with no connection renders the bullets without a diagram",
     sg.ok && sg.out.includes("<summary>What this change reaches — ") && !sg.out.includes("```mermaid"), sg.err);
 
   const badRound = clone();
@@ -11298,6 +11300,111 @@ const isPollBlock = (block) =>
   s.check("G93e the adversarial pass never brainstorms, and the brainstorm rule never asks the user",
     OOB.length > 0 && !/brainstorm/i.test(ADV) && !/AskUserQuestion/.test(OOB),
     "adversarial.md mentions a brainstorm (it must only execute specs), or out-of-bounds.md can ask a question an unattended caller cannot answer");
+}
+
+// ── G94: the reach diagram draws from one connection, says why when it does not, and draws importers ──
+// Executed, not grepped: each check runs the renderer (or the module that feeds it) on a payload.
+// Proven to bite by breaking what it guards: raise REACH_MIN_EDGES back to 3, drop the footnote
+// entry, mark an importer node checked, drop the importers-vs-count check, stop reach.mjs from
+// skipping a file a listed export covers, or stop finalize from sending IMPACT {}.
+{
+  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
+  const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/reach-modules.json"), "utf8"));
+  const render = (/** @type {any} */ payload) => {
+    const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(payload), encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+  };
+  const clone = () => JSON.parse(JSON.stringify(base));
+  const footnote = (/** @type {string} */ out) => (out.match(/^<sup>Nothing to report — (.*)\.<\/sup>$/m) || [])[1] || "";
+  const reachNote = (/** @type {string} */ out) => (footnote(out).match(/reach diagram \(([^)]*)\)/) || [])[1] || "";
+
+  // (a) one connection is enough
+  const one = clone();
+  one.IMPACT = { symbols: [{ name: "f", path: "a.ts", change: "body", consumer_files: 1, verified_unaffected: 1, findings: 0 }] };
+  const r1 = render(one);
+  const reachAt = r1.out.indexOf("<summary>What this change reaches — ");
+  const fenceAt = r1.out.indexOf("```mermaid");
+  s.check("G94a a reach section with one connection renders its diagram, inside the reach accordion",
+    r1.ok && reachAt !== -1 && fenceAt > reachAt && fenceAt < r1.out.indexOf("</details>", reachAt)
+      && /^ {2}s1 --> s1c1$/m.test(r1.out) && reachNote(r1.out) === "", r1.err);
+
+  // (b) a missing diagram is explained, and only when IMPACT was supplied
+  const empty = clone();
+  empty.IMPACT = {};
+  const re = render(empty);
+  const diffOnly = clone();
+  diffOnly.IMPACT = {};
+  diffOnly.RUN = { mode: "full", sha: "c08d5e2", delta_lines: 12, at: "2026-10-03T21:45:00Z", depth: "diff-only" };
+  const rd = render(diffOnly);
+  const unconnected = clone();
+  unconnected.IMPACT = { dependencies: [{ name: "left-pad", from: "1.0.0", to: "2.0.0", delta: "major", usage_sites: 0 }] };
+  const ru = render(unconnected);
+  const absent = clone();
+  delete absent.IMPACT;
+  const ra = render(absent);
+  s.check("G94b the footnote names why there is no diagram: the graph found no consumer or importer, no workspace, or nothing to connect",
+    re.ok && !re.out.includes("What this change reaches") && reachNote(re.out) === "impact graph found no consumer or importer"
+      && rd.ok && reachNote(rd.out) === "no workspace to trace"
+      && ru.ok && ru.out.includes("<summary>What this change reaches — ") && !ru.out.includes("```mermaid")
+      && reachNote(ru.out) === "no connections to draw",
+    [re.err, rd.err, ru.err].filter(Boolean).join(" | ") || `footnotes: ${reachNote(re.out)} / ${reachNote(rd.out)} / ${reachNote(ru.out)}`);
+  s.check("G94b an absent IMPACT adds no reach entry — it claims nothing about the run",
+    ra.ok && reachNote(ra.out) === "" && !footnote(ra.out).includes("reach diagram"), ra.err);
+
+  // (c) changed files draw to their importers, never as checked
+  const rm = render(base);
+  const fence = (rm.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
+  const importNodes = fence.split("\n").filter((l) => l.endsWith(":::imports"));
+  s.check("G94c a changed file draws dotted edges to importer nodes that say they import it, never checked",
+    rm.ok && fence.includes('m1["src/api/backoff.ts<br/>file changed"]:::changed')
+      && importNodes.length === 4 && importNodes.every((l) => /<br\/>imports? this file"\]:::imports$/.test(l))
+      && !importNodes.some((l) => l.includes("✓")) && /^ {2}m1 -\.-> m1i1$/m.test(fence) && !/^ {2}m1 --> /m.test(fence)
+      && rm.out.includes("- `src/api/backoff.ts` — changed file · imported by 9 files, not traced")
+      && rm.out.includes("· 1 changed file imported by 9 files</summary>")
+      && rm.out.includes("**Checked:** 3 of 3 changed files read · 1 of 1 dependent file traced"), rm.err);
+
+  // (d) a modules entry that contradicts itself is rejected
+  const bad = (/** @type {(m: any) => void} */ mutate) => { const c = clone(); mutate(c.IMPACT.modules[0]); return render(c).ok; };
+  s.check("G94d the renderer rejects importers over importer_files, the file as its own importer, a repeated importer, or a stray field",
+    !bad((m) => { m.importer_files = 2; })
+      && !bad((m) => { m.importers.push("src/api/backoff.ts"); })
+      && !bad((m) => { m.importers.push("src/jobs/sync.ts"); })
+      && !bad((m) => { m.checked = true; }));
+
+  // (e) the builders: reach.mjs leaves a file to its listed export, finalize sends {} for a quiet graph
+  // A file, not `-e`: fingerprint.mjs (imported by finalize.mjs) reads process.argv[1] at load.
+  const probeDir = mkdtempSync(join(tmpdir(), "g94e-"));
+  const probeFile = join(probeDir, "probe.mjs");
+  const at = (/** @type {string} */ rel) => pathToFileURL(join(REPO_ROOT, rel)).href;
+  writeFileSync(probeFile, `
+    import { buildImpact } from ${JSON.stringify(at("agents/pr-reviewer/scripts/finalize/reach.mjs"))};
+    import { finalizeReview } from ${JSON.stringify(at("agents/pr-reviewer/scripts/finalize.mjs"))};
+    const built = buildImpact({ impact: {
+      symbols: [{ name: "f", path: "src/f.ts", change: "body", exported: true, consumer_files: 1, consumers: [{ path: "src/a.ts" }] }],
+      modules: [{ path: "src/f.ts", importers: 2, importer_paths: ["src/a.ts", "src/b.ts"] },
+        { path: "src/h.ts", importers: 2, importer_paths: ["src/h.ts", "src/c.ts"] }] } });
+    const j = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+    const ctx = { mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, anomalies: [] };
+    const quiet = finalizeReview({ context: { ...ctx, impact: { symbols: [], modules: [] } }, judgments: j }).payload;
+    const none = finalizeReview({ context: ctx, judgments: j }).payload;
+    const diffOnly = finalizeReview({ context: { ...ctx, workspace: { depthCapability: "diff-only" } }, judgments: j }).payload.IMPACT ?? null;
+    console.log(JSON.stringify({ modules: built?.modules, quiet: quiet.IMPACT ?? null, none: "IMPACT" in none, diffOnly }));`);
+  const probe = spawnSync(process.execPath, [probeFile], { encoding: "utf8", cwd: REPO_ROOT });
+  rmSync(probeDir, { recursive: true, force: true });
+  s.check("G94e reach.mjs builds a module only for a file no listed export covers, and finalize sends IMPACT {} only when a graph exists or the run is diff-only",
+    probe.status === 0 && (probe.stdout || "").trim().split("\n").pop()
+      === JSON.stringify({ modules: [{ path: "src/h.ts", importer_files: 1, importers: ["src/c.ts"] }], quiet: {}, none: false, diffOnly: {} }),
+    (probe.stdout || probe.stderr || "").trim().slice(-300));
+
+  // (f) the rule states what the renderer does
+  const RR = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/report-rendering.md"), "utf8");
+  const IG = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/impact-graph.md"), "utf8");
+  s.check("G94f report-rendering.md states the 1-connection diagram, all three footnote entries, and the importer node; impact-graph.md names the modules input",
+    RR.includes("The diagram renders with ≥ 1 connection") && !RR.includes("≥ 3 edges")
+      && ["reach diagram (no workspace to trace)", "reach diagram (impact graph found no consumer or importer)", "reach diagram (no connections to draw)"].every((t) => RR.includes(`\`${t}\``))
+      && RR.includes("**Changed files to their importers.**") && RR.includes("`modules` is `[{path, importer_files, importers?}]`")
+      && IG.includes("`modules[].importer_paths`") && IG.includes("`IMPACT: {}`"));
 }
 
 process.exit(s.report() ? 0 : 1);

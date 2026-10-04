@@ -66,7 +66,7 @@ review, where it does not exist.
 | `--overlaps <file>` | **takes a value** — a pre-fetched overlap payload, which skips the `gh` call. Omit it for the normal path: with `--repo` and `--pr` set the script fetches overlaps itself (one `gh pr list`, capped at 30 PRs) and degrades to no overlaps when `gh` is absent or unauthorized. A bare value-less `--overlaps` swallows the next argument. |
 | `--production <file>` | merge a telemetry exposure block, see [`telemetry.md`](./telemetry.md) |
 | `--no-rg` | force the JS search fallback; both backends are self-tested, so results agree |
-| `--self-test` | run the 48 offline cases and exit |
+| `--self-test` | run the 56 offline cases and exit |
 
 The script is deterministic and self-tested, in the same shape as `classify-shape.mjs`, and L1 executes its self-test.
 That matters more than it sounds: a routing input that is wrong 5 % of the time is worse than no routing input, because the tier decision is announced with it as justification.
@@ -183,11 +183,13 @@ trace:
 
 | Input | Source | Becomes |
 | --- | --- | --- |
-| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); `same-symbol` overlaps; each dependency delta that is direct or has a usage site, plus `dependencies_omitted` — the count of transitive deltas with no usage site, rendered as one bullet, never dropped |
+| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); each changed file with importers and no listed export, from `modules[].importer_paths` (`importer_files` from `modules[].importers`); `same-symbol` overlaps; each dependency delta that is direct or has a usage site, plus `dependencies_omitted` — the count of transitive deltas with no usage site, rendered as one bullet, never dropped |
 | `judgments.impact_trace` | the consumer-impact and dependency finders | `verified` for each consumer file read and found holding — kept even past impact.json's 25-file list; for a dependency (`symbol` = package name, `path` = its manifest), the usage sites in the files listed become `checked_sites` |
 | a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set; with `symbol` set, kept even past the 25-file list) |
 
-Every other listed consumer renders as `? not checked`. Record the trace as you go:
+Every other listed consumer renders as `? not checked`, and every importer as `imports this file`.
+An impact graph that reached nothing, or a `diff-only` run that built no graph, still sends `IMPACT: {}`, so the report's footnote can say why it drew no diagram.
+Record the trace as you go:
 
 ```json
 "impact_trace": [

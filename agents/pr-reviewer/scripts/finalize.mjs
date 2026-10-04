@@ -819,7 +819,13 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     // The `**Checked:**` line and the `What this change reaches` section, built from what the run
     // recorded (finalize/reach.mjs). A caller-supplied context.render value always wins.
     ...(context?.render?.COVERAGE === undefined && autoCoverage ? { COVERAGE: autoCoverage } : {}),
-    ...(context?.render?.IMPACT === undefined && autoImpact ? { IMPACT: autoImpact } : {}),
+    // An impact graph that reached nothing still sends `{}`, so the renderer can say why there is no
+    // diagram. A diff-only run sends `{}` too: prepare-review builds no graph without a workspace, and
+    // the renderer's `(no workspace to trace)` footnote needs an IMPACT to fire. Any other run with no
+    // impact graph sends nothing, and the report claims nothing about reach.
+    ...(context?.render?.IMPACT === undefined
+      && (autoImpact || (context?.impact && typeof context.impact === "object") || depth === "diff-only")
+      ? { IMPACT: autoImpact ?? {} } : {}),
   };
 
   const payload = buildReportPayload({
@@ -1368,6 +1374,19 @@ async function selfTest() {
           rendered.ok && rendered.stdout.includes("- 1 more dependency bump — transitive, no usage sites in this repo, not listed")
             && rendered.stdout.includes("2 dependency bumps (1 transitive, not listed) · 1 open-PR overlap</summary>")
             && !rendered.stdout.includes("`qs`"), rendered.stderr.trim());
+      }
+      {
+        const quietGraph = finalizeReview({ context: { ...ctx, impact: { symbols: [], modules: [], dependencies: [], overlaps: [] } }, judgments: j0 }).payload;
+        const noGraph = finalizeReview({ context: { ...ctx, impact: undefined }, judgments: j0 }).payload;
+        const diffOnly = finalizeReview({ context: { ...ctx, impact: undefined, workspace: { depthCapability: "diff-only" } }, judgments: j0 }).payload;
+        check("an impact graph that reached nothing sends IMPACT {}; so does a diff-only run with no graph; no impact graph otherwise sends no IMPACT",
+          JSON.stringify(quietGraph.IMPACT) === "{}" && JSON.stringify(diffOnly.IMPACT) === "{}" && !("IMPACT" in noGraph));
+        const withModules = finalizeReview({ context: { ...ctx, impact: { modules: [{ path: "src/h.ts", importers: 2, importer_paths: ["src/a.ts", "src/b.ts"] }] },
+          render: { at: "2026-10-02T06:00:00Z" } }, judgments: { ...j0, summary: "Reworks a private helper." } }).payload;
+        const modRendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, withModules, "self-test-auto-modules");
+        check("an auto-built module renders a changed file and its importers in the diagram",
+          modRendered.ok && modRendered.stdout.includes("```mermaid") && modRendered.stdout.includes('m1["src/h.ts<br/>file changed"]')
+            && modRendered.stdout.includes("- `src/h.ts` — changed file · imported by 2 files, not traced"), modRendered.stderr.trim());
       }
       check("a caller-supplied COVERAGE / IMPACT wins over the auto-built one",
         JSON.stringify(supplied.COVERAGE) === JSON.stringify({ files_read: 1, files_total: 1 })
