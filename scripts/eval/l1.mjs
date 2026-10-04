@@ -11388,12 +11388,13 @@ const isPollBlock = (block) =>
     const ctx = { mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, anomalies: [] };
     const quiet = finalizeReview({ context: { ...ctx, impact: { symbols: [], modules: [] } }, judgments: j }).payload;
     const none = finalizeReview({ context: ctx, judgments: j }).payload;
-    console.log(JSON.stringify({ modules: built?.modules, quiet: quiet.IMPACT ?? null, none: "IMPACT" in none }));`);
+    const diffOnly = finalizeReview({ context: { ...ctx, workspace: { depthCapability: "diff-only" } }, judgments: j }).payload.IMPACT ?? null;
+    console.log(JSON.stringify({ modules: built?.modules, quiet: quiet.IMPACT ?? null, none: "IMPACT" in none, diffOnly }));`);
   const probe = spawnSync(process.execPath, [probeFile], { encoding: "utf8", cwd: REPO_ROOT });
   rmSync(probeDir, { recursive: true, force: true });
-  s.check("G94e reach.mjs builds a module only for a file no listed export covers, and finalize sends IMPACT {} only when a graph exists",
+  s.check("G94e reach.mjs builds a module only for a file no listed export covers, and finalize sends IMPACT {} only when a graph exists or the run is diff-only",
     probe.status === 0 && (probe.stdout || "").trim().split("\n").pop()
-      === JSON.stringify({ modules: [{ path: "src/h.ts", importer_files: 1, importers: ["src/c.ts"] }], quiet: {}, none: false }),
+      === JSON.stringify({ modules: [{ path: "src/h.ts", importer_files: 1, importers: ["src/c.ts"] }], quiet: {}, none: false, diffOnly: {} }),
     (probe.stdout || probe.stderr || "").trim().slice(-300));
 
   // (f) the rule states what the renderer does

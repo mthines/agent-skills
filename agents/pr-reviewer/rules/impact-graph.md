@@ -188,7 +188,7 @@ trace:
 | a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set; with `symbol` set, kept even past the 25-file list) |
 
 Every other listed consumer renders as `? not checked`, and every importer as `imports this file`.
-An impact graph that reached nothing still sends `IMPACT: {}`, so the report's footnote can say why it drew no diagram.
+An impact graph that reached nothing, or a `diff-only` run that built no graph, still sends `IMPACT: {}`, so the report's footnote can say why it drew no diagram.
 Record the trace as you go:
 
 ```json

@@ -820,8 +820,11 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     // recorded (finalize/reach.mjs). A caller-supplied context.render value always wins.
     ...(context?.render?.COVERAGE === undefined && autoCoverage ? { COVERAGE: autoCoverage } : {}),
     // An impact graph that reached nothing still sends `{}`, so the renderer can say why there is no
-    // diagram; no impact graph at all sends nothing, and the report claims nothing about reach.
-    ...(context?.render?.IMPACT === undefined && (autoImpact || (context?.impact && typeof context.impact === "object"))
+    // diagram. A diff-only run sends `{}` too: prepare-review builds no graph without a workspace, and
+    // the renderer's `(no workspace to trace)` footnote needs an IMPACT to fire. Any other run with no
+    // impact graph sends nothing, and the report claims nothing about reach.
+    ...(context?.render?.IMPACT === undefined
+      && (autoImpact || (context?.impact && typeof context.impact === "object") || depth === "diff-only")
       ? { IMPACT: autoImpact ?? {} } : {}),
   };
 
@@ -1375,8 +1378,9 @@ async function selfTest() {
       {
         const quietGraph = finalizeReview({ context: { ...ctx, impact: { symbols: [], modules: [], dependencies: [], overlaps: [] } }, judgments: j0 }).payload;
         const noGraph = finalizeReview({ context: { ...ctx, impact: undefined }, judgments: j0 }).payload;
-        check("an impact graph that reached nothing sends IMPACT {}; no impact graph sends no IMPACT",
-          JSON.stringify(quietGraph.IMPACT) === "{}" && !("IMPACT" in noGraph));
+        const diffOnly = finalizeReview({ context: { ...ctx, impact: undefined, workspace: { depthCapability: "diff-only" } }, judgments: j0 }).payload;
+        check("an impact graph that reached nothing sends IMPACT {}; so does a diff-only run with no graph; no impact graph otherwise sends no IMPACT",
+          JSON.stringify(quietGraph.IMPACT) === "{}" && JSON.stringify(diffOnly.IMPACT) === "{}" && !("IMPACT" in noGraph));
         const withModules = finalizeReview({ context: { ...ctx, impact: { modules: [{ path: "src/h.ts", importers: 2, importer_paths: ["src/a.ts", "src/b.ts"] }] },
           render: { at: "2026-10-02T06:00:00Z" } }, judgments: { ...j0, summary: "Reworks a private helper." } }).payload;
         const modRendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, withModules, "self-test-auto-modules");
