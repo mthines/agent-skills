@@ -11342,8 +11342,8 @@ const isPollBlock = (block) =>
   const absent = clone();
   delete absent.IMPACT;
   const ra = render(absent);
-  s.check("G94b the footnote names why there is no diagram: nothing uses the change, no workspace, or nothing to connect",
-    re.ok && !re.out.includes("What this change reaches") && reachNote(re.out) === "no other file uses what changed"
+  s.check("G94b the footnote names why there is no diagram: the graph found no consumer or importer, no workspace, or nothing to connect",
+    re.ok && !re.out.includes("What this change reaches") && reachNote(re.out) === "impact graph found no consumer or importer"
       && rd.ok && reachNote(rd.out) === "no workspace to trace"
       && ru.ok && ru.out.includes("<summary>What this change reaches — ") && !ru.out.includes("```mermaid")
       && reachNote(ru.out) === "no connections to draw",
@@ -11401,7 +11401,7 @@ const isPollBlock = (block) =>
   const IG = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/impact-graph.md"), "utf8");
   s.check("G94f report-rendering.md states the 1-connection diagram, all three footnote entries, and the importer node; impact-graph.md names the modules input",
     RR.includes("The diagram renders with ≥ 1 connection") && !RR.includes("≥ 3 edges")
-      && ["reach diagram (no workspace to trace)", "reach diagram (no other file uses what changed)", "reach diagram (no connections to draw)"].every((t) => RR.includes(`\`${t}\``))
+      && ["reach diagram (no workspace to trace)", "reach diagram (impact graph found no consumer or importer)", "reach diagram (no connections to draw)"].every((t) => RR.includes(`\`${t}\``))
       && RR.includes("**Changed files to their importers.**") && RR.includes("`modules` is `[{path, importer_files, importers?}]`")
       && IG.includes("`modules[].importer_paths`") && IG.includes("`IMPACT: {}`"));
 }

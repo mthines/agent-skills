@@ -290,7 +290,7 @@ The same footnote says why the `What this change reaches` accordion has no diagr
 | State | Footnote entry |
 | --- | --- |
 | `IMPACT` yields no section, `RUN.depth` is `diff-only` | `reach diagram (no workspace to trace)` |
-| `IMPACT` yields no section otherwise | `reach diagram (no other file uses what changed)` |
+| `IMPACT` yields no section otherwise | `reach diagram (impact graph found no consumer or importer)` |
 | a section with no connection to draw | `reach diagram (no connections to draw)` |
 
 **Do not write a markdown link into a structured field.** `path`, `ask`, `body`, `key` and `note`

@@ -1196,7 +1196,7 @@ function main() {
     // could not look for consumers, and "nothing uses it" would read an empty list as a fact.
     if (!impactSection) {
       reachFootnote = String(run.depth) === "diff-only" ? "reach diagram (no workspace to trace)"
-        : "reach diagram (no other file uses what changed)";
+        : "reach diagram (impact graph found no consumer or importer)";
     } else if (!diagram) {
       reachFootnote = "reach diagram (no connections to draw)";
     }

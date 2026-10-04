@@ -66,7 +66,7 @@ review, where it does not exist.
 | `--overlaps <file>` | **takes a value** — a pre-fetched overlap payload, which skips the `gh` call. Omit it for the normal path: with `--repo` and `--pr` set the script fetches overlaps itself (one `gh pr list`, capped at 30 PRs) and degrades to no overlaps when `gh` is absent or unauthorized. A bare value-less `--overlaps` swallows the next argument. |
 | `--production <file>` | merge a telemetry exposure block, see [`telemetry.md`](./telemetry.md) |
 | `--no-rg` | force the JS search fallback; both backends are self-tested, so results agree |
-| `--self-test` | run the 48 offline cases and exit |
+| `--self-test` | run the 56 offline cases and exit |
 
 The script is deterministic and self-tested, in the same shape as `classify-shape.mjs`, and L1 executes its self-test.
 That matters more than it sounds: a routing input that is wrong 5 % of the time is worse than no routing input, because the tier decision is announced with it as justification.

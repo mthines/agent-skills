@@ -25,7 +25,7 @@ Quality — produced 3 → posted inline 0 · cleared 0 · carried forward 0 · 
 full · 12 lines in delta · tier deep · depth checkout
 Memories — 53 indexed · 0 used
 
-<sup>Nothing to report — standards (2 docs), optimality (2 judged), measurability (3 paths classified), integrations (not activated), severity, reach diagram (no other file uses what changed), 0 files skipped.</sup>
+<sup>Nothing to report — standards (2 docs), optimality (2 judged), measurability (3 paths classified), integrations (not activated), severity, reach diagram (impact graph found no consumer or importer), 0 files skipped.</sup>
 
 </details>
 
