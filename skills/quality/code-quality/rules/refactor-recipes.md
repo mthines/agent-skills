@@ -382,9 +382,9 @@ In authoring mode, recipes are reminders during the REFACTOR phase of TDD.
   3. **Genuine WHY but verbose** → rewrite as one line, lead with the constraint or surprise, drop the preamble.
   4. **Public API documentation that grew an essay** → convert to a docstring on the function; keep one-sentence summary + structured tags (`@param`, `@returns`, `@throws`, `@deprecated`, `@since`, `@example`, etc.); move rationale to a linked design doc or ADR. **Never delete a JSDoc / TSDoc / docstring block to satisfy this recipe** — the block is part of the function's API surface (IDE hover, type strippers, doc generators read it). Trim the prose; preserve the block, the summary line, and every contract-bearing tag. See `comments.md` § "Docstrings / API Documentation → Hard rule for auto-fix runs".
   5. **Multiple distinct concerns in bullets above one function** → split the function. The bullets become function names; the comment disappears.
-  6. **References the PR / ticket / task** → delete (git blame and the PR description are authoritative).
+  6. **References an internal PR / ticket / task** (TODOs included) → delete the reference (git blame and the PR description are authoritative). An upstream vendor or library issue link on a workaround stays.
 
-No hard length cap — a rare comment legitimately needs a paragraph (subtle invariant, hard-won workaround). Keep those; rewrite everything else to one line.
+Cap: one line by default, three lines at most. A WHY that needs more is a docstring (step 4) or design rationale in `docs/` — move it there.
 **Why:** Verbose comments accrete faster than they decay. They restate code, drift from it, lull readers into trusting stale narration, and crowd the diff on every unrelated change. The reader can read the code — comments must add what code can't: the WHY, the constraint, the surprise. Brevity preserves the signal that *this comment is worth reading*.
 **See:** [`comments.md` § Brevity — Trim to the WHY](./comments.md#brevity--trim-to-the-why).
 
