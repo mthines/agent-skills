@@ -84,16 +84,16 @@ For each non-trivial function (rough mental score per `cognitive-complexity.md`)
 - [ ] Does every comment say something the code doesn't?
 - [ ] Any comments that just restate what the code does — delete or rename.
 - [ ] Any commented-out code — delete.
-- [ ] Any TODO/FIXME without a tracking link or owner?
+- [ ] Any TODO/FIXME without a removal condition, or carrying an internal
+      ticket / issue / PR ID? Remove the ID; state the condition.
 - [ ] Are non-obvious WHYs documented (constraints, workarounds, tradeoffs)?
 - [ ] **Verbosity.** Any multi-sentence, paragraph-style, or "preamble"
       comment whose WHY would survive being trimmed to one line? Any
       comment longer than the code it describes? Any bullet-list above a
       single function (usually means split the function)? Apply **R35
-      (Trim Verbose Comment)**. There is no hard length cap — a genuinely
-      subtle constraint may justify a paragraph — but the default is the
-      shortest form that preserves the WHY. When in doubt, trim first,
-      delete second, keep third.
+      (Trim Verbose Comment)**. One line by default, three lines at most;
+      anything longer moves to the docstring or `docs/`. When in doubt,
+      trim first, delete second, keep third.
 
 ## Pass 5: Error Handling
 

@@ -36,16 +36,20 @@ Keep a comment if it captures one of these:
 3. **A subtle invariant.** "This list is always sorted; callers depend on
    that."
 4. **A workaround for a specific bug or limitation.** "Workaround for
-   [link to upstream issue]; remove when the fix lands in v2.4."
+   [link to upstream issue]; remove when the fix lands in v2.4." A link to
+   an upstream vendor or library issue is the only link a comment may
+   carry — never an internal ticket, issue, or PR (see
+   [When to Delete](#when-to-delete-a-comment) item 3).
 5. **A surprising performance choice.** "Using a `Map` here even though
    the list is small — measured 30% faster than `Array.find` on real input
    profiles."
 
 ## Brevity — Trim to the WHY
 
-A comment that earns its place still has to stay short. There is no hard
-length cap — a genuinely subtle constraint may justify a paragraph — but
-the default is **the shortest form that preserves the WHY**. Multi-sentence
+A comment that earns its place still has to stay short. **One line by
+default, three lines at most** — the shortest form that preserves the WHY.
+The cap applies to inline and block comments; docstrings follow
+[Docstrings / API Documentation](#docstrings--api-documentation). Multi-sentence
 narration, paragraph blocks above a 3-line function, and friendly
 "introductions" to obvious code are noise, even if every sentence is true.
 
@@ -58,10 +62,10 @@ Heuristics, in order:
    way is Y." → "Y." The reader is already reading the function.
 3. **No restating the diff.** "Added Z to fix bug N." belongs in the commit
    message and PR description, not in the source.
-4. **Two paragraphs ⇒ docstring or design doc.** If the explanation
-   genuinely needs paragraphs, it is API documentation (move to the
-   docstring) or design rationale (move to `docs/`, an ADR, or a linked
-   issue) — not an inline comment.
+4. **More than three lines ⇒ docstring or design doc.** If the
+   explanation does not fit in three lines, it is API documentation (move
+   to the docstring) or design rationale (move to `docs/` or an ADR) — not
+   an inline comment.
 5. **Bullet lists in comments are a smell.** Three bullets above one
    function usually means three separate things are happening in that
    function — split the function instead.
@@ -114,14 +118,19 @@ Delete or replace with code if the comment is one of these — **and** it is not
    // Better:
    const fullNameWithTitle = `${title} ${firstName} ${lastName}`;
    ```
-3. **References the current task / PR / ticket.** That's PR description
-   territory; comments rot when the PR ships.
+3. **References an internal task / PR / ticket** — anywhere in the
+   comment, TODOs included. That's commit message and PR description
+   territory; ticket IDs rot when the PR ships.
    ```javascript
    // Added for PR-1234 to fix login bug
+   // TODO(AI-1234): batch these calls
+   // ... rate-limits at 5/sec — see TICKET-432
    ```
-   Delete. Git blame and the commit message preserve this.
-4. **Is a TODO without a date or owner.** A TODO with no plan is just
-   ambient guilt. Either fix it now, file an issue with a link, or delete.
+   Delete the reference (and the comment, if nothing else is left). Git
+   blame and the commit message preserve it.
+4. **Is a TODO without a removal condition.** A TODO with no plan is
+   just ambient guilt. Either fix it now, state when it can be removed, or
+   delete it.
 5. **Describes a removed thing.**
    ```javascript
    // Removed: legacy auth flow
@@ -200,13 +209,22 @@ nobody knows whether it's important. If a future-you needs to recover it,
 
 These are useful when used sparingly and with discipline:
 
-- **TODO**: a known improvement, ideally with a link to a tracking issue.
+- **TODO**: a known improvement, with the condition that lets it be
+  done or removed.
 - **FIXME**: known broken, with a description of how it breaks.
 - **HACK**: known suboptimal, with the reason and a path forward.
 
-Without a tracker link or a date, these comments become permanent
-furniture. Better: file the issue, link to it, then delete the comment
-when the issue closes.
+Each one fits the three-line cap and carries no internal ticket ID — the
+tracker belongs in the commit message or PR description. Without a
+removal condition, these comments become permanent furniture.
+
+```javascript
+// Bad: ticket ID instead of a condition
+// TODO(AI-1234): clean this up
+
+// Good: says what is wrong and when it goes away
+// TODO: drop the v1 fallback once all clients send `schemaVersion`.
+```
 
 ## Why-Heavy, Not What-Heavy
 
@@ -220,7 +238,6 @@ That's what comments are for.
 for (const user of users) sendEmail(user);
 
 // Good: explains the why
-// Sequential (not parallel) because the email provider rate-limits at 5/sec
-// and we don't have a queue yet — see TICKET-432
+// Sequential: the email provider rate-limits at 5/sec and there is no queue yet.
 for (const user of users) await sendEmail(user);
 ```
