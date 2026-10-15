@@ -278,6 +278,13 @@ self-note.
 The carve-out is keyed on the marker (report) or the footer (inline finding), not on the login:
 any identity may post either, and a genuine self-note carries neither.
 
+**A `ui-verify` finding is included the same way.** A review comment whose body contains
+`<!-- ui-verify:finding` is always included, whoever posted it — including `github-actions[bot]`
+and the current user — because the `review-loop --ui` lane posts it under the loop's own identity
+for this skill to fix and resolve. Classify it `actionable`: it reports a failing spec or a
+`critical`/`high` defect observed on the live preview. The lane's status comment, whose body starts
+with `<!-- ui-verify:lane -->`, is the opposite: always **exclude** it — it is a run summary, not feedback.
+
 ## Author inclusion — humans AND AI reviewers
 
 Process comments from **both** human teammates **and** AI / bot reviewers
@@ -292,7 +299,7 @@ Concretely:
 | --------------------------------------------------------------------------------------------- | ---------------------- |
 | Human teammate                                                                                | **Include**            |
 | AI code-review bot — `claude[bot]`, `coderabbitai[bot]`, `sourcery-ai[bot]`, `sweep-ai[bot]`  | **Include**            |
-| The current user (GraphQL `viewer` login, normalized)                                         | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. **Except** any body carrying `<!-- PR_REVIEWER_REPORT -->` — sticky issue comment or legacy review body alike — or the `pr-reviewer` inline-finding footer, which are always included (see *Carve-out* above). |
+| The current user (GraphQL `viewer` login, normalized)                                         | **Exclude** by default — self-notes, not feedback. Surface count in Phase 7. **Except** any body carrying `<!-- PR_REVIEWER_REPORT -->` — sticky issue comment or legacy review body alike — or the `pr-reviewer` inline-finding footer, or a `<!-- ui-verify:finding` marker, which are always included (see *Carve-out* above). |
 | Noise bots — `dependabot[bot]`, `renovate[bot]`                                               | **Exclude** unless the body contains a fenced `suggestion` block          |
 | CI summary bots — `github-actions[bot]`                                                       | **Exclude** unless the body contains a fenced `suggestion` block          |
 

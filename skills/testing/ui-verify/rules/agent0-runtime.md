@@ -100,12 +100,12 @@ In place of the `Task(subagent_type: "aw-tester", …)` block in [`runner.md § 
     Work in <the checkout directory>.
     Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
     Specs file: .agent/{branch}/.ui-verify/specs.md
-    Mode: --all --auto-capture
+    Mode: --all --auto-capture --record-video
 )
 ```
 
 The input lines are the `runner.md` block's, unchanged, so the verdict shape is identical.
-Drop `--auto-capture` under `--no-screenshots`, exactly as there.
+Drop `--auto-capture` under `--no-screenshots` and `--record-video` under `--no-recording`, exactly as there.
 The sub-agent is one level deep and dispatches nothing; `aw-tester` never does.
 
 A reply that opens with a refusal or a `BLOCKED` line is `inconclusive: aw-tester refused (<first line>)`, never a verdict.
