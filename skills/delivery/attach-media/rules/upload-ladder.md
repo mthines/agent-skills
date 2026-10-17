@@ -69,13 +69,15 @@ It is undocumented, so treat a `404` as `not attached (upload endpoint unavailab
 TOKEN=$(gh auth token 2>/dev/null || echo "${GH_TOKEN:-$GITHUB_TOKEN}")
 REPO_ID=$(curl -fsS -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/$REPO" | jq -r .id)
 
+enc() { jq -rn --arg s "$1" '$s|@uri'; }   # percent-encode one query value, no trailing newline
+
 upload() {   # $1 = absolute path, $2 = MIME type → prints the asset URL
   curl -fsS -X POST \
     -H "Authorization: Bearer $TOKEN" \
     -H "Accept: application/vnd.github+json" \
     -H "Content-Type: application/octet-stream" \
     --data-binary "@$1" \
-    "https://uploads.github.com/user-attachments/assets?name=$(basename "$1" | jq -sRr @uri)&content_type=$2&repository_id=$REPO_ID" \
+    "https://uploads.github.com/user-attachments/assets?name=$(enc "$(basename "$1")")&content_type=$(enc "$2")&repository_id=$REPO_ID" \
   | jq -r .url
 }
 ```
