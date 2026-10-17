@@ -105,6 +105,9 @@ ui_settled():
     if UI_MECH == "off": return true
     head = current remote head SHA
     if UI_LAST.head == head: return verdict_settles(UI_LAST)
+    if UI_RUNNING and UI_RUNNING.head != head:
+        wait for the stale run as below and record it in UI_LAST   # U2 launches only when none is in flight
+        on timeout: clear UI_RUNNING; UI_LAST.note = "stale lane run on <old sha7> abandoned"
     if UI_RUNNING and UI_RUNNING.head == head:
         wait for it: poll every 60 s, at most UI_WAIT_MIN minutes
     elif UI_RUNS < UI_CAP:
