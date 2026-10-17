@@ -38,7 +38,7 @@ Skill("attach-media", "<pr-url|#n> <file>[#alt] ... [--to body|comment|urls] [--
 | --- | --- | --- |
 | `<pr-or-issue-ref>` | the current branch's open PR | A PR or issue URL, or `#<n>` in the current repo. |
 | `<file>[#alt]` | — (required, 1–50) | A local file. Text after `#` is the image's alt text; video has none. |
-| `--to body` | yes | Write into the owned region of the PR or issue body. Re-runs replace the region. |
+| `--to body` | yes | Write into the owned region of the PR or issue body. Re-runs merge into the region by filename. |
 | `--to comment` | — | Post one new comment instead. Use for evidence attached to a specific event. |
 | `--to urls` | — | Upload only, through rung 2, and print one Markdown line per file for the caller to embed. Use it for a review thread or any body the caller writes itself. Writes nothing to GitHub except the upload. |
 | `--heading <text>` | `Screenshots` | The `###` heading inside the owned region. |
@@ -75,14 +75,16 @@ Under `--to urls`, skip this step and print the lines from [`rules/upload-ladder
 
 Full contract: [`rules/body-region.md`](./rules/body-region.md).
 The region is delimited by `<!-- attach-media:v1 -->` … `<!-- /attach-media:v1 -->`.
-There is at most one per body, and a re-run replaces it whole.
+There is at most one per body, and a re-run merges by filename.
 
 ```markdown
 <!-- attach-media:v1 -->
 ### Screenshots
 
+<!-- attach-media:file=revenue-widget.png -->
 ![Dashboard with the new revenue widget](https://github.com/user-attachments/assets/1f0c…)
 
+<!-- attach-media:file=spec-1.webm -->
 https://github.com/user-attachments/assets/9a2d…
 <!-- /attach-media:v1 -->
 ```

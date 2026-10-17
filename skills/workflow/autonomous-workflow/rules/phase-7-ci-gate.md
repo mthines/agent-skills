@@ -390,7 +390,7 @@ Pass the explicit `CAPTURE` files first, then each spec's `*-auto-final.png`, up
 Skill("attach-media", "<pr-url> <path>#<label> ... --to body")
 ```
 
-`attach-media` replaces the region `create-pr` Step 6.2 may have written, so the PR shows the preview, not the local run.
+`attach-media` merges into the region `create-pr` Step 6.2 may have written by filename, so a preview capture replaces its same-named local capture and every other attached file stays.
 Log its first report line; a `not attached` line is advisory, like the rehearsal itself:
 
 ```markdown

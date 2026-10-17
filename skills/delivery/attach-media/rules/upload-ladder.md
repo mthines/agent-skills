@@ -29,7 +29,7 @@ Condition: `gh "$KIND" edit --help | grep -q -- '--attach'` and `gh auth status`
 
 1. Read the current body: `gh "$KIND" view "$N" -R "$REPO" --json body -q .body > "$WORK/body.md"`.
 2. Splice the owned region into `$WORK/body.md` per [`body-region.md`](./body-region.md).
-   Reference each file by its **absolute local path**:
+   Precede each entry with its `<!-- attach-media:file=<basename> -->` marker, then reference the file by its **absolute local path**:
    - an image as `![<alt>](<abs-path>)`;
    - a video as `![](<abs-path>)` alone in its own paragraph, with a blank line above and below.
 3. Upload and rewrite in one call:
@@ -91,7 +91,7 @@ upload() {   # $1 = absolute path, $2 = MIME type → prints the asset URL
 | `mov` | `video/quicktime` |
 | `webm` | `video/webm` |
 
-Then splice the region, putting each returned URL where rung 1 put the local path, and write the body:
+Then splice the region, writing each entry's `<!-- attach-media:file=<basename> -->` marker and putting each returned URL where rung 1 put the local path, and write the body:
 
 ```bash
 jq -n --rawfile body "$WORK/body.md" '{body: $body}' \
