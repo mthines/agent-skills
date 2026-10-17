@@ -4,24 +4,23 @@ description: >
   Bounded review-apply-resolve convergence loop for a GitHub PR, drafts
   included. Runs up to N=5 iterations of pr-reviewer → implement-suggestion
   (--resolve-all) → polish simplify, converging until every review thread is
-  resolved through a fix OR a reply, so the PR ends with zero open threads and
-  only genuine human-judgment flags left open. Convergence also means CI is
-  not red: each push is check-read and a red mechanical failure delegated to
+  resolved through a fix OR a reply, with only human-judgment flags left open.
+  Convergence also means CI is not red: a red mechanical failure goes to
   ci-auto-fix (--no-ci). On convergence it refreshes the PR description
-  (--no-refresh) and, on a UI PR, runs ui-verify against the live preview
-  once, report-only (--no-preview-run). When the last review still stands
-  (unmoved head, open unreplied threads), iteration 1 applies before
-  re-reviewing. --merge squash-merges on a clean convergence, an approving
-  verdict, and green CI.
+  (--no-refresh) and, on a UI PR, runs ui-verify against the preview once,
+  report-only (--no-preview-run). --ui instead runs ui-verify in a parallel
+  session throughout and resolves its findings in the loop. When the last
+  review still stands, iteration 1 applies before re-reviewing. --merge
+  squash-merges on a clean convergence, an approving verdict, and green CI.
   Run it at the TOP LEVEL of a session holding a sub-agent dispatch tool,
   never nested in a sub-agent. Use after opening a draft PR to converge it
   before undrafting. Triggers on "/review-loop".
 disable-model-invocation: false
-argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--merge]'
+argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--ui] [--merge]'
 license: MIT
 metadata:
   author: mthines
-  version: '2.0.0'
+  version: '2.1.0'
   workflow_type: command
   tags:
     - review
@@ -33,6 +32,7 @@ metadata:
     - orchestrator
     - ci
     - merge
+    - ui-verify
 ---
 
 # review-loop — Bounded Review-Apply-Resolve Convergence
@@ -209,12 +209,15 @@ Everything else is a flag.
 | `--no-refresh` | Run the convergence loop as normal but skip the final PR-description refresh and Linear note. |
 | `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–8) and `autonomous-workflow` (Phase 7) both do. |
 | `--no-preview-run` | Skip [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit), the report-only ui-verify run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
+| `--ui` | Run `ui-verify` against the live preview **in parallel** with the loop — in a sibling session, a background sub-agent, or inline when neither exists — and resolve its findings inside the loop. Each lane run posts its failing specs and its `critical`/`high` adversarial and telemetry findings as review threads (`ui-verify run --post-findings`); sub-step B fixes and resolves them; a new lane run checks each new head. Clean convergence then also needs a settled lane run on the final head. Authors the spec first when the PR has none. Replaces Step 1.6. Full procedure: [`rules/ui-lane.md`](./rules/ui-lane.md). |
 | `--merge` | Merge the PR (squash) on the first agent approval. After the loop, [Step 2.5](#step-25-merge-under---merge-on-approval) merges **only** when the run reached clean convergence (`all-threads-resolved` — every non-blocking comment fixed or answered), the final review is an approval (pr-reviewer `PASS`), and CI is green. It undrafts first (the one case that overrides *never undraft*). When Step 2 rewrote the description after a non-PASS final review, it first runs one gates-only [post-refresh re-review](#post-refresh-re-review--before-the-gates) and gates on that verdict instead. It never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI — it reports why and stops. |
 
 **Incompatible combinations**, refused at Step 0:
 
 | Combination | Behaviour |
 | --- | --- |
+| `--ui` + `--no-feedback` | **Refuse.** The lane hands its findings to sub-step B, which report-only skips. Print `--ui needs the apply loop; drop --no-feedback.` and exit. |
+| `--ui` + `--no-preview-run` | **Refuse.** `--ui` is a preview run. Print `--ui runs the preview verification; drop --no-preview-run.` and exit. |
 | `--merge` + `--no-feedback` | **Refuse.** `--no-feedback` applies nothing and never converges, so "fix the non-blocking comments before merging" is impossible and there is no approval to merge on. Print `--merge needs the apply loop; drop --no-feedback.` and exit. |
 
 ## Procedure
@@ -389,6 +392,12 @@ if [[ " $ARGUMENTS " == *" --merge "* ]]; then
   MERGE=1
 fi
 
+# --ui: run ui-verify in a parallel lane and resolve its findings in the loop — rules/ui-lane.md.
+UI=0
+if [[ " $ARGUMENTS " == *" --ui "* ]]; then
+  UI=1
+fi
+
 CAP=${cap_flag:-5}
 ITERATION=0
 
@@ -405,7 +414,19 @@ if [ "$MERGE" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
   echo "--merge needs the apply loop; drop --no-feedback."
   exit 1
 fi
+
+# Refuse --ui without the apply loop, or alongside an explicit opt-out of the preview run.
+if [ "$UI" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
+  echo "--ui needs the apply loop; drop --no-feedback."
+  exit 1
+fi
+if [ "$UI" -eq 1 ] && [ "$NO_PREVIEW_RUN" -eq 1 ]; then
+  echo "--ui runs the preview verification; drop --no-preview-run."
+  exit 1
+fi
 ```
+
+Under `--ui`, run [`rules/ui-lane.md`](./rules/ui-lane.md) Steps U0 and U1 now, before the loop: author the spec when the PR has none, and pick the lane mechanism.
 
 A helper for the exit check — the count of **unresolved** review threads:
 
@@ -454,6 +475,10 @@ STOP_REASON   = "cap-reached"  # the default is only correct if the WHILE CONDIT
                                # exits on its last allowed iteration too.
 while ITERATION < CAP:
     ITERATION += 1
+
+    # --ui: read a finished lane run and launch one on a moved head — never blocks.
+    # rules/ui-lane.md § Step U3. Its threads reach sub-step B through the PR.
+    if UI == 1: ui_lane_tick()
 
     # Iteration 1 only: when the last pr-reviewer review still stands, apply its
     # open threads before re-reviewing. The check is one self-contained Bash
@@ -510,8 +535,14 @@ while ITERATION < CAP:
     # (iteration 1 can reach this exit before sub-step D has ever run), so the
     # loop can never converge on a build it has not looked at.
     if NEW_FINDINGS == false AND unresolved_thread_count() == 0 AND ci_is_settled():
-        STOP_REASON = "all-threads-resolved"
-        break   # every thread resolved (fix or reply), nothing new to fix, CI not red
+        # Under --ui, ui_settled() may block for the lane run on the current head
+        # (rules/ui-lane.md § Step U4). When that run posted threads it sets
+        # NEW_FINDINGS = true and returns false, so the iteration goes on to sub-step B.
+        if UI == 0 or ui_settled():
+            STOP_REASON = "all-threads-resolved"
+            break   # every thread resolved (fix or reply), nothing new to fix, CI not red
+        if STOP_REASON == "ui-red":
+            break   # the lane saw a red it could not post — report it, never converge over it
 
     unresolved_before = unresolved_thread_count()
 
@@ -767,6 +798,7 @@ Skip this step entirely when **any** of:
 - `NO_PREVIEW_RUN == 1` — the caller owns preview verification (`autonomous-workflow`
   passes this; its Phase 7 rehearses the same specs).
 - `NO_FEEDBACK == 1` — report-only mode applied nothing, so there is nothing new to verify.
+- `UI == 1` — the [`--ui` lane](./rules/ui-lane.md) already verified the final head and its findings went through the loop; report its line instead.
 - the loop returned a dispatch skip (no dispatch tool, nested dispatch, `pr-reviewer` not a dispatchable agent type, Agent0 install failed) — no run happened.
 
 Otherwise dispatch it **once**, regardless of iteration count, **always with `--unattended`**:
@@ -925,6 +957,9 @@ verdict from [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit) is
 **report-only and never gates the merge** (matching its treatment everywhere
 else); surface a `red` preview verdict in the report so the human sees it, but do
 not let it block or force the merge.
+Under `--ui` the lane is part of convergence, so it **does** gate: when the lane's last run on
+the final head reported `verdict: red`, report `not merged (UI lane red on <sha7>)` and stop.
+An `inconclusive` lane does not block the merge; name it in the report.
 
 When every gate passes:
 
@@ -952,7 +987,7 @@ After the loop exits (converged, no-progress, or at cap), emit a compact summary
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | reviewer-refused (Agent0) | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level) | skipped (pr-reviewer is not a dispatchable agent type here) | skipped (Agent0 install failed: <reason>)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | reviewer-refused (Agent0) | ui-red (lane findings not posted) | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level) | skipped (pr-reviewer is not a dispatchable agent type here) | skipped (Agent0 install failed: <reason>)>
 # Report the STOP_REASON the loop actually set — never re-derive it from the
 # iteration count. `Iterations: 1 of 1` is what report-only, a first-iteration
 # convergence, and a CAP=1 run all look like from the outside.
@@ -976,7 +1011,8 @@ Open threads at exit: <count>
 CI at exit: <green | pending | red (<failing check names>) | error (<verbatim query failure>) | not run (--no-ci) | none on this repo>
   ci-auto-fix handoffs: <CI_HANDOFFS> of 2
 
-UI verify: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | inconclusive (no deployment lookup on this access path) | inconclusive (<reason> at exit) | not run (no ui-verify block) | not run (empty ui-verify block) | not run (<reason>) | not run (unrecognised outcome: <verbatim>) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (ui-verify not available)>
+UI verify: <green (<N> specs on <url>) | red (<N> failing on <url>) — review before undrafting | inconclusive (preview not deployed at exit) | inconclusive (no deployment lookup on this access path) | inconclusive (<reason> at exit) | not run (no ui-verify block) | not run (empty ui-verify block) | not run (<reason>) | not run (unrecognised outcome: <verbatim>) | skipped (--no-preview-run) | skipped (--no-feedback) | skipped (ui-verify not available) | replaced by the --ui lane (see UI lane)>
+UI lane: <the rules/ui-lane.md § Report line value | not requested (no --ui)>
 
 PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh)>
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
@@ -984,7 +1020,7 @@ Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skip
 Merge re-review: <PASS | WARN | FAIL | refused | not needed (final verdict PASS) | not needed (description unchanged) | not run (<STOP_REASON>) | not requested (no --merge)>
 # Step 2.5's post-refresh re-review. "not needed" names which condition made it unnecessary.
 
-Merge: <merged (squash) | not merged (verdict <V> — not a clean approval) | not merged (post-refresh re-review refused) | not merged (post-refresh re-review found <N> new findings) | not merged (converged, awaiting CI) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
+Merge: <merged (squash) | not merged (verdict <V> — not a clean approval) | not merged (post-refresh re-review refused) | not merged (post-refresh re-review found <N> new findings) | not merged (converged, awaiting CI) | not merged (UI lane red on <sha7>) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
 # Only ever "merged" when Step 2.5's four gates all passed. Any other outcome
 # names why, and the PR is left converged and review-ready for a human.
 
@@ -1020,6 +1056,7 @@ threads over a red build is not a review-ready PR.
 - **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
 - **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.
 - **The ui-verify run is report-only and never part of convergence.** Step 1.6 runs after the loop has already decided convergence (threads-resolved + CI-settled); its verdict is surfaced for the human, never gates the loop, and never undrafts — matching `autonomous-workflow` Phase 7. It runs at most once per invocation, reads only the committed ui-verify block, `v2` or `v1` (never `.agent/{branch}/specs.md`), and `autonomous-workflow` opts out via `--no-preview-run` because Phase 7 rehearses the same specs. A missing `ui-verify` is a silent skip, not a failure.
+- **Under `--ui`, the lane is part of convergence and only reports.** The lane posts threads and never commits; sub-step B stays the one writer on the branch. A clean convergence needs a settled lane run on the final head, at most `UI_CAP = 3` lane runs per invocation, one in flight at a time; an `inconclusive` or `NOT RUN` lane never blocks ([`rules/ui-lane.md`](./rules/ui-lane.md)).
 - **Never fix CI in this context.** Sub-step D classifies and delegates to `ci-auto-fix`; it applies no fix itself, and every `ci-auto-fix` refusal (no `--no-verify`, no `continue-on-error`, no skipped suites, no weakened assertions) holds transitively.
 - **Never carry CI watch state — query it.** Sub-step D reads check state statelessly at the current remote head and writes nothing; it never records a verdict or a spent budget for another phase to inherit, and it never reintroduces a cross-phase watch-state file ([`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md) — *watch state is queried, never carried*). `CI_HANDOFFS` is counted inside this run only.
 
@@ -1035,5 +1072,5 @@ threads over a red build is not a review-ready PR.
 | `create-pr` | Upstream caller — delegates post-draft review to `review-loop` after opening the draft PR. |
 | `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
 | `ci-auto-fix` | Sub-step D: dispatched as a subagent on a red check, capped at 2 handoffs per run. Owns the fix; this loop only classifies and delegates. Skipped under `--no-ci`. |
-| `ui-verify run` | Step 1.6: dispatched once at exit on a UI PR to run the committed spec against the preview deployment. Report-only — never gates convergence or undrafts. Skipped under `--no-preview-run` (which `autonomous-workflow` passes, its Phase 7 owning the same rehearsal) or when the skill is absent. Pairs with `create-pr` Step 6.4, which authored the spec. |
+| `ui-verify run` | Step 1.6: dispatched once at exit on a UI PR to run the committed spec against the preview deployment. Report-only — never gates convergence or undrafts. Skipped under `--no-preview-run` (which `autonomous-workflow` passes, its Phase 7 owning the same rehearsal) or when the skill is absent. Pairs with `create-pr` Step 6.4, which authored the spec. Under `--ui`, replaced by the lane: `ui-verify run --unattended --post-findings --wait-preview 15`, per head, in parallel ([`rules/ui-lane.md`](./rules/ui-lane.md)). |
 | `implement-suggestion --watch` | **Sibling, never nested.** `--watch` waits on an out-of-process reviewer and applies what it posts (apply + push + stop, and it reads CI only as a stop reason); this loop dispatches its own reviewer and adds `--resolve-all`, simplify, CI delegation, and the description refresh. The hard rule *one `implement-suggestion` per iteration, no `--watch`* keeps them from stacking. |

@@ -11407,4 +11407,55 @@ const isPollBlock = (block) =>
       && IG.includes("`modules[].importer_paths`") && IG.includes("`IMPACT: {}`"));
 }
 
+// ── G95: ui-verify recordings, Dash0 telemetry check, and the review-loop --ui lane ──
+// Three contracts that only hold if every surface agrees: the Playwright dispatch must pass
+// --record-video (a runner that supports video records nothing if no caller asks), the
+// telemetry check must stay verdict-neutral and use the Dash0 web-events tool, and the --ui
+// lane only converges if the marker ui-verify posts is the marker implement-suggestion
+// refuses to self-filter — two spellings of one string drift silently otherwise.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const RUN = readOr("skills/testing/ui-verify/rules/runner.md");
+  const CONTRACT = readOr("skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
+  const AWT = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+  const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
+  const TEL = readOr("skills/testing/ui-verify/rules/telemetry.md");
+  const POST = readOr("skills/testing/ui-verify/rules/post-findings.md");
+  const IS = readOr("skills/workflow/implement-suggestion/rules/comment-fetching.md");
+  const RL = readOr("skills/quality/review-loop/SKILL.md");
+  const LANE = readOr("skills/quality/review-loop/rules/ui-lane.md");
+
+  // a. recordings: the contract defines the option, aw-tester implements it, ui-verify wires it
+  //    on in the Playwright block (and its Agent0 mirror) but never in the Chrome block.
+  const modes = RUN.match(/^\s*Mode: .*$/gm) || [];
+  const recordModes = modes.filter((m) => m.includes("--record-video")).length;
+  s.check("G95a --record-video is defined by the contract, implemented by aw-tester, and passed only by ui-verify's Playwright dispatches",
+    /### Record video \(a Playwright run option\)/.test(CONTRACT) && /recordings:/.test(CONTRACT)
+      && /recordVideo: cfg\.video/.test(AWT) && /video\.saveAs\(cfg\.video\)/.test(AWT)
+      && recordModes === 1
+      && /Mode: --all --auto-capture --record-video/.test(A0),
+    `Mode lines with --record-video in runner.md: ${recordModes} (want exactly 1, the Playwright block)`);
+
+  // b. the telemetry check is wired in, verdict-neutral, and reads Dash0 web events with lag handling.
+  s.check("G95b runner Step 4c runs the Dash0 telemetry check, which never changes the verdict and waits out ingestion lag",
+    /## Step 4c: Telemetry check/.test(RUN) && RUN.includes("](./telemetry.md)")
+      && /getWebEvents/.test(TEL) && /never changes the verdict/i.test(TEL)
+      && /at most 4 attempts/.test(TEL) && /telemetry: skipped \(no Dash0 MCP server connected\)/.test(TEL));
+
+  // c. one marker, three files: ui-verify posts it, implement-suggestion includes it, the lane reads it.
+  const MARK = "<!-- ui-verify:finding";
+  s.check("G95c the ui-verify finding marker is posted by ui-verify and never self-filtered by implement-suggestion",
+    POST.includes(MARK) && IS.includes("`<!-- ui-verify:finding` is always included") && POST.includes("<!-- ui-verify:lane -->") && LANE.includes("<!-- ui-verify:lane -->"));
+
+  // d. --ui: parsed, refused with --no-feedback / --no-preview-run, gated at convergence, and the
+  //    lane only reports (unattended + post-findings), never fixes.
+  s.check("G95d review-loop --ui parses, refuses its two conflicts, gates convergence on ui_settled(), and launches a report-only lane",
+    /if \[\[ " \$ARGUMENTS " == \*" --ui "\* \]\]; then\n\s+UI=1/.test(RL)
+      && RL.includes("--ui needs the apply loop; drop --no-feedback.")
+      && RL.includes("--ui runs the preview verification; drop --no-preview-run.")
+      && /if UI == 0 or ui_settled\(\):/.test(RL)
+      && LANE.includes("/ui-verify run <PR-URL> --unattended --post-findings --wait-preview 15")
+      && /UI_CAP\s+= 3/.test(LANE));
+}
+
 process.exit(s.report() ? 0 : 1);

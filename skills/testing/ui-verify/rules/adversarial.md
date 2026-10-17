@@ -45,7 +45,7 @@ Why it is shaped this way, and the sources behind the catalog: [`references/adve
 | `Playwright bin:` | `.agent/{branch}/.aw-tester/playwright-bin`, written by `aw-tester`. Playwright driver only. |
 | `Output dir:` | `.agent/{branch}/.ui-verify/adversarial/`. Everything this pass writes goes here. |
 | `Lessons:` | Matched `ui-verify-lessons` bodies the orchestrator passed in, or `none`. Apply them as probe constraints (e.g. "inputs debounce 300 ms"). |
-| `Mode:` | `--driver playwright` or `--driver chrome`, plus `--no-screenshots` when the caller passed it. |
+| `Mode:` | `--driver playwright` or `--driver chrome`, plus `--no-screenshots` and `--no-recording` when the caller passed them. |
 
 ## The pass never changes the verdict
 
@@ -145,14 +145,20 @@ A probe is a **finding** only when one of these oracles fires.
 
    ```ts
    import { defineConfig } from '@playwright/test';
-   export default defineConfig({ testDir: '.', testMatch: 'probes.spec.ts', workers: 1, timeout: 60_000, reporter: 'line' });
+   export default defineConfig({
+     testDir: '.', testMatch: 'probes.spec.ts', workers: 1, timeout: 60_000, reporter: 'line',
+     outputDir: './test-results',
+     // ADV_VIDEO=0 under --no-recording; Playwright writes test-results/<test>/video.webm per probe
+     use: { video: process.env.ADV_VIDEO === '0' ? 'off' : 'on' },
+   });
    ```
 
 3. When the repo has no `node_modules/@playwright/test`, link `aw-tester`'s branch-local install so the probe file's import resolves: `ln -sfn "$(pwd)/.agent/{branch}/.aw-tester/node_modules" "<output dir>/node_modules"`.
    When neither exists, return `status: skipped` with reason `no playwright install` — never install into the project.
-4. Export the `ADV_*` variables the template reads from the overlay — `ADV_OUT`, `ADV_BASE_URL`, `ADV_STORAGE_STATE`, `ADV_BYPASS_NAME`, `ADV_BYPASS_ENV` (the env var **name**, never its value), `ADV_ALLOWED_ORIGINS`, `ADV_MOCK_ENDPOINTS`, `ADV_MASK_TESTIDS`, and `ADV_PASS_SHOTS=0` under `--no-screenshots`.
+4. Export the `ADV_*` variables the template reads from the overlay — `ADV_OUT`, `ADV_BASE_URL`, `ADV_STORAGE_STATE`, `ADV_BYPASS_NAME`, `ADV_BYPASS_ENV` (the env var **name**, never its value), `ADV_ALLOWED_ORIGINS`, `ADV_MOCK_ENDPOINTS`, `ADV_MASK_TESTIDS`, `ADV_PASS_SHOTS=0` under `--no-screenshots`, and `ADV_VIDEO=0` under `--no-recording` (the config in item 2 reads it).
 5. Run one category at a time with `"$(cat "<Playwright bin>")" test --config "<output dir>/playwright.config.ts" --grep "<category>:"`, then read the new lines of `results.jsonl` **and open every `after` image written** before planning the next batch.
    A DOM signal alone does not prove what the user sees; the `overflow`, `silent-failure`, and `stuck-loading` oracles are judged from the image.
+   Unless `ADV_VIDEO=0`, move the `video.webm` of every probe whose outcome is `finding` or `probe-error` to `<output dir>/recordings/<ADV-NN>-<slug>.webm`, add its path to that result's `evidence`, and delete `test-results/` before the next batch — a passing probe's video is not kept ([`recording.md`](./recording.md)).
 6. A non-empty `signals.blocked` means the app sent a mutation to an origin outside the allow-list, and the guard aborted it. Never widen the list yourself.
    When the probe's flow still completed (its success state appeared), the request was incidental — analytics, a beacon: keep the result and name the origin in `notes`.
    When the flow did not complete, mark the probe `skipped` with reason `blocked <origin> — add it to adversarial.allowed_origins in preview.yml if it is the app's own API`.

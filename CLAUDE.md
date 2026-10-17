@@ -75,7 +75,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `observe-run` (`Skill() + /`) — runs a command and grades the telemetry that run emitted against behavioral assertions only
 - `optimize-approach` (`Skill()`) — approach-level optimality lens; modes `report` / `apply` / `plan`; standalone `--deep` also judges `critical deep` lens alternatives. Never blocks
 - `polish` (`/`) — re-runnable pre-PR branch quality gate (review + simplify)
-- `review-loop` (`Skill()`) — bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5. Run at the top level of a session that holds a dispatch tool
+- `review-loop` (`Skill()`) — bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5; `--ui` runs `ui-verify` in a parallel lane and resolves its findings. Run at the top level of a session that holds a dispatch tool
 - `dx` (`/`) — CLI / shell-script DX review
 - `review-branch` (`/`) — PR-less sibling of `review-loop`; findings bus `.agent/{branch}/findings.jsonl`, zero GitHub calls
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule
@@ -97,7 +97,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
 - `e2e-pr-stabilizer` (`/`) — local-first Playwright E2E stabilizer for one PR; modes `stabilize` / `optimize`
-- `ui-verify` (`Skill()` + `/`) — Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); `author` adds out-of-bounds specs from a PR-scoped brainstorm; the runner adapts the route but checks every outcome with evidence, then tries to break each passing spec
+- `ui-verify` (`Skill()` + `/`) — Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); `author` adds out-of-bounds specs from a PR-scoped brainstorm; the runner adapts the route but checks every outcome with evidence, then tries to break it, records it, and checks its Dash0 web events
 
 ### `design/` — UI, visual, interaction
 

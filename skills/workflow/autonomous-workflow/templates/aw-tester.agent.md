@@ -84,6 +84,7 @@ Resolve the following from the invocation prompt:
 | `mode` | `--bail-on-first-red` (default) or `--all` | No |
 | `headed` | `--headed` flag | No |
 | `auto_capture` | `--auto-capture` flag — off unless passed; see [Auto-capture](#auto-capture-always-on-documentation-screenshots) | No |
+| `record_video` | `--record-video` flag — off unless passed; see [Record video](#record-video-one-webm-per-spec) | No |
 
 ### 3. Load the aw-target
 
@@ -385,6 +386,47 @@ await page.screenshot({
   every distinct visual state; a spec wanting a specific intermediate frame adds
   an explicit `CAPTURE` step.
 
+### Record video (one `.webm` per spec)
+
+When the invocation passed `--record-video`, record each spec per the
+[spec-run contract § Record video](../rules/spec-run-contract.md#record-video-a-playwright-run-option).
+`ui-verify run`/`verify` pass this flag on the Playwright driver; the executor's
+Phase 4 hot loop does not.
+
+- **Grammar spec.** Give each spec its own context (this overrides the
+  one-context-per-batch rule above) and save its video when the context closes:
+
+  ```ts
+  // per spec, with --record-video
+  const context = await browser.newContext({
+    ...contextOptions,
+    recordVideo: { dir: '.agent/<branch>/.aw-tester/recordings/.raw', size: { width: 1280, height: 720 } },
+  });
+  const page = await context.newPage();
+  // … the spec's steps …
+  const video = page.video();
+  await context.close();                       // the video is finalized on close
+  await video?.saveAs('.agent/<branch>/.aw-tester/recordings/spec-1.webm').catch(() => {});
+  await video?.delete().catch(() => {});
+  ```
+
+- **Intent spec.** Set `video` in `probe-in.json` (a `.webm` path) only on the
+  launches that grade the spec — the replay launch, each commit launch, and the
+  final probe — naming them `<spec-id>-<seq>.webm`; never on an exploratory
+  probe. After the spec, join the segments when `ffmpeg` is on `PATH`, else keep
+  them:
+
+  ```bash
+  # concat resolves list entries against the list file's directory, so write basenames
+  (cd "$AW_DIR/recordings" && ls spec-1-*.webm | sort -V | sed "s/.*/file '&'/") > "$AW_DIR/recordings/spec-1.txt"
+  ffmpeg -loglevel error -f concat -safe 0 -i "$AW_DIR/recordings/spec-1.txt" -c copy "$AW_DIR/recordings/spec-1.webm" \
+    && rm "$AW_DIR"/recordings/spec-1-*.webm "$AW_DIR/recordings/spec-1.txt"
+  ```
+
+- A save that fails is a `notes` line, never a red spec. Delete `recordings/.raw/`
+  when the run ends.
+- List each saved video in the verdict's `recordings:` array.
+
 ### Locator resolution
 
 Walk the locator ladder in order — never skip a rung:
@@ -522,6 +564,8 @@ test('probe', async ({ browser }) => {
     baseURL: cfg.baseURL,
     storageState: cfg.storageState || undefined,
     extraHTTPHeaders: bypass ? { [bypass.name]: process.env[bypass.env] ?? '' } : undefined,
+    // cfg.video: a .webm path, set only on a launch that grades the spec (--record-video)
+    recordVideo: cfg.video ? { dir: join(DIR, 'video-raw'), size: { width: 1280, height: 720 } } : undefined,
   });
   const page = await context.newPage();
   const requests: string[] = [];
@@ -584,7 +628,9 @@ test('probe', async ({ browser }) => {
   if (cfg.shot) await page.screenshot({ path: cfg.shot, fullPage: true }).catch(() => {});
   writeFileSync(join(DIR, 'probe-out.json'), JSON.stringify(
     { url: page.url(), fatal, steps, checks, aria: aria.slice(0, 20000), requests: requests.slice(-100) }, null, 2));
+  const video = page.video();
   await context.close();
+  if (cfg.video && video) await video.saveAs(cfg.video).then(() => video.delete()).catch(() => {});
 });
 ```
 
@@ -596,7 +642,8 @@ the probe budget. A `fatal` value means `start` itself did not load.
 
 ```bash
 # probe-in.json: { baseURL, storageState, bypassHeader, apiOrigins, settleMs, start,
-#                  steps: [{action, locator, value, dry}], checks: [locator, …], shot }
+#                  steps: [{action, locator, value, dry}], checks: [locator, …], shot, video }
+# video: a .webm path — set only on a grading launch under --record-video; absent otherwise.
 # apiOrigins: the app's own API origins besides the preview's (it is always included) —
 #   the aw-target's adversarial.allowed_origins when set; never analytics or third-party hosts.
 # settleMs: wait after each action before reading `fired` (default 1500; raise it for a debounced control).
@@ -701,6 +748,10 @@ captures:                       # omit the key when nothing was written
     path: .agent/<branch>/.aw-tester/captures/spec-1-auto-final.png
     full_page: true
     auto: true
+recordings:                     # omit when --record-video was off or nothing saved
+  - spec: Spec-1
+    path: .agent/<branch>/.aw-tester/recordings/spec-1.webm
+    segments: 1                  # > 1 only when ffmpeg could not join the launches
 hot_loop:
   spec_file: .agent/<branch>/.aw-tester/last-run.spec.ts
   playwright_bin: <absolute path written to .aw-tester/playwright-bin>
@@ -724,6 +775,9 @@ notes: <optional one-paragraph context; omit if nothing notable>
 - `captures:` is present when at least one file was written — an explicit
   `CAPTURE` step or an auto-capture (`--auto-capture`); an auto-capture entry
   carries `auto: true`. A capture never appears as a spec result and never
+  changes `verdict`.
+- `recordings:` is present only under `--record-video`, one entry per spec
+  whose video saved. A recording never appears as a spec result and never
   changes `verdict`.
 - An intent spec's `result` comes from the contract § 6.5 first-match table,
   in its order, never from judgment: a must-follow deviation outside the

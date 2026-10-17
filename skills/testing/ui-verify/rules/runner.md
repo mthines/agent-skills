@@ -11,7 +11,7 @@ tags:
 # Runner
 
 The `run` operation: get the spec, point the selected runner at the live preview, and report its verdict.
-The runner is an **on-demand orchestrator** — it resolves once, dispatches the spec run and then the [adversarial pass](./adversarial.md), reads both results, and writes lessons. It does not watch, retry the browser, or fix code. It picks between two runners with `--driver`; both emit the same verdict per the [spec-run contract](../../../workflow/autonomous-workflow/rules/spec-run-contract.md).
+The runner is an **on-demand orchestrator** — it resolves once, dispatches the spec run, then the [adversarial pass](./adversarial.md), then reads the run's own web events from Dash0 ([telemetry check](./telemetry.md)), and writes lessons. It does not watch, retry the browser, or fix code. It picks between two runners with `--driver`; both emit the same verdict per the [spec-run contract](../../../workflow/autonomous-workflow/rules/spec-run-contract.md).
 
 ## Contents
 
@@ -20,7 +20,9 @@ The runner is an **on-demand orchestrator** — it resolves once, dispatches the
 - [Step 3: Materialize the ephemeral files](#step-3-materialize-the-ephemeral-files)
 - [Step 4: Select the driver and run](#step-4-select-the-driver-and-run)
 - [Step 4b: Adversarial pass — try to break it](#step-4b-adversarial-pass--try-to-break-it)
+- [Step 4c: Telemetry check — read the run's Dash0 web events](#step-4c-telemetry-check--read-the-runs-dash0-web-events)
 - [Step 5: Report the verdict](#step-5-report-the-verdict)
+- [Step 5b: Post findings (under `--post-findings`)](#step-5b-post-findings-under---post-findings)
 - [Step 6: Write lessons](#step-6-write-lessons)
 
 ## Step 1: Get the spec
@@ -50,6 +52,12 @@ Resolve the URL per [`preview-url-resolution.md`](./preview-url-resolution.md).
 Any `inconclusive: …` outcome there is terminal for this run — report it and stop. The spec was not run; do not report a pass or a fail.
 That resolution also consults the committed `.claude/aw-targets/preview.yml`'s optional `preview_url` block (after `--url`, before the deployments API) — so a repo whose CI CLI-deploys previews behind a `github-actions[bot]` comment resolves without a manual `--url`.
 
+**`--wait-preview <minutes>` — wait for a build instead of stopping.**
+A caller running in parallel with pushes (the `review-loop --ui` lane) passes it, because the preview for a fresh head is usually still building.
+When resolution returns `inconclusive: preview building` or `inconclusive: preview not deployed`, wait 60 seconds and resolve again, until a URL resolves or `<minutes>` have passed; then report the last outcome as terminal.
+Every other `inconclusive: …` outcome stays terminal at once — waiting cannot fix a missing access path or a failed deploy.
+Without the flag, the first outcome is terminal, as above.
+
 ## Step 3: Materialize the ephemeral files
 
 Write two files under `.agent/{branch}/.ui-verify/` (the branch is the PR's head ref; the directory is git-ignored scratch):
@@ -74,6 +82,11 @@ Resolve `--driver` (default `auto`), then run the spec through the chosen runner
 
 Both runners detect the format from the `Format: intent` header line themselves, so the dispatch blocks below are the same for both formats.
 For an intent spec each runner replays a cached route when one matches the spec's text, otherwise explores the route, and returns each spec with the intent keys (`route`, `changed`, `expected`, `deviations`).
+
+**Record the window start.** Immediately before the dispatch, record `RUN_STARTED_AT` as UTC ISO-8601 (`date -u +%Y-%m-%dT%H:%M:%SZ`); the [telemetry check](./telemetry.md#step-2-build-the-query-window) reads its events from that moment on.
+
+**Recordings are on by default on the Playwright driver.** The Playwright dispatch block carries `--record-video`, so `aw-tester` writes one video per spec under `.agent/{branch}/.aw-tester/recordings/` ([`recording.md`](./recording.md)).
+Pass `--no-recording` to drop the flag. The Chrome driver cannot record and its block never carries the flag.
 
 **Screenshots are on by default.** A `ui-verify run` always passes
 `--auto-capture` to the runner, so every run yields full-page screenshots — each
@@ -116,7 +129,7 @@ Task(
     Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target "preview".
     Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
     Specs file: .agent/{branch}/.ui-verify/specs.md
-    Mode: --all --auto-capture
+    Mode: --all --auto-capture --record-video
 )
 ```
 
@@ -189,9 +202,18 @@ Task(
 )
 ```
 
-Fill `Lessons:` per [`memory.md § Read at run time`](./memory.md#read-at-run-time), and append `--no-screenshots` to the `Mode:` line when the caller passed it.
+Fill `Lessons:` per [`memory.md § Read at run time`](./memory.md#read-at-run-time), and append `--no-screenshots` and `--no-recording` to the `Mode:` line when the caller passed them.
 On a Dash0 Agent0 sandbox, dispatch it as [`agent0-runtime.md § Dispatch the adversarial pass`](./agent0-runtime.md#dispatch-the-adversarial-pass) shows instead.
 A reply with no `adversarial:` block is `adversarial: not run (<first line of the reply>)` — never an empty findings list.
+
+When this step returns, or when it was skipped, record `RUN_ENDED_AT` (UTC ISO-8601).
+
+## Step 4c: Telemetry check — read the run's Dash0 web events
+
+Confirm the run looked right to the product's telemetry too: read the web events the run's own sessions emitted on the preview from the Dash0 Dev MCP, and judge them against fixed oracles — events arrived at all, no error events, no 5xx requests, a page view per spec start, and every custom event the diff adds.
+Full procedure, server selection, oracles, and configuration: [`telemetry.md`](./telemetry.md).
+**It never changes the verdict from Step 4** — its findings travel in a separate `telemetry:` block.
+`--no-telemetry` skips it; so do `telemetry.enabled: false` in `preview.yml`, an app with no Dash0 web SDK, and a session with no Dash0 MCP server, each with its own `telemetry: skipped (…)` line.
 
 ## Step 5: Report the verdict
 
@@ -214,7 +236,9 @@ List the specs whose title starts with `Out of bounds:` after the others, under 
 
 **Surface the screenshots.** When the verdict carries a `captures:` array (it does on every default run, since `--auto-capture` is on — see Step 4), list each `path` in the report under a **Screenshots** heading so the user can attach them to the PR description. State the count and the directory (`.agent/{branch}/.aw-tester/captures/`); if `captures:` is absent, say `no screenshots (--no-screenshots)`. Never inline the image bytes — the paths are the deliverable.
 
-**Surface the adversarial pass** under an **Adversarial pass** heading, after the screenshots:
+**Surface the recordings** under a **Recordings** heading, after the screenshots, per [`recording.md § Report`](./recording.md#report): one line per video with its spec or probe id, result, and path, or the one-line reason there are none.
+
+**Surface the adversarial pass** under an **Adversarial pass** heading, after the recordings:
 
 1. One summary line, which callers relay verbatim: `adversarial: <probes_run> probes, <N> findings (<C> critical, <H> high, <M> medium, <L> low)`, followed by ` — partial: <reason>` when the block's `status` is `partial`; or the `skipped (…)` / `not run (…)` line from Step 4b.
 2. Each finding, most severe first: its id, severity, oracle, probe, expected vs actual, and its before and after image paths.
@@ -223,7 +247,16 @@ List the specs whose title starts with `Out of bounds:` after the others, under 
 
 Keep the happy-path verdict line first and unchanged; a critical finding is stated in the summary line, never by rewriting `verdict`.
 
+**Surface the telemetry check** under a **Telemetry (Dash0)** heading, after the adversarial pass: the summary line from [`telemetry.md § Step 5`](./telemetry.md#step-5-return-the-telemetry-block), then each finding with its oracle, severity, event, page, and link, or the `skipped (…)` / `inconclusive (…)` line.
+Like the adversarial pass, a telemetry finding never rewrites `verdict`.
+
 Optionally, when the caller asked for it, post the verdict as a PR comment. Off by default — the runner reports to the terminal.
+
+## Step 5b: Post findings (under `--post-findings`)
+
+Only when the caller passed `--post-findings`: write every failing spec, every `critical` or `high` adversarial finding, and every `high` telemetry finding to the PR as a file-level review thread, deduped by fingerprint, and upsert the `<!-- ui-verify:lane -->` summary comment.
+Full procedure: [`post-findings.md`](./post-findings.md).
+`run` with a local `specs-path` has no PR and ignores the flag with the note `post-findings: skipped (no PR)`.
 
 ## Step 6: Write lessons
 

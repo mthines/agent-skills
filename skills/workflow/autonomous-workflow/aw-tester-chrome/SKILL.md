@@ -194,6 +194,8 @@ verdict's `captures:` array. If the extension cannot persist the file to that
 path, record it in `notes` and omit it from `captures:` — a capture never turns a
 green spec red.
 
+**Record video (`--record-video`).** Not supported in Chrome: ignore the flag and add `notes: --record-video ignored — video is Playwright-only` (contract § Record video).
+
 **Auto-capture (`--auto-capture`).** When the caller passed `--auto-capture`,
 screenshot the current page (full-page) automatically — in addition to any
 `CAPTURE` steps — at each spec's **final state** (`<spec-id>-auto-final.png`) and

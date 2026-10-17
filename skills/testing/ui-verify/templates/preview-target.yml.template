@@ -103,6 +103,20 @@ auth:
 #   mask_testids:                 # data-testid values masked in every image
 #     - user-avatar
 
+# ── Telemetry check (optional) ───────────────────────────────────────────────
+# `ui-verify run` reads the run's own web events from the Dash0 Dev MCP and
+# judges them (rules/telemetry.md). It never changes the verdict. Runs only when
+# this block exists or a package.json depends on @dash0/sdk-web.
+# `--no-telemetry` skips one run. Never put a Dash0 token here.
+# telemetry:
+#   enabled: true
+#   dash0:
+#     mcp_server: dash0-dev       # MCP server name; needed when several are connected
+#     dataset: default
+#     service_name: my-frontend   # the website's service.name
+#     event_patterns:             # extra regexes; capture 1 = a custom event name
+#       - "track\\(['\"]([^'\"]+)"
+
 fixtures:
   # A preview usually points at a shared staging database, so seeding is often a
   # no-op. Reference dynamic ids the same way as any aw-target.
