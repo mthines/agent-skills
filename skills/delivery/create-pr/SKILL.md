@@ -133,7 +133,8 @@ Select files in this order, stopping at **6 images and 2 videos**:
 Rows 2–4 take only files newer than the merge base, so a capture from an older branch with the same name is never shown:
 
 ```bash
-SINCE=$(git log -1 --format=%cI "$(git merge-base origin/HEAD HEAD)")
+BASE=$(git merge-base origin/HEAD HEAD 2>/dev/null || git merge-base origin/main HEAD)
+SINCE=$(git log -1 --format=%cI "$BASE")
 find ".agent/$BRANCH/.aw-tester/captures" -name '*.png' -newermt "$SINCE" 2>/dev/null | sort
 ```
 
