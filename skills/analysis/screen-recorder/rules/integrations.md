@@ -171,8 +171,11 @@ git diff origin/main...HEAD -U0 | grep -E \
 ```
 
 If the heuristic matches and the PR author has not already attached
-recordings (check PR body for `.webm` / `.mp4` links), `pr-reviewer`
-should invoke `screen-recorder`.
+recordings, `pr-reviewer` should invoke `screen-recorder`.
+Count recordings as already attached when the PR body contains any of these:
+a `.webm` / `.mp4` link, an `<!-- attach-media:v1 -->` region, or a
+`github.com/user-attachments/assets/` URL.
+An uploaded video's asset URL has no file extension, so the extension check alone misses it.
 
 ### Required inputs from `pr-reviewer`
 
