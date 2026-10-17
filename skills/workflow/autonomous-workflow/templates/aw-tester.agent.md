@@ -417,7 +417,8 @@ Phase 4 hot loop does not.
   them:
 
   ```bash
-  ls "$AW_DIR"/recordings/spec-1-*.webm | sed "s/.*/file '&'/" > "$AW_DIR/recordings/spec-1.txt"
+  # concat resolves list entries against the list file's directory, so write basenames
+  (cd "$AW_DIR/recordings" && ls spec-1-*.webm | sort -V | sed "s/.*/file '&'/") > "$AW_DIR/recordings/spec-1.txt"
   ffmpeg -loglevel error -f concat -safe 0 -i "$AW_DIR/recordings/spec-1.txt" -c copy "$AW_DIR/recordings/spec-1.webm" \
     && rm "$AW_DIR"/recordings/spec-1-*.webm "$AW_DIR/recordings/spec-1.txt"
   ```
