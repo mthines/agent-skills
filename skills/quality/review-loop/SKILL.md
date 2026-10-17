@@ -876,8 +876,8 @@ the loop's fixes:
    [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md)
    — the same contract `create-pr` uses, so the refresh keeps identical quality and
    length rules. Diff against the PR base and read the current body first; make it a
-   minimal edit, not a rewrite. Carry the `<!-- attach-media:v1 -->` media region and
-   the ui-verify region forward verbatim, markers included — dropping either deletes
+   minimal edit, not a rewrite. Carry the `<!-- attach-media:v1 -->` …
+   `<!-- /attach-media:v1 -->` media region and the ui-verify region forward verbatim, markers included — dropping either deletes
    uploaded screenshots or the spec, and nothing re-adds them.
 2. Apply it:
 
