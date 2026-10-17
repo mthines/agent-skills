@@ -16,7 +16,7 @@ description: >
   "write a preview spec", "verify this PR's preview", "try to break this PR's
   preview", "check the preview's web events in Dash0", "/ui-verify".
 disable-model-invocation: false
-argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--post-findings] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
+argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--post-findings] [--attach-media] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__github__pull_request_review_write mcp__github__add_comment_to_pending_review mcp__github__add_issue_comment mcp__github__update_issue_comment mcp__Dash0__getWebEvents mcp__Dash0__getAttributeKeys mcp__Dash0__generateDash0Url mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
@@ -342,6 +342,7 @@ Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
    - On the Playwright driver every spec is **screen-recorded** (`--record-video`), and so is every adversarial finding ([`rules/recording.md`](./rules/recording.md)); `--no-recording` opts out.
 5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver — then, for an intent spec, each spec's route, its `Expected` items with their evidence, and its deviations ([`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict)), then the screenshots, the recordings, the adversarial summary line and its findings, and the telemetry summary line and its findings.
    Under `--post-findings`, also write the blocking results to the PR as review threads plus one sticky summary comment ([`rules/post-findings.md`](./rules/post-findings.md)) — the hand-off `review-loop --ui` resolves.
+   Under `--attach-media`, also put the screenshots and passing-spec recordings into the PR body through `Skill("attach-media", …)` ([`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict)). A local `specs-path` run has no PR and ignores the flag with `attach-media: skipped (no PR)`.
 6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.
 
 ## Operation `verify`
@@ -361,7 +362,7 @@ spec exists yet.
    `failed (no GitHub access path)` from `author` ends it with that same reason —
    there is nothing to run.
 2. **Run.** Then run Operation `run` against the resolved preview URL, honouring
-   `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--post-findings`, `--wait-preview`, and `--unattended` exactly as `run` does —
+   `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--post-findings`, `--attach-media`, `--wait-preview`, and `--unattended` exactly as `run` does —
    including its adversarial pass. On the `mcp` path (or a local
    `specs-path`), `--url` is required — without it, report
    `inconclusive: no access path for deployment lookup (pass --url)` and stop,

@@ -86,6 +86,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 
 ### `delivery/` — Git, PR, CI
 
+- `attach-media` (`Skill()` + `/`) — uploads screenshots and recordings to a PR or issue via `gh --attach`, with a curl fallback; owns the `<!-- attach-media:v1 -->` body region. Never writes placeholders
 - `changelog` (`/`) — personal PR + Linear ticket digest
 - `ci-auto-fix` (`/`) — evidence-gated CI diagnosis and fix; never weakens checks
 - `create-pr` (`/`) — narrative PR description; pre-push `review-branch`, draft PR, post-draft `review-loop`, CI watch

@@ -6818,7 +6818,7 @@ const isPollBlock = (block) =>
   const RN_STEP4_REST = RN_STEP4.replace(/`{3}text[\s\S]*?`{3}/g, "")
     .replace(/`auto` never calls `AskUserQuestion`[^\n]*/, "");
   s.check("G70g review-loop Step 1.6 invokes ui-verify run with --unattended",
-    /Skill\("ui-verify", "run <PR-URL> --unattended"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
+    /Skill\("ui-verify", "run <PR-URL> --unattended[^"]*"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
   s.check("G70g ui-verify's auto driver never asks (attended or --unattended), falls back with a notice, and the flag is advertised",
     /`auto` never calls `AskUserQuestion`, attended or under `--unattended`/.test(RN_STEP4)
     && /^### The auto-mode fallback notice$/m.test(RN_STEP4)
@@ -11456,6 +11456,28 @@ const isPollBlock = (block) =>
       && /if UI == 0 or ui_settled\(\):/.test(RL)
       && LANE.includes("/ui-verify run <PR-URL> --unattended --post-findings --wait-preview 15")
       && /UI_CAP\s+= 3/.test(LANE));
+}
+
+// ── G96: attach-media's owned region — one marker pair on every surface that writes or carries it ──
+// The region survives a description refresh only when the writer (attach-media), the contract
+// (create-pr), and the refresher (review-loop) spell the same pair; the per-file marker is what
+// lets a re-run merge by filename instead of erasing earlier media.
+{
+  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
+  const SURFACES = [
+    "skills/delivery/attach-media/rules/body-region.md",
+    "skills/delivery/create-pr/rules/description-contract.md",
+    "skills/quality/review-loop/SKILL.md",
+  ];
+  const OPEN = "<!-- attach-media:v1 -->";
+  const CLOSE = "<!-- /attach-media:v1 -->";
+  const missing = SURFACES.filter((f) => { const t = readOr(f); return !t.includes(OPEN) || !t.includes(CLOSE); });
+  s.check("G96a every attach-media region surface names both the open and the close marker",
+    missing.length === 0,
+    `missing ${OPEN} or ${CLOSE} in: ${missing.join(", ") || "none"}`);
+  s.check("G96b body-region.md names the per-file attach-media:file= marker the merge keys on",
+    readOr(SURFACES[0]).includes("attach-media:file="),
+    "body-region.md lost the attach-media:file=<basename> entry marker");
 }
 
 process.exit(s.report() ? 0 : 1);
