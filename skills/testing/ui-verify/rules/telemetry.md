@@ -55,10 +55,11 @@ Name the chosen server in the block as `server:`.
 [`runner.md § Step 4`](./runner.md#step-4-select-the-driver-and-run) records `RUN_STARTED_AT` (UTC ISO-8601, before the dispatch), and § Step 4b records `RUN_ENDED_AT` after the adversarial pass returns (or right after Step 4 when 4b did not run).
 
 - `timeRange.from` = `RUN_STARTED_AT` minus 30 seconds.
-- `timeRange.to` = `now`.
+- `timeRange.to` = `RUN_ENDED_AT` plus 30 seconds — the same on every retry in Step 3.
 - `dataset` = `telemetry.dash0.dataset` from the overlay, else `default`.
 
 Never widen the window past the run to "find something" — events outside it are someone else's.
+Ingestion lag delays when an event becomes queryable, not its timestamp, so the retries in Step 3 wait on a fixed window instead of extending it.
 
 ## Step 3: Discover the keys, then fetch the run's events
 
@@ -114,7 +115,7 @@ telemetry:
   reason: <one line; omit on green>
   server: mcp__dash0-dev
   dataset: default
-  window: 2026-10-15T09:12:03Z..now
+  window: 2026-10-15T09:12:03Z..2026-10-15T09:15:47Z
   attempts: 2
   sessions: 1
   attribution: run-only | shared-window
