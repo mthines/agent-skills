@@ -190,7 +190,8 @@ should invoke `screen-recorder`.
 
 The `screen-recorder` skill produces the file and returns the path via `RECORDING_PATH=`.
 It does not touch `gh`, and `pr-reviewer` has no `Motion evidence` slot — its Step 4 body template forbids sections outside its defined slots, so it does not attach or render recordings.
-The recording is a local artifact for the reviewer to inspect; surfacing it in a PR is a separate, manual step.
+The recording is a local artifact for the reviewer to inspect.
+To put it on a PR, the caller that owns the PR, never `pr-reviewer`, delegates: `Skill("attach-media", "<pr-url> <RECORDING_PATH> --to comment")`. Never paste the local path into the PR.
 
 ## Caller 4 — `storybook`
 

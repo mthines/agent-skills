@@ -26,7 +26,7 @@ It delegates to one of two existing skills:
 ## Capturing a still screenshot for PR evidence
 
 `pr-reviewer` has no browser or screenshot capability — its `tools:` list carries no browser and the agent never captures images.
-Capture the anchoring screenshot yourself via the Playwright CLI, then attach it to the PR description or comment.
+Capture the anchoring screenshot yourself via the Playwright CLI, then attach it with `Skill("attach-media", "<pr-url> <png>#<story name> --to body")`. Never leave a screenshots placeholder for a human.
 Do this when:
 
 - The PR body says "screenshots please" (or the user does).
@@ -90,7 +90,7 @@ A common end-to-end pattern for a new story PR:
 2. Run Playwright CLI screenshot of `Default` and `Playground` — sanity check.
 3. If the story includes motion or transitions, also run `screen-recorder`.
 4. Open the PR via `/create-pr`.
-5. Attach the final screenshots to the PR yourself (Playwright CLI output), then
+5. Attach the final screenshots and any recording with `Skill("attach-media", "<pr-url> <files…> --to body")`, then
    dispatch the `pr-reviewer` **agent** via the Task tool (`Task(subagent_type="pr-reviewer",
    prompt="<pr-url>")`) — it is an agent, not a skill, so `Skill("pr-reviewer", …)`
    errors. It posts its review immediately as a visible `COMMENT` review — nothing is

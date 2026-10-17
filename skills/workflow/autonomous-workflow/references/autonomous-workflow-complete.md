@@ -884,8 +884,7 @@ Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")
 ```
 Skill("aw-create-walkthrough")
 → Wrote .agent/feat-dark-mode-toggle/walkthrough.md
-→ Captured: change narrative, testing summary, screenshots placeholder,
-            review-loop advisory notes
+→ Captured: change narrative, testing summary, review-loop advisory notes
 ```
 
 ### Create PR
@@ -897,6 +896,7 @@ Skill("create-pr")
 → Body sourced from walkthrough.md (no AI attribution lines —
   the user owns the PR)
 → Draft PR opened: https://github.com/user/nextjs-app/pull/123
+→ Media (Step 6.2): attach-media: 2 attached, 0 skipped, 0 not attached
 ```
 
 **Progress Log entries:**

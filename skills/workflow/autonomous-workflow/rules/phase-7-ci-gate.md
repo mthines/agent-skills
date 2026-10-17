@@ -360,7 +360,7 @@ prompt: |
   Override aw-target base_url to: {preview_url}
   Auth strategy override: none (preview — no auth state available)
   Specs file: .agent/{branch}/specs.md
-  Mode: --all
+  Mode: --all --auto-capture
   
   Skip any spec whose preconditions require a logged-in user.
   Return the verdict block in the exact output schema format.
@@ -379,6 +379,22 @@ Never auto-undraft based on the spec rehearsal verdict. Log:
 ```markdown
 - [TIMESTAMP] Phase 7: spec-rehearsal — verdict: {green|red|inconclusive}
   ({N} specs on {preview_url})
+```
+
+### Step 4: Attach the preview screenshots to the PR
+
+When the verdict carries a `captures:` array, put the deployed UI into the PR body.
+Pass the explicit `CAPTURE` files first, then each spec's `*-auto-final.png`, up to 6 images, with each capture's `label` as its alt text:
+
+```text
+Skill("attach-media", "<pr-url> <path>#<label> ... --to body")
+```
+
+`attach-media` replaces the region `create-pr` Step 6.2 may have written, so the PR shows the preview, not the local run.
+Log its first report line; a `not attached` line is advisory, like the rehearsal itself:
+
+```markdown
+- [TIMESTAMP] Phase 7: spec-rehearsal media — attach-media: 4 attached, 0 skipped, 0 not attached
 ```
 
 ---

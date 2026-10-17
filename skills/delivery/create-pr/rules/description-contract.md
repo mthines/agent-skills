@@ -36,6 +36,8 @@ If you can't fit the change inside this budget, the PR is probably too big — s
 
 **One region is exempt: the UI verification spec block.** When the PR has a ui-verify block — `<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->`, or the `v1` / legacy `preview-spec:v1` pair on an older PR (see [UI verification spec](#ui-verification-spec-optional)) — everything between those markers does **not** count toward the ≤ 25 / 40 budget — it is collapsed and machine-oriented, not reviewer-facing prose.
 
+**The media region is exempt too.** Everything between `<!-- attach-media:v1 -->` and `<!-- /attach-media:v1 -->` (see [Media](#media-screenshots-and-recordings)) is uploaded screenshots and recordings, not prose.
+
 ## Core principles
 
 1. **Narrative over checklist.** Reads like prose explaining a decision, not a bullet-point manifest of every file touched.
@@ -85,7 +87,7 @@ If you can't answer these from the diff alone, ask the user — don't pad the de
 
 ## Step 3: Choose output format
 
-**Branch A — Repository has a PR template:** Use it. Fill each section with the *narrative* version (short, focused, no filler). Leave optional sections empty rather than padding with `N/A` boilerplate. Keep checkbox lists if the template has them, but only check what genuinely applies.
+**Branch A — Repository has a PR template:** Use it. Fill each section with the *narrative* version (short, focused, no filler). Leave optional sections empty rather than padding with `N/A` boilerplate. A screenshots, recording, or demo section is filled only by `create-pr` Step 6.2 with real uploaded media; until then, leave it empty and never write a placeholder (see [Media](#media-screenshots-and-recordings)). Keep checkbox lists if the template has them, but only check what genuinely applies.
 
 **Branch B — No PR template:** Use the lean default below. Do not invent extra sections.
 
@@ -125,8 +127,28 @@ When the diff touches the UI, the PR body can carry a **collapsed, machine-finda
 - **It is exempt from the length budget** (see above) and **preserved verbatim on refresh** (see Step 5 and the refresh note below).
 - Full contract: [`skills/testing/ui-verify/rules/spec-format.md`](../../../testing/ui-verify/rules/spec-format.md).
 
-**On refresh (the `review-loop` case):** carry the whole ui-verify region — whichever marker version it uses — forward unchanged, markers included.
+**On refresh (the `review-loop` case):** carry the whole `attach-media:v1` region and the whole ui-verify region — whichever marker version it uses — forward unchanged, markers included.
 The refresh rewrites narrative sections only; re-authoring the spec is `ui-verify author`'s job, not the refresh's.
+
+## Media (screenshots and recordings)
+
+Screenshots and recordings reach the body only through `Skill("attach-media", …)`, which uploads each file to GitHub and writes one owned region.
+
+- **Never write a placeholder** for media: no `TODO: add screenshots`, no `<!-- screenshots -->`, no `N/A`, and no local `.agent/…` path a reviewer cannot open.
+- **The region is a single owned block**, delimited by `<!-- attach-media:v1 -->` … `<!-- /attach-media:v1 -->`, and appears at most once per PR.
+- **It is exempt from the length budget**, and **a refresh preserves it verbatim**, markers included, wherever it sits in the body.
+
+```markdown
+<!-- ❌ WRONG -->
+## Screenshots
+<!-- Add screenshots here -->
+
+<!-- ✅ RIGHT — written by attach-media, kept verbatim on refresh -->
+## Screenshots
+<!-- attach-media:v1 -->
+![Settings page with the new toggle](https://github.com/user-attachments/assets/1f0c…)
+<!-- /attach-media:v1 -->
+```
 
 ## Step 4: Write the title
 
@@ -137,7 +159,7 @@ The refresh rewrites narrative sections only; re-authoring the spec is `ui-verif
 
 ## Step 5: Length self-check (before writing the body)
 
-Count the rendered lines of the body, **skipping any ui-verify region (`<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->`, or its `v1` / `preview-spec:v1` pair)** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
+Count the rendered lines of the body, **skipping any `<!-- attach-media:v1 -->` region and any ui-verify region (`<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->`, or its `v1` / `preview-spec:v1` pair)** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
 
 - **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
 - **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.

@@ -58,13 +58,14 @@ Pick the first that resolves:
 **Steps:** <numbered steps from the spec or probe>
 **Expected:** <the Expected item, or the oracle's expectation>
 **Actual:** <what the run observed>
-**Evidence:** <screenshot / recording / Dash0 event paths or link>
+**Evidence:** <uploaded screenshot / recording lines, and the Dash0 event link>
 
 Fix the code and resolve this thread. If this is not a defect, reply with why and resolve it.
 ```
 
 The marker line is load-bearing: `implement-suggestion` includes any comment that carries `<!-- ui-verify:finding`, even when the current user posted it (`implement-suggestion/rules/comment-fetching.md` § Carve-out).
-Evidence paths are local to the session that ran; say so with `(local to the ui-verify run)` after them.
+Upload a finding's before/after images and its recording before writing the thread, so a reviewer can see them: `Skill("attach-media", "<pr-url> <before.png>#Before <after.png>#After <clip.webm> --to urls")`, then paste the lines it prints into **Evidence:**.
+For a file it reports as `not attached`, keep the local path and add `(local to the ui-verify run)` after it.
 
 ## Dedupe by fingerprint
 

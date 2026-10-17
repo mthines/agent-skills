@@ -7,7 +7,9 @@ description: >
   iterations) until every review thread is resolved via fix or reply. Scale
   down with --no-review, --no-simplify, --quick (light mechanical pass only),
   or --no-quality (skip the loop). On a UI diff, injects a preview
-  verification spec by default (--no-ui-verify to skip). Before the push,
+  verification spec by default (--no-ui-verify to skip), and attaches the
+  branch's screenshots and recordings via attach-media (--no-media to
+  skip). Before the push,
   converges the branch by default with review-branch, which needs no PR, so
   the draft opens already review-clean (--no-pre-review to skip). With
   --split, breaks the branch diff into 2–4 focused,
@@ -15,7 +17,7 @@ description: >
   ci-auto-fix, which fixes or escalates. Invoke with /create-pr or
   /create-pr --split.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-ui-verify]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-ui-verify] [--attach <file>] [--no-media]'
 license: MIT
 metadata:
   author: mthines
@@ -44,6 +46,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft qual
 | `no-quality`   | `--no-quality` anywhere in arguments               | Skip Step 6.5 entirely. Wins over every other quality flag.                                                                  |
 | `no-ui-verify` | `--no-ui-verify` (or the legacy alias `--no-preview-spec`) anywhere in arguments | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything. `--no-preview-spec` is the pre-rename spelling, still honoured so existing scripts and muscle memory keep working. |
 | `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip the **default-on** Step 5.5 — `Skill("review-branch", …)` **before** the push, which opens the draft already converged. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.        |
+| `attach` / `no-media` | `--attach <file>` (repeatable) / `--no-media` | `--attach` adds a local screenshot or recording to Step 6.2, ahead of the branch's own captures. `--no-media` skips Step 6.2. |
 
 > **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. `--no-feedback` is accepted and ignored: the background external-bot watch it disabled was removed in v4.0.0 (see [Step 6.5](#step-65-post-draft-quality-loop-delegated-to-review-loop)). Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
 
@@ -114,6 +117,36 @@ EOF
 ```
 
 Capture the PR URL/number from the output — the next steps need it.
+
+## Step 6.2: Attach screenshots and recordings (delegated to `attach-media`)
+
+When the branch has visual evidence, put the real files into the PR body; never a placeholder for a human to fill.
+Skip on `--no-media` or when no file is selected below.
+
+Select files in this order, stopping at **6 images and 2 videos**:
+
+1. Every path passed with `--attach <file>` in `$ARGUMENTS`, in order.
+2. Explicit `CAPTURE` screenshots from this branch's runs: `.agent/{branch}/.aw-tester/captures/*.png`, excluding `*-auto-*`.
+3. Final-state auto-captures: `.agent/{branch}/.aw-tester/captures/*-auto-final.png`.
+4. Recordings of passing specs: `.agent/{branch}/.aw-tester/recordings/spec-*.webm`.
+
+Rows 2–4 take only files newer than the merge base, so a capture from an older branch with the same name is never shown:
+
+```bash
+SINCE=$(git log -1 --format=%cI "$(git merge-base origin/HEAD HEAD)")
+find ".agent/$BRANCH/.aw-tester/captures" -name '*.png' -newermt "$SINCE" 2>/dev/null | sort
+```
+
+Use the capture's label as its alt text: `<file>#<label>`.
+Then delegate:
+
+```text
+Skill("attach-media", "<pr-url> <file>#<alt> ... --to body")
+```
+
+`attach-media` owns the upload, the secret check, and the owned `<!-- attach-media:v1 -->` region.
+Record its first report line for Step 10.
+If it reports rung 3 (`not attached`), continue: the PR stays valid without media, and the report says so.
 
 ## Step 6.4: Author the UI verification spec (default ON for UI changes)
 
@@ -308,6 +341,8 @@ Title: <imperative title>
 
 Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
 
+Media (Step 6.2): <the attach-media summary line | none (no captures or --attach files) | skipped (--no-media) | skipped (attach-media not available)>
+
 UI verify (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-ui-verify) | skipped (--no-quality) | skipped (ui-verify not available) | failed (<reason>)>
 
 Review loop (review-loop / pr-reviewer):
@@ -377,6 +412,7 @@ Quick reference for the shape of the workflow:
 - **"This PR adds X, Y, Z and also..."** strings of features. If a PR has many unrelated additions, suggest splitting.
 - **Internal narration of process** ("First I tried X, then Y didn't work, so I refactored Z"). Reviewers want the result, not the journey.
 - **Vague verbs** ("improved", "enhanced", "updated"). Say what changed and why it's better.
+- **Media placeholders.** Never write `TODO: add screenshots`, an empty `<!-- screenshots -->`, or a local `.agent/` path in the body. Attach the real file through Step 6.2, or leave the section empty.
 - **Co-Authored-By lines.** Never include `Co-Authored-By: Claude` or any AI co-author attribution.
 
 ## Examples

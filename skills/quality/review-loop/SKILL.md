@@ -804,8 +804,10 @@ Skip this step entirely when **any** of:
 Otherwise dispatch it **once**, regardless of iteration count, **always with `--unattended`**:
 
 ```text
-Skill("ui-verify", "run <PR-URL> --unattended")
+Skill("ui-verify", "run <PR-URL> --unattended --attach-media")
 ```
+
+`--attach-media` puts this final run's screenshots and passing-spec recordings into the PR body through `attach-media`, so the converged PR shows the deployed change. It runs here and never in the `--ui` lane, so a push does not re-upload media.
 
 `--unattended` is mandatory here, not a host-specific choice: this step runs at the end of a
 loop the caller expects to finish on its own, and the flag is `ui-verify`'s guarantee that no path
@@ -874,7 +876,9 @@ the loop's fixes:
    [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md)
    — the same contract `create-pr` uses, so the refresh keeps identical quality and
    length rules. Diff against the PR base and read the current body first; make it a
-   minimal edit, not a rewrite.
+   minimal edit, not a rewrite. Carry the `<!-- attach-media:v1 -->` media region and
+   the ui-verify region forward verbatim, markers included — dropping either deletes
+   uploaded screenshots or the spec, and nothing re-adds them.
 2. Apply it:
 
    ```bash

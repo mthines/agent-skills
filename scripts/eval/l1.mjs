@@ -6818,7 +6818,7 @@ const isPollBlock = (block) =>
   const RN_STEP4_REST = RN_STEP4.replace(/`{3}text[\s\S]*?`{3}/g, "")
     .replace(/`auto` never calls `AskUserQuestion`[^\n]*/, "");
   s.check("G70g review-loop Step 1.6 invokes ui-verify run with --unattended",
-    /Skill\("ui-verify", "run <PR-URL> --unattended"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
+    /Skill\("ui-verify", "run <PR-URL> --unattended[^"]*"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
   s.check("G70g ui-verify's auto driver never asks (attended or --unattended), falls back with a notice, and the flag is advertised",
     /`auto` never calls `AskUserQuestion`, attended or under `--unattended`/.test(RN_STEP4)
     && /^### The auto-mode fallback notice$/m.test(RN_STEP4)
