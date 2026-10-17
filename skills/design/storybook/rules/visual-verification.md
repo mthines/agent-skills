@@ -73,7 +73,8 @@ Skill("screen-recorder",
 ```
 
 The result lands under `.agent/recordings/`.
-Attach the clip to a PR comment yourself — `pr-reviewer` does not capture or attach media.
+Attach the clip with `Skill("attach-media", "<pr-url> <clip> --to comment")`.
+`pr-reviewer` does not capture or attach media.
 
 ## When neither is needed
 
