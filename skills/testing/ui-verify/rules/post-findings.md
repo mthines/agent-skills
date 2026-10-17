@@ -68,14 +68,22 @@ Evidence paths are local to the session that ran; say so with `(local to the ui-
 
 ## Dedupe by fingerprint
 
-`fingerprint` = the first 8 hex characters of the SHA-1 of `<kind>|<spec id or ADV id or oracle>|<the first 80 characters of Actual, lowercased, digits stripped>`.
+`fingerprint` = the first 8 hex characters of the SHA-1 of the key for its kind.
+Every key part is a stable identifier; never hash `Actual` or any other prose the runner writes fresh each run, or the same failure stops matching its own thread.
+
+| Kind | Key |
+| --- | --- |
+| spec fail | `spec\|<spec id>\|<1-based index of the first failing Expected item>` |
+| adversarial | `adversarial\|<the finding's spec>\|<oracle>` — never the `ADV-NN` id, which is numbered per run |
+| telemetry | `telemetry\|<oracle>\|<event name, or the page path for page-view-missing and request-failure>` |
 
 Read the PR's review threads (resolved and open) before posting:
 
 | An existing thread with this fingerprint is… | Do |
 | --- | --- |
 | open | Skip — count it as `deduped` |
-| resolved | Post again with the line `Recurred after a resolution — the previous fix did not hold.` after the heading |
+| resolved, and a reply in it starts with `Addressed in` (a fix landed) | Post again with the line `Recurred after a resolution — the previous fix did not hold.` after the heading |
+| resolved with no `Addressed in` reply (declined or answered) | Skip — count it as `declined`; a decision someone already made is not re-litigated on every head |
 | absent | Post |
 
 ## Write calls by access path
@@ -101,12 +109,14 @@ Upsert one issue comment whose first line is `<!-- ui-verify:lane -->`: edit the
 - verdict: <green | red | inconclusive> (<pass>/<total> specs)
 - adversarial: <the summary line>
 - telemetry: <the summary line>
-- threads: <N> posted, <D> deduped
+- threads: <N> posted, <D> deduped, <X> declined | failed (<reason>)
 - finished: <UTC ISO-8601>
 ```
+
+Write `threads: failed (<reason>)` whenever any thread write failed, so a caller that only reads this comment can tell a red run that posted nothing from one with nothing to post.
 
 `head` and `finished` are what a parallel caller polls for: the comment for head `<sha>` with a `finished:` line means the run on that head is done.
 
 ## Report line
 
-Print `posted: <N> threads, <D> deduped, summary <comment-url>` after the Step 5 report, or `posted: failed (<reason>)`.
+Print `posted: <N> threads, <D> deduped, <X> declined, summary <comment-url>` after the Step 5 report, or `posted: failed (<reason>)`.

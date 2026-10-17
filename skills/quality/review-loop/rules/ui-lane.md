@@ -143,7 +143,7 @@ gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments" --paginate \
 ```
 
 On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`).
-Parse `verdict`, `adversarial`, `telemetry`, and `threads: <N> posted, <D> deduped` from it.
+Parse `verdict`, `adversarial`, `telemetry`, and the `threads:` line from it: `<N> posted, <D> deduped, <X> declined` sets `posted = N`, and `failed (<reason>)` sets `post_failed = true`.
 
 Also finished, with no summary to read:
 
