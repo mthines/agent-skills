@@ -5,7 +5,7 @@ description: >
   reports its verdict and findings without touching your code. The short entry point
   for "review this PR" when you do not want an apply-and-converge loop. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`. Invoke with /pr-review.
-disable-model-invocation: true
+disable-model-invocation: false
 argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
