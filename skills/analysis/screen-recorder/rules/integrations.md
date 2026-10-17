@@ -173,9 +173,18 @@ git diff origin/main...HEAD -U0 | grep -E \
 If the heuristic matches and the PR author has not already attached
 recordings, `pr-reviewer` should invoke `screen-recorder`.
 Count recordings as already attached when the PR body contains any of these:
-a `.webm` / `.mp4` link, an `<!-- attach-media:v1 -->` region, or a
-`github.com/user-attachments/assets/` URL.
+
+- A `.webm` / `.mp4` link.
+- An `<!-- attach-media:file=<basename> -->` marker whose basename ends in `.webm`, `.mp4`, or `.mov`.
+- A `github.com/user-attachments/assets/` URL alone on its own line, which GitHub renders as a video player.
+
 An uploaded video's asset URL has no file extension, so the extension check alone misses it.
+An image embed of a `user-attachments` URL, or an `<!-- attach-media:v1 -->` region holding only screenshots, does not count as a recording.
+
+```bash
+# ✓ counts — a video marker, or a bare asset URL on its own line
+grep -qE 'attach-media:file=[^ ]+\.(webm|mp4|mov) -->|^https://github\.com/user-attachments/assets/[^ ]+$' <<<"$BODY"
+```
 
 ### Required inputs from `pr-reviewer`
 
