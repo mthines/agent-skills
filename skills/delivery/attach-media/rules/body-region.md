@@ -36,7 +36,7 @@ Use the first row that matches.
 
 | # | Body state | Put the region |
 | --- | --- | --- |
-| 1 | A region already exists | In its place, merged by filename. Replace each entry whose `attach-media:file=` basename this run re-supplies, keep every other entry as it is, and append this run's new files in input order. |
+| 1 | A region already exists | In its place, merged by filename. Replace each entry whose `attach-media:file=` basename this run re-supplies, keep every other entry as it is, and add this run's new files in input order. Then re-order the merged entries so every image precedes every video, keeping the relative order within each group. |
 | 2 | A heading outside any `<!-- ui-verify:… -->` … `<!-- /ui-verify:… -->` (or `preview-spec:v1`) block matches `/screenshot\|recording\|demo\|video\|visual\|preview\|before.*after/i` (a repo PR template). Never match a heading inside such a block, such as a spec title. | Directly under that heading. Delete that section's placeholder text: an HTML comment, `N/A`, `TBD`, `TODO`, or `_No response_`. Omit the `###` heading inside the region, since the template's heading already labels it. |
 | 3 | A `<!-- ui-verify:v2 -->` (or `v1` / `preview-spec:v1`) block exists | Immediately above that block. |
 | 4 | Otherwise | At the end of the body. |
