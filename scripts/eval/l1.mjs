@@ -11428,12 +11428,13 @@ const isPollBlock = (block) =>
   // a. recordings: the contract defines the option, aw-tester implements it, ui-verify wires it
   //    on in the Playwright block (and its Agent0 mirror) but never in the Chrome block.
   const modes = RUN.match(/^\s*Mode: .*$/gm) || [];
+  const recordModes = modes.filter((m) => m.includes("--record-video")).length;
   s.check("G95a --record-video is defined by the contract, implemented by aw-tester, and passed only by ui-verify's Playwright dispatches",
     /### Record video \(a Playwright run option\)/.test(CONTRACT) && /recordings:/.test(CONTRACT)
       && /recordVideo: cfg\.video/.test(AWT) && /video\.saveAs\(cfg\.video\)/.test(AWT)
-      && modes.filter((m) => m.includes("--record-video")).length === 1
+      && recordModes === 1
       && /Mode: --all --auto-capture --record-video/.test(A0),
-    `Mode lines with --record-video in runner.md: ${modes.filter((m) => m.includes("--record-video")).length} (want exactly 1, the Playwright block)`);
+    `Mode lines with --record-video in runner.md: ${recordModes} (want exactly 1, the Playwright block)`);
 
   // b. the telemetry check is wired in, verdict-neutral, and reads Dash0 web events with lag handling.
   s.check("G95b runner Step 4c runs the Dash0 telemetry check, which never changes the verdict and waits out ingestion lag",
