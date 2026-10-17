@@ -130,13 +130,22 @@ Select files in this order, stopping at **6 images and 2 videos**:
 3. Final-state auto-captures: `.agent/{branch}/.aw-tester/captures/*-auto-final.png`.
 4. Recordings of passing specs: `.agent/{branch}/.aw-tester/recordings/spec-*.webm`.
 
-Rows 2–4 take only files newer than the merge base, so a capture from an older branch with the same name is never shown:
+Rows 2–4 take only files newer than the merge base with the PR's own base branch, so a capture from an older branch with the same name is never shown:
 
 ```bash
-BASE=$(git merge-base origin/HEAD HEAD 2>/dev/null || git merge-base origin/main HEAD)
-SINCE=$(git log -1 --format=%cI "$BASE")
-find ".agent/$BRANCH/.aw-tester/captures" -name '*.png' -newermt "$SINCE" 2>/dev/null | sort
+PR_NUMBER=$(gh pr view --json number -q .number)
+BASE_REF=$(gh pr view "$PR_NUMBER" --json baseRefName -q .baseRefName)
+BASE=$(git merge-base "origin/$BASE_REF" HEAD 2>/dev/null)
+if [ -z "$BASE" ]; then
+  echo "none (merge base unresolved)"   # skip rows 2–4; record this for Step 10
+else
+  SINCE=$(git log -1 --format=%cI "$BASE")
+  find ".agent/$BRANCH/.aw-tester/captures" -name '*.png' -newermt "$SINCE" 2>/dev/null | sort
+fi
 ```
+
+When `BASE` is empty, skip rows 2–4 and record `none (merge base unresolved)` as the Step 10 `Media` line, unless row 1 supplied files.
+Never run the `find` with an empty `SINCE`: it silently selects nothing, which reads as "no captures".
 
 Use the capture's label as its alt text: `<file>#<label>`.
 Then delegate:
@@ -342,7 +351,7 @@ Title: <imperative title>
 
 Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
 
-Media (Step 6.2): <the attach-media summary line | none (no captures or --attach files) | skipped (--no-media) | skipped (attach-media not available)>
+Media (Step 6.2): <the attach-media summary line | none (no captures or --attach files) | none (merge base unresolved) | skipped (--no-media) | skipped (attach-media not available)>
 
 UI verify (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff) | skipped (--no-ui-verify) | skipped (--no-quality) | skipped (ui-verify not available) | failed (<reason>)>
 
