@@ -77,9 +77,10 @@ Every key part is a stable identifier; never hash `Actual` or any other prose th
 | adversarial | `adversarial\|<the finding's spec>\|<oracle>` — never the `ADV-NN` id, which is numbered per run |
 | telemetry | `telemetry\|<oracle>\|<event name, or the page path for page-view-missing and request-failure>` |
 
-Read the PR's review threads (resolved and open) before posting:
+Read the PR's review threads (resolved and open) before posting.
+When several threads carry the fingerprint, judge only the **newest** one: an older fixed thread must not override a later decline.
 
-| An existing thread with this fingerprint is… | Do |
+| The newest thread with this fingerprint is… | Do |
 | --- | --- |
 | open | Skip — count it as `deduped` |
 | resolved, and a reply in it starts with `Addressed in` (a fix landed) | Post again with the line `Recurred after a resolution — the previous fix did not hold.` after the heading |
