@@ -182,8 +182,9 @@ An uploaded video's asset URL has no file extension, so the extension check alon
 An image embed of a `user-attachments` URL, or an `<!-- attach-media:v1 -->` region holding only screenshots, does not count as a recording.
 
 ```bash
-# ✓ counts — a video marker, or a bare asset URL on its own line
-grep -qE 'attach-media:file=[^ ]+\.(webm|mp4|mov) -->|^https://github\.com/user-attachments/assets/[^ ]+$' <<<"$BODY"
+# ✓ counts — a .webm/.mp4/.mov link or video marker, or a bare asset URL on its own line
+BODY=$(gh pr view "$PR_NUMBER" --json body -q .body)
+grep -qE '\.(webm|mp4|mov)([^[:alnum:]]|$)|^https://github\.com/user-attachments/assets/[^ ]+$' <<<"$BODY"
 ```
 
 ### Required inputs from `pr-reviewer`
