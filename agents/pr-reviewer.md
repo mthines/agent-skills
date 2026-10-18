@@ -287,7 +287,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `#<n>` or bare positive integer | PR number in current repo |
 | `--full` | Force full review mode regardless of delta size or prior run. Binds `FLAG_FULL=true`, read at Step 0.8 and Step 0.7 as the same flag. |
 | `--critical` | Force adversarial pre-mortem via `Skill("critical", "code")` |
-| `--no-critical` | Suppress `critical` for this run — beats both the auto-engage heuristic and a `critical: always` review config |
+| `--no-critical` | Suppress auto-engage of `critical` |
 | `--no-holistic` | Skip the holistic review step (Step 2.4) and targeted escalation (Step 2.4b) |
 | `--no-escalate` | Skip only the targeted holistic escalation (Step 2.4b) |
 | `--no-optimize` | Skip the optimality review step (Step 2.4c) |
@@ -1596,9 +1596,6 @@ With neither present (subtree `.review.yaml` overrides may still exist), configu
 `profile: balanced` — threshold 80, inline placement cap 5 per file, no filters, no path instructions.
 The cap governs placement only; overflow is deferred to the review body, never dropped.
 
-The run-level knobs — `profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, and `critical` — are already resolved in `context.reviewConfig`, read from the PR's **base** commit by `prepare-review.mjs` ([`review-config.md` § Run-level knobs](./shared/rules/review-config.md#run-level-knobs)).
-Take them from the context and never re-read the head's config for them: `finalize.mjs` applies the profile and bars itself, and Step 2.3 reads `critical`.
-
 ### 1.7b Load standards (default ON)
 
 See `agents/shared/rules/standards-conformance.md` § Step 1.7b — Standards discovery.
@@ -1736,7 +1733,7 @@ Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
 1. Load `code-quality` (always, unless `REVIEW_DIFF` is trivial).
 2. Load `ux` (UI globs — against `REVIEW_DIFF`).
-3. Load `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic; `--no-critical` suppresses the config and the heuristic).
+3. Load `critical` (`--critical`, `context.reviewConfig.critical: always`, or auto-engage heuristic).
 4. Load `--with` lenses (max 3).
 5. Walk each rubric against `REVIEW_DIFF`. Each rubric emits raw findings.
 
