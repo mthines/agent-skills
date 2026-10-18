@@ -31,7 +31,7 @@ in §6 has been implemented (P1–P3, with the noted adaptations: traceability i
 embedded in the Acceptance Criteria rather than a separate Core section, and
 the Existing Code Survey is a deterministic-trigger Extended section — both to
 keep Core-8 stable).
-Implementation record: the v3.15.0 entry in [`CLAUDE.md`](../CLAUDE.md#history);
+Implementation record: the commit and PR that added the plan-quality gates (`git log -- rules/phase-0-validation.md`);
 design intent: [`CLAUDE.md` "Plan-quality gates + executable checks"](../CLAUDE.md#plan-quality-gates--executable-checks--design-intent).
 The findings, caveats, and open questions below remain the durable evidence
 base — instrumentation of the executable-checks loop (open question #3) is
@@ -291,7 +291,7 @@ These map cleanly onto this skill's existing philosophy — confidence-gated aut
 
 Ordered by leverage-to-effort.
 Each names the file(s) it touches.
-**Status: implemented in v3.15** (see the History entry in [`CLAUDE.md`](../CLAUDE.md#history) for the as-built mapping); kept as the original decision record.
+**Status: implemented in v3.15** (the as-built mapping is in the [plan-quality design intent](../CLAUDE.md#plan-quality-gates--executable-checks--design-intent)); kept as the original decision record.
 
 | Priority | Change | Concern | Files | Effort | Confidence it helps |
 | -------- | ------ | ------- | ----- | ------ | ------------------- |

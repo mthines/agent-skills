@@ -130,7 +130,7 @@ A proposal that touches one of these requires the user to type the change manual
 - ...
 ```
 
-If your skill has no hard invariants, write `(none)` — but think hard before doing so.
+If your skill has no hard invariants, write `(none)` — but only after checking that no rule in the skill names an invariant.
 Most non-trivial skills have at least one load-bearing gate.
 
 ### 7. Artifacts

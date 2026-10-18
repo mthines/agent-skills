@@ -369,6 +369,19 @@ AW RUN COMPLETE
 - Verified: [green | red (<check>: <reason>) | not run (<reason>)]   # Full only
 - Degraded: [companions/agents skipped and why, or "none"]
 - Needs you: [blockers or decisions, or "nothing"]
+- Resume: [/goal condition, or "none"]   # Full only, when a check is not yet pass
+```
+
+**`Resume:` is a ready-to-paste `/goal` condition, written so a transcript-only judge can grade it.**
+The `/goal` judge reads only the conversation — it runs no command and opens no file — so name one end state, the printed proof of it, what must not change, and a turn cap.
+Build it from `checks.yaml`; never from a phrase like "the feature is done".
+
+```text
+# ✗ Wrong — the judge cannot see whether this holds, so it clears early
+/goal the feature is finished
+
+# ✓ Right — one end state, printed proof, an invariant, a cap
+/goal every check in .agent/{branch}/checks.yaml reports status: pass in output you print, no file under tests/ is deleted or skipped, or stop after 15 turns
 ```
 
 Micro and Lite may collapse this to one line, but **`Degraded:` survives the

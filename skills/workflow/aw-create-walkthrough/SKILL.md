@@ -101,6 +101,14 @@ pr: { PR_NUMBER }
 
 1. {decision and brief rationale}
 
+## Assumptions
+
+<!-- Every fact the implementation relied on that was not in plan.md or the request,
+     and that nothing in the run verified. The reviewer checks these first.
+     Write "none" only when every input was stated or verified. -->
+
+- {assumption} — {where it is relied on: file or AC-n}
+
 ## Testing Results
 
 <!-- Test outcomes with pass/fail indicators -->
@@ -135,6 +143,7 @@ After writing walkthrough.md, verify:
 - [ ] **Summary**: Concise, describes what was done and the outcome
 - [ ] **Changes table**: Matches actual `git diff --stat` output (no missing files)
 - [ ] **Key Decisions**: Pulled from plan.md, covers the important choices
+- [ ] **Assumptions**: Every unverified input named with where it is used, or `none`
 - [ ] **Testing Results**: Reflects actual test run outcomes
 - [ ] **How to Verify**: Actionable steps a reviewer can follow
 - [ ] **Presented to user**: Walkthrough content shown in conversation (not just written to file)
