@@ -199,6 +199,19 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
 }
 
 /**
+ * The workers a run ledger proves delivered: a `worker <unit> end` record carrying `delivered: true`,
+ * which review-telemetry.mjs stamps only when the `--done` file it was given parses as a candidate
+ * array. A bare `end` proves the worker returned, not that it left a readable file — on Agent0 the
+ * marker rides the command that reads the file, whatever the file holds — so it never counts.
+ * @param {Array<{ t?: string, unit?: unknown, phase?: string, attrs?: Record<string, unknown> }>} ledger
+ * @returns {string[]}
+ */
+export function deliveredWorkers(ledger) {
+  return [...new Set(ledger.filter((r) => r.t === "worker" && r.phase === "end" && r.attrs?.delivered === true)
+    .map((r) => String(r.unit)))];
+}
+
+/**
  * A caller-supplied RUN_ANOMALY is MERGED with the computed one, never a replacement for it: a
  * supplied value used to win outright, silently dropping a capability cap or a prepare-time
  * anomaly the caller never saw. Parts are joined with " — " and exact repeats are dropped, so a
@@ -740,9 +753,10 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     && noDispatchTopology === "hybrid" && context?.intentIsolated !== true
     && typeof context?.budget?.effectiveThoroughness === "number"
     ? context.budget.effectiveThoroughness : undefined;
-  // finder_passes: 2 — a second-pass worker is delivered when the run ledger holds its `worker <unit>
-  // end` record (context.workersDelivered, read by the CLI); any unit the budget planned without one
-  // is named, so a single-pass review never passes for a two-pass one.
+  // finder_passes: 2 — a second-pass worker is delivered when the run ledger holds a `worker <unit>
+  // end` record stamped `delivered: true` (context.workersDelivered, read by the CLI through
+  // deliveredWorkers()); any unit the budget planned without one is named, so a single-pass review
+  // never passes for a two-pass one.
   const delivered = new Set(Array.isArray(context?.workersDelivered) ? context.workersDelivered.map(String) : []);
   const secondPassMissing = context?.budget?.finderPasses === 2 && Array.isArray(context?.budget?.secondPassUnits)
     ? context.budget.secondPassUnits.map(String).filter((/** @type {string} */ u) => !delivered.has(u)) : [];
@@ -2309,9 +2323,38 @@ async function selfTest() {
     check("a half-delivered pass 2 names only the missing unit; a full one and a single-pass budget add nothing",
       half.includes("from other-finders-2") && !half.includes("intent-2,") && !all.includes("finder pass 2") && !single.includes("finder pass 2"),
       `${half} | ${all} | ${single}`);
+    // A bare `end` marker (on Agent0 it rides the command that reads the file, whatever the file
+    // holds) is not delivery; only the stamp review-telemetry.mjs writes from a parsed --done file is.
+    const proven = deliveredWorkers([
+      { t: "worker", unit: "intent", phase: "end" },
+      { t: "worker", unit: "intent-2", phase: "start" },
+      { t: "worker", unit: "intent-2", phase: "end" },
+      { t: "worker", unit: "other-finders-2", phase: "start", attrs: { delivered: true } },
+      { t: "worker", unit: "other-finders-2", phase: "end", attrs: { delivered: true, candidates: 3 } },
+    ]);
+    const fromLedger = ra({ ...pctx, workersDelivered: proven });
+    check("only an end record stamped delivered counts: a bare pass-2 end marker is still named in RUN_ANOMALY",
+      JSON.stringify(proven) === '["other-finders-2"]'
+        && fromLedger.includes("finder pass 2 delivered nothing from intent-2 —") && !fromLedger.includes("other-finders-2"),
+      `${JSON.stringify(proven)} | ${fromLedger}`);
+    // End to end: the ledger review-telemetry.mjs writes for the Agent0 markers, read back here.
+    const lDir = join(scratchRoot(), "finalize-delivered-cli");
+    rmSync(lDir, { recursive: true, force: true });
+    mkdirSync(join(lDir, "pass2"), { recursive: true });
+    writeFileSync(join(lDir, "pass2", "intent.json"), "[]");
+    const tel = (/** @type {string[]} */ a) => spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), ...a, "--run-dir", lDir],
+      { encoding: "utf8", env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+    tel(["begin"]);
+    tel(["worker", "intent-2", "end", "--done", join(lDir, "pass2", "intent.json")]);
+    tel(["worker", "other-finders-2", "end", "--done", join(lDir, "pass2", "others.json")]);
+    tel(["worker", "other-finders-2", "end"]);
+    const telEnds = readLedger(lDir).filter((r) => r.t === "worker");
+    check("through the real telemetry CLI, only the pass-2 unit whose --done file parsed is delivered",
+      JSON.stringify(deliveredWorkers(telEnds)) === '["intent-2"]', JSON.stringify(telEnds));
+    rmSync(lDir, { recursive: true, force: true });
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
-    check("the CLI reads every delivered worker from the run ledger into context.workersDelivered",
-      /context\.workersDelivered = \[\.\.\.new Set\(ledger\.filter\(\(r\) => r\.t === "worker" && r\.phase === "end"\)/.test(src)
+    check("the CLI reads context.workersDelivered through deliveredWorkers(), and intent isolation still reads any intent end record",
+      /context\.workersDelivered = deliveredWorkers\(ledger\);/.test(src)
         && src.includes(`r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;`));
   }
 
@@ -2910,8 +2953,8 @@ async function main() {
   try {
     const ledger = readLedger(dirname(/** @type {string} */ (opts.context)));
     if (ledger.some((r) => r.t === "worker" && r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;
-    // Every worker that delivered, the finder_passes: 2 units included (finalizeReview names a missing one).
-    context.workersDelivered = [...new Set(ledger.filter((r) => r.t === "worker" && r.phase === "end").map((r) => String(r.unit)))];
+    // Every worker whose --done file parsed, the finder_passes: 2 units included (finalizeReview names a missing one).
+    context.workersDelivered = deliveredWorkers(ledger);
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);

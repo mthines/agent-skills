@@ -263,8 +263,22 @@ verification keeps the extra recall without verifying any defect twice.
    The reader folds each worker in on the command that reads its file:
    `node "$TELEMETRY" worker intent-2 import --from <run-dir>/pass2 --done <run-dir>/pass2/intent.json --wait 540 --run-dir "$RUN_DIR"`,
    and the same for `other-finders-2` with `--done <run-dir>/pass2/others.json`.
-   On Agent0, mark `worker intent-2 start` / `worker other-finders-2 start` and the two `end`
-   markers exactly as for pass 1's workers.
+   On Agent0, mark `worker intent-2 start` / `worker other-finders-2 start` as for pass 1's workers,
+   and give each `end` marker `--done` naming the file that command reads.
+   `review-telemetry.mjs` stamps `delivered: true` on an `end` or `import` record only when its
+   `--done` file parses as a candidate array, and `finalize.mjs` counts a pass-2 unit as run from that
+   stamp alone: a bare `end`, or a file that is missing or does not parse, leaves the unit undelivered.
+   **Why:** the marker rides the command that reads the file, so on its own it records that the
+   worker returned, not that it left a readable file.
+
+   ```bash
+   # correct (Agent0): the end marker names the file the same command reads
+   node "$TELEMETRY" worker intent-2 end --done <run-dir>/pass2/intent.json --run-dir "$RUN_DIR"; cat <run-dir>/pass2/intent.json
+
+   # incorrect: a bare end marker — intent-2 stays undelivered and finalize.mjs names it in RUN_ANOMALY
+   node "$TELEMETRY" worker intent-2 end --run-dir "$RUN_DIR"; cat <run-dir>/pass2/intent.json
+   ```
+
 4. **Union before verification.** Run the union once, after every readable file exists:
 
    ```bash
@@ -288,8 +302,8 @@ verification keeps the extra recall without verifying any defect twice.
    strips `agreement_promoted` and `_also_flagged_by` from every record it writes.
 7. **A pass-2 worker with no readable file** is left out of `--second-pass` and is neither retried nor
    run in your context — you have seen pass 1, so a pass 2 run by you is not independent.
-   `finalize.mjs` reads the run ledger and names every planned unit that never delivered in
-   `RUN_ANOMALY`, so the report never claims two passes it did not run.
+   `finalize.mjs` reads the run ledger and names in `RUN_ANOMALY` every planned unit with no `end`
+   record stamped `delivered: true` (step 3), so the report never claims two passes it did not run.
 
 ```text
 # correct (finder_passes: 2, /pr-review): one message, four dispatches; one union before verifying worker candidates

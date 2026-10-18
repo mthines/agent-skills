@@ -203,11 +203,19 @@ Mark both workers on commands you already run ([`run-telemetry.md`](./run-teleme
 `worker intent start` and `worker other-finders start` on the command before the message, and the
 two `end` markers on the command that reads the files. The `worker intent end` record is what tells
 `finalize.mjs` the intent finder ran isolated.
+A pass-2 unit's `end` marker also takes `--done <its file>`, as in
+`worker intent-2 end --done <scratch>/pass2/intent.json`: `finalize.mjs` counts a pass-2 unit as run
+only from the `delivered` stamp that flag writes when the file parses
+([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes), step 3).
 
 If a worker returns no readable file, **do not dispatch it again**: here a retry runs in series,
-against the same timeout. Run that worker's finders in this context and add
+against the same timeout. For pass 1's two workers, run that worker's finders in this context and add
 `<worker> worker returned no readable candidates — ran its finders in-context` to `RUN_ANOMALY`
 through `context.render.RUN_ANOMALY`. The review never loses a finder.
+A pass-2 worker (`intent-2`, `other-finders-2`) is the exception: never run its finders here, because
+you have seen pass 1 and a pass 2 run by you is not independent.
+Leave its file out of the union and add nothing by hand: `finalize.mjs` names the unit in `RUN_ANOMALY`
+([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes), step 7).
 
 Fact 3 still binds: a worker cannot dispatch further, so no worker prompt may ask it to.
 
