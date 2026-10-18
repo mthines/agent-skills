@@ -146,6 +146,7 @@ pnpm install                             # from repo root, for packages/
 ## Evals
 
 Harness docs: [`scripts/eval/README.md`](./scripts/eval/README.md).
+- **plugin-eval** (`pnpm plugin-eval --tag ablation`): [`evals/`](./evals/README.md) runs each key skill with and without the plugin loaded; a skill whose `Δ` stays ≤ 0 is a slimming candidate. Opt-in, never in CI; L1 `G110` keeps every case loadable.
 
 - **L1** (`node scripts/eval/l1.mjs`): deterministic, free, CI-gated on every PR. Add an `s.check` for any mechanical contract and prove it bites by breaking what it guards.
 - **L2** (`ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs [--suite a,b]`): one suite per labelled decision; goldens in `scripts/eval/golden/`, suites in `scripts/eval/suites.mjs`. Opt-in in CI via the `run-evals` PR label (aggregator check `evals · L2 (behavioral) / l2`).

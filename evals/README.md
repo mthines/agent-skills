@@ -1,0 +1,84 @@
+# Plugin evals — does each skill beat no skill?
+
+These cases run the repo root as a Claude Code plugin through [`claude plugin eval`](https://code.claude.com/docs/en/plugin-evals).
+Each run is a sandboxed `claude -p` with only this plugin loaded; under `--ablation with-without` every case also runs with no plugin, and `Δ` is the difference.
+A skill whose `Δ` stays at or below zero is decoration: the model already does what it teaches.
+
+## Run
+
+From the repo root:
+
+```bash
+# Ablation suite: does the skill change the outcome? (both arms)
+pnpm plugin-eval --tag ablation --runs 3 --max-cost-usd 40 -j 4 --json /tmp/plugin-eval.json
+
+# Trigger suite: does natural phrasing reach the right skill? (one arm; a Skill grader can never pass without the plugin)
+pnpm plugin-eval --tag trigger --ablation none --runs 3 --max-cost-usd 5 -j 4
+
+# One case while iterating on it
+pnpm plugin-eval --case critical-premortem --runs 1 --ablation none
+```
+
+`pnpm plugin-eval` expands to `claude plugin eval . --trust-plugin --scaffold --no-publish --allow-tools Write Edit Bash`.
+
+| Flag | Why it is in the script |
+| --- | --- |
+| `--scaffold` | Cases copy their `fixtures/` into the empty workspace through `scaffold.sh`; without it they start empty |
+| `--allow-tools Write Edit Bash` | The refactor, TDD, and plan-artifact cases edit files and run `node --test`; Bash runs inside the OS sandbox |
+| `--trust-plugin` | Skips the first-run trust prompt, which `--json` cannot answer |
+| `--no-publish` | Keeps `report.html` local |
+
+## Cost knobs
+
+- A smoke run (3 cases × 1 run × 2 arms) costs about $1.40; the full ablation suite at `--runs 3` is roughly 13 cases × 6 runs.
+- `--max-cost-usd` stops new runs once the estimate is spent (exit 2, partial results).
+- `--runs 1` while editing a case, `--runs 3` (the default) before trusting a `Δ`.
+- `--ablation none` halves the cost when you only need to know the case loads and grades.
+- `--model <id>` and `--judge-model <id>` pin both models; compare `Δ` only between runs with the same pins.
+- `--tag smoke` selects the three cheapest representative cases.
+
+## Read the result
+
+Results land in `evals/results/<timestamp>/` (gitignored), or the `--json` path.
+
+| Field | Meaning |
+| --- | --- |
+| `cases[].aggregates.score` | Mean with-plugin score, 0–1 |
+| `cases[].aggregates.scoreWithout` | Mean no-plugin score |
+| `cases[].aggregates.delta` | `score − scoreWithout`; what the skill contributed on this case |
+| `aggregates.meanDelta` | Mean `delta` across the cases that ran both arms |
+
+A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`scored: false`): it tells you whether the skill was invoked, not whether the outcome improved.
+
+## Decision rule
+
+1. Run the ablation suite at `--runs 3` with pinned `--model` and `--judge-model`.
+2. A skill whose every case has `delta ≤ 0` is a deletion or slimming candidate.
+3. Before acting, check the case's `skill-fired` indicator or trace: a skill that never fired has a description problem, not a content problem.
+4. A negative `delta` with the skill firing means the skill makes the outcome worse; read the failing grader's explanation in `report.html`.
+
+## Write a case
+
+- One directory per case: `prompt.md` (frontmatter + prompt), `graders/*.md`, and, when it needs files, `case.yaml` + `scaffold.sh` + `fixtures/`.
+- Tag it `ablation` (outcome graders, both arms) or `trigger` (one `tool_used: Skill` grader).
+- Give it at least one deterministic grader (`regex`, `tool_used`, `tool_order`, `file_exists`) and at most one `llm` grader; L1 `G110` enforces both and the frontmatter keys.
+- Ask for the outcome in a neutral format both arms can produce (for example `Severity: <tier>`), so `Δ` measures the decision, not the skill's house style.
+- Keep `max_turns ≤ 15` and prefer read-only tools.
+
+## Cases
+
+| Case | Skill | Graders |
+| --- | --- | --- |
+| `code-quality-refactor` | `code-quality` | `Record<OrderStatus,…>` map, no `} else {`, no per-status chain, `node --test` green |
+| `tdd-discount-codes` | `tdd` | red run before the first `src/cart.mjs` write, ≥ 4 passing tests, suite ran ≥ 2× |
+| `critical-premortem` | `critical` | steelman heading, line-cited finding, no self-score, llm: grounded findings |
+| `confidence-plan-gaps` | `confidence` | `Final:` ≤ 89%, names missing Acceptance Criteria, names the dangling path |
+| `severity-billing-floor` | `severity` | `Severity: high` (billing path floor) |
+| `severity-fixture-exclusion` | `severity` | `Severity: low` (fixture exclusion gate) |
+| `aw-create-plan-artifact` | `aw-create-plan` | `.agent/*/plan.md`, `.agent/*/checks.yaml`, `AC-n (covers: Rn)`, llm: testable criteria |
+| `holistic-analysis-wrong-total` | `holistic-analysis` | names the string concatenation, llm: fix at the load boundary |
+| `optimize-approach-reuse` | `optimize-approach` | names `uniqueBy`, llm: approach-level, behaviour-preserving |
+| `ux-signup-form` | `ux` | error association, labelled toggle or target size, llm: ≥ 5 of 7 defects |
+| `behavioral-design-local-tests` | `behavioral-design` | names a barrier, no shaming, llm: diagnosis → intervention → metric |
+| `trigger-critical`, `trigger-confidence`, `trigger-severity`, `trigger-code-quality` | each named skill | `Skill` fired |
+| `trigger-neg-aw-question`, `trigger-neg-aw-here` | `aw` | `aw` / `autonomous-workflow` not fired |

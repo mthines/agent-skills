@@ -11539,4 +11539,59 @@ const isPollBlock = (block) =>
     "body-region.md lost the attach-media:file=<basename> entry marker");
 }
 
+// ── G110: `claude plugin eval` suite — every case loads, and every case can be graded for free ──
+// A case without a deterministic grader is scored only by a judge model, so its with-without Δ is
+// judge noise; a prompt.md without frontmatter (or with an unknown key) fails to load at run time,
+// after the money is spent. The manifest half guards that the plugin under test actually carries
+// every skill: `skills` entries are scanned one level deep, so a nested SKILL.md no entry reaches
+// is silently absent from both arms. (G110 rather than the next free number: parallel branches.)
+{
+  const EVALS = join(REPO_ROOT, "evals");
+  const PROMPT_KEYS = new Set(["schema_version", "name", "description", "tags", "plugins", "runs", "expected_outcome",
+    "model", "max_turns", "timeout_seconds", "allowed_tools", "append_system_prompt", "env"]);
+  const DETERMINISTIC = new Set(["regex", "tool_used", "tool_order", "file_exists"]);
+  const fmBlock = (text) => /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? null;
+  const fmKeys = (block) => [...block.matchAll(/^([A-Za-z_][\w-]*):/gm)].map((m) => m[1]);
+  const cases = existsSync(EVALS)
+    ? readdirSync(EVALS, { withFileTypes: true })
+        .filter((d) => d.isDirectory() && d.name !== "results" && d.name !== "mocks")
+        .map((d) => d.name)
+        .filter((n) => existsSync(join(EVALS, n, "prompt.md")) || existsSync(join(EVALS, n, "case.yaml")))
+    : [];
+  s.check("G110a evals/ holds plugin-eval cases", cases.length >= 10, `found ${cases.length}`);
+  for (const c of cases) {
+    const promptPath = join(EVALS, c, "prompt.md");
+    const block = existsSync(promptPath) ? fmBlock(readFileSync(promptPath, "utf8")) : null;
+    const unknown = block ? fmKeys(block).filter((k) => !PROMPT_KEYS.has(k)) : [];
+    s.check(`G110b evals/${c}/prompt.md has frontmatter with only known keys`, block !== null && unknown.length === 0,
+      block === null ? "missing prompt.md or its --- frontmatter block" : `unknown keys: ${unknown.join(", ")}`);
+    const gdir = join(EVALS, c, "graders");
+    const types = existsSync(gdir)
+      ? readdirSync(gdir).filter((f) => f.endsWith(".md"))
+          .map((f) => /^type:\s*(\S+)/m.exec(fmBlock(readFileSync(join(gdir, f), "utf8")) ?? "")?.[1])
+      : [];
+    s.check(`G110c evals/${c} has ≥ 1 deterministic grader (regex / tool_used / tool_order / file_exists)`,
+      types.some((t) => DETERMINISTIC.has(t)), `grader types: ${types.join(", ") || "none"}`);
+    s.check(`G110d evals/${c} has at most one llm grader`, types.filter((t) => t === "llm").length <= 1,
+      `${types.filter((t) => t === "llm").length} llm graders`);
+  }
+  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, ".claude-plugin/plugin.json"), "utf8"));
+  const skillRoots = [manifest.skills ?? []].flat().map((p) => join(REPO_ROOT, p));
+  const reachable = (skillDir) => skillRoots.some((root) => {
+    const r = root.replace(/\/$/, "");
+    return skillDir === r || join(skillDir, "..") === r;
+  });
+  const unreached = walk(join(REPO_ROOT, "skills"))
+    .filter((f) => f.endsWith("/SKILL.md"))
+    .map((f) => join(f, ".."))
+    .filter((d) => !reachable(d));
+  s.check("G110e every SKILL.md is reachable from a plugin.json `skills` entry (scanned one level deep)",
+    unreached.length === 0, `unreached: ${unreached.map(rel).join(", ")}`);
+  const agents = [manifest.agents ?? []].flat();
+  s.check("G110f plugin.json `agents` lists .md files only (a directory invalidates the whole manifest)",
+    agents.every((a) => a.endsWith(".md") && existsSync(join(REPO_ROOT, a))), `agents: ${agents.join(", ")}`);
+  s.check("G110g evals/results/ is gitignored",
+    /^evals\/results\/?$/m.test(readFileSync(join(REPO_ROOT, ".gitignore"), "utf8")));
+}
+
 process.exit(s.report() ? 0 : 1);
