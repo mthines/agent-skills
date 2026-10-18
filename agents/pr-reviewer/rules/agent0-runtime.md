@@ -165,6 +165,15 @@ A worker's trace is coverage, never a finding: it marks consumer files and usage
 and nothing in it is posted. A missing or unreadable trace file folds as `[]`, so its consumers
 render as not checked, never as verified.
 
+**`budget.finderPasses == 2` adds two workers to that same message** — `intent-2` and
+`other-finders-2`, writing `<scratch>/pass2/intent.json` and `<scratch>/pass2/others.json` — so four
+`general` sub-agents go out at once and the wait is still the slowest worker's.
+Under an `in-context` budget the message carries only the two pass-2 workers, and you run pass 1's
+finders here first, without reading their files.
+Then union both passes before verifying anything, verify only `_needs_verification: true`, and leave
+an unreadable pass-2 file out of the union without retrying it
+([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes)).
+
 **Never dispatch anything else.** Phase E verifies one candidate at a time in this turn, and Step
 2.4b's targeted holistic traces are `Skill()` calls in this turn too. Neither is a fan-out, on this
 host or any other: a dispatch per candidate pays a sub-agent's whole base cost for one verdict.
@@ -207,7 +216,9 @@ automation the top-level run is the loop, and this review is its one `general`
 sub-agent ([`review-loop/rules/agent0-runtime.md`](../../../skills/quality/review-loop/rules/agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)).
 Run every finder, the intent finder included, and the verifier in this context — the `in-context`
 topology, which the pipeline already permits — and return the verdict, the new-finding count, and
-the sticky URL in the final message. Never attempt a dispatch to recover the isolation: the second
+the sticky URL in the final message.
+A `finder_passes: 2` budget gets no pass 2 here; `finalize.mjs` names both pass-2 units in
+`RUN_ANOMALY` because the ledger holds no `end` record for them. Never attempt a dispatch to recover the isolation: the second
 rung does not exist.
 
 ## The dispatch prompt is short on purpose

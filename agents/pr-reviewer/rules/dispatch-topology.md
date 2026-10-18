@@ -129,6 +129,10 @@ reads it, never re-derives it:
   `"hybrid"` dispatches only `budget.isolatedFinders` and runs everything else in the reviewer's own
   turn; `"in-context"` dispatches nothing. `budget` already folds `dispatchAvailable` into this field — a
   caller never checks `Task` separately.
+- **`budget.finderPasses`** — `1`, or `2` when the review config sets `finder_passes: 2` (see
+  [*Two finder passes*](#two-finder-passes) below). At `2`, `budget.secondPassUnits` names pass 2's
+  workers and `budget.toolCalls` already includes the ×1.5. Like `topology`, it assumes a dispatch:
+  with no dispatch tool there is no pass 2, and `finalize.mjs` names the missing units.
 - **`budget.maxVerificationTier`** — the ceiling on `verify-behavior`'s Tier 1–3 evidence ladder
   verification may reach for this run (`finding-verifier.md`'s own per-candidate judgment still
   decides whether a given candidate needs it).
@@ -227,6 +231,78 @@ across the two, so the votes added work for the verifier rather than agreement, 
 one worker each.
 Reintroduce votes only with a run that shows them adding **confirmed** recall, and change
 `route-depth.mjs`'s `CORRECTNESS_VOTES` and `depth-routing.md` together.
+
+## Two finder passes
+
+`budget.finderPasses` is `2` when the PR's base commit sets `finder_passes: 2` in `.github/review.yaml`
+(or `prepare-review.mjs` got `--finder-passes 2`), a dispatch is available, and the run is not
+zero-delta; otherwise it is `1` and `budget.finderPassesReason` says why.
+Pass 1 is the run this file already describes, on `budget.topology`, unchanged.
+Pass 2 runs the same active finders again, in the two workers `budget.secondPassUnits` names:
+
+| Unit | Finders | Writes |
+| --- | --- | --- |
+| `intent-2` | `intent` only | `<run-dir>/pass2/intent.json` |
+| `other-finders-2` | every other finder `budget.finders` turns on, in one context | `<run-dir>/pass2/others.json` |
+
+`<run-dir>` is the directory holding `context.json`.
+Pass 2 writes no `impact_trace`: coverage is recorded once, by pass 1.
+**Why:** independent passes over the same diff raise different confirmed defects; a union before
+verification keeps the extra recall without verifying any defect twice.
+
+1. **Dispatch.** Whoever dispatches pass 1's intent worker also sends both pass-2 workers, in the
+   same message: `/pr-review` and `review-loop` on a harness with a dispatch tool, or on a Dash0 Agent0
+   Automation the top-level reviewer, as two more workers in its Phase D message
+   ([`agent0-runtime.md`](./agent0-runtime.md#phase-d-two-workers-in-one-message-never-expect-a-second-rung)).
+   When `budget.topology` is `in-context` and `budget.finderPasses` is `2`, the two pass-2 workers
+   are still sent.
+2. **Independence.** Each pass-2 worker gets the intent worker's preamble, the same context file, the
+   review packet, and its output path — never pass 1's candidates, a count of them, or notes from the
+   reviewer. It never runs `prepare-review.mjs`.
+3. **Record each worker.** The caller stamps the dispatch with `date +%s > <run-dir>/pass2/dispatched_at`.
+   The reader folds each worker in on the command that reads its file:
+   `node "$TELEMETRY" worker intent-2 import --from <run-dir>/pass2 --done <run-dir>/pass2/intent.json --wait 540 --run-dir "$RUN_DIR"`,
+   and the same for `other-finders-2` with `--done <run-dir>/pass2/others.json`.
+   On Agent0, mark `worker intent-2 start` / `worker other-finders-2 start` and the two `end`
+   markers exactly as for pass 1's workers.
+4. **Union before verification.** Run the union once, after every readable file exists:
+
+   ```bash
+   node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" \
+     --union-pass1 <pass-1 candidate files> --union-pass2 <run-dir>/pass2/intent.json,<run-dir>/pass2/others.json \
+     --out <run-dir>/union.json --run-dir "$RUN_DIR"
+   ```
+
+   - Where the reviewer verifies its own pass-1 candidates before reading any worker file (the
+     `--intent-from` path), write that verified pool to `<run-dir>/pass1/own.json` and pass
+     `<run-dir>/pass1/own.json,<intent file>` as pass 1.
+     This replaces step 3's `--dedupe-candidates` call: one merge covers the intent worker and pass 2.
+   - Where every finder ran as a worker (Agent0), pass 1 is `<scratch>/intent.json,<scratch>/others.json`.
+5. **Verify** only the kept candidates with `_needs_verification: true`.
+   A kept candidate with `_needs_verification: false` shares a group with one you already verified:
+   that verdict stands, and the candidate is not verified or posted again.
+6. **Write `judgments.json` without the union's fields.** Drop `_pass`, `_found_in_passes`, and
+   `_needs_verification` from every candidate; the judgments schema rejects unknown keys.
+   `_found_in_passes: [1, 2]` is not agreement: it never lowers a confidence bar and never sets
+   `agreement_promoted`.
+7. **A pass-2 worker with no readable file** is left out of `--union-pass2` and is neither retried nor
+   run in your context — you have seen pass 1, so a pass 2 run by you is not independent.
+   `finalize.mjs` reads the run ledger and names every planned unit that never delivered in
+   `RUN_ANOMALY`, so the report never claims two passes it did not run.
+
+```text
+# correct (finder_passes: 2, /pr-review): one message, four dispatches; one union before verifying worker candidates
+dispatch pr-reviewer + intent + intent-2 + other-finders-2 → reviewer verifies its own pass-1 candidates
+→ imports intent, intent-2, other-finders-2 → finalize.mjs --union-pass1 own.json,intent.json
+  --union-pass2 pass2/intent.json,pass2/others.json → verify _needs_verification: true → finalize
+
+# incorrect: pass 2 run by the reviewer after reading pass 1 — correlated, not independent
+reviewer runs its finders → reads intent.json → "runs the finders again" → unions them
+```
+
+Cost: two more sub-agents per run (each ~110–160k tokens before it reads the diff) and 1.5× the
+reviewer's tool-call budget for the extra verification. **Unmeasured:** no A/B round has compared a
+two-pass union with one pass; measure confirmed recall before raising the default from `1`.
 
 ## Worker prompts
 

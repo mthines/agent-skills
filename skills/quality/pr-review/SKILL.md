@@ -6,7 +6,7 @@ description: >
   for "review this PR" when you do not want an apply-and-converge loop. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`. Invoke with /pr-review.
 disable-model-invocation: false
-argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
@@ -140,7 +140,7 @@ and left a worktree behind.
    scope `branch::<owner>/<repo>::<headRefName>`, key `ci-state::pr-review-<n>` — and save a hit to
    `<dir>/state.json`. Skip it under `--isolated`; on a miss, or with no LoreKit tool, pass no `--state`.
 3. Run prepare once, forwarding only the pass-through flags it takes (`--full`, `--effort`,
-   `--thoroughness`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
+   `--thoroughness`, `--finder-passes`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
    when the pass-through flags carry `--review-sha`), and read the topology on the same command:
 
    ```bash
@@ -152,6 +152,12 @@ and left a worktree behind.
    Write seconds: BSD `date` on macOS has no `%N`, so `%s%3N` there prints a literal `3N`.
    The `dispatch` record and the stamp put the agent's definition read and the worker's own span in
    the trace ([`run-telemetry.md`](../../../agents/pr-reviewer/rules/run-telemetry.md)).
+   Then read whether the repo asked for a second finder pass, and stamp it when it did:
+
+   ```bash
+   [ "$(jq -r '.budget.finderPasses // 1' <dir>/context.json)" = 2 ] && mkdir -p <dir>/pass2 && date +%s > <dir>/pass2/dispatched_at
+   ```
+
 4. On `hybrid`, in **one message**, dispatch both:
    - `pr-reviewer` with `<PR_REF> <pass-through flags> --context <dir>/context.json --intent-from <dir>/intent/intent.json`;
    - a general-purpose worker (the harness's general sub-agent type) with the [worker preamble](#worker-preamble--the-intent-worker),
@@ -161,6 +167,17 @@ and left a worktree behind.
 5. On `in-context` — below thoroughness 0.4, or a small incremental re-review — dispatch
    `pr-reviewer` alone with `--context <dir>/context.json`. The budget isolates nothing, so a worker
    would be a sub-agent's base cost for a candidate list the reviewer builds itself.
+5b. When `budget.finderPasses` is `2`, add two more general workers to the message from step 4 or 5,
+   whichever topology: both get the [worker preamble](#worker-preamble--the-intent-worker) and
+   `<dir>/context.json`, and neither runs `prepare-review.mjs`.
+   - `intent-2` acts as the `intent` finder only and writes `<dir>/pass2/intent.json`;
+   - `other-finders-2` runs every other finder `budget.finders` turns on, from `finders.md` (plus
+     `finder-consumer-impact.md` and `finder-dependency.md` when those are on), and writes
+     `<dir>/pass2/others.json`.
+
+   Pass the reviewer nothing extra: it finds `<dir>/pass2/` beside its `--context` file, unions both
+   passes before verifying a worker's candidate, and `finalize.mjs` names any pass-2 unit that never
+   delivered (`agents/pr-reviewer/rules/dispatch-topology.md` § Two finder passes).
 6. When every dispatch has returned, release the workspace: you ran prepare, so the cleanup is yours,
    never the reviewer's.
 
@@ -388,7 +405,7 @@ Both exemptions are the agent's, not this command's, so this refusal is a restat
 - **Read-only, always.** This command never edits a file, never commits, never pushes, and never resolves a thread. Applying is [`/implement-suggestion`](../../workflow/implement-suggestion/SKILL.md); applying-and-converging is [`review-loop`](../review-loop/SKILL.md).
 - **Never write to GitHub.** The agent posts its own sticky report and inline findings. This skill adds a terminal summary only — a second comment would duplicate a report that is rewritten in place precisely so a PR does not accumulate copies.
 - **Dispatch via the sub-agent dispatch tool, never `Skill()`.** `pr-reviewer` is an agent; `Skill("pr-reviewer", …)` errors with `Unknown skill`. The tool is named `Task` in some harnesses and `Agent` in others — use the one this session has.
-- **One prepare, one review dispatch per invocation, plus the intent worker in the same message when the budget is `hybrid`. Do not loop.** The caller that ran prepare runs `--cleanup`. Re-reviewing an unchanged head produces the same report at full cost.
+- **One prepare, one review dispatch per invocation, plus the intent worker in the same message when the budget is `hybrid`, and the two pass-2 workers when `budget.finderPasses` is `2`. Do not loop.** The caller that ran prepare runs `--cleanup`. Re-reviewing an unchanged head produces the same report at full cost.
 - **Absent sub-agent dispatch is a skip, not a fallback — and it is a CAPABILITY test, not a name test.** Conclude it only when no available tool dispatches a sub-agent under any name; the absence of `Task` alone is not evidence. Then never review in this context and label it a `pr-reviewer` review, and never retry the dispatch.
 - **Never validate the pass-through flags.** Forward the tail verbatim; the agent owns that grammar and rejects what it does not know.
 - **Never re-adjudicate the verdict.** Report `PASS` / `WARN` / `FAIL` as returned, with the blocking findings named.

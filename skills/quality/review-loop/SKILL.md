@@ -613,12 +613,13 @@ if STOP_REASON in ("cap-reached", "no-progress"):
 
 On `REVIEWER_ROUTE == "named"`, dispatch `pr-reviewer` exactly as the `pr-review` skill's Step 2 does, and never as a bare single call.
 That step owns the procedure: load the `pr-review` skill and follow it, never restate it.
-It adds four things a bare `<dispatch>(subagent_type="pr-reviewer", …)` loses:
+It adds five things a bare `<dispatch>(subagent_type="pr-reviewer", …)` loses:
 
 1. **One prepare, shared, and cleaned up here.** This loop runs `prepare-review.mjs` once per iteration and hands the reviewer `--context`; the intent worker reads the same context instead of preparing its own. On iteration 1 the [apply-first check](#iteration-1--apply-first-when-the-last-review-still-stands) reads that same context before anything is dispatched. Having run prepare, the loop runs `prepare-review.mjs --cleanup` once the iteration's dispatches return, or straight after the check when it skipped the dispatch.
 2. **The intent worker, in the same message, when `context.budget.topology` is `hybrid`.** The dispatched reviewer holds no dispatch tool, so a bare call runs a `hybrid` budget's intent finder in-context — the setting A/B rounds 7–8 measured missing the highest-severity defect. A re-review that routes `standard` or `quick` is `in-context` and sends the reviewer alone.
 3. **A dispatch record and stamp** (`review-telemetry.mjs dispatch`, and `dispatched_at` in the intent dir). The time the agent spends loading its definition is then a `load` step instead of an unexplained gap after `prepare`.
 4. **`--repo-dir <path>`, when a local clone of the PR's repository exists** and this session's cwd is not one — this loop is often run from another checkout. Pass the clone's path (the session's own checkout when its `origin` is the PR's repo, or a clone the user named). Without it, the reviewer's workspace rung 0 is skipped and it clones over the network; one observed run fell through to a failed tarball and restarted.
+5. **The two pass-2 workers, in the same message, when `context.budget.finderPasses` is `2`** (the repo set `finder_passes: 2`) — `pr-review` Step 2's step 5b. The dispatched reviewer cannot send them itself; without them `finalize.mjs` reports that pass 2 never ran.
 
 ```text
 # RIGHT — one message, both dispatches, as /pr-review Step 2 sends them

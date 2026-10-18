@@ -274,6 +274,7 @@ On sync-tray#72 (22 files), arms at `t = 0.8` skipped whole files to stay inside
 partial review after reading 13 of 22 files, and the file it only grepped held the
 highest-severity corroborated defect, which the `t = 0.8` arm missed in all three rounds.
 At `deep`'s default (`t = 0.95`) an 11–30-file diff gets 120 calls.
+`finder_passes: 2` multiplies the result by a further 1.5 for the second pass's verification ([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes)), so the same diff gets 180.
 The budget is a ceiling, never a target, so a run that finishes early spends nothing extra.
 
 **Holistic broad pass (item 3).** Step 2.4 used to run unconditionally — gated only by
