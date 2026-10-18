@@ -272,6 +272,7 @@ The full annotated description, including the recorded run history, is [`docs/ev
   Opt-in in CI via the `run-evals` PR label; require the aggregator check `evals · L2 (behavioral) / l2`.
 - **L2-detection** (`ANTHROPIC_API_KEY=… node scripts/eval/l2-detection.mjs`, `--self-test` offline): replays finder → verifier over `golden/bug-detection.jsonl`; hard-gated on `recall ≥ 0.7` and `fp ≤ 0.2`.
   Never lower a gate or loosen the parse to meet the current core.
+- **plugin-eval** (`pnpm plugin-eval --tag ablation`): [`evals/`](./evals/README.md) runs each key skill with and without the plugin loaded; a skill whose `Δ` stays ≤ 0 is a slimming candidate. Opt-in, never in CI; L1 `G110` keeps every case loadable.
 
 
 ### Keeping the evals honest (mandatory on every change)

@@ -21,6 +21,17 @@ Methodology follows the repo's own [`ai-engineering/rules/evals.md`](../../skill
 routes a 4-file task to Micro"; L2 would never have caught "the confidence
 `awk` idiom counts 0 acceptance criteria." Different failure classes.
 
+## plugin-eval — does a skill beat no skill?
+
+L2 grades one decision against a rubric excerpt; `plugin-eval` runs the whole plugin as a sandboxed agent, with and without the plugin loaded, and reports the difference (`Δ`).
+Cases live in [`evals/`](../../evals/README.md), which also holds the decision rule for slimming a skill.
+
+```bash
+pnpm plugin-eval --tag ablation --runs 3 --max-cost-usd 40 -j 4 --json /tmp/plugin-eval.json
+```
+
+It is opt-in and never runs in CI; L1 `G110` keeps every case loadable and gradable for free.
+
 ## L1 — `node scripts/eval/l1.mjs`
 
 Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:

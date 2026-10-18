@@ -7,8 +7,26 @@
   },
   "repository": "https://github.com/mthines/agent-skills",
   "license": "MIT",
-  "skills": "./skills/",
-  "agents": "./agents/",
+  "skills": [
+    "./skills/analysis/",
+    "./skills/authoring/",
+    "./skills/delivery/",
+    "./skills/design/",
+    "./skills/quality/",
+    "./skills/testing/",
+    "./skills/workflow/",
+    "./skills/workflow/autonomous-workflow/aw/",
+    "./skills/workflow/autonomous-workflow/aw-setup/",
+    "./skills/workflow/autonomous-workflow/aw-tester-chrome/"
+  ],
+  "agents": [
+    "./agents/branch-reviewer.md",
+    "./agents/bug-fix-verifier.md",
+    "./agents/feature-pr-verifier.md",
+    "./agents/linear-ticket-investigator.md",
+    "./agents/pr-reviewer.md",
+    "./agents/rca-investigator.md"
+  ],
   "keywords": [
     "claude-code",
     "claude-code-plugin",
