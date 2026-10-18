@@ -221,9 +221,9 @@ An explicit CLI flag beats every config key, and within the config `effort: high
 Config keys come from the PR's base commit, already resolved in `context.reviewConfig` ([`review-config.md` § Run-level knobs](../../shared/rules/review-config.md#run-level-knobs)).
 
 1. `--effort high`, or (no CLI depth flag) `effort: high` → `t = 1`.
-2. `--thoroughness <n>`, or (no CLI depth flag) `thoroughness: <n>` → `t = clamp(n, 0, 1)`. A
-   non-finite or garbage value **fails closed to `t = 1`** — the safe direction for a broken override
-   is maximum scrutiny, never a silent under-review.
+2. `--thoroughness <n>`, or (no CLI depth flag) `thoroughness: <n>` → `t = clamp(n, 0, 1)`.
+   A non-finite or garbage CLI value **fails closed to `t = 1`** — the safe direction for a broken override is maximum scrutiny, never a silent under-review.
+   A config `thoroughness:` outside 0–1 never reaches this item: `prepare-review.mjs` ignores it without coercing it and lists it in `RUN_ANOMALY`, so `t` falls through to item 3.
 3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.95.**
    Each default sits one band past a breakpoint, so a defaulted review buys the next lever up:
 
