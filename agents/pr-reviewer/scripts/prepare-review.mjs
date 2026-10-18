@@ -1328,7 +1328,8 @@ export function reviewSettings(yamlText) {
     return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
   };
   let inSeverity = false;
-  for (const raw of yamlText.split("\n")) {
+  // `\r?\n`, never `\n`: a CRLF line keeps its `\r`, which `.` never matches, so every `(.*)$` key below would read as absent with no anomaly.
+  for (const raw of yamlText.split(/\r?\n/)) {
     if (inSeverity) {
       // A blank line, an indented line, or a comment at any column stays inside the block: YAML ignores comments.
       if (/^\s*$/.test(raw) || /^\s+/.test(raw) || raw.startsWith("#")) {
@@ -2415,6 +2416,15 @@ async function selfTest() {
       "thoroughness: 2", "critical: sometimes", "per_comment_confidence_threshold: abc"].join("\n"));
     return r.profile === null && r.severityThresholds === null && r.effort === null && r.thoroughness === null
       && r.critical === null && r.flatThreshold === null && r.invalid.length === 7;
+  });
+  t("reviewSettings reads a CRLF config exactly like its LF twin, with no carriage return left in a value or an anomaly", () => {
+    const lines = ["profile: assertive  # more findings", "severity_thresholds:", "  critical: 55", "", "per_comment_confidence_threshold: 75",
+      "effort: max", "thoroughness: 0.8", "critical: always", ""];
+    const crlf = reviewSettings(lines.join("\r\n")), lf = reviewSettings(lines.join("\n"));
+    return JSON.stringify(crlf) === JSON.stringify(lf)
+      && crlf.profile === "assertive" && crlf.severityThresholds?.critical === 55 && crlf.flatThreshold === 75
+      && crlf.thoroughness === 0.8 && crlf.critical === "always"
+      && crlf.invalid.length === 1 && crlf.invalid[0] === "effort: max";
   });
   t("reviewSettings is all-null for an empty or knob-free config", () => {
     const a = reviewSettings(""), b = reviewSettings("agent0_fix_links: false\nhigh_stakes_paths:\n  - ^x/\n");
