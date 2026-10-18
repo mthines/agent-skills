@@ -483,6 +483,8 @@ with an empty variable would swallow the next argument, so build the flag condit
 4. To try a config before merging it, pass `--config <file>` to `prepare-review.mjs`; that file replaces the base read for the run, and `context.reviewConfig.source` names it.
    An unreadable `--config` file leaves every knob at its default and adds `review config <file> (unreadable): using defaults` to `anomalies[]`.
 5. Subtree `<subtree>/.review.yaml` files never set these keys; they still scope `filters:` and `path_instructions:` per file.
+6. `filters:`, `path_instructions:`, `standards:`, and `measurable:` also shape what the review reports, but they are not run-level knobs: `context.reviewConfig` does not carry them, so take them from [Step 1.7](#config-loading-step).
+   Step 1.7 reads the head checkout, the repo-level file included, so the base-commit read above does not cover these four keys: a PR that edits one changes which findings its own review produces and how they are scored or gated.
 
 ```yaml
 # ✓ every review on this repo runs the pre-mortem and surfaces findings down to the assertive bars
