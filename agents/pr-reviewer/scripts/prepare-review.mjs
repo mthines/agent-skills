@@ -58,6 +58,7 @@ import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
 import { discoverStandards, trivialSkip } from "./discover-standards.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
 import { PROFILES } from "./finalize/thresholds.mjs";
+import { TIERS as SEVERITY_TIERS } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORT_MARKER = "<!-- PR_REVIEWER_REPORT -->";
@@ -1308,7 +1309,6 @@ export function agent0Config(yamlText) {
 
 const CONFIG_PROFILES = Object.keys(PROFILES);
 const CONFIG_CRITICAL = ["auto", "always"];
-const SEVERITY_TIERS = ["critical", "high", "medium", "low"];
 
 /**
  * The run-level review knobs (review-config.md § Run-level knobs), top-level keys only:
