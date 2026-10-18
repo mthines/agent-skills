@@ -528,6 +528,7 @@ path ("authorization", "payment", and whatever this repo's equivalents are).
   (`api-contract` paths are deliberately not high-stakes: a contract edit escalates within
   incremental rather than forcing full.)
 - Config entries **extend** that list; they can never remove a built-in.
+- `prepare-review.mjs` unions the repo-level list at the PR's base commit with the head's: a PR may add a high-stakes path but never remove one the base declares.
 - Effect: any delta file matching either list puts the file in `HIGH_STAKES_FILES`, which forces
   `RUN_MODE = "full"` at Step 1.2b and marks the change `high-stakes-path` for Persona 1's shape
   checklists.

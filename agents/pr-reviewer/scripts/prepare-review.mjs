@@ -1273,7 +1273,8 @@ export function extraHighStakes(yamlText) {
   if (!yamlText) return [];
   const out = [];
   let inBlock = false;
-  for (const raw of yamlText.split("\n")) {
+  // `\r?\n`, as in reviewSettings(): a CRLF entry keeps its `\r`, which `(.+)$` never matches, and a blank CRLF line ends the block.
+  for (const raw of yamlText.split(/\r?\n/)) {
     if (/^high_stakes_paths:/.test(raw)) {
       inBlock = true;
       continue;
@@ -1286,6 +1287,18 @@ export function extraHighStakes(yamlText) {
     if (v) out.push(v);
   }
   return out;
+}
+
+/**
+ * The `high_stakes_paths` a run classifies with: the base config's list unioned with the head's
+ * (review-config.md § High-stakes paths). A PR may add a high-stakes path but never remove one the
+ * base declares — read from the head alone, deleting a base entry would drop the full-review trigger
+ * for the PR's own review.
+ * @param {string} baseText @param {string} headText
+ * @returns {string[]}
+ */
+export function mergedHighStakes(baseText, headText) {
+  return [...new Set([...extraHighStakes(baseText), ...extraHighStakes(headText)])];
 }
 
 /**
@@ -1705,15 +1718,16 @@ async function prepare(opts) {
   // Shape classification — a pure local computation, no API calls.
   timing.start("classify-shape");
   let shape = null;
-  // `high_stakes_paths` (extend-only) and the Agent0 link keys read the HEAD checkout; the knobs
-  // that can LOWER the bar (profile, thresholds, depth, critical) read the BASE commit
-  // (review-config.md § Run-level knobs), so a PR cannot weaken its own review.
+  // The Agent0 link keys read the HEAD checkout; `high_stakes_paths` reads the BASE list unioned
+  // with the head's (a PR may add a path, never drop the base's); the knobs that can LOWER the bar
+  // (profile, thresholds, depth, critical) read the BASE commit (review-config.md § Run-level
+  // knobs), so a PR cannot weaken its own review.
   const reviewConfigText = readReviewConfig(workspace.dir);
   const baseConfig = await readBaseReviewConfig({ explicitPath: opts.config, dir: workspace.dir, baseSha, repo, timeoutMs });
   const settings = reviewSettings(baseConfig.text);
   anomalies.push(...reviewConfigAnomalies(baseConfig, settings));
   const depthOverrides = resolveDepthOverrides(opts, settings);
-  const hsArgs = extraHighStakes(reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
+  const hsArgs = mergedHighStakes(baseConfig.text, reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
   if (classify.ok) {
     try {
@@ -2520,6 +2534,42 @@ async function selfTest() {
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;
+  });
+  t("extraHighStakes reads a CRLF config exactly like its LF twin, across a blank line, with no carriage return left in an entry", () => {
+    const lines = ["high_stakes_paths:", "  - ^src/auth/  # money", "", '  - "^db/migrations/"', "other: 1", ""];
+    const crlf = extraHighStakes(lines.join("\r\n")), lf = extraHighStakes(lines.join("\n"));
+    return JSON.stringify(crlf) === JSON.stringify(lf) && crlf.length === 2
+      && crlf[0] === "^src/auth/" && crlf[1] === "^db/migrations/" && crlf.every((v) => !v.includes("\r"));
+  });
+  t("mergedHighStakes keeps a base entry the head deletes, adds the head's, and dedupes", () => {
+    const base = ["high_stakes_paths:", '  - "(^|/)ledger(/|$)"', "  - ^billing-core/"].join("\n");
+    const head = ["high_stakes_paths:", "  - ^billing-core/", "  - ^tenant/"].join("\r\n"); // the head deleted the ledger entry
+    const r = mergedHighStakes(base, head);
+    return r.length === 3 && r.includes("(^|/)ledger(/|$)") && r.includes("^tenant/")
+      && r.filter((v) => v === "^billing-core/").length === 1
+      && mergedHighStakes(base, "profile: chill\n").includes("(^|/)ledger(/|$)") // the head dropped the key
+      && mergedHighStakes(base, "").length === 2 // the head deleted the file
+      && mergedHighStakes("", head).length === 2; // no base list: the head's additions still apply
+  });
+  t("a head that deletes a base high_stakes_paths entry still gets that path classified high-stakes, and prepare() classifies with the union", () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-hs-union-"));
+    try {
+      const filesPath = join(dir, "pr-files.json");
+      writeFileSync(filesPath, JSON.stringify({ filename: "ledger/post.ts", patch: "@@ -1,0 +1,1 @@\n+export const x = 1;" }) + "\n");
+      const base = 'high_stakes_paths:\n  - "(^|/)ledger(/|$)"\n';
+      const head = "high_stakes_paths:\n  - ^tenant/\n";
+      const cls = (/** @type {string[]} */ pats) => JSON.parse(execFileSync("node",
+        [join(HERE, "classify-shape.mjs"), filesPath, ...pats.flatMap((p) => ["--extra-high-stakes", p])], { encoding: "utf8" }));
+      const merged = cls(mergedHighStakes(base, head));
+      const headOnly = cls(extraHighStakes(head));
+      const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+      const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+      return merged.high_stakes_files.includes("ledger/post.ts") && !headOnly.high_stakes_files.includes("ledger/post.ts")
+        && /const hsArgs = mergedHighStakes\(baseConfig\.text, reviewConfigText\)/.test(body)
+        && !/extraHighStakes\(reviewConfigText\)/.test(body);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   t("normalizeLogin folds the three spellings of one GitHub App identity", () => {
