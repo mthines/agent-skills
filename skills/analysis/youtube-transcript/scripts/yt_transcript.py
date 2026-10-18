@@ -95,10 +95,18 @@ def main():
     ap.add_argument("--lang", default="en")
     ap.add_argument("--timestamps", action="store_true")
     a = ap.parse_args()
-    tracks, ua, title = caption_tracks(video_id(a.video))
-    track = pick(tracks, a.lang)
-    print(f"# {title} [{track['languageCode']}, {track.get('kind', 'manual')}]", file=sys.stderr)
-    print(parse(http(track["baseUrl"], ua), a.timestamps))
+    # Every exit message names a row of the SKILL.md "When it fails" table.
+    try:
+        tracks, ua, title = caption_tracks(video_id(a.video))
+        track = pick(tracks, a.lang)
+        print(f"# {title} [{track['languageCode']}, {track.get('kind', 'manual')}]", file=sys.stderr)
+        print(parse(http(track["baseUrl"], ua), a.timestamps))
+    except urllib.error.HTTPError as e:
+        sys.exit(f"HTTP {e.code} from {e.url.split('?')[0]}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        sys.exit(f"network error: {getattr(e, 'reason', e)}")
+    except ET.ParseError:
+        sys.exit("no captions: the caption track was empty or not timedtext XML")
 
 
 if __name__ == "__main__":

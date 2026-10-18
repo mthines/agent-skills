@@ -57,6 +57,7 @@ yt-dlp --write-auto-subs --skip-download "https://youtu.be/J9NQTYUP6k0"
 | --- | --- |
 | `LOGIN_REQUIRED` / `not a bot` on both clients | Bump `clientVersion` and the matching `User-Agent` for `ANDROID` and `IOS` in `CLIENTS` to the current app versions, then retry once |
 | `HTTP 429` | Wait a minute and retry once; the IP is rate-limited |
+| any other `HTTP <code>` or `network error` | Retry once; if it repeats, the host is unreachable from this session — report it verbatim |
 | `UNPLAYABLE` / `ERROR` with a reason | The video is private, removed, or age/region-restricted; report the reason to the user |
 | `no captions` | The video has no caption tracks; say so — do not invent content |
 
