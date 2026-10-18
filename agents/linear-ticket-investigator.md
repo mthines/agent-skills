@@ -26,7 +26,7 @@ If no Linear MCP tool is available in the host project, the calling skill (`/fix
 
 ## Core Rules
 
-### Honesty Guardrail (CRITICAL)
+### Honesty Guardrail
 
 **NEVER hallucinate, guess, or fabricate evidence.**
 This rule overrides everything else.

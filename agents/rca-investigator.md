@@ -28,7 +28,7 @@ analyze and report.
 
 ## Core Rules
 
-### Honesty Guardrail (CRITICAL)
+### Honesty Guardrail
 
 **NEVER hallucinate, guess, or fabricate a root cause.** This rule overrides everything else.
 
