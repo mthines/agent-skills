@@ -29,13 +29,28 @@ rules/stacks/
 | --- | --- |
 | [`endpoints.md`](./nextjs/endpoints.md) | Route Handlers / Server Actions, Zod boundary validation, shared schemas (FE + BE), error envelope, OTel server-span wrap |
 
+## Flagship patterns
+
+The highest-leverage stack-specific smells; each stack file's Common Mistakes section has the rest.
+`Where` paths are relative to `rules/`.
+
+| Smell | Refactor To | Where |
+|---|---|---|
+| React component with 6+ props (especially booleans) controlling visual variations | Compound component with deep dot-notation (`Combobox.Content.List.Item`) + namespaced control hook (`Combobox.useCombobox`); shared state via Context | `stacks/react/components.md` |
+| `useEffect(() => { fetch(...).then(setData) }, [id])` for server data | `useQuery({ queryKey, queryFn })` (TanStack Query / SWR) | `stacks/react/data-fetching.md` |
+| Mutation waits for the server before updating the UI | Optimistic update in `onMutate`, rollback in `onError`, invalidate in `onSettled` | `stacks/react/data-fetching.md` |
+| Form saves on every keystroke | Debounce ~1000 ms + max-wait ~5 s flush + on-blur + on-visibility-hidden; never block input | `stacks/react/autosave.md` |
+| Two tabs autosave the same record and one silently overwrites the other | ETag + `If-Match`; on 412 surface "edited elsewhere — Reload / Keep mine" | `stacks/react/autosave.md` |
+| Mutations lost on reload, ad-hoc retries scattered across components | Durable mutation queue in IndexedDB + idempotency key per entry; multi-tab single-writer via `navigator.locks` | `stacks/react/offline-sync.md` |
+| Route handler trusts `req.json()` body without validation | `safeParse` with a shared Zod schema (FE + BE import the same module); one error envelope mapped from a discriminated `AppError` union | `stacks/nextjs/endpoints.md` |
+
 ## Adding a new stack
 
 To add e.g. Go server-side rules:
 
 1. Create `rules/stacks/go/` with one rule file per topic (`http-handlers.md`, `errors-as-values.md`, `concurrency.md`).
 2. Add a row to "Current stacks" above with a one-line description.
-3. Update `SKILL.md` — extend the description's "Stack-specific extensions" line, add a row to the Rule Files lookup table, and tag-list updates if relevant.
+3. Update `SKILL.md` — add a row to the stack-specific Rule Files lookup table, and update the tag list if relevant. Add the stack's flagship smell to [Flagship patterns](#flagship-patterns) above.
 4. Cross-reference back to language-agnostic rules using `rules/<file>.md` paths so the references resolve regardless of where the agent reads from.
 
 Stack-specific files should pull on the language-agnostic rules whenever possible — for example, Go HTTP handler rules should reference `rules/api-design.md` for total functions and `rules/correctness.md` for idempotency rather than restating them. The stack file's job is to translate the universal pattern into the stack's idiom, not to re-derive the principle.

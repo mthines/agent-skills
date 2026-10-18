@@ -6,6 +6,15 @@ Loaded only when the user invokes split mode; default-mode users skip this file.
 Use when the branch has accumulated several unrelated changes and a single PR would be hard to review.
 The skill analyses the diff, proposes a small number of focused PRs, and after explicit user approval executes the split as dependency-ordered draft PRs.
 
+**Contents:** [How split mode changes the default steps](#how-split-mode-changes-the-default-steps) · [When to split](#when-to-split-and-when-not-to) · [S1](#step-s1-analyze-the-diff) · [S2](#step-s2-group-files-into-prs) · [S3](#step-s3-detect-dependencies) · [S4](#step-s4-propose-the-split-to-the-user) · [S5](#step-s5-execute-the-split) · [S6](#step-s6-watch-ci-bottom-up-rebase-the-stack-after-auto-fix) · [S7](#step-s7-abort-and-rollback) · [S8](#step-s8-report) · [Hard rules](#split-mode-hard-rules)
+
+## How split mode changes the default steps
+
+- Run Steps 1–5 (the description contract) but skip the Step 5 length self-check's "PR too big" trim — the split is the response to that signal. Each resulting sub-PR must still pass it on its own.
+- Step 5.5 runs `Skill("review-branch", "")` on the full branch before the split is computed, so each sub-PR inherits reviewed-and-converged code. Step 6.5 never runs for the whole branch here (it needs an open PR, which does not exist before S1).
+- Only when Step 5.5 reports a skip (no sub-agent dispatch) or `--no-pre-review` was passed, run the fallback `Skill("polish", "simplify")` instead — mechanical refactors, no review. Say which one ran; a split whose sub-PRs were never reviewed must not be reported as one whose sub-PRs were.
+- Then continue at Step S1 below.
+
 ## When to split (and when not to)
 
 Split is worth it when **at least one** of these is true:

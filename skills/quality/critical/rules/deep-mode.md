@@ -130,7 +130,7 @@ Each lens prompt is self-contained and contains exactly:
 
 1. The lens record (persona + focus probes).
 2. The one-line target summary and how to read it (`plan.md` path, `git diff <base>...HEAD`, or the analysis text).
-3. The mode's taxonomy table from [`../SKILL.md`](../SKILL.md) and the [persona contract](../SKILL.md#the-persona-contract)'s three rules (no hedging, no vibes, no re-stating).
+3. The mode's taxonomy table from `rules/taxonomy-<mode>.md` ([plan](./taxonomy-plan.md), [code](./taxonomy-code.md), [analysis](./taxonomy-analysis.md)) and the [persona contract](../SKILL.md#the-persona-contract)'s three rules (no hedging, no vibes, no re-stating).
 4. The grounding instruction: run at least one `Read`/`Grep` of your own before writing findings.
 5. The return shape below, and nothing else — no conversation history, no other lens's output, no lessons.
 

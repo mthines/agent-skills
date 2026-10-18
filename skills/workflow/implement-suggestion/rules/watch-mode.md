@@ -7,6 +7,8 @@ Loaded only when `--watch` is present in `$ARGUMENTS`; normal invocations skip t
 
 Run it on purpose when a PR is waiting on reviewers who comment after the automated passes — `create-pr` no longer backgrounds it (its `review-loop` already applies and resolves every open thread, from any author, on every iteration).
 
+**Contents:** [Preconditions](#preconditions-and-parameters) · [The loop](#the-loop) · [Lesson capture](#lesson-capture-on-re-flag) · [Waiting](#waiting-for-new-review-activity) · [CI state](#ci-state-is-a-stop-reason-not-a-fix) · [Outcome emit](#outcome-emit-per-iteration) · [Report](#report-watch-mode) · [Hard rules](#hard-rules-in-addition-to-the-skills-global-hard-rules)
+
 ## Preconditions and parameters
 
 - **Exactly one PR.** `--watch` operates on a single PR. If `$ARGUMENTS` resolves to more than one PR, refuse: print `--watch operates on a single PR; pass exactly one.` and exit. With empty `$ARGUMENTS`, use the active-PR auto-detection (mode rule #4).
@@ -98,7 +100,7 @@ only decides whether to run a pass, not what to apply.
 
 Watch mode **never fixes CI**. Fixing red CI belongs to `ci-auto-fix`, and
 composing the two belongs to [`review-loop`](../../../quality/review-loop/SKILL.md)
-— see [Relationship to other skills](../SKILL.md#relationship-to-other-skills).
+— see [Hard Rules](../SKILL.md#hard-rules).
 
 But continuing to apply comment after comment on a branch whose CI is already red
 wastes iterations and buries the real blocker under a pile of fix commits. So after
@@ -131,6 +133,11 @@ This is **reporting, not fixing**: watch mode dispatches nothing, pushes no CI f
 and spends none of the `ci-auto-fix` handoff budget that
 [`create-pr` Step 8](../../../delivery/create-pr/SKILL.md) and `phase-7-ci-gate.md`
 own. It stops early and hands off cleanly.
+
+## Outcome emit per iteration
+
+After each iteration's Phase 7 report, run [`outcome-emit.md`](./outcome-emit.md) for every comment processed in that iteration — both the `review-outcomes` bus write and the `reviewer-comment-relevance` memory write, append-only and non-blocking.
+This captures a `reverted-after-ci` verdict in the iteration where the CI failure is detected.
 
 ## Report (watch mode)
 

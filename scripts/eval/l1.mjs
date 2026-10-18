@@ -282,7 +282,7 @@ function tierQuestions(file) {
 
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
 // against fixtures. Encodes the #30 Core contract + the #31 Acceptance-Criteria-non-empty fix.
-// We execute the exact idioms documented in skills/quality/confidence/SKILL.md rules #2 and #3,
+// We execute the exact idioms documented in skills/quality/confidence/rules/plan-rule-checks.md rules #2 and #3,
 // so a regression in that logic (like #31, where AC always counted 0) fails here.
 function coreSectionCount(plan) {
   return Number(execSync(
@@ -296,7 +296,7 @@ function acceptanceCriteriaCount(plan) {
 }
 // Rule #9 (v3.15): every [user-stated] requirement (positional R-number) is covered
 // by a `(covers: R…)` annotation in the Acceptance Criteria. Exact idiom from
-// skills/quality/confidence/SKILL.md rule #9. Returns true when the check passes.
+// skills/quality/confidence/rules/plan-rule-checks.md rule #9. Returns true when the check passes.
 function requirementCoveragePasses(plan) {
   try {
     execSync(
@@ -719,9 +719,13 @@ function checksInSync(plan, checks) {
   // placeholder left in any memory.write template is an open invitation to re-encode a
   // coordinate, which is how the drift reached dash0hq/dash0 in the first place. Assert the
   // expanded placeholder is present AND the bare one is gone, per writing agent.
-  const implSuggestion = read("skills/workflow/implement-suggestion/SKILL.md");
+  // implement-suggestion's relevance write template lives in rules/outcome-emit.md (SKILL.md
+  // points at it); SKILL.md itself must still never carry a bare fingerprint placeholder.
+  const implSuggestion = read("skills/workflow/implement-suggestion/rules/outcome-emit.md");
+  s.check("G9d implement-suggestion/SKILL.md never spells a bare fingerprint relevance key",
+    !/reviewer-comment-relevance::[<{]fingerprint[>}]/.test(read("skills/workflow/implement-suggestion/SKILL.md")));
   for (const [label, doc] of [
-    ["implement-suggestion/SKILL.md", implSuggestion],
+    ["implement-suggestion/rules/outcome-emit.md", implSuggestion],
     ["comment-relevance-memory.md", crm],
     ["thread-resolution.md", threadRes],
   ]) {
@@ -1016,7 +1020,8 @@ function checksInSync(plan, checks) {
   //   1. agents/shared/rules/comment-relevance-memory.md   ("default: now + N days")
   //   2. plugins/pr-relevance-memory/README.md             ("N-day TTL, refreshed on each sighting")
   //   3. scripts/record-comment-relevance.mjs              (`N * 24 * 60 * 60 * 1000`)
-  //   4. skills/workflow/implement-suggestion/SKILL.md     ("N-day default TTL", "durable N-day TTL")
+  //   4. skills/workflow/implement-suggestion/SKILL.md     ("durable N-day TTL")
+  //      skills/workflow/implement-suggestion/rules/outcome-emit.md ("N-day default TTL")
   // The frozen archive docs/inventory.md also states the TTL, but it is a snapshot and not a
   // contract surface, so it is not updated or checked.
   {
@@ -1025,6 +1030,7 @@ function checksInSync(plan, checks) {
     const pluginReadme = read("plugins/pr-relevance-memory/README.md");
     const recorder = read("scripts/record-comment-relevance.mjs");
     const isSkill3 = read("skills/workflow/implement-suggestion/SKILL.md");
+    const isEmit = read("skills/workflow/implement-suggestion/rules/outcome-emit.md");
 
     // G16a retired: its sentence now lives only in the frozen archive docs/inventory.md, which is not a contract surface (CLAUDE.md § Where knowledge goes). G16b–e + G16f cover the live mirrors.
     s.check(`G16b comment-relevance-memory.md record schema expires at +${TTL_DAYS} days`,
@@ -1033,8 +1039,8 @@ function checksInSync(plan, checks) {
       new RegExp(`${TTL_DAYS}-day TTL`).test(pluginReadme));
     s.check(`G16d record-comment-relevance.mjs computes expiry from ${TTL_DAYS} days`,
       recorder.includes(`${TTL_DAYS} * 24 * 60 * 60 * 1000`));
-    s.check(`G16e implement-suggestion SKILL.md states the ${TTL_DAYS}-day TTL in both places`,
-      new RegExp(`${TTL_DAYS}-day default TTL`).test(isSkill3) &&
+    s.check(`G16e implement-suggestion states the ${TTL_DAYS}-day TTL in both places (rules/outcome-emit.md + SKILL.md)`,
+      new RegExp(`${TTL_DAYS}-day default TTL`).test(isEmit) &&
       new RegExp(`durable ${TTL_DAYS}-day TTL`).test(isSkill3));
 
     // Negative assertion: the feared drift is a PARTIAL revert, where one or two
@@ -1045,6 +1051,7 @@ function checksInSync(plan, checks) {
       ["pr-relevance-memory/README.md", pluginReadme],
       ["record-comment-relevance.mjs", recorder],
       ["implement-suggestion/SKILL.md", isSkill3],
+      ["implement-suggestion/rules/outcome-emit.md", isEmit],
     ];
     const stale = /(\d+)-day (?:default )?TTL|(\d+)-day per-repo relevance signal|now \+ (\d+) days|(\d+) \* 24 \* 60 \* 60 \* 1000/g;
     for (const [label, content] of mirrors) {
@@ -4309,9 +4316,10 @@ const isPollBlock = (block) =>
   // writes `type: human, agent: other` — byte-identical to the incidental human comment the filter
   // rejects — so without `explicit` on both sides, a literal implementation of the filter drops
   // every rule a maintainer ever wrote, silently.
-  const rememberSkill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
+  // The `remember` invocation moved from pr-review/SKILL.md to its own rule file; read the owner.
+  const rememberSkill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/rules/remember.md"), "utf8");
   for (const [name, src] of [["memory.md", memory], ["the agent body", prm],
-    ["pr-review/SKILL.md", rememberSkill]]) {
+    ["pr-review/rules/remember.md", rememberSkill]]) {
     s.check(`G38e ${name} carves out the remember rule with source.explicit, not prose`,
       /source\.explicit|explicit: true/.test(src),
       "the /pr-review remember carve-out names no field the read path can key on");
@@ -6151,7 +6159,8 @@ const isPollBlock = (block) =>
   //     other one's remedy. `review-loop` had a row for `preview not deployed` whose note
   //     is `re-run once the preview is up` — advice that can never come true when no lookup
   //     ran, so a UI PR reviewed on a cloud session got a permanently-false note in it.
-  const RL = read("skills/quality/review-loop/SKILL.md");
+  // Step 1.6's outcome table lives in rules/preview-run.md; the report slot in SKILL.md Step 3.
+  const RL = read("skills/quality/review-loop/SKILL.md") + "\n" + read("skills/quality/review-loop/rules/preview-run.md");
   // Both row-anchored, like the `empty spec` and catch-all pairs below. The claim is about
   // a ROW of the outcome table, so the row is what the pattern has to match — and the
   // remedy's `{0,320}` window is gone with the anchor, being the third instance of a
@@ -6809,7 +6818,7 @@ const isPollBlock = (block) =>
   // one-line notice and no question in either mode, so Step 4 must state that, carry the notice
   // section, and never regrow an ask-the-user instruction (which would fire at the end of a loop
   // nobody is watching, and error on a host with no ask-user tool).
-  const RL = read("skills/quality/review-loop/SKILL.md");
+  const RL = read("skills/quality/review-loop/SKILL.md") + "\n" + read("skills/quality/review-loop/rules/preview-run.md");
   const RN = read("skills/testing/ui-verify/rules/runner.md");
   const UV = read("skills/testing/ui-verify/SKILL.md");
   const RN_STEP4 = (RN.match(/\n## Step 4:[\s\S]*?(?=\n## Step 4b|\n## Step 5)/) || [""])[0];
@@ -7102,7 +7111,7 @@ const isPollBlock = (block) =>
   // pattern names the two script dirs so the cautionary prose (`node agents/…`) is not a hit.
   const BARE_SCRIPT = /node\s+"?agents\/(?:branch-reviewer|pr-reviewer)\/scripts\//;
   for (const rel of ["agents/branch-reviewer.md", "skills/quality/review-branch/rules/findings-bus.md",
-                     "skills/quality/pr-review/SKILL.md"]) {
+                     "skills/quality/pr-review/SKILL.md", "skills/quality/pr-review/rules/remember.md"]) {
     const p = join(REPO_ROOT, rel);
     // A renamed file must red, not silently drop out of the sweep.
     s.check(`G52g ${rel} exists (the bare-path sweep reads it)`, existsSync(p));
@@ -10622,7 +10631,7 @@ const isPollBlock = (block) =>
   const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
   const STEP4B = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 4b: Adversarial pass — try to break it");
   const STEP5 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 5: Report the verdict");
-  const RL16 = sectionOr("skills/quality/review-loop/SKILL.md", "### Step 1.6: UI-verify run (report-only, once, on exit)");
+  const RL16 = sectionOr("skills/quality/review-loop/rules/preview-run.md", "# Step 1.6: UI-verify run (report-only, once, on exit)");
 
   // G87a — reachable: Step 4b exists, delegates to the rule, and records the opt-out.
   s.check("G87a the guard reads runner.md's Step 4b section", STEP4B.length > 400,
@@ -10716,7 +10725,8 @@ const isPollBlock = (block) =>
   const sectionOr = (heading) => { try { return extractSection("skills/quality/review-loop/SKILL.md", heading); } catch { return ""; } };
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
   const RL = readOr("skills/quality/review-loop/SKILL.md");
-  const S25 = sectionOr("### Step 2.5: Merge (under `--merge`, on approval)");
+  // Step 2.5 lives in rules/merge.md (read only under --merge); Steps 2 and 3 stay in SKILL.md.
+  const S25 = (() => { try { return extractSection("skills/quality/review-loop/rules/merge.md", "### Step 2.5: Merge (under `--merge`, on approval)"); } catch { return ""; } })();
   const S2 = sectionOr("### Step 2: Refresh the PR description and Linear note (on convergence)");
   const S3 = sectionOr("### Step 3: Report");
   const A0 = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
@@ -10740,7 +10750,7 @@ const isPollBlock = (block) =>
   s.check("G88d the report, the --merge hard rule, and the Agent0 rule all name the post-refresh re-review",
     /^Merge re-review: <PASS \| WARN \| FAIL \| refused \|/m.test(S3)
       && /The final verdict is the post-refresh re-review's when Step 2 changed the body/.test(RL)
-      && A0.includes("(../SKILL.md#post-refresh-re-review--before-the-gates)"),
+      && A0.includes("(./merge.md#post-refresh-re-review--before-the-gates)"),
     "a run that re-reviewed cannot report it, or the hard rule / Agent0 route lost it");
 }
 
@@ -10939,7 +10949,8 @@ const isPollBlock = (block) =>
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
   const sectionOr = (heading) => { try { return extractSection(RL_PATH, heading); } catch { return ""; } };
   const RL = readOr(RL_PATH);
-  const AF = sectionOr("### Iteration 1 — apply first when the last review still stands");
+  // The apply-first procedure lives in rules/apply-first.md; the loop, report, and hard rule stay in SKILL.md.
+  const AF = (() => { try { return extractSection("skills/quality/review-loop/rules/apply-first.md", "# Iteration 1 — apply first when the last review still stands"); } catch { return ""; } })();
   const S3 = sectionOr("### Step 3: Report");
 
   // a. the five conditions, each a row of the section's condition table.
@@ -11025,6 +11036,9 @@ const isPollBlock = (block) =>
 
   // e. --external-review is gone, from the loop and from every caller that named it.
   const surfaces = [RL_PATH, "skills/quality/review-loop/rules/agent0-runtime.md",
+    "skills/quality/review-loop/rules/apply-first.md", "skills/quality/review-loop/rules/ci.md",
+    "skills/quality/review-loop/rules/dispatch-skips.md", "skills/quality/review-loop/rules/merge.md",
+    "skills/quality/review-loop/rules/preview-run.md",
     "skills/workflow/autonomous-workflow/aw/SKILL.md", "skills/quality/pr-review/SKILL.md",
     "skills/workflow/implement-suggestion/SKILL.md", "skills/quality/review-branch/SKILL.md",
     "skills/workflow/autonomous-workflow/rules/diagnostic-surface.md",
@@ -11065,7 +11079,8 @@ const isPollBlock = (block) =>
   const RUN1 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 1: Get the spec");
   const UV = readOr("skills/testing/ui-verify/SKILL.md");
   const DC = readOr("skills/delivery/create-pr/rules/description-contract.md");
-  const RL = readOr("skills/quality/review-loop/SKILL.md");
+  // review-loop reads the spec block in Step 1.6, which lives in rules/preview-run.md.
+  const RL = readOr("skills/quality/review-loop/SKILL.md") + "\n" + readOr("skills/quality/review-loop/rules/preview-run.md");
 
   // (a) the field tokens are derived from the template's own format comment, never re-encoded here.
   const fields = [...new Set([...TPL.matchAll(/^#\s+(\*\*[A-Z][A-Za-z ]+:\*\*)/gm)].map((m) => m[1]))];
