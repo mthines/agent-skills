@@ -1399,8 +1399,9 @@ export function resolveDepthOverrides(opts, settings) {
 
 /**
  * The RUN_ANOMALY lines the run-level review config produces (review-config.md § Run-level knobs):
- * one per ignored invalid value, plus one when an explicit `--config` file could not be read — the
- * run then uses every default, and without this line only `reviewConfig.source` would say so.
+ * one per ignored invalid value, plus one when the config could not be read (an explicit `--config`
+ * file, or a base file that exists but failed to load) — the run then uses every default, and
+ * without this line only `reviewConfig.source` would say so.
  * @param {{ source: string, unreadable?: boolean }} baseConfig
  * @param {{ invalid: string[] }} settings
  * @returns {string[]}
@@ -1431,10 +1432,12 @@ function readReviewConfig(dir) {
  * `explicitPath` (`--config <file>`) replaces the base read entirely, for trying a config before
  * merging it. Order: explicit file → `git show <baseSha>:<path>` in the workspace → the contents
  * API at `baseSha`. Each path tries `.github/review.yaml`, then the legacy root `.review.yaml`.
- * @param {{ explicitPath?: string, dir?: string|null, baseSha?: string, repo?: string, timeoutMs?: number }} input
+ * Only a path absent at the base moves on to the next one: a path that exists but cannot be read
+ * returns `unreadable: true`, never the next path's file and never the head's.
+ * @param {{ explicitPath?: string, dir?: string|null, baseSha?: string, repo?: string, timeoutMs?: number, runner?: typeof run }} input
  * @returns {Promise<{ text: string, source: string, unreadable?: boolean }>}
  */
-export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, timeoutMs = 30000 }) {
+export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, timeoutMs = 30000, runner = run }) {
   if (explicitPath) {
     try {
       return { text: readFileSync(explicitPath, "utf8"), source: explicitPath };
@@ -1444,20 +1447,27 @@ export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, t
   }
   if (!baseSha) return { text: "", source: "none (no base SHA)" };
   const rels = [".github/review.yaml", ".review.yaml"];
-  if (dir && (await run("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok) {
+  const unreadable = (/** @type {string} */ rel) => ({ text: "", source: `${rel}@${baseSha.slice(0, 7)} (unreadable)`, unreadable: true });
+  if (dir && (await runner("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok) {
     // The base commit is local, so a missing path means "no config" — asking the API again
     // would only repeat the same answer at network cost.
     for (const rel of rels) {
-      // A partial (blob:none) clone fetches the blob on demand, so this read can touch the remote.
-      const r = await run("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
-      if (r.ok) return { text: r.stdout, source: `${rel}@${baseSha.slice(0, 7)}` };
+      // `ls-tree` reads trees, which a partial (blob:none) clone holds locally: an empty listing is "absent at the base".
+      const ls = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "ls-tree", "--full-tree", "--name-only", baseSha, "--", rel], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
+      if (!ls.ok) return unreadable(rel);
+      if (!ls.stdout.trim()) continue;
+      // The blob is fetched on demand, so this read can touch the remote — and fail.
+      const r = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
+      return r.ok ? { text: r.stdout, source: `${rel}@${baseSha.slice(0, 7)}` } : unreadable(rel);
     }
     return { text: "", source: "none" };
   }
   if (repo) {
     for (const rel of rels) {
-      const r = await run("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${rel}?ref=${baseSha}`], { timeoutMs });
+      const r = await runner("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${rel}?ref=${baseSha}`], { timeoutMs });
       if (r.ok) return { text: r.stdout, source: `${rel}@${baseSha.slice(0, 7)}` };
+      // Only a 404 is "absent at the base"; auth, rate-limit, and network failures are a failed read.
+      if (!/\bHTTP 404\b/.test(r.stderr)) return unreadable(rel);
     }
   }
   return { text: "", source: "none" };
@@ -2453,6 +2463,42 @@ async function selfTest() {
     return missing.unreadable === true && missing.text === ""
       && lines.length === 1 && lines[0] === `review config ${missing.source}: using defaults`
       && bad.length === 1 && bad[0] === "review config x.yaml: ignored invalid profile: strict";
+  });
+  t("readBaseReviewConfig reports a base file it cannot read as unreadable, never as no config, the legacy file, or the head's", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-unreadable-"));
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    try {
+      g(["init", "-q"]);
+      mkdirSync(join(dir, ".github"));
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: assertive\n");
+      writeFileSync(join(dir, ".review.yaml"), "profile: balanced\n");
+      g(["add", "."]); g(["commit", "-qm", "base"]);
+      const base = g(["rev-parse", "HEAD"]).trim();
+      const blob = g(["rev-parse", `${base}:.github/review.yaml`]).trim();
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: chill\n");
+      g(["commit", "-qam", "head lowers the bar"]);
+      // The tree still lists the path but its blob is gone — what a failed partial-clone fetch leaves.
+      rmSync(join(dir, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
+      const r = await readBaseReviewConfig({ dir, baseSha: base });
+      const lines = reviewConfigAnomalies(r, reviewSettings(r.text));
+      const src = `.github/review.yaml@${base.slice(0, 7)} (unreadable)`;
+      return r.unreadable === true && r.text === "" && r.source === src
+        && lines.length === 1 && lines[0] === `review config ${src}: using defaults`;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  t("readBaseReviewConfig over the contents API: only a 404 moves to the next path, any other failure is unreadable", async () => {
+    const api = (/** @type {string} */ firstErr) => async (/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
+      args.some((a) => a.includes("contents/.github/review.yaml"))
+        ? { ok: false, code: 1, stdout: "", stderr: firstErr, timedOut: false }
+        : { ok: true, code: 0, stdout: "profile: chill\n", stderr: "", timedOut: false };
+    const legacy = await readBaseReviewConfig({ baseSha: "abc1234def", repo: "o/r", runner: api("gh: Not Found (HTTP 404)") });
+    const failed = await readBaseReviewConfig({ baseSha: "abc1234def", repo: "o/r", runner: api("gh: Server Error (HTTP 502)") });
+    const lines = reviewConfigAnomalies(failed, reviewSettings(failed.text));
+    return legacy.text === "profile: chill\n" && legacy.source === ".review.yaml@abc1234" && legacy.unreadable === undefined
+      && failed.unreadable === true && failed.text === "" && failed.source === ".github/review.yaml@abc1234 (unreadable)"
+      && lines.length === 1 && lines[0] === "review config .github/review.yaml@abc1234 (unreadable): using defaults";
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;

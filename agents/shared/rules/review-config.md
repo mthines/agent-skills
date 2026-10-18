@@ -474,6 +474,8 @@ with an empty variable would swallow the next argument, so build the flag condit
    `prepare-review.mjs` adds `review config <source>: ignored invalid <key>: <value>` to `anomalies[]`, which reaches `RUN_ANOMALY`.
 3. A config change applies to PRs whose base contains it.
    The PR that adds or edits `.github/review.yaml` is still reviewed under the base's settings.
+   A base file that exists but cannot be read (a failed blob fetch, or a contents-API error other than 404) leaves every knob at its default and adds `review config <path>@<sha> (unreadable): using defaults` to `anomalies[]`.
+   Neither the legacy `.review.yaml` nor the head's file stands in for it.
 4. To try a config before merging it, pass `--config <file>` to `prepare-review.mjs`; that file replaces the base read for the run, and `context.reviewConfig.source` names it.
    An unreadable `--config` file leaves every knob at its default and adds `review config <file> (unreadable): using defaults` to `anomalies[]`.
 5. Subtree `<subtree>/.review.yaml` files never set these keys; they still scope `filters:` and `path_instructions:` per file.
