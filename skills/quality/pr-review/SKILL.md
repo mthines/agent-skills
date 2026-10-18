@@ -155,7 +155,7 @@ and left a worktree behind.
    Then read whether the repo asked for a second finder pass, and stamp it when it did:
 
    ```bash
-   [ "$(jq -r '.budget.finderPasses // 1' <dir>/context.json)" = 2 ] && mkdir -p <dir>/pass2 && date +%s > <dir>/pass2/dispatched_at
+   if [ "$(jq -r '.budget.finderPasses // 1' <dir>/context.json)" = 2 ]; then mkdir -p <dir>/pass2 && date +%s > <dir>/pass2/dispatched_at; fi
    ```
 
 4. On `hybrid`, in **one message**, dispatch both:
