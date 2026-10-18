@@ -1,17 +1,11 @@
 ---
 name: visual-design
 description: >
-  Guides and reviews the visual design and brand identity of UI components for
-  web and React Native — color systems, typography pairing, visual hierarchy,
-  signature details, and named style directions (minimal, swiss, editorial,
-  brutalist, neo-brutalist, glass, soft-UI, terminal, playful, retro). Owns
-  the generative, brand-aware side; defers WCAG contrast math, size minimums,
-  and dark-mode mechanics back to /ux. Modes: `guide` (default — build a
-  component from scratch), `review` (audit existing visuals against
-  direction), `direction` (propose a style direction for a new product or
-  feature). Triggers on "visual design", "make this look good", "brand
-  identity", "style direction", "improve the visuals", "review the look",
-  "does this look generic", "/visual-design".
+  Guides and reviews visual design and brand identity for web and React Native
+  UI — color, typography, hierarchy, and named style directions — deferring
+  contrast math and a11y mechanics to /ux. Triggers on "make this look good",
+  "visual design", "style direction", "does this look generic",
+  "/visual-design".
 argument-hint: '[guide|review|direction]'
 license: MIT
 metadata:

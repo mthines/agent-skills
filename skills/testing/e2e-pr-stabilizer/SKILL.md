@@ -1,21 +1,10 @@
 ---
 name: e2e-pr-stabilizer
 description: >
-  Stabilizes or optimizes Playwright E2E tests on one PR via a local-first
-  loop, then ratifies with a single CI run. Pulls Dash0 spans
-  (`git.pull_request_link`) as the historical baseline, then captures every
-  iteration's evidence locally with `--trace=on` (same OTel exporter, same
-  trace schema). Validation is empirical, not predictive: before commit,
-  every new locator must resolve against source (static grep) or the live
-  app (`locator.count()`); after commit, the fixed test must pass three
-  consecutive local runs before the single push. Modes: `stabilize`
-  (default) heals flaky / failing tests; `optimize` is report-only and
-  ranks slow-action wins by measured ms saved. Refuses `.skip`, `.fixme`,
-  `waitForTimeout`, or any check-weakening edit. Use when a PR has flaky
-  or failing E2E tests or when you want to find slow tests worth
-  tightening. Triggers on "stabilize this PR", "fix flaky e2e", "heal
-  playwright on PR", "ui-e2e is failing", "self-heal e2e", "optimize e2e",
-  "/e2e-pr-stabilizer".
+  Stabilizes flaky or failing Playwright E2E tests on one PR with a local-first
+  loop ratified by a single CI run, or ranks slow-test wins in `optimize` mode;
+  never skips tests or weakens checks. Invoke with /e2e-pr-stabilizer for "fix
+  flaky e2e" or "stabilize this PR".
 disable-model-invocation: true
 license: MIT
 argument-hint: '[stabilize|optimize] [pr-url|pr-number]'

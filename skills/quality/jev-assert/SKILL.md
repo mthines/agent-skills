@@ -1,19 +1,11 @@
 ---
 name: jev-assert
 description: >
-  Verifies a UI expectation semantically by asking TypeSafe's Jev model
-  whether a user-observable outcome holds in a page's captured TEXT state
-  (accessibility tree / page text — never a screenshot), then maps Jev's
-  typed answer and probability onto this repo's verify-behavior receipt
-  vocabulary (confirms, contradicts, ambiguous, null, unobtainable).
-  Driver-agnostic: consumes text state from either the Playwright
-  (aw-tester) or the claude-in-chrome (aw-tester-chrome) runner, so the
-  Chrome-vs-Playwright choice is orthogonal to it. Use it for a semantic UI
-  assertion where an exact locator or string match is brittle — "did the
-  user see a success state", "is this the right screen". Delegates the API
-  contract to the typesafe@typesafe-ai skill (TYPESAFE_API_KEY). Triggers on
-  "assert semantically", "does the page show", "verify this outcome with
-  jev", "semantic UI assertion", "jev-assert", "/jev-assert".
+  Asserts a UI expectation semantically by asking TypeSafe's Jev model whether
+  an outcome holds in a page's captured text state, mapped to a verify-behavior
+  receipt. Use when an exact locator or string match is brittle; triggers on
+  "assert semantically", "does the page show", "semantic UI assertion",
+  "/jev-assert".
 argument-hint: '<expectation> [--state-file <path>] [--threshold-high N] [--threshold-low N]'
 license: MIT
 metadata:

@@ -1,19 +1,10 @@
 ---
 name: profile-optimizer
 description: >
-  Analyzes React DevTools Profiler exports, Chrome DevTools Performance
-  traces, and Chrome heap snapshots / heap-timelines / heap-profiles.
-  Identifies the highest-impact bottlenecks (long tasks, expensive renders,
-  layout thrash, wasted memoisation, blocking scripts, retained memory,
-  leaks) and proposes concrete code fixes ranked by measured impact.
-  Auto-detects the input format (React `.json` profile, Chrome trace `.json`
-  / `.cpuprofile`, or `.heapsnapshot` / `.heaptimeline` / `.heapprofile`).
-  Iterates via the `/confidence` skill — if root-cause certainty is below
-  90%, it digs deeper before recommending a fix. Use when handed a profile
-  file, asked "why is this slow?", "why is memory growing?", or asked to
-  optimise a hot path with evidence. Triggers on "analyze profile", "react
-  profiler", "chrome performance", "optimize from profile", "profile this",
-  "why is this slow", "memory leak", "heap snapshot", "/profile-optimizer".
+  Analyzes React Profiler exports, Chrome Performance traces, and heap snapshots
+  to find the highest-impact CPU and memory bottlenecks and propose fixes ranked
+  by measured impact. Invoke with /profile-optimizer for "why is this slow",
+  "memory leak", or "analyze profile".
 argument-hint: '<profile.json|trace.json|.cpuprofile|.heapsnapshot>'
 license: MIT
 disable-model-invocation: true

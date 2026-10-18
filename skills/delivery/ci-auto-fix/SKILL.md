@@ -1,12 +1,9 @@
 ---
 name: ci-auto-fix
 description: >
-  Diagnoses and fixes failing CI, verifies locally, pushes, and confirms the relevant
-  checks pass on the resulting revision. Uses an evidence-gated mechanical
-  path for narrow failures and deeper diagnosis for ambiguous or shared changes.
-  Never weakens checks. Currently supports GitHub Actions through gh or GitHub
-  MCP. Triggers on "CI is failing", "fix the CI", "the build is red",
-  "auto-fix this PR's checks", or "/ci-auto-fix".
+  Diagnoses and fixes failing GitHub Actions CI, verifies locally, pushes, and
+  confirms the checks pass on the new revision — never weakens checks. Triggers
+  on "CI is failing", "fix the CI", "the build is red", "/ci-auto-fix".
 disable-model-invocation: false
 argument-hint: '[<pr-url>|<run-id>]'
 license: MIT

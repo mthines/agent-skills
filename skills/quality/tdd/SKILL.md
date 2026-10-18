@@ -1,15 +1,10 @@
 ---
 name: tdd
 description: >
-  Enforces strict Test-Driven Development with RED-GREEN-REFACTOR cycles.
-  Writes one failing test at a time, implements minimal code to pass, then
-  refactors. Delegates to the `test-provenance-guard` skill during REFACTOR
-  to detect tests-by-construction (static + mutation checks). Pairs
-  with the `code-quality` skill: invokes `Skill('code-quality')` during the
-  REFACTOR phase to apply the full code-quality rule set against the GREEN
-  output, and cites refactor recipes (R1–R20) by ID when reporting changes.
-  Triggers on: "tdd", "write tests", "test this", "add test coverage",
-  "test driven", "red green refactor", "/tdd".
+  Enforces strict RED-GREEN-REFACTOR test-driven development — one failing test
+  at a time, minimal code to pass, then refactor with `code-quality` and
+  `test-provenance-guard`. Triggers on "tdd", "write tests", "test driven", "red
+  green refactor", "/tdd".
 disable-model-invocation: false
 argument-hint: '[after] [<feature-description>]'
 license: MIT

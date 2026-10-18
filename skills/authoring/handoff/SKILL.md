@@ -1,15 +1,10 @@
 ---
 name: handoff
 description: >
-  Distills the current session's task, context, and plan into a clean,
-  copy-pasteable markdown handoff document for another agent or LLM to pick up.
-  Captures the goal, current state, remaining plan, and the key files,
-  decisions, and gotchas — and leaves out conversational noise, tool-call
-  transcripts, and dead ends. Writes to `.agent/{branch}/handoff.md` and copies
-  it to the clipboard. Use when continuing work in a fresh session, passing a
-  task to a teammate's agent, or briefing a different model. Invoke with
-  /handoff; add a focus phrase to scope the handoff, or --brief for a condensed
-  version.
+  Distills the current session's goal, state, remaining plan, key files, and
+  gotchas into a copy-pasteable markdown handoff for a fresh agent or teammate,
+  written to `.agent/{branch}/handoff.md` and the clipboard. Invoke with
+  /handoff [focus phrase] [--brief].
 argument-hint: '[focus phrase] [--brief]'
 license: MIT
 metadata:

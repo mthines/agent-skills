@@ -1,18 +1,11 @@
 ---
 name: verify-behavior
 description: >
-  Owns a cheapest-first three-tier verification ladder — Tier 1 syntactic
-  (grep / ast-grep / read), Tier 2 semantic-no-execution (typecheck / build /
-  lint), Tier 3 execution (run the covering test, or a minimal synthesized
-  repro) — and reports the result as an evidence receipt (confirms /
-  contradicts / ambiguous / null). It never scores; `confidence(code)` owns
-  the number. Two consumer shapes: claim-verification (read-only, feeds
-  `confidence(code)`) and change-verification (post-apply green/red gate).
-  Called by `verification-receipt.md` (pr-reviewer Tier 2/3), `bug-fix-verifier`,
-  `feature-pr-verifier`, and the `aw-executor` Phase 4 checks loop. Use when a
-  finding or a change needs executed proof, not just a plausible-sounding
-  claim. Triggers on "verify this claim", "does this actually happen at
-  runtime", "prove this behavior", "run this to confirm", "/verify-behavior".
+  Runs a cheapest-first verification ladder (syntactic, then typecheck / build /
+  lint, then execution) and reports an evidence receipt — confirms, contradicts,
+  ambiguous, or null — never a score. Use when a claim or change needs executed
+  proof; triggers on "verify this claim", "prove this behavior", "run this to
+  confirm", "/verify-behavior".
 disable-model-invocation: false
 argument-hint: '[claim|change]'
 license: MIT

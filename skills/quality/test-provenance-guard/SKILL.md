@@ -1,21 +1,10 @@
 ---
 name: test-provenance-guard
 description: >
-  Detects tests that pass by construction — tests that define a private
-  copy of the function under test instead of importing the production
-  module — and self-heals by extracting the inline logic to an exported
-  function, updating production callers, and rewriting the test to
-  import the export. Two checks: (1) static — the test file must import
-  the SUT and must not shadow its exported names; (2) mutation —
-  blanking the production function body re-runs the test and expects
-  failure. Runs autonomously inside autonomous-workflow Phase 4 and as
-  a slash command for human-driven PR review. Use when adding new tests
-  for existing or refactored code, when CI is green but you are unsure
-  whether the tests actually exercise production, or when reviewing a
-  PR for tests-by-construction. Triggers on "test provenance", "tests
-  by construction", "verify tests cover real code", "tests duplicate
-  logic", "mutation sanity check", "are these tests fake",
-  "/test-provenance-guard".
+  Detects tests that pass by construction — a private copy of the function under
+  test instead of an import — via static and mutation checks, and self-heals by
+  extracting and importing the production export. Triggers on "test provenance",
+  "tests by construction", "are these tests fake", "/test-provenance-guard".
 disable-model-invocation: false
 argument-hint: '[--mode static|mutate|both] [--fix|--report-only] [<paths>]'
 license: MIT

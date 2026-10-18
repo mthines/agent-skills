@@ -1,6 +1,10 @@
 ---
 name: linear-ticket-investigator
-description: Extract evidence from a single Linear ticket — read the ticket, locate affected code, and return an Evidence Record matching the /fix-bug Phase 2 schema. Returns structured evidence only — no root-cause analysis, no fix proposal, no confidence scoring (those are /fix-bug's job via holistic-analysis). Used by /fix-bug's Linear input route.
+description: >
+  Extracts evidence from one Linear ticket — reads it, locates the affected
+  code, and returns an Evidence Record in the /fix-bug Phase 2 schema. Returns
+  evidence only (no root cause, fix, or score); used by /fix-bug's Linear input
+  route.
 tools: Read, Glob, Grep, Skill, mcp__Linear__get_issue, mcp__Linear__list_comments, mcp__claude_ai_Linear__get_issue, mcp__claude_ai_Linear__list_comments
 model: sonnet
 ---

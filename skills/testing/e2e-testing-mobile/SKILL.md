@@ -1,17 +1,10 @@
 ---
 name: e2e-testing-mobile
 description: >
-  Plans, generates, runs, and heals end-to-end tests for Expo and React
-  Native mobile apps using Maestro (the 2026 standard for RN E2E, adopted
-  by Meta, Microsoft, and DoorDash, and integrated with Expo via EAS
-  Workflows). Drives a spec-first YAML-flow loop, proposes `testID`
-  source diffs (never `accessibilityLabel` reuse), runs Maestro Cloud as
-  an EAS job, and stays token-aware via `--shards`, `--retries`, and
-  failure-only healing. Use for native flows in Expo / RN apps. Triggers
-  on "test this RN flow", "add mobile e2e", "maestro flow", "expo e2e",
-  "e2e for react native", "test the native app", "/e2e-testing-mobile".
-  Defer to [`e2e-testing`](../e2e-testing/SKILL.md) for web flows and
-  the WebView portion of hybrid apps.
+  Plans, generates, runs, and heals Maestro end-to-end flows for Expo and React
+  Native apps, spec-first, with `testID` locators and Maestro Cloud via EAS. Use
+  for native flows (web flows go to `e2e-testing`); triggers on "add mobile
+  e2e", "maestro flow", "expo e2e", "/e2e-testing-mobile".
 disable-model-invocation: false
 license: MIT
 metadata:

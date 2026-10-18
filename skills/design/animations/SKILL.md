@@ -1,22 +1,10 @@
 ---
 name: animations
 description: >
-  Authors performant web animations CSS-first AND brainstorms the
-  right feedback for an interaction via a verb-to-motion catalog.
-  Covers GPU-safe properties, modern primitives (@starting-style,
-  interpolate-size), View Transitions, scroll-driven timelines,
-  state-choreography morphs, React state (Motion, AnimatePresence),
-  advanced effects (Liquid Glass, glow, 3D tilt), external engines
-  (Lottie, Rive), React Three Fiber, prefers-reduced-motion, AND
-  perceived performance (skeleton loaders, optimistic UI, loader
-  floor, predictive prefetch, stale-while-revalidate). Use when
-  building transitions, hover effects, route changes, when an
-  animation feels janky, when deciding what feedback an interaction
-  should have, or when the app needs to feel snappier. Triggers on
-  "animate this", "fade in", "hover effect", "liquid glass",
-  "lottie", "rive", "ideal feedback", "how should X feel",
-  "skeleton loader", "perceived performance", "feel faster",
-  "optimistic UI", "/animations".
+  Authors performant CSS-first web animations and picks the right feedback for
+  an interaction — transitions, View Transitions, scroll-driven motion, Motion
+  for React, reduced motion, and perceived performance. Triggers on "animate
+  this", "hover effect", "feel faster", "skeleton loader", "/animations".
 argument-hint: '[brainstorm|decision-flow]'
 license: MIT
 metadata:

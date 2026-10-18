@@ -1,20 +1,11 @@
 ---
 name: persistent-memory
 description: >
-  Persists context across conversations as plain markdown so every future
-  session can enrich a topic-scoped memory (e.g. `project-acme`). Four
-  operations: `write` (extract candidates, resolve as ADD / UPDATE / DELETE /
-  NOOP per Mem0), `read` (load a ≤ 200-line INDEX, fetch detail on demand),
-  `consolidate` (sleep-style merge + prune), `forget` (delete or redact with
-  audit). Three storage tiers: home (`~/.agent-memory/<scope>/`, default),
-  project-local (gitignored), project-shared (committed). Enforces a
-  never-store list (secrets, keys, financial and identity numbers) and a
-  consent preview before every write. `rules/scaling-tiers.md` covers scaling
-  to SQLite FTS, vector DB, and managed memory, plus the LoreKit backend the
-  self-improvement loops run on: scope mapping, the `loop::<skill>-lessons`
-  tag and key convention, and the shared lesson schema. Triggers on "remember
-  this", "save to memory", "recall memory", "what do you remember about",
-  "consolidate memory", "forget that", "/persistent-memory".
+  Persists topic-scoped context across conversations as plain markdown with
+  write, read, consolidate, and forget operations, a never-store list for
+  secrets, and a consent preview before every write. Triggers on "remember
+  this", "save to memory", "what do you remember about", "forget that",
+  "/persistent-memory".
 disable-model-invocation: false
 argument-hint: '[write|read|consolidate|forget] <scope> [--tier home|project-local|project-shared]'
 license: MIT

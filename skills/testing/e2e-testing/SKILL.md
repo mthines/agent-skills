@@ -1,15 +1,10 @@
 ---
 name: e2e-testing
 description: >
-  Plans, generates, runs, and heals end-to-end tests using Playwright Test
-  Agents (Planner, Generator, Healer) and the official `@playwright/mcp`
-  server. Drives a spec-first feature-flow loop, proposes `data-testid`
-  source diffs only when accessibility-tree locators fail, and stays
-  token-aware via snapshot mode and `--last-failed` reruns. Use when adding
-  E2E coverage, verifying a user journey, hardening a flaky flow, or wiring
-  Playwright MCP into a repo. Triggers on "test this flow", "add e2e",
-  "verify the user journey", "write e2e test", "feature test", "playwright
-  agents", "/e2e-testing".
+  Plans, generates, runs, and heals Playwright end-to-end tests through a
+  spec-first loop with Playwright Test Agents and `@playwright/mcp`. Use when
+  adding E2E coverage or hardening a flaky flow; triggers on "add e2e", "test
+  this flow", "verify the user journey", "/e2e-testing".
 disable-model-invocation: false
 license: MIT
 metadata:

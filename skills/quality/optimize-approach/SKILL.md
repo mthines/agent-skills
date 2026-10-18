@@ -1,21 +1,11 @@
 ---
 name: optimize-approach
 description: >
-  Reviews whether a change takes the most optimal approach for its stated
-  intent and, when it does not, researches the code, validates a concretely
-  better approach via holistic analysis, and either proposes it (report mode)
-  or applies it behind a confidence gate (apply mode). Judges four axes —
-  codebase-fit, simplicity, performance, robustness — at the approach level,
-  deferring line-level and failure-mode findings to code-quality, critical,
-  and holistic-review. Stays silent when the approach is already optimal
-  (quiet early-exit). A `plan` mode reviews a drafted plan's approach at plan
-  time (aw-planner Phase 1) — the cheapest moment to switch. Called by the
-  pr-reviewer agent, the polish skill, and aw-planner as a
-  default-on lens; also runnable standalone, where `--deep` also judges
-  every `critical deep` lens's alternative (end-of-feature check).
-  Triggers on
-  "is this the best approach", "better way to do this", "is this optimal",
-  "optimize this approach", "rethink the approach", "/optimize-approach".
+  Judges whether a change or plan takes the most optimal approach for its intent
+  (codebase-fit, simplicity, performance, robustness) and proposes or applies a
+  validated better one; silent when already optimal. Triggers on "is this the
+  best approach", "better way to do this", "is this optimal",
+  "/optimize-approach".
 disable-model-invocation: false
 argument-hint: '[report|apply|plan] [--deep] [--no-confidence-gate]'
 license: MIT

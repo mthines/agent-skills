@@ -1,19 +1,10 @@
 ---
 name: review-branch
 description: >
-  Converges a LOCAL branch with no pull request through a bounded
-  review-apply-simplify loop. Dispatches the branch-reviewer agent, which runs
-  the same impact graph, finders, verifier, and confidence/severity gates as
-  pr-reviewer, but carries findings in a local findings.jsonl instead of GitHub
-  review threads — so a run makes zero GitHub API calls, posts nothing, and
-  works on an un-pushed branch or offline. Stops when every finding is applied
-  or honestly declined AND the repo's own fast checks are green; a finding it
-  can neither fix nor honestly decline stays flagged and visible, never quietly
-  resolved. Use it to iterate before opening a PR, or when the comment round
-  trip on your own PR is pure overhead. Once a PR exists use /review-loop
-  instead — threads are the right bus when other people read them. Invoke with
-  /review-branch [--base <ref>] [--cap N] [--effort high] [--no-simplify]
-  [--no-checks] [--report] [--include-untracked].
+  Converges a local branch with no PR through a bounded review-apply-simplify
+  loop via the `branch-reviewer` agent, carrying findings in
+  `.agent/{branch}/findings.jsonl` with zero GitHub calls. Use before opening a
+  PR (once one exists, use /review-loop); invoke with /review-branch.
 disable-model-invocation: false
 argument-hint: '[--base <ref>] [--head <ref>] [--cap N] [--effort high] [--no-simplify] [--no-checks] [--report] [--include-untracked]'
 license: MIT

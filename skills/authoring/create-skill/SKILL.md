@@ -1,17 +1,9 @@
 ---
 name: create-skill
 description: >
-  Scaffolds, reviews, upgrades, or diagnoses agent skills against
-  best-practice frontmatter, progressive disclosure, token-aware
-  structure, and the agent-skills.git symlink + inventory wiring.
-  Modes: `scaffold` (default — new skill), `review` (audit existing
-  skill), `upgrade` (split a single-file skill into multi-file),
-  `diagnose` (retrospective failure analysis that emits a
-  confidence-gated unified diff against any skill declaring a
-  diagnostic surface). Triggers on "create a skill", "scaffold a skill",
-  "new SKILL.md", "review this skill", "audit my skill", "upgrade this
-  skill", "split this skill", "diagnose this skill", "why did the skill
-  miss this", "/create-skill".
+  Scaffolds, reviews, upgrades, or diagnoses agent skills against best-practice
+  frontmatter, progressive disclosure, and this repo's symlink and inventory
+  wiring. Invoke with /create-skill [scaffold|review|upgrade|diagnose].
 disable-model-invocation: true
 argument-hint: '[scaffold|review|upgrade|diagnose] [<skill-name>|<path>]'
 license: MIT

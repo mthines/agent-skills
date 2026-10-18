@@ -1,17 +1,10 @@
 ---
 name: rum-tracking
 description: >
-  Guides product analytics and RUM (Real User Monitoring) event tracking
-  in web (React/Next.js) and mobile (React Native/Expo) apps. Decides what
-  user interactions are valuable to capture, what's noise, what's PII to
-  avoid, and how to implement, audit, update, and remove tracking code
-  cleanly. Covers event naming, property schemas, tracking plans,
-  GDPR/CCPA/DPDPA compliance, OpenTelemetry semantic conventions for
-  browser and mobile RUM, and platforms (PostHog, Segment, Mixpanel,
-  Amplitude, Datadog RUM, Sentry, OTel, Dash0). Modes: guide (default),
-  implement, audit, remove, plan. Triggers on "track this event",
-  "add analytics", "what should I track", "is this PII", "tracking plan",
-  "remove tracking", "audit analytics", "/rum-tracking".
+  Guides product analytics and RUM event tracking in web and React Native apps —
+  what to capture, what is noise or PII, naming, tracking plans, compliance, and
+  clean implement / audit / remove. Triggers on "track this event", "add
+  analytics", "what should I track", "is this PII", "/rum-tracking".
 argument-hint: '[guide|implement|audit|remove|plan] [<target>]'
 license: MIT
 metadata:

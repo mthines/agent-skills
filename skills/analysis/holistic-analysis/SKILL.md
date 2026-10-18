@@ -1,19 +1,11 @@
 ---
 name: holistic-analysis
 description: >
-  Forces a full step-back re-analysis when a fix or refactor is not working:
-  traces the whole execution path end-to-end — entry point to exit, every
-  block, every contract boundary, and the full data flow — instead of patching
-  in isolation. Three modes: `fix` (default) for bugs and broken behavior,
-  `refactor` for restructuring, and `review` for PR validation (returns
-  intent-match and system-fit findings for the `pr-reviewer` agent to consume
-  — never run standalone for routine review work). Trigger ONLY once at least
-  one isolated fix attempt has already failed, or on an explicit request for a
-  full execution-path analysis: "step back", "think holistically", "analyze
-  the whole thing", "zoom out", "look at the bigger picture", and "rethink
-  this" qualify in that context only. Never for trivial one-line fixes or
-  first-attempt debugging. Also triggers on "/holistic", "/step-back",
-  "/rethink", "/zoom-out".
+  Traces the whole execution path end-to-end — entry to exit, every contract
+  boundary and data flow — once an isolated fix or refactor has already failed;
+  modes fix, refactor, and review (for pr-reviewer). Triggers on "step back",
+  "think holistically", "zoom out", "rethink this" only after a failed attempt,
+  never for first-attempt debugging; also "/holistic".
 disable-model-invocation: false
 argument-hint: '[fix|refactor|review]'
 license: MIT

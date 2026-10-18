@@ -1,15 +1,10 @@
 ---
 name: attach-media
 description: >
-  Uploads local screenshots and screen recordings (PNG, JPEG, GIF, WebP, SVG,
-  MP4, MOV, WebM) to GitHub and embeds them in a pull request or issue body, or
-  in a new comment, as github.com/user-attachments URLs that render inline —
-  images as images, videos as players. No commits and no third-party host. Uses
-  `gh --attach` (gh ≥ 2.99), falls back to the same upload endpoint over curl
-  with a gh or env token, and never writes placeholder text when neither works.
-  The single owner of PR media for create-pr, ui-verify, storybook, and
-  screen-recorder. Triggers on "attach screenshots to the PR", "upload this
-  recording to the PR", "add images to the PR description", "/attach-media".
+  Uploads local screenshots and recordings to GitHub and embeds them in a PR or
+  issue body or comment as inline-rendering user-attachments URLs, via `gh
+  --attach` with a curl fallback; never writes placeholders. Triggers on "attach
+  screenshots to the PR", "upload this recording to the PR", "/attach-media".
 disable-model-invocation: false
 argument-hint: '<pr-or-issue-ref> <file>[#alt] [<file>[#alt] ...] [--to body|comment|urls] [--heading <text>] [--dry-run]'
 license: MIT

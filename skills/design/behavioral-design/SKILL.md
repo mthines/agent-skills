@@ -1,15 +1,11 @@
 ---
 name: behavioral-design
 description: >
-  Applies behavioral science to make a desired behavior the easy default — for team adoption
-  of tools, practices, and process changes as much as for product flows. Diagnoses why a
-  behavior is not happening (COM-B, Fogg B=MAP), designs ethical interventions (EAST,
-  choice architecture, defaults, friction, System 1 / System 2 fit), audits rollout plans,
-  and builds behavior-change workshops and presentations. Never recommends a dark pattern
-  or sludge. Use when the question is "why don't people do X" or "how do we get people to
-  adopt X", not "is this component usable". Triggers on "behavioral design",
-  "behavior change", "nudge", "drive adoption", "why aren't people using", "make it easy
-  to adopt", "system 1 / system 2", "thinking fast and slow", "/behavioral-design".
+  Applies behavioral science (COM-B, B=MAP, EAST, defaults, friction) to make a
+  desired behavior the easy default, for team adoption as much as product flows;
+  never recommends a dark pattern or sludge. Use for "why don't people do X" or
+  "how do we drive adoption"; triggers on "behavior change", "nudge",
+  "/behavioral-design".
 disable-model-invocation: false
 argument-hint: '[diagnose|design|workshop|review] <target behavior or context>'
 license: MIT

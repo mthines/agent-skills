@@ -1,20 +1,11 @@
 ---
 name: playwright-trace-analyzer
 description: >
-  Analyzes Playwright E2E `trace.zip` archives (and bare trace JSONL when
-  unpacked). Extracts the action timeline, network waterfall, console
-  errors, and DOM-snapshot anchors, then identifies the highest-impact
-  problems (flaky waits, slow selectors, network bottlenecks, hung actions,
-  unhandled console errors, navigation churn) and proposes concrete test
-  or app fixes ranked by measured impact. Auto-detects whether the input
-  is a `trace.zip`, a directory of unpacked trace files, or a single
-  `trace.trace` / `trace.network` JSONL stream. Iterates via the
-  `/confidence` skill — if root-cause certainty is below 90%, it digs
-  deeper before recommending a fix. Use when handed a Playwright trace,
-  asked "why is this test flaky?", "why did the test time out?", or asked
-  to optimise an E2E suite with evidence. Triggers on "analyze trace",
-  "playwright trace", "e2e trace", "test flake", "why did playwright
-  fail", "playwright timing", "/playwright-trace-analyzer".
+  Analyzes Playwright `trace.zip` archives (or a GitHub Actions run URL) —
+  action timeline, network, console errors — to name the race behind a flake and
+  rank test or app fixes by measured impact. Invoke with
+  /playwright-trace-analyzer for "why is this test flaky" or "why did playwright
+  time out".
 argument-hint: '<trace.zip|trace-dir|github-actions-url>'
 license: MIT
 disable-model-invocation: true

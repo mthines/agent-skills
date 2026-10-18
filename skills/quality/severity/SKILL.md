@@ -1,16 +1,10 @@
 ---
 name: severity
 description: >
-  Rates how severe a finding or bug is if it is real — the blast-radius axis,
-  complementary to confidence's is-it-real axis. Emits a lowercase tier
-  (critical / high / medium / low) from a fixed axis rubric, then applies one
-  deterministic, executable path floor (auth / billing / migration / infra /
-  secrets paths) plus heuristic escalators (data-loss, security, concurrency
-  shapes) — both scoped to reachable production code, never test / fixture /
-  generated paths. Callers own how they gate on the tier and map it to their
-  own blocking rules; the skill stays policy-free. Use to triage a review
-  finding or a bug. Triggers on "how severe", "rate severity", "severity check",
-  "triage this finding", "how bad is this", "/severity".
+  Rates how severe a finding or bug is if it is real — a blast-radius tier
+  (critical / high / medium / low) from a fixed rubric plus deterministic path
+  floors; policy-free, callers own gating. Triggers on "how severe", "rate
+  severity", "triage this finding", "how bad is this", "/severity".
 disable-model-invocation: false
 argument-hint: '[finding|bug]'
 license: MIT

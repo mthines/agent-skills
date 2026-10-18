@@ -1,21 +1,10 @@
 ---
 name: github-actions-author
 description: >
-  Authors fast, cheap, maintainable GitHub Actions workflows applying
-  2026 best practices: caching with `hashFiles` + `restore-keys`,
-  parallelization via matrix + artifacts, reusability (composite actions
-  for steps, reusable workflows for jobs), security (SHA-pinned actions,
-  least-privilege `GITHUB_TOKEN`, concurrency), trackable errors
-  (named steps, step summaries, annotations, and stdout/stderr that always
-  reaches the run log so agents can act on failures), and feedback for
-  comment-triggered runs (👀 acknowledgement reaction on start, 🚀/👎
-  outcome reaction plus a run-linked comment at the end). Two modes: `scaffold`
-  (default) generates workflow YAML; `review` audits an existing
-  workflow against the same rules. Use when creating CI/CD pipelines,
-  optimizing slow workflows, deduping copy-pasted YAML across repos, or
-  auditing workflow security. Triggers on "github action",
-  "github workflow", "ci pipeline", "create workflow", "speed up ci",
-  "review my workflow", "/github-actions-author".
+  Authors and reviews fast, secure, maintainable GitHub Actions workflows —
+  caching, matrix parallelism, reusable workflows, SHA pinning, least privilege,
+  and actionable logs. Invoke with /github-actions-author [scaffold|review] for
+  "create workflow", "speed up ci", or "review my workflow".
 disable-model-invocation: true
 argument-hint: '[scaffold|review] [<workflow-file>]'
 license: MIT

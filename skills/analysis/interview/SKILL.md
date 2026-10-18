@@ -1,18 +1,11 @@
 ---
 name: interview
 description: >
-  Aligns on the scope of a request before any plan or implementation begins — the
-  requirements-elicitation interview a senior engineer runs before touching code.
-  Restates the request and diffs it against the user's words, researches the codebase
-  so questions are specific, surfaces unknowns, non-goals, edge cases, and success
-  criteria, then runs a batched clarifying-question interview only when research
-  cannot resolve the ambiguity (adaptive — stays silent when the request is already
-  crisp). Produces a confirmed brief.md artifact that downstream planning consumes,
-  plus a readiness verdict (ready / ready-with-assumptions / blocked). Convergent and
-  pre-plan: hands option-generation to /ideate, plan review to /critical, and scoring
-  to /confidence. Use before autonomous work, before planning, or when a request feels
-  underspecified. Triggers on "align on scope", "interview me", "clarify the request",
-  "scope this", "scope alignment", "before we plan", "/interview".
+  Aligns on a request's scope before planning — researches the codebase,
+  surfaces unknowns, non-goals, and success criteria, asks batched clarifying
+  questions only when research cannot resolve them, and writes a confirmed
+  `brief.md`. Triggers on "align on scope", "interview me", "clarify the
+  request", "/interview".
 disable-model-invocation: false
 argument-hint: '[<request>] [--non-interactive]'
 license: MIT

@@ -1,14 +1,10 @@
 ---
 name: ux
 description: >
-  Reviews UX, accessibility, and microcopy for web and React Native (Expo) applications.
-  Analyzes UI code against established UX principles, WCAG 2.2 accessibility standards,
-  platform guidelines (Apple HIG, Material Design 3), and UX writing best practices.
-  Triggers on: "ux review", "review ux", "check accessibility", "improve the UI",
-  "ux audit", "review this component", "is this accessible", "check usability",
-  "ux feedback", "review the design", "improve usability", "check contrast",
-  "review navigation", "ux writing", "improve copy", "review microcopy",
-  "make this more intuitive", "ux best practices", "/ux".
+  Reviews UX, accessibility (WCAG 2.2), and microcopy for web and React Native
+  (Expo) UIs against Apple HIG, Material 3, and UX-writing practice; never
+  recommends a dark pattern. Triggers on "ux review", "check accessibility", "is
+  this accessible", "improve copy", "/ux".
 disable-model-invocation: false
 license: MIT
 metadata:

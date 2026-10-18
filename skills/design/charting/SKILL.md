@@ -1,16 +1,10 @@
 ---
 name: charting
 description: >
-  Selects the right chart type and visualization library for React/Next.js
-  (web) and Expo/React Native (mobile) data visualization tasks, then applies
-  accessibility and anti-pattern guardrails. Maps data shape and intent
-  (comparison, composition, distribution, relationship, evolution, flow,
-  geographic, hierarchical) to a recommended chart, then to a recommended
-  library based on platform, dataset size, and design system. Defers
-  cross-cutting UI concerns (contrast, touch targets, typography, copy) to
-  the `ux` skill rather than restating them. Triggers on: "what chart should
-  I use", "visualize this data", "build a chart", "build a dashboard",
-  "data visualization", "pick a chart library", "graph this", "/charting".
+  Selects the chart type and visualization library for React/Next.js and
+  Expo/React Native data visualization, with accessibility and anti-pattern
+  guardrails. Triggers on "what chart should I use", "visualize this data",
+  "build a dashboard", "pick a chart library", "/charting".
 license: MIT
 metadata:
   author: mthines

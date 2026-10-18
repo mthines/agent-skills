@@ -1,19 +1,10 @@
 ---
 name: docs
 description: >
-  Authors, audits, and maintains project documentation across CLAUDE.md /
-  .claude/rules/, AGENTS.md, README.md, and Diátaxis docs/ trees (root +
-  nested for monorepos). Four modes: init scaffolds a tiered docs setup
-  from scratch; update detects drift (dead @imports, renamed commands,
-  stale narrative) and incrementally refreshes via a Placement Resolver
-  that pushes rules to the innermost-ancestor destination; readme writes
-  or audits a README against the standard-readme spec; audit produces a
-  documentation health report across every surface. Routes by kind: hard
-  rules to CLAUDE.md, path-scoped patterns to .claude/rules/, narrative
-  to docs/, marketing to README.md. Triggers on "init claude", "bootstrap
-  docs", "scaffold CLAUDE.md", "update docs", "sync CLAUDE.md", "docs
-  drift", "write a README", "audit our docs", "review the README",
-  "Diátaxis", "/docs".
+  Authors, audits, and maintains project docs — CLAUDE.md / .claude/rules/,
+  AGENTS.md, README.md, and Diátaxis docs/ trees — in modes init, update,
+  readme, and audit. Triggers on "init claude", "update docs", "docs drift",
+  "write a README", "/docs".
 argument-hint: '[init|update|readme|audit] [--auto|--dry-run] [--nested <dir>|--pattern <glob>]'
 license: MIT
 metadata:
