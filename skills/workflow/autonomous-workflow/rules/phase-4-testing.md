@@ -220,14 +220,11 @@ npm run build
 
 All three must pass before exiting Phase 4.
 
-### Step 6b: Run the Executable Checks (Full Mode)
+### Step 6b: Gate on the check runner (Full Mode)
 
-After the suite is green, run every check in `.agent/{branch}/checks.yaml`
-per the [Executable Checks Loop](#executable-checks-loop) below. **Phase 4 is
-not complete until every check's `status` is `pass`** (or a check was declared
-`unsatisfiable` and the user approved). Self-skips (one log line) when no
-`checks.yaml` exists — legacy plans and non-aw authors gate on the Acceptance
-Criteria by judgment, as before.
+After the suite is green, run the [Executable Checks Loop](#executable-checks-loop).
+Phase 4 is complete only when `run-checks.mjs` prints `CHECKS <M>/<M> PASS (<sha>)` on the current head, or a check is `unsatisfiable` and the user approved.
+Self-skips with one log line when no `checks.yaml` exists — then gate on the Acceptance Criteria by judgment.
 
 ### Step 7: Update Progress Log (Full Mode)
 
@@ -274,51 +271,35 @@ git commit -m "test(scope): add coverage for <feature>
 
 **Anchor:** `executable-checks`
 
-Full Mode plans ship with `.agent/{branch}/checks.yaml` — one runnable check
-per `AC-{n}` acceptance criterion, authored by the planner via
-[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#step-2b-derive-checksyaml-from-the-acceptance-criteria).
-This loop replaces "the LLM judges whether the criteria are met" with "the
-harness runs the checks": `checks.yaml` is the Phase 4 **termination condition
-and progress ledger**.
+Full Mode plans ship `.agent/{branch}/checks.yaml` — one runnable check per `AC-{n}`, written and sealed by [`aw-create-plan`](../../aw-create-plan/SKILL.md#checksyaml).
+The harness decides "done", not the model: the gate is the one sentinel line `run-checks.mjs` prints.
 
-**Self-skip:** if `checks.yaml` does not exist, log
-`executable-checks — skipped (no checks.yaml)` and gate on the Acceptance
-Criteria by judgment (the pre-v3.15 behavior). Never bail because it's absent.
+**Self-skip:** if `checks.yaml` does not exist, log `executable-checks — skipped (no checks.yaml)` and gate on the Acceptance Criteria by judgment.
+Never bail because it is absent.
 
 ### The loop
 
-The "run `setup` + `run`, compare against `expect`" mechanic delegates to
-`Skill("verify-behavior", "change")` — the shared change-verification shape
-(isolated execution, toolchain discovery, the receipt format). The loop, the
-mode-aware iteration cap, the check-integrity rules, and the `unsatisfiable`
-abort affordance below are unchanged; only the run-and-compare mechanic moves
-to the shared skill. If the skill is unavailable, log
-`verify-behavior — skipped (not installed)` and run `setup`/`run` directly,
-exactly as before this delegation existed.
-
+```bash
+AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"   # the dir Skill("autonomous-workflow") loaded from
+DIR=".agent/$(git branch --show-current)"
+node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$DIR/checks.yaml" | tee "$DIR/checks.run.log"
 ```
-for each check in checks.yaml with status pending or fail:
-    1. Skill("verify-behavior", "change")
-         target: <the check's `setup` + `run`>
-         expected: <the check's `expect`>
-         review_relation: "self"
-         caller: "aw-executor"
-       (or, if unavailable: run `setup` (if not "none"), then `run` directly)
-    2. Compare the observed output / exit code against `expect`.
-    3. Match     → set status: pass. Log: `[TS] Phase 4: check AC-n — pass`
-       Mismatch  → set status: fail. The check joins the failing-area queue —
-                   fix the IMPLEMENTATION, then re-run. Failing checks count
-                   toward the same mode-aware iteration cap (3 Lite / 5 Full)
-                   and stuck-loop protocol as failing tests.
-    4. kind: judge → resolve by rubric-scored LLM judgment against the AC's
-       text; record the verdict + one-line rationale in the Progress Log.
-       A judge check NEVER gates alone: it cannot be the only evidence that
-       an irreversible step is safe, and a plan whose checks are majority
-       judge-kind should be flagged to the user as weakly verifiable.
 
-Phase 4 exit gate: every check status == pass
-                   (or unsatisfiable + user approval — see below).
-```
+The runner runs each check's `setup` then `run`, compares against `expect` (exact stdout, `exit <n>`, or `/regex/`), rewrites only the `status:` lines, and prints one final line:
+
+| Sentinel | Meaning | Next action |
+| --- | --- | --- |
+| `CHECKS M/M PASS (<sha>)` | Every check passed on `<sha>` | Exit Phase 4; copy the line into the Progress Log and the walkthrough |
+| `CHECKS p/M FAIL: AC-2 AC-5` | The listed checks failed | Fix the implementation for each listed ID, then re-run the runner |
+| `CHECKS 0/0 FAIL: <reason>` | Missing file, parse error, or no checks | Re-derive `checks.yaml` via `aw-create-plan`; never hand-edit sealed fields |
+
+Rules of the loop:
+
+1. Read the verdict from the sentinel line only; never declare Phase 4 done from your own reading of the per-check lines.
+2. Failing checks join the failing-area queue and count toward the same mode-aware iteration cap (3 Lite / 5 Full) and [Stuck-Loop Detection](#stuck-loop-detection) as failing tests.
+3. The runner never executes a `kind: judge` check. Resolve it by rubric-scored judgment against the AC text, set its `status:` to `pass` or `fail` yourself, and log the verdict with a one-line rationale. A judge check never gates alone; flag a plan whose checks are mostly judge-kind as weakly verifiable.
+4. To diagnose a failing check, run `Skill("verify-behavior", "change")` with the check's `setup` + `run` as `target` and its `expect` as `expected`; it returns a receipt, and the runner's sentinel stays the gate. Without the skill, log `verify-behavior — skipped (not installed)`.
+5. Sealed-field edits are caught mechanically: the runner fails every check whose `id`, `requirement`, `ears`, `kind`, or `expect` differs from `checks.lock`.
 
 ### Check-integrity rules (NON-RELAXABLE)
 
@@ -331,8 +312,8 @@ The rules:
    `status:` freely. It may amend `run:`/`setup:` ONLY to make the draft
    command runnable against the real code, and every amendment requires a
    Progress Log entry: `[TS] Phase 4: check-run-amended AC-n — <why>`.
-   `id:`, `requirement:`, `ears:`, and `expect:` are **never** edited by the
-   executor. A diff that changes them is a hard stop → user escalation.
+   `id:`, `requirement:`, `ears:`, `kind:`, and `expect:` are **never** edited by the
+   executor, and neither is `checks.lock`. A diff that changes them is a hard stop → user escalation.
 2. **Forbidden strategies — never satisfy a check by:** (a) modifying the
    check or a test to match wrong behavior, (b) overloading operators /
    comparisons to fake equality, (c) recording or replaying state to bypass
@@ -352,10 +333,10 @@ The rules:
 
 ```markdown
 - [2026-04-29T16:50:00Z] Phase 4: executable-checks — 5 checks loaded (4 command, 1 judge)
-- [2026-04-29T16:51:10Z] Phase 4: check AC-1 — pass (expect 401, got 401)
-- [2026-04-29T16:52:30Z] Phase 4: check AC-3 — fail (expect 401, got 500); joining iteration loop
+- [2026-04-29T16:51:10Z] Phase 4: CHECKS 3/5 FAIL: AC-3 AC-5 — AC-5 is the judge check, AC-3 joins the iteration loop
 - [2026-04-29T16:55:02Z] Phase 4: check-run-amended AC-3 — port 3000 → 4001 (dev server config)
-- [2026-04-29T16:58:44Z] Phase 4: check AC-3 — pass; all 5 checks green
+- [2026-04-29T16:56:30Z] Phase 4: judge AC-5 — pass (copy matches the tone rubric: short, second person)
+- [2026-04-29T16:58:44Z] Phase 4: CHECKS 5/5 PASS (a1b2c3d)
 ```
 
 Disable: remove this section's invocation from Step 6b — but note the

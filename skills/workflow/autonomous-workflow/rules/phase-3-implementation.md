@@ -107,10 +107,11 @@ If the worktree was not created, **STOP and return to Phase 2.**
 
 ## Procedure
 
-### Step 1: Read `plan.md` Implementation Order
+### Step 1: Read the brief
 
-Open `.agent/{branch}/plan.md` and follow the **Implementation Order** section
-verbatim. Typical order:
+Open `.agent/{branch}/plan.md`.
+Touch only the files in **File Changes**, and nothing the **Guardrails** name.
+Follow the **Implementation Order** section verbatim when the plan has one; otherwise use this default order:
 
 1. Types / interfaces (if TypeScript)
 2. Core logic / pure functions
@@ -118,7 +119,7 @@ verbatim. Typical order:
 4. Integration / glue code
 5. Configuration updates
 
-If `plan.md` is missing (Lite Mode), use the order above as the default.
+If `plan.md` is missing (Lite Mode), use the default order and the files named in the in-conversation brief.
 
 ### Step 2: One Change at a Time
 

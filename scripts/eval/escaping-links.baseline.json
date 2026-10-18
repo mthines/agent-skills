@@ -26,11 +26,10 @@
   "skills/testing/e2e-testing": 15,
   "skills/testing/e2e-testing-mobile": 33,
   "skills/testing/ui-verify": 23,
-  "skills/workflow/autonomous-workflow": 115,
-  "skills/workflow/autonomous-workflow/aw": 8,
-  "skills/workflow/autonomous-workflow/aw-setup": 7,
+  "skills/workflow/autonomous-workflow": 100,
+  "skills/workflow/autonomous-workflow/aw": 3,
+  "skills/workflow/autonomous-workflow/aw-setup": 4,
   "skills/workflow/autonomous-workflow/aw-tester-chrome": 14,
-  "skills/workflow/aw-create-plan": 5,
   "skills/workflow/fix-bug": 22,
   "skills/workflow/implement-suggestion": 16
 }

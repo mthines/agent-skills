@@ -345,7 +345,7 @@ Completeness dimension: "looked around" is not a search record.
 **Anchor:** `acceptance-criteria-drafting`
 
 Acceptance Criteria follow the format contract in the
-[`aw-create-plan` template](../../aw-create-plan/SKILL.md#template):
+[`aw-create-plan` template](../../aw-create-plan/SKILL.md#the-brief-core):
 
 - Each criterion carries a unique `AC-{n}` ID and a `(covers: R{m})`
   annotation naming the requirement(s) it verifies. Every `[user-stated]`
