@@ -15,6 +15,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 
+INNERTUBE = "https://www.youtube.com/youtubei/v1"
 CLIENTS = [
     ({"clientName": "ANDROID", "clientVersion": "20.10.38", "androidSdkVersion": 30},
      "com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip"),
@@ -23,9 +24,9 @@ CLIENTS = [
 ]
 
 
-def video_id(s):
-    m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([\w-]{11})", s)
-    return m.group(1) if m else s
+def video_id(url_or_id):
+    m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/|live/)([\w-]{11})", url_or_id)
+    return m.group(1) if m else url_or_id
 
 
 def http(url, ua, body=None, visitor=None):
@@ -42,7 +43,7 @@ def visitor_data(vid):
     # Without a visitor id the app clients get "Sign in to confirm you're not a bot".
     body = {"context": {"client": {"clientName": "WEB", "clientVersion": "2.20260915.01.00", "hl": "en"}},
             "videoId": vid}
-    resp = json.loads(http("https://www.youtube.com/youtubei/v1/next?prettyPrint=false", "Mozilla/5.0", body))
+    resp = json.loads(http(f"{INNERTUBE}/next?prettyPrint=false", "Mozilla/5.0", body))
     return resp.get("responseContext", {}).get("visitorData")
 
 
@@ -53,7 +54,7 @@ def caption_tracks(vid):
         body = {"context": {"client": dict(client, hl="en", visitorData=visitor)}, "videoId": vid,
                 "contentCheckOk": True, "racyCheckOk": True}
         try:
-            resp = json.loads(http("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", ua, body, visitor))
+            resp = json.loads(http(f"{INNERTUBE}/player?prettyPrint=false", ua, body, visitor))
         except urllib.error.HTTPError as e:
             errors.append(f"{client['clientName']}: HTTP {e.code}")
             continue
