@@ -1397,6 +1397,20 @@ export function resolveDepthOverrides(opts, settings) {
   return { effortHigh: false, thoroughness: undefined, source: "default" };
 }
 
+/**
+ * The RUN_ANOMALY lines the run-level review config produces (review-config.md § Run-level knobs):
+ * one per ignored invalid value, plus one when an explicit `--config` file could not be read — the
+ * run then uses every default, and without this line only `reviewConfig.source` would say so.
+ * @param {{ source: string, unreadable?: boolean }} baseConfig
+ * @param {{ invalid: string[] }} settings
+ * @returns {string[]}
+ */
+export function reviewConfigAnomalies(baseConfig, settings) {
+  const lines = settings.invalid.map((bad) => `review config ${baseConfig.source}: ignored invalid ${bad}`);
+  if (baseConfig.unreadable) lines.push(`review config ${baseConfig.source}: using defaults`);
+  return lines;
+}
+
 function readReviewConfig(dir) {
   if (!dir) return "";
   for (const p of [join(dir, ".github", "review.yaml"), join(dir, ".review.yaml")]) {
@@ -1418,14 +1432,14 @@ function readReviewConfig(dir) {
  * merging it. Order: explicit file → `git show <baseSha>:<path>` in the workspace → the contents
  * API at `baseSha`. Each path tries `.github/review.yaml`, then the legacy root `.review.yaml`.
  * @param {{ explicitPath?: string, dir?: string|null, baseSha?: string, repo?: string, timeoutMs?: number }} input
- * @returns {Promise<{ text: string, source: string }>}
+ * @returns {Promise<{ text: string, source: string, unreadable?: boolean }>}
  */
 export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, timeoutMs = 30000 }) {
   if (explicitPath) {
     try {
       return { text: readFileSync(explicitPath, "utf8"), source: explicitPath };
     } catch {
-      return { text: "", source: `${explicitPath} (unreadable)` };
+      return { text: "", source: `${explicitPath} (unreadable)`, unreadable: true };
     }
   }
   if (!baseSha) return { text: "", source: "none (no base SHA)" };
@@ -1684,7 +1698,7 @@ async function prepare(opts) {
   const reviewConfigText = readReviewConfig(workspace.dir);
   const baseConfig = await readBaseReviewConfig({ explicitPath: opts.config, dir: workspace.dir, baseSha, repo, timeoutMs });
   const settings = reviewSettings(baseConfig.text);
-  for (const bad of settings.invalid) anomalies.push(`review config ${baseConfig.source}: ignored invalid ${bad}`);
+  anomalies.push(...reviewConfigAnomalies(baseConfig, settings));
   const depthOverrides = resolveDepthOverrides(opts, settings);
   const hsArgs = extraHighStakes(reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
@@ -2431,6 +2445,14 @@ async function selfTest() {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+  t("reviewConfigAnomalies reports an unreadable --config file as well as each ignored invalid value", async () => {
+    const missing = await readBaseReviewConfig({ explicitPath: join(tmpdir(), `prr-no-such-review-${process.pid}.yaml`) });
+    const lines = reviewConfigAnomalies(missing, reviewSettings(missing.text));
+    const bad = reviewConfigAnomalies({ source: "x.yaml" }, reviewSettings("profile: strict\n"));
+    return missing.unreadable === true && missing.text === ""
+      && lines.length === 1 && lines[0] === `review config ${missing.source}: using defaults`
+      && bad.length === 1 && bad[0] === "review config x.yaml: ignored invalid profile: strict";
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;
