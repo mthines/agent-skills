@@ -252,13 +252,15 @@ Merge rules by field:
 
 | Field | Merge rule |
 | --- | --- |
-| `profile` | Closer file wins — the most specific `.review.yaml` (or the `.github/review.yaml` base) sets the profile |
+| `profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `thoroughness`, `critical` | **Base only, never subtree-merged** — run-level knobs, read once from the repo-level config at the PR's base commit ([§ Run-level knobs](#run-level-knobs)); a subtree `.review.yaml` that sets one is ignored. |
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
 | `agent0_fix_links`, `agent0_environment`, `agent0_org` | **Base only, never subtree-merged** — these govern the whole run (buttons on or off, which Agent0 host, which organization), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out, nor point one directory's buttons at a different org. Read from the repo-level base config alone; see § Run-level fields below. |
 | `effort` | **Base only, never subtree-merged** — the depth tier is one decision per run, made at Step 1.2b before any file is read, so there is no point in the run at which a subtree's value could apply. Read from the repo-level base config alone. |
 
-Example: if `.github/review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
+Example: `.github/review.yaml` sets `profile: chill`, and `src/payments/.review.yaml` sets `profile: assertive` and adds `naming-nits` to `filters:`.
+Every file, including those under `src/payments/`, is reviewed at `chill`, because a subtree `profile` is ignored.
+Only files under `src/payments/` drop `naming-nits` findings, because `filters` is a per-file union.
 
 ### Loading algorithm
 
@@ -504,8 +506,8 @@ threshold = resolved_profile.per_comment_confidence_threshold
             (default: 80 when no config is present or profile: balanced)
 ```
 
-The `per_comment_confidence_threshold` override in the review config (previously documented in `per-comment-confidence.md`) is now superseded by the `profile` field.
-For backwards compatibility, a bare `per_comment_confidence_threshold: N` without a `profile:` field is honoured as a direct threshold override (equivalent to a custom profile with that threshold and the balanced caps).
+A flat `per_comment_confidence_threshold: N` collapses every tier's bar to `N`, with or without a `profile:` field ([§ Run-level knobs](#run-level-knobs)).
+`profile` still selects the per-file inline cap: `profile: assertive` with `per_comment_confidence_threshold: 75` gates every tier at 75 and keeps `assertive`'s cap of 7, and with no `profile:` the `balanced` cap of 5 applies.
 
 ---
 
