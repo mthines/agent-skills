@@ -4309,9 +4309,10 @@ const isPollBlock = (block) =>
   // writes `type: human, agent: other` — byte-identical to the incidental human comment the filter
   // rejects — so without `explicit` on both sides, a literal implementation of the filter drops
   // every rule a maintainer ever wrote, silently.
-  const rememberSkill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
+  // The `remember` invocation moved from pr-review/SKILL.md to its own rule file; read the owner.
+  const rememberSkill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/rules/remember.md"), "utf8");
   for (const [name, src] of [["memory.md", memory], ["the agent body", prm],
-    ["pr-review/SKILL.md", rememberSkill]]) {
+    ["pr-review/rules/remember.md", rememberSkill]]) {
     s.check(`G38e ${name} carves out the remember rule with source.explicit, not prose`,
       /source\.explicit|explicit: true/.test(src),
       "the /pr-review remember carve-out names no field the read path can key on");
@@ -7103,7 +7104,7 @@ const isPollBlock = (block) =>
   // pattern names the two script dirs so the cautionary prose (`node agents/…`) is not a hit.
   const BARE_SCRIPT = /node\s+"?agents\/(?:branch-reviewer|pr-reviewer)\/scripts\//;
   for (const rel of ["agents/branch-reviewer.md", "skills/quality/review-branch/rules/findings-bus.md",
-                     "skills/quality/pr-review/SKILL.md"]) {
+                     "skills/quality/pr-review/SKILL.md", "skills/quality/pr-review/rules/remember.md"]) {
     const p = join(REPO_ROOT, rel);
     // A renamed file must red, not silently drop out of the sweep.
     s.check(`G52g ${rel} exists (the bare-path sweep reads it)`, existsSync(p));
