@@ -33,7 +33,8 @@ Strict order so dedup is deterministic:
 
 1. `code-quality` (always, unless diff is trivial — single-line typo, ≤ 5 line whitespace fix).
 2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
-3. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below). `--no-critical` suppresses the config and the heuristic.
+3. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
+   `--no-critical` suppresses the config and the heuristic.
 4. `--with` lenses (max 3, in the order given on the command line).
 
 ## Auto-engage heuristics for `critical`
