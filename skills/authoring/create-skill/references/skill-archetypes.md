@@ -30,7 +30,7 @@ frontmatter, the layout, and what makes the shape worth using.
 
 ## A1 — Advisory skill (review-style)
 
-**Examples in this repo:** `code-quality`, `dx`, `ux`,
+**Examples in this repo:** `code-quality`, `ux`,
 `holistic-analysis`.
 
 **Shape:**

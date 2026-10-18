@@ -1,6 +1,6 @@
 {
   "name": "mthines-agent-skills",
-  "description": "Agent skills for code review, DX/UX analysis, TDD, holistic analysis, and developer productivity",
+  "description": "Agent skills for code review, UX analysis, TDD, holistic analysis, and developer productivity",
   "version": "1.0.0",
   "author": {
     "name": "mthines"
@@ -16,7 +16,6 @@
     "skills",
     "agentic",
     "code-review",
-    "dx",
     "ux",
     "tdd",
     "holistic-analysis",

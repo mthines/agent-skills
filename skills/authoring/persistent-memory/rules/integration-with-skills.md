@@ -183,7 +183,7 @@ the host skill's loop rules in the same PR — the two surfaces must never drift
 
 Some skills should never call `persistent-memory`:
 
-- One-shot utilities (`changelog`, `resolve-conflicts`, `ci-auto-fix`)
+- One-shot utilities (`resolve-conflicts`, `ci-auto-fix`)
   — they have no durable subject.
 - Skills that operate on secrets or credentials (would risk routing
   them through extraction).

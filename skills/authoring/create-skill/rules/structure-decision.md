@@ -60,8 +60,8 @@ my-skill/
     └── walkthrough.md
 ```
 
-When the skill emits structured artefacts. `changelog` follows this
-pattern (a single `SKILL.md` plus a `templates/changelog.md` it fills in).
+When the skill emits structured artefacts. `handoff` follows this
+pattern (a `SKILL.md` plus a `templates/handoff.template.md` it fills in).
 
 ### C — Multi-file with rules
 

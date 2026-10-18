@@ -68,7 +68,6 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `ai-engineering` (`/`) — LLM/AI app review across 13 concerns
 - `code-quality` (`auto`) — readability, complexity, maintainability; modes `plan` / authoring / `review` / `simplify`
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps the LLM score at 89%
-- `eval-iterate` (`/`) — drives a failing AI/LLM eval to a confirmed green (two consecutive passes, 5-iteration cap)
 - `severity` (`auto`) — severity/blast-radius tier (`critical`/`high`/`medium`/`low`) for a finding or bug; policy-free
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates; `deep` runs 3–5 parallel persona lenses (found via `ideate`) and merges them
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
@@ -76,7 +75,6 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `optimize-approach` (`Skill()`) — approach-level optimality lens; modes `report` / `apply` / `plan`; standalone `--deep` also judges `critical deep` lens alternatives. Never blocks
 - `polish` (`/`) — re-runnable pre-PR branch quality gate (review + simplify)
 - `review-loop` (`Skill()`) — bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5; `--ui` runs `ui-verify` in a parallel lane and resolves its findings. Run at the top level of a session that holds a dispatch tool
-- `dx` (`/`) — CLI / shell-script DX review
 - `review-branch` (`/`) — PR-less sibling of `review-loop`; findings bus `.agent/{branch}/findings.jsonl`, zero GitHub calls
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule
 - `tdd` (`auto`) — strict RED-GREEN-REFACTOR
@@ -87,7 +85,6 @@ Type markers (by primary entry point — all three are technically model-invocab
 ### `delivery/` — Git, PR, CI
 
 - `attach-media` (`Skill()` + `/`) — uploads screenshots and recordings to a PR or issue via `gh --attach`, with a curl fallback; owns the `<!-- attach-media:v1 -->` body region. Never writes placeholders
-- `changelog` (`/`) — personal PR + Linear ticket digest
 - `ci-auto-fix` (`/`) — evidence-gated CI diagnosis and fix; never weakens checks
 - `create-pr` (`/`) — narrative PR description; pre-push `review-branch`, draft PR, post-draft `review-loop`, CI watch
 - `github-actions-author` (`/`) — author / review GHA workflows
