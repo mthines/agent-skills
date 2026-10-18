@@ -56,13 +56,32 @@ export function recomputeFinal(candidate) {
 }
 
 /**
- * @param {{ profile?: string, severityTier?: string, flatOverride?: number }} args
+ * review-config.md § Severity-aware thresholds: a flat override collapses every tier; otherwise a
+ * tier named in `severityThresholds` uses its own bar and an unnamed tier keeps the profile's.
+ * @param {{ profile?: string, severityTier?: string, flatOverride?: number, severityThresholds?: Record<string, number>|null }} args
  * @returns {number}
  */
-export function resolveThreshold({ profile = "balanced", severityTier = "medium", flatOverride }) {
+export function resolveThreshold({ profile = "balanced", severityTier = "medium", flatOverride, severityThresholds }) {
   if (typeof flatOverride === "number") return flatOverride;
+  const own = severityThresholds ? severityThresholds[severityTier] : undefined;
+  if (typeof own === "number") return own;
   const p = PROFILES[profile] || PROFILES.balanced;
   return p.thresholds[severityTier] ?? p.thresholds.medium;
+}
+
+/**
+ * The finalize options a context's `reviewConfig` (prepare-review.mjs, read from the base commit)
+ * selects. A context without one — an older prepare, branch-reviewer — gets the `balanced` defaults.
+ * @param {any} context
+ * @returns {{ profile: string, flatOverride: number|undefined, severityThresholds: Record<string, number>|undefined }}
+ */
+export function reviewConfigOptions(context) {
+  const rc = context?.reviewConfig || {};
+  return {
+    profile: typeof rc.profile === "string" && PROFILES[rc.profile] ? rc.profile : "balanced",
+    flatOverride: typeof rc.flatThreshold === "number" ? rc.flatThreshold : undefined,
+    severityThresholds: rc.severityThresholds && typeof rc.severityThresholds === "object" ? rc.severityThresholds : undefined,
+  };
 }
 
 /**
@@ -116,6 +135,19 @@ async function selfTest() {
       Math.abs(recomputeFinal(realShaped) - realShaped.final) < 0.01);
   }
 
+  check("a severity_thresholds tier overrides the profile's bar for that tier only",
+    resolveThreshold({ profile: "balanced", severityTier: "high", severityThresholds: { high: 60 } }) === 60
+    && resolveThreshold({ profile: "balanced", severityTier: "medium", severityThresholds: { high: 60 } }) === 80);
+  check("a flat per_comment_confidence_threshold beats a severity_thresholds tier",
+    resolveThreshold({ profile: "balanced", severityTier: "high", severityThresholds: { high: 60 }, flatOverride: 75 }) === 75);
+  check("reviewConfigOptions maps context.reviewConfig to finalize options",
+    (() => {
+      const o = reviewConfigOptions({ reviewConfig: { profile: "assertive", flatThreshold: null, severityThresholds: { low: 85 } } });
+      return o.profile === "assertive" && o.flatOverride === undefined && o.severityThresholds?.low === 85;
+    })());
+  check("reviewConfigOptions falls back to balanced for a missing or unknown profile",
+    reviewConfigOptions({}).profile === "balanced" && reviewConfigOptions({ reviewConfig: { profile: "strict" } }).profile === "balanced"
+    && reviewConfigOptions(null).severityThresholds === undefined);
   check("PROFILES has exactly chill/balanced/assertive", Object.keys(PROFILES).sort().join(",") === "assertive,balanced,chill");
   check("balanced.thresholds.medium is 80 (today's default)", PROFILES.balanced.thresholds.medium === 80);
   check("balanced.perFileCap is 5", PROFILES.balanced.perFileCap === 5);

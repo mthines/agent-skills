@@ -89,6 +89,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { finalizeReview } from "../../agents/pr-reviewer/scripts/finalize.mjs";
+import { reviewConfigOptions } from "../../agents/pr-reviewer/scripts/finalize/thresholds.mjs";
 import { extractFingerprint } from "../../agents/pr-reviewer/scripts/fingerprint.mjs";
 import { ghApi, ghApiAll } from "../record-comment-relevance.mjs";
 
@@ -288,8 +289,10 @@ export function compareShadow(judgments, proseDispositions, explained, context) 
       .map((/** @type {any} */ c) => ({ filename: c.path, patch: `@@ -${c.line},1 +${c.line},1 @@\n+x` })),
     threads: [],
   };
+  // The same options the live CLI passes (finalize.mjs main): a captured context's reviewConfig
+  // replays at the profile and bars the run used, never at a silent `balanced`.
   const { payload, inline, deferred, suppressed, anchorless, dedupeDropped, confidenceDropped, verdict } =
-    finalizeReview({ context: ctx, judgments, skipGates: false });
+    finalizeReview({ context: ctx, judgments, ...reviewConfigOptions(ctx), skipGates: false });
   void payload;
 
   /** @type {Map<string,string>} */
@@ -715,6 +718,24 @@ async function selfTest() {
     check("compareShadow flags a real disagreement (clear vs. defer) and fails without an explanation", !rNoExplain.ok && rNoExplain.mismatches.length === 1);
     const rExplained = compareShadow(judgments, prose, { "correctness:logic:foo@a.ts": "D5: prose applies a stricter bar for this defect class" });
     check("compareShadow's ok flips to true once the SAME disagreement carries a non-empty explanation", rExplained.ok);
+  }
+  {
+    // A captured context's reviewConfig sets the replay's bar, as it sets the live CLI's:
+    // a medium finding at 72 clears under assertive (70) and not under the balanced default (80).
+    const judgments = {
+      candidates: [
+        { finder: "correctness", defect_class: "logic", symbol: "foo", path: "a.ts", line: 1, prefix: "issue", severity: "medium", final: 72, title: "t", body: "b" },
+      ],
+      gates: shadowGates,
+    };
+    const ctx = { mode: "full", files: [{ filename: "a.ts", patch: "@@ -1,1 +1,1 @@\n+x" }], threads: [] };
+    const prose = { "correctness:logic:foo@a.ts": "clear", __verdict__: "WARN" };
+    const configured = compareShadow(judgments, prose, {}, { ...ctx, reviewConfig: { profile: "assertive", severityThresholds: null, flatThreshold: null } });
+    const unconfigured = compareShadow(judgments, prose, {}, ctx);
+    check("compareShadow replays a captured context at its reviewConfig's bar: assertive clears a 72 medium finding, as the prose did",
+      configured.ok && configured.mismatches.length === 0, JSON.stringify(configured.mismatches));
+    check("compareShadow without a reviewConfig keeps the balanced bar, so the same 72 finding is not cleared and disagrees with the prose",
+      !unconfigured.ok && unconfigured.mismatches.some((m) => m.fp === "correctness:logic:foo@a.ts" && m.finalize !== "clear"));
   }
 
   // parseArgs — boolean flags (--write, --self-test) never consume the next argv slot
