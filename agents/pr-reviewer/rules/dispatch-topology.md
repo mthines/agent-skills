@@ -235,8 +235,12 @@ Reintroduce votes only with a run that shows them adding **confirmed** recall, a
 ## Two finder passes
 
 `budget.finderPasses` is `2` when the PR's base commit sets `finder_passes: 2` in `.github/review.yaml`
-(or `prepare-review.mjs` got `--finder-passes 2`), a dispatch is available, and the run is not
-zero-delta; otherwise it is `1` and `budget.finderPassesReason` says why.
+(or `prepare-review.mjs` got `--finder-passes 2`) and the run is not zero-delta; otherwise it is `1`
+and `budget.finderPassesReason` says why.
+`prepare-review.mjs` cannot see the caller's dispatch tool, so the budget in `context.json` assumes
+one, exactly as it does for `topology`: a run with no dispatch still reads `2` and the ×1.5
+`budget.toolCalls`, sends no pass-2 worker, and `finalize.mjs` names both pass-2 units in
+`RUN_ANOMALY` (step 7).
 Pass 1 is the run this file already describes, on `budget.topology`, unchanged.
 Pass 2 runs the same active finders again, in the two workers `budget.secondPassUnits` names:
 
