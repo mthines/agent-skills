@@ -1265,6 +1265,18 @@ function detectTier2Checker(dir) {
 /* ------------------------------ review config ------------------------------ */
 
 /**
+ * The lines of a review config, for every line parser below: a leading UTF-8 BOM (U+FEFF) is
+ * stripped, then the text splits on `\r?\n`. No read path strips a BOM (`readFileSync(…, "utf8")`,
+ * `git show`, `gh api`), so it would prefix line 1 and a first-line `^key:` would never match;
+ * a CRLF line keeps its `\r`, which `.` never matches. Either way the key reads as absent with no anomaly.
+ * @param {string} yamlText
+ * @returns {string[]}
+ */
+function configLines(yamlText) {
+  return yamlText.replace(/^\uFEFF/, "").split(/\r?\n/);
+}
+
+/**
  * Extract `high_stakes_paths:` from the review config, in the documented lookup
  * order. Entries are regexes in block-list form; everything from ` #` on is an
  * inline comment, which review-config.md's own worked example relies on.
@@ -1273,8 +1285,8 @@ export function extraHighStakes(yamlText) {
   if (!yamlText) return [];
   const out = [];
   let inBlock = false;
-  // `\r?\n`, as in reviewSettings(): a CRLF entry keeps its `\r`, which `(.+)$` never matches, and a blank CRLF line ends the block.
-  for (const raw of yamlText.split(/\r?\n/)) {
+  // configLines(), as in reviewSettings(): a BOM hides a first-line `high_stakes_paths:`, and a CRLF entry keeps its `\r`, which `(.+)$` never matches.
+  for (const raw of configLines(yamlText)) {
     if (/^high_stakes_paths:/.test(raw)) {
       inBlock = true;
       continue;
@@ -1341,8 +1353,8 @@ export function reviewSettings(yamlText) {
     return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
   };
   let inSeverity = false;
-  // `\r?\n`, never `\n`: a CRLF line keeps its `\r`, which `.` never matches, so every `(.*)$` key below would read as absent with no anomaly.
-  for (const raw of yamlText.split(/\r?\n/)) {
+  // configLines(), never `split("\n")`: a leading BOM hides the first-line key and a CRLF line keeps its `\r`, so a `(.*)$` key below would read as absent with no anomaly.
+  for (const raw of configLines(yamlText)) {
     if (inSeverity) {
       // A blank line, an indented line, or a comment at any column stays inside the block: YAML ignores comments.
       if (/^\s*$/.test(raw) || /^\s+/.test(raw) || raw.startsWith("#")) {
@@ -2540,6 +2552,20 @@ async function selfTest() {
     const crlf = extraHighStakes(lines.join("\r\n")), lf = extraHighStakes(lines.join("\n"));
     return JSON.stringify(crlf) === JSON.stringify(lf) && crlf.length === 2
       && crlf[0] === "^src/auth/" && crlf[1] === "^db/migrations/" && crlf.every((v) => !v.includes("\r"));
+  });
+  t("a BOM-prefixed review config parses exactly like its plain twin in reviewSettings and extraHighStakes, first-line key included", () => {
+    const bom = (/** @type {string} */ s) => `\uFEFF${s}`;
+    const same = (/** @type {unknown} */ a, /** @type {unknown} */ b) => JSON.stringify(a) === JSON.stringify(b);
+    const knobs = ["profile: assertive", "severity_thresholds:", "  critical: 55", "effort: max", ""].join("\n");
+    const block = ["severity_thresholds:", "  high: 70", "critical: always", ""].join("\n");
+    const hs = ["high_stakes_paths:", "  - ^src/auth/", "other: 1", ""].join("\n");
+    const k = reviewSettings(bom(knobs)), b = reviewSettings(bom(block)), h = extraHighStakes(bom(hs));
+    return same(k, reviewSettings(knobs)) && same(b, reviewSettings(block)) && same(h, extraHighStakes(hs))
+      && same(reviewSettings(bom(knobs.replace(/\n/g, "\r\n"))), reviewSettings(knobs))
+      && k.profile === "assertive" && k.severityThresholds?.critical === 55 && k.invalid.length === 1 && k.invalid[0] === "effort: max"
+      && b.severityThresholds?.high === 70 && b.critical === "always"
+      && h.length === 1 && h[0] === "^src/auth/" && mergedHighStakes(bom(hs), "").includes("^src/auth/")
+      && same(reviewSettings(bom("")), reviewSettings("")) && extraHighStakes(bom("")).length === 0;
   });
   t("mergedHighStakes keeps a base entry the head deletes, adds the head's, and dedupes", () => {
     const base = ["high_stakes_paths:", '  - "(^|/)ledger(/|$)"', "  - ^billing-core/"].join("\n");
