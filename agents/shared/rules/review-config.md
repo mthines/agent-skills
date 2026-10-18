@@ -466,7 +466,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 | `per_comment_confidence_threshold` | 0–100 | `finalize.mjs` — one bar for every tier | — |
 | `effort` | `high` | `prepare-review.mjs` — forces `deep` and thoroughness 1 | CLI `--effort` or `--thoroughness` |
 | `thoroughness` | 0–1 | `prepare-review.mjs` — the budget's thoroughness | CLI `--effort` or `--thoroughness`; config `effort: high` |
-| `critical` | `auto` (default) / `always` | the agent at Step 2.3 | CLI `--no-critical` |
+| `critical` | `auto` (default) / `always` | `pr-reviewer.md` Step 2 — the rubric load ([`rubric-composition.md` § Load order](./rubric-composition.md#load-order)) | CLI `--no-critical` |
 
 1. Take these values from `context.reviewConfig`.
    Never re-read the head's `.github/review.yaml` for them, and never apply a head value the context does not carry.

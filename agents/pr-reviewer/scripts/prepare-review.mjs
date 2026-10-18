@@ -2049,7 +2049,7 @@ async function prepare(opts) {
     agent0: agent0Config(reviewConfigText),
     // The run-level knobs from the BASE commit's review config (review-config.md § Run-level
     // knobs). finalize.mjs reads profile / severityThresholds / flatThreshold; the agent reads
-    // `critical` at Step 2.3; `depthSource` says whether the routing above used CLI or config.
+    // `critical` when Step 2 loads its rubrics; `depthSource` says whether the routing above used CLI or config.
     reviewConfig: {
       source: baseConfig.source,
       profile: settings.profile,
