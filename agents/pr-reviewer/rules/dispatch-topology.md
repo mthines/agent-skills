@@ -281,10 +281,11 @@ verification keeps the extra recall without verifying any defect twice.
 5. **Verify** only the kept candidates with `_needs_verification: true`.
    A kept candidate with `_needs_verification: false` shares a group with one you already verified:
    that verdict stands, and the candidate is not verified or posted again.
-6. **Write `judgments.json` without the union's fields.** Drop `_pass`, `_found_in_passes`, and
-   `_needs_verification` from every candidate; the judgments schema rejects unknown keys.
-   `_found_in_passes: [1, 2]` is not agreement: it never lowers a confidence bar and never sets
-   `agreement_promoted`.
+6. **Write `judgments.json` without the union's fields.** Drop `_pass`, `_found_in_passes`,
+   `_needs_verification`, and `_semantic_merged` (the semantic pass's audit record, on a merged
+   group's survivor only) from every candidate; the judgments schema rejects unknown keys.
+   `_found_in_passes: [1, 2]` is not agreement: it never lowers a confidence bar, and the union
+   strips `agreement_promoted` and `_also_flagged_by` from every record it writes.
 7. **A pass-2 worker with no readable file** is left out of `--second-pass` and is neither retried nor
    run in your context — you have seen pass 1, so a pass 2 run by you is not independent.
    `finalize.mjs` reads the run ledger and names every planned unit that never delivered in

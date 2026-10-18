@@ -942,6 +942,10 @@ export function dedupeCandidates(candidates) {
  *     report and the trace only: being raised twice is NOT agreement and never lowers a bar.
  *   - `_needs_verification` — false when any member of its group already carries a `verdict` (the
  *     reviewer verified it before the union): that verdict stands and the group is not verified again.
+ * No record carries `agreement_promoted` or `_also_flagged_by`: they are `dedupeCandidates()`'s
+ * cross-finder agreement signal, a union is not a vote, and judgments.schema.json rejects both.
+ * A semantic survivor keeps `_semantic_merged`, the audit record rubric-composition.md § Dedupe
+ * names; the reviewer drops it with the union's own fields before writing judgments.json.
  * @param {any[][]} passes
  * @returns {{ kept: any[], dropped: any[], stats: { passes: number, raised: number[], kept: number,
  *   inEveryPass: number, onlyIn: number[], toVerify: number } }}
@@ -969,6 +973,8 @@ export function unionFinderPasses(passes) {
     const rest = { ...c };
     delete rest._uid;
     delete rest._dedupe_dropped_for_uid;
+    delete rest.agreement_promoted;
+    delete rest._also_flagged_by;
     return rest;
   };
   const out = kept.map((k) => {
@@ -2203,9 +2209,38 @@ async function selfTest() {
       JSON.stringify(u.stats) === JSON.stringify({ passes: 2, raised: [3, 3], kept: 4, inEveryPass: 2, onlyIn: [1, 1], toVerify: 4 }),
       JSON.stringify(u.stats));
     check("the same finder raising a defect in both passes is never agreement-promoted — a union is not a vote",
-      at(40)?.agreement_promoted === false && !at(40)?._also_flagged_by);
+      at(40) !== undefined && !("agreement_promoted" in at(40)) && !("_also_flagged_by" in at(40)));
     check("unionFinderPasses never leaks its internal _uid / _dedupe_dropped_for_uid fields",
       [...u.kept, ...u.dropped].every((c) => !("_uid" in c) && !("_dedupe_dropped_for_uid" in c)) && u.dropped.every((d) => d._pass === 2));
+
+    // Two DIFFERENT finders raise one defect at one anchor, one per pass: dedupeCandidates() records
+    // cross-finder agreement on the survivor, which a union must not emit. After step 6's strip, every
+    // kept record must pass the judgments candidate validation (validate-judgments.mjs --shape-only).
+    const agreeA = fc({ finder: "correctness", line: 50, symbol: "uploadNow",
+      claim: "uploadNow cancels the Task but OverlaySyncService.run never checks cancellation",
+      bad_outcome: "two keep-mode upload runs execute concurrently on one overlay" });
+    const agreeB = fc({ finder: "quality", line: 50, symbol: "uploadNow",
+      claim: "Upload Now cancellation never stops OverlaySyncService.run, which has no cancellation checks",
+      bad_outcome: "concurrent upload runs race on the overlay manifest" });
+    const agree = unionFinderPasses([[agreeA, sem1, only1], [agreeB, sem2, only2]]);
+    const agreed = agree.kept.find((k) => k.line === 50);
+    check("two different finders raising one defect across passes merge into pass 1's record, found in [1, 2]",
+      agree.kept.length === 4 && agreed?.finder === "correctness" && JSON.stringify(agreed?._found_in_passes) === "[1,2]"
+        && agree.dropped.some((d) => d.finder === "quality" && d._dedupe_reason === "exact" && d._pass === 2));
+    check("unionFinderPasses emits no agreement_promoted / _also_flagged_by on any record, even across two finders",
+      [...agree.kept, ...agree.dropped].every((c) => !("agreement_promoted" in c) && !("_also_flagged_by" in c)));
+    check("a semantic survivor keeps its _semantic_merged audit record (rubric-composition.md § Dedupe)",
+      agree.kept.find((k) => Math.abs(k.line - 2935) <= 3)?._semantic_merged?.length === 1);
+    const { loadSchema, validateShapeOnly } = await import("./validate-judgments.mjs");
+    const judged = agree.kept.map((k) => {
+      const c = { ...k, verdict: "confirmed", R: 90, A: 90, Ac: 90, final: 90, severity: "medium", prefix: "issue",
+        blocking: false, title: "T", body: "B", materiality: true, category: "c" };
+      for (const f of ["_pass", "_found_in_passes", "_needs_verification", "_semantic_merged"]) delete c[f];
+      return c;
+    });
+    const shapeErrors = validateShapeOnly(loadSchema(), judged);
+    check("union output, verified and stripped per dispatch-topology.md step 6, passes the judgments candidate validation",
+      shapeErrors.length === 0, shapeErrors.slice(0, 3).join("; "));
 
     // A chain: an exact duplicate inside pass 2, whose survivor then merges semantically into pass 1.
     const chainA = { ...sem2 };
