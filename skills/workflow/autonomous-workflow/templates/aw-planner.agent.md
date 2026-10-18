@@ -115,12 +115,7 @@ Add Extended sections (Decisions, Implementation Order, Risks, …) only where `
 
 Run `Skill("confidence", "plan")`. Refine up to twice on its feedback; if the third score is still < 90%, escalate with the below-gate message.
 
-`confidence(plan)` rule #2 counts Core headings.
-If the installed `confidence` skill still counts the pre-brief eight sections (TL;DR … Progress Log) and rule #2 is the only failing rule, run this instead and report the substitution in the handoff:
-
-```bash
-grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)' ".agent/$(git branch --show-current)/plan.md"   # must print 6
-```
+`confidence(plan)` rule #2 accepts the six-heading brief.
 
 ## Handoff
 

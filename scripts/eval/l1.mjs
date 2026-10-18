@@ -344,6 +344,12 @@ function coreSectionCount(plan) {
     `grep -E '^## (TL;DR|Requirements|Decisions|Acceptance Criteria|Implementation Order|File Changes|Verification|Progress Log)' "${plan}" | wc -l`,
     { shell: "/bin/bash" }).toString().trim());
 }
+// Rule #2's brief shape (aw-create-plan's six-heading Core); a plan passes rule #2 on either shape.
+function briefSectionCount(plan) {
+  return Number(execSync(
+    `grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)' "${plan}" || true`,
+    { shell: "/bin/bash" }).toString().trim());
+}
 function acceptanceCriteriaCount(plan) {
   return Number(execSync(
     `awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' "${plan}" | grep -c '^- \\|^[0-9]' || true`,
@@ -392,6 +398,13 @@ function checksInSync(plan, checks) {
   const createNoSurvey = join(fx, "create-no-survey.md");
   s.check("rule#2: valid plan has all 8 Core sections", coreSectionCount(valid) >= 8, `got ${coreSectionCount(valid)}`);
   s.check("rule#2: missing-core plan fails (< 8)", coreSectionCount(missing) < 8, `got ${coreSectionCount(missing)}`);
+  const validBrief = join(fx, "valid-brief.md");
+  const missingBrief = join(fx, "missing-brief.md");
+  s.check("rule#2: valid brief plan has all 6 brief Core sections", briefSectionCount(validBrief) >= 6, `got ${briefSectionCount(validBrief)}`);
+  s.check("rule#2: brief missing Guardrails + Turn Cap fails (< 6)", briefSectionCount(missingBrief) < 6, `got ${briefSectionCount(missingBrief)}`);
+  s.check("rule#2: plan-rule-checks.md documents the brief-shape idiom",
+    readFileSync(join(REPO_ROOT, "skills/quality/confidence/rules/plan-rule-checks.md"), "utf8")
+      .includes("Task\\|Requirements\\|Guardrails\\|Acceptance Criteria\\|Turn Cap\\|File Changes"));
   s.check("rule#3: valid plan has ≥1 Acceptance Criterion", acceptanceCriteriaCount(valid) >= 1, `got ${acceptanceCriteriaCount(valid)}`);
   // The #31 regression: an AC heading present but empty must count 0 (the old awk bug counted wrong).
   s.check("rule#3 (#31 guard): empty-AC plan counts 0", acceptanceCriteriaCount(emptyAc) === 0, `got ${acceptanceCriteriaCount(emptyAc)}`);

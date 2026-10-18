@@ -38,8 +38,8 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 ### `workflow/` — end-to-end orchestrators
 
-- `autonomous-workflow` (`/`) — phase machinery 0–7 behind the `aw` dispatcher; `aw` (`auto`) is the only natural-language entry point and owns tier detection (Micro/Lite/Full). Design intent: [`autonomous-workflow/CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md)
-- `aw-create-plan` (`Skill()`) — writes `plan.md` + `checks.yaml`. `aw-create-walkthrough` (`Skill()`) — writes `walkthrough.md`
+- `autonomous-workflow` (`/`) — phase machinery behind `aw`; `plan.md` is a six-heading brief gated on `run-checks.mjs` printing `CHECKS M/M PASS`, ending in a paste-ready `/goal`. `aw` (`auto`) is the sole entry and owns tiers. Design: [`CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md)
+- `aw-create-plan` (`Skill()`) — writes the `plan.md` brief (Task, Requirements, Guardrails, Definition of Done, Turn Cap, File Changes) + sealed `checks.yaml`. `aw-create-walkthrough` (`Skill()`) — writes `walkthrough.md`, led by a one-page review summary
 - `fix-bug` (`/`) — single-bug pipeline, phases 0–8
 - `implement-suggestion` (`/`) — apply reviewer suggestions across PRs; `--watch` loops one PR, `--resolve-all` closes non-fix threads. Never fixes CI
 
