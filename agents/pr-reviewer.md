@@ -1592,8 +1592,7 @@ See `agents/shared/rules/rubric-composition.md`. Cap 3; dedupe against auto-load
 
 See `agents/shared/rules/review-config.md`.
 The default config location is `.github/review.yaml`; a legacy root `.review.yaml` is still honoured (DEPRECATED) when `.github/review.yaml` is absent.
-With neither present (subtree `.review.yaml` overrides may still exist), configuration defaults to
-`profile: balanced` — threshold 80, inline placement cap 5 per file, no filters, no path instructions.
+`profile` and thresholds come from `context.reviewConfig` (base commit), never a subtree file; with no base file, `profile: balanced` — threshold 80, inline placement cap 5 per file.
 The cap governs placement only; overflow is deferred to the review body, never dropped.
 
 ### 1.7b Load standards (default ON)

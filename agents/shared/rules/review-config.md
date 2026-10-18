@@ -235,17 +235,17 @@ path_instructions:
 
 Subtree config files are discovered by traversing **upward** from the changed file toward the repo root, collecting all `<dir>/.review.yaml` files found along the path.
 The repo-level default (`.github/review.yaml`, or the legacy root `.review.yaml`) is then prepended as the lowest-precedence base.
-This is Bugbot's model: a subtree can tighten (or loosen) rules without affecting the whole repo.
+This is Bugbot's model: a subtree can add filters and path instructions for its own files without affecting the whole repo, but it never changes a run-level knob ([§ Run-level knobs](#run-level-knobs)).
 
 ### Merge precedence
 
-The agent resolves a single effective config by merging all discovered files, with **closer-to-the-changed-file winning** on conflict:
+The agent resolves each changed file's per-file fields by merging all discovered files, **closer-to-the-changed-file first**; the run-level knobs are never merged (table below):
 
 ```
 .github/review.yaml               ← lowest precedence (repo-level default base)
                                      (or legacy ./.review.yaml if .github/review.yaml is absent — DEPRECATED)
-<subdir>/.review.yaml             ← overrides the default base for files under <subdir>/
-<subdir>/<nested>/.review.yaml    ← overrides both for files under <nested>/
+<subdir>/.review.yaml             ← adds per-file fields for files under <subdir>/
+<subdir>/<nested>/.review.yaml    ← adds to both for files under <nested>/
 ```
 
 Merge rules by field:
@@ -271,7 +271,8 @@ For each changed file path `P`:
 3. Stop at the repo root (do not cross the `.git` directory boundary).
 4. Prepend the repo-level default as the lowest-precedence base: prefer `.github/review.yaml`, else fall back to a legacy root `.review.yaml` (DEPRECATED).
 5. Merge the collected configs in precedence order (default base last).
-6. Apply the merged config for this file's findings.
+6. Apply the merged per-file fields to this file's findings.
+   Never take a run-level knob from this merge; read it from `context.reviewConfig` ([§ Run-level knobs](#run-level-knobs)).
 
 Run this once per changed file at the start of Step 1 (change-scope understanding), not per finding.
 
@@ -287,7 +288,7 @@ Add this step immediately after Step 1.6 (lens loading), labelled **Step 1.7: Lo
 CHANGED_FILES=$(git diff --name-only origin/main...HEAD 2>/dev/null || \
   gh api repos/$REPO/pulls/$PR_NUMBER/files --jq '.[].filename')
 
-declare -A FILE_CONFIGS  # path → effective profile/threshold
+declare -A FILE_CONFIGS  # path → effective filters / path_instructions (run-level knobs: § Run-level knobs)
 
 for f in $CHANGED_FILES; do
   # Subtree overrides (unchanged): walk up collecting <dir>/.review.yaml
@@ -303,24 +304,25 @@ for f in $CHANGED_FILES; do
   elif [[ -f ".review.yaml" ]]; then
     configs=(".review.yaml" "${configs[@]}")   # deprecated legacy location
   fi
-  # configs is now base-first (lowest precedence first) — merge later
+  # configs is now base-first (lowest precedence first) — merge filters / path_instructions later
   FILE_CONFIGS["$f"]="${configs[*]}"
 done
 
-# If no .github/review.yaml AND no legacy root .review.yaml found: defaults to profile: balanced
-# (threshold 80, inline cap 5 for pr-reviewer / none for reviewer, no filters, no path instructions)
+# An empty chain means no filters and no path instructions for that file.
+# profile and the confidence thresholds are never read from this chain: take them from
+# context.reviewConfig (§ Run-level knobs). With no base config the run defaults to profile: balanced.
 ```
 
 The effective config is consumed by:
 
-- `per-comment-confidence.md` (2.7) — reads the profile's threshold.
+- `per-comment-confidence.md` (2.7) — its bars come from `context.reviewConfig` ([§ Run-level knobs](#run-level-knobs)), applied by `finalize.mjs`, never from the per-file chain above.
 - The filter evaluation (**Step 2.3**, early in Step 2, before holistic review) — drops findings in suppressed categories.
 - The path-instruction injection at `per-comment-confidence.md` (2.7) — appends instruction to Evidence.
 - `pr-reviewer.md`'s `Fix-with-Agent0 buttons` section (`agents/shared/rules/agent0-fix-links.md`) — reads `agent0_fix_links`, `agent0_environment`, and `agent0_org`, resolved per § Run-level fields below.
 
 ### Run-level fields (`agent0_fix_links`, `agent0_environment`, `agent0_org`)
 
-Unlike `profile` / `filters` / `path_instructions`, these three are **not** part of the per-changed-file
+Unlike `filters` / `path_instructions`, these three are **not** part of the per-changed-file
 walk above: they decide whether "Fix with Agent0" buttons render at all, which Agent0 host they
 point at, and which organization they open — a property of the *run*, not of any one file's findings.
 Resolve them once, from the repo-level base config only, before Step 0.5.
@@ -499,7 +501,7 @@ thoroughness: 1.5
 
 ## Integration with per-comment-confidence.md
 
-`per-comment-confidence.md` reads the per-comment confidence threshold from the resolved profile:
+`per-comment-confidence.md` reads the per-comment confidence threshold from the run's resolved profile in `context.reviewConfig` — one value per run, never per changed file ([§ Run-level knobs](#run-level-knobs)):
 
 ```
 threshold = resolved_profile.per_comment_confidence_threshold
