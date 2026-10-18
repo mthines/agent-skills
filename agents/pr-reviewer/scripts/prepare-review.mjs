@@ -35,7 +35,7 @@
  *        [--out <file>] [--workdir <dir>] [--repo-dir <dir>] [--reviewer-login <login>]
  *        [--no-workspace] [--no-impact] [--no-telemetry] [--inline-payloads]
  *        [--timeout-ms N] [--quiet] [--pin-head <sha>] [--isolated] [--full]
- *        [--state <file>] [--effort high] [--thoroughness 0..1] [--config <file>]
+ *        [--state <file>] [--effort high] [--thoroughness 0..1] [--config <file>] [--finder-passes 1|2]
  *        [--no-threads] [--review-sha <sha>]
  *   node prepare-review.mjs --cleanup <context.json>
  *   node prepare-review.mjs --self-test
@@ -1313,14 +1313,14 @@ const SEVERITY_TIERS = ["critical", "high", "medium", "low"];
 /**
  * The run-level review knobs (review-config.md § Run-level knobs), top-level keys only:
  * `profile`, `severity_thresholds` (a nested map), `per_comment_confidence_threshold`,
- * `effort`, `thoroughness`, and `critical`. A key that is absent stays null. A value outside
+ * `effort`, `thoroughness`, `critical`, and `finder_passes`. A key that is absent stays null. A value outside
  * its domain is never coerced: it stays null and lands in `invalid[]`, which the caller turns
  * into a RUN_ANOMALY line, so a typo can never silently change the review bar.
  * @param {string} yamlText
  */
 export function reviewSettings(yamlText) {
-  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, invalid: string[] }} */
-  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, critical: null, invalid: [] };
+  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, finderPasses: number|null, invalid: string[] }} */
+  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, critical: null, finderPasses: null, invalid: [] };
   if (!yamlText) return out;
   const clean = (/** @type {string} */ v) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
   const score = (/** @type {string} */ v) => {
@@ -1346,7 +1346,7 @@ export function reviewSettings(yamlText) {
       inSeverity = true;
       continue;
     }
-    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical):\s*(.*)$/.exec(raw);
+    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical|finder_passes):\s*(.*)$/.exec(raw);
     if (!m) continue;
     const v = clean(m[2]);
     if (m[1] === "profile") {
@@ -1363,6 +1363,9 @@ export function reviewSettings(yamlText) {
       const n = v === "" ? NaN : Number(v);
       if (Number.isFinite(n) && n >= 0 && n <= 1) out.thoroughness = n;
       else out.invalid.push(`thoroughness: ${v}`);
+    } else if (m[1] === "finder_passes") {
+      if (v === "1" || v === "2") out.finderPasses = Number(v);
+      else out.invalid.push(`finder_passes: ${v}`);
     } else if (CONFIG_CRITICAL.includes(v)) {
       out.critical = v;
     } else {
@@ -1389,6 +1392,25 @@ export function resolveDepthOverrides(opts, settings) {
   if (settings.effort === "high") return { effortHigh: true, thoroughness: undefined, source: "config" };
   if (typeof settings.thoroughness === "number") return { effortHigh: false, thoroughness: settings.thoroughness, source: "config" };
   return { effortHigh: false, thoroughness: undefined, source: "default" };
+}
+
+/**
+ * How many finder passes a run asks for (review-config.md § Run-level knobs, `finder_passes`): a CLI
+ * `--finder-passes` beats the config, and the default is one. A CLI value other than 1 or 2 is not
+ * coerced — it stays a single pass and comes back in `invalid`, which the caller turns into an anomaly.
+ * @param {{ finderPasses?: string }} opts
+ * @param {{ finderPasses?: number|null }} settings
+ * @returns {{ passes: 1|2, source: "cli"|"config"|"default", invalid: string|null }}
+ */
+export function resolveFinderPasses(opts, settings) {
+  const cli = opts.finderPasses;
+  if (cli !== undefined && cli !== "") {
+    if (cli === "1" || cli === "2") return { passes: cli === "2" ? 2 : 1, source: "cli", invalid: null };
+    return { passes: 1, source: "cli", invalid: `--finder-passes ${cli} (expected 1 or 2)` };
+  }
+  if (settings.finderPasses === 2) return { passes: 2, source: "config", invalid: null };
+  if (settings.finderPasses === 1) return { passes: 1, source: "config", invalid: null };
+  return { passes: 1, source: "default", invalid: null };
 }
 
 function readReviewConfig(dir) {
@@ -1680,6 +1702,8 @@ async function prepare(opts) {
   const settings = reviewSettings(baseConfig.text);
   for (const bad of settings.invalid) anomalies.push(`review config ${baseConfig.source}: ignored invalid ${bad}`);
   const depthOverrides = resolveDepthOverrides(opts, settings);
+  const finderPassesSetting = resolveFinderPasses(opts, settings);
+  if (finderPassesSetting.invalid) anomalies.push(`ignored invalid ${finderPassesSetting.invalid} — one finder pass`);
   const hsArgs = extraHighStakes(reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
   if (classify.ok) {
@@ -1981,6 +2005,7 @@ async function prepare(opts) {
     depthCapability: workspace.depthCapability,
     effortHigh: depthOverrides.effortHigh,
     changedFiles: files.length,
+    finderPasses: finderPassesSetting.passes,
   });
 
   // Item 3: a capability-deactivated finder is exactly the class of "something changed what this
@@ -2059,6 +2084,8 @@ async function prepare(opts) {
       thoroughness: settings.thoroughness,
       critical: settings.critical,
       depthSource: depthOverrides.source,
+      finderPasses: finderPassesSetting.passes,
+      finderPassesSource: finderPassesSetting.source,
     },
 
     // Bulk payloads live on disk; the context names them. `inline` says which
@@ -2379,7 +2406,32 @@ async function selfTest() {
   });
   t("reviewSettings is all-null for an empty or knob-free config", () => {
     const a = reviewSettings(""), b = reviewSettings("agent0_fix_links: false\nhigh_stakes_paths:\n  - ^x/\n");
-    return [a, b].every((r) => r.profile === null && r.severityThresholds === null && r.critical === null && r.invalid.length === 0);
+    return [a, b].every((r) => r.profile === null && r.severityThresholds === null && r.critical === null
+      && r.finderPasses === null && r.invalid.length === 0);
+  });
+  t("reviewSettings reads finder_passes 1 or 2 and never coerces anything else", () => {
+    const two = reviewSettings("finder_passes: 2  # union two passes\n");
+    const one = reviewSettings('finder_passes: "1"\n');
+    const bad = ["3", "0", "two", "2.0", ""].map((v) => reviewSettings(`finder_passes: ${v}\n`));
+    return two.finderPasses === 2 && two.invalid.length === 0 && one.finderPasses === 1
+      && bad.every((r) => r.finderPasses === null && r.invalid.length === 1 && r.invalid[0].startsWith("finder_passes:"));
+  });
+  t("resolveFinderPasses: the CLI beats the config, the default is one, and a bad CLI value stays one pass", () => {
+    const cfg2 = { finderPasses: 2 };
+    const cliOne = resolveFinderPasses({ finderPasses: "1" }, cfg2);
+    const cliTwo = resolveFinderPasses({ finderPasses: "2" }, { finderPasses: null });
+    const cfgTwo = resolveFinderPasses({ finderPasses: "" }, cfg2);
+    const none = resolveFinderPasses({}, { finderPasses: null });
+    const bad = resolveFinderPasses({ finderPasses: "5" }, cfg2);
+    return cliOne.passes === 1 && cliOne.source === "cli" && cliTwo.passes === 2 && cliTwo.source === "cli"
+      && cfgTwo.passes === 2 && cfgTwo.source === "config" && none.passes === 1 && none.source === "default"
+      && bad.passes === 1 && bad.source === "cli" && /--finder-passes 5/.test(String(bad.invalid))
+      && [cliOne, cliTwo, cfgTwo, none].every((r) => r.invalid === null);
+  });
+  t("prepare() feeds the resolved finder passes into resolveBudget and records them in context.reviewConfig", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    return /finderPasses: finderPassesSetting\.passes,\n\s+\}\);/.test(src)
+      && /finderPasses: finderPassesSetting\.passes,\n\s+finderPassesSource: finderPassesSetting\.source,/.test(src);
   });
   t("resolveDepthOverrides: a CLI flag beats the config, config effort beats config thoroughness", () => {
     const cfg = { effort: "high", thoroughness: 0.6 };
@@ -3225,6 +3277,7 @@ async function main(argv) {
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
     else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
+    else if (a === "--finder-passes") opts.finderPasses = argv[++i]; // 1|2, beats the config's finder_passes
     else if (a === "--config") opts.config = argv[++i]; // review config file to use instead of the base commit's
     else if (a === "--no-threads") opts.threads = false;
     else if (a === "--review-sha") opts.reviewSha = argv[++i]; // D8/D9: historical read-only review target
@@ -3239,7 +3292,7 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
         "[--no-telemetry] [--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--effort high] [--thoroughness 0..1] [--config file] [--no-threads] [--review-sha sha] | --self-test\n",
+        "[--state file] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
   }
