@@ -60,52 +60,35 @@ Two artifacts cross the boundary, with distinct jobs:
 - **`checks.yaml` is the living contract** — the executable acceptance criteria the executor's Phase 4 loop gates on mechanically. It self-validates against reality on every loop, so it never goes stale silently. This is the artifact the executor is *held to*.
 - **`plan.md` is the handoff document** — the decisions, requirements, and approach a cold session needs to start. It must stay self-contained (the executor and `confidence(plan)` both cold-read it), but it is a handoff artifact, **not** an exhaustive knowledge base. Keep it lean. If the executor is dispatched while the planner agent is still alive and a plan detail is genuinely unclear, it is better to **query the planner (or the user)** than to expect `plan.md` to have pre-answered every question — the split does not oblige the planner to dump its whole context into the file.
 
-`plan.md` remains the executor's primary written input (plus `checks.yaml` and the worktree). The [`aw-create-plan`](../../aw-create-plan/SKILL.md) template is two-tier: **Core** sections are always present; **Extended** sections appear only when their `Include when` trigger holds. The executor must not bail because an Extended section is absent — its omission is intentional.
+`plan.md` remains the executor's primary written input (plus `checks.yaml` and the worktree). The [`aw-create-plan`](../../aw-create-plan/SKILL.md) template is a **brief** (Core, always present) plus **Extended** sections that appear only when their trigger holds. The executor must not bail because an Extended section is absent — its omission is intentional.
 
-**Core sections — always present:**
+**Core — the brief, always present, in this order:**
 
-| Section                | Purpose                                                           |
-| ---------------------- | ----------------------------------------------------------------- |
-| TL;DR                  | 3-5 sentences: what / why / approach (HOW) / done. Human-review surface — readers verify direction here before approving the planner→executor handoff. |
-| Requirements           | Tagged list (`[user-stated]` / `[inferred]`), with an Out of Scope subsection. Implicitly numbered by position (R1, R2, …) for traceability. |
-| Decisions              | Each decision + alternatives considered + rationale               |
-| Acceptance Criteria    | Bullet list with `AC-{n}` IDs + `(covers: R{m})` annotations — the contract Phase 4 testing gates against, mirrored 1:1 into `checks.yaml` |
-| Implementation Order   | Numbered sequence the executor follows verbatim                   |
-| File Changes           | Action / File / Change / Reason table                             |
-| Verification           | Commands for fast-check (after edit) and broad-check (before PR)  |
-| Progress Log           | Append-only log of every phase milestone                          |
+| Section | Purpose |
+| --- | --- |
+| Task | 1–3 sentences: what changes, why, what done looks like. The human-review surface. |
+| Requirements | Tagged list (`[user-stated]` / `[inferred]`) with an Out of Scope subsection, numbered by position (R1, R2, …) |
+| Guardrails | What must not change: out-of-bounds paths, preserved interfaces and behaviour, forbidden moves. Every file outside File Changes is out of bounds. |
+| Acceptance Criteria (Definition of Done) | `AC-{n}` items with `(covers: R{m})`, mirrored 1:1 into `checks.yaml`; the After-editing and Before-PR commands; done = `CHECKS M/M PASS` |
+| Turn Cap | The turn budget that bounds the `/goal` line ([`goal-emission.md`](./goal-emission.md)) |
+| File Changes | Action / File / Change / Reason — the only files the executor may touch |
 
-The plan travels with a sibling artifact: **`.agent/{branch}/checks.yaml`** —
-one executable check per `AC-{n}`, statuses `pending`. The executor's Phase 4
-[Executable Checks Loop](./phase-4-testing.md#executable-checks-loop) gates on
-it mechanically. Check definitions are executor-immutable (see the loop's
-integrity rules); its absence is logged, not a bail condition.
+The plan travels with **`.agent/{branch}/checks.yaml`** — one executable check per `AC-{n}`, statuses `pending`, immutable fields sealed in `checks.lock`.
+The executor's Phase 4 [Executable Checks Loop](./phase-4-testing.md#executable-checks-loop) gates on the `run-checks.mjs` sentinel line; its absence is logged, not a bail condition.
 
-**Extended sections — present only when the task needs them:**
-
-| Section                | Included when                                                     |
-| ---------------------- | ----------------------------------------------------------------- |
-| Background & Context   | The "why" is not self-evident from the TL;DR                       |
-| Technical Approach     | Architectural / multi-component change (high-level only)          |
-| Patterns to Follow     | A non-obvious existing convention must be matched                 |
-| Edge Cases             | Non-trivial edge / error cases beyond the Acceptance Criteria     |
-| API / Interfaces       | A public interface / type / config shape is defined or changed    |
-| Existing Code Survey   | File Changes has ≥ 1 `create` row (deterministic trigger — rule #10 fails a create-without-survey plan) |
-| Tests                  | Test design is non-obvious beyond Acceptance Criteria + Verification |
-| Dependencies           | A dependency is added, removed, or upgraded                       |
-| Risks                  | High complexity, migration, or irreversible operation             |
+**Extended** sections (Decisions, Implementation Order, Background, Technical Approach, Patterns, Edge Cases, API, Existing Code Survey, Tests, Dependencies, Risks, Progress Log) and their triggers live in `aw-create-plan`'s `rules/extended-sections.md`.
+Existing Code Survey is required in every tier whenever File Changes has a `create` row (rule #10).
 
 All multi-signal `confidence(plan)` rule checks must pass:
 
-- All eight Core sections are present
+- The six Core headings are present (rule #2 — `grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)' plan.md` prints 6)
 - File paths in the File Changes table resolve in the worktree
-- Requirements are tagged (must / nice / out-of-scope)
+- Requirements are tagged `[user-stated]` or `[inferred]`
 - Acceptance Criteria section is non-empty
 - Every `[user-stated]` requirement is covered by a `(covers: R{m})` annotation (rule #9)
 - Every planned `create` has an Existing Code Survey verdict (rule #10)
 - `checks.yaml` exists with IDs in sync with the plan's `AC-{n}` criteria (rule #11)
-- Implementation Order is numbered and references actual files
-- Verification commands are concrete (no placeholders)
+- The After-editing and Before-PR commands are concrete (no placeholders)
 
 If any check fails, the gate fails and the planner enters the iterate-or-escalate flow described in [`phase-1-planning.md#confidence-gate`](./phase-1-planning.md#confidence-gate).
 
@@ -157,8 +140,9 @@ At the end of Phase 2, the planner outputs **one** of the two messages below —
 - Worktree: <path>
 - Files to change: N
 - Acceptance Criteria: M items
-- Checks: .agent/{branch}/checks.yaml (M checks: K command/grep, J judge)
+- Checks: .agent/{branch}/checks.yaml (M checks: K command/grep, J judge; sealed)
 - Specs: .agent/{branch}/specs.md ({N} specs, aw-target: {name}) | none (non-UI task)
+- Goal: <the one-line /goal built per goal-emission.md>
 - Companions: one `companion: <name> — ran | skipped (<reason>)` line per Phase 0–2 registry row
 
 Reply with one of:
@@ -218,7 +202,7 @@ The loop fires whenever the user replies `iterate` to either handoff message. Th
    | Template instructional comments | Carried in from the `aw-create-plan` template (e.g. `<!-- Why is this needed? ... -->`, `<!-- ALL requirements from Phase 0. ... -->`). Already addressed by the section content beneath them. | Ignore. |
    | User feedback comments | Added by the user inline to direct this iteration (e.g. `<!-- this also needs to handle the timeout case -->`, `<!-- use the existing logger, not a new one -->`). | **Hard constraint** — must be addressed in version N+1. |
 
-   When a previous immutable snapshot exists (**snapshot mode only** — `aw-create-plan` writes `plan.v*.md` only when invoked with the `snapshot` arg, see [`aw-create-plan/SKILL.md`](../../aw-create-plan/SKILL.md#snapshot-mode-opt-in)), diff against it to separate the two kinds reliably:
+   When a previous immutable snapshot exists (**snapshot mode only** — `aw-create-plan` writes `plan.v*.md` only when invoked with the `snapshot` arg, see [`aw-create-plan/rules/snapshot-mode.md`](../../aw-create-plan/rules/snapshot-mode.md)), diff against it to separate the two kinds reliably:
 
    ```bash
    DIR=".agent/$(git branch --show-current)"
@@ -239,7 +223,7 @@ The loop fires whenever the user replies `iterate` to either handoff message. Th
    Detected edits:
    - Requirements: added "..."
    - Acceptance Criteria: removed "..."
-   - Implementation Order: reordered steps 3 and 4
+   - Guardrails: added "do not touch src/api/public/**"
 
    Detected inline comments (HTML <!-- -->):
    - Acceptance Criteria → "cover the offline case"
@@ -254,7 +238,7 @@ The loop fires whenever the user replies `iterate` to either handoff message. Th
    If there are zero detected comments, state "Detected inline comments: none" explicitly — silence on this line is a bug (it means the scan was skipped). The new plan version (v{N+1}) must address every listed comment; the comments themselves are NOT carried forward to the new version (they've been incorporated into the content).
 
 5. **Consistency check inside `plan.md`.** Walk the file and check internal coherence:
-   - If the user edited an upstream section (Requirements, Decisions, Technical Approach) but did NOT correspondingly update a downstream section (Implementation Order, File Changes, Tests), **re-derive the downstream sections** rather than blindly preserving them. State the inferred downstream changes back to the user.
+   - If the user edited an upstream section (Task, Requirements, Guardrails, Decisions) but did NOT correspondingly update a downstream section (Acceptance Criteria, File Changes, Implementation Order), **re-derive the downstream sections** rather than blindly preserving them. State the inferred downstream changes back to the user.
    - If the user edited a downstream section in a way that contradicts an upstream section, **surface the contradiction** and ask whether to update the upstream section, revert the downstream edit, or accept both as-is.
    - Apply the same coherence check to every user feedback comment from step 3 — a comment in `Acceptance Criteria` that contradicts the `Requirements` section is a contradiction, not just a comment.
 6. **Re-run planning companions** with the user's edits and comments as constraints:
@@ -331,7 +315,7 @@ If any of the following holds, the executor STOPS without writing code and tells
 | Condition                       | Detection                                                  |
 | ------------------------------- | ---------------------------------------------------------- |
 | `plan.md` missing               | `cat` returns "No such file or directory"                  |
-| `plan.md` malformed             | Cannot find expected section headers (`## Acceptance Criteria`, `## Implementation Order`) |
+| `plan.md` malformed             | Fewer than the six Core headings, and not a `/fix-bug` fast-lane plan (which keeps the eight pre-brief headings: TL;DR, Requirements, Decisions, Acceptance Criteria, Implementation Order, File Changes, Verification, Progress Log) |
 | Acceptance Criteria empty       | Section exists but has no bullets                          |
 | Wrong worktree                  | Branch name doesn't match `.agent/{branch}/` path          |
 

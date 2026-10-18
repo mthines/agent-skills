@@ -1,151 +1,143 @@
 ---
 name: aw-create-walkthrough
 description: >
-  Generate a walkthrough artifact (walkthrough.md) in `.agent/{branch}/` summarizing
-  completed work for PR delivery. Gathers information from plan.md, git history, and
-  test results to produce a comprehensive summary. Use at Phase 6 before creating
-  the draft PR.
-  Triggers on create walkthrough, generate walkthrough, write walkthrough artifact.
+  Writes `.agent/{branch}/walkthrough.md`, a one-page post-hoc review of finished work — what
+  changed, what was assumed, and the evidence — for the reviewer to read after the fact. Use at
+  Phase 6 before the draft PR; triggers on create walkthrough, generate walkthrough, write
+  walkthrough artifact.
 license: MIT
 disable-model-invocation: false
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '2.0.0'
   workflow_type: advisory
 ---
 
 # Create Walkthrough Artifact
 
-Generate `.agent/{branch-name}/walkthrough.md` — the final summary for PR delivery.
+Write `.agent/{branch}/walkthrough.md`: the page a reviewer reads instead of approving a plan up front.
+It leads with one screen — what changed, what was assumed, and the evidence — and keeps the detail below it.
 
----
+## Contents
+
+- [Prerequisites](#prerequisites)
+- [Procedure](#procedure)
+- [Template](#template)
+- [Validation](#validation)
 
 ## Prerequisites
 
-Before invoking this skill:
-
-1. All tests must be passing
-2. Documentation must be updated
-3. `plan.md` must exist and have an up-to-date Progress Log
-4. You must be inside the worktree
-
----
+1. `run-checks.mjs` has printed its sentinel line on the current head (`CHECKS n/n PASS (<sha>)`, or the FAIL line with the user's approval to ship).
+2. Documentation is updated.
+3. You are inside the worktree, and `.agent/{branch}/plan.md` exists for a Full-tier run.
 
 ## Procedure
 
-### Step 1: Determine file location and gather information
-
-Run this command to get the artifact path and gather git information — do NOT guess the branch name:
+### Step 1: Gather the facts
 
 ```bash
-BRANCH=$(git branch --show-current) && mkdir -p ".agent/${BRANCH}" && echo "Artifact path: .agent/${BRANCH}/walkthrough.md" && echo "---" && git diff --stat main...HEAD && echo "---" && git log --oneline main...HEAD
+BRANCH=$(git branch --show-current)
+BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)
+mkdir -p ".agent/${BRANCH}"
+git diff --stat "$BASE"...HEAD
+git diff --name-only "$BASE"...HEAD
+git log --oneline "$BASE"...HEAD
+cat ".agent/${BRANCH}/plan.md" 2>/dev/null
+tail -n 1 ".agent/${BRANCH}/checks.run.log" 2>/dev/null   # last sentinel, when the executor teed it
 ```
 
-**From plan.md** (read the file — must run in the same shell session as above, or re-assign `BRANCH`):
+Never guess the branch name or the base.
+Take Task, Guardrails, File Changes, and any Decisions from `plan.md`; take the sentinel line from the last `run-checks.mjs` output in this session or from `checks.run.log`.
 
-```bash
-BRANCH=$(git branch --show-current) && cat ".agent/${BRANCH}/plan.md"
+### Step 2: List the assumptions
+
+An assumption is a choice you made that the plan, the user, or the code did not settle.
+List each with the evidence that would prove it wrong.
+Write `none` only when every choice traces to the plan or the user.
+
+```markdown
+<!-- ✗ Wrong — restates the task, names no choice -->
+- Assumed the feature should work.
+
+<!-- ✓ Right — a real choice and how to falsify it -->
+- Assumed expired tokens return 401, not 403 — the API guide does not say; check `docs/api/errors.md`.
 ```
 
-Extract: Summary, Decisions, Requirements, File Changes table.
+### Step 3: Check the guardrails
 
-**From test results:**
+Compare `git diff --name-only` with File Changes.
+Every file outside File Changes goes in the summary's `Out of bounds:` line with the reason; `none` when there is none.
 
-Recall or re-run the test suite to confirm current status.
+### Step 4: Write and present
 
-### Step 2: Write walkthrough.md
-
-Create the file at the path from Step 1 using the template below. **Do NOT hardcode or guess the branch name.**
-
-### Step 3: Present to user
-
-After writing the file, output the walkthrough content directly in the conversation so the user sees it immediately.
-
----
+Write the file from [Template](#template), then print its Review summary inline in the conversation together with the PR URL.
+The file alone does not count as delivery: the reviewer reads the inline copy first.
 
 ## Template
 
-**All timestamps MUST use full ISO 8601 with time: `YYYY-MM-DDTHH:MM:SSZ`**
+Timestamps are ISO 8601 with time (`2026-03-07T14:30:00Z`).
 
-```markdown
+````markdown
 ---
-created: { TIMESTAMP }
-branch: { BRANCH }
-task: { TASK_DESCRIPTION }
-pr: { PR_NUMBER }
+created: {TIMESTAMP}
+branch: {BRANCH}
+task: {TASK_DESCRIPTION}
+pr: {PR_URL}
 ---
 
 # Walkthrough: {TASK_DESCRIPTION}
 
-## Quick Reference
+## Review summary
 
-- **Branch**: `{BRANCH}`
-- **PR**: #{PR_NUMBER}
-- **Worktree**: `{WORKTREE_PATH}`
+**What changed** — {one sentence}.
 
-## Summary
+```text
+{before → after diagram of the change, ≤ 12 lines; a mermaid flowchart is fine when it renders}
+request ──▶ authGuard ──▶ handler
+                │
+                └─ expired token ──▶ 401 (new)
+```
 
-<!-- 2-3 sentences: what was implemented and the key outcome -->
+**What I assumed**
+
+- {assumption} — {how to falsify it}
+
+**Evidence**
+
+- Checks: `{the sentinel line, verbatim — CHECKS n/n PASS (<sha>)}`
+- Suite: `{before-PR command}` → {exit code / summary}
+- Out of bounds: {files changed outside File Changes, with reason | none}
+- PR: {PR_URL}
 
 ## Changes
 
 | File | Change | Purpose |
 | ---- | ------ | ------- |
 
-<!-- List ALL modified/created/deleted files from git diff -->
+## How to verify
 
-## Key Decisions
+1. {a step a reviewer can run}
 
-<!-- Numbered list of important decisions made during implementation.
-     Pull from plan.md Decisions table — include only the most significant ones. -->
+## Decisions
 
-1. {decision and brief rationale}
+1. {decision — rationale} <!-- omit the section when plan.md had none -->
+````
 
-## Testing Results
+Rules for the template:
 
-<!-- Test outcomes with pass/fail indicators -->
+| Part | Rule |
+| --- | --- |
+| Review summary | Fits one screen (≤ 30 lines); written for a reviewer who has not read the plan |
+| Diagram | Shows the changed path or structure, not the file list; omit only for a pure text or config edit |
+| Evidence → Checks | The sentinel line copied verbatim, never paraphrased |
+| Changes | One row per file in `git diff --name-only` — no file missing, none invented |
+| How to verify | Commands or clicks a reviewer can repeat |
 
-- [x] {test category}: {result summary}
-- [x] {test category}: {result summary}
+## Validation
 
-## How to Verify
-
-<!-- Step-by-step instructions for a reviewer to verify the changes work -->
-
-1. {step}
-2. {step}
-3. {step}
-
-## Next Steps
-
-1. Review draft PR
-2. Mark as ready for review
-3. After merge: `gw remove {BRANCH}`
-```
-
----
-
-## Validation Checklist
-
-After writing walkthrough.md, verify:
-
-- [ ] **File location**: Path from `git branch --show-current` — inside the worktree
-- [ ] **Frontmatter**: created, branch, task, pr — all filled
-- [ ] **Timestamps**: ISO 8601 with time
-- [ ] **Summary**: Concise, describes what was done and the outcome
-- [ ] **Changes table**: Matches actual `git diff --stat` output (no missing files)
-- [ ] **Key Decisions**: Pulled from plan.md, covers the important choices
-- [ ] **Testing Results**: Reflects actual test run outcomes
-- [ ] **How to Verify**: Actionable steps a reviewer can follow
-- [ ] **Presented to user**: Walkthrough content shown in conversation (not just written to file)
-
----
-
-## Delivery
-
-The walkthrough is delivered in **two ways**:
-
-1. **File** — saved to `.agent/{branch-name}/walkthrough.md` for reference and handoff
-2. **Inline** — presented in the conversation with PR link so the user sees the summary immediately
-
-**Both are mandatory. Do not announce completion without showing the walkthrough.**
+- [ ] The file is at `.agent/{branch}/walkthrough.md` inside the worktree.
+- [ ] Frontmatter has `created`, `branch`, `task`, `pr`.
+- [ ] The Review summary is ≤ 30 lines and contains What changed, What I assumed, and Evidence.
+- [ ] The Checks line equals the latest `run-checks.mjs` sentinel output.
+- [ ] The Changes table lists exactly the files in `git diff --name-only "$BASE"...HEAD`.
+- [ ] The Review summary and PR URL were printed in the conversation.

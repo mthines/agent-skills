@@ -751,11 +751,14 @@ failure mode to the earliest phase that can catch it (full evidence base:
 
 Design rules that keep this from rotting:
 
-- **Core-8 stays Core-8.** Traceability is embedded in the Acceptance
-  Criteria (`AC-{n}` + `covers:`), and the survey is an Extended section with
-  a deterministic trigger — deliberately NOT new Core sections, because the
-  Core set is coupled to `confidence` rule #2, the L1 evals, and fix-bug's
-  fast-lane contract (L1 G2).
+- **The brief's Core is six headings.** `plan.md`'s Core is Task,
+  Requirements, Guardrails, Acceptance Criteria (Definition of Done), Turn
+  Cap, and File Changes (L1 G130a); everything else is Extended and Full-tier
+  only. Traceability is embedded in the Acceptance Criteria (`AC-{n}` +
+  `covers:`), and the survey is an Extended section with a deterministic
+  trigger. The executor's bail check also accepts fix-bug's fast-lane plan,
+  which still carries the legacy eight headings (L1 G2, G130b), and the
+  Definition of Done is the one line `run-checks.mjs` prints (G130c/d).
 - **`checks.yaml` is additive, never a replacement.** It mechanizes the
   Acceptance-Criteria sprint contract; the suite, `confidence`, `reviewer`,
   and Phase 7 verifiers are unchanged. The check-integrity rules exist

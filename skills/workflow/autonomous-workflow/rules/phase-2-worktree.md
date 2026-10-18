@@ -244,7 +244,7 @@ The skill writes to `.agent/{branch-name}/plan.md`, capturing the full Phase 0
 testing strategy, risks, verification commands) — **and derives
 `.agent/{branch-name}/checks.yaml`** (one executable check per `AC-{n}`
 acceptance criterion; see
-[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#step-2b-derive-checksyaml-from-the-acceptance-criteria)).
+[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#checksyaml)).
 The executor's Phase 4 loop gates on those checks mechanically.
 
 Log the invocation in the plan's Progress Log:

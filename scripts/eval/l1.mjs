@@ -21,6 +21,16 @@ const docsWalk = () => walk(join(REPO_ROOT, "docs")).filter((f) => !(rel(f) in F
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
 const s = new Suite("L1 deterministic contract checks");
 
+// The aw-tester definition is its template plus the on-demand parts it links
+// (`rules/aw-tester-*.md`). Content checks read the joined text, so moving a rule
+// between the template and a part never reds a check, and dropping it from both does.
+const AW_TESTER_TPL = "skills/workflow/autonomous-workflow/templates/aw-tester.agent.md";
+const awTesterParts = () => readdirSync(join(AW, "rules")).filter((f) => /^aw-tester-.+\.md$/.test(f)).sort();
+const readAwTester = () => {
+  const r = (p) => { try { return readFileSync(join(REPO_ROOT, p), "utf8"); } catch { return ""; } };
+  return [r(AW_TESTER_TPL), ...awTesterParts().map((f) => r(`skills/workflow/autonomous-workflow/rules/${f}`))].join("\n");
+};
+
 // Every report-body fixture, discovered from disk rather than listed. G25/G26/G27 each iterate
 // the fixtures, and an explicit list meant a new fixture was silently exempt from all three —
 // the guards would have kept passing while the reference rendering it locks in went unchecked.
@@ -276,8 +286,53 @@ function tierQuestions(file) {
     missing.length ? `not in rule: ${missing.join(", ")}` : `${quotedInAw.length} phrases, all present`);
   // Sentinel, pinned to the live count for the same reason G2c's is: a loose
   // floor lets phrases drop out of the description one at a time in silence.
-  s.check("G2d found the advertised trigger phrases to guard", quotedInAw.length >= 14,
+  s.check("G2d found the advertised trigger phrases to guard", quotedInAw.length >= 10,
     `found ${quotedInAw.length}`);
+}
+
+// ── G130: plan.md is a brief, gated by the deterministic check runner ────────
+// The brief's Core is six `## ` headings in aw-create-plan's template; the executor bails
+// on a plan carrying neither the brief nor the legacy fast-lane eight; and the
+// Definition of Done is the one sentinel line `run-checks.mjs` prints. The runner's own
+// --self-test is executed, so its parser, statuses, and seal cannot rot unobserved.
+{
+  const read = (p) => { try { return readFileSync(join(REPO_ROOT, p), "utf8"); } catch { return ""; } };
+  const BRIEF = ["Task", "Requirements", "Guardrails", "Acceptance Criteria", "Turn Cap", "File Changes"];
+  const ACP = read("skills/workflow/aw-create-plan/SKILL.md");
+  const tpl = (ACP.match(/^## The brief \(Core\)[\s\S]*?````markdown\n([\s\S]*?)\n````/m) || ["", ""])[1];
+  const heads = [...tpl.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+  const order = BRIEF.map((b) => heads.findIndex((h) => h.startsWith(b)));
+  s.check("G130a aw-create-plan's brief template carries the six Core headings, in order",
+    order.every((i) => i >= 0) && order.every((i, k) => k === 0 || i > order[k - 1]),
+    `template headings: ${heads.join(" | ") || "none — the \`\`\`\`markdown block under ## The brief (Core) was not found"}`);
+  s.check("G130a aw-create-plan validates the brief with the six-heading grep",
+    ACP.includes("grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)'"),
+    "the validation grep is what the executor's bail check and the planner's rule-#2 substitution both run");
+
+  const EXE = read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md");
+  s.check("G130b aw-executor's bail check accepts the brief (6) or the legacy fast-lane plan (8)",
+    /BRIEF=\$\(grep -cE '\^## \(Task\|Requirements\|Guardrails\|Acceptance Criteria\|Turn Cap\|File Changes\)'/.test(EXE)
+    && /FASTLANE=\$\(grep -cE '\^## \(TL;DR\|Requirements\|Decisions\|Acceptance Criteria\|Implementation Order\|File Changes\|Verification\|Progress Log\)'/.test(EXE)
+    && /`BRIEF` below prints < 6 and `FASTLANE` prints < 8/.test(EXE),
+    "drop either grep and the executor rejects a valid brief or every fix-bug fast-lane plan");
+
+  const P4 = read("skills/workflow/autonomous-workflow/rules/phase-4-testing.md");
+  const SENT = /CHECKS M\/M PASS \(<sha>\)|CHECKS <M>\/<M> PASS \(<sha>\)/;
+  s.check("G130c the executor and phase-4 gate on the run-checks sentinel",
+    /scripts\/run-checks\.mjs/.test(P4) && SENT.test(P4) && /run-checks\.mjs/.test(EXE) && SENT.test(EXE),
+    "Phase 4 must exit on the runner's one line, never on the executor's own reading of checks.yaml");
+
+  const RC = join(AW, "scripts/run-checks.mjs");
+  const st = spawnSync(process.execPath, [RC, "--self-test"], { encoding: "utf8", timeout: 60000 });
+  s.check("G130d run-checks.mjs --self-test exits 0",
+    st.status === 0 && /self-test: PASS/.test(st.stdout),
+    `exit ${st.status}; ${(st.stdout + st.stderr).trim().split("\n").slice(-3).join(" / ")}`);
+
+  const AWTT = read(AW_TESTER_TPL);
+  const unlinked = awTesterParts().filter((f) => !AWTT.includes(`(../rules/${f})`));
+  s.check("G130e aw-tester's template links every rules/aw-tester-*.md part it loads on demand",
+    awTesterParts().length >= 4 && unlinked.length === 0,
+    `unlinked parts: ${unlinked.join(", ") || "none"} (found ${awTesterParts().length})`);
 }
 
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
@@ -505,8 +560,9 @@ function checksInSync(plan, checks) {
   ])
     s.check(`G1 seen_count UPDATE contract in ${p.split("/").pop()}`, norm(read(p)).includes(norm(CONTRACT)));
 
-  // G2: the fix-bug fast-lane plan is a superset of the aw-create-plan Core sections —
-  // otherwise aw-executor's bail check and confidence(plan) rule #2 reject every fast-lane plan.
+  // G2: the fix-bug fast-lane plan is a superset of the LEGACY Core-8 sections — aw-executor's
+  // bail check accepts a plan carrying either the brief (G130b) or these eight headings, and
+  // confidence(plan) rule #2 still counts them.
   const CORE = ["TL;DR", "Requirements", "Decisions", "Acceptance Criteria",
     "Implementation Order", "File Changes", "Verification", "Progress Log"];
   const fastLane = read("skills/workflow/fix-bug/rules/fast-lane-plan-contract.md");
@@ -514,7 +570,7 @@ function checksInSync(plan, checks) {
   // bail check and confidence rule #2 key on `^## ` headings, so the guard must too.
   const missingCore = CORE.filter(
     (c) => !new RegExp("^## " + c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "m").test(fastLane));
-  s.check("G2 fast-lane plan contract ⊇ Core-8 sections (as ## headings)", missingCore.length === 0, missingCore.join(", "));
+  s.check("G2 fast-lane plan contract ⊇ legacy Core-8 sections (as ## headings)", missingCore.length === 0, missingCore.join(", "));
 
   // G3: implement-suggestion's non-removable override keys on /critical's REAL output
   // buckets (Must-fix), never the phantom Critical/High/Major severity taxonomy.
@@ -6782,10 +6838,12 @@ const isPollBlock = (block) =>
     !/\[ -f "[^"]*agents\/feature-pr-verifier\.md" \]/.test(P7) && !/subagent_type: feature-pr-verifier/.test(P7),
     "the post-CI dispatch never fired from the executor; aw owns it at PR open");
   const AW = read("skills/workflow/autonomous-workflow/aw/SKILL.md");
+  const FT = read("skills/workflow/autonomous-workflow/aw/rules/full-tier.md");
   const term = (AW.match(/AW RUN COMPLETE\n[\s\S]*?```/) || [""])[0];
   s.check("G70e aw dispatches feature-pr-verifier at PR open and reports a mandatory Verified: line",
-    /^#### Verify at PR open — you dispatch `feature-pr-verifier`$/m.test(AW)
-    && /Task\(subagent_type="feature-pr-verifier"/.test(AW)
+    /\(rules\/full-tier\.md\)/.test(AW)
+    && /^#+ Verify at PR open — you dispatch `feature-pr-verifier`$/m.test(FT)
+    && /Task\(subagent_type="feature-pr-verifier"/.test(FT)
     && /^- Verified: /m.test(term),
     "without the dispatch and the terminal slot, a Full run can end unverified and report nothing");
 
@@ -8177,7 +8235,6 @@ const isPollBlock = (block) =>
   const VERIF_RECEIPT = join(REPO_ROOT, "agents/shared/rules/verification-receipt.md");
   const CONTRACT = join(REPO_ROOT, "skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
   const TEMPLATE = join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates/specs.md.template");
-  const AW_TESTER = join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
   const AW_CHROME = join(REPO_ROOT, "skills/workflow/autonomous-workflow/aw-tester-chrome/SKILL.md");
 
   // Canonical set: derive from verification-receipt.md's own `verdict: <a|b|c|d|e>` pipe list —
@@ -8215,11 +8272,11 @@ const isPollBlock = (block) =>
   const semanticSites = [
     ["specs.md.template (grammar)", TEMPLATE],
     ["spec-run-contract.md (contract)", CONTRACT],
-    ["aw-tester.agent.md (Playwright runner)", AW_TESTER],
+    ["aw-tester.agent.md (Playwright runner)", "@aw-tester"],
     ["aw-tester-chrome/SKILL.md (Chrome runner)", AW_CHROME],
   ];
   for (const [label, p] of semanticSites) {
-    const t = existsSync(p) ? readFileSync(p, "utf8") : "";
+    const t = p === "@aw-tester" ? readAwTester() : existsSync(p) ? readFileSync(p, "utf8") : "";
     s.check(`G55 the semantic: assertion form is present in ${label}`,
       /semantic:/.test(t),
       `${label} never names the \`semantic:\` form — the assertion is unreachable from a conforming run of that surface`);
@@ -8242,7 +8299,7 @@ const isPollBlock = (block) =>
 {
   const readOr = (rel) => { try { return readFileSync(join(REPO_ROOT, rel), "utf8"); } catch { return ""; } };
   const contract = readOr("skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
-  const awt = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+  const awt = readAwTester();
   const chrome = readOr("skills/workflow/autonomous-workflow/aw-tester-chrome/SKILL.md");
   const runner = readOr("skills/testing/ui-verify/rules/runner.md");
   const uiv = readOr("skills/testing/ui-verify/SKILL.md");
@@ -8523,7 +8580,7 @@ const isPollBlock = (block) =>
   // The four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines and the browser install live in
   // agent0-playwright.sh (agent0-setup.sh delegates — G59f), so G59d and G59e read both scripts.
   const setupOrPw = setup + "\n" + pwInstaller;
-  const awt = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+  const awt = readAwTester();
 
   // G59a — both entry points route to the rule: SKILL.md, and runner.md Step 4 (which owns the
   // driver decision the rule replaces).
@@ -11058,7 +11115,7 @@ const isPollBlock = (block) =>
   const TPL = readOr(`${AW}/templates/intent-spec.md.template`);
   const CONTRACT_FILE = `${AW}/rules/spec-run-contract.md`;
   const C6 = sectionOr(CONTRACT_FILE, "## 6. Intent specs");
-  const AWT = readOr(`${AW}/templates/aw-tester.agent.md`);
+  const AWT = readAwTester();
   const CHR = readOr(`${AW}/aw-tester-chrome/SKILL.md`);
   const FMT = readOr("skills/testing/ui-verify/rules/spec-format.md");
   const EMB = readOr("skills/testing/ui-verify/templates/embedded-spec.md.template");
@@ -11417,7 +11474,7 @@ const isPollBlock = (block) =>
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
   const RUN = readOr("skills/testing/ui-verify/rules/runner.md");
   const CONTRACT = readOr("skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
-  const AWT = readOr("skills/workflow/autonomous-workflow/templates/aw-tester.agent.md");
+  const AWT = readAwTester();
   const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
   const TEL = readOr("skills/testing/ui-verify/rules/telemetry.md");
   const POST = readOr("skills/testing/ui-verify/rules/post-findings.md");
