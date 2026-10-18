@@ -35,8 +35,8 @@
  *        [--out <file>] [--workdir <dir>] [--repo-dir <dir>] [--reviewer-login <login>]
  *        [--no-workspace] [--no-impact] [--no-telemetry] [--inline-payloads]
  *        [--timeout-ms N] [--quiet] [--pin-head <sha>] [--isolated] [--full]
- *        [--state <file>] [--effort high] [--thoroughness 0..1] [--no-threads]
- *        [--review-sha <sha>]
+ *        [--state <file>] [--effort high] [--thoroughness 0..1] [--config <file>]
+ *        [--no-threads] [--review-sha <sha>]
  *   node prepare-review.mjs --cleanup <context.json>
  *   node prepare-review.mjs --self-test
  *
@@ -57,6 +57,7 @@ import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
 import { discoverStandards, trivialSkip } from "./discover-standards.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
+import { PROFILES } from "./finalize/thresholds.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORT_MARKER = "<!-- PR_REVIEWER_REPORT -->";
@@ -1305,6 +1306,91 @@ export function agent0Config(yamlText) {
   return out;
 }
 
+const CONFIG_PROFILES = Object.keys(PROFILES);
+const CONFIG_CRITICAL = ["auto", "always"];
+const SEVERITY_TIERS = ["critical", "high", "medium", "low"];
+
+/**
+ * The run-level review knobs (review-config.md § Run-level knobs), top-level keys only:
+ * `profile`, `severity_thresholds` (a nested map), `per_comment_confidence_threshold`,
+ * `effort`, `thoroughness`, and `critical`. A key that is absent stays null. A value outside
+ * its domain is never coerced: it stays null and lands in `invalid[]`, which the caller turns
+ * into a RUN_ANOMALY line, so a typo can never silently change the review bar.
+ * @param {string} yamlText
+ */
+export function reviewSettings(yamlText) {
+  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, invalid: string[] }} */
+  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, critical: null, invalid: [] };
+  if (!yamlText) return out;
+  const clean = (/** @type {string} */ v) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
+  const score = (/** @type {string} */ v) => {
+    const n = v === "" ? NaN : Number(v);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+  };
+  let inSeverity = false;
+  for (const raw of yamlText.split("\n")) {
+    if (inSeverity) {
+      if (/^\s*$/.test(raw) || /^\s+/.test(raw)) {
+        const m = /^\s+(\w+):\s*(.*)$/.exec(raw);
+        if (!m) continue;
+        const v = clean(m[2]);
+        const n = score(v);
+        if (!SEVERITY_TIERS.includes(m[1])) out.invalid.push(`severity_thresholds.${m[1]} (unknown tier)`);
+        else if (n === null) out.invalid.push(`severity_thresholds.${m[1]}: ${v}`);
+        else out.severityThresholds = { ...(out.severityThresholds || {}), [m[1]]: n };
+        continue;
+      }
+      inSeverity = false;
+    }
+    if (/^severity_thresholds:\s*(#.*)?$/.test(raw)) {
+      inSeverity = true;
+      continue;
+    }
+    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical):\s*(.*)$/.exec(raw);
+    if (!m) continue;
+    const v = clean(m[2]);
+    if (m[1] === "profile") {
+      if (CONFIG_PROFILES.includes(v)) out.profile = v;
+      else out.invalid.push(`profile: ${v}`);
+    } else if (m[1] === "per_comment_confidence_threshold") {
+      const n = score(v);
+      if (n === null) out.invalid.push(`per_comment_confidence_threshold: ${v}`);
+      else out.flatThreshold = n;
+    } else if (m[1] === "effort") {
+      if (v === "high") out.effort = v;
+      else out.invalid.push(`effort: ${v}`);
+    } else if (m[1] === "thoroughness") {
+      const n = v === "" ? NaN : Number(v);
+      if (Number.isFinite(n) && n >= 0 && n <= 1) out.thoroughness = n;
+      else out.invalid.push(`thoroughness: ${v}`);
+    } else if (CONFIG_CRITICAL.includes(v)) {
+      out.critical = v;
+    } else {
+      out.invalid.push(`critical: ${v}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * The depth knobs a run actually uses (depth-routing.md § Thoroughness budget): an explicit CLI
+ * flag beats the review config, and within the config `effort: high` beats `thoroughness:`.
+ * A CLI `--thoroughness` also beats a config `effort: high` — the invocation is the narrower scope.
+ * @param {{ effort?: string, thoroughness?: string }} opts
+ * @param {{ effort?: string|null, thoroughness?: number|null }} settings
+ * @returns {{ effortHigh: boolean, thoroughness: number|undefined, source: "cli"|"config"|"default" }}
+ */
+export function resolveDepthOverrides(opts, settings) {
+  const cliEffort = opts.effort === "high";
+  const cliThoroughness = opts.thoroughness !== undefined && opts.thoroughness !== "";
+  if (cliEffort || cliThoroughness) {
+    return { effortHigh: cliEffort, thoroughness: cliThoroughness ? Number(opts.thoroughness) : undefined, source: "cli" };
+  }
+  if (settings.effort === "high") return { effortHigh: true, thoroughness: undefined, source: "config" };
+  if (typeof settings.thoroughness === "number") return { effortHigh: false, thoroughness: settings.thoroughness, source: "config" };
+  return { effortHigh: false, thoroughness: undefined, source: "default" };
+}
+
 function readReviewConfig(dir) {
   if (!dir) return "";
   for (const p of [join(dir, ".github", "review.yaml"), join(dir, ".review.yaml")]) {
@@ -1317,6 +1403,44 @@ function readReviewConfig(dir) {
     }
   }
   return "";
+}
+
+/**
+ * The review config that governs the run-level knobs, read from the PR's BASE commit, never the
+ * head: a PR must not be able to lower its own review bar by editing `.github/review.yaml`.
+ * `explicitPath` (`--config <file>`) replaces the base read entirely, for trying a config before
+ * merging it. Order: explicit file → `git show <baseSha>:<path>` in the workspace → the contents
+ * API at `baseSha`. Each path tries `.github/review.yaml`, then the legacy root `.review.yaml`.
+ * @param {{ explicitPath?: string, dir?: string|null, baseSha?: string, repo?: string, timeoutMs?: number }} input
+ * @returns {Promise<{ text: string, source: string }>}
+ */
+export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, timeoutMs = 30000 }) {
+  if (explicitPath) {
+    try {
+      return { text: readFileSync(explicitPath, "utf8"), source: explicitPath };
+    } catch {
+      return { text: "", source: `${explicitPath} (unreadable)` };
+    }
+  }
+  if (!baseSha) return { text: "", source: "none (no base SHA)" };
+  const rels = [".github/review.yaml", ".review.yaml"];
+  if (dir && (await run("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok) {
+    // The base commit is local, so a missing path means "no config" — asking the API again
+    // would only repeat the same answer at network cost.
+    for (const rel of rels) {
+      // A partial (blob:none) clone fetches the blob on demand, so this read can touch the remote.
+      const r = await run("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
+      if (r.ok) return { text: r.stdout, source: `${rel}@${baseSha.slice(0, 7)}` };
+    }
+    return { text: "", source: "none" };
+  }
+  if (repo) {
+    for (const rel of rels) {
+      const r = await run("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${rel}?ref=${baseSha}`], { timeoutMs });
+      if (r.ok) return { text: r.stdout, source: `${rel}@${baseSha.slice(0, 7)}` };
+    }
+  }
+  return { text: "", source: "none" };
 }
 
 /* --------------------------------- main --------------------------------- */
@@ -1548,7 +1672,14 @@ async function prepare(opts) {
   // Shape classification — a pure local computation, no API calls.
   timing.start("classify-shape");
   let shape = null;
+  // `high_stakes_paths` (extend-only) and the Agent0 link keys read the HEAD checkout; the knobs
+  // that can LOWER the bar (profile, thresholds, depth, critical) read the BASE commit
+  // (review-config.md § Run-level knobs), so a PR cannot weaken its own review.
   const reviewConfigText = readReviewConfig(workspace.dir);
+  const baseConfig = await readBaseReviewConfig({ explicitPath: opts.config, dir: workspace.dir, baseSha, repo, timeoutMs });
+  const settings = reviewSettings(baseConfig.text);
+  for (const bad of settings.invalid) anomalies.push(`review config ${baseConfig.source}: ignored invalid ${bad}`);
+  const depthOverrides = resolveDepthOverrides(opts, settings);
   const hsArgs = extraHighStakes(reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
   if (classify.ok) {
@@ -1815,7 +1946,7 @@ async function prepare(opts) {
     // (dash0#20655's sticky held a file path, not a report, and D1 fired on its seventh run).
     firstRun: runMode.isolated || (!sticky && !state.priorSha),
     full: runMode.full,
-    effortHigh: opts.effort === "high",
+    effortHigh: depthOverrides.effortHigh,
     cumDeltaLines,
     incrRunsSinceFull: state.incrRunsSinceFull,
     priorDeepRecorded: !!state.lastFullSha,
@@ -1839,7 +1970,7 @@ async function prepare(opts) {
   // available — the agent re-derives it as `dispatchAvailable ? budget.topology :
   // "in-context"` and logs RUN_ANOMALY when that downgrades it
   // (dispatch-topology.md § Reading a budget into dispatch).
-  const thoroughnessOverride = opts.thoroughness === "" ? undefined : Number(opts.thoroughness);
+  const thoroughnessOverride = depthOverrides.thoroughness;
   const contextMode = resolveContextMode({ runMode, zeroDelta, routing });
   const budget = resolveBudget({
     runMode: contextMode, // a small incremental re-review skips the intent worker (route-depth.mjs SMALL_INCREMENTAL_MODES)
@@ -1848,7 +1979,7 @@ async function prepare(opts) {
     shape: (deltaShape && deltaShape.shapes) || [],
     band: impact?.blast_radius?.band ?? "none",
     depthCapability: workspace.depthCapability,
-    effortHigh: opts.effort === "high",
+    effortHigh: depthOverrides.effortHigh,
     changedFiles: files.length,
   });
 
@@ -1916,6 +2047,19 @@ async function prepare(opts) {
     identitySource,
     // Read by finalize.mjs, which builds the Fix-with-Agent0 links (finalize/fix-links.mjs).
     agent0: agent0Config(reviewConfigText),
+    // The run-level knobs from the BASE commit's review config (review-config.md § Run-level
+    // knobs). finalize.mjs reads profile / severityThresholds / flatThreshold; the agent reads
+    // `critical` at Step 2.3; `depthSource` says whether the routing above used CLI or config.
+    reviewConfig: {
+      source: baseConfig.source,
+      profile: settings.profile,
+      severityThresholds: settings.severityThresholds,
+      flatThreshold: settings.flatThreshold,
+      effort: settings.effort,
+      thoroughness: settings.thoroughness,
+      critical: settings.critical,
+      depthSource: depthOverrides.source,
+    },
 
     // Bulk payloads live on disk; the context names them. `inline` says which
     // form this context is in, so a consumer never has to guess whether a null
@@ -2203,6 +2347,77 @@ async function selfTest() {
   t("agent0Config leaves fixLinks null when the key is absent", () => {
     const r = agent0Config("profile: strict\n");
     return r.fixLinks === null && r.environment === null && r.org === null && agent0Config("").fixLinks === null;
+  });
+  t("reviewSettings reads every run-level knob, the nested severity map, and strips comments and quotes", () => {
+    const y = [
+      "profile: assertive  # more findings",
+      "severity_thresholds:",
+      "  critical: 55",
+      '  high: "60"',
+      "",
+      "  # medium stays the profile's",
+      "per_comment_confidence_threshold: 75",
+      "effort: high",
+      "thoroughness: 0.8",
+      "critical: always",
+      "agent0_fix_links: true",
+    ].join("\n");
+    const r = reviewSettings(y);
+    return r.profile === "assertive" && r.severityThresholds.critical === 55 && r.severityThresholds.high === 60
+      && !("medium" in r.severityThresholds) && r.flatThreshold === 75 && r.effort === "high"
+      && r.thoroughness === 0.8 && r.critical === "always" && r.invalid.length === 0;
+  });
+  t("reviewSettings ends the severity block at the next top-level key", () => {
+    const r = reviewSettings(["severity_thresholds:", "  low: 85", "profile: chill", "  high: 1"].join("\n"));
+    return r.severityThresholds.low === 85 && !("high" in r.severityThresholds) && r.profile === "chill";
+  });
+  t("reviewSettings never coerces an invalid value: it stays null and is listed in invalid[]", () => {
+    const r = reviewSettings(["profile: strict", "severity_thresholds:", "  high: 120", "  urgent: 50", "effort: max",
+      "thoroughness: 2", "critical: sometimes", "per_comment_confidence_threshold: abc"].join("\n"));
+    return r.profile === null && r.severityThresholds === null && r.effort === null && r.thoroughness === null
+      && r.critical === null && r.flatThreshold === null && r.invalid.length === 7;
+  });
+  t("reviewSettings is all-null for an empty or knob-free config", () => {
+    const a = reviewSettings(""), b = reviewSettings("agent0_fix_links: false\nhigh_stakes_paths:\n  - ^x/\n");
+    return [a, b].every((r) => r.profile === null && r.severityThresholds === null && r.critical === null && r.invalid.length === 0);
+  });
+  t("resolveDepthOverrides: a CLI flag beats the config, config effort beats config thoroughness", () => {
+    const cfg = { effort: "high", thoroughness: 0.6 };
+    const cliT = resolveDepthOverrides({ effort: "", thoroughness: "0.4" }, cfg);
+    const cliE = resolveDepthOverrides({ effort: "high", thoroughness: "" }, { thoroughness: 0.6 });
+    const cfgE = resolveDepthOverrides({ effort: "", thoroughness: "" }, cfg);
+    const cfgT = resolveDepthOverrides({ effort: "", thoroughness: "" }, { effort: null, thoroughness: 0.6 });
+    const none = resolveDepthOverrides({ effort: "", thoroughness: "" }, { effort: null, thoroughness: null });
+    return cliT.effortHigh === false && cliT.thoroughness === 0.4 && cliT.source === "cli"
+      && cliE.effortHigh === true && cliE.thoroughness === undefined && cliE.source === "cli"
+      && cfgE.effortHigh === true && cfgE.thoroughness === undefined && cfgE.source === "config"
+      && cfgT.effortHigh === false && cfgT.thoroughness === 0.6 && cfgT.source === "config"
+      && none.effortHigh === false && none.thoroughness === undefined && none.source === "default";
+  });
+  t("readBaseReviewConfig reads the BASE commit, not the head, and reports none when the base has no file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-"));
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    try {
+      g(["init", "-q"]);
+      mkdirSync(join(dir, ".github"));
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: assertive\n");
+      g(["add", "."]); g(["commit", "-qm", "base"]);
+      const base = g(["rev-parse", "HEAD"]).trim();
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: chill\n");
+      g(["commit", "-qam", "head lowers the bar"]);
+      const atBase = await readBaseReviewConfig({ dir, baseSha: base });
+      g(["rm", "-q", ".github/review.yaml"]); g(["commit", "-qm", "drop"]);
+      const bare = g(["rev-parse", "HEAD"]).trim();
+      const none = await readBaseReviewConfig({ dir, baseSha: bare });
+      const explicitPath = join(dir, "explicit.yaml");
+      writeFileSync(explicitPath, "critical: always\n");
+      const explicit = await readBaseReviewConfig({ explicitPath, dir, baseSha: base });
+      return atBase.text === "profile: assertive\n" && atBase.source === `.github/review.yaml@${base.slice(0, 7)}`
+        && none.text === "" && none.source === "none"
+        && explicit.text === "critical: always\n" && explicit.source === explicitPath;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;
@@ -2985,6 +3200,7 @@ async function main(argv) {
     state: "",
     effort: "",
     thoroughness: "",
+    config: "",
     threads: true,
     reviewSha: "",
   };
@@ -3009,6 +3225,7 @@ async function main(argv) {
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
     else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
+    else if (a === "--config") opts.config = argv[++i]; // review config file to use instead of the base commit's
     else if (a === "--no-threads") opts.threads = false;
     else if (a === "--review-sha") opts.reviewSha = argv[++i]; // D8/D9: historical read-only review target
     else {
@@ -3022,7 +3239,7 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
         "[--no-telemetry] [--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--effort high] [--thoroughness 0..1] [--no-threads] [--review-sha sha] | --self-test\n",
+        "[--state file] [--effort high] [--thoroughness 0..1] [--config file] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
   }
