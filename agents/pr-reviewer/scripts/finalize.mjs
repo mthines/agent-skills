@@ -745,7 +745,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // is named, so a single-pass review never passes for a two-pass one.
   const delivered = new Set(Array.isArray(context?.workersDelivered) ? context.workersDelivered.map(String) : []);
   const secondPassMissing = context?.budget?.finderPasses === 2 && Array.isArray(context?.budget?.secondPassUnits)
-    ? context.budget.secondPassUnits.map(String).filter((u) => !delivered.has(u)) : [];
+    ? context.budget.secondPassUnits.map(String).filter((/** @type {string} */ u) => !delivered.has(u)) : [];
   const autoRunAnomaly = buildAutoRunAnomaly({
     capApplied,
     depthCapability: context?.workspace?.depthCapability || context?.depthCapability,
