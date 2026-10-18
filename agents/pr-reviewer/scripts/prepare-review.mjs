@@ -1382,13 +1382,15 @@ export function reviewSettings(yamlText) {
  * The depth knobs a run actually uses (depth-routing.md § Thoroughness budget): an explicit CLI
  * flag beats the review config, and within the config `effort: high` beats `thoroughness:`.
  * A CLI `--thoroughness` also beats a config `effort: high` — the invocation is the narrower scope.
+ * Only an empty `opts.thoroughness` is unset: a bare trailing `--thoroughness` leaves it undefined,
+ * which reaches `resolveBudget()` as NaN and fails closed to t = 1.
  * @param {{ effort?: string, thoroughness?: string }} opts
  * @param {{ effort?: string|null, thoroughness?: number|null }} settings
  * @returns {{ effortHigh: boolean, thoroughness: number|undefined, source: "cli"|"config"|"default" }}
  */
 export function resolveDepthOverrides(opts, settings) {
   const cliEffort = opts.effort === "high";
-  const cliThoroughness = opts.thoroughness !== undefined && opts.thoroughness !== "";
+  const cliThoroughness = opts.thoroughness !== "";
   if (cliEffort || cliThoroughness) {
     return { effortHigh: cliEffort, thoroughness: cliThoroughness ? Number(opts.thoroughness) : undefined, source: "cli" };
   }
@@ -2430,6 +2432,12 @@ async function selfTest() {
       && cfgE.effortHigh === true && cfgE.thoroughness === undefined && cfgE.source === "config"
       && cfgT.effortHigh === false && cfgT.thoroughness === 0.6 && cfgT.source === "config"
       && none.effortHigh === false && none.thoroughness === undefined && none.source === "default";
+  });
+  t("resolveDepthOverrides: a bare --thoroughness is a CLI value that fails closed to t = 1, never the config's", () => {
+    const bare = resolveDepthOverrides({ effort: "", thoroughness: undefined }, { effort: null, thoroughness: 0.3 });
+    const budget = resolveBudget({ routedTier: "quick", thoroughness: bare.thoroughness, effortHigh: bare.effortHigh });
+    return bare.source === "cli" && Number.isNaN(bare.thoroughness)
+      && budget.effectiveThoroughness === 1 && typeof budget.inputError === "string";
   });
   t("readBaseReviewConfig reads the BASE commit, not the head, and reports none when the base has no file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-"));
