@@ -1312,7 +1312,7 @@ const SEVERITY_TIERS = ["critical", "high", "medium", "low"];
 
 /**
  * The run-level review knobs (review-config.md § Run-level knobs), top-level keys only:
- * `profile`, `severity_thresholds` (a nested map), `per_comment_confidence_threshold`,
+ * `profile`, `severity_thresholds` (a block-style nested map), `per_comment_confidence_threshold`,
  * `effort`, `thoroughness`, and `critical`. A key that is absent stays null. A value outside
  * its domain is never coerced: it stays null and lands in `invalid[]`, which the caller turns
  * into a RUN_ANOMALY line, so a typo can never silently change the review bar.
@@ -1330,7 +1330,8 @@ export function reviewSettings(yamlText) {
   let inSeverity = false;
   for (const raw of yamlText.split("\n")) {
     if (inSeverity) {
-      if (/^\s*$/.test(raw) || /^\s+/.test(raw)) {
+      // A blank line, an indented line, or a comment at any column stays inside the block: YAML ignores comments.
+      if (/^\s*$/.test(raw) || /^\s+/.test(raw) || raw.startsWith("#")) {
         const m = /^\s+(\w+):\s*(.*)$/.exec(raw);
         if (!m) continue;
         const v = clean(m[2]);
@@ -1344,6 +1345,11 @@ export function reviewSettings(yamlText) {
     }
     if (/^severity_thresholds:\s*(#.*)?$/.test(raw)) {
       inSeverity = true;
+      continue;
+    }
+    const inlineSeverity = /^severity_thresholds:\s*([^\s#].*)$/.exec(raw);
+    if (inlineSeverity) {
+      out.invalid.push(`severity_thresholds: ${clean(inlineSeverity[1])} (inline value; use the block form)`);
       continue;
     }
     const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical):\s*(.*)$/.exec(raw);
@@ -2370,6 +2376,13 @@ async function selfTest() {
   t("reviewSettings ends the severity block at the next top-level key", () => {
     const r = reviewSettings(["severity_thresholds:", "  low: 85", "profile: chill", "  high: 1"].join("\n"));
     return r.severityThresholds.low === 85 && !("high" in r.severityThresholds) && r.profile === "chill";
+  });
+  t("reviewSettings keeps the severity block open across a column-0 comment and reports an inline map", () => {
+    const a = reviewSettings(["severity_thresholds:", "# per-tier bars", "  high: 70", "profile: chill"].join("\n"));
+    const b = reviewSettings("severity_thresholds: { high: 70 }  # flow style\n");
+    return a.severityThresholds !== null && a.severityThresholds.high === 70 && a.profile === "chill" && a.invalid.length === 0
+      && b.severityThresholds === null && b.invalid.length === 1
+      && b.invalid[0] === "severity_thresholds: { high: 70 } (inline value; use the block form)";
   });
   t("reviewSettings never coerces an invalid value: it stays null and is listed in invalid[]", () => {
     const r = reviewSettings(["profile: strict", "severity_thresholds:", "  high: 120", "  urgent: 50", "effort: max",
