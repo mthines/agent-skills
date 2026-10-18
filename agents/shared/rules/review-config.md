@@ -465,7 +465,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 
 | Key | Values | Applied by | Beaten by |
 | --- | --- | --- | --- |
-| `profile` | `chill` / `balanced` / `assertive` | `finalize.mjs` — confidence bars and per-file inline cap | — |
+| `profile` | `chill` / `balanced` / `assertive` | `finalize.mjs` — confidence bars and per-file inline cap | `severity_thresholds` (that tier's bar), `per_comment_confidence_threshold` (every bar); the cap stays the profile's |
 | `severity_thresholds` | block-style map of `critical` / `high` / `medium` / `low` → 0–100 | `finalize.mjs` — a named tier replaces the profile's bar for that tier only | `per_comment_confidence_threshold` |
 | `per_comment_confidence_threshold` | 0–100 | `finalize.mjs` — one bar for every tier | — |
 | `effort` | `high` | `prepare-review.mjs` — forces `deep` and thoroughness 1 | CLI `--effort` or `--thoroughness` |
