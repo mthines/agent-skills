@@ -143,7 +143,7 @@ async function selfTest() {
   check("reviewConfigOptions maps context.reviewConfig to finalize options",
     (() => {
       const o = reviewConfigOptions({ reviewConfig: { profile: "assertive", flatThreshold: null, severityThresholds: { low: 85 } } });
-      return o.profile === "assertive" && o.flatOverride === undefined && o.severityThresholds.low === 85;
+      return o.profile === "assertive" && o.flatOverride === undefined && o.severityThresholds?.low === 85;
     })());
   check("reviewConfigOptions falls back to balanced for a missing or unknown profile",
     reviewConfigOptions({}).profile === "balanced" && reviewConfigOptions({ reviewConfig: { profile: "strict" } }).profile === "balanced"
