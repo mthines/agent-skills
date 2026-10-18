@@ -282,7 +282,7 @@ function tierQuestions(file) {
 
 // ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
 // against fixtures. Encodes the #30 Core contract + the #31 Acceptance-Criteria-non-empty fix.
-// We execute the exact idioms documented in skills/quality/confidence/SKILL.md rules #2 and #3,
+// We execute the exact idioms documented in skills/quality/confidence/rules/plan-rule-checks.md rules #2 and #3,
 // so a regression in that logic (like #31, where AC always counted 0) fails here.
 function coreSectionCount(plan) {
   return Number(execSync(
@@ -296,7 +296,7 @@ function acceptanceCriteriaCount(plan) {
 }
 // Rule #9 (v3.15): every [user-stated] requirement (positional R-number) is covered
 // by a `(covers: R…)` annotation in the Acceptance Criteria. Exact idiom from
-// skills/quality/confidence/SKILL.md rule #9. Returns true when the check passes.
+// skills/quality/confidence/rules/plan-rule-checks.md rule #9. Returns true when the check passes.
 function requirementCoveragePasses(plan) {
   try {
     execSync(
