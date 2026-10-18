@@ -947,6 +947,10 @@ export function dedupeCandidates(candidates) {
   return { kept: semKept.map(strip), dropped: [...dropped, ...semDropped].map(strip) };
 }
 
+/** finding-verifier.md's verdicts, strongest first: a union group holding several verified members keeps
+ *  the strongest, so a merge never turns a confirmed defect into a contradicted one. */
+const VERDICT_RANK = /** @type {Record<string, number>} */ ({ confirmed: 4, ambiguous: 3, unobtainable: 2, contradicted: 1 });
+
 /**
  * `finder_passes: 2` (dispatch-topology.md § Two finder passes): the union of independent finder
  * passes, deduped by the same rules as one pass (`dedupeCandidates`), before verification.
@@ -954,8 +958,12 @@ export function dedupeCandidates(candidates) {
  * an exact-duplicate group keeps pass 1's record. Each kept record gains:
  *   - `_found_in_passes` — the passes whose candidates merged into it, e.g. `[1, 2]`. Recorded for the
  *     report and the trace only: being raised twice is NOT agreement and never lowers a bar.
- *   - `_needs_verification` — false when any member of its group already carries a `verdict` (the
- *     reviewer verified it before the union): that verdict stands and the group is not verified again.
+ *   - `_needs_verification` — false when a member of its group already carries a `verdict` (the
+ *     reviewer verified it before the union). The kept record is then that member, never an unverified
+ *     framing the dedupe order ranked first, and the group's other members go to `dropped`; with
+ *     several verified members the strongest verdict is kept (`VERDICT_RANK`).
+ * Every kept record is rebuilt from its own input, so `dedupeCandidates()`'s `prefix` / `body` strip
+ * never reaches it: a verified record keeps every field it had.
  * No record carries `agreement_promoted` or `_also_flagged_by`: they are `dedupeCandidates()`'s
  * cross-finder agreement signal, a union is not a vote, and judgments.schema.json rejects both.
  * A semantic survivor keeps `_semantic_merged`, the audit record rubric-composition.md § Dedupe
@@ -968,6 +976,8 @@ export function unionFinderPasses(passes) {
   const lists = (Array.isArray(passes) ? passes : []).map((p) => (Array.isArray(p) ? p : []));
   const tagged = lists.flatMap((list, pi) => list.map((c, ci) => ({ ...c, _pass: pi + 1, _uid: `p${pi + 1}:${ci}` })));
   const { kept, dropped } = dedupeCandidates(tagged);
+  // The pre-dedupe input, `prefix` / `body` intact: every kept record is rebuilt from it.
+  const src = new Map(tagged.map((t) => [t._uid, t]));
 
   // A dropped record may point at a candidate that was itself dropped later (an exact merge followed
   // by a semantic one), so walk each link to the record that survived.
@@ -991,12 +1001,38 @@ export function unionFinderPasses(passes) {
     delete rest._also_flagged_by;
     return rest;
   };
+  /** @param {any} m */
+  const framing = (m) => ({ finder: m.finder, defect_class: m.defect_class, line: m.line, claim: m.claim });
+  // Dropped members promoted to represent their group, and the dedupe survivors they replaced.
+  /** @type {Set<string>} */
+  const promoted = new Set();
+  /** @type {any[]} */
+  const demoted = [];
   const out = kept.map((k) => {
     const group = members.get(k._uid) || [k];
+    // A verified group is represented by its strongest verdict (ties: the dedupe survivor, then drop
+    // order), never by an unverified framing the exact or semantic order happened to rank first.
+    const verified = group.filter((m) => m.verdict !== undefined && m.verdict !== null)
+      .sort((a, b) => (VERDICT_RANK[b.verdict] || 0) - (VERDICT_RANK[a.verdict] || 0));
+    const rep = verified[0] ?? k;
+    let semanticMerged = k._semantic_merged;
+    if (rep !== k) {
+      // The record the semantic pass saw for `rep`: itself, or the exact-pass survivor it merged into.
+      const repNode = rep._dedupe_reason === "semantic" ? rep._uid : parentOf.get(rep._uid);
+      if (repNode !== k._uid) {
+        semanticMerged = [k, ...group.filter((m) => m._dedupe_reason === "semantic")]
+          .filter((m) => m._uid !== repNode).map(framing);
+      }
+      promoted.add(rep._uid);
+      const replaced = { ...k, _dedupe_dropped_for: rep.finder, _dedupe_reason: repNode === k._uid ? rep._dedupe_reason : "semantic" };
+      delete replaced._semantic_merged;
+      demoted.push(replaced);
+    }
     return {
-      ...clean(k),
+      ...clean(src.get(rep._uid)),
+      ...(semanticMerged ? { _semantic_merged: semanticMerged } : {}),
       _found_in_passes: [...new Set(group.map((m) => m._pass))].sort((a, b) => a - b),
-      _needs_verification: !group.some((m) => m.verdict !== undefined && m.verdict !== null),
+      _needs_verification: verified.length === 0,
     };
   });
 
@@ -1004,7 +1040,7 @@ export function unionFinderPasses(passes) {
   const onlyIn = Array.from({ length: n }, (_, pi) => out.filter((k) => k._found_in_passes.length === 1 && k._found_in_passes[0] === pi + 1).length);
   return {
     kept: out,
-    dropped: dropped.map(clean),
+    dropped: [...dropped.filter((d) => !promoted.has(d._uid)), ...demoted].map(clean),
     stats: {
       passes: n,
       raised: lists.map((l) => l.length),
@@ -2263,13 +2299,56 @@ async function selfTest() {
     check("a pass-2 record merged by an exact match and then semantically still credits pass 2 on the survivor",
       chain.kept.length === 1 && JSON.stringify(chain.kept[0]._found_in_passes) === "[1,2]" && chain.dropped.length === 2);
 
-    // The reviewer verified its own pass-1 candidate before the union: the group is not verified again,
-    // even when the semantic pass picks the unverified pass-2 framing as the representative.
+    // The reviewer verified its own pass-1 candidate before the union: the group is not verified again.
     const verified = unionFinderPasses([[{ ...sem1, verdict: "confirmed" }, only1], [sem2, only2]]);
     const vg = verified.kept.find((k) => Math.abs(k.line - 2935) <= 3);
     check("a group holding an already-verified member is marked _needs_verification: false; new ones true",
       vg?._needs_verification === false && verified.kept.find((k) => k.line === 200)?._needs_verification === true
         && verified.kept.find((k) => k.line === 100)?._needs_verification === true && verified.stats.toVerify === 2);
+
+    // A verified record keeps its group: a pass-2 framing the semantic order ranks first (higher
+    // severity_hint, earlier line) is dropped, and the kept record is the verified input, every field intact.
+    const judgedFields = { verdict: "confirmed", R: 90, A: 90, Ac: 90, final: 90, severity: "medium", prefix: "issue",
+      blocking: false, title: "T", body: "B", materiality: true, category: "c" };
+    const ownVerified = { ...sem2, ...judgedFields };
+    const outranking = { ...sem1, severity_hint: "high" };
+    const outranked = unionFinderPasses([[ownVerified, only1], [outranking, only2]]);
+    const og = outranked.kept.find((k) => Math.abs(k.line - 2935) <= 3);
+    check("a pass-2 duplicate that outranks a verified pass-1 record never replaces it: the verified record is kept, the duplicate dropped",
+      og?.verdict === "confirmed" && og?._pass === 1 && og?.line === 2937 && og?._needs_verification === false
+        && JSON.stringify(og?._found_in_passes) === "[1,2]"
+        && og?._semantic_merged?.length === 1 && og._semantic_merged[0].line === 2935
+        && outranked.dropped.length === 1 && outranked.dropped[0]._pass === 2 && outranked.dropped[0].line === 2935
+        && outranked.dropped[0]._dedupe_reason === "semantic" && outranked.dropped[0].verdict === undefined
+        && outranked.kept.length === 3 && outranked.stats.toVerify === 2,
+      JSON.stringify({ og, dropped: outranked.dropped }).slice(0, 300));
+    check("the verified record kept for its group keeps every field it had — verdict, scores, prefix, and body",
+      Object.entries(judgedFields).every(([f, v]) => og?.[f] === v), JSON.stringify(og).slice(0, 300));
+    const ownWins = unionFinderPasses([[{ ...sem1, ...judgedFields }], [sem2]]);
+    check("a verified record that wins its group outright still keeps prefix and body (dedupeCandidates strips both)",
+      ownWins.kept.length === 1 && ownWins.kept[0].prefix === "issue" && ownWins.kept[0].body === "B" && ownWins.kept[0]._pass === 1);
+    // The exact pass keeps the first record in load order: a verified record listed after its unverified twin.
+    const twin = unionFinderPasses([[exact1, { ...exact1, ...judgedFields }], [exact2]]);
+    check("a verified record listed after its unverified exact twin is still the one kept",
+      twin.kept.length === 1 && twin.kept[0].verdict === "confirmed" && twin.kept[0].prefix === "issue"
+        && JSON.stringify(twin.kept[0]._found_in_passes) === "[1,2]" && twin.dropped.length === 2
+        && twin.dropped.every((d) => d.verdict === undefined && d._dedupe_reason === "exact" && !("_semantic_merged" in d)));
+    // Two verified members of one group: the strongest verdict is kept, whichever the dedupe order ranked first.
+    const twoVerdicts = unionFinderPasses([[{ ...sem1, ...judgedFields, verdict: "contradicted" }, { ...sem2, ...judgedFields }], []]);
+    check("a group with two verified members keeps the confirmed one over a contradicted one ranked first",
+      twoVerdicts.kept.length === 1 && twoVerdicts.kept[0].verdict === "confirmed" && twoVerdicts.kept[0].line === 2937
+        && twoVerdicts.dropped.length === 1 && twoVerdicts.dropped[0].verdict === "contradicted");
+    // Steps 5–6 end to end: verify only _needs_verification: true, carry every other kept record as it
+    // is, strip the union's fields — and every candidate passes the judgments candidate validation.
+    const carried = unionFinderPasses([[ownVerified, { ...only1, ...judgedFields }], [outranking, only2]]);
+    const stepSix = carried.kept.map((k) => {
+      const c = k._needs_verification ? { ...k, ...judgedFields } : { ...k };
+      for (const f of ["_pass", "_found_in_passes", "_needs_verification", "_semantic_merged"]) delete c[f];
+      return c;
+    });
+    const carriedErrors = validateShapeOnly(loadSchema(), stepSix);
+    check("verified records carried through the union without re-verification pass the judgments candidate validation after step 6",
+      carried.stats.toVerify === 1 && carriedErrors.length === 0, carriedErrors.slice(0, 3).join("; "));
 
     // Order: listing the passes the other way round finds the same groups.
     const swapped = unionFinderPasses([[exact2, sem2, only2], [exact1, sem1, only1]]);

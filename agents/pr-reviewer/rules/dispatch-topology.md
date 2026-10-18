@@ -293,8 +293,11 @@ verification keeps the extra recall without verifying any defect twice.
      This replaces step 3's `--dedupe-candidates` call: one merge covers the intent worker and pass 2.
    - Where every finder ran as a worker (Agent0), pass 1 is `<scratch>/intent.json,<scratch>/others.json`.
 5. **Verify** only the kept candidates with `_needs_verification: true`.
-   A kept candidate with `_needs_verification: false` shares a group with one you already verified:
-   that verdict stands, and the candidate is not verified or posted again.
+   A kept candidate with `_needs_verification: false` is the candidate you already verified, with
+   every field it had (`verdict`, scores, `prefix`, `body`); the rest of its group is in `dropped`.
+   Carry it into `judgments.json` as it is, without verifying it again.
+   When a group holds several verified candidates, the union keeps the strongest verdict:
+   `confirmed`, then `ambiguous`, `unobtainable`, and `contradicted`.
 6. **Write `judgments.json` without the union's fields.** Drop `_pass`, `_found_in_passes`,
    `_needs_verification`, and `_semantic_merged` (the semantic pass's audit record, on a merged
    group's survivor only) from every candidate; the judgments schema rejects unknown keys.
