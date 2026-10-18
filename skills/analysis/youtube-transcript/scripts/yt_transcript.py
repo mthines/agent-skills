@@ -66,8 +66,10 @@ def caption_tracks(vid):
 
 
 def pick(tracks, lang):
-    # Prefer a human-made track in the language, then auto-generated (kind=asr), then anything.
-    same = [t for t in tracks if t["languageCode"].split("-")[0] == lang]
+    # Exact code (pt-BR) beats base subtag (pt); within that, human-made beats auto-generated (kind=asr).
+    code = lang.lower()
+    same = ([t for t in tracks if t["languageCode"].lower() == code]
+            or [t for t in tracks if t["languageCode"].split("-")[0].lower() == code.split("-")[0]])
     return next((t for t in same if t.get("kind") != "asr"), None) or (same or tracks)[0]
 
 
