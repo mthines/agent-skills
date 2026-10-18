@@ -33,6 +33,7 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 - [Path instructions](#path-instructions)
 - [Hierarchical discovery](#hierarchical-discovery)
 - [Config loading step](#config-loading-step)
+- [Run-level knobs](#run-level-knobs)
 - [Integration with per-comment-confidence.md](#integration-with-per-comment-confidencemd)
 - [High-stakes paths](#high-stakes-paths)
 - [Standards](#standards)
@@ -96,6 +97,12 @@ agent0_org: dash0-development            # OPTIONAL — which Dash0 organization
                                          # it picks a destination and gates nothing. Must match
                                          # ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$ — anything else is
                                          # ignored here and rejected by build-agent0-link.mjs
+
+critical: always                         # auto (default) | always — `always` engages the critical
+                                         # rubric (adversarial pre-mortem) on every run, not only
+                                         # when the auto-engage heuristic fires. --no-critical on
+                                         # the invocation still suppresses it. There is no `off`.
+                                         # See rubric-composition.md § Auto-engage heuristics
 
 high_stakes_paths:                       # repo-specific critical paths (regex, case-insensitive)
   - "(^|/)ledger(/|$)"                   # EXTENDS the built-in list (auth, payments, migrations,
@@ -443,6 +450,45 @@ inline site from passing it — see the note in each). Pass `--org` only when `A
 non-empty; the script treats an empty value as absent either way, but an unquoted `--org $AGENT0_ORG`
 with an empty variable would swallow the next argument, so build the flag conditionally
 (`${AGENT0_ORG:+--org "$AGENT0_ORG"}`) rather than interpolating it bare.
+
+---
+
+## Run-level knobs
+
+`profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, and `critical` govern the whole run, not one file's findings.
+`prepare-review.mjs` resolves them once, from the repo-level config (`.github/review.yaml`, else the legacy root `.review.yaml`) **at the PR's base commit**, and writes them to `context.reviewConfig`.
+**Why:** read from the head, a PR could lower its own review bar by editing the file it is reviewed under.
+
+| Key | Values | Applied by | Beaten by |
+| --- | --- | --- | --- |
+| `profile` | `chill` / `balanced` / `assertive` | `finalize.mjs` — confidence bars and per-file inline cap | — |
+| `severity_thresholds` | map of `critical` / `high` / `medium` / `low` → 0–100 | `finalize.mjs` — a named tier replaces the profile's bar for that tier only | `per_comment_confidence_threshold` |
+| `per_comment_confidence_threshold` | 0–100 | `finalize.mjs` — one bar for every tier | — |
+| `effort` | `high` | `prepare-review.mjs` — forces `deep` and thoroughness 1 | CLI `--effort` or `--thoroughness` |
+| `thoroughness` | 0–1 | `prepare-review.mjs` — the budget's thoroughness | CLI `--effort` or `--thoroughness`; config `effort: high` |
+| `critical` | `auto` (default) / `always` | the agent at Step 2.3 | CLI `--no-critical` |
+
+1. Take these values from `context.reviewConfig`.
+   Never re-read the head's `.github/review.yaml` for them, and never apply a head value the context does not carry.
+2. A value outside its domain is ignored, never coerced.
+   `prepare-review.mjs` adds `review config <source>: ignored invalid <key>: <value>` to `anomalies[]`, which reaches `RUN_ANOMALY`.
+3. A config change applies to PRs whose base contains it.
+   The PR that adds or edits `.github/review.yaml` is still reviewed under the base's settings.
+4. To try a config before merging it, pass `--config <file>` to `prepare-review.mjs`; that file replaces the base read for the run, and `context.reviewConfig.source` names it.
+5. Subtree `<subtree>/.review.yaml` files never set these keys; they still scope `filters:` and `path_instructions:` per file.
+
+```yaml
+# ✓ every review on this repo runs the pre-mortem and surfaces findings down to the assertive bars
+critical: always
+profile: assertive
+```
+
+```yaml
+# ✗ ignored — `strict` is not a profile and 1.5 is outside 0–1; the run keeps balanced and the
+#   routed thoroughness, and lists both keys in RUN_ANOMALY
+profile: strict
+thoroughness: 1.5
+```
 
 ---
 

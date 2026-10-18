@@ -33,13 +33,14 @@ Strict order so dedup is deterministic:
 
 1. `code-quality` (always, unless diff is trivial — single-line typo, ≤ 5 line whitespace fix).
 2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
-3. `critical` (`--critical` flag OR auto-engage heuristic — see below).
+3. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below). `--no-critical` suppresses the config and the heuristic.
 4. `--with` lenses (max 3, in the order given on the command line).
 
 ## Auto-engage heuristics for `critical`
 
 | Heuristic | Rationale |
 | --- | --- |
+| `critical: always` in the base commit's review config (`context.reviewConfig.critical`) | The repo opted every review into the pre-mortem ([`review-config.md` § Run-level knobs](./review-config.md#run-level-knobs)) |
 | Path matches `**/migrations/**`, `**/migrate/**`, `**/prisma/migrations/**` | Schema / data migrations are not easily reverted |
 | Path matches `**/auth/**`, contains `authz`, `rbac`, or `iam` | Security-sensitive |
 | Path matches `**/billing/**`, `**/payments/**`, `**/stripe/**` | Money-touching |

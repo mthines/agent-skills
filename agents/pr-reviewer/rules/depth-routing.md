@@ -217,8 +217,11 @@ continuously instead of jumping at two tier boundaries.
 
 **Input**, first match wins:
 
-1. `--effort high` / `effort: high` → `t = 1`.
-2. `--thoroughness <n>` / `thoroughness: <n>` (CLI wins over config) → `t = clamp(n, 0, 1)`. A
+An explicit CLI flag beats every config key, and within the config `effort: high` beats `thoroughness:`.
+Config keys come from the PR's base commit, already resolved in `context.reviewConfig` ([`review-config.md` § Run-level knobs](../../shared/rules/review-config.md#run-level-knobs)).
+
+1. `--effort high`, or (no CLI depth flag) `effort: high` → `t = 1`.
+2. `--thoroughness <n>`, or (no CLI depth flag) `thoroughness: <n>` → `t = clamp(n, 0, 1)`. A
    non-finite or garbage value **fails closed to `t = 1`** — the safe direction for a broken override
    is maximum scrutiny, never a silent under-review.
 3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.95.**
