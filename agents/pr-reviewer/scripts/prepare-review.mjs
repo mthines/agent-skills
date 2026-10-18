@@ -2004,8 +2004,8 @@ async function prepare(opts) {
     band: impact?.blast_radius?.band ?? "none",
     depthCapability: workspace.depthCapability,
     effortHigh: depthOverrides.effortHigh,
-    changedFiles: files.length,
     finderPasses: finderPassesSetting.passes,
+    changedFiles: files.length,
   });
 
   // Item 3: a capability-deactivated finder is exactly the class of "something changed what this
@@ -2430,7 +2430,7 @@ async function selfTest() {
   });
   t("prepare() feeds the resolved finder passes into resolveBudget and records them in context.reviewConfig", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
-    return /finderPasses: finderPassesSetting\.passes,\n\s+\}\);/.test(src)
+    return /finderPasses: finderPassesSetting\.passes,\n\s+changedFiles: files\.length,\n\s+\}\);/.test(src)
       && /finderPasses: finderPassesSetting\.passes,\n\s+finderPassesSource: finderPassesSetting\.source,/.test(src);
   });
   t("resolveDepthOverrides: a CLI flag beats the config, config effort beats config thoroughness", () => {

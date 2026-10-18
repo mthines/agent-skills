@@ -1113,8 +1113,14 @@ function parseArgs(argv) {
   const opts = { writer: "github" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") { opts[a.slice(2)] = true; continue; }
-    if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; continue; }
+    // The union's value flags are declared one per branch, the shape L1 G43a reads a parser contract
+    // from, because the docs invoke them in a bash block; every other flag keeps the generic parse.
+    if (a === "--union-pass1") opts.unionPass1 = argv[++i];
+    else if (a === "--union-pass2") opts.unionPass2 = argv[++i];
+    else if (a === "--out") opts.out = argv[++i];
+    else if (a === "--run-dir") opts.runDir = argv[++i];
+    else if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") opts[a.slice(2)] = true;
+    else if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; }
   }
   return opts;
 }
@@ -2270,7 +2276,8 @@ async function selfTest() {
       `${half} | ${all} | ${single}`);
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     check("the CLI reads every delivered worker from the run ledger into context.workersDelivered",
-      /context\.workersDelivered = \[\.\.\.new Set\(ended\)\];/.test(src) && /if \(ended\.includes\("intent"\)\) context\.intentIsolated = true;/.test(src));
+      /context\.workersDelivered = \[\.\.\.new Set\(ledger\.filter\(\(r\) => r\.t === "worker" && r\.phase === "end"\)/.test(src)
+        && src.includes(`r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;`));
   }
 
   // D4 / AC-10: checkShape() — the pure function, called directly.
@@ -2822,18 +2829,18 @@ async function main() {
   // finder_passes: 2 — the union of the passes before verification (dispatch-topology.md § Two finder
   // passes). `--union-pass1 a.json,b.json --union-pass2 c.json,d.json [--out <file>] [--run-dir <dir>]`
   // writes {kept, dropped, stats}; with --run-dir it also records the stats on the run's trace.
-  if (opts["union-pass1"] !== undefined || opts["union-pass2"] !== undefined) {
+  if (opts.unionPass1 !== undefined || opts.unionPass2 !== undefined) {
     let passes;
     try {
-      passes = [readPassFiles(String(opts["union-pass1"] ?? "")), readPassFiles(String(opts["union-pass2"] ?? ""))];
+      passes = [readPassFiles(String(opts.unionPass1 ?? "")), readPassFiles(String(opts.unionPass2 ?? ""))];
     } catch (e) {
       console.error(`finalize.mjs --union-pass1/--union-pass2: ${/** @type {Error} */ (e).message} — pass only the files that exist and parse`);
       process.exit(2);
     }
     const result = unionFinderPasses(passes);
     const s = result.stats;
-    if (typeof opts["run-dir"] === "string") {
-      appendRecord(opts["run-dir"], { t: "attr", target: "run", attrs: {
+    if (typeof opts.runDir === "string") {
+      appendRecord(opts.runDir, { t: "attr", target: "run", attrs: {
         finder_passes: s.passes, finder_pass1_candidates: s.raised[0], finder_pass2_candidates: s.raised[1],
         finder_union_kept: s.kept, finder_union_in_every_pass: s.inEveryPass, finder_union_pass2_only: s.onlyIn[1],
         finder_union_to_verify: s.toVerify,
@@ -2866,11 +2873,10 @@ async function main() {
   // The hybrid intent worker delivered when the run ledger folded it in (review-telemetry.mjs
   // `worker intent import`) — the one record of it a later script can read.
   try {
-    const ended = readLedger(dirname(/** @type {string} */ (opts.context)))
-      .filter((r) => r.t === "worker" && r.phase === "end").map((r) => String(r.unit));
-    if (ended.includes("intent")) context.intentIsolated = true;
+    const ledger = readLedger(dirname(/** @type {string} */ (opts.context)));
+    if (ledger.some((r) => r.t === "worker" && r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;
     // Every worker that delivered, the finder_passes: 2 units included (finalizeReview names a missing one).
-    context.workersDelivered = [...new Set(ended)];
+    context.workersDelivered = [...new Set(ledger.filter((r) => r.t === "worker" && r.phase === "end").map((r) => String(r.unit)))];
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
