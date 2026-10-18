@@ -164,10 +164,10 @@ export function hydrateImpact(context) {
  * this run actually reviewed". Pure (D18): the caller resolves `capApplied`/`depthCapability`/
  * `contextAnomalies` from the context; this only formats them, and never begins with a glyph
  * (the renderer prepends its own ⚠️ — a value that did would double it).
- * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number }} args
+ * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number, secondPassMissing?: string[] }} args
  * @returns {string|undefined}
  */
-export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt }) {
+export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt, secondPassMissing }) {
   const parts = [];
   // A/B iteration 2: every in-context arm hand-wrote dispatch-topology.md's no-dispatch line into
   // context.render.RUN_ANOMALY, which REPLACED this function's output and dropped prepare-review's
@@ -178,6 +178,13 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
   if (typeof noDispatchAt === "number") {
     parts.push("no sub-agent dispatch available — the intent finder ran in-context with the other finders"
       + ` at effective thoroughness ${noDispatchAt}, instead of as its own sub-agent`);
+  }
+  // finder_passes: 2 whose second pass did not deliver (dispatch-topology.md § Two finder passes): a
+  // review resting on one pass must never read as a two-pass review.
+  const missing = Array.isArray(secondPassMissing) ? secondPassMissing.filter(Boolean) : [];
+  if (missing.length) {
+    parts.push(`finder_passes: 2, but finder pass 2 delivered nothing from ${missing.join(", ")}`
+      + " — those finders ran once, in pass 1 only");
   }
   if (capApplied) {
     parts.push(`depth capability (${depthCapability || "diff-only"}) capped this run below the deep tier its mode would otherwise require`);
@@ -733,11 +740,18 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     && noDispatchTopology === "hybrid" && context?.intentIsolated !== true
     && typeof context?.budget?.effectiveThoroughness === "number"
     ? context.budget.effectiveThoroughness : undefined;
+  // finder_passes: 2 — a second-pass worker is delivered when the run ledger holds its `worker <unit>
+  // end` record (context.workersDelivered, read by the CLI); any unit the budget planned without one
+  // is named, so a single-pass review never passes for a two-pass one.
+  const delivered = new Set(Array.isArray(context?.workersDelivered) ? context.workersDelivered.map(String) : []);
+  const secondPassMissing = context?.budget?.finderPasses === 2 && Array.isArray(context?.budget?.secondPassUnits)
+    ? context.budget.secondPassUnits.map(String).filter((u) => !delivered.has(u)) : [];
   const autoRunAnomaly = buildAutoRunAnomaly({
     capApplied,
     depthCapability: context?.workspace?.depthCapability || context?.depthCapability,
     contextAnomalies: context?.anomalies,
     noDispatchAt,
+    secondPassMissing,
   });
 
   // MEMORIES_USED / MEMORIES_SUMMARY — computed from judgments.memory's two arrays (D4:
@@ -920,6 +934,90 @@ export function dedupeCandidates(candidates) {
 }
 
 /**
+ * `finder_passes: 2` (dispatch-topology.md § Two finder passes): the union of independent finder
+ * passes, deduped by the same rules as one pass (`dedupeCandidates`), before verification.
+ * `passes[n]` is pass n+1's candidates, every finder of that pass concatenated; list pass 1 first so
+ * an exact-duplicate group keeps pass 1's record. Each kept record gains:
+ *   - `_found_in_passes` — the passes whose candidates merged into it, e.g. `[1, 2]`. Recorded for the
+ *     report and the trace only: being raised twice is NOT agreement and never lowers a bar.
+ *   - `_needs_verification` — false when any member of its group already carries a `verdict` (the
+ *     reviewer verified it before the union): that verdict stands and the group is not verified again.
+ * @param {any[][]} passes
+ * @returns {{ kept: any[], dropped: any[], stats: { passes: number, raised: number[], kept: number,
+ *   inEveryPass: number, onlyIn: number[], toVerify: number } }}
+ */
+export function unionFinderPasses(passes) {
+  const lists = (Array.isArray(passes) ? passes : []).map((p) => (Array.isArray(p) ? p : []));
+  const tagged = lists.flatMap((list, pi) => list.map((c, ci) => ({ ...c, _pass: pi + 1, _uid: `p${pi + 1}:${ci}` })));
+  const { kept, dropped } = dedupeCandidates(tagged);
+
+  // A dropped record may point at a candidate that was itself dropped later (an exact merge followed
+  // by a semantic one), so walk each link to the record that survived.
+  const parentOf = new Map(dropped.map((d) => [d._uid, d._dedupe_dropped_for_uid]));
+  /** @param {string} uid */
+  const rootOf = (uid) => {
+    let u = uid;
+    for (let hops = 0; parentOf.get(u) !== undefined && hops < tagged.length; hops++) u = parentOf.get(u);
+    return u;
+  };
+  /** @type {Map<string, any[]>} */
+  const members = new Map(kept.map((k) => [k._uid, [k]]));
+  for (const d of dropped) members.get(rootOf(d._uid))?.push(d);
+
+  /** @param {any} c */
+  const clean = (c) => {
+    const rest = { ...c };
+    delete rest._uid;
+    delete rest._dedupe_dropped_for_uid;
+    return rest;
+  };
+  const out = kept.map((k) => {
+    const group = members.get(k._uid) || [k];
+    return {
+      ...clean(k),
+      _found_in_passes: [...new Set(group.map((m) => m._pass))].sort((a, b) => a - b),
+      _needs_verification: !group.some((m) => m.verdict !== undefined && m.verdict !== null),
+    };
+  });
+
+  const n = lists.length;
+  const onlyIn = Array.from({ length: n }, (_, pi) => out.filter((k) => k._found_in_passes.length === 1 && k._found_in_passes[0] === pi + 1).length);
+  return {
+    kept: out,
+    dropped: dropped.map(clean),
+    stats: {
+      passes: n,
+      raised: lists.map((l) => l.length),
+      kept: out.length,
+      inEveryPass: n > 0 ? out.filter((k) => k._found_in_passes.length === n).length : 0,
+      onlyIn,
+      toVerify: out.filter((k) => k._needs_verification).length,
+    },
+  };
+}
+
+/**
+ * Reads one pass's candidate files (comma-separated paths), each a JSON array or `{candidates:[...]}`,
+ * and concatenates them in the order given. A file that is missing or does not parse throws, naming
+ * it: a pass that silently contributed nothing would read as a pass that found nothing.
+ * @param {string} list
+ * @returns {any[]}
+ */
+export function readPassFiles(list) {
+  return String(list || "").split(",").map((p) => p.trim()).filter(Boolean).flatMap((p) => {
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync(p, "utf8"));
+    } catch (e) {
+      throw new Error(`${p}: ${/** @type {Error} */ (e).message}`);
+    }
+    const candidates = Array.isArray(raw) ? raw : raw?.candidates;
+    if (!Array.isArray(candidates)) throw new Error(`${p}: not a JSON array or {candidates:[...]}`);
+    return candidates;
+  });
+}
+
+/**
  * Whether a finding renders as an inline comment through the REAL payload -> render path.
  * @param {any} f @param {string} sha
  */
@@ -1024,6 +1122,7 @@ function parseArgs(argv) {
 function usage() {
   console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-dispatch] [--skip-gates] [--no-fix-links] [--fix-links] [--self-test] [--replay-fixtures]\n"
     + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
+    + "   or: finalize.mjs --union-pass1 <a.json,b.json> --union-pass2 <c.json,d.json> [--out <file>] [--run-dir <dir>]\n"
     + "   or: finalize.mjs --check-shape <judgments.json>");
 }
 
@@ -2068,6 +2167,112 @@ async function selfTest() {
       r2.status === 0 && (() => { try { const p = JSON.parse(r2.stdout); return p.kept.length === 1 && p.dropped.length === 1; } catch { return false; } })());
   }
 
+  // finder_passes: 2 — unionFinderPasses(), the union of two independent finder passes before
+  // verification (dispatch-topology.md § Two finder passes).
+  {
+    const fc = (/** @type {any} */ over) => ({ finder: "correctness", defect_class: "logic", path: "s.swift", line: 10, symbol: "run",
+      claim: "x", bad_outcome: "y", evidence: ["s.swift:10"], verify_by: "read", ...over });
+    // The same defect in both passes from the same finder: an exact duplicate.
+    const exact1 = fc({ finder: "intent", defect_class: "intent-mismatch", line: 40, symbol: "profileErrors",
+      claim: "the abort line replaces the stored EPERM", bad_outcome: "the banner never fires" });
+    const exact2 = { ...exact1, claim: "the abort line replaces the stored EPERM", bad_outcome: "the banner never fires" };
+    // The same defect framed by two different finders, one per pass: only the semantic pass catches it.
+    const sem1 = fc({ finder: "correctness", defect_class: "logic", line: 2935, symbol: "storeError",
+      claim: "the bisync abort line overwrites the stored EPERM error so the macOS banner never fires",
+      bad_outcome: "the macOS block banner and telemetry never fire on Two-Way profiles" });
+    const sem2 = fc({ finder: "quality", defect_class: "edge-case", line: 2937, symbol: "storeError",
+      claim: "bisync abort line replaces the stored EPERM error and the macOS banner never fires",
+      bad_outcome: "the macOS block banner never fires on Two-Way profiles" });
+    const only1 = fc({ line: 100, symbol: "a", claim: "pass one only finding about retries", bad_outcome: "retries forever" });
+    const only2 = fc({ line: 200, symbol: "b", claim: "pass two only finding about the privacy button", bad_outcome: "settings never open" });
+    const u = unionFinderPasses([[exact1, sem1, only1], [exact2, sem2, only2]]);
+    const at = (/** @type {number} */ line) => u.kept.find((k) => Math.abs(k.line - line) <= 3);
+    check("unionFinderPasses merges an exact cross-pass duplicate into pass 1's record, found in [1, 2]",
+      at(40)?._pass === 1 && JSON.stringify(at(40)?._found_in_passes) === "[1,2]");
+    check("unionFinderPasses merges the same defect framed by different finders in each pass (semantic), found in [1, 2]",
+      JSON.stringify(at(2935)?._found_in_passes) === "[1,2]");
+    check("unionFinderPasses keeps each pass's own findings, each found in that pass alone",
+      JSON.stringify(at(100)?._found_in_passes) === "[1]" && JSON.stringify(at(200)?._found_in_passes) === "[2]");
+    check("unionFinderPasses stats: raised per pass, kept, in both, only-in per pass, to verify",
+      JSON.stringify(u.stats) === JSON.stringify({ passes: 2, raised: [3, 3], kept: 4, inEveryPass: 2, onlyIn: [1, 1], toVerify: 4 }),
+      JSON.stringify(u.stats));
+    check("the same finder raising a defect in both passes is never agreement-promoted — a union is not a vote",
+      at(40)?.agreement_promoted === false && !at(40)?._also_flagged_by);
+    check("unionFinderPasses never leaks its internal _uid / _dedupe_dropped_for_uid fields",
+      [...u.kept, ...u.dropped].every((c) => !("_uid" in c) && !("_dedupe_dropped_for_uid" in c)) && u.dropped.every((d) => d._pass === 2));
+
+    // A chain: an exact duplicate inside pass 2, whose survivor then merges semantically into pass 1.
+    const chainA = { ...sem2 };
+    const chainB = { ...sem2, finder: "consumer-impact" };
+    const chain = unionFinderPasses([[sem1], [chainA, chainB]]);
+    check("a pass-2 record merged by an exact match and then semantically still credits pass 2 on the survivor",
+      chain.kept.length === 1 && JSON.stringify(chain.kept[0]._found_in_passes) === "[1,2]" && chain.dropped.length === 2);
+
+    // The reviewer verified its own pass-1 candidate before the union: the group is not verified again,
+    // even when the semantic pass picks the unverified pass-2 framing as the representative.
+    const verified = unionFinderPasses([[{ ...sem1, verdict: "confirmed" }, only1], [sem2, only2]]);
+    const vg = verified.kept.find((k) => Math.abs(k.line - 2935) <= 3);
+    check("a group holding an already-verified member is marked _needs_verification: false; new ones true",
+      vg?._needs_verification === false && verified.kept.find((k) => k.line === 200)?._needs_verification === true
+        && verified.kept.find((k) => k.line === 100)?._needs_verification === true && verified.stats.toVerify === 2);
+
+    // Order: listing the passes the other way round finds the same groups.
+    const swapped = unionFinderPasses([[exact2, sem2, only2], [exact1, sem1, only1]]);
+    const shape = (/** @type {any} */ r) => r.kept.map((/** @type {any} */ k) => `${k.line - (k.line % 10)}:${k._found_in_passes.length}`).sort().join(",");
+    check("unionFinderPasses finds the same groups whichever pass is listed first",
+      shape(swapped) === shape(u) && swapped.stats.kept === u.stats.kept && swapped.stats.inEveryPass === u.stats.inEveryPass);
+
+    const empty2 = unionFinderPasses([[only1, exact1], []]);
+    check("an empty pass 2 leaves every finding in pass 1 alone",
+      empty2.stats.kept === 2 && JSON.stringify(empty2.stats.onlyIn) === "[2,0]" && empty2.stats.inEveryPass === 0);
+
+    // The CLI, through the real process boundary the reviewer invokes.
+    const uDir = join(scratchRoot(), "finalize-union-cli");
+    rmSync(uDir, { recursive: true, force: true });
+    mkdirSync(uDir, { recursive: true });
+    const w = (/** @type {string} */ name, /** @type {any} */ body) => { const p = join(uDir, name); writeFileSync(p, JSON.stringify(body)); return p; };
+    const p1a = w("own.json", [exact1, sem1]);
+    const p1b = w("intent.json", { candidates: [only1] });
+    const p2a = w("intent-2.json", [exact2]);
+    const p2b = w("others-2.json", [sem2, only2]);
+    const outPath = join(uDir, "union.json");
+    const runDir = join(uDir, "run");
+    const cli = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--union-pass1", `${p1a},${p1b}`, "--union-pass2", `${p2a},${p2b}`,
+      "--out", outPath, "--run-dir", runDir], { encoding: "utf8" });
+    const written = existsSync(outPath) ? JSON.parse(readFileSync(outPath, "utf8")) : null;
+    check("finalize.mjs --union-pass1/--union-pass2 exits 0 and writes the same union as the pure function",
+      cli.status === 0 && written?.stats?.kept === 4 && written?.stats?.inEveryPass === 2 && /2 in both/.test(cli.stdout),
+      (cli.stderr || cli.stdout || "").trim().slice(0, 300));
+    const attrs = readLedger(runDir).find((r) => r.t === "attr" && r.target === "run")?.attrs;
+    check("--run-dir records the union on the run's trace as scalar attributes",
+      attrs?.finder_passes === 2 && attrs?.finder_pass1_candidates === 3 && attrs?.finder_pass2_candidates === 3
+        && attrs?.finder_union_kept === 4 && attrs?.finder_union_in_every_pass === 2 && attrs?.finder_union_pass2_only === 1);
+    const missing = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--union-pass1", p1a, "--union-pass2", join(uDir, "nope.json")], { encoding: "utf8" });
+    check("a pass file that is missing exits 2 and names it — never a silent empty pass",
+      missing.status === 2 && missing.stderr.includes("nope.json"), missing.stderr.trim().slice(0, 200));
+  }
+
+  // finder_passes: 2 whose second pass never delivered is named in RUN_ANOMALY, never passed off as two passes.
+  {
+    const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+    const pctx = { mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, workspace: { depthCapability: "checkout" }, anomalies: [],
+      budget: { topology: "hybrid", effectiveThoroughness: 0.95, finderPasses: 2, secondPassUnits: ["intent-2", "other-finders-2"] } };
+    const ra = (/** @type {any} */ ctx) => String(finalizeReview({ context: ctx, judgments: j0 }).payload.RUN_ANOMALY || "");
+    const none = ra(pctx);
+    const half = ra({ ...pctx, workersDelivered: ["intent", "intent-2"] });
+    const all = ra({ ...pctx, workersDelivered: ["intent", "intent-2", "other-finders-2"] });
+    const single = ra({ ...pctx, budget: { ...pctx.budget, finderPasses: 1, secondPassUnits: [] } });
+    check("a two-pass budget with no pass-2 worker delivered names both units in RUN_ANOMALY",
+      none.includes("finder pass 2 delivered nothing from intent-2, other-finders-2"), none);
+    check("a half-delivered pass 2 names only the missing unit; a full one and a single-pass budget add nothing",
+      half.includes("from other-finders-2") && !half.includes("intent-2,") && !all.includes("finder pass 2") && !single.includes("finder pass 2"),
+      `${half} | ${all} | ${single}`);
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    check("the CLI reads every delivered worker from the run ledger into context.workersDelivered",
+      /context\.workersDelivered = \[\.\.\.new Set\(ended\)\];/.test(src) && /if \(ended\.includes\("intent"\)\) context\.intentIsolated = true;/.test(src));
+  }
+
   // D4 / AC-10: checkShape() — the pure function, called directly.
   {
     const conforming = { candidates: [mkCandidate({ title: "Handle the null case", final: 90 })] };
@@ -2614,6 +2819,39 @@ async function main() {
     return;
   }
 
+  // finder_passes: 2 — the union of the passes before verification (dispatch-topology.md § Two finder
+  // passes). `--union-pass1 a.json,b.json --union-pass2 c.json,d.json [--out <file>] [--run-dir <dir>]`
+  // writes {kept, dropped, stats}; with --run-dir it also records the stats on the run's trace.
+  if (opts["union-pass1"] !== undefined || opts["union-pass2"] !== undefined) {
+    let passes;
+    try {
+      passes = [readPassFiles(String(opts["union-pass1"] ?? "")), readPassFiles(String(opts["union-pass2"] ?? ""))];
+    } catch (e) {
+      console.error(`finalize.mjs --union-pass1/--union-pass2: ${/** @type {Error} */ (e).message} — pass only the files that exist and parse`);
+      process.exit(2);
+    }
+    const result = unionFinderPasses(passes);
+    const s = result.stats;
+    if (typeof opts["run-dir"] === "string") {
+      appendRecord(opts["run-dir"], { t: "attr", target: "run", attrs: {
+        finder_passes: s.passes, finder_pass1_candidates: s.raised[0], finder_pass2_candidates: s.raised[1],
+        finder_union_kept: s.kept, finder_union_in_every_pass: s.inEveryPass, finder_union_pass2_only: s.onlyIn[1],
+        finder_union_to_verify: s.toVerify,
+      } });
+    }
+    const summary = `finalize: union of ${s.passes} finder passes — raised ${s.raised.join(" + ")} -> ${s.kept} kept`
+      + ` (${s.inEveryPass} in both, ${s.onlyIn[0]} pass 1 only, ${s.onlyIn[1]} pass 2 only), ${s.toVerify} to verify`;
+    if (typeof opts.out === "string") {
+      mkdirSync(dirname(opts.out), { recursive: true });
+      writeFileSync(opts.out, JSON.stringify(result, null, 2));
+      console.log(`${summary} -> ${opts.out}`);
+    } else {
+      console.log(JSON.stringify(result, null, 2));
+      console.error(summary);
+    }
+    return;
+  }
+
   if (!opts.context || !opts.judgments || !opts["out-dir"]) {
     usage();
     process.exit(2);
@@ -2628,7 +2866,11 @@ async function main() {
   // The hybrid intent worker delivered when the run ledger folded it in (review-telemetry.mjs
   // `worker intent import`) — the one record of it a later script can read.
   try {
-    if (readLedger(dirname(/** @type {string} */ (opts.context))).some((r) => r.t === "worker" && r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;
+    const ended = readLedger(dirname(/** @type {string} */ (opts.context)))
+      .filter((r) => r.t === "worker" && r.phase === "end").map((r) => String(r.unit));
+    if (ended.includes("intent")) context.intentIsolated = true;
+    // Every worker that delivered, the finder_passes: 2 units included (finalizeReview names a missing one).
+    context.workersDelivered = [...new Set(ended)];
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);

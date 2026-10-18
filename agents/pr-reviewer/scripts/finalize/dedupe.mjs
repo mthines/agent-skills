@@ -72,7 +72,10 @@ export function dedupe(candidates) {
         if (!mergedInto._also_flagged_by) mergedInto._also_flagged_by = [];
         if (!mergedInto._also_flagged_by.includes(c.finder)) mergedInto._also_flagged_by.push(c.finder);
       }
-      dropped.push({ ...c, _dedupe_dropped_for: mergedInto.finder, _dedupe_reason: reason });
+      // `_dedupe_dropped_for_uid` links a dropped record to the exact candidate it merged into when the
+      // caller tagged candidates with `_uid` (finalize.mjs unionFinderPasses); untagged input is unchanged.
+      dropped.push({ ...c, _dedupe_dropped_for: mergedInto.finder, _dedupe_reason: reason,
+        ...(mergedInto._uid !== undefined ? { _dedupe_dropped_for_uid: mergedInto._uid } : {}) });
     } else {
       kept.push({ ...c });
     }
@@ -276,7 +279,8 @@ export function semanticDedupe(candidates) {
     }
     kept.push(head);
     for (const m of rest) {
-      dropped.push({ ...m, _dedupe_dropped_for: head.finder, _dedupe_reason: "semantic" });
+      dropped.push({ ...m, _dedupe_dropped_for: head.finder, _dedupe_reason: "semantic",
+        ...(head._uid !== undefined ? { _dedupe_dropped_for_uid: head._uid } : {}) });
     }
   }
   return { kept, dropped };
