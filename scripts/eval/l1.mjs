@@ -719,9 +719,13 @@ function checksInSync(plan, checks) {
   // placeholder left in any memory.write template is an open invitation to re-encode a
   // coordinate, which is how the drift reached dash0hq/dash0 in the first place. Assert the
   // expanded placeholder is present AND the bare one is gone, per writing agent.
-  const implSuggestion = read("skills/workflow/implement-suggestion/SKILL.md");
+  // implement-suggestion's relevance write template lives in rules/outcome-emit.md (SKILL.md
+  // points at it); SKILL.md itself must still never carry a bare fingerprint placeholder.
+  const implSuggestion = read("skills/workflow/implement-suggestion/rules/outcome-emit.md");
+  s.check("G9d implement-suggestion/SKILL.md never spells a bare fingerprint relevance key",
+    !/reviewer-comment-relevance::[<{]fingerprint[>}]/.test(read("skills/workflow/implement-suggestion/SKILL.md")));
   for (const [label, doc] of [
-    ["implement-suggestion/SKILL.md", implSuggestion],
+    ["implement-suggestion/rules/outcome-emit.md", implSuggestion],
     ["comment-relevance-memory.md", crm],
     ["thread-resolution.md", threadRes],
   ]) {
@@ -1016,7 +1020,8 @@ function checksInSync(plan, checks) {
   //   1. agents/shared/rules/comment-relevance-memory.md   ("default: now + N days")
   //   2. plugins/pr-relevance-memory/README.md             ("N-day TTL, refreshed on each sighting")
   //   3. scripts/record-comment-relevance.mjs              (`N * 24 * 60 * 60 * 1000`)
-  //   4. skills/workflow/implement-suggestion/SKILL.md     ("N-day default TTL", "durable N-day TTL")
+  //   4. skills/workflow/implement-suggestion/SKILL.md     ("durable N-day TTL")
+  //      skills/workflow/implement-suggestion/rules/outcome-emit.md ("N-day default TTL")
   // The frozen archive docs/inventory.md also states the TTL, but it is a snapshot and not a
   // contract surface, so it is not updated or checked.
   {
@@ -1025,6 +1030,7 @@ function checksInSync(plan, checks) {
     const pluginReadme = read("plugins/pr-relevance-memory/README.md");
     const recorder = read("scripts/record-comment-relevance.mjs");
     const isSkill3 = read("skills/workflow/implement-suggestion/SKILL.md");
+    const isEmit = read("skills/workflow/implement-suggestion/rules/outcome-emit.md");
 
     // G16a retired: its sentence now lives only in the frozen archive docs/inventory.md, which is not a contract surface (CLAUDE.md § Where knowledge goes). G16b–e + G16f cover the live mirrors.
     s.check(`G16b comment-relevance-memory.md record schema expires at +${TTL_DAYS} days`,
@@ -1033,8 +1039,8 @@ function checksInSync(plan, checks) {
       new RegExp(`${TTL_DAYS}-day TTL`).test(pluginReadme));
     s.check(`G16d record-comment-relevance.mjs computes expiry from ${TTL_DAYS} days`,
       recorder.includes(`${TTL_DAYS} * 24 * 60 * 60 * 1000`));
-    s.check(`G16e implement-suggestion SKILL.md states the ${TTL_DAYS}-day TTL in both places`,
-      new RegExp(`${TTL_DAYS}-day default TTL`).test(isSkill3) &&
+    s.check(`G16e implement-suggestion states the ${TTL_DAYS}-day TTL in both places (rules/outcome-emit.md + SKILL.md)`,
+      new RegExp(`${TTL_DAYS}-day default TTL`).test(isEmit) &&
       new RegExp(`durable ${TTL_DAYS}-day TTL`).test(isSkill3));
 
     // Negative assertion: the feared drift is a PARTIAL revert, where one or two
@@ -1045,6 +1051,7 @@ function checksInSync(plan, checks) {
       ["pr-relevance-memory/README.md", pluginReadme],
       ["record-comment-relevance.mjs", recorder],
       ["implement-suggestion/SKILL.md", isSkill3],
+      ["implement-suggestion/rules/outcome-emit.md", isEmit],
     ];
     const stale = /(\d+)-day (?:default )?TTL|(\d+)-day per-repo relevance signal|now \+ (\d+) days|(\d+) \* 24 \* 60 \* 60 \* 1000/g;
     for (const [label, content] of mirrors) {
