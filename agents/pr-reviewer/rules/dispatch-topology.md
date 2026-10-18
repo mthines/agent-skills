@@ -269,7 +269,7 @@ verification keeps the extra recall without verifying any defect twice.
 
    ```bash
    node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" \
-     --union-pass1 <pass-1 candidate files> --union-pass2 <run-dir>/pass2/intent.json,<run-dir>/pass2/others.json \
+     --first-pass <pass-1 candidate files> --second-pass <run-dir>/pass2/intent.json,<run-dir>/pass2/others.json \
      --out <run-dir>/union.json --run-dir "$RUN_DIR"
    ```
 
@@ -285,7 +285,7 @@ verification keeps the extra recall without verifying any defect twice.
    `_needs_verification` from every candidate; the judgments schema rejects unknown keys.
    `_found_in_passes: [1, 2]` is not agreement: it never lowers a confidence bar and never sets
    `agreement_promoted`.
-7. **A pass-2 worker with no readable file** is left out of `--union-pass2` and is neither retried nor
+7. **A pass-2 worker with no readable file** is left out of `--second-pass` and is neither retried nor
    run in your context — you have seen pass 1, so a pass 2 run by you is not independent.
    `finalize.mjs` reads the run ledger and names every planned unit that never delivered in
    `RUN_ANOMALY`, so the report never claims two passes it did not run.
@@ -293,8 +293,8 @@ verification keeps the extra recall without verifying any defect twice.
 ```text
 # correct (finder_passes: 2, /pr-review): one message, four dispatches; one union before verifying worker candidates
 dispatch pr-reviewer + intent + intent-2 + other-finders-2 → reviewer verifies its own pass-1 candidates
-→ imports intent, intent-2, other-finders-2 → finalize.mjs --union-pass1 own.json,intent.json
-  --union-pass2 pass2/intent.json,pass2/others.json → verify _needs_verification: true → finalize
+→ imports intent, intent-2, other-finders-2 → finalize.mjs --first-pass own.json,intent.json
+  --second-pass pass2/intent.json,pass2/others.json → verify _needs_verification: true → finalize
 
 # incorrect: pass 2 run by the reviewer after reading pass 1 — correlated, not independent
 reviewer runs its finders → reads intent.json → "runs the finders again" → unions them

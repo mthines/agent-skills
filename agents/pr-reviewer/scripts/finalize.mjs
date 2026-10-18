@@ -1115,8 +1115,8 @@ function parseArgs(argv) {
     const a = argv[i];
     // The union's value flags are declared one per branch, the shape L1 G43a reads a parser contract
     // from, because the docs invoke them in a bash block; every other flag keeps the generic parse.
-    if (a === "--union-pass1") opts.unionPass1 = argv[++i];
-    else if (a === "--union-pass2") opts.unionPass2 = argv[++i];
+    if (a === "--first-pass") opts.firstPass = argv[++i];
+    else if (a === "--second-pass") opts.secondPass = argv[++i];
     else if (a === "--out") opts.out = argv[++i];
     else if (a === "--run-dir") opts.runDir = argv[++i];
     else if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") opts[a.slice(2)] = true;
@@ -1128,7 +1128,7 @@ function parseArgs(argv) {
 function usage() {
   console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-dispatch] [--skip-gates] [--no-fix-links] [--fix-links] [--self-test] [--replay-fixtures]\n"
     + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
-    + "   or: finalize.mjs --union-pass1 <a.json,b.json> --union-pass2 <c.json,d.json> [--out <file>] [--run-dir <dir>]\n"
+    + "   or: finalize.mjs --first-pass <a.json,b.json> --second-pass <c.json,d.json> [--out <file>] [--run-dir <dir>]\n"
     + "   or: finalize.mjs --check-shape <judgments.json>");
 }
 
@@ -2243,17 +2243,17 @@ async function selfTest() {
     const p2b = w("others-2.json", [sem2, only2]);
     const outPath = join(uDir, "union.json");
     const runDir = join(uDir, "run");
-    const cli = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--union-pass1", `${p1a},${p1b}`, "--union-pass2", `${p2a},${p2b}`,
+    const cli = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--first-pass", `${p1a},${p1b}`, "--second-pass", `${p2a},${p2b}`,
       "--out", outPath, "--run-dir", runDir], { encoding: "utf8" });
     const written = existsSync(outPath) ? JSON.parse(readFileSync(outPath, "utf8")) : null;
-    check("finalize.mjs --union-pass1/--union-pass2 exits 0 and writes the same union as the pure function",
+    check("finalize.mjs --first-pass/--second-pass exits 0 and writes the same union as the pure function",
       cli.status === 0 && written?.stats?.kept === 4 && written?.stats?.inEveryPass === 2 && /2 in both/.test(cli.stdout),
       (cli.stderr || cli.stdout || "").trim().slice(0, 300));
     const attrs = readLedger(runDir).find((r) => r.t === "attr" && r.target === "run")?.attrs;
     check("--run-dir records the union on the run's trace as scalar attributes",
       attrs?.finder_passes === 2 && attrs?.finder_pass1_candidates === 3 && attrs?.finder_pass2_candidates === 3
         && attrs?.finder_union_kept === 4 && attrs?.finder_union_in_every_pass === 2 && attrs?.finder_union_pass2_only === 1);
-    const missing = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--union-pass1", p1a, "--union-pass2", join(uDir, "nope.json")], { encoding: "utf8" });
+    const missing = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--first-pass", p1a, "--second-pass", join(uDir, "nope.json")], { encoding: "utf8" });
     check("a pass file that is missing exits 2 and names it — never a silent empty pass",
       missing.status === 2 && missing.stderr.includes("nope.json"), missing.stderr.trim().slice(0, 200));
   }
@@ -2827,14 +2827,14 @@ async function main() {
   }
 
   // finder_passes: 2 — the union of the passes before verification (dispatch-topology.md § Two finder
-  // passes). `--union-pass1 a.json,b.json --union-pass2 c.json,d.json [--out <file>] [--run-dir <dir>]`
+  // passes). `--first-pass a.json,b.json --second-pass c.json,d.json [--out <file>] [--run-dir <dir>]`
   // writes {kept, dropped, stats}; with --run-dir it also records the stats on the run's trace.
-  if (opts.unionPass1 !== undefined || opts.unionPass2 !== undefined) {
+  if (opts.firstPass !== undefined || opts.secondPass !== undefined) {
     let passes;
     try {
-      passes = [readPassFiles(String(opts.unionPass1 ?? "")), readPassFiles(String(opts.unionPass2 ?? ""))];
+      passes = [readPassFiles(String(opts.firstPass ?? "")), readPassFiles(String(opts.secondPass ?? ""))];
     } catch (e) {
-      console.error(`finalize.mjs --union-pass1/--union-pass2: ${/** @type {Error} */ (e).message} — pass only the files that exist and parse`);
+      console.error(`finalize.mjs --first-pass/--second-pass: ${/** @type {Error} */ (e).message} — pass only the files that exist and parse`);
       process.exit(2);
     }
     const result = unionFinderPasses(passes);
