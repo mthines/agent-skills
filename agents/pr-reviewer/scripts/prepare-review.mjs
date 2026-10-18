@@ -1321,7 +1321,8 @@ export function mergedHighStakes(baseText, headText) {
 export function agent0Config(yamlText) {
   const out = { fixLinks: null, environment: null, org: null };
   if (!yamlText) return out;
-  for (const raw of yamlText.split("\n")) {
+  // configLines(), as in extraHighStakes() and reviewSettings(): a CRLF line keeps its `\r`, which `(.*)$` never matches, so `agent0_fix_links: false` would read as absent and the buttons would render; a BOM hides a first-line key.
+  for (const raw of configLines(yamlText)) {
     const m = /^(agent0_fix_links|agent0_environment|agent0_org):\s*(.*)$/.exec(raw);
     if (!m) continue;
     const v = m[2].replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
@@ -2406,6 +2407,13 @@ async function selfTest() {
   t("agent0Config leaves fixLinks null when the key is absent", () => {
     const r = agent0Config("profile: strict\n");
     return r.fixLinks === null && r.environment === null && r.org === null && agent0Config("").fixLinks === null;
+  });
+  t("agent0Config reads a CRLF or BOM-prefixed config exactly like its plain LF twin, first-line opt-out included", () => {
+    const lines = ["agent0_fix_links: false  # off", 'agent0_environment: "development"', "agent0_org: acme", ""];
+    const lf = agent0Config(lines.join("\n"));
+    const twins = [lines.join("\r\n"), `\uFEFF${lines.join("\n")}`, `\uFEFF${lines.join("\r\n")}`].map((y) => agent0Config(y));
+    return lf.fixLinks === false && lf.environment === "development" && lf.org === "acme"
+      && twins.every((r) => JSON.stringify(r) === JSON.stringify(lf));
   });
   t("reviewSettings reads every run-level knob, the nested severity map, and strips comments and quotes", () => {
     const y = [
