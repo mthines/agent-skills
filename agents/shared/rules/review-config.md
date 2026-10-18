@@ -243,30 +243,32 @@ path_instructions:
 
 Subtree config files are discovered by traversing **upward** from the changed file toward the repo root, collecting all `<dir>/.review.yaml` files found along the path.
 The repo-level default (`.github/review.yaml`, or the legacy root `.review.yaml`) is then prepended as the lowest-precedence base.
-This is Bugbot's model: a subtree can tighten (or loosen) rules without affecting the whole repo.
+This is Bugbot's model: a subtree can add filters and path instructions for its own files without affecting the whole repo, but it never changes a run-level knob ([§ Run-level knobs](#run-level-knobs)).
 
 ### Merge precedence
 
-The agent resolves a single effective config by merging all discovered files, with **closer-to-the-changed-file winning** on conflict:
+The agent resolves each changed file's per-file fields by merging all discovered files, **closer-to-the-changed-file first**; the run-level knobs are never merged (table below):
 
 ```
 .github/review.yaml               ← lowest precedence (repo-level default base)
                                      (or legacy ./.review.yaml if .github/review.yaml is absent — DEPRECATED)
-<subdir>/.review.yaml             ← overrides the default base for files under <subdir>/
-<subdir>/<nested>/.review.yaml    ← overrides both for files under <nested>/
+<subdir>/.review.yaml             ← adds per-file fields for files under <subdir>/
+<subdir>/<nested>/.review.yaml    ← adds to both for files under <nested>/
 ```
 
 Merge rules by field:
 
 | Field | Merge rule |
 | --- | --- |
-| `profile` | Closer file wins — the most specific `.review.yaml` (or the `.github/review.yaml` base) sets the profile |
+| `profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `thoroughness`, `critical` | **Base only, never subtree-merged** — run-level knobs, read once from the repo-level config at the PR's base commit ([§ Run-level knobs](#run-level-knobs)); a subtree `.review.yaml` that sets one is ignored. |
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
 | `agent0_fix_links`, `agent0_environment`, `agent0_org` | **Base only, never subtree-merged** — these govern the whole run (buttons on or off, which Agent0 host, which organization), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out, nor point one directory's buttons at a different org. Read from the repo-level base config alone; see § Run-level fields below. |
 | `effort` | **Base only, never subtree-merged** — the depth tier is one decision per run, made at Step 1.2b before any file is read, so there is no point in the run at which a subtree's value could apply. Read from the repo-level base config alone. |
 
-Example: if `.github/review.yaml` sets `profile: chill` and `src/payments/.review.yaml` sets `profile: assertive`, then files under `src/payments/` use `assertive` while all other files use `chill`.
+Example: `.github/review.yaml` sets `profile: chill`, and `src/payments/.review.yaml` sets `profile: assertive` and adds `naming-nits` to `filters:`.
+Every file, including those under `src/payments/`, is reviewed at `chill`, because a subtree `profile` is ignored.
+Only files under `src/payments/` drop `naming-nits` findings, because `filters` is a per-file union.
 
 ### Loading algorithm
 
@@ -277,7 +279,8 @@ For each changed file path `P`:
 3. Stop at the repo root (do not cross the `.git` directory boundary).
 4. Prepend the repo-level default as the lowest-precedence base: prefer `.github/review.yaml`, else fall back to a legacy root `.review.yaml` (DEPRECATED).
 5. Merge the collected configs in precedence order (default base last).
-6. Apply the merged config for this file's findings.
+6. Apply the merged per-file fields to this file's findings.
+   Never take a run-level knob from this merge; read it from `context.reviewConfig` ([§ Run-level knobs](#run-level-knobs)).
 
 Run this once per changed file at the start of Step 1 (change-scope understanding), not per finding.
 
@@ -293,7 +296,7 @@ Add this step immediately after Step 1.6 (lens loading), labelled **Step 1.7: Lo
 CHANGED_FILES=$(git diff --name-only origin/main...HEAD 2>/dev/null || \
   gh api repos/$REPO/pulls/$PR_NUMBER/files --jq '.[].filename')
 
-declare -A FILE_CONFIGS  # path → effective profile/threshold
+declare -A FILE_CONFIGS  # path → effective filters / path_instructions (run-level knobs: § Run-level knobs)
 
 for f in $CHANGED_FILES; do
   # Subtree overrides (unchanged): walk up collecting <dir>/.review.yaml
@@ -309,24 +312,25 @@ for f in $CHANGED_FILES; do
   elif [[ -f ".review.yaml" ]]; then
     configs=(".review.yaml" "${configs[@]}")   # deprecated legacy location
   fi
-  # configs is now base-first (lowest precedence first) — merge later
+  # configs is now base-first (lowest precedence first) — merge filters / path_instructions later
   FILE_CONFIGS["$f"]="${configs[*]}"
 done
 
-# If no .github/review.yaml AND no legacy root .review.yaml found: defaults to profile: balanced
-# (threshold 80, inline cap 5 for pr-reviewer / none for reviewer, no filters, no path instructions)
+# An empty chain means no filters and no path instructions for that file.
+# profile and the confidence thresholds are never read from this chain: take them from
+# context.reviewConfig (§ Run-level knobs). With no base config the run defaults to profile: balanced.
 ```
 
 The effective config is consumed by:
 
-- `per-comment-confidence.md` (2.7) — reads the profile's threshold.
+- `per-comment-confidence.md` (2.7) — its bars come from `context.reviewConfig` ([§ Run-level knobs](#run-level-knobs)), applied by `finalize.mjs`, never from the per-file chain above.
 - The filter evaluation (**Step 2.3**, early in Step 2, before holistic review) — drops findings in suppressed categories.
 - The path-instruction injection at `per-comment-confidence.md` (2.7) — appends instruction to Evidence.
 - `pr-reviewer.md`'s `Fix-with-Agent0 buttons` section (`agents/shared/rules/agent0-fix-links.md`) — reads `agent0_fix_links`, `agent0_environment`, and `agent0_org`, resolved per § Run-level fields below.
 
 ### Run-level fields (`agent0_fix_links`, `agent0_environment`, `agent0_org`)
 
-Unlike `profile` / `filters` / `path_instructions`, these three are **not** part of the per-changed-file
+Unlike `filters` / `path_instructions`, these three are **not** part of the per-changed-file
 walk above: they decide whether "Fix with Agent0" buttons render at all, which Agent0 host they
 point at, and which organization they open — a property of the *run*, not of any one file's findings.
 Resolve them once, from the repo-level base config only, before Step 0.5.
@@ -469,12 +473,12 @@ with an empty variable would swallow the next argument, so build the flag condit
 
 | Key | Values | Applied by | Beaten by |
 | --- | --- | --- | --- |
-| `profile` | `chill` / `balanced` / `assertive` | `finalize.mjs` — confidence bars and per-file inline cap | — |
-| `severity_thresholds` | map of `critical` / `high` / `medium` / `low` → 0–100 | `finalize.mjs` — a named tier replaces the profile's bar for that tier only | `per_comment_confidence_threshold` |
+| `profile` | `chill` / `balanced` / `assertive` | `finalize.mjs` — confidence bars and per-file inline cap | `severity_thresholds` (that tier's bar), `per_comment_confidence_threshold` (every bar); the cap stays the profile's |
+| `severity_thresholds` | block-style map of `critical` / `high` / `medium` / `low` → 0–100 | `finalize.mjs` — a named tier replaces the profile's bar for that tier only | `per_comment_confidence_threshold` |
 | `per_comment_confidence_threshold` | 0–100 | `finalize.mjs` — one bar for every tier | — |
 | `effort` | `high` | `prepare-review.mjs` — forces `deep` and thoroughness 1 | CLI `--effort` or `--thoroughness` |
 | `thoroughness` | 0–1 | `prepare-review.mjs` — the budget's thoroughness | CLI `--effort` or `--thoroughness`; config `effort: high` |
-| `critical` | `auto` (default) / `always` | the agent at Step 2.3 | CLI `--no-critical` |
+| `critical` | `auto` (default) / `always` | `pr-reviewer.md` Step 2 — the rubric load ([`rubric-composition.md` § Load order](./rubric-composition.md#load-order)) | CLI `--no-critical` |
 | `finder_passes` | `1` (default) / `2` | `prepare-review.mjs` — `budget.finderPasses`; the caller dispatches pass 2 ([`dispatch-topology.md` § Two finder passes](../../pr-reviewer/rules/dispatch-topology.md#two-finder-passes)) | CLI `--finder-passes` on `prepare-review.mjs` |
 
 1. Take these values from `context.reviewConfig`.
@@ -483,8 +487,13 @@ with an empty variable would swallow the next argument, so build the flag condit
    `prepare-review.mjs` adds `review config <source>: ignored invalid <key>: <value>` to `anomalies[]`, which reaches `RUN_ANOMALY`.
 3. A config change applies to PRs whose base contains it.
    The PR that adds or edits `.github/review.yaml` is still reviewed under the base's settings.
+   A base file that exists but cannot be read (a failed blob fetch, or a contents-API error other than 404) leaves every knob at its default and adds `review config <path>@<sha> (unreadable): using defaults` to `anomalies[]`.
+   Neither the legacy `.review.yaml` nor the head's file stands in for it.
 4. To try a config before merging it, pass `--config <file>` to `prepare-review.mjs`; that file replaces the base read for the run, and `context.reviewConfig.source` names it.
+   An unreadable `--config` file leaves every knob at its default and adds `review config <file> (unreadable): using defaults` to `anomalies[]`.
 5. Subtree `<subtree>/.review.yaml` files never set these keys; they still scope `filters:` and `path_instructions:` per file.
+6. `filters:`, `path_instructions:`, `standards:`, and `measurable:` also shape what the review reports, but they are not run-level knobs: `context.reviewConfig` does not carry them, so take them from [Step 1.7](#config-loading-step).
+   Step 1.7 reads the head checkout, the repo-level file included, so the base-commit read above does not cover these four keys: a PR that edits one changes which findings its own review produces and how they are scored or gated.
 
 ```yaml
 # ✓ every review on this repo runs the pre-mortem and surfaces findings down to the assertive bars
@@ -504,15 +513,15 @@ finder_passes: 3
 
 ## Integration with per-comment-confidence.md
 
-`per-comment-confidence.md` reads the per-comment confidence threshold from the resolved profile:
+`per-comment-confidence.md` reads the per-comment confidence threshold from the run's resolved profile in `context.reviewConfig` — one value per run, never per changed file ([§ Run-level knobs](#run-level-knobs)):
 
 ```
 threshold = resolved_profile.per_comment_confidence_threshold
             (default: 80 when no config is present or profile: balanced)
 ```
 
-The `per_comment_confidence_threshold` override in the review config (previously documented in `per-comment-confidence.md`) is now superseded by the `profile` field.
-For backwards compatibility, a bare `per_comment_confidence_threshold: N` without a `profile:` field is honoured as a direct threshold override (equivalent to a custom profile with that threshold and the balanced caps).
+A flat `per_comment_confidence_threshold: N` collapses every tier's bar to `N`, with or without a `profile:` field ([§ Run-level knobs](#run-level-knobs)).
+`profile` still selects the per-file inline cap: `profile: assertive` with `per_comment_confidence_threshold: 75` gates every tier at 75 and keeps `assertive`'s cap of 7, and with no `profile:` the `balanced` cap of 5 applies.
 
 ---
 
@@ -531,6 +540,7 @@ path ("authorization", "payment", and whatever this repo's equivalents are).
   (`api-contract` paths are deliberately not high-stakes: a contract edit escalates within
   incremental rather than forcing full.)
 - Config entries **extend** that list; they can never remove a built-in.
+- `prepare-review.mjs` unions the repo-level list at the PR's base commit with the head's: a PR may add a high-stakes path but never remove one the base declares.
 - Effect: any delta file matching either list puts the file in `HIGH_STAKES_FILES`, which forces
   `RUN_MODE = "full"` at Step 1.2b and marks the change `high-stakes-path` for Persona 1's shape
   checklists.
