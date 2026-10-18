@@ -7,6 +7,8 @@ Loaded only when `--watch` is present in `$ARGUMENTS`; normal invocations skip t
 
 Run it on purpose when a PR is waiting on reviewers who comment after the automated passes — `create-pr` no longer backgrounds it (its `review-loop` already applies and resolves every open thread, from any author, on every iteration).
 
+**Contents:** [Preconditions](#preconditions-and-parameters) · [The loop](#the-loop) · [Lesson capture](#lesson-capture-on-re-flag) · [Waiting](#waiting-for-new-review-activity) · [CI state](#ci-state-is-a-stop-reason-not-a-fix) · [Outcome emit](#outcome-emit-per-iteration) · [Report](#report-watch-mode) · [Hard rules](#hard-rules-in-addition-to-the-skills-global-hard-rules)
+
 ## Preconditions and parameters
 
 - **Exactly one PR.** `--watch` operates on a single PR. If `$ARGUMENTS` resolves to more than one PR, refuse: print `--watch operates on a single PR; pass exactly one.` and exit. With empty `$ARGUMENTS`, use the active-PR auto-detection (mode rule #4).

@@ -34,6 +34,8 @@ Validate reviewer suggestions on one or more PRs through `/critical` and `/confi
 Never open a new PR.
 Detailed procedure lives in `rules/*.md`; load each file at the phase that names it.
 
+**Contents:** [Mode Detection](#mode-detection) · [Architecture](#architecture) · [Multi-PR Workflow](#multi-pr-workflow) · [Results](#implement-suggestion-results) · [Free-text Workflow](#free-text-workflow) · [Self-Improvement](#self-improvement) · [Hard Rules](#hard-rules) · [Prerequisites](#prerequisites) · [Rules](#rules)
+
 ## Mode Detection
 
 Parse `$ARGUMENTS` once, in this order. First match wins.

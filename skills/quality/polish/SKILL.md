@@ -24,6 +24,8 @@ Get a branch into reviewable shape, and re-run any time after a batch of changes
 Polish has no quality rules of its own; it composes the `pr-reviewer` agent (read-only review via the branch's open PR) and `code-quality` in `simplify` mode over the branch diff.
 How `review-loop` and `/create-pr` call polish: [`references/callers.md`](./references/callers.md).
 
+**Contents:** [Modes](#modes) · [Step 0](#step-0-resolve-mode-and-preconditions) · [Step 1](#step-1-working-tree-check) · [Step 2](#step-2-run-the-passes) · [Step 3](#step-3-commit-each-pass-that-changed-files) · [Step 4](#step-4-report) · [Hard rules](#hard-rules)
+
 ## Modes
 
 Parse the **first token** of `$ARGUMENTS`. Everything else is a flag.

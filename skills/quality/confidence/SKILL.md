@@ -26,6 +26,8 @@ metadata:
 Rate your confidence that the current work fully solves the stated requirement.
 Plan mode is gated on two signals — LLM dimensional scoring and deterministic rule checks; rationale: [`references/multi-signal-rationale.md`](./references/multi-signal-rationale.md).
 
+**Contents:** [Mode Detection](#mode-detection) · [Assessment Dimensions](#assessment-dimensions) · [Output Format](#output-format) · [Score Thresholds](#score-thresholds) · [Iteration Protocol](#iteration-protocol-plan-mode)
+
 ## Mode Detection
 
 Check the arguments: `$ARGUMENTS`

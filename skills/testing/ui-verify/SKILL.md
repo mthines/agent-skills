@@ -1,12 +1,11 @@
 ---
 name: ui-verify
 description: >
-  Makes a UI pull request autonomously verifiable: `author` writes a Markdown
-  intent spec (happy path plus out-of-bounds cases) into the PR description, and
-  `run` checks it on the preview with evidence, screenshots, recordings, an
-  adversarial pass, and a Dash0 web-events check; `verify` does both and
-  `--post-findings` feeds `review-loop --ui`. Web only; triggers on "write a
-  preview spec", "verify this PR's preview", "try to break this PR's preview", "/ui-verify".
+  Makes a UI PR autonomously verifiable: `author` writes an intent spec into the
+  PR body; `run` checks it on the preview with evidence, an adversarial pass, and
+  Dash0 web events; `verify` does both; `--post-findings` feeds `review-loop --ui`.
+  Web only; triggers on "write a preview spec", "verify this PR's preview", "try
+  to break this PR's preview", "/ui-verify".
 disable-model-invocation: false
 argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--post-findings] [--attach-media] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
 license: MIT
