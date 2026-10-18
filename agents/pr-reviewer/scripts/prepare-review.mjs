@@ -2485,7 +2485,7 @@ async function selfTest() {
   });
   t("readBaseReviewConfig reads the BASE commit, not the head, and reports none when the base has no file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-"));
-    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
     try {
       g(["init", "-q"]);
       mkdirSync(join(dir, ".github"));
@@ -2518,7 +2518,7 @@ async function selfTest() {
   });
   t("readBaseReviewConfig reports a base file it cannot read as unreadable, never as no config, the legacy file, or the head's", async () => {
     const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-unreadable-"));
-    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
     try {
       g(["init", "-q"]);
       mkdirSync(join(dir, ".github"));
