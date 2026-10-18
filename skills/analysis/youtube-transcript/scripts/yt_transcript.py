@@ -107,7 +107,9 @@ def main():
     except (urllib.error.URLError, TimeoutError) as e:
         sys.exit(f"network error: {getattr(e, 'reason', e)}")
     except ET.ParseError:
-        sys.exit("no captions: the caption track was empty or not timedtext XML")
+        sys.exit("unreadable caption track: the track URL returned an empty or non-XML body")
+    except ValueError:  # json.JSONDecodeError: an HTML block page or empty body instead of InnerTube JSON
+        sys.exit("unexpected response: YouTube returned non-JSON from InnerTube")
 
 
 if __name__ == "__main__":
