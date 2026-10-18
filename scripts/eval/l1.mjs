@@ -6151,7 +6151,8 @@ const isPollBlock = (block) =>
   //     other one's remedy. `review-loop` had a row for `preview not deployed` whose note
   //     is `re-run once the preview is up` — advice that can never come true when no lookup
   //     ran, so a UI PR reviewed on a cloud session got a permanently-false note in it.
-  const RL = read("skills/quality/review-loop/SKILL.md");
+  // Step 1.6's outcome table lives in rules/preview-run.md; the report slot in SKILL.md Step 3.
+  const RL = read("skills/quality/review-loop/SKILL.md") + "\n" + read("skills/quality/review-loop/rules/preview-run.md");
   // Both row-anchored, like the `empty spec` and catch-all pairs below. The claim is about
   // a ROW of the outcome table, so the row is what the pattern has to match — and the
   // remedy's `{0,320}` window is gone with the anchor, being the third instance of a
@@ -6809,7 +6810,7 @@ const isPollBlock = (block) =>
   // one-line notice and no question in either mode, so Step 4 must state that, carry the notice
   // section, and never regrow an ask-the-user instruction (which would fire at the end of a loop
   // nobody is watching, and error on a host with no ask-user tool).
-  const RL = read("skills/quality/review-loop/SKILL.md");
+  const RL = read("skills/quality/review-loop/SKILL.md") + "\n" + read("skills/quality/review-loop/rules/preview-run.md");
   const RN = read("skills/testing/ui-verify/rules/runner.md");
   const UV = read("skills/testing/ui-verify/SKILL.md");
   const RN_STEP4 = (RN.match(/\n## Step 4:[\s\S]*?(?=\n## Step 4b|\n## Step 5)/) || [""])[0];
@@ -10622,7 +10623,7 @@ const isPollBlock = (block) =>
   const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
   const STEP4B = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 4b: Adversarial pass — try to break it");
   const STEP5 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 5: Report the verdict");
-  const RL16 = sectionOr("skills/quality/review-loop/SKILL.md", "### Step 1.6: UI-verify run (report-only, once, on exit)");
+  const RL16 = sectionOr("skills/quality/review-loop/rules/preview-run.md", "# Step 1.6: UI-verify run (report-only, once, on exit)");
 
   // G87a — reachable: Step 4b exists, delegates to the rule, and records the opt-out.
   s.check("G87a the guard reads runner.md's Step 4b section", STEP4B.length > 400,
@@ -10716,7 +10717,8 @@ const isPollBlock = (block) =>
   const sectionOr = (heading) => { try { return extractSection("skills/quality/review-loop/SKILL.md", heading); } catch { return ""; } };
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
   const RL = readOr("skills/quality/review-loop/SKILL.md");
-  const S25 = sectionOr("### Step 2.5: Merge (under `--merge`, on approval)");
+  // Step 2.5 lives in rules/merge.md (read only under --merge); Steps 2 and 3 stay in SKILL.md.
+  const S25 = (() => { try { return extractSection("skills/quality/review-loop/rules/merge.md", "### Step 2.5: Merge (under `--merge`, on approval)"); } catch { return ""; } })();
   const S2 = sectionOr("### Step 2: Refresh the PR description and Linear note (on convergence)");
   const S3 = sectionOr("### Step 3: Report");
   const A0 = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
@@ -10740,7 +10742,7 @@ const isPollBlock = (block) =>
   s.check("G88d the report, the --merge hard rule, and the Agent0 rule all name the post-refresh re-review",
     /^Merge re-review: <PASS \| WARN \| FAIL \| refused \|/m.test(S3)
       && /The final verdict is the post-refresh re-review's when Step 2 changed the body/.test(RL)
-      && A0.includes("(../SKILL.md#post-refresh-re-review--before-the-gates)"),
+      && A0.includes("(./merge.md#post-refresh-re-review--before-the-gates)"),
     "a run that re-reviewed cannot report it, or the hard rule / Agent0 route lost it");
 }
 
@@ -10939,7 +10941,8 @@ const isPollBlock = (block) =>
   const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
   const sectionOr = (heading) => { try { return extractSection(RL_PATH, heading); } catch { return ""; } };
   const RL = readOr(RL_PATH);
-  const AF = sectionOr("### Iteration 1 — apply first when the last review still stands");
+  // The apply-first procedure lives in rules/apply-first.md; the loop, report, and hard rule stay in SKILL.md.
+  const AF = (() => { try { return extractSection("skills/quality/review-loop/rules/apply-first.md", "# Iteration 1 — apply first when the last review still stands"); } catch { return ""; } })();
   const S3 = sectionOr("### Step 3: Report");
 
   // a. the five conditions, each a row of the section's condition table.
@@ -11025,6 +11028,9 @@ const isPollBlock = (block) =>
 
   // e. --external-review is gone, from the loop and from every caller that named it.
   const surfaces = [RL_PATH, "skills/quality/review-loop/rules/agent0-runtime.md",
+    "skills/quality/review-loop/rules/apply-first.md", "skills/quality/review-loop/rules/ci.md",
+    "skills/quality/review-loop/rules/dispatch-skips.md", "skills/quality/review-loop/rules/merge.md",
+    "skills/quality/review-loop/rules/preview-run.md",
     "skills/workflow/autonomous-workflow/aw/SKILL.md", "skills/quality/pr-review/SKILL.md",
     "skills/workflow/implement-suggestion/SKILL.md", "skills/quality/review-branch/SKILL.md",
     "skills/workflow/autonomous-workflow/rules/diagnostic-surface.md",
@@ -11065,7 +11071,8 @@ const isPollBlock = (block) =>
   const RUN1 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 1: Get the spec");
   const UV = readOr("skills/testing/ui-verify/SKILL.md");
   const DC = readOr("skills/delivery/create-pr/rules/description-contract.md");
-  const RL = readOr("skills/quality/review-loop/SKILL.md");
+  // review-loop reads the spec block in Step 1.6, which lives in rules/preview-run.md.
+  const RL = readOr("skills/quality/review-loop/SKILL.md") + "\n" + readOr("skills/quality/review-loop/rules/preview-run.md");
 
   // (a) the field tokens are derived from the template's own format comment, never re-encoded here.
   const fields = [...new Set([...TPL.matchAll(/^#\s+(\*\*[A-Z][A-Za-z ]+:\*\*)/gm)].map((m) => m[1]))];

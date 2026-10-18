@@ -1,20 +1,12 @@
 ---
 name: review-loop
 description: >
-  Bounded review-apply-resolve convergence loop for a GitHub PR, drafts
-  included. Runs up to N=5 iterations of pr-reviewer → implement-suggestion
-  (--resolve-all) → polish simplify, converging until every review thread is
-  resolved through a fix OR a reply, with only human-judgment flags left open.
-  Convergence also means CI is not red: a red mechanical failure goes to
-  ci-auto-fix (--no-ci). On convergence it refreshes the PR description
-  (--no-refresh) and, on a UI PR, runs ui-verify against the preview once,
-  report-only (--no-preview-run). --ui instead runs ui-verify in a parallel
-  session throughout and resolves its findings in the loop. When the last
-  review still stands, iteration 1 applies before re-reviewing. --merge
-  squash-merges on a clean convergence, an approving verdict, and green CI.
-  Run it at the TOP LEVEL of a session holding a sub-agent dispatch tool,
-  never nested in a sub-agent. Use after opening a draft PR to converge it
-  before undrafting. Triggers on "/review-loop".
+  Bounded PR convergence loop: up to 5 iterations of pr-reviewer →
+  implement-suggestion --resolve-all → polish simplify until every thread is
+  fixed or answered and CI is not red, then a description refresh. Run it at
+  the top level of a session with a dispatch tool; flags --ui (parallel
+  ui-verify lane), --merge (squash on clean approval), --no-ci, --no-feedback;
+  triggers on "/review-loop".
 disable-model-invocation: false
 argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--ui] [--merge]'
 license: MIT
@@ -37,38 +29,31 @@ metadata:
 
 # review-loop — Bounded Review-Apply-Resolve Convergence
 
-Drive a PR from its initial draft state to a clean, review-ready state by
-iterating `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`
-until **every review thread is resolved** or the cap is reached, then refresh the
-PR description to match the shipped diff.
+Iterate `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` on a PR until **every review thread is resolved** and CI is not red, or the cap is reached; then refresh the PR description.
+A thread is resolved by a **fix** or an honest **reply**; only genuine human-judgment flags stay open, and the loop never resolves a live finding to terminate.
+This skill is an orchestrator with no quality rules of its own.
+Why it is shaped this way: [`references/design-rationale.md`](./references/design-rationale.md).
 
-A thread is resolved when it is **either fixed** (a code change landed) **or
-answered** (a reply — the answer to a question, the agent's take on a discussion,
-or a rationale for a declined suggestion). The only threads left open at
-convergence are genuine **human-judgment flags**: a real potential issue the
-agent will neither auto-apply nor honestly decline. That safety valve means the
-loop can never green-wash a PR by resolving a live finding — it surfaces it
-instead.
+Each iteration runs sub-steps A (`pr-reviewer`), B (`implement-suggestion --resolve-all`), C (`polish simplify`), and D (`ci-auto-fix`); after the loop come Step 1.6 (preview run), Step 2 (description refresh), Step 2.5 (`--merge`), and Step 3 (report).
 
-This skill is an **orchestrator**.
-It contains no quality rules of its own.
-It sequences existing pieces, each owning its own domain:
+## Contents
 
-1. `pr-reviewer` — finds issues (read-only; posts one `COMMENT` review; on a re-review resolves its own addressed threads). Skipped on iteration 1 when its last review still stands.
-2. `implement-suggestion --resolve-all` — applies actionable findings **and** replies-to-and-resolves the non-fix threads it can honestly close (single-shot, no `--watch`).
-3. `Skill("polish", "simplify")` — applies Class M mechanical refactors behind a confidence gate.
-4. `ci-auto-fix` — diagnoses and fixes a red check after the iteration's push (skipped under `--no-ci`).
-5. On convergence — refreshes the PR description (via the shared description-contract) and, best-effort, notes the linked Linear ticket.
-
-Iteration 1 skips step 1 when the last `pr-reviewer` review still stands: the head is the commit it judged, threads are open, and nobody has replied to them.
-It applies those threads first and re-reviews from iteration 2 — see [Iteration 1 — apply first when the last review still stands](#iteration-1--apply-first-when-the-last-review-still-stands).
+- [Dispatch mechanics](#dispatch-mechanics--read-before-invoking)
+- [Modes](#modes)
+- [Step 0: Resolve the PR and preconditions](#step-0-resolve-the-pr-and-preconditions)
+- [Step 1: Loop](#step-1-loop--review--applyresolve--simplify)
+- [Sub-step A — the named dispatch](#sub-step-a--the-named-dispatch)
+- [Iteration 1 — apply first](#iteration-1--apply-first-when-the-last-review-still-stands)
+- [Sub-step D — CI](#sub-step-d--ci)
+- [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit) · [Step 2](#step-2-refresh-the-pr-description-and-linear-note-on-convergence) · [Step 2.5](#step-25-merge-under---merge) · [Step 3](#step-3-report)
+- [Hard rules](#hard-rules)
 
 ### Dispatch mechanics — read before invoking
 
-`pr-reviewer` is an **agent**, not a skill. Dispatch it with the harness's
-sub-agent dispatch tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical]")`).
-**Do not** call `Skill("pr-reviewer", …)` — there is no skill by that name and it
-errors with `Unknown skill: pr-reviewer`.
+`pr-reviewer` is an **agent**, not a skill: dispatch it with the harness's sub-agent dispatch tool (`Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical]")`).
+Never call `Skill("pr-reviewer", …)` — it errors with `Unknown skill: pr-reviewer`.
+`implement-suggestion` and `polish` are skills: invoke them with `Skill(...)`.
+If `Skill("implement-suggestion")` is refused (`disable-model-invocation: true`), apply its contract inline — resolve a worktree at the PR head, apply findings commit-per-comment, push, and reply-to-and-resolve the threads yourself; never skip sub-step B.
 
 #### Dash0 Agent0 sandboxes
 
@@ -78,155 +63,65 @@ So whenever `/tmp/workspace/agent-skills/env.sh` exists, whether it existed at s
 
 1. Source it (`. /tmp/workspace/agent-skills/env.sh`) at the start of every Bash call. It exports `AGENT_SKILLS_ROOT` and `AGENT_SKILLS_COMMIT`.
 2. Read every `rules/…` or `scripts/…` file this skill links from `$AGENT_SKILLS_ROOT/skills/review-loop/`, every sibling skill from `$AGENT_SKILLS_ROOT/skills/<name>/`, and every `agents/<path>` link from `$AGENT_SKILLS_ROOT/<path>`. Never read them relative to the folder this `SKILL.md` was loaded from.
-3. When `$AGENT_SKILLS_ROOT/skills/review-loop/SKILL.md` differs from the copy you are running, or you cannot compare the two, re-read the installed copy and follow it from Step 0. **The installed copy at `$AGENT_SKILLS_COMMIT` wins**, even when that commit is older than the import, because the rules it links come from that same commit. An import is a snapshot and goes stale. Once you are following the installed copy, this check is satisfied and you do not re-read it again.
+3. When `$AGENT_SKILLS_ROOT/skills/review-loop/SKILL.md` differs from the copy you are running, or you cannot compare the two, re-read the installed copy and follow it from Step 0. **The installed copy at `$AGENT_SKILLS_COMMIT` wins**, even when that commit is older than the import, because the rules it links come from that same commit. Once you are following the installed copy, this check is satisfied.
 
-When `/tmp/workspace/agent-skills/env.sh` exists, the loop is running in an Agent0
-Automation sandbox, where `pr-reviewer` cannot be dispatched and `Skill()` cannot
-see a repo-owned skill. **Read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md)
-before Step 0.** It keeps every exit condition and substitutes how each sub-step is
-reached: sub-step A dispatches a `general` sub-agent pointed at the compiled
-`pr-reviewer` bundle, still in a separate context and never in this one, and every
-`Skill("<name>")` becomes a read of the installed `SKILL.md`. The sandbox is prepared
-by [`scripts/agent0-setup.sh`](../../../scripts/agent0-setup.sh), pasted as the
-automation's `sandbox.setupScript`.
+When `/tmp/workspace/agent-skills/env.sh` exists, the loop runs in an Agent0 Automation sandbox, where `pr-reviewer` cannot be dispatched and `Skill()` cannot see a repo-owned skill.
+**Read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md) before Step 0.** It keeps every exit condition and substitutes how each sub-step is reached: sub-step A dispatches a `general` sub-agent pointed at the compiled `pr-reviewer` bundle, never a review in this context, and every `Skill("<name>")` becomes a read of the installed `SKILL.md`.
+The sandbox is prepared by [`scripts/agent0-setup.sh`](../../../scripts/agent0-setup.sh), pasted as the automation's `sandbox.setupScript`.
 
-An Agent0 session that ran **no** setup script has neither that file nor the bundle.
-That is the generic automation answering a `/review-loop` comment, and any chat thread whose sandbox was not prepared.
-Its dispatch tool offers `explore` and `general`, not `pr-reviewer`.
-Step 0 does **not** skip there.
-It recognises the host by `/tmp/workspace`, or by the `/tmp/.opencode/skills/` import tree (also `/tmp/.opencode/agents/general.md`) when `/tmp/workspace` does not exist yet.
-It installs the bundle into `/tmp/workspace` itself, creating that directory when needed, with the [on-demand install block](#on-demand-install--step-0-row-4) in Step 0, which takes seconds with no browser, and continues on the same `general` route.
-That block lives in this file, so a `SKILL.md`-only import still reaches it.
+An Agent0 session that ran **no** setup script (the generic automation answering a `/review-loop` comment, or an unprepared chat thread) has neither that file nor the bundle, and its dispatch tool offers `explore` and `general`.
+Step 0 does **not** skip there: it recognises the host by `/tmp/workspace`, or by `/tmp/.opencode/skills/` or `/tmp/.opencode/agents/general.md` when `/tmp/workspace` does not exist yet, and runs the [on-demand install block](#on-demand-install--step-0-row-4), which lives in this file so a `SKILL.md`-only import still reaches it.
 
 #### The dispatch tool is a capability, not a fixed name
 
-Harnesses spell that tool differently. `Task` is the Claude Code CLI's name for
-it; the Claude Agent SDK harness behind Claude Code on the web and in cloud
-sessions names it `Agent`; other hosts may add further spellings. **Every
-capability check in this file therefore asks whether *any* sub-agent dispatch
-tool is present, never whether one specific name is.** The names above are
-examples of the capability, not its definition.
+Every capability check in this file asks whether *any* sub-agent dispatch tool is present — `Task`, `Agent`, or another spelling — never whether one specific name is.
 
 ```text
-# WRONG — a name check. In a harness that spells the tool `Agent` this concludes
-# "no dispatch available" and skips the review on a PR that was reviewable.
+# WRONG — a name check; on a harness that spells it `Agent` this skips a reviewable PR
 if "Task" not in available_tools: skip
-
-# RIGHT — a capability check, name-agnostic.
+# RIGHT
 if no available tool dispatches a sub-agent (Task, Agent, or another spelling): degrade
 ```
 
-This is not cosmetic: the whole degradation ladder below hangs off this one
-check, so a false negative costs the PR its review.
-
 #### Caller contract — run this loop at the top level, never inside a sub-agent
 
-This skill is an orchestrator whose **first sub-step is itself a delegation**. It
-must therefore be invoked from a context that still holds a dispatch tool. Most
-harnesses give a dispatched sub-agent no dispatch tool under any name (Dash0
-Agent0 sub-agents cannot delegate further, by platform design; a Claude Agent
-SDK sub-agent has neither `Task` nor `Agent`), so a caller that
-dispatches this loop into a sub-agent spends the run's delegation budget one level
-too high and leaves the loop with nothing to dispatch `pr-reviewer` with. The loop
-then has exactly one honest outcome: a skip at iteration 0, with the PR unreviewed.
+The loop's first sub-step is a delegation, and a dispatched sub-agent usually holds no dispatch tool, so a loop dispatched into a sub-agent can only skip at iteration 0.
+A caller that can make only one dispatch runs this procedure itself and spends the budget on `pr-reviewer` / `implement-suggestion`.
 
 ```text
 # WRONG — the loop arrives with no dispatch tool and can only skip at iteration 0
 Task(subagent_type="general", prompt="Run /review-loop <PR-URL>")
-
-# RIGHT — the caller runs the loop itself and spends its dispatch budget on the
-# agents the loop actually needs
+# RIGHT — the caller runs the loop itself
 Skill("review-loop", "<PR-URL>")        # → the loop dispatches pr-reviewer itself
 ```
 
-A caller that can make **only one** dispatch has one supported shape: **own the loop**.
-Run this procedure at the top level and spend the delegation budget on `pr-reviewer` / `implement-suggestion`.
-There is no delegated shape — a loop dispatched into a sub-agent can only skip at iteration 0.
+`pr-reviewer` has **no `Skill()` form and no in-context substitute**: never review in the loop's own context.
+A `general` sub-agent that reads the `pr-reviewer` definition is a reviewer route (Step 0 rows 2 and 4), because it runs in its own fresh context.
 
-**One skip is conclusive — never retry the dispatch.** An absent dispatch tool is
-a property of the dispatch topology, decided before any code is read; a second
-attempt re-derives a platform fact at the cost of a full round trip and cannot
-change the outcome.
-
-**When sub-agent dispatch is unavailable.** Some harnesses expose no dispatch
-tool at all, so that dispatch fails outright (`Failed to run agent`). `pr-reviewer` has
-**no `Skill()` form and no in-context substitute** — its review independence comes
-from running in a fresh, isolated context, so "play the role yourself" would
-produce a self-review wearing a reviewer's label, which is worse than no review.
-
-What that rules out is the **context**, not the agent **type**.
-A `general` sub-agent that reads the `pr-reviewer` definition runs the same procedure in its own fresh context, so it is a reviewer route ([Step 0](#step-0-resolve-the-pr-and-preconditions) rows 2 and 4), not a substitute.
-Only a review performed in the loop's own context is forbidden.
-
-Check for it in [Step 0](#step-0-resolve-the-pr-and-preconditions) and **self-report
-a clean skip** rather than letting the caller discover it as a mid-loop tool error:
-
-Four causes leave the loop without a reviewer, and they get **different skip
-lines** because they have different fixes. Report the one you can evidence; when
-you cannot tell the first two apart, report the harness line:
-
-| Cause | How you know | Skip line |
-| --- | --- | --- |
-| **Nested dispatch** (caller error, fixable today) | You are running as a dispatched sub-agent — the caller's prompt dispatched this loop rather than running it | `skipped (nested dispatch — review-loop must run at the top level; the caller consumed the delegation budget)` |
-| **Harness exposes no dispatch tool** (environment) | This is the top-level session and no tool that dispatches a sub-agent is present under any name — `Task`, `Agent`, or another spelling | `skipped (sub-agent dispatch unavailable; pr-reviewer requires it)` |
-| **`pr-reviewer` is not an agent type here, and there is no Agent0 workspace** (install) | Step 0 row 5: a dispatch tool exists, its agent types omit `pr-reviewer`, and none of the Agent0 host signals (`/tmp/workspace`, `/tmp/.opencode/skills`, `/tmp/.opencode/agents/general.md`) exists | `skipped (pr-reviewer is not a dispatchable agent type here). Install the agent.` |
-| **The Agent0 on-demand install failed** (environment) | Step 0 row 4 ran the [install](#on-demand-install--step-0-row-4) and `/tmp/workspace/agent-skills/env.sh` still does not exist | `skipped (Agent0 install failed: <the setup log's last line>)` |
-
-```markdown
-- [TIMESTAMP] review-loop — skipped (nested dispatch — review-loop must run at the top level; the caller consumed the delegation budget). Have the caller run the loop itself.
-- [TIMESTAMP] review-loop — skipped (sub-agent dispatch unavailable; pr-reviewer requires it)
-- [TIMESTAMP] review-loop — skipped (pr-reviewer is not a dispatchable agent type here). Install the agent.
-- [TIMESTAMP] review-loop — skipped (Agent0 install failed: could not download scripts/agent0-setup.sh)
-```
-
-Return that skip as the loop's terminal result. Do **not** retry the dispatch and
-do **not** silently continue to sub-steps B and C — without a review pass there are
-no findings to apply, and running `polish simplify` alone would misreport an
-unreviewed PR as converged.
-
-The check is best-effort, not certain: there is no capability-introspection API, and
-a refused dispatch may surface as an uncatchable harness error. Its value is
-**placement** — one clean logged deviation at Step 0 instead of a mid-Phase-6 error
-the caller has to interpret.
-
-`implement-suggestion` and `polish` **are** skills — invoke them with `Skill(...)`.
-If a given install has `implement-suggestion` set `disable-model-invocation: true`
-(so `Skill("implement-suggestion")` is refused), fall back to applying its
-contract inline: resolve a worktree at the PR head, apply the findings as
-commit-per-comment, push, and reply-to-and-resolve the threads yourself (the
-same work the skill's worker does) — never skip sub-step B silently.
+When Step 0 finds no reviewer route, or the row-4 install fails, read [`rules/dispatch-skips.md`](./rules/dispatch-skips.md): it picks the skip line, and the skip is the loop's terminal result — never retried, never followed by sub-steps B and C.
 
 ## Modes
 
-Parse the **first positional argument** as the PR reference.
-Everything else is a flag.
+Parse the **first positional argument** as the PR reference; everything else is a flag.
 
 | Flag | Effect |
 | --- | --- |
 | `--cap N` | Override the default iteration cap of 5. |
-| `--critical` | Pass `--critical` to each `pr-reviewer` call (adversarial pre-mortem). |
-| `--no-feedback` | Report-only. Forces `CAP=1` and skips sub-steps B, C, and the final refresh, so `pr-reviewer` runs once and its findings are reported without being applied, resolved, or pushed. It never takes the [iteration-1 apply-first skip](#iteration-1--apply-first-when-the-last-review-still-stands). |
-| `--no-refresh` | Run the convergence loop as normal but skip the final PR-description refresh and Linear note. |
-| `--no-ci` | Skip sub-step D (the CI pass). Callers that own their own CI phase pass this — `create-pr` (Steps 7–8) and `autonomous-workflow` (Phase 7) both do. |
-| `--no-preview-run` | Skip [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit), the report-only ui-verify run at exit. `autonomous-workflow` passes this because its Phase 7 spec rehearsal already runs the same specs against the preview; `create-pr` does **not**, so a hand-driven UI PR gets its authored spec verified here. |
-| `--ui` | Run `ui-verify` against the live preview **in parallel** with the loop — in a sibling session, a background sub-agent, or inline when neither exists — and resolve its findings inside the loop. Each lane run posts its failing specs and its `critical`/`high` adversarial and telemetry findings as review threads (`ui-verify run --post-findings`); sub-step B fixes and resolves them; a new lane run checks each new head. Clean convergence then also needs a settled lane run on the final head. Authors the spec first when the PR has none. Replaces Step 1.6. Full procedure: [`rules/ui-lane.md`](./rules/ui-lane.md). |
-| `--merge` | Merge the PR (squash) on the first agent approval. After the loop, [Step 2.5](#step-25-merge-under---merge-on-approval) merges **only** when the run reached clean convergence (`all-threads-resolved` — every non-blocking comment fixed or answered), the final review is an approval (pr-reviewer `PASS`), and CI is green. It undrafts first (the one case that overrides *never undraft*). When Step 2 rewrote the description after a non-PASS final review, it first runs one gates-only [post-refresh re-review](#post-refresh-re-review--before-the-gates) and gates on that verdict instead. It never merges on a non-clean convergence, a non-PASS verdict, or pending/red CI — it reports why and stops. |
+| `--critical` | Pass `--critical` to each `pr-reviewer` call. |
+| `--no-feedback` | Report-only: forces `CAP=1` and skips sub-steps B, C, D, and Step 2, so `pr-reviewer` runs once and its findings are reported unapplied. It never takes the apply-first skip. |
+| `--no-refresh` | Skip Step 2 (description refresh and Linear note). |
+| `--no-ci` | Skip sub-step D. `create-pr` and `autonomous-workflow` pass it (they own CI). |
+| `--no-preview-run` | Skip Step 1.6. `autonomous-workflow` passes it; `create-pr` does not. |
+| `--ui` | Run `ui-verify` against the live preview in a parallel lane and resolve its findings inside the loop; replaces Step 1.6. Read [`rules/ui-lane.md`](./rules/ui-lane.md) when `--ui` is set. |
+| `--merge` | Squash-merge on a clean convergence, a `PASS` verdict, and green CI (Step 2.5). Read [`rules/merge.md`](./rules/merge.md) when `--merge` is set. |
 
-**Incompatible combinations**, refused at Step 0:
-
-| Combination | Behaviour |
-| --- | --- |
-| `--ui` + `--no-feedback` | **Refuse.** The lane hands its findings to sub-step B, which report-only skips. Print `--ui needs the apply loop; drop --no-feedback.` and exit. |
-| `--ui` + `--no-preview-run` | **Refuse.** `--ui` is a preview run. Print `--ui runs the preview verification; drop --no-preview-run.` and exit. |
-| `--merge` + `--no-feedback` | **Refuse.** `--no-feedback` applies nothing and never converges, so "fix the non-blocking comments before merging" is impossible and there is no approval to merge on. Print `--merge needs the apply loop; drop --no-feedback.` and exit. |
+Step 0 refuses `--ui` + `--no-feedback`, `--ui` + `--no-preview-run`, and `--merge` + `--no-feedback` (messages in the flag block).
 
 ## Procedure
 
 ### Step 0: Resolve the PR and preconditions
 
 ```bash
-# Resolve PR number and repo from the argument
-# (mirrors the parsing logic in pr-reviewer Step 0)
 if [[ "$ARG" =~ ^https://github\.com/([^/]+/[^/]+)/pull/([0-9]+) ]]; then
   PR_REPO="${BASH_REMATCH[1]}"
   PR_NUMBER="${BASH_REMATCH[2]}"
@@ -242,11 +137,7 @@ REPO="${RESOLVED_REPO#*/}"
 
 If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
 
-**Precondition — a reviewer route (best-effort).** The loop's first sub-step
-dispatches the `pr-reviewer` agent, which has no in-context substitute (see
-[Dispatch mechanics](#dispatch-mechanics--read-before-invoking)). Before entering
-the loop, resolve **how** it is dispatched — `REVIEWER_ROUTE` — from capabilities,
-never from a tool name. Take the **first** row that matches:
+**Precondition — a reviewer route.** Resolve `REVIEWER_ROUTE` from capabilities, never from a tool name. Take the **first** row that matches:
 
 | Row | Condition | `REVIEWER_ROUTE` | Sub-step A dispatches |
 | --- | --- | --- | --- |
@@ -256,34 +147,10 @@ never from a tool name. Take the **first** row that matches:
 | 4 | That list omits `pr-reviewer`, and the host is Agent0: `/tmp/workspace` or `/tmp/.opencode/skills` exists, or `/tmp/.opencode/agents/general.md` does | `agent0`, after the [on-demand install](#on-demand-install--step-0-row-4), which creates `/tmp/workspace` when absent | As row 2 |
 | 5 | That list omits `pr-reviewer`, and none of row 4's Agent0 signals exists | `none` | Nothing — emit `skipped (pr-reviewer is not a dispatchable agent type here)` and return |
 
-How to evaluate each row:
-
-1. **Row 1 — the tool.** Scan your available tools for one whose job is
-   dispatching a sub-agent — `Task` and `Agent` are the two spellings in
-   circulation, and a tool that takes a `subagent_type` (or equivalent
-   agent-name) parameter is one whatever it is called. Substitute its name
-   wherever this file writes `Task(...)`; the call shape is otherwise identical.
-   Found none → pick the skip line by cause — **nested dispatch** when you are
-   running as a dispatched sub-agent, the harness line otherwise — and do **not**
-   retry: one absent-capability return is conclusive.
-2. **Row 2 — the marker.** A sandbox that ran the setup script keeps the bundle
-   route even if its setup also registered `pr-reviewer` as an agent type: that
-   route is the one validated on the host. Source `env.sh` and apply the
-   [installed-copy rule](#dash0-agent0-sandboxes) before sub-step A: every
-   `rules/…` file this route reads comes from `$AGENT_SKILLS_ROOT/skills/review-loop/`.
-3. **Rows 3–5 — the agent type.** Read the list of agent types the dispatch tool
-   itself publishes, in its description or its `subagent_type` parameter. Claude
-   Code's `Task` lists them under "Available agent types"; Agent0's `task` lists
-   `explore` and `general`, plus any agent the session's setup registered. Read
-   it — never test-dispatch to find out. When no list is visible at all,
-   dispatch `pr-reviewer` once: a rejection that names the agent type
-   (`Unknown agent type`, `not a valid agent type`) is that list's answer arriving
-   late, so continue at rows 4–5. It is never a row-1 skip, because the tool worked.
-4. **Row 4 — the install.** Run the [block below](#on-demand-install--step-0-row-4)
-   once, in this context. The file `/tmp/workspace/agent-skills/env.sh` existing
-   afterwards is the only success test; when it does not exist, emit the
-   install-failed skip line and return — never retry the install, and never
-   review in this context instead.
+1. **Row 1.** A tool that takes a `subagent_type` (or equivalent agent-name) parameter is a dispatch tool whatever it is called; substitute its name wherever this file writes `Task(...)`. None → the nested-dispatch line when you are a dispatched sub-agent, the harness line otherwise.
+2. **Row 2.** A prepared sandbox keeps the bundle route even if its setup also registered `pr-reviewer`. Source `env.sh` and apply the [installed-copy rule](#dash0-agent0-sandboxes) before sub-step A.
+3. **Rows 3–5.** Read the agent types the dispatch tool publishes (its description or its `subagent_type` parameter); never test-dispatch to find out. When no list is visible, dispatch `pr-reviewer` once: a rejection naming the agent type (`Unknown agent type`, `not a valid agent type`) continues at rows 4–5, never a row-1 skip.
+4. **Row 4.** Run the block below once, in this context. `/tmp/workspace/agent-skills/env.sh` existing afterwards is the only success test; otherwise emit the install-failed skip line and return — never retry, never review in this context instead.
 
 #### On-demand install — Step 0 row 4
 
@@ -329,71 +196,21 @@ Read the outcome from the last line:
 | `INSTALL: ok` | Set `REVIEWER_ROUTE = agent0`, apply the [installed-copy rule](#dash0-agent0-sandboxes), read `/tmp/workspace/agent-skills/CONSTRAINTS.md` (this session loaded no `AGENTS.md` pointing at it), and continue as if the sandbox had been prepared. Report the review source as `installed on demand` |
 | `INSTALL: failed — <reason>` | Emit `skipped (Agent0 install failed: <reason>)` and return. Never retry, and never review in this context instead |
 
-**Never conclude "no dispatch" from the absence of the single name `Task`.** That
-misread is what this step exists to prevent: the harness behind Claude Code on
-the web names the tool `Agent`, so a `Task`-only check skips the review on every
-cloud session, reports the PR as unreviewable, and the failure is invisible
-because a skip is a legitimate outcome.
-
-**Never conclude "no reviewer" from a dispatch tool that lacks the `pr-reviewer`
-type.** That misread skipped every `/review-loop` in Agent0 sessions without a
-setup script: the `task` tool was present, `pr-reviewer` was not one of its types,
-and the run reported the loop as unrunnable although rows 2–4 exist for exactly
-that host.
-
-**This check cannot be made certain**, and the contract does not pretend otherwise:
-there is no capability-introspection API, and on some harnesses a refused dispatch
-surfaces as an uncatchable error rather than a return value. When the check is
-inconclusive, attempt the dispatch — and if it fails for any reason other than an
-unknown agent type (which continues at rows 4–5, above), emit the same skip line rather
-than retrying or working around it. The value is **placement**: one clean logged
-deviation instead of a mid-Phase-6 error the caller must interpret.
+Never conclude "no dispatch" from the absence of the name `Task`, and never conclude "no reviewer" from a dispatch tool that lacks the `pr-reviewer` type — rows 2–4 exist for that host.
 
 Parse the flags and set the iteration cap:
 
 ```bash
-# Parse flags out of the argument string.
-cap_flag=""
-CRITICAL=0
-NO_FEEDBACK=0
-NO_REFRESH=0
-
-# --cap N: override the default iteration cap (accepts "--cap 5" or "--cap=5").
+cap_flag=""; CRITICAL=0; NO_FEEDBACK=0; NO_REFRESH=0; NO_CI=0; NO_PREVIEW_RUN=0; MERGE=0; UI=0
+# --cap N accepts "--cap 5" or "--cap=5".
 if [[ " $ARGUMENTS " =~ [[:space:]]--cap[[:space:]=]+([0-9]+) ]]; then
   cap_flag="${BASH_REMATCH[1]}"
 fi
-
-# --critical: pass the adversarial pre-mortem through to each pr-reviewer call.
-if [[ " $ARGUMENTS " == *" --critical "* ]]; then
-  CRITICAL=1
-fi
-
-# --no-refresh: skip the final PR-description refresh + Linear note.
-if [[ " $ARGUMENTS " == *" --no-refresh "* ]]; then
-  NO_REFRESH=1
-fi
-
-# --no-ci: skip sub-step D. Callers owning their own CI phase pass this.
-NO_CI=0
-if [[ " $ARGUMENTS " == *" --no-ci "* ]]; then
-  NO_CI=1
-fi
-
-# --no-preview-run: skip Step 1.6, the report-only ui-verify run at exit.
-# autonomous-workflow passes this (its Phase 7 rehearses the same specs).
-NO_PREVIEW_RUN=0
-if [[ " $ARGUMENTS " == *" --no-preview-run "* ]]; then
-  NO_PREVIEW_RUN=1
-fi
-
-# --merge: merge the PR (squash) on the first agent approval — see Step 2.5.
-MERGE=0
-if [[ " $ARGUMENTS " == *" --merge "* ]]; then
-  MERGE=1
-fi
-
-# --ui: run ui-verify in a parallel lane and resolve its findings in the loop — rules/ui-lane.md.
-UI=0
+[[ " $ARGUMENTS " == *" --critical "* ]] && CRITICAL=1
+[[ " $ARGUMENTS " == *" --no-refresh "* ]] && NO_REFRESH=1
+[[ " $ARGUMENTS " == *" --no-ci "* ]] && NO_CI=1
+[[ " $ARGUMENTS " == *" --no-preview-run "* ]] && NO_PREVIEW_RUN=1
+[[ " $ARGUMENTS " == *" --merge "* ]] && MERGE=1
 if [[ " $ARGUMENTS " == *" --ui "* ]]; then
   UI=1
 fi
@@ -408,14 +225,10 @@ if [[ " $ARGUMENTS " == *" --no-feedback "* ]]; then
   NO_REFRESH=1
 fi
 
-# Refuse --merge with report-only: --no-feedback applies nothing and never
-# converges, so there is no approval to merge on and no fixing-before-merge.
 if [ "$MERGE" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
   echo "--merge needs the apply loop; drop --no-feedback."
   exit 1
 fi
-
-# Refuse --ui without the apply loop, or alongside an explicit opt-out of the preview run.
 if [ "$UI" -eq 1 ] && [ "$NO_FEEDBACK" -eq 1 ]; then
   echo "--ui needs the apply loop; drop --no-feedback."
   exit 1
@@ -428,7 +241,7 @@ fi
 
 Under `--ui`, run [`rules/ui-lane.md`](./rules/ui-lane.md) Steps U0 and U1 now, before the loop: author the spec when the PR has none, and pick the lane mechanism.
 
-A helper for the exit check — the count of **unresolved** review threads:
+The exit-check helper — the count of **unresolved** review threads:
 
 ```bash
 unresolved_thread_count() {
@@ -446,179 +259,109 @@ unresolved_thread_count() {
 
 ### Step 1: Loop — review → apply+resolve → simplify
 
-Each iteration runs up to four sub-steps.
-The loop exits when **every review thread is resolved** (`unresolved_thread_count == 0`)
-**and CI is settled** (green, pending, or absent — never red), when an iteration makes
-**no progress** (the only threads left are ones nothing can resolve — human-judgment
-flags), or at the cap.
-
-When `NO_FEEDBACK == 1`, only sub-step A runs: sub-steps B and C are skipped, the
-push and the refresh are skipped, and the run reports the findings without applying
-anything.
-
-Iteration 1 skips sub-step A when the last `pr-reviewer` review still stands — see
-[Iteration 1 — apply first when the last review still stands](#iteration-1--apply-first-when-the-last-review-still-stands).
-Every later iteration, and every iteration 1 that fails that check, reviews first.
+The loop exits when every review thread is resolved **and** CI is settled (green, pending, or absent — never red), when an iteration makes no progress (only human-judgment flags remain), or at the cap.
 
 ```text
 APPLIED_TOTAL = 0
 CI_HANDOFFS   = 0
 CI_STATE      = "unread"     # no check state observed yet this run
-FINAL_VERDICT = "n/a"       # last pr-reviewer verdict seen; stays n/a until a review pass runs
-APPLY_FIRST   = 0           # 1 when iteration 1 skipped sub-step A (apply-first check passed)
+FINAL_VERDICT = "n/a"       # last pr-reviewer verdict; stays n/a until a review pass runs
+APPLY_FIRST   = 0           # 1 when iteration 1 skipped sub-step A
 PRIOR_SHA     = ""          # the commit the standing review judged — context.json .priorRun.priorSha
-DESCRIPTION_REFRESHED = 0   # Step 2 sets 1 when it changed the PR body; Step 2.5's re-review reads it
-STOP_REASON   = "cap-reached"  # the default is only correct if the WHILE CONDITION
-                               # ends the loop; every break below overwrites it.
-                               # ITERATION == CAP is NOT the cap test — a run that
-                               # converges (or is report-only with CAP forced to 1)
-                               # exits on its last allowed iteration too.
+DESCRIPTION_REFRESHED = 0   # Step 2 sets 1 when it changed the PR body; Step 2.5 reads it
+STOP_REASON   = "cap-reached"  # correct only when the while condition ends the loop;
+                               # every break below overwrites it
 while ITERATION < CAP:
     ITERATION += 1
 
-    # --ui: read a finished lane run and launch one on a moved head — never blocks.
-    # rules/ui-lane.md § Step U3. Its threads reach sub-step B through the PR.
+    # --ui: read a finished lane run and launch one on a moved head — never blocks (ui-lane.md § Step U3).
     if UI == 1: ui_lane_tick()
 
-    # Iteration 1 only: when the last pr-reviewer review still stands, apply its
-    # open threads before re-reviewing. The check is one self-contained Bash
-    # call: it reads context.json from one prepare-review.mjs run, makes its own
-    # thread query, and prints APPLY_FIRST. Any read that fails fails the check,
-    # and the iteration reviews first as usual. See
-    # "Iteration 1 — apply first when the last review still stands".
+    # Iteration 1 only — see "Iteration 1 — apply first when the last review still stands".
     if ITERATION == 1 and NO_FEEDBACK == 0:
         APPLY_FIRST = (context.json .mode == "zero-delta"
                        AND OPEN >= 1       # unresolved threads
                        AND REPLIED == 0)   # unresolved threads holding more than one comment
 
-    # Sub-step A: review — the FIRST thing every iteration runs except an
-    # iteration 1 that passed the apply-first check, so a review pass validates
-    # the previous iteration's fixes and resolves this agent's now-addressed
-    # threads before anything else touches the PR.
-    #
-    # Two of the four exits below therefore land on a review pass — the
-    # report-only break and the clean-convergence exit, both immediately after
-    # this sub-step. The other two do NOT: the no-progress guard fires at the
-    # bottom of the body (after B/C/D) and the cap fires at the loop condition,
-    # so in both the last thing that ran was a push, not a review. Report those
-    # exits as what they are; never describe them as validated by a final review.
+    # Sub-step A: review — first in every iteration except an iteration 1 that passed the check.
     if ITERATION == 1 and APPLY_FIRST == 1:
-        NEW_FINDINGS = true   # the standing review's threads are the work. true also
-                              # keeps iteration 1 off the convergence exit, so a run
-                              # converges (and --merge merges) only after a review pass.
-                              # FINAL_VERDICT stays "n/a" until iteration 2 reviews.
+        NEW_FINDINGS = true   # the standing review's threads are the work; true also keeps
+                              # iteration 1 off the convergence exit. FINAL_VERDICT stays "n/a".
     else:
         review = <dispatch>(subagent_type="pr-reviewer",
                       prompt="<PR-URL>" + (" --critical" if CRITICAL == 1 else ""))
-        # <dispatch> is the harness's sub-agent dispatch tool — Task, Agent, or
-        # another spelling; Step 0 resolved which one. pr-reviewer is an AGENT,
-        # so never Skill("pr-reviewer").
-        # REVIEWER_ROUTE == "named": the call above, sent the way /pr-review sends it —
-        # one prepare-review.mjs run here first (--context), the intent worker in the
-        # same message only on a hybrid budget, a dispatch stamp, --repo-dir when a
-        # local clone exists, and --cleanup after. See "Sub-step A — the named dispatch".
-        # REVIEWER_ROUTE == "agent0" (Step 0 row 2, or row 4 after the install):
-        # AGENT0 == 1 (rules/agent0-runtime.md): subagent_type="general" with the
-        # short bundle-pointing prompt from that rule — never pr-reviewer, and
-        # never a review in this context. A refusal or BLOCKED reply is not a
-        # review: STOP_REASON = "reviewer-refused"; break.
-        # On a re-review it resolves its own addressed threads (thread-resolution.md).
+        # <dispatch> is the dispatch tool Step 0 found. Never Skill("pr-reviewer").
+        # REVIEWER_ROUTE == "named": sent as "Sub-step A — the named dispatch" describes.
+        # AGENT0 == 1 (rules/agent0-runtime.md): subagent_type="general" with that rule's bundle-pointing prompt — never pr-reviewer, never a review in this context.
+        # A refusal or BLOCKED reply is not a review: STOP_REASON = "reviewer-refused"; break.
         NEW_FINDINGS  = (pr-reviewer reported new actionable findings)
         FINAL_VERDICT = review.verdict   # PASS | WARN | FAIL — the --merge approval gate reads this
 
     if NO_FEEDBACK == 1:
         STOP_REASON = "report-only"
-        break   # report-only: never apply, never resolve, never simplify, never push
+        break   # never apply, resolve, simplify, or push
 
-    # CLEAN CONVERGENCE EXIT — the only exit that means "done":
-    # ci_is_settled() reads check state on demand when CI_STATE is still "unread"
-    # (iteration 1 can reach this exit before sub-step D has ever run), so the
-    # loop can never converge on a build it has not looked at.
+    # CLEAN CONVERGENCE EXIT — the only exit that means "done".
     if NEW_FINDINGS == false AND unresolved_thread_count() == 0 AND ci_is_settled():
-        # Under --ui, ui_settled() may block for the lane run on the current head
-        # (rules/ui-lane.md § Step U4). When that run posted threads it sets
-        # NEW_FINDINGS = true and returns false, so the iteration goes on to sub-step B.
+        # --ui: ui_settled() may block for the lane run on this head (ui-lane.md § Step U4);
+        # when that run posted threads it sets NEW_FINDINGS = true and returns false.
         if UI == 0 or ui_settled():
             STOP_REASON = "all-threads-resolved"
-            break   # every thread resolved (fix or reply), nothing new to fix, CI not red
+            break
         if STOP_REASON == "ui-red":
             break   # the lane saw a red it could not post — report it, never converge over it
 
     unresolved_before = unresolved_thread_count()
 
-    # Sub-step B: apply findings AND resolve non-fix threads
+    # Sub-step B: apply findings AND resolve non-fix threads (single-shot, never --watch).
     Skill("implement-suggestion", "<PR-URL> --resolve-all")
-    # If this install has implement-suggestion set disable-model-invocation:true,
-    # Skill() is refused — use the inline fallback from "Dispatch mechanics" above
-    # (apply commit-per-comment, push, reply-and-resolve yourself). Never skip B.
-    # Single-shot apply — no --watch; the loop drives re-review itself.
-    # --resolve-all: fixes what it can, and replies-to-and-resolves questions /
-    # discussions / declined suggestions; leaves only human-judgment flags open.
     APPLIED_TOTAL += (applies + answers this iteration, from its report)
 
     # Sub-step C: simplify
     Skill("polish", "simplify")
-    # Applies Class M mechanical refactors; never runs the reviewer pass.
 
     push any local changes:
     git push
 
-    # Sub-step D: CI. Read check state at the CURRENT REMOTE HEAD, then delegate
-    # a red mechanical failure to ci-auto-fix. Skipped under --no-ci.
+    # Sub-step D: CI at the CURRENT REMOTE HEAD; skipped under --no-ci.
     if NO_CI == 0:
         CI_STATE = read check state (stateless query, no watch)   # green|pending|red|error
         if CI_STATE == "error":
-            # Tooling failure, not "no CI" and not a red build. Same verdict as
-            # ci_is_settled()'s error arm: never route to ci-auto-fix, never converge.
             STOP_REASON = "ci-error"
-            break   # report the query failure verbatim and escalate
+            break   # tooling failure: report verbatim, escalate, never ci-auto-fix
         if CI_STATE == "red" and CI_HANDOFFS < 2:
             dispatch ci-auto-fix as a subagent; CI_HANDOFFS += 1
-            CI_STATE = "unread"   # the handoff pushed a fix, so the recorded red
-                                  # describes a commit that is no longer head.
-                                  # ci_is_settled()'s unread arm re-reads it.
+            CI_STATE = "unread"   # the handoff pushed; the recorded red is no longer head
         elif CI_STATE == "red":
-            # Red with the handoff budget spent. Stop rather than spinning to the
-            # cap: another review pass cannot fix a build ci-auto-fix already
-            # failed twice on.
             STOP_REASON = "ci-red"
             break
 
-    # No-progress guard: nothing was applied or answered AND the open-thread
-    # count did not drop → the remaining threads are human-judgment flags the
-    # loop cannot resolve. Stop early rather than spinning to the cap. (The clean
-    # convergence exit above stays the normal path — it runs one more review pass
-    # to validate before declaring done.)
-    # CI is deliberately part of "progress": a red-CI iteration that fixed nothing
-    # else still made progress if ci-auto-fix pushed, so the loop gets to re-review.
+    # No-progress guard: a ci-auto-fix handoff counts as progress.
     if this iteration applied 0, answered 0, dispatched no ci-auto-fix,
        and unresolved_thread_count() >= unresolved_before:
         STOP_REASON = "no-progress"
         break
 
-# Post-loop. Gate on STOP_REASON, never on ITERATION == CAP: report-only forces
-# CAP=1 (so its break lands with ITERATION == CAP having pushed nothing), and a
-# clean convergence on the last allowed iteration lands there too. Both were
-# reported as "cap reached" by the old ITERATION == CAP test.
+# Post-loop. Gate on STOP_REASON, never on ITERATION == CAP.
 if STOP_REASON in ("cap-reached", "no-progress"):
-    # Neither of these two exits ended on a review pass (see sub-step A), so the
-    # state below is the state after the last PUSH — read it, do not assume it.
+    # Neither exit ended on a review pass: read the state after the last push.
     if CI_STATE == "unread" and NO_CI == 0:
-        CI_STATE = read check state   # never report a state you have not read at head
+        CI_STATE = read check state
     if unresolved_thread_count() > 0 or CI_STATE == "red":   # CI_STATE stays "unread" under --no-ci
         report: <STOP_REASON>; surface remaining blockers/flags AND any red check
 ```
 
+Never describe a `no-progress` or `cap-reached` exit as validated by a final review: the last thing that ran was a push.
+
 ### Sub-step A — the named dispatch
 
-On `REVIEWER_ROUTE == "named"`, dispatch `pr-reviewer` exactly as the `pr-review` skill's Step 2 does, and never as a bare single call.
-That step owns the procedure: load the `pr-review` skill and follow it, never restate it.
-It adds four things a bare `<dispatch>(subagent_type="pr-reviewer", …)` loses:
+On `REVIEWER_ROUTE == "named"`, dispatch `pr-reviewer` exactly as the `pr-review` skill's Step 2 does, never as a bare single call; load that skill and follow it rather than restating it.
+It adds:
 
-1. **One prepare, shared, and cleaned up here.** This loop runs `prepare-review.mjs` once per iteration and hands the reviewer `--context`; the intent worker reads the same context instead of preparing its own. On iteration 1 the [apply-first check](#iteration-1--apply-first-when-the-last-review-still-stands) reads that same context before anything is dispatched. Having run prepare, the loop runs `prepare-review.mjs --cleanup` once the iteration's dispatches return, or straight after the check when it skipped the dispatch.
-2. **The intent worker, in the same message, when `context.budget.topology` is `hybrid`.** The dispatched reviewer holds no dispatch tool, so a bare call runs a `hybrid` budget's intent finder in-context — the setting A/B rounds 7–8 measured missing the highest-severity defect. A re-review that routes `standard` or `quick` is `in-context` and sends the reviewer alone.
-3. **A dispatch record and stamp** (`review-telemetry.mjs dispatch`, and `dispatched_at` in the intent dir). The time the agent spends loading its definition is then a `load` step instead of an unexplained gap after `prepare`.
-4. **`--repo-dir <path>`, when a local clone of the PR's repository exists** and this session's cwd is not one — this loop is often run from another checkout. Pass the clone's path (the session's own checkout when its `origin` is the PR's repo, or a clone the user named). Without it, the reviewer's workspace rung 0 is skipped and it clones over the network; one observed run fell through to a failed tarball and restarted.
+1. **One prepare, shared, and cleaned up here.** Run `prepare-review.mjs` once per iteration and hand the reviewer `--context`; the intent worker reads the same context. On iteration 1 the [apply-first check](#iteration-1--apply-first-when-the-last-review-still-stands) reads it before anything is dispatched. Run `prepare-review.mjs --cleanup` once the iteration's dispatches return, or straight after the check when it skipped the dispatch.
+2. **The intent worker, in the same message, when `context.budget.topology` is `hybrid`.** A re-review that routes `standard` or `quick` is `in-context` and sends the reviewer alone.
+3. **A dispatch record and stamp** (`review-telemetry.mjs dispatch`, and `dispatched_at` in the intent dir).
+4. **`--repo-dir <path>`, when a local clone of the PR's repository exists** and this session's cwd is not one (the session's own checkout when its `origin` is the PR's repo, or a clone the user named).
 
 ```text
 # RIGHT — one message, both dispatches, as /pr-review Step 2 sends them
@@ -633,116 +376,16 @@ prepare-review.mjs --cleanup <dir>/context.json
 
 ### Iteration 1 — apply first when the last review still stands
 
-When the last `pr-reviewer` review judged the current head, a re-review re-reads code that review already judged and can only carry its findings forward.
-Iteration 1 then skips sub-step A and starts at sub-step B, on the threads that review left open.
-**Why:** the skipped pass is the reviewer's fixed cost — loading its definition, the gate checks, re-posting — spent on an answer the PR already holds.
-
-Skip sub-step A in iteration 1 when **all** of these hold, and review first otherwise:
-
-| Condition | Read from | Why it is required |
-| --- | --- | --- |
-| `ITERATION == 1` | the loop counter | Every later iteration must review the previous iteration's push |
-| `NO_FEEDBACK == 0` | Step 0 | Report-only runs only sub-step A; skipping it leaves the run nothing to do |
-| `.mode == "zero-delta"` | `context.json` from one `prepare-review.mjs` run | The head is the commit the last review judged, so a re-review would take its zero-delta path and re-read nothing |
-| `OPEN >= 1` | the block's thread query — unresolved threads | With no open thread, the zero-delta review is what lets iteration 1 converge without pushing; skipped, a finished PR goes to `polish simplify` and gets new commits |
-| `REPLIED == 0` | the block's thread query — unresolved threads holding more than one comment, that is, a finding someone replied to | A reply is the one thing a zero-delta review acts on — it resolves a thread the author declined; skipped, sub-step B meets that thread still open |
-
-Read the mode from exactly one `prepare-review.mjs` run in the loop's own context.
-On the `named` route that is the prepare sub-step A runs anyway, so nothing is prepared twice.
-On the `agent0` route the `general` reviewer cannot be handed a context and prepares its own, so the loop's run is an extra one that it cleans up:
-
-| `REVIEWER_ROUTE` | Where `context.json` comes from | After the check |
-| --- | --- | --- |
-| `named` | The `prepare-review.mjs` run of [the named dispatch](#sub-step-a--the-named-dispatch), item 1 — run it before the check | Passed: run its `--cleanup` and dispatch nothing. Failed: hand the same `context.json` to the dispatch |
-| `agent0` | `node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json`, run in the loop's context | Run its `--cleanup` either way; the `general` reviewer runs its own prepare ([`rules/agent0-runtime.md`](./rules/agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)) |
-
-Run the block below as **one** Bash call, with the loop's values written in for `<ITERATION>`, `<NO_FEEDBACK>`, `<OWNER>`, `<REPO>`, `<PR_NUMBER>`, and `<dir>`.
-Shell state does not survive between tool calls, so the block calls no helper defined elsewhere, makes its own thread query, and prints the decision.
-Read `APPLY_FIRST` from that printed line, never from a variable set in another call.
-
-```bash
-# Iteration 1 only. Every failed read leaves APPLY_FIRST=0, so the iteration reviews first.
-ITERATION=<ITERATION>; NO_FEEDBACK=<NO_FEEDBACK>; OWNER=<OWNER>; REPO=<REPO>; PR_NUMBER=<PR_NUMBER>
-MODE=$(jq -r '.mode // empty' "<dir>/context.json" 2>/dev/null)
-PRIOR_SHA=$(jq -r '.priorRun.priorSha // empty' "<dir>/context.json" 2>/dev/null)
-THREADS=$(gh api graphql -f query='
-  query($owner:String!,$repo:String!,$pr:Int!){
-    repository(owner:$owner,name:$repo){
-      pullRequest(number:$pr){
-        reviewThreads(first:100){ nodes{ isResolved comments{ totalCount } } }
-      }
-    }
-  }' -F owner="$OWNER" -F repo="$REPO" -F pr="$PR_NUMBER" \
-  --jq '.data.repository.pullRequest.reviewThreads.nodes' 2>/dev/null)
-OPEN=$(printf '%s' "$THREADS" | jq '[.[] | select(.isResolved==false)] | length' 2>/dev/null)
-REPLIED=$(printf '%s' "$THREADS" | jq '[.[] | select(.isResolved==false and .comments.totalCount > 1)] | length' 2>/dev/null)
-APPLY_FIRST=0
-if [ "$ITERATION" -eq 1 ] && [ "$NO_FEEDBACK" -eq 0 ] && [ "$MODE" = "zero-delta" ] \
-   && [ "${OPEN:-0}" -ge 1 ] && [ "${REPLIED:-1}" -eq 0 ]; then
-  APPLY_FIRST=1
-fi
-echo "APPLY_FIRST=$APPLY_FIRST MODE=${MODE:-none} OPEN=${OPEN:-unread} REPLIED=${REPLIED:-unread} PRIOR_SHA=${PRIOR_SHA:-none}"
-```
-
-A prepare that exits non-zero, a `context.json` with no `.mode`, and a thread query that fails all leave `APPLY_FIRST=0`.
-Never skip a review on a state you could not read.
-
-When the check passes:
-
-1. Set `NEW_FINDINGS = true` and go straight to sub-step B.
-   Iteration 1 cannot reach the clean-convergence exit, so the run converges — and `--merge` merges — only after a review pass, from iteration 2 on.
-2. Leave `FINAL_VERDICT = "n/a"`; iteration 2's review sets it.
-3. Change nothing else: sub-steps B, C, and D, the no-progress guard, and the cap run exactly as in every other iteration.
-4. Report iteration 1 as `review skipped (prior review at <PRIOR_SHA> still stands)`.
-   When the loop stops before iteration 2 reviews (`no-progress`, `ci-red`, `ci-error`, or `--cap 1`), report the final verdict as `n/a (no review this run — prior review at <PRIOR_SHA>)`.
-
-```text
-# correct: unmoved head, two open threads nobody replied to → apply first
-Iteration 1: zero-delta · 2 open · 0 replied → review skipped → B applies 2 → C → push
-Iteration 2: pr-reviewer (incremental) → PASS, 0 new → all-threads-resolved
-
-# incorrect: skipping with no open thread — polish simplify pushes to a finished PR
-Iteration 1: zero-delta · 0 open → review skipped → C applies a recipe → push
-
-# incorrect: skipping when the author replied "won't fix" — B meets the declined thread still open
-Iteration 1: zero-delta · 1 open · 1 replied → review skipped → B re-applies the declined fix
-```
+At iteration 1, unless `NO_FEEDBACK == 1`, read [`rules/apply-first.md`](./rules/apply-first.md) and run its one-Bash-call check before sub-step A.
+It skips sub-step A only when all five conditions hold — `ITERATION == 1`, `NO_FEEDBACK == 0`, `context.json` `.mode == "zero-delta"`, `OPEN >= 1`, `REPLIED == 0` — and any failed read leaves `APPLY_FIRST=0`.
 
 ### Sub-step D — CI
 
-Skipped entirely when `--no-ci` is set.
-
-After the iteration's push, read the check state **once** — stateless, at the
-current remote head, no watch:
-
-```bash
-gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"
-```
-
-This is a **query, not a watch**: it adds no `gh … --watch` site and spends nothing
-from the watch budgets that
-[`create-pr` Step 8](../../delivery/create-pr/SKILL.md) and
-[`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md)
-each count inside their own invocation. `ci-auto-fix` likewise keeps its own local
-counter, so delegating to it stays inside the existing contract — no budget is
-shared, and none is carried across contexts.
-
-Classify with the same three-way rule as `phase-7-ci-gate.md` Step 1 — **"no checks
-reported" is three different states**, and a bare `gh pr checks` **exits non-zero
-while merely pending**, printing to stdout, so non-zero with empty stderr means
-"registered and running", not an error:
-
-| Check state | `CI_STATE` | This loop does |
-| --- | --- | --- |
-| All terminal and passing | `green` | Nothing. Convergence may proceed |
-| Any still pending | `pending` | Nothing this iteration — do **not** wait. A *continuing* loop re-reads it next iteration; a loop that exits here does not, so `pending` can be the state it converges on |
-| Any check failing | `red` | Dispatch `ci-auto-fix` as a subagent (its output is loud and belongs out of this context), unless `CI_HANDOFFS` is already 2 |
-| Query errored (exit 127, or stderr naming auth / network / rate limit / not-logged-in) | `error` | **Tooling failure, not "no CI".** Report and escalate. Never route to `ci-auto-fix` |
-| Nothing reported, query succeeded, and this iteration just pushed | — | Not registered yet. Run the shared [registration poll](../../delivery/create-pr/rules/registration-poll.md#the-poll) and re-classify from its outcome; `no-ci` means this repo genuinely has no CI, and counts as `green` for convergence |
+When `NO_CI == 0`, read [`rules/ci.md`](./rules/ci.md) before the first sub-step D: it classifies the stateless `gh pr checks` read into `green | pending | red | error`, delegates a red check to `ci-auto-fix` (cap 2 handoffs), and never fixes CI itself.
 
 ```text
 ci_is_settled():   # the convergence predicate
-    NO_CI == 1                      → true    # caller owns CI; not this loop's call
+    NO_CI == 1                      → true    # caller owns CI
     CI_STATE == "unread"            → read check state now, then re-evaluate
     CI_STATE == "green"             → true
     CI_STATE == "pending", 1st time → re-read at head once, then re-evaluate
@@ -751,134 +394,22 @@ ci_is_settled():   # the convergence predicate
     CI_STATE == error               → abort, do not converge
 ```
 
-The `"pending"` re-read is the same rule
-[`watch-mode.md`](../../workflow/implement-suggestion/rules/watch-mode.md#ci-state-is-a-stop-reason-not-a-fix)
-applies before its own stop, and it exists for the same reason: sub-step D reads seconds
-after its own push, so `pending` is its usual answer, and converging on the first one means
-converging on a build no check has finished. Exactly **one** re-read, and only at this
-predicate — re-reading until a check is terminal would turn a loop that must never wait for
-CI into a busy-wait on it.
-
-The `"unread"` arm matters: iteration 1 can reach the convergence exit before
-sub-step D has run even once (a PR that arrives already reviewed and thread-clean).
-Without that arm the loop would report convergence having never looked at CI —
-the precise failure this sub-step exists to prevent.
-
-It is also the arm that keeps a `red` from going stale. A `ci-auto-fix` handoff
-pushes a fix, so the `red` sub-step D just recorded describes a commit that is no
-longer head; the handoff therefore resets `CI_STATE` to `"unread"`, and the next
-`ci_is_settled()` re-reads instead of blocking convergence on a build that is
-already fixed. The cap check does the same read for the same reason — the loop
-never reports a CI state it has not read at the current head.
-
-**Cap: 2 `ci-auto-fix` handoffs per `review-loop` run** (`CI_HANDOFFS`), matching the
-per-PR cap the other two orchestrators use. Each handoff already burns a full internal
-retry budget; do not wrap it in another loop. At the cap with CI still red, stop and
-surface the failing checks — never extend it, and never converge a red PR silently.
-
-**This loop never fixes CI itself.** It classifies and delegates. Every refusal in
-[`ci-auto-fix`'s anti-patterns](../../delivery/ci-auto-fix/rules/anti-patterns.md)
-holds transitively: no `--no-verify`, no `continue-on-error`, no skipped suites, no
-weakened assertions to reach green.
-
-**Hard rule: the only permitted `polish` invocation is `Skill("polish", "simplify")`.**
-The `simplify` mode applies Class M mechanical refactors and dispatches no pr-reviewer.
-All other `polish` modes trigger an internal agent pass, which would create a dispatch cycle.
-This is the anti-circularity guarantee.
-
 ### Step 1.6: UI-verify run (report-only, once, on exit)
 
-After the loop exits — however it exited (converged, no-progress, or cap) — run the
-PR's embedded ui-verify **once** against the live preview deployment. This is the
-run half of the `author` step `create-pr` performs at its Step 6.4: the spec was
-written into the PR body; here it is executed.
+After the loop exits, read [`rules/preview-run.md`](./rules/preview-run.md) and run it, unless **any** of these holds:
 
-Skip this step entirely when **any** of:
+- `NO_PREVIEW_RUN == 1` — record `skipped (--no-preview-run)`.
+- `NO_FEEDBACK == 1` — record `skipped (--no-feedback)`.
+- `UI == 1` — the [`--ui` lane](./rules/ui-lane.md) already verified the final head; report its line instead.
+- the loop returned a dispatch skip (no dispatch tool, nested dispatch, `pr-reviewer` not a dispatchable agent type, Agent0 install failed).
 
-- `NO_PREVIEW_RUN == 1` — the caller owns preview verification (`autonomous-workflow`
-  passes this; its Phase 7 rehearses the same specs).
-- `NO_FEEDBACK == 1` — report-only mode applied nothing, so there is nothing new to verify.
-- `UI == 1` — the [`--ui` lane](./rules/ui-lane.md) already verified the final head and its findings went through the loop; report its line instead.
-- the loop returned a dispatch skip (no dispatch tool, nested dispatch, `pr-reviewer` not a dispatchable agent type, Agent0 install failed) — no run happened.
-
-Otherwise dispatch it **once**, regardless of iteration count, **always with `--unattended`**:
-
-```text
-Skill("ui-verify", "run <PR-URL> --unattended --attach-media")
-```
-
-`--attach-media` puts this final run's screenshots and passing-spec recordings into the PR body through `attach-media`, so the converged PR shows the deployed change. It runs here and never in the `--ui` lane, so a push does not re-upload media.
-
-`--unattended` is mandatory here, not a host-specific choice: this step runs at the end of a
-loop the caller expects to finish on its own, and the flag is `ui-verify`'s guarantee that no path
-calls `AskUserQuestion` — a question would block forever in an automation and fail outright on a
-host that has no ask-user tool. Under the flag it runs Chrome or Playwright, or returns
-`inconclusive: no driver available (…)`, never a question.
-
-`ui-verify run` owns the whole procedure: it reads the committed
-`<!-- ui-verify:v2 -->` (or `v1`) block (the **only** source — never the gitignored
-`.agent/{branch}/specs.md`, so it works on this or any checkout), resolves the
-preview URL via the GitHub deployments API, dispatches `aw-tester --all`, and
-returns a verdict. This loop only records the outcome.
-
-**Deliberately invoked with no `--url`.** The deployments API has no
-`mcp__github__*` equivalent, so on the `mcp` access path `ui-verify run`
-cannot resolve a URL and returns `inconclusive: no access path for deployment
-lookup (pass --url)` — the row below records it with an actionable note. This
-loop does **not** resolve the URL itself: that is `ui-verify`'s own concern
-([`preview-url-resolution.md`](../../testing/ui-verify/rules/preview-url-resolution.md)),
-and a second implementation here would be the drift surface this repo argues
-against. A caller that already holds a preview URL should run
-`/ui-verify run <PR-URL> --url <preview-url>` directly instead.
-
-**Report-only — this step never gates.** The verdict does **not** block convergence,
-does **not** reopen the loop, and does **not** undraft the PR — matching
-`autonomous-workflow`'s Phase 7 rehearsal, which also never auto-undrafts on the
-spec verdict. Convergence is already decided by threads-resolved + CI-settled before
-this step runs; the preview verdict is surfaced for the human undrafting the PR.
-
-Map its outcome into the report:
-
-| `ui-verify run` outcome | This loop records |
-| --- | --- |
-| `no spec` (no block — not a UI PR, or `author` never ran) | `not run (no ui-verify block)` — log and continue |
-| `inconclusive: preview not deployed` | `inconclusive (preview not deployed at exit)` — note `re-run /ui-verify run <PR-URL> once the preview is up`. Never a red |
-| `inconclusive: no access path for deployment lookup (pass --url)` | `inconclusive (no deployment lookup on this access path)` — note `re-run /ui-verify run <PR-URL> --url <preview-url>`. Never a red, and never recorded as `preview not deployed`: no lookup ran, so waiting for the build fixes nothing and only an explicit URL changes the outcome |
-| any other `inconclusive: <reason>` (`preview building`, `no preview environment`, `preview deploy failed`, `preview URL not published`, `no driver available (unattended — …)`) | `inconclusive (<reason> at exit)` — log the reason verbatim and continue. Never a red |
-| `empty spec` (markers present, body empty) | `not run (empty ui-verify block)` — log and continue. Distinct from `no spec` on purpose: `author` **did** run and embedded nothing, which is a spec-authoring bug worth naming, not a PR that needed no spec |
-| `NOT RUN (<reason>)` (`sub-agent dispatch unavailable`, `no Chrome extension and no sub-agent dispatch available`) | `not run (<reason>)` — log the reason verbatim and continue. Never a red: no driver executed, so there is no verdict to be red about |
-| `green` | `green (<N> specs on <preview-url>)` |
-| `red` | `red (<N> failing on <preview-url>) — review before undrafting`. Report-only; does not reopen the loop |
-| `ui-verify` not installed / `Skill()` refused | `skipped (ui-verify not available)` — log one line and continue; it is a non-load-bearing companion |
-| anything else | `not run (unrecognised outcome: <verbatim>)` — quote what it returned and continue. An unmapped return is never recorded as `green` and never as a skip; the delegate gaining an outcome this table has no row for is exactly how a permanently-false note reached a report once already |
-
-**Relay the adversarial summary.** After the spec run, `ui-verify run` tries to break
-every passing spec and reports one `adversarial: …` summary line beside the verdict
-(`<N> probes, <F> findings (<C> critical, …)`, or a `skipped (…)` / `not run (…)` line).
-Append that line verbatim to the `green` or `red` line recorded above, so adversarial
-findings — and the `report.md` path with their screenshots — reach the human. It is
-report-only like the verdict: it never gates, never reopens the loop, and never turns a
-`green` into a `red`.
-
-Run it **at most once** per `review-loop` invocation — it is an exit signal, not a
-per-iteration check, and each run spends a full `aw-tester` Playwright dispatch plus
-the adversarial pass's own dispatch.
+It is report-only: it never gates convergence, never reopens the loop, and never undrafts.
 
 ### Step 2: Refresh the PR description and Linear note (on convergence)
 
-Skip this step entirely when `NO_REFRESH == 1`, when `NO_FEEDBACK == 1`, or when
-`APPLIED_TOTAL == 0` (the loop changed no code, so the description cannot have drifted).
+Skip when `NO_REFRESH == 1`, `NO_FEEDBACK == 1`, or `APPLIED_TOTAL == 0` (no code changed, so the description cannot have drifted).
 
-Otherwise, refresh the PR body so it matches the diff that actually shipped after
-the loop's fixes:
-
-1. Regenerate the title and body following the shared
-   [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md)
-   — the same contract `create-pr` uses, so the refresh keeps identical quality and
-   length rules. Diff against the PR base and read the current body first; make it a
-   minimal edit, not a rewrite. Carry the `<!-- attach-media:v1 -->` …
-   `<!-- /attach-media:v1 -->` media region and the ui-verify region forward verbatim, markers included — dropping either deletes
-   uploaded screenshots or the spec, and nothing re-adds them.
+1. Regenerate the title and body following the shared [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md) — the contract `create-pr` uses. Diff against the PR base and read the current body first; make a minimal edit, not a rewrite. Carry the `<!-- attach-media:v1 -->` … `<!-- /attach-media:v1 -->` media region and the ui-verify region forward verbatim, markers included — dropping either deletes uploaded screenshots or the spec.
 2. Apply it:
 
    ```bash
@@ -890,123 +421,26 @@ the loop's fixes:
 
 3. Set `DESCRIPTION_REFRESHED = 1` when the edit succeeded and the new body differs from the one you read in item 1.
    Leave it `0` when this step was skipped, the edit failed, or the body came out unchanged.
-   [Step 2.5](#post-refresh-re-review--before-the-gates) reads it: the loop's last review judged the old body.
 
-Then, **best-effort**, note the linked Linear ticket (skip with one report line if any part is absent):
+Then, best-effort, note the linked Linear ticket (skip with one report line if any part is absent): detect a ticket from the branch name (`.../ABC-123-...`), the PR title/body, or `gh pr view`; if one is found **and** the Linear MCP tools are connected, comment on it linking the PR (e.g. `Review loop converged — PR <url> ready for review.`).
+Any failure here is logged and never fails the loop.
 
-- Detect a ticket from the branch name (`.../ABC-123-...`), the PR title/body, or `gh pr view`.
-- If a ticket id is found **and** the Linear MCP tools are connected, post a short comment on the ticket linking the PR and stating that review converged (e.g. `Review loop converged — PR <url> ready for review.`).
-- Any failure here (no ticket, no MCP, API error) is logged and never fails the loop.
+### Step 2.5: Merge (under `--merge`)
 
-### Step 2.5: Merge (under `--merge`, on approval)
-
-Run this step **only when `MERGE == 1`**. Skip it silently otherwise.
-
-This is the one step that overrides *never undraft*: to merge, a draft must first
-be marked ready. The override is deliberate and scoped to `--merge` — a caller
-that did not pass the flag never reaches this step.
-
-Merge on the **first agent approval**, meaning: the loop already ran to clean
-convergence (every non-blocking comment fixed or answered — that is the "fixing
-them before merging" half), and the review that ended the loop was an approval.
-
-#### Post-refresh re-review — before the gates
-
-The loop's last review judged the PR body as it was **before** Step 2 rewrote it.
-So when that review's verdict is not `PASS` and Step 2 changed the body, its verdict is stale: a `Description vs. code` warning the refresh fixed would still block the merge.
-Run **exactly one** more review pass before reading the gates, when **all** of these hold:
-
-| Condition | Why |
-| --- | --- |
-| `MERGE == 1` | Without `--merge` nothing reads the verdict |
-| `STOP_REASON == "all-threads-resolved"` | Any other stop reason fails the first gate whatever the verdict says |
-| `DESCRIPTION_REFRESHED == 1` | An unchanged body cannot change the verdict |
-| `FINAL_VERDICT != "PASS"` | A `PASS` needs no second look |
-
-How it runs:
-
-1. Dispatch it exactly as [sub-step A](#step-1-loop--review--applyresolve--simplify) does, on the same `REVIEWER_ROUTE` with the same flags (`--critical` included).
-   The head has not moved since the last review, so `pr-reviewer` takes its zero-delta path: gates and threads only, with the description re-read from the live PR.
-2. Set `FINAL_VERDICT` to the verdict it returns, and record it as `MERGE_REREVIEW`.
-3. It is not an iteration: it does not count against `CAP`, it never runs sub-steps B, C, or D, and nothing is pushed after it.
-   At most one per run, never retried.
-4. Do not merge when it does not come back clean:
-   - a refusal or `BLOCKED` reply → `MERGE_REREVIEW = refused`, report `not merged (post-refresh re-review refused)`;
-   - new actionable findings → report `not merged (post-refresh re-review found <N> new findings)` and leave them for the next run;
-   - `WARN` or `FAIL` → the Approval gate below reports it as usual.
-
-```text
-# correct: the refresh changed the body after a WARN, so the gates read a verdict on the new body
-Iteration 2: WARN (Description vs. code: body omits a new attribute), 0 new findings → all-threads-resolved
-Step 2:   body refreshed → DESCRIPTION_REFRESHED = 1
-Step 2.5: post-refresh re-review → PASS → FINAL_VERDICT = PASS → gates pass → merged (squash)
-
-# incorrect: gating on the verdict that predates the refresh
-Step 2.5: FINAL_VERDICT == WARN (iteration 2) → not merged — the warning it carried was fixed by Step 2
-```
-
-Then merge if and **only if all** of the following hold — any single failure means
-*do not merge*, record the reason, and stop with the PR left review-ready:
-
-| Gate | Merge requires | Read from |
-| --- | --- | --- |
-| **Clean convergence** | `STOP_REASON == "all-threads-resolved"` | the loop's exit. `no-progress` (human-judgment flags remain), `cap-reached`, `ci-red`, and `ci-error` are all **not** merge-eligible |
-| **Zero open threads** | `unresolved_thread_count() == 0` | re-read now, do not trust the loop's last value — implied by clean convergence, but confirm, because merging is irreversible |
-| **Approval** | `FINAL_VERDICT == "PASS"` | the last review pass — the post-refresh re-review when one ran |
-| **CI green** | CI is actually **green**, or the repo genuinely has no CI. Pending is **not** green — the loop never waits for CI, so a converged-but-pending run stops here without merging | a fresh stateless `gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"` read (**run this even under `--no-ci`** — `--no-ci` only skips the in-loop `ci-auto-fix` delegation; a merge still confirms green first) |
-
-A non-`PASS` final verdict (`WARN` or `FAIL`) is **not** an approval: report
-`not merged (verdict <V> — not a clean approval)` and stop. The ui-verify
-verdict from [Step 1.6](#step-16-ui-verify-run-report-only-once-on-exit) is
-**report-only and never gates the merge** (matching its treatment everywhere
-else); surface a `red` preview verdict in the report so the human sees it, but do
-not let it block or force the merge.
-Under `--ui` the lane is part of convergence, so it **does** gate: when the lane's last run on
-the final head reported `verdict: red`, report `not merged (UI lane red on <sha7>)` and stop.
-An `inconclusive` lane does not block the merge; name it in the report.
-
-When every gate passes:
-
-```bash
-# Undraft first if the PR is a draft — the scoped override of "never undraft".
-if [ "$(gh pr view "$PR_NUMBER" --repo "$RESOLVED_REPO" --json isDraft -q .isDraft)" = "true" ]; then
-  gh pr ready "$PR_NUMBER" --repo "$RESOLVED_REPO"
-fi
-
-# Squash-merge (the method decided for --merge; gh requires an explicit method).
-gh pr merge "$PR_NUMBER" --repo "$RESOLVED_REPO" --squash
-```
-
-If `gh pr merge` fails (branch protection needs a review approval the bot cannot
-give, a required check the loop read as green flipped, a merge conflict), do
-**not** retry with `--admin` or force anything: record `merge failed (<verbatim
-gh error>)` and stop. The PR is already converged and review-ready; a human
-completes the merge.
+Only when `MERGE == 1`: read [`rules/merge.md`](./rules/merge.md) and run it — the post-refresh re-review, then the four merge gates, then undraft and squash-merge.
 
 ### Step 3: Report
-
-After the loop exits (converged, no-progress, or at cap), emit a compact summary:
 
 ```text
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
 Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | reviewer-refused (Agent0) | ui-red (lane findings not posted) | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level) | skipped (pr-reviewer is not a dispatchable agent type here) | skipped (Agent0 install failed: <reason>)>
-# Report the STOP_REASON the loop actually set — never re-derive it from the
-# iteration count. `Iterations: 1 of 1` is what report-only, a first-iteration
-# convergence, and a CAP=1 run all look like from the outside.
-# The two skipped tokens are distinct on purpose. A nested dispatch is a caller
-# bug with a same-day fix; an absent dispatch tool is the environment. Never report a
-# skip as "report-only" because it is the nearest token — report-only means a
-# review pass ran and its findings were not applied, which is the opposite of a
-# PR that was never reviewed.
+# The STOP_REASON the loop set — never re-derived from the iteration count.
 Review source: <pr-reviewer | pr-reviewer bundle via general sub-agent (Agent0<, installed on demand>)>
-# Name the route Step 0 resolved. "installed on demand" marks a row-4 run, so a
-# reader can tell a prepared sandbox from one the loop set up itself.
 
 Per-iteration summary:
   Iteration 1: <verdict | review skipped (prior review at <PRIOR_SHA> still stands)>, <N findings>, <M applied>, <A answered/resolved>, <K simplify recipes>, <U threads still open>
-  # "review skipped" only when the apply-first check passed; N is then the open threads it started from.
   Iteration 2: ...
 
 Open threads at exit: <count>
@@ -1022,59 +456,25 @@ PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
 
 Merge re-review: <PASS | WARN | FAIL | refused | not needed (final verdict PASS) | not needed (description unchanged) | not run (<STOP_REASON>) | not requested (no --merge)>
-# Step 2.5's post-refresh re-review. "not needed" names which condition made it unnecessary.
-
 Merge: <merged (squash) | not merged (verdict <V> — not a clean approval) | not merged (post-refresh re-review refused) | not merged (post-refresh re-review found <N> new findings) | not merged (converged, awaiting CI) | not merged (UI lane red on <sha7>) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
-# Only ever "merged" when Step 2.5's four gates all passed. Any other outcome
-# names why, and the PR is left converged and review-ready for a human.
 
 Final pr-reviewer verdict: <PASS | WARN | FAIL | n/a (no review this run — prior review at <PRIOR_SHA>)>
 # The post-refresh re-review's verdict when it ran, else the loop's last review pass.
-# The n/a arm is only an apply-first run that stopped before iteration 2 reviewed.
 Head commit: <sha>
 ```
 
-Surface remaining open threads prominently if the cap was reached or the
-no-progress guard tripped. Do not silently drop them — an open thread at exit is
-a human-judgment flag the user must resolve.
-
-**A red check at exit gets the same treatment.** Name the failing checks and say
-the loop stopped with CI red. Never describe such a run as converged — zero open
-threads over a red build is not a review-ready PR.
+Surface remaining open threads and any red check prominently when the cap or the no-progress guard stopped the loop.
+Never describe a run that stopped with CI red, or that skipped, as converged; a skip is never reported as report-only.
 
 ## Hard rules
 
-- **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Non-simplify modes trigger an internal agent pass and create a dispatch cycle.
-- **This loop runs at the top level, never inside a sub-agent.** Its first sub-step is a delegation, so a caller that dispatches the loop instead of running it spends the delegation budget one level too high and the loop can only skip at iteration 0 ([Caller contract](#caller-contract--run-this-loop-at-the-top-level-never-inside-a-sub-agent)). A caller limited to one dispatch runs the loop itself.
-- **In an Agent0 sandbox the review is a `general` dispatch, never an in-context review.** Detect the host by the presence of `/tmp/workspace/agent-skills/env.sh`, never from a failed call, and follow [`rules/agent0-runtime.md`](./rules/agent0-runtime.md). A reviewer reply that refuses is `reviewer-refused`, never a clean pass.
-- **A dispatch tool without the `pr-reviewer` type is a route to resolve, never a skip.** Step 0 reads the tool's own list of agent types; when `pr-reviewer` is absent and the host is Agent0 (`/tmp/workspace` or the `/tmp/.opencode` import tree exists), it installs the bundle on demand and dispatches the `general` reviewer. The only skips on that path are row 5 (no Agent0 workspace) and a failed install, each with its own line.
-- **The dispatch precondition tests a capability, never a tool name.** `Task` and `Agent` are two spellings of the same capability; concluding "no dispatch available" because the name `Task` is absent skips the review on every harness that spells it otherwise ([The dispatch tool is a capability, not a fixed name](#the-dispatch-tool-is-a-capability-not-a-fixed-name)).
-- **One absent-dispatch skip is terminal.** Never retry the dispatch and never work around it: the capability's absence is fixed by the dispatch topology before any code is read, so a retry costs a round trip and returns the same answer.
-- **A skip is never reported as convergence, and never as report-only.** Zero open threads plus green CI is not convergence when no review pass produced a verdict; say plainly that the loop did not run and the PR was not reviewed.
-- **Convergence never green-washes.** The loop resolves a thread only via a fix or an honest reply. A live finding the agent cannot fix or honestly decline stays open and is surfaced — the loop never resolves it to terminate. This is `implement-suggestion --resolve-all`'s safety valve, inherited here.
-- **Never write to GitHub directly, except the Step 2 description refresh.** `pr-reviewer` posts the `COMMENT` review and `implement-suggestion` resolves threads; this skill orchestrates. The one direct write it owns is the final `gh pr edit --body` refresh.
-- **Never undraft the PR — except under `--merge`.** By default this skill converges and the user makes the final undraft decision. `--merge` is the one scoped override: Step 2.5 undrafts (`gh pr ready`) as the mandatory first move of a merge, and only when every merge gate has already passed.
-- **`--merge` merges only on a clean approval, never green-washes a merge.** Step 2.5 merges **iff** `STOP_REASON == "all-threads-resolved"`, zero open threads, the final verdict is an approval (`PASS`), **and** CI is actually green. The final verdict is the post-refresh re-review's when Step 2 changed the body after a non-`PASS` review — one gates-only pass, never an iteration, never followed by an apply. A non-`PASS` verdict, any open thread, a non-clean stop reason, or pending/red CI leaves the PR unmerged and review-ready with the reason reported. It merges by squash and never with `--admin` or `--force`; a failed `gh pr merge` is reported verbatim, never retried around.
-- **One `implement-suggestion` per iteration, no `--watch`.** The loop drives re-review; `--watch` waits for external bots and would conflict.
-- **Iteration 1 skips the review only when the last review still stands.** All five [apply-first conditions](#iteration-1--apply-first-when-the-last-review-still-stands) must hold — iteration 1, not `--no-feedback`, `context.json` `.mode == "zero-delta"`, at least one open thread, and no open thread with a reply — and any read that fails fails the check. A skipped review never lets iteration 1 converge: `NEW_FINDINGS` is `true`, so convergence and `--merge` always follow a review pass.
-- **Cap is a hard limit.** If threads are still open at the cap, surface them and stop. Do not extend the cap silently.
-- **Convergence requires CI settled, not just threads resolved.** Unless `--no-ci` is set, a red check blocks the clean-convergence exit. Reporting zero open threads over a red build is the CI-shaped version of green-washing.
-- **The ui-verify run is report-only and never part of convergence.** Step 1.6 runs after the loop has already decided convergence (threads-resolved + CI-settled); its verdict is surfaced for the human, never gates the loop, and never undrafts — matching `autonomous-workflow` Phase 7. It runs at most once per invocation, reads only the committed ui-verify block, `v2` or `v1` (never `.agent/{branch}/specs.md`), and `autonomous-workflow` opts out via `--no-preview-run` because Phase 7 rehearses the same specs. A missing `ui-verify` is a silent skip, not a failure.
-- **Under `--ui`, the lane is part of convergence and only reports.** The lane posts threads and never commits; sub-step B stays the one writer on the branch. A clean convergence needs a settled lane run on the final head, at most `UI_CAP = 3` lane runs per invocation, one in flight at a time; an `inconclusive` or `NOT RUN` lane never blocks ([`rules/ui-lane.md`](./rules/ui-lane.md)).
-- **Never fix CI in this context.** Sub-step D classifies and delegates to `ci-auto-fix`; it applies no fix itself, and every `ci-auto-fix` refusal (no `--no-verify`, no `continue-on-error`, no skipped suites, no weakened assertions) holds transitively.
-- **Never carry CI watch state — query it.** Sub-step D reads check state statelessly at the current remote head and writes nothing; it never records a verdict or a spent budget for another phase to inherit, and it never reintroduces a cross-phase watch-state file ([`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md) — *watch state is queried, never carried*). `CI_HANDOFFS` is counted inside this run only.
-
-## Relationship to other skills
-
-| Skill | Relationship |
-| --- | --- |
-| `pr-reviewer` | Sub-step A: the find pass (read-only); resolves its own addressed threads on re-review; this skill drives re-review between iterations. Skipped on iteration 1 when its last review still stands. |
-| `implement-suggestion --resolve-all` | Sub-step B: the apply + resolve pass; invoked single-shot (no `--watch`) with `--resolve-all` so non-fix threads (questions, discussions, declines) are answered and resolved. |
-| `polish simplify` | Sub-step C: the cleanup pass; only the simplify mode, never full `polish`. |
-| `create-pr` description-contract | Step 2 reuses [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md) for the PR-description refresh — single source of truth with `create-pr`. |
-| `polish` (bare) | **Downstream, not a caller.** `polish`'s Pass A invokes `pr-reviewer` directly and never calls `review-loop`; this loop only invokes `Skill("polish", "simplify")`. |
-| `create-pr` | Upstream caller — delegates post-draft review to `review-loop` after opening the draft PR. |
-| `autonomous-workflow` Phase 6/7 | Invokes `review-loop` in place of the retired `reviewer` agent dispatches. |
-| `ci-auto-fix` | Sub-step D: dispatched as a subagent on a red check, capped at 2 handoffs per run. Owns the fix; this loop only classifies and delegates. Skipped under `--no-ci`. |
-| `ui-verify run` | Step 1.6: dispatched once at exit on a UI PR to run the committed spec against the preview deployment. Report-only — never gates convergence or undrafts. Skipped under `--no-preview-run` (which `autonomous-workflow` passes, its Phase 7 owning the same rehearsal) or when the skill is absent. Pairs with `create-pr` Step 6.4, which authored the spec. Under `--ui`, replaced by the lane: `ui-verify run --unattended --post-findings --wait-preview 15`, per head, in parallel ([`rules/ui-lane.md`](./rules/ui-lane.md)). |
-| `implement-suggestion --watch` | **Sibling, never nested.** `--watch` waits on an out-of-process reviewer and applies what it posts (apply + push + stop, and it reads CI only as a stop reason); this loop dispatches its own reviewer and adds `--resolve-all`, simplify, CI delegation, and the description refresh. The hard rule *one `implement-suggestion` per iteration, no `--watch`* keeps them from stacking. |
+- **The only permitted `polish` invocation is `Skill("polish", "simplify")`.** Every other mode runs a reviewer pass and creates a dispatch cycle.
+- **Never review in this context.** Sub-step A is always a dispatch: `pr-reviewer`, or under Agent0 a `general` sub-agent reading the bundle. A refusing reply is `reviewer-refused`, never a clean pass.
+- **Never write to GitHub directly, except the Step 2 description refresh.** `pr-reviewer` posts reviews and `implement-suggestion` resolves threads.
+- **Never undraft the PR — except under `--merge`**, where Step 2.5 undrafts only after every merge gate passed.
+- **`--merge` merges only on a clean approval.** `STOP_REASON == "all-threads-resolved"`, zero open threads, a `PASS` verdict, and green CI. The final verdict is the post-refresh re-review's when Step 2 changed the body after a non-`PASS` review. Squash only, never `--admin` or `--force`.
+- **One `implement-suggestion` per iteration, no `--watch`.**
+- **Iteration 1 skips the review only when the last review still stands.** All five apply-first conditions must hold and any failed read fails the check; `NEW_FINDINGS` is `true` on the skip, so convergence and `--merge` always follow a review pass.
+- **The cap is a hard limit.**
+- **Never fix CI in this context, and never carry CI watch state.** Sub-step D reads check state statelessly, writes nothing for another phase to inherit, and counts `CI_HANDOFFS` inside this run only.
+- **Under `--ui`, the lane is part of convergence and only reports.** It posts threads and never commits; at most `UI_CAP = 3` lane runs, one in flight; an `inconclusive` or `NOT RUN` lane never blocks.
