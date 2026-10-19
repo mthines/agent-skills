@@ -16,7 +16,7 @@
 // `kind: judge` is never executed: it passes only when its status is already `pass`.
 // `status: unsatisfiable` is never overwritten and never passes.
 // `--seal` writes checks.lock (sha256 of id, requirement, ears, kind, expect per check);
-// a later run whose definitions differ from the lock fails every changed check.
+// a later run whose definitions differ from the lock fails every changed or removed check.
 
 import { spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -124,7 +124,11 @@ export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = 
   if (checks.length === 0) return { exit: 1, sentinel: "CHECKS 0/0 FAIL: no checks" };
 
   const lockFile = join(dirname(file), "checks.lock");
-  const lock = existsSync(lockFile) ? JSON.parse(readFileSync(lockFile, "utf8")) : null;
+  let lock = null;
+  if (existsSync(lockFile)) {
+    try { lock = JSON.parse(readFileSync(lockFile, "utf8")); }
+    catch (e) { return { exit: 2, sentinel: `CHECKS 0/0 FAIL: checks.lock unreadable (${e.message})` }; }
+  }
   if (!lock) log("note: no checks.lock — definitions unsealed (run --seal after deriving checks.yaml)");
 
   const lines = text.split("\n");
@@ -161,8 +165,15 @@ export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = 
     const writable = c.kind !== "judge" && c.status !== "unsatisfiable" && (status === "pass" || status === "fail");
     if (writable && c._statusLine >= 0) lines[c._statusLine] = lines[c._statusLine].replace(/(status:\s*)[^\s#]+/, `$1${status}`);
   }
+  // A sealed check deleted from checks.yaml is a failure, not a silent pass.
+  const present = new Set(checks.map((c) => c.id));
+  const dropped = lock ? Object.keys(lock).filter((id) => !present.has(id)) : [];
+  for (const id of dropped) {
+    log(`${id} fail — sealed check removed from checks.yaml (only aw-create-plan may re-seal)`);
+    failed.push(id);
+  }
   if (write) writeFileSync(file, lines.join("\n"));
-  const total = checks.length;
+  const total = checks.length + dropped.length;
   return failed.length === 0
     ? { exit: 0, sentinel: `CHECKS ${passed}/${total} PASS (${shortSha(cwd)})` }
     : { exit: 1, sentinel: `CHECKS ${passed}/${total} FAIL: ${failed.join(" ")}` };
@@ -278,6 +289,21 @@ function selfTest() {
     r = cli(["green.yaml"]);
     expectEq("tamper: exit code", r.status, 1);
     expectEq("tamper: sentinel", last(r.stdout), "CHECKS 1/2 FAIL: AC-1");
+    rmSync(join(dir, "checks.lock"));
+
+    // A sealed check deleted from checks.yaml fails by id instead of vanishing from the count.
+    writeFileSync(join(dir, "green.yaml"), green);
+    cli(["green.yaml", "--seal"]);
+    writeFileSync(join(dir, "green.yaml"), green.split("- id: AC-2")[0]);
+    r = cli(["green.yaml"]);
+    expectEq("removed: exit code", r.status, 1);
+    expectEq("removed: sentinel", last(r.stdout), "CHECKS 1/2 FAIL: AC-2");
+
+    // An unreadable checks.lock is a runner error with a sentinel, not an uncaught throw.
+    writeFileSync(join(dir, "checks.lock"), "{not json");
+    r = cli(["green.yaml"]);
+    expectEq("corrupt lock: exit code", r.status, 2);
+    expectEq("corrupt lock: sentinel prefix", last(r.stdout).startsWith("CHECKS 0/0 FAIL: checks.lock unreadable"), true);
     rmSync(join(dir, "checks.lock"));
 
     writeFileSync(join(dir, "green.yaml"), green);
