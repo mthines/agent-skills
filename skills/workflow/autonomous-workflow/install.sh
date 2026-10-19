@@ -131,7 +131,7 @@ if [[ ! -d "$SKILL_DIR" ]]; then
       echo "install the skill first:" >&2
       echo "  npx skills add https://github.com/mthines/agent-skills \\" >&2
       echo "    --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \\" >&2
-      echo "            polish tdd docs \\" >&2
+      echo "            polish tdd docs ux \\" >&2
       echo "            review-loop implement-suggestion create-pr ci-auto-fix \\" >&2
       echo "    --agent claude-code \\" >&2
       echo "    --global --yes" >&2
@@ -140,7 +140,7 @@ if [[ ! -d "$SKILL_DIR" ]]; then
       echo "install the skill first:" >&2
       echo "  npx skills add https://github.com/mthines/agent-skills \\" >&2
       echo "    --skill autonomous-workflow aw-create-plan aw-create-walkthrough confidence \\" >&2
-      echo "            polish tdd docs \\" >&2
+      echo "            polish tdd docs ux \\" >&2
       echo "            review-loop implement-suggestion create-pr ci-auto-fix \\" >&2
       echo "    --agent claude-code \\" >&2
       echo "    --yes" >&2
