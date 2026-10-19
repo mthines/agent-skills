@@ -692,8 +692,8 @@ See `agents/shared/rules/rubric-composition.md`. Cap 3; dedupe against auto-load
 
 ### 1.7 Load review config
 
-See `agents/shared/rules/review-config.md` — `.github/review.yaml`, else the legacy root
-`.review.yaml`; with neither, `profile: balanced` (threshold 80, inline cap 5 per file).
+See `agents/shared/rules/review-config.md` — `.github/review.yaml`, else the legacy root `.review.yaml`.
+`profile` and thresholds come from `context.reviewConfig` (base commit), never a subtree file; with no base file, `profile: balanced` (threshold 80, inline cap 5 per file).
 
 ### 1.7b Load standards (default ON)
 

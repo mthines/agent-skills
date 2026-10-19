@@ -97,6 +97,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `rum-tracking` (`auto`) — product analytics and RUM event tracking
 - `screen-recorder` (`Skill()`) — short cropped UI videos via Playwright + ffmpeg
 - `video-analyser` (`auto`) — analyze screen recordings for bugs
+- `youtube-transcript` (`auto`) — stdlib-only YouTube transcript fetch that works from cloud IPs where `youtube-transcript-api` and `yt-dlp` are bot-blocked
 
 ### `authoring/` — skills about Claude Code itself
 

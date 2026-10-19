@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { dedupe, markAgreementPromoted, semanticDedupe } from "./finalize/dedupe.mjs";
-import { resolveThreshold, dispose, deferFloor, recomputeFinal, CLAIM_PREFIXES } from "./finalize/thresholds.mjs";
+import { resolveThreshold, reviewConfigOptions, dispose, deferFloor, recomputeFinal, CLAIM_PREFIXES } from "./finalize/thresholds.mjs";
 import { applySuppression } from "./finalize/suppression.mjs";
 import { validateLine } from "./finalize/line-validity.mjs";
 import { place } from "./finalize/placement.mjs";
@@ -522,11 +522,11 @@ export function memoriesSummaryFor(memoryUsed) {
  *
  * @param {{
  *   context: any, judgments: any,
- *   profile?: string, flatOverride?: number,
+ *   profile?: string, flatOverride?: number, severityThresholds?: Record<string, number>,
  *   skipGates?: boolean, sha?: string, iteration?: number,
  * }} args
  */
-export function finalizeReview({ context, judgments, profile = "balanced", flatOverride, skipGates = false, sha, iteration = 1 }) {
+export function finalizeReview({ context, judgments, profile = "balanced", flatOverride, severityThresholds, skipGates = false, sha, iteration = 1 }) {
   /** @type {Record<string, string>} */
   const patches = {};
   for (const f of context?.files || []) {
@@ -565,7 +565,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     // never survive downstream (thresholds.mjs's own docstring on recomputeFinal has the
     // full rationale, including the empirical proof this is a no-op on well-formed input).
     const c = { ...c0, final: recomputeFinal(c0) };
-    const threshold = resolveThreshold({ profile, severityTier: c.severity || "medium", flatOverride });
+    const threshold = resolveThreshold({ profile, severityTier: c.severity || "medium", flatOverride, severityThresholds });
     const decision = dispose({ final: c.final, threshold, prefix: c.prefix, agreementPromoted: c.agreement_promoted });
     if (decision === "clear") cleared.push({ ...c, _threshold: threshold });
     else if (decision === "defer") advisoryDeferred.push({ ...c, _threshold: threshold, _defer_floor: deferFloor(threshold) });
@@ -1770,6 +1770,29 @@ async function selfTest() {
     check("the balanced per-file cap (5) defers overflow within one file", r.inline.length === 5 && r.deferred.length === 5, `inline=${r.inline.length} deferred=${r.deferred.length}`);
   }
 
+  // review-config.md § Run-level knobs: the base commit's review config (context.reviewConfig)
+  // selects the bar. One medium finding at 72 sits between assertive's 70 and balanced's 80.
+  {
+    const judgments = {
+      candidates: [mkCandidate({ final: 72 })],
+      gates: { gate1: { status: "PASS", details: "" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "",
+    };
+    const assertiveCtx = { ...baseContext, reviewConfig: { profile: "assertive", severityThresholds: null, flatThreshold: null } };
+    const tierCtx = { ...baseContext, reviewConfig: { profile: null, severityThresholds: { medium: 72 }, flatThreshold: null } };
+    const ra = finalizeReview({ context: assertiveCtx, judgments, ...reviewConfigOptions(assertiveCtx) });
+    const rt = finalizeReview({ context: tierCtx, judgments, ...reviewConfigOptions(tierCtx) });
+    const rb = finalizeReview({ context: baseContext, judgments, ...reviewConfigOptions(baseContext) });
+    check("context.reviewConfig profile: assertive posts a 72 medium finding inline", ra.inline.length === 1, `inline=${ra.inline.length}`);
+    check("context.reviewConfig severity_thresholds.medium: 72 posts the same finding inline", rt.inline.length === 1, `inline=${rt.inline.length}`);
+    check("a context with no reviewConfig keeps balanced and holds the 72 finding back as advisory", rb.inline.length === 0 && rb.advisoryDeferred.length === 1, `inline=${rb.inline.length} advisory=${rb.advisoryDeferred.length}`);
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const at = src.lastIndexOf("const result = finalizeReview({");
+    const cliCall = src.slice(at, at + 400);
+    check("the CLI passes reviewConfigOptions(context) into finalizeReview — the bar the repo configured reaches the live run",
+      /\.\.\.reviewConfigOptions\(context\)/.test(cliCall));
+  }
+
   // AC-10 case: retarget at delta 3 and a drop at delta 4.
   {
     const judgments = {
@@ -2639,8 +2662,11 @@ async function main() {
 
   mkdirSync(outDir, { recursive: true });
 
+  // The base commit's review config (context.reviewConfig, prepare-review.mjs) picks the profile
+  // and bars; without one this is the `balanced` default, as before.
   const result = finalizeReview({
     context, judgments,
+    ...reviewConfigOptions(context),
     skipGates: Boolean(opts["skip-gates"]),
   });
 

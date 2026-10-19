@@ -63,7 +63,7 @@ Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
 1. Load `code-quality` (always, unless `REVIEW_DIFF` is trivial).
 2. Load `ux` (UI globs — against `REVIEW_DIFF`).
-3. Load `critical` (`--critical` flag OR auto-engage heuristic).
+3. Load `critical` (`--critical`, `context.reviewConfig.critical: always`, or auto-engage heuristic).
 4. Load `--with` lenses (max 3).
 5. Walk each rubric against `REVIEW_DIFF`. Each rubric emits raw findings.
 

@@ -35,8 +35,8 @@
  *        [--out <file>] [--workdir <dir>] [--repo-dir <dir>] [--reviewer-login <login>]
  *        [--no-workspace] [--no-impact] [--no-telemetry] [--inline-payloads]
  *        [--timeout-ms N] [--quiet] [--pin-head <sha>] [--isolated] [--full]
- *        [--state <file>] [--effort high] [--thoroughness 0..1] [--no-threads]
- *        [--review-sha <sha>]
+ *        [--state <file>] [--effort high] [--thoroughness 0..1] [--config <file>]
+ *        [--no-threads] [--review-sha <sha>]
  *   node prepare-review.mjs --cleanup <context.json>
  *   node prepare-review.mjs --self-test
  *
@@ -57,6 +57,8 @@ import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
 import { discoverStandards, trivialSkip } from "./discover-standards.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
+import { PROFILES } from "./finalize/thresholds.mjs";
+import { TIERS as SEVERITY_TIERS } from "./comment-spine.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORT_MARKER = "<!-- PR_REVIEWER_REPORT -->";
@@ -1263,6 +1265,18 @@ function detectTier2Checker(dir) {
 /* ------------------------------ review config ------------------------------ */
 
 /**
+ * The lines of a review config, for every line parser below: a leading UTF-8 BOM (U+FEFF) is
+ * stripped, then the text splits on `\r?\n`. No read path strips a BOM (`readFileSync(…, "utf8")`,
+ * `git show`, `gh api`), so it would prefix line 1 and a first-line `^key:` would never match;
+ * a CRLF line keeps its `\r`, which `.` never matches. Either way the key reads as absent with no anomaly.
+ * @param {string} yamlText
+ * @returns {string[]}
+ */
+function configLines(yamlText) {
+  return yamlText.replace(/^\uFEFF/, "").split(/\r?\n/);
+}
+
+/**
  * Extract `high_stakes_paths:` from the review config, in the documented lookup
  * order. Entries are regexes in block-list form; everything from ` #` on is an
  * inline comment, which review-config.md's own worked example relies on.
@@ -1271,7 +1285,8 @@ export function extraHighStakes(yamlText) {
   if (!yamlText) return [];
   const out = [];
   let inBlock = false;
-  for (const raw of yamlText.split("\n")) {
+  // configLines(), as in reviewSettings(): a BOM hides a first-line `high_stakes_paths:`, and a CRLF entry keeps its `\r`, which `(.+)$` never matches.
+  for (const raw of configLines(yamlText)) {
     if (/^high_stakes_paths:/.test(raw)) {
       inBlock = true;
       continue;
@@ -1287,6 +1302,18 @@ export function extraHighStakes(yamlText) {
 }
 
 /**
+ * The `high_stakes_paths` a run classifies with: the base config's list unioned with the head's
+ * (review-config.md § High-stakes paths). A PR may add a high-stakes path but never remove one the
+ * base declares — read from the head alone, deleting a base entry would drop the full-review trigger
+ * for the PR's own review.
+ * @param {string} baseText @param {string} headText
+ * @returns {string[]}
+ */
+export function mergedHighStakes(baseText, headText) {
+  return [...new Set([...extraHighStakes(baseText), ...extraHighStakes(headText)])];
+}
+
+/**
  * The three run-level Agent0 fix-link keys (review-config.md § Run-level fields), top-level only —
  * a nested or subtree key never governs the run. `fixLinks` is null when the key is absent, so
  * finalize.mjs can tell "said nothing" (buttons on) from "said false" (buttons off).
@@ -1294,7 +1321,8 @@ export function extraHighStakes(yamlText) {
 export function agent0Config(yamlText) {
   const out = { fixLinks: null, environment: null, org: null };
   if (!yamlText) return out;
-  for (const raw of yamlText.split("\n")) {
+  // configLines(), as in extraHighStakes() and reviewSettings(): a CRLF line keeps its `\r`, which `(.*)$` never matches, so `agent0_fix_links: false` would read as absent and the buttons would render; a BOM hides a first-line key.
+  for (const raw of configLines(yamlText)) {
     const m = /^(agent0_fix_links|agent0_environment|agent0_org):\s*(.*)$/.exec(raw);
     if (!m) continue;
     const v = m[2].replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
@@ -1303,6 +1331,114 @@ export function agent0Config(yamlText) {
     else out.org = v || null;
   }
   return out;
+}
+
+const CONFIG_PROFILES = Object.keys(PROFILES);
+const CONFIG_CRITICAL = ["auto", "always"];
+
+/**
+ * The run-level review knobs (review-config.md § Run-level knobs), top-level keys only:
+ * `profile`, `severity_thresholds` (a block-style nested map), `per_comment_confidence_threshold`,
+ * `effort`, `thoroughness`, and `critical`. A key that is absent stays null. A value outside
+ * its domain is never coerced: it stays null and lands in `invalid[]`, which the caller turns
+ * into a RUN_ANOMALY line, so a typo can never silently change the review bar.
+ * @param {string} yamlText
+ */
+export function reviewSettings(yamlText) {
+  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, invalid: string[] }} */
+  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, critical: null, invalid: [] };
+  if (!yamlText) return out;
+  const clean = (/** @type {string} */ v) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
+  const score = (/** @type {string} */ v) => {
+    const n = v === "" ? NaN : Number(v);
+    return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
+  };
+  let inSeverity = false;
+  // configLines(), never `split("\n")`: a leading BOM hides the first-line key and a CRLF line keeps its `\r`, so a `(.*)$` key below would read as absent with no anomaly.
+  for (const raw of configLines(yamlText)) {
+    if (inSeverity) {
+      // A blank line, an indented line, or a comment at any column stays inside the block: YAML ignores comments.
+      if (/^\s*$/.test(raw) || /^\s+/.test(raw) || raw.startsWith("#")) {
+        const m = /^\s+(\w+):\s*(.*)$/.exec(raw);
+        if (!m) continue;
+        const v = clean(m[2]);
+        const n = score(v);
+        if (!SEVERITY_TIERS.includes(m[1])) out.invalid.push(`severity_thresholds.${m[1]} (unknown tier)`);
+        else if (n === null) out.invalid.push(`severity_thresholds.${m[1]}: ${v}`);
+        else out.severityThresholds = { ...(out.severityThresholds || {}), [m[1]]: n };
+        continue;
+      }
+      inSeverity = false;
+    }
+    if (/^severity_thresholds:\s*(#.*)?$/.test(raw)) {
+      inSeverity = true;
+      continue;
+    }
+    const inlineSeverity = /^severity_thresholds:\s*([^\s#].*)$/.exec(raw);
+    if (inlineSeverity) {
+      out.invalid.push(`severity_thresholds: ${clean(inlineSeverity[1])} (inline value; use the block form)`);
+      continue;
+    }
+    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical):\s*(.*)$/.exec(raw);
+    if (!m) continue;
+    const v = clean(m[2]);
+    if (m[1] === "profile") {
+      if (CONFIG_PROFILES.includes(v)) out.profile = v;
+      else out.invalid.push(`profile: ${v}`);
+    } else if (m[1] === "per_comment_confidence_threshold") {
+      const n = score(v);
+      if (n === null) out.invalid.push(`per_comment_confidence_threshold: ${v}`);
+      else out.flatThreshold = n;
+    } else if (m[1] === "effort") {
+      if (v === "high") out.effort = v;
+      else out.invalid.push(`effort: ${v}`);
+    } else if (m[1] === "thoroughness") {
+      const n = v === "" ? NaN : Number(v);
+      if (Number.isFinite(n) && n >= 0 && n <= 1) out.thoroughness = n;
+      else out.invalid.push(`thoroughness: ${v}`);
+    } else if (CONFIG_CRITICAL.includes(v)) {
+      out.critical = v;
+    } else {
+      out.invalid.push(`critical: ${v}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * The depth knobs a run actually uses (depth-routing.md § Thoroughness budget): an explicit CLI
+ * flag beats the review config, and within the config `effort: high` beats `thoroughness:`.
+ * A CLI `--thoroughness` also beats a config `effort: high` — the invocation is the narrower scope.
+ * Only an empty `opts.thoroughness` is unset: a bare trailing `--thoroughness` leaves it undefined,
+ * which reaches `resolveBudget()` as NaN and fails closed to t = 1.
+ * @param {{ effort?: string, thoroughness?: string }} opts
+ * @param {{ effort?: string|null, thoroughness?: number|null }} settings
+ * @returns {{ effortHigh: boolean, thoroughness: number|undefined, source: "cli"|"config"|"default" }}
+ */
+export function resolveDepthOverrides(opts, settings) {
+  const cliEffort = opts.effort === "high";
+  const cliThoroughness = opts.thoroughness !== "";
+  if (cliEffort || cliThoroughness) {
+    return { effortHigh: cliEffort, thoroughness: cliThoroughness ? Number(opts.thoroughness) : undefined, source: "cli" };
+  }
+  if (settings.effort === "high") return { effortHigh: true, thoroughness: undefined, source: "config" };
+  if (typeof settings.thoroughness === "number") return { effortHigh: false, thoroughness: settings.thoroughness, source: "config" };
+  return { effortHigh: false, thoroughness: undefined, source: "default" };
+}
+
+/**
+ * The RUN_ANOMALY lines the run-level review config produces (review-config.md § Run-level knobs):
+ * one per ignored invalid value, plus one when the config could not be read (an explicit `--config`
+ * file, or a base file that exists but failed to load) — the run then uses every default, and
+ * without this line only `reviewConfig.source` would say so.
+ * @param {{ source: string, unreadable?: boolean }} baseConfig
+ * @param {{ invalid: string[] }} settings
+ * @returns {string[]}
+ */
+export function reviewConfigAnomalies(baseConfig, settings) {
+  const lines = settings.invalid.map((bad) => `review config ${baseConfig.source}: ignored invalid ${bad}`);
+  if (baseConfig.unreadable) lines.push(`review config ${baseConfig.source}: using defaults`);
+  return lines;
 }
 
 function readReviewConfig(dir) {
@@ -1317,6 +1453,53 @@ function readReviewConfig(dir) {
     }
   }
   return "";
+}
+
+/**
+ * The review config that governs the run-level knobs, read from the PR's BASE commit, never the
+ * head: a PR must not be able to lower its own review bar by editing `.github/review.yaml`.
+ * `explicitPath` (`--config <file>`) replaces the base read entirely, for trying a config before
+ * merging it. Order: explicit file → `git show <baseSha>:<path>` in the workspace → the contents
+ * API at `baseSha`. Each path tries `.github/review.yaml`, then the legacy root `.review.yaml`.
+ * Only a path absent at the base moves on to the next one: a path that exists but cannot be read
+ * returns `unreadable: true`, never the next path's file and never the head's.
+ * @param {{ explicitPath?: string, dir?: string|null, baseSha?: string, repo?: string, timeoutMs?: number, runner?: typeof run }} input
+ * @returns {Promise<{ text: string, source: string, unreadable?: boolean }>}
+ */
+export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, timeoutMs = 30000, runner = run }) {
+  if (explicitPath) {
+    try {
+      return { text: readFileSync(explicitPath, "utf8"), source: explicitPath };
+    } catch {
+      return { text: "", source: `${explicitPath} (unreadable)`, unreadable: true };
+    }
+  }
+  if (!baseSha) return { text: "", source: "none (no base SHA)" };
+  const rels = [".github/review.yaml", ".review.yaml"];
+  const unreadable = (/** @type {string} */ rel) => ({ text: "", source: `${rel}@${baseSha.slice(0, 7)} (unreadable)`, unreadable: true });
+  if (dir && (await runner("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok) {
+    // The base commit is local, so a missing path means "no config" — asking the API again
+    // would only repeat the same answer at network cost.
+    for (const rel of rels) {
+      // `ls-tree` reads trees, which a partial (blob:none) clone holds locally: an empty listing is "absent at the base".
+      const ls = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "ls-tree", "--full-tree", "--name-only", baseSha, "--", rel], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
+      if (!ls.ok) return unreadable(rel);
+      if (!ls.stdout.trim()) continue;
+      // The blob is fetched on demand, so this read can touch the remote — and fail.
+      const r = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
+      return r.ok ? { text: r.stdout, source: `${rel}@${baseSha.slice(0, 7)}` } : unreadable(rel);
+    }
+    return { text: "", source: "none" };
+  }
+  if (repo) {
+    for (const rel of rels) {
+      const r = await runner("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${rel}?ref=${baseSha}`], { timeoutMs });
+      if (r.ok) return { text: r.stdout, source: `${rel}@${baseSha.slice(0, 7)}` };
+      // Only a 404 is "absent at the base"; auth, rate-limit, and network failures are a failed read.
+      if (!/\bHTTP 404\b/.test(r.stderr)) return unreadable(rel);
+    }
+  }
+  return { text: "", source: "none" };
 }
 
 /* --------------------------------- main --------------------------------- */
@@ -1548,8 +1731,16 @@ async function prepare(opts) {
   // Shape classification — a pure local computation, no API calls.
   timing.start("classify-shape");
   let shape = null;
+  // The Agent0 link keys read the HEAD checkout; `high_stakes_paths` reads the BASE list unioned
+  // with the head's (a PR may add a path, never drop the base's); the knobs that can LOWER the bar
+  // (profile, thresholds, depth, critical) read the BASE commit (review-config.md § Run-level
+  // knobs), so a PR cannot weaken its own review.
   const reviewConfigText = readReviewConfig(workspace.dir);
-  const hsArgs = extraHighStakes(reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
+  const baseConfig = await readBaseReviewConfig({ explicitPath: opts.config, dir: workspace.dir, baseSha, repo, timeoutMs });
+  const settings = reviewSettings(baseConfig.text);
+  anomalies.push(...reviewConfigAnomalies(baseConfig, settings));
+  const depthOverrides = resolveDepthOverrides(opts, settings);
+  const hsArgs = mergedHighStakes(baseConfig.text, reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
   if (classify.ok) {
     try {
@@ -1815,7 +2006,7 @@ async function prepare(opts) {
     // (dash0#20655's sticky held a file path, not a report, and D1 fired on its seventh run).
     firstRun: runMode.isolated || (!sticky && !state.priorSha),
     full: runMode.full,
-    effortHigh: opts.effort === "high",
+    effortHigh: depthOverrides.effortHigh,
     cumDeltaLines,
     incrRunsSinceFull: state.incrRunsSinceFull,
     priorDeepRecorded: !!state.lastFullSha,
@@ -1839,7 +2030,7 @@ async function prepare(opts) {
   // available — the agent re-derives it as `dispatchAvailable ? budget.topology :
   // "in-context"` and logs RUN_ANOMALY when that downgrades it
   // (dispatch-topology.md § Reading a budget into dispatch).
-  const thoroughnessOverride = opts.thoroughness === "" ? undefined : Number(opts.thoroughness);
+  const thoroughnessOverride = depthOverrides.thoroughness;
   const contextMode = resolveContextMode({ runMode, zeroDelta, routing });
   const budget = resolveBudget({
     runMode: contextMode, // a small incremental re-review skips the intent worker (route-depth.mjs SMALL_INCREMENTAL_MODES)
@@ -1848,7 +2039,7 @@ async function prepare(opts) {
     shape: (deltaShape && deltaShape.shapes) || [],
     band: impact?.blast_radius?.band ?? "none",
     depthCapability: workspace.depthCapability,
-    effortHigh: opts.effort === "high",
+    effortHigh: depthOverrides.effortHigh,
     changedFiles: files.length,
   });
 
@@ -1916,6 +2107,19 @@ async function prepare(opts) {
     identitySource,
     // Read by finalize.mjs, which builds the Fix-with-Agent0 links (finalize/fix-links.mjs).
     agent0: agent0Config(reviewConfigText),
+    // The run-level knobs from the BASE commit's review config (review-config.md § Run-level
+    // knobs). finalize.mjs reads profile / severityThresholds / flatThreshold; the agent reads
+    // `critical` when Step 2 loads its rubrics; `depthSource` says whether the routing above used CLI or config.
+    reviewConfig: {
+      source: baseConfig.source,
+      profile: settings.profile,
+      severityThresholds: settings.severityThresholds,
+      flatThreshold: settings.flatThreshold,
+      effort: settings.effort,
+      thoroughness: settings.thoroughness,
+      critical: settings.critical,
+      depthSource: depthOverrides.source,
+    },
 
     // Bulk payloads live on disk; the context names them. `inline` says which
     // form this context is in, so a consumer never has to guess whether a null
@@ -2204,8 +2408,202 @@ async function selfTest() {
     const r = agent0Config("profile: strict\n");
     return r.fixLinks === null && r.environment === null && r.org === null && agent0Config("").fixLinks === null;
   });
+  t("agent0Config reads a CRLF or BOM-prefixed config exactly like its plain LF twin, first-line opt-out included", () => {
+    const lines = ["agent0_fix_links: false  # off", 'agent0_environment: "development"', "agent0_org: acme", ""];
+    const lf = agent0Config(lines.join("\n"));
+    const twins = [lines.join("\r\n"), `\uFEFF${lines.join("\n")}`, `\uFEFF${lines.join("\r\n")}`].map((y) => agent0Config(y));
+    return lf.fixLinks === false && lf.environment === "development" && lf.org === "acme"
+      && twins.every((r) => JSON.stringify(r) === JSON.stringify(lf));
+  });
+  t("reviewSettings reads every run-level knob, the nested severity map, and strips comments and quotes", () => {
+    const y = [
+      "profile: assertive  # more findings",
+      "severity_thresholds:",
+      "  critical: 55",
+      '  high: "60"',
+      "",
+      "  # medium stays the profile's",
+      "per_comment_confidence_threshold: 75",
+      "effort: high",
+      "thoroughness: 0.8",
+      "critical: always",
+      "agent0_fix_links: true",
+    ].join("\n");
+    const r = reviewSettings(y);
+    return r.profile === "assertive" && r.severityThresholds.critical === 55 && r.severityThresholds.high === 60
+      && !("medium" in r.severityThresholds) && r.flatThreshold === 75 && r.effort === "high"
+      && r.thoroughness === 0.8 && r.critical === "always" && r.invalid.length === 0;
+  });
+  t("reviewSettings ends the severity block at the next top-level key", () => {
+    const r = reviewSettings(["severity_thresholds:", "  low: 85", "profile: chill", "  high: 1"].join("\n"));
+    return r.severityThresholds.low === 85 && !("high" in r.severityThresholds) && r.profile === "chill";
+  });
+  t("reviewSettings keeps the severity block open across a column-0 comment and reports an inline map", () => {
+    const a = reviewSettings(["severity_thresholds:", "# per-tier bars", "  high: 70", "profile: chill"].join("\n"));
+    const b = reviewSettings("severity_thresholds: { high: 70 }  # flow style\n");
+    return a.severityThresholds !== null && a.severityThresholds.high === 70 && a.profile === "chill" && a.invalid.length === 0
+      && b.severityThresholds === null && b.invalid.length === 1
+      && b.invalid[0] === "severity_thresholds: { high: 70 } (inline value; use the block form)";
+  });
+  t("reviewSettings never coerces an invalid value: it stays null and is listed in invalid[]", () => {
+    const r = reviewSettings(["profile: strict", "severity_thresholds:", "  high: 120", "  urgent: 50", "effort: max",
+      "thoroughness: 2", "critical: sometimes", "per_comment_confidence_threshold: abc"].join("\n"));
+    return r.profile === null && r.severityThresholds === null && r.effort === null && r.thoroughness === null
+      && r.critical === null && r.flatThreshold === null && r.invalid.length === 7;
+  });
+  t("reviewSettings reads a CRLF config exactly like its LF twin, with no carriage return left in a value or an anomaly", () => {
+    const lines = ["profile: assertive  # more findings", "severity_thresholds:", "  critical: 55", "", "per_comment_confidence_threshold: 75",
+      "effort: max", "thoroughness: 0.8", "critical: always", ""];
+    const crlf = reviewSettings(lines.join("\r\n")), lf = reviewSettings(lines.join("\n"));
+    return JSON.stringify(crlf) === JSON.stringify(lf)
+      && crlf.profile === "assertive" && crlf.severityThresholds?.critical === 55 && crlf.flatThreshold === 75
+      && crlf.thoroughness === 0.8 && crlf.critical === "always"
+      && crlf.invalid.length === 1 && crlf.invalid[0] === "effort: max";
+  });
+  t("reviewSettings is all-null for an empty or knob-free config", () => {
+    const a = reviewSettings(""), b = reviewSettings("agent0_fix_links: false\nhigh_stakes_paths:\n  - ^x/\n");
+    return [a, b].every((r) => r.profile === null && r.severityThresholds === null && r.critical === null && r.invalid.length === 0);
+  });
+  t("resolveDepthOverrides: a CLI flag beats the config, config effort beats config thoroughness", () => {
+    const cfg = { effort: "high", thoroughness: 0.6 };
+    const cliT = resolveDepthOverrides({ effort: "", thoroughness: "0.4" }, cfg);
+    const cliE = resolveDepthOverrides({ effort: "high", thoroughness: "" }, { thoroughness: 0.6 });
+    const cfgE = resolveDepthOverrides({ effort: "", thoroughness: "" }, cfg);
+    const cfgT = resolveDepthOverrides({ effort: "", thoroughness: "" }, { effort: null, thoroughness: 0.6 });
+    const none = resolveDepthOverrides({ effort: "", thoroughness: "" }, { effort: null, thoroughness: null });
+    return cliT.effortHigh === false && cliT.thoroughness === 0.4 && cliT.source === "cli"
+      && cliE.effortHigh === true && cliE.thoroughness === undefined && cliE.source === "cli"
+      && cfgE.effortHigh === true && cfgE.thoroughness === undefined && cfgE.source === "config"
+      && cfgT.effortHigh === false && cfgT.thoroughness === 0.6 && cfgT.source === "config"
+      && none.effortHigh === false && none.thoroughness === undefined && none.source === "default";
+  });
+  t("resolveDepthOverrides: a bare --thoroughness is a CLI value that fails closed to t = 1, never the config's", () => {
+    const bare = resolveDepthOverrides({ effort: "", thoroughness: undefined }, { effort: null, thoroughness: 0.3 });
+    const budget = resolveBudget({ routedTier: "quick", thoroughness: bare.thoroughness, effortHigh: bare.effortHigh });
+    return bare.source === "cli" && Number.isNaN(bare.thoroughness)
+      && budget.effectiveThoroughness === 1 && typeof budget.inputError === "string";
+  });
+  t("readBaseReviewConfig reads the BASE commit, not the head, and reports none when the base has no file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-"));
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    try {
+      g(["init", "-q"]);
+      mkdirSync(join(dir, ".github"));
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: assertive\n");
+      g(["add", "."]); g(["commit", "-qm", "base"]);
+      const base = g(["rev-parse", "HEAD"]).trim();
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: chill\n");
+      g(["commit", "-qam", "head lowers the bar"]);
+      const atBase = await readBaseReviewConfig({ dir, baseSha: base });
+      g(["rm", "-q", ".github/review.yaml"]); g(["commit", "-qm", "drop"]);
+      const bare = g(["rev-parse", "HEAD"]).trim();
+      const none = await readBaseReviewConfig({ dir, baseSha: bare });
+      const explicitPath = join(dir, "explicit.yaml");
+      writeFileSync(explicitPath, "critical: always\n");
+      const explicit = await readBaseReviewConfig({ explicitPath, dir, baseSha: base });
+      return atBase.text === "profile: assertive\n" && atBase.source === `.github/review.yaml@${base.slice(0, 7)}`
+        && none.text === "" && none.source === "none"
+        && explicit.text === "critical: always\n" && explicit.source === explicitPath;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  t("reviewConfigAnomalies reports an unreadable --config file as well as each ignored invalid value", async () => {
+    const missing = await readBaseReviewConfig({ explicitPath: join(tmpdir(), `prr-no-such-review-${process.pid}.yaml`) });
+    const lines = reviewConfigAnomalies(missing, reviewSettings(missing.text));
+    const bad = reviewConfigAnomalies({ source: "x.yaml" }, reviewSettings("profile: strict\n"));
+    return missing.unreadable === true && missing.text === ""
+      && lines.length === 1 && lines[0] === `review config ${missing.source}: using defaults`
+      && bad.length === 1 && bad[0] === "review config x.yaml: ignored invalid profile: strict";
+  });
+  t("readBaseReviewConfig reports a base file it cannot read as unreadable, never as no config, the legacy file, or the head's", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-unreadable-"));
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    try {
+      g(["init", "-q"]);
+      mkdirSync(join(dir, ".github"));
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: assertive\n");
+      writeFileSync(join(dir, ".review.yaml"), "profile: balanced\n");
+      g(["add", "."]); g(["commit", "-qm", "base"]);
+      const base = g(["rev-parse", "HEAD"]).trim();
+      const blob = g(["rev-parse", `${base}:.github/review.yaml`]).trim();
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: chill\n");
+      g(["commit", "-qam", "head lowers the bar"]);
+      // The tree still lists the path but its blob is gone — what a failed partial-clone fetch leaves.
+      rmSync(join(dir, ".git", "objects", blob.slice(0, 2), blob.slice(2)));
+      const r = await readBaseReviewConfig({ dir, baseSha: base });
+      const lines = reviewConfigAnomalies(r, reviewSettings(r.text));
+      const src = `.github/review.yaml@${base.slice(0, 7)} (unreadable)`;
+      return r.unreadable === true && r.text === "" && r.source === src
+        && lines.length === 1 && lines[0] === `review config ${src}: using defaults`;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  t("readBaseReviewConfig over the contents API: only a 404 moves to the next path, any other failure is unreadable", async () => {
+    const api = (/** @type {string} */ firstErr) => async (/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
+      args.some((a) => a.includes("contents/.github/review.yaml"))
+        ? { ok: false, code: 1, stdout: "", stderr: firstErr, timedOut: false }
+        : { ok: true, code: 0, stdout: "profile: chill\n", stderr: "", timedOut: false };
+    const legacy = await readBaseReviewConfig({ baseSha: "abc1234def", repo: "o/r", runner: api("gh: Not Found (HTTP 404)") });
+    const failed = await readBaseReviewConfig({ baseSha: "abc1234def", repo: "o/r", runner: api("gh: Server Error (HTTP 502)") });
+    const lines = reviewConfigAnomalies(failed, reviewSettings(failed.text));
+    return legacy.text === "profile: chill\n" && legacy.source === ".review.yaml@abc1234" && legacy.unreadable === undefined
+      && failed.unreadable === true && failed.text === "" && failed.source === ".github/review.yaml@abc1234 (unreadable)"
+      && lines.length === 1 && lines[0] === "review config .github/review.yaml@abc1234 (unreadable): using defaults";
+  });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;
+  });
+  t("extraHighStakes reads a CRLF config exactly like its LF twin, across a blank line, with no carriage return left in an entry", () => {
+    const lines = ["high_stakes_paths:", "  - ^src/auth/  # money", "", '  - "^db/migrations/"', "other: 1", ""];
+    const crlf = extraHighStakes(lines.join("\r\n")), lf = extraHighStakes(lines.join("\n"));
+    return JSON.stringify(crlf) === JSON.stringify(lf) && crlf.length === 2
+      && crlf[0] === "^src/auth/" && crlf[1] === "^db/migrations/" && crlf.every((v) => !v.includes("\r"));
+  });
+  t("a BOM-prefixed review config parses exactly like its plain twin in reviewSettings and extraHighStakes, first-line key included", () => {
+    const bom = (/** @type {string} */ s) => `\uFEFF${s}`;
+    const same = (/** @type {unknown} */ a, /** @type {unknown} */ b) => JSON.stringify(a) === JSON.stringify(b);
+    const knobs = ["profile: assertive", "severity_thresholds:", "  critical: 55", "effort: max", ""].join("\n");
+    const block = ["severity_thresholds:", "  high: 70", "critical: always", ""].join("\n");
+    const hs = ["high_stakes_paths:", "  - ^src/auth/", "other: 1", ""].join("\n");
+    const k = reviewSettings(bom(knobs)), b = reviewSettings(bom(block)), h = extraHighStakes(bom(hs));
+    return same(k, reviewSettings(knobs)) && same(b, reviewSettings(block)) && same(h, extraHighStakes(hs))
+      && same(reviewSettings(bom(knobs.replace(/\n/g, "\r\n"))), reviewSettings(knobs))
+      && k.profile === "assertive" && k.severityThresholds?.critical === 55 && k.invalid.length === 1 && k.invalid[0] === "effort: max"
+      && b.severityThresholds?.high === 70 && b.critical === "always"
+      && h.length === 1 && h[0] === "^src/auth/" && mergedHighStakes(bom(hs), "").includes("^src/auth/")
+      && same(reviewSettings(bom("")), reviewSettings("")) && extraHighStakes(bom("")).length === 0;
+  });
+  t("mergedHighStakes keeps a base entry the head deletes, adds the head's, and dedupes", () => {
+    const base = ["high_stakes_paths:", '  - "(^|/)ledger(/|$)"', "  - ^billing-core/"].join("\n");
+    const head = ["high_stakes_paths:", "  - ^billing-core/", "  - ^tenant/"].join("\r\n"); // the head deleted the ledger entry
+    const r = mergedHighStakes(base, head);
+    return r.length === 3 && r.includes("(^|/)ledger(/|$)") && r.includes("^tenant/")
+      && r.filter((v) => v === "^billing-core/").length === 1
+      && mergedHighStakes(base, "profile: chill\n").includes("(^|/)ledger(/|$)") // the head dropped the key
+      && mergedHighStakes(base, "").length === 2 // the head deleted the file
+      && mergedHighStakes("", head).length === 2; // no base list: the head's additions still apply
+  });
+  t("a head that deletes a base high_stakes_paths entry still gets that path classified high-stakes, and prepare() classifies with the union", () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-hs-union-"));
+    try {
+      const filesPath = join(dir, "pr-files.json");
+      writeFileSync(filesPath, JSON.stringify({ filename: "ledger/post.ts", patch: "@@ -1,0 +1,1 @@\n+export const x = 1;" }) + "\n");
+      const base = 'high_stakes_paths:\n  - "(^|/)ledger(/|$)"\n';
+      const head = "high_stakes_paths:\n  - ^tenant/\n";
+      const cls = (/** @type {string[]} */ pats) => JSON.parse(execFileSync("node",
+        [join(HERE, "classify-shape.mjs"), filesPath, ...pats.flatMap((p) => ["--extra-high-stakes", p])], { encoding: "utf8" }));
+      const merged = cls(mergedHighStakes(base, head));
+      const headOnly = cls(extraHighStakes(head));
+      const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+      const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+      return merged.high_stakes_files.includes("ledger/post.ts") && !headOnly.high_stakes_files.includes("ledger/post.ts")
+        && /const hsArgs = mergedHighStakes\(baseConfig\.text, reviewConfigText\)/.test(body)
+        && !/extraHighStakes\(reviewConfigText\)/.test(body);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   t("normalizeLogin folds the three spellings of one GitHub App identity", () => {
@@ -2985,6 +3383,7 @@ async function main(argv) {
     state: "",
     effort: "",
     thoroughness: "",
+    config: "",
     threads: true,
     reviewSha: "",
   };
@@ -3009,6 +3408,7 @@ async function main(argv) {
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
     else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
+    else if (a === "--config") opts.config = argv[++i]; // review config file to use instead of the base commit's
     else if (a === "--no-threads") opts.threads = false;
     else if (a === "--review-sha") opts.reviewSha = argv[++i]; // D8/D9: historical read-only review target
     else {
@@ -3022,7 +3422,7 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
         "[--no-telemetry] [--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--effort high] [--thoroughness 0..1] [--no-threads] [--review-sha sha] | --self-test\n",
+        "[--state file] [--effort high] [--thoroughness 0..1] [--config file] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
   }
