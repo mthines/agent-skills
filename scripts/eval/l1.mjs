@@ -313,6 +313,28 @@ const renderReport = (payload) => {
   }
 }
 
+// ── G115: no workflow splices attacker-controlled PR/issue text into a shell `run:` — script injection ──
+{
+  const UNTRUSTED = /\$\{\{\s*github\.(?:event\.(?:comment|review|issue|pull_request|discussion)\.(?:body|title)|head_ref|event\.pull_request\.head\.ref)\s*\}\}/;
+  const workflows = execFileSync("git", ["ls-files", "*.yml", "*.yaml"], { cwd: REPO_ROOT, encoding: "utf8" })
+    .split("\n").filter((f) => /(^|\/)(\.github\/workflows|templates)\//.test(f));
+  for (const f of workflows) {
+    const lines = readFileSync(join(REPO_ROOT, f), "utf8").split("\n");
+    const hits = [];
+    let runIndent = -1;
+    lines.forEach((line, i) => {
+      const indent = line.search(/\S/);
+      if (runIndent >= 0 && indent !== -1 && indent <= runIndent) runIndent = -1;
+      const run = line.match(/^(\s*)(?:-\s+)?run:\s*(.*)$/);
+      if (run) {
+        runIndent = run[1].length;
+        if (UNTRUSTED.test(run[2])) hits.push(i + 1);
+      } else if (runIndent >= 0 && UNTRUSTED.test(line)) hits.push(i + 1);
+    });
+    s.check(`G115 ${f} binds untrusted event text via env, never inside run:`, hits.length === 0, `lines ${hits.join(", ")}`);
+  }
+}
+
 // ── G58 / G85 / G59: the Agent0 sandbox install — what the rules expect must be what the installer lays down ──
 {
   const host = readOr("agents/shared/rules/agent0-host.md");

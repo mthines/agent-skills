@@ -54,7 +54,7 @@ The categories are a closed list:
 
 1. **Link, anchor, and reference resolution** — relative links, heading anchors, `Skill("<name>")` targets, and the `G71` escaping-link ratchet.
 2. **Frontmatter validity** — semver, `name` equals the directory, the 1024-char description cap, and a strict-YAML parse.
-3. **Manifest ↔ disk sync** — `plugin.json`, `marketplace.json`, `skills-lock.json`, `install.sh` symlinks, and `tsconfig.json` coverage.
+3. **Manifest ↔ disk sync and workflow safety** — `plugin.json`, `marketplace.json`, `skills-lock.json`, `install.sh` symlinks, `tsconfig.json` coverage, and the `G115` guard that untrusted event text never reaches a shell `run:`.
 4. **Eval-harness integrity** — golden JSONL parses, every rubric section extracts (`G21g`), `choices` ↔ golden labels (`G21j`), and the CI wiring that makes a red eval read red.
 5. **Script self-tests** — every tracked script with a `--self-test` handler is discovered and run (`G114`); a script without one gets its behaviour probes here.
 6. **Size and budget ceilings** — the root `CLAUDE.md` budget (`G86`), the `pr-reviewer.md` ratchet (`G82`), and description caps.
