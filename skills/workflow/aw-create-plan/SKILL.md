@@ -236,4 +236,5 @@ node "${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}/scripts/run-chec
 | AC without `AC-{n}` or `covers:` | Add both — rule #9 fails on an uncovered `[user-stated]` requirement |
 | `create` row without an Existing Code Survey | Run the reuse searches and add the section — rule #10 |
 | `checks.yaml` edited after sealing | Re-run `--seal`; the runner fails every check whose sealed fields changed |
+| Runner prints `CHECKS 0/0 FAIL: checks.lock missing` | Step 3 skipped `--seal`; re-derive and seal — the runner refuses an unsealed `checks.yaml` (exit 2) |
 | Most checks are `kind: judge` | Rewrite the criteria toward EARS trigger→response so a command decides them |

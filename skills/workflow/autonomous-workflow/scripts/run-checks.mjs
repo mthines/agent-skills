@@ -18,6 +18,8 @@
 // `status: unsatisfiable` is never overwritten and never passes.
 // `--seal` writes checks.lock (sha256 of id, requirement, ears, kind, expect per check);
 // a later run whose definitions differ from the lock fails every changed or removed check.
+// A missing or unreadable checks.lock stops the run before any check executes (exit 2):
+// aw-create-plan always seals, so an unsealed checks.yaml is never a valid run.
 
 import { spawnSync, execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
@@ -131,12 +133,10 @@ export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = 
   if (checks.length === 0) return { exit: 1, sentinel: "CHECKS 0/0 FAIL: no checks" };
 
   const lockFile = join(dirname(file), "checks.lock");
-  let lock = null;
-  if (existsSync(lockFile)) {
-    try { lock = JSON.parse(readFileSync(lockFile, "utf8")); }
-    catch (e) { return { exit: 2, sentinel: `CHECKS 0/0 FAIL: checks.lock unreadable (${e.message})` }; }
-  }
-  if (!lock) log("note: no checks.lock — definitions unsealed (run --seal after deriving checks.yaml)");
+  if (!existsSync(lockFile)) return { exit: 2, sentinel: "CHECKS 0/0 FAIL: checks.lock missing — re-derive and seal via aw-create-plan" };
+  let lock;
+  try { lock = JSON.parse(readFileSync(lockFile, "utf8")); }
+  catch (e) { return { exit: 2, sentinel: `CHECKS 0/0 FAIL: checks.lock unreadable (${e.message})` }; }
 
   const lines = text.split("\n");
   const failed = [];
@@ -147,7 +147,7 @@ export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = 
     let why;
     if (!c.id || !STATUSES.has(c.status ?? "pending")) {
       status = "fail"; why = !c.id ? "missing id" : `unknown status ${c.status}`;
-    } else if (lock && lock[c.id] !== fingerprint(c)) {
+    } else if (lock[c.id] !== fingerprint(c)) {
       status = "fail"; why = "definition changed since --seal (id/requirement/ears/kind/expect are immutable)";
     } else if (c.status === "unsatisfiable") {
       status = "unsatisfiable"; why = "declared unsatisfiable — escalate to the user";
@@ -174,7 +174,7 @@ export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = 
   }
   // A sealed check deleted from checks.yaml is a failure, not a silent pass.
   const present = new Set(checks.map((c) => c.id));
-  const dropped = lock ? Object.keys(lock).filter((id) => !present.has(id)) : [];
+  const dropped = Object.keys(lock).filter((id) => !present.has(id));
   for (const id of dropped) {
     log(`${id} fail — sealed check removed from checks.yaml (only aw-create-plan may re-seal)`);
     failed.push(id);
@@ -268,7 +268,15 @@ function selfTest() {
       "",
     ].join("\n");
     writeFileSync(join(dir, "checks.yaml"), mixed);
+    // A checks.yaml with no checks.lock is a runner error: no check runs, the file is untouched.
     let r = cli(["checks.yaml"]);
+    expectEq("no lock: exit code", r.status, 2);
+    expectEq("no lock: one sentinel line", r.stdout.split("\n").filter((l) => /^CHECKS /.test(l)).length, 1);
+    expectEq("no lock: sentinel", last(r.stdout), "CHECKS 0/0 FAIL: checks.lock missing — re-derive and seal via aw-create-plan");
+    expectEq("no lock: file untouched", readFileSync(join(dir, "checks.yaml"), "utf8"), mixed);
+
+    cli(["checks.yaml", "--seal"]);
+    r = cli(["checks.yaml"]);
     expectEq("mixed: exit code", r.status, 1);
     expectEq("mixed: sentinel", last(r.stdout), "CHECKS 4/8 FAIL: AC-4 AC-5 AC-6 AC-7");
     const after = readFileSync(join(dir, "checks.yaml"), "utf8");
@@ -314,6 +322,7 @@ function selfTest() {
     rmSync(join(dir, "checks.lock"));
 
     writeFileSync(join(dir, "green.yaml"), green);
+    cli(["green.yaml", "--seal"]);
     r = cli(["green.yaml", "--no-write"]);
     expectEq("no-write: leaves file untouched", readFileSync(join(dir, "green.yaml"), "utf8").includes("status: pending"), true);
 
@@ -328,6 +337,7 @@ function selfTest() {
 
     // A path-like expect is not a regex: its trailing segment is not a flag set.
     writeFileSync(join(dir, "path.yaml"), ["- id: AC-1", "  kind: command", "  run: echo /usr/bin/node", "  expect: /usr/bin/node", "  status: pending", ""].join("\n"));
+    cli(["path.yaml", "--seal"]);
     r = cli(["path.yaml"]);
     expectEq("path expect: exit code", r.status, 0);
     expectEq("path expect: sentinel", last(r.stdout), `CHECKS 1/1 PASS (${sha})`);
@@ -335,14 +345,17 @@ function selfTest() {
     // `re:` is the only regex form: plain, flagged, a slash-led literal, and an invalid pattern.
     const one = (name, out, expect) => ["- id: " + name, "  kind: command", `  run: echo ${out}`, `  expect: '${expect}'`, "  status: pending", ""].join("\n");
     writeFileSync(join(dir, "re.yaml"), one("AC-1", "hello", "re:^he") + one("AC-2", "hello", "re/i:^HE"));
+    cli(["re.yaml", "--seal"]);
     r = cli(["re.yaml"]);
     expectEq("re expect: exit code", r.status, 0);
     expectEq("re expect: sentinel", last(r.stdout), `CHECKS 2/2 PASS (${sha})`);
     writeFileSync(join(dir, "slash.yaml"), one("AC-1", "/home/other", "/home/us"));
+    cli(["slash.yaml", "--seal"]);
     r = cli(["slash.yaml"]);
     expectEq("slash literal: exit code", r.status, 1);
     expectEq("slash literal: sentinel", last(r.stdout), "CHECKS 0/1 FAIL: AC-1");
     writeFileSync(join(dir, "badre.yaml"), one("AC-1", "x", "re:("));
+    cli(["badre.yaml", "--seal"]);
     r = cli(["badre.yaml"]);
     expectEq("invalid regex: exit code", r.status, 1);
     expectEq("invalid regex: one sentinel line", r.stdout.split("\n").filter((l) => /^CHECKS /.test(l)).length, 1);
@@ -350,6 +363,7 @@ function selfTest() {
     expectEq("invalid regex: reason", /AC-1 fail — invalid regex in expect: /.test(r.stdout), true);
 
     // Exactly one sentinel line per run.
+    cli(["checks.yaml", "--seal"]);
     const sentinels = cli(["checks.yaml", "--no-write"]).stdout.split("\n").filter((l) => /^CHECKS /.test(l));
     expectEq("one sentinel line", sentinels.length, 1);
   } finally {
@@ -370,7 +384,7 @@ function main(argv) {
     else if (a === "--timeout") timeout = Number(argv[++i]);
     else if (a === "--no-write") write = false;
     else if (a === "--seal") doSeal = true;
-    else if (a === "-h" || a === "--help") { console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 20).join("\n")); return 0; }
+    else if (a === "-h" || a === "--help") { console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 23).join("\n")); return 0; }
     else if (a.startsWith("--")) { console.log(`CHECKS 0/0 FAIL: unknown option ${a}`); return 2; }
     else file = resolve(cwd, a);
   }
