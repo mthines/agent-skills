@@ -11660,11 +11660,13 @@ const isPollBlock = (block) =>
   const agents = [manifest.agents ?? []].flat();
   s.check("G110f plugin.json `agents` lists .md files only (a directory invalidates the whole manifest)",
     agents.every((a) => a.endsWith(".md") && existsSync(join(REPO_ROOT, a))), `agents: ${agents.join(", ")}`);
-  const unlisted = readdirSync(join(REPO_ROOT, "agents"), { withFileTypes: true })
-    .filter((d) => d.isFile() && d.name.endsWith(".md"))
-    .map((d) => `./agents/${d.name}`)
+  // aw-planner / aw-executor / aw-tester are dispatched by name but live as templates, not in agents/.
+  const shippedAgents = (dir, suffix) => readdirSync(join(REPO_ROOT, dir), { withFileTypes: true })
+    .filter((d) => d.isFile() && d.name.endsWith(suffix))
+    .map((d) => `./${dir}/${d.name}`);
+  const unlisted = [...shippedAgents("agents", ".md"), ...shippedAgents("skills/workflow/autonomous-workflow/templates", ".agent.md")]
     .filter((a) => !agents.includes(a));
-  s.check("G110h every agents/*.md is listed in plugin.json `agents` (an unlisted agent ships in no plugin)",
+  s.check("G110h every agents/*.md and autonomous-workflow templates/*.agent.md is listed in plugin.json `agents` (an unlisted agent ships in no plugin)",
     unlisted.length === 0, `unlisted: ${unlisted.join(", ")}`);
   s.check("G110g evals/results/ is gitignored",
     /^evals\/results\/?$/m.test(readFileSync(join(REPO_ROOT, ".gitignore"), "utf8")));
