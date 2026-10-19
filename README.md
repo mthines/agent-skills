@@ -457,7 +457,7 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   53 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   50 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
 agents/                   3 agents (pr-reviewer, branch-reviewer, feature-pr-verifier)
 plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance-memory, pr-reviewer-shape-guard)
 packages/                 VS Code extension (vscode-agent-tasks)
