@@ -96,7 +96,8 @@ function sh(cmd, cwd, timeoutMs) {
 export function compare(expect, res) {
   const exit = expect.match(/^exit\s+(-?\d+)$/);
   if (exit) return { ok: res.code === Number(exit[1]), got: `exit ${res.code}` };
-  const re = expect.match(/^\/(.*)\/([a-z]*)$/s);
+  // Regex form only with valid JS flags, so a path like `/usr/bin/node` stays a literal.
+  const re = expect.match(/^\/(.*)\/([dgimsuyv]*)$/s);
   if (re) return { ok: new RegExp(re[1], re[2]).test(res.out), got: clip(res.out) };
   return { ok: res.out === expect.trim(), got: clip(res.out) };
 }
@@ -318,6 +319,12 @@ function selfTest() {
     r = cli(["bad.yaml"]);
     expectEq("parse error: exit code", r.status, 2);
     expectEq("parse error: sentinel prefix", last(r.stdout).startsWith("CHECKS 0/0 FAIL: parse error"), true);
+
+    // A path-like expect is not a regex: its trailing segment is not a flag set.
+    writeFileSync(join(dir, "path.yaml"), ["- id: AC-1", "  kind: command", "  run: echo /usr/bin/node", "  expect: /usr/bin/node", "  status: pending", ""].join("\n"));
+    r = cli(["path.yaml"]);
+    expectEq("path expect: exit code", r.status, 0);
+    expectEq("path expect: sentinel", last(r.stdout), `CHECKS 1/1 PASS (${sha})`);
 
     // Exactly one sentinel line per run.
     const sentinels = cli(["checks.yaml", "--no-write"]).stdout.split("\n").filter((l) => /^CHECKS /.test(l));
