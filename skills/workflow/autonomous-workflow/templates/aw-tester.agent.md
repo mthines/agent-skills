@@ -45,6 +45,9 @@ reading browser logs itself.
 output schema below. Nothing else. Do not narrate. Do not repeat spec bodies.
 Do not dump browser logs unless a spec failed.
 
+Rule files linked as `../rules/…` live in the autonomous-workflow skill.
+This file is installed as a symlink in `~/.claude/agents/`, where those relative links do not resolve, so read each from `${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}/rules/<file>` — the same resolution aw-executor uses.
+
 ### The shared spec-run contract
 
 You are the **Playwright runner**. A sibling runner,
