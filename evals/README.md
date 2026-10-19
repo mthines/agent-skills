@@ -69,7 +69,7 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 
 | Case | Skill | Graders |
 | --- | --- | --- |
-| `code-quality-refactor` | `code-quality` | `Record<OrderStatus,…>` map, no `} else {`, no per-status chain, `node --test` green |
+| `polish-simplify` | `polish` | restating and ticket comments pruned, docstring contract, license header, and lint pragma kept, dead helper removed, nesting flattened with behaviour kept, threshold single-sourced, tests green and untouched, pass committed |
 | `tdd-discount-codes` | `tdd` | red run before the first `src/cart.mjs` write, ≥ 4 passing tests, suite ran ≥ 2× |
 | `critical-premortem` | `critical` | steelman heading, line-cited finding, no self-score, llm: grounded findings |
 | `confidence-plan-gaps` | `confidence` | `Final:` ≤ 89%, names missing Acceptance Criteria, names the dangling path |
@@ -80,5 +80,5 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 | `optimize-approach-reuse` | `optimize-approach` | names `uniqueBy`, llm: approach-level, behaviour-preserving |
 | `ux-signup-form` | `ux` | error association, labelled toggle or target size, llm: ≥ 5 of 7 defects |
 | `behavioral-design-local-tests` | `behavioral-design` | names a barrier, no shaming, llm: diagnosis → intervention → metric |
-| `trigger-critical`, `trigger-confidence`, `trigger-severity`, `trigger-code-quality` | each named skill | `Skill` fired |
+| `trigger-critical`, `trigger-confidence`, `trigger-severity` | each named skill | `Skill` fired |
 | `trigger-neg-aw-question`, `trigger-neg-aw-here` | `aw` | `aw` / `autonomous-workflow` not fired |
