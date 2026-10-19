@@ -251,7 +251,7 @@ jobs:
     # The bug-detection eval — a SEPARATE runner, not a `suite` matrix entry, because
     # it is not a single-choice classification (see scripts/eval/l2-detection.mjs's
     # header). It had real gates (recall ≥ 0.7, fp ≤ 0.2) and 30 golden records but ran
-    # in no workflow at all: only its `--self-test` was executed, by L1 G39, so the
+    # in no workflow at all: only its `--self-test` was executed, by L1, so the
     # scoring plumbing was guarded while the measurement itself had never run in CI.
     #
     # Selection is DERIVED exactly like the matrix's: `SUITES.DETECTION` in

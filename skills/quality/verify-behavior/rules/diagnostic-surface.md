@@ -97,7 +97,6 @@ The skill produces no durable repo artifact of its own and writes nothing outsid
 
 ## Validators
 
-- `node scripts/eval/l1.mjs` — G28 asserts the adapter wiring (delegation call, position, invariant preservation) in the real shipped files.
 - Manual: verify a claim a `grep` can decide; confirm Tier 2/3 are never invoked.
 - Manual: verify a claim requiring a runtime return value; confirm Tier 3 runs in a throwaway worktree and the scratch repro is gone afterward.
 - Manual: verify a claim in the `cross` relation with no sandbox opt-in; confirm Tier 3 is refused and only Tier 1/2 run.

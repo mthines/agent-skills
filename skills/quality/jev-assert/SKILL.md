@@ -157,9 +157,8 @@ PR/preview verification with no extra wiring.
       resistant to a single-keyword shortcut — see `evals/evals.json`.
 - [ ] `evals/triggers.jsonl` covers should-trigger and adjacent near-miss
       queries.
-- [ ] The repo eval obligation is met: the receipt-token set is a mechanical
-      contract guarded in `scripts/eval/l1.mjs`; the accept/reject provenance
-      decision is an enumerable judgment guarded by a golden set.
+- [ ] The repo eval obligation is met: the accept/reject provenance decision
+      is an enumerable judgment guarded by a golden set.
 
 ## Anti-patterns
 

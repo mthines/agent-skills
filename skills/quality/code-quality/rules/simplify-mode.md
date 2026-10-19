@@ -126,7 +126,7 @@ Use the Output Contract in the next section.
 
 ## Mechanical recipe whitelist
 
-`simplify` only auto-applies recipes flagged **Class M (Mechanical)** in the [Recipe Class table](./refactor-recipes.md#recipe-class--mechanical-vs-judgment) — that table is the single source of truth. Do not duplicate the list here; the L1 eval guards the table against drift (`G7 every recipe in Contents has a class`).
+`simplify` only auto-applies recipes flagged **Class M (Mechanical)** in the [Recipe Class table](./refactor-recipes.md#recipe-class--mechanical-vs-judgment) — that table is the single source of truth. Do not duplicate the list here; a second copy drifts from the table.
 
 Class J recipes need architectural taste, naming decisions, semantic judgment, or cross-module redesign that confidence scoring on a structural diff cannot validate — propose, never apply.
 

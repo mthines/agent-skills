@@ -73,9 +73,8 @@ all land near 70% on these sets, and `confirm` scores ~76% while pointing at **o
 the two suites — which is the proof it is sampling noise rather than a shortcut anything could
 learn.
 A guard chasing that maximum would chase chance forever and could never be satisfied.
-So the tells are declared, one per decision dimension, and fixed in `l1.mjs`; run the scan when
-authoring new cases, and if it surfaces a token that is genuinely a shortcut rather than a
-stopword, add it to the declared list with its own decoys.
+So no guard chases it: run the scan when authoring new cases, and if it surfaces a token that is
+genuinely a shortcut rather than a stopword, add decoys for it.
 
 ### Measured after the decoys landed
 

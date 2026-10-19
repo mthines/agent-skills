@@ -133,7 +133,7 @@ EXTRA_HS=$(test -f "$HS_CFG" && \
 
 # resolve() — portable readlink -f. DEFINED HERE, at its first call site, because shell
 # state does not persist between this agent's tool calls. Step 4a re-executes this same
-# block verbatim for the renderer; edit the two together (G33i).
+# block verbatim for the renderer; edit the two together.
 resolve() {  # portable readlink -f
   [ -e "$1" ] || return 1
   ( cd "$(dirname "$1")" && t=$(basename "$1")

@@ -342,7 +342,7 @@ sent Lite tasks — that have no `plan.md` — to the planner anyway. See the tw
 design-intent sections below.
 
 **The tier table has exactly one home: `SKILL.md` Step 1.** The dispatcher links
-it rather than restating it (L1 `G2b`). While the dispatcher was an agent it
+it rather than restating it. While the dispatcher was an agent it
 carried an inline copy — an agent boots cold, so having the rows in the prompt
 was worth something — and the copies were kept honest by a byte-comparison L1
 check. A skill runs in the caller's context with `SKILL.md` already loaded, so
@@ -577,9 +577,8 @@ Three costs the agent form was paying, all removed:
    reports the pass as skipped.
 2. **A duplicated tier table with a CI guard to police it.** L1 Check B
    byte-compared `aw.agent.md`'s copy against `SKILL.md` Step 1. The duplication
-   was an artifact of the shape, not of the domain. The check is now `G2b`, which
-   asserts the *absence* of a second copy plus the presence of a link to the
-   canonical one.
+   was an artifact of the shape, not of the domain. There is now one copy and a
+   link to it, so there is nothing to compare.
 3. **A triplicated tool grant.** The agent enumerated 4 LoreKit + 11 GitHub tools
    with two paragraphs explaining that sub-agents inherit neither MCP tools nor
    `gh`. A skill inherits the caller's grant.
@@ -593,7 +592,6 @@ Three costs the agent form was paying, all removed:
 - **No `tools:` block.** `aw` cannot grant itself anything. Its obligation is to
   degrade *visibly* instead — a missing `memory.*`, `gh`, or GitHub MCP grant is
   named in the terminal contract's `Degraded:` line, never silently swallowed.
-  L1 `G24b` guards this; it is the skill-shaped counterpart of `G24`.
 - **Existing installs get a dangling `~/.claude/agents/aw.md`** until they re-run
   `install.sh`, which removes it (the same legacy-symlink cleanup the pre-`aw-`
   namespace rename used). Deleting the agent file outright, rather than leaving
@@ -604,7 +602,7 @@ Design rules that keep this from rotting:
 
 - **Do not re-add a `tools:` block, a `model:` line, or an inline tier table to
   `aw/SKILL.md`.** Each one is a step back toward the agent form; the first two
-  are meaningless in a skill and the third is guarded by `G2b`.
+  are meaningless in a skill and the third can only rot.
 - **Do not convert `aw-planner` / `aw-executor` to skills.** They pass §2.2 on
   their own merits; collapsing them loses the context isolation that is the
   entire justification for the split.
@@ -642,33 +640,27 @@ duplicates `aw`'s description: frontmatter cannot link a canonical home the way
 words — and this file is *also* the live rubric the L2 `aw-should-trigger` suite
 reads (`scripts/eval/l2.mjs` passes the whole file), so slimming it to a pointer
 would leave that suite with no vocabulary to decide `trigger` on. The
-duplication is forced by the two consumers, so it is kept honest by assertion
+duplication is forced by the two consumers, so it is kept honest by review
 instead of eliminated.
 
-That assertion is **L1 `G2d`**, which guards both halves:
+Two properties keep it honest:
 
 1. The parent's description quotes none of the trigger vocabulary and makes no
-   `Triggers on` / `Use when` claim. It matches the *claiming* forms (a quoted
-   phrase, or those two clauses) rather than bare substrings, because the
+   `Triggers on` / `Use when` claim. Only the *claiming* forms (a quoted
+   phrase, or those two clauses) count, because the
    sentence that fixes the problem — "a natural-language request to do work
    autonomously … belongs to the `aw` skill" — necessarily names the words it is
    disclaiming.
-2. Every phrase `aw` advertises appears in the routing rule. This fired on its
-   first run: `aw` advertised `"implement autonomously"`, which the rule had
-   never listed contiguously, and which was the phrasing just deleted from the
-   parent. It needed a home, and the guard is what said so.
+2. Every phrase `aw` advertises appears in the routing rule.
+   Whether a phrase actually routes is behaviour, measured by the L2 `aw-should-trigger` suite, not by a text-sync check.
 
 Design rules that keep this from rotting:
 
 - **Never add trigger vocabulary back to the parent's description.** If a phrase
   should fire the workflow, it goes in `aw`'s description *and* the routing
-  rule, in the same change. `G2d` enforces both directions.
+  rule, in the same change.
 - **Never slim the routing rule's positive trigger list to a pointer.** It is
   the L2 rubric; a pointer would silently gut the `aw-should-trigger` suite.
-- **`G2d`'s phrase-count sentinel is pinned to the live count, not a floor.**
-  A loose floor lets phrases drop out of the description one at a time in
-  silence — the same defect a reviewer caught in `G2c`. When you add or remove a
-  phrase, move the number.
 
 ## Adaptive dispatch (the `aw` dispatcher) — design intent
 
@@ -753,12 +745,12 @@ Design rules that keep this from rotting:
 
 - **The brief's Core is six headings.** `plan.md`'s Core is Task,
   Requirements, Guardrails, Acceptance Criteria (Definition of Done), Turn
-  Cap, and File Changes (L1 G130a); everything else is Extended and Full-tier
+  Cap, and File Changes (L1 `G130a` runs the executor's bail grep against the template); everything else is Extended and Full-tier
   only. Traceability is embedded in the Acceptance Criteria (`AC-{n}` +
   `covers:`), and the survey is an Extended section with a deterministic
   trigger. The executor's bail check also accepts fix-bug's fast-lane plan,
-  which still carries the legacy eight headings (L1 G2, G130b), and the
-  Definition of Done is the one line `run-checks.mjs` prints (G130c/d).
+  which still carries the legacy eight headings (L1 `G130b`), and the
+  Definition of Done is the one line `run-checks.mjs` prints (L1 `G130c`).
 - **`checks.yaml` is additive, never a replacement.** It mechanizes the
   Acceptance-Criteria sprint contract; the suite, `confidence`, `reviewer`,
   and Phase 7 verifiers are unchanged. The check-integrity rules exist
@@ -878,7 +870,7 @@ links it directly in `--development` mode). It is edited like any other skill,
 and it is **not** an agent — do not give it a `tools:` block or a `model:` line,
 and do not restate the tier table in it. See
 [the shape design-intent section](#the-dispatcher-is-a-skill-not-an-agent--design-intent)
-for why, and `G2b` / `G24b` in `scripts/eval/l1.mjs` for the guards. It must stay
+for why. It must stay
 thin (router + loop only) — see the ~200-line body target and its current
 breach under
 [design rules](#adaptive-dispatch-the-aw-dispatcher--design-intent).

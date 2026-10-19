@@ -261,8 +261,8 @@ once per review, on the object that *is* the review — repeating
 say the same thing the report already says once, on the surface with the least room for it. So
 `footerLine()`'s `docs` flag defaults **off** and only `render-report.mjs` passes `docs: true`: a
 surface has to *ask* for the link, which is why this cannot silently come back. Guarded from both
-directions — L1 `G46e` asserts the four inline reference renderings carry the whole footer and no
-methodology link, and `G25` diffs the report's own renderings, which do carry it.
+directions — L1 `G46d` diffs the four inline reference renderings, which carry the whole footer and
+no methodology link, and `G25` diffs the report's own renderings, which do carry it.
 
 It answers two questions nothing else on this surface could. *Who is speaking* — an inline comment
 is most often read in a notification email or the Files-changed rail, with no surrounding page to
@@ -358,7 +358,7 @@ If a finding needs more than a 60-char title, 200 characters of prose, and 2 sen
 implementation.** It is kept because it documents the *order* the checks run in and why each cap
 exists; the executable version lives in the renderer and is exercised by `node
 render-comment.mjs --self-test` plus committed fixtures in
-`scripts/eval/fixtures/inline-comment/`, both run by L1 (`G41`). If the two ever disagree, the
+`scripts/eval/fixtures/inline-comment/`, both run by L1 (`G114` and `G46d`). If the two ever disagree, the
 renderer is right and this block is stale — that asymmetry is deliberate, and it is the whole
 difference between this rule and the version of it that let three decorations quietly disappear.
 

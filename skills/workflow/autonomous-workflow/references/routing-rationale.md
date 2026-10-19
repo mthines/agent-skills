@@ -6,7 +6,8 @@ Read on demand; the operative rule is `templates/routing.rule.md`.
 
 The trigger phrases appear twice: in `aw`'s `description:` frontmatter and in the routing rule.
 Frontmatter cannot link a canonical home, and the routing rule is the live rubric the L2 `aw-should-trigger` suite reads, so neither copy can be deleted.
-L1 `G2d` keeps them honest by assertion instead: every phrase quoted in `aw`'s description must appear in the rule, and the parent `autonomous-workflow` description must quote none of them.
+Keep them honest by hand: every phrase quoted in `aw`'s description must appear in the rule, and the parent `autonomous-workflow` description must quote none of them.
+Whether a phrase routes is measured by the L2 `aw-should-trigger` suite, not by a text-sync check.
 When you add, remove, or reword a trigger phrase, update both in the same change.
 
 ## `aw` is the only natural-language destination

@@ -7,7 +7,7 @@
  * Why this exists — and why it cannot live in the agent. Every other guard on this contract runs
  * somewhere the agent controls:
  *
- *   L1 / G25 (439 checks)      runs in CI against the repository, and never sees a posted report
+ *   L1 / G25                   runs in CI against the repository, and never sees a posted report
  *   render-report.mjs          fails closed, but only if the run invokes it
  *   Step 4a pre-write asserts  prose in the same file a drifting run has already skipped
  *   the ingest round trip      runs against committed fixtures, not live output

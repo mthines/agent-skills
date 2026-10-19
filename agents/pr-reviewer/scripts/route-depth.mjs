@@ -8,10 +8,9 @@
 // the inputs; this file only decides.
 //
 // depth-routing.md is the single source of TRUTH for the routing rules —
-// read it for the WHY. This file is the single source of EXECUTION. An L1
-// guard (G60-series, later extended) asserts the D-IDs and the two refresh
-// thresholds below equal what that rule file states, so the two cannot drift
-// apart silently.
+// read it for the WHY. This file is the single source of EXECUTION. Keep the
+// D-IDs and the two refresh thresholds below equal to what that rule file
+// states: change both in the same commit.
 //
 // Order of decisions, matching the rule file's own "first match wins, top to
 // bottom, with two rules that run BEFORE the table":
@@ -158,8 +157,8 @@ export function routeDepth(i) {
 // dispatch/scope lever this pipeline used to leave to model discretion.
 // depth-routing.md § Thoroughness budget is the single source of TRUTH for
 // the breakpoints below and the WHY each one sits where it does; this is the
-// EXECUTION, same split as routeDepth/depth-routing.md above. An L1 guard
-// (G84e) asserts the two agree.
+// EXECUTION, same split as routeDepth/depth-routing.md above. Change both in
+// the same commit.
 
 /** Tier -> default thoroughness when no explicit override is given. What each default turns on is
  *  depth-routing.md § Thoroughness budget's per-tier table, the one place that lists it. */
@@ -418,8 +417,7 @@ function selfTest() {
   }
 
   // A few additional shape assertions beyond the golden 22, on the pure API
-  // itself — the constants and the D-id set the L1 cross-file equality guard
-  // (G60-series, extended) checks against depth-routing.md.
+  // itself — the constants and the D-id set depth-routing.md states.
   const constOk = FULL_REFRESH_DELTA === 150 && FULL_REFRESH_RUNS === 3 && TRIGGERS.length === 13;
   if (!constOk) fails.push("FULL_REFRESH_DELTA/FULL_REFRESH_RUNS/TRIGGERS drifted from depth-routing.md's stated values");
 

@@ -32,4 +32,4 @@ Do NOT auto-trigger for:
 
 If unsure whether the task qualifies, prefer triggering — `aw`'s Phase 0 asks clarifying questions before doing any work.
 
-Keep this trigger list and `aw`'s `description:` in step (L1 `G2d`); rationale: [`references/routing-rationale.md`](../references/routing-rationale.md).
+Keep this trigger list and `aw`'s `description:` in step, in the same change; rationale: [`references/routing-rationale.md`](../references/routing-rationale.md).

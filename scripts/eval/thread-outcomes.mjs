@@ -11,7 +11,7 @@
  *
  * For every review thread on a PR, classifies the outcome by reusing the
  * SAME decision tables `record-comment-relevance.mjs` already ships and is
- * L1-tested (G24f) — never a re-derivation:
+ * self-tested — never a re-derivation:
  *   - a RESOLVED thread routes through `decideResolvedThread` (declined via a
  *     wont-fix reply/reaction, or fixed if a later commit touched its region,
  *     or fixed on a live anchor with no decline detected);

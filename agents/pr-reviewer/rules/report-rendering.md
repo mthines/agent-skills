@@ -244,7 +244,7 @@ unchanged apart from the new `RUN_ANOMALY` slot — the grouping is entirely ren
 | Found | `**Found**` | `Quality`, `Dropped`, `Severity`, `Optimality`, `Standards`, `Measurability`, `Verified` | always (`QUALITY` is required, so the group is never empty) |
 | Run | `**Run**` | the run line, the `⚠️` anomaly line, `Skipped files`, `Integrations`, `CI`, `Memories` + its bullets | always |
 
-Three properties are load-bearing rather than cosmetic, and L1 `G25` asserts each:
+Three properties are load-bearing rather than cosmetic, and the committed snapshots L1 `G25` diffs pin each:
 
 - **The group headings are the only bold lines left inside the accordion.** In-group labels are
   plain (`Quality — `, `CI — `), so the eye lands on the two or three headings first. Re-bolding an

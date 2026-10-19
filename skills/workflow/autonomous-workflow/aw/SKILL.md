@@ -53,7 +53,7 @@ Why it is built this way: [`references/dispatcher-rationale.md`](references/disp
 
 The tier table lives in one place: [`autonomous-workflow/SKILL.md` → *Step 1: Detect Workflow Mode*](../SKILL.md#step-1-detect-workflow-mode-mandatory).
 Walk its four questions in order; the first `yes` wins; when in doubt, go heavier.
-Do not restate the table here — L1 `G2b` asserts this file carries no tier rows.
+Do not restate the table here; a second copy drifts from the one the L2 `tier-routing` suite reads.
 
 ```text
 MODE SELECTION:

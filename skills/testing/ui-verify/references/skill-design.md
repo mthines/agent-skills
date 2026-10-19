@@ -7,7 +7,7 @@ This file records the reasons behind choices there, so a later edit can tell a l
 
 The `gh`-path commands are not a mapping.
 A reader handed only `gh pr edit` on a host without `gh` has to invent the MCP call, and an agent that cannot invent it writes nothing to the PR.
-So Step 0 names the `mcp__github__*` equivalent of every GitHub call the skill makes, and every tool in `allowed-tools` is named in the body (L1 `G49`).
+So Step 0 names the `mcp__github__*` equivalent of every GitHub call the skill makes, and every tool in `allowed-tools` is named in the body.
 
 ## Why the access-path precondition is enforced in `preview-url-resolution.md`
 
@@ -18,7 +18,7 @@ Reporting `inconclusive: preview not deployed` there would assert a fact about a
 ## Why the on-demand browser install lives in `SKILL.md`
 
 An Agent0 Settings → Skills import copies `SKILL.md` and nothing else.
-A block in a linked file is unreachable on an unprepared host, which is exactly the host that needs it (L1 `G85e`).
+A block in a linked file is unreachable on an unprepared host, which is exactly the host that needs it (L1 `G85b` executes the inline block).
 Why each line of the block is shaped as it is: [`agent0-browser-install.md`](./agent0-browser-install.md).
 
 ## Why `author` reports `failed (no GitHub access path)` instead of the drafted specs

@@ -197,7 +197,7 @@ The matrix is not exhaustive — when a real failure exposes a guard not listed 
 | `F-lens-degraded-silently` | Cross-harness lens resolution | One of the six composed lenses (`severity`, `optimize-approach`, `measurable`, `confidence`, `holistic-analysis`, `verify-behavior`) resolved to nothing (a `Skill "<name>" not found` error) or to the wrong skill (a host name-collision, e.g. `measurable`) — on some harness whose `Skill()` resolution differs from this agent's own installation — and the run still reported a clean verdict instead of surfacing the drop via `RUN_ANOMALY` (`lens-invocation.md`) | 2.4 / 2.4c / 2.4d / 2.6b / 2.7 |
 | `F-novel` | Novel mode | Does not match any existing row | — |
 
-The taxonomy is **append-only**. New failure classes are added only after a confidence-gated diagnosis surfaces them, and a row is **never deleted** — when a failure becomes structurally impossible or is folded into another class, its row stays and is marked **Retired** with what superseded it. Deleting the row loses the record that the failure ever happened, which is the whole reason the taxonomy is append-only; L1 (G25) asserts the retired rows are still present.
+The taxonomy is **append-only**. New failure classes are added only after a confidence-gated diagnosis surfaces them, and a row is **never deleted** — when a failure becomes structurally impossible or is folded into another class, its row stays and is marked **Retired** with what superseded it. Deleting the row loses the record that the failure ever happened, which is the whole reason the taxonomy is append-only.
 
 ---
 
