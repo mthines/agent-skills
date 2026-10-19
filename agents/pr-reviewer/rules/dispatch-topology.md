@@ -234,9 +234,9 @@ Reintroduce votes only with a run that shows them adding **confirmed** recall, a
 
 ## Two finder passes
 
-`budget.finderPasses` is `2` when the PR's base commit sets `finder_passes: 2` in `.github/review.yaml`
-(or `prepare-review.mjs` got `--finder-passes 2`) and the run is not zero-delta; otherwise it is `1`
-and `budget.finderPassesReason` says why.
+`budget.finderPasses` is `2` when the PR's base commit sets `finder_passes: 2` in `.github/review.yaml` (or `prepare-review.mjs` got `--finder-passes 2`) and the run is not zero-delta against a prior SHA from the PR-state record (`--state`); otherwise it is `1` and `budget.finderPassesReason` says why.
+Such a run takes `pr-reviewer.md` Step 0.8's gates-only path, so it has no finders to repeat.
+A zero-delta run on the GitHub fallback rung (no `--state`, or a record with no prior SHA) keeps `2`: it falls through to Step 1.2b, which promotes it to `full` ([`agent0-runtime.md`](./agent0-runtime.md#enter-at-step-12c-from-a-prepared-context)).
 `prepare-review.mjs` cannot see the caller's dispatch tool, so the budget in `context.json` assumes
 one, exactly as it does for `topology`: a run with no dispatch still reads `2` and the ×1.5
 `budget.toolCalls`, sends no pass-2 worker, and `finalize.mjs` names both pass-2 units in

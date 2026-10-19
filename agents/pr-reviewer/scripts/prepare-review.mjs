@@ -2077,6 +2077,9 @@ async function prepare(opts) {
     band: impact?.blast_radius?.band ?? "none",
     depthCapability: workspace.depthCapability,
     effortHigh: depthOverrides.effortHigh,
+    // Step 0.8's gates-only fast path keys on the PR-state record: a zero-delta run whose priorSha
+    // came from the sticky (the fallback rung) is reviewed in full, so it keeps finder pass 2.
+    priorShaFromState: !!state.priorSha,
     finderPasses: finderPassesSetting.passes,
     changedFiles: files.length,
   });
@@ -2534,11 +2537,23 @@ async function selfTest() {
       && one.length === 1 && one[0] === "ignored invalid --finder-passes 5 (expected 1 or 2) — one finder pass from the default"
       && valid.length === 0;
   });
-  t("prepare() feeds the resolved finder passes into resolveBudget, records them in context.reviewConfig, and reports an ignored CLI value", () => {
+  t("prepare() feeds the resolved finder passes, and whether the state record supplied priorSha, into resolveBudget, records the passes in context.reviewConfig, and reports an ignored CLI value", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
-    return /finderPasses: finderPassesSetting\.passes,\n\s+changedFiles: files\.length,\n\s+\}\);/.test(src)
+    return /priorShaFromState: !!state\.priorSha,\n\s+finderPasses: finderPassesSetting\.passes,\n\s+changedFiles: files\.length,\n\s+\}\);/.test(src)
       && /finderPasses: finderPassesSetting\.passes,\n\s+finderPassesSource: finderPassesSetting\.source,/.test(src)
       && /anomalies\.push\(\.\.\.finderPassesAnomalies\(finderPassesSetting\)\);/.test(src);
+  });
+  t("a zero-delta run keeps finder pass 2 on the GitHub fallback rung and drops it only when the state record supplied priorSha", () => {
+    const head = "906a74781990f75607f0234de963fdbbc3953f2c";
+    const sticky = "<sup>`pr-reviewer` · commit `906a747` · full review</sup>";
+    const budgetFor = (/** @type {string|null} */ statePriorSha) => {
+      const prior = resolvePriorRun({ isolated: false, stickyBody: sticky, headSha: head, statePriorSha });
+      const mode = resolveContextMode({ runMode: { mode: null }, zeroDelta: prior.zeroDelta, routing: { tier: "deep" } });
+      return { mode, budget: resolveBudget({ runMode: mode, routedTier: "deep", finderPasses: 2, priorShaFromState: !!statePriorSha }) };
+    };
+    const fallback = budgetFor(null), record = budgetFor(head);
+    return fallback.mode === "zero-delta" && fallback.budget.finderPasses === 2 && fallback.budget.finderPassesReason === "requested"
+      && record.mode === "zero-delta" && record.budget.finderPasses === 1 && record.budget.finderPassesReason === "zero-delta";
   });
   t("resolveDepthOverrides: a CLI flag beats the config, config effort beats config thoroughness", () => {
     const cfg = { effort: "high", thoroughness: 0.6 };
