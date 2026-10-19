@@ -327,7 +327,7 @@ const renderReport = (payload) => {
       if (runIndent >= 0 && indent !== -1 && indent <= runIndent) runIndent = -1;
       const run = line.match(/^(\s*)(?:-\s+)?run:\s*(.*)$/);
       if (run) {
-        runIndent = run[1].length;
+        runIndent = line.indexOf("run:");
         if (UNTRUSTED.test(run[2])) hits.push(i + 1);
       } else if (runIndent >= 0 && UNTRUSTED.test(line)) hits.push(i + 1);
     });
