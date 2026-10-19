@@ -1,60 +1,55 @@
 #!/usr/bin/env node
-// L1 — Deterministic contract checks. No LLM, no network, no cost.
-// These assert the *mechanical contracts* the skills promise. Run in CI.
+// L1 — deterministic integrity checks. No LLM, no network, no cost. Run in CI on every PR.
 //   node scripts/eval/l1.mjs
 // Exits non-zero if any check fails.
-import { execFileSync, execSync, spawnSync } from "node:child_process";
+//
+// Admission is a closed list (scripts/eval/README.md § L1 admission rule). A check lives here
+// only when it guards one of:
+//   1. link / anchor / reference resolution      5. script self-tests and script behaviour
+//   2. frontmatter validity                       6. size and token budgets
+//   3. manifest ↔ disk sync (install, plugin)     7. executable idioms run against fixtures
+//   4. eval-harness integrity                     8. machine-parsed contracts
+// Every check carries a one-line comment naming the runtime failure it prevents.
+// Prose presence, wording, and "two copies agree" checks are not admitted — behaviour claims
+// belong in a `claude plugin eval` case under evals/ or an L2 golden case.
+import { execFileSync, execSync, spawn, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync, mkdirSync, symlinkSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { pathToFileURL } from "node:url";
-import { REPO_ROOT, walk, headingSlugs, links, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
+import { REPO_ROOT, walk, headingSlugs, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
+import { SUITES, DETECTION } from "./suites.mjs";
 import { validateSkill } from "../../skills/authoring/create-skill/scripts/validate-skill.mjs";
 import { escapingLinks, counts as escapingCounts, readBaseline as escapingBaseline } from "./escaping-links.mjs";
 
-// Frozen archives (CLAUDE.md § Where knowledge goes): snapshots that are never kept current, so
-// no walk that asserts LIVE facts (links, Skill() names) reads them. The value is the G86d byte
-// ceiling — one table, so the walks and G86d cannot disagree about which files are frozen.
+// Frozen archives (CLAUDE.md § Where knowledge goes): never kept current, so no live-fact walk
+// reads them. The value is the G86d byte ceiling.
 const FROZEN_ARCHIVES = { "docs/inventory.md": 118685, "docs/evals.md": 27529 };
 const docsWalk = () => walk(join(REPO_ROOT, "docs")).filter((f) => !(rel(f) in FROZEN_ARCHIVES));
 
 const AW = join(REPO_ROOT, "skills/workflow/autonomous-workflow");
-const s = new Suite("L1 deterministic contract checks");
+const PRS = join(REPO_ROOT, "agents/pr-reviewer/scripts");
+const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
+const readOr = (p) => { try { return read(p); } catch { return ""; } };
+const s = new Suite("L1 integrity checks");
 
-// The aw-tester definition is its template plus the on-demand parts it links
-// (`rules/aw-tester-*.md`). Content checks read the joined text, so moving a rule
-// between the template and a part never reds a check, and dropping it from both does.
-const AW_TESTER_TPL = "skills/workflow/autonomous-workflow/templates/aw-tester.agent.md";
-const awTesterParts = () => readdirSync(join(AW, "rules")).filter((f) => /^aw-tester-.+\.md$/.test(f)).sort();
-const readAwTester = () => {
-  const r = (p) => { try { return readFileSync(join(REPO_ROOT, p), "utf8"); } catch { return ""; } };
-  return [r(AW_TESTER_TPL), ...awTesterParts().map((f) => r(`skills/workflow/autonomous-workflow/rules/${f}`))].join("\n");
+// Report-body fixtures, discovered from disk so a new fixture is never silently exempt.
+const REPORT_FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
+const REPORT_FIXTURES = existsSync(REPORT_FIX)
+  ? readdirSync(REPORT_FIX).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort()
+  : [];
+const RENDER_REPORT = join(PRS, "render-report.mjs");
+const renderReport = (payload) => {
+  const r = spawnSync(process.execPath, [RENDER_REPORT], { input: typeof payload === "string" ? payload : JSON.stringify(payload), encoding: "utf8" });
+  return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
 };
 
-// Every report-body fixture, discovered from disk rather than listed. G25/G26/G27 each iterate
-// the fixtures, and an explicit list meant a new fixture was silently exempt from all three —
-// the guards would have kept passing while the reference rendering it locks in went unchecked.
-// A fixture is `<name>.json` + `<name>.expected.md`; the presence checks below catch a half-pair.
-const REPORT_FIXTURES = (() => {
-  const dir = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter((f) => f.endsWith(".json"))
-    .map((f) => f.replace(/\.json$/, "")).sort();
-})();
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 1. Links, anchors, and references
+// ════════════════════════════════════════════════════════════════════════════════════════════
 
-// ── Check A: link + anchor integrity (skips code fences + templates/) ──
-// Catches the broken-anchor class (e.g. the #lesson-promotion bug we shipped + fixed).
-// The repo has pre-existing link debt in example/scaffold prose, so this gates on
-// NO NEW breakage: known pre-existing breaks live in the baseline below (a ratchet —
-// burn the list down over time; never add to it for new work).
+// ── A: link + anchor integrity — a broken relative link or anchor sends an agent to nothing ──
 {
-  // Known pre-existing breaks, kept so the gate catches NEW breakage without
-  // failing on history. Currently EMPTY — all pre-existing breaks have been
-  // resolved (from-to-morphs→state-choreography, the fix-bug verifier anchor, and
-  // playwright-test-healer now points at the external Playwright Test Agents docs).
-  // Keep it empty: fix new breaks, don't baseline them.
-  const BASELINE = new Set([]);
-  // linksOutsideFences: skip ``` fenced blocks (examples) and obvious placeholders.
   function realLinks(file) {
     const out = [];
     let fence = false;
@@ -66,11 +61,7 @@ const REPORT_FIXTURES = (() => {
     });
     return out;
   }
-  // Skills that live in sibling repos by design — links to them are not repo-internal.
-  // (otel-* used to be here as broken relative links; they now point at the dash0
-  // agent-skills repo via https, so the http skip handles them — and any NEW relative
-  // otel link would correctly fail.)
-  const SIBLING_REPO = /git-worktree-workflows/;
+  const SIBLING_REPO = /git-worktree-workflows/; // lives in a sibling repo by design
   const files = [
     ...walk(join(REPO_ROOT, "skills")).filter((f) => !f.includes("/templates/") && !f.endsWith("/_template.md")),
     ...walk(join(REPO_ROOT, "agents")).filter((f) => !f.includes("/templates/")),
@@ -79,6916 +70,38 @@ const REPORT_FIXTURES = (() => {
     join(REPO_ROOT, "README.md"),
     ...docsWalk(),
   ];
-  let newBroken = 0, baselined = 0;
+  let broken = 0;
   for (const f of files) {
     for (const { line, target } of realLinks(f)) {
       if (/^(https?:|mailto:)/.test(target) || target.includes("<") || target.includes("{") || target === "...") continue;
-      if (target.startsWith("/")) continue; // absolute path = illustrative example, not a repo-relative link
-      if (SIBLING_REPO.test(target)) continue; // lives in a sibling repo by design
+      if (target.startsWith("/")) continue; // absolute path = illustrative example
+      if (SIBLING_REPO.test(target)) continue;
       const [path, anchor] = target.split("#");
       const tf = path === "" ? f : join(f, "..", path);
       let bad = "";
       if (path && !existsSync(tf)) bad = `missing file: ${target}`;
       else if (anchor && tf.endsWith(".md") && !headingSlugs(tf).has(anchor)) bad = `no heading for #${anchor}`;
       if (!bad) continue;
-      if (BASELINE.has(`${rel(f)}::${target}`)) { baselined++; continue; }
-      newBroken++;
+      broken++;
       s.check(`link ${rel(f)}:${line}`, false, bad);
     }
   }
-  s.check("no NEW broken links/anchors (baseline-ratcheted)", newBroken === 0, newBroken ? `${newBroken} new` : `${baselined} pre-existing baselined`);
+  s.check("A no broken links/anchors", broken === 0, broken ? `${broken} broken` : "");
 }
 
-// ── Check B / G2b: the tier-detection table has exactly ONE home ──
-// Until v3.23 the dispatcher was an agent, which boots cold and so carried its
-// own inline copy of the table; this check compared the two copies byte-for-byte.
-// The dispatcher is now the `aw` SKILL, which runs in the caller's context with
-// SKILL.md already loaded — so the second copy buys nothing and can only rot.
-// The guard inverts accordingly: assert the canonical table still exists, and
-// that the dispatcher did not silently re-fork it.
-function tierQuestions(file) {
-  // pull the decision rows from the first markdown table whose rows mention Full/Lite/Micro
-  return readFileSync(file, "utf8")
-    .split("\n")
-    .filter((l) => /^\|\s*\d\s*\|/.test(l) && /\*\*(Full|Lite|Micro)\*\*/.test(l))
-    .map((l) => l.replace(/\s+/g, " ").trim());
-}
+// ── G71: an escaping `../` link breaks on hosts that import one skill folder at a time ──
 {
-  const canonical = tierQuestions(join(AW, "SKILL.md"));
-  s.check("G2b tier table present in SKILL.md Step 1 (canonical)", canonical.length >= 4,
-    `${canonical.length} decision rows`);
-
-  const dispatcher = tierQuestions(join(AW, "aw/SKILL.md"));
-  s.check("G2b aw dispatcher does not duplicate the tier table", dispatcher.length === 0,
-    dispatcher.length ? `${dispatcher.length} tier rows re-forked into aw/SKILL.md` : "single source of truth");
-
-  // The dispatcher must still POINT at the canonical table, or "no copy" would
-  // pass trivially on a dispatcher that forgot tier detection altogether.
-  const body = readFileSync(join(AW, "aw/SKILL.md"), "utf8");
-  s.check("G2b aw dispatcher links the canonical tier table",
-    /\.\.\/SKILL\.md#step-1-detect-workflow-mode-mandatory/.test(body),
-    "expected a link to ../SKILL.md#step-1-detect-workflow-mode-mandatory");
-}
-
-// ── Check B2 / G2c: prose agent counts ≡ what install.sh actually links ──
-// The v3.23 dispatcher conversion moved `aw` out of the agent set, and the
-// resulting "how many aw- agents are there" claim went wrong three times across
-// two review rounds — each fix corrected the flagged line and left a twin, in a
-// different file, saying the other number. The count is mechanically derivable
-// from the installer, so derive it and make every prose claim answer to it.
-//
-// `aw` is deliberately NOT in the population: it is a skill, has no `aw-`
-// prefix, and is linked into skills/ rather than agents/. That distinction is
-// exactly what the prose kept losing.
-{
-  const installer = readFileSync(join(AW, "install.sh"), "utf8");
-  // `aw-[a-z0-9-]+` — NOT `aw-[a-z]+`. A hyphenated or numbered agent
-  // (`aw-ui-tester`) would otherwise be invisible to the extraction, and the
-  // whole guard would pass green while the installer linked one more agent
-  // than every prose claim admits.
-  const linked = [...installer.matchAll(/ln -sf[n]?\s+\S+\s+"\$CLAUDE_DIR\/agents\/(aw-[a-z0-9-]+)\.md"/g)]
-    .map((m) => m[1]);
-  const truth = new Set(linked);
-
-  s.check("G2c install.sh links a discoverable set of aw- agents", truth.size >= 2,
-    truth.size ? [...truth].join(", ") : "no `ln -sf` into agents/aw-*.md found");
-
-  // Second, independent derivation of the same truth. Everything below trusts
-  // one regex over one file; if that extraction silently under-reads — a
-  // renamed variable, a shape the pattern does not cover — every downstream
-  // assertion passes against a wrong number. The templates on disk are the
-  // other end of the same fact, so disagreement means the extraction is wrong,
-  // not the prose.
-  const templated = new Set(
-    readdirSync(join(AW, "templates"))
-      .filter((f) => /^aw-[a-z0-9-]+\.agent\.md$/.test(f))
-      .map((f) => f.replace(/\.agent\.md$/, "")),
-  );
-  const onlyLinked = [...truth].filter((a) => !templated.has(a));
-  const onlyTemplated = [...templated].filter((a) => !truth.has(a));
-  s.check("G2c the installer's aw- agent set matches templates/ on disk",
-    onlyLinked.length === 0 && onlyTemplated.length === 0,
-    onlyLinked.length || onlyTemplated.length
-      ? `linked-not-templated: [${onlyLinked}] · templated-not-linked: [${onlyTemplated}]`
-      : `${truth.size} agents agree`);
-
-  // Every agent the installer links must be inventoried in the root CLAUDE.md
-  // generated-from-templates list, or `agents/` stays the wrong place to look.
-  const rootClaude = readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8");
-  const uninventoried = [...truth].filter((a) => !new RegExp("^- `" + a + "`", "m").test(rootClaude));
-  s.check("G2c every installed aw- agent is inventoried in CLAUDE.md",
-    uninventoried.length === 0,
-    uninventoried.length ? `missing: ${uninventoried.join(", ")}` : `${truth.size} inventoried`);
-
-  // Now the counts. Three phrasings carry the claim across the docs; each is
-  // anchored on something that pins it to the aw- set specifically, so an
-  // unrelated "agents" sentence elsewhere in these files is not swept in.
-  const WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5 };
-  const toNum = (w) => (/^\d+$/.test(w) ? Number(w) : WORDS[w.toLowerCase()]);
-  const CLAIMS = [
-    // "the three `aw-` agents", "links three `aw-` agents"
-    /(\w+)\s+`aw-`\s+agents/g,
-    // "Plus three agents linked into", "three agents installed"
-    /(\w+)\s+agents\s+(?:linked|installed)/g,
-    // "a dispatcher, three agents, eight phases"
-    /dispatcher(?:\s+skill)?,\s+(\w+)\s+agents/g,
-    // "**one dispatcher skill** and **three agents**" — SKILL.md's Templates
-    // intro, whose bolded form matches none of the three above.
-    /dispatcher\s+skill\*{0,2}\s+and\s+\*{0,2}(\w+)\s+agents/g,
-  ];
-  const SURFACES = [
-    ["README.md", readFileSync(join(REPO_ROOT, "README.md"), "utf8")],
-    ["autonomous-workflow/README.md", readFileSync(join(AW, "README.md"), "utf8")],
-    ["autonomous-workflow/SKILL.md", readFileSync(join(AW, "SKILL.md"), "utf8")],
-    ["autonomous-workflow/install.sh", installer],
-  ];
-  const wrong = [];
-  let claimsSeen = 0;
-  for (const [label, text] of SURFACES) {
-    for (const re of CLAIMS) {
-      for (const m of text.matchAll(re)) {
-        const n = toNum(m[1]);
-        if (n === undefined) continue;   // "the `aw-` agents" etc. — not a count
-        claimsSeen++;
-        if (n !== truth.size) wrong.push(`${label}: "${m[0].trim()}" (linked: ${truth.size})`);
-      }
-    }
-  }
-  s.check("G2c prose aw- agent counts match the installer", wrong.length === 0,
-    wrong.length ? wrong.join(" | ") : `${claimsSeen} count claims agree on ${truth.size}`);
-
-  // Sentinel: if the phrasings drift, the check above passes vacuously.
-  // Pinned to the live count, not a loose floor. A floor with headroom is the
-  // vacuous case in miniature — at `>= 5` against 9 live sites, rewording any
-  // ONE claim both un-matched every regex and mis-stated the count, and L1
-  // stayed green. One site at a time is how this class actually behaves, so
-  // the bar has to notice one site going missing. Adding a claim site is fine
-  // (9 → 10 passes); losing one is not.
-  s.check("G2c found the aw- agent count claims to guard", claimsSeen >= 9, `found ${claimsSeen}`);
-}
-
-// ── Check B3 / G2d: `aw` owns the natural-language triggers, alone ──────────
-// `aw` and its parent `autonomous-workflow` used to auto-trigger on near-
-// identical vocabulary, so "implement this autonomously" could land on the
-// phase machinery with tier detection and the lessons loop skipped. v3.24
-// made `aw` the sole entry point. Two halves, both asserted, because either
-// one alone silently re-opens the gap:
-//
-//   1. The parent's description carries none of the trigger vocabulary.
-//   2. Every phrase quoted in `aw`'s description exists in the routing rule.
-//
-// Half 2 is the drift guard the tier table got from `G2b` — but by assertion
-// rather than by deletion, because neither copy can link the other here:
-// frontmatter has no link mechanism, and the routing rule is the live rubric
-// the L2 `aw-should-trigger` suite reads, so slimming it would leave that
-// suite with no vocabulary to decide `trigger` on.
-{
-  const frontmatter = (src) => {
-    const m = src.match(/^---\n([\s\S]*?)\n---/);
-    return m ? m[1] : "";
-  };
-  const describe = (src) => {
-    const fm = frontmatter(src);
-    // `description: >` folded block — everything until the next top-level key.
-    const m = fm.match(/^description:\s*>\s*\n([\s\S]*?)(?=\n[a-z-]+:)/m);
-    return (m ? m[1] : "").replace(/\s+/g, " ").toLowerCase();
-  };
-
-  const awDesc = describe(readFileSync(join(AW, "aw/SKILL.md"), "utf8"));
-  const parentDesc = describe(readFileSync(join(AW, "SKILL.md"), "utf8"));
-  const rule = readFileSync(join(AW, "templates/routing.rule.md"), "utf8").toLowerCase();
-
-  s.check("G2d both aw and parent descriptions were parsed", awDesc.length > 100 && parentDesc.length > 100,
-    `aw ${awDesc.length} chars, parent ${parentDesc.length} chars`);
-
-  // Half 1. The parent may NAME the vocabulary while disclaiming it ("belongs
-  // to the `aw` skill"), so a bare substring test would fire on the sentence
-  // that fixes the problem. Match the claiming forms instead: a quoted phrase,
-  // or a `Triggers on` / `Use when` clause.
-  const VOCAB = [
-    "autonomously", "independently", "in isolation", "in a worktree",
-    "end-to-end", "all the way to a pr", "ship this", "land this",
-    "take care of this", "handle this without me",
-  ];
-  const claimed = VOCAB.filter((p) => new RegExp(`["'\`]${p}["'\`]`).test(parentDesc));
-  s.check("G2d the parent skill's description quotes no trigger phrase", claimed.length === 0,
-    claimed.length ? `quoted: ${claimed.join(", ")}` : "none quoted");
-  s.check("G2d the parent skill's description makes no trigger claim",
-    !/\b(triggers on|use when)\b/.test(parentDesc),
-    parentDesc.match(/\b(triggers on|use when)\b/)?.[0] ?? "no claim");
-
-  // Half 2. Every phrase `aw` advertises must be one the routing rule lists,
-  // or the two discovery surfaces disagree about what fires the dispatcher.
-  const quotedInAw = [...awDesc.matchAll(/"([^"]{4,40})"/g)].map((m) => m[1])
-    .filter((p) => !p.startsWith("/"));           // `/aw` is an invocation, not a phrase
-  const missing = quotedInAw.filter((p) => !rule.includes(p));
-  s.check("G2d every phrase aw advertises appears in the routing rule", missing.length === 0,
-    missing.length ? `not in rule: ${missing.join(", ")}` : `${quotedInAw.length} phrases, all present`);
-  // Sentinel, pinned to the live count for the same reason G2c's is: a loose
-  // floor lets phrases drop out of the description one at a time in silence.
-  s.check("G2d found the advertised trigger phrases to guard", quotedInAw.length >= 10,
-    `found ${quotedInAw.length}`);
-}
-
-// ── G130: plan.md is a brief, gated by the deterministic check runner ────────
-// The brief's Core is six `## ` headings in aw-create-plan's template; the executor bails
-// on a plan carrying neither the brief nor the legacy fast-lane eight; and the
-// Definition of Done is the one sentinel line `run-checks.mjs` prints. The runner's own
-// --self-test is executed, so its parser, statuses, and seal cannot rot unobserved.
-{
-  const read = (p) => { try { return readFileSync(join(REPO_ROOT, p), "utf8"); } catch { return ""; } };
-  const BRIEF = ["Task", "Requirements", "Guardrails", "Acceptance Criteria", "Turn Cap", "File Changes"];
-  const ACP = read("skills/workflow/aw-create-plan/SKILL.md");
-  const tpl = (ACP.match(/^## The brief \(Core\)[\s\S]*?````markdown\n([\s\S]*?)\n````/m) || ["", ""])[1];
-  const heads = [...tpl.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
-  const order = BRIEF.map((b) => heads.findIndex((h) => h.startsWith(b)));
-  s.check("G130a aw-create-plan's brief template carries the six Core headings, in order",
-    order.every((i) => i >= 0) && order.every((i, k) => k === 0 || i > order[k - 1]),
-    `template headings: ${heads.join(" | ") || "none — the \`\`\`\`markdown block under ## The brief (Core) was not found"}`);
-  s.check("G130a aw-create-plan validates the brief with the six-heading grep",
-    ACP.includes("grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)'"),
-    "the validation grep is what the executor's bail check and the planner's rule-#2 substitution both run");
-
-  const EXE = read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md");
-  s.check("G130b aw-executor's bail check accepts the brief (6) or the legacy fast-lane plan (8)",
-    /BRIEF=\$\(grep -cE '\^## \(Task\|Requirements\|Guardrails\|Acceptance Criteria\|Turn Cap\|File Changes\)'/.test(EXE)
-    && /FASTLANE=\$\(grep -cE '\^## \(TL;DR\|Requirements\|Decisions\|Acceptance Criteria\|Implementation Order\|File Changes\|Verification\|Progress Log\)'/.test(EXE)
-    && /`BRIEF` below prints < 6 and `FASTLANE` prints < 8/.test(EXE),
-    "drop either grep and the executor rejects a valid brief or every fix-bug fast-lane plan");
-
-  const P4 = read("skills/workflow/autonomous-workflow/rules/phase-4-testing.md");
-  const SENT = /CHECKS M\/M PASS \(<sha>\)|CHECKS <M>\/<M> PASS \(<sha>\)/;
-  s.check("G130c the executor and phase-4 gate on the run-checks sentinel",
-    /scripts\/run-checks\.mjs/.test(P4) && SENT.test(P4) && /run-checks\.mjs/.test(EXE) && SENT.test(EXE),
-    "Phase 4 must exit on the runner's one line, never on the executor's own reading of checks.yaml");
-
-  const RC = join(AW, "scripts/run-checks.mjs");
-  const st = spawnSync(process.execPath, [RC, "--self-test"], { encoding: "utf8", timeout: 60000 });
-  s.check("G130d run-checks.mjs --self-test exits 0",
-    st.status === 0 && /self-test: PASS/.test(st.stdout),
-    `exit ${st.status}; ${(st.stdout + st.stderr).trim().split("\n").slice(-3).join(" / ")}`);
-
-  const AWTT = read(AW_TESTER_TPL);
-  const unlinked = awTesterParts().filter((f) => !AWTT.includes(`(../rules/${f})`));
-  s.check("G130e aw-tester's template links every rules/aw-tester-*.md part it loads on demand",
-    awTesterParts().length >= 4 && unlinked.length === 0,
-    `unlinked parts: ${unlinked.join(", ") || "none"} (found ${awTesterParts().length})`);
-}
-
-// ── Check C: plan.md Core-section contract — runs the ACTUAL confidence rule-checks ──
-// against fixtures. Encodes the #30 Core contract + the #31 Acceptance-Criteria-non-empty fix.
-// We execute the exact idioms documented in skills/quality/confidence/rules/plan-rule-checks.md rules #2 and #3,
-// so a regression in that logic (like #31, where AC always counted 0) fails here.
-function coreSectionCount(plan) {
-  return Number(execSync(
-    `grep -E '^## (TL;DR|Requirements|Decisions|Acceptance Criteria|Implementation Order|File Changes|Verification|Progress Log)' "${plan}" | wc -l`,
-    { shell: "/bin/bash" }).toString().trim());
-}
-// Rule #2's brief shape (aw-create-plan's six-heading Core); a plan passes rule #2 on either shape.
-function briefSectionCount(plan) {
-  return Number(execSync(
-    `grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)' "${plan}" || true`,
-    { shell: "/bin/bash" }).toString().trim());
-}
-function acceptanceCriteriaCount(plan) {
-  return Number(execSync(
-    `awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' "${plan}" | grep -c '^- \\|^[0-9]' || true`,
-    { shell: "/bin/bash" }).toString().trim());
-}
-// Rule #9 (v3.15): every [user-stated] requirement (positional R-number) is covered
-// by a `(covers: R…)` annotation in the Acceptance Criteria. Exact idiom from
-// skills/quality/confidence/rules/plan-rule-checks.md rule #9. Returns true when the check passes.
-function requirementCoveragePasses(plan) {
-  try {
-    execSync(
-      `awk '/^## Requirements/ {rs=1; as=0; next} /^## Acceptance Criteria/ {as=1; rs=0; next} /^###? / {rs=0; as=0} rs && /^[-0-9]/ {n++; if (index($0,"[user-stated]")) us[n]=1} as {s=$0; while (match(s, /covers:[^)]*/)) {seg=substr(s,RSTART,RLENGTH); s=substr(s,RSTART+RLENGTH); while (match(seg,/R[0-9]+/)) {cov[substr(seg,RSTART+1,RLENGTH-1)]=1; seg=substr(seg,RSTART+RLENGTH)}}} END {for (i in us) if (!(i in cov)) exit 1; exit 0}' "${plan}"`,
-      { shell: "/bin/bash" });
-    return true;
-  } catch { return false; }
-}
-// Rule #10 (v3.15): a File Changes `create` row requires an Existing Code Survey
-// section with ≥1 verdict row; modification-only plans pass vacuously. Exact idiom
-// from confidence rule #10 (pipe-free index() sums keep the table row verbatim).
-function existingCodeSurveyPasses(plan) {
-  try {
-    execSync(
-      `awk -F'[|]' '/^## File Changes/ {fc=1; es=0; next} /^## Existing Code Survey/ {es=1; fc=0; next} /^###? / {fc=0; es=0} fc && /^[|]/ && $2 ~ /create/ {creates++} es && /^[|]/ {if (index($0,"EXTEND") + index($0,"WRAP") + index($0,"BUILD NEW") > 0) rows++} END {if (creates == 0) exit 0; exit (rows < 1)}' "${plan}"`,
-      { shell: "/bin/bash" });
-    return true;
-  } catch { return false; }
-}
-// Rule #11 (v3.15): checks.yaml IDs are in sync with the plan's AC-{n} IDs, both
-// directions (no missing check, no orphan check).
-function checksInSync(plan, checks) {
-  const planIds = execSync(
-    `awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' "${plan}" | grep -oE 'AC-[0-9]+' | sort -u`,
-    { shell: "/bin/bash" }).toString().trim().split("\n").filter(Boolean);
-  const checkIds = execSync(
-    `grep -oE '^- id: AC-[0-9]+' "${checks}" | grep -oE 'AC-[0-9]+' | sort -u`,
-    { shell: "/bin/bash" }).toString().trim().split("\n").filter(Boolean);
-  return planIds.length > 0 &&
-    JSON.stringify(planIds) === JSON.stringify(checkIds);
-}
-{
-  const fx = join(REPO_ROOT, "scripts/eval/fixtures/plans");
-  const valid = join(fx, "valid-core.md");
-  const missing = join(fx, "missing-core.md");
-  const emptyAc = join(fx, "empty-ac.md");
-  const uncovered = join(fx, "uncovered-req.md");
-  const createNoSurvey = join(fx, "create-no-survey.md");
-  s.check("rule#2: valid plan has all 8 Core sections", coreSectionCount(valid) >= 8, `got ${coreSectionCount(valid)}`);
-  s.check("rule#2: missing-core plan fails (< 8)", coreSectionCount(missing) < 8, `got ${coreSectionCount(missing)}`);
-  const validBrief = join(fx, "valid-brief.md");
-  const missingBrief = join(fx, "missing-brief.md");
-  s.check("rule#2: valid brief plan has all 6 brief Core sections", briefSectionCount(validBrief) >= 6, `got ${briefSectionCount(validBrief)}`);
-  s.check("rule#2: brief missing Guardrails + Turn Cap fails (< 6)", briefSectionCount(missingBrief) < 6, `got ${briefSectionCount(missingBrief)}`);
-  s.check("rule#2: plan-rule-checks.md documents the brief-shape idiom",
-    readFileSync(join(REPO_ROOT, "skills/quality/confidence/rules/plan-rule-checks.md"), "utf8")
-      .includes("Task\\|Requirements\\|Guardrails\\|Acceptance Criteria\\|Turn Cap\\|File Changes"));
-  s.check("rule#3: valid plan has ≥1 Acceptance Criterion", acceptanceCriteriaCount(valid) >= 1, `got ${acceptanceCriteriaCount(valid)}`);
-  // The #31 regression: an AC heading present but empty must count 0 (the old awk bug counted wrong).
-  s.check("rule#3 (#31 guard): empty-AC plan counts 0", acceptanceCriteriaCount(emptyAc) === 0, `got ${acceptanceCriteriaCount(emptyAc)}`);
-  // Rule #9 — requirement→criterion traceability.
-  s.check("rule#9: valid plan covers every [user-stated] requirement", requirementCoveragePasses(valid));
-  s.check("rule#9: uncovered-req plan fails", !requirementCoveragePasses(uncovered));
-  // Rule #10 — create-without-survey is the anti-reinvention gate; modify-only passes vacuously.
-  s.check("rule#10: valid plan (create + survey) passes", existingCodeSurveyPasses(valid));
-  s.check("rule#10: create-no-survey plan fails", !existingCodeSurveyPasses(createNoSurvey));
-  s.check("rule#10: modification-only plan passes vacuously", existingCodeSurveyPasses(emptyAc));
-  // Rule #11 — checks.yaml ID sync, both directions.
-  s.check("rule#11: in-sync checks.yaml passes", checksInSync(valid, join(fx, "checks-valid.yaml")));
-  s.check("rule#11: drifted checks.yaml fails", !checksInSync(valid, join(fx, "checks-drifted.yaml")));
-}
-
-// ── Check D: every skill with a diagnostic-surface is uniquely resolvable by `skills/*/<name>/` ──
-// Locks the diagnose path-resolution fix (flat `skills/<name>/` would miss category-nested skills).
-{
-  const surfaces = walk(join(REPO_ROOT, "skills"))
-    .filter((f) => f.endsWith("/rules/diagnostic-surface.md"))
-    .map((f) => f.split("/skills/")[1].split("/")[1]); // skills/<category>/<name>/rules/...
-  for (const name of surfaces) {
-    const matches = readdirSync(join(REPO_ROOT, "skills"))
-      .filter((c) => existsSync(join(REPO_ROOT, "skills", c, name)));
-    s.check(`diagnose resolves '${name}' uniquely via skills/*/${name}/`, matches.length === 1, `${matches.length} matches`);
-  }
-}
-
-// ── Check E: agent-skills.git commits no fast-tier lesson scopes ──
-// The loops now run their fast tier on LoreKit (tag loop::<scope>, scopes
-// global / repo::{owner}/{repo}), not on committed markdown — so no loop
-// writes memory/<scope>/ anymore. This guard stays as a belt-and-suspenders
-// check: a committed memory/<scope>/ directory here (e.g. left over from the
-// pre-LoreKit markdown backend, or hand-created) would be skill-author noise
-// masquerading as lessons. Keep these directories absent in agent-skills.git.
-{
-  // Keep this array in sync with the Lessons table in agents/shared/rules/memory-buckets.md.
-  for (const scope of ["aw-lessons", "aw-tester-lessons", "ui-verify-lessons", "fix-bug-lessons", "reviewer-lessons", "implement-suggestion-lessons", "ci-auto-fix-lessons", "e2e-pr-stabilizer-lessons", "ideate-lessons", "optimize-approach-lessons"]) {
-    const dir = join(REPO_ROOT, "memory", scope);
-    s.check(`memory/${scope} not committed in agent-skills.git (this is the skill source, not a consumer)`, !existsSync(dir));
-  }
-}
-
-// ── Check F: SKILL.md frontmatter sanity — semver version + name matches directory ──
-{
-  for (const f of walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))) {
-    const fm = frontmatter(f);
-    const dir = f.split("/").slice(-2)[0];
-    if (fm.version !== undefined)
-      s.check(`${rel(f)} version is semver`, /^\d+\.\d+\.\d+$/.test(fm.version), `got '${fm.version}'`);
-    if (fm.name !== undefined)
-      s.check(`${rel(f)} name matches dir`, fm.name === dir, `name='${fm.name}' dir='${dir}'`);
-  }
-}
-
-// ── Check F1b: every SKILL.md `description` is within the 1024-char spec cap ──
-// The Agent Skills spec caps `description` at 1024 characters, and a consumer that imports this
-// repo from git REJECTS the skill outright when it is longer — nine skills failed one such import
-// at once (`Bad Request: The SKILL.md frontmatter 'description' must be 1-1024 characters.`),
-// every one of them a description that grew a clause at a time across releases. Nothing here
-// measured it: `create-skill`'s own validator has owned the rule as FM05 since it shipped, but it
-// runs per-skill on demand, so a skill nobody re-validated drifted past the cap unobserved while
-// L1 stayed green.
-//
-// The length is READ FROM `validateSkill` rather than re-derived, for the same reason `G21d`
-// derives suite selection instead of mirroring it: `description` is a folded YAML scalar, so a
-// second extractor here would be a second answer to "how long is it", and the two would disagree
-// the first time one of them learned about `|` blocks or a trailing blank line. One extractor,
-// one cap (`DESC_MAX` in `validate-skill.mjs`), one place to change it.
-//
-// Scoped to FM05 deliberately. The validator's other rows carry judgment (`FM08` wants a
-// third-person verb, `FM03` warns on a reserved word) and several skills fail them today; gating
-// L1 on the whole result would turn one import-blocking defect into a repo-wide rewrite.
-{
-  for (const f of walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))) {
-    const dir = f.slice(0, -"/SKILL.md".length);
-    const fm05 = validateSkill(dir).findings.filter((x) => x.id === "FM05" && x.level === "FAIL");
-    s.check(`F1b ${rel(f)} description is within the 1024-char cap`,
-      fm05.length === 0,
-      fm05.length ? fm05[0].message : "");
-  }
-}
-
-// ── Check F2: frontmatter is PARSEABLE YAML, for skills and agents alike ──
-// A plain (unquoted) YAML scalar may not contain ": " — it reads as a mapping indicator, and a
-// strict parser rejects the WHOLE frontmatter block, so the file's name/description/tools never
-// load. Two real instances: agents/rca-investigator.md shipped broken ("absorbing the
-// reasoning: `/fix-bug`"), and a pr-reviewer description rewrite reintroduced it twice in one
-// line ("multi-lens review: correctness", "the Task tool: `Task(`"). Both are invisible to every
-// other check here, because every other check greps the BODY.
-//
-// This is a targeted rule rather than a YAML parse: the repo has no YAML dependency, and ": " in
-// an unquoted scalar is the only shape either failure took. A quoted value may contain anything.
-{
-  const AGENT_AND_SKILL_FRONTMATTER = [
-    ...walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md")),
-    ...walk(join(REPO_ROOT, "agents")).filter((p) => /\/agents\/[^/]+\.md$/.test(p)),
-  ];
-  for (const f of AGENT_AND_SKILL_FRONTMATTER) {
-    const src = readFileSync(f, "utf8");
-    const parts = src.split("---\n");
-    if (parts.length < 3 || parts[0] !== "") continue;   // no frontmatter block
-    const offenders = parts[1].split("\n")
-      .map((line) => /^([A-Za-z_][\w-]*): (.+)$/.exec(line))
-      .filter((m) => m && !/^["'|>]/.test(m[2]) && m[2].includes(": "))
-      .map((m) => m[1]);
-    s.check(`F2 ${rel(f)} frontmatter has no bare ": " in a plain scalar`,
-      offenders.length === 0,
-      offenders.length ? `key(s): ${offenders.join(", ")} — quote the value or use an em dash` : "");
-  }
-}
-
-// ── Check F3: "tool unavailable" is not one failure, and never terminal for a run ──
-// An MCP server connects asynchronously: a tool unregistered at the start of a run can be
-// callable minutes later in the same session (observed live — the harness reports servers as
-// "still connecting" and ToolSearch waits for them). The rule used to say the opposite — "there
-// is nothing to wait for, set false immediately, the remedy is environmental" — which is how a
-// long multi-round run probes once, settles false, and then no-ops every read AND write in every
-// later round: "LoreKit memory not connected ... nothing captured".
-//
-// Assert the two causes are still distinguished, and that no surface has gone back to declaring
-// unavailability terminal for the run.
-{
-  const readSrc = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const SURFACES = [
-    "agents/pr-reviewer.md",
-    "agents/shared/rules/comment-relevance-memory.md",
-    "agents/shared/rules/prior-comment-awareness.md",
-  ];
-  for (const f of SURFACES) {
-    const src = readSrc(f);
-    s.check(`F3 ${f} distinguishes a missing grant from a server that has not connected yet`,
-      /tools:` grant/.test(src) && /connected yet|has not connected/.test(src),
-      "the two causes of 'tool unavailable' are conflated again");
-    // The exact sentences that made the old rule wrong. Each asserted the run-level verdict.
-    for (const phrase of ["There is nothing to wait for", "terminal immediately"]) {
-      s.check(`F3 ${f} no longer declares unavailability terminal ("${phrase}")`,
-        !src.includes(phrase),
-        "a run-terminal verdict on an asynchronously-connecting server is back");
-    }
-  }
-  // The write sites must not inherit the read-time verdict — that inheritance is what turned one
-  // early probe into a whole run of no-ops.
-  s.check("F3 pr-reviewer's write sites re-probe rather than inheriting the read verdict",
-    /write sites[\s\S]{0,400}attempt their call regardless/.test(readSrc("agents/pr-reviewer.md")));
-}
-
-// ── Check G: cross-file contract drift guards (2026-06 holistic audit) ──
-// Every defect below was a contradiction between files that must agree —
-// the class Check A's link integrity cannot see. Lock the repaired contracts.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const norm = (t) => t.replace(/\s+/g, " ");
-
-  // G1: the seen_count UPDATE contract sentence is shared verbatim by all three owners
-  // (persistent-memory write pipeline + both autonomous-workflow loop surfaces).
-  // Without it, applied lessons never reach the seen_count >= 3 promotion gate.
-  // The wording is LoreKit's own: the STORE owns both halves, so a loop must not
-  // hand-write a count or an expiry date into the lesson body to track them.
-  const CONTRACT =
-    "A recurrence resolves to an UPDATE: the store increments `seen_count` by 1 for you, and re-passing `ttl_days` refreshes the expiry.";
-  for (const p of [
-    "skills/authoring/persistent-memory/rules/write-pipeline.md",
-    "skills/workflow/autonomous-workflow/rules/self-improvement-loop.md",
-    "skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md",
-  ])
-    s.check(`G1 seen_count UPDATE contract in ${p.split("/").pop()}`, norm(read(p)).includes(norm(CONTRACT)));
-
-  // G2: the fix-bug fast-lane plan is a superset of the LEGACY Core-8 sections — aw-executor's
-  // bail check accepts a plan carrying either the brief (G130b) or these eight headings, and
-  // confidence(plan) rule #2 still counts them.
-  const CORE = ["TL;DR", "Requirements", "Decisions", "Acceptance Criteria",
-    "Implementation Order", "File Changes", "Verification", "Progress Log"];
-  const fastLane = read("skills/workflow/fix-bug/rules/fast-lane-plan-contract.md");
-  // Match heading-shaped occurrences (`## <name>`), not prose mentions — the executor
-  // bail check and confidence rule #2 key on `^## ` headings, so the guard must too.
-  const missingCore = CORE.filter(
-    (c) => !new RegExp("^## " + c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "m").test(fastLane));
-  s.check("G2 fast-lane plan contract ⊇ legacy Core-8 sections (as ## headings)", missingCore.length === 0, missingCore.join(", "));
-
-  // G3: implement-suggestion's non-removable override keys on /critical's REAL output
-  // buckets (Must-fix), never the phantom Critical/High/Major severity taxonomy.
-  const isFiles = walk(join(REPO_ROOT, "skills/workflow/implement-suggestion"));
-  const phantomSeverity = isFiles.filter((f) => /Critical( or |\/)(High|Major)/.test(readFileSync(f, "utf8"))).map(rel);
-  const usesMustFix = isFiles.some((f) => readFileSync(f, "utf8").includes("Must-fix"));
-  s.check("G3 implement-suggestion keys on /critical's Must-fix bucket",
-    phantomSeverity.length === 0 && usesMustFix, phantomSeverity.join(", ") || "Must-fix missing");
-
-  // G4: review agents consume confidence(code)'s real contract (weighted Final over
-  // Correctness/Completeness/No-regressions), not a fictional returned score trio.
-  const pcc = read("agents/shared/rules/per-comment-confidence.md");
-  s.check("G4 per-comment gate consumes the real confidence(code) contract",
-    !/returns three scores/.test(pcc) && /Correctness/.test(pcc));
-
-  // G5: forbidden phrases that re-introduce audited contradictions or phantom references.
-  const FORBIDDEN = [
-    [/Never auto-continue past iteration 3/, "flat 3-cap — caps are mode-aware with one-shot auto-replan"],
-    [/iterate until passing/i, "uncapped iteration — the stuck-loop cap governs"],
-    [/\bvisual-test\b/, "phantom visual-test agent"],
-    [/worker-dispatch-prompt\.md/, "phantom dispatch prompt file"],
-    [/\bmcp list\b/, "fabricated mcp CLI — detect MCP tools from the tool list"],
-  ];
-  const scan = [...walk(join(REPO_ROOT, "skills")), ...walk(join(REPO_ROOT, "agents"))];
-  for (const [re, why] of FORBIDDEN) {
-    const hits = scan.filter((f) => re.test(readFileSync(f, "utf8"))).map(rel);
-    s.check(`G5 no /${re.source}/ (${why})`, hits.length === 0, hits.slice(0, 3).join(", "));
-  }
-
-  // G6: Phase 1 — Cross-rubric agreement rule is present and carries the promotion language.
-  // Locks the contract that ≥ 2 rubric overlap lowers the per-comment-confidence threshold.
-  const rcmd = read("agents/shared/rules/rubric-composition.md");
-  s.check("G6 rubric-composition has Cross-rubric agreement section",
-    rcmd.includes("Cross-rubric agreement"));
-  s.check("G6 rubric-composition 80 → 70 promotion language present",
-    rcmd.includes("80") && rcmd.includes("70") && /agreement.promoted/i.test(rcmd));
-
-  // G6b: Materiality routing — non-blocking findings split material/cosmetic; cosmetic sorts after
-  // material at placement, and on a docs-only incremental delta is dropped at the PRE-CLEARING
-  // filtering stage (2.3) so it never enters <CL> and the <CL> − <DEF> == <F> identity holds. Both
-  // assertions are scoped to the section slice so gutting the section fails the check.
-  const matSec = (rcmd.match(/###\s+Materiality routing[\s\S]*?(?=\n##\s)/) || [""])[0];
-  s.check("G6b rubric-composition § Materiality routing classifies material vs cosmetic + orders them",
-    /cosmetic/i.test(matSec) && /material/i.test(matSec) && /sort before|material findings sort/i.test(matSec));
-  s.check("G6b materiality cosmetic drop is pre-clearing (never enters <CL>, identity intact)",
-    /filtering stage/i.test(matSec) && /never enters `<CL>`/i.test(matSec));
-  // G6c: Consolidation collapses cross-surface parity findings into one enumerated finding, so a
-  // consistency fix cannot leave a sibling to re-flag on the next push (cascade guard). Scoped to
-  // the § Consolidation pass slice so gutting item 4 fails the check (matched G6b's scoping).
-  const consSec = (rcmd.match(/##\s+Consolidation pass[\s\S]*?(?=\n##\s)/) || [""])[0];
-  s.check("G6c rubric-composition consolidation collapses parity findings across siblings",
-    /parity findings across sibling surfaces/i.test(consSec) && /enumerate/i.test(consSec));
-
-  // G7: every refactor recipe (R\d+) in refactor-recipes.md's Contents list appears
-  // in exactly one of the M or J rows of the Recipe Class table. The "simplify" mode
-  // auto-applies Class M recipes; an unclassified recipe silently defaults to J, but
-  // the contract is that the table is exhaustive — drift here erodes the classification
-  // as a correctness boundary.
-  const recipes = read("skills/quality/code-quality/rules/refactor-recipes.md");
-  const contentsBlock = recipes.match(/## Contents\n([\s\S]+?)\n## /);
-  const contentsIds = contentsBlock
-    ? [...contentsBlock[1].matchAll(/^- (R\d+):/gm)].map((m) => m[1])
-    : [];
-  const classTable = recipes.match(/\| \*\*M \(Mechanical\)\*\* \| ([^|]+) \|[\s\S]+?\| \*\*J \(Judgment\)\*\* \| ([^|]+) \|/);
-  const mIds = classTable ? [...classTable[1].matchAll(/R\d+/g)].map((m) => m[0]) : [];
-  const jIds = classTable ? [...classTable[2].matchAll(/R\d+/g)].map((m) => m[0]) : [];
-  const classified = new Set([...mIds, ...jIds]);
-  const unclassified = contentsIds.filter((id) => !classified.has(id));
-  s.check("G7 every recipe in Contents has a class (M or J)",
-    contentsIds.length > 0 && unclassified.length === 0,
-    unclassified.length ? `unclassified: ${unclassified.join(", ")}` : `${contentsIds.length} recipes classified`);
-  const dupInM = mIds.filter((id, i) => mIds.indexOf(id) !== i);
-  const dupInJ = jIds.filter((id, i) => jIds.indexOf(id) !== i);
-  const inBoth = mIds.filter((id) => jIds.includes(id) && !/R17/.test(id));
-  s.check("G7 no recipe appears in both M and J (R17 split is the only exception)",
-    inBoth.length === 0 && dupInM.length === 0 && dupInJ.length === 0,
-    [inBoth.length && `both: ${inBoth.join(", ")}`, dupInM.length && `dup M: ${dupInM.join(", ")}`, dupInJ.length && `dup J: ${dupInJ.join(", ")}`].filter(Boolean).join("; "));
-
-  // G8: the targeted-escalation (Step 2.4b) contract is shared across four files —
-  // the holistic skill's review-mode (owns the `focus` input + focused R1–R3),
-  // the shared holistic-review rule (owns 2.4b selection/fan-out/cap), and both
-  // review agents (wire 2.4b into their pipeline). Drift here means the escalation
-  // calls into a `focus` input the skill never honours, or an agent advertises a
-  // step that no longer exists. Lock the four corners of the contract.
-  const reviewMode = read("skills/analysis/holistic-analysis/rules/review-mode.md");
-  const holisticReview = read("agents/shared/rules/holistic-review.md");
-  const prReviewer = read("agents/pr-reviewer.md");
-  // Step 4's rendering reference (headlines, payload keys, section shapes) lives in its own rule
-  // file. Checks that assert a rendered SHAPE read this; checks that assert PROCEDURE stay on the
-  // agent body.
-  const reportRendering = read("agents/pr-reviewer/rules/report-rendering.md");
-
-  // G8a: review-mode declares the `focus` input with all four sub-keys.
-  const focusKeys = ["file:", "line:", "symbol:", "finding:"];
-  s.check("G8a review-mode declares the focus input with file/line/symbol/finding",
-    /\bfocus\b/.test(reviewMode) && focusKeys.every((k) => reviewMode.includes(k)),
-    focusKeys.filter((k) => !reviewMode.includes(k)).join(", ") || "ok");
-
-  // G8b: the shared rule owns the 2.4b section and passes a `focus:` block in its call.
-  s.check("G8b holistic-review has Targeted escalation (Step 2.4b) section",
-    holisticReview.includes("Targeted escalation (Step 2.4b)") && /focus:/.test(holisticReview));
-
-  // G8c: the 10-cap cost bound is stated (guards against silent regression to 3).
-  s.check("G8c holistic-review escalation cap is 10, not 3",
-    /up to \*\*10\*\*/.test(holisticReview));
-
-  // G8d: pr-reviewer is the sole review agent; it wires 2.4b default-on with --no-escalate.
-  // (reviewer agent retired — pr-reviewer self/cross relation handles both modes.)
-  // Retiring reviewer.md dropped 8 checks that tracked that file (the G11 loop over
-  // [reviewer, pr-reviewer] alone lost 7, plus G8d's former reviewer assertion), taking
-  // the consolidation base from 156/156 down to 148/148. This branch restores the total to
-  // 156/156: the 8 dropped checks are replaced by the 8 new G17a–G17h standards-conformance
-  // guards below. All checks are executed and green.
-  s.check("G8d pr-reviewer wires 2.4b + --no-escalate",
-    prReviewer.includes("2.4b") && prReviewer.includes("--no-escalate"));
-
-  // G8e: every Step 2.4 skip condition the AGENT BODY enumerates has a logged Status token in
-  // the RULE's own Logging block. The two had drifted: the body and diagnostic-surface.md both
-  // listed the incremental and token-economy skips while the enum offered only trivial-diff and
-  // --no-holistic, so the two most common skips had no legal token and rendered as the
-  // nearest-fitting wrong one — a policy skip reading as a triviality verdict.
-  //
-  // Both halves are SCOPED, because a file-wide substring is not evidence about Step 2.4.
-  // The first version searched the WHOLE agent body for bare tokens, and `incremental` alone
-  // occurs 49 times in it — so deleting the Step 2.4 skip bullet left the check green, and the
-  // same held for the other three (`--no-holistic` ×4, `TRIVIAL_SKIP` ×7, `token-economy` ×2).
-  // The guard asserted a token it expected to see somewhere rather than the property it is
-  // about, which is the standing failure mode recorded against this file. So slice Step 2.4's
-  // own section first and match each condition's own wording inside it; an empty slice (the
-  // heading renamed or the step removed) fails closed rather than vacuously passing.
-  // The Status line is likewise anchored on its block's own label: the rule file carries a
-  // second `Status:` line for the 2.4b escalation, and an unanchored match grades that one.
-  // Step 2.4 moved verbatim to rules/inline-pipeline.md (pr-reviewer diet).
-  const step24 = (read("agents/pr-reviewer/rules/inline-pipeline.md")
-    .match(/^### 2\.4 Holistic review[\s\S]*?(?=^### )/m) || [""])[0];
-  const statusLine = (holisticReview.match(/^Holistic review:\n\s*Status:.*$/m) || [""])[0];
-  const skipTokens = [
-    ["`--no-holistic` was passed", "skipped (--no-holistic)"],
-    ["The `TRIVIAL_SKIP` cache from Step 1.7b is true", "skipped (trivial diff)"],
-    ["The Step 1.8 token-economy skip triggered", "skipped (gates)"],
-    ["`RUN_MODE` is `incremental` or `incremental-quick`", "skipped (incremental)"],
-  ];
-  const bodySkips = skipTokens.filter(([cond]) => step24.includes(cond));
-  const missingTokens = bodySkips.filter(([, tok]) => !statusLine.includes(tok)).map(([, t]) => t);
-  s.check("G8e holistic-review Status enum has a token for every skip Step 2.4 lists",
-    step24.length > 0 && bodySkips.length === skipTokens.length
-      && missingTokens.length === 0 && statusLine.includes("ran"),
-    step24.length === 0 ? "Step 2.4 section not found in rules/inline-pipeline.md — heading renamed?"
-      : missingTokens.length ? `no token for: ${missingTokens.join(", ")}`
-      : bodySkips.length !== skipTokens.length
-        ? `Step 2.4 lists ${bodySkips.length}/${skipTokens.length} of the conditions this check knows`
-        : "ok");
-
-  // G8f: the holistic broad pass emits on a SEVERITY floor and carries no count budget. A
-  // generation-time count ceiling is the defect rubric-composition.md removed from Step 2.5 one
-  // step later — it discards a finding before anything scores it, so the loss is invisible. Both
-  // ends of the contract are asserted: the caller's rule and the skill's own review mode.
-  const noBudget = [["holistic-review.md", holisticReview], ["review-mode.md", reviewMode]]
-    .filter(([, txt]) => /max_findings/.test(txt)).map(([f]) => f);
-  s.check("G8f holistic review has no max_findings count budget on either side of the call",
-    noBudget.length === 0, noBudget.join(", ") || "ok");
-  s.check("G8f holistic review states the severity floor instead",
-    /severity floor/i.test(holisticReview) && /severity floor/i.test(reviewMode)
-      && /`blocker`/.test(reviewMode) && /`major`/.test(reviewMode));
-
-  // G9: verification-receipt (Step 2.6b) is wired into pr-reviewer's pipeline block
-  // in the same position (after 2.6 grounding, before 2.7 confidence).
-  // pr-reviewer is the sole review agent since the reviewer agent was retired.
-  const verificationReceipt = read("agents/shared/rules/verification-receipt.md");
-  s.check("G9a verification-receipt.md declares Step 2.6b",
-    verificationReceipt.includes("2.6b") && verificationReceipt.includes("verification-receipt"));
-  s.check("G9b verification-receipt.md declares null-result DROP rule",
-    /null.*DROP|DROP.*null/i.test(verificationReceipt) || verificationReceipt.includes("null result = DROP") ||
-    verificationReceipt.includes("null or empty proof result DROPS"));
-  s.check("G9c pr-reviewer.md wires 2.6b between 2.6 and 2.7",
-    prReviewer.includes("2.6b") && prReviewer.includes("verification-receipt"));
-
-  // G9d: comment-relevance keys must be a pure `<category>:<claim-gist>` fingerprint —
-  // NEVER a coordinate (pr#/comment-id/sha/file:line). Coordinate keys are unique per
-  // occurrence, so seen_count never accumulates and the relevance loop goes inert; this
-  // is the observed drift that left ~40 duplicate rows on dash0hq/dash0. The rule and the
-  // pr-reviewer write path must both carry the broadened prohibition + the ❌ anti-pattern
-  // exemplar, so the agent cannot read "MUST NOT encode file:line" narrowly and think a
-  // pr{N}-{commentId} key is allowed. Lock the guidance in place (presence, not absence —
-  // the ❌ example intentionally contains a coordinate key).
-  const crm = read("agents/shared/rules/comment-relevance-memory.md");
-  const threadRes = read("agents/shared/rules/thread-resolution.md");
-  s.check("G9d comment-relevance-memory broadens the coordinate ban beyond file:line",
-    /PR number,\s+comment id/.test(crm) && /never in the key/.test(crm));
-  s.check("G9d comment-relevance-memory shows the pr{N}-{commentId} anti-pattern as ❌ WRONG",
-    /❌ WRONG/.test(crm) && /reviewer-comment-relevance::pr\d+-\d+/.test(crm));
-  s.check("G9d comment-relevance-memory carries the pre-write coordinate self-check",
-    crm.includes("Self-check before every write") && /encoded a coordinate/.test(crm));
-  // The self-check must key on coordinate SHAPES, not on any run of digits. `fingerprint()`
-  // in scripts/record-comment-relevance.mjs preserves digits, so a bare `\d{3,}` test fires
-  // on legitimate gists (`issue:500-responses-not-retried`) — the agent would strip the digits
-  // while the script keeps them, re-creating the agent/script key split this rule exists to
-  // close. Lock both halves: the over-broad test is gone, and the carve-out is stated.
-  s.check("G9d comment-relevance self-check does not fire on digits inside a claim gist",
-    !crm.includes("(pr)?\\d{3,}") && crm.includes("Digits inside a gist are legitimate"));
-  s.check("G9d thread-resolution warns against coordinate keys in the pr-reviewer write path",
-    /NO pr#\/comment-id\/sha/.test(threadRes) && threadRes.includes("<category>:<claim-gist>"));
-  // The ban must cover EVERY write path, not just pr-reviewer's. A bare `::<fingerprint>`
-  // placeholder left in any memory.write template is an open invitation to re-encode a
-  // coordinate, which is how the drift reached dash0hq/dash0 in the first place. Assert the
-  // expanded placeholder is present AND the bare one is gone, per writing agent.
-  // implement-suggestion's relevance write template lives in rules/outcome-emit.md (SKILL.md
-  // points at it); SKILL.md itself must still never carry a bare fingerprint placeholder.
-  const implSuggestion = read("skills/workflow/implement-suggestion/rules/outcome-emit.md");
-  s.check("G9d implement-suggestion/SKILL.md never spells a bare fingerprint relevance key",
-    !/reviewer-comment-relevance::[<{]fingerprint[>}]/.test(read("skills/workflow/implement-suggestion/SKILL.md")));
-  for (const [label, doc] of [
-    ["implement-suggestion/rules/outcome-emit.md", implSuggestion],
-    ["comment-relevance-memory.md", crm],
-    ["thread-resolution.md", threadRes],
-  ]) {
-    // Ban BOTH placeholder spellings: the markdown templates use `<fingerprint>` and the
-    // GitHub Actions CLI snippet uses `{fingerprint}`. Guarding only the angle form leaves
-    // the brace form free to regress the same defect.
-    s.check(`G9d ${label} spells the relevance key as <category>:<claim-gist>, never a bare fingerprint placeholder`,
-      doc.includes("reviewer-comment-relevance::<category>:<claim-gist>") &&
-      !/reviewer-comment-relevance::[<{]fingerprint[>}]/.test(doc));
-  }
-
-  // G10: review-config.md declares that absent .review.yaml defaults to profile: balanced,
-  // and that balanced = today's defaults (threshold 80, per-file caps 5/10).
-  // Back-compat: any behavior change without a config file is a guard failure.
-  const reviewConfig = read("agents/shared/rules/review-config.md");
-  s.check("G10a review-config.md states 'defaults to profile: balanced' (back-compat phrase)",
-    reviewConfig.includes("defaults to profile: balanced"));
-  s.check("G10b review-config.md states balanced threshold is 80",
-    /balanced.*80|80.*balanced/i.test(reviewConfig) || reviewConfig.includes("**80**"));
-  s.check("G10c per-comment-confidence.md still documents threshold default of 80",
-    read("agents/shared/rules/per-comment-confidence.md").includes("80"));
-
-  // G11: pr-reviewer's diagnostic-surface Phase model table includes the new phases
-  // 1.0, 1.7, 2.5b, 2.6b — failure taxonomy is append-only; verify new rows exist.
-  // (reviewer agent retired — only pr-reviewer remains; it handles self + cross via REVIEW_RELATION.)
-  const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
-  for (const [label, content] of [["pr-reviewer", prReviewerDiag]]) {
-    s.check(`G11 ${label} diagnostic-surface has phase 1.7 (review config load)`,
-      content.includes("1.7") && content.includes("review-config"));
-    s.check(`G11 ${label} diagnostic-surface has phase 2.5b (prior-comment dedup)`,
-      content.includes("2.5b") && content.includes("prior-comment"));
-    s.check(`G11 ${label} diagnostic-surface has phase 2.6b (verification receipt)`,
-      content.includes("2.6b") && content.includes("verification-receipt"));
-    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-null-receipt-treated-as-confirmation`,
-      content.includes("F-null-receipt-treated-as-confirmation"));
-    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-flip-flop-not-suppressed`,
-      content.includes("F-flip-flop-not-suppressed"));
-    s.check(`G11 ${label} diagnostic-surface failure taxonomy has F-config-back-compat-broken`,
-      content.includes("F-config-back-compat-broken"));
-    s.check(`G11 ${label} diagnostic-surface hard invariants include null-receipt drop rule`,
-      content.includes("null") && content.includes("verification") &&
-      (content.includes("never read as confirmation") || content.includes("drop")));
-  }
-
-  // G12: review-outcomes.md exists as the shared candidate/outcome bus and documents
-  // the four required contracts: volatile TTL, fingerprint reuse, promotion threshold,
-  // and provenance rule. These are the stable literal strings the emit step and
-  // agents wire against — check them verbatim.
-  {
-    const ro = read("agents/shared/rules/review-outcomes.md");
-    s.check("G12a review-outcomes.md exists and declares volatile TTL (30 days)",
-      ro.includes("review-outcomes") && ro.includes("volatile") && /30.day/i.test(ro));
-    s.check("G12b review-outcomes.md mandates fingerprint reuse from prior-comment-awareness",
-      ro.includes("prior-comment-awareness") && ro.includes("fingerprint"));
-    s.check("G12c review-outcomes.md states promotion-agreement threshold (≥ 3 concordant verdicts)",
-      /concordant.*verdict|verdict.*concordant/i.test(ro) || /3 concordant/i.test(ro));
-    s.check("G12d review-outcomes.md states provenance honesty rule (mixed-source)",
-      ro.includes("provenance") && /mixed.source/i.test(ro) &&
-      (ro.includes("filter by") || ro.includes("filter by `source`")));
-    s.check("G12e review-outcomes.md states candidate bus NOT loaded per-review",
-      ro.includes("MUST NOT") && ro.includes("per-review") ||
-      ro.includes("per-review") && ro.includes("never") && ro.includes("Step 0.7"));
-    s.check("G12f review-outcomes.md names outcome-emit step token (anchors implement-suggestion's emit)",
-      ro.includes("outcome-emit") || ro.includes("implement-suggestion"));
-  }
-
-  // G13: implement-suggestion SKILL.md references review-outcomes as a producer
-  // and contains the outcome-emit step. Check for stable literal tokens written
-  // into the file — these strings are controlled by this commit.
-  {
-    const isSkill = read("skills/workflow/implement-suggestion/SKILL.md");
-    s.check("G13a implement-suggestion references review-outcomes scope",
-      isSkill.includes("review-outcomes"));
-    s.check("G13b implement-suggestion contains outcome-emit anchor/step",
-      isSkill.includes("outcome-emit"));
-    s.check("G13c implement-suggestion states emit is non-blocking (append-only)",
-      /non-blocking/i.test(isSkill) && isSkill.includes("review-outcomes"));
-    s.check("G13d implement-suggestion references outcome-learning.md as the consumer",
-      isSkill.includes("outcome-learning.md") && isSkill.includes("review-outcomes"));
-  }
-
-  // G14: outcome-learning.md names review-outcomes as its primary input and explicitly
-  // forbids loading the bus per-review (Step 0.7 discipline). Both contracts are
-  // stable literal strings this commit writes into the file.
-  {
-    const ol = read("agents/shared/rules/outcome-learning.md");
-    s.check("G14a outcome-learning.md names review-outcomes as primary input",
-      ol.includes("review-outcomes") && /primary.*input|primary.*signal/i.test(ol));
-    s.check("G14b outcome-learning.md states bus is NEVER loaded per-review",
-      ol.includes("review-outcomes") && (ol.includes("NEVER") || ol.includes("never")) &&
-      ol.includes("per-review"));
-    s.check("G14c outcome-learning.md references review-outcomes.md for bus schema",
-      ol.includes("review-outcomes.md") && (ol.includes("schema") || ol.includes("bus")));
-  }
-
-  // G15: implement-suggestion commit-per-comment + resolve-thread invariants (v2.3.0).
-  // These lock the behavioral contract of the worker: one commit per addressed
-  // comment, push ONCE, then resolve each addressed thread. The REST reply path
-  // MUST carry the pull number (a prior review regression removed it) and the
-  // forbidden legacy phrase "one commit per PR" must not reappear anywhere in
-  // the skill. All are stable literal tokens this commit controls.
-  {
-    const handoff = read("skills/workflow/implement-suggestion/rules/handoff.md");
-    const isSkill2 = read("skills/workflow/implement-suggestion/SKILL.md");
-    const fetching = read("skills/workflow/implement-suggestion/rules/comment-fetching.md");
-    const watch = read("skills/workflow/implement-suggestion/rules/watch-mode.md");
-    const pack = read("skills/workflow/implement-suggestion/templates/suggestion-pack.md");
-    const skillFiles = [
-      ["SKILL.md", isSkill2], ["handoff.md", handoff], ["comment-fetching.md", fetching],
-      ["watch-mode.md", watch], ["suggestion-pack.md", pack],
-    ];
-
-    s.check("G15a handoff worker prompt mandates one commit per comment",
-      handoff.includes("ONE COMMIT PER COMMENT"));
-    s.check("G15b handoff pushes ONCE after all per-comment commits",
-      handoff.includes("Push ONCE") || handoff.includes("push ONCE"));
-    s.check("G15c handoff resolves via resolveReviewThread",
-      handoff.includes("resolveReviewThread"));
-    s.check("G15d handoff REST reply path carries the pull number",
-      handoff.includes("pulls/<n>/comments/<comment-id>/replies"));
-    s.check("G15e handoff does NOT use the pull-number-less reply path (prior regression)",
-      !handoff.includes("pulls/comments/<comment-id>/replies"));
-    s.check("G15f handoff skips resolve for null threadId (issues/review-summary)",
-      handoff.includes("threadId") && handoff.includes("no thread to resolve"));
-    s.check("G15g handoff aborts push+resolve on partial-batch failure",
-      handoff.includes("partial batch") && /push nothing/i.test(handoff) && /resolve nothing/i.test(handoff));
-    s.check("G15h handoff continues (does not abort) on a resolve-side failure",
-      handoff.includes("not-resolved") && handoff.includes("CONTINUE"));
-    s.check("G15i comment-fetching captures threadId and guards GraphQL truncation",
-      fetching.includes("threadId") && fetching.includes("hasNextPage"));
-    s.check("G15j SKILL.md hard rule is 'One commit per applied comment'",
-      isSkill2.includes("One commit per applied comment"));
-    for (const [label, content] of skillFiles) {
-      s.check(`G15k ${label} does not reintroduce the legacy 'one commit per PR' phrase`,
-        !/one commit per pr\b/i.test(content));
-    }
-  }
-
-  // G24: the relevance-bucket contracts this repo hand-mirrors across rule files.
-  // Same class as G16 (cross-file drift, no single source of truth).
-  //
-  // Every check here must FAIL on the regression it names, not on a proxy. Five
-  // earlier versions did not, each for its own reason: one asserted enum membership
-  // under a name promising producer coverage; two matched only double-quoted phrase
-  // restatements; one counted a symbol repo-wide so the function definition satisfied
-  // it with both call sites deleted; one matched a key anywhere in a file that also
-  // defines it. If you add a check here, mutate the contract and confirm it goes red.
-  {
-    const ol = read("agents/shared/rules/outcome-learning.md");
-    const tr = read("agents/shared/rules/thread-resolution.md");
-    const rec = read("scripts/record-comment-relevance.mjs");
-
-    // (a) "Cite, don't restate": the two deferring rows in thread-resolution must link
-    // out and must not carry the phrase lists they used to duplicate — quoted or not.
-    const ackRow = (tr.match(/^\|\s*\*\*acknowledged\*\*.*$/m) || [""])[0];
-    const decRow = (tr.match(/^\|\s*\*\*declined\*\*.*$/m) || [""])[0];
-    const ackPhrases = (ackRow.match(/\b(fixed|done|addressed|resolved|updated)\b/gi) || []).length;
-    const decPhrases = (decRow.match(/\b(won.?t fix|by design|intentional|out of scope|n\/a|nwf|as designed)\b/gi) || []).length;
-    s.check("G24a acknowledged row links the judgement rule and does not restate a phrase list",
-      /outcome-learning\.md/.test(ackRow) && ackPhrases <= 1);
-    s.check("G24b declined row cites the judgement rule and does not restate the alternatives",
-      /outcome-learning\.md/.test(decRow) && decPhrases === 0);
-
-    // (c) The agent-facing rule is a JUDGEMENT rule, not a tokenizer. Positive shape
-    // assertion: a denylist of tokenizer vocabulary is routed around by paraphrase.
-    const ackSection = (ol.match(/#### What counts as an acknowledgement[\s\S]*?(?=\n#### |\n### |\n## )/) || [""])[0];
-    const bullets = (ackSection.match(/^- \*\*/gm) || []).length;
-    s.check("G24c the acknowledgement rule states decline-precedence",
-      /decline wins/i.test(ackSection));
-    s.check("G24d the acknowledgement rule keeps its judgement shape (bulleted criteria + default)",
-      bullets >= 4 &&
-      /cannot tell|when you can.t tell/i.test(ackSection) &&
-      !/token window|word tokens|negator|complement clause|tokeniz|split the reply/i.test(ackSection));
-
-    // (e) Decline-precedence is the one contract both paths must share. G24c asserts the
-    // prose half in outcome-learning; this asserts it in thread-resolution, which makes
-    // the claim, and (f) asserts the executable half, which fails silently.
-    s.check("G24e thread-resolution states decline-precedence for the in-run path",
-      /decline outranks an acknowledgement/i.test(tr));
-
-    // Scope to each function's own body. `fnBody` must handle `async function`: an
-    // earlier version terminated on "\nfunction " only, so modeThreadResolved's window
-    // ran to EOF, swallowed modePrMerged, and stayed green when its own call was cut.
-    // `export ` must be tolerated too: the decline logic now lives in exported pure
-    // deciders, and a pattern anchored on a bare `function` silently returned "" for
-    // each of them — which reads as "the call is missing" rather than "the guard cannot
-    // see the function", the same false-green shape the async fix above closed.
-    const FN_START = "^(?:export\\s+)?(?:async\\s+)?function";
-    const fnBody = (name) => {
-      const i = rec.search(new RegExp(`${FN_START} ${name}\\(`, "m"));
-      if (i < 0) return "";
-      const rest = rec.slice(i + 1);
-      const j = rest.search(new RegExp(`${FN_START} \\w+\\(`, "m"));
-      return j < 0 ? rec.slice(i) : rec.slice(i, i + 1 + j);
-    };
-    // Decline detection moved out of the two mode functions and into the pure deciders
-    // they call, so asserting the call site inside each mode body no longer proves
-    // anything. Assert the whole path instead — each mode delegates, and each decider
-    // it delegates to applies the matcher. Four assertions where there were two: a
-    // decider that drops the matcher fails, and so does a mode that stops delegating.
-    s.check("G24f both deciders apply decline detection",
-      /hasWontFixReply\s*\(/.test(fnBody("decideResolvedThread")) &&
-      /hasWontFixReply\s*\(/.test(fnBody("decideMergeSweep")));
-    s.check("G24f both script modes delegate to the decider that applies it",
-      /decideResolvedThread\s*\(/.test(fnBody("modeThreadResolved")) &&
-      /decideMergeSweep\s*\(/.test(fnBody("modePrMerged")));
-
-    // (i) The acknowledged-no-fix carve-out must exist AND precede the ignored-at-merge
-    // bullet whose condition it satisfies in full. Deleting it (which I did) sends an
-    // author who replied "fixed" into `weak-not-relevant / ignored-at-merge` — a
-    // dismissal feeding the suppression gate, the inversion the acknowledgement test
-    // exists to prevent, arriving through the sibling bullet.
-    const crm2 = read("agents/shared/rules/comment-relevance-memory.md");
-    const iAck = crm2.indexOf("- Author **acknowledged** but no fix commit in range");
-    const iIgn = crm2.indexOf("- PR merged with thread open");
-    s.check("G24i the acknowledged-no-fix carve-out exists and precedes ignored-at-merge",
-      iAck > -1 && iIgn > -1 && iAck < iIgn);
-    s.check("G24i2 the ignored-at-merge bullet excludes acknowledgements in its own condition",
-      /- PR merged with thread open[^\n]*no acknowledgement/.test(crm2));
-
-    // (j) The open-thread set must mean "pending". Two contracts hold that invariant,
-    // and both were absent when a real PR accumulated 20 unclosable threads across six
-    // passes. These assert the RELATION, not the presence of two strings in a 450-line
-    // file: an earlier version stayed green when the obsolete row's `and` was flipped to
-    // `or` and when the whole alternate-write-path paragraph was deleted.
-    const tr2 = read("agents/shared/rules/thread-resolution.md");
-    const pca = read("agents/shared/rules/prior-comment-awareness.md");
-    const prm = read("agents/pr-reviewer.md");
-
-    const obsRow = (tr2.match(/^\|\s*\*\*obsolete\*\*.*$/m) || [""])[0];
-    s.check("G24j thread-resolution defines an obsolete disposition that resolves",
-      /\*\*Resolve\*\*/.test(obsRow));
-    // Conjunction, in the row itself — `or` must fail.
-    s.check("G24k obsolete conjoins isOutdated with non-reproduction, and requires the re-scan predicate",
-      /isOutdated/.test(obsRow) && /\*\*and\*\*/.test(obsRow) && !/\*\*or\*\*/.test(obsRow) &&
-      /re-scan predicate/i.test(obsRow));
-    // The predicate must actually be stated for obsolete, not only for fixed.
-    const obsSection = (tr2.match(/### `obsolete`[\s\S]*?(?=\n### |\n## )/) || [""])[0];
-    s.check("G24k2 the obsolete section names both re-scan conjuncts and the pre-dedup read",
-      /SCANNED_FILES/.test(obsSection) && /REVIEW_DIFF/.test(obsSection) &&
-      /2\.5b|pre-dedup/i.test(obsSection));
-
-    s.check("G24l the thread query captures isOutdated for both readers",
-      /isResolved isOutdated/.test(pca) && /isResolved isOutdated/.test(tr2));
-
-    // The carve-out must SET the flag (not "never set" it), defer the path decision to
-    // github-access.md, and the agent must not report the removed threads as closed.
-    s.check("G24m the no-resolve-path carve-out is stated affirmatively and defers the path to github-access",
-      /\bset `RESOLUTION_UNAVAILABLE = true`/i.test(tr2) &&
-      !/\b(never|do not|don't) set `RESOLUTION_UNAVAILABLE/i.test(tr2) &&
-      /github-access\.md/.test(tr2));
-    // The exclusion sentence is procedure (Step 2.9c, agent body); the Details-cell wording it
-    // produces is a rendered shape (rendering reference). Assert each where it now lives.
-    // Step 2.9c moved verbatim to rules/thread-reconcile.md (pr-reviewer diet).
-    s.check("G24m2 carve-out removals are excluded from the resolved-since counter",
-      /RESOLUTION_UNAVAILABLE` carve-out are excluded/.test(read("agents/pr-reviewer/rules/thread-reconcile.md")) &&
-      /certified done but still open/.test(read("agents/pr-reviewer/rules/report-rendering.md")));
-
-    // (g) Every WONT_FIX_RE alternative bounded, derived from the regex rather than a
-    // named subset — an earlier version asserted three of four and missed the fourth.
-    const reLine = (rec.match(/^const WONT_FIX_RE\s*=.*$/m) || [""])[0];
-    const body = (reLine.match(/=\s*\/(.*)\/[a-z]*;/) || [])[1] || "";
-    const alts = body ? body.split("|") : [];
-    s.check("G24g every WONT_FIX_RE alternative is bounded on both sides",
-      alts.length >= 8 && alts.every((a) => a.startsWith("\\b") && a.endsWith("\\b")));
-
-    // (h) The model-readable decline list and WONT_FIX_RE are hand-mirrored. Compare as
-    // sets so a deletion or addition on either side goes red — the drift that produced
-    // the `as designed` inversion.
-    const norm = (x) => x.replace(/\\b/g, "").replace(/\\s\+/g, " ").replace(/\\\//g, "/")
-                         .replace(/\(.*?\)/g, "").replace(/[^a-z /]/gi, "").trim().toLowerCase();
-    const fromRe = new Set(alts.map(norm).filter(Boolean));
-    // The blockquote is indented inside a list item, so anchor on optional leading space.
-    const quote = (ol.match(/^[ \t]*> [^\n]*·[\s\S]*?(?=\n[ \t]*\n)/m) || [""])[0];
-    const fromProse = new Set(quote.split(/[·\n>]/).map(norm).filter(Boolean));
-    // BOTH directions. A one-way subset test leaves the direction that matters green:
-    // a phrase the model-readable list treats as a decline but WONT_FIX_RE misses is the
-    // exact coupling this PR documents (a decline that misses the regex resolves the
-    // thread and records relevant/fixed for a finding the author rejected).
-    const covers = (x, set) => [...set].some((y) => y.includes(x) || x.includes(y));
-    s.check("G24h the model-readable decline list and WONT_FIX_RE's alternatives agree both ways",
-      fromRe.size >= 8 && fromProse.size >= 8 &&
-      [...fromRe].every((a) => covers(a, fromProse)) &&
-      [...fromProse].every((b) => covers(b, fromRe)));
-  }
-
-  // G16: the `reviewer-comment-relevance` TTL is hand-mirrored across five files
-  // with no single source of truth (the executable writer needs a literal, and this
-  // repo's CLAUDE.md requires rules to be self-contained). This is the cross-file
-  // drift guard, the counterpart to G12a's lock on `review-outcomes`' 30-day TTL.
-  //
-  // CHANGING THE TTL? Update all FIVE occurrences, then update `TTL_DAYS` below:
-  //   1. agents/shared/rules/comment-relevance-memory.md   ("default: now + N days")
-  //   2. plugins/pr-relevance-memory/README.md             ("N-day TTL, refreshed on each sighting")
-  //   3. scripts/record-comment-relevance.mjs              (`N * 24 * 60 * 60 * 1000`)
-  //   4. skills/workflow/implement-suggestion/SKILL.md     ("durable N-day TTL")
-  //      skills/workflow/implement-suggestion/rules/outcome-emit.md ("N-day default TTL")
-  // The frozen archive docs/inventory.md also states the TTL, but it is a snapshot and not a
-  // contract surface, so it is not updated or checked.
-  {
-    const TTL_DAYS = 60;
-    const crm = read("agents/shared/rules/comment-relevance-memory.md");
-    const pluginReadme = read("plugins/pr-relevance-memory/README.md");
-    const recorder = read("scripts/record-comment-relevance.mjs");
-    const isSkill3 = read("skills/workflow/implement-suggestion/SKILL.md");
-    const isEmit = read("skills/workflow/implement-suggestion/rules/outcome-emit.md");
-
-    // G16a retired: its sentence now lives only in the frozen archive docs/inventory.md, which is not a contract surface (CLAUDE.md § Where knowledge goes). G16b–e + G16f cover the live mirrors.
-    s.check(`G16b comment-relevance-memory.md record schema expires at +${TTL_DAYS} days`,
-      new RegExp(`default: now \\+ ${TTL_DAYS} days`).test(crm));
-    s.check(`G16c pr-relevance-memory README states a ${TTL_DAYS}-day TTL`,
-      new RegExp(`${TTL_DAYS}-day TTL`).test(pluginReadme));
-    s.check(`G16d record-comment-relevance.mjs computes expiry from ${TTL_DAYS} days`,
-      recorder.includes(`${TTL_DAYS} * 24 * 60 * 60 * 1000`));
-    s.check(`G16e implement-suggestion states the ${TTL_DAYS}-day TTL in both places (rules/outcome-emit.md + SKILL.md)`,
-      new RegExp(`${TTL_DAYS}-day default TTL`).test(isEmit) &&
-      new RegExp(`durable ${TTL_DAYS}-day TTL`).test(isSkill3));
-
-    // Negative assertion: the feared drift is a PARTIAL revert, where one or two
-    // files keep the old number. Any reviewer-comment-relevance TTL statement that
-    // disagrees with TTL_DAYS must fail here.
-    const mirrors = [
-      ["comment-relevance-memory.md", crm],
-      ["pr-relevance-memory/README.md", pluginReadme],
-      ["record-comment-relevance.mjs", recorder],
-      ["implement-suggestion/SKILL.md", isSkill3],
-      ["implement-suggestion/rules/outcome-emit.md", isEmit],
-    ];
-    const stale = /(\d+)-day (?:default )?TTL|(\d+)-day per-repo relevance signal|now \+ (\d+) days|(\d+) \* 24 \* 60 \* 60 \* 1000/g;
-    for (const [label, content] of mirrors) {
-      // TTLs of OTHER buckets legitimately co-occur in these files. Each is excused by name and
-      // owned by its own check, so this one stays about `reviewer-comment-relevance` drift only.
-      const OTHER_BUCKET_TTLS = new Set([
-        30,  // `review-outcomes` — the volatile bus; G12a owns it.
-        7,   // `pr-review-state` — pr-reviewer's per-PR state record; G24i owns it.
-        90,  // `codebase-knowledge` — symbol + hotspot records; G16g below owns it.
-      ]);
-      const found = [...content.matchAll(stale)]
-        .map((m) => Number(m[1] ?? m[2] ?? m[3] ?? m[4]))
-        .filter((n) => n !== TTL_DAYS && !OTHER_BUCKET_TTLS.has(n));
-      s.check(`G16f ${label} carries no reviewer-comment-relevance TTL other than ${TTL_DAYS}`,
-        found.length === 0, found.length ? `stale: ${[...new Set(found)].join(", ")}` : "");
-    }
-
-    // G16g owns the OTHER durable TTL in the same file. Excusing 90 in G16f without an
-    // owning check would let the knowledge TTL drift freely under cover of the excuse.
-    const KNOWLEDGE_TTL_DAYS = 90;
-    const buckets = read("agents/shared/rules/memory-buckets.md");
-    s.check(`G16g record-comment-relevance.mjs computes the knowledge/hotspot expiry from ${KNOWLEDGE_TTL_DAYS} days`,
-      recorder.includes(`KNOWLEDGE_TTL_MS = ${KNOWLEDGE_TTL_DAYS} * 24 * 60 * 60 * 1000`));
-    s.check(`G16g memory-buckets.md states the knowledge/hotspot lifetime as ${KNOWLEDGE_TTL_DAYS}d`,
-      new RegExp(`codebase-knowledge\`? \\(symbol\\)[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets) &&
-      new RegExp(`codebase-knowledge\`? \\(hotspot\\)[^\n]*durable ${KNOWLEDGE_TTL_DAYS}d`).test(buckets));
-  }
-
-  // G17: standards-conformance.md exists and is wired into pr-reviewer.
-  // Each sub-check reads the REAL shipped file and asserts a literal anchor/string.
-  // Mirrors the G8d/G9c guard shape — never re-encode expected content inside the eval.
-  // Check-gaming is forbidden: these guards read the files under test, not a copy.
-  {
-    const sc = read("agents/shared/rules/standards-conformance.md");
-    // G17a: the rule file exists and declares itself default-on with --no-standards opt-out.
-    s.check("G17a standards-conformance.md exists and declares default-on + --no-standards opt-out",
-      sc.includes("standards-conformance") &&
-      /default.on/i.test(sc) &&
-      sc.includes("--no-standards"));
-
-    // G17b: the rule names review-config upward walk, states the 30,000-char cap,
-    // states drops are logged (never silent), and references the reused holistic-review trivial-skip.
-    s.check("G17b standards-conformance.md names review-config walk + 30000-char cap + log-drops + trivial-skip",
-      sc.includes("review-config") &&
-      (sc.includes("30,000") || sc.includes("30000")) &&
-      /log/i.test(sc) &&
-      sc.includes("trivial-skip"));
-
-    // G17c: review-config.md documents the standards: schema, its concatenation merge rule,
-    // and an explicit distinction between path_instructions (nudge) and standards (findings).
-    const rcFull = read("agents/shared/rules/review-config.md");
-    s.check("G17c review-config.md documents standards: schema + concatenation + path_instructions-vs-standards distinction",
-      rcFull.includes("standards:") &&
-      /concatenat/i.test(rcFull) &&
-      rcFull.includes("path_instructions") &&
-      // The distinction itself, not merely the two words: the section heading plus the
-      // semantics that separate them (nudge-only vs. finding-producing).
-      /`path_instructions`\s+vs\.\s+`standards`/.test(rcFull) &&
-      /`path_instructions`\*\* is a \*\*confidence nudge\*\*/.test(rcFull) &&
-      /`standards`\*\* produces \*\*real findings\*\*/.test(rcFull));
-
-    // G17d: the rule states never/must→issue and prefer→suggestion mapping,
-    // states narrative/aspirational prose is never flagged, and states doc path:line as grounding.
-    s.check("G17d standards-conformance.md states never/must→issue + prefer→suggestion + prose-never + path:line grounding",
-      /issue/i.test(sc) &&
-      /suggestion/i.test(sc) &&
-      /prefer/i.test(sc) &&
-      /narrative|aspirational/i.test(sc) &&
-      (/path:line/i.test(sc) || /grounding/i.test(sc)));
-
-    // G17e: pr-reviewer.md has a standards diagnostics line in the Review details block
-    // AND the standards-specific precedence statement.
-    // A bare /precedence|conflict/ sweep is tautological here: the base file already matches it
-    // three times (Step 0.7's lesson-collision sentence, Gate 4's merge-conflict markers, and the
-    // carve-out's "conflict residue"), so it asserts nothing about the 2.4d statement. Same shape
-    // as the G17c fix above — assert the new content, not a word that was already there.
-    s.check("G17e pr-reviewer.md has standards diagnostics line + 2.4d precedence paragraph + Conflicts-surfaced counter",
-      // The posted-body label dropped its step number when the accordion was grouped
-      // (`**Standards (2.4d)** —` → `Standards — ` under the `Found` heading), so match the
-      // current label there and the step reference in the agent body. Either surface satisfies it;
-      // the assertion is that a standards run-state line EXISTS, not what it is called.
-      // Step 2.4d's prose moved verbatim to rules/inline-pipeline.md (pr-reviewer diet).
-      ((prReviewer + read("agents/pr-reviewer/rules/inline-pipeline.md")).includes("Standards conformance (2.4d)")
-        || read("agents/pr-reviewer/rules/report-rendering.md").includes("`Standards — `")) &&
-      /Precedence: when a standards finding conflicts with the PR author's stated intent or a review-config\s+explicit override, the author-intent and config \*\*win\*\*/.test(read("agents/pr-reviewer/rules/inline-pipeline.md")) &&
-      // The diagnostics counter lives in whichever surface renders the log block: the terminal
-      // template (now terminal-report.md) or the posted-body reference. Accept either — the
-      // assertion is that the counter EXISTS, not which file it moved to.
-      (prReviewer.includes("Conflicts surfaced:")
-        || read("agents/pr-reviewer/rules/terminal-report.md").includes("Conflicts surfaced:")));
-
-    // G17f: pr-reviewer.md has --no-standards in the arg table AND the frontmatter description,
-    // standards-conformance.md in the Imports list, and 2.4d in the pipeline block.
-    s.check("G17f pr-reviewer.md has --no-standards (arg + frontmatter) + standards-conformance in Imports + 2.4d in pipeline",
-      prReviewer.includes("--no-standards") &&
-      prReviewer.includes("standards-conformance.md") &&
-      prReviewer.includes("2.4d"));
-
-    // G17g retired: the inventory mention moved to the frozen archive; G17h (README) and the agent-body checks above remain.
-    const readme = read("README.md");
-    s.check("G17h README.md mentions standards-conformance + --no-standards in pr-reviewer context",
-      readme.includes("standards-conformance") && readme.includes("--no-standards"));
-  }
-
-  // G18: the pr-reviewer memory-read call sites name the real mcp__lorekit__memory_list
-  // tool and state a mandatory-attempt policy; the shared read rules mirror the same.
-  // Mirrors the G16/G17 guard shape — reads the REAL shipped files and asserts literal anchors.
-  // Never re-encode expected prose inside the eval (aw-lessons::mock-that-reimplements-the-thing-under-test).
-  {
-    const crm = read("agents/shared/rules/comment-relevance-memory.md");
-    const pca = read("agents/shared/rules/prior-comment-awareness.md");
-
-    // G18a: pr-reviewer.md issues the Step 1.0 read as a real mcp__lorekit__memory_list call.
-    // A bare includes("mcp__lorekit__memory_list") is tautological here: the base file already
-    // matches it once, in the `tools:` frontmatter (line 4), so it asserts nothing about the new
-    // Step 1.0 fan-out. Same shape as the G17c/G17e fixes above — assert a literal sentence from
-    // the rewritten block plus an occurrence floor the base revision cannot reach.
-    const memoryListMentions = prReviewer.split("mcp__lorekit__memory_list").length - 1;
-    s.check("G18a pr-reviewer.md issues the Step 1.0 read as a real mcp__lorekit__memory_list call (literal sentence + >= 5 mentions)",
-      prReviewer.includes("Issue each line below as a real `mcp__lorekit__memory_list` tool call — these are not documentation shorthand.") &&
-      memoryListMentions >= 5);
-
-    // G18b: comment-relevance-memory.md names the real mcp__lorekit__memory_list tool at the read.
-    s.check("G18b comment-relevance-memory.md names mcp__lorekit__memory_list at the read call site",
-      crm.includes("mcp__lorekit__memory_list"));
-
-    // G18c: pr-reviewer.md states a mandatory-attempt policy (the word "mandatory" near the read).
-    s.check("G18c pr-reviewer.md states mandatory-attempt policy at the Step 1.0 read",
-      /mandatory attempt/i.test(prReviewer));
-
-    // G18d: comment-relevance-memory.md states a mandatory-attempt policy.
-    s.check("G18d comment-relevance-memory.md states mandatory-attempt policy at the read",
-      /mandatory attempt/i.test(crm));
-
-    // G18e: pr-reviewer.md carries the sub-agent + SessionStart priming statement.
-    s.check("G18e pr-reviewer.md states sub-agent SessionStart priming caveat",
-      prReviewer.includes("sub-agent") && prReviewer.includes("SessionStart"));
-
-    // G18f: at least one shared rule carries the sub-agent + SessionStart statement
-    //       (comment-relevance-memory.md or prior-comment-awareness.md).
-    s.check("G18f at least one shared rule states sub-agent SessionStart priming caveat",
-      (crm.includes("sub-agent") && crm.includes("SessionStart")) ||
-      (pca.includes("sub-agent") && pca.includes("SessionStart")));
-
-    // G18g: scope/tag regression lock — the existing read semantics are unchanged.
-    //       Both repo:: and the loop::reviewer-comment-relevance tag still appear.
-    s.check("G18g comment-relevance-memory.md still carries repo:: and loop::reviewer-comment-relevance",
-      crm.includes("repo::") && crm.includes("loop::reviewer-comment-relevance"));
-  }
-
-  // G19: the pr-reviewer posted review body uses a concise headline at the top level and the
-  // gate-status table lives only inside the Review details accordion.
-  // Reads the REAL shipped agents/pr-reviewer.md — never re-encode expected strings as
-  // a self-comparison (aw-lessons::mock-that-reimplements-the-thing-under-test).
-  // Mirrors the G18 literal-sentence + positional-slice idiom.
-  {
-    // G19a-c: the three headline forms. They used to be three prose sentences the run composed
-    // and the renderer accepted unchecked, which is how a headline matching none of them shipped;
-    // they are now derived shapes, so the checks assert the RENDERED forms against the real
-    // renderer and the doc that specifies them, not a prose literal.
-    s.check("G19a the PASS form is a heading with an affirming checkmark lead",
-      reportRendering.includes("`### ✅ No issues found`"));
-
-    s.check("G19b the zero-finding non-PASS form names the gate count",
-      reportRendering.includes("`### <verdict glyph> No findings — <M> gates need attention`"));
-
-    s.check("G19c the with-findings form leads with the count and the blocking subset",
-      reportRendering.includes("`### <worst-tier glyph> <N> findings — <K> blocking`")
-      && /never rendered as `0 blocking`/.test(reportRendering));
-
-    // Every form the doc specifies must be reachable from the renderer, and every form the
-    // renderer emits must be specified. Executed against the real script, because a spec/impl
-    // agreement asserted by reading only the spec is the exact gap this replaces.
-    {
-      const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-      const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
-      const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
-      const render = (fn) => {
-        const c = structuredClone(base); fn(c);
-        const r = spawnSync("node", [RENDER], { input: JSON.stringify(c), encoding: "utf8" });
-        return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
-      };
-      const passForm = render(() => {});
-      s.check("G19a the renderer emits the PASS form", passForm.ok
-        && /^### ✅ No issues found$/m.test(passForm.out), passForm.err);
-      const warnForm = render((c) => {
-        c.VERDICT = "WARN"; c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x";
-        c.WARN_REASONS = ["1 doc gap"];
-      });
-      s.check("G19b the renderer emits the zero-finding non-PASS form", warnForm.ok
-        && /^### ⚠️ No findings — 1 gate needs? attention$/m.test(warnForm.out), warnForm.err);
-      const withFindings = render((c) => {
-        c.QUALITY = "produced 3 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
-        c.FINDINGS = [
-          { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
-          { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
-        ];
-      });
-      s.check("G19c the renderer emits the with-findings form", withFindings.ok
-        && /^### 🟠 2 findings — 1 blocking$/m.test(withFindings.out), withFindings.err);
-      // `0 blocking` is never rendered — the clause is dropped, not zero-filled.
-      const noBlocking = render((c) => {
-        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
-        c.FINDINGS = [{ title: "A quieter one", path: "b.ts", line: 2, tier: "low" }];
-      });
-      s.check("G19c the renderer drops the blocking clause at zero", noBlocking.ok
-        && /^### ⚪ 1 finding$/m.test(noBlocking.out) && !/0 blocking/.test(noBlocking.out),
-        noBlocking.err);
-    }
-
-    // G19d / G19g retired: they scanned the three embedded Step-4 templates for
-    // gate-table-inside-accordion and footer-inside-accordion. Those templates no longer exist —
-    // layout moved to agents/pr-reviewer/templates/report-body.md — and G25 now asserts both
-    // properties against the REAL rendered output instead of against prose, which is strictly
-    // stronger: it catches a run that produces the wrong markup, not just a spec that describes it.
-    {
-      // G19e: the review-body footer no longer carries the redundant CI-status sentence.
-      // The clause was dropped from every FOOTER_LINE variant; assert it is gone from the
-      // whole shipped file, not just Step 4 (the FOOTER_LINE definitions live in Step 4).
-      s.check("G19e pr-reviewer.md review-body footer dropped the 'CI status is shown' clause",
-        !prReviewer.includes("CI status is shown"));
-
-      // G19f: the gate table is three columns with a static description on a passing gate.
-      // The table lives in the template; the static descriptions the model chooses from live in
-      // the rendering reference. Assert one on each side of that split.
-      s.check("G19f the report template carries the 3-column gate table",
-        readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8")
-          .includes("| Gate | Status | Details |"));
-      s.check("G19f the rendering reference still defines the ✅ static descriptions",
-        reportRendering.includes("The multi-lens review found no blocking issues."));
-    }
-  }
-
-  // G33: the Step 3 TERMINAL report's WARN verdict line and the POSTED body's WARN headline
-  // (report-rendering.md) must never re-diverge. Regression guard for
-  // `reviewer-lessons::gate-table-says-pass-while-contract-says-fail` (seen_count 7): a Step 3
-  // WARN row that prints "PASS — no blocking issues, N warning(s)" beside a harness
-  // `VERDICT: FAIL` (forced by ACTIONABLE >= 1, independent of gate severity) reads as an
-  // unexplained contradiction to a human, and — per the lesson's sighting 7 — a harness that
-  // judges "was this lesson honoured" from the Step 3 report rather than the posted body can be
-  // fooled if the two are allowed to drift apart. Assert three things: neither surface prints the
-  // literal `PASS —` WARN token, both surfaces state "no blocking issues" plus the warning count
-  // for WARN, and pr-reviewer.md's WARN line names the report-rendering.md contract explicitly so
-  // a future edit to one side is not made in ignorance of the other.
-  {
-    // The template moved out of the agent body into terminal-report.md; the agent body keeps the
-    // routing line. Read the surface that actually owns the verdict rows, and assert the agent
-    // still routes to it — otherwise a future move could orphan these three checks silently.
-    const terminalReport = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/terminal-report.md"), "utf8");
-    s.check("G33 pr-reviewer.md routes Step 3 to terminal-report.md",
-      prReviewer.includes("pr-reviewer/rules/terminal-report.md"),
-      "Step 3 no longer names the file that owns the terminal template");
-    const step3WarnRow = sliceBetween(terminalReport, "| Presentation | `**Verdict**` line |", "`VERDICT` (PASS/WARN/FAIL");
-    s.check("G33a terminal-report.md Step 3 WARN verdict line carries no bare PASS token",
-      !/\|\s*WARN\s*\|\s*`PASS\s*—/.test(step3WarnRow),
-      "Step 3's WARN row still prints a `PASS —` verdict, which contradicts a harness VERDICT: FAIL");
-    s.check("G33b terminal-report.md Step 3 WARN verdict line matches the posted-body wording",
-      /No blocking issues — <WARN_GATE_COUNT> warning\(s\): <WARN_REASONS>\./.test(step3WarnRow),
-      "Step 3's WARN row no longer reads 'No blocking issues — <N> warning(s): <reasons>.' — re-sync it with report-rendering.md § Headlines");
-    s.check("G33c report-rendering.md's posted-body WARN headline carries no bare PASS token",
-      !/no blocking issues.*\*\*PASS\*\*|PASS\s*—\s*no blocking issues/i.test(reportRendering),
-      "report-rendering.md's WARN headline regained a PASS token");
-    // The two surfaces now count different things on purpose — the posted headline counts
-    // FINDINGS, this line counts gates — so the old assertion (a `byte-identical` claim next to a
-    // `report-rendering.md` reference) would now enforce a coupling that is itself the bug: it is
-    // what made the posted headline count gates. What must still agree is the FACT, so assert the
-    // cross-reference plus the named shared values, and assert the retired claim is gone.
-    s.check("G33d terminal-report.md's WARN row cites report-rendering.md so the two cannot drift silently",
-      /report-rendering\.md/.test(terminalReport)
-      && /verdict token[\s\S]{0,200}reason phrases/.test(terminalReport),
-      "terminal-report.md's Step 3 WARN explanation no longer cross-references report-rendering.md,"
-      + " or no longer names the verdict token and reason phrases as the values that must agree");
-    s.check("G33d the retired byte-identity coupling is not re-asserted",
-      /byte-identity rule this paragraph used to state/.test(terminalReport)
-      && !/must stay \*\*byte-identical\*\*/.test(terminalReport),
-      "a byte-identity claim between the terminal line and the posted headline is back");
-  }
-
-  // G34: prior-comment-awareness.md requires verifying a "resolved" thread against HEAD before
-  // trusting it, and verifying an "open" thread before assuming it is still live. Regression guard
-  // for `reviewer-lessons::resolved-bot-thread-is-not-evidence-of-a-fix` (seen_count 7): a resolved
-  // cursor[bot] thread was once trusted at face value and a real defect it covered was suppressed
-  // with no code change behind the resolution.
-  {
-    const pca = read("agents/shared/rules/prior-comment-awareness.md");
-    s.check("G34a the resolved-state table no longer treats GitHub thread resolution as sufficient on its own",
-      !/\|\s*Thread explicitly marked resolved on GitHub\s*\|\s*Yes\s*\|/.test(pca),
-      "the 'accepted / resolved' table reverted to trusting a resolved GitHub thread unconditionally");
-    s.check("G34b prior-comment-awareness.md states the anchor-file-existence check as the first, cheapest verification",
-      /anchor-file existence/i.test(pca) && /[Cc]heck it before anything else/.test(pca));
-    s.check("G34c prior-comment-awareness.md requires bidirectional verification (resolved≠fixed, open≠unaddressed)",
-      /resolved ≠ fixed|resolved≠fixed/.test(pca) && /open ≠ unaddressed|open≠unaddressed/.test(pca));
-    s.check("G34d prior-comment-awareness.md requires verifying compound claims per-mechanism, not as a whole sentence",
-      /each\s+mechanism\s+verified\s+separately/i.test(pca));
-    s.check("G34e prior-comment-awareness.md defines three dedupe outcomes, not a binary post-or-suppress",
-      /gate-without-posting/.test(pca) && /post-as-new-code/.test(pca) &&
-      /not\s+collapse\s+this\s+to\s+a\s+binary\s+post-or-suppress/i.test(pca));
-    s.check("G34f the verification requirement applies to this agent's own prior comments too, not only a third party's",
-      /this agent's own prior comments\*\*, not only a third party's/.test(pca));
-  }
-
-  // G20: the pr-reviewer Step 1.2c diff-keyed lesson search enriches its query with the changed
-  // symbol names and the synthesized intent + integrations, and raises the search limit past 10.
-  // Reads the REAL shipped agents/pr-reviewer.md and asserts literal anchors grepped from it —
-  // never re-encode expected strings as a self-comparison
-  // (aw-lessons::mock-that-reimplements-the-thing-under-test). Mirrors the G18/G19 idiom.
-  {
-    // sliceBetween guards both anchors: an unresolved anchor throws a clear error
-    // instead of a raw indexOf(-1) silently widening the haystack to (nearly) the
-    // whole file and keeping the checks green.
-    const step12c      = sliceBetween(prReviewer, "### 1.2c Diff-keyed lesson search", "### 1.3 Synthesize intent");
-
-    // G20a: the query-construction prose enumerates the changed-symbol-names field.
-    s.check("G20a pr-reviewer.md Step 1.2c query includes a changed-symbol-names field",
-      step12c.includes("Changed symbol names") &&
-      step12c.includes("added or modified"));
-
-    // G20b: the query-construction prose enumerates the synthesized-intent + integrations field,
-    //       and ties it to the Step 1.3 synthesis.
-    s.check("G20b pr-reviewer.md Step 1.2c query includes a synthesized-intent + integrations field",
-      step12c.includes("Synthesized intent + integrations") &&
-      step12c.includes("Step 1.3"));
-
-    // G20c: the runnable q= example carries both new field groups (not just the prose above it).
-    //       Scope the assertion to the fenced `q=` line itself — asserting over the whole
-    //       step12c slice lets the prose above satisfy it (e.g. after a casing change), which
-    //       is the tautology class this repo's guards must not fall into.
-    const qLine = (step12c.match(/^mcp__lorekit__memory_search: q=.*$/m) || [""])[0];
-    s.check("G20c pr-reviewer.md Step 1.2c q= example lists the symbol + intent + integrations groups",
-      qLine.length > 0 &&
-      qLine.includes("changed symbol names") &&
-      qLine.includes("synthesized intent") &&
-      qLine.includes("integrations"));
-
-    // G20d: the search limit was raised past 10 — no `limit=10` survives in the block, and a
-    //       higher limit in the 15–20 band is present on the memory_search call.
-    s.check("G20d pr-reviewer.md Step 1.2c memory_search limit raised past 10 into the 15–20 band",
-      !step12c.includes("limit=10") &&
-      /memory_search:.*limit=(1[5-9]|20)\b/.test(step12c));
-
-    // G20e: Step 1.0's list cap of 50 is explicitly left unchanged — regression lock so a future
-    //       edit does not conflate the two caps. Scoped to the Step 1.0 block for the same reason
-    //       G20c is scoped to its fence: a `limit=50` anywhere else in the file must not satisfy a
-    //       claim about Step 1.0. An unresolvable slice fails rather than passing vacuously.
-    const step10      = sliceBetween(prReviewer, "### 1.0 Prior-comment awareness", "### 1.1 Fetch PR data in parallel");
-    s.check("G20e pr-reviewer.md Step 1.0 list cap of 50 is unchanged",
-      /memory_list:.*limit=50/.test(step10));
-
-    // G20f: the docs-drift sweep — the diagnostic-surface phase-model row for 1.2c names the two
-    //       new query fields, not just "changed paths". G20a–G20e lock agents/pr-reviewer.md only,
-    //       so without this the mirrored row can silently revert. Non-tautological: the base row
-    //       carries neither literal.
-    const diag12cRow = prReviewerDiag
-      .split("\n")
-      .find((l) => l.startsWith("| 1.2c | Diff-keyed lesson search")) || "";
-    s.check("G20f diagnostic-surface 1.2c row names the changed-symbol and intent+integrations fields",
-      diag12cRow.includes("changed symbol names") &&
-      diag12cRow.includes("synthesized intent + integrations"));
-
-    // G20g: the INTENT_PHRASE hoist itself — Step 1.2c is the single derivation point and Step 1.3
-    //       expands the bound value instead of re-deriving it. Without this the two prose halves
-    //       can drift back apart, which is the exact defect the hoist was introduced to remove.
-    //       Both halves are asserted from their OWN slice, never from the whole file.
-    const step13      = sliceBetween(prReviewer, "### 1.3 Synthesize intent", "### 1.4 Triage for large PRs");
-    const diag13Row = prReviewerDiag
-      .split("\n")
-      .find((l) => l.startsWith("| 1.3 | Intent synthesis")) || "";
-    s.check("G20g Step 1.2c binds INTENT_PHRASE as the single derivation point and Step 1.3 expands it",
-      step12c.includes("INTENT_PHRASE") &&
-      step12c.includes("single derivation point") &&
-      /Expand `INTENT_PHRASE`/.test(step13) &&
-      step13.includes("do not re-derive it") &&
-      diag12cRow.includes("INTENT_PHRASE") &&
-      diag13Row.includes("INTENT_PHRASE"));
-
-    // G20h: the second mirrored surface for the hoist — holistic-analysis review-mode's
-    //       `intent_summary` input bullet. It is the only downstream consumer that restates
-    //       Step 1.3's DERIVATION rather than its output, so it is the one the hoist can
-    //       invalidate; without a guard it silently reverts. Scoped to that one bullet.
-    const intentSummaryBullet = reviewMode
-      .split("\n")
-      .find((l) => l.startsWith("- `intent_summary`")) || "";
-    s.check("G20h review-mode intent_summary bullet describes Step 1.3 as expanding INTENT_PHRASE",
-      intentSummaryBullet.includes("INTENT_PHRASE") &&
-      intentSummaryBullet.includes("Step 1.2c"));
-  }
-}
-
-// ── G21: code-review-retrieval-relevance L2 suite wiring ──
-// Reads the REAL shipped files and asserts literal anchors grepped OUT of them —
-// never re-encode expected strings inside the eval (aw-lessons::mock-that-reimplements).
-// Pairs positive + negative halves. Guard bites on revert (aw-lessons::prove-the-guard-bites).
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-
-  // The suite table lives in `suites.mjs`, not `l2.mjs` — both `l2.mjs` (which runs the
-  // suites) and `select-suites.mjs` (which maps changed files onto them) need the same
-  // table, and a second parse of it would be the drift surface. These guards therefore
-  // assert against the file that OWNS the table: pointing them at `l2.mjs` after the move
-  // would have left every one of them green and vacuous, matching nothing in a file that
-  // no longer declares a suite. The runner is read separately, under its own name, for the
-  // guards that are genuinely about the runner rather than the table.
-  const l2 = read("scripts/eval/suites.mjs");
-  const l2runner = read("scripts/eval/l2.mjs");
-  const golden = read("scripts/eval/golden/code-review-retrieval-relevance.jsonl");
-  const notes  = read("scripts/eval/golden/code-review-retrieval-relevance.NOTES.md");
-  const l2yml  = read(".github/workflows/evals-l2.yml");
-  const readme = read("scripts/eval/README.md");
-
-  // Every shipped suite's rubric declaration, parsed LIVE out of the table so both
-  // consumers below (G21d's no-mirror half, G21g's extraction check) read the same
-  // set and neither can drift from the suites that actually ship.
-  //
-  // The alternation covers BOTH declaration shapes — a single `section:` and the
-  // multi-section `sections: [...]` form — and matches each suite exactly ONCE, which
-  // is what the parity check at the end of this block depends on. A `section:`-only
-  // regex silently dropped every multi-section suite: the mirror check below then
-  // stopped asserting that suite's rubric file, and the parity count went 9 vs 8.
-  const SUITES_TABLE = [...l2.matchAll(
-    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*(?:section:\s*(null|"([^"]+)")|sections:\s*\[[^\]]*\])\s*,?\s*\}/g,
-  )];
-
-  // G21a: l2.mjs SUITES contains the new suite entry with the D1 rubric file + section.
-  // Scoped to the code-review-retrieval-relevance suite object so the file/section
-  // anchors are asserted INSIDE that entry — a bare whole-file includes would stay
-  // green if agents/pr-reviewer.md ever appeared in another suite's rubric.
-  const d1Suite = (l2.match(
-    /name:\s*"code-review-retrieval-relevance"[\s\S]*?rubric:\s*\{[^}]*\}/,
-  ) || [""])[0];
-  // Both subsections are named, not `## Step 1`. That parent is heading-level-aware and so
-  // captured all ten `### 1.x` subsections — including `### 1.2d`, whose diff-keyed shortlist
-  // answers a different question from the one this suite's goldens label, which is what put
-  // the suite at 3/5 against a 70% floor. Asserting the two literals here means a silent
-  // widening back to the parent reds L1 rather than only the paid L2 run.
-  s.check("G21a suites.mjs SUITES contains code-review-retrieval-relevance with D1 rubric (file + sections)",
-    d1Suite.includes("agents/pr-reviewer.md") &&
-    d1Suite.includes("### 1.0 Prior-comment awareness + relevance memory load (default ON)") &&
-    d1Suite.includes("### 1.2c Diff-keyed lesson search (all modes)") &&
-    !d1Suite.includes("## Step 1: Fetch all inputs + load memories"));
-
-  // G21b: golden JSONL exists and every non-empty line is valid JSON (locks the
-  // test-plan claim that all lines parse). A bare non-empty count would pass on a
-  // truncated/corrupt line; JSON.parse per line actually validates parseability.
-  const goldenLines = golden.split("\n").filter(Boolean);
-  let goldenAllParse = goldenLines.length >= 1;
-  for (const ln of goldenLines) {
-    try { JSON.parse(ln); } catch { goldenAllParse = false; break; }
-  }
-  s.check("G21b golden JSONL exists and every line is valid JSON", goldenAllParse);
-
-  // G21c: the loud BOOTSTRAP marker literal is present in the NOTES file.
-  s.check("G21c loud BOOTSTRAP marker literal is present in the NOTES file",
-    notes.includes("BOOTSTRAP SEED — NOT A REAL BASELINE"));
-
-  // G21d: evals-l2.yml DERIVES its suite selection instead of mirroring the rubric
-  // files in a `paths:` filter. The mirror is what drifted — four of nine rubric
-  // files were absent from it (severity, optimality, depth-routing, rubric-composition),
-  // so editing those rubrics never ran their own eval, and two listed paths backed no
-  // suite at all. Asserting the derivation (the selector is invoked, the matrix drives
-  // `--suite`) is what makes that class of drift unrepresentable; a re-added rubric-path
-  // list is caught by the negative half below.
-  s.check("G21d evals-l2.yml derives the affected suites from the selector, not a paths mirror",
-    l2yml.includes("scripts/eval/select-suites.mjs") &&
-    l2yml.includes("--suite") &&
-    l2yml.includes("fromJSON(needs.select.outputs.suites)"));
-  const rubricFilesInYml = SUITES_TABLE
-    .map((m) => m[1])
-    .filter((f) => l2yml.includes(f));
-  s.check("G21d evals-l2.yml carries no hand-maintained mirror of the suites' rubric files",
-    rubricFilesInYml.length === 0,
-    rubricFilesInYml.length ? `still listed: ${rubricFilesInYml.join(", ")}` : "");
-
-  // G21h: the selector's own self-test. It asserts the MAPPING derived from the table
-  // (each suite is selected by its rubric file and by its golden file; a harness file
-  // selects all; an unrelated or near-miss path selects none; output is table-ordered),
-  // so adding a suite extends the coverage rather than aging the assertion. Executing
-  // it here is the difference between a selector that is documented to be right and one
-  // that is checked — a narrowing bug hides itself, because a suite that never ran
-  // reports as a green PR exactly like a suite that passed.
-  {
-    const SELECT = join(REPO_ROOT, "scripts/eval/select-suites.mjs");
-    const r = spawnSync("node", [SELECT, "--self-test"], { encoding: "utf8" });
-    s.check("G21h the suite selector's self-test passes", r.status === 0,
-      (r.stderr || r.stdout || "").trim().split("\n").slice(0, 6).join(" / "));
-
-    // The runner must reject an unknown --suite loudly. CI drives that flag from a
-    // generated matrix, so a run-nothing-exit-0 would report a typo as a passing eval.
-    const bad = spawnSync("node", [join(REPO_ROOT, "scripts/eval/l2.mjs"), "--suite", "no-such-suite"],
-      { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
-    s.check("G21h l2.mjs exits non-zero on an unknown --suite name", bad.status !== 0,
-      `exit ${bad.status}`);
-    s.check("G21h l2.mjs imports the shared suite table rather than declaring its own",
-      /import\s*\{[^}]*SUITES[^}]*\}\s*from\s*"\.\/suites\.mjs"/.test(l2runner) &&
-      !/^const SUITES = \[/m.test(l2runner));
-  }
-
-  // G21i: the opt-in gate. These evals cost model tokens per case, so a suite job
-  // must be reachable ONLY through an explicit ask (the PR label or a dispatch) —
-  // and the aggregator must still run on every PR, because dropping the
-  // `pull_request` trigger to make the workflow manual leaves a required check
-  // pending forever. Both halves are asserted: the gate exists AND the check does
-  // not depend on it firing.
-  {
-    // The label literal is EXTRACTED from the workflow, never re-encoded here, so
-    // this guard cannot pass against a workflow that renamed it
-    // (aw-lessons::mock-that-reimplements-the-thing-under-test).
-    const label = (l2yml.match(
-      /contains\(github\.event\.pull_request\.labels\.\*\.name,\s*'([^']+)'\)/,
-    ) || [])[1];
-    s.check("G21i evals-l2.yml resolves the opt-in from a PR label", Boolean(label),
-      "no contains(...labels.*.name, '<label>') expression found");
-
-    if (label) {
-      // The only path to a model call is an opted-in run. Asserted on the suite
-      // job's own `if`, so a re-added unconditional matrix fails here.
-      const suiteIf = (l2yml.match(/^\s{2}suite:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
-      s.check("G21i the suite jobs run only on an opted-in run",
-        suiteIf.includes("needs.gate.outputs.opted_in == 'true'"), `suite if: ${suiteIf.trim()}`);
-
-      // …and the requireable check is NOT gated on the opt-in, or every
-      // non-opted-in PR would wait on a check that never runs.
-      const l2If = (l2yml.match(/^\s{2}l2:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
-      s.check("G21i the aggregator check runs on every PR, opted in or not",
-        l2If.trim() === "always()", `l2 if: ${l2If.trim()}`);
-      s.check("G21i evals-l2.yml still triggers on pull_request (a manual-only trigger hangs a required check)",
-        /^on:[\s\S]*?^\s{2}pull_request:/m.test(l2yml));
-
-      // The label is an instruction to a human, so it has to be documented under
-      // the name the workflow actually reads.
-      s.check(`G21i the '${label}' opt-in label is documented in the eval README`,
-        readme.includes(label));
-    }
-  }
-
-  // G21j: every suite's `choices` are EXERCISED by its golden set, both directions.
-  // This is the one mechanically-checkable half of the eval-maintenance obligation
-  // (CLAUDE.md § Keeping the evals honest): a decision surface that gains an option
-  // — a fourth tier, a tenth bug class, a new severity — is untested for that option
-  // by construction until a golden case carries it, and nothing else in the pipeline
-  // notices. The reverse direction catches the more dangerous edit: RENAMING a choice
-  // in suites.mjs leaves every existing label unmatchable, so the suite scores 0% and
-  // reads as a catastrophic rubric regression rather than the label mismatch it is.
-  // All nine suites cover every choice today, so this is a ratchet, not a baseline.
-  {
-    const suiteBlocks = [...l2.matchAll(
-      /name:\s*"([^"]+)",\s*\n\s*golden:\s*"([^"]+)"[\s\S]*?choices:\s*\[([^\]]*)\]/g,
-    )];
-    s.check("G21j parsed every shipped suite's golden + choices pair from suites.mjs",
-      suiteBlocks.length === SUITES_TABLE.length,
-      `${suiteBlocks.length} name/golden/choices blocks vs ${SUITES_TABLE.length} rubric entries`);
-
-    for (const [, name, goldenRel, choicesRaw] of suiteBlocks) {
-      const choices = [...choicesRaw.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-      const goldenAbs = join(REPO_ROOT, "scripts/eval", goldenRel);
-      if (!existsSync(goldenAbs)) {
-        s.check(`G21j ${name}: golden file exists`, false, goldenRel);
-        continue;
-      }
-      const labels = readFileSync(goldenAbs, "utf8").split("\n").filter(Boolean)
-        .map((l) => { try { return JSON.parse(l).expected; } catch { return null; } });
-      const seen = new Set(labels.filter(Boolean));
-      const uncovered = choices.filter((c) => !seen.has(c));
-      const unknown = [...seen].filter((e) => !choices.includes(e));
-      s.check(`G21j ${name}: every choice has at least one golden case`,
-        uncovered.length === 0, uncovered.length ? `no case labelled: ${uncovered.join(", ")}` : "");
-      s.check(`G21j ${name}: every golden label is one of the suite's choices`,
-        unknown.length === 0, unknown.length ? `label not in choices: ${unknown.join(", ")}` : "");
-    }
-  }
-
-  // G21k: eval telemetry. A run is a tree with a token price on every leaf, and
-  // stdout can answer "what was today's accuracy" but never "has this rubric been
-  // drifting for three weeks" or "which suite is eating the budget" — both are trend
-  // questions and need a backend. The contracts worth mechanising are the ones a
-  // future edit would break silently:
-  //
-  //   1. OFF by default. An unset OTEL_EXPORTER_OTLP_ENDPOINT must mean no export
-  //      attempt at all, or every contributor's local run starts failing DNS.
-  //   2. A MISS is not a span error. A wrong answer is the measurement; only a
-  //      transport/API failure sets ERROR. Conflate them and every rubric regression
-  //      shows up in the trace list as an outage.
-  //   3. The flush happens BEFORE the gate exit. A red run is the one you most want
-  //      to look at, so it must ship its own trace — asserted positionally, since a
-  //      later refactor that moves the exit up would lose exactly that trace.
-  //   4. Export failure never changes the verdict. The accuracy is the product; the
-  //      span is the receipt.
-  {
-    const telRel = "scripts/eval/telemetry.mjs";
-    const telAbs = join(REPO_ROOT, telRel);
-    // The encoder/exporter mechanics (enabled-gate, no-op span, flush) were
-    // extracted into agents/pr-reviewer/scripts/otlp.mjs (pr-reviewer
-    // deterministic pipeline, D7) so review-telemetry.mjs can share one
-    // encoder. telemetry.mjs keeps its own API and self-test unchanged (still
-    // executed and behaviorally proven below); the three SOURCE-pattern
-    // checks that used to read telemetry.mjs's own text now read otlp.mjs's,
-    // since that is the file that now contains those literal lines.
-    const otlpRel = "agents/pr-reviewer/scripts/otlp.mjs";
-    const otlpAbs = join(REPO_ROOT, otlpRel);
-    s.check("G21k the eval telemetry module exists", existsSync(telAbs));
-    s.check("G21k the shared otlp encoder module exists", existsSync(otlpAbs));
-    if (existsSync(telAbs)) {
-      const tel = read(telRel);
-      s.check("G21k telemetry.mjs imports its exporter from the shared otlp.mjs, not a second copy",
-        /from\s+"\.\.\/\.\.\/agents\/pr-reviewer\/scripts\/otlp\.mjs"/.test(tel));
-      const r = spawnSync(process.execPath, [telAbs, "--self-test"], { encoding: "utf8" });
-      s.check("G21k the telemetry self-test passes (OTLP encoding, span tree, metric shapes)",
-        r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
-    }
-    if (existsSync(otlpAbs)) {
-      const otlp = read(otlpRel);
-      const ro = spawnSync(process.execPath, [otlpAbs, "--self-test"], { encoding: "utf8" });
-      s.check("G21k the shared otlp encoder's own self-test passes",
-        ro.status === 0, (ro.stdout || "").trim().split("\n").slice(-4).join(" | ") || ro.stderr?.slice(0, 200));
-
-      s.check("G21k telemetry is off unless an OTLP endpoint is configured",
-        /this\.enabled\s*=\s*this\.endpoint\s*!==\s*""/.test(otlp));
-      s.check("G21k a disabled harness hands back a no-op span so callers need no conditional",
-        /if\s*\(!this\.enabled\)\s*return\s*\{\s*spanId:\s*null/.test(otlp));
-      s.check("G21k flush never throws — it reports the failure and returns",
-        /console\.error\(`⚠ telemetry export failed/.test(otlp) && /async flush\(\)/.test(otlp));
-    }
-    if (existsSync(telAbs)) {
-      // l2.mjs is the only producer today; assert the wiring rather than trusting it.
-      s.check("G21k l2.mjs imports the telemetry harness", /from "\.\/telemetry\.mjs"/.test(l2runner));
-      s.check("G21k l2.mjs opens a run span, a suite span and a per-case span",
-        /T\.span\("eval\.run"/.test(l2runner)
-        && /T\.span\(`eval\.suite \$\{suite\.name\}`/.test(l2runner)
-        && /T\.span\(`eval\.case \$\{c\.id\}`/.test(l2runner));
-      s.check("G21k a case MISS ends the span normally; only an API error fails it",
-        /if\s*\(apiError\)\s*caseSpan\.fail\(apiError,\s*caseAttrs\);\s*else\s*caseSpan\.end\(caseAttrs\)/.test(l2runner));
-      s.check("G21k the per-case span carries expected, actual and match",
-        /"eval\.case\.expected"/.test(l2runner) && /"eval\.case\.actual"/.test(l2runner) && /"eval\.case\.match"/.test(l2runner));
-      s.check("G21k token usage is recorded under the upstream gen_ai semantic conventions",
-        /"gen_ai\.usage\.input_tokens"/.test(l2runner) && /gen_ai\.client\.token\.usage/.test(l2runner));
-
-      const flushAt = l2runner.indexOf("await T.flush()");
-      const gateExitAt = l2runner.indexOf("anyBelowGate) {");
-      s.check("G21k the telemetry flush precedes the gate exit, so a FAILING run still ships its trace",
-        flushAt > 0 && gateExitAt > flushAt, `flush@${flushAt} gate-exit@${gateExitAt}`);
-
-      // CI half: the workflow must pass the OTLP config through, or the whole thing
-      // is dead code on the only surface that runs it unattended.
-      s.check("G21k evals-l2.yml forwards the OTLP endpoint and headers to the suite job",
-        /OTEL_EXPORTER_OTLP_ENDPOINT:/.test(l2yml) && /OTEL_EXPORTER_OTLP_HEADERS:/.test(l2yml));
-      s.check("G21k the OTLP endpoint comes from a repo variable and the token from a secret",
-        /vars\.OTEL_EXPORTER_OTLP_ENDPOINT/.test(l2yml) && /secrets\.DASH0_AUTH_TOKEN/.test(l2yml));
-    }
-
-    // G21l: the SCORER and the GATE. Both decide what a run reports while being
-    // invisible in its output, which is how each of them lied once already: the
-    // earliest-substring parse turned a rubric's `[Micro | Lite | Full]` template
-    // line into a confident `Micro` (five tier-routing misses, all one label), and
-    // a blanket 70% floor applied to a 5-case suite is decided by one coin flip.
-    // Every check here is executed against the runner's real behaviour, not its prose.
-    {
-      // The parse is pulled out of the live source and run, so a rewrite that
-      // reintroduces earliest-wins fails here rather than in a quarterly review.
-      const fnSrc = l2runner.slice(l2runner.indexOf("function parseChoice"), l2runner.indexOf("const summary = []"));
-      let parseChoice = null;
-      try { parseChoice = eval(`(${fnSrc.slice(fnSrc.indexOf("function parseChoice"))})`); } catch { /* reported below */ }
-      s.check("G21l parseChoice is extractable and callable from the live runner", typeof parseChoice === "function");
-      if (typeof parseChoice === "function") {
-        const C = ["Micro", "Lite", "Full"];
-        const amb = (r) => typeof r === "string" && r.startsWith("?(");
-        s.check("G21l a one-word reply parses to that choice",
-          parseChoice("Full", C) === "Full" && parseChoice("  lite ", C) === "Lite");
-        s.check("G21l a reply that ENUMERATES every choice is ambiguous, never the first one",
-          amb(parseChoice("- Tier: [Micro | Lite | Full]", C)) && amb(parseChoice("Micro | Lite | Full", C)),
-          `template→${parseChoice("- Tier: [Micro | Lite | Full]", C)}`);
-        s.check("G21l a structured reply the rubric asked for still parses",
-          parseChoice("MODE SELECTION:\n- Tier: Full", C) === "Full");
-        s.check("G21l a bracketed placeholder is scaffolding, not a second claim",
-          parseChoice("Tier: Full [not Micro]", C) === "Full");
-        s.check("G21l an unparseable reply carries its own raw text for the reader",
-          parseChoice("I decline", C).includes("I decline"));
-
-        // The checks above all use choices where none contains another, so a
-        // containment defect passed them green — and there was one: two live
-        // suites use nested pairs, and every reply but the byte-exact one scored
-        // ambiguous. Probe the nesting itself, in BOTH directions (the contained
-        // choice must still be reachable), and for both live shapes: a substring
-        // inside a word (`optimal` in `suboptimal`) and a hyphenated prefix
-        // (`promoted` in `not-promoted`).
-        const N = ["optimal", "suboptimal"];
-        const P = ["promoted", "not-promoted"];
-        s.check("G21l a choice that CONTAINS another parses to the one that was said",
-          parseChoice("suboptimal.", N) === "suboptimal" &&
-          parseChoice("not-promoted.", P) === "not-promoted",
-          `suboptimal→${parseChoice("suboptimal.", N)} · not-promoted→${parseChoice("not-promoted.", P)}`);
-        s.check("G21l the CONTAINED choice is still reachable, not shadowed by the longer one",
-          parseChoice("optimal.", N) === "optimal" &&
-          parseChoice("promoted.", P) === "promoted",
-          `optimal→${parseChoice("optimal.", N)} · promoted→${parseChoice("promoted.", P)}`);
-        // The documented residue, asserted so it stays a KNOWN trade rather than
-        // drifting into an accident: for a nested pair, containment is the only
-        // evidence available, so an unbracketed enumeration resolves to the longer
-        // choice instead of reading as ambiguous. Pinned here because the fix for
-        // it would be to re-break the line above.
-        s.check("G21l an unbracketed enumeration of a NESTED pair resolves, by design, to the longer choice",
-          parseChoice("optimal | suboptimal", N) === "suboptimal");
-      }
-
-      // A miss line that shows only the parsed label cannot distinguish a wrong
-      // ANSWER from a wrong PARSE — the whole reason the scorer's defect read as a
-      // rubric defect for a full run.
-      // Assert the raw text is the INTERPOLATED VALUE, not merely mentioned: the first
-      // version of this check passed a probe that printed `m.got` in the value slot,
-      // because `m.raw` still appeared in the line's own guard clause.
-      s.check("G21l a miss prints the model's raw reply, not just the parsed choice",
-        /miss \$\{m\.id\}/.test(l2runner) && /reply: «\$\{m\.raw\b/.test(l2runner));
-
-      // Gate calibration: a floor exists, it is case-count-aware, and a suite it
-      // cannot grade is LABELLED rather than dropped from the report.
-      s.check("G21l the gate has a minimum case count, overridable but defaulted",
-        /GATE_MIN_CASES\s*=\s*process\.env\.EVAL_GATE_MIN_CASES\s*\?[\s\S]{0,60}:\s*10/.test(l2runner));
-      s.check("G21l only a suite at or above the case floor can breach the gate",
-        /const gating = GATE !== null && results\.length >= GATE_MIN_CASES/.test(l2runner) &&
-        /if \(gating && acc < GATE\) anyBelowGate = true/.test(l2runner));
-      s.check("G21l a suite below the floor is still reported, and labelled advisory",
-        /advisory/.test(l2runner) && /s\.gating === false/.test(l2runner));
-
-      // The missing-key silent green: an opted-in run must fail, an unasked one skips.
-      s.check("G21l an absent API key FAILS a run that asked for the evals",
-        /EVAL_REQUIRE_KEY === "1"/.test(l2runner) && /process\.exit\(3\)/.test(l2runner));
-      s.check("G21l evals-l2.yml sets EVAL_REQUIRE_KEY, so the opted-in check cannot pass unmeasured",
-        /EVAL_REQUIRE_KEY:\s*"1"/.test(l2yml));
-
-      // Cost: the system block is the rubric, identical across a suite's cases.
-      s.check("G21l the rubric is sent as a cacheable system block",
-        /cache_control: \{ type: "ephemeral" \}/.test(l2runner));
-      s.check("G21l cache reads and writes are accounted separately from plain input",
-        /cache_read_input_tokens/.test(l2runner) && /cache_creation_input_tokens/.test(l2runner) &&
-        /"gen_ai\.token\.type": "cache_read"/.test(l2runner));
-    }
-  }
-
-  // G21m: the bug-detection eval's CI wiring. This runner had real gates
-  // (recall ≥ 0.7, fp ≤ 0.2) and 30 golden records, and ran in NO workflow — only its
-  // `--self-test` executed, by G39, so the scoring plumbing was guarded while the
-  // measurement itself had never once run in CI. Every claim below is the wiring, not
-  // the runner: the inputs are DECLARED in the suite table (so no `paths:` mirror can
-  // reappear), the selector derives one boolean from them, the job consumes that
-  // boolean, and the aggregator READS the job's result — the last of which is the half
-  // that decides whether a red detection run can report green.
-  {
-    const detectionInputsInTable = /export const DETECTION = \{[\s\S]*?runner:\s*"scripts\/eval\/l2-detection\.mjs"[\s\S]*?rubrics:\s*\[[\s\S]*?finders\.md[\s\S]*?finding-verifier\.md[\s\S]*?golden:\s*"scripts\/eval\/golden\/bug-detection\.jsonl"/.test(l2);
-    s.check("G21m the detection eval's inputs are declared in the suite table, next to the suites",
-      detectionInputsInTable);
-
-    // The selector DERIVES from that declaration — it imports the accessor rather than
-    // restating the three paths, which is what makes a renamed rubric impossible to
-    // forget (the same reason the nine suites carry no paths mirror).
-    const selector  = read("scripts/eval/select-suites.mjs");
-    const detRunner = read("scripts/eval/l2-detection.mjs");
-    s.check("G21m the selector imports the declared detection inputs rather than restating them",
-      /import\s*\{[^}]*detectionInputs[^}]*\}\s*from\s*"\.\/suites\.mjs"/.test(selector) &&
-      !/l2-detection\.mjs"/.test(selector.replace(/^\/\/.*$/gm, "")));
-    s.check("G21m the selector reports detection as its own boolean, separate from the matrix",
-      /detection\b/.test(selector) && /detection:\s*result\.detection === true/.test(selector));
-
-    // The negative half of G21d, for the detection job: no rubric path may be spelled
-    // in the workflow.
-    const detPathsInYml = ["scripts/eval/golden/bug-detection.jsonl",
-      "agents/pr-reviewer/rules/finders.md",
-      "agents/shared/rules/finding-verifier.md"].filter((p) => l2yml.includes(p));
-    s.check("G21m evals-l2.yml carries no hand-maintained mirror of the detection eval's inputs",
-      detPathsInYml.length === 0,
-      detPathsInYml.length ? `still listed: ${detPathsInYml.join(", ")}` : "");
-
-    // The job exists, runs only when both the opt-in and the derived boolean say so,
-    // and runs the detection runner — gated and require-key, like the suites.
-    const detJob = (l2yml.match(/^\s{2}detection:[\s\S]*?(?=^\s{2}l2:)/m) || [""])[0];
-    const detIf = (detJob.match(/^\s{4}if:\s*(.+)$/m) || [])[1] || "";
-    s.check("G21m evals-l2.yml has a bug-detection job", detJob.length > 0);
-    s.check("G21m the detection job runs only on an opted-in run whose diff selected it",
-      detIf.includes("needs.gate.outputs.opted_in == 'true'") &&
-      detIf.includes("needs.select.outputs.detection == 'true'"), `detection if: ${detIf.trim()}`);
-    s.check("G21m the detection job runs the detection runner, gated, and cannot pass unmeasured",
-      /node scripts\/eval\/l2-detection\.mjs/.test(detJob) &&
-      /EVAL_DETECTION_GATE:\s*"1"/.test(detJob) &&
-      /EVAL_REQUIRE_KEY:\s*"1"/.test(detJob));
-    s.check("G21m the detection runner FAILS a run that asked for it with no API key",
-      /EVAL_REQUIRE_KEY === "1"/.test(detRunner) && /process\.exit\(3\)/.test(detRunner));
-
-    // The half that decides whether a red run can report green: the requireable check
-    // must both DEPEND on the detection job and branch on its result. `needs` alone is
-    // not enough — the aggregator is `if: always()`, so a failed dependency reaches it
-    // as a value to read, not as a skip.
-    const l2Job = (l2yml.match(/^\s{2}l2:[\s\S]*$/m) || [""])[0];
-    s.check("G21m the aggregator depends on the detection job",
-      /needs:\s*\[[^\]]*\bdetection\b[^\]]*\]/.test(l2Job));
-    // Asserted on the FAILURE PATH, not on the presence of an `exit 1` anywhere in the
-    // job: the gate and selection branches already carry one, so a whole-job
-    // `/exit 1/` stays green against a detection branch that merely prints a note.
-    // (The same defect the G21l raw-reply check had on its first version.)
-    const detCase = (l2Job.match(/case "\$DETECTION_RESULT" in[\s\S]*?esac/) || [""])[0];
-    s.check("G21m the aggregator reads the detection job's result and fails on it",
-      /DETECTION_RESULT:\s*\$\{\{\s*needs\.detection\.result\s*\}\}/.test(l2Job) &&
-      /^\s*\*\)[^\n]*FAILED=/m.test(detCase) &&
-      /if \[ -n "\$FAILED" \][\s\S]{0,120}exit 1/.test(l2Job));
-    // …and `skipped` stays a pass on BOTH jobs, or a PR that affects one eval and not
-    // the other would fail for having nothing to run.
-    s.check("G21m a skipped eval job is a pass, on both the matrix and the detection job",
-      /\bskipped\)/.test(l2Job) && (l2Job.match(/\bskipped\)/g) || []).length >= 2);
-  }
-
-  // G21e: README carries the methodology NOTE for this suite (promotion → golden case),
-  // not merely the suite table row. Assert on the note's own heading literal so a table
-  // row alone can't satisfy it.
-  s.check("G21e README carries the per-suite methodology note (promotion → golden case) for code-review-retrieval-relevance",
-    readme.includes("### `code-review-retrieval-relevance` — methodology note"));
-
-  // G21f (regression lock): the six pre-existing suite names are still present in the table
-  // (negative half: the edit added, did not replace).
-  for (const name of ["tier-routing", "bug-class", "complexity-triage", "aw-should-trigger",
-    "optimize-approach-optimality", "reviewer-agreement-bump"]) {
-    s.check(`G21f suites.mjs still contains pre-existing suite '${name}' (add-not-replace)`,
-      l2.includes(`name: "${name}"`));
-  }
-
-  // G21g: EVERY L2 suite with a non-null rubric.section must extract a NON-EMPTY body
-  // (more than just its heading line). This is the "the eval actually contains a rubric"
-  // guard — it would have caught the empty-rubric defect where a `## ` section immediately
-  // followed by a `### ` subheading extracted only the 43-char title (zero body), feeding
-  // the model an empty rubric. It runs the SAME shared extractSection l2.mjs feeds the model
-  // (imported from lib.mjs), so a regression in that function — e.g. reverting the
-  // heading-level-aware cut back to a cut-at-any-heading — fails this guard. The suite list
-  // is parsed live out of suites.mjs so the guard can never drift from the shipped suites.
-  const BODY_MIN = 80; // a real rubric body dwarfs this; a bare title never reaches it.
-  // The trailing `,?` is load-bearing: without it a suite written `section: "…",` (a trailing
-  // comma before the closing brace — legal JS and the house style everywhere else in this
-  // file) fell out of the parse entirely. Every shipped suite happens to omit it, so the
-  // brittleness was invisible until a mutation added one, and under the old `>= 7` floor it
-  // would have stayed invisible: the suite would simply have gone unchecked.
-  const rubricEntries = [...l2.matchAll(
-    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*section:\s*(null|"([^"]+)")\s*,?\s*\}/g,
-  )].map((m) => ({ file: m[1], section: m[2] === "null" ? null : m[3] }));
-  // The `sections: [...]` form (a decision split across sibling subsections) is a SECOND
-  // rubric shape, so it needs its own parse — and the count sentinel below has to be a
-  // PARITY check against the suite count, not the `>= 7` floor it used to be. A floor is
-  // satisfied by the suites that still match, so a suite adopting an unrecognised rubric
-  // shape drops out of this loop while the sentinel stays green: the guard would then cover
-  // every suite except the one whose rubric had just changed.
-  for (const m of l2.matchAll(
-    /rubric:\s*\{\s*file:\s*"([^"]+)",\s*sections:\s*\[([^\]]*)\]\s*,?\s*\}/g,
-  )) {
-    for (const q of m[2].matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
-      rubricEntries.push({ file: m[1], section: q[1] });
-    }
-  }
-  const suiteCount = [...l2.matchAll(/^\s{4}name:\s*"/gm)].length;
-  s.check("G21g parses a rubric for every suite in suites.mjs (no unrecognised rubric shape)",
-    suiteCount >= 9 && rubricEntries.length >= suiteCount,
-    "a suite's `rubric:` matched neither the `section:` nor the `sections:` parse, so it would"
-      + " be silently exempt from the non-empty-body checks below —"
-      + ` suites=${suiteCount} rubric entries parsed=${rubricEntries.length}`);
-  for (const { file, section } of rubricEntries) {
-    if (section === null) continue; // whole-file rubrics have no heading to strip.
-    // Guard the extraction: a renamed/moved rubric heading makes extractSection throw.
-    // Catch it so this surfaces as a red G21g check with a report, rather than an
-    // uncaught throw that aborts the entire L1 run before s.report() runs.
-    let body = "";
-    let extractErr = null;
-    try {
-      body = extractSection(file, section).slice(section.length).trim();
-    } catch (e) {
-      extractErr = e instanceof Error ? e.message : String(e);
-    }
-    s.check(`G21g L2 rubric '${section}' in ${file} extracts a non-empty body (> heading line)`,
-      extractErr === null && body.length > BODY_MIN,
-      extractErr ?? `body length ${body.length} <= ${BODY_MIN}`);
-  }
-
-  // G21n: the golden set's MAJORITY-CLASS BASELINE must sit BELOW the EVAL_GATE floor.
-  //
-  // Numbered G21n, not G21h: this guard arrived on one branch while the suite-selector
-  // self-test arrived on another, both claiming G21h. Two different guards under one ID
-  // makes a red build ambiguous about which contract broke, so the newer one moved.
-  //
-  // A suite whose labels are lopsided grades nothing: at 4 `surface` / 1 `skip` an
-  // always-`surface` responder scored 80% and cleared a 70% floor without reading the
-  // rubric at all, so a green meant only "the model stopped answering skip". Nothing
-  // asserted the split, so the sole detector was a human noticing — and the limitation
-  // stood recorded in CLAUDE.md for two paid CI rounds while both hypotheses under test
-  // were about something else entirely.
-  //
-  // Both operands are GREPPED OUT of the shipped files, never re-encoded here: the labels
-  // from the golden JSONL, and the floor from evals-l2.yml, which is the authority because
-  // l2.mjs defaults GATE to null (report-only) and only CI sets it. Re-encoding either
-  // would let this guard stay green while the thing it guards moved.
-  {
-    const labels = goldenLines.map((ln) => JSON.parse(ln).expected);
-    const tally = new Map();
-    for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
-    const majority = Math.max(...tally.values());
-    const baseline = (majority / labels.length) * 100;
-    // The floor CI actually enforces. Absent (someone dropped the env line) ⇒ fail closed:
-    // an unknown floor cannot be shown to exceed the baseline.
-    const gateLiteral = (l2yml.match(/EVAL_GATE:\s*"?(\d+)"?/) || [])[1];
-    const gate = gateLiteral === undefined ? null : Number(gateLiteral);
-    const split = [...tally.entries()].map(([k, v]) => `${k}=${v}`).sort().join(" ");
-    s.check("G21n code-review-retrieval-relevance majority-class baseline is below the EVAL_GATE floor",
-      gate !== null && baseline < gate,
-      gate === null
-        ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml — the floor this"
-          + " baseline must sit under is unknown, so the check fails closed"
-        : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}%`
-          + ` — a single-label responder would clear the floor without reading the rubric`
-          + ` (n=${labels.length}, ${split})`);
-  }
-
-}
-
-// ── G24: Gate 3 (Prior review feedback) tri-state + open-thread rendering contract ──
-// The summary counter and the list heading are an EXACT-STRING contract between the renderer
-// (pr-reviewer.md § The Gate 3 open threads) and its documented consumer
-// (reviewer-report-ingest.md § the open-threads checklist is not a body section). That rule
-// skips these blocks by literal heading match, so a reworded heading on either side silently
-// promotes a presentational block to an ingestable one — re-ingesting OTHER bots' comments as
-// pr-reviewer's own findings. Nothing else locks that pair.
-// The headings are EXTRACTED from the renderer and compared against the consumer, never
-// re-encoded here (aw-lessons::mock-that-reimplements-the-thing-under-test).
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const prReviewer = read("agents/pr-reviewer.md");
-  // Step 4's rendering reference moved to its own rule file (verbatim, so every literal anchor
-  // below still matches). Checks that assert a SHAPE read it; checks that assert PROCEDURE stay
-  // on the agent body.
-  const reportRendering = read("agents/pr-reviewer/rules/report-rendering.md");
-  const prReviewerDiag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
-  const ingest = read("agents/shared/rules/reviewer-report-ingest.md");
-  // Step 4 (4a-4d + "The shapes") moved verbatim to rules/posting.md (plan
-  // feat/pr-reviewer-shrink-fanout-ab, Step 9 split). Every literal anchor a check below slices
-  // out of Step 4's WRITE procedure now lives here; Step 0.7's prior-run-detection anchors
-  // (step07, "### First run") are untouched and still read off prReviewer.
-  const postingMd = read("agents/pr-reviewer/rules/posting.md");
-  // The pr-reviewer diet moved the gate criteria + Step 1.8 to rules/gates.md and Steps 0.7/0.8
-  // to rules/prior-run.md, verbatim; the anchors below that slice those sections read them there.
-  const gatesMd = read("agents/pr-reviewer/rules/gates.md");
-  const priorRunMd = read("agents/pr-reviewer/rules/prior-run.md");
-  // Every file the diet split out of the agent body, for absence checks that must cover all of it.
-  const prReviewerSplit = ["gates", "fix-links", "prior-run", "fetch-and-triage", "memory-steps",
-    "inline-pipeline", "verify-and-render", "thread-reconcile"]
-    .map((n) => read(`agents/pr-reviewer/rules/${n}.md`)).join("\n");
-
-  // G24a: Step 1.8 grades on BOTH discriminants and enumerates all three states. A revert to
-  // the old binary gate drops the `blocking`/`answered` conjunct and reds here.
-  const gate3 = sliceBetween(gatesMd,
-    "**Gate 3 — Unresolved prior review feedback**", "**Gate 4 — Self-review signals**");
-  s.check("G24a pr-reviewer.md Step 1.8 grades Gate 3 on blocking AND answered, across ✅/⚠️/❌",
-    gate3.includes("`blocking == true` **and** `answered == false`") &&
-    ["- ✅ —", "- ⚠️ —", "- ❌ —"].every((marker) => gate3.includes(marker)));
-
-  // ── G25: the report renderer. Behavioural, not textual: these EXECUTE the script that now
-  // owns the report layout and compare against committed snapshots. Five production runs posted
-  // marker-less, accordion-less reports from a correct prose spec, so text-matching the spec was
-  // never going to catch this class. Snapshots live in scripts/eval/fixtures/report-body/ and are
-  // readable markdown — they are the reference for what a report looks like.
-  {
-    const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-    const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-body");
-    const run = (args, input) => {
-      const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
-      return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
-    };
-
-    s.check("G25 the renderer and its template both exist",
-      existsSync(RENDER) && existsSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md")));
-
-    // (a) Snapshot parity. A template or renderer change that alters the output must be
-    // accompanied by a regenerated snapshot, so the diff shows the reader exactly what moved.
-    for (const name of REPORT_FIXTURES) {
-      const payload = join(FIX, `${name}.json`);
-      const expectedPath = join(FIX, `${name}.expected.md`);
-      if (!existsSync(payload) || !existsSync(expectedPath)) {
-        s.check(`G25 ${name} fixture + snapshot present`, false, "missing fixture or snapshot");
-        continue;
-      }
-      const r = run([payload]);
-      s.check(`G25 ${name}.json renders without error`, r.ok, r.err);
-      const expected = readFileSync(expectedPath, "utf8");
-      let diffDetail = "";
-      if (r.out !== expected) {
-        let i = 0;
-        const min = Math.min(r.out.length, expected.length);
-        while (i < min && r.out[i] === expected[i]) i++;
-        const ctx = (s2, at) => JSON.stringify(s2.slice(Math.max(0, at - 20), at + 20));
-        diffDetail = `output drifted — regenerate the snapshot and review the diff (lengths`
-          + ` ${r.out.length} vs ${expected.length}, first diff at index ${i}: got`
-          + ` ${ctx(r.out, i)} want ${ctx(expected, i)})`;
-      }
-      s.check(`G25 ${name} output matches its committed snapshot`, r.out === expected, diffDetail);
-    }
-
-    // (b) Structural invariants on every snapshot. These are what the five failed runs broke.
-    for (const name of REPORT_FIXTURES) {
-      const p = join(FIX, `${name}.expected.md`);
-      if (!existsSync(p)) continue;
-      const body = readFileSync(p, "utf8");
-      s.check(`G25 ${name} carries the report marker`, body.includes("<!-- PR_REVIEWER_REPORT -->"));
-      s.check(`G25 ${name} has a Review details accordion`,
-        /<details>\n<summary>Review details/.test(body));
-      s.check(`G25 ${name} pre-expands nothing`, !body.includes("<details open>"));
-      s.check(`G25 ${name} carries no **Verdict** line`, !body.includes("**Verdict**"));
-      // The report is the ONE surface that carries the methodology link; G46e asserts its
-      // absence inline. Named here rather than left to the snapshot byte-diff, because a
-      // regenerated snapshot updates silently and both halves of an asymmetry need a guard
-      // that says which direction it points (`comment-shape.md § The footer`).
-      s.check(`G25 ${name} carries the methodology link (report-only)`,
-        body.includes("[how these findings are produced]"),
-        "the report owns this link once per review; inline findings carry the identity half only");
-      // Nothing the accordion owns may render above the first <details>.
-      const head = body.split("<details>")[0];
-      for (const owned of ["| Gate | Status | Details |", "**Needs attention**", "**Found**",
-        "**Run**", "<sup>Nothing to report \u2014"]) {
-        s.check(`G25 ${name} keeps ${owned} inside the accordion`, !head.includes(owned));
-      }
-    }
-
-    // (c) Fail-closed. Each of these once shipped as a real posted report; the renderer must
-    // refuse them, and must print NOTHING on stdout so a piping caller cannot post a fragment.
-    const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
-    const mutate = (fn) => { const c = structuredClone(base); fn(c); return JSON.stringify(c); };
-    const rejects = [
-      ["a missing required slot", mutate((c) => { delete c.SUMMARY; })],
-      // The verdict is cross-checked against the gate table it sits above. A `reviewer-lessons`
-      // entry records a posted report whose gate table read PASS while the run's own contract said
-      // FAIL; the gates decide, so a disagreement is a rejection rather than a rendered
-      // contradiction.
-      ["a VERDICT that contradicts the gate table",
-        mutate((c) => { c.GATE_DOCS_STATUS = "❌"; c.GATE_DOCS_DETAILS = "no docs"; })],
-      // The findings index and the QUALITY tally are the same number stated twice.
-      ["a findings index that disagrees with the QUALITY tally", mutate((c) => {
-        c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "high" }];
-      })],
-      // A tier is an enum, not prose: the glyph is looked up from it.
-      ["a findings entry with an unknown tier", mutate((c) => {
-        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
-        c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "urgent" }];
-      })],
-      // A pipe in a title splits the index row into phantom columns.
-      ["a findings title carrying a table pipe", mutate((c) => {
-        c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
-        c.FINDINGS = [{ title: "A | B", path: "a.ts", line: 1, tier: "high" }];
-      })],
-      // Zero findings and no CI note means the Fix-all button would hand Agent0 an empty worklist.
-      ["a Fix-all button with nothing to fix", mutate((c) => {
-        c.FIX_ALL_URL = "https://app.dash0.com/goto/agent0?auto_submit=true";
-      })],
-      ["an unknown key (typo'd slot)", mutate((c) => { c.HEADLIN = "x"; })],
-      ["an invalid gate glyph", mutate((c) => { c.GATE_PRIOR_STATUS = "FAIL"; })],
-      // `RUN_MODE` is a v1 slot, so mutating it only proved the unknown-key check. Smuggle the
-      // verdict through slots a v2 payload really has — one scalar, one nested in an array item.
-      ["a smuggled **Verdict** line", mutate((c) => { c.RUN_NOTE = "**Verdict**: PASS"; })],
-      ["a **Verdict** line nested in OPEN_THREADS", mutate((c) => {
-        c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "see **Verdict**: PASS" }];
-      })],
-      ["a **Verdict** line nested in ADDITIONAL_FINDINGS", mutate((c) => {
-        c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "issue", body: "**Verdict**: PASS", confidence: 90 }];
-      })],
-      ["an empty required slot", mutate((c) => { c.SKIPPED_FILES = "   "; })],
-      ["a non-object payload", "[1,2]"],
-      ["malformed JSON", "{nope"],
-      // ── v2 shape validation. Each of these was a live defect in a posted report, or the
-      // silent-acceptance path that let one through.
-      ["a 40-char sha in RUN", mutate((c) => { c.RUN.sha = "c3ceb870255d96307be5b0499ca372345d237af7"; })],
-      ["an uppercase sha in RUN", mutate((c) => { c.RUN.sha = "C3CEB87"; })],
-      ["a bad RUN.mode", mutate((c) => { c.RUN.mode = "quick"; })],
-      ["a missing prior_sha on an incremental run", mutate((c) => { c.RUN.mode = "incremental"; delete c.RUN.prior_sha; })],
-      ["a non-integer delta_lines", mutate((c) => { c.RUN.delta_lines = "256"; })],
-      ["a stray nested field in RUN", mutate((c) => { c.RUN.delta_note = "x"; })],
-      ["a gate cell over the 120-char cap", mutate((c) => { c.GATE_DOCS_DETAILS = "x".repeat(121); })],
-      ["a newline in a gate cell", mutate((c) => { c.GATE_DOCS_DETAILS = "one\ntwo"; })],
-      ["a pipe in a gate cell", mutate((c) => { c.GATE_DOCS_DETAILS = "a | b"; })],
-      ["a markdown link in a structured field", mutate((c) => {
-        c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "see [the docs](https://x.invalid)" }];
-      })],
-      ["a backtick in an identifier field", mutate((c) => {
-        c.OPEN_THREADS = [{ path: "a`b.ts", line: 1, ask: "bind the store" }];
-      })],
-      ["a non-http url", mutate((c) => {
-        c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "javascript:alert(1)", ask: "x" }];
-      })],
-      ["a non-numeric line", mutate((c) => {
-        c.OPEN_THREADS = [{ path: "a.ts", line: "top", url: "https://x.invalid/1", ask: "x" }];
-      })],
-      ["a bad Conventional-Comments prefix", mutate((c) => {
-        c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "warning", body: "x", confidence: 90 }];
-      })],
-      ["an out-of-range confidence", mutate((c) => {
-        c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "issue", body: "x", confidence: 150 }];
-      })],
-      ["RESOLVED_SINCE with no open threads", mutate((c) => { c.RESOLVED_SINCE = { count: 4, sha: "70cf147" }; })],
-      ["an optimality card with no anchored heading", mutate((c) => { c.OPTIMALITY_CARDS = ["> just prose"]; })],
-      ["a log slot that does not start ran/skipped", mutate((c) => { c.STANDARDS_LOG = "2 docs · 0 findings"; })],
-      ["a QUALITY line in the wrong shape", mutate((c) => { c.QUALITY = "4 findings posted"; })],
-      // A v1 payload must fail loudly, and the error must name the replacement.
-      ["a v1 payload (FOOTER_LINE / MEMORIES / counts)", mutate((c) => {
-        c.FOOTER_LINE = "Reviewed for commit `abc1234`."; c.MEMORIES = "53 indexed";
-        c.OPEN_THREADS_COUNT = "2";
-      })],
-      // The v1 companion-slot cases (`PARTIAL_BANNER`, `OPEN_THREADS_SUFFIX`) are gone: those slots
-      // are derived now, so supplying one is just another unknown key and the case above covers it.
-      // What is left to guard is the structured replacement being handed a v1-shaped value.
-      ["OPEN_THREADS supplied as a markdown string", mutate((c) => { c.OPEN_THREADS = "- x"; })],
-      ["a non-zero delta_lines on a zero-delta run", mutate((c) => {
-        c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147", delta_lines: 12 };
-      })],
-      ["a MEMORIES_USED entry with no key", mutate((c) => {
-        c.MEMORIES_USED = [{ url: "https://lorekit.io/lore?x=1", note: "promoted" }];
-      })],
-      // The `used` half is derived from MEMORIES_USED, so supplying it is the one remaining way
-      // to make a count disagree with its list.
-      ["a hand-written used count in MEMORIES_SUMMARY",
-        mutate((c) => { c.MEMORIES_SUMMARY = "53 indexed · 3 used"; })],
-      ["MEMORIES_USED beside a not-connected summary", mutate((c) => {
-        c.MEMORIES_SUMMARY = "not connected";
-        c.MEMORIES_USED = [{ key: "a-lesson-key" }];
-      })],
-      ["more memories used than indexed", mutate((c) => {
-        c.MEMORIES_SUMMARY = "1 indexed";
-        c.MEMORIES_USED = [{ key: "a" }, { key: "b" }];
-      })],
-      ["PARTIAL_REVIEW scanned over total", mutate((c) => {
-        c.PARTIAL_REVIEW = { calls: 40, scanned: 90, total: 12 };
-      })],
-      ["RESOLVED_SINCE supplied as a pre-rendered string",
-        mutate((c) => { c.RESOLVED_SINCE = " <sup>7 resolved since `abc1234`</sup>"; })],
-      // Shipped for real on PR #121's sticky: the run wanted [`key`](url) inside a JSON string,
-      // mangled the nesting, and emitted ``['key'](url)`` — a code span, so the link rendered as
-      // dead monospace text. The report looked fine and the URL did not work.
-      // Routing it through the retired `MEMORIES` slot only exercised the unknown-key check, so
-      // aim it at the two surfaces a v2 payload can still cage a link on: a prose field, and
-      // OPTIMALITY_CARDS, the one slot where model-authored markdown remains.
-      ["a markdown link caged in a code span in a prose field", mutate((c) => {
-        c.MEMORIES_USED = [{
-          key: "a-lesson-key",
-          note: "``[a-lesson-key](https://lorekit.io/lore?x=1)`` — promoted",
-        }];
-      })],
-      ["a markdown link caged in a code span in an optimality card", mutate((c) => {
-        c.OPTIMALITY_CARDS = ["### Optimality proposal — a.ts:1\n\n"
-          + "``[the docs](https://lorekit.io/lore?x=1)``"];
-      })],
-    ];
-    // Only the v1 case is allowed to fail on the unknown-key check. Everything else must fail on
-    // the guard it names. Without this, a v2 rename silently turns a real guard's case into an
-    // `unknown payload key` rejection: the check still passes, and the guard it was written for
-    // is left with no coverage at all. That is exactly what happened to the **Verdict** and
-    // caged-link cases when the payload went structured.
-    const UNKNOWN_KEY_CASES = new Set([
-      "an unknown key (typo'd slot)",
-      "a v1 payload (FOOTER_LINE / MEMORIES / counts)",
-    ]);
-    for (const [why, input] of rejects) {
-      const r = run([], input);
-      s.check(`G25 the renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
-      s.check(`G25 rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
-      if (!UNKNOWN_KEY_CASES.has(why)) {
-        s.check(`G25 rejecting ${why} is not an unknown-key rejection`,
-          !/unknown payload key/.test(r.err), r.err.slice(0, 90));
-      }
-    }
-
-    // A correctly written link in the same slot must still render — the footer link
-    // [`pr-reviewer`](url) in every snapshot already proves the guard is not blanket-rejecting,
-    // but assert the MEMORIES shape explicitly since that is where the mangling happened.
-    {
-      // The renderer BUILDS the link from {key, url}; the model never writes markdown here, which
-      // is what makes the caged-link failure unrepresentable rather than merely rejected.
-      const r = run([], mutate((c) => {
-        c.MEMORIES_USED = [{ key: "a-lesson-key", url: "https://lorekit.io/lore?x=1", note: "promoted" }];
-      }));
-      s.check("G25 MEMORIES_USED renders as a real link", r.ok, r.err);
-      s.check("G25 the renderer built the link, not the model",
-        r.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted"));
-      s.check("G25 the used count is derived from the list",
-        r.out.includes("Memories — 53 indexed · 1 used"));
-    }
-
-    // A zero-delta run parses under the same {mode, delta_lines} grammar as every other mode,
-    // and the footer — not the Run mode line — is what still names the zero-delta shape.
-    {
-      const r = run([], mutate((c) => {
-        c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147", at: "2026-08-15T09:12:00Z" };
-      }));
-      s.check("G25 a zero-delta run renders", r.ok, r.err);
-      s.check("G25 zero-delta parses as {incremental, 0}",
-        /^incremental · 0 lines in delta$/m.test(r.out));
-      s.check("G25 zero-delta keeps its footer form",
-        r.out.includes("commit `bde3c2f` · no code changes since `70cf147`, gate checks only"));
-    }
-
-    // A prose field carries the source comment's own wording, backticks and all. Step 1.0 requires
-    // `ask` be another bot's lead line truncated-not-paraphrased, and those name symbols in code
-    // spans; rejecting them aborted the render on mandated input.
-    {
-      const r = run([], mutate((c) => {
-        c.OPEN_THREADS = [{
-          path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "bind `LocalStore.search`",
-        }];
-      }));
-      s.check("G25 a backticked ask renders", r.ok, r.err);
-      s.check("G25 the ask survives verbatim", r.out.includes("— bind `LocalStore.search`"));
-    }
-
-    // A complete group is still accepted — the check must discriminate, not blanket-reject.
-    {
-      // Count and suffix are DERIVED from the array, so they cannot be supplied, omitted, or
-      // disagree — the companion-group and orphaned-slot failures are gone by construction.
-      const r = run([], mutate((c) => {
-        c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "bind the store" }];
-      }));
-      s.check("G25 a structured OPEN_THREADS array renders", r.ok, r.err);
-      s.check("G25 the derived count and suffix agree, list inside the accordion",
-        r.out.includes("**Open review threads (1)**") &&
-        r.out.includes("<summary>Review details — 1 open review thread</summary>") &&
-        r.out.split("<details>")[0].includes("**Open review threads (") === false);
-    }
-
-    // (h) PRODUCER -> CONSUMER ROUND TRIP. reviewer-report-ingest.md documents extractable
-    // grammars for the report's sections; nothing checked that the report the producer emits
-    // actually parses under them. It did not: the first report the new pipeline posted carried
-    // `Run mode — full (forced by --full) · 15 files, 750 additions / 486 deletions`, while the
-    // grammar parses that slot for {mode, delta_lines}. An unenforced grammar is aspirational,
-    // which is the exact failure this whole line of work was diagnosing.
-    //
-    // These extractors are the grammar's documented shapes, applied to real rendered output.
-    {
-      const EXTRACT = {
-        // The grammar is explicit: match on "commit `<sha>`" ALONE, never on a leading phrase —
-        // anchoring on "review for commit" catches only the incremental form. Take the last such
-        // match, since the zero-delta form names the prior sha first.
-        "Footer SHA": (b) => {
-          const line = (b.match(/^<sup>`pr-reviewer` · commit[^\n]*<\/sup>$/m) || [""])[0];
-          const all = [...line.matchAll(/commit `([0-9a-f]{7})`/g)];
-          return all.length ? { sha: all[all.length - 1][1] } : null;
-        },
-        "Run mode": (b) => {
-          // One shape for every mode, zero-delta included — it renders `incremental · 0 lines in
-          // delta`, so there is no second alternative to carry. The `**Run mode**` label is gone:
-          // the `**Run**` group heading carries it and the line's own shape is the anchor.
-          const m = b.match(/^(full|incremental|incremental-quick) · (\d+) lines in delta/m);
-          return m ? { mode: m[1], delta_lines: Number(m[2]) } : null;
-        },
-        "Headline": (b) => {
-          const lines = b.split("\n").filter((l) => l.trim() !== "");
-          const i = lines.findIndex((l) => !l.startsWith("<!--") && !l.startsWith("⚠️ **Partial review"));
-          return i !== -1 && lines[i].length > 0 ? { headline: lines[i] } : null;
-        },
-      };
-      // Sections that only appear on some fixtures: assert they parse WHERE PRESENT.
-      const CONDITIONAL = {
-        "Additional findings": [/<summary>(\d+) more findings — verified, too minor to comment on<\/summary>/,
-          /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
-        "Low-confidence findings": [/<summary>Less certain \((\d+)\) — advisory, below the confidence bar<\/summary>/,
-          /^- (?:\[)?`[^`]+`(?:\]\([^)]+\))? — \w+: .+ \(confidence \d+\)$/m],
-        "Optimality cards": [/<summary>Is there a better approach\? \((\d+)\)<\/summary>/,
-          /^### Optimality proposal — \S+:\d+$/m],
-        "Partial-review banner": [/⚠️ \*\*Partial review — tool budget exhausted after \d+ calls; \d+ of \d+ files scanned\.\*\*/, null],
-      };
-      for (const name of REPORT_FIXTURES) {
-        const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
-        if (!existsSync(p)) continue;
-        const body = readFileSync(p, "utf8");
-        for (const [section, fn] of Object.entries(EXTRACT)) {
-          const got = fn(body);
-          s.check(`G25 round-trip: ${name} — the ingest grammar parses "${section}"`, got !== null,
-            "section absent or does not match the documented shape");
-        }
-        // The gate table must parse to five rows with a valid glyph each.
-        const rows = [...body.matchAll(/^\| (Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
-        s.check(`G25 round-trip: ${name} — the gate table parses to 5 typed rows`, rows.length === 5,
-          `parsed ${rows.length}`);
-        // A collapsible lens renders EITHER its own labelled line in a group OR one entry in the
-        // `Nothing to report` footnote — never both, and never neither. Both would say the same
-        // thing twice; neither would silently drop a lens's run-state, which is the failure the
-        // old always-render shape traded vertical space to avoid.
-        const footnote = (body.match(/^<sup>Nothing to report — (.+)\.<\/sup>$/m) || [, ""])[1];
-        for (const [lens, lineRe, token] of [
-          ["Standards log", /^Standards — (ran|skipped)/m, "standards"],
-          ["Optimality log", /^Optimality — (ran|skipped)/m, "optimality"],
-          ["Integrations", /^Integrations — \S/m, "integrations"],
-          ["Skipped files", /^Skipped files — \S/m, "files skipped"],
-          ["Severity", /^Severity — \S/m, "severity"],
-        ]) {
-          const asLine = lineRe.test(body);
-          const asFootnote = footnote.includes(token);
-          s.check(`G25 round-trip: ${name} — "${lens}" renders as a line xor a footnote entry`,
-            asLine !== asFootnote, `line=${asLine} footnote=${asFootnote} (footnote: ${footnote})`);
-        }
-        // Counts in a summary must equal the bullets rendered under it.
-        for (const [section, [summaryRe, bulletRe]] of Object.entries(CONDITIONAL)) {
-          const m = body.match(summaryRe);
-          if (!m) continue;
-          s.check(`G25 round-trip: ${name} — "${section}" summary matches the documented literal`, true);
-          if (bulletRe) {
-            s.check(`G25 round-trip: ${name} — "${section}" bullets match the documented shape`,
-              bulletRe.test(body), "no bullet matched");
-          }
-        }
-      }
-    }
-
-    // (i) Derived counts cannot disagree with the lists they count — the whole point of moving
-    // counts out of the payload. Assert it on the rendered output, per fixture.
-    for (const name of REPORT_FIXTURES) {
-      const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
-      if (!existsSync(p)) continue;
-      const body = readFileSync(p, "utf8");
-      const declared = body.match(/\*\*Open review threads \((\d+)\)\*\*/);
-      if (declared) {
-        const region = body.split("**Open review threads (")[1].split("\n\n")[1] || "";
-        const bullets = region.split("\n").filter((l) => l.startsWith("- ")).length;
-        s.check(`G25 ${name}: the open-threads count equals the bullets rendered`,
-          Number(declared[1]) === bullets, `declared ${declared[1]}, rendered ${bullets}`);
-        const suffix = body.match(/<summary>Review details — (\d+) open review thread/);
-        s.check(`G25 ${name}: the summary counter equals the list count`,
-          suffix && Number(suffix[1]) === Number(declared[1]),
-          suffix ? `summary ${suffix[1]} vs list ${declared[1]}` : "no summary counter");
-      }
-    }
-
-    // (i2) The grouped accordion. Nine flat `**Label** — value` lines became three groups, and
-    // three properties of that shape are load-bearing rather than cosmetic: the group headings
-    // are the only bold lines left inside the accordion (so the eye lands on them), the
-    // attention heading asserts something and therefore must not appear over an all-✅ table,
-    // and a run caveat gets its own ⚠️ line instead of riding at the tail of the densest line.
-    {
-      const tpl = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/templates/report-body.md"), "utf8");
-      for (const slot of ["{{#NEEDS_ATTENTION}}**Needs attention**", "**Found**\n\n{{FOUND_LINES}}",
-        "**Run**\n\n{{RUN_LINES}}", "<sup>Nothing to report — {{NOTHING_TO_REPORT}}.</sup>"]) {
-        s.check(`G25 the template carries ${slot.split("\n")[0]}`, tpl.includes(slot));
-      }
-      // The pre-grouping labels must not come back: they are what the grouping replaced, and a
-      // template carrying both shapes would render every line twice.
-      for (const gone of ["**Run mode**", "**Memories**", "**Quality**", "**Integrations**",
-        "**Optimality (2.4c)**", "**Standards (2.4d)**", "**Skipped files** —"]) {
-        s.check(`G25 the template no longer carries the flat label ${gone}`, !tpl.includes(gone));
-      }
-
-      // `Needs attention` tracks the five gate rows, and only them. CI is excluded on purpose:
-      // Gate 2 is informational-in-`Run`, so a red build must not label the gate table.
-      const allPass = run([join(FIX, "pass.json")]);
-      s.check("G25 an all-✅ gate table renders no attention heading",
-        allPass.ok && !allPass.out.includes("**Needs attention**"), allPass.err);
-      // The verdict travels with the gate change: the renderer now rejects a VERDICT that
-      // contradicts the table, so a ⚠️ gate implies WARN and the payload has to say so.
-      const oneWarn = run([], mutate((c) => {
-        c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x";
-        c.VERDICT = "WARN"; c.WARN_REASONS = ["1 doc gap"];
-      }));
-      s.check("G25 one ⚠️ gate renders the attention heading",
-        oneWarn.ok && oneWarn.out.includes("**Needs attention**"), oneWarn.err);
-      // Red CI is informational-in-`Run` and never raises the verdict — it has no row in the gate
-      // table and never contributes to `warning`, so an all-✅ payload with a red CI_NOTE stays a
-      // clean PASS end to end.
-      const ciOnly = run([], mutate((c) => {
-        c.CI_NOTE = "2 checks red on `bde3c2f`.";
-      }));
-      s.check("G25 red CI alone renders the clean PASS headline — Gate 2 is informational, never a gate",
-        ciOnly.ok && !ciOnly.out.includes("**Needs attention**")
-          && /^### ✅ No issues found$/m.test(ciOnly.out), ciOnly.err);
-
-      // RUN_ANOMALY owns its own line; the renderer owns the glyph.
-      const anom = run([], mutate((c) => { c.RUN_ANOMALY = "a base-branch merge polluted the compare range"; }));
-      s.check("G25 RUN_ANOMALY renders on its own ⚠️ line",
-        anom.ok && /^⚠️ a base-branch merge polluted the compare range$/m.test(anom.out), anom.err);
-      for (const [why, payload] of [
-        ["a RUN_NOTE carrying a ⚠️", mutate((c) => { c.RUN_NOTE = "⚠️ compare range polluted"; })],
-        ["a RUN_ANOMALY supplying its own glyph", mutate((c) => { c.RUN_ANOMALY = "⚠️ compare range polluted"; })],
-      ]) {
-        const r = run([], payload);
-        s.check(`G25 the renderer rejects ${why}`, !r.ok && r.out === "", `exit ok=${r.ok}`);
-      }
-
-      // The xor above is asserted on the committed snapshots, so it only fires once a snapshot is
-      // regenerated. Assert both directions against a LIVE render too, so a renderer change that
-      // stops collapsing (or stops rendering) is caught before the snapshots are touched.
-      const noisy = run([], mutate((c) => { c.STANDARDS_LOG = "ran · 2 docs · 3 finding(s)"; }));
-      s.check("G25 a standards lens with findings renders its own line, not a footnote entry",
-        noisy.ok && /^Standards — ran · 2 docs · 3 finding\(s\)$/m.test(noisy.out)
-          && !/Nothing to report —[^\n]*standards/.test(noisy.out), noisy.err);
-      const hushed = run([], mutate((c) => { c.STANDARDS_LOG = "ran · 2 docs · 0 finding(s)"; }));
-      s.check("G25 a standards lens with nothing to say collapses to a footnote entry",
-        hushed.ok && !/^Standards — /m.test(hushed.out)
-          && /Nothing to report —[^\n]*standards \(2 docs\)/.test(hushed.out), hushed.err);
-    }
-
-    // (d) The agent must delegate, not hand-render. The old three-template shape is gone and
-    // must not come back; the payload contract and the renderer call must be present. Step 4a
-    // moved to rules/posting.md (Step 9 split), so this scans both files — the embedded-template
-    // absence is a property of everything a run can read, and the renderer call + no-hand-render
-    // rule now live in posting.md only.
-    s.check("G25 pr-reviewer.md / posting.md no longer embed report templates",
-      ((prReviewer + postingMd + prReviewerSplit).match(/```markdown\n<!-- PR_REVIEWER_REPORT -->/g) || []).length === 0,
-      "an embedded REPORT_BODY template is back — layout belongs to the template file");
-    s.check("G25 rules/posting.md calls the renderer at Step 4a",
-      /render-report\.mjs/.test(postingMd) && /REPORT_BODY payload/.test(postingMd));
-    s.check("G25 rules/posting.md forbids hand-rendering as a fallback",
-      /do not fall back to composing the body by hand/.test(postingMd));
-    // (e) A provenance-independent pre-write net — EXECUTED, not text-matched. The previous
-    // version of this guard used preWrite.includes(needle) and was green over an assertion that
-    // could never fire: `grep -qz '<details>\n<summary>…'` treats \n as the letter n inside a
-    // plain-quoted BRE, so it matched only the literal "<details>n<summary>…" and would have
-    // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
-    {
-      const preWrite = sliceBetween(postingMd,
-        // Anchored on the invariant half of the sentence, never the count: the count changes every
-        // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
-        // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
-        "things on `REPORT_BODY` immediately before the write",
-        "On any `abort`: post no report object");
-      const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
-      s.check("G25 the pre-write assertion block is extractable", !!fence);
-      if (fence) {
-        const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
-        const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
-          join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
-        // AGENT_SUPPORT is what the block resolves the shared checker through, so the extracted
-        // block runs the REAL comment-spine.mjs rather than failing on an unset path. Without it
-        // the `node` call errors and every case below aborts for the wrong reason — which is how
-        // this omission was caught.
-        const runAssert = (body) =>
-          spawnSync("bash", ["-c", script], {
-            env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") },
-            encoding: "utf8",
-          });
-
-        // A valid rendered body must PASS. This is the check that was missing.
-        const ok = runAssert(good);
-        s.check("G25 the pre-write assertions accept a valid rendered body",
-          ok.status === 0, `exit ${ok.status}: ${(ok.stdout || "").trim()}`);
-
-        // Each defect the net exists to catch must ABORT.
-        const cases = [
-          ["a body with no marker", good.replace("<!-- PR_REVIEWER_REPORT -->\n", "")],
-          ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
-          ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
-          ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
-          // The MCP-write-path corruption (#165): renderer output re-encoded while being
-          // reproduced into a tool-call argument. Every other case here is a body that was
-          // never built from the template; this one WAS, and was damaged afterwards.
-          ["a body whose inline HTML was escaped in transit",
-            good.replace('"><picture><source', '"&gt;&lt;picture&gt;&lt;source')],
-          ["a body with a backtick smuggled into an href",
-            good.replace('<a href="https://', '<a href="``https://')],
-        ];
-        for (const [why, body] of cases) {
-          const r = runAssert(body);
-          s.check(`G25 the pre-write assertions reject ${why}`, r.status === 3,
-            `exit ${r.status} (expected 3 = abort)`);
-        }
-      }
-    }
-
-    // (g) Slot-name parity. In v2 the payload keys are the three declared arrays; the template's
-    // placeholders are the renderer's DERIVED names, which are a superset (counts, bullets, the
-    // footer line). So: prose must name only real payload keys, and no unresolved placeholder may
-    // survive a render — the latter is asserted behaviourally by the fixtures rendering at all.
-    {
-      const rendererSrc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
-      const keysIn = (arrName) => {
-        const blk = sliceBetween(rendererSrc, `const ${arrName} = [`, "];");
-        return new Set([...blk.matchAll(/"([A-Z0-9_]+)"/g)].map((m) => m[1]));
-      };
-      const payloadKeys = new Set([...keysIn("REQUIRED_SCALARS"), ...keysIn("OPTIONAL_SCALARS"),
-        ...keysIn("STRUCTURED")]);
-      s.check("G25 the renderer declares a non-trivial payload key set", payloadKeys.size >= 24,
-        `${payloadKeys.size}`);
-
-      // Every slot the agent's payload contract names must be a real payload key. A name that
-      // disagrees is a hard exit 1 and the run posts nothing — this caught PARTIAL_REVIEW_BANNER.
-      const contract = sliceBetween(reportRendering, "#### REPORT_BODY payload", "#### Headlines");
-      const named = [...contract.matchAll(/^\|\s*((?:`[A-Z][A-Z0-9_]{3,}`(?:\s*[·+]\s*)?)+)\s*\|/gm)]
-        .flatMap((m) => [...m[1].matchAll(/`([A-Z][A-Z0-9_]{3,})`/g)].map((x) => x[1]));
-      const wrong = [...new Set(named)].filter((n) => !payloadKeys.has(n));
-      s.check("G25 every slot named in the payload contract is a real payload key", wrong.length === 0,
-        wrong.join(", "));
-      for (const g of ["DESCRIPTION", "PRIOR", "DOCS", "SELFREVIEW", "CODEREVIEW"]) {
-        for (const kind of ["STATUS", "DETAILS"]) {
-          s.check(`G25 the payload contract spells GATE_${g}_${kind}`,
-            contract.includes(`GATE_${g}_${kind}`));
-        }
-      }
-      // v1 slot names must be gone from the contract: a payload built from them exits 1.
-      for (const dead of ["FOOTER_LINE", "RUN_MODE", "OPEN_THREADS_COUNT", "OPEN_THREADS_SUFFIX",
-        "ADDITIONAL_COUNT", "LOW_CONFIDENCE_COUNT", "OPTIMALITY_COUNT", "BUDGET_CALLS"]) {
-        s.check(`G25 the payload contract does not still name the derived slot ${dead}`,
-          !named.includes(dead), "listed as a payload key but is derived by the renderer");
-      }
-    }
-
-    // (e) A provenance-independent pre-write net — EXECUTED, not text-matched. The previous
-    // version of this guard used preWrite.includes(needle) and was green over an assertion that
-    // could never fire: `grep -qz '<details>\n<summary>…'` treats \n as the letter n inside a
-    // plain-quoted BRE, so it matched only the literal "<details>n<summary>…" and would have
-    // aborted every run. A guard that checks a command's TEXT cannot see that. Run the block.
-    {
-      const preWrite = sliceBetween(postingMd,
-        // Anchored on the invariant half of the sentence, never the count: the count changes every
-        // time an assertion is added, and a stale anchor CRASHES the whole run rather than failing
-        // one check (`sliceBetween` throws), which surfaces as zero checks and no `✗` line at all.
-        "things on `REPORT_BODY` immediately before the write",
-        "On any `abort`: post no report object");
-      const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
-      s.check("G25 the pre-write assertion block is extractable", !!fence);
-      if (fence) {
-        const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
-        const good = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"),
-          join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.json")], { encoding: "utf8" }).stdout;
-        // AGENT_SUPPORT is what the block resolves the shared checker through, so the extracted
-        // block runs the REAL comment-spine.mjs rather than failing on an unset path. Without it
-        // the `node` call errors and every case below aborts for the wrong reason — which is how
-        // this omission was caught.
-        const runAssert = (body) =>
-          spawnSync("bash", ["-c", script], {
-            env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") },
-            encoding: "utf8",
-          });
-
-        // A valid rendered body must PASS. This is the check that was missing.
-        const ok = runAssert(good);
-        s.check("G25 the pre-write assertions accept a valid rendered body",
-          ok.status === 0, `exit ${ok.status}: ${(ok.stdout || "").trim()}`);
-
-        // Each defect the net exists to catch must ABORT.
-        const cases = [
-          ["a body with no marker", good.replace("<!-- PR_REVIEWER_REPORT -->\n", "")],
-          ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
-          ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
-          ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
-          // The MCP-write-path corruption (#165): renderer output re-encoded while being
-          // reproduced into a tool-call argument. Every other case here is a body that was
-          // never built from the template; this one WAS, and was damaged afterwards.
-          ["a body whose inline HTML was escaped in transit",
-            good.replace('"><picture><source', '"&gt;&lt;picture&gt;&lt;source')],
-          ["a body with a backtick smuggled into an href",
-            good.replace('<a href="https://', '<a href="``https://')],
-        ];
-        for (const [why, body] of cases) {
-          const r = runAssert(body);
-          s.check(`G25 the pre-write assertions reject ${why}`, r.status === 3,
-            `exit ${r.status} (expected 3 = abort)`);
-        }
-      }
-    }
-
-    // (f) The taxonomy is append-only: a superseded row is marked Retired, never deleted. This
-    // caught a real regression — the layout excision took three rows out with it.
-    for (const fm of ["F-report-accordion-flattened", "F-report-accordion-expanded",
-      "F-open-threads-slot-orphaned", "F-report-body-composed-from-memory"]) {
-      s.check(`G25 diagnostic-surface keeps the retired ${fm} row`,
-        prReviewerDiag.includes(fm) &&
-        new RegExp(`\\\`${fm}\\\`[^\n]*Retired`).test(prReviewerDiag),
-        "row deleted or not marked Retired");
-    }
-    s.check("G25 diagnostic-surface forbids deleting a taxonomy row",
-      /a row is \*\*never deleted\*\*/.test(prReviewerDiag));
-  }
-
-  // G24f: the report has exactly one host. A review body carrying the report marker is the
-  // regression that leaves one full report per run on the PR; the pre-flight must reject it.
-  // Phase 5 moved `payload_is_safe` out of the agent body into `payloadIsSafe()`
-  // (execute-write-plan.mjs) — the executable home the check now reads.
-  s.check("G24f execute-write-plan.mjs's payloadIsSafe rejects a review body carrying the report marker",
-    /payload\.body\.includes\("<!-- PR_REVIEWER_REPORT -->"\)/.test(
-      readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8")));
-  s.check("G24f rules/posting.md documents the un-writable-sticky path without a second report",
-    /When the sticky cannot be written/.test(postingMd) &&
-    /DEGRADED_POINTER_BODY/.test(postingMd));
-  s.check("G24f pr-reviewer.md's Step 4 router points at rules/posting.md before any write",
-    /rules\/posting\.md/.test(sliceBetween(prReviewer, "## Step 4: Post the review", "## Step 5: Report")));
-  // G24h: prior-run detection reads the PR-state record, and its ONE GitHub fallback rung must
-  // not be login-keyed — an unresolvable `/user` would otherwise read as "no prior report" and
-  // duplicate the sticky on every run. Assert on the WHOLE fetch region rather than on one clause
-  // shape: a predicate is order-free (`select((.body | contains(…)) and .user.login == env.ME)`
-  // is the same bug rearranged), so any mention of the login inside these fetches is the regression.
-  const step07 = sliceBetween(priorRunMd,
-    "## Step 0.7: Prior run detection", "### Bind the run-mode inputs");
-  const step07Fetches = [...step07.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
-  // Reading `.user.login` OUT of a found object is fine (PRIOR_REPORT_AUTHOR does exactly that);
-  // FILTERING on it is the bug. A regex cannot express "inside a select() at any nesting depth" —
-  // an earlier bounded-depth version let `select(((.body | contains(…))) and .user.login == …)`
-  // through — so scan to the matching close paren instead.
-  const selectBodies = (src) => {
-    const out = [];
-    for (let i = src.indexOf("select("); i >= 0; i = src.indexOf("select(", i + 1)) {
-      let depth = 0;
-      for (let j = i + "select".length; j < src.length; j++) {
-        if (src[j] === "(") depth++;
-        else if (src[j] === ")" && --depth === 0) { out.push(src.slice(i, j + 1)); break; }
-      }
-    }
-    return out;
-  };
-  const loginFilter = selectBodies(step07Fetches).some((b) => /user\.login/.test(b));
-  s.check("G24h pr-reviewer.md finds the sticky by marker, not by author login",
-    step07Fetches.includes("PR_REVIEWER_REPORT") && !loginFilter && !/env\.ME/.test(step07Fetches),
-    step07Fetches.includes("PR_REVIEWER_REPORT") ? "login key present in a Step 0.7 fetch" : "no marker-keyed fetch found");
-
-  // ── G24i: prior-run state lives in the PR-state record, not in the report body. These are the
-  // guards on the change that moved it: the read, the write, their agreement, and the absence of
-  // every mechanism that used to serialise state into a comment.
-  {
-    const step4c = sliceBetween(postingMd, "### 4c. Record the run state",
-      "### The shapes: report body, headlines, sections, inline comments");
-    const step4b = sliceBetween(postingMd, "### 4b. Post the review (conditionally)",
-      "### 4c. Record the run state");
-
-    // The read and the write must address the SAME record. Two independently-written scope/key
-    // strings is the drift that silently gives every run a fresh first-run path.
-    for (const [where, src] of [["Step 0.7", step07], ["Step 4c", step4c]]) {
-      s.check(`G24i ${where} addresses the record by branch scope + per-PR key`,
-        /branch::\$?\{?RESOLVED_REPO\}?|branch::\{owner\}\/\{repo\}/.test(src) &&
-        /ci-state::pr-review-/.test(src),
-        "scope or key missing — the two sites must name the same record");
-    }
-    s.check("G24i Step 0.7 reads the record with memory_read",
-      /mcp__lorekit__memory_read/.test(step07));
-    s.check("G24i Step 4c writes the record with memory_write",
-      /mcp__lorekit__memory_write/.test(step4c));
-
-    // A state record's guards are cardinality, TTL, and never-blocking (ci-state-records.md),
-    // not the lessons entrenchment guards. Each of these has cost a real loop when omitted.
-    // The TTL is 7 days and lives in exactly one place per surface. G16f excuses the number as
-    // "another bucket's TTL"; this is the check that makes that excuse true.
-    s.check("G24i Step 4c passes ttl_days on every write", /ttl_days/.test(step4c));
-    s.check("G24i the state-record TTL is 7 days in the agent and the taxonomy",
-      /ttl_days\s*=\s*7\b/.test(step4c) &&
-      /7d, refreshed on every write/.test(read("agents/shared/rules/memory-buckets.md")));
-    // The TTL must be documented as self-sufficient. A repo with no LoreKit GitHub integration —
-    // which is most of them — has no merge-purge event, so any wording that makes that event the
-    // real collector tells those users their records are never cleaned up. It shipped that way
-    // once ("the floor, not the plan", "the only collector") and was corrected.
-    for (const [label, src] of [["pr-reviewer.md", step4c],
-      ["memory-buckets.md", read("agents/shared/rules/memory-buckets.md")]]) {
-      s.check(`G24i ${label} presents the TTL as the cleanup mechanism, not a stopgap`,
-        /requires? nothing to be wired up|needs nothing wired up/.test(src) &&
-        /accelerant/.test(src) &&
-        !/only collector|floor, not the plan/.test(src),
-        "the merge-purge event is being presented as the real mechanism");
-    }
-    // An expired record can still be RETURNED by a read; acting on one is the stale-state failure
-    // the house rule warns about, and it is the normal end state of every dormant PR where nothing
-    // purges. It must route to the fallback rung, with its own log line.
-    s.check("G24i an expired state record is treated as absent",
-      /An expired record is a miss, not a baseline/.test(step07) &&
-      /record expired at/.test(step07),
-      "expired records are not routed to the fallback rung");
-    s.check("G24i Step 4c tags the record outside the loop:: lessons grammar",
-      /ci::pr-review-state/.test(step4c) && !/loop::/.test(step4c));
-    s.check("G24i Step 4c applies the three caps", /50\]/.test(step4c.replace(/\s/g, ""))
-      || /\.\[-50:\]/.test(step4c));
-    s.check("G24i Step 4c is unconditional and never blocking",
-      /unconditional/i.test(step4c) && /never on the critical path|never block/i.test(step4c));
-
-    // The retired mechanisms. Each is asserted absent from the step that used to own it, not from
-    // the whole file — the file still EXPLAINS them, and forbidding the explanation would delete
-    // the record of why they are gone.
-    s.check("G24i Step 4a appends no ledger to the report body",
-      !/PR_REVIEWER_LEDGER/.test(sliceBetween(postingMd, "#### Build the payload, then run the renderer",
-        "#### The report has exactly one host")));
-    // Phase 5 moved `payload_is_safe` out of Step 4b into `payloadIsSafe()`
-    // (execute-write-plan.mjs) — the executable home the check now reads; Step 4b's own prose
-    // just needs to still POINT at it, asserted a few checks below (G46i/G46l).
-    s.check("G24i execute-write-plan.mjs's payloadIsSafe rejects a review body carrying a ledger",
-      /payload\.body\.includes\("<!-- PR_REVIEWER_LEDGER"\)/.test(
-        readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8")));
-    s.check("G24i Step 0.7 does not fetch pulls/reviews for prior state",
-      !/pulls\/\$PR_NUMBER\/reviews|pulls\/\{n\}\/reviews`/.test(step07Fetches));
-
-    // Step 4b has exactly ONE posting condition. The three notification-only conditions are what
-    // filled a PR timeline with one review object per state change.
-    // The retired conditions are still NAMED in this step (deliberately — the prose explains what
-    // was removed and why), so the predicate keys on the live contract instead: exactly one
-    // condition, and no surviving "post when any of these holds" enumeration.
-    s.check("G24i Step 4b posts a review only for new inline findings",
-      /\*\*When to post\.\*\* Exactly one condition/.test(step4b) &&
-      /INLINE_COMMENTS_JSON` is non-empty/.test(step4b) &&
-      !/Post a review when \*\*any\*\* of these holds/.test(step4b),
-      "a notification-only posting condition is back");
-    s.check("G24i the notification-only cost is stated, not silent",
-      /updates the report silently|silently/.test(step4b));
-
-    // Both prior-run paths must bind what Step 1.2b reads; an unset value is not a bound empty one.
-    for (const v of ["RUN_MODE", "PRIOR_SHA", "LAST_FULL_SHA", "INCR_RUNS_SINCE_FULL"]) {
-      s.check(`G24i Step 0.7 binds ${v} on the first-run path`,
-        sliceBetween(priorRunMd, "### First run", "### What no longer happens here").includes(v));
-    }
-    // STATE_STATUS is the flag the announcements and Step 5 branch on. A flag with no reader is
-    // a comment — this is the check PRIOR_RUN_STATE_UNKNOWN used to carry.
-    s.check("G24i STATE_STATUS has readers, not just a binding",
-      (priorRunMd.match(/STATE_STATUS/g) || []).length >= 3);
-    s.check("G24i Step 5 reports how prior-run state was resolved",
-      /state: (record|sticky fallback)/.test(sliceBetween(prReviewer, "## Step 5: Report",
-        "## What this agent does not do")));
-    s.check("G24i Step 5 reports the state write outcome separately",
-      /state record/.test(sliceBetween(prReviewer, "## Step 5: Report",
-        "## What this agent does not do")));
-
-    // The identity ladder's second rung. Both sources are needed: the record on the happy path,
-    // the sticky on the fallback rung — which is the one path where `/user` also fails.
-    s.check("G24i PRIOR_REPORT_AUTHOR is bound from both the record and the sticky",
-      /PRIOR_REPORT_AUTHOR[\s\S]{0,400}bot_login/.test(priorRunMd) &&
-      /PRIOR_REPORT_AUTHOR=\$\(jq -r '\.user\.login/.test(priorRunMd));
-
-    // The write is in-run, which the "never writes lessons during a review" rule must not be read
-    // to forbid. Without this carve-out spelled out, a reader deletes Step 4c and takes the delta
-    // logic with it.
-    s.check("G24i the state write is distinguished from a lesson write",
-      /not a lesson/i.test(prReviewer) && /never writes lessons during a review/.test(prReviewer));
-
-    // The bucket is in the taxonomy, with the branch-scope reasoning that keeps per-PR state out
-    // of the repo:: scope an agent's SessionStart injection reads.
-    const buckets = read("agents/shared/rules/memory-buckets.md");
-    s.check("G24i memory-buckets documents the pr-review-state record",
-      /pr-review-state/.test(buckets) && /ci::pr-review-state/.test(buckets) &&
-      /branch::\{owner\}\/\{repo\}/.test(buckets));
-    s.check("G24i memory-buckets says why the scope is branch:: and not repo::",
-      /SessionStart/.test(buckets) && /displace/.test(buckets));
-  }
-
-  // ── G26: the out-of-band shape validator. Behavioural — these EXECUTE the validator, against
-  // both our own fixtures and REAL bodies as published. Everything else guarding the report shape
-  // runs inside the agent's control flow; a run that hand-writes the body is invisible to all of
-  // it, so this is the only check that observes what actually reached a PR.
-  {
-    const VALIDATOR = join(REPO_ROOT, "scripts/validate-report-shape.mjs");
-    const POSTED = join(REPO_ROOT, "scripts/eval/fixtures/posted-bodies");
-    const run = (input) => {
-      const r = spawnSync("node", [VALIDATOR], { input, encoding: "utf8" });
-      let verdict = null;
-      try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
-      return { status: r.status, verdict, err: (r.stderr || "").trim() };
-    };
-    s.check("G26 the validator exists", existsSync(VALIDATOR));
-
-    // (a) Real production bodies must be rejected, with the specific codes that name the defect.
-    const REAL = [
-      ["lorekit-503-flat.md", ["missing-report-marker", "no-review-details-accordion",
-        "accordion-owned-line-at-top-level"]],
-      ["lorekit-503-report-as-pointer.md", ["report-marked-as-pointer"]],
-      // The MCP-write-path corruption: correct renderer output, re-encoded while being reproduced
-      // into a tool-call argument. Invisible to every in-agent guard, which is why it belongs here.
-      ["agent-skills-165-escaped-button.md",
-        ["escaped-inline-html", "backtick-in-href", "caged-link-target"]],
-    ];
-    for (const [file, expectedCodes] of REAL) {
-      const p = join(POSTED, file);
-      if (!existsSync(p)) { s.check(`G26 posted fixture ${file} present`, false); continue; }
-      const r = run(readFileSync(p, "utf8"));
-      s.check(`G26 ${file} is rejected`, r.status === 1, `exit ${r.status}: ${r.err.slice(0, 80)}`);
-      const got = new Set((r.verdict?.violations || []).map((v) => v.code));
-      for (const code of expectedCodes) {
-        s.check(`G26 ${file} reports ${code}`, got.has(code), `got: ${[...got].join(", ")}`);
-      }
-    }
-
-    // (b) Every rendered snapshot must PASS. If the renderer's own output fails the external
-    // validator, the two disagree about the contract and one of them is wrong.
-    // A missing snapshot must FAIL, exactly as an absent posted fixture does in case (a). A bare
-    // `continue` here ran zero checks, so deleting all three snapshots would have passed by vacuity.
-    for (const name of REPORT_FIXTURES) {
-      const p = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
-      if (!existsSync(p)) { s.check(`G26 report-body snapshot ${name}.expected.md present`, false); continue; }
-      const r = run(readFileSync(p, "utf8"));
-      s.check(`G26 the rendered ${name} snapshot passes the external validator`, r.status === 0,
-        `exit ${r.status}: ${r.err.slice(0, 120)}`);
-    }
-
-    // (b2) The gate table alone must classify a body as a report. The real flat body omitted
-    // `**Run mode**`, which broke a classifier that required two diagnostic labels; the abridged
-    // fixture still carries two others, so this synthesises the minimal case that makes the
-    // gate-table signal load-bearing. Column spacing varies between runs, so test both.
-    for (const [why, sep] of [["tight pipes", "|---|---|---|"], ["padded pipes", "| --- | --- | --- |"]]) {
-      const minimal = "Reviewed your changes — no blocking issues.\n\n"
-        + `| Gate | Status | Details |\n${sep}\n| Code review | ✅ | fine |\n`;
-      const r = run(minimal);
-      s.check(`G26 the gate table alone classifies a body as a report (${why})`,
-        r.status === 1 && r.verdict?.kind === "report-unmarked",
-        `kind ${r.verdict?.kind}, exit ${r.status}`);
-    }
-
-    // (b4) The gate table above the accordion must be caught with the SAME spacing tolerance the
-    // classifier uses. A literal `| Gate | Status | Details |` let a padded header classify as a
-    // report and then escape the flattening check.
-    for (const [why, hdr] of [["tight", "| Gate | Status | Details |"], ["padded", "|  Gate  |  Status  |  Details  |"]]) {
-      const flat = `Reviewed your changes.\n\n${hdr}\n|---|---|---|\n| Code review | OK | fine |\n\n`
-        + "<details>\n<summary>Review details</summary>\n\n**Run mode** \u2014 full\n\n</details>\n";
-      const r = run(flat);
-      s.check(`G26 a ${why}-spaced gate table above the accordion is flagged`,
-        r.status === 1 &&
-        (r.verdict?.violations || []).some((v) => v.code === "accordion-owned-line-at-top-level"),
-        `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
-    }
-
-    // (b5) The pointer budget must match the agent's own pre-flight, which strips the ledger and
-    // nothing else. Stripping the marker too made the external guard looser than the internal one.
-    {
-      const marker = "<!-- PR_REVIEWER_POINTER -->";
-      const prose = "x".repeat(600 - marker.length + 5);
-      const r = run(`${marker}\n${prose}\n`);
-      s.check("G26 the pointer budget counts the marker, as the agent's pre-flight does",
-        r.status === 1 && (r.verdict?.violations || []).some((v) => v.code === "pointer-too-long"),
-        `exit ${r.status}, codes: ${(r.verdict?.violations || []).map((v) => v.code).join(", ")}`);
-    }
-
-    // (b6) The guard's own notice must not trip the guard. The workflow renders every violation
-    // `detail` into its sticky notice, so a detail quoting a marker verbatim made that notice
-    // classify as a malformed report when re-validated — the guard failing itself.
-    {
-      const flat = "Reviewed your changes.\n\n| Gate | Status | Details |\n|---|---|---|\n| Code review | OK | x |\n";
-      const r = run(flat);
-      const details = (r.verdict?.violations || []).map((v) => v.detail).join("\n");
-      const notice = ["<!-- PR_REVIEWER_SHAPE_GUARD -->",
-        "\u26a0\ufe0f **The last `pr-reviewer` body does not match the report shape contract.**", "",
-        ...(r.verdict?.violations || []).map((v) => `- \`${v.code}\` \u2014 ${v.detail}`), ""].join("\n");
-      const back = run(notice);
-      s.check("G26 no violation detail emits a marker verbatim",
-        !/<!--\s*PR_REVIEWER_(REPORT|POINTER)\s*-->/.test(details), details.slice(0, 120));
-      s.check("G26 the guard's own notice is not itself a reviewer body",
-        back.status === 0 && back.verdict?.kind === "not-a-reviewer-body",
-        `kind ${back.verdict?.kind}, exit ${back.status}`);
-    }
-
-    // (c) Non-reviewer bodies are ignored, so the guard never fires on ordinary PR chatter.
-    for (const [why, body] of [
-      ["a plain human comment", "LGTM, nice work on the caching layer."],
-      ["a body with one incidental bold label", "**Note** — rebased onto main."],
-    ]) {
-      const r = run(body);
-      s.check(`G26 the validator ignores ${why}`, r.status === 0 && r.verdict?.kind === "not-a-reviewer-body",
-        `kind ${r.verdict?.kind}, exit ${r.status}`);
-    }
-
-    // (d) A genuine one-line pointer conforms — the guard must discriminate report from pointer.
-    {
-      const r = run('<!-- PR_REVIEWER_POINTER -->\nReviewed `abc1234` — 3 finding(s) inline.\n\n'
-        + '<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[]} -->\n');
-      s.check("G26 a genuine one-line pointer conforms", r.status === 0 && r.verdict?.kind === "pointer",
-        `kind ${r.verdict?.kind}, exit ${r.status}`);
-    }
-
-    // (d2) The ordinary review body is now marker-only (render-pointer.mjs `pointer` form). It has
-    // no visible prose, no gate table, and no report signals, so the CI shape guard must classify
-    // it as a conforming pointer — never as a report or a non-reviewer body — or a converging
-    // review-loop would post a false-positive shape notice on every run.
-    {
-      const r = run('<!-- PR_REVIEWER_POINTER -->\n');
-      s.check("G26 a marker-only pointer conforms", r.status === 0 && r.verdict?.kind === "pointer",
-        `kind ${r.verdict?.kind}, exit ${r.status}`);
-    }
-
-    // (e) Each remaining defect class, synthesised.
-    // Guarded like case (b): an unguarded readFileSync throws and aborts ALL of L1, turning one
-    // missing fixture into a total run failure with no per-check attribution.
-    const goodPath = join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md");
-    const goodPresent = existsSync(goodPath);
-    s.check("G26 report-body snapshot warn.expected.md present (the synthesis base)", goodPresent);
-    const good = goodPresent ? readFileSync(goodPath, "utf8") : "";
-    const CASES = goodPresent ? [
-      ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details"), "accordion-pre-expanded"],
-      ["a **Verdict** line", `${good}\n**Verdict**: PASS\n`, "verdict-in-posted-body"],
-      // Cage the WHOLE link, both delimiters — the production defect was
-      // ``['key'](url)``, and a leading pair alone cages nothing.
-      ["a caged markdown link",
-        good.replace(/^- (\[[^\]]*\]\([^)]*\))/m, "- ``$1``"), "link-caged-in-code-span"],
-      ["a count disagreeing with its list", good.replace("**Open review threads (2)**", "**Open review threads (5)**"), "count-disagrees-with-list"],
-      // The captured drift body wrote `**Open threads (6)**`; requiring the canonical `review`
-      // wording let a hand-written heading's wrong count through the very check meant to catch it.
-      ["a drift-worded count disagreeing with its list",
-        good.replace("**Open review threads (2)**", "**Open threads (5)**"), "count-disagrees-with-list"],
-      // The head slice must anchor on the `Review details` accordion, not on the first <details>.
-      // A flat body preceded by an unrelated fold sliced the head to nothing and reported clean.
-      ["a flat body preceded by an unrelated <details> fold",
-        "Reviewed your changes.\n\n<details>\n<summary>Additional findings</summary>\n\n- a\n\n</details>\n\n"
-        + "| Gate | Status | Details |\n|---|---|---|\n| Code review | \u2705 | fine |\n\n**Run mode** \u2014 full\n",
-        "accordion-owned-line-at-top-level"],
-    ] : [];
-    for (const [why, body, code] of CASES) {
-      const r = run(body);
-      s.check(`G26 the validator flags ${why}`, r.status === 1, `exit ${r.status}`);
-      s.check(`G26 ${why} reports ${code}`,
-        (r.verdict?.violations || []).some((v) => v.code === code),
-        (r.verdict?.violations || []).map((v) => v.code).join(", "));
-    }
-
-    // (f) The workflow and its caller template must reference the validator and each other, or the
-    // guard is unreachable from a consuming repo.
-    // Every read here is guarded: an unguarded readFileSync throws and takes down all of L1, so a
-    // deleted workflow would be reported as a total run failure instead of one named missing file.
-    const readGuarded = (rel) => {
-      const p = join(REPO_ROOT, rel);
-      const present = existsSync(p);
-      s.check(`G26 ${rel} present`, present);
-      return present ? readFileSync(p, "utf8") : "";
-    };
-    const wf = readGuarded(".github/workflows/reviewer-report-shape.yml");
-    if (wf) {
-      s.check("G26 the reusable workflow runs the validator",
-        wf.includes("scripts/validate-report-shape.mjs") && wf.includes("workflow_call"));
-      // BOTH body inputs, not just the review one: `github.event.comment.body` is equally
-      // attacker-controlled, and asserting only the review body left half the claim unguarded.
-      for (const [label, expr] of [
-        ["REVIEW_BODY", "github.event.review.body"],
-        ["COMMENT_BODY", "github.event.comment.body"],
-      ]) {
-        const bound = new RegExp(`${label}: \\$\\{\\{ ${expr.replace(/\./g, "\\.")} \\}\\}`);
-        const spliced = new RegExp(`run:[\\s\\S]{0,400}\\$\\{\\{ ${expr.replace(/\./g, "\\.")} \\}\\}`);
-        s.check(`G26 the workflow binds ${label} via env, never interpolated into shell`,
-          bound.test(wf) && !spliced.test(wf));
-      }
-      s.check("G26 the workflow posts one sticky notice, keyed by a marker",
-        wf.includes("PR_REVIEWER_SHAPE_GUARD") && wf.includes("-X PATCH"));
-    }
-    const caller = readGuarded("plugins/pr-reviewer-shape-guard/templates/report-shape-caller.yml");
-    if (caller) {
-      s.check("G26 the caller template targets the reusable workflow",
-        caller.includes("mthines/agent-skills/.github/workflows/reviewer-report-shape.yml@main"));
-      // The caller must grant at least what the reusable workflow requests, or the run fails on a
-      // repo whose default token is read-only.
-      s.check("G26 the caller template declares the permissions the reusable workflow needs",
-        /permissions:\s*\n\s*contents: read\s*\n\s*pull-requests: write/.test(caller));
-    }
-  }
-
-  // ── G27: Gate 2 (CI) is informational-in-`Run`, it never grades and never fails. Red CI is a
-  // fact about the branch, not a finding about the diff — this agent did not diagnose it and
-  // cannot tell a regression from a flaky job,
-  // a quota, a check that does not run on this base branch, or a draft with no workflow. GitHub
-  // already blocks the merge on a required check. Observed on mthines/lorekit#490, whose headline
-  // read "CI failing, 1 error, 2 warnings … Blocking: CI checks failing" — i.e. it reported the
-  // reviewer as having found something blocking when it had not.
-  {
-    const gateStates = sliceBetween(gatesMd, "### Gate states", "`--skip-gates` bypasses");
-    s.check("G27 Gate 2 is declared informational, not a graded warning gate",
-      /Gate 1 is two-state/.test(gateStates) &&
-      !/Gates 1 and 2 are two-state/.test(gateStates) &&
-      /Gate 2 \(CI\) is neither hard nor graded/.test(gateStates) &&
-      /\*\*Gate 2 \(CI\) is informational, never part of the grade\.\*\*/.test(gateStates));
-    s.check("G27 the hard-gate set no longer contains Gate 2",
-      /Gates 4 and 5 are \*\*hard\*\* gates/.test(gateStates) &&
-      !/plus Gate 2 \(CI\), are \*\*hard\*\*/.test(gateStates));
-
-    // No verdict rule may still route a CI failure to FAIL. `Gates 2/4/5` was the shared idiom for
-    // the hard-gate set at four sites, so its absence is the load-bearing assertion.
-    s.check("G27 no verdict rule still names Gates 2/4/5 as the hard set",
-      !/Gates 2\/4\/5/.test(prReviewer + prReviewerSplit));
-    s.check("G27 the FAIL verdict rule names only Gates 4 and 5",
-      /verdict is \*\*FAIL\*\* when Gate 4 or Gate 5 fails/.test(gatesMd));
-
-    // CI must not reach the posted headline at all. The gate-count tally that used to lead it is
-    // gone — the headline counts FINDINGS now, and `SEVERITY_TALLY` is terminal-only — so the
-    // assertion moves to the two places CI could still leak into a verdict: the WARN ceiling in
-    // the headline rules, and the reasons array.
-    const headlines = sliceBetween(reportRendering, "#### Headlines", "| Gate | ❌ reason");
-    s.check("G27 the headline rules exclude CI from the verdict entirely",
-      /`CI_NOTE` \*\*never counts as a gate\*\*/.test(headlines));
-    s.check("G27 the headline counts findings, not gate statuses",
-      /\*\*It counts findings, not gates\.\*\*/.test(headlines));
-    s.check("G27 SEVERITY_TALLY no longer reaches the posted headline",
-      /`SEVERITY_TALLY` is a \*\*terminal-only\*\* term/.test(reportRendering));
-    s.check("G27 the posted headline region carries no CI token",
-      !/CI failing/.test(headlines));
-    s.check("G27 FAIL_REASONS no longer leads with a CI phrase",
-      !/leading\s*\n?`CI checks failing`/.test(headlines)
-      && /CI is never\s*\n?among them/.test(headlines));
-
-    // The reason table's CI row must offer neither a ❌ phrase nor a ⚠️ phrase — CI never grades.
-    const ciRow = (reportRendering.match(/^\| CI \(Gate 2\) \|[^\n]*$/m) || [""])[0];
-    s.check("G27 the reason table's CI row is declared informational, not a gate",
-      /informational-in-`Run`, never a gate/.test(ciRow), ciRow.slice(0, 90));
-    s.check("G27 the reason table's CI row supplies no ⚠️ phrase either — CI never joins WARN_REASONS",
-      !/CI red:/.test(ciRow) && !/CI still pending/.test(ciRow), ciRow.slice(0, 90));
-
-    // Gate 2's own result line must be two-state, informational, and explicitly never ❌.
-    const gate2 = sliceBetween(gatesMd, "**Gate 2 — CI status**", "**Gate 3 —");
-    s.check("G27 Gate 2's result is PASS/WARN, informational-in-Run, and explicitly never ❌",
-      /Never ❌/.test(gate2) && /WARN \(⚠️\)/.test(gate2)
-      && /informational-in-`Run`/.test(gate2) && /never feeds/.test(gate2));
-
-    // Registered in the diagnostic surface, as an invariant and a failure mode.
-    s.check("G27 diagnostic-surface registers F-ci-failed-the-verdict",
-      prReviewerDiag.includes("F-ci-failed-the-verdict"));
-    // Absence is not sufficiency here either: CI must be excluded consistently everywhere the
-    // graded/warning gates are enumerated — the WARN presentation selectors and the
-    // WARN_GATE_COUNT definition — or one surface would render a WARN a sibling surface calls
-    // PASS for the identical payload.
-    // The two selectors live in different files: Step 3's terminal one in the agent body, Step 4's
-    // body-template one in the rendering reference. Pair each anchor with its source rather than
-    // assuming one haystack.
-    for (const [what, src, anchor] of [
-      ["the Step 3 WARN selector", prReviewer, "Pick the presentation by verdict"],
-      ["the Step 4 WARN selector", reportRendering, "Pick the body by verdict"],
-    ]) {
-      const sel = sliceBetween(src, anchor, "\n\n");
-      s.check(`G27 ${what} no longer lists CI among the graded gates`,
-        !/graded gate — Description vs\. code, CI,/.test(sel)
-        && /graded gate — Description vs\. code, Prior review feedback, or Code review/.test(sel),
-        sel.slice(0, 120));
-    }
-    {
-      const wgc = sliceBetween(reportRendering, "- `WARN_GATE_COUNT` = the number of gates showing",
-        "The top-level WARN headline leads with");
-      s.check("G27 WARN_GATE_COUNT excludes CI from the warning gates",
-        !/\*\*CI\*\*/.test(wgc) && /so 0 to 3/.test(wgc), wgc.slice(0, 140));
-    }
-    // The criteria list is read as normative, so it must not still call CI verdict-bearing.
-    {
-      const crit = sliceBetween(gatesMd, "2. **CI status**", "3. **Prior review feedback**");
-      s.check("G27 criterion 2 declares CI informational-in-Run, not verdict-bearing",
-        /informational-in-`Run`/.test(crit) && !/Contributes to verdict/.test(crit), crit.slice(0, 120));
-    }
-    // The reference fixtures must not demonstrate the shape G27 forbids — G25 diffs them, so a
-    // stale fixture locks the forbidden headline in as the expected rendering.
-    for (const name of REPORT_FIXTURES) {
-      for (const ext of ["json", "expected.md"]) {
-        const f = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.${ext}`);
-        if (!existsSync(f)) continue;
-        const t = readFileSync(f, "utf8");
-        s.check(`G27 fixture ${name}.${ext} carries no CI-blocking headline`,
-          !/CI failing/.test(t) && !/Blocking: CI checks failing/.test(t));
-      }
-    }
-    // Every prior guard here checks whether a STRING is present or absent. That cannot see a
-    // fixture whose headline COUNT disagrees with the payload it was rendered from — and because
-    // G25 diffs the snapshots byte-for-byte, such a fixture locks the wrong semantics in as the
-    // reference rendering.
-    //
-    // The headline used to count GATES (`1 error, 2 warnings`), which is what these checks read.
-    // It now counts FINDINGS, because that is the number the author acts on and the one the inline
-    // comments are — the gate/finding mismatch was why the report and the inline surface never
-    // added up to one number. So the invariants change shape: the finding count and the blocking
-    // subset are checked against FINDINGS[], and the verdict is checked against the gates that
-    // decide it — CI excluded, since it is informational-in-`Run` only.
-    for (const name of REPORT_FIXTURES) {
-      const pj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.json`);
-      const mj = join(REPO_ROOT, `scripts/eval/fixtures/report-body/${name}.expected.md`);
-      if (!existsSync(pj)) { s.check(`G27 fixture ${name}.json present`, false); continue; }
-      const d = JSON.parse(readFileSync(pj, "utf8"));
-      const statuses = ["GATE_DESCRIPTION_STATUS", "GATE_PRIOR_STATUS", "GATE_DOCS_STATUS",
-        "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"].map((k) => d[k]);
-      const errors = statuses.filter((v) => v === "❌").length;
-      // CI never counts toward `warning` — it is informational-in-`Run`, not a gate.
-      const warnings = statuses.filter((v) => v === "⚠️").length;
-      const implied = errors > 0 ? "FAIL" : warnings > 0 ? "WARN" : "PASS";
-      s.check(`G27 ${name} VERDICT agrees with its own gate statuses (CI excluded)`,
-        d.VERDICT === implied, `payload ${d.VERDICT}, gates imply ${implied}`);
-      // CI can never move the verdict at all: a red check is never an error, and — since it is
-      // excluded from `warnings` too — never even a warning.
-      s.check(`G27 ${name} CI alone never produces a FAIL`,
-        !(errors === 0 && d.VERDICT === "FAIL"), `${d.VERDICT} with 0 ❌ gates`);
-      // One FAIL_REASONS phrase per ❌ gate, and CI is never among them.
-      const reasons = Array.isArray(d.FAIL_REASONS) ? d.FAIL_REASONS : [];
-      s.check(`G27 ${name} has one FAIL_REASONS phrase per ❌ gate`,
-        reasons.length === errors, `${reasons.length} phrase(s), ${errors} ❌ gate(s)`);
-      s.check(`G27 ${name} names no CI phrase in FAIL_REASONS`,
-        !reasons.some((r) => /\bCI\b/.test(r)), reasons.join("; ").slice(0, 90));
-      // A populated CI_NOTE with every real gate ✅ must never force a WARN_REASONS phrase — CI
-      // is not a warning gate, so it names nothing there.
-      if (d.CI_NOTE && errors === 0 && warnings === 0) {
-        const warnReasonsArr = Array.isArray(d.WARN_REASONS) ? d.WARN_REASONS : [];
-        s.check(`G27 ${name} names no CI phrase in WARN_REASONS when only CI_NOTE is populated`,
-          !warnReasonsArr.some((r) => /\bCI\b/.test(r)), warnReasonsArr.join("; ").slice(0, 90));
-      }
-      if (!existsSync(mj)) continue;
-      const body = readFileSync(mj, "utf8");
-      const findings = Array.isArray(d.FINDINGS) ? d.FINDINGS : [];
-      const blocking = findings.filter((f) => f.blocking === true).length;
-      const head = (body.match(/^### .*$/m) || [""])[0];
-      const claimed = Number((head.match(/(\d+) findings?/) || [0, 0])[1]);
-      s.check(`G27 ${name} headline's finding count matches FINDINGS[]`,
-        claimed === findings.length, `headline ${claimed}, payload ${findings.length}`);
-      const claimedBlocking = Number((head.match(/(\d+) blocking/) || [0, 0])[1]);
-      s.check(`G27 ${name} headline's blocking count matches FINDINGS[].blocking`,
-        claimedBlocking === blocking, `headline ${claimedBlocking}, payload ${blocking}`);
-      // The index is the worklist, so it must carry one row per finding and sit above the accordion.
-      const indexRows = (body.split("<details>")[0].match(/^\| .* \| .* \| .* \|$/gm) || [])
-        .filter((r) => !/^\|\s*(Finding|-{3})/.test(r) && !/^\|---\|/.test(r));
-      s.check(`G27 ${name} findings index has one visible row per finding`,
-        indexRows.length === findings.length, `${indexRows.length} row(s), ${findings.length} finding(s)`);
-    }
-    s.check("G27 diagnostic-surface carries the CI-never-fails invariant",
-      /\*\*CI never fails the verdict\.\*\*/.test(prReviewerDiag));
-  }
-
-  // G24c: the three Gate-3 failure modes are registered in the diagnostic surface, so a
-  // regression has a named bucket instead of silently becoming "expected behaviour".
-  for (const fm of ["F-nonblocking-thread-fails-gate-3", "F-gate-3-severity-reinvented",
-    "F-warn-hides-open-threads"]) {
-    s.check(`G24c diagnostic-surface.md registers ${fm}`, prReviewerDiag.includes(fm));
-  }
-}
-
-// Shared by G22 and G23. Deliberately ONE definition: this predicate was
-// copy-pasted across the two checks, and widening one without the other would
-// let a block be counted by G22 while G23 silently stopped guarding it — the
-// same restated-value defect these checks exist to catch.
-const isPollBlock = (block) =>
-  /\b(while|until)\b/.test(block) && /\bsleep\b/.test(block) &&
-  /\b(gh|curl|wget|aws|kubectl|az|gcloud)\b/.test(block);
-
-// ── Check G22: every external-wait site is bounded at BOTH levels ──
-// The `diagnostic-surface.md` invariant has two clauses and checking only the
-// first is the documented trap: an in-command `timeout 540` issued at the Bash
-// tool's DEFAULT (120000 ms) is still killed before its own exit 124 fires.
-//
-// Sites are identified by SHAPE inside fenced code blocks, not by variable name:
-//   - a `gh … --watch` / `gh run watch` command line, or
-//   - a poll block: a fence containing a loop keyword AND a sleep AND a network call.
-// Keying on a shape rather than an identifier means a poll loop written with any
-// variable name is still seen, and an unrelated snippet is not miscounted.
-// `references/` is excluded — it quotes the unbounded forms as examples of the bug.
-{
-  const PROXIMITY = 6;
-  const EXPECTED_SITES = 7; // ci-auto-fix now specifies bounded monitoring without shell snippets.
-  // Pinned, not a floor — adding or deleting an executable example must trip this.
-  const files = [
-    ...walk(join(REPO_ROOT, "skills")),
-    ...walk(join(REPO_ROOT, "agents")),
-  ].filter((f) => !f.includes("/references/"));
-
-  const isWatchCmd = (l) => /gh\s+(?:pr\s+checks[^\n]*--watch|run\s+watch)/.test(l);
-  let sites = 0;
-
-  for (const f of files) {
-    const lines = readFileSync(f, "utf8").split("\n");
-    const text = lines.join("\n");
-    // Collect fenced blocks as [startIdx, endIdx) line ranges.
-    const blocks = [];
-    let open = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (/^\s*```/.test(lines[i])) {
-        if (open === -1) open = i;
-        else { blocks.push([open + 1, i]); open = -1; }
-      }
-    }
-
-    for (const [b0, b1] of blocks) {
-      const block = lines.slice(b0, b1).join("\n");
-
-      // (1) Watch commands — one site per matching line.
-      for (let i = b0; i < b1; i++) {
-        if (!isWatchCmd(lines[i])) continue;
-        sites++;
-        const m = lines[i].match(/^\s*(?:timeout\s+(\d+)\s+)?gh\b/);
-        const inner = m && m[1] ? Number(m[1]) : null;
-        s.check(`G22 ${rel(f)}:${i + 1} watch is bounded in-command (timeout N, N < 600)`,
-          inner !== null && inner < 600,
-          inner === null ? `unbounded: ${lines[i].trim()}` : `timeout ${inner} >= harness cap`);
-        s.check(`G22 ${rel(f)}:${i + 1} declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
-          lines.slice(Math.max(0, i - PROXIMITY), i).join("\n").includes("600000"),
-          "an inner timeout alone still dies at the 120000 ms tool default");
-      }
-
-      // (2) Poll blocks — a loop that sleeps around a network call.
-      if (!isPollBlock(block)) continue;
-      // A fence may hold BOTH a watch command and a separate poll loop; each is
-      // counted. (isPoll needs a loop keyword AND a sleep, which a watch command
-      // line never has, so this cannot double-count a single watch.)
-      sites++;
-      const wrapper = block.match(/^\s*timeout\s+(\d+)\s+bash\s+-c/m);
-      const wrapped = wrapper !== null && Number(wrapper[1]) < 600;
-      if (wrapped) {
-        s.check(`G22 ${rel(f)}:${b0 + 1} poll block is wrapped in a timeout below the harness cap`, true);
-      } else {
-        // A bare poll's only bounds are the tool timeout plus an interval kept
-        // under it — so assert the CLAMP INSTRUCTION, not merely the example
-        // literal, which a comment on the snippet line would satisfy on its own.
-        s.check(`G22 ${rel(f)}:${b0 + 1} bare poll documents an --interval clamp instruction`,
-          lines.some((l) => /--interval/.test(l) && /\b540\b/.test(l)),
-          "needs a line instructing the clamp (--interval and 540 together); an example " +
-          "literal, or the word 'clamp' about some other flag, does not constrain a " +
-          "user-supplied interval");
-      }
-      s.check(`G22 ${rel(f)}:${b0 + 1} poll block declares the per-call tool timeout (600000) within ${PROXIMITY} lines`,
-        lines.slice(Math.max(0, b0 - PROXIMITY), b0 + 2).join("\n").includes("600000"),
-        "a poll bounded only internally still dies at the 120000 ms tool default");
-    }
-  }
-  s.check(`G22 guards exactly ${EXPECTED_SITES} external-wait sites`,
-    sites === EXPECTED_SITES, `found ${sites}`);
-}
-
-// ── Check G23: every polling block classifies tool failure as failure ──
-// G22 guards BOUNDING. Nothing guarded CLASSIFICATION, and L1 was green in every
-// round of PR #111 in which a classification defect shipped — three of them, each
-// the same shape: a remote call whose empty output was read as a benign "nothing
-// yet" regardless of whether the tool had actually failed. A broken `gh` prints
-// to stderr and nothing to stdout, so `$(gh …)` yields "" exactly as a legitimate
-// empty result does; a loop that cannot tell them apart burns its budget and then
-// escalates the wrong cause, or reports "quiet" when it is simply blind.
-//
-// The rule, stated in registration-poll.md: an unrecognised tool error is never
-// benign. This asserts it mechanically — every fenced poll block must contain a
-// non-benign default: a `case` whose `*)` arm exits non-zero, or an explicit
-// stderr/failure arm.
-{
-  const files = [
-    ...walk(join(REPO_ROOT, "skills")),
-    ...walk(join(REPO_ROOT, "agents")),
-  ].filter((f) => !f.includes("/references/"));
-
-  let guarded = 0;
-  for (const f of files) {
-    const lines = readFileSync(f, "utf8").split("\n");
-    const blocks = [];
-    let open = -1;
-    for (let i = 0; i < lines.length; i++) {
-      if (/^\s*```/.test(lines[i])) {
-        if (open === -1) open = i;
-        else { blocks.push([open + 1, i]); open = -1; }
-      }
-    }
-    for (const [b0, b1] of blocks) {
-      const block = lines.slice(b0, b1).join("\n");
-      if (!isPollBlock(block)) continue;
-      guarded++;
-      // Accept either shape: a case default that exits non-zero, or an explicit
-      // "the tool wrote to stderr / the call failed" arm.
-      // MUST be anchored: a specific arm such as `*authentication*)` also ends
-      // in `*)`, so an unanchored match is satisfied by a non-default arm while
-      // the real default stays benign — the exact bug this check exists to find.
-      const caseDefault = /^\s*\*\)[^\n]*exit\s+[1-9]/m.test(block);
-      const stderrArm = /\[\s*-[sn]\s+"?\$\{?(err|ERR)/i.test(block) ||
-        /\|\|\s*\{[^}]*(exit\s+[1-9]|POLL_ERROR)/.test(block);
-      s.check(
-        `G23 ${rel(f)}:${b0 + 1} poll block treats a tool failure as failure, not as "nothing yet"`,
-        caseDefault || stderrArm,
-        "empty output alone cannot distinguish a broken tool from a legitimately " +
-        "empty result — add a non-benign default (case *) exit N, or a stderr arm)",
-      );
-    }
-  }
-  s.check("G23 guards exactly 2 polling blocks", guarded === 2, `found ${guarded}`);
-}
-
-// ── Check G24: any agent that does GitHub work can actually reach GitHub ──
-// A sub-agent inherits NEITHER the parent's `gh` binary NOR the parent's MCP
-// tools — its access is exactly its own `tools:` frontmatter. Observed in the
-// field: an agent dispatched to open a PR reported the task BLOCKED, in a session
-// where the parent's MCP tools worked fine; the parent then did it in one call.
-// Same cause: `pr-reviewer` made 26 `gh` calls with zero GitHub tools granted,
-// so on a cloud session it could not post a single one of its reviews.
-//
-// If an agent's body invokes GitHub, its frontmatter must grant a way to get there.
-{
-  const agentFiles = [
-    // Real agent definitions only: agents/*.md. `agents/rules/` and
-    // `agents/templates/` are prose and boilerplate, not dispatchable agents.
-    ...walk(join(REPO_ROOT, "agents"))
-      .filter((f) => !f.includes("/rules/") && !f.includes("/templates/")),
-    ...walk(join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates"))
-      .filter((f) => f.endsWith(".agent.md")),
-  ];
-  let checked = 0;
-  for (const f of agentFiles) {
-    const text = readFileSync(f, "utf8");
-    const fmEnd = text.indexOf("\n---", 4);
-    if (fmEnd === -1) continue;
-    const fm = text.slice(0, fmEnd);
-    const body = text.slice(fmEnd);
-    // Two ways an agent needs GitHub access, and the second is the one that bit:
-    //   (1) its own body runs `gh ...`
-    //   (2) it invokes a skill that does — that skill executes IN THIS AGENT'S
-    //       context, with this agent's tools, so delegating does not delegate access.
-    const ghCalls = (body.match(/\bgh\s+(pr|api|run|repo|search|auth)\b/g) || []).length;
-    // Matches both `Skill("create-pr")` and the backticked name used in the
-    // agents' companion tables — either way the skill runs in this agent's context.
-    const GH_SKILLS = /(?:Skill\(\s*["']|`)(create-pr|ci-auto-fix|review-loop|implement-suggestion)(?:["']|`)/;
-    const viaSkill = GH_SKILLS.test(body);
-    if (ghCalls === 0 && !viaSkill) continue;
-    checked++;
-    const why = ghCalls > 0
-      ? `makes ${ghCalls} gh calls`
-      : "invokes a GitHub-using skill, which runs in its context";
-    s.check(
-      `G24 ${rel(f)} ${why}, so its frontmatter must grant GitHub tools`,
-      /mcp__github__/.test(fm),
-      "grant mcp__github__* in tools: — a sub-agent inherits neither gh nor the " +
-      "parent's MCP tools, so without this it reports the task blocked",
-    );
-  }
-  // Sentinel so the guard can't silently stop finding agents. Was 3 until v3.23,
-  // when the `aw` dispatcher stopped being an agent. A SKILL cannot grant itself
-  // tools — it inherits the caller's — so the frontmatter invariant genuinely
-  // does not apply to it. The equivalent obligation for the skill form is to
-  // DEGRADE VISIBLY instead, which is checked immediately below rather than
-  // dropped.
-  s.check("G24 found the GitHub-using agents to guard", checked >= 2, `found ${checked}`);
-
-  // G24b — the skill-shaped counterpart of G24. `aw` reaches GitHub through
-  // create-pr / review-loop but has no `tools:` block to grant anything, so its
-  // contract is that a missing grant is named in the terminal report, never
-  // silently swallowed.
-  // Collapse whitespace first: this repo uses semantic line breaks, so a phrase
-  // that reads as one sentence is routinely split across lines mid-clause.
-  const awSkill = readFileSync(join(AW, "aw/SKILL.md"), "utf8").replace(/\s+/g, " ");
-  s.check(
-    "G24b aw dispatcher skill documents tool-grant degradation",
-    /inherit tools rather than declaring them/i.test(awSkill)
-      && /absent from the caller's tool grant/i.test(awSkill),
-    "aw/SKILL.md must state that it inherits the caller's grant and that a " +
-    "missing tool is named in Degraded: — it cannot grant itself tools like an agent can",
-  );
-}
-
-// ── G28: the verify-behavior skill exists and its wiring into verification-receipt.md +
-// pr-reviewer's diagnostic-surface.md is real. Each sub-check reads the REAL shipped file and
-// asserts a literal anchor — never a copy re-encoded inside this eval. Mirrors the G17 guard
-// shape. Check-gaming is forbidden: these guards read the files under test, not a mock of them.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const skillDir = join(REPO_ROOT, "skills/quality/verify-behavior");
-
-  // G28a: the skill exists and documents the ladder + receipt contract + execute-not-score
-  // boundary (the same anchors AC-1/AC-6 gate on, read here as a shipping-file guard rather
-  // than a plan-time acceptance check).
-  s.check("G28a skills/quality/verify-behavior/SKILL.md exists and documents the ladder",
-    existsSync(join(skillDir, "SKILL.md")) &&
-    /Tier 1/i.test(read("skills/quality/verify-behavior/SKILL.md")) &&
-    /Tier 3/i.test(read("skills/quality/verify-behavior/SKILL.md")) &&
-    /does not score/i.test(read("skills/quality/verify-behavior/SKILL.md")));
-
-  // G28b: verification-receipt.md actually delegates Tier 2/3 to the skill, keeps the 2.6b
-  // pipeline position, and preserves the null-drop invariant — the exact adapter contract
-  // AC-7 gates on, read here as a regression lock against a future edit re-flattening it.
-  const vr = read("agents/shared/rules/verification-receipt.md");
-  s.check('G28b verification-receipt.md delegates to Skill("verify-behavior") and keeps 2.6b + null-drop',
-    /Skill\(\s*["']verify-behavior["']/.test(vr) &&
-    vr.includes("2.6b") &&
-    /null/i.test(vr) &&
-    /unavailable|not installed|not available/i.test(vr));
-
-  // G28c: verification-receipt.md's Order-in-the-pipeline block still reads 2.6 -> 2.6b -> 2.7 —
-  // a regression lock distinct from G28b's substring check, so a rewrite that keeps the words
-  // "2.6b" somewhere else in the file but reorders the actual pipeline diagram still fails.
-  s.check("G28c verification-receipt.md pipeline diagram still orders 2.6 -> 2.6b -> 2.7",
-    /\[2\.6\][^\n]*\n\s*→ verification-receipt\.md[^\n]*\[2\.6b\][^\n]*\n\s*→ per-comment-confidence[^\n]*\[2\.7\]/.test(vr));
-
-  // G28d: pr-reviewer's diagnostic-surface.md carries the new runtime-tier failure classes
-  // (append-only) without dropping the pre-existing static-tier row
-  // (F-null-receipt-treated-as-confirmation) — the exact append-only contract R17/AC-14
-  // requires. Retired rows are asserted per-fingerprint by G25, not here; a bare
-  // diag.includes("Retired") only matched the append-only policy sentence, so it is dropped.
-  const diag = read("agents/pr-reviewer/rules/diagnostic-surface.md");
-  s.check("G28d diagnostic-surface.md appends the runtime-tier F-classes without dropping prior rows",
-    diag.includes("F-tier3-ran-untrusted-code-in-cross") &&
-    diag.includes("F-null-execution-treated-as-confirmation") &&
-    diag.includes("F-tier3-modified-tracked-files") &&
-    diag.includes("F-null-receipt-treated-as-confirmation"));
-
-  // G28e: bug-fix-verifier.md and feature-pr-verifier.md both delegate their run mechanic and
-  // both still exist as real agent files — the WRAP verdict from the Existing Code Survey
-  // (D7 / plan.md), never a DELETE.
-  s.check("G28e bug-fix-verifier.md and feature-pr-verifier.md delegate to verify-behavior and still exist",
-    existsSync(join(REPO_ROOT, "agents/bug-fix-verifier.md")) &&
-    existsSync(join(REPO_ROOT, "agents/feature-pr-verifier.md")) &&
-    read("agents/bug-fix-verifier.md").includes("verify-behavior") &&
-    read("agents/feature-pr-verifier.md").includes("verify-behavior"));
-
-  // G28f: the aw-executor Phase 4 checks loop cites the change-verification shape while
-  // keeping its own mode-aware cap and check-integrity rules intact.
-  const p4 = read("skills/workflow/autonomous-workflow/rules/phase-4-testing.md");
-  s.check("G28f phase-4-testing.md checks loop cites verify-behavior change-verification and keeps its own gate rules",
-    p4.includes("verify-behavior") &&
-    p4.includes("Check definitions are executor-immutable") &&
-    p4.includes("unsatisfiable"));
-}
-
-// ── G29: the review-body pointer renderer. Behavioural, same rationale as G25 — a hand-authored
-// pointer drifted into four different ad-hoc headline shapes across mthines/lorekit#514-#518 when
-// a run had no deterministic fallback for "the sticky write is forbidden, not just technically
-// unavailable". render-pointer.mjs is the fix; these checks execute it against committed fixtures.
-{
-  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-pointer.mjs");
-  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-pointer");
-  const run = (args, input) => {
-    const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
-    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
-  };
-  // Step 4b (the pointer-renderer call site) moved to rules/posting.md with the rest of Step 4
-  // (Step 9 split) — read it there rather than off the agent body.
-  const prReviewer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
-
-  s.check("G29a the pointer renderer exists and rules/posting.md invokes it, not a hand-authored body",
-    existsSync(RENDER) &&
-    /render-pointer\.mjs/.test(prReviewer) &&
-    prReviewer.includes("`POINTER_BODY` is not written by hand either"));
-
-  s.check("G29b rules/posting.md defines the caller-policy-refusal branch, distinct from access-path incapability",
-    /STICKY_WRITE_FORBIDDEN/.test(prReviewer) &&
-    /Two different reasons the sticky can go unwritten/.test(prReviewer) &&
-    /caller policy refusal/.test(prReviewer));
-
-  // (a) Snapshot parity — one fixture per FORM.
-  for (const name of ["pointer", "degraded"]) {
-    const payload = join(FIX, `${name}.json`);
-    const expectedPath = join(FIX, `${name}.expected.md`);
-    if (!existsSync(payload) || !existsSync(expectedPath)) {
-      s.check(`G29 ${name} fixture + snapshot present`, false, "missing fixture or snapshot");
-      continue;
-    }
-    const r = run([payload]);
-    s.check(`G29 ${name}.json renders without error`, r.ok, r.err);
-    const expected = readFileSync(expectedPath, "utf8");
-    s.check(`G29 ${name} output matches its committed snapshot`, r.out === expected,
-      r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
-  }
-
-  // (b) Structural invariants every form must hold.
-  for (const name of ["pointer", "degraded"]) {
-    const p = join(FIX, `${name}.expected.md`);
-    if (!existsSync(p)) continue;
-    const body = readFileSync(p, "utf8");
-    s.check(`G29 ${name} carries the pointer marker`, body.startsWith("<!-- PR_REVIEWER_POINTER -->"));
-    s.check(`G29 ${name} never carries the report marker`, !body.includes("<!-- PR_REVIEWER_REPORT -->"));
-  }
-
-  // (c) Fail-closed — each once shipped as an ad-hoc posted body (or is the exact shape that
-  // would let one back in); the renderer must refuse it and print nothing on stdout.
-  const rejects = [
-    ["a missing FORM", '{"HEAD_SHA":"bde3c2f"}'],
-    ["an invalid FORM", '{"FORM":"summary","HEAD_SHA":"bde3c2f"}'],
-    ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1}'],
-    ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1}'],
-    // The two retired notification-only forms. A run that remembers them must get an error, not
-    // a shape nothing documents — and not a silently-accepted unknown FORM either.
-    ["the retired escalation form", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","PRIOR_VERDICT":"PASS","REASONS":"x","STICKY_URL":"https://x/1"}'],
-    ["the retired no_prior form", '{"FORM":"no_prior","HEAD_SHA":"bde3c2f","VERDICT":"PASS","STICKY_URL":"https://x/1"}'],
-    ["degraded missing DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x"}'],
-    ["degraded HEADLINE_LINE carrying the report marker", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"<!-- PR_REVIEWER_REPORT -->","DEGRADED_REASON":"x"}'],
-    // Run state may not ride on a review body at all any more: LEDGER is not a known key, and a
-    // ledger block smuggled in through a prose field is rejected by the post-condition.
-    ["a LEDGER key", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"y","LEDGER":{"v":1,"runs":[]}}'],
-    ["a ledger block smuggled into DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"see <!-- PR_REVIEWER_LEDGER {\"v\":1} -->"}'],
-    ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"EXTRA":"nope"}'],
-    ["a non-object payload", "[1,2]"],
-    ["malformed JSON", "{nope"],
-  ];
-  for (const [label, input] of rejects) {
-    const r = run([], input);
-    s.check(`G29 rejects ${label}`, !r.ok && r.out === "", r.out ? `stdout was non-empty: ${r.out.slice(0, 80)}` : r.err);
-  }
-}
-
-// G30: the tier-tolerant Conventional-Comments prefix / severity-label regex is hand-mirrored
-// across three sites — the rule (conventional-comments.md PREFIX_RE), the Step 4b payload
-// pre-flight (Phase 5: `payloadIsSafe()` in execute-write-plan.mjs, no longer the agent body
-// itself), and the relevance script (record-comment-relevance.mjs).
-// A drift (a tier renamed/reordered/removed in one) would let a tiered comment pass one gate and
-// abort another — exactly the hand-mirror the #136 review flagged. Assert the four-tier alternation
-// is spelled identically wherever that regex lives. (render-report.mjs uses the array form, so it
-// is not a mirror of this string and is excluded.)
-{
-  const TIER = "critical|high|medium|low";
-  for (const m of [
-    "agents/shared/rules/conventional-comments.md",
-    "agents/pr-reviewer/scripts/execute-write-plan.mjs",
-    "scripts/record-comment-relevance.mjs",
-  ]) {
-    const body = readFileSync(join(REPO_ROOT, m), "utf8");
-    s.check(`G30 ${m} spells the severity tier enum as \`${TIER}\``, body.includes(TIER),
-      `missing the canonical tier alternation "${TIER}" — a rename/reorder/removal drifted a mirror`);
-  }
-}
-
-// G31: build-agent0-link.mjs is the documented single source of truth for the Agent0 deep-link
-// encoding (its own header comment says so, and render-report.mjs's FIX_ALL_URL guard cites it by
-// name) but, unlike every other renderer script here (G25 render-report.mjs, G29 render-pointer.mjs),
-// no fixture or unit check exercised it directly — a regression in `encodePrompt` or the MAX_URL
-// guard could ship silently. Exercise the exported functions directly (not a snapshot: the encoding
-// contract is a small pure function, not a rendered template) plus the CLI's two fail-closed guards.
-{
-  const LINK_MOD = join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs");
-  const { encodePrompt, buildLink } = await import(`file://${LINK_MOD}`);
-
-  s.check("G31a encodePrompt escapes '(', ')', and \"'\" beyond encodeURIComponent's own output",
-    encodePrompt("fix(this)'now") === "fix%28this%29%27now",
-    `got ${JSON.stringify(encodePrompt("fix(this)'now"))}`);
-
-  s.check("G31b buildLink never leaves a literal ')' in the URL — the markdown-link-termination guard",
-    !buildLink("close (this) paren", "production", "fix-all").includes(")"),
-    `buildLink output still contained ')': ${buildLink("close (this) paren", "production", "fix-all")}`);
-
-  s.check("G31c buildLink prefixes the documented Agent0 base and auto_submit flag",
-    buildLink("hi", "production", "fix-all").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
-
-  s.check("G31g buildLink throws on a missing or unknown source — click attribution must never silently default",
-    (() => { try { buildLink("hi", "production", undefined); return false; } catch { return true; } })()
-    && (() => { try { buildLink("hi", "production", "bogus"); return false; } catch { return true; } })());
-
-  s.check("G31h buildLink appends the utm_source click-attribution tag matching the given source",
-    buildLink("hi", "production", "fix-all").includes("&utm_source=pr-reviewer-fix-all")
-    && buildLink("hi", "production", "fix-this").includes("&utm_source=pr-reviewer-fix-this"));
-
-  // G31j–l: the optional `org` param (agent0-fix-links.md § Organization). Three properties, and
-  // the first is the one a regression would take: ABSENT means no parameter at all. A default slug
-  // or a bare `&org=` would send every repo that never configured one into somebody else's
-  // organization — the same class of silent misrouting `agent0_environment` produced when it
-  // defaulted while also gating.
-  for (const [what, org] of [["omitted", undefined], ["null", null], ["empty", ""], ["blank", "  "]]) {
-    s.check(`G31j buildLink sends no org param when the org is ${what}`,
-      !buildLink("hi", "production", "fix-all", org).includes("org="),
-      `an ${what} org still produced an org parameter: ${buildLink("hi", "production", "fix-all", org)}`);
-  }
-  s.check("G31k buildLink appends &org=<slug> last when one is configured",
-    buildLink("hi", "production", "fix-all", "dash0-development")
-      === `${buildLink("hi", "production", "fix-all")}&org=dash0-development`,
-    `got ${buildLink("hi", "production", "fix-all", "dash0-development")}`);
-  // Rejected, not sanitized and not dropped: the slug lands UNENCODED in the query string, so a
-  // stray `&`/`#`/space would append a parameter, truncate at the fragment, or break the href — and
-  // a silently dropped org renders a button that looks right and opens the wrong organization.
-  // "" is deliberately absent from this list — an empty org is "absent", not malformed, and is
-  // asserted by G31j above.
-  for (const bad of ["a&b=c", "a#b", "a b", "-leading", "x".repeat(64), "a/b", "a?b"]) {
-    s.check(`G31l buildLink rejects the malformed org ${JSON.stringify(bad)}`,
-      (() => { try { buildLink("hi", "production", "fix-all", bad); return false; } catch { return true; } })(),
-      "a malformed org slug was accepted — it reaches the query string unencoded");
-  }
-
-  const runCli = (args) => spawnSync("node", [LINK_MOD, ...args], { encoding: "utf8" });
-
-  const empty = runCli(["--source", "fix-all", ""]);
-  s.check("G31d CLI rejects an empty prompt: non-zero exit, nothing on stdout",
-    empty.status !== 0 && empty.stdout === "",
-    `status=${empty.status} stdout=${JSON.stringify(empty.stdout)}`);
-
-  const oversized = runCli(["--source", "fix-all", "a".repeat(4500)]);
-  s.check("G31e CLI rejects a prompt whose encoded URL exceeds MAX_URL: non-zero exit, nothing on stdout",
-    oversized.status !== 0 && oversized.stdout === "" && /over 4000/.test(oversized.stderr),
-    `status=${oversized.status} stdout=${JSON.stringify(oversized.stdout)} stderr=${oversized.stderr}`);
-
-  const ok = runCli(["--source", "fix-all", "fix this thing"]);
-  s.check("G31f CLI accepts a normal prompt: zero exit, one URL line on stdout",
-    ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing", "production", "fix-all"),
-    `status=${ok.status} stdout=${JSON.stringify(ok.stdout)}`);
-
-  const noSource = runCli(["fix this thing"]);
-  s.check("G31i CLI rejects a missing --source: non-zero exit, nothing on stdout",
-    noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr),
-    `status=${noSource.status} stdout=${JSON.stringify(noSource.stdout)} stderr=${noSource.stderr}`);
-
-  // The CLI is the only form the agent invokes, so --org has to survive argv parsing next to the
-  // other two flags, in either order, and a bad slug must fail closed there too.
-  const withOrg = runCli(["--env", "development", "--org", "dash0-development", "--source", "fix-this", "fix it"]);
-  s.check("G31m CLI --org appends the param and composes with --env / --source",
-    withOrg.status === 0
-      && withOrg.stdout.trim() === buildLink("fix it", "development", "fix-this", "dash0-development"),
-    `status=${withOrg.status} stdout=${JSON.stringify(withOrg.stdout)} stderr=${withOrg.stderr}`);
-  const noOrg = runCli(["--source", "fix-all", "fix it"]);
-  s.check("G31m CLI omits the org param when --org is not passed",
-    noOrg.status === 0 && !noOrg.stdout.includes("org="),
-    `stdout=${JSON.stringify(noOrg.stdout)}`);
-  const badOrg = runCli(["--org", "bad&org", "--source", "fix-all", "fix it"]);
-  s.check("G31m CLI rejects a malformed --org: non-zero exit, nothing on stdout",
-    badOrg.status !== 0 && badOrg.stdout === "" && /org must match/.test(badOrg.stderr),
-    `status=${badOrg.status} stdout=${JSON.stringify(badOrg.stdout)} stderr=${badOrg.stderr}`);
-
-  // G32: the Agent0 fix prompts are one `/pr-fix` invocation plus an address — the skill owns the
-  // method (gather the PR's comments, filter to one author, apply, commit, push), the URL owns the
-  // target. Two regressions this guards, in opposite directions. Backwards: a revert to the marker
-  // hop ("open the pr-reviewer report comment (marker PR_REVIEWER_REPORT)"), which cost four
-  // discovery calls on mthines/lorekit#594 and is structurally stale — Gate 3 counts PRIOR threads,
-  // while the run's own findings post at 4b after the 4a render. Forwards: re-inlining any part of
-  // what /pr-fix now owns — an embedded gh api graphql worklist, a {lead} excerpt, a {count}
-  // checksum — each of which is a second implementation that drifts, and together are what made the
-  // prompts ~1100 and ~880 chars. The templates carry no code, so a fixture cannot cover them;
-  // assert the argument grammar, the absence of the re-inlined parts, and the length win.
-  const rule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
-  const templates = [...rule.matchAll(/```text\n([^`]*?)\n```/g)].map((m) => m[1]);
-  const implementTpls = templates.filter((t) => t.trimStart().startsWith("/pr-fix"));
-  const fixThis = implementTpls.find((t) => t.includes("{path}:{line}"));
-  const fixAll = implementTpls.find((t) => t.includes("{bot_login}") && !t.includes("{path}"));
-  const fallback = implementTpls.find((t) => t.includes("{report_comment_url}"));
-  const ciOnly = templates.find((t) => t.includes("{failing_checks}"));
-
-  // The PR is addressed by its short reference, never its URL: `https://github.com/…/pull/` is
-  // most of the percent-escapes in the encoded link (`%3A%2F%2F…%2Fpull%2F`) and says nothing the
-  // short form does not. G32r holds the builder to the same shape the rule file shows.
-  s.check("G32a the Fix-all template is a /pr-fix call carrying the PR's short reference and the reviewer's login",
-    !!fixAll && /^\/pr-fix \{owner\}\/\{repo\}#\{n\} \{bot_login\}$/.test(fixAll.trim()),
-    `no text-fenced template is a bare "/pr-fix {owner}/{repo}#{n} {bot_login}" — got ${JSON.stringify(fixAll ?? null)}`);
-  s.check("G32a no /pr-fix template addresses the PR by its full URL",
-    !implementTpls.some((t) => /https:\/\/github\.com\/\{owner\}\/\{repo\}\/pull\//.test(t)),
-    "a /pr-fix template is back to the full PR URL — the short reference {owner}/{repo}#{n} names the same PR without the escaped scaffolding");
-
-  s.check("G32b no template sends Agent0 to the report comment by marker first",
-    !templates.some((t) => t.includes("PR_REVIEWER_REPORT")),
-    "a prompt template names the PR_REVIEWER_REPORT marker again — that is the list-and-scan hop, and the report is stale for this run's own findings");
-
-  s.check("G32c the Fix-this template is a /pr-fix call scoping to one {path}:{line}",
-    !!fixThis && fixThis.includes("/pr-fix ") && fixThis.includes("{bot_login}"),
-    "the fix-this template lost its /pr-fix call, its {path}:{line} scope, or its {bot_login} author argument — without the scope it duplicates Fix-all, and without the author /pr-fix skips a bot reviewer's own findings");
-
-  // G32r: the rule file's templates and the code that fills them are two copies of one prompt —
-  // finalize/fix-links.mjs builds every default-run button — so fill each template with the same
-  // PR and assert the builder emits it byte for byte. Without this, the prose could show the short
-  // reference while the buttons kept posting the full URL, and every other G32 check stays green.
-  {
-    const fx = await import(pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/fix-links.mjs")).href);
-    const PR_URL = "https://github.com/mthines/agent-skills/pull/215";
-    const fill = (t) => (t ?? "").trim()
-      .replaceAll("{owner}", "mthines").replaceAll("{repo}", "agent-skills").replaceAll("{n}", "215")
-      .replaceAll("{bot_login}", "dash0-dev[bot]").replaceAll("{path}", "src/a.ts").replaceAll("{line}", "88");
-    s.check("G32r the Fix-all builder emits the rule file's Fix-all template",
-      !!fixAll && fx.fixAllPrompt({ prUrl: PR_URL, login: "dash0-dev[bot]", openCount: 1, stickyCommentId: null }) === fill(fixAll),
-      `builder: ${JSON.stringify(fx.fixAllPrompt({ prUrl: PR_URL, login: "dash0-dev[bot]", openCount: 1, stickyCommentId: null }))} · template: ${JSON.stringify(fill(fixAll))}`);
-    s.check("G32r the Fix-this builder emits the rule file's Fix-this template",
-      !!fixThis && fx.fixThisPrompt(PR_URL, "dash0-dev[bot]", "src/a.ts", 88) === fill(fixThis),
-      `builder: ${JSON.stringify(fx.fixThisPrompt(PR_URL, "dash0-dev[bot]", "src/a.ts", 88))} · template: ${JSON.stringify(fill(fixThis))}`);
-  }
-
-  // The login fallback is what narrowed the omit-the-button rule: an unresolved {bot_login} used to
-  // drop the Fix-all button outright, and now the report comment's own permalink names the author by
-  // naming a comment the reviewer wrote. It is unavailable on a first run (the sticky is POSTed after
-  // the body renders), so it must stay a fallback and never replace the login form.
-  s.check("G32l the Fix-all login fallback passes the report comment permalink to /pr-fix",
-    !!fallback && /^\/pr-fix \{report_comment_url\}$/.test(fallback.trim())
-      && /issuecomment-\{sticky_id\}/.test(rule)
-      && /fallback, not the default/.test(rule),
-    "the {report_comment_url} fallback, its #issuecomment-{sticky_id} definition, or its fallback-not-default rule is gone — an unresolved login is back to omitting the button");
-
-  // G32l-count: the routing bullets are FIRST-MATCH-WINS, so the fallback branch needs the count
-  // condition as well as the identity one. Shipped without it: an unresolved login plus a matched
-  // sticky pre-empted the CI-only bullet AND the omit bullet below, emitting a /pr-fix call at a
-  // count of 0 — the one state § Prompt templates forbids one in ("must not become one"). The
-  // branch it replaced carried an explicit precedence marker ("regardless of {count} or CI state")
-  // and the rewrite dropped it, which is what made the ordering ambiguous rather than merely terse.
-  //
-  // Anchored on the fallback bullet's own sentence, not on a file-wide count of OPEN_FINDING_COUNT:
-  // the identifier appears in four bullets here, so a whole-body match would pass with this exact
-  // condition deleted. Both owners are asserted — the agent body routes, the rule file explains —
-  // because the two said different things and only the rule file was wrong-in-prose.
-  // § Fix-with-Agent0 buttons moved verbatim from the agent body to rules/fix-links.md, and the
-  // Step 2.8 inline-site bash block to rules/verify-and-render.md (pr-reviewer diet).
-  const routingBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/fix-links.md"), "utf8");
-  const inlineSiteBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/verify-and-render.md"), "utf8");
-  // The report-site --relay-check call (G32p below) moved to rules/posting.md with Step 4a
-  // (Step 9 split) — the inline-site call (Step 2.8) did not move, so scanning the union covers
-  // both without disturbing the pr-reviewer.md-only checks above/below that read routingBody alone.
-  const postingBodyForButtons = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
-  const routingAndPosting = routingBody + "\n" + inlineSiteBody + "\n" + postingBodyForButtons;
-  const fallbackBullet = /\*\*When `\{bot_login\}` is unresolved\*\*[^\n]*/.exec(routingBody)?.[0] ?? "";
-  s.check("G32l the Fix-all login fallback is gated on OPEN_FINDING_COUNT, not on identity alone",
-    /OPEN_FINDING_COUNT` is non-zero/.test(fallbackBullet),
-    "first-match-wins: an identity-only fallback pre-empts the CI-only variant and the omit rule,"
-      + " emitting a /pr-fix call at a finding count of 0");
-  s.check("G32l the rule file states identity and count as independent conditions",
-    /Identity and count are independent conditions/.test(rule)
-      && /reached only\s*\nwhen the open reviewer-finding count is \*\*non-zero\*\*/.test(rule),
-    "the rule file said to omit the button 'only when both identity paths are unavailable', which"
-      + " reads as licensing a fallback at a count of 0");
-
-  // Nothing /pr-fix owns may be re-inlined into a prompt. Each of these three IS the shape the
-  // rewrite removed, so a match means a specific documented regression, not a style slip.
-  for (const [what, re, why] of [
-    ["an embedded gh api graphql worklist", /gh api graphql/,
-      "/pr-fix gathers the PR's comments itself; an embedded query is a second implementation that drifts"],
-    ["a {lead} body excerpt", /\{lead\}/,
-      "quoting the finding's lead line went stale on a § Hard caps prose trim and is what made Fix-this ~880 chars"],
-    ["a {count} checksum", /\{count\}/,
-      "/pr-fix reports what it applied; a count in the URL is a second, staler answer to the same question"],
-  ]) {
-    s.check(`G32m no /pr-fix template re-inlines ${what}`,
-      !implementTpls.some((t) => re.test(t)), why);
-  }
-
-  // The design target is 2500 — the point of the target is that MAX_URL (4000) stays a fail-closed
-  // guard rather than a routine ceiling, since the real cliff behind it is the 8k request-line buffer
-  // of a default nginx/Apache. G32k adds a much tighter bound to hold the /pr-fix win: without it,
-  // a re-added clause is absorbed into ~2200 chars of headroom and never reads as a regression.
-  // Filled from the LIVE templates, never hand-copied: a transcribed copy silently stops measuring
-  // the real prompt the moment a template gains a clause, which is exactly when it matters.
-  const TARGET = 2500;
-  const SHORT = 500;
-  // A 94-char path is Fix-this's documented worst case; owner/repo/login are realistic.
-  const fillTemplate = (t) => (t ?? "")
-    .replaceAll("{owner}", "mthines").replaceAll("{repo}", "lorekit")
-    .replaceAll("{n}", "594").replaceAll("{bot_login}", "dash0-dev[bot]")
-    .replaceAll("{path}", `packages/${"nested-directory/".repeat(4)}some-module-name.ts`)
-    .replaceAll("{line}", "1204");
-  const KNOWN_PLACEHOLDERS = ["{owner}", "{repo}", "{n}", "{bot_login}", "{path}", "{line}"];
-  for (const [name, tpl, source] of [["Fix-all", fixAll, "fix-all"], ["Fix-this", fixThis, "fix-this"]]) {
-    const filled = fillTemplate(tpl);
-    const leftover = KNOWN_PLACEHOLDERS.find((p) => filled.includes(p));
-    s.check(`G32d0 the ${name} fill leaves no unsubstituted placeholder`,
-      filled !== "" && !leftover,
-      `template gained a placeholder this fill does not substitute: ${leftover ?? "(no template)"}`);
-    const len = buildLink(filled, "production", source).length;
-    s.check(`G32d a filled ${name} URL stays under the ${TARGET}-char design target`,
-      len < TARGET, `filled URL is ${len} chars — over the ${TARGET} design target`);
-    s.check(`G32k a filled ${name} URL stays under the ${SHORT}-char /pr-fix bound`,
-      len < SHORT,
-      `filled URL is ${len} chars — the /pr-fix rewrite put both prompts near 200–300, so ${len} means a clause, a worklist, or an excerpt crept back in (agent0-fix-links.md § Deep-link format)`);
-  }
-
-  // The Agent0 runner lacks the headroom for a raw tsc/eslint invocation — even one scoped to a
-  // single changed package still walks that package's whole project graph and crashes the run, so
-  // scoping by file count alone (the earlier wording) was not sufficient; observed live when a run
-  // honored "only the files you changed" but still reached for `npx tsc --noEmit --project
-  // tsconfig.json` on the changed package. The CI-only template is the one that still carries its own
-  // method — the two /pr-fix templates delegate verification to the skill — so it must route to
-  // the repo's own lint/typecheck/test scripts and allow skipping verification outright.
-  s.check("G32g the Fix-all — CI-only template verifies via the repo's own scripts, never a raw call or a whole-repo pass",
-    !!ciOnly
-      && /repo's own lint\/typecheck/.test(ciOnly)
-      && /never a raw [\w/-]+ call or a whole-repo pass/.test(ciOnly)
-      && /skip verification if none exist/.test(ciOnly),
-    "Fix-all — CI-only lost the scoped-verification clause — a raw tsc/eslint call, even scoped to the changed package, still crashes the Agent0 runner on a large repo");
-
-  s.check("G32n the CI-only template is not a /pr-fix call",
-    !!ciOnly && !ciOnly.includes("/pr-fix") && /must not become one/.test(rule),
-    "the CI-only variant became a /pr-fix call — /pr-fix applies review comments, and a red check with zero findings has none to apply");
-
-  // G32o: the both-buttons-or-neither invariant must be scoped to the FLAG, and the one state
-  // that diverges the placements must be named in the same breath. Shipped unqualified in both
-  // owners while the login fallback renders Fix-all and skips Fix-this for its ENTIRE population
-  // (an inline comment has no permalink to itself), so the absolute was false exactly where a
-  // reader would go looking — the same contradiction class as CLAUDE.md's "always named".
-  // Two checks, not one: the phrase is what a reader quotes, the exception is what makes it true.
-  for (const [file, body] of [["agents/pr-reviewer/rules/fix-links.md", routingBody], ["agent0-fix-links.md", rule]]) {
-    s.check(`G32o ${file} scopes both-buttons-or-neither to the flag`,
-      !/(?:a run (?:has|either has)|so a run either has) both buttons or neither/.test(body)
-        && /no per-placement opt-out/.test(body),
-      "the invariant is stated as a property of the run, but the login fallback renders Fix all"
-        + " with no Fix this for every run that reaches it — scope the claim to the flag");
-    s.check(`G32o ${file} names the fallback's one-button divergence`,
-      /has no permalink to itself|no permalink to itself/.test(body)
-        && /entire\*\* population|\*\*entire\*\* population/.test(body),
-      "the divergence is undocumented, so a reader treats the absent Fix this as a defect and"
-        + " 'fixes' it by inventing a self-link GitHub cannot assign until POST");
-  }
-
-  // G32p: --relay-check must be GATED ON THE WRITE PATH, in the shell, at both call sites.
-  // Every Fix-this link is over the 140 budget (floor 188), and so is every realistic Fix all
-  // (155 and up — only a degenerate one-character fill reaches 130), so an unconditional check
-  // withholds the buttons on practically every run of every repo — including `gh` runs that rewrite nothing —
-  // which is a silent permanent opt-out of a default-on affordance. It shipped that way: the
-  // report block carried "on the `gh` path the buttons post intact and stay" as PROSE while the
-  // shell asked unconditionally, and the inline block had neither. So this asserts the guard
-  // condition sits in the same fenced block as the call, not that a sentence about it exists.
-  for (const [site, marker] of [["report", "/tmp/report-body.md"], ["inline", "/tmp/finding-$i.md"]]) {
-    const blocks = [...routingAndPosting.matchAll(/```bash\n([\s\S]*?)```/g)]
-      .map((m) => m[1])
-      .filter((b) => b.includes(`--relay-check ${marker}`));
-    s.check(`G32p the ${site} --relay-check call sits behind a write-path condition`,
-      blocks.length > 0 && blocks.every((b) => /ACCESS_PATH.*=.*"?mcp"?/.test(b)
-        && /if \[ -n "\$WRITE_IS_RELAYED" \]/.test(b)),
-      blocks.length === 0
-        ? `no bash block calls --relay-check ${marker} — the call site moved; re-anchor this guard`
-        : "the call is unconditional, so the buttons are withheld on the `gh` path too and the"
-          + " affordance never renders anywhere");
-
-    // A gate that always answers "relayed" is the unconditional check wearing an `if`. The probe
-    // shipped reading `repos/$RESOLVED_REPO`, which is bound at ONE site in a different tool call
-    // — so it was empty here, probed `repos/`, 404'd, and pinned ACCESS_PATH to `mcp` forever.
-    // The check above passed the whole time, which is why this one exists: assert the probe can
-    // actually reach `gh`, not merely that a condition is written. G43b cannot see this — it
-    // asks whether a name is bound anywhere in the file, and this one is.
-    s.check(`G32p the ${site} write-path probe derives its own repo`,
-      blocks.every((b) => !/repos\/\$RESOLVED_REPO/.test(b)
-        && (!/gh api "repos\//.test(b) || /TARGET_REPO="\$\{RESOLVED_REPO:-/.test(b))),
-      "the probe reads $RESOLVED_REPO, which Step 0.2 binds in a different tool call — empty here,"
-        + " so it probes `repos/`, 404s, and reports `mcp` on every path including `gh`");
-  }
-
-  // The exit-3 re-check is meaningless without a re-render: asking the SAME file returns the same
-  // 1 forever, so the branch reads as coverage while being dead. Its own comment said "re-render
-  // first" while the shell only re-asked — the identical prose-vs-shell split as the gate above.
-  const reportBlock = [...routingAndPosting.matchAll(/```bash\n([\s\S]*?)```/g)]
-    .map((m) => m[1])
-    .find((b) => b.includes("--relay-check /tmp/report-body.md"));
-  s.check("G32p the report's exit-3 re-check re-renders before re-asking",
-    !!reportBlock && /del\(\.FIX_ALL_URL\)/.test(reportBlock)
-      && reportBlock.indexOf("del(.FIX_ALL_URL)") < reportBlock.lastIndexOf("--relay-check"),
-    "the second --relay-check reads an unchanged body, so it returns 1 again and can never reach"
-      + " 3 — NOTE_MANGLED_LINK is unreachable and a mangled citation goes unnamed");
-  s.check("G32p github-access.md binds ACCESS_PATH with how the body travels",
-    (() => {
-      const ga = readFileSync(join(REPO_ROOT, "agents/shared/rules/github-access.md"), "utf8");
-      return /`ACCESS_PATH`/.test(ga) && /tool-call argument/.test(ga) && /Body travels as/.test(ga);
-    })(),
-    "the consumers compare $ACCESS_PATH against the literal \"mcp\" to decide whether their body"
-      + " is relayed, so renaming the token here silently inverts the fail-safe: the comparison"
-      + " goes always-false, WRITE_IS_RELAYED stays unset, and every write is treated as"
-      + " file-based — posting a mangled button, the direction the default exists to avoid");
-
-  // G32q: the buttons are ON BY DEFAULT, and that is a fact about the SHELL, not about a
-  // sentence. Two prior defaults failed the same way — off-unless-flagged, then
-  // on-only-where-an-agent0_environment-was-named — and in both the affordance was missing from
-  // every run nobody had remembered to configure. So EXECUTE the resolution block from
-  // review-config.md against fixture configs and assert what it resolves. A prose-presence check
-  // would pass while a `[ "$fl" = "true" ]` truthiness test read every absent key as `false` and
-  // quietly restored off-by-default, with the table, the schema and the prose all still claiming
-  // otherwise — the same shape as G32p's unconditional --relay-check.
-  {
-    const cfg = readFileSync(join(REPO_ROOT, "agents/shared/rules/review-config.md"), "utf8");
-    const block = [...cfg.matchAll(/```bash\n([\s\S]*?)```/g)]
-      .map((m) => m[1])
-      .find((b) => /^AGENT0_FIX_LINKS=/m.test(b));
-    // Drop the fetch half — it needs `gh` and the network. The resolution half starts at the
-    // first AGENT0_ variable and is pure string handling, so it runs as-is.
-    const tail = block?.slice(block.search(/^AGENT0_FIX_LINKS=/m));
-    const resolve = (content, readFailed = 0) => {
-      const r = spawnSync("bash", ["-c",
-        `CONFIG_READ_FAILED=${readFailed}\n`
-        + `BASE_CONFIG_CONTENT=$(cat)\n${tail}\n`
-        + `printf '%s %s %s\\n' "$AGENT0_FIX_LINKS" "$AGENT0_ENVIRONMENT" "\${AGENT0_ORG:-(none)}"`,
-      ], { input: content, encoding: "utf8" });
-      return (r.stdout || "").trim();
-    };
-
-    s.check("G32q the review-config resolution block is still where this guard reads it",
-      !!tail && /agent0_fix_links/.test(tail),
-      "no bash block in review-config.md binds AGENT0_FIX_LINKS — the resolution moved;"
-        + " re-anchor this guard rather than deleting it");
-
-    if (tail) {
-      // The whole point of the inversion: nothing configured must render buttons.
-      s.check("G32q nothing configured resolves the buttons ON at the production host",
-        resolve("") === "true production (none)",
-        `an empty config resolved "${resolve("")}" — a repo that configured nothing gets no`
-          + " buttons again, which is the default this change replaced");
-      s.check("G32q a config that never mentions Agent0 still resolves ON",
-        resolve("profile: balanced\nfilters:\n  - naming-nits\n") === "true production (none)",
-        "an unrelated review config turned the buttons off — only `agent0_fix_links: false` may");
-
-      // The one opt-out has to actually work: it is all that stands between a repo that declined
-      // and a deep link to a host its readers cannot sign in to.
-      s.check("G32q `agent0_fix_links: false` is a real opt-out",
-        resolve("agent0_fix_links: false\n").startsWith("false"),
-        "the documented repo-wide opt-out did not resolve off — the only way for a non-Dash0 repo"
-          + " to decline the buttons is broken, and the config says it works");
-      s.check("G32q the opt-out survives an inline comment after the value",
-        resolve("agent0_fix_links: false   # we do not use Agent0\n").startsWith("false"),
-        "an inline comment defeated the opt-out — the schema's own documented style puts one"
-          + " there (the PR #149 regression, in the direction that now fails open)");
-
-      // agent0_environment is HOST ONLY. It gated the buttons before; one key carrying both
-      // meanings made them unsettable independently.
-      s.check("G32q agent0_environment picks the host and does not gate rendering",
-        resolve("agent0_environment: development\n") === "true development (none)"
-          && resolve("agent0_fix_links: false\nagent0_environment: development\n")
-            === "false development (none)",
-        "agent0_environment still moves AGENT0_FIX_LINKS — a repo on `development` cannot turn"
-          + " the buttons off without also losing its host, which is what splitting them fixed");
-
-      // agent0_org is the third independent key: a DESTINATION, optional, and absent by default.
-      // The default matters more than the set case — a slug that appears when nobody asked for one
-      // sends every unconfigured repo's readers into an organization that is not theirs.
-      s.check("G32q agent0_org is absent unless configured",
-        resolve("agent0_environment: development\n").endsWith(" (none)")
-          && resolve("profile: balanced\n").endsWith(" (none)"),
-        "an org resolved from a config that never named one — the link would carry a slug nobody set");
-      s.check("G32q agent0_org resolves and gates nothing",
-        resolve("agent0_org: dash0-development\n") === "true production dash0-development"
-          && resolve("agent0_fix_links: false\nagent0_org: dash0-development\n")
-            === "false production dash0-development",
-        "agent0_org moved AGENT0_FIX_LINKS or AGENT0_ENVIRONMENT — it picks an organization and"
-          + " nothing else, the same separation agent0_environment needed");
-      s.check("G32q agent0_org survives an inline comment after the value",
-        resolve("agent0_org: dash0-development   # our org\n")
-          === "true production dash0-development",
-        "an inline comment defeated the org — the schema's own documented style puts one there");
-      // The fix for the `#` divergence must stay SCOPED to agent0_org. Anchoring the cut inside
-      // the shared strip() would fix org and break the opt-out: `false#x` would stop matching
-      // `false` and fall through to the default — the buttons ON for a repo that wrote "false",
-      // which is the one direction this whole block exists to prevent. Pin both halves.
-      s.check("G32q the org fix did not anchor the shared strip()'s comment cut",
-        resolve("agent0_fix_links: false#x\n").startsWith("false")
-          && resolve("agent0_org: org#123\n").endsWith(" (none)"),
-        "the `#` handling was changed in the shared strip() rather than for agent0_org alone —"
-          + " that resolves `agent0_fix_links: false#x` to the default (ON), failing the opt-out open");
-      // A typo'd slug must leave the variable EMPTY, not pass garbage to the link builder: the
-      // value lands unencoded in a query string, and `--org 'a&b=c'` would append a parameter.
-      // `org#123` is the case the two validators disagreed on: the shell's shared strip() cut at
-      // the first `#` unanchored, so a slug naming ANOTHER organization arrived pre-truncated to a
-      // valid-looking `org` and passed — while the script rejected the same input. The
-      // script-level G31l always carried `a#b`; this list did not, which is why the divergence
-      // shipped. Keep the two lists' `#` coverage in sync.
-      // Every entry here is a value that must yield NO org rather than a prefix of itself. The
-      // quoted forms are the second seam the progressive-stripping approach leaked through:
-      // `"org # 123"` peeled to `org`, a valid-looking slug for an organization never named —
-      // the same class as the bare `org#123` case, reached through quotes. Both are why the
-      // resolution matches the whole value instead of peeling it.
-      for (const bad of ["a&b=c", "a b c", "-leading", "x".repeat(64), "org#123", "a#b",
-                         '"org # 123"', "'org # 123'", '"org#123"', 'org "x"']) {
-        s.check(`G32q a malformed agent0_org (${JSON.stringify(bad)}) resolves to no org at all`,
-          resolve(`agent0_org: ${bad}\n`).endsWith(" (none)"),
-          `resolved "${resolve(`agent0_org: ${bad}\n`)}" — a malformed slug reached AGENT0_ORG and`
-            + " would be passed to build-agent0-link.mjs verbatim");
-      }
-
-      // Fail-safe: an unreadable config may have carried the opt-out, so withhold.
-      s.check("G32q an unreadable config withholds the buttons",
-        resolve("", 1).startsWith("false"),
-        "a config that could not be read resolved ON — the opt-out is discarded by any transient"
-          + " read failure, which is the one direction that is not recoverable");
-
-      // …and the fetch has to tell those two apart. EXECUTE it against a stub `gh`: the first
-      // version of this function used `2>&1`, which put a success-path warning inside the JSON,
-      // failed `--jq`, and returned empty — so a config carrying `agent0_fix_links: false` read
-      // as "no config" and the buttons rendered. Verified: the `2>&1` form returns empty on
-      // case 4 below. The fail-safe above cannot catch it, because the fetch reports success.
-      const fetchFn = block.slice(0, block.indexOf("\nCONFIG_READ_FAILED=0"));
-      const B64 = Buffer.from("agent0_fix_links: false\n").toString("base64");
-      const withStub = (ghBody) => {
-        const dir = mkdtempSync(join(tmpdir(), "l1-cfg-"));
-        writeFileSync(join(dir, "gh"), `#!/bin/bash\n${ghBody}\n`, { mode: 0o755 });
-        const r = spawnSync("bash", ["-c",
-          `RESOLVED_REPO=o/r\n${fetchFn}\n`
-          + `out=$(fetch_base_config .github/review.yaml)\nprintf '%s|%s' "$?" "$out"`,
-        ], { encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
-        rmSync(dir, { recursive: true, force: true });
-        return (r.stdout || "").trim();
-      };
-      const cases = [
-        ["a readable config returns its content", `echo "${B64}"`,
-          `0|agent0_fix_links: false`],
-        ["an absent config (404) is an answer, not a failure",
-          'echo "gh: Not Found (HTTP 404)" >&2; exit 1', "0|"],
-        ["an unreadable config (403) exits 2 so the caller withholds",
-          'echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1', "2|"],
-        ["a warning on the SUCCESS path does not erase the config",
-          `echo "warning: token from env" >&2; echo "${B64}"`, `0|agent0_fix_links: false`],
-      ];
-      for (const [what, stub, want] of cases) {
-        const got = withStub(stub);
-        s.check(`G32q fetch_base_config — ${what}`, got === want,
-          `got "${got}", want "${want}" — the fetch cannot tell an absent config from an`
-            + " unreadable one, so the only repo-wide opt-out is silently discardable");
-      }
-    }
-  }
-
-  const maxUrl = Number(/^const MAX_URL = (\d+)/m.exec(readFileSync(LINK_MOD, "utf8"))?.[1]);
-  s.check("G32f MAX_URL stays under the 8k request-line cliff it was moved off",
-    Number.isFinite(maxUrl) && maxUrl <= 4000,
-    `MAX_URL is ${maxUrl} — 8000 is nginx's default one-buffer request-line limit (414), not a safe ceiling`);
-}
-
-// ── G33: the shape classifier — depth routing's deterministic core, EXECUTED ──
-// classify-shape.mjs owns the high-stakes path list and the change-shape taxonomy that
-// Step 1.2/1.2b route review depth on. The regression this guards: the hand-copied
-// high-stakes jq regex in pr-reviewer.md shipped with an unmatched parenthesis, so every
-// incremental delta triage threw at runtime — a prose-presence check cannot see that;
-// only executing the code can.
-{
-  const readRepo = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const CLS = join(REPO_ROOT, "agents/pr-reviewer/scripts/classify-shape.mjs");
-  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/delta-triage");
-  s.check("G33a classify-shape.mjs exists", existsSync(CLS));
-
-  const st = spawnSync("node", [CLS, "--self-test"], { encoding: "utf8" });
-  s.check("G33b classifier self-test passes", st.status === 0,
-    (st.stderr || "").split("\n").filter((l) => l.includes("FAIL")).join("; ").slice(0, 200));
-
-  const run = spawnSync("node", [CLS, join(FIX, "pr-files.ndjson")], { encoding: "utf8" });
-  s.check("G33c classifier accepts the NDJSON /tmp/pr-files.json shape", run.status === 0,
-    (run.stderr || "").slice(0, 120));
-  let cls = {};
-  try { cls = JSON.parse(run.stdout || "{}"); } catch { /* asserted below */ }
-  s.check("G33d fixture classifies auth as a risky high-stakes shape",
-    Array.isArray(cls.shapes) && cls.shapes.includes("auth") && cls.risky === true
-      && (cls.high_stakes_files || []).includes("src/auth/login.ts"),
-    JSON.stringify(cls).slice(0, 160));
-
-  const badRe = spawnSync("node", [CLS, join(FIX, "pr-files.ndjson"), "--extra-high-stakes", "("], { encoding: "utf8" });
-  s.check("G33e an invalid --extra-high-stakes regex fails closed (non-zero, empty stdout)",
-    badRe.status !== 0 && badRe.stdout === "");
-  const badFlag = spawnSync("node", [CLS, join(FIX, "pr-files.ndjson"), "--nope"], { encoding: "utf8" });
-  s.check("G33f an unknown flag fails closed (non-zero, empty stdout)",
-    badFlag.status !== 0 && badFlag.stdout === "");
-
-  // Single source: the agent body must not re-state the high-stakes alternation by hand —
-  // that copy is what drifted into the broken regex. Any two high-stakes tokens joined by a
-  // literal `|` is a regex being restated, whatever the order. (holistic-review.md keeps one
-  // grep as the documented reference fallback for non-pr-reviewer callers; that is the one
-  // allowed site.)
-  s.check("G33g pr-reviewer.md carries no hand-copied high-stakes regex",
-    !/\b(auth|billing|payments|migrations|infra|secrets)\|(auth|billing|payments|migrations|infra|secrets)\b/
-      .test(readRepo("agents/pr-reviewer.md")));
-
-  // A one-file PR's /tmp/pr-files.json is a SINGLE JSON object (valid JSON, not just valid
-  // NDJSON) — the parse must treat it as one file entry, not a malformed wrapper. This is
-  // the classifier's blocking regression from PR #146's own review.
-  const one = spawnSync("node", [CLS, join(FIX, "one-file.ndjson")], { encoding: "utf8" });
-  let oneCls = {};
-  try { oneCls = JSON.parse(one.stdout || "{}"); } catch { /* asserted below */ }
-  s.check("G33h a single-file PR classifies instead of failing the parse",
-    one.status === 0 && Array.isArray(oneCls.shapes) && oneCls.shapes.includes("auth"),
-    `status=${one.status} ${(one.stderr || "").slice(0, 80)}`);
-
-  // Shell state does not persist between the agent's tool calls, so resolve() is defined at
-  // EVERY call site — § Locating this agent's own files / Step 0.1, Step 1.2 (CLASSIFY), and
-  // Step 4a (FINALIZE) — each with an edit-them-together note. This asserts the bodies have not
-  // drifted; the regression that shipped was defining it at only one.
-  const RESOLVE_SITES = 3;
-  // Step 4a's (FINALIZE's) call site moved to rules/posting.md with Step 4a (Step 9 split) — the
-  // other two (Step 0.1, Step 1.2 CLASSIFY) stay in the agent body, so scan the union for the count.
-  // Step 1.2's CLASSIFY site then moved to rules/fetch-and-triage.md (pr-reviewer diet).
-  const resolveSource = readRepo("agents/pr-reviewer.md") + "\n"
-    + readRepo("agents/pr-reviewer/rules/fetch-and-triage.md") + "\n"
-    + readRepo("agents/pr-reviewer/rules/posting.md");
-  const resolves = [...resolveSource
-    .matchAll(/resolve\(\)\s*\{([\s\S]*?)\n\}/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
-  const allSame = resolves.length > 0 && resolves.every((r) => r === resolves[0]);
-  s.check("G33i resolve() is defined at every call site and the bodies are identical",
-    resolves.length === RESOLVE_SITES && allSame,
-    `found ${resolves.length} definition(s)${allSame ? "" : " that differ"}`);
-}
-
-// ── G34: the defer-floor formula has one owner ──
-// per-comment-confidence.md § Drop vs. defer floors the near-miss band at 50 (so sub-65
-// severity tiers keep a non-empty band). Three restatements shipped a stale 65 floor;
-// this pins the authority and bans the stale form everywhere it appeared.
-{
-  const readRepo = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  s.check("G34a per-comment-confidence floors the defer band at 50",
-    /max\(threshold - 15, 50\)/.test(readRepo("agents/shared/rules/per-comment-confidence.md")));
-  for (const f of ["agents/pr-reviewer.md", "agents/pr-reviewer/rules/inline-pipeline.md",
-    "agents/pr-reviewer/rules/verify-and-render.md", "agents/pr-reviewer/rules/diagnostic-surface.md", "CLAUDE.md", "docs/inventory.md"]) {
-    s.check(`G34b ${f} carries no stale 65-floor restatement`,
-      !/threshold\s*[−-]\s*15,\s*65/.test(readRepo(f)));
-  }
-}
-
-// ── G35: Step 1.2b's executable delta-triage snippets actually run ──
-// Same pattern as Check C: extract the EXACT idioms from the agent body and execute them
-// against fixtures, so a syntax error or semantic regression in the shipped snippet fails
-// here instead of at review time.
-{
-  // Step 1.2b's manual snippets moved verbatim to rules/fetch-and-triage.md (pr-reviewer diet).
-  const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/fetch-and-triage.md"), "utf8");
-  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/delta-triage");
-
-  // The intact-history compare extraction.
-  const compareJq = /--jq '(\{\n\s*delta_lines:[\s\S]*?\n {2}\})'\)/.exec(prm)?.[1];
-  s.check("G35a the compare-extraction jq program is extractable", !!compareJq);
-  if (compareJq) {
-    const r = spawnSync("jq", [compareJq], { input: readFileSync(join(FIX, "compare-intact.json"), "utf8"), encoding: "utf8" });
-    s.check("G35b the compare jq runs clean (the shipped predecessor threw 'unmatched parenthesis')",
-      r.status === 0, (r.stderr || "").slice(0, 160));
-    let out = {};
-    try { out = JSON.parse(r.stdout || "{}"); } catch { /* asserted below */ }
-    s.check("G35c compare jq extracts delta_lines=8, new_files=1, files=2",
-      out.delta_lines === 8 && out.new_files === 1 && Array.isArray(out.files) && out.files.length === 2,
-      JSON.stringify({ delta_lines: out.delta_lines, new_files: out.new_files, files: out.files?.length }));
-  }
-
-  // The EXTRA_HS awk — review-config.md's own worked example annotates high_stakes_paths
-  // entries with inline `#` comments, and the shipped extraction once passed the comment
-  // text through as CLI arguments, killing the whole classification (PR #146 review round 3).
-  const hsAwk = /awk '([^']*)' "\$HS_CFG"/.exec(prm)?.[1];
-  s.check("G35g the high_stakes_paths awk program is extractable", !!hsAwk);
-  if (hsAwk) {
-    const r = spawnSync("awk", [hsAwk, join(FIX, "review.yaml")], { encoding: "utf8" });
-    s.check("G35h the awk strips inline comments, quotes, and empty entries",
-      r.status === 0 && r.stdout === " --extra-high-stakes (^|/)ledger(/|$) --extra-high-stakes packages/tenant-isolation/",
-      `status=${r.status} out=${JSON.stringify(r.stdout)}`);
-  }
-
-  // The diverged-history blob-SHA authored delta.
-  const blobJq = /jq -s --slurpfile prior \S+ '\n([\s\S]*?)' \\/.exec(prm)?.[1];
-  s.check("G35d the blob-diff jq program is extractable", !!blobJq);
-  if (blobJq) {
-    const r = spawnSync("jq", ["-s", "--slurpfile", "prior", join(FIX, "tree-prior.json"), blobJq],
-      { input: readFileSync(join(FIX, "pr-files.ndjson"), "utf8"), encoding: "utf8" });
-    s.check("G35e the blob-diff jq runs clean", r.status === 0, (r.stderr || "").slice(0, 160));
-    let files = [];
-    try { files = JSON.parse(r.stdout || "[]"); } catch { /* asserted below */ }
-    const names = files.map((f) => f.filename).sort();
-    s.check("G35f blob diff keeps changed + added + REMOVED files and drops the identical blob",
-      JSON.stringify(names) === JSON.stringify(["assets/logo.png", "src/legacy/cleanup.ts", "src/util.ts"]),
-      JSON.stringify(names));
-  }
-}
-
-// ── G36: weekly lesson-promotion sweep (2026-08-31) — three reviewer-lessons clusters ──
-// (a) The review.create POST must use `--input`, never `--field`/`--raw-field`, for the
-//     `comments` array (gh's raw-field flags always serialize a value as a JSON string, so a
-//     `comments` array 422s as "is not an array" — 5 independent lessons converged on this fix).
-//     Phase 5 moved the POST itself into execute-write-plan.mjs's `review.create` step (its own
-//     self-test mutation-tests the fix at runtime); this static lock re-anchors there rather than
-//     at the now-slimmed Step 4b prose, which keeps only a one-paragraph pointer to it.
-// (b) Step 1.2/3.5 must partition undiffable (binary) paths and route their findings to the
-//     gate table as ANCHORLESS-BY-CONSTRUCTION, never as an ordinary line-validity casualty.
-// (c) The dependency finder must name the cross-owner `gh api` 401 as scoping (not breakage) and pivot to a
-//     `webfetch` HTTP fallback for any pin/spec verification outside the PR's own repository.
-{
-  const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-  const ewp = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8");
-
-  // (a) --input POST regression lock.
-  s.check("G36a execute-write-plan.mjs's review.create posts with --input, not --field/--raw-field",
-    /"--input",\s*reviewPayloadPath/.test(ewp));
-  s.check("G36a-neg execute-write-plan.mjs's review.create no longer carries a -f comments= flag",
-    !/"-f",\s*`comments=/.test(ewp));
-  s.check("G36a the payload is built as one JSON document with commit_id, body, event, and comments",
-    /commit_id: writePlan\.review_create\.commit_id,[\s\S]{0,80}body: writePlan\.review_create\.body[\s\S]{0,80}event: "COMMENT",[\s\S]{0,80}comments: writePlan\.review_create\.comments,/.test(ewp));
-
-  // (b) ANCHORLESS-BY-CONSTRUCTION regression lock.
-  // Step 1.2's manual partition moved verbatim to rules/fetch-and-triage.md (pr-reviewer diet).
-  const triage36 = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/fetch-and-triage.md"), "utf8");
-  s.check("G36b Step 1.2 computes /tmp/pr-undiffable-paths.json from patch == null entries",
-    /select\(\.patch == null\) \| \.filename\]/.test(triage36) && triage36.includes("/tmp/pr-undiffable-paths.json"));
-  s.check("G36b Step 3.5 names ANCHORLESS-BY-CONSTRUCTION as a distinct, non-casualty outcome",
-    /ANCHORLESS-BY-CONSTRUCTION.{0,400}never a line-validity casualty/s.test(prm));
-
-  // (c) Cross-owner 401-is-scoping regression lock. The lesson moved out of the agent body with
-  // Persona 4's retirement — the dependency finder is what reads an upstream changelog now, so
-  // that is where the anchors have to be. Reverting the move without carrying the lesson leaves
-  // rung 2 (`gh api repos/<upstream>/releases`) reading its own 401 as "unverifiable", which is
-  // the exact defect this locks: a cross-owner 401 is credential scope, not an unreachable target.
-  const dep = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/finder-dependency.md"), "utf8");
-  s.check("G36c the dependency finder states the injected gh credential is scoped to the PR's own repository",
-    dep.includes("The injected `gh` credential is scoped to this PR's own repository"));
-  s.check("G36c the dependency finder prescribes the webfetch/raw.githubusercontent fallback for cross-owner targets",
-    dep.includes("`webfetch` against `api.github.com`") && dep.includes("raw.githubusercontent.com"));
-  s.check("G36c a dependency-bump PR's upstream claim is labelled unverified rather than asserted when unreachable",
-    dep.includes("unverified (upstream unreachable)"));
-  // And the lesson must not be orphaned: the agent body has to route to the file that carries it.
-  s.check("G36c the agent body routes dependency review to finder-dependency.md",
-    prm.includes("pr-reviewer/rules/finder-dependency.md"));
-
-  // Guard-bites proof (documented, not executed, per the mock-that-reimplements lesson):
-  // reverting any of the three edits above removes the literal anchor G36a/b/c greps for,
-  // which flips the corresponding check red — confirmed by hand before landing this guard.
-}
-
-// ── G37: the Fix-with-Agent0 scripts are never invoked by a bare relative path ──
-// build-agent0-link.mjs must be resolved from $AGENT_MD the same way FINALIZE/CLASSIFY/POINTER
-// already are — a bare `agents/pr-reviewer/scripts/build-agent0-link.mjs` only happens to
-// resolve when the shell's cwd is this repo's own checkout, which silently breaks on a
-// cross-repo dispatch (observed live: mthines/lorekit#318 still linked to app.dash0.com hours
-// after both the base-config resolution and the --env-threading fixes had merged).
-{
-  const readRepo = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  // Matches only an actual invocation ("node <bare path>"), not the cautionary prose in these
-  // same files that quotes the bad bare path as an example of what NOT to do.
-  const BARE_INVOCATION = /node agents\/pr-reviewer\/scripts\/build-agent0-link\.mjs/;
-  for (const f of ["agents/pr-reviewer.md", "agents/pr-reviewer/rules/fix-links.md",
-    "agents/pr-reviewer/rules/verify-and-render.md", "agents/shared/rules/comment-shape.md"]) {
-    s.check(`G37a ${f} never invokes build-agent0-link.mjs by a bare relative path`,
-      !BARE_INVOCATION.test(readRepo(f)));
-  }
-  // Every script the agent runs is addressed through $AGENT_SUPPORT — the one variable
-  // `Locating this agent's own files` derives from the resolved definition path. A call site
-  // that re-derives `${AGENT_MD%/pr-reviewer.md}` inline is drift: it works, but it puts the
-  // support-tree contract in N places, which is how the rule-file paths came to be bare
-  // repo-relative in the first place.
-  // FINALIZE is the current call-site sibling of BUILD_LINK — Phase 5 retired the direct
-  // RENDER invocation (render-report.mjs now runs inside finalize.mjs), so the guard's own
-  // "same as ___" anchor moved with it; re-anchoring here is the guard tracking the code
-  // instead of restating a call site that no longer exists.
-  // BUILD_LINK is bound in § Fix-with-Agent0 buttons, which moved to rules/fix-links.md
-  // (pr-reviewer diet); FINALIZE moved to rules/posting.md with Step 4a (Step 9 split) — assert
-  // each in its own home.
-  s.check("G37b rules/fix-links.md derives BUILD_LINK from $AGENT_SUPPORT, same as FINALIZE",
-    /BUILD_LINK="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/build-agent0-link\.mjs"/.test(
-      readRepo("agents/pr-reviewer/rules/fix-links.md"))
-    && /FINALIZE="\$AGENT_SUPPORT\/pr-reviewer\/scripts\/finalize\.mjs"/.test(
-      readRepo("agents/pr-reviewer/rules/posting.md")));
-
-  // G37c: every once-per-run destination argument must be named at BOTH button sites. This is the
-  // exact drift `--env` already took — the Fix-this bullet never named it, so a `development`-
-  // configured repo's inline buttons silently linked to app.dash0.com while its report button did
-  // not (mthines/lorekit#601). `--org` is the same shape of argument (resolved once, filled at two
-  // sites, invisible when wrong), so it is asserted the same way rather than trusted to prose.
-  {
-    // Both button sites moved verbatim to rules/fix-links.md (pr-reviewer diet).
-    const body = readRepo("agents/pr-reviewer/rules/fix-links.md");
-    for (const source of ["fix-all", "fix-this"]) {
-      const invocation = new RegExp(`node "\\$BUILD_LINK"[^\`]*--source ${source}`).exec(body)?.[0] ?? "";
-      for (const flag of ["--env", "--org"]) {
-        s.check(`G37c the ${source} invocation names ${flag}`, invocation.includes(flag),
-          invocation === ""
-            ? `no \`node "$BUILD_LINK" … --source ${source}\` invocation found — re-anchor this guard`
-            : `the ${source} call site does not pass ${flag}, so it silently takes the script's own`
-              + " default while the other site takes the run's resolved value");
-      }
-    }
-  }
-}
-
-// ── G38: the detection core — Phases A–F must actually be wired, not merely present ──
-//
-// Every phase shipped as a rule file plus a routing line in the agent body. The failure mode a
-// text-presence check cannot see is a rule file that exists and is never read: the file is
-// correct, the review does not run it, and nothing is red. So these assert the JOINT condition —
-// the rule exists AND the agent body routes to it at a named step — plus the handful of
-// invariants that are the whole reason each phase was split out.
-{
-  const prm = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-  const ruleOf = (p) => {
-    const f = join(REPO_ROOT, p);
-    return existsSync(f) ? readFileSync(f, "utf8") : null;
-  };
-
-  // (a) Each phase: file present, and routed from the body.
-  const PHASES = [
-    ["A workspace", "agents/pr-reviewer/rules/workspace.md", "1.1b"],
-    ["B impact graph", "agents/pr-reviewer/rules/impact-graph.md", "1.2a"],
-    ["C depth routing", "agents/pr-reviewer/rules/depth-routing.md", "1.2b"],
-    ["D finders", "agents/pr-reviewer/rules/finders.md", "Step 2"],
-    ["D consumer-impact", "agents/pr-reviewer/rules/finder-consumer-impact.md", "Step 2"],
-    ["D dependency", "agents/pr-reviewer/rules/finder-dependency.md", "Step 2"],
-    ["E verifier", "agents/shared/rules/finding-verifier.md", "2.6b"],
-    ["memory contract", "agents/pr-reviewer/rules/memory.md", "1.0"],
-    ["telemetry", "agents/pr-reviewer/rules/telemetry.md", "1.0"],
-  ];
-  for (const [label, path, step] of PHASES) {
-    const body = ruleOf(path);
-    s.check(`G38a Phase ${label} rule exists (${path})`, body !== null);
-    if (!body) continue;
-    // The basename is what a routing line must name; a rule nobody names is a rule nobody reads.
-    const base = path.split("/").pop();
-    s.check(`G38a the agent body routes to ${base} (Phase ${label}, ~Step ${step})`,
-      prm.includes(base), "rule file present but never referenced from the agent body");
-  }
-
-  // (b) The polarity rule. This is the one invariant that, if lost, silently reverts the whole
-  // refactor: a finder that knows the confidence bar prunes against it, and a candidate pruned
-  // pre-verification is a defect nobody adjudicated. Assert it in the rule AND in the body.
-  const finders = ruleOf("agents/pr-reviewer/rules/finders.md") || "";
-  s.check("G38b finders.md states that a finder never sees the confidence bar",
-    /never sees|does not see|never knows/.test(finders) && /confidence|threshold|bar/.test(finders));
-  s.check("G38b the agent body carries the polarity rule at Step 2",
-    /finder'?s? job is to \*\*flag\*\*|[Ff]inders flag, the verifier filters/.test(prm));
-  s.check("G38b the candidate record requires bad_outcome and verify_by",
-    finders.includes("bad_outcome") && finders.includes("verify_by")
-    && prm.includes("bad_outcome") && prm.includes("verify_by"));
-
-  // (c) The four verdicts, and the two that are NOT drops. `unobtainable` collapsing back into
-  // `null` is the regression that silently discards every claim the runner could not check.
-  const verifier = ruleOf("agents/shared/rules/finding-verifier.md") || "";
-  const receipt = readFileSync(join(REPO_ROOT, "agents/shared/rules/verification-receipt.md"), "utf8");
-  for (const v of ["confirmed", "contradicted", "ambiguous", "unobtainable"]) {
-    s.check(`G38c finding-verifier.md defines the ${v} verdict`, verifier.includes(v));
-  }
-  s.check("G38c verification-receipt.md distinguishes unobtainable from null",
-    receipt.includes("unobtainable") && /could not run/.test(receipt),
-    "the unobtainable row is gone — a check that could not run is being read as a check that found nothing");
-  s.check("G38c an unobtainable finding is re-framed, never asserted as an issue",
-    /re-frame, do not drop/i.test(receipt)
-    && /Capped at `suggestion:`[\s\S]{0,80}never `issue:`/.test(receipt),
-    "the unobtainable cap is gone — an unverified claim can be filed as a blocking issue");
-  s.check("G38c a contradicted candidate is logged with its reason, not silently dropped",
-    /contradicted[\s\S]{0,600}(log|logged|record)/i.test(verifier),
-    "an unlogged contradiction is a lesson the loop never learns");
-
-  // (d) Suppression AFTER verification, and the two never-suppressible classes. Reverting the
-  // step order drops the fourth instance of a pattern — the one that is actually a bug — on the
-  // strength of the first three being won't-fixed.
-  s.check("G38d the agent body applies memory suppression at 2.7b, after the verifier",
-    /### 2\.7b Memory suppression \(after verification\)/.test(prm));
-  s.check("G38d 2.7b comes after 2.6b in the body, not before it",
-    prm.indexOf("### 2.7b Memory suppression") > prm.indexOf("### 2.6b Verify each candidate"));
-  s.check("G38d no relevance-filtering step survives at 2.2",
-    !/### 2\.2 Relevance-memory filtering/.test(prm),
-    "the pre-verification suppression step is back");
-  const rubric = readFileSync(join(REPO_ROOT, "agents/shared/rules/rubric-composition.md"), "utf8");
-  for (const surface of [["the agent body", prm], ["rubric-composition.md", rubric],
-    ["memory.md", ruleOf("agents/pr-reviewer/rules/memory.md") || ""]]) {
-    s.check(`G38d ${surface[0]} names standards and (blocking) as never-suppressible`,
-      /standards/i.test(surface[1]) && /\(blocking\)/.test(surface[1]) && /suppress/i.test(surface[1]));
-  }
-
-  // (e) Memory must be keyed structurally and filtered by author, or it cannot do the one thing
-  // it was redesigned for: carry what one author's PR taught the reviewer onto the next author's.
-  const memory = ruleOf("agents/pr-reviewer/rules/memory.md") || "";
-  s.check("G38e memory.md keys records structurally, not by branch or PR",
-    /finder:defect-class:symbol@path|fp_v/.test(memory));
-  s.check("G38e memory.md requires a source.agent filter on every read",
-    /source\.agent|source\.\{?login/.test(memory) && /filter/i.test(memory));
-  s.check("G38e the agent body states the author filter is not optional",
-    /source\.agent/.test(prm) && /not optional/.test(prm));
-  s.check("G38e memory.md requires a knowledge fact to be re-verified or dropped",
-    /re-verif/i.test(memory) && /drop/i.test(memory));
-  // The filter's one carve-out has to be a FIELD the read path can key on. `/pr-review remember`
-  // writes `type: human, agent: other` — byte-identical to the incidental human comment the filter
-  // rejects — so without `explicit` on both sides, a literal implementation of the filter drops
-  // every rule a maintainer ever wrote, silently.
-  // The `remember` invocation moved from pr-review/SKILL.md to its own rule file; read the owner.
-  const rememberSkill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/rules/remember.md"), "utf8");
-  for (const [name, src] of [["memory.md", memory], ["the agent body", prm],
-    ["pr-review/rules/remember.md", rememberSkill]]) {
-    s.check(`G38e ${name} carves out the remember rule with source.explicit, not prose`,
-      /source\.explicit|explicit: true/.test(src),
-      "the /pr-review remember carve-out names no field the read path can key on");
-  }
-  s.check("G38e the filter predicate names both usable cases",
-    /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(memory)
-    && /source\.agent == "pr-reviewer"\s*(?:∨|\|\|)\s*source\.explicit == true/.test(prm),
-    "memory.md and the agent body must state the same two-case predicate");
-  // A record value with no closed field set grows fields nobody reads. Observed once as a hotspot
-  // carrying `fp_v` and `source{}` lifted off the relevance-rule schema, a `window_days` restating
-  // the TTL LoreKit stores as a column, and three prose sections — one of them the checklist line
-  // the READ side renders from the counters, frozen at write time so the next increment made it
-  // wrong. Nothing objected, because the schemas were examples rather than contracts.
-  s.check("G38e memory.md closes both record schemas against extra fields",
-    /field sets are closed/i.test(memory) && /not listed is not written/i.test(memory),
-    "the knowledge/hotspot value schemas must be stated as closed, not shown as examples");
-  s.check("G38e memory.md forbids restating a LoreKit first-class property",
-    /Never restate what LoreKit already stores as a first-class property/.test(memory)
-    && /source_agent/.test(memory) && /`window_days: 90` in the value/.test(memory),
-    "memory.md must name the columns a value may not duplicate, window_days included");
-  // The carve-out's reason used to read "LoreKit marks an expired record rather than dropping it",
-  // which is false: `lorekit_memory_list` and the search handler both filter
-  // `expires_at is null or expires_at > now()`. The real mechanism is narrower and survives the
-  // correction — a row written with no `ttl_days` has no `expires_at` to filter on, and the GitHub
-  // Actions recorder is exactly that write path. Assert the true reason, and that the divergence is
-  // named rather than presented as a design, so closing it stays on the record.
-  s.check("G38e memory.md keeps in-value expires as the stated exception",
-    /deliberate exception is the in-value \*\*`expires`\*\*/.test(memory)
-    && /drops an expired row server-side, but only when the write set one/.test(memory)
-    && /expires_at is null or expires_at > now\(\)/.test(memory)
-    && /passes no `ttl_days`/.test(memory),
-    "the expires carve-out must give its real mechanical reason: a row written without ttl_days has no expires_at to filter on");
-  s.check("G38e memory.md names the two-write-path expiry divergence",
-    /divergence worth closing/i.test(memory)
-    && /Until the recorder passes `ttl_days`/.test(memory),
-    "the carve-out must mark the recorder's missing ttl_days as a divergence to close, not a design");
-  s.check("G38e memory.md bans storing what the read side derives",
-    /Never store what the read side derives/.test(memory)
-    && /facts and not advice|facts, not advice/i.test(memory),
-    "memory.md must forbid writing the rendered checklist line into the record");
-
-  // (f) Telemetry's three invariants. Any of the three lost turns an exposure signal into a
-  // correctness verdict about code that has, by construction, no telemetry yet.
-  const tele = ruleOf("agents/pr-reviewer/rules/telemetry.md") || "";
-  s.check("G38f telemetry.md states it raises priority and never lowers it",
-    /raise/i.test(tele) && /never lower/i.test(tele));
-  s.check("G38f telemetry.md states it never blocks", /never block/i.test(tele));
-  s.check("G38f telemetry.md carries aggregates and signatures only",
-    /aggregate/i.test(tele) && /signature/i.test(tele));
-  // FAIL_REASONS is what flips the verdict. Telemetry contributing a phrase to it would make an
-  // exposure figure blocking, which is exactly what invariant 2 forbids.
-  s.check("G38f no telemetry term reaches FAIL_REASONS in the agent body",
-    !/FAIL_REASONS[^\n]{0,200}(telemetry|traffic_band|span)/i.test(prm)
-    && !/(telemetry|traffic_band)[^\n]{0,200}FAIL_REASONS/i.test(prm));
-
-  // (g) The tier vocabulary is one vocabulary. Three surfaces name the tiers and a fourth
-  // validates them; a rename applied to some of them is how a report claims a tier the router
-  // cannot produce.
-  const depth = ruleOf("agents/pr-reviewer/rules/depth-routing.md") || "";
-  const renderer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
-  for (const tier of ["deep", "standard", "quick"]) {
-    s.check(`G38g the tier "${tier}" is named by depth-routing.md, the body, and the renderer`,
-      depth.includes(tier) && prm.includes(tier) && renderer.includes(tier));
-  }
-  for (const cap of ["checkout", "tarball", "diff-only"]) {
-    s.check(`G38g the capability "${cap}" is named by workspace.md, the body, and the renderer`,
-      (ruleOf("agents/pr-reviewer/rules/workspace.md") || "").includes(cap)
-      && prm.includes(cap) && renderer.includes(cap));
-  }
-  s.check("G38g depth-routing.md caps a diff-only run below deep",
-    /diff-only[\s\S]{0,300}cap/i.test(depth));
-  s.check("G38g the renderer rejects tier deep with depth diff-only",
-    /diff-only[\s\S]{0,300}deep|deep[\s\S]{0,300}diff-only/.test(renderer));
-  // Rung 0 reaches `checkout` through a worktree the USER owns, which makes the cleanup line the
-  // one place in this pipeline that can destroy data: an unconditional `rm -rf "$WORKDIR"` deletes
-  // their uncommitted work and leaves a stale entry in the parent repo's `.git/worktrees`. Guard
-  // both halves — the flag has to exist, and the trap has to read it.
-  const ws = ruleOf("agents/pr-reviewer/rules/workspace.md") || "";
-  s.check("G38g workspace.md passes --no-hooks on every gw invocation",
-    /gw checkout/.test(ws) && !/gw checkout(?!.*--no-hooks)[^\n]*<(?:PR_NUMBER|PR_URL|PR)>/.test(ws),
-    "a gw checkout without --no-hooks would install dependencies as a side effect of rung 0");
-  // Rung 0 has THREE dispositions, not two, so the disposal method is an enum rather than an
-  // owned/not-owned boolean: `rm -rf` on either kind of worktree leaves a stale entry in the
-  // parent repo's .git/worktrees, which breaks the repo the review was reviewing.
-  for (const disposition of ["none", "worktree", "rm"]) {
-    s.check(`G38g workspace.md binds WORKDIR_CLEANUP=${disposition}`,
-      new RegExp(`WORKDIR_CLEANUP=${disposition}\\b`).test(ws));
-  }
-  // Assert the bare trap in BOTH files. The agent body is the file an agent actually executes,
-  // and a correct rule beside a wrong body loses: the body's line is the last word on cleanup.
-  // Guarding only `ws` is how a verbatim copy of workspace.md's own ❌ WRONG case sat at
-  // pr-reviewer.md:962 through a green 905/905 run.
-  // Step 1.1b's trap moved verbatim to rules/fetch-and-triage.md (pr-reviewer diet); the body
-  // still binds WORKDIR_CLEANUP, so the bare-trap ban covers both.
-  const triage38 = ruleOf("agents/pr-reviewer/rules/fetch-and-triage.md") || "";
-  for (const [name, src] of [["workspace.md", ws], ["rules/fetch-and-triage.md", triage38]]) {
-    s.check(`G38g ${name} dispatches disposal on WORKDIR_CLEANUP, never a bare rm -rf trap`,
-      /case\s+"\$WORKDIR_CLEANUP"/.test(src) && !/trap\s+'rm -rf/.test(src),
-      "an unconditional rm -rf trap deletes worktrees through git's back");
-  }
-  // The shell in these rule files is normative — an agent runs it verbatim — so a helper that is
-  // never defined is dead code, not shorthand. `$(origin_repo)` and `worktree_is_clean_at_head`
-  // both shipped undefined, which silently skipped the whole rung while still reporting
-  // `Depth: checkout`. Every snake_case command the block calls must be defined in the same file.
-  const SHELL_BUILTIN_UNDERSCORES = new Set([]);   // real commands with `_` are vanishingly rare
-  s.check("G38g the agent body carries no bare rm -rf trap", !/trap\s+'rm -rf/.test(prm));
-  for (const [name, src] of [["workspace.md", ws], ["the agent body", prm], ["rules/fetch-and-triage.md", triage38]]) {
-    const blocks = [...src.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).join("\n");
-    const called = new Set();
-    for (const m of blocks.matchAll(/\$\(([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\)/g)) called.add(m[1]);
-    for (const m of blocks.matchAll(
-      // Exclude `=` (assignment), `(` (a definition), and `:` / `,` — a `jq`/JSON key or a
-      // Python tuple unpack inside a bash-fenced heredoc is not a command call.
-      /(?:^|&&|\|\||;|\bthen\b|\belif\b|\bif\b)[ \t]*([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b(?![ \t]*[=(:,])/gm
-    )) called.add(m[1]);
-    const undefined_ = [...called].filter(
-      (fn) => !SHELL_BUILTIN_UNDERSCORES.has(fn) && !new RegExp(`^\\s*${fn}\\(\\)`, "m").test(src),
-    );
-    s.check(`G38g every snake_case helper the ${name} shell calls is defined in it`,
-      undefined_.length === 0,
-      `undefined helper(s) called but never defined: ${undefined_.join(", ")}`);
-  }
-  s.check("G38g only the rm disposition uses rm -rf, and worktree uses git worktree remove",
-    /worktree\)\s*git (?:-C "\$WORKDIR" )?worktree remove/.test(ws) && /\brm\)\s*rm -rf/.test(ws));
-  s.check("G38g workspace.md forbids removing a gw worktree at all",
-    /never\*{0,2}\s+removed by this agent|not even with `gw remove`/i.test(ws));
-  // The fallback is the point of the rung: `gw` is ergonomics, the local object store is the
-  // capability. A rule that made `gw` a precondition would drop the rung on every machine
-  // without it and pay for a network clone it did not need.
-  s.check("G38g rung 0 falls back to plain git worktree when gw is absent",
-    /git worktree add --detach/.test(ws) && /fallback/i.test(ws));
-  s.check("G38g rung 0's precondition is the local clone, not gw being installed",
-    /not\*{0,2}\s+a precondition/i.test(ws),
-    "gw must select the implementation, never gate the rung");
-  s.check("G38g rung 0 fetches the pull/<n>/head ref so fork PRs are not excluded",
-    /pull\/\$PR_NUMBER\/head/.test(ws) && /fork/i.test(ws));
-  s.check("G38g rules/fetch-and-triage.md (Step 1.1b) names the disposal hazard and the fallback, not just the command",
-    /WORKDIR_CLEANUP/.test(triage38) && /--no-hooks/.test(triage38) && /\.git\/worktrees/.test(triage38)
-    && /git worktree add --detach/.test(triage38),
-    "Step 1.1b must carry the disposal rule and the no-gw path, since that is where it binds");
-
-  // (h) The two pre-table routing rules in depth-routing.md. Both exist because "first match wins"
-  // over the raw table produced a wrong answer that the file's own worked example contradicted:
-  // a 412-line generated refresh routed `deep` on line count while reaching nothing, and a
-  // review-answering push was claimed by the standard row's size band.
-  s.check("G38h depth-routing.md excludes docs/test-only/generated deltas from the size triggers",
-    /docs-only[\s\S]{0,200}test-only[\s\S]{0,400}size\s+trigger/i.test(depth));
-  s.check("G38h the size exclusion still routes on every other row",
-    /excused\s+from size, not from review/.test(depth));
-  // Both conjuncts matter: `indexOf` on an absent string returns -1, which is less than any real
-  // index, so a check that only compared positions would PASS on an override that had been
-  // deleted outright — the very regression it exists to catch.
-  const overrideAt = depth.indexOf("The `quick` override");
-  const tableAt = depth.indexOf("| **deep**");
-  s.check("G38h the quick override is stated, and before the table rather than as a row",
-    overrideAt >= 0 && tableAt >= 0 && overrideAt < tableAt,
-    overrideAt < 0 ? "the quick override is gone"
-      : "the override sits inside or below the table, where first-match-wins lets the standard row outrank it");
-  s.check("G38h the semver standard trigger is qualified by usage sites",
-    /semver_delta`?\s*\*\*with ≥ 1 usage site\*\*/.test(depth),
-    "an unused bump routes to standard again, so every automated bump PR buys a finder pass");
-}
-
-// ── G39: the bug-detection eval is executable and its golden set is well-formed ──
-//
-// A golden set is the only thing that says whether the detection core actually detects. Executing
-// the runner's own self-test here means a malformed record — a control carrying a defect, a defect
-// anchored in a file the finder is never shown — is caught in CI rather than by a strange L2 score
-// nobody can explain. This runs offline; the LLM half needs a key and stays out of L1.
-{
-  const RUNNER = join(REPO_ROOT, "scripts/eval/l2-detection.mjs");
-  const GOLDEN = join(REPO_ROOT, "scripts/eval/golden/bug-detection.jsonl");
-  s.check("G39a the detection runner and its golden set exist",
-    existsSync(RUNNER) && existsSync(GOLDEN));
-  if (existsSync(RUNNER) && existsSync(GOLDEN)) {
-    const r = spawnSync("node", [RUNNER, "--self-test"], { encoding: "utf8" });
-    s.check("G39b the detection runner's self-test passes", r.status === 0,
-      ((r.stdout || "") + (r.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 300));
-
-    // The runner exits 0 without a key. That is correct behaviour, and it is also how a broken
-    // runner hides: assert the skip is a SKIP and not a silent pass of the real thing.
-    const noKey = spawnSync("node", [RUNNER], { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
-    s.check("G39c the detection runner skips cleanly with no API key",
-      noKey.status === 0 && /no ANTHROPIC_API_KEY/.test(noKey.stdout || ""));
-  }
-}
-
-// ── G46: the inline comment surface has a renderer, and it shares ONE vocabulary with the report ──
-//
-// The report got `render-report.mjs` because runs stopped copying its template and started
-// remembering it. The inline surface had the same problem and the opposite treatment: a prose rule
-// plus a `passes_shape()` function in Python that nothing ever executed — so on dash0hq/dash0#18362
-// one posted finding dropped three documented decorations at once (the severity label, the bold on
-// `**(blocking)**`, and its position) and omitted the fix fence its own rule requires.
-//
-// These checks are behavioural, not textual, for the same reason G25's are: text-matching a correct
-// prose spec was never going to catch a run that ignores it.
-{
-  const SPINE = join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs");
-  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-comment.mjs");
-  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/inline-comment");
-  const run = (args, input) => {
-    const r = spawnSync("node", [RENDER, ...args], { input, encoding: "utf8" });
-    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
-  };
-
-  s.check("G46a the inline renderer and the shared spine both exist",
-    existsSync(RENDER) && existsSync(SPINE));
-
-  if (existsSync(RENDER) && existsSync(SPINE)) {
-    // (a) The renderer's own self-test. Every case in it is a shape that shipped or was one edit
-    // from shipping, so a regression in the caps is a CI failure rather than a posted comment.
-    const st = spawnSync("node", [RENDER, "--self-test"], { encoding: "utf8" });
-    s.check("G46b the inline renderer's self-test passes", st.status === 0,
-      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("—"))
-        .join("; ").slice(0, 400));
-
-    // (a2) D7: a second witness on sentenceCount, independent of the renderer's own self-test —
-    // the four pinned cases from plan AC-14, imported and called directly against the shared
-    // spine so a regression here fails even if the self-test's own accepts()/rejects() cases were
-    // edited alongside it.
-    {
-      const mod = await import(pathToFileURL(SPINE).href);
-      const cases = [
-        ["Bump `x` to 3.2.6 in foo.md", 0],
-        ["One. Two. Three.", 3],
-        ["Really?! Yes.", 2],
-        ["See foo.md.", 1],
-      ];
-      const results = cases.map(([input, want]) => ({ input, want, got: mod.sentenceCount(input) }));
-      s.check("G46n sentenceCount counts terminal-punctuation RUNS, not characters — a dotted"
-        + " filename or version number scores 0, never one sentence per dot",
-        results.every((r) => r.got === r.want),
-        results.filter((r) => r.got !== r.want).map((r) => `${JSON.stringify(r.input)}->${r.got} (want ${r.want})`).join("; "));
-    }
-
-    // (b) Snapshot parity, discovered from disk so a new fixture is never silently exempt.
-    const fixtures = existsSync(FIX)
-      ? readdirSync(FIX).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort()
-      : [];
-    s.check("G46c the inline surface has committed reference renderings", fixtures.length >= 3,
-      `${fixtures.length} fixture(s)`);
-    for (const name of fixtures) {
-      const expectedPath = join(FIX, `${name}.expected.md`);
-      if (!existsSync(expectedPath)) {
-        s.check(`G46d ${name} fixture + snapshot present`, false, "missing snapshot");
-        continue;
-      }
-      const r = run([join(FIX, `${name}.json`)]);
-      s.check(`G46d ${name}.json renders without error`, r.ok, r.err);
-      const expected = readFileSync(expectedPath, "utf8");
-      s.check(`G46d ${name} output matches its committed snapshot`, r.out === expected,
-        r.out === expected ? "" : "output drifted — regenerate the snapshot and review the diff");
-    }
-
-    // (c) The invariants the posted comment in the screenshots broke. Asserted on every snapshot,
-    // because these are the properties that make the two surfaces read as one reviewer.
-    for (const name of fixtures) {
-      const p = join(FIX, `${name}.expected.md`);
-      if (!existsSync(p)) continue;
-      const body = readFileSync(p, "utf8");
-      const first = body.split("\n")[0];
-      // The prefix stays at position 0 with the tier immediately after it, because
-      // record-comment-relevance.mjs reads the tier off exactly that shape.
-      s.check(`G46e ${name} opens with a Conventional-Comments prefix`,
-        /^(praise|nitpick|suggestion|issue|question)( \((critical|high|medium|low)\)):/.test(first),
-        first.slice(0, 60));
-      // The recorder's own regex, verbatim — a guard that paraphrases it is not a guard on it.
-      s.check(`G46e ${name} tier is readable by the relevance recorder's SEVERITY_RE`,
-        /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i
-          .test(body), first.slice(0, 60));
-      // The blocking/non-blocking token is bold and on line 1 — other rules parse it, and Gate 3
-      // reads it to decide whether an open thread fails a PR.
-      if (/\*\*\(blocking\)\*\*|\*\*\(non-blocking\)\*\*/.test(body)) {
-        s.check(`G46e ${name} keeps its bold decoration on line 1`,
-          /\*\*\((?:non-)?blocking\)\*\*\s*$/.test(first), first.slice(-40));
-      }
-      // The footer is the cue that makes an inline finding and the report the same reviewer, and
-      // the only attribution visible in a notification email. What is SHARED is the identity half
-      // — `pr-reviewer` plus the commit sha — and on this surface that is the whole footer: the
-      // methodology link is report-only (`comment-spine.mjs` § footerLine, `docs` off by default),
-      // because a reader asking how a finding was produced is asking about the run, and repeating
-      // one link per finding restated it 4–20 times on a busy PR.
-      s.check(`G46e ${name} carries the shared attribution footer`,
-        /^<sup>`pr-reviewer` · commit `[0-9a-f]{7}`<\/sup>$/m.test(body));
-      // Asserted as an absence too, in the direction this regresses: the check above matches the
-      // whole line, so it would already fail — but naming the link makes the failure say WHICH
-      // asymmetry broke rather than "the footer drifted".
-      s.check(`G46e ${name} carries no methodology link (report-only)`,
-        !body.includes("how these findings are produced"),
-        "the report owns that link once per review; an inline copy is the drift the docs flag prevents");
-      // No heading, no bullets — the shape rule the report's `### ` headline is the counterpart of.
-      s.check(`G46e ${name} uses no heading`, !/^#{1,6} /m.test(body));
-      // A claim carries a title in bold; a one-liner carries none. Both are checked, because the
-      // interesting failure is a nitpick that grew a title as much as an issue that lost one.
-      const isClaim = /^(issue|suggestion)/.test(first);
-      s.check(`G46e ${name} ${isClaim ? "carries" : "carries no"} a bold title`,
-        /\*\*[^*(]/.test(first) === isClaim, first.slice(0, 70));
-    }
-
-    // (d) The two surfaces import the SAME vocabulary. This is the check that makes consistency
-    // structural: a glyph map or footer builder copied into one renderer would drift on the first
-    // edit that touched only one of them, which is how the two surfaces came to share nothing.
-    const spine = readFileSync(SPINE, "utf8");
-    const inline = readFileSync(RENDER, "utf8");
-    const report = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
-    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
-      s.check(`G46f ${file} imports the shared spine`,
-        /from "\.\/comment-spine\.mjs"/.test(src));
-      for (const shared of ["TIER_GLYPH", "footerLine"]) {
-        s.check(`G46f ${file} takes ${shared} from the spine, not a local copy`,
-          new RegExp(`import[\\s\\S]*?${shared}[\\s\\S]*?comment-spine`).test(src)
-          && !new RegExp(`(const|function)\\s+${shared}\\b`).test(src));
-      }
-    }
-    // The glyph set is defined exactly once in the repo's renderer layer.
-    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
-      s.check(`G46f ${file} declares no second glyph map`,
-        !/\{\s*critical:\s*"/.test(src.replace(/^import[\s\S]*?;$/m, "")));
-    }
-    s.check("G46f the spine is where the glyph set lives", /TIER_GLYPH = \{ critical:/.test(spine));
-
-    // `assertPlain` needs its own form. The report renderer legitimately WRAPS it — the spine
-    // throws and this renderer must exit non-zero with nothing on stdout — so the no-local-binding
-    // test above would reject a correct delegation. The defect it must catch is a second
-    // IMPLEMENTATION, and the signal for that is the spine's own error strings appearing in a
-    // renderer: this file carried a behaviourally identical copy through the whole parity change,
-    // validating the same fields against a second definition of "plain".
-    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
-      s.check(`G46f ${file} imports assertPlain from the spine`,
-        /import[\s\S]*?assertPlain[\s\S]*?comment-spine/.test(src),
-        "one definition of plain, or the two surfaces validate the same field two ways");
-      s.check(`G46f ${file} carries no second assertPlain implementation`,
-        !/contains a markdown link/.test(src) && !/contains a backtick/.test(src),
-        "a behaviourally identical local copy is the drift the spine exists to prevent");
-    }
-
-    // The pipe is the FOURTH check on the finding title, and the one the parity change missed.
-    // `render-report.mjs` rejects it (a table cell cannot be escaped out of) and the inline
-    // renderer did not — the worst available failure ordering, since every comment posts and then
-    // the report indexing them is lost. Both surfaces bound this string or neither does.
-    for (const [file, src] of [["render-comment.mjs", inline], ["render-report.mjs", report]]) {
-      s.check(`G46f ${file} rejects a pipe in the finding title`,
-        /includes\("\|"\)/.test(src), "the title is one string on two surfaces");
-    }
-    const pipeTitle = JSON.parse(readFileSync(join(FIX, "issue-blocking.json"), "utf8"));
-    pipeTitle.TITLE = "Fix button | costs too much";
-    const pipeRun = run([], JSON.stringify(pipeTitle));
-    s.check("G46f the inline renderer rejects a piped title", !pipeRun.ok,
-      "it renders fine in bold and destroys the report row that indexes it");
-    s.check("G46f rejecting a piped title emits nothing on stdout", (pipeRun.out || "") === "",
-      (pipeRun.out || "").slice(0, 80));
-
-    // (e) WCAG 1.4.1: the glyph is never the sole carrier of the tier. `🔴 3 · 🟠 1` is unreadable
-    // to anyone who does not already know the mapping and announces as four colour names.
-    s.check("G46g the tally pairs every glyph with its word",
-      /`\$\{TIER_GLYPH\[t\]\} \$\{counts\[t\]\} \$\{t\}`/.test(spine));
-
-    // (e2) The Step 4b pre-flight and the renderer must agree about what a well-formed body is.
-    // They are two implementations of one contract, and the pre-flight aborts the WHOLE post
-    // rather than dropping one comment — so a disagreement does not lose a finding, it loses the
-    // review. Caught exactly that while writing this: the <picture> button markup is ~430 chars
-    // and was being measured as prose, which rejected every rendered claim.
-    //
-    // Executed, not text-matched. Phase 5 moved the pre-flight out of the agent body (it was
-    // `payload_is_safe`, a hand-mirrored Python re-implementation model-composed at review time)
-    // into `payloadIsSafe()`, a real, imported, self-tested JS function in
-    // execute-write-plan.mjs — so this now imports and calls the SAME function the write path
-    // runs, rather than extracting a fenced code block and shelling out to python3 to run a copy
-    // of it. A drift between this check and production is no longer possible by construction.
-    {
-      const ewpMod = await import(
-        pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs")).href);
-      s.check("G46i execute-write-plan.mjs exports payloadIsSafe",
-        typeof ewpMod.payloadIsSafe === "function",
-        "payloadIsSafe not found — the Phase 5 migration target moved or was renamed");
-      if (typeof ewpMod.payloadIsSafe === "function") {
-        const comments = fixtures.map((name) => {
-          const body = readFileSync(join(FIX, `${name}.expected.md`), "utf8");
-          return { path: "a.ts", line: 1, side: "RIGHT", body };
-        });
-        const verdict = ewpMod.payloadIsSafe({
-          event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->", comments,
-        });
-        s.check("G46i the pre-flight accepts every rendered reference body", verdict.ok === true,
-          `rejected: ${verdict.reason}`);
-      }
-    }
-
-    // (f) Fail-closed, and silent on stdout — a caller that pipes stdout can never post a fragment.
-    const good = JSON.parse(readFileSync(join(FIX, "issue-blocking.json"), "utf8"));
-    const mutate = (fn) => { const c = structuredClone(good); fn(c); return JSON.stringify(c); };
-    for (const [why, payload] of [
-      ["a missing title on a claim", mutate((c) => { delete c.TITLE; })],
-      ["a hand-typed fingerprint", mutate((c) => { c.FP = "persona1:vibes:f@a.ts"; })],
-      ["a typo'd slot", mutate((c) => { c.TITEL = "x"; })],
-      ["a non-Agent0 button host", mutate((c) => { c.FIX_URL = "https://evil.example.com/x"; })],
-      ["a 40-char sha", mutate((c) => { c.SHA = "7389036aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"; })],
-      ["malformed JSON", "{nope"],
-    ]) {
-      const r = run([], payload);
-      s.check(`G46h the inline renderer rejects ${why}`, !r.ok, r.ok ? "ACCEPTED" : "");
-      s.check(`G46h rejecting ${why} emits nothing on stdout`, r.out === "", r.out.slice(0, 60));
-    }
-
-    // (j) The relay length budget. A write path that carries the body as a tool-call argument
-    // rewrites a long unbroken run into a code span, which closes the href and escapes the markup
-    // after it — measured on mthines/agent-skills#165. The budget is executable, not prose: it is a
-    // number in the spine that both the agent body and the rule have to agree with, because the
-    // whole failure mode was a correct renderer plus a documented cause that was wrong.
-    // Read once, up front: the (j) / (k) / (l) / (m) groups all cross-check the same three
-    // documents against the spine's live exports.
-    const fixRule = readFileSync(join(REPO_ROOT, "agents/shared/rules/agent0-fix-links.md"), "utf8");
-    // The sticky (report) call site moved to rules/posting.md with Step 4a (Step 9 split); the
-    // inline call site (Step 2.8) did not. Scan the union so every (j)/(k)/(l)/(m) check below
-    // finds whichever call site it targets without needing a per-check repoint.
-    // The inline call site (Step 2.8) then moved to rules/verify-and-render.md (pr-reviewer diet).
-    const agentBody = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8") + "\n"
-      + readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/verify-and-render.md"), "utf8") + "\n"
-      + readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
-    const assetMod = await import(pathToFileURL(SPINE).href);
-    const relay = (body) => {
-      const f = join(tmpdir(), `l1-relay-${Math.random().toString(36).slice(2)}.md`);
-      writeFileSync(f, body);
-      const r = spawnSync("node", [SPINE, "--relay-check", f], { encoding: "utf8" });
-      rmSync(f, { force: true });
-      return r;
-    };
-    const budget = 140;
-    s.check("G46j the spine states the relay budget as an executable constant",
-      new RegExp(`RELAY_SAFE_URL_MAX = ${budget}`).test(spine),
-      "RELAY_SAFE_URL_MAX must be a named export the agent and the rule can both cite");
-
-    const shortUrl = `https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix`;
-    const longUrl = shortUrl + "%20" + "x".repeat(budget);
-    s.check(`G46j a URL inside the ${budget}-char budget is relay-safe`,
-      relay(`<a href="${shortUrl}"><img alt="Fix with Agent0" src="x"></a>`).status === 0,
-      `rejected a ${shortUrl.length}-char url`);
-    const over = relay(`<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`);
-    s.check("G46j an over-budget URL is reported, with its length and the budget",
-      over.status === 1 && /relay-unsafe url \(\d+ chars, over 140\)/.test(over.stderr),
-      (over.stderr || "").slice(0, 200));
-    s.check("G46j the over-budget message names the remedy, not a shorter prompt",
-      /--no-fix-links|from a file/.test(over.stderr) && !/shorten the prompt/.test(over.stderr),
-      "withholding the button is the remedy; truncating the prompt ships a useless button");
-    // A fenced quote may legitimately contain anything, including a long url from the diff.
-    s.check("G46j a long URL inside a fence is not a relay finding",
-      relay(`before\n\n\`\`\`\n${longUrl}\n\`\`\`\n\nafter\n`).status === 0);
-    // The real link is the case that matters: it does NOT fit, and the docs must not pretend it can.
-    const realLink = spawnSync("node",
-      [join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs"),
-        "--env", "production", "--source", "fix-this",
-        "Fix the finding at agents/pr-reviewer/scripts/comment-spine.mjs:180 on mthines/agent-skills#165."],
-      { encoding: "utf8" });
-    s.check("G46j a full-fidelity fix-this link is over the budget, as documented",
-      realLink.status === 0 && realLink.stdout.trim().length > budget,
-      `link was ${realLink.stdout.trim().length} chars — if this now fits, the rule's table is stale`);
-
-    // The exit code has to name what the REMEDY reaches, not what the relay damages. Reporting a
-    // long non-fix-link as exit 1 sent the caller to `--no-fix-links`, which removes Agent0 deep
-    // links and nothing else: the re-render failed the identical check with nothing left to try.
-    const longDoc = `https://lorekit.example.com/${"d".repeat(budget)}`;
-    const otherOver = relay(`see <${longDoc}>\n`);
-    s.check("G46j a long URL that is not a fix link exits 3, not 1",
-      otherOver.status === 3,
-      `exit ${otherOver.status} — exit 1 points at a remedy that cannot remove this URL`);
-    s.check("G46j the exit-3 message says the remedy does not apply",
-      /--no-fix-links removes none of them/.test(otherOver.stderr),
-      (otherOver.stderr || "").slice(0, 200));
-    s.check("G46j a fix link still exits 1 when both kinds are over budget",
-      relay(`see <${longDoc}>\n\n<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`)
-        .status === 1,
-      "a remediable URL present anywhere makes the run remediable");
-    s.check("G46j the spine exports the fix-link partition",
-      /export function relayUnsafeFixLinks\(/.test(spine),
-      "the two classes need different answers, so the partition has to be a function");
-    for (const [surface, target] of [
-      ["the sticky", "--relay-check /tmp/report-body.md"],
-      ["the inline surface", "--relay-check /tmp/finding-$i.md"],
-    ]) {
-      const idx = agentBody.indexOf(target);
-      s.check(`G46j ${surface} branches on the relay exit code rather than on truthiness`,
-        idx > 0 && /^\s*case \$\? in/m.test(agentBody.slice(idx, idx + 320)),
-        "`|| withhold` collapses 3 into 1 and re-renders a body that cannot pass");
-    }
-    s.check("G46j the rule documents exit 3 as post-as-rendered",
-      /Exit 3 — something else is over budget/.test(fixRule)
-        && /relayUnsafeFixLinks\(\)/.test(fixRule),
-      "agent0-fix-links.md owns the exit-code table; a third code that is not in it is invisible");
-
-    // The codes are ONE exit status, so 1 outranks 3 and the exit-3 condition can survive the
-    // withhold: a body with both a fix link and a cited link over budget re-renders, posts, and
-    // never names the citation the relay is still going to mangle. Every place that acts on exit 1
-    // must therefore ask again on the re-rendered body — both call sites and the rule that owns
-    // the table, or the obligation is discharged in one and dropped in the others.
-    for (const [where, src, anchorRe] of [
-      ["the inline call site", agentBody, /finding-\$i\.md[\s\S]{0,400}?rc=\$\?/],
-      ["the sticky call site", agentBody, /RERENDER_WITH_NO_FIX_LINKS[\s\S]{0,400}?rc=\$\?/],
-      ["the rule", fixRule, /1 outranks 3[\s\S]{0,200}?rc=\$\?/],
-    ]) {
-      s.check(`G46j ${where} re-checks the relay after the exit-1 remedy`, anchorRe.test(src),
-        "exit 1 means this RUN is remediable, not that the body is otherwise clean");
-    }
-    s.check("G46j the surviving exit-3 condition reaches the run line",
-      /NOTE_MANGLED_LINK=1/.test(agentBody) && /note_mangled_link/.test(fixRule),
-      "a re-check whose result goes nowhere is the same silence with an extra step");
-
-    // (l) The post pre-flight's prose ceiling, measured against the renderer rather than restated.
-    // `UNVERIFIED_MAX` was added to the spine and this ceiling did not move, so a finding legal
-    // under every per-field cap tripped a predicate that ABORTS THE WHOLE POST — one maximal
-    // finding took the entire batch down. The guard renders the maximal legal payload for each
-    // shape and runs it through the REAL `payloadIsSafe()` (execute-write-plan.mjs, Phase 5's
-    // migration target) — calling the function itself rather than re-deriving its ceilings and
-    // strips as a parallel copy, so the next cap added to the spine fails a check here instead of
-    // a review in production, and this guard cannot silently drift from what actually runs.
-    const ewpPath = join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs");
-    const ewpSrc = readFileSync(ewpPath, "utf8");
-    const { payloadIsSafe } = await import(pathToFileURL(ewpPath).href);
-    const ceilingM = ewpSrc.match(/if \(prose\.length > (\d+)\)/);
-    s.check("G46l the post pre-flight states its prose ceiling as a number L1 can read",
-      !!ceilingM, "payloadIsSafe must keep the `if (prose.length > N)` form");
-    const ceiling = Number(ceilingM?.[1] ?? 0);
-    const bodyCeilingM = ewpSrc.match(/if \(body2000\.length > (\d+)\)/);
-    s.check("G46l the post pre-flight states its whole-body ceiling as a number L1 can read",
-      !!bodyCeilingM, "payloadIsSafe must keep the `if (body2000.length > N)` form");
-    const bodyCeiling = Number(bodyCeilingM?.[1] ?? 0);
-    // A real link through the real builder, at a realistic prompt length — the encoding and the
-    // `<picture>` markup around it are what this measures, so neither may be approximated here.
-    const { buildLink } = await import(
-      pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-link.mjs")).href);
-    const maxFixUrl = buildLink(
-      `/pr-fix https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
-        + "apply only the finding at ".repeat(6), "development", "fix-this");
-    const tenLineFence = { lang: "ts", code: Array.from({ length: 10 },
-      (_, i) => `  const someValue${i} = computeSomething(argumentOne, argumentTwo);`).join("\n") };
-    const maximal = [
-      ["a claim at every cap, unverified", "suggestion-pseudo",
-        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX),
-          UNVERIFIED: "U".repeat(assetMod.UNVERIFIED_MAX), EVIDENCE: undefined }],
-      ["a claim at every cap, verified", "suggestion-pseudo",
-        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX) }],
-      ["a one-liner at its cap", "nitpick", { BODY: "P".repeat(assetMod.PROSE_MAX) }],
-      // The shape that broke the whole-body ceiling: every cap, a 10-line fence AND a fix button.
-      ["a blocking claim at every cap with a 10-line fence and a fix button", "issue-blocking",
-        { TITLE: "T".repeat(assetMod.TITLE_MAX), BODY: "P".repeat(assetMod.PROSE_MAX),
-          FENCE: tenLineFence, FIX_URL: maxFixUrl }],
-    ];
-    for (const [label, base, over] of maximal) {
-      const payload = { ...JSON.parse(readFileSync(join(FIX, `${base}.json`), "utf8")), ...over };
-      for (const k of Object.keys(over)) if (over[k] === undefined) delete payload[k];
-      const r = run([], JSON.stringify(payload));
-      s.check(`G46l ${label} renders`, r.ok, (r.err || "").slice(0, 140));
-      if (!r.ok) continue;
-      const verdict = payloadIsSafe({
-        event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->",
-        comments: [{ path: "a.ts", line: 1, side: "RIGHT", body: r.out }],
-      });
-      s.check(`G46l ${label} passes payloadIsSafe (prose <= ${ceiling}, body <= ${bodyCeiling})`,
-        verdict.ok === true,
-        `rejected: ${verdict.reason} — payloadIsSafe aborts the WHOLE post, so this drops every finding`);
-    }
-    s.check("G46l the pre-flight strips the unverified tag it does not bound",
-      /prose = prose\.replace\(\/\\s\*\\\(unverified: \[\^\)\]\*\\\)\/g, ""\)/.test(ewpSrc),
-      "the tag is a rendered decoration like the fence and the button — strip it, do not re-bound it");
-    // The body measurement is only survivable because the button is stripped from it too: the
-    // element is ~525 chars of boilerplate plus a URL `build-agent0-link.mjs` bounds at 4000, so a
-    // maximal button alone can exceed any ceiling this predicate could name.
-    const bodyStripsButton = /const body2000 = cBody\.replace\(\/\^<a href="https:\\\/\\\/app\\\.dash0/.test(ewpSrc);
-    s.check("G46l the whole-body ceiling excludes the fix button",
-      bodyStripsButton && /fix button excluded/.test(ewpSrc),
-      "measure the body without the button, exactly as the prose measurement does");
-
-    // (m) The finding title is one string on two surfaces, so one cap governs both. The report
-    // renderer had `assertPlain` and no length check while the comment renderer enforced
-    // TITLE_MAX — so an over-long title rendered a report row and then failed the comment that
-    // row indexes, after the report had already been written.
-    const reportRenderer = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs"), "utf8");
-    s.check("G46m the report renderer imports TITLE_MAX from the spine",
-      /TITLE_MAX/.test(reportRenderer.slice(0, reportRenderer.indexOf('} from "./comment-spine.mjs"'))),
-      "a local copy of the cap is the drift this spine exists to prevent");
-    const warnPayload = JSON.parse(readFileSync(join(FIX, "../report-body/warn.json"), "utf8"));
-    const overTitle = structuredClone(warnPayload);
-    overTitle.FINDINGS[0].title = "W".repeat(assetMod.TITLE_MAX + 1);
-    const rr = spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs")],
-      { input: JSON.stringify(overTitle), encoding: "utf8" });
-    s.check("G46m the report renderer rejects a title over TITLE_MAX", rr.status !== 0,
-      "the report indexes the inline finding; a title it accepts must be one the comment can post");
-    s.check("G46m rejecting an over-long title emits nothing on stdout", rr.stdout === "",
-      (rr.stdout || "").slice(0, 80));
-
-    // The reasons line is the same count stated twice — once as a list, once as the gate table
-    // above it. FAIL_REASONS was cross-checked against the ❌ count and WARN_REASONS against
-    // nothing, so a WARN could claim more warnings than it had gates; `reasonList` truncates at
-    // two phrases, so it did not even look wrong. Both polarities or neither.
-    const renderReport = (mut) => {
-      const p = structuredClone(warnPayload); mut(p);
-      return spawnSync("node", [join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs")],
-        { input: JSON.stringify(p), encoding: "utf8" });
-    };
-    // The gate statuses are individual `GATE_<NAME>_STATUS` slots, not one array, and CI has no
-    // row at all — `CI_NOTE` is its whole surface, and it is informational-in-`Run` only, so it
-    // never counts toward the warning-gate total.
-    const warnGates = Object.entries(warnPayload)
-      .filter(([k, v]) => /^GATE_[A-Z]+_STATUS$/.test(k) && v === "⚠️").length;
-    const tooManyWarn = renderReport((p) => {
-      p.WARN_REASONS = Array.from({ length: warnGates + 2 }, (_, i) => `phantom warning ${i + 1}`);
-    });
-    s.check("G46m the report renderer rejects more WARN_REASONS than ⚠️ gates",
-      tooManyWarn.status !== 0 && /WARN_REASONS has \d+ phrases but only \d+ gate/.test(tooManyWarn.stderr),
-      (tooManyWarn.stderr || "").slice(0, 160));
-    s.check("G46m a WARN verdict with no WARN_REASONS is rejected",
-      renderReport((p) => { p.WARN_REASONS = []; }).status !== 0,
-      "the FAIL branch requires a reason phrase; the WARN branch cannot be laxer");
-    // Parity is all three checks the inline renderer applies to the same string, not just the
-    // length one — a title is a noun phrase on both surfaces or on neither.
-    for (const [what, bad] of [
-      ["sentence punctuation", "The registry is never wired up."],
-      ["block structure", "- a bulleted title"],
-    ]) {
-      s.check(`G46m the report renderer rejects a title carrying ${what}`,
-        renderReport((p) => { p.FINDINGS[0].title = bad; }).status !== 0,
-        `render-comment.mjs rejects it, so the row that indexes it cannot accept it`);
-    }
-    s.check("G46m the cross-check is symmetric in the source, not just in behaviour",
-      /WARN_REASONS"\)\.length > warning/.test(reportRenderer)
-        && /FAIL_REASONS"\)\.length > failing/.test(reportRenderer),
-      "one polarity validated and not the other is the shape FINDINGS[].title had in this file");
-
-    // The rule and the agent body both have to carry it. The wrong-cause version of this section
-    // read as correct and was invisible to every other guard here.
-    s.check("G46j the rule documents the relay length limit",
-      /## Relay length limit/.test(fixRule) && /RELAY_SAFE_URL_MAX = 140/.test(fixRule),
-      "agent0-fix-links.md must own the measured table and cite the same constant");
-    s.check("G46j the rule forbids shrinking the prompt to fit",
-      /worse than no button/.test(fixRule),
-      "a truncated prompt opens a session with no idea what to fix — say so");
-    // (k) The button's image has to exist at the URL the markup names. Offline, so this asserts the
-    // FILE is in the repo and the markup follows GitHub's documented three-element form; the 404
-    // case is a live HEAD check the agent runs (`--assets-check`), because whether a path is on the
-    // default branch is not knowable from a working tree.
-    const ASSETS = join(REPO_ROOT, "agents/pr-reviewer/assets");
-    s.check("G46k the spine enumerates every asset file it can reference",
-      Array.isArray(assetMod.ASSET_FILES) && assetMod.ASSET_FILES.length === 6,
-      `ASSET_FILES = ${JSON.stringify(assetMod.ASSET_FILES)}`);
-    for (const f of assetMod.ASSET_FILES ?? []) {
-      s.check(`G46k ${f} exists in the repo`, existsSync(join(ASSETS, f)),
-        "fixButton names it, so a missing file is a broken-image icon on every review");
-    }
-    // The unsuffixed default is what email and RSS render — they ignore <source> entirely — and it
-    // is the one filename that predates the theme split, so it must equal the light variant rather
-    // than being left as whatever art shipped before.
-    for (const stem of ["fix-this-agent0", "fix-all-agent0"]) {
-      const dflt = join(ASSETS, `${stem}.svg`);
-      const light = join(ASSETS, `${stem}-light.svg`);
-      s.check(`G46k ${stem}.svg (the <img> default) matches the light variant`,
-        existsSync(dflt) && existsSync(light)
-          && readFileSync(dflt, "utf8") === readFileSync(light, "utf8"),
-        "email and RSS render the default, so it cannot be stale art");
-    }
-    const btn = assetMod.fixButton({ kind: "this", url: "https://app.dash0.com/goto/agent0?x=1" });
-    s.check("G46k the button follows GitHub's documented picture form (dark, light, then default)",
-      /<picture><source media="\(prefers-color-scheme: dark\)"[^>]*><source media="\(prefers-color-scheme: light\)"[^>]*><img alt="[^"]+" src="[^"]*\/fix-this-agent0\.svg"/.test(btn),
-      btn.slice(0, 200));
-    s.check("G46k the <img> default is not a theme-suffixed file",
-      !/<img[^>]*src="[^"]*-(dark|light)\.svg"/.test(btn),
-      "picture does NOT fall back to img on a failed srcset, so the default must be the stable name");
-    const assetsUrls = assetMod.assetUrls(btn);
-    s.check("G46k assetUrls() finds all three of a button's assets", assetsUrls.length === 3,
-      JSON.stringify(assetsUrls));
-    s.check("G46k assetUrls() ignores a non-asset url",
-      assetMod.assetUrls("see https://example.com/x.svg").length === 0);
-    s.check("G46k the rule documents the asset-availability failure and its three exit codes",
-      /## Asset availability/.test(fixRule) && /inconclusive is not a missing asset/.test(fixRule),
-      "a network failure must never withhold a button that would have rendered");
-    for (const [surface, target] of [
-      ["the sticky", "--assets-check /tmp/report-body.md"],
-      ["the inline surface", "--assets-check /tmp/finding-$i.md"],
-    ]) {
-      s.check(`G46k ${surface} checks its button assets before posting`,
-        agentBody.includes(target), `no \`${target}\` call site`);
-    }
-
-    // Anchor each call site by the file it checks, not by counting the flag: the body mentions
-    // `--relay-check` in prose too, so a count-based guard passed with a call site deleted.
-    for (const [surface, target] of [
-      ["the sticky", "--relay-check /tmp/report-body.md"],
-      ["the inline surface", "--relay-check /tmp/finding-$i.md"],
-    ]) {
-      s.check(`G46j ${surface} runs the relay check on the body it is about to post`,
-        agentBody.includes(target), `no \`${target}\` call site`);
-    }
-    s.check("G46j the agent body no longer blames the copy for the #165 mangling",
-      /The cause is the relay, not the copy/.test(agentBody)
-        && !/is the specific hazard\*\*/.test(agentBody),
-      "the first diagnosis was falsified by measurement; a stale root cause misroutes the next fix");
-  }
-}
-
-// ── G40: a rule file may not state a contract the agent body does not implement ──
-//
-// The first review of the detection core found four instances of ONE shape: a new rule stating a
-// contract nothing binds, reads, or can render. That shape is invisible to every other guard here,
-// because each half is internally consistent — the rule reads correctly and the body runs
-// correctly, and only the seam between them is broken.
-//
-// The THREAD_OVERLAP case is the instructive one: a guard for it DID exist (the L2
-// shape-depth-routing suite) and was neutralised by being fed its own answer — every golden record
-// hands the model the value in its prompt, so the suite measures the table's ordering and never the
-// input's availability. A contract-existence check has to look at the binding, not the decision.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const body = read("agents/pr-reviewer.md");
-  const depth = read("agents/pr-reviewer/rules/depth-routing.md");
-  const cfg = read("agents/shared/rules/review-config.md");
-
-  // (a) Every input the routing table votes on is bound somewhere in the body.
-  //
-  // Matched case-insensitively on purpose: the rule names the impact.json field
-  // (`blast_radius.band`) while the body names the bound variable (`BLAST_RADIUS`). Those are the
-  // same concept in two conventions, and requiring one literal spelling across both files would
-  // fail on a naming difference rather than on a missing binding.
-  // The body's OWN input table is excluded from the search, and that exclusion is the whole
-  // check. Its rows are claims *about* the bindings, not the bindings — `TRAFFIC_BAND` occurred
-  // exactly once in the body, in the row asserting Step 1.2a bound it, and nothing did. A
-  // presence test over the whole file reads that row as its own evidence.
-  // The Bind-DEPTH_TIER input table and THREAD_OVERLAP's binding moved verbatim to
-  // rules/fetch-and-triage.md (pr-reviewer diet); the haystack is the body plus that file, minus the table.
-  const triage = read("agents/pr-reviewer/rules/fetch-and-triage.md");
-  const inputTable = sliceBetween(triage, "| Input | Bound at |", "`THREAD_OVERLAP` is the one input");
-  const bodyOutsideTable = (body + "\n" + triage).replace(inputTable, "");
-  for (const input of ["THREAD_OVERLAP", "DEPTH_CAPABILITY", "BLAST_RADIUS", "TRAFFIC_BAND"]) {
-    const needle = input.toLowerCase();
-    s.check(`G40a ${input} is named in depth-routing.md`, depth.toLowerCase().includes(needle));
-    s.check(`G40a ${input} is bound outside the body's own input table`,
-      bodyOutsideTable.toLowerCase().includes(needle),
-      `${input} appears in depth-routing.md and in the "Bound at" table, but nowhere that binds it`
-      + " — a row claiming a binding is not one, and the row that reads it can never fire");
-  }
-  // The two graph-sourced inputs must be fields the producing script actually emits, or the
-  // binding sentence names a value that never arrives.
-  const graph = read("agents/pr-reviewer/scripts/build-impact-graph.mjs");
-  for (const field of ["traffic_band", "blast_radius"]) {
-    s.check(`G40a build-impact-graph.mjs emits ${field}, which the routing table reads`,
-      new RegExp(`${field}:`).test(graph),
-      `depth-routing.md routes on impact.json's ${field} but the script does not emit it`);
-  }
-  s.check("G40a THREAD_OVERLAP's binding states it is computed at tier-binding time, not read from Step 2.9c",
-    /THREAD_OVERLAP\s*=/.test(triage) && /2\.9c/.test(triage.slice(triage.indexOf("THREAD_OVERLAP ="))),
-    "the body must show the formula AND say why Step 2.9c's predicate cannot be read directly (it runs after the tier is bound)");
-
-  // (b) A flag the rules advertise is parseable at the run's only parse point.
-  const step0 = body.slice(body.indexOf("| Token | Meaning |"), body.indexOf("Parse the PR reference:"));
-  s.check("G40b --effort is in Step 0's token table",
-    step0.includes("--effort"),
-    "depth-routing.md and CLAUDE.md advertise --effort, so Step 0 must accept it or both entry points are unreachable");
-  s.check("G40b the review-config half of --effort is defined",
-    /^\s*effort:/m.test(cfg),
-    "CLAUDE.md says '(or effort: in review-config)' — review-config.md must define the key it names");
-
-  // (c) No rule may mandate a payload key the fail-closed renderer rejects. Asserted against the
-  // renderer's real key sets, so adding a slot is what retires the check — not editing it.
-  const renderer = read("agents/pr-reviewer/scripts/render-report.mjs");
-  for (const f of ["agents/pr-reviewer/rules/depth-routing.md", "agents/pr-reviewer/rules/report-rendering.md"]) {
-    const txt = read(f);
-    const mandated = [...txt.matchAll(/\brender the headline with a `([A-Z_]+)`/gi)].map((m) => m[1]);
-    for (const key of mandated) {
-      s.check(`G40c ${f} mandates headline key ${key}, which the renderer must accept`,
-        renderer.includes(key),
-        `${key} is required by a rule but is not a renderer payload key — render-report.mjs fails closed, so a run that obeys the rule posts no report at all`);
-    }
-  }
-
-  // (d) The one-read-one-head invariant is not contradicted by a rule telling the run to re-read.
-  //
-  // Asserted as a PAIR — the mandate is absent AND the deferral is stated — rather than as
-  // "headRefOid is not re-read anywhere". A bare absence test cannot tell a mandate from the
-  // ❌-marked counter-example or from the prose that says the run does *not* re-read, so it fired
-  // on the very text that fixes the contradiction. Naming the exact retired sentence keeps the
-  // check specific, and the positive half is what stops the section from going silent instead.
-  s.check("G40d depth-routing.md no longer mandates a second headRefOid read before posting",
-    !/\*\*Immediately before Step 4 posts\*\*,\s*re-read/i.test(depth),
-    "Step 1.2 forbids a second headRefOid read (torn state: the diff and the SHA would describe different commits)");
-  s.check("G40d depth-routing.md states the one-read-one-head deferral instead",
-    /does \*\*not\*\* re-read/.test(depth) && /one read, one head/i.test(depth),
-    "removing the mandate is not enough — the section must say what the run does instead, or the moved-head case is simply unhandled");
-}
-
-// ── G41: the five defects two production runs exposed, each pinned where it failed ──
-//
-// A `/pr-review` dispatch at dash0hq/dash0#17523 improvised its way past five rules that were
-// either absent or stated only once, in prose, somewhere the run never reached. All five had the
-// same signature: the run produced *plausible* output, so nothing downstream was red. These are
-// the joint conditions — the rule is stated AND the thing it forbids does not appear.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const body = read("agents/pr-reviewer.md");
-
-  // (a) The support-tree contract exists and derives AGENT_SUPPORT from the resolved path.
-  s.check("G41a the agent body has a support-tree section that derives AGENT_SUPPORT",
-    /^### Locating this agent's own files$/m.test(body)
-    && /AGENT_SUPPORT="\$\{AGENT_MD%\/pr-reviewer\.md\}"/.test(body));
-
-  // (b) The naive install path is banned as a probe. The observed run ran `ls` against
-  // $HOME/.claude/agents/pr-reviewer/scripts/, read the ENOENT as proof the tree was missing,
-  // and hand-wrote its report. The ban has to be stated, because the probe looks reasonable.
-  s.check("G41b probing the un-resolved install path is banned by name",
-    /Never probe the un-resolved install path/i.test(body)
-    && /`?resolve\(\)`? is the only admissible test/i.test(body));
-
-  // (c) Resolution happens at Step 0.1 — BEFORE Step 0.5 — so a degraded run is known to be
-  // degraded while nothing is invested, not discovered at Step 4a with findings in hand.
-  const i01 = body.indexOf("### 0.1 Resolve the support tree");
-  const i05 = body.indexOf("## Step 0.5");
-  s.check("G41c the support tree is resolved at Step 0.1, ahead of Step 0.5",
-    i01 !== -1 && i05 !== -1 && i01 < i05,
-    `0.1 at ${i01}, 0.5 at ${i05}`);
-  s.check("G41c resolving the support tree is not read as a permission to post",
-    /AGENT_SUPPORT` is a location, not a permission/.test(body));
-
-  // (d) One derivation point. Every script call site addresses $AGENT_SUPPORT; the
-  // `${AGENT_MD%/pr-reviewer.md}` form appears exactly where AGENT_SUPPORT is defined.
-  const derivations = [...body.matchAll(/\$\{AGENT_MD%\/pr-reviewer\.md\}/g)].length;
-  s.check("G41d ${AGENT_MD%/pr-reviewer.md} appears only where AGENT_SUPPORT is defined",
-    derivations === 1, `found ${derivations} occurrence(s)`);
-  s.check("G41d no script is addressed by a bare agents/pr-reviewer/scripts/ path in a node call",
-    !/node\s+"?agents\/pr-reviewer\/scripts\//.test(body));
-
-  // (e) The sticky-write not-a-reason list. The run stood down on two invented rules — the
-  // sticky's author login, and an unchanged verdict — and left the delta baseline pinned.
-  // This table (§ 4a "The table above is exhaustive") moved to rules/posting.md with Step 4a
-  // (Step 9 split); read it there rather than off the agent body.
-  const bodyE = read("agents/pr-reviewer/rules/posting.md");
-  for (const phrase of [
-    /is \*\*diagnostic only\*\*/,
-    /The sticky's author login is not this run's `ME`/,
-    /The verdict is unchanged since the prior run/,
-    /The run produced no new inline findings/,
-    /Another bot already reviews this PR/,
-    /It is the caller's own PR \(self relation\)/,
-  ]) {
-    s.check(`G41e the sticky not-a-reason list names ${phrase.source.slice(0, 46)}`,
-      phrase.test(bodyE));
-  }
-  s.check("G41e the not-a-reason list closes with the imperative",
-    /If a\s*\nsituation is not a row in the table above, \*\*write the sticky\*\*/.test(bodyE));
-
-  // (f) No brace-escaped STICKY default survives. The expression was correct; its escaped brace
-  // did not survive being retyped, and the run took four jq parse errors on the one rung that
-  // recovers the delta baseline. A correct-but-fragile idiom is a defect at this scale.
-  // The ban is on the LIVE idiom, not on the comment that explains why it was retired — the
-  // explanation has to be able to quote the shape it is warning about.
-  // The fallback rung moved verbatim to rules/prior-run.md (pr-reviewer diet).
-  const priorRun = read("agents/pr-reviewer/rules/prior-run.md");
-  s.check("G41f no ${STICKY:-…} brace default is used at a read site",
-    !/<<<\s*"\$\{STICKY:-/.test(body + priorRun));
-  s.check("G41f STICKY is normalised to a brace-free JSON literal once",
-    /\[ -n "\$STICKY" \] \|\| STICKY=null/.test(priorRun));
-
-  // (g) The empty merge-base guard, in the phase that owns the workspace. Both forms must be
-  // named: the three-dot failure (loud, benign) and the two-dot hazard (silent, wrong).
-  const ws = read("agents/pr-reviewer/rules/workspace.md");
-  s.check("G41g workspace.md guards an empty merge-base",
-    /empty `MERGE_BASE` is a hard branch/i.test(ws)
-    && /no merge base/.test(ws)
-    && /two-dot form succeeds, and that is the dangerous one/i.test(ws));
-  s.check("G41g the empty-merge-base fallback is the authoritative per-file patches",
-    /DIFF_SOURCE=api/.test(ws) && /per-file patches/.test(ws));
-  s.check("G41g the fallback is announced in RUN_ANOMALY, not RUN_NOTE",
-    /RUN_ANOMALY/.test(ws) && !/RUN_NOTE:/.test(ws));
-
-  // (h) The memory read budget is a bound, not a description.
-  const mem = read("agents/pr-reviewer/rules/memory.md");
-  s.check("G41h memory.md states a fixed read budget with no pagination",
-    /calls per run \| exactly \*\*2\*\*/.test(mem)
-    && /\| pagination \| \*\*never\.\*\*/.test(mem)
-    && /\*\*top 10\*\* changed symbols/.test(mem));
-  // Anchored on the mcp__ call lines, not on the budget table that repeats the same numbers —
-  // a table row is a promise, the call is the thing that keeps it.
-  // The second pattern read `memory_search\s+scope=` until G44a was written, so this guard
-  // was asserting the broken call shape it was meant to bound — the parameter is `q`, and
-  // `scopes` is the array. A guard that mirrors a call by hand can pin the wrong one.
-  // dash0#20655: the full page was ~101 KB and overflowed the tool output. The list is keys; a
-  // matched key is expanded with memory_read, capped, as the Step 1.0 lesson reads already do.
-  s.check("G41h the knowledge list is summary-only, in memory.md and at the agent body's call site, with a capped expansion",
-    /mcp__lorekit__memory_list\s+scope=[^\n]*codebase-knowledge[^\n]*limit=50\s+view="summary"/.test(mem)
-    && /mcp__lorekit__memory_list:\s+scope=[^\n]*codebase-knowledge[^\n]*view="summary"/.test(read("agents/pr-reviewer.md"))
-    && /at most \*\*5\*\* `memory_read` expansions/.test(mem));
-  s.check("G41h both memory reads carry an explicit limit at the call site",
-    /mcp__lorekit__memory_list\s+scope=[^\n]*limit=50/.test(mem)
-    && /mcp__lorekit__memory_search\s+q=[^\n]*limit=25/.test(mem));
-}
-
-// ── G42: the measurability lens is wired, bounded, and cannot block ──
-//
-// Same joint-condition discipline as G38: the rule existing proves nothing if the body never
-// routes to it, and a lens with no quiet-exit gates is one the author learns to ignore.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const body = read("agents/pr-reviewer.md");
-  // Step 2.4e moved verbatim to rules/inline-pipeline.md (pr-reviewer diet).
-  const step24e = read("agents/pr-reviewer/rules/inline-pipeline.md");
-  const rule = read("agents/shared/rules/measurability-review.md");
-
-  s.check("G42a measurability-review.md exists and the body routes to it at Step 2.4e",
-    rule.length > 0
-    && /^### 2\.4e Measurability review/m.test(step24e)
-    && /measurability-review\.md/.test(step24e)
-    && /inline-pipeline\.md/.test(body));
-
-  // audit mode only — pr-reviewer is read-only in both relations.
-  s.check("G42b the lens is audit-mode only and says so in both files",
-    /Skill\("measurable", "audit"\)/.test(rule) && /Skill\("measurable", "audit"\)/.test(step24e)
-    && /\*\*Never\*\* `Skill\("measurable", "implement"\)`/.test(rule));
-  s.check("G42b neither file ever calls measurable in implement mode",
-    !/Skill\("measurable",\s*"implement"\)/.test(body + step24e)
-    && !/^\s*Skill\("measurable",\s*"implement"\)/m.test(rule));
-
-  // Two quiet-exit gates. Without them the lens asks "where's the telemetry" on every diff.
-  s.check("G42c both quiet-exit gates are defined",
-    /### Gate 1 — the diff touches a path kind that needs a signal/.test(rule)
-    && /### Gate 2 — the change adds or alters observable behaviour/.test(rule)
-    && /new failure mode/.test(rule));
-
-  // The bounded-blocking invariant: strict is the default, but the lens never lowers a verdict
-  // and `unlinked` never blocks under either level — only a `missing` new-failure-mode gates.
-  s.check("G42d unlinked never blocks, and the lens never lowers a verdict",
-    /never \*\*lowers\*\* a verdict/.test(rule)
-    && /FAIL_REASONS/.test(rule)
-    && /never blocks and is never an `issue:`/.test(rule));
-  s.check("G42d the level is a repository claim, not the reviewer's own judgment",
-    /on (the reviewer's|its) own judgment/.test(rule)
-    && /Strict is the \*\*default\*\*/.test(rule)
-    && /measurable: strict/.test(rule) && /--measurable-strict/.test(body)
-    && /--measurable-advisory/.test(body));
-
-  // The seam with telemetry.md — two rules, opposite questions, neither answers the other's.
-  s.check("G42e the seam with telemetry.md is stated in both directions",
-    /## Seam with `telemetry\.md`/.test(rule)
-    && /\*\*today\*\*/.test(rule) && /\*\*tomorrow\*\*/.test(rule));
-
-  // The renderer accepts the slot and treats a clean audit as quiet. A required slot the
-  // fail-closed renderer rejects would mean a run that obeys the rule posts no report at all.
-  const renderer = read("agents/pr-reviewer/scripts/render-report.mjs");
-  // Membership of REQUIRED_SCALARS specifically: the name appears in three places in the
-  // renderer, so a bare substring test passes while the slot is no longer required.
-  const requiredBlock = /const REQUIRED_SCALARS = \[([\s\S]*?)\];/.exec(renderer)?.[1] ?? "";
-  s.check("G42f MEASURABILITY_LOG is a required renderer slot",
-    requiredBlock.includes('"MEASURABILITY_LOG"'));
-  s.check("G42f the renderer folds a clean measurability run into the footnote",
-    /key: "MEASURABILITY_LOG"/.test(renderer)
-    && /0 missing\\b/.test(renderer)
-    && /0 unlinked\\b/.test(renderer));
-  s.check("G42f the lens log grammar is shared by rule and renderer",
-    /MEASURABILITY_LOG: <ran\|skipped \(<reason>\)> · <N> paths classified · <M> missing · <U> unlinked/
-      .test(rule)
-    && /\["OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG"\]/.test(renderer));
-
-  // The flag exists in Step 0's token table, or a documented opt-out is unreachable.
-  s.check("G42g --no-measurable is in Step 0's token table",
-    /\| `--no-measurable` \| Skip the measurability review step \(Step 2\.4e\) \|/.test(body));
-}
-
-
-// ── G43: the normative shell in these files is executable ────────────────────
-//
-// The shell in the agent body and its rule files is not illustration — an agent runs it
-// verbatim — so an invocation that cannot parse and a variable that was never bound are
-// both broken rungs, not shorthand. Both halves below are the general form of a defect a
-// live review found, rather than a string match on the specific instance:
-//
-//   G43a  Three documented `build-impact-graph.mjs` invocations fed the input on stdin
-//         where the script takes a positional path (`exit=2`, usage string, zero bytes
-//         written), and one carried a bare value-less `--overlaps`, which silently
-//         swallows the next argument. The contract is derived from the script's own argv
-//         parser, so it tracks the script instead of restating it.
-//   G43b  `BASE_SHA` was read in four places and bound in none: Step 1.1 fetched
-//         `baseRefName` (a branch name) and never `baseRefOid`. It failed quietly at every
-//         reader — `merge-base ""` exits 128 into a `|| true`, and the impact graph's base
-//         reader degrades to `() => null` and still exits 0 — so a `checkout` run reported
-//         full depth while reading no base side at all.
-{
-  const SHELL_MD = [
-    "agents/pr-reviewer.md",
-    ...readdirSync(join(REPO_ROOT, "agents/pr-reviewer/rules"))
-      .filter((f) => f.endsWith(".md"))
-      .map((f) => `agents/pr-reviewer/rules/${f}`),
-  ];
-  const readMd = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const bashBlocks = (text) => [...text.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
-
-  // ---- G43a: documented invocations must satisfy the script's own argv parser ----
-
-  // Join `\`-continued lines, then drop `${VAR:+ … }` conditional wrappers, keeping their
-  // contents — the tokens inside are real arguments whenever the variable is set.
-  const commandsIn = (block) =>
-    block
-      .replace(/\\\n\s*/g, " ")
-      .split("\n")
-      .map((l) => l.replace(/\$\{[A-Z_]+:\+(.*?)\}/g, "$1").trim())
-      .filter((l) => /^node\s/.test(l));
-
-  const tokenize = (cmd) => cmd.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
-
-  // The parser contract, read out of the script rather than restated here. Two shapes are
-  // in use and both must be understood, or a script parsing the other way reports every
-  // flag as unknown — a guard failing on itself, not a defect in the docs.
-  const flagContract = (src) => {
-    const takesValue = new Set();
-    const boolean = new Set();
-    // Shape 1 — a switch over argv (build-impact-graph.mjs's `flags.x`, prepare-review.mjs's `opts.x`).
-    for (const m of src.matchAll(/a === "(--[a-z-]+)"\)\s*(?:flags|opts)\.\w+\s*=\s*([^;\n]+)/g)) {
-      (/argv\[\+\+i\]/.test(m[2]) ? takesValue : boolean).add(m[1]);
-    }
-    // Shape 2 — an indexOf lookup helper (fingerprint.mjs's `flag(args, "name")`), which
-    // returns `args[i + 1]`, so every name it reads takes a value.
-    for (const m of src.matchAll(/\bflag\(args,\s*"([a-z-]+)"\)/g)) takesValue.add(`--${m[1]}`);
-    // Positional switches are boolean by construction.
-    for (const m of src.matchAll(/args\[\d+\] === "(--[a-z-]+)"/g)) boolean.add(m[1]);
-    for (const m of src.matchAll(/cmd === "(--[a-z-]+)"/g)) boolean.add(m[1]);
-    // Shape 3 — an `.includes()` presence check (comment-spine.mjs's `argv.includes("--shape-caps")`,
-    // every script's own `--self-test`), which never consumes a following argv slot.
-    for (const m of src.matchAll(/\b(?:argv|process\.argv|args)\.includes\("(--[a-z-]+)"\)/g)) boolean.add(m[1]);
-    // Shape 4 — an indexOf lookup whose value is the NEXT slot (validate-judgments.mjs's
-    // `const shapeOnlyIdx = args.indexOf("--shape-only")`, then `args[shapeOnlyIdx + 1]`).
-    for (const m of src.matchAll(/const (\w+) = (?:argv|args)\.indexOf\("(--[a-z-]+)"\);/g)) {
-      if (new RegExp(`\\b(?:argv|args)\\[${m[1]} \\+ 1\\]`).test(src)) takesValue.add(m[2]);
-    }
-    return { takesValue, boolean };
-  };
-
-  let invocations = 0;
-  for (const mdPath of SHELL_MD) {
-    for (const block of bashBlocks(readMd(mdPath))) {
-      for (const cmd of commandsIn(block)) {
-        const all = tokenize(cmd);
-        const scriptTok = all.find((t) => t.replace(/"/g, "").endsWith(".mjs"));
-        if (!scriptTok) continue;
-        const base = scriptTok.replace(/"/g, "").split("/").pop();
-        const scriptPath = join(REPO_ROOT, "agents/pr-reviewer/scripts", base);
-        if (!existsSync(scriptPath)) continue;
-        invocations++;
-        const src = readFileSync(scriptPath, "utf8");
-        const { takesValue, boolean } = flagContract(src);
-        const needsPositional = /usage: \S+ <[a-z-]+\.json>/.test(src);
-        const where = `${mdPath} → ${base}`;
-
-        // The stdin defect. A script taking a positional path writes nothing when fed on
-        // stdin, and an `exit 2` inside a `$(…)` or a pipeline is easy to read past.
-        s.check(`G43a ${where}: input is not fed on stdin`,
-          !needsPositional || !/(^|\s)<\s/.test(cmd));
-
-        const toks = all.slice(all.indexOf(scriptTok) + 1);
-        const positional = [];
-        const flagValues = [];
-        const unknownFlags = [];
-        const valuelessFlags = [];
-        for (let i = 0; i < toks.length; i++) {
-          const t = toks[i];
-          if (t === ">" || t === ">>" || t === "2>" || t === "|") { i++; continue; }
-          if (t.startsWith(">") || t.startsWith("2>")) continue;
-          if (!t.startsWith("--")) { positional.push(t); continue; }
-          if (takesValue.has(t)) {
-            const next = toks[i + 1];
-            if (!next || next.startsWith("-") || next.startsWith(">")) valuelessFlags.push(t);
-            else { flagValues.push(next); i++; }
-            continue;
-          }
-          if (!boolean.has(t)) unknownFlags.push(t);
-        }
-
-        // Guard the guard: an empty contract means the extractor did not understand this
-        // script's parser, and every flag would read as unknown.
-        const flagsUsed = toks.filter((t) => t.startsWith("--"));
-        s.check(`G43a ${where}: the parser contract was extractable`,
-          flagsUsed.length === 0 || takesValue.size + boolean.size > 0);
-        s.check(`G43a ${where}: every flag is one the parser knows (saw: ${unknownFlags.join(" ") || "none"})`,
-          unknownFlags.length === 0);
-        // A value-taking flag written bare eats the next argument, so the command still
-        // exits 0 while one argument has silently become another's value.
-        s.check(`G43a ${where}: no value-taking flag is written bare (saw: ${valuelessFlags.join(" ") || "none"})`,
-          valuelessFlags.length === 0);
-        // `validate-judgments.mjs --shape-only <file>` takes its path as the flag's value.
-        s.check(`G43a ${where}: the required input path is passed positionally`,
-          !needsPositional || [...positional, ...flagValues].some((p) => p.replace(/"/g, "").endsWith(".json")));
-      }
-    }
-  }
-  // The guard is worthless if the extractor silently matches nothing.
-  s.check(`G43a the invocation extractor found the documented commands (${invocations})`,
-    invocations >= 4);
-
-  // ---- G43b: every variable a normative block reads has a binding ----
-
-  // Provided by the shell or the environment, never by this pipeline.
-  const SHELL_PROVIDED = new Set(["HOME", "PATH", "ARG", "BASH_REMATCH", "DASH0_EXPOSURE", "DASH0_AGENT_ENV"]);
-  // Payloads the run constructs in context rather than in shell. Named explicitly so the
-  // list stays a decision: anything NOT here must have an assignment that exists.
-  const RUN_CONSTRUCTED = new Set([
-    "VERDICT", "PR_STATE", "CARRIED_FINDINGS_JSON", "DIAGNOSTICS_JSON",
-    "INLINE_COMMENTS_JSON", "OPEN_BOT_COMMENT_IDS_JSON",
-  ]);
-
-  const boundVars = new Set();
-  const varReads = new Map();
-  for (const mdPath of SHELL_MD) {
-    const text = readMd(mdPath);
-    // An assignment anywhere in the file counts: `elif WORKTREE_PARENT="$(mktemp -d)"` is a
-    // binding, and requiring column 0 would have read it as unbound.
-    for (const m of text.matchAll(/\b([A-Z][A-Z0-9_]{2,})=/g)) boundVars.add(m[1]);
-    for (const block of bashBlocks(text)) {
-      // Strip `#` comments first. A comment is not executed, and a rule explaining why a
-      // variable was retired names it — G41f made exactly this mistake and flagged the
-      // sentence documenting a fix as the defect.
-      const live = block.replace(/(^|\s)#[^\n]*/g, "$1");
-      for (const m of live.matchAll(/\$\{?([A-Z][A-Z0-9_]{2,})\b/g)) {
-        if (!varReads.has(m[1])) varReads.set(m[1], mdPath);
-      }
-    }
-  }
-  const unbound = [...varReads.keys()]
-    .filter((v) => !boundVars.has(v) && !SHELL_PROVIDED.has(v) && !RUN_CONSTRUCTED.has(v))
-    .sort();
-  s.check(`G43b every variable read in a normative block is bound (unbound: ${unbound.join(", ") || "none"})`,
-    unbound.length === 0);
-
-  // BASE_SHA specifically, because every one of its readers fails silently: assert the
-  // fetch that makes it available and the assignment that binds it, not just the reads.
-  // Step 1.1/1.2's manual fetch moved verbatim to rules/fetch-and-triage.md (pr-reviewer diet).
-  const rbody = readMd("agents/pr-reviewer/rules/fetch-and-triage.md");
-  s.check("G43b Step 1.1 requests baseRefOid, not only baseRefName",
-    /--json [^\n]*\bbaseRefOid\b/.test(rbody));
-  s.check("G43b BASE_SHA is bound from that response, next to HEAD_SHA",
-    /BASE_SHA=\$\(jq -r '\.baseRefOid' <<< "\$PR_VIEW_JSON"\)/.test(rbody));
-  s.check("G43b the merge-base rule refuses to run on an empty base OID",
-    /\*\*the base OID itself empty\*\*/.test(readMd("agents/pr-reviewer/rules/workspace.md")));
-}
-
-// ── G44: the memory layer's read path can reach what its write path writes ───
-//
-// A memory bucket fails in one direction only, and it is the silent one: a read that
-// cannot reach the records is indistinguishable from a repository that knows nothing, so
-// every rule about reading still passes while the loop delivers nothing. An audit of the
-// live store found four such breaks at once, and each check below is the general form of
-// one:
-//
-//   G44a  `memory.md`'s second read call was written `memory_search scope=… query=…` —
-//         neither parameter exists (the tool takes `q` and `scopes[]`). A validation error
-//         on a best-effort read is swallowed, so the run reports 0 memories applied.
-//   G44b  The relevance key was quoted as `rule::<fp>` with the bucket prefix dropped, so
-//         a `memory_read` against it can only miss. The recorder is the authority; the
-//         expected form is extracted from its source rather than restated here.
-//   G44c  `knowledge::<symbol>@<path>` — the record the whole rule is named for — had a
-//         read, a match table, a TTL and a write budget, and no producer anywhere. Zero
-//         rows existed after four runs on the same PR.
-//   G44d  `thread-resolution.md`, the one write path that had actually fired on this repo,
-//         keyed every record into the v1 prose space (`promotable: false`) even though the
-//         comment it was resolving carried a v2 marker to recover. 273 legacy rows, no
-//         `rule::` row, `seen_count` accumulating on nothing.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const MEMORY_MD = read("agents/pr-reviewer/rules/memory.md");
-  const RELEVANCE_MD = read("agents/shared/rules/comment-relevance-memory.md");
-  const THREADS_MD = read("agents/shared/rules/thread-resolution.md");
-  const BODY = read("agents/pr-reviewer.md");
-  const RECORDER = read("scripts/record-comment-relevance.mjs");
-
-  // ---- G44a: documented memory tool calls use the tools' real parameter names ----
-  //
-  // The two tools disagree, which is the whole trap: `memory_list` takes a singular
-  // `scope` string, `memory_search` takes `scopes[]` plus `q`. Generalising either one to
-  // the other produces a call that validates away to nothing.
-  const memoryCalls = (text, tool) =>
-    [...text.matchAll(new RegExp(`mcp__lorekit__${tool}\\b([^\\n]*)`, "g"))].map((m) => m[1]);
-
-  for (const [file, text] of [
-    ["memory.md", MEMORY_MD],
-    ["comment-relevance-memory.md", RELEVANCE_MD],
-  ]) {
-    for (const args of memoryCalls(text, "memory_search")) {
-      // Skip a prose mention that passes no arguments at all (e.g. "issue it as a real
-      // mcp__lorekit__memory_search tool call"): there is no call shape to check.
-      if (!/[:=]/.test(args)) continue;
-      s.check(`G44a ${file}: memory_search puts the query in \`q\`, not \`query\``,
-        /\bq\s*=/.test(args) && !/\bquery\s*=/.test(args));
-      s.check(`G44a ${file}: memory_search takes \`scopes\` (array), not a singular \`scope\``,
-        /\bscopes\s*=/.test(args) && !/(^|[^s])\bscope\s*=/.test(args));
-    }
-    for (const args of memoryCalls(text, "memory_list")) {
-      if (!/[:=]/.test(args)) continue;
-      s.check(`G44a ${file}: memory_list takes a singular \`scope\`, not \`scopes\``,
-        !/\bscopes\s*=/.test(args));
-    }
-  }
-  // The knowledge read is tag-filtered, not just kind/host-filtered. Both buckets carry
-  // `kind: signal, host: reviewer`, and the relevance bucket grows per resolved thread while
-  // this one grows per traced symbol — measured on this repo, an untagged call spent 48 of
-  // its 50 recency-ordered slots on relevance rows the Step 1.0 calls already fetch.
-  s.check("G44a memory.md's knowledge read filters on the `codebase-knowledge` tag",
-    /mcp__lorekit__memory_list[^\n]*tags=\["codebase-knowledge"\][^\n]*limit=50/.test(MEMORY_MD));
-
-  // ---- G44b: the keys the read path quotes are the keys the recorder writes ----
-  //
-  // Extracted from the recorder's template literals, so the assertion tracks the writer.
-  // A prefix that changes there fails here instead of quietly re-keying the bucket.
-  // `[^`;]*` reaches across the ternary's newline to the first branch without escaping the
-  // statement, so the `key` position is what selects the literal — a `tags:` entry like
-  // `source::${method}` is the same shape and must not be read as a key prefix.
-  const recorderKeys = [...RECORDER.matchAll(/\bkey\s*[:=][^`;]*`([a-z-]+(?:::[a-z-]+)*::)\$\{/g)]
-    .map((m) => m[1]);
-  s.check(`G44b the recorder's key prefixes were extractable (saw: ${recorderKeys.join(" ") || "none"})`,
-    recorderKeys.length >= 2);
-  s.check("G44b the relevance rule's promotable key space is `reviewer-comment-relevance::rule::`",
-    recorderKeys.includes("reviewer-comment-relevance::rule::"));
-  for (const prefix of new Set(recorderKeys)) {
-    s.check(`G44b memory.md quotes the key \`${prefix}…\` exactly as the recorder builds it`,
-      MEMORY_MD.includes(prefix));
-  }
-
-  // ---- G44c: every record the read path matches on has a named producer ----
-  //
-  // `hotspot::` has two producers (the recorder and Step 4d); `knowledge::` has only
-  // Step 4d, which is why its absence went unnoticed for so long. Require the agent body
-  // to name a write for each — a match table pointed at rows nothing writes is the defect.
-  // Step 4d moved to rules/posting.md with the rest of Step 4 (Step 9 split) — read it there.
-  const step4dSource = read("agents/pr-reviewer/rules/posting.md");
-  const step4d = step4dSource.split(/### 4d\./)[1]?.split(/\n### |\n## /)[0] ?? "";
-  s.check("G44c Step 4d exists and routes to the write section that holds the calls",
-    step4d !== "" && /#write--the-two-calls-this-agent-makes-itself/.test(step4d));
-  for (const record of ["knowledge", "hotspot"]) {
-    s.check(`G44c Step 4d names the \`${record}\` write`, step4d.includes(record));
-    // The literal key lives in one place — the rule file with the call — so the body
-    // routing to it cannot drift from the key it writes.
-    s.check(`G44c memory.md's write section spells the \`${record}::\` key`,
-      MEMORY_MD.includes(`key      = "${record}::`));
-  }
-  // Per call, not file-wide: with the two calls in one section, a file-wide test passes on
-  // either one's properties and the other can silently lose them.
-  const writeCalls = {
-    knowledge: MEMORY_MD.split("# A. Symbol knowledge")[1]?.split("# B. Hotspot")[0] ?? "",
-    hotspot: MEMORY_MD.split("# B. Hotspot")[1]?.split("```")[0] ?? "",
-  };
-  for (const [name, call] of Object.entries(writeCalls)) {
-    s.check(`G44c the ${name} write passes kind + host explicitly (a \`ci::\` tag infers neither)`,
-      /kind\s*=\s*"signal"/.test(call) && /host\s*=\s*"reviewer"/.test(call));
-    s.check(`G44c the ${name} write sets an explicit 90-day TTL`, /ttl_days\s*=\s*90/.test(call));
-  }
-  s.check("G44c the knowledge write is deep-tier only, so no unverified fact is stored",
-    /deep tier only/i.test(MEMORY_MD));
-
-  // ---- G44d: the in-run relevance write recovers its fingerprint, never re-derives it ----
-  s.check("G44d thread-resolution.md writes the v2 `rule::` key when a marker is present",
-    THREADS_MD.includes("reviewer-comment-relevance::rule::<fp>"));
-  s.check("G44d thread-resolution.md recovers the fingerprint through fingerprint.mjs",
-    /fingerprint\.mjs" extract/.test(THREADS_MD));
-  s.check("G44d thread-resolution.md keeps the prose key as the marker-less fallback only",
-    /fp_v: 1, promotable: false/.test(THREADS_MD));
-
-  // ---- G44e: one value shape, and the licence that broke it is gone ----
-  s.check("G44e the relevance bucket's value is JSON only",
-    /### One value shape: JSON/.test(RELEVANCE_MD));
-  s.check("G44e no write site still licenses a markdown record body",
-    !/record body as JSON or markdown/.test(RELEVANCE_MD));
-
-  // ---- G44f: the state scope's third segment is the branch NAME ----
-  //
-  // Derived from the body's own binding: a SHA-keyed scope mints a fresh scope per push,
-  // so the record is written once and never read again.
-  s.check("G44f STATE_SCOPE is bound from HEAD_REF, never HEAD_SHA",
-    /STATE_SCOPE="branch::\$\{RESOLVED_REPO\}::\$\{HEAD_REF\}"/.test(read("agents/pr-reviewer/rules/prior-run.md")));
-  for (const [file, text] of [
-    ["memory.md", MEMORY_MD],
-    ["memory-buckets.md", read("agents/shared/rules/memory-buckets.md")],
-  ]) {
-    s.check(`G44f ${file} names the state scope's third segment unambiguously`,
-      text.includes("branch::{owner}/{repo}::{head-branch-name}") &&
-      !/branch::\{owner\}\/\{repo\}::\{head\}/.test(text));
-  }
-
-  // ---- G44g: this repo calls the only committed writer it owns ----
-  //
-  // The reusable workflow was committed and documented as live while nothing in this
-  // repository called it, so its own store could never gain a v2 row. The self-caller
-  // mirrors the report-shape guard's: a local `uses:`, so a change here is exercised here.
-  const CALLER = "\.github/workflows/pr-relevance-memory.yml";
-  s.check("G44g this repo has a caller for reviewer-comment-relevance.yml",
-    existsSync(join(REPO_ROOT, ".github/workflows/pr-relevance-memory.yml")));
-  if (existsSync(join(REPO_ROOT, ".github/workflows/pr-relevance-memory.yml"))) {
-    const caller = read(".github/workflows/pr-relevance-memory.yml");
-    s.check("G44g the self-caller uses the local reusable workflow, not @main",
-      caller.includes("uses: ./.github/workflows/reviewer-comment-relevance.yml") &&
-      !caller.includes("reviewer-comment-relevance.yml@main"));
-    const modes = [...caller.matchAll(/mode:\s*([a-z-]+)/g)].map((m) => m[1]);
-    for (const mode of ["thread-resolved", "pr-merged", "human-comment"]) {
-      s.check(`G44g the self-caller wires up \`${mode}\``, modes.includes(mode));
-    }
-    s.check("G44g the self-caller passes the LoreKit secret through",
-      /lorekit_api_key:\s*\$\{\{\s*secrets\.LOREKIT_API_KEY\s*\}\}/.test(caller));
-  }
-  void CALLER;
-
-  // ---- G45a: the knowledge read has a call site, not just a rule ----
-  //
-  // G44 guarded the write side and said so in its own comment. The read side stayed
-  // prescribed-only: `memory.md § Read` carried two calls, a match table, a budget and a TTL,
-  // while `agents/pr-reviewer.md` mentioned `codebase-knowledge`, `knowledge::` and
-  // `hotspot::` zero times — so Step 4d's producer had no consumer, and a run reported
-  // "0 memories applied" indistinguishably from a repo that had learned nothing.
-  s.check("G45a the agent body issues the `codebase-knowledge` read",
-    BODY.includes('tags=["codebase-knowledge"]'));
-  s.check("G45a the agent body's knowledge read passes kind=signal host=reviewer",
-    /tags=\["codebase-knowledge"\][^\n]*kind="signal"[^\n]*host="reviewer"/.test(BODY));
-  // The call site is Phase B's tail, per memory.md. Assert it positionally rather than by
-  // heading text: the read must come after the graph exists and before depth routing reads it.
-  const iGraph = BODY.indexOf("#### 1.2a Build the impact graph (Phase B)");
-  const iKnowledgeRead = BODY.indexOf('tags=["codebase-knowledge"]');
-  const iDepthRouting = BODY.indexOf("### 1.2b Delta triage and depth routing (Phase C)");
-  s.check("G45a the knowledge read sits inside Step 1.2a, after the graph is built",
-    iGraph > 0 && iKnowledgeRead > iGraph && iDepthRouting > iKnowledgeRead);
-  // Both files must name the other's half of the loop, so moving one fails here.
-  s.check("G45a memory.md names its call site in the agent body",
-    /call site is the tail of Step 1\.2a/.test(MEMORY_MD));
-  s.check("G45a the agent body routes the read back to memory.md § Read",
-    /Read — two calls, keyed by the impact graph|#read--two-calls-keyed-by-the-impact-graph/
-      .test(BODY));
-
-  // ---- G45b: the hotspot write merges its counters instead of clobbering them ----
-  //
-  // The template was a literal `confirmed:1` with field list `{v, path, confirmed,
-  // last_touched_by}`, and the merge rule was scoped to "the knowledge write" by its own
-  // heading — so every run reset a counter the read side classifies `hot` on, and the
-  // `missed[]` the in-run signals table promises had nowhere to land.
-  const hotspotBlock = MEMORY_MD.split("# B. Hotspot")[1]?.split("```")[0] ?? "";
-  s.check("G45b the hotspot write is documented", hotspotBlock.length > 0);
-  s.check("G45b the hotspot write merges onto the record read at Step 1.2a",
-    /MERGED onto the record read at Step 1\.2a/.test(hotspotBlock));
-  s.check("G45b the hotspot write template does not hardcode `confirmed:1`",
-    !/confirmed\s*:\s*1\b/.test(hotspotBlock));
-  // Every counter the read side branches on must exist in the written record. `missed` and
-  // `regressed` are named by the four-records table and the match table; omitting them from
-  // the write is what made those rows unreachable.
-  for (const field of ["missed", "regressed", "classes", "confirmed_examples"]) {
-    s.check(`G45b the hotspot record's value carries \`${field}\``,
-      new RegExp(`"${field}"`).test(MEMORY_MD));
-  }
-  s.check("G45b the merge rule covers both writes, not the knowledge write alone",
-    /Merge, never clobber — on both writes/.test(MEMORY_MD)
-    && !/Four rules on the knowledge write/.test(MEMORY_MD));
-  s.check("G45b Step 4d tells the run to merge rather than write the literals",
-    /never write the rule file's literals/.test(step4dSource));
-
-  // ---- G45c: `indexed` and `used` count one population ----
-  //
-  // The body defined `MEMORIES_READ_COUNT` as relevance-only and called itself authoritative;
-  // a later step extended `MEMORIES_USED[]` to knowledge and hotspot; `render-report.mjs`
-  // derives `used` from that array's length and FAILS CLOSED when it exceeds indexed. A run
-  // applying a hotspot on a repo with no armed relevance rule therefore rendered nothing at
-  // all — and that is the normal shape for a bucket in its first weeks.
-  const RENDERING_MD = read("agents/pr-reviewer/rules/report-rendering.md");
-  // Each file states the widened population in its own words, so each is pinned to its own
-  // sentence rather than to proximity: a `MEMORIES_READ_COUNT … hotspot` window check passes
-  // on the unrelated `kind` ∈ `rule`/`knowledge`/`hotspot` mention a few lines away, which is
-  // how a probe that narrowed the definition back to relevance-only stayed green.
-  for (const [file, text, claim] of [
-    ["pr-reviewer.md", BODY, /plus the knowledge and hotspot records the\s+Step 1\.2a read returns/],
-    ["report-rendering.md", RENDERING_MD,
-      /relevance rules\s*\n?\(Step 1\.0\) \*\*plus\*\* knowledge and hotspot records \(Step 1\.2a\)/],
-  ]) {
-    s.check(`G45c ${file}: MEMORIES_READ_COUNT counts knowledge and hotspot too`,
-      claim.test(text));
-    s.check(`G45c ${file}: no relevance-only claim survives beside the widened pair`,
-      !/MEMORIES_READ_COUNT[^\n]*counts `reviewer-comment-relevance` memories only/.test(text)
-      && !/is how many relevance memories were loaded/.test(text));
-  }
-  // The renderer's fail-closed rule is the reason the two must agree; assert it is still there,
-  // so a future relaxation of the docs cannot pass while the code still rejects the payload.
-  const RENDER = read("agents/pr-reviewer/scripts/render-report.mjs");
-  s.check("G45c the renderer still fails closed on used > indexed",
-    /indexed is always >= used/.test(RENDER));
-
-  // ---- G45d: relevance suppression is documented after verification, in every file ----
-  //
-  // G38d asserted the 2.7b ordering on the agent body alone, and G44a looped over both memory
-  // files without an ordering check, so `comment-relevance-memory.md` kept describing Step 2.2
-  // ("DROP the finding before it reaches the grounding step") at 1008/1008 green — the exact
-  // pre-verification suppression this PR moved.
-  for (const [file, text] of [
-    ["comment-relevance-memory.md", RELEVANCE_MD],
-    ["pr-reviewer.md", BODY],
-  ]) {
-    s.check(`G45d ${file}: no site claims relevance filtering runs at Step 2.2`,
-      !/[Ss]tep 2\.2\b/.test(text));
-    s.check(`G45d ${file}: no site drops a finding before grounding`,
-      !/before it reaches the grounding step/.test(text));
-  }
-  s.check("G45d comment-relevance-memory.md names Step 2.7b as the match point",
-    /In `pr-reviewer` that is Step 2\.7b/.test(RELEVANCE_MD));
-}
-
-// ── G47: the CI-only Fix-all trigger fires on a red/failed check, never on pending-only ──
-//
-// The trigger's own prose read "CI is not green", which subsumes a pending check that has
-// produced no failure and no logs to view — the button then sent Agent0 to "fix the failing
-// CI checks" on a check that had not failed (observed on mthines/lorekit#647: zero findings,
-// CI state `pending (Darkplane auto-approval)`, a Fix-all button with nothing to fix). The
-// fix narrows the trigger to the `CI red:` subset `CI_NOTE` already computes
-// (`report-rendering.md`); this guard reads the two real shipped surfaces and asserts the
-// red-only condition is present and the broader "not green" phrase is gone. Slices are bound
-// on stable neighbouring headings/bullets, never on the reworded trigger sentence itself — a
-// `sliceBetween` anchor pinned to the very text being edited throws on the next rename, and a
-// thrown slice reads as 0 checks / green through a `grep "✗"` pipe (recorded repeat-failure).
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  // § Fix-with-Agent0 buttons moved verbatim to rules/fix-links.md (pr-reviewer diet).
-  const BODY = read("agents/pr-reviewer/rules/fix-links.md");
-  const FIX_LINKS = read("agents/shared/rules/agent0-fix-links.md");
-
-  const bodyTrigger = sliceBetween(BODY,
-    "**When `{bot_login}` is unresolved**", "**Omit the slot**");
-  const bodyOmit = sliceBetween(BODY,
-    "**Omit the slot**", "- **Fix this (inline).**");
-
-  s.check("G47 agent body: the CI-only trigger fires on a red/failed check",
-    /red\/failed/i.test(bodyTrigger));
-  s.check("G47 agent body: the CI-only trigger no longer reads \"not green\"",
-    !/not green/i.test(bodyTrigger));
-  s.check("G47 agent body: the omit rule covers both green and pending-only CI",
-    /pending/i.test(bodyOmit));
-
-  const ruleSection = sliceBetween(FIX_LINKS,
-    "**Fix all — CI-only**", "**This one is not a `/pr-fix` invocation");
-  const ruleOmit = sliceBetween(FIX_LINKS,
-    "So the Fix-all button is omitted", "**Fix all — CI-only**");
-
-  s.check("G47 agent0-fix-links.md: the CI-only trigger fires on a red/failed check",
-    /red\/failed/i.test(ruleSection));
-  s.check("G47 agent0-fix-links.md: the CI-only trigger no longer reads \"not green\"",
-    !/not green/i.test(ruleSection));
-  s.check("G47 agent0-fix-links.md: the omit summary covers pending-only, not just green",
-    /pending/i.test(ruleOmit));
-
-  // The template body is unchanged — still legitimately imperative about a real failure,
-  // because the trigger now only fires when one has actually occurred.
-  s.check("G47 the CI-only template body still reads \"Fix the failing CI checks\"",
-    /Fix the failing CI checks on \{owner\}\/\{repo\}#\{n\}/.test(FIX_LINKS));
-}
-
-// ── G48: `aw` resolves a GitHub ACCESS PATH; it never hard-stops on `which gh` ──
-// `gh` is absent in Claude Code cloud sessions while `mcp__github__*` is present, and both
-// aw agents already carry those tools. The failure this guards is not a missing mapping —
-// `github-access.md` has owned that repo-wide for a while — but a CONSUMER that never reads
-// it. aw's two agent templates referenced the file only from a YAML comment inside `tools:`
-// (a note explaining the grant, not a step anyone executes), while `prerequisites.md` and the
-// planner's Critical First Actions carried a live `which gh` hard-stop. So the capability was
-// present and the prose forbade using it. Assert the wiring across every surface at once,
-// because fixing any one alone leaves the run stopping at another.
-{
-  const AW = "skills/workflow/autonomous-workflow/";
-  const rd = (p) => readFileSync(join(REPO_ROOT, AW + p), "utf8");
-  const PREREQ = rd("rules/prerequisites.md");
-  const PHASE7 = rd("rules/phase-7-ci-gate.md");
-  const PLANNER = rd("templates/aw-planner.agent.md");
-  const EXECUTOR = rd("templates/aw-executor.agent.md");
-  // ENUMERATE THE SIBLING SET, never the named instances. Grepping for `gh` COMMANDS
-  // finds the call sites; it does not find the POLICY, and the policy is what stops the
-  // run — `SKILL.md` Step 2 was a live gate one hop from the planner's Critical First
-  // Action, so removing the planner's own hard-stop while leaving that one fixed nothing.
-  //
-  // A hand-listed set was then wrong twice in a row: the first pass named four surfaces
-  // and missed four more; the second named eight and missed
-  // `references/error-recovery-scenarios.md`, which carried the exact sentence
-  // `overview.md` had just been changed to remove. The list is the defect, so it is gone:
-  // every `.md` under the skill is swept, and a surface added tomorrow is covered on the
-  // day it lands.
-  const AW_DIR = join(REPO_ROOT, AW);
-  const POLICY_SURFACES = walk(AW_DIR).map((f) => [rel(f), readFileSync(f, "utf8")]);
-  s.check("G48 the policy sweep actually reaches the skill's files",
-    POLICY_SURFACES.length >= 30,
-    "walk() returning empty or near-empty would pass every per-file assertion below"
-      + " vacuously — the sweep must be proved non-empty before it is trusted");
-
-  // Each surface must CITE the owner rather than restate its mapping.
-  for (const [name, src] of [["prerequisites.md", PREREQ], ["phase-7-ci-gate.md", PHASE7],
-    ["aw-planner.agent.md", PLANNER], ["aw-executor.agent.md", EXECUTOR]]) {
-    s.check(`G48 ${name} cites github-access.md`,
-      /github-access\.md/.test(src),
-      "aw is the only GitHub-touching surface that never resolved an access path; a citation"
-        + " here is what makes the cloud path reachable at all");
-    s.check(`G48 ${name} binds ACCESS_PATH`,
-      /ACCESS_PATH/.test(src),
-      "the phase rules branch on $ACCESS_PATH; a surface that never binds it falls back to the"
-        + " gh-path commands verbatim and every call fails in a cloud session");
-  }
-
-  // The regression that started this: a live `which gh` hard-stop.
-  // Match the CLAIMING shapes, never a bare substring. Every surface here has to NAME
-  // `which gh` in order to forbid it, so a substring test would flag the sentence that
-  // fixes the defect — and an `/i` on a `STOP` alternative additionally matches the
-  // ordinary word "stop" in "turns a workable cloud session into a hard stop". Both
-  // false positives were observed. G2d solved the same problem the same way.
-  const ghHardStopDirective = (src) =>
-    // a tool-status table row marking `gh` itself REQUIRED
-    /`gh`\s*\|\s*\*\*REQUIRED\*\*/.test(src)
-    // "`which gh` (REQUIRED, hard-stop if missing)"
-    || /which gh[^\n]*\(\s*REQUIRED/i.test(src)
-    || /hard-stop if missing/i.test(src)
-    // The two prose forms are scoped to lines that are ABOUT gh — otherwise they catch
-    // any unrelated install directive (observed: safety-guardrails' `confidence` companion
-    // row, "Stop, ask user to install before continuing", which concerns neither gh nor CI).
-    || src.split("\n").some((L) => /\bgh\b/.test(L) && (
-      // "**STOP** — install via Homebrew or download"
-      /\*\*STOP\*\*[^\n]*\binstall\b/.test(L)
-      // "Stop, prompt user to install" / "Stop. Phase 6 … cannot proceed."
-      || /\bStop[,.]\s[^\n]*\b(install|cannot proceed)\b/.test(L)));
-
-  // Both assertions run over the WHOLE sweep — which now includes `aw-executor.agent.md`
-  // (the agent that actually runs Phases 6–7, omitted from the first hand-list) and
-  // `phase-7-ci-gate.md` itself.
-  //
-  // CLAUDE.md's `## History` is exempt: its v3.1 entry legitimately records "gh remains
-  // hard-required" as what was true then. Only that trailing section is sliced off — the
-  // live body is swept like every other file, so a claim reintroduced above the changelog
-  // is still caught. Exempting the whole file would have created a ninth blind spot of
-  // exactly the kind this sweep exists to close.
-  // `lastIndexOf`, never `indexOf`: the changelog is the LAST `## History` in the file, and
-  // slicing at the first one lets a decoy heading inserted above the live body truncate the
-  // swept text and hide everything below it — verified green at 1441/1441 before this fix,
-  // which is the ninth blind spot the paragraph above claims to avoid. With `lastIndexOf` a
-  // decoy only shrinks the exempt region, so the failure direction is toward more coverage.
-  const livePolicyText = (name, src) =>
-    name.endsWith("autonomous-workflow/CLAUDE.md") && src.includes("\n## History")
-      ? src.slice(0, src.lastIndexOf("\n## History"))
-      : src;
-
-  for (const [name, raw] of POLICY_SURFACES) {
-    const src = livePolicyText(name, raw);
-    s.check(`G48 ${name} does not hard-stop on \`which gh\``,
-      !ghHardStopDirective(src),
-      "a `which gh` hard-stop is un-actionable in a cloud session — the documented remedy"
-        + " (\"install via Homebrew\") cannot be followed, so the agent improvises or stalls,"
-        + " which github-access.md names as the dominant source of a run that spins");
-
-    // The policy claim itself, separate from the gate. A surface can drop the `which gh`
-    // check and still assert `gh` is hard-required in prose — which is what the planner's
-    // Critical First Action would then delegate to.
-    s.check(`G48 ${name} does not claim \`gh\` is hard-required`,
-      !/`gh`[^\n]{0,40}\b(is|remains) hard-required/i.test(src)
-        && !/only `gh` is hard-required/i.test(src)
-        && !/hard-required CLI tool is `gh`/i.test(src),
-      "the binary is one of two paths; a surface still calling it hard-required re-creates"
-        + " the stop this change removed, one hop from where it was removed");
-  }
-  // CLAUDE.md's v3.1 CHANGELOG entry legitimately records "gh remains hard-required" as
-  // history. Assert the live invariant changed without forbidding the historical record —
-  // otherwise the guard would demand rewriting a changelog, which is not a contract surface.
-  s.check("G48 the live CLAUDE.md invariant states a GitHub access path, not a gh dependency",
-    (() => {
-      const cm = rd("CLAUDE.md");
-      const inv = sliceBetween(cm, "## Things to keep invariant", "## Diagnose participation");
-      return /GitHub \*?access path\*? is required/i.test(inv)
-        && !/`gh` is hard-required/.test(inv);
-    })(),
-    "two copies of this invariant exist (CLAUDE.md and diagnostic-surface.md); updating one"
-      + " leaves a diagnoser reading the other and scoring this very change as the regression");
-
-  // Two correctness properties of the mcp poll. Assert the OPERATIVE statement, sliced to
-  // the poll itself — never the paragraph that explains it, and never a bare number.
-  //
-  // The first version of these two checks grepped `/wall-clock/` and `/vacuously true/`,
-  // which are words from the *rationale*. Gutting the operative bound to "at most 4
-  // iterations" and inverting "it is never green" both left L1 at 1368/1368. They were
-  // mutation-"tested" by substituting the very strings being grepped, which proves the
-  // grep matches its own literal and nothing about the rule. A guard must fail when the
-  // RULE is broken, not when its explanation is reworded — and `/36/` additionally matched
-  // the gh path's own "≈ 36 min" on another line, so the mcp number was free to drift.
-  const MCP_POLL = sliceBetween(PHASE7, "**`ACCESS_PATH = mcp`**", "**No budget is shared");
-  s.check("G48 phase-7's mcp poll states the 36-iteration bound in its own operative text",
-    /at most 36 iterations/.test(MCP_POLL) && !/at most 4\b/.test(MCP_POLL),
-    "an `attempt` on the gh path is a 540 s watch and an `iteration` here is a 60 s sleep,"
-      + " so copying the count bounds the mcp poll at 4 minutes against the watch's ~36 —"
-      + " escalating with checks pending on the very path this rule exists to enable");
-  s.check("G48 phase-7's mcp poll tests emptiness BEFORE all-passing, and calls it not-green",
-    (() => {
-      const empty = MCP_POLL.indexOf("union is empty");
-      const passing = MCP_POLL.indexOf("every member terminal and passing");
-      return empty > -1 && passing > -1 && empty < passing
-        && /is never green/.test(MCP_POLL) && /get_status/.test(MCP_POLL);
-    })(),
-    "\"all terminal and passing\" is vacuously true of an empty set, so testing it first"
-      + " routes an unregistered push to success; and get_check_runs alone drops every legacy"
-      + " commit-status check, which reads as \"no CI\" on a repo that has it. Order is"
-      + " asserted positionally because a correct pair of sentences in the wrong order is"
-      + " still the bug (same technique as G38's suppression-after-verification check)");
-
-  // `gh auth status` is not a valid probe: it inspects a stored token, so it exits non-zero
-  // under a per-call credential proxy while every real API call succeeds.
-  s.check("G48 prerequisites.md does not verify access with `gh auth status`",
-    !/^\s*(?:\$\s*)?gh auth status\s*$/m.test(PREREQ)
-      && !/`gh auth status`\s*\|[^|]*Logged in to github\.com/.test(PREREQ),
-    "gh auth status lies under a wrapped gh that injects a scoped credential per call, so"
-      + " probing with it declares \"no gh\" on a session where gh works perfectly");
-
-  // Phase 7 must name the --watch Gap. It is the one verb here with NO MCP equivalent, so a
-  // mapping table that silently omitted it would send the mcp path at a command that cannot
-  // exist — and the bounded-poll substitute has to keep the phase's own two invariants.
-  s.check("G48 phase-7 names the --watch gap and its bounded-poll substitute",
-    /--watch/.test(PHASE7) && /\bpoll\b/i.test(PHASE7)
-      && /get_check_runs/.test(PHASE7),
-    "gh pr checks --watch streams until checks settle and MCP is request/response; without a"
-      + " stated substitute the mcp path either invents a --watch or silently skips the watch");
-  s.check("G48 phase-7's mcp poll keeps the queried-never-carried invariant",
-    /queried, never carried|never carry a verdict|re-read the state on \*\*every\*\*/i.test(PHASE7),
-    "a poll that caches a verdict between iterations reports some earlier commit as green;"
-      + " this is the invariant the reverted shared-watch-budget design broke (v3.22)");
-
-  // ACCESS_PATH=none must degrade visibly, never silently and never as success.
-  s.check("G48 phase-7 degrades visibly when there is no access path",
-    /Degraded:/.test(PHASE7)
-      && /never report CI as green|never treat "could not observe" as "no CI/i.test(PHASE7),
-    "\"could not observe CI\" and \"no CI configured\" are different states; collapsing them is"
-      + " how a green report gets written for a PR whose CI was never observed");
-}
-
-// ── G49: the ui-verify author delegation is REACHABLE and its skip is VISIBLE ──
-// Measured, not hypothesised: of the 20 most recent lorekit PRs, all 20 merged after
-// ui-verify shipped (2026-09-01) and NONE carried a `ui-verify:v1` block —
-// including #651, whose diff matched create-pr Step 6.4's own UI heuristic on nine files.
-// Two independent defects produced that, and each one alone is sufficient:
-//
-//   1. `ui-verify`'s frontmatter granted `Bash(gh *)` and no `mcp__github__*`, so on a
-//      cloud session (no `gh`, which is where these runs happen) the operation's only
-//      deliverable — writing the block into the PR body — was unreachable. Its own Step 0
-//      told it to resolve to the mcp path that its grant then forbade.
-//   2. `create-pr`'s Step 10 report had no slot for the spec at all, so every skip and
-//      every failure rendered as a clean, successful PR. That is why defect 1 survived
-//      four days of UI PRs unnoticed: nothing downstream contradicted it.
-//
-// Assert both at once. Fixing the grant while leaving the report blind restores the
-// capability and keeps the next regression invisible, which is how this one lasted.
-//
-// On the relative weight of the two: a prompt-level A/B (pre-fix vs post-fix text, told
-// only that `gh` is absent and the mcp tools present) reproduced defect 2 in every
-// baseline run — the pre-fix arm answered "NO SLOT" 3/3 — but did NOT reproduce defect 1,
-// because a capable agent handed its tool inventory bridges the missing mapping itself.
-// That is a limit of the probe, not evidence the grant was harmless: `allowed-tools` is a
-// permission allowlist, so a tool absent from it is not callable however well the agent
-// reasons, and no prompt-level simulation can exercise permission enforcement. Defect 2
-// is therefore the one with measured behavioural support, and it alone is sufficient to
-// explain a silent 0-of-20; defect 1 rests on the allowlist contract.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const PS = read("skills/testing/ui-verify/SKILL.md");
-  const CP = read("skills/delivery/create-pr/SKILL.md");
-  // Every `.test()` below reads a BOUNDED surface — a section slice, or a line-anchored
-  // pattern over a whole file. `G49-lint` (the block after this one) executes that as a
-  // rule, and this helper is what makes conforming cheap. `extractSection` throws on a
-  // renamed heading, which would abort the L1 run before `s.report()`, so a miss degrades
-  // to "" and each slice is proved non-empty by its own sentinel instead.
-  const section = (file, heading) => {
-    try {
-      return extractSection(file, heading);
-    } catch {
-      return "";
-    }
-  };
-  const PS_STEP0 = section(
-    "skills/testing/ui-verify/SKILL.md", "## Step 0: Resolve your GitHub access path");
-  s.check("G49 the guard reads ui-verify's Step 0 section",
-    PS_STEP0.length > 400,
-    "a renamed Step 0 heading yields an empty slice; the two access-path assertions below"
-      + " would report as satisfied by a section that no longer exists");
-  // One named boundary, sliced both ways: the frontmatter is what grants, the body is what
-  // documents, and every assertion below belongs to exactly one of them.
-  const PS_FM_END = PS.indexOf("\n---", 4);
-  const PS_FM = PS.slice(0, PS_FM_END);
-  const PS_BODY = PS.slice(PS_FM_END);
-
-  // The sweep must be proved non-empty before any assertion over it is trusted.
-  s.check("G49 the guard reads both surfaces",
-    PS.length > 2000 && CP.length > 2000 && PS_FM.includes("allowed-tools:"),
-    "an empty read or a frontmatter slice that missed `allowed-tools:` would pass every"
-      + " assertion below vacuously");
-
-  // 1. The grant must be able to reach GitHub on BOTH access paths, and to dispatch under
-  //    either spelling. `Bash(gh *)` alone is the pre-fix state; `Task` alone is the exact
-  //    literal-name defect PR #180 removed from this skill's PROSE while leaving it here.
-  //
-  // Every assertion in this group reads the `allowed-tools:` LINE, never the whole
-  // frontmatter: a grant is a permission allowlist, so only that line grants anything, and
-  // a tool named in `description:` prose must not satisfy a check about what the skill may
-  // CALL. The line is bound and proved non-empty FIRST — binding it after the assertions
-  // that depend on it, as an earlier revision did, left the two `mcp__github__*` checks
-  // reading `PS_FM` under a comment stating the rule they broke, so a grant that dropped
-  // `update_pull_request` while still mentioning it in `description:` passed green.
-  const PS_TOOLS = (/^allowed-tools:.*$/m.exec(PS_FM) || [""])[0];
-  s.check("G49 the guard reads ui-verify's grant line",
-    /\bRead\b/.test(PS_TOOLS) && PS_TOOLS.length > 80,
-    "a failed `allowed-tools:` match would make every grant assertion below vacuous");
-  s.check("G49 ui-verify's grant can write a PR body on the mcp path",
-    /mcp__github__update_pull_request/.test(PS_TOOLS),
-    "the whole deliverable of `author` is a PR-body write; granting only `Bash(gh *)` makes"
-      + " it unreachable in every cloud session, where `gh` is absent");
-  s.check("G49 ui-verify's grant can read a PR on the mcp path",
-    /mcp__github__pull_request_read/.test(PS_TOOLS),
-    "the block must be merged into the EXISTING body, so the body has to be readable first");
-  // `run` dispatches the aw-tester agent, so this IS a dispatching skill: it must name
-  // BOTH spellings. Stated as a conjunction over presence rather than the earlier
-  // `!Task || Agent`, which went green on a grant naming NEITHER (the left disjunct is
-  // satisfied by absence) and on an `Agent`-only grant that breaks the Claude Code CLI.
-  s.check("G49 ui-verify's grant names BOTH dispatch spellings",
-    /\bTask\b/.test(PS_TOOLS) && /\bAgent\b/.test(PS_TOOLS),
-    "`run` dispatches the aw-tester agent; a grant naming only `Task` blocks it on the"
-      + " harness that spells the tool `Agent` — the F6 defect, one layer below the prose —"
-      + " and naming only `Agent` breaks it on the CLI. Both, or it cannot dispatch");
-  // The grant widened by seven tools in one commit. Pinning two of them leaves the next
-  // added-or-dropped entry invisible, which is the exact shape of the defect this guard
-  // exists for: a grant that silently disagreed with its own prose.
-  for (const tool of PS_TOOLS.match(/mcp__github__\w+/g) ?? []) {
-    s.check(`G49 ui-verify's prose accounts for the granted \`${tool}\``,
-      PS_BODY.includes(tool),
-      "a GitHub tool in the grant that no step names is either dead capability or an"
-        + " undocumented call; both are how the grant and the prose drift apart");
-  }
-
-  // 2. Step 0 must NAME the mcp equivalents. `github-access.md` owns the repo-wide mapping,
-  //    but a consumer that cites it and then prints only `gh` forms leaves the reader to
-  //    invent the call — this is G48's lesson applied to a second consumer.
-  // Read over Step 0's slice, so the pair no longer needs a 400-char proximity window to
-  // stand in for a scope — and `mcp__github__update_pull_request` cannot be satisfied by
-  // its own mention in the `allowed-tools:` frontmatter, which is a grant, not a mapping.
-  s.check("G49 ui-verify states the mcp-path equivalent of the body write",
-    /gh pr edit[\s\S]*mcp__github__update_pull_request/.test(PS_STEP0),
-    "citing the access-path rule is not the same as naming the call; the gh form was"
-      + " labelled authoritative and no mcp form appeared anywhere in the file");
-
-  // 3. `run`'s deployment lookup genuinely has NO mcp equivalent, so the honest degradation
-  //    must be stated rather than collapsed into the deployed/not-deployed verdict.
-  // Scoped to Step 0, which is where the degradation is stated. Over the whole file the
-  // `pass --url` half was VACUOUS: the literal occurs twice in `ui-verify/SKILL.md`
-  // (Step 0's outcome string and Operation `run`'s `--url` prose), so rewording Step 0's
-  // outcome left the check satisfied by the other mention — eighth instance of this
-  // block's one class, and the instance that motivated the lint below.
-  s.check("G49 ui-verify distinguishes 'no access path' from 'preview not deployed'",
-    /pass --url/.test(PS_STEP0)
-      && /never report `inconclusive: preview not deployed`/.test(PS_STEP0),
-    "no `mcp__github__*` tool exposes deployments; reporting a lookup that never happened"
-      + " as `preview not deployed` asserts a fact about the deployment as if checked");
-
-  // 3b. And it must bite in the file that OWNS the decision. Asserting it against SKILL.md
-  //     alone was structurally incapable of catching the residue: `runner.md § Step 2`
-  //     delegates resolution to `preview-url-resolution.md` and declares any `inconclusive`
-  //     from THERE terminal, so an agent following the file the skill points at reached the
-  //     forbidden string with nothing in its path to stop it — while L1 stayed green. A
-  //     guard that green-lights the residue of its own bug is worse than no guard.
-  const PUR = read("skills/testing/ui-verify/rules/preview-url-resolution.md");
-  const PUR_PRECOND = section(
-    "skills/testing/ui-verify/rules/preview-url-resolution.md",
-    "## The access-path precondition (check this before step 1)");
-  s.check("G49 the guard reads the precondition section",
-    PUR_PRECOND.length > 300,
-    "an empty slice would report the precondition's two halves as present in a section"
-      + " that no longer exists");
-  // Read over the precondition's own section: the claim is that THAT section states both
-  // halves, so a copy of either sentence elsewhere in the file must not satisfy it.
-  s.check("G49 the owning file carries the access-path precondition",
-    /no access path for deployment lookup \(pass --url\)/.test(PUR_PRECOND)
-      && /[Nn]ever report `inconclusive: preview not deployed`/.test(PUR_PRECOND),
-    "`preview-url-resolution.md` owns the resolution outcome and `runner.md` treats it as"
-      + " terminal, so a branch stated only in SKILL.md is unreachable by a conforming run");
-  s.check("G49 the precondition precedes the steps it guards",
-    PUR.indexOf("## The access-path precondition") !== -1
-      && PUR.indexOf("## The access-path precondition") < PUR.indexOf("## Resolution steps"),
-    "a precondition printed after the steps it gates is read too late; the condition is"
-      + " `run` invoked without `--url`, which SKILL.md Step 0 cannot see at all");
-  // And the premise that makes the two checks above MEAN anything must itself be guarded.
-  // Placing the branch in the owning file is only sufficient because `runner.md § Step 2`
-  // (a) delegates resolution there and (b) declares any `inconclusive` from there terminal.
-  // Neither was asserted, so deleting either sentence from `runner.md` left L1 green while
-  // the branch became unreachable again — the guard resting on an unguarded premise.
-  const RUN = read("skills/testing/ui-verify/rules/runner.md");
-  // Bounded by the NEXT HEADING, never by a character count. A `slice(0, 400)` window was
-  // scoped in name only: Step 2 is ~253 chars, so 147 chars of Step 3 sat inside every
-  // assertion and deleting Step 2's delegation while naming the file in Step 3's opening
-  // kept L1 green — a vacuous pass in the very guard added to close a vacuous guard. The
-  // constant also failed the other way: `terminal for this run` sits ~155 chars in, so
-  // adding a couple of sentences of legitimate prose ahead of it pushed it out of the
-  // window and turned L1 red for a reflow that changed no rule.
-  // The shared `extractSection`, not a local slicer. Both bounds of a section are places a
-  // heading-level confusion can get in, and a hand-rolled slicer here got each of them
-  // wrong in turn:
-  //
-  //   * the START was `indexOf` on the bare heading text, which also matches inside a
-  //     DEEPER heading — demoting every `## ` to `### ` in `runner.md` kept the match and
-  //     grew the Step 2 "section" from 253 chars to 7126, so every assertion ran against
-  //     the whole document;
-  //   * the END was `indexOf("\n## ")`, level-blind in the other direction — PROMOTING the
-  //     next heading to `# ` grew the slice to 1813 chars, and moving Step 2's delegation
-  //     sentence into that top-level section then satisfied the delegation check from
-  //     outside Step 2 entirely, with L1 green. It was also fence-blind: a ```text block
-  //     inside Step 2 containing a `## ` line cut the slice at the fence.
-  //
-  // A `length > N` LOWER bound cannot see either over-capture, which is what kept both
-  // invisible. `extractSection` is level-aware AND fence-aware and is already imported, so
-  // this is one implementation for every caller instead of a third private copy — and its
-  // own start bound was the same bare `indexOf`, fixed there rather than worked around
-  // here. It throws on a missing section; the sentinels below want an empty slice, so the
-  // throw is converted rather than propagated.
-  const runSection = (heading) => {
-    try {
-      return extractSection("skills/testing/ui-verify/rules/runner.md", `## ${heading}`);
-    } catch {
-      return "";
-    }
-  };
-  const RUN_STEP2 = runSection("Step 2: Resolve the preview URL");
-  // Both checks below get their OWN sentinel. Relying on the empty slice to fail them by
-  // side effect works but is invisible: a later edit that gives one of them a fallback
-  // would silently restore the vacuity with nothing naming what broke.
-  s.check("G49 the guard reads runner.md's Step 2 section",
-    RUN_STEP2.length > 120,
-    "a renamed, removed, or demoted Step 2 heading yields an empty slice; asserting over it"
-      + " would report the two premises below as satisfied by a section that no longer"
-      + " exists — or, on a demotion, by the rest of the file");
-  s.check("G49 runner.md Step 2 delegates resolution to the owning file",
-    /preview-url-resolution\.md/.test(RUN_STEP2),
-    "the precondition is enforced in `preview-url-resolution.md`; a Step 2 that resolves the"
-      + " URL itself never reads that file, and the branch is unreachable however well it"
-      + " is written");
-  // Matches the RULE, not its punctuation. Requiring the literal `…` made a reword to
-  // `inconclusive: <reason>` turn L1 red while the rule was still honoured — the wording
-  // dependency this block's own comments disavow. The gap is unbounded on purpose: the
-  // slice IS the scope, so a character window is a second, weaker scope that can only
-  // false-red. The `{0,80}` it replaces used 18 of its 80 chars, meaning one added clause
-  // between the code and the terminality claim turned L1 red for a reflow.
-  s.check("G49 runner.md Step 2 declares an inconclusive from that file terminal",
-    /`inconclusive:[^`]*`[\s\S]*terminal for this run/.test(RUN_STEP2),
-    "without terminality the runner may treat `no access path for deployment lookup` as a"
-      + " soft miss and carry on to dispatch, reporting a pass or a fail for a spec that"
-      + " never ran — the outcome the string exists to prevent");
-  // 3b-ii. Step 1's body read is the other half of the access-path fix, and it landed as
-  //        prose no check read — so reverting it to the gh-only form left L1 green. It
-  //        precedes the Step 2 precondition, so on the mcp path it was the FIRST command
-  //        a reader met, and a gh-only spelling there strands the run before Step 2.
-  const RUN_STEP1 = runSection("Step 1: Get the spec");
-  s.check("G49 the guard reads runner.md's Step 1 section",
-    RUN_STEP1.length > 200,
-    "an empty Step 1 slice would report the dual access path below as present");
-  s.check("G49 runner.md Step 1 gives the body read on BOTH access paths",
-    /gh pr view/.test(RUN_STEP1) && /mcp__github__pull_request_read/.test(RUN_STEP1),
-    "unlike Step 2's deployment lookup this read HAS an mcp equivalent, so naming only the"
-      + " gh form makes the mcp path look blocked at the first command when it is not");
-
-  // 3c. The named downstream consumer must map the new outcome, and must NOT map it to the
-  //     other one's remedy. `review-loop` had a row for `preview not deployed` whose note
-  //     is `re-run once the preview is up` — advice that can never come true when no lookup
-  //     ran, so a UI PR reviewed on a cloud session got a permanently-false note in it.
-  // Step 1.6's outcome table lives in rules/preview-run.md; the report slot in SKILL.md Step 3.
-  const RL = read("skills/quality/review-loop/SKILL.md") + "\n" + read("skills/quality/review-loop/rules/preview-run.md");
-  // Both row-anchored, like the `empty spec` and catch-all pairs below. The claim is about
-  // a ROW of the outcome table, so the row is what the pattern has to match — and the
-  // remedy's `{0,320}` window is gone with the anchor, being the third instance of a
-  // character gap standing in for a scope (after the 400 and the 80).
-  s.check("G49 review-loop maps the no-access-path outcome",
-    /^\|[^\n|]*no access path for deployment lookup \(pass --url\)[^\n|]*\|/m.test(RL),
-    "the delegate gained an outcome its primary programmatic caller could not render, so"
-      + " even a correctly-behaving `run` fell through the outcome table unmapped");
-  s.check("G49 review-loop's remedy for it is an explicit URL, not waiting for a build",
-    /^\|[^\n]*no deployment lookup on this access path[^\n]*--url <preview-url>/m.test(RL),
-    "`re-run once the preview is up` is unactionable here — nothing was looked up, so the"
-      + " human re-runs and gets the same string; only passing a URL changes the outcome");
-  // The other two rows added to that table landed as prose no check read, so reverting
-  // either left L1 green. An unmapped return is the mechanism that put a permanently-false
-  // note in a report once already, which is what makes the catch-all load-bearing rather
-  // than tidy: without it a delegate can gain an outcome and the table just drops it.
-  // Anchored to the ROW, exactly as the `empty spec` pair below is, and for the same
-  // reason: `unrecognised outcome` is enumerated on TWO surfaces — this table row and the
-  // Step 3 report slot — so testing the two halves as independent substrings of the whole
-  // file asserted neither of them. Deleting the row left the slot satisfying the second
-  // half; INVERTING the row (mapping the catch-all to a pass) left BOTH halves satisfied
-  // and L1 green, which is the worse failure: the guard was silent while the rule it names
-  // said the opposite of what it says. Fifth instance of one class in this block — a
-  // substring test whose satisfying occurrence is not the one the check names.
-  // The cell is matched by its CONTENT within the row's first column (`[^\n|]*` either
-  // side), not by its exact text: bolding it to `| **anything else** |` says the same
-  // thing and previously turned L1 red. Anchoring is about which ROW satisfies the check,
-  // and that is what `^\|` plus the same-row `unrecognised outcome` establish; the cell's
-  // decoration carries no meaning and must not be part of the assertion.
-  s.check("G49 review-loop's outcome table has a terminal catch-all row",
-    /^\|[^\n|]*anything else[^\n|]*\|[^\n]*unrecognised outcome/m.test(RL),
-    "`ui-verify run` gained returns this table had no row for; with no catch-all an"
-      + " unmapped outcome is recorded as whatever the run guesses — a pass or a skip");
-  s.check("G49 review-loop's report renders the unrecognised-outcome value",
-    /^UI verify[^\n]*unrecognised outcome/m.test(RL),
-    "the catch-all row above produces a value the Step 3 report must be able to print;"
-      + " asserted on its own surface so neither check can stand in for the other");
-  // Anchored to the ROW, and the slot arm asserted separately. A bare
-  // `/empty ui-verify block/` over the whole file was satisfied by the Step 3 report
-  // slot, which enumerates the same string — so deleting the table row left L1 green.
-  // Same shape as the `"authored"` ⊂ `"not authored"` bug this block already fixed once:
-  // a substring that two different surfaces can satisfy asserts neither of them.
-  s.check("G49 review-loop's outcome table maps an EMPTY spec block",
-    /^\|\s*`empty spec`[^\n]*\|[^\n]*empty ui-verify block/m.test(RL),
-    "markers present with an empty body means `author` ran and embedded nothing — a"
-      + " spec-authoring bug; with no row for it the runner's return falls through to the"
-      + " catch-all and loses the distinction the row exists to draw");
-  // Order-independent. A single regex pinned the two arms to the order they happen to be
-  // written in, so swapping them — which carries no meaning, the slot is an unordered
-  // `<a | b | c>` enumeration — turned L1 red for an edit that changed no rule. The claim
-  // is that BOTH values are renderable, so it is asserted as two membership tests over
-  // the one line that renders them.
-  const RL_SPEC_SLOT = (/^UI verify[^\n]*/m.exec(RL) || [""])[0];
-  s.check("G49 review-loop keeps EMPTY and ABSENT as two report values",
-    RL_SPEC_SLOT.includes("not run (no ui-verify block)")
-      && RL_SPEC_SLOT.includes("not run (empty ui-verify block)"),
-    "the two must be separately renderable in the report; collapsing them there reports a"
-      + " spec-authoring bug as the healthy case of a PR that legitimately needed no spec");
-
-  // 4. The report slot. Every skip condition Step 6.4 enumerates needs a rendered outcome,
-  //    or the degraded path reports as success.
-  // Anchored at line start, and paired with the arm count below. Neither is load-bearing
-  // TODAY — `UI verify (Step 6.4):` occurs exactly once in the file, so anchored and
-  // unanchored `exec` capture the same six arms, and reverting either one keeps L1 green.
-  // Both are here because an earlier revision of Step 6.4's own prose DID repeat the
-  // literal mid-sentence, which made the unanchored `exec` take the paragraph as its first
-  // match and assert the enumeration against it; that prose was reworded rather than the
-  // guard being left to depend on the wording. Keep both: they cost nothing and they are
-  // what stops a re-added prose mention from silently re-breaking the capture.
-  const SLOT = /^UI verify \(Step 6\.4\):([^\n]*)/m.exec(CP);
-  s.check("G49 create-pr's Step 10 report has a ui-verify slot",
-    SLOT !== null && SLOT[1].split("|").length === 6,
-    "with no slot, all four skip conditions and the failure mode render as a clean PR —"
-      + " the reason the grant defect went unnoticed across four days of UI PRs. The arm"
-      + " count is asserted here so the per-outcome checks below cannot pass against prose");
-  // Delimited tokens, not bare substrings: `"authored"` is a substring of
-  // `"not authored"`, so the success outcome was previously asserted for free by the
-  // decline outcome's text and could have been deleted without turning L1 red.
-  for (const outcome of ["<authored (", "| not authored (", "| skipped (--no-ui-verify)",
-    "| skipped (--no-quality)", "| skipped (ui-verify not available)", "| failed ("]) {
-    s.check(`G49 the slot can render "${outcome}"`,
-      SLOT !== null && SLOT[1].includes(outcome),
-      "an outcome with no rendering collapses into a neighbouring one, which is how a"
-        + " failure gets reported as a correct decline");
-  }
-  // A slot with no producer renders as whatever the run remembers — the failure class the
-  // slot was added to close. Step 6.4 must record its branch as it leaves, and must map
-  // the delegate's own `failed` return rather than softening it into a decline.
-  // Each read over the section that owns the claim: Step 6.4 PRODUCES the outcome, Step 10
-  // RENDERS it, and asserting either against the whole file lets one section satisfy a
-  // check about the other — the mechanism behind four of this block's eight vacuities.
-  const CP_S64 = section("skills/delivery/create-pr/SKILL.md",
-    "## Step 6.4: Author the UI verification spec (default ON for UI changes)");
-  const CP_S10 = section("skills/delivery/create-pr/SKILL.md", "## Step 10: Report");
-  s.check("G49 the guard reads create-pr's Step 6.4 and Step 10 sections",
-    CP_S64.length > 800 && CP_S10.length > 400,
-    "an empty slice on either side would report the producer or the renderer as compliant"
-      + " on the strength of a heading that no longer exists");
-  s.check("G49 create-pr's Step 6.4 records the outcome it hands to the slot",
-    /Record which branch you took, now, before continuing/i.test(CP_S64)
-      && /failed \(no GitHub access path\)/.test(CP_S64),
-    "the six values are enumerated in Step 10 but were produced nowhere; in particular"
-      + " `ui-verify`'s `failed (no GitHub access path)` had no mapping, so the one new"
-      + " failure mode this fix introduced was the one the new slot could not show");
-  s.check("G49 create-pr states the slot is mandatory on a non-UI diff too",
-    /mandatory on every run, including a non-UI diff/i.test(CP_S10),
-    "the tempting omission is exactly the silent case: `not authored (no UI files in diff)`"
-      + " is the informative answer, and dropping the line restores the blind spot");
-
-  // 5. The gate must actually FIRE through its documented invocation path. Found by running
-  //    that path in a fresh agent: the skill invokes the script as
-  //    `node ~/.claude/skills/ui-verify/scripts/is-ui-diff.mjs`, a symlink chain to the repo.
-  //    Node's ESM loader realpath-resolves `import.meta.url` to the repo path, while
-  //    `process.argv[1]` stays the symlink path — so a main-guard comparing the two directly
-  //    (`import.meta.url === \`file://${argv[1]}\``, OR the `pathToFileURL(argv[1]).href`
-  //    form) NEVER matches through a symlink and `main()` silently never runs: no `UI_DIFF:`
-  //    line, exit 0. A conforming agent reads nothing and the whole mechanical gate is a
-  //    no-op. Neither the self-test (run at the real path) nor any source substring caught
-  //    it. Prove it hermetically — symlink the self-contained script into a tmpdir and run
-  //    it THERE, so the guard needs no `~/.claude` (absent in CI) and reds on a revert to
-  //    either fragile form.
-  {
-    const realScript = join(REPO_ROOT, "skills/testing/ui-verify/scripts/is-ui-diff.mjs");
-    let firedThroughSymlink = false;
-    let detail = "";
-    try {
-      const dir = mkdtempSync(join(tmpdir(), "uiv-symlink-"));
-      const link = join(dir, "is-ui-diff.mjs");
-      symlinkSync(realScript, link);
-      const r = spawnSync(process.execPath, [link, "--self-test"], { encoding: "utf8" });
-      firedThroughSymlink = r.status === 0 && (r.stdout || "").includes("passed, 0 failed");
-      detail = `status=${r.status} stdout=${JSON.stringify((r.stdout || "").trim().slice(0, 80))}`;
-      rmSync(dir, { recursive: true, force: true });
-    } catch (e) {
-      detail = `spawn error: ${e.message}`;
-    }
-    s.check("G49 is-ui-diff's CLI main-guard fires through a symlink (documented invocation)",
-      firedThroughSymlink,
-      "the skill runs the script via ~/.claude/skills/ui-verify → repo; a main-guard"
-        + " comparing import.meta.url (realpath) to a path derived from process.argv[1]"
-        + " (symlink) never matches, so the gate is a silent no-op through its own"
-        + ` documented path. Resolve BOTH sides through realpath. ${detail}`);
-  }
-}
-
-// ── G49-lint: no assertion in the G49 block may test an UNBOUNDED whole-file string ──
-// This guard reads `l1.mjs` itself and lints the G49 block above. It exists because ONE
-// defect class recurred EIGHT times in the change that produced that block, five of them
-// inside the fix written for the previous one: a substring test whose satisfying
-// occurrence is not the one the check names. Every instance had the same shape — a
-// `.test()` against a whole file, passing because the literal also appears somewhere the
-// assertion was not about. Two examples, both bite-confirmed:
-//
-//   * `/pass --url/.test(PS)` — the literal occurs twice in `ui-verify/SKILL.md`
-//     (Step 0's outcome string, and Operation `run`'s `--url` prose). Deleting it from
-//     Step 0, which is the surface the check names, left L1 GREEN.
-//   * `/\|\s*anything else\s*\|/.test(RL)` — INVERTING the catch-all row so the table
-//     told the run to swallow an unmapped outcome also left L1 GREEN. Worse than
-//     deletion: the guard was silent while the rule said the opposite.
-//
-// A `length > N` sentinel cannot see any of this, because it is a LOWER bound and every
-// instance is an OVER-capture. So the rule is structural instead: an assertion reading a
-// whole file must be LINE-ANCHORED (`^` in the body, `m` in the flags), which pins the
-// match to one row or one line; anything narrower than a file — a section slice, a
-// frontmatter slice, a single extracted line — is already bounded and is not linted.
-// Re-pointing an assertion onto `extractSection(...)` is the other way to conform, and
-// the block's own `section()` helper is there to make that cheap.
-//
-// Fail-closed by construction: a `.test(binding)` whose receiver this lint cannot parse
-// as a regex literal is a VIOLATION, not an exemption. A receiver it cannot read is a
-// receiver it cannot prove bounded, and "unparseable" is exactly the hole a future
-// `new RegExp(...)` or a hoisted pattern constant would slip through.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const SELF = read("scripts/eval/l1.mjs").split("\n");
-  // Locate the block by the EXACT banner prefix. `// ── G49: ` and not `// ── G49`,
-  // because this lint's own banner starts `// ── G49-lint` and a prefix match would
-  // pick the lint up instead of its subject — a guard that lints only itself.
-  const bannerAt = SELF.findIndex((l) => l.startsWith("// ── G49: "));
-  // Guard blocks in this file are top-level `{ … }` with the braces alone at column 0
-  // and every inner brace indented, so the bounds are two exact-line matches. Deliberately
-  // not brace COUNTING: a `{` inside a string or a regex character class would throw the
-  // count off, and a mis-bounded block is how an over-capture gets in — the very failure
-  // this guard is about.
-  const openAt = bannerAt < 0 ? -1 : SELF.indexOf("{", bannerAt);
-  const closeAt = openAt < 0 ? -1 : SELF.indexOf("}", openAt);
-  const BLOCK = openAt >= 0 && closeAt > openAt
-    ? SELF.slice(openAt, closeAt + 1).join("\n")
-    : "";
-  // The banner is a multi-line comment header, so the `{` is not the line after it —
-  // only that it FOLLOWS it, with nothing but comment lines between.
-  const gap = bannerAt >= 0 && openAt > bannerAt
-    ? SELF.slice(bannerAt + 1, openAt).every((l) => l.startsWith("//"))
-    : false;
-  s.check("G49-lint located the G49 block in l1.mjs",
-    bannerAt >= 0 && openAt > bannerAt && gap && closeAt > openAt && BLOCK.length > 10000,
-    "the lint could not find its subject, so every assertion below would report as"
-      + " satisfied by an empty string — the exact vacuity it exists to forbid;"
-      + ` banner=${bannerAt} open=${openAt} close=${closeAt} len=${BLOCK.length}`);
-
-  // Whole-file bindings are DERIVED, not listed: a `read()` added to the block tomorrow
-  // is linted without editing this guard. A hardcoded list is a second place to forget.
-  const bindings = [...BLOCK.matchAll(/^\s*const (\w+) = read\("/gm)].map((m) => m[1]);
-  s.check("G49-lint derives the block's whole-file bindings",
-    bindings.length >= 3,
-    "no `const X = read(...)` bindings were recovered, so the scan below has nothing to"
-      + ` check and passes trivially; derived=[${bindings.join(", ")}]`);
-
-  const allTests = [...BLOCK.matchAll(/\.test\(/g)].length;
-  s.check("G49-lint's scan sees the block's assertions",
-    allTests >= 10,
-    "the block asserts through `.test()` throughout; recovering almost none of them means"
-      + ` the slice or the scan is wrong, not that the block got simpler; seen=${allTests}`);
-
-  // A regex literal, recovered by anchoring to the END of everything preceding `.test(`.
-  // The body class admits escapes (`\/`) and character classes (`[^\]]`) so a `/` inside
-  // either does not terminate the literal early, and excludes a raw newline so the match
-  // cannot run backwards past the assertion's own line into an earlier one.
-  const LITERAL = /\/((?:\\.|\[(?:\\.|[^\]\n])*\]|[^/\\\n])+)\/([a-z]*)$/;
-  let scanned = 0;
-  for (const binding of bindings) {
-    const re = new RegExp(`\\.test\\(${binding}\\)`, "g");
-    for (const m of BLOCK.matchAll(re)) {
-      scanned++;
-      const before = BLOCK.slice(0, m.index);
-      const lit = LITERAL.exec(before);
-      // `openAt` is a 0-indexed line index, so `openAt + <1-indexed line within BLOCK>`
-      // lands on the 1-indexed file line — the `{` itself is block line 1.
-      const lineNo = openAt + before.split("\n").length;
-      const where = `l1.mjs:${lineNo} .test(${binding})`;
-      if (lit === null) {
-        s.check(`G49-lint ${where} tests a whole file through a regex literal`, false,
-          "the receiver is not a parseable regex literal, so this lint cannot prove the"
-            + " match is line-anchored — bind the pattern inline, or re-point the"
-            + " assertion at a bounded slice via the block's `section()` helper");
-        continue;
-      }
-      const [, body, flags] = lit;
-      s.check(`G49-lint ${where} is line-anchored`,
-        body.includes("^") && flags.includes("m"),
-        "an unanchored pattern over a whole file is satisfied by ANY occurrence, including"
-          + " one on a surface the assertion is not about — the defect class that recurred"
-          + " eight times in the change this block came from. Either anchor it (`^` plus"
-          + " the `m` flag, pinning it to one line or one table row) or read a bounded"
-          + ` slice instead; body=/${body}/${flags}`);
-    }
-  }
-  // No sentinel on `scanned`: it is the quantity this rule DRIVES TO ZERO. Re-pointing
-  // every whole-file assertion onto a section slice is the ideal outcome, and a
-  // `scanned >= N` floor would redden on exactly that improvement.
-  s.check("G49-lint reports what it scanned",
-    Number.isInteger(scanned) && scanned >= 0,
-    `whole-file assertions scanned: ${scanned}`);
-}
-
-// ── G50: L2 cost controls — prompt caching + per-PR suite selection ──
-// Two optimisations, both of which fail SILENTLY if they regress: a dropped `cache_control`
-// key still returns correct answers at ~3x the price, and a selector that returns nothing
-// still exits 0 while grading nothing. Neither shows up in a score, so neither is visible in
-// the one output anyone reads. This block asserts the wiring; the run's own token line
-// (`cache read` > 0) is the runtime half.
-//
-// Assertions here are line-anchored (`^` + `m`) or read a bounded slice, per G49-lint's rule —
-// several of them test for the ABSENCE of a pre-change shape, and an unanchored absence test
-// over a whole file is satisfied by any stray occurrence, including one in a comment.
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const l2 = read("scripts/eval/l2.mjs");
-  const sel = read("scripts/eval/select-suites.mjs");
-  const yml = read(".github/workflows/evals-l2.yml");
-
-  // G50a is RETIRED, not missing: executing the selector's `--self-test` is `G21h`'s first
-  // check, and two guards under two IDs asserting one contract makes a red build ambiguous
-  // about which contract broke. The two arrived on separate branches; `G21h` is the survivor
-  // because the rest of its group covers the same workflow surface.
-
-  // G50b: the suite table is imported, never re-parsed. A regex parse of the table inside the
-  // selector is the one shape that reintroduces drift, and it would still pass G21h — the
-  // self-test derives its expectations from `SUITES`, so a parse that agreed with the table
-  // today would satisfy it while being free to disagree tomorrow.
-  // The named-import list is asserted as a SET, not as one literal line: the selector also
-  // imports `HARNESS_FILES` / `goldenPath` / `detectionInputs` from the same module (the
-  // harness set and the detection inputs live next to the suites they are derived from), and
-  // pinning the exact import line would red on any of those being added or reordered while
-  // proving nothing extra. What must hold is that each name comes FROM suites.mjs.
-  {
-    const importLine = sel.match(/^import \{([^}]*)\} from "\.\/suites\.mjs";$/m);
-    const named = importLine ? importLine[1].split(",").map((n) => n.trim()).filter(Boolean) : [];
-    s.check("G50b select-suites.mjs imports the suite table from suites.mjs",
-      named.includes("SUITES"), `named imports: [${named}]`);
-    s.check("G50b select-suites.mjs imports the harness set rather than declaring one",
-      named.includes("HARNESS_FILES") && !/^(export )?const HARNESS_FILES = \[/m.test(sel),
-      `named imports: [${named}]`);
-  }
-  // The selector must never READ `l2.mjs` — a regex re-parse of the runner is the one shape
-  // that reintroduces drift. Strip comments first; the name is legitimate in prose (the
-  // module header explains why the parse was rejected) and nowhere in the code.
-  {
-    const body = sel.replace(/^\s*\/\/.*$/gm, "");
-    s.check("G50b select-suites.mjs does not read or re-parse l2.mjs",
-      !body.includes("l2.mjs"), body.match(/.*l2\.mjs.*/)?.[0]?.trim() ?? "");
-  }
-
-  // G50c: the rubric is sent as a CACHED system block. Both halves matter: the key must be
-  // present, and the pre-change `system,` shorthand (a bare string, re-billed per case) must
-  // be gone. Anchored, because `system:` appears in prose in this file too.
-  s.check("G50c l2.mjs sends the system prompt as an ephemeral cached block",
-    /^\s*system: \[\{ type: "text", text: system, cache_control: \{ type: "ephemeral" \} \}\],$/m.test(l2));
-  s.check("G50c l2.mjs no longer sends the system prompt as a bare uncached string",
-    !/^\s*body: JSON\.stringify\(\{ model: MODEL, max_tokens: 16, system,/m.test(l2));
-
-  // G50d: the run reports cache effectiveness. Without this, a `cache_control` key the API
-  // declined to honour is indistinguishable from a working cache until the invoice arrives,
-  // which is off this surface by days — the same self-concealing shape as the transport
-  // failure that read as a rubric regression.
-  s.check("G50d l2.mjs reads cache_read_input_tokens from the response usage",
-    /^\s*totalCacheRead \+= usage\.cache_read_input_tokens;$/m.test(l2)
-    && /^\s*totalCacheWrite \+= usage\.cache_creation_input_tokens;$/m.test(l2));
-  // The notice is THREE-way, not two. An undifferentiated "cache inactive" sent readers
-  // after a non-existent defect on the three suites whose rubric slice is under the
-  // model's minimum cacheable prefix — there is nothing to discount there, so both the
-  // "nothing to fix" wording and the "long enough to cache, so it is being re-billed"
-  // wording must exist, and the branch must be decided by the measured PREFIX
-  // (`maxSystemChars`) rather than by dividing total input by case count, which counts
-  // each case's user message and can cry MISSED at a suite that was never cacheable.
-  s.check("G50d l2.mjs distinguishes an uncacheable prefix from a missed cache",
-    l2.includes("cache not applicable") && l2.includes("cache MISSED")
-    && /maxSystemChars \/ CHARS_PER_TOKEN/.test(l2));
-
-  // G50e: `--suite` accepts a list, and an EMPTY selection fails closed. The list form is what
-  // makes selection possible in one process; the empty-selection exit is what stops a selector
-  // bug, or a shell expanding an unset variable, from reporting a pass over zero cases.
-  s.check("G50e l2.mjs parses --suite as a comma-separated list",
-    /^const only = onlyArg === null \|\| onlyArg === undefined$/m.test(l2)
-    && l2.includes('onlyArg.split(",")'));
-  s.check("G50e l2.mjs exits non-zero on an empty --suite selection",
-    /^if \(only !== null && only\.length === 0\) \{$/m.test(l2));
-
-  // G50i: the harness-file set is pinned HERE, not only in the module that declares it. The
-  // selector's self-test derives its expectations by iterating `HARNESS_FILES`, so deleting an
-  // entry deletes that entry's own coverage — a change to `l2.mjs` would then select no suite
-  // and skip the eval entirely, which is precisely the silent coverage loss the selector must
-  // not be able to cause. This is the one place a literal list belongs: a guard pins an
-  // invariant, a module derives.
-  {
-    const suitesMod = read("scripts/eval/suites.mjs");
-    const decl = suitesMod.match(/export const HARNESS_FILES = \[([\s\S]*?)\];/);
-    const files = decl ? [...decl[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]) : [];
-    for (const f of ["scripts/eval/l2.mjs", "scripts/eval/lib.mjs", "scripts/eval/suites.mjs",
-      "scripts/eval/select-suites.mjs"]) {
-      s.check(`G50i ${f} is a harness file (a change to it selects every suite)`,
-        files.includes(f), `HARNESS_FILES = [${files}]`);
-    }
-    // The exclusions are asserted too, because the criterion is not "is imported by the
-    // runner" but "can alter a suite's ANSWER". `telemetry.mjs` observes the run and cannot
-    // move a label; the workflow decides WHEN suites run, not what they decide, and it is
-    // also the file that consumes the selection — listing it would make every workflow edit
-    // spend all nine suites' tokens on a change that cannot flip a single case. Both are
-    // guarded by the free layer instead (telemetry by its own `--self-test` at G21k, the
-    // workflow by G50f/G50g below).
-    for (const f of ["scripts/eval/telemetry.mjs", ".github/workflows/evals-l2.yml"]) {
-      s.check(`G50i ${f} is deliberately NOT a harness file`,
-        !files.includes(f), `HARNESS_FILES = [${files}]`);
-    }
-    s.check("G50i the harness set is exactly those four files", files.length === 4,
-      `HARNESS_FILES = [${files}]`);
-  }
-
-  // G50f: a selection that did not succeed fails CLOSED AND LOUD. Selection is a JOB here,
-  // not a step inside the run job, and that changes which direction is safe. The inline-step
-  // shape had to fail OPEN — a broken selector could not be reported without a check to
-  // report it on, so the only safe answer was to run all nine suites — whereas a `select`
-  // job's outcome is a value the aggregator READS, so the run can say "the affected subset is
-  // unknown" and go red without spending a token on nine suites nobody asked for. Both shapes
-  // refuse to let a selector bug read as "nothing to run"; this one refuses without paying.
-  //
-  // The three properties, asserted against the aggregator (which is the file's only reader of
-  // the selection): it depends on the select job, it fails on any non-`success`, and the ONLY
-  // condition that runs no suite is a genuinely empty count.
-  {
-    const lines = yml.split("\n");
-    const from = lines.findIndex((l) => /^\s{2}l2:$/.test(l));
-    const agg = from >= 0 ? lines.slice(from).join("\n") : "";
-    s.check("G50f located the l2 aggregator job in evals-l2.yml", agg.length > 0,
-      `l2: at ${from}`);
-    s.check("G50f the aggregator depends on the select job and reads its result",
-      /^\s*needs: \[gate, select, suite, detection\]$/m.test(agg)
-      && /^\s*SELECT_RESULT: \$\{\{ needs\.select\.result \}\}$/m.test(agg));
-    s.check("G50f a selection that did not succeed fails the run, loudly",
-      /if \[ "\$SELECT_RESULT" != "success" \]; then/.test(agg)
-      && /affected subset is unknown/.test(agg)
-      && /affected subset is unknown[\s\S]{0,120}exit 1/.test(agg));
-    // Exactly one condition may suppress the suites, and it must be the count. A second
-    // suppressing term — a `continue-on-error`, an `|| true`, a `success()` guard on the
-    // matrix — is how a failed selection would silently become an empty one.
-    const countGuards = [...yml.matchAll(/needs\.select\.outputs\.count != '0'/g)];
-    s.check("G50f the suite matrix is suppressed only by a genuinely empty selection",
-      countGuards.length === 1 && !/continue-on-error/.test(yml),
-      `${countGuards.length} count guards; continue-on-error present: ${/continue-on-error/.test(yml)}`);
-  }
-
-  // G50g: a manual dispatch overrides the derived selection, and `all` names every suite.
-  // The precedence lives in the select job's shell rather than in one `${A:-B}` expansion,
-  // because the dispatch input is a comma LIST that can also name `bug-detection` — which is
-  // a separate runner and cannot ride `--suite` — so the branch has to emit the same
-  // `{suites, count, detection}` shape the selector does, not just a suite name.
-  s.check("G50g evals-l2.yml prefers the dispatch input over the computed selection",
-    /^\s*REQUESTED: \$\{\{ inputs\.suites \}\}$/m.test(yml)
-    && /elif \[ "\$\{REQUESTED:-all\}" = "all" \]; then/.test(yml));
-  s.check("G50g a dispatch of `all` selects every suite through the same selector",
-    /^\s*node scripts\/eval\/select-suites\.mjs --json --all \| tee selection\.json$/m.test(yml));
-  s.check("G50g an explicit dispatch list can name the separate detection runner",
-    /raw\.includes\("bug-detection"\)/.test(yml));
-
-  // G50h: full history is fetched, so the changed-file diff can reach the merge base. A
-  // shallow clone fails open — correct, but it pays the full price on every PR while looking
-  // like the optimisation is working.
-  s.check("G50h evals-l2.yml checks out full history for the diff",
-    /^\s*fetch-depth: 0$/m.test(yml));
-}
-
-// ── G51: create-skill's validate-skill.mjs — the mechanical pre-pass has a self-test,
-// stays runnable against real skills, and cannot go orphaned ──
-//
-// The plan that added this script split the work across two concurrently-edited agents: one
-// wrote the validator (scripts/validate-skill.mjs), the other rewrote create-skill's OWN
-// markdown to point at it (rules/quality-checklist.md's "## Mechanical pre-pass" section,
-// SKILL.md's link to the script). A script with no self-test is a script nobody can prove
-// still does what it claims after the next edit — the same argument G39b/G46b/G33b make for
-// their own scripts; a script with a self-test but no link from the skill's own docs is dead
-// weight the next author won't find; and a skill that ships a TOC rule for its own rules/*.md
-// files without obeying it on its OWN long files is the exact self-inconsistency this repo's
-// create-skill review (finding A9: 9 of its own rules/*.md over 100 lines had no TOC) caught
-// in the first place. This group closes all three gaps mechanically rather than trusting a
-// future editor to remember them by hand.
-{
-  const CS = join(REPO_ROOT, "skills/authoring/create-skill");
-  const VALIDATOR = join(CS, "scripts/validate-skill.mjs");
-  s.check("G51a validate-skill.mjs exists", existsSync(VALIDATOR));
-  if (existsSync(VALIDATOR)) {
-    // (a) The validator's own self-test. This is the one sub-check that MUST be green
-    // regardless of what state create-skill's own markdown is in — it is the script proving
-    // itself internally consistent, not proving anything about the skill it validates.
-    const st = spawnSync(process.execPath, [VALIDATOR, "--self-test"], { encoding: "utf8" });
-    s.check("G51a the validator's own self-test passes", st.status === 0,
-      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
-
-    // (b) The skill validates cleanly against its OWN validator — the same "physician, heal
-    // thyself" bar this file holds every other script and rule file to. A FAIL here is a real,
-    // reportable state and is never a bug in this guard, so the detail line carries the
-    // validator's own FAIL lines (which finding ids, on which file) rather than a bare red.
-    const run = spawnSync(process.execPath, [VALIDATOR, CS], { encoding: "utf8" });
-    s.check("G51b create-skill passes its own validator", run.status === 0,
-      (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
-  }
-
-  // (c) The script cannot go orphaned: SKILL.md must link it, and quality-checklist.md must
-  // name it under a "Mechanical pre-pass" heading, so a reader who opens the checklist lands
-  // on the script instead of re-deriving these checks by hand.
-  const skillMdPath = join(CS, "SKILL.md");
-  const skillMd = existsSync(skillMdPath) ? readFileSync(skillMdPath, "utf8") : "";
-  s.check("G51c SKILL.md links scripts/validate-skill.mjs",
-    /scripts\/validate-skill\.mjs/.test(skillMd),
-    existsSync(skillMdPath) ? "SKILL.md never mentions scripts/validate-skill.mjs" : "SKILL.md not found");
-  const checklistPath = join(CS, "rules/quality-checklist.md");
-  const checklist = existsSync(checklistPath) ? readFileSync(checklistPath, "utf8") : "";
-  s.check("G51c quality-checklist.md names the validator under a Mechanical pre-pass section",
-    /## Mechanical pre-pass/.test(checklist) && /validate-skill\.mjs/.test(checklist),
-    existsSync(checklistPath) ? "no ## Mechanical pre-pass section naming validate-skill.mjs" : "rules/quality-checklist.md not found");
-
-  // (d) The skill obeys its own two-branch TOC rule (rules/progressive-disclosure.md § Long
-  // reference and rule files need a TOC): rules/*.md past 150 lines and references/*.md past
-  // 100 lines both need a ## Contents / ## Table of contents heading. Both branches are guarded
-  // here because the validator grades PD03 as WARN, so G51b exits 0 either way.
-  for (const [sub, min] of [["rules", 150], ["references", 100]]) {
-    const subDir = join(CS, sub);
-    if (!existsSync(subDir)) continue;
-    for (const name of readdirSync(subDir).filter((f) => f.endsWith(".md")).sort()) {
-      const body = readFileSync(join(subDir, name), "utf8");
-      const lc = body.split("\n").length;
-      if (lc <= min) continue;
-      s.check(`G51d ${sub}/${name} (${lc} lines, > ${min}) has a ## Contents heading`,
-        /^##\s+(contents|table of contents)\s*$/im.test(body));
-    }
-  }
-
-  // (e) The skill obeys its own SC01 path convention (rules/scripts-and-assets.md § Path
-  // convention): a skill shipping scripts/ invokes them through ${CLAUDE_SKILL_DIR}/scripts/,
-  // never a cwd-relative path. Guarded here for the same reason as G51d one block up — the
-  // validator grades SC01 as WARN, so G51b exits 0 whether the WARN is present or not, and a
-  // WARN-graded check therefore needs its own guard or it is enforced by nothing. That gap was
-  // not hypothetical: SC01's own predicate was a whole-file scan for the bare variable, which
-  // this skill's prose satisfied while the invocations stayed cwd-relative, and G51b stayed
-  // green through it.
-  //
-  // Two halves, because passing is not the same as biting:
-  //   1. the convention holds on real repo state (an invocation path is present, and no
-  //      cwd-relative invocation of the validator survives anywhere in SKILL.md), and
-  //   2. SC01 actually fires on a violating input — asserted through the validator's own
-  //      --self-test, which carries a bare-variable-in-prose fixture. G51a executes that
-  //      self-test, so this check pins the fixture's existence and G51a proves it passes;
-  //      together they mean the guard cannot go green against a check that stopped firing.
-  //      Asserted against the self-test rather than a temp fixture built here, so the coverage
-  //      lives with the validator that owns SC01 and l1.mjs writes nothing to disk.
-  s.check("G51e SKILL.md invokes the validator through a ${CLAUDE_SKILL_DIR}/scripts/ path",
-    /\$\{CLAUDE_SKILL_DIR\}\/scripts\/validate-skill\.mjs/.test(skillMd),
-    existsSync(skillMdPath)
-      ? "no ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs invocation in SKILL.md"
-      : "SKILL.md not found");
-  // Byte-identical to the validator's own INTERPRETER constant, and deliberately duplicated
-  // rather than imported: this guard exists to hold the validator to a contract from outside
-  // it, so importing the alternation would let a change to the validator silently change the
-  // guard that is supposed to catch it. The cost of the copy is that the two can drift — a
-  // divergence this review caught (4 interpreters here against 9 there, with `deno`
-  // unreachable in both) — so they are asserted equal below rather than trusted to match.
-  const INTERPRETER = String.raw`\b(?:node|npx|python3?|bash|sh|tsx|(?:deno|bun)(?:\s+run)?)\s+`;
-  const validatorSrc = existsSync(VALIDATOR) ? readFileSync(VALIDATOR, "utf8") : "";
-  s.check("G51e the validator's INTERPRETER alternation matches this guard's copy",
-    validatorSrc.includes(`const INTERPRETER = String.raw\`${INTERPRETER}\`;`),
-    existsSync(VALIDATOR)
-      ? "validate-skill.mjs's INTERPRETER constant is absent or differs from l1.mjs's copy"
-      : "validate-skill.mjs not found");
-  // The convention is not SKILL.md's alone: the blocking finding this guard answers named
-  // four sites across three files, so an arm reading only `skillMd` enforced the rule on one
-  // of them and left the other three free to regress. Hence the walk over every markdown
-  // file the skill ships.
-  //
-  // Keyed on the skill's OWN script FILENAMES, not on a `create-skill/` path segment. The
-  // segment form let the bare `node scripts/validate-skill.mjs` through untouched — the same
-  // partial-coverage shape as the SKILL.md-only arm it replaced, one level down. Reading the
-  // filenames off the directory also excludes a repo-level script by construction:
-  // `bash scripts/sync-symlinks.sh`, which SKILL.md legitimately documents, is not a file in
-  // this skill's scripts/ directory, so no allowlist has to be maintained by hand.
-  // EVERY file in scripts/, not an extension allowlist. The allowlist was a hand-kept list
-  // with nothing asserting it complete, and adding a `.rb` script silently dropped it from
-  // the arm's coverage — a guard that quietly shrinks when the thing it guards grows. Taking
-  // the directory as-is cannot fall behind, and a non-script file landing in the list is
-  // harmless: nothing invokes a README through an interpreter.
-  //
-  // The INTERPRETER alternation above is the second such list, and it is deliberately NOT
-  // fixed the same way, because it cannot be: no enumeration of interpreters is complete, so
-  // `ruby scripts/x.sh` stays uncaught. That direction is safe — a missing interpreter is a
-  // missed violation, never a false accusation — and the repo's own skills invoke scripts
-  // with node, bash and python only. Recorded rather than papered over with an assertion
-  // that could not actually establish completeness.
-  const ownScriptsDir = join(CS, "scripts");
-  const ownScriptNames = existsSync(ownScriptsDir)
-    ? readdirSync(ownScriptsDir, { withFileTypes: true })
-      .filter((e) => e.isFile()).map((e) => e.name).sort()
-    : [];
-  const cwdRelative = [];
-  if (ownScriptNames.length) {
-    const names = ownScriptNames.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-    const invocation = new RegExp(
-      `${INTERPRETER}(?!\\$\\{CLAUDE_SKILL_DIR\\})(?:[^\\s"'\`]*\\/)?(?:${names})`, "g");
-    for (const path of walk(CS, ".md")) {
-      const body = readFileSync(path, "utf8");
-      for (const hit of body.match(invocation) ?? []) cwdRelative.push(`${rel(path)}: ${hit}`);
-    }
-  }
-  s.check("G51e the skill ships at least one script for the arm above to key on",
-    ownScriptNames.length > 0,
-    existsSync(ownScriptsDir) ? "scripts/ holds no recognised script files" : "scripts/ not found");
-  s.check("G51e no create-skill markdown file invokes its own script by a cwd-relative path",
-    cwdRelative.length === 0,
-    cwdRelative.length ? `${cwdRelative.length} cwd-relative invocation(s) — ${cwdRelative.join("; ")}` : "");
-  // The SC01 behaviours this group exists to pin, asserted BEHAVIOURALLY. The prior form
-  // matched the self-test fixture's PROSE across a `[\s\S]{0,400}` window — an untraceable
-  // magic number in a script whose own header rule requires every constant to name its
-  // source — and it was wrong in both directions: rewording a fixture body reds L1 while the
-  // coverage is intact, and moving the coverage elsewhere greens it while the behaviour is
-  // gone. Running the validator against fixtures instead survives any rewording and reds only
-  // when SC01 itself stops discriminating. The silent case is not padding: without it, an
-  // SC01 hardwired to fire would satisfy both firing rows.
-  const sc01Probe = (label, body, shouldFire) => {
-    const root = mkdtempSync(join(tmpdir(), "l1-sc01-"));
-    const dir = join(root, "probe-skill");
-    mkdirSync(join(dir, "scripts"), { recursive: true });
-    writeFileSync(join(dir, "SKILL.md"),
-      "---\nname: probe-skill\ndescription: Fixture skill used by L1 to probe SC01 discrimination.\n"
-      + `---\n\n# Probe\n\n${body}\n`);
-    const r = spawnSync(process.execPath, [VALIDATOR, dir, "--json"], { encoding: "utf8" });
-    rmSync(root, { recursive: true, force: true });
-    let fired = null;
-    try {
-      fired = JSON.parse(r.stdout).findings.some((x) => x.id === "SC01");
-    } catch { /* left null; reported as an unparseable result rather than as a verdict */ }
-    s.check(`G51e SC01 ${label}`, fired === shouldFire,
-      fired === null
-        ? `validator --json unparseable: ${((r.stdout || "") + (r.stderr || "")).slice(0, 200)}`
-        : `SC01 ${fired ? "fired" : "stayed silent"}, expected ${shouldFire ? "fire" : "silence"}`);
-  };
-  sc01Probe("fires on a bare-variable prose mention with every command cwd-relative",
-    "Every helper is `${CLAUDE_SKILL_DIR}`-anchored.\n\nRun `node scripts/check.mjs`.", true);
-  sc01Probe("fires when a correct path coexists with an own-path cwd-relative one",
-    "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.\n\nOr `node pkg/probe-skill/scripts/check.mjs`.", true);
-  sc01Probe("stays silent on a correct path alone",
-    "Run `node ${CLAUDE_SKILL_DIR}/scripts/check.mjs`.", false);
-}
-
-// ── G70: host portability — capability checks, never a tool name, prefix, or install path ──
-//
-// Every check below is the F6 shape (`diagnostic-surface.md`): a precondition keyed on how ONE
-// harness spells a capability, which reads as "unavailable" on every other harness and hides
-// itself because a skip is a documented, legitimate outcome. Each is pinned where it lived.
-// (G70 rather than the next free number: PR #205 claims G60–G65 on its own branch.)
-{
-  const read = (p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const CP = read("skills/delivery/create-pr/SKILL.md");
-  s.check("G70a create-pr gates the review on the dispatch capability, not the name `Task`",
-    !/Confirm `Task` is available/.test(CP) && /confirm that \*\*some\*\* available tool dispatches a sub-agent/.test(CP),
-    "a literal `Task` check records NOT REVIEWED on every harness that spells the tool `Agent` or `task`");
-
-  const HO = read("skills/workflow/implement-suggestion/rules/handoff.md");
-  s.check("G70b implement-suggestion names the `general` spelling of the generic sub-agent type",
-    /^## Generic sub-agent type$/m.test(HO) && /`general` in OpenCode-based hosts/.test(HO),
-    "a bare `general-purpose` strands the worker on OpenCode-based hosts (Dash0 Agent0)");
-
-  const TDA = read("skills/testing/e2e-pr-stabilizer/rules/telemetry-driven-analysis.md");
-  s.check("G70c e2e-pr-stabilizer detects telemetry by capability, not the `mcp__dash0-*` prefix",
-    !/\(no `mcp__dash0-\*` tools in the session\)/.test(TDA) && /capability, never a tool-name prefix/.test(TDA),
-    "a prefix check reports no-telemetry on any host that names the Dash0 server differently");
-
-  // The verifier: dispatched by the session that holds the dispatch rung, at PR open, and its
-  // verdict is a done-condition. Phase 7 must not also dispatch it by an install-path probe.
-  const P7 = read("skills/workflow/autonomous-workflow/rules/phase-7-ci-gate.md");
-  s.check("G70d phase-7 no longer detects feature-pr-verifier by a file at an install path",
-    !/\[ -f "[^"]*agents\/feature-pr-verifier\.md" \]/.test(P7) && !/subagent_type: feature-pr-verifier/.test(P7),
-    "the post-CI dispatch never fired from the executor; aw owns it at PR open");
-  const AW = read("skills/workflow/autonomous-workflow/aw/SKILL.md");
-  const FT = read("skills/workflow/autonomous-workflow/aw/rules/full-tier.md");
-  const term = (AW.match(/AW RUN COMPLETE\n[\s\S]*?```/) || [""])[0];
-  s.check("G70e aw dispatches feature-pr-verifier at PR open and reports a mandatory Verified: line",
-    /\(rules\/full-tier\.md\)/.test(AW)
-    && /^#+ Verify at PR open — you dispatch `feature-pr-verifier`$/m.test(FT)
-    && /Task\(subagent_type="feature-pr-verifier"/.test(FT)
-    && /^- Verified: /m.test(term),
-    "without the dispatch and the terminal slot, a Full run can end unverified and report nothing");
-
-  // Identity: `/user` 401s under an App installation token and a per-call proxy, and
-  // `gh auth status` fails under the proxy while every real call succeeds. GraphQL `viewer`
-  // answers for all three. A `$(gh api user …)` rung is the regression; prose naming the
-  // endpoint to explain why it is not used is not.
-  for (const rel of ["agents/shared/rules/prior-comment-awareness.md", "agents/shared/rules/outcome-learning.md",
-                     "agents/shared/rules/github-access.md", "skills/workflow/implement-suggestion/rules/comment-fetching.md",
-                     "agents/pr-reviewer.md"]) {
-    const body = read(rel);
-    s.check(`G70f ${rel} resolves identity via GraphQL viewer, never $(gh api user)`,
-      !/\$\(gh api (\/)?user\b/.test(body) && /viewer \{ login \}/.test(body)
-      && !/authenticated via `gh auth status`/.test(body));
-  }
-  s.check("G70f github-access.md requires normalized login comparison (lowercase, strip [bot])",
-    /Compare logins normalized, never raw/.test(read("agents/shared/rules/github-access.md")));
-
-  // --unattended: an automated caller must never reach AskUserQuestion. review-loop Step 1.6 is
-  // the named caller. The runner's `auto` driver falls back from Chrome to Playwright with a
-  // one-line notice and no question in either mode, so Step 4 must state that, carry the notice
-  // section, and never regrow an ask-the-user instruction (which would fire at the end of a loop
-  // nobody is watching, and error on a host with no ask-user tool).
-  const RL = read("skills/quality/review-loop/SKILL.md") + "\n" + read("skills/quality/review-loop/rules/preview-run.md");
-  const RN = read("skills/testing/ui-verify/rules/runner.md");
-  const UV = read("skills/testing/ui-verify/SKILL.md");
-  const RN_STEP4 = (RN.match(/\n## Step 4:[\s\S]*?(?=\n## Step 4b|\n## Step 5)/) || [""])[0];
-  // Step 4 with its ```text example fences and the "never calls" sentence removed: any mention of
-  // AskUserQuestion or asking the user left in that remainder is an instruction to ask, however worded.
-  const RN_STEP4_REST = RN_STEP4.replace(/`{3}text[\s\S]*?`{3}/g, "")
-    .replace(/`auto` never calls `AskUserQuestion`[^\n]*/, "");
-  s.check("G70g review-loop Step 1.6 invokes ui-verify run with --unattended",
-    /Skill\("ui-verify", "run <PR-URL> --unattended[^"]*"\)/.test(RL) && !/Skill\("ui-verify", "run <PR-URL>"\)/.test(RL));
-  s.check("G70g ui-verify's auto driver never asks (attended or --unattended), falls back with a notice, and the flag is advertised",
-    /`auto` never calls `AskUserQuestion`, attended or under `--unattended`/.test(RN_STEP4)
-    && /^### The auto-mode fallback notice$/m.test(RN_STEP4)
-    && !/AskUserQuestion|ask the user/i.test(RN_STEP4_REST)
-    && /argument-hint:[^\n]*--unattended/.test(UV));
-
-  // The companion report. `interview`, `tdd`, and `test-provenance-guard` had 0 invocations in
-  // 39 planner + 48 executor runs, and "skip silently" made that unexplainable. The contract
-  // must define the line and its closed reason set; the two agent templates — what a dispatched
-  // agent actually reads — must not restate the silent form; and the executor's own table must
-  // carry test-provenance-guard, whose absence there is one of the measured causes.
-  const CS = read("skills/workflow/autonomous-workflow/rules/companion-skills.md");
-  s.check("G70h companion-skills.md no longer says any companion skips silently",
-    !/skips? silently/i.test(CS.replace(/headline read \*skip silently\*/g, "")));
-  s.check("G70h companion-skills.md defines the mandatory report line and its closed reason set",
-    /^## The companion report$/m.test(CS)
-    && ["trigger not met:", "disabled (", "not installed", "not dispatchable on this host", "tool unavailable:"]
-      .every((r) => CS.includes(`\`${r}`)));
-  for (const t of ["aw-planner", "aw-executor"]) {
-    const body = read(`skills/workflow/autonomous-workflow/templates/${t}.agent.md`);
-    s.check(`G70h ${t} template carries no "companions skip silently" contract`,
-      !/Companions skip silently/i.test(body) && /companion-skills\.md#the-companion-report/.test(body));
-  }
-  s.check("G70h the executor's companion table lists test-provenance-guard",
-    /^\| 4\s+\| `test-provenance-guard`/m.test(read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md")));
-}
-
-// ── G71: self-containment ratchet — no skill gains a link that leaves its own folder ──
-//
-// Hosts that import skills folder by folder (Dash0 Agent0: flat /tmp/.opencode/skills/custom/<name>/,
-// no `agents/` tree) break every `../` link that climbs out of a skill. The author's symlinked
-// install hides it. Today's debt is baselined per skill in escaping-links.baseline.json; a count
-// may fall (lower the baseline with `node scripts/eval/escaping-links.mjs --write` in the same
-// commit) and may never rise. Per skill rather than one total, so removing a link in one skill
-// cannot pay for adding one in another.
-{
-  const st = spawnSync(process.execPath, [join(REPO_ROOT, "scripts/eval/escaping-links.mjs"), "--self-test"], { encoding: "utf8" });
-  s.check("G71a escaping-links.mjs self-test passes", st.status === 0,
-    ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 300));
   const found = escapingLinks();
   const now = escapingCounts(found);
   const base = escapingBaseline();
+  // An empty baseline would let every escaping link through as "not above baseline".
   s.check("G71b the escaping-link baseline exists and is non-empty", Object.keys(base).length > 0);
   for (const [skill, n] of Object.entries(now)) {
     const b = base[skill] ?? 0;
     if (n > b) {
       const fresh = found[skill].slice(-3).map((l) => `${l.file} → ${l.target}`).join("; ");
       s.check(`G71c ${skill} adds no link that escapes its folder`, false,
-        `${n} escaping vs baseline ${b} — ship the file inside the skill, or load the other skill and read ` +
-        `its files relative to the base directory the load reports (e.g. ${fresh})`);
+        `${n} escaping vs baseline ${b} — ship the file inside the skill (e.g. ${fresh})`);
     }
   }
   const total = Object.values(now).reduce((a, c) => a + c, 0);
@@ -6998,17 +111,7 @@ const isPollBlock = (block) =>
     total < baseTotal ? `${total} < baseline ${baseTotal}: lower it with --write` : `${total} escaping links`);
 }
 
-// ── G72: every Skill("<name>") names a skill that exists ──
-//
-// A deleted or renamed skill leaves `Skill("<old>")` calls behind that nothing else catches:
-// the link checker sees only Markdown links, and the harness answers with `Unknown skill` —
-// which every caller here is written to treat as a tolerable skip. The restructure deletes
-// skills in bulk (review-changes, test-auto-fix, …), so this is where a leftover call would hide.
-// Three kinds of name are legitimate:
-//   - a skill directory in this repo (holds a SKILL.md);
-//   - an EXTERNAL skill from another repo, named here so the list is reviewed;
-//   - an AGENT name, but only inside a prohibition ("never Skill("pr-reviewer")", "❌ WRONG",
-//     "Unknown skill") — that is the documentation of the mistake, not the mistake.
+// ── G72: a Skill("<name>") naming a deleted skill is answered `Unknown skill`, which callers skip ──
 {
   const EXTERNAL = new Set(["otel-instrumentation", "otel-semantic-conventions"]); // dash0hq/agent-skills
   const skillNames = new Set(walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))
@@ -7036,4585 +139,89 @@ const isPollBlock = (block) =>
     bad.length === 0, bad.slice(0, 5).join("; "));
 }
 
-// ── G52: review-branch / branch-reviewer — the PR-less review path ──
-//
-// This path makes exactly two load-bearing claims, and both are the kind that rot silently
-// because a degraded version still looks like a working review.
-//
-//   1. "Zero GitHub calls." It is the entire reason the skill exists. One `gh pr view` added
-//      later by a well-meaning editor turns it into review-loop with a misleading name, and
-//      nothing else in the repo would notice — the run still reviews, still converges, still
-//      reports. Guarded as an absence, positionally, over both files.
-//   2. "Same findings as pr-reviewer, by reference." The detection core is reused, never
-//      copied — the SAME bytes the bug-detection L2 eval reads as its live rubric. A copy
-//      here forks the core into two homes and the eval measures one while the agent runs the
-//      other, which is this repo's own mock-that-reimplements-the-thing-under-test failure at
-//      the worst possible place. Guarded in both directions: the links must be present, and
-//      the candidate-record schema must NOT be restated.
-//
-// The adapter gets the same treatment every other script here does (G39b/G46b/G33b/G51a): its
-// self-test is EXECUTED, plus one integration check, because the self-test proves the parser
-// internally consistent while the thing that actually matters is that its output still drives
-// the unmodified graph builder. Those are different claims and the second is the fragile one —
-// build-impact-graph.mjs is fail-closed on bad input, so a shape drift shows up as an empty
-// graph and a review that finds nothing, which reads exactly like a clean branch.
+// ── G46k: the Fix-with-Agent0 button names asset files; a missing one is a broken image on every review ──
 {
-  const RB = join(REPO_ROOT, "skills/quality/review-branch");
-  const AGENT = join(REPO_ROOT, "agents/branch-reviewer.md");
-  const ADAPTER = join(REPO_ROOT, "agents/branch-reviewer/scripts/local-diff-files.mjs");
-  const GRAPH = join(REPO_ROOT, "agents/pr-reviewer/scripts/build-impact-graph.mjs");
-
-  s.check("G52a the branch-reviewer agent exists", existsSync(AGENT));
-  s.check("G52a the local-diff adapter exists", existsSync(ADAPTER));
-  s.check("G52a the review-branch skill exists", existsSync(join(RB, "SKILL.md")));
-
-  if (existsSync(ADAPTER)) {
-    const st = spawnSync(process.execPath, [ADAPTER, "--self-test"], { encoding: "utf8" });
-    s.check("G52b the local-diff adapter's self-test passes", st.status === 0,
-      ((st.stdout || "") + (st.stderr || "")).split("\n").filter((l) => l.includes("✗")).join("; ").slice(0, 400));
-
-    // (c) The integration claim, end to end, with the real graph builder. Asserting the
-    // adapter's JSON shape in isolation would be asserting a schema this file invented;
-    // running the actual consumer asserts the thing the agent does.
-    //
-    // The fixture is a purpose-built two-file repo, NOT this repo's own `HEAD~1..HEAD`.
-    // `evals-l1.yml` checks out at `actions/checkout`'s default `fetch-depth: 1`, where
-    // `HEAD~1` does not resolve at all: the adapter exits 2, both checks below fail, and the
-    // guard reds every PR in CI while passing for whoever wrote it on a full local clone.
-    // A guard may not depend on history the workflow running it does not fetch. The fixture
-    // also exercises the WORKING TREE as head, which is the agent's documented default and
-    // the case `HEAD~1..HEAD` never covered.
-    if (existsSync(GRAPH)) {
-      const tmp = mkdtempSync(join(tmpdir(), "g52-"));
-      try {
-        const filesPath = join(tmp, "files.json");
-        const fixture = join(tmp, "repo");
-        mkdirSync(join(fixture, "src"), { recursive: true });
-        const git = (...a) => spawnSync("git", ["-C", fixture, ...a], { encoding: "utf8" });
-        writeFileSync(join(fixture, "src/parse.ts"),
-          "export function parseThing(raw: string): number {\n  return Number(raw);\n}\n");
-        writeFileSync(join(fixture, "src/use.ts"),
-          "import { parseThing } from './parse';\nexport const run = (s: string) => parseThing(s) + 1;\n");
-        git("init", "-q", "-b", "main");
-        git("config", "user.email", "l1@example.invalid");
-        git("config", "user.name", "l1");
-        // Don't inherit a developer's global commit.gpgsign — the fixture has no
-        // signing key, and a failed commit would leave HEAD unborn so the adapter
-        // exits 2 and this guard reds locally (never in CI, which does not sign).
-        git("config", "commit.gpgsign", "false");
-        git("add", "-A");
-        git("commit", "-qm", "fixture base");
-        // The change under review: a signature break its consumer does not follow.
-        writeFileSync(join(fixture, "src/parse.ts"),
-          "export function parseThing(raw: string, radix: number): number {\n  return parseInt(raw, radix);\n}\n");
-        const adapt = spawnSync(process.execPath,
-          [ADAPTER, "--base", "HEAD", "--workdir", fixture],
-          { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
-        let files = [];
-        try { files = JSON.parse(adapt.stdout || "[]"); } catch { /* reported below as unparseable */ }
-        s.check("G52c the adapter emits a parseable, non-empty file list for base..working-tree",
-          adapt.status === 0 && Array.isArray(files) && files.length > 0,
-          `exit ${adapt.status}, ${Array.isArray(files) ? files.length : "unparseable"} files`);
-
-        // Every record carries the six keys build-impact-graph.mjs reads off a GitHub file entry.
-        const REQUIRED = ["filename", "patch", "status", "additions", "deletions", "sha"];
-        s.check("G52c every emitted record carries the graph builder's six keys",
-          Array.isArray(files) && files.length > 0 && files.every((f) => REQUIRED.every((k) => k in f)),
-          Array.isArray(files) && files.length
-            ? `missing: ${REQUIRED.filter((k) => !(k in files[0])).join(", ") || "none on first record"}`
-            : "no records to check");
-
-        if (Array.isArray(files) && files.length > 0) {
-          writeFileSync(filesPath, JSON.stringify(files));
-          const g = spawnSync(process.execPath,
-            [GRAPH, filesPath, "--workdir", fixture, "--base-ref", "HEAD"],
-            { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
-          let graph = null;
-          try { graph = JSON.parse(g.stdout || "null"); } catch { /* reported below */ }
-          s.check("G52c the adapter's output drives the UNMODIFIED impact-graph builder",
-            g.status === 0 && graph && typeof graph === "object" && "symbols" in graph,
-            `exit ${g.status}: ${(g.stderr || "").slice(0, 200) || "no symbols key in stdout"}`);
-        }
-      } finally {
-        rmSync(tmp, { recursive: true, force: true });
-      }
-    }
-  }
-
-  // (d) The zero-GitHub promise, as an absence over all three files.
-  //
-  // `gh` is matched as a COMMAND — the bare word followed by a real subcommand — never as a
-  // substring, or every mention of "GitHub" would red this guard, and a guard that reds on its
-  // own documentation gets deleted rather than fixed.
-  //
-  // The lookbehind is `[\w-]` and NOT an allow-list of shell prefixes. The first version of this
-  // guard allowed only start-of-line, a pipe, an `&`, a `;`, or `$(` — and a probe that appended
-  // a literal "Run `gh pr view` …" to the agent sailed straight past it, because this repo writes
-  // every command inside backticks. It went red only because G24 (the tool-grant guard) happened
-  // to catch the same line, which is worse than a plain miss: G24 goes green the moment someone
-  // ADDS the GitHub grant, so the zero-GitHub promise would then have had no guard at all while
-  // L1 stayed green. Enumerate what `gh` may not be preceded by, never where it may appear.
-  const GH_CMD = /(?<![\w-])gh\s+(?:api|pr|repo|issue|auth|release|run|workflow|search|browse)\b/m;
-  const MCP_GH = /mcp__github__/;
-  for (const [label, path] of [["branch-reviewer.md", AGENT], ["review-branch/SKILL.md", join(RB, "SKILL.md")],
-                               ["review-branch/rules/findings-bus.md", join(RB, "rules/findings-bus.md")]]) {
-    if (!existsSync(path)) continue;
-    const body = readFileSync(path, "utf8");
-    // Strip the lines that deliberately FORBID these calls, so the prohibition itself is not
-    // read as a violation. A rule may name what it bans.
-    //
-    // A prohibition is recognised by the negation GOVERNING the command in the same CLAUSE —
-    // not by the negation appearing somewhere on the line. The line-level test this replaces
-    // stripped every line containing `no` / `not` / `without` / `rather than`, which was 52 of
-    // this agent's 232 lines, and the stripped set is precisely the prose most likely to be
-    // ABOUT the prohibition. A probe of `There is no PR here, so run \`gh pr view\`` passed
-    // G52d untouched and went red only through G24 — the same borrowed-guard result the comment
-    // above describes, surviving one layer down. Clause-scoping is what distinguishes the two:
-    // in `No \`gh\`, no \`mcp__github__*\`` the negation abuts the token, while in the probe a
-    // comma separates the `no` (which governs "PR") from the command.
-    const NEGATION = /\b(never|no|not|zero|none|forbid(s|den)?|without|instead of|rather than)\b/i;
-    const governed = (line, index) => {
-      const before = line.slice(0, index);
-      const clause = before.slice(before.search(/[.;,:—][^.;,:—]*$/) + 1);
-      return NEGATION.test(clause);
-    };
-    const offenders = (re) => body.split("\n").flatMap((line) => {
-      const m = line.match(re);
-      return m && !governed(line, m.index) ? [line.trim().slice(0, 120)] : [];
-    });
-    const ghHits = offenders(GH_CMD);
-    const mcpHits = offenders(MCP_GH);
-    s.check(`G52d ${label} issues no gh command`, ghHits.length === 0, ghHits[0] || "");
-    s.check(`G52d ${label} calls no mcp__github__ tool`, mcpHits.length === 0, mcpHits[0] || "");
-  }
-
-  // The agent's tool grant is the mechanical half of the same promise: prose can say "zero
-  // GitHub calls" while the frontmatter hands it the tools to make them.
-  if (existsSync(AGENT)) {
-    const fm = frontmatter(AGENT) || {};
-    const tools = String(fm.tools || "");
-    s.check("G52d the branch-reviewer tool grant contains no GitHub tool",
-      !/mcp__github__/.test(tools), tools.slice(0, 200));
-
-    // (e) Reuse by reference, both directions. The links must be present...
-    const body = readFileSync(AGENT, "utf8");
-    for (const ref of ["finders.md", "finding-verifier.md", "impact-graph.md", "depth-routing.md",
-                       "workspace.md", "comment-shape.md", "per-comment-confidence.md"]) {
-      s.check(`G52e branch-reviewer.md links ${ref}`, body.includes(ref));
-    }
-    // ...and the candidate-record schema must NOT be restated. `severity_hint` and `verify_by`
-    // are finders.md's own field names and appear nowhere else in the repo's agent prose, so
-    // their presence here is the signature of a pasted copy rather than a link.
-    s.check("G52e branch-reviewer.md does not restate the candidate-record schema",
-      !/severity_hint\s*:/.test(body) && !/verify_by\s*:/.test(body),
-      "found finders.md's own field names — the detection core was copied, not referenced");
-
-    // (g) The support tree is resolved, never assumed to be the cwd. A bare
-    // `node agents/branch-reviewer/scripts/…` resolves against the REVIEWED repository, so it
-    // exits MODULE_NOT_FOUND in every repo but this one and the impact graph comes back empty —
-    // a review that finds nothing and reads exactly like a clean branch (create-pr Step 5.5).
-    // Same contract pr-reviewer holds under G41a/G41d, one derivation point per agent.
-    s.check("G52g branch-reviewer.md has a support-tree section that derives AGENT_SUPPORT",
-      /^## Locating this agent's own files$/m.test(body)
-      && [...body.matchAll(/AGENT_SUPPORT="\$\{AGENT_MD%\/branch-reviewer\.md\}"/g)].length === 1);
-  }
-  // (g) …and no file on the PR-less path invokes a support-tree script by a bare path. The
-  // pattern names the two script dirs so the cautionary prose (`node agents/…`) is not a hit.
-  const BARE_SCRIPT = /node\s+"?agents\/(?:branch-reviewer|pr-reviewer)\/scripts\//;
-  for (const rel of ["agents/branch-reviewer.md", "skills/quality/review-branch/rules/findings-bus.md",
-                     "skills/quality/pr-review/SKILL.md", "skills/quality/pr-review/rules/remember.md"]) {
-    const p = join(REPO_ROOT, rel);
-    // A renamed file must red, not silently drop out of the sweep.
-    s.check(`G52g ${rel} exists (the bare-path sweep reads it)`, existsSync(p));
-    if (!existsSync(p)) continue;
-    const hit = readFileSync(p, "utf8").split("\n").find((l) => BARE_SCRIPT.test(l));
-    s.check(`G52g ${rel} never runs a support-tree script by a bare agents/ path`, !hit,
-      (hit || "").trim().slice(0, 120));
-  }
-
-  // (f) The skill passes the repo's own skill validator, same bar as G51b.
-  const VALIDATOR = join(REPO_ROOT, "skills/authoring/create-skill/scripts/validate-skill.mjs");
-  if (existsSync(VALIDATOR) && existsSync(join(RB, "SKILL.md"))) {
-    const run = spawnSync(process.execPath, [VALIDATOR, RB], { encoding: "utf8" });
-    s.check("G52f review-branch passes the repo's skill validator", run.status === 0,
-      (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
+  const spineMod = await import(pathToFileURL(join(PRS, "comment-spine.mjs")).href);
+  const ASSETS = join(REPO_ROOT, "agents/pr-reviewer/assets");
+  s.check("G46k the spine enumerates the asset files it can reference",
+    Array.isArray(spineMod.ASSET_FILES) && spineMod.ASSET_FILES.length > 0);
+  for (const f of spineMod.ASSET_FILES ?? []) {
+    s.check(`G46k ${f} exists in the repo`, existsSync(join(ASSETS, f)));
   }
 }
 
-// ── G53: observe-run — the receipt grammar, the rung/provenance rule files, the wiring
-// into measurable / verify-behavior, and the eval + inventory surfaces ──
-//
-// observe-run is a new skill whose whole value rests on its receipt vocabulary matching the
-// canonical one it borrows (verify-behavior/rules/receipt.md) rather than drifting into a
-// private grading scheme — the same three-surface-drift shape that has bitten this repo before
-// (aw-lessons::extracted-skill-adapter-must-reconcile-output-contract-with-canonical-and-own-examples).
-// Sub-checks a-c lock the receipt grammar FIRST, before any consumer is wired to it, per plan.md
-// D14. Sub-checks d-g land as their respective integrations are built (verify-behavior Tier 3,
-// measurable's setup interview + implement step, and the two new L2 suites).
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 2. Frontmatter
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── F: a bad semver or a name that is not its directory fails install/discovery ──
 {
-  const OR = join(REPO_ROOT, "skills/quality/observe-run");
-  const RM = join(OR, "rules/receipt-mapping.md");
-  const VB_RECEIPT = join(REPO_ROOT, "skills/quality/verify-behavior/rules/receipt.md");
-  const VR = join(REPO_ROOT, "agents/shared/rules/verification-receipt.md");
-  const TOKENS = ["confirms", "contradicts", "ambiguous", "null"];
-
-  // (a) receipt-mapping.md names all four canonical tokens and cites the canonical file by path.
-  // break-shape: G53a — deleting a backticked token (e.g. `contradicts`) or the path citation
-  // from receipt-mapping.md flips the matching sub-check red; restoring it goes green.
-  s.check("G53a receipt-mapping.md exists", existsSync(RM));
-  if (existsSync(RM)) {
-    const body = readFileSync(RM, "utf8");
-    for (const t of TOKENS) {
-      s.check(`G53a receipt-mapping.md names verdict token "${t}"`, body.includes(`\`${t}\``),
-        `missing backticked \`${t}\``);
-    }
-    s.check("G53a receipt-mapping.md cites the canonical receipt.md by path",
-      body.includes("skills/quality/verify-behavior/rules/receipt.md"),
-      "no path citation found");
-
-    // (b) the verdict table is TOTAL **and** MUTUALLY EXCLUSIVE, and it is so by construction: one
-    // named `CLEAN` guard, three rows partitioning it, and one `NOT CLEAN` row. This guard used to
-    // assert three literal conjuncts on the contradicts row, which is the same per-row enumeration
-    // the table itself used to carry — and an enumeration cannot say what it is MISSING. Two
-    // conjuncts escaped it in successive reviews: `no error event` (present on the null row only,
-    // so an error event with `*.failed == 0` matched both contradicts and ambiguous) and
-    // `a shutdown event exists` (implied by every row, guaranteed by none, so a SIGKILLed proxy
-    // matched no row at all). So assert the SHAPE instead: the definition is stated once and
-    // carries all four conjuncts, and every row references it rather than restating it.
-    // break-shape: G53b — deleting the "was observed" conjunct from the CLEAN definition, or
-    // rewriting any row's state cell back to an inline enumeration, flips the matching check red.
-    const lines = body.split("\n");
-    // The conjuncts of `CLEAN`, declared once and read twice: once against the DEFINITION (does the
-    // guard still conjoin all three) and once against the per-rung REALIZATION (does each conjunct
-    // have a row, filled for every rung). One list, so a conjunct added to the definition without a
-    // realization row reds here instead of shipping as a condition one rung cannot evaluate.
-    const CLEAN_CONJUNCTS = [
-      ["collection terminating normally", /terminate normally/, /^\|\s*collection terminated normally\s*\|/],
-      ["nothing dropped or failed", /nothing was dropped or failed/, /^\|\s*nothing dropped or failed\s*\|/],
-      ["no delivery error reported", /no delivery error\*\* was reported/, /^\|\s*no delivery error reported\s*\|/],
-    ];
-    // The `CLEAN` definition, wherever it sits — matched on the token, not on a heading or a line
-    // number, so re-wording the prose around it cannot orphan this check.
-    const cleanDef = body.match(/\*\*`CLEAN`\*\*[\s\S]{0,400}?(?=\n\n)/);
-    s.check("G53b the CLEAN guard is defined once, by name", !!cleanDef,
-      "no `**`CLEAN`**` definition found in receipt-mapping.md");
-    if (cleanDef) {
-      // The list above is HAND-TYPED, so on its own it can only ever check the conjuncts already in
-      // it: adding a fourth `AND` clause to the definition with no realization row left L1 green at
-      // 1729/1729 — exactly the drift the comment over `CLEAN_CONJUNCTS` advertises it prevents.
-      // Every prior probe on this file DELETED a token; this one ADDS to the artifact, which is the
-      // direction a fixed list is blind in by construction. So the count is DERIVED from the
-      // definition rather than re-encoded here.
-      //
-      // Derive from the definition's STRUCTURE, never from a joiner's spelling. Counting `\bAND\b`
-      // over the slice was wrong in BOTH directions at once: a fourth conjunct joined with a
-      // lowercase `and` left L1 green at 1732/1732 (failing OPEN on the growth case this check
-      // exists for), while an `AND` used mid-line for emphasis inside a correct three-conjunct
-      // definition red it at 1731/1732 (failing CLOSED on a correct table — the exact property this
-      // file uses one screen away to reject a proposed containment guard). A spelling-bound
-      // derivation inherits the class it was prescribed to remove.
-      //
-      // So: assert the SHAPE the artifact now states as load-bearing, then count lines under it.
-      // Line count is immune to how a joiner is spelled and to an emphasis token inside a line; the
-      // shape assertions are what make line count FAITHFUL, by rejecting the two ways a conjunct
-      // could be added without adding a line. Each failure names the rule it broke, so a red here
-      // is a repair instruction rather than an invitation to game the token.
-      // The slice STARTS at the bold token, so line 1 carries no `>` prefix even though the
-      // definition is a blockquote — filtering on `>` silently dropped it and under-counted by one.
-      const defLines = cleanDef[0].split("\n").filter((l) => l.trim().length > 0);
-      const contLines = defLines.slice(1);
-      s.check("G53b the CLEAN definition is a blockquote with one conjunct per line",
-        defLines.length >= 2 && contLines.every((l) => l.trim().startsWith(">")),
-        `${defLines.length} definition line(s) — the definition must be a blockquote, one conjunct per line`);
-      s.check("G53b every CLEAN conjunct line after the first opens with the joiner `AND`",
-        contLines.every((l) => /^>\s*AND\b/.test(l.trim())),
-        `${contLines.filter((l) => !/^>\s*AND\b/.test(l.trim())).length} continuation line(s) do not open with \`AND\` — a conjunct joined any other way is invisible to the count derived below`);
-      s.check("G53b the CLEAN definition uses the token `AND` only as a line-opening joiner",
-        (cleanDef[0].match(/\bAND\b/g) || []).length === contLines.length,
-        `${(cleanDef[0].match(/\bAND\b/g) || []).length} \`AND\` token(s) against ${contLines.length} continuation line(s) — a line-internal \`AND\` is indistinguishable from a second conjunct crammed onto that line; use a comma or a new line`);
-      const expectedConjuncts = defLines.length;
-      s.check("G53b CLEAN_CONJUNCTS covers every conjunct the definition states",
-        CLEAN_CONJUNCTS.length === expectedConjuncts,
-        `the definition states ${expectedConjuncts} conjunct(s); the guard's list holds ${CLEAN_CONJUNCTS.length} — add the new conjunct to CLEAN_CONJUNCTS and give it a realization row`);
-      // The definition is READER-NEUTRAL. Written in one rung's vocabulary it is not a stricter
-      // guard — it is a guard the other rung can never satisfy, and since `NOT CLEAN` matches
-      // unconditionally, that rung then grades `ambiguous` on every run it performs. Rung 1 is the
-      // DEFAULT rung, so the version of this definition written purely in `dash0.cli.otlp_proxy.*`
-      // vocabulary silently disabled the common path while L1 stayed green.
-      for (const [label, re] of CLEAN_CONJUNCTS) {
-        s.check(`G53b the CLEAN definition conjoins ${label}`, re.test(cleanDef[0]),
-          `not found in the CLEAN definition`);
-      }
-      s.check("G53b the CLEAN definition names no rung-specific reader vocabulary",
-        !/dash0\.cli\.otlp_proxy|in-memory|BatchSpanProcessor/.test(cleanDef[0]),
-        "the guard is written in one rung's vocabulary, which the other rung can never satisfy");
-    }
-    // Every rung the skill can select has a realization of each condition — a rung with no column
-    // here is a rung whose only reachable verdict is `ambiguous`. Read the rung count from
-    // rungs.md rather than hardcoding 2, so adding a rung 3 there without a column reds this.
-    const RUNGS = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
-    // Existence is ASSERTED, not assumed. The whole rung-coverage and cell-coverage block below
-    // sits behind this one path, so a bare `if (existsSync(...))` deleted five checks in silence
-    // when the file was renamed — the total fell and not one `G53b` failure was reported. Same
-    // shape, and the same fix, as the `G53e` golden-file assertion one screen down; that one was
-    // corrected first and its twin here was left behind.
-    const rungsPresent = existsSync(RUNGS);
-    s.check("G53b rungs.md is present for the rung-coverage checks", rungsPresent,
-      `${RUNGS} not found — the per-rung realization coverage would go unchecked`);
-    if (rungsPresent) {
-      const rungNums = [...new Set((readFileSync(RUNGS, "utf8").match(/^## Rung (\d+)/gm) || [])
-        .map((h) => h.match(/(\d+)/)[1]))];
-      s.check("G53b rungs.md defines at least two rungs", rungNums.length >= 2,
-        `${rungNums.length} rung heading(s) found`);
-      const realization = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
-      s.check("G53b receipt-mapping.md carries a per-rung realization of CLEAN", !!realization,
-        "no `### What `CLEAN` and `totals` are, per rung` section found");
-      // Parse the realization TABLE's header row into cells — never substring-test the section.
-      // The section carries prose that names the rungs, so `/Rung 1/` over the whole slice was
-      // satisfied by a sentence: deleting the entire rung-1 COLUMN while the prose still said
-      // "Rung 1" left this green, asserting a coverage claim its own failure message spells out
-      // and does not check. Structured parse, same idiom as G53c's Verdict column one screen up.
-      const realHeader = (realization?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l));
-      const realCols = (realHeader ?? "").split("|").slice(1, -1).map((c) => c.trim());
-      s.check("G53b the realization table's header row parses",
-        realCols.length >= 1 + rungNums.length,
-        `${realCols.length} header cell(s) parsed, expected >= ${1 + rungNums.length}`);
-      // Every header cell is LABELLED. An unlabelled column is not a cosmetic defect here: it is
-      // the column the filled-cell check below reports its empties under, so an empty header made
-      // an entire empty column unreportable. Caught at the header, where the defect actually is.
-      s.check("G53b every realization column carries a header label",
-        realCols.every((c) => c.length > 0),
-        `${realCols.filter((c) => !c.length).length} unlabelled column(s) in the realization header`);
-      for (const n of rungNums) {
-        s.check(`G53b the realization has a column for rung ${n}`,
-          realCols.some((c) => new RegExp(`^Rung ${n}\\b`).test(c)),
-          `rung ${n} is selectable but has no column in the realization table — its only reachable verdict is ambiguous`);
-      }
-      // The coverage claim is about the table's CONTENT, and a header check proves only that the
-      // column is LABELLED. Scoped to the single `totals` row, this check left three of four
-      // rung-1 cells blankable at 1717/1717 — so it is generalised over EVERY body row rather than
-      // given a second special case, and a row added later is covered on arrival instead of when
-      // someone remembers to extend a list.
-      // Scope to the realization TABLE, not to every pipe line in the section. The section is
-      // prose plus tables, and a second table added below the realization (the reader-local
-      // exclusions) had its own header and rows swept in here — three false failures naming a
-      // 2-column table against the realization's 3 columns. A table is the CONTIGUOUS run of
-      // pipe lines starting at its header, so take exactly that and stop at the first line that
-      // is not one.
-      const realLines = realization?.[0].split("\n") ?? [];
-      const realStart = realLines.indexOf(realHeader);
-      const realTable = [];
-      for (let i = realStart; i >= 0 && i < realLines.length && realLines[i].startsWith("|"); i++) realTable.push(realLines[i]);
-      const bodyRows = realTable.filter((l) => l !== realHeader && !/^\|[\s:|-]+\|$/.test(l));
-      s.check("G53b the realization has a body row per CLEAN conjunct plus totals",
-        bodyRows.length >= CLEAN_CONJUNCTS.length + 1,
-        `${bodyRows.length} body row(s) for ${CLEAN_CONJUNCTS.length} conjunct(s) + totals`);
-      for (const row of bodyRows) {
-        const cells = row.split("|").slice(1, -1).map((c) => c.trim());
-        // Partition BEFORE naming the column, never `.map(...).filter(Boolean)` over names: an
-        // empty header cell is `""`, which `??` does not replace and `filter(Boolean)` then
-        // discards — so the one case that most needs reporting (an empty cell under an unlabelled
-        // column) was silently dropped by the very line computing its label.
-        const empties = cells.slice(1)
-          .map((c, i) => ({ col: realCols[i + 1] || `column ${i + 2}`, empty: c.length === 0 }))
-          .filter((e) => e.empty)
-          .map((e) => e.col);
-        s.check(`G53b the realization row "${cells[0] || "(unlabelled)"}" is filled for every rung`,
-          cells.length === realCols.length && empties.length === 0,
-          `${cells.length} cell(s) against ${realCols.length} column(s)${empties.length ? `; empty under: ${empties.join(", ")}` : ""}`);
-      }
-      // Each conjunct is present BY NAME, so renaming one out of the table reds here rather than
-      // quietly reducing a row count the check above would still accept.
-      for (const [label, , rowRe] of CLEAN_CONJUNCTS) {
-        s.check(`G53b the realization carries a row for "${label}"`,
-          bodyRows.some((l) => rowRe.test(l)),
-          `no row matching ${rowRe} in the per-rung realization`);
-      }
-      s.check("G53b the realization carries a totals row",
-        bodyRows.some((l) => /^\|\s*`totals`\s*\|/.test(l)),
-        "no `totals` row in the per-rung realization");
-    }
-    const tableRow = (token) => lines.find((l) => l.startsWith("|") && new RegExp(`\\b${token}\\b`).test(l));
-    // Each clean row REFERENCES the guard instead of restating it — a row that re-inlines the
-    // conjuncts is a second copy to keep in sync, which is the defect this shape removes.
-    for (const [token, extra] of [["confirms", /totals > 0/], ["contradicts", /totals > 0/], ["null", /totals == 0/]]) {
-      const row = tableRow(token);
-      s.check(`G53b the ${token} row references CLEAN and its own totals condition`,
-        !!row && /`CLEAN`/.test(row) && extra.test(row) && !/failed == 0/.test(row),
-        row || `no ${token} row found`);
-    }
-    const ambiguousRow = tableRow("ambiguous");
-    s.check("G53b the ambiguous row is the negation of CLEAN and carries the never-contradicts clause",
-      !!ambiguousRow && /`NOT CLEAN`/.test(ambiguousRow) && /never `contradicts`/.test(ambiguousRow),
-      ambiguousRow || "no ambiguous row found");
+  for (const f of walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))) {
+    const fm = frontmatter(f);
+    const dir = f.split("/").slice(-2)[0];
+    if (fm.version !== undefined)
+      s.check(`${rel(f)} version is semver`, /^\d+\.\d+\.\d+$/.test(fm.version), `got '${fm.version}'`);
+    if (fm.name !== undefined)
+      s.check(`${rel(f)} name matches dir`, fm.name === dir, `name='${fm.name}' dir='${dir}'`);
   }
-
-  // (c) three-surface reconciliation: the four tokens appear in all three real files, and
-  // observe-run introduces no fifth token in the mapping table's Verdict column.
-  // break-shape: G53c — adding a `| \`unproven\` — ...` row to receipt-mapping.md's table flips
-  // this red; removing the row goes green.
-  s.check("G53c verify-behavior/rules/receipt.md exists", existsSync(VB_RECEIPT));
-  s.check("G53c agents/shared/rules/verification-receipt.md exists", existsSync(VR));
-  if (existsSync(VB_RECEIPT) && existsSync(VR) && existsSync(RM)) {
-    for (const [label, file] of [
-      ["verify-behavior/rules/receipt.md", VB_RECEIPT],
-      ["verification-receipt.md", VR],
-      ["observe-run/rules/receipt-mapping.md", RM],
-    ]) {
-      const body = readFileSync(file, "utf8");
-      for (const t of TOKENS) {
-        s.check(`G53c ${label} names "${t}"`, body.includes(t), `"${t}" not found in ${label}`);
-      }
-    }
-    const rmBody = readFileSync(RM, "utf8");
-    // Read the LAST cell of every row in the mapping table and take its leading backticked token.
-    // The prior regex required an em-dash or hyphen gloss after the token, so a fifth verdict
-    // added as a bare `| \`unproven\` |` cell — the likeliest shape a new row takes — was invisible
-    // to the check that exists to catch it.
-    const rmLines = rmBody.split("\n");
-    const headerIdx = rmLines.findIndex((l) => /^\|\s*Observed collection state\s*\|/.test(l));
-    const verdictCellTokens = [];
-    for (const l of headerIdx < 0 ? [] : rmLines.slice(headerIdx + 2)) {
-      if (!l.startsWith("|")) break;
-      const cells = l.split("|").slice(1, -1).map((c) => c.trim());
-      const token = (cells[cells.length - 1] ?? "").match(/^`([a-z]+)`/);
-      if (token) verdictCellTokens.push(token[1]);
-    }
-    // Without this, renaming the table's header would silently yield zero parsed tokens and the
-    // fifth-token check below would pass vacuously — the same failure mode one level up.
-    s.check("G53c the mapping table's Verdict column parses", verdictCellTokens.length >= TOKENS.length,
-      `${verdictCellTokens.length} verdict cell(s) parsed, expected >= ${TOKENS.length}`);
-    const fifth = verdictCellTokens.filter((t) => !TOKENS.includes(t));
-    s.check("G53c observe-run introduces no fifth verdict token", fifth.length === 0,
-      fifth.length ? `unexpected token(s): ${fifth.join(", ")}` : "");
-  }
-
-  // (d) verify-behavior integration: ladder.md's Tier 3 table names observe-run as a third
-  // approach, and verification-receipt.md names observe-run while retaining its existing 2.6b
-  // ordering reference and null-drop invariant intact — a future edit that swaps in observe-run
-  // language must not silently drop either anchor.
-  // break-shape: G53d — deleting "observe-run" from ladder.md's Tier 3 table, or from
-  // verification-receipt.md, or deleting the "2.6b" or "null" references from
-  // verification-receipt.md, flips the corresponding check red; restoring goes green.
-  const LADDER = join(REPO_ROOT, "skills/quality/verify-behavior/rules/ladder.md");
-  s.check("G53d ladder.md exists", existsSync(LADDER));
-  if (existsSync(LADDER) && existsSync(VR)) {
-    const ladderBody = readFileSync(LADDER, "utf8");
-    const vrBody = readFileSync(VR, "utf8");
-    // Slice the section positionally rather than matching `## Tier 3[\s\S]*observe-run`, which
-    // matches ANYWHERE after the heading — the mention could sit in the file's last section and
-    // the check would still pass, so the guard's name overclaimed its scope. Same idiom as G49.
-    const tier3 = ladderBody.split(/^## /m).find((x) => x.startsWith("Tier 3")) || "";
-    s.check("G53d ladder.md's Tier 3 section names observe-run as a third approach",
-      tier3.includes("observe-run"),
-      "no observe-run mention inside the Tier 3 section");
-    s.check("G53d verification-receipt.md names observe-run",
-      vrBody.includes("observe-run"), "no observe-run mention found");
-    s.check("G53d verification-receipt.md still cites Step 2.6b",
-      vrBody.includes("2.6b"), "2.6b reference missing");
-    s.check("G53d verification-receipt.md still states the null-drop invariant",
-      /null-drop invariant/i.test(vrBody), "null-drop invariant reference missing");
-  }
-
-  // (e) both new L2 suites exist, resolve, and their golden sets are correctly shaped: valid
-  // JSONL, at least 10 cases, both choices exercised, and a majority-class baseline strictly
-  // below the EVAL_GATE floor grepped out of evals-l2.yml — never re-encoded here, same
-  // discipline as G21n. break-shape: G53e — collapsing either golden set to a single label, or
-  // truncating it below 10 cases, flips the corresponding sub-check red; restoring goes green.
-  {
-    const suitesBody = readFileSync(join(REPO_ROOT, "scripts/eval/suites.mjs"), "utf8");
-    const l2ymlPath = join(REPO_ROOT, ".github/workflows/evals-l2.yml");
-    const l2ymlBody = existsSync(l2ymlPath) ? readFileSync(l2ymlPath, "utf8") : "";
-    const gateLiteral = (l2ymlBody.match(/EVAL_GATE:\s*"?(\d+)"?/) || [])[1];
-    const gate = gateLiteral === undefined ? null : Number(gateLiteral);
-
-    for (const name of ["observe-run-rung-selection", "observe-run-assertion-provenance"]) {
-      s.check(`G53e suites.mjs declares SUITES entry "${name}"`, suitesBody.includes(`name: "${name}"`));
-      const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
-      s.check(`G53e ${name}.jsonl exists`, existsSync(goldenFile));
-      if (!existsSync(goldenFile)) continue;
-      const lines = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean);
-      let allParse = lines.length >= 1;
-      const labels = [];
-      for (const ln of lines) {
-        try {
-          const obj = JSON.parse(ln);
-          labels.push(obj.expected);
-        } catch {
-          allParse = false;
-        }
-      }
-      s.check(`G53e ${name}.jsonl parses line-by-line as valid JSON`, allParse);
-      s.check(`G53e ${name}.jsonl has at least 10 cases`, lines.length >= 10, `${lines.length} cases`);
-      const tally = new Map();
-      for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
-      s.check(`G53e ${name}.jsonl exercises both choices`, tally.size >= 2, `${tally.size} distinct choice(s)`);
-      const majority = labels.length ? Math.max(...tally.values()) : 0;
-      const baseline = labels.length ? (majority / labels.length) * 100 : 100;
-      const split = [...tally.entries()].map(([k, v]) => `${k}=${v}`).sort().join(" ");
-      s.check(`G53e ${name}.jsonl majority-class baseline is below the EVAL_GATE floor`,
-        gate !== null && baseline < gate,
-        gate === null
-          ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
-          : `majority-class baseline ${baseline.toFixed(1)}% >= gate ${gate}% (n=${labels.length}, ${split})`);
-    }
-
-    // A balanced set can still be separable without the rubric, and BOTH of these sets were: the
-    // assertion-provenance set was 8/6 while every `by-construction` case carried a static-read
-    // verb and every `behavioral` one said "run" (85.0% for one keyword), and rung-selection was
-    // 78.6% off the word "process". A responder keying on the verb scored at or above the gate
-    // having never consulted the rubric, so a green run measured nothing. Balance is necessary and
-    // not sufficient — assert the surface vocabulary is NOT the label.
-    //
-    // Guard DECLARED tells, never the best of every token. At n≈30 an unrestricted best-token scan
-    // over ~400 tokens finds stopwords by chance: `and`, `one`, and `with` all land near 70%, and
-    // `confirm` scores ~76% pointing at OPPOSITE labels in the two suites — which is the proof it
-    // is sampling noise rather than a learnable shortcut. A guard chasing that maximum would chase
-    // chance forever and could never be satisfied. The tells below are instead the vocabularies a
-    // rubric-free responder could plausibly key on, one per decision dimension, declared here and
-    // fixed. The unrestricted scan stays an authoring aid, not a gate.
-    //
-    // Each tell is scored BOTH ways: a keyword that is wrong 80% of the time is an 80%-accurate
-    // classifier with its polarity flipped, so `max(acc, 100 - acc)` is the real shortcut strength
-    // and is what must sit below the EVAL_GATE floor.
-    // break-shape: G53e — deleting the `decoy-` cases from either golden set flips 5 of these 6
-    // separability checks red. Measured on the decoy-free sets: assertion-provenance's run tell
-    // returns to **100.0%** (a rubric-free responder answering on one verb scored a perfect 14/14
-    // on the set as originally shipped — worse than the 85% first reported), `startSpan` to 85.7%,
-    // its static verb to 78.6%; rung-selection's `process` tell to 78.6% and its rung-2 vocabulary
-    // to 85.7%. The sixth, rung-selection's `offline|in-memory`, lands at 57.1% and stays green —
-    // it was never the shortcut, and saying "all six" here would overstate what the deletion shows.
-    // typoing a tell's regex so it matches nothing flips the partition sub-check red rather than
-    // silently degrading the separability check into a second majority-baseline measurement.
-    {
-      const DECLARED_TELLS = {
-        "observe-run-assertion-provenance": [
-          [/\brun\b|\brunning\b|\bexecut/i, "behavioral"],
-          [/startspan/i, "by-construction"],
-          [/\bgrep\b|\bstatic|\bsource\b/i, "by-construction"],
-        ],
-        "observe-run-rung-selection": [
-          [/process/i, "rung-1"],
-          [/baseline|cross-process|separately-deployed/i, "rung-2"],
-          [/offline|in-memory/i, "rung-1"],
-        ],
-      };
-      // "without running anything" / "without executing the code" is a STATIC tell, not a run
-      // verb. Counting it as one let an earlier version of this guard pass on two cases that
-      // execute nothing at all, so the negated form is stripped before any tell is matched.
-      const surfaceOf = (r) => String(r.input).replace(/without\s+(?:running|executing)\b[^,.]*/gi, "");
-
-      for (const [name, tells] of Object.entries(DECLARED_TELLS)) {
-        const goldenFile = join(REPO_ROOT, `scripts/eval/golden/${name}.jsonl`);
-        const present = existsSync(goldenFile);
-        s.check(`G53e ${name}.jsonl is present for the declared-tell scan`, present,
-          `${goldenFile} not found — its ${tells.length} declared tell(s) would go unmeasured`);
-        if (!present) continue;
-        const rows = readFileSync(goldenFile, "utf8").split("\n").filter(Boolean)
-          .map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-        const choices = [...new Set(rows.map((r) => r.expected))].sort();
-        // The label/other scan below is binary by construction. A SILENT skip here is the same
-        // vacuous shape the scan itself guards against one level up: growing either set to a third
-        // choice — or emptying it — would delete all three of that suite's separability checks
-        // while L1 stayed green, on a total nobody reads case-by-case. Assert the precondition so
-        // the third choice reds here and the author extends the scan instead of losing it.
-        const scannable = rows.length > 0 && choices.length === 2;
-        s.check(`G53e ${name} is a non-empty two-choice set the declared tells can score`, scannable,
-          `${rows.length} row(s) over ${choices.length} choice(s) [${choices.join(", ")}] — the declared-tell scan is binary; extend it before adding a third choice`);
-        if (!scannable) continue;
-        for (const [re, label] of tells) {
-          const other = choices.find((c) => c !== label);
-          let hit = 0;
-          let matched = 0;
-          for (const r of rows) {
-            const fires = re.test(surfaceOf(r));
-            if (fires) matched++;
-            if ((fires ? label : other) === r.expected) hit++;
-          }
-          // A tell that fires on NO row, or on EVERY row, is a constant classifier: it answers
-          // `other` (or `label`) everywhere, so its accuracy is just the majority-class baseline
-          // the check above already measures, and the separability check below passes while
-          // measuring nothing. That is the exact shape a typoed regex takes — `/proces/` matching
-          // zero rows keeps this guard green on a set the real `/process/` tell could separate.
-          // Assert the tell genuinely partitions the set before reading its accuracy.
-          s.check(`G53e the ${re.source} tell partitions ${name}`,
-            matched > 0 && matched < rows.length,
-            `matches ${matched}/${rows.length} rows — a constant classifier re-measures the majority baseline`);
-          const acc = (hit / rows.length) * 100;
-          const strength = Math.max(acc, 100 - acc);
-          s.check(`G53e ${name} is not separable by the ${re.source} tell`,
-            gate !== null && strength < gate,
-            gate === null
-              ? "no EVAL_GATE literal found in .github/workflows/evals-l2.yml"
-              : `keyword-only accuracy ${acc.toFixed(1)}% (strength ${strength.toFixed(1)}%) >= gate ${gate}% over n=${rows.length}`);
-        }
-      }
-    }
-  }
-
-  // (f) the measurable setup interview question and the profile-template field move together —
-  // neither exists without the other, so a future edit cannot drop one half silently.
-  // break-shape: G53f — deleting the "Dev Run Target" heading from the template (or the
-  // dev-run-target interview question from setup-profile.md) flips this red.
-  const SETUP_PROFILE = join(REPO_ROOT, "skills/quality/measurable/rules/setup-profile.md");
-  const PROFILE_TEMPLATE = join(REPO_ROOT, "skills/quality/measurable/templates/observability-profile.template.md");
-  {
-    const setupBody = existsSync(SETUP_PROFILE) ? readFileSync(SETUP_PROFILE, "utf8") : "";
-    const templateBody = existsSync(PROFILE_TEMPLATE) ? readFileSync(PROFILE_TEMPLATE, "utf8") : "";
-    const hasQuestion = /dev run target|dev-run target|local dev target/i.test(setupBody);
-    const hasField = /dev run target/i.test(templateBody);
-    s.check("G53f measurable setup-profile.md carries the dev-run-target interview question",
-      hasQuestion, existsSync(SETUP_PROFILE) ? "no dev-run-target question found" : "setup-profile.md not found");
-    s.check("G53f observability-profile.template.md carries the matching Dev Run Target field",
-      hasField, existsSync(PROFILE_TEMPLATE) ? "no Dev Run Target field found" : "template not found");
-    s.check("G53f the question and the field move TOGETHER (neither exists alone)",
-      hasQuestion === hasField,
-      `question=${hasQuestion} field=${hasField}`);
-  }
-
-  // (g) reader-adapters.md names at least three non-Dash0 readers and carries the
-  // "selects the implementation, it never gates the rung" invariant.
-  // break-shape: G53g — deleting the invariant sentence, or trimming the non-Dash0 reader list
-  // below three, flips the corresponding check red.
-  const READER_ADAPTERS = join(REPO_ROOT, "skills/quality/observe-run/rules/reader-adapters.md");
-  s.check("G53g reader-adapters.md exists", existsSync(READER_ADAPTERS));
-  if (existsSync(READER_ADAPTERS)) {
-    const body = readFileSync(READER_ADAPTERS, "utf8");
-    s.check("G53g carries the 'selects the implementation, it never gates the rung' invariant",
-      body.includes("selects the implementation, it never gates the rung"));
-    // Deduplicate before counting: the raw match array counts MENTIONS, so one reader named
-    // three times satisfied `>= 3` and the documented break-shape (trimming the list to a
-    // single reader) did not fire. The guard is about distinct readers, so count distinct.
-    const nonDash0 = new Set(
-      (body.match(/otel-desktop-viewer|file exporter|in-memory exporter|stdout exporter|jaeger|otel-tui|collector/gi) || [])
-        .map((m) => m.toLowerCase()));
-    s.check("G53g names at least three non-Dash0 readers", nonDash0.size >= 3,
-      `${nonDash0.size} distinct reader(s) found`);
-    s.check("G53g states a missing Dash0 CLI costs rung 1 nothing",
-      /costs rung 1 nothing|rung 1 costs nothing/i.test(body));
-    // The flag's own page must not list `dev.run.id` among the keys it stamps. It did, and that
-    // was the restatement half of the defect below: the flag upserts onto EVERY forwarded batch,
-    // metrics included, so naming `dev.run.id` here contradicts run-identity.md's per-signal
-    // scope one file away. Scoped to the decoration-flags line, not the whole file, because the
-    // page legitimately DISCUSSES the attribute in saying why it is excluded.
-    const decoFlag = body.match(/`--resource-attribute key=value`[\s\S]*?(?=\n\n)/);
-    s.check("G53g the decoration-flags line does not claim to stamp `dev.run.id`",
-      !!decoFlag && !/dev\.run\.id/.test(decoFlag[0]),
-      "`--resource-attribute` is batch-level with no per-signal scoping, so it cannot carry an attribute run-identity.md scopes to spans and logs only");
-  }
-
-  // (h) run-identity.md — the only observe-run rule file with no guard, and the one that states a
-  // per-signal constraint. Stating a constraint is not the same as it being SATISFIABLE: the
-  // `Stamp on` column says `dev.run.id` never reaches metrics, while the mechanism it named for
-  // rung 2 (`--resource-attribute`) upserts onto every forwarded batch and the proxy forwards
-  // metrics. So the guard asserts the pair — the constraint AND a stated rung-2 mechanism that can
-  // honour it — since either alone is what the defect looked like.
-  // break-shape: G53h — deleting the never-metrics scope, or deleting the rung-2 mechanism
-  // section that makes it satisfiable, flips the corresponding check red.
-  const RUN_IDENTITY = join(REPO_ROOT, "skills/quality/observe-run/rules/run-identity.md");
-  s.check("G53h run-identity.md is present", existsSync(RUN_IDENTITY),
-    `${RUN_IDENTITY} not found — the run-identity constraints would go unchecked`);
-  if (existsSync(RUN_IDENTITY)) {
-    const body = readFileSync(RUN_IDENTITY, "utf8");
-    s.check("G53h `dev.run.id` is scoped away from metrics",
-      /`dev\.run\.id`[\s\S]{0,200}?never metrics/.test(body) || /never reach a metric dimension/.test(body),
-      "the never-metrics scope on `dev.run.id` is the constraint every other rule here depends on");
-    s.check("G53h the never-metrics scope names a rung-2 mechanism that can honour it",
-      /not free at rung 2/.test(body) && /every forwarded batch/.test(body),
-      "rung 2's `--resource-attribute` upserts onto every forwarded batch, so a stated per-signal scope with no alternative mechanism is unsatisfiable there");
-    // The unsatisfiable case must RESOLVE to a rung change, never to a degraded rung 2. The first
-    // version said "omit `dev.run.id` at rung 2 and scope by time window", which creates a rung-2
-    // state the rest of the pipeline cannot serve: the filter matches nothing, so the observed set
-    // is empty and `totals` — its own size — is 0, which is the `null` row on EVERY claim. Rung 2
-    // decides nothing, forever. Assert the resolution, not merely that one exists.
-    // This rationale claimed "grades an emitted span `contradicts`" until round 13, and that was
-    // true of the PRE-round-11 realization, where `totals` was the proxy's counter and kept counting
-    // while the observed set emptied. Round 11 closed that route and left the argument for it
-    // standing here — in a guard's own comment and failure message, one layer below the four prose
-    // surfaces that round 13 found. A guard defended by a hazard that no longer exists reads as
-    // corroboration for the stale claim rather than as a contradiction of it.
-    s.check("G53h the unsatisfiable-at-rung-2 case resolves to a rung change, not a degraded rung 2",
-      /Rung 2 is unavailable for this run/.test(body) && !/Omit `dev\.run\.id` at rung 2/.test(body),
-      "without `dev.run.id` the filter matches nothing, so the observed set is empty and `totals` is 0 — every claim grades `null` and rung 2 decides nothing; the fallback is rung 1, never a rung 2 with a widened filter");
-    s.check("G53h rung 2 is stated to REQUIRE `dev.run.id`, so its readers may assume it",
-      /no rung-2 path without it/.test(body),
-      "six readers filter on `dev.run.id` unconditionally; either they all learn a new state or rung 2 requires the attribute — the second is what makes them correct");
-  }
-
-  // (i) The CONSUMER side of the same contract. `G53h` asserts the rule; nothing asserted its
-  // readers agree, which is the direction the round-9 sweep escaped in — a fix landing on the
-  // authority and not its restatements, for the fifth time in this skill. Each check below reads a
-  // DIFFERENT file, so a future edit that re-introduces an optional `dev.run.id` reds here on
-  // whichever reader it contradicts rather than on the rule it edited.
-  // break-shape: G53i — making `rungs.md`'s rung-2 query filter conditional, or dropping
-  // `dev.run.id` from the Definition of Done, flips the corresponding check red.
-  const OBSERVE_SKILL = join(REPO_ROOT, "skills/quality/observe-run/SKILL.md");
-  const RUNGS_MD = join(REPO_ROOT, "skills/quality/observe-run/rules/rungs.md");
-  const RECEIPT = join(REPO_ROOT, "skills/quality/observe-run/rules/receipt-mapping.md");
-  for (const [label, path] of [["SKILL.md", OBSERVE_SKILL], ["rungs.md", RUNGS_MD], ["receipt-mapping.md", RECEIPT]]) {
-    s.check(`G53i ${label} is present for the run-identity consumer checks`, existsSync(path),
-      `${path} not found — a consumer of the \`dev.run.id\` contract would go unchecked`);
-  }
-  if (existsSync(RUNGS_MD)) {
-    const body = readFileSync(RUNGS_MD, "utf8");
-    s.check("G53i rungs.md's rung-2 query filters on `dev.run.id` unconditionally",
-      /--filter "dev\.run\.id is <run-id>"/.test(body),
-      "the rung-2 worked example is the one a run copies; a conditional filter here is a second implementation of the rule");
-  }
-  if (existsSync(OBSERVE_SKILL)) {
-    const body = readFileSync(OBSERVE_SKILL, "utf8");
-    // Scope to the DoD section, then test for the REQUIREMENT, not for the token. A whole-section
-    // `/dev\.run\.id/` was the `/Rung 1/.test(section)` shape round 6 repaired on `G53b`: bullet 4
-    // already carried the token BEFORE round 10 added the rung-2 requirement, so deleting exactly
-    // the two-sentence requirement clause left L1 green at 1747/1747 while the contract it guards
-    // was gone. Conjoin the requirement's own wording, which nothing else in the section supplies.
-    const dod = body.slice(body.indexOf("## Definition of Done"));
-    s.check("G53i the Definition of Done still demands `dev.run.id`",
-      /dev\.run\.id/.test(dod) && /falls back to rung 1/.test(dod),
-      "a DoD box a conforming rung-2 run cannot tick is a contract nothing can satisfy — and the token alone does not state the rung-2 requirement");
-  }
-  if (existsSync(RECEIPT)) {
-    const body = readFileSync(RECEIPT, "utf8");
-    // The two scopings are DIFFERENT and the file must say so. Asserting they are both "this run"
-    // is what let a false claim about rung 2 sit one line under the row that contradicted it.
-    // The `totals` claim must be a REQUIREMENT on the realization, not a description of whichever
-    // counter a rung happens to have. Round 11: rung 2 realized it as the proxy's `spans.total`,
-    // which counts every process pointed at the ports, while the observed set is attribute-
-    // filtered — so the two columns disagreed on MEMBERSHIP and a foreign span graded the run
-    // `contradicts`. The fix is that `totals` IS the observed set's size on every rung.
-    // Test the REALIZATION ROW, not the prose that states the requirement. Scoping this to the
-    // whole file left the reviewer's own revert — restoring the proxy counter as the rung-2
-    // `totals` — GREEN at 1751/1751, because the requirement paragraph one screen up still said
-    // the right thing. That is the defect one layer out: a guard satisfied by the claim rather
-    // than by the thing the claim is about. Same scoping lesson as G53b's body-row parse.
-    const totalsRow = body.split("\n").find((l) => /^\|\s*`totals`\s*\|/.test(l));
-    const totalsCells = (totalsRow ?? "").split("|").slice(1, -1).map((c) => c.trim());
-    s.check("G53i the `totals` realization row exists and has a cell per rung",
-      totalsCells.length >= 3,
-      `${totalsCells.length} cell(s) in the \`totals\` row — the per-rung realization is what the requirement below is about`);
-    // POSITIVE, and PER RUNG. Two earlier shapes both failed on the same axis. A denylist of two
-    // literals (`spans.total`, `final_total`) was narrower than its own name — "the proxy's own
-    // count of forwarded span records over the run" evaded it. Replacing it with a whitelist of
-    // nouns (`observed set|span list|exported file`) applied uniformly to every rung cell was
-    // narrower still in a subtler way: NAMING the set and BEING the set are different claims, so
-    // "the proxy's own running count, reported as the size of the observed set" satisfied it while
-    // reinstating the counter, green at 1753/1753.
-    // The fix is to assert, per rung, the ARTIFACT that IS the observed set on that rung — rung 1's
-    // own export, and at rung 2 the `dash0 spans query` whose attribute filter is what DEFINES the
-    // set (`receipt-mapping.md`'s own words). A cell describing a proxy counter has no reason to
-    // carry that filter expression. The denylist survives as a second conjunct for the spellings
-    // that name the rejected counter outright.
-    // Residual, stated rather than papered over: prose can still evade this ("...as what the query
-    // would return"). `receipt-mapping.md` says so itself — whether a filled cell says the right
-    // thing is a reviewer's judgement — and the bar here is that the two probes that HAVE gotten
-    // through now red, not that no sentence ever can.
-    // ADDITION-PROOF, the way `G53b` already is. The first version of these indexed
-    // `totalsCells[1]` and `totalsCells[2]` BY HAND, so a rung 3 added to `rungs.md` and given a
-    // column here carried any `totals` cell past them in silence — probed: a rung-3 cell reading
-    // "the number of records the collector reported for this run" (a wider counter, exactly the
-    // round-11 defect) tripped no `G53i` check at all. That is round 8's sub-shape — a hand-typed
-    // list blind to ADDITIONS — recurring inside the round-13 fix written for the same family, one
-    // round later, which is why it is worth saying plainly: every probe I ran on those two checks
-    // was a MODIFICATION probe, and a modification probe cannot see a missing row.
-    // `G53b` has derived its rung set from `rungs.md`'s `## Rung N` headings since round 6. Do the
-    // same: require a rule PER RUNG (so a new rung reds loudly rather than going unchecked), and
-    // resolve each rung's COLUMN from the header instead of assuming its position.
-    const TOTALS_ARTIFACT = {
-      "1": { re: /span list|exported file/, what: "the run's own exported span records" },
-      "2": { re: /dash0 spans query[\s\S]*dev\.run\.id is/, what: "the count of the `dash0 spans query` whose `dev.run.id` filter DEFINES the observed set" },
-    };
-    const rungNums = existsSync(RUNGS_MD)
-      ? [...new Set((readFileSync(RUNGS_MD, "utf8").match(/^## Rung (\d+)/gm) || []).map((h) => h.match(/(\d+)/)[1]))]
-      : [];
-    s.check("G53i the rung set is derivable for the `totals` artifact checks", rungNums.length >= 2,
-      `${rungNums.length} rung heading(s) in rungs.md — with none derived, the per-rung checks below would vacuously pass`);
-    const realSection = body.match(/### What `CLEAN` and `totals` are, per rung[\s\S]*?(?=\n## )/);
-    const realHeaderCells = ((realSection?.[0].split("\n") ?? []).find((l) => /^\|.*\bRung\b/.test(l)) ?? "")
-      .split("|").slice(1, -1).map((c) => c.trim());
-    // The artifact is only HALF the definition, and round 14 guarded only that half. `totals` is
-    // "the number of **span** records in <artifact>", and the record TYPE is load-bearing
-    // independently of the container: on rung 1 a file exporter's NDJSON holds logs too, so summing
-    // every record makes `totals > 0` satisfiable by a run that emitted no spans — it skips the
-    // `null` row it belongs on, matches `CLEAN AND totals > 0` with the expected span absent, and
-    // grades `contradicts`. A confident disproof produced by counting log records.
-    // Probed before fixing: dropping `**span**` from the rung-1 cell left L1 GREEN at 1761/1761,
-    // because `/span list|exported file/` matches the CONTAINER's name and never the record type.
-    // So the type gets its own conjunct per rung rather than being folded into the artifact regex —
-    // a cell can lose one and keep the other, and the failure messages say which.
-    const SPAN_RECORD = /\*\*span\*\* records|\bspan records\b/;
-    for (const n of rungNums) {
-      const rule = TOTALS_ARTIFACT[n];
-      s.check(`G53i rung ${n} has a \`totals\` artifact rule`, !!rule,
-        `rung ${n} is selectable but nothing says what its \`totals\` must BE — it would be held only by the counter denylist below, which any fresh wording walks around`);
-      if (!rule) continue;
-      const col = realHeaderCells.findIndex((c) => new RegExp(`^Rung ${n}\\b`).test(c));
-      s.check(`G53i rung ${n}'s \`totals\` cell is ${rule.what}`,
-        col >= 0 && rule.re.test(totalsCells[col] ?? ""),
-        col < 0
-          ? `no \`Rung ${n}\` column in the realization header, so its \`totals\` cell cannot be located`
-          : `rung ${n}'s \`totals\` cell does not name the artifact that IS the observed set on that rung — naming the set and being the set are different claims`);
-      // The failure message is PER RUNG because the hazard is not the same on both, and one message
-      // serving both overstated it on rung 2: `receipt-mapping.md` says `dash0 spans query` returns
-      // spans by construction, so a mis-worded rung-2 cell cannot actually admit a log record. What
-      // it breaks there is the cell agreeing with the definition it realizes — still worth a red,
-      // and worth saying honestly, since that same file's rule is that overstating a live hazard to
-      // defend a rule is how the next author learns to discount the file.
-      const TYPE_WHY = {
-        "1": "counting logs or metrics in makes `totals > 0` reachable by a run that emitted no spans, which grades `contradicts` instead of `null`",
-        "2": "`dash0 spans query` returns spans by construction, so this cannot admit a log record — what it breaks is the cell stating the definition it realizes, leaving the spans-only rule true on one rung's wording only",
-      };
-      s.check(`G53i rung ${n}'s \`totals\` counts SPAN records, not every record in the artifact`,
-        col >= 0 && SPAN_RECORD.test(totalsCells[col] ?? ""),
-        `rung ${n}'s \`totals\` cell names its artifact without naming the record type — ${TYPE_WHY[n] ?? "every assertion this skill grades is a span claim, so a cell that does not say so leaves the record type to the reader"}`);
-    }
-    // …and the rationale that makes the conjunct above non-arbitrary. Deleting the whole paragraph
-    // also left L1 green at 1761/1761 — the operative cells and their reason were BOTH unguarded,
-    // which is the round-13 shape (one definition, several surfaces, L1 on none of them). Assert
-    // the MECHANISM, not just the rule: a reader who has the rule without the failure it prevents
-    // is the reader who relaxes it.
-    s.check("G53i the spans-only rule for `totals` is stated with the failure it prevents",
-      /`totals` counts spans, on both rungs/.test(body)
-        && /count span records alone, not every record/.test(body)
-        && /confident disproof produced by counting log records/.test(body),
-      "without the mechanism the rule reads as pedantry: summing the `logs` / `metrics` counters in makes `totals > 0` satisfiable by a run that emitted no spans, so it skips the `null` row and grades `contradicts` on an absence it never measured");
-    s.check("G53i no `totals` realization names the rejected proxy counter",
-      totalsCells.slice(1).every((c) => !/\bspans\.total\b|final_total|forwarded/.test(c)),
-      "a rung realizing `totals` as the proxy's own counter counts every process pointed at the ports, so a foreign span inflates it without entering the observed set and the run grades `contradicts` on spans it never emitted");
-    s.check("G53i the requirement the `totals` row realizes is stated",
-      /size of the observed set/.test(body) && /delivery receipt, not a census/.test(body),
-      "absence from a set is disproof only when the set is the one the count attested to");
-    // Scope to the WAIT paragraph, and assert what round 12 actually changed. The prior check read
-    // `/re-query until the observed set stops growing/` over the whole file — a sentence the
-    // ROUND-11 text also contained, immediately before "taking `final_total.spans` as the number to
-    // wait for". So the check was green on the defect it was added for, and restoring that target
-    // kept L1 at 1753/1753. The discriminating claims are that the set's own size is the ONLY
-    // quantity watched, and the named rejection of the counter as a target.
-    const waitStart = body.indexOf("`null` is the floor, not the goal");
-    const waitEnd = body.indexOf("Never extend the wait");
-    const wait = waitStart >= 0 && waitEnd > waitStart ? body.slice(waitStart, waitEnd) : "";
-    s.check("G53i the rung-2 read waits for ingest before grading an absence",
-      /re-query until the observed set stops growing/.test(wait),
-      "rung 2's cost is ingest latency, so a query issued at shutdown can return empty on a perfect delivery — an unfinished read is `null`, never `contradicts`");
-    s.check("G53i the ingest wait watches the observed set's own size, never a proxy counter",
-      /the set's own size is the only quantity to watch/.test(wait)
-        && /Do not wait for `final_total\.spans`/.test(wait),
-      "waiting on a delivery receipt that counts every process pointed at the ports means the target is never met under a second process, the deadline always fires, and every such run grades `ambiguous` where `run-identity.md` says `null`");
-    // Round 13 RETIRED the check that used to sit here — `/proxy's own lifetime/ && /different
-    // mechanisms/`, which asserted that `totals` is scoped differently per rung. That was the
-    // pre-round-11 realization: round 11 made `totals` the observed set's own size on every rung,
-    // so `dev.run.id` scopes it on both and there is no asymmetry left to state. The check outlived
-    // the claim and then REQUIRED it, so correcting the prose turned L1 red — a guard holding a
-    // file to a contract the file's own definition had already replaced.
-    // What is worth guarding is the replacement plus the reason the proxy counters are disqualified.
-    s.check("G53i `totals` is scoped by `dev.run.id` on both rungs, and the proxy counters serve `CLEAN` alone",
-      /scoped by `dev\.run\.id` on both rungs/.test(body) && /cannot serve as `totals`/.test(body),
-      "the proxy's counters are scoped by the proxy's LIFETIME, and a lifetime is not a run — they answer whether delivery was healthy and are indifferent to whose spans were delivered");
-    s.check("G53i the two rung-2 population preconditions are stated where the rule lives",
-      existsSync(RUN_IDENTITY) && /proxy is exclusive to this run/i.test(readFileSync(RUN_IDENTITY, "utf8"))
-        && /participating in the claim carries `dev\.run\.id`/.test(readFileSync(RUN_IDENTITY, "utf8")),
-      "an OTel SDK at default endpoint config already reaches the proxy, so exclusivity and per-process stamping are what make the two populations coincide — neither follows from the attribute merely being present");
-  }
-
-  // (k) The defect round 13 found was NOT one stale sentence — it was ONE definition with FIVE
-  // surfaces, of which L1 guarded exactly one, and guarded it at the stale value. Round 11 made
-  // `totals` the observed set's own size; the realization row and one paragraph were updated, and
-  // the asymmetry paragraph, the spans-counting imperative, both worked examples, `run-identity`'s
-  // input table, and `G53h`'s own rationale all kept describing the proxy counter for two rounds.
-  // Guarding the five individually would be five greps that go stale the same way, so guard the
-  // CLASS: in these two files every mention of a proxy counter must sit in a block that REJECTS or
-  // HISTORICISES it. That is true of all seven mentions today, and it is the property each of the
-  // five violations broke.
-  // A fenced block is a violation outright, whatever it contains: a worked example is copied far
-  // more often than the prose above it is read, and a `text` fence has nowhere to put a rejection.
-  // That is the surface that carried `spans.total=3` through the whole round-11..12 window.
-  // break-shape: G53k — restoring `spans.total` to the Correct example, the rung-2 "read
-  // `spans.total` alone" imperative, or `run-identity`'s proxy-counter row flips it red.
-  // Residual, stated rather than papered over: a block could type a rejection marker and then
-  // prescribe the counter anyway. That is a self-contradicting paragraph — visible to a reader in a
-  // way that silent agreement with a retired definition was not — and `receipt-mapping.md` already
-  // says whether a filled cell means the right thing is a reviewer's judgement.
-  // The marker list is a WHITELIST over blocks that mention the counter, so every entry widens what
-  // passes and a marker made of ordinary English widens it by an unknown amount. Two were exactly
-  // that — `used to` and `cannot serve` — and neither was even paying for itself: `cannot serve`
-  // was load-bearing for NO block (it is a `G53i` body marker that drifted into this list), and
-  // `used to` was redundant with `route is closed` in the single block carrying both. Every
-  // remaining marker either names the counter's disqualifying property or marks a historicisation,
-  // and each is load-bearing for at least one block — asserted below, because a dead marker is pure
-  // attack surface that nothing else would ever notice.
-  const COUNTER = /`?\bspans\.total\b`?|`?\bfinal_total(\.spans)?\b`?/;
-  const MARKERS = ["never the proxy's", "delivery receipt, not a census", "every process pointed at its ports",
-    "Do not wait for", "deliberately absent", "earlier draft", "route is closed"];
-  // Deriving the pattern from the list bought addition-proofing and brought a DEGENERATE INPUT with
-  // it: `new RegExp([].join("|"))` is `/(?:)/`, which matches every block — so an empty `MARKERS`
-  // makes `offenders` permanently empty AND `dead` permanently empty, and BOTH G53k checks pass on
-  // a tree that prescribes the counter freely. No syntax error, no red check. That is this file's
-  // own recurring defect arriving through the refactor written to close the previous instance of
-  // it, so the list gets the same non-degeneracy floor `rungNums` has above, for the same reason.
-  // Assert the COMPILED PATTERN, never the array's arity. The first attempt at this floor was
-  // `MARKERS.length > 0` — an empty-ARRAY check for an empty-STRING hazard, and the gap is not
-  // narrow: `[""]` has length 1, and seven real markers plus `""` has length 8, so the floor passes
-  // while `join("|")` leaves an empty alternative and `REJECTS` is `/(?:)/` again. Probed: with
-  // that eighth entry and a prescriptive `spans.total` block in the file, L1 was GREEN 1766/1766.
-  // The companion load-bearing check cannot catch it either, since `b.includes("")` is always true.
-  // The precedent cited for the arity floor is where it went wrong: `rungNums.length >= 2` is
-  // sufficient because its elements are `(\d+)` captures that CANNOT be empty. These are free-form
-  // strings, so length is a proxy for the property rather than the property. `REJECTS.test("")` IS
-  // the property — a pattern matching the empty string matches every block by construction — so it
-  // is asserted on the built regex, after it exists.
-  const REJECTS = new RegExp(MARKERS.map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
-  s.check("G53k the compiled rejection pattern is not vacuous", !REJECTS.test(""),
-    "`REJECTS` matches the empty string, so it matches every block — an EMPTY entry in MARKERS leaves an empty alternative in the alternation, and both G53k checks below pass on a tree that prescribes the counter freely. A whitespace-only entry is NOT this check: it compiles to `/ /`, which does not match `\"\"` — the length floor below is what catches that one");
-  // A second, weaker conjunct, and weaker ON PURPOSE rather than by oversight: the check above
-  // catches vacuity exactly, but a one- or two-character marker is near-vacuous without literally
-  // matching `""`. A length floor is a proxy — an eight-character phrase can still be ordinary
-  // English — and it is kept only because it costs nothing and closes the degenerate-but-nonempty
-  // band. The real limit on generic markers stays the one documented below: it is not mechanical.
-  // The BLANK entry is this check's alone, not the vacuity check's: `[" "].join("|")` is `" "`, so
-  // `REJECTS` is `/ /` and `REJECTS.test("")` is FALSE. The two checks cover the degenerate band
-  // JOINTLY, and each message now names the subset IT fires on rather than the union — the earlier
-  // wording sent a reader debugging a blank marker to the check that stays green on it, and the
-  // probe that would have shown this was run and its output read past.
-  s.check("G53k no rejection marker is degenerately short", MARKERS.every((m) => m.trim().length >= 8),
-    `marker(s) under 8 non-blank characters: ${MARKERS.filter((m) => m.trim().length < 8).map((m) => JSON.stringify(m)).join(", ")} — a marker this short cannot name the counter's disqualifying property, so it admits blocks on an accident of wording`);
-  for (const [label, path] of [["receipt-mapping.md", RECEIPT], ["run-identity.md", RUN_IDENTITY]]) {
-    if (!existsSync(path)) continue;
-    // Normalise emphasis and semantic line breaks before matching. This repo's prose rule is one
-    // sentence per line, so a marker phrase is routinely split across a newline and wrapped in
-    // `**`; matching the raw block would have meant shortening the markers until they fit inside
-    // one line fragment, which is how a marker list stops meaning anything.
-    const flat = (b) => b.replace(/\*\*/g, "").replace(/\s+/g, " ");
-    const blocks = readFileSync(path, "utf8").split(/\n\s*\n/);
-    const offenders = blocks
-      .filter((b) => COUNTER.test(flat(b)))
-      .filter((b) => b.trimStart().startsWith("```") || !REJECTS.test(flat(b)))
-      .map((b) => b.trim().split("\n")[0].slice(0, 70));
-    s.check(`G53k ${label} names a proxy counter only to reject or historicise it`,
-      offenders.length === 0,
-      `${offenders.length} block(s) mention \`spans.total\`/\`final_total\` prescriptively: ${offenders.join(" | ")} — round 11 made \`totals\` the observed set's own size, so a surface still sourcing it from the proxy counter regrades an emitted span`);
-  }
-  // Every marker must be load-bearing. A marker matching no block is a widening of the whitelist
-  // that buys nothing and that no other check would ever surface — `cannot serve` sat there exactly
-  // that way, and it is how a list of specific phrases silently becomes a list of English ones: the
-  // cheap fix for any future red here is to append a broader phrase, and this is what makes that
-  // move visible. Adding a marker means adding the block it covers, in the same change.
-  // What this does NOT catch, said plainly rather than left to look covered: a marker that is
-  // ordinary English AND happens to match a block. `used to` was one — it matched `run-identity`'s
-  // historicisation paragraph, so this check stayed green on it, and removing it was a JUDGEMENT
-  // (redundant there with `route is closed`, which covers the same block). The obvious mechanical
-  // strengthening — require each marker to be the UNIQUE cover of some block — is wrong and was
-  // rejected: it would red on `never the proxy's` and `delivery receipt, not a census`, the two
-  // most specific phrases in the list, because they share their block with a third. Minimality is
-  // not the property wanted here; specificity is, and specificity is not mechanically checkable.
-  // One amendment, so this paragraph does not overclaim in the other direction: the length floor
-  // added above WOULD now red on `used to` — it is seven characters. That is incidental, and for
-  // the wrong reason: it catches the marker for being SHORT, not for being generic, and a generic
-  // phrase of eight characters or more still passes both checks. The claim above stands as stated.
-  {
-    const flat = (b) => b.replace(/\*\*/g, "").replace(/\s+/g, " ");
-    const counterBlocks = [RECEIPT, RUN_IDENTITY]
-      .filter((p) => existsSync(p))
-      .flatMap((p) => readFileSync(p, "utf8").split(/\n\s*\n/))
-      .map(flat)
-      .filter((b) => COUNTER.test(b));
-    const dead = MARKERS.filter((m) => !counterBlocks.some((b) => b.includes(m)));
-    s.check("G53k every rejection marker is load-bearing for at least one block",
-      dead.length === 0,
-      `${dead.length} marker(s) match no counter-mentioning block: ${dead.join(" | ")} — an unused marker only widens what passes, so it is attack surface with no coverage behind it`);
-  }
-
-  // (l) A guard ID quoted in ANOTHER file is a cross-file reference to a check this file owns, and
-  // nothing read it: this branch's guards were renumbered `G52*` -> `G53*` on the merge with main
-  // (which had claimed `G52a`–`G52f` for `review-branch`), a sweep ran over `*.md` only, and the two
-  // `L1 G52e` citations in `suites.mjs` survived — still resolving, but to MAIN's `G52e`, an
-  // unrelated `branch-reviewer` check. That is this PR's own defect class one more time: the
-  // reference stayed well-formed, so every existing check stayed green.
-  //
-  // The scoping is the load-bearing half. A guard asserting only "the ID is defined somewhere in
-  // l1.mjs" would have passed on `G52e` — main defines one — so it would have been an assertion
-  // that passes because of what it does not look at. This derives the OWNER of the
-  // keyword-separability scan from the `s.check` label that performs it, and requires the citing
-  // comment to name that owner.
-  // break-shape: G53l — revert either `suites.mjs` citation to `G52e` (or renumber this family
-  // again without sweeping `.mjs`) and it flips red.
-  {
-    const src = readFileSync(new URL(import.meta.url), "utf8");
-    // Own label deliberately avoids the phrase below, so this guard cannot derive itself as owner.
-    const owners = [...new Set((src.match(/s\.check\(\s*["`]G\d+[a-z](?=[^"`]*declared tells?)/g) || [])
-      .map((m) => m.slice(m.search(/G\d/))))];
-    const SUITES = join(REPO_ROOT, "scripts/eval/suites.mjs");
-    if (existsSync(SUITES) && owners.length === 1) {
-      const owner = owners[0];
-      // Group contiguous `//` lines into blocks, so a citation and its subject still meet after a
-      // re-wrap. A line-at-a-time scan would go quiet the moment someone reflowed the comment.
-      const blocks = [];
-      let run = [];
-      for (const line of readFileSync(SUITES, "utf8").split("\n")) {
-        if (line.trim().startsWith("//")) run.push(line.trim());
-        else { if (run.length) blocks.push(run); run = []; }
-      }
-      if (run.length) blocks.push(run);
-      const wrong = blocks
-        .map((b) => b.join(" "))
-        .filter((b) => /declared tells?/.test(b))
-        .flatMap((b) => (b.match(/\bG\d+[a-z]\b/g) || []))
-        .filter((id) => id !== owner);
-      s.check(`G53l suites.mjs cites the guard that owns the keyword-separability scan (${owner})`,
-        wrong.length === 0,
-        `suites.mjs cites ${[...new Set(wrong)].join(", ")} for the keyword-separability scan, which ${owner} owns — a stale ID that still resolves points the next reader at the wrong check`);
-    } else if (existsSync(SUITES)) {
-      s.check("G53l the keyword-separability scan has exactly one owning check to cite",
-        false,
-        `derived ${owners.length} owner(s) (${owners.join(", ") || "none"}) from l1.mjs's own s.check labels — with none, the cross-file citation guard silently measures nothing; with several, it cannot say which is correct`);
-    }
-  }
-
-  // G53j retired: the inventory range claim now lives only in the frozen archive docs/inventory.md, which does not track guard ranges.
 }
 
-// ── G54: measurable's Weaver rule file — reachable, paired, bounded, and honest ──
-//
-// `weaver-schema.md` adds a THIRD question to a skill built on two, and it does it with an
-// external CLI the repo may not have. That combination is exactly the shape this repo keeps
-// getting bitten by: a rule file stating a contract nothing routes to (G40), a rule whose
-// companion half drifts away from it (G53f), and a lens vocabulary that grew a value the
-// consumer has no row for. Each sub-check below guards one of those, and each is scoped to the
-// surface that OWNS the claim rather than to prose restating it — the G53i lesson.
+// ── F1b: a description over 1024 chars makes a git import reject the whole skill (validator FM05) ──
 {
-  const MSK = join(REPO_ROOT, "skills/quality/measurable");
-  const WEAVER = join(MSK, "rules/weaver-schema.md");
-  const MEASURABLE_SKILL = join(MSK, "SKILL.md");
-  const AUDIT_CHECKLIST = join(MSK, "rules/audit-checklist.md");
-  const REGRESSION_SIGNALS = join(MSK, "rules/regression-signals.md");
-  const SETUP_PROFILE_MD = join(MSK, "rules/setup-profile.md");
-  const PROFILE_TEMPLATE_MD = join(MSK, "templates/observability-profile.template.md");
-  // Non-throwing wrapper around the SHARED extractSection, not a local re-implementation.
-  // The first version of this was a five-line regex slice, justified against `sliceBetween`
-  // — the wrong shared function. `sliceBetween` throws when the end anchor is absent (the
-  // normal case for a file's LAST section), but `extractSection` needs no end anchor at all,
-  // and it is heading-LEVEL-aware and fence-aware where the local slice was neither. Probed:
-  // a `## ` line inside a ```yaml fence truncated the mapping section from 2055 to 427 chars
-  // and BOTH G54c checks passed with every table row invisible; an H1 demotion made the slice
-  // over-run into the next section and report a verdict that was not in the table at all.
-  // The only property worth keeping from the local version is not throwing, so that is all
-  // this adds. It takes a repo-RELATIVE path, because that is extractSection's own contract.
-  const sectionOf = (relPath, heading) => {
-    try { return extractSection(relPath, heading); } catch { return ""; }
-  };
-  const REL = "skills/quality/measurable";
-
-  // (a) The file exists. Every check below is conditional on it, so without this one a deleted
-  // rule file would take the whole family quiet — the vacuous-pass shape G53i calls out.
-  // break-shape: G54a — delete rules/weaver-schema.md and this flips red.
-  s.check("G54a measurable/rules/weaver-schema.md exists", existsSync(WEAVER));
-  // BOTH halves of the gating conjunction below get an assertion, not just the rule file.
-  // Probed: retargeting MEASURABLE_SKILL to a name that does not exist drops 22 checks and
-  // the suite reports 1805/1805 GREEN — the same vacuous-quiet shape this family opens by
-  // warning about, left open on the conjunct nobody asserted.
-  s.check("G54a measurable/SKILL.md exists", existsSync(MEASURABLE_SKILL),
-    "22 checks below are gated on it, so its absence takes the whole family quiet");
-
-  if (existsSync(WEAVER) && existsSync(MEASURABLE_SKILL)) {
-    const weaver = readFileSync(WEAVER, "utf8");
-    const skill = readFileSync(MEASURABLE_SKILL, "utf8");
-
-    // (b) REACHABILITY. A rule file the mode table does not route to is a file no run loads —
-    // it would sit in the repo looking like coverage while every `guide` and `audit` pass
-    // skipped it. Derive the routing from the `Required Reading by Mode` table's own rows
-    // rather than grepping the whole SKILL.md: a mention in the prose is not a route, and the
-    // first version of this check (a bare `skill.includes(...)`) passed on exactly that.
-    const readingRows = Object.fromEntries(
-      sectionOf(`${REL}/SKILL.md`, "## Required Reading by Mode")
-        .split("\n")
-        .filter((l) => /^\|\s*`\w+`\s*\|/.test(l))
-        .map((l) => [l.split("|")[1].trim().replace(/`/g, ""), l]));
-    s.check("G54b the Required Reading table is parseable into mode rows",
-      Object.keys(readingRows).length >= 3,
-      `${Object.keys(readingRows).length} mode row(s) parsed — with none, the routing checks below measure nothing`);
-    for (const mode of ["guide", "audit"]) {
-      s.check(`G54b the \`${mode}\` row routes to rules/weaver-schema.md`,
-        /rules\/weaver-schema\.md/.test(readingRows[mode] ?? ""),
-        `the \`${mode}\` mode never loads the file, so its contract is unreachable from a run`);
-    }
-    // `implement` routes INDIRECTLY — its cell says "Same as `guide`, plus …" — so the two rows
-    // above do not cover it, and rewriting that cell as an explicit list that omits the file
-    // would unroute the mode with nothing to say about it. Assert the inheritance itself.
-    s.check("G54b the `implement` row inherits the `guide` reading list",
-      /Same as `guide`/.test(readingRows.implement ?? ""),
-      "implement routes to weaver-schema.md only through that inheritance, so an explicit list here could silently drop it");
-    // audit-checklist.md is what weaver-schema.md's mapping section names as the owner of the
-    // three verdicts, so the row that carries Weaver into `audit` mode has to exist there.
-    // Without this, AUDIT_CHECKLIST was declared and never read.
-    const auditBody = existsSync(AUDIT_CHECKLIST) ? readFileSync(AUDIT_CHECKLIST, "utf8") : "";
-    s.check("G54b audit-checklist.md carries the registry-conformance row",
-      /weaver-schema\.md/.test(auditBody) && /never introduces a fourth/i.test(auditBody),
-      "audit mode is where a registry finding is graded, so the checklist must route to the rule and restate the three-verdict bound");
-
-    // (c) BOUNDED VOCABULARY. audit mode grades three verdicts and the pr-reviewer lens maps
-    // exactly those three, so a fourth introduced here reaches no surface. Derive the permitted
-    // set from regression-signals.md's own `Audit-mode classification` bullets — a literal list
-    // here would just be a second place to update, which is the drift this guards against.
-    const allowed = new Set(
-      [...sectionOf(`${REL}/rules/regression-signals.md`, "## Audit-mode classification")
-        .matchAll(/^-\s+\*\*`([a-z]+)`\*\*/gm)].map((m) => m[1]));
-    s.check("G54c the verdict set is derivable from regression-signals.md", allowed.size === 3,
-      `derived ${allowed.size} verdict(s) (${[...allowed].join(", ") || "none"}) — the subset check below is vacuous unless the owner defines them`);
-    // Read the verdicts weaver-schema CLAIMS, from the mapping table that owns the claim.
-    const mapSection = sectionOf(`${REL}/rules/weaver-schema.md`, "## Audit-mode mapping — three verdicts, never a fourth");
-    // Take the table's OWN verdict column and subtract `allowed`. The first version filtered
-    // `claimed` through an eight-word literal, so a fourth verdict could only be caught if the
-    // author had guessed its spelling in advance — the very re-encoding the `allowed` side is
-    // derived to avoid. Probed: a `waived` row rendered in the table's exact shape left
-    // `claimed` unchanged and the suite at 1827/1827.
-    // Scoped to the SECOND cell so the observation column's `renamed` / `obsoleted` / `removed`
-    // (which are `weaver registry diff` change types, not audit verdicts) are out of scope, and
-    // verdict-SHAPED so the prose cell's `id` and `path:line` are too.
-    const VERDICT_SHAPED = /^[a-z][a-z-]{2,}$/;
-    const claimed = new Set(
-      mapSection.split("\n")
-        .filter((l) => /^\|/.test(l) && !/^\|\s*-{2,}/.test(l))
-        .map((l) => l.split("|")[2] ?? "")
-        .flatMap((cell) => [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]))
-        .filter((v) => VERDICT_SHAPED.test(v)));
-    const fourth = [...claimed].filter((v) => !allowed.has(v));
-    s.check("G54c weaver-schema.md's audit mapping introduces no fourth verdict",
-      allowed.size === 3 && fourth.length === 0,
-      `verdict(s) ${fourth.join(", ")} appear in the mapping table but not in regression-signals.md's classification — a verdict the pr-reviewer lens has no row for is a finding that reaches no surface`);
-    // Scoped to a NEGATED mention, not to the bare phrase: "a fourth verdict would be useful
-    // here" contains `fourth verdict` and says the opposite of the rule. Bounded to one
-    // sentence (`[^.]`) so the negation and the noun have to be the same claim.
-    s.check("G54c the mapping table says so in words, not only by omission",
-      /\b(never|not|no)\b[^.]{0,40}fourth verdict/i.test(mapSection),
-      "the constraint is only inferable from the table's contents, so the next author has nothing telling them why");
-
-    // (d) THE DEPRECATED COMMAND. `weaver registry search` is deprecated upstream and is not
-    // V2-schema compatible, so recommending it costs a turn and returns nothing. Assert it is
-    // never named OUTSIDE a sentence that marks it deprecated — a denylist of the whole string
-    // would also red the two places that correctly warn about it.
-    for (const f of walk(MSK)) {
-      const lines = readFileSync(f, "utf8").split("\n");
-      // The marker has to be ABOUT the command. `!/deprecat/i` only asked whether the word
-      // appeared somewhere on the same physical line, which passes
-      // "Use `weaver registry search` to find deprecated attributes" — a recommendation of the
-      // deprecated command in which `deprecated` modifies something else entirely.
-      const MARKS_IT_DEPRECATED =
-        /`weaver registry search` is \*\*deprecated\*\*|(?:do not|never) recommend it|deprecated and not V2/i;
-      const bad = lines
-        .map((l, i) => ({ l, n: i + 1 }))
-        .filter(({ l }) => /weaver registry search/.test(l) && !MARKS_IT_DEPRECATED.test(l));
-      s.check(`G54d ${rel(f)} never recommends the deprecated \`weaver registry search\``,
-        bad.length === 0,
-        bad.map(({ n }) => `line ${n}`).join(", ") + " names it without marking it deprecated");
-    }
-
-    // (e) ADVISORY, ON BOTH SURFACES. The rule file promising "never blocks" while SKILL.md's
-    // companion principle omits the CLI is the G40 shape — a contract stated in a rule the body
-    // does not implement. Require both halves, and scope the SKILL.md half to the principle
-    // that OWNS the claim rather than to the file, so a passing mention elsewhere cannot carry it.
-    s.check("G54e weaver-schema.md states it never blocks a mode or a gate",
-      /never blocks|never block\b|Advisory, always/i.test(weaver),
-      "no advisory/never-blocks statement found — an external CLI that can fail a gate is a dependency, not a companion");
-    const companionPrinciple = (skill.match(/\*\*Companions never block, and never skip silently\.\*\*[\s\S]*?(?=\n\d+\.\s\*\*|\n\n##)/) ?? [""])[0];
-    s.check("G54e SKILL.md's companion principle names the `weaver` CLI among the optional ones",
-      /`weaver`/.test(companionPrinciple),
-      "the principle that makes every companion skippable does not list the one companion that is not even a skill");
-
-    // (f) THE ADOPTION DEFAULT. A conformance gate that fails the build on its first run against
-    // an existing codebase gets the step deleted, not the findings fixed — which is why the
-    // upstream action's own docs say to start permissive. Assert the CI EXAMPLE, because the
-    // example is what gets copied; prose advising `none` above a snippet that says `violation`
-    // teaches the snippet.
-    // Anchored to the fence that CONTAINS the stop action, and forbidden from crossing a fence
-    // delimiter on the way. The first version was `/```yaml[\s\S]*?weaver-live-check-stop…/`,
-    // which is leftmost-matched: it anchored on the manifest.yaml snippet ~130 lines earlier and
-    // captured a 6955-char slab spanning 14 fences. Probed: deleting the ENTIRE CI example left
-    // both checks green, satisfied by the prose sentence that advises `fail-on: none` — which is
-    // the exact substitution the comment above says it exists to prevent.
-    const ciExample =
-      (weaver.match(/```yaml\n(?:(?!```)[\s\S])*?weaver-live-check-stop(?:(?!```)[\s\S])*?```/) ?? [""])[0];
-    s.check("G54f the CI example exists and sets `fail-on`", /fail-on:/.test(ciExample),
-      "no live-check-stop example with a `fail-on` — the one setting that decides whether adoption survives contact with a real repo");
-    s.check("G54f the CI example starts at `fail-on: none`, not at a failing level",
-      /fail-on:\s*none\b/.test(ciExample),
-      "the copyable example gates the build on day one; start at `none` and tighten once the backlog is cleared");
-
-    // (g) THE BY-CONSTRUCTION SPLIT. This is the file's one genuinely load-bearing idea and the
-    // easiest to trim as hedging: an agent that authors both the registry group and the
-    // instrumentation, then reports their agreement as evidence, has proved nothing. The
-    // upstream half IS evidence; the same-diff half is not. Require both rows and the citation
-    // of the rule that owns the principle, so the claim stays attributable rather than reinvented.
-    const provenance = sectionOf(`${REL}/rules/weaver-schema.md`, "## What a green Weaver run proves, and what it does not");
-    s.check("G54g weaver-schema.md splits Weaver's findings by provenance",
-      /upstream/i.test(provenance) && /this same change|same diff|same change/i.test(provenance),
-      "the provenance section does not distinguish findings from the upstream registry (evidence) from findings against a registry this same change authored (by-construction)");
-    // Scoped to `provenance`, not to the whole file: the citation is a property of THIS
-    // section, and testing the file left the check green after the section was renamed away.
-    s.check("G54g it cites observe-run's assertion-provenance rule as the principle's owner",
-      /observe-run\/rules\/assertion-provenance\.md/.test(provenance),
-      "the by-construction principle is restated without citing the file that owns it, which is how two copies drift");
-    s.check("G54g it states that neither Weaver nor observe-run covers the other",
-      /[Nn]either answers the other|never report one as though it covered the other/.test(weaver),
-      "a live-check pass reads as behavioral verification unless the file says outright that it is not");
+  for (const f of walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))) {
+    const dir = f.slice(0, -"/SKILL.md".length);
+    const fm05 = validateSkill(dir).findings.filter((x) => x.id === "FM05" && x.level === "FAIL");
+    s.check(`F1b ${rel(f)} description is within the 1024-char cap`, fm05.length === 0,
+      fm05.length ? fm05[0].message : "");
   }
-
-  // (h) The setup interview question and the profile-template field move together — the same
-  // paired-existence contract G53f holds for the dev-run target, applied to the telemetry-schema
-  // pair. A question with no field writes the answer nowhere; a field with no question is filled
-  // by guesswork, and `weaver-schema.md` Step 1 branches on it either way.
-  // break-shape: G54h — delete the `Telemetry Schema` heading from the template (or the
-  // telemetry-schema question from setup-profile.md) and the third check flips red.
-  {
-    const setupBody = existsSync(SETUP_PROFILE_MD) ? readFileSync(SETUP_PROFILE_MD, "utf8") : "";
-    const templateBody = existsSync(PROFILE_TEMPLATE_MD) ? readFileSync(PROFILE_TEMPLATE_MD, "utf8") : "";
-    const hasQuestion = /\*\*Telemetry schema\*\*/i.test(setupBody);
-    const hasField = /^##\s+Telemetry Schema\s*$/im.test(templateBody);
-    s.check("G54h setup-profile.md carries the telemetry-schema interview question", hasQuestion,
-      existsSync(SETUP_PROFILE_MD) ? "no telemetry-schema question found" : "setup-profile.md not found");
-    s.check("G54h observability-profile.template.md carries the matching Telemetry Schema section", hasField,
-      existsSync(PROFILE_TEMPLATE_MD) ? "no Telemetry Schema section found" : "template not found");
-    s.check("G54h the question and the field move TOGETHER (neither exists alone)",
-      hasQuestion === hasField, `question=${hasQuestion} field=${hasField}`);
-    // `none` has to be a RECORDABLE answer, not just an unstated possibility: it is what makes
-    // the Weaver branch advisory instead of re-derived by scanning the tree on every run.
-    s.check("G54h `none` is an explicit, recordable answer for the registry field",
-      /Registry:.*"none"/.test(templateBody) && /`none`/.test(setupBody),
-      "without an explicit `none`, an absent registry is indistinguishable from an uninterviewed repo, and every later run re-derives it");
-  }
-
-  // G54i retired: the inventory range claim now lives only in the frozen archive docs/inventory.md, which does not track guard ranges.
 }
 
-// ── G55: jev-assert — receipt vocabulary ≡ verify-behavior, and the semantic: form is wired ──
-//
-// jev-assert only composes if its receipt tokens are EXACTLY the five verify-behavior owns — a
-// sixth reaches no consumer, and a missing one silently drops a verdict a runner maps. And the
-// `semantic:` assertion is only real if it lives in the shared grammar + contract the runners
-// parse, not only in the skill that resolves it. Each check is scoped to the file that OWNS the
-// claim, and both the canonical and the claimed verdict sets are DERIVED from their owners rather
-// than re-encoded here (the G54c lesson).
+// ── F2: a bare ": " in a plain YAML scalar makes a strict parser drop the whole frontmatter ──
 {
-  const JEV = join(REPO_ROOT, "skills/quality/jev-assert");
-  const RECEIPT_MAP = join(JEV, "rules/receipt-mapping.md");
-  const VERIF_RECEIPT = join(REPO_ROOT, "agents/shared/rules/verification-receipt.md");
-  const CONTRACT = join(REPO_ROOT, "skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
-  const TEMPLATE = join(REPO_ROOT, "skills/workflow/autonomous-workflow/templates/specs.md.template");
-  const AW_CHROME = join(REPO_ROOT, "skills/workflow/autonomous-workflow/aw-tester-chrome/SKILL.md");
-
-  // Canonical set: derive from verification-receipt.md's own `verdict: <a|b|c|d|e>` pipe list —
-  // the owner of the vocabulary — never a literal re-encoded here.
-  const vrText = existsSync(VERIF_RECEIPT) ? readFileSync(VERIF_RECEIPT, "utf8") : "";
-  const vrMatch = vrText.match(/verdict:\s*<([a-z|]+)>/);
-  const canonical = new Set(vrMatch ? vrMatch[1].split("|") : []);
-  s.check("G55 canonical receipt set derives from verification-receipt.md (5 tokens)",
-    canonical.size === 5,
-    `derived ${canonical.size} token(s) (${[...canonical].join(", ") || "none"}) — the equality check below is vacuous unless the owner defines them`);
-
-  // Claimed set: the verdict column (cell 2) of receipt-mapping.md's "## The mapping" table.
-  const rmText = existsSync(RECEIPT_MAP) ? readFileSync(RECEIPT_MAP, "utf8") : "";
-  const mapSection = rmText.split(/^## /m).find((sec) => sec.startsWith("The mapping")) ?? "";
-  const claimed = new Set();
-  for (const line of mapSection.split("\n")) {
-    if (!/^\|/.test(line)) continue;
-    const cells = line.split("|");
-    if (cells.length < 4) continue;
-    const m = cells[2].match(/`([a-z]+)`/);
-    if (m) claimed.add(m[1]);
-  }
-  const extra = [...claimed].filter((t) => !canonical.has(t));
-  const missing = [...canonical].filter((t) => !claimed.has(t));
-  s.check("G55 jev-assert's mapping verdicts ≡ the verify-behavior vocabulary (no sixth, none missing)",
-    canonical.size === 5 && extra.length === 0 && missing.length === 0,
-    `extra: ${extra.join(", ") || "none"}; missing: ${missing.join(", ") || "none"}`);
-
-  s.check("G55 receipt-mapping.md states the verdict set is closed",
-    /closed/i.test(rmText) && /sixth/i.test(rmText),
-    "the closed-set promise is what stops a bespoke verdict word being added — state it in words, not only by the table");
-
-  // The semantic: form is only real if it lives in the shared grammar + contract the runners
-  // parse AND both runners resolve it — not only in the skill that owns the judgment.
-  const semanticSites = [
-    ["specs.md.template (grammar)", TEMPLATE],
-    ["spec-run-contract.md (contract)", CONTRACT],
-    ["aw-tester.agent.md (Playwright runner)", "@aw-tester"],
-    ["aw-tester-chrome/SKILL.md (Chrome runner)", AW_CHROME],
+  const files = [
+    ...walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md")),
+    ...walk(join(REPO_ROOT, "agents")).filter((p) => /\/agents\/[^/]+\.md$/.test(p)),
   ];
-  for (const [label, p] of semanticSites) {
-    const t = p === "@aw-tester" ? readAwTester() : existsSync(p) ? readFileSync(p, "utf8") : "";
-    s.check(`G55 the semantic: assertion form is present in ${label}`,
-      /semantic:/.test(t),
-      `${label} never names the \`semantic:\` form — the assertion is unreachable from a conforming run of that surface`);
+  for (const f of files) {
+    const parts = readFileSync(f, "utf8").split("---\n");
+    if (parts.length < 3 || parts[0] !== "") continue;
+    const offenders = parts[1].split("\n")
+      .map((line) => /^([A-Za-z_][\w-]*): (.+)$/.exec(line))
+      .filter((m) => m && !/^["'|>]/.test(m[2]) && m[2].includes(": "))
+      .map((m) => m[1]);
+    s.check(`F2 ${rel(f)} frontmatter has no bare ": " in a plain scalar`, offenders.length === 0,
+      offenders.length ? `key(s): ${offenders.join(", ")} — quote the value or use an em dash` : "");
   }
-  // The contract must route the semantic form to jev-assert, or the form names no resolver.
-  const contractText = existsSync(CONTRACT) ? readFileSync(CONTRACT, "utf8") : "";
-  s.check("G55 the spec-run contract routes semantic: to jev-assert",
-    /jev-assert/.test(contractText),
-    "spec-run-contract.md defines the semantic form but never names jev-assert as its resolver");
 }
 
-// ── G57: ui-verify auto-capture — always-on screenshots, one contract, both runners, wired on ──
-//
-// `ui-verify run`/`verify` must ALWAYS yield screenshots for a PR description. The mechanism is a
-// run-level `--auto-capture` option owned by the spec-run contract (SSOT) and honored by BOTH
-// runners; ui-verify turns it on by default by passing the flag in EACH Step-4 dispatch block.
-// Every sub-check read()s the SHIPPED files and greps LITERAL anchors — the cap number is derived
-// from the contract and asserted equal in the runners, never re-encoded here (the
-// mock-that-reimplements-the-thing-under-test trap). Break-shapes are noted per check.
+// ── D: installs are flat by skill name, so two category folders holding one name collide ──
 {
-  const readOr = (rel) => { try { return readFileSync(join(REPO_ROOT, rel), "utf8"); } catch { return ""; } };
-  const contract = readOr("skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
-  const awt = readAwTester();
-  const chrome = readOr("skills/workflow/autonomous-workflow/aw-tester-chrome/SKILL.md");
-  const runner = readOr("skills/testing/ui-verify/rules/runner.md");
-  const uiv = readOr("skills/testing/ui-verify/SKILL.md");
-  const capOf = (t) => { const m = t.match(/AUTO_CAPTURE_CAP\s*=\s*(\d+)/); return m ? m[1] : ""; };
-  const CAP = capOf(contract);
-
-  // G57a — the contract DEFINES auto-capture: the heading, the flag, and the cap constant. Delete
-  // any of the three and this reds (and takes the derived CAP with it).
-  s.check("G57a spec-run-contract defines the Auto-capture option (heading + flag + cap)",
-    /##+\s*Auto-capture/.test(contract) && /--auto-capture/.test(contract) && CAP !== "",
-    "spec-run-contract.md is missing the Auto-capture heading, the --auto-capture flag, or AUTO_CAPTURE_CAP");
-
-  // G57b — the Playwright runner implements it: parse input + the deterministic final-state file
-  // name + the cap. Drop the --auto-capture parse row and this reds.
-  s.check("G57b aw-tester implements --auto-capture (flag, -auto-final.png, cap)",
-    /--auto-capture/.test(awt) && /-auto-final\.png/.test(awt) && capOf(awt) !== "",
-    "aw-tester.agent.md does not implement --auto-capture with a cap and the -auto-final.png name");
-
-  // G57c — the Chrome runner mirrors it (parity: one contract, two runners).
-  s.check("G57c aw-tester-chrome mirrors --auto-capture with a cap",
-    /--auto-capture/.test(chrome) && capOf(chrome) !== "",
-    "aw-tester-chrome/SKILL.md does not mirror --auto-capture with a cap");
-
-  // G57d — the cap is ONE number across the contract and both runners (cross-file equality, not
-  // three independent presence checks). Change 30→40 in one file only and this reds.
-  s.check("G57d the auto-capture cap is identical across contract and both runners",
-    CAP !== "" && capOf(awt) === CAP && capOf(chrome) === CAP,
-    `AUTO_CAPTURE_CAP drift: contract=${CAP || "∅"}, aw-tester=${capOf(awt) || "∅"}, chrome=${capOf(chrome) || "∅"}`);
-
-  // G57e — ui-verify WIRES it on: --auto-capture in BOTH Step-4 dispatch blocks (chrome +
-  // playwright), so a default run always captures. This is the load-bearing wiring — a contract
-  // and two runners that support auto-capture do nothing if no caller passes the flag.
-  // Count the DISPATCH lines specifically (`Mode: … --auto-capture`), not every mention: the
-  // three prose references to --auto-capture must not let this stay green when both dispatch-block
-  // flags are removed — the exact regression this guard describes.
-  const autoInRunner = (runner.match(/Mode:.*--auto-capture/g) || []).length;
-  s.check("G57e ui-verify runner passes --auto-capture in BOTH dispatch blocks",
-    autoInRunner >= 2,
-    `runner.md carries --auto-capture ${autoInRunner} time(s); both the chrome and playwright dispatch blocks must pass it`);
-  s.check("G57e ui-verify documents the --no-screenshots opt-out",
-    /--no-screenshots/.test(runner), "runner.md does not document the --no-screenshots opt-out");
-
-  // G57f — the opt-out reaches the user-facing surface so it is discoverable.
-  s.check("G57f ui-verify SKILL.md argument-hint carries --no-screenshots",
-    /argument-hint:[^\n]*--no-screenshots/.test(uiv), "ui-verify SKILL.md argument-hint is missing --no-screenshots");
+  const names = walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))
+    .map((p) => p.split("/").slice(-2)[0]);
+  const dupes = [...new Set(names.filter((n, i) => names.indexOf(n) !== i))];
+  s.check("D every skill name is unique across categories", dupes.length === 0, dupes.join(", "));
 }
 
-// ── G58: repo-owned skills on an Agent0 Automation sandbox (shared host rule + review-loop) ──
-//
-// On that host custom agent types (`pr-reviewer`, `aw-tester`) are not dispatchable and the skill
-// tool never reads the filesystem, so review-loop could only skip at iteration 0. The fix is one
-// shared host rule, a per-skill rule, one setup script, and a one-line branch per skill. Each
-// check reads the SHIPPED files; the file list the setup script verifies is DERIVED from the
-// rules' own `$AGENT_SKILLS_ROOT/skills/…` mentions, never re-encoded here.
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 3. Manifests and install
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── G2c: install.sh links aw- agents from templates/; a mismatch installs a missing or stale agent ──
 {
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const host = readOr("agents/shared/rules/agent0-host.md");
-  const loop = readOr("skills/quality/review-loop/SKILL.md");
-  const rule = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
-  const uvSkill = readOr("skills/testing/ui-verify/SKILL.md");
-  const uvRule = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
-  const SETUP_REL = "scripts/agent0-setup.sh";
-  const setup = readOr(SETUP_REL);
-  const DETECT = "/tmp/workspace/agent-skills/env.sh";
-
-  // G58a — the loop routes to its rule, and sub-step A's pseudocode carries the Agent0 branch.
-  s.check("G58a review-loop routes to rules/agent0-runtime.md and branches sub-step A on AGENT0",
-    loop.includes("(./rules/agent0-runtime.md)") && /AGENT0 == 1[^\n]*subagent_type="general"/.test(loop),
-    "review-loop SKILL.md is missing the agent0-runtime.md pointer or the sub-step A AGENT0 branch");
-
-  // G58b — ONE detection file, named identically everywhere, and it is the file the installer
-  // writes. Rename it in any one place and this reds before a sandbox run finds out.
-  const namers = { host, loop, rule, uvSkill, uvRule };
-  const missing = Object.entries(namers).filter(([, t]) => !t.includes(DETECT)).map(([k]) => k);
-  s.check("G58b the Agent0 detection file is named identically across rules, skills, and the installer",
-    missing.length === 0 && setup.includes('HOST="$WS/agent-skills"') && setup.includes('} > "$HOST/env.sh"'),
-    `${DETECT} missing from: ${missing.join(",") || "none"}; or the installer does not write "$HOST/env.sh"`);
-
-  // G58c — the review stays a separate context: a `general` dispatch naming the bundle and the
-  // reviewer's own constraints file.
-  const block = (rule.match(/<dispatch>\(\n[\s\S]*?\n\)/) || [""])[0];
-  s.check("G58c the Agent0 reviewer is a general dispatch pointed at the bundle and RUN-CONSTRAINTS",
-    /subagent_type: "general"/.test(block) && block.includes("pr-reviewer.agent0.md") && block.includes("RUN-CONSTRAINTS.md"),
-    "review-loop agent0-runtime.md's dispatch block is not a general dispatch naming the bundle and RUN-CONSTRAINTS.md");
-
-  // G58d — one install procedure: the installer DELEGATES to the reviewer's with SRC_DIR, and
-  // overwrites AGENTS.md AFTER that call (the reviewer's copy says "never push").
-  const iDelegate = setup.indexOf('bash "$SRC/agents/pr-reviewer/scripts/agent0-setup.sh"');
-  const iAgents = setup.indexOf('cat > "$WS/AGENTS.md"');
-  s.check("G58d the installer delegates to the reviewer installer, then overwrites AGENTS.md",
-    iDelegate > 0 && /SRC_DIR="\$SRC"/.test(setup) && iAgents > iDelegate,
-    `delegation at ${iDelegate}, AGENTS.md overwrite at ${iAgents} — must delegate with SRC_DIR, then overwrite`);
-
-  // G58e — every installed file a rule names is VERIFIED by the installer. Derived from the
-  // rules' `$AGENT_SKILLS_ROOT/skills/<path>` and `/tmp/workspace/pr-reviewer/skills/<path>` mentions.
-  const named = new Set();
-  for (const t of [host, rule, uvRule]) {
-    for (const m of t.matchAll(/(?:\$AGENT_SKILLS_ROOT|\/tmp\/workspace\/pr-reviewer)\/skills\/([a-z0-9-]+\/[A-Za-z0-9._/-]+\.(?:md|mjs))/g)) named.add(m[1]);
-  }
-  const unverified = [...named].filter((n) => !setup.includes(`"$S/${n}"`));
-  s.check("G58e the installer verifies every installed file the Agent0 rules name",
-    named.size >= 6 && unverified.length === 0,
-    `named=${[...named].join(",") || "∅"}; unverified by ${SETUP_REL}: ${unverified.join(",") || "none"}`);
-
-  // G58f — the top-level constraints do not forbid what the loop does, and a refusal has a token.
-  const cons = (setup.match(/<<'CONSTRAINTS'\n([\s\S]*?)\nCONSTRAINTS/) || ["", ""])[1];
-  s.check("G58f top-level CONSTRAINTS permit pushing the PR head, and reviewer-refused is a stop reason",
-    /commit\s+to and push the PR's own head branch/.test(cons) && !/Never[^\n]*push a commit/.test(cons)
-      && /Stop reason: <[^>]*reviewer-refused/.test(loop),
-    "the CONSTRAINTS heredoc forbids pushing, or reviewer-refused is missing from the Step 3 stop-reason list");
-
-  // G58g — the installer parses; PIN is optional and defaults to latest main; and because the host
-  // caches the result while the TEXT is unchanged, the cache-key line that refreshes it exists.
-  const syn = spawnSync("bash", ["-n", join(REPO_ROOT, SETUP_REL)], { encoding: "utf8" });
-  s.check("G58g the installer parses, defaults PIN to main, and carries a cache-key line",
-    syn.status === 0 && setup.includes('PIN="${PIN:-main}"') && /^# cache-key: \S+/m.test(setup),
-    `bash -n=${syn.status}; PIN default or cache-key line missing`);
-
-  // G58h — a dispatch tool WITHOUT the pr-reviewer type is a route to resolve, never a skip. The
-  // generic Agent0 automation (no setup script, `task` offering only explore/general) skipped every
-  // /review-loop at iteration 0 because Step 0 only asked whether a dispatch tool existed. Asserts
-  // the route table exists, the marker row precedes the named row (a prepared sandbox keeps the
-  // validated bundle route), the install row links to an anchor the rule actually has, and both new
-  // skips are reportable Step 3 tokens rather than prose-only.
-  const step0 = (loop.match(/### Step 0:[\s\S]*?(?=\n### Step 1:)/) || [""])[0];
-  const iMarkerRow = step0.search(/^\| 2 \| `\/tmp\/workspace\/agent-skills\/env\.sh` exists \| `agent0`/m);
-  const iNamedRow = step0.search(/^\| 3 \|[^\n]*`pr-reviewer`[^\n]*\| `named` \|/m);
-  const iInstallRow = step0.search(/^\| 4 \|[^\n]*\(#on-demand-install--step-0-row-4\)/m);
-  const stopLine = (loop.match(/^Stop reason: <[^\n]*/m) || [""])[0];
-  s.check("G58h review-loop Step 0 resolves REVIEWER_ROUTE: marker row, then named row, then on-demand install; both skips reportable",
-    step0.includes("REVIEWER_ROUTE") && iMarkerRow > 0 && iNamedRow > iMarkerRow && iInstallRow > iNamedRow
-      && /^## Install on demand when the marker is absent$/m.test(rule)
-      && stopLine.includes("skipped (pr-reviewer is not a dispatchable agent type here)")
-      && stopLine.includes("skipped (Agent0 install failed: <reason>)"),
-    `REVIEWER_ROUTE=${step0.includes("REVIEWER_ROUTE")} rows(marker,named,install)=${iMarkerRow},${iNamedRow},${iInstallRow}; `
-      + "install anchor heading or a Step 3 skip token missing");
-
-  // G58i — the on-demand install is the SETUP SCRIPT, run safely: the block parses, downloads the
-  // exact file this repo ships as the setup script (derived from SETUP_REL, never re-encoded), skips
-  // the browser, leaves the workspace AGENTS.md as found, and removes the marker on a failed exit
-  // (the setup script writes env.sh BEFORE its own verification, so a failed run would otherwise
-  // leave a marker that sends the next run down row 2 on an unverified install). The block lives in
-  // SKILL.md Step 0 (a SKILL.md-only Agent0 import must reach it), and ONLY there: the rule file's
-  // install section keeps the rationale and carries no second copy of the block.
-  const installSec = (step0.match(/#### On-demand install — Step 0 row 4\n[\s\S]*?\n```bash\n[\s\S]*?\n```/) || [""])[0];
-  const installBlock = (installSec.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
-  const ruleInstallSec = (rule.match(/## Install on demand when the marker is absent[\s\S]*?(?=\n## )/) || [""])[0];
-  s.check("G58i2 the on-demand install block has one owner: SKILL.md, and the rule file points there",
-    installBlock !== "" && !/```bash/.test(ruleInstallSec) && !ruleInstallSec.includes("agent0-setup.sh; then")
-      && ruleInstallSec.includes("(../SKILL.md#on-demand-install--step-0-row-4)"),
-    "the install block is missing from review-loop SKILL.md Step 0, or rules/agent0-runtime.md still carries a copy / no pointer");
-  const synI = installBlock ? spawnSync("bash", ["-n"], { input: installBlock, encoding: "utf8" }) : { status: -1 };
-  s.check("G58i the on-demand install runs the shipped setup script without a browser, restores AGENTS.md, and drops the marker on failure",
-    synI.status === 0
-      && installBlock.includes(`https://raw.githubusercontent.com/mthines/agent-skills/main/${SETUP_REL}`)
-      && /WITH_PLAYWRIGHT=0 [^\n]*bash "\$B\/agent0-setup\.sh"/.test(installBlock)
-      && installBlock.includes(`M=${DETECT}`) && /\[ "\$rc" = 0 \] \|\| rm -f "\$M"/.test(installBlock)
-      && /cp -p "\$B\/AGENTS\.md\.before" \/tmp\/workspace\/AGENTS\.md/.test(installBlock)
-      && installBlock.includes("rm -f /tmp/workspace/AGENTS.md"),
-    `bash -n=${synI.status}; the install block must fetch ${SETUP_REL}, pass WITH_PLAYWRIGHT=0, restore AGENTS.md, and rm the marker when rc != 0`);
+  const installer = readFileSync(join(AW, "install.sh"), "utf8");
+  const linked = new Set([...installer.matchAll(/ln -sf[n]?\s+\S+\s+"\$CLAUDE_DIR\/agents\/(aw-[a-z0-9-]+)\.md"/g)].map((m) => m[1]));
+  s.check("G2c install.sh links a discoverable set of aw- agents", linked.size >= 1,
+    linked.size ? [...linked].join(", ") : "no `ln -sf` into agents/aw-*.md found");
+  const templated = new Set(readdirSync(join(AW, "templates"))
+    .filter((f) => /^aw-[a-z0-9-]+\.agent\.md$/.test(f)).map((f) => f.replace(/\.agent\.md$/, "")));
+  const onlyLinked = [...linked].filter((a) => !templated.has(a));
+  const onlyTemplated = [...templated].filter((a) => !linked.has(a));
+  s.check("G2c the installer's aw- agent set matches templates/ on disk",
+    onlyLinked.length === 0 && onlyTemplated.length === 0,
+    `linked-not-templated: [${onlyLinked}] · templated-not-linked: [${onlyTemplated}]`);
 }
 
-// ── G85: Agent0 flat import — each entry-point skill works from its SKILL.md ALONE ──
-//
-// Agent0's Settings → Skills import copies SKILL.md and nothing else (observed: the imported
-// review-loop folder held exactly one file, so rules/agent0-runtime.md and its install block were
-// unreachable and every run fell to the "not a dispatchable agent type" skip). This simulates that
-// import literally — each SKILL.md is copied ALONE into an empty temp dir and only that copy is read
-// — and asserts what an Agent0 run needs is in it: review-loop's install block (by its key commands,
-// derived from SETUP_REL/DETECT where possible), the unprepared-host signals that let it install
-// before /tmp/workspace exists (and that no signal means no install), and in every entry point the
-// rule that sends linked-file reads to $AGENT_SKILLS_ROOT and lets the installed copy win.
-{
-  const SETUP_URL = "https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-setup.sh";
-  const ENTRY = { "review-loop": "skills/quality/review-loop/SKILL.md", "ui-verify": "skills/testing/ui-verify/SKILL.md", "pr-review": "skills/quality/pr-review/SKILL.md" };
-  const flat = {};
-  const dir = mkdtempSync(join(tmpdir(), "l1-flat-import-"));
-  try {
-    for (const [name, relp] of Object.entries(ENTRY)) {
-      const d = join(dir, name);
-      mkdirSync(d);
-      writeFileSync(join(d, "SKILL.md"), readFileSync(join(REPO_ROOT, relp), "utf8"));
-      const listing = readdirSync(d);
-      flat[name] = listing.length === 1 ? readFileSync(join(d, "SKILL.md"), "utf8") : "";
-    }
-  } finally { rmSync(dir, { recursive: true, force: true }); }
-
-  // G85a — review-loop's install block is in SKILL.md itself, with its key commands and outcome lines.
-  const rl = flat["review-loop"];
-  const blk = ((rl.match(/#### On-demand install — Step 0 row 4\n[\s\S]*?```bash\n([\s\S]*?)\n```/) || ["", ""])[1]);
-  s.check("G85a flat import: review-loop SKILL.md alone carries the install block (setup URL, WITH_PLAYWRIGHT=0, INSTALL: lines)",
-    blk.includes(SETUP_URL) && /WITH_PLAYWRIGHT=0 timeout 300 bash/.test(blk)
-      && blk.includes('echo "INSTALL: ok"') && blk.includes('echo "INSTALL: failed')
-      && /^\| `INSTALL: ok` \|/m.test(rl) && /^\| `INSTALL: failed — <reason>` \|/m.test(rl),
-    "review-loop SKILL.md alone lacks the install block's URL, WITH_PLAYWRIGHT=0, or the INSTALL: ok/failed lines and their outcome rows");
-
-  // G85b — the install works before /tmp/workspace exists: the opencode import tree is an Agent0
-  // signal, the block creates /tmp/workspace, and with NO signal the block installs nothing. The
-  // last half is EXECUTED: the block's host test runs against a fake root with and without signals.
-  const hostLine = (blk.match(/^if \[ -d \/tmp\/workspace \][^\n]*A0=0; fi$/m) || [""])[0];
-  const probe = (mk) => {
-    const root = mkdtempSync(join(tmpdir(), "l1-a0-"));
-    try {
-      for (const m of mk) mkdirSync(join(root, m), { recursive: true });
-      if (mk.includes(".opencode/agents")) writeFileSync(join(root, ".opencode/agents/general.md"), "x");
-      const sh = hostLine.replaceAll("/tmp/", `${root}/`) + "\necho $A0";
-      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout.trim();
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  };
-  const hostOk = hostLine !== "" && probe([]) === "0" && probe(["workspace"]) === "1"
-    && probe([".opencode/skills"]) === "1" && probe([".opencode/agents"]) === "1";
-  s.check("G85b flat import: review-loop installs on an unprepared Agent0 host (opencode signals, mkdir /tmp/workspace) and never without a signal",
-    hostOk && /if \[ ! -f "\$M" \] && \[ "\$A0" = 1 \]; then\n\s*mkdir -p \/tmp\/workspace /.test(blk)
-      && /^\| 4 \|[^\n]*`\/tmp\/\.opencode\/skills`/m.test(rl) && /^\| 5 \|[^\n]*none of row 4's Agent0 signals/m.test(rl),
-    `host test ${hostLine ? "found" : "missing"}; probes none/ws/skills/agents=${hostLine ? [probe([]), probe(["workspace"]), probe([".opencode/skills"]), probe([".opencode/agents"])].join("/") : "-"} (want 0/1/1/1); or mkdir / row 4-5 wording drifted`);
-
-  // G85c — every entry point, from SKILL.md alone, sends linked-file reads to the install and lets the
-  // installed copy win. Keyed per skill name, so a rule copied without renaming its path reds.
-  const noRule = Object.entries(flat).filter(([name, t]) => !(
-    t.includes(`$AGENT_SKILLS_ROOT/skills/${name}/SKILL.md`) && t.includes("$AGENT_SKILLS_ROOT/skills/<name>/")
-      && /Read linked files from the install, never from the imported folder/.test(t)
-      && /the installed copy at `\$AGENT_SKILLS_COMMIT` wins/i.test(t)
-      && t.includes(". /tmp/workspace/agent-skills/env.sh"))).map(([n]) => n);
-  s.check("G85c flat import: every Agent0 entry point reads linked files from $AGENT_SKILLS_ROOT/skills/<name>/ and follows the installed copy",
-    Object.values(flat).every(Boolean) && noRule.length === 0,
-    `missing the installed-copy rule: ${noRule.join(",") || "none"}`);
-
-  // G85d — ui-verify and pr-review recognise the unprepared host by the same signals and name it,
-  // rather than falling through to a dispatch Agent0 cannot make.
-  const noHost = ["ui-verify", "pr-review"].filter((n) => !(flat[n].includes("/tmp/.opencode/skills/")
-    && flat[n].includes("/tmp/.opencode/agents/general.md") && /Agent0 sandbox not prepared/.test(flat[n])));
-  s.check("G85d flat import: ui-verify and pr-review recognise an unprepared Agent0 host and report it by name",
-    noHost.length === 0, `missing unprepared-host handling: ${noHost.join(",") || "none"}`);
-
-  // G85e — ui-verify's own on-demand BROWSER top-up (distinct from review-loop's reviewer
-  // install) is also reachable from a SKILL.md-only import: both raw script URLs, both stage
-  // budgets, the byte-identical host-test line (EXECUTED against fake roots, same as G85b), all
-  // four BROWSER: outcome lines plus their table rows, and the prose scoping it to run/verify,
-  // never --driver chrome, with the required Bash timeout.
-  const uv = flat["ui-verify"];
-  const PW_URL = "https://raw.githubusercontent.com/mthines/agent-skills/main/scripts/agent0-playwright.sh";
-  const uvBlk = ((uv.match(/#### On-demand browser install — run and verify\n[\s\S]*?```bash\n([\s\S]*?)\n```/) || ["", ""])[1]);
-  const uvHostLine = (uvBlk.match(/^if \[ -d \/tmp\/workspace \][^\n]*A0=0; fi$/m) || [""])[0];
-  const uvProbe = (mk) => {
-    const root = mkdtempSync(join(tmpdir(), "l1-a0e-"));
-    try {
-      for (const m of mk) mkdirSync(join(root, m), { recursive: true });
-      if (mk.includes(".opencode/agents")) writeFileSync(join(root, ".opencode/agents/general.md"), "x");
-      const sh = uvHostLine.replaceAll("/tmp/", `${root}/`) + "\necho $A0";
-      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout.trim();
-    } finally { rmSync(root, { recursive: true, force: true }); }
-  };
-  const uvProbes = uvHostLine ? [uvProbe([]), uvProbe(["workspace"]), uvProbe([".opencode/skills"]), uvProbe([".opencode/agents"])] : ["-", "-", "-", "-"];
-  const uvHostOk = uvHostLine !== "" && uvProbes.join("/") === "0/1/1/1";
-  s.check("G85e flat import: ui-verify SKILL.md alone carries the on-demand BROWSER install block (both raw URLs, both stage budgets, the executed host-test probe, all four outcome lines + table rows, run/verify + --driver chrome scoping, timeout: 600000)",
-    uvBlk.includes(SETUP_URL) && uvBlk.includes(PW_URL)
-      && /WITH_PLAYWRIGHT=0 timeout 200 bash/.test(uvBlk) && /BUDGET=280 timeout 300 bash/.test(uvBlk)
-      && uvHostOk
-      && uvBlk.includes('echo "BROWSER: ok (prepared)"') && /BROWSER: ok \(installed on demand/.test(uvBlk)
-      && /BROWSER: unavailable —/.test(uvBlk) && /BROWSER: not prepared —/.test(uvBlk)
-      && /^\| `BROWSER: ok \(prepared\)` \|/m.test(uv) && /^\| `BROWSER: ok \(installed on demand, <N>s\)` \|/m.test(uv)
-      && /^\| `BROWSER: unavailable — <reason>` \|/m.test(uv) && /^\| `BROWSER: not prepared — <reason>` \|/m.test(uv)
-      && /runs only for `run` and `verify`, never under\s*`--driver chrome`/.test(uv) && uv.includes("timeout: 600000"),
-    `on-demand BROWSER block missing an element (host probes none/ws/skills/agents=${uvProbes.join("/")}, want 0/1/1/1)`);
-}
-
-// ── G59: ui-verify on an Agent0 Automation sandbox ──
-//
-// No Chrome extension, no user to answer the Playwright prompt, and `aw-tester` is not
-// dispatchable. The rule answers each; these checks hold the answers to the files that consume them.
-{
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const uvSkill = readOr("skills/testing/ui-verify/SKILL.md");
-  const runner = readOr("skills/testing/ui-verify/rules/runner.md");
-  const uvRule = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
-  const setup = readOr("scripts/agent0-setup.sh");
-  const pwInstaller = readOr("scripts/agent0-playwright.sh");
-  // The four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines and the browser install live in
-  // agent0-playwright.sh (agent0-setup.sh delegates — G59f), so G59d and G59e read both scripts.
-  const setupOrPw = setup + "\n" + pwInstaller;
-  const awt = readAwTester();
-
-  // G59a — both entry points route to the rule: SKILL.md, and runner.md Step 4 (which owns the
-  // driver decision the rule replaces).
-  const step4 = (runner.match(/## Step 4[\s\S]*?(?=\n## Step 5)/) || [""])[0];
-  s.check("G59a ui-verify SKILL.md and runner.md Step 4 route to rules/agent0-runtime.md",
-    uvSkill.includes("(./rules/agent0-runtime.md)") && step4.includes("(./agent0-runtime.md"),
-    "ui-verify's SKILL.md or runner.md Step 4 does not route to agent0-runtime.md");
-
-  // G59b — the aw-tester dispatch is `general`, reads the definition file, and carries runner.md's
-  // input lines UNCHANGED (derived from runner.md's own Task block, so the verdict shape cannot fork).
-  const runnerBlock = (runner.match(/subagent_type: "aw-tester"[\s\S]*?\n\)/) || [""])[0];
-  const inputs = ["Aw-Target file:", "Specs file:", "Mode:"].map((k) => (runnerBlock.match(new RegExp(`${k}[^\\n]*`)) || [""])[0].trim());
-  const ruleBlock = (uvRule.match(/<dispatch>\(\n[\s\S]*?\n\)/) || [""])[0];
-  const drift = inputs.filter((l) => !l || !ruleBlock.includes(l));
-  s.check("G59b the Agent0 aw-tester dispatch is general, reads its definition, and keeps runner.md's inputs",
-    /subagent_type: "general"/.test(ruleBlock) && ruleBlock.includes("templates/aw-tester.agent.md") && drift.length === 0,
-    `input lines missing from the Agent0 block: ${drift.join(" | ") || "none"}`);
-
-  // G59c — no question is asked on a host with no user, and a forced chrome is NOT RUN, never
-  // silently substituted.
-  const drivers = (uvRule.match(/## Driver selection[\s\S]*?(?=\n## )/) || [""])[0];
-  s.check("G59c auto resolves to playwright with no AskUserQuestion; forced chrome is NOT RUN",
-    /`auto`[^\n]*\*\*`playwright`, with no `AskUserQuestion`\.\*\*/.test(drivers) && /`chrome` \| `NOT RUN \(/.test(drivers),
-    "agent0-runtime.md's driver table no longer states the auto→playwright no-prompt answer or the chrome NOT RUN");
-
-  // G59d — the browser precondition reads the status the installer writes, and a missing browser
-  // is NOT RUN, never red. Reads the union of setup.sh and agent0-playwright.sh (see setupOrPw).
-  s.check("G59d the browser precondition reads UI_VERIFY_BROWSER, which the installer (setup.sh or agent0-playwright.sh) exports",
-    /\[ "\$UI_VERIFY_BROWSER" = ok \]/.test(uvRule) && /NOT RUN \(playwright browser unavailable/.test(uvRule)
-      && setupOrPw.includes("export UI_VERIFY_BROWSER=") && setupOrPw.includes("export UI_VERIFY_BROWSER_REASON="),
-    "the UI_VERIFY_BROWSER precondition and the installer's export have drifted apart");
-
-  // G59e — no run-time download: the link target and browser path the rule uses are the ones the
-  // installer exports, and the installer installs the package aw-tester's spec imports. Reads the
-  // union of setup.sh and agent0-playwright.sh (see setupOrPw).
-  const imports = /from '@playwright\/test'/.test(awt);
-  s.check("G59e the installer provides the module link, browser path, and @playwright/test aw-tester imports",
-    uvRule.includes('"$UI_VERIFY_PLAYWRIGHT_NODE_MODULES"') && setupOrPw.includes("export UI_VERIFY_PLAYWRIGHT_NODE_MODULES=")
-      && setupOrPw.includes("export PLAYWRIGHT_BROWSERS_PATH=") && imports && /npm install[^\n]*@playwright\/test/.test(setupOrPw),
-    `link var / browser path / @playwright/test install drifted (aw-tester imports @playwright/test: ${imports})`);
-
-  // G59f — agent0-setup.sh delegates the Playwright install to agent0-playwright.sh (one
-  // procedure, not two), copies it into $HOST so the on-demand top-up can run the identical
-  // installer, verifies it with a check line, and holds no npm-install-playwright of its own.
-  s.check("G59f agent0-setup.sh delegates Playwright to agent0-playwright.sh, copies + verifies it, and holds no npm install of its own",
-    /bash "\$SRC\/scripts\/agent0-playwright\.sh"/.test(setup)
-      && /cp "\$SRC\/scripts\/agent0-playwright\.sh" "\$HOST\/agent0-playwright\.sh"/.test(setup)
-      && /check "playwright installer"\s+"\$HOST\/agent0-playwright\.sh"/.test(setup)
-      && !/npm install[^\n]*playwright/.test(setup),
-    "agent0-setup.sh's delegation, copy, or verify line drifted, or it re-acquired its own npm install");
-
-  // G59g — EXECUTED, not grepped (a negative assertion must be shown to fail): running
-  // agent0-playwright.sh with WITH_PLAYWRIGHT=0 twice against a temp ENV_FILE holding other lines
-  // plus stale UI_VERIFY_* lines must leave exactly one of each of the four export lines, keep
-  // every other line, and exit 0 both times. Only the WITH_PLAYWRIGHT=0 path runs here — no
-  // timeout/npm/network — so this is identical on macOS and ubuntu-latest.
-  {
-    const d = mkdtempSync(join(tmpdir(), "l1-pw-env-"));
-    const envFile = join(d, "env.sh");
-    writeFileSync(envFile, "export AGENT_SKILLS_ROOT=/x\nexport UI_VERIFY_BROWSER=ok\nexport PLAYWRIGHT_BROWSERS_PATH=/old\n");
-    let allOk = true;
-    for (let i = 0; i < 2; i++) {
-      const r = spawnSync("bash", [join(REPO_ROOT, "scripts/agent0-playwright.sh")], {
-        encoding: "utf8",
-        env: { ...process.env, ENV_FILE: envFile, PW: join(d, "pw"), WITH_PLAYWRIGHT: "0" },
-      });
-      if (r.status !== 0) allOk = false;
-    }
-    const out = (() => { try { return readFileSync(envFile, "utf8"); } catch { return ""; } })();
-    // "g" is load-bearing: without it, String.match returns only the first hit, so .length is
-    // always 1 (or the capture-group count) regardless of how many times the line repeats — a
-    // duplicate-line regression would read as "once" and this check would never go red.
-    const once = (re) => (out.match(re) || []).length === 1;
-    const keepsOtherLines = once(/^export AGENT_SKILLS_ROOT=\/x$/gm);
-    const fourOnce = ["UI_VERIFY_BROWSER", "UI_VERIFY_BROWSER_REASON", "UI_VERIFY_PLAYWRIGHT_NODE_MODULES", "PLAYWRIGHT_BROWSERS_PATH"]
-      .every((v) => once(new RegExp(`^export ${v}=`, "gm")));
-    const skippedValue = once(/^export UI_VERIFY_BROWSER=skipped$/gm);
-    rmSync(d, { recursive: true, force: true });
-    s.check("G59g agent0-playwright.sh WITH_PLAYWRIGHT=0 rewrites the four export lines idempotently across two runs, keeping every other line (executed)",
-      allOk && keepsOtherLines && fourOnce && skippedValue,
-      `exit-ok=${allOk} keeps-other-lines=${keepsOtherLines} four-lines-once=${fourOnce} skipped-value=${skippedValue}`);
-  }
-}
-
-// ── G56: lens-invocation.md — the shared cross-harness resolution rule for pr-reviewer's six
-// composed lenses (`severity`, `optimize-approach`, `measurable`, `confidence`,
-// `holistic-analysis`, `verify-behavior`) ──
-//
-// Two of the six used to carry duplicated per-lens silent-skip prose and a third carried an
-// inline degrade, instead of one shared contract. That is the exact shape that let
-// `dash0hq/dash0#19751` (a real "Agent0 | review" run) report a clean `success` verdict on a
-// review whose lenses had all silently degraded — five to a host error, one (`measurable`) to a
-// silent name-collision with an unrelated built-in skill. Every sub-check below `read()`s the
-// SHIPPED rule files and greps LITERAL anchors out of them — never re-encoding the expected
-// prose as a second copy inside this guard, the mock-that-reimplements-the-thing-under-test trap.
-{
-  const REL_LI = "agents/shared/rules/lens-invocation.md";
-  const LI = join(REPO_ROOT, REL_LI);
-  // Non-throwing wrapper around the SHARED extractSection (see the G54 comment on why a local
-  // regex slice is the wrong tool) — scoped to this block since each guard family's `{ }` is its
-  // own lexical scope in this file.
-  const sectionOf = (relPath, heading) => {
-    try { return extractSection(relPath, heading); } catch { return ""; }
-  };
-  // break-shape: G56a — delete agents/shared/rules/lens-invocation.md and this flips red, taking
-  // every check gated on `existsSync(LI)` below quiet along with it — the vacuous-pass shape
-  // G53i/G54a already warn about, guarded the same way here.
-  s.check("G56a agents/shared/rules/lens-invocation.md exists", existsSync(LI));
-
-  // Populated from the table's own Spine/Enhancement rows below (never a hardcoded parallel
-  // copy) so the G56g cross-check further down reads the SAME classification G56f already
-  // extracted, rather than re-encoding it as a third element of a literal array.
-  const LENS_CLASS = {};
-
-  if (existsSync(LI)) {
-    const li = readFileSync(LI, "utf8");
-
-    s.check("G56b lens-invocation.md opens with a YAML frontmatter block",
-      li.startsWith("---\n"),
-      "no leading frontmatter block");
-
-    const headingCount = (li.match(/^## /gm) || []).length;
-    s.check("G56b lens-invocation.md carries at least 5 `## ` section headings",
-      headingCount >= 5,
-      `only ${headingCount} found`);
-
-    // (c) file-presence predicate, never an error string — R3 / AC-3.
-    s.check("G56c lens-invocation.md names the deterministic repo-owned skill path",
-      /\.claude\/skills\//.test(li),
-      "no ~/.claude/skills/<name>/SKILL.md path named");
-    s.check("G56c lens-invocation.md states the recovery predicate is file-presence",
-      /file-presence|file presence|present at/i.test(li),
-      "no file-presence predicate stated");
-    s.check("G56c lens-invocation.md rejects the error-string predicate, citing F6",
-      /Skill "<name>" not found/.test(li) && /F6/.test(li),
-      "the rejected error string or the F6 citation is missing");
-
-    // (d) the `measurable` collision is named as silent, not as an error — R4 / AC-4.
-    s.check("G56d lens-invocation.md names the `measurable` collision as silent, not an error",
-      /measurable/.test(li) && /collision|collide|silently/i.test(li),
-      "measurable's silent collision is not described");
-    s.check("G56d lens-invocation.md states local resolution is primary/authoritative",
-      /authoritative|primary/i.test(li),
-      "no authoritative/primary resolution statement");
-
-    // (e) no self-concealing degradation — R5 / AC-5.
-    s.check("G56e lens-invocation.md requires a loud RUN_ANOMALY on a genuine skip",
-      /RUN_ANOMALY/.test(li),
-      "RUN_ANOMALY not named");
-    s.check("G56e lens-invocation.md forbids a clean report on a dropped lens, citing F6/F7",
-      /must not report clean|not report clean|self-conceal/i.test(li) && /F6/.test(li) && /F7/.test(li),
-      "no no-clean-report rule or F6/F7 doctrine citation");
-    // break-shape: G56e-j — `RUN_ANOMALY` is a single-line renderer slot (`render-report.mjs`'s
-    // `assertPlainish`), so the rule's own worked examples cannot show one line per degraded
-    // lens without instructing something the payload contract rejects on the incident's central
-    // case (all six lenses degraded at once, dash0hq/dash0#19751). branch-reviewer iteration 3
-    // caught this — it dates to 0be7637 and survived two review passes unflagged.
-    const anomalySection = sectionOf(REL_LI, "## No self-concealing degradation — `RUN_ANOMALY` is mandatory");
-    s.check("G56j lens-invocation.md states RUN_ANOMALY is single-line and cannot carry one line per lens",
-      /single-line/i.test(anomalySection) && /cannot emit one line per degraded lens|one line per degraded lens/i.test(anomalySection),
-      "no single-line constraint, or no statement that one-line-per-lens is unobtainable");
-    s.check("G56j lens-invocation.md shows an aggregated multi-lens RUN_ANOMALY example",
-      /aggregate/i.test(anomalySection) && (anomalySection.match(/RUN_ANOMALY:/g) || []).length >= 2,
-      "no aggregation instruction, or fewer than two worked RUN_ANOMALY examples (aggregated + single)");
-
-    // (f) enhancement vs spine, every lens classified, confidence justified — R6 / AC-6.
-    // Scoped to the OWNING section and to the SPINE ROW specifically, not to "does this lens name
-    // appear anywhere in the file" — a bare `new RegExp(lens).test(li)` is satisfied by the ToC
-    // entry, the heading, or the six-owner-file table just as well as by an actual classification,
-    // so deleting the whole spine/enhancement table left every one of those checks green in a
-    // probe. Reading the table's own SPINE row is what a vacuous read cannot fake.
-    const evsSection = sectionOf(REL_LI, "## Enhancement vs. spine — what a genuine skip costs");
-    s.check("G56f lens-invocation.md classifies lenses as spine vs enhancement",
-      /spine/i.test(evsSection) && /enhancement/i.test(evsSection),
-      "spine/enhancement classification missing from its own section");
-    const spineRow = (evsSection.split("\n").find((l) => /^\|\s*\*\*Spine\*\*/i.test(l)) ?? "");
-    s.check("G56f the Spine row names exactly `severity` and `verify-behavior`",
-      /`severity`/.test(spineRow) && /`verify-behavior`/.test(spineRow),
-      spineRow ? `Spine row found but missing one of the two: ${spineRow}` : "no Spine row found in the table");
-    // Restricted to the row's LENSES cell (column 2 of `| Class | Lenses | A genuine skip means |`)
-    // rather than the whole row — the Description cell (column 3) is free prose that may itself
-    // contain a backticked term, and a whole-row matchAll let a description-column mention
-    // silently overwrite a lens's own classification (branch-reviewer, PR #198 finding
-    // suggestion:g55g-cell-scoped-derivation, reproduced by appending a backticked `severity`
-    // to the Enhancement row's description and watching it flip LENS_CLASS.severity to enhancement).
-    const lensCell = (row) => row.split("|")[2] ?? "";
-    for (const m of lensCell(spineRow).matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "spine";
-    const enhancementRow = (evsSection.split("\n").find((l) => /^\|\s*\*\*Enhancement\*\*/i.test(l)) ?? "");
-    for (const m of lensCell(enhancementRow).matchAll(/`([^`]+)`/g)) LENS_CLASS[m[1]] = "enhancement";
-    for (const lens of ["optimize-approach", "measurable", "confidence", "holistic-analysis"]) {
-      s.check(`G56f lens-invocation.md classifies \`${lens}\` as enhancement`,
-        new RegExp("\\*\\*Enhancement\\*\\*[^\\n]*`" + lens + "`|`" + lens + "`[^\\n]*\\*\\*Enhancement\\*\\*").test(evsSection)
-          || enhancementRow.includes("`" + lens + "`"),
-        `${lens} not found on the Enhancement row`);
-    }
-    s.check("G56f lens-invocation.md justifies confidence's classification from the verifier rubric",
-      /verifier|Reproducible|per-comment-confidence/i.test(li),
-      "no justification tying confidence's classification to finding-verifier.md / per-comment-confidence.md");
-    // The cap precedent was retracted in ce8e908 — a spine skip no longer touches `RUN.tier`
-    // at all. A loose `evsSection`-wide regex for "untouched" / "left exactly" still passed on a
-    // mutation that flipped ONLY the live contract sentence back to the retracted design while
-    // leaving the rejected-designs history paragraph intact (branch-reviewer iteration 3, finding
-    // quality:test-gap:g55f-cap-check#2) — the section carries three matches for that shape, and
-    // the confidence-classification paragraph's unrelated closing clause was the one surviving.
-    // Anchor on the literal bold lead sentence instead, the same anti-vacuous move as reading the
-    // table's own SPINE row above: a bold topic sentence is deliberately singular and load-bearing
-    // prose, not a phrase that recurs incidentally elsewhere in the section.
-    s.check("G56f lens-invocation.md's bold lead sentence states neither class touches RUN.tier",
-      /\*\*Neither class ever touches `RUN\.tier`\.\*\*/.test(evsSection),
-      "the exact bold lead sentence 'Neither class ever touches `RUN.tier`.' is missing from its own section");
-    s.check("G56f lens-invocation.md names workspace.md's diff-only precedent only as a rejected design",
-      /diff-only/i.test(evsSection) && /workspace/i.test(evsSection) && /rejected/i.test(evsSection),
-      "diff-only/workspace precedent not present, or not framed as rejected");
-  }
-
-  // (g) REACHABILITY — all six canonical owner files reference the shared rule, and the two
-  // formerly-duplicated silent-skip bodies no longer restate the old prose. break-shape: G56g —
-  // remove the reference from one owner file (or reintroduce "log once and continue without the
-  // step" in either collapsed body) and one of the checks below flips red.
-  const OWNERS = [
-    ["agents/shared/rules/conventional-comments.md", "severity"],
-    ["agents/shared/rules/optimality-review.md", "optimize-approach"],
-    ["agents/shared/rules/measurability-review.md", "measurable"],
-    ["agents/shared/rules/per-comment-confidence.md", "confidence"],
-    ["agents/shared/rules/holistic-review.md", "holistic-analysis"],
-    ["agents/shared/rules/verification-receipt.md", "verify-behavior"],
-  ];
-  // break-shape: G56g-class-crosscheck — the OWNERS loop below (pre-existing) only asserted a
-  // reference exists; it never compared the CLASS each owner restates in prose against
-  // lens-invocation.md's own table, so an owner file could drift to the wrong class (spine vs
-  // enhancement) with every existing G56 check still green (branch-reviewer, PR #198 finding
-  // quality:test-gap:g55g-class-crosscheck). Fixed by reading the expected class out of
-  // `LENS_CLASS` (derived above from the table's own rows, not a third hardcoded array element),
-  // and by capturing the classified SYMBOL out of the owner's sentence too — a bare
-  // `(spine|enhancement)` capture is satisfied by any backticked name in front of the phrase, so
-  // it could pass while classifying the wrong lens entirely.
-  for (const [f, lens] of OWNERS) {
-    const abs = join(REPO_ROOT, f);
-    const body = existsSync(abs) ? readFileSync(abs, "utf8") : "";
-    const m = body.match(/`([^`]+)`\s+is classified\s+\*\*(spine|enhancement)\*\*/i);
-    const expectedClass = LENS_CLASS[lens];
-    s.check(`G56g ${f} restates \`${lens}\`'s class consistently with lens-invocation.md's table`,
-      m !== null && m[1] === lens && expectedClass !== undefined && m[2].toLowerCase() === expectedClass,
-      m === null ? "no 'classified **spine|enhancement**' statement found"
-        : m[1] !== lens ? `sentence classifies \`${m[1]}\`, not \`${lens}\``
-        : `owner says ${m[2]}, table says ${expectedClass ?? "(lens missing from table)"}`);
-  }
-  for (const [f] of OWNERS) {
-    const abs = join(REPO_ROOT, f);
-    s.check(`G56g ${f} references lens-invocation.md`,
-      existsSync(abs) && /lens-invocation\.md/.test(readFileSync(abs, "utf8")),
-      "no reference to the shared rule found");
-  }
-  // break-shape: G56g-case2-coverage — a case-1-only restatement (pr-reviewer, PR #198, iteration
-  // 3 finding) positively implies case 2 (any fall-through to host at all, success or not) does not
-  // apply to that lens, when lens-invocation.md states it generically for all six. `measurable`'s
-  // own restatement uses different wording ("both ... cases ... (case 2)") than the shared clause
-  // the other five carry verbatim, so this check accepts either shape rather than one literal string.
-  for (const [f, lens] of OWNERS) {
-    const abs = join(REPO_ROOT, f);
-    const body = existsSync(abs) ? readFileSync(abs, "utf8") : "";
-    const hasSharedClause = /The same `RUN_ANOMALY` also fires on `lens-invocation\.md`'s other case/.test(body);
-    const hasMeasurablePhrasing = /both[^\n]*`RUN_ANOMALY`[^\n]*cases/i.test(body) && /\(case 2\)/.test(body);
-    s.check(`G56g ${f} restates RUN_ANOMALY's case 2 (fall-through-to-host, not only outright failure) for \`${lens}\``,
-      hasSharedClause || hasMeasurablePhrasing,
-      "neither the shared case-2 clause nor measurable's own both-cases phrasing was found");
-  }
-
-  // Non-throwing wrapper — a section this specific has to be genuinely absent to be a defect,
-  // not a reason to crash the whole suite the way `sliceBetween` does on a missing end anchor.
-  const sectionOrNull = (relPath, heading) => {
-    try { return extractSection(relPath, heading); } catch { return null; }
-  };
-  const hrBody = sectionOrNull("agents/shared/rules/holistic-review.md", "## When holistic is unavailable");
-  s.check("G56g holistic-review.md's collapsed body no longer restates the silent-skip prose",
-    hrBody !== null && !/log once and continue without the step/.test(hrBody),
-    hrBody === null ? "section not found" : "silent-skip prose still present");
-  // break-shape: G56g-predates-mode-anomaly — the "predates `review` mode" branch matches neither
-  // of lens-invocation.md's two enumerated cases by name, which is exactly how it shipped with no
-  // RUN_ANOMALY at all (pr-reviewer, PR #198, iteration 4 finding) while optimality-review.md's
-  // structurally identical fallthrough already carried one.
-  // Coupled into one regex, not two independent `.test()` conjuncts — pr-reviewer iteration 5
-  // probed the uncoupled form: add a case-1-style example block elsewhere in the section (the
-  // shape optimality-review.md:216 already carries) then delete the guarded RUN_ANOMALY line, and
-  // the two independent tests both still find A match somewhere in the section and stay green.
-  s.check("G56g holistic-review.md's predates-review-mode branch raises RUN_ANOMALY",
-    hrBody !== null && /RUN_ANOMALY: [^\n]*predates `review` mode/.test(hrBody),
-    hrBody === null ? "section not found" : "predates-mode branch present with no RUN_ANOMALY line naming it");
-  const orBody = sectionOrNull("agents/shared/rules/optimality-review.md", "## When optimize-approach is unavailable");
-  s.check("G56g optimality-review.md's collapsed body no longer restates the silent-skip prose",
-    orBody !== null && !/log once and continue without the step/.test(orBody),
-    orBody === null ? "section not found" : "silent-skip prose still present");
-
-  // (h) RUN_ANOMALY was already a wired payload slot before this change — D6/D8's whole premise
-  // is that no renderer edit was needed to surface it. break-shape: G56h — strip RUN_ANOMALY out
-  // of render-report.mjs and this flips red, since the rule's instruction would then point at a
-  // slot that does not exist.
-  const RR = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-  s.check("G56h RUN_ANOMALY is already a wired payload slot in render-report.mjs",
-    existsSync(RR) && /RUN_ANOMALY/.test(readFileSync(RR, "utf8")),
-    "RUN_ANOMALY absent from the renderer — the no-renderer-change premise this rule relies on does not hold");
-
-  // (i) diagnostic-surface.md names the failure mode — R5 / AC-11.
-  const DS = join(REPO_ROOT, "agents/pr-reviewer/rules/diagnostic-surface.md");
-  s.check("G56i diagnostic-surface.md names silent lens degradation as a failure mode",
-    existsSync(DS) && /lens.*degrad|degrad.*lens|F-lens/i.test(readFileSync(DS, "utf8")),
-    "no F-lens-degraded-silently (or equivalent) row found");
-}
-
-// ── G60: pr-reviewer deterministic pipeline, Phase 0 (measurement + comparability) ──
-//
-// R1/D7: review-telemetry.mjs shares otlp.mjs's encoder rather than a second copy.
-// R2/R3: --dry-run and --isolated exist as real flags with a stated carve-out from
-// Step 4c's "unconditional" state write, and prepare-review.mjs enforces --pin-head
-// comparability. Every sub-check below executes the real script rather than grepping
-// prose for a promise, per this file's own self-test-execution pattern (G21k, G39).
-{
-  const REL_RT = "agents/pr-reviewer/scripts/review-telemetry.mjs";
-  const RT = join(REPO_ROOT, REL_RT);
-  s.check("G60a review-telemetry.mjs exists", existsSync(RT));
-  if (existsSync(RT)) {
-    const rt = readFileSync(RT, "utf8");
-    s.check("G60a review-telemetry.mjs is // @ts-check", /^\/\/ @ts-check/m.test(rt.split("\n").slice(0, 3).join("\n")));
-    s.check("G60a review-telemetry.mjs imports its encoder from otlp.mjs, not a second copy",
-      /from\s+"\.\/otlp\.mjs"/.test(rt));
-    const r = spawnSync(process.execPath, [RT, "--self-test"], { encoding: "utf8" });
-    s.check("G60a the review-telemetry self-test passes (timing block + the four telemetry rules)",
-      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
-  }
-
-  const REL_PR = "agents/pr-reviewer/scripts/prepare-review.mjs";
-  const PR = join(REPO_ROOT, REL_PR);
-  if (existsSync(PR)) {
-    const pr = readFileSync(PR, "utf8");
-    s.check("G60b prepare-review.mjs accepts --pin-head, --isolated, and --full",
-      /--pin-head/.test(pr) && /--isolated/.test(pr) && /["']--full["']/.test(pr));
-    const r = spawnSync(process.execPath, [PR, "--self-test"], { encoding: "utf8" });
-    s.check("G60b the prepare-review self-test passes (incl. verifyPinnedHead and resolveRunMode cases)",
-      r.status === 0, (r.stderr || "").trim().split("\n").slice(-6).join(" | ") || r.stdout?.slice(0, 200));
-  }
-
-  const REL_PIPE = "agents/pr-reviewer/rules/pipeline.md";
-  s.check("G60c agents/pr-reviewer/rules/pipeline.md exists and defines both flags",
-    existsSync(join(REPO_ROOT, REL_PIPE))
-      && /--dry-run/.test(readFileSync(join(REPO_ROOT, REL_PIPE), "utf8"))
-      && /--isolated/.test(readFileSync(join(REPO_ROOT, REL_PIPE), "utf8")));
-
-  // Step 0/4 of the agent body carry the carve-out prose — grepped, not re-executed,
-  // since the agent body is prose the model reads rather than a script this file runs.
-  const PRW = join(REPO_ROOT, "agents/pr-reviewer.md");
-  if (existsSync(PRW)) {
-    const step0 = sliceBetween(readFileSync(PRW, "utf8"), "## Step 0: Read raw arguments", "## Step 0.5");
-    s.check("G60d Step 0's flag table documents --dry-run, --isolated, and --pin-head, pointing at rules/pipeline.md",
-      /--dry-run/.test(step0) && /--isolated/.test(step0) && /--pin-head/.test(step0) && /rules\/pipeline\.md/.test(step0));
-    // Step 4c moved verbatim to rules/posting.md (Step 9 split) — read it there.
-    const POSTING = join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md");
-    const step4c = existsSync(POSTING)
-      ? sliceBetween(readFileSync(POSTING, "utf8"), "### 4c. Record the run state", "### 4d.")
-      : "";
-    s.check("G60d Step 4c states the --dry-run carve-out from its own \"unconditional\" state write",
-      /unconditional/.test(step4c) && /--dry-run/.test(step4c) && /exception/.test(step4c));
-  }
-
-  const REL_TS = "agents/pr-reviewer/scripts/tsconfig.json";
-  const TS = join(REPO_ROOT, REL_TS);
-  s.check("G60e agents/pr-reviewer/scripts/tsconfig.json exists with strict:true and checkJs:false",
-    existsSync(TS) && /"strict":\s*true/.test(readFileSync(TS, "utf8")) && /"checkJs":\s*false/.test(readFileSync(TS, "utf8")));
-  const l1yml = join(REPO_ROOT, ".github/workflows/evals-l1.yml");
-  s.check("G60e evals-l1.yml runs the pr-reviewer scripts tsconfig project in its own typecheck job",
-    existsSync(l1yml) && readFileSync(l1yml, "utf8").includes("agents/pr-reviewer/scripts/tsconfig.json"));
-}
-
-// ── G61: pr-reviewer deterministic pipeline, Phase 1 (delta triage + depth routing + Gate 4) ──
-//
-// R4/D10/D11: route-depth.mjs, delta-triage.mjs, and gate4-scan.mjs exist, are typed, and their
-// self-tests pass; prepare-review.mjs wires all three (plus the graphql threads fetch) into the
-// context; the shape-depth-routing L2 suite is gone; and depth-routing.md's D-IDs and refresh
-// thresholds equal route-depth.mjs's constants, so the rationale doc cannot drift from the
-// executable home without failing here (AC-7, AC-8, AC-25 in part).
-{
-  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
-  const NEW_SCRIPTS = ["route-depth.mjs", "delta-triage.mjs", "gate4-scan.mjs"];
-
-  for (const name of NEW_SCRIPTS) {
-    const p = join(REPO_ROOT, SCRIPTS_DIR, name);
-    s.check(`G61a ${name} exists`, existsSync(p));
-    if (!existsSync(p)) continue;
-    const src = readFileSync(p, "utf8");
-    s.check(`G61a ${name} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
-    const r = spawnSync(process.execPath, [p, "--self-test"], { encoding: "utf8" });
-    s.check(`G61a ${name} --self-test passes`,
-      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 200));
-  }
-
-  // D-ID and threshold cross-file equality — depth-routing.md's own D1-D13 table against
-  // route-depth.mjs's exported TRIGGERS/FULL_REFRESH_DELTA/FULL_REFRESH_RUNS. Executed via a
-  // real dynamic import, not a second regex over the script's source, so a rename that keeps
-  // the string "150" somewhere else in the file cannot fake this check green.
-  const DR = join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md");
-  const RD = join(REPO_ROOT, SCRIPTS_DIR, "route-depth.mjs");
-  if (existsSync(DR) && existsSync(RD)) {
-    const drText = readFileSync(DR, "utf8");
-    const dIds = [...new Set([...drText.matchAll(/\*\*D(\d+)\*\*/g)].map((m) => Number(m[1])))].sort((a, b) => a - b);
-    s.check("G61b depth-routing.md documents exactly D1..D13 (contiguous, no gap, no extra)",
-      dIds.length === 13 && dIds.every((n, i) => n === i + 1), JSON.stringify(dIds));
-    s.check("G61b depth-routing.md states FULL_REFRESH_DELTA = 150 lines",
-      /FULL_REFRESH_DELTA.{0,20}150/.test(drText));
-    s.check("G61b depth-routing.md states FULL_REFRESH_RUNS = 3",
-      /FULL_REFRESH_RUNS.{0,20}3\b/.test(drText));
-
-    const mod = await import(pathToFileURL(RD).href);
-    s.check("G61b route-depth.mjs's TRIGGERS is exactly D1..D13, in order",
-      Array.isArray(mod.TRIGGERS) && mod.TRIGGERS.length === 13
-        && mod.TRIGGERS.every((t, i) => t === `D${i + 1}`),
-      JSON.stringify(mod.TRIGGERS));
-    s.check("G61b route-depth.mjs's FULL_REFRESH_DELTA/FULL_REFRESH_RUNS equal depth-routing.md's stated values",
-      mod.FULL_REFRESH_DELTA === 150 && mod.FULL_REFRESH_RUNS === 3);
-
-    // Cross-check the SAME two constants against delta-triage.mjs, which independently exports
-    // FULL_REFRESH_DELTA for its own churnState() — a single number restated in two files must
-    // never drift, since D10 requires delta-triage's cumulative-churn input to feed the exact
-    // threshold route-depth's D4 trigger tests against.
-    const DT = join(REPO_ROOT, SCRIPTS_DIR, "delta-triage.mjs");
-    if (existsSync(DT)) {
-      const dtMod = await import(pathToFileURL(DT).href);
-      s.check("G61b delta-triage.mjs's FULL_REFRESH_DELTA equals route-depth.mjs's (one threshold, two consumers, never two copies)",
-        dtMod.FULL_REFRESH_DELTA === mod.FULL_REFRESH_DELTA);
-    }
-  }
-
-  // prepare-review.mjs wiring (D10): imports the three new scripts, the graphql threads fetch,
-  // --state/--effort flags, and the routing/threads/gate4_precandidates context fields.
-  const PR = join(REPO_ROOT, SCRIPTS_DIR, "prepare-review.mjs");
-  if (existsSync(PR)) {
-    const pr = readFileSync(PR, "utf8");
-    s.check("G61c prepare-review.mjs imports classifyDivergence/blobDelta/deltaCounts/churnState from delta-triage.mjs",
-      /from\s+"\.\/delta-triage\.mjs"/.test(pr) && /classifyDivergence/.test(pr) && /blobDelta/.test(pr) && /churnState/.test(pr));
-    s.check("G61c prepare-review.mjs imports routeDepth from route-depth.mjs",
-      /from\s+"\.\/route-depth\.mjs"/.test(pr) && /routeDepth/.test(pr));
-    s.check("G61c prepare-review.mjs imports scanGate4 from gate4-scan.mjs",
-      /from\s+"\.\/gate4-scan\.mjs"/.test(pr) && /scanGate4/.test(pr));
-    s.check("G61c prepare-review.mjs runs a reviewThreads graphql fetch",
-      /reviewThreads/.test(pr) && /THREADS_QUERY/.test(pr));
-    s.check("G61c prepare-review.mjs accepts --state and --effort",
-      /["']--state["']/.test(pr) && /["']--effort["']/.test(pr));
-    s.check("G61c prepare-review.mjs's context carries routing, threads, and gate4_precandidates",
-      /\brouting,/.test(pr) && /\bthreads,/.test(pr) && /gate4_precandidates:/.test(pr));
-    const r = spawnSync(process.execPath, [PR, "--self-test"], { encoding: "utf8" });
-    s.check("G61c the prepare-review self-test passes (incl. buildThreads/hunksOf/computeThreadOverlap/readStateFile cases)",
-      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
-  }
-
-  // tsconfig.json carries all three new scripts under strict typechecking.
-  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
-  if (existsSync(TS)) {
-    const tsText = readFileSync(TS, "utf8");
-    s.check("G61d tsconfig.json's files[] lists route-depth.mjs, delta-triage.mjs, and gate4-scan.mjs",
-      NEW_SCRIPTS.every((n) => tsText.includes(`"${n}"`)));
-  }
-
-  // The retired shape-depth-routing L2 suite is fully gone (D11, AC-7) — no SUITES entry, no
-  // golden file, no dangling reference from suites.mjs itself.
-  const SUITES_FILE = join(REPO_ROOT, "scripts/eval/suites.mjs");
-  const GOLDEN = join(REPO_ROOT, "scripts/eval/golden/shape-depth-routing.jsonl");
-  s.check("G61e golden/shape-depth-routing.jsonl no longer exists", !existsSync(GOLDEN));
-  if (existsSync(SUITES_FILE)) {
-    s.check("G61e suites.mjs carries no shape-depth-routing SUITES entry",
-      !/name:\s*"shape-depth-routing"/.test(readFileSync(SUITES_FILE, "utf8")));
-  }
-  s.check("G61e fixtures/route-depth/cases.json exists with all 22 hand-converted records",
-    (() => {
-      const p = join(REPO_ROOT, "scripts/eval/fixtures/route-depth/cases.json");
-      if (!existsSync(p)) return false;
-      try { return JSON.parse(readFileSync(p, "utf8")).length === 22; } catch { return false; }
-    })());
-
-  // Item 1.7: the diff-only capability cap (route-depth.mjs's capApplied, deep -> standard) must
-  // be RENDERABLE — TIER_FOR_MODE's mode=full-implies-tier=deep rule and the diff-only-cannot-
-  // carry-deep rule below it are jointly unsatisfiable for a capped run unless the first carries
-  // an explicit carve-out (Risk "diff-only cap unrenderable in full mode", R4/D10). Executed
-  // end-to-end against real render-report.mjs invocations, not grepped, because the defect this
-  // guards is exactly a case no fixture happened to cover.
-  const RR = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-  const DEEP_FIXTURE = join(REPO_ROOT, "scripts/eval/fixtures/report-body/deep.json");
-  if (existsSync(RR) && existsSync(DEEP_FIXTURE)) {
-    const base = JSON.parse(readFileSync(DEEP_FIXTURE, "utf8"));
-
-    const withAnomaly = { ...base, RUN: { ...base.RUN, tier: "standard", depth: "diff-only" },
-      RUN_ANOMALY: "workspace ladder exhausted — DEPTH_CAPABILITY=diff-only, tier capped at standard" };
-    const pCapped = join(tmpdir(), `g61f-capped-${process.pid}.json`);
-    writeFileSync(pCapped, JSON.stringify(withAnomaly));
-    const rCapped = spawnSync(process.execPath, [RR, pCapped], { encoding: "utf8" });
-    s.check("G61f a capped run (mode=full, tier=standard, depth=diff-only, RUN_ANOMALY set) renders",
-      rCapped.status === 0, (rCapped.stderr || "").trim().slice(0, 200));
-    rmSync(pCapped, { force: true });
-
-    const noAnomaly = { ...base, RUN: { ...base.RUN, tier: "standard", depth: "diff-only" } };
-    delete noAnomaly.RUN_ANOMALY;
-    const pNoAnomaly = join(tmpdir(), `g61f-no-anomaly-${process.pid}.json`);
-    writeFileSync(pNoAnomaly, JSON.stringify(noAnomaly));
-    const rNoAnomaly = spawnSync(process.execPath, [RR, pNoAnomaly], { encoding: "utf8" });
-    s.check("G61f the SAME capped run with no RUN_ANOMALY is rejected — a capped depth is never silent",
-      rNoAnomaly.status !== 0 && /RUN_ANOMALY naming the capability cap/.test(rNoAnomaly.stderr || ""));
-    rmSync(pNoAnomaly, { force: true });
-
-    const wrongTier = { ...base, RUN: { ...base.RUN, tier: "quick", depth: "diff-only" },
-      RUN_ANOMALY: "workspace ladder exhausted" };
-    const pWrongTier = join(tmpdir(), `g61f-wrong-tier-${process.pid}.json`);
-    writeFileSync(pWrongTier, JSON.stringify(wrongTier));
-    const rWrongTier = spawnSync(process.execPath, [RR, pWrongTier], { encoding: "utf8" });
-    s.check("G61f the carve-out stays narrow — mode=full + tier=quick is still rejected, never widened by the cap",
-      rWrongTier.status !== 0 && /contradicts RUN\.mode/.test(rWrongTier.stderr || ""));
-    rmSync(pWrongTier, { force: true });
-  }
-}
-
-// ── G62: pr-reviewer deterministic pipeline, Phase 2 (judgments contract) ──
-//
-// R5/D4/AC-9: judgments.schema.json is the single SSOT, validate-judgments.mjs interprets only
-// the documented fixed keyword subset and fails closed on anything else, the fixture set proves
-// the three AC-9-named rejection cases plus the domain rules the fixed subset cannot express, and
-// the schema's finder/defect_class enums equal fingerprint.mjs's live FINDERS/DEFECT_CLASSES —
-// checked here via a real dynamic import of BOTH files, not by trusting the self-test alone.
-{
-  const SCHEMAS_DIR = "agents/pr-reviewer/schemas";
-  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
-  const SCHEMA_PATH = join(REPO_ROOT, SCHEMAS_DIR, "judgments.schema.json");
-  const VALIDATOR_PATH = join(REPO_ROOT, SCRIPTS_DIR, "validate-judgments.mjs");
-  const FIXTURES_DIR = join(REPO_ROOT, "scripts/eval/fixtures/judgments");
-
-  s.check("G62a judgments.schema.json exists and is valid JSON", (() => {
-    if (!existsSync(SCHEMA_PATH)) return false;
-    try { JSON.parse(readFileSync(SCHEMA_PATH, "utf8")); return true; } catch { return false; }
-  })());
-
-  s.check("G62a validate-judgments.mjs exists", existsSync(VALIDATOR_PATH));
-  if (existsSync(VALIDATOR_PATH)) {
-    const src = readFileSync(VALIDATOR_PATH, "utf8");
-    s.check("G62a validate-judgments.mjs is // @ts-check", /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
-    const r = spawnSync(process.execPath, [VALIDATOR_PATH, "--self-test"], { encoding: "utf8" });
-    s.check("G62a validate-judgments.mjs --self-test passes",
-      r.status === 0, (r.stdout || "").trim().split("\n").slice(-6).join(" | ") || r.stderr?.slice(0, 200));
-  }
-
-  if (existsSync(SCHEMA_PATH) && existsSync(VALIDATOR_PATH)) {
-    const mod = await import(pathToFileURL(VALIDATOR_PATH).href);
-    const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
-
-    // AC-9 case 1: an unsupported schema keyword is rejected — probed directly against the
-    // interpreter's own keyword-checking function, not just against the (currently clean) real
-    // schema, so this guard bites even if judgments.schema.json itself never regresses.
-    const badKeyword = { type: "object", minProperties: 1, properties: { a: { type: "string" } } };
-    const kwErrors = mod.checkSchemaKeywords(badKeyword);
-    s.check("G62b an unsupported schema keyword (minProperties) is rejected",
-      kwErrors.length > 0 && kwErrors.some((e) => e.includes("minProperties")));
-
-    // The real, committed schema uses ONLY the supported subset.
-    const realKwErrors = mod.checkSchemaKeywords(schema);
-    s.check("G62b judgments.schema.json itself uses only the supported keyword subset",
-      realKwErrors.length === 0, realKwErrors.join(" | "));
-
-    // Cross-file enum equality — schema vs. fingerprint.mjs, by real dynamic import of both
-    // rather than a duplicated literal, so a FINDERS/DEFECT_CLASSES rename cannot drift silently.
-    const FP = join(REPO_ROOT, SCRIPTS_DIR, "fingerprint.mjs");
-    if (existsSync(FP)) {
-      const fp = await import(pathToFileURL(FP).href);
-      const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-      s.check("G62c schema $defs.finder.enum equals fingerprint.mjs FINDERS",
-        sortedEq(schema.$defs?.finder?.enum ?? [], fp.FINDERS));
-      s.check("G62c schema $defs.defect_class.enum equals fingerprint.mjs DEFECT_CLASSES",
-        sortedEq(schema.$defs?.defect_class?.enum ?? [], fp.DEFECT_CLASSES));
-    }
-
-    // AC-9 case 2 + 3, and the domain rules the fixed keyword subset cannot express — read
-    // straight off the committed fixtures rather than re-deriving payloads, so a fixture that
-    // regresses to no-longer-actually-invalid is caught here too.
-    const loadFixture = (name) => JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8"));
-
-    s.check("G62d fixtures/judgments/valid.json exists and validates with zero errors", (() => {
-      const p = join(FIXTURES_DIR, "valid.json");
-      if (!existsSync(p)) return false;
-      const errs = mod.validateJudgments(schema, loadFixture("valid.json"));
-      return errs.length === 0;
-    })());
-
-    const invalidCases = [
-      ["invalid-unknown-top-level-key.json", "unknown property"],
-      ["invalid-secret-exempt.json", "secret"],
-      ["invalid-title-mismatch.json", "title"],
-      ["invalid-unverified-reason.json", "unverified_reason"],
-      ["invalid-thread-reply.json", "reply"],
-    ];
-    for (const [name, needle] of invalidCases) {
-      const p = join(FIXTURES_DIR, name);
-      s.check(`G62d fixtures/judgments/${name} exists and is rejected (mentions "${needle}")`, (() => {
-        if (!existsSync(p)) return false;
-        const errs = mod.validateJudgments(schema, loadFixture(name));
-        return errs.length > 0 && errs.some((e) => e.includes(needle));
-      })());
-    }
-  }
-
-  // tsconfig.json carries the new validator under strict typechecking.
-  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
-  if (existsSync(TS)) {
-    s.check("G62e tsconfig.json's files[] lists validate-judgments.mjs",
-      readFileSync(TS, "utf8").includes('"validate-judgments.mjs"'));
-  }
-}
-
-// ── G63: pr-reviewer deterministic pipeline, Phase 3 (finalize) ──
-//
-// R6/D5/D18/AC-10/AC-12/AC-19: finalize.mjs and its finalize/*.mjs pure-core library exist, are
-// typed, and self-test; the findings-bus writer's field set is re-derived against
-// findings-bus.md's own worked example (not just trusted from the self-test); the AC-12
-// byte-unchanged file set really is unchanged versus origin/main, reproduced here as a standing
-// guard so a later phase cannot silently touch it; and Gate 2 (CI) structurally has no input to
-// the orchestration at all, matching agents/pr-reviewer.md's "informational-in-Run" invariant.
-{
-  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
-  const FINALIZE_SCRIPTS = [
-    "finalize.mjs",
-    "finalize/dedupe.mjs", "finalize/thresholds.mjs", "finalize/suppression.mjs",
-    "finalize/placement.mjs", "finalize/line-validity.mjs", "finalize/gates.mjs",
-    "finalize/payload.mjs", "finalize/findings-bus.mjs", "finalize/write-plan.mjs",
-    "finalize/fix-links.mjs", "finalize/reach.mjs",
-  ];
-
-  for (const name of FINALIZE_SCRIPTS) {
-    const p = join(REPO_ROOT, SCRIPTS_DIR, name);
-    s.check(`G63a ${name} exists`, existsSync(p));
-    if (!existsSync(p)) continue;
-    const src = readFileSync(p, "utf8");
-    s.check(`G63a ${name} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
-    const r = spawnSync(process.execPath, [p, "--self-test"], { encoding: "utf8" });
-    s.check(`G63a ${name} --self-test passes`,
-      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
-  }
-
-  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
-  if (existsSync(TS)) {
-    const tsText = readFileSync(TS, "utf8");
-    s.check(`G63b tsconfig.json's files[] lists finalize.mjs and all ${FINALIZE_SCRIPTS.length - 1} finalize/*.mjs modules`,
-      FINALIZE_SCRIPTS.every((n) => tsText.includes(`"${n}"`)));
-  }
-
-  // AC-19: the findings-bus record's field set, re-derived against findings-bus.md's own worked
-  // example JSON — a second witness independent of findings-bus.mjs's own self-test.
-  const FB_RULE = join(REPO_ROOT, "skills/quality/review-branch/rules/findings-bus.md");
-  const FB_MOD = join(REPO_ROOT, SCRIPTS_DIR, "finalize/findings-bus.mjs");
-  if (existsSync(FB_RULE) && existsSync(FB_MOD)) {
-    const ruleText = readFileSync(FB_RULE, "utf8");
-    const jsonMatch = /```json\n(\{[\s\S]*?\n\})\n```/.exec(ruleText);
-    if (jsonMatch) {
-      const worked = JSON.parse(jsonMatch[1]);
-      const mod = await import(pathToFileURL(FB_MOD).href);
-      const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-      s.check("G63c findings-bus.mjs's FINDINGS_BUS_FIELDS equals findings-bus.md's own worked-example key set",
-        sortedEq(mod.FINDINGS_BUS_FIELDS, Object.keys(worked)),
-        `mjs=${JSON.stringify([...mod.FINDINGS_BUS_FIELDS].sort())} md=${JSON.stringify(Object.keys(worked).sort())}`);
-    } else {
-      s.check("G63c findings-bus.md carries a parseable worked-example JSON block", false);
-    }
-  }
-
-  // G63d — RETIRED (plan feat/pr-reviewer-shrink-fanout-ab, D14). It asserted that AC-12's
-  // byte-unchanged file set (fingerprint.mjs / comment-spine.mjs / templates / report fixtures /
-  // reviewer-report-ingest.md) was unchanged versus origin/main. That was a property of #205's own
-  // diff at merge time, not a standing invariant this repo owes forever — and this PR intentionally
-  // changes agents/pr-reviewer/scripts/comment-spine.mjs (D7's sentenceCount rewrite, from a naive
-  // per-character `.`/`!`/`?` count to a terminal-punctuation-run regex, so `3.2.6` and `foo.md`
-  // stop scoring as sentences), so the asserted property reds by construction the moment that
-  // change lands. AC-12 stays enforced in #205's own checks.yaml, which is unaffected by this
-  // worktree. The comment-spine.mjs behaviour change this guard would have blocked is now covered
-  // by G84 (shape semantics: terminal-punctuation sentenceCount, single optimality heading,
-  // semantic-dedupe decoys) instead. Do not resurrect this check without first re-deriving whether
-  // comment-spine.mjs is meant to be frozen again.
-
-  // Gate 2 (CI) structurally never participates: finalizeReview's own signature carries no ci
-  // parameter, so a red/pending CI status has no path into the verdict at all — not merely a
-  // behavioral property the self-test happens to exercise.
-  const FIN = join(REPO_ROOT, SCRIPTS_DIR, "finalize.mjs");
-  if (existsSync(FIN)) {
-    const finSrc = readFileSync(FIN, "utf8");
-    const sigMatch = /export function finalizeReview\(\{([^}]*)\}/.exec(finSrc);
-    s.check("G63e finalizeReview()'s own parameter list carries no ci/CI field",
-      Boolean(sigMatch) && !/\bci\b/i.test(sigMatch[1]), sigMatch ? sigMatch[1] : "signature not found");
-  }
-}
-
-// ── G64: pr-reviewer deterministic pipeline, Phase 4 (execute-write-plan) ──
-//
-// R2/R7/D9/AC-3/AC-14: execute-write-plan.mjs exists, is typed and self-tests (including the
-// four named AC-3 cases); rules/pipeline.md's write-plan op -> MCP tool map names every op and
-// both tool families; AC-14's "no which/auth-status" static scan is reproduced here as a
-// standing guard, independent of checks.yaml's own copy of the same command, so a later phase
-// cannot silently reintroduce either forbidden invocation.
-{
-  const SCRIPTS_DIR = "agents/pr-reviewer/scripts";
-  const EWP = join(REPO_ROOT, SCRIPTS_DIR, "execute-write-plan.mjs");
-
-  s.check("G64a execute-write-plan.mjs exists", existsSync(EWP));
-  if (existsSync(EWP)) {
-    const src = readFileSync(EWP, "utf8");
-    s.check("G64a execute-write-plan.mjs is // @ts-check", /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
-    const r = spawnSync(process.execPath, [EWP, "--self-test"], { encoding: "utf8" });
-    s.check("G64a execute-write-plan.mjs --self-test passes",
-      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
-
-    // AC-14's exact static scan, reproduced as a standing guard independent of checks.yaml's own
-    // copy — a same-file self-test check cannot assert this (its own check labels would have to
-    // name the forbidden phrases in prose and would then trip on themselves), so this is the
-    // guard that actually holds the invariant, read from the OUTSIDE.
-    s.check("G64c execute-write-plan.mjs contains no literal `which gh` or `gh auth status`",
-      !/which gh|gh auth status/.test(src));
-  }
-
-  const TS = join(REPO_ROOT, SCRIPTS_DIR, "tsconfig.json");
-  if (existsSync(TS)) {
-    const tsText = readFileSync(TS, "utf8");
-    s.check("G64b tsconfig.json's files[] lists execute-write-plan.mjs", tsText.includes('"execute-write-plan.mjs"'));
-  }
-
-  // AC-14: rules/pipeline.md maps every write-plan op to an MCP tool (or an explicitly named
-  // gap), and names both tool families.
-  const PIPELINE = join(REPO_ROOT, "agents/pr-reviewer/rules/pipeline.md");
-  if (existsSync(PIPELINE)) {
-    const pText = readFileSync(PIPELINE, "utf8");
-    const OPS = ["sticky.upsert", "review.create", "thread.reply", "thread.resolve", "lorekit.write"];
-    s.check("G64d pipeline.md's op map names every write-plan op", OPS.every((op) => pText.includes(op)),
-      OPS.filter((op) => !pText.includes(op)).join(", "));
-    s.check("G64d pipeline.md's op map names an mcp__github__ tool", pText.includes("mcp__github__"));
-    s.check("G64d pipeline.md's op map names mcp__lorekit__memory_write for lorekit.write", pText.includes("mcp__lorekit__memory_write"));
-  }
-}
-
-// ── G65: pr-reviewer deterministic pipeline, Phase 0b (A/B benchmark harness) ──
-//
-// R11/AC-13/AC-20-23: thread-outcomes.mjs and ab-review.mjs exist, are typed, self-test, and are
-// wired into agents/pr-reviewer/scripts/tsconfig.json; both are read-only per AC-23 (no write
-// verb anywhere in their own source, reproduced here as a standing guard independent of each
-// script's own --self-test, for the same reason G64c holds AC-14's scan from the outside); the
-// reused record-comment-relevance.mjs additions (isMain guard, the three new exports) hold and
-// its own self-test still passes; and the benchmark manifest matches AC-22's allowlist shape.
-{
-  const EVAL_DIR = "scripts/eval";
-  const TO = join(REPO_ROOT, EVAL_DIR, "thread-outcomes.mjs");
-  const AB = join(REPO_ROOT, EVAL_DIR, "ab-review.mjs");
-  const RCR = join(REPO_ROOT, "scripts/record-comment-relevance.mjs");
-  const WRITE_VERB_RE = /-X\s+(?:POST|PATCH|PUT|DELETE)|--method[\s=]+(?:POST|PATCH|PUT|DELETE)|\bmutation\s*[({]/i;
-
-  for (const [id, path, label] of [
-    ["G65a", TO, "thread-outcomes.mjs"],
-    ["G65b", AB, "ab-review.mjs"],
-  ]) {
-    s.check(`${id} ${label} exists`, existsSync(path));
-    if (!existsSync(path)) continue;
-    const src = readFileSync(path, "utf8");
-    s.check(`${id} ${label} is // @ts-check`, /^\/\/ @ts-check/m.test(src.split("\n").slice(0, 3).join("\n")));
-    const r = spawnSync(process.execPath, [path, "--self-test"], { encoding: "utf8" });
-    s.check(`${id} ${label} --self-test passes`,
-      r.status === 0, (r.stdout || "").trim().split("\n").slice(-4).join(" | ") || r.stderr?.slice(0, 300));
-    s.check(`${id} ${label} contains no GitHub write verb (AC-23: no -X POST/PATCH/PUT/DELETE, no --method, no graphql mutation)`,
-      !WRITE_VERB_RE.test(src));
-  }
-
-  s.check("G65c record-comment-relevance.mjs exists", existsSync(RCR));
-  if (existsSync(RCR)) {
-    const rcrSrc = readFileSync(RCR, "utf8");
-    s.check("G65c record-comment-relevance.mjs has an isMain guard around its CLI entry point",
-      /const isMain\s*=\s*process\.argv\[1\]\s*&&\s*import\.meta\.url\s*===\s*pathToFileURL\(process\.argv\[1\]\)\.href/.test(rcrSrc));
-    s.check("G65c record-comment-relevance.mjs exports ghApi, fetchReviewThreads, and hasFixCommit",
-      ["ghApi", "fetchReviewThreads", "hasFixCommit"].every((fn) => new RegExp(`export function ${fn}\\(`).test(rcrSrc)));
-    s.check("G65c record-comment-relevance.mjs's ghGraphql uses execFileSync (argv array), not execSync with string interpolation",
-      /execFileSync\(\s*["']gh["']/.test(rcrSrc));
-    const r = spawnSync(process.execPath, [RCR, "--self-test"], { encoding: "utf8" });
-    s.check("G65c record-comment-relevance.mjs --self-test still passes (37 cases)",
-      r.status === 0 && /37 cases/.test((r.stdout || "") + (r.stderr || "")),
-      ((r.stdout || "") + (r.stderr || "")).trim().split("\n").slice(-4).join(" | "));
-  }
-
-  const TS = join(REPO_ROOT, "agents/pr-reviewer/scripts/tsconfig.json");
-  if (existsSync(TS)) {
-    const tsText = readFileSync(TS, "utf8");
-    s.check("G65d tsconfig.json's files[] lists thread-outcomes.mjs, ab-review.mjs, and record-comment-relevance.mjs",
-      ["thread-outcomes.mjs", "ab-review.mjs", "record-comment-relevance.mjs"].every((f) => tsText.includes(f)));
-  }
-
-  // AC-22: manifest allowlist, reproduced as a standing guard independent of checks.yaml's own
-  // copy of the same check (same rationale as G64c/G65a-b: the check definition is
-  // executor-immutable, but a standing L1 guard catches drift the moment the file changes,
-  // without waiting for a Phase-4 checks.yaml run).
-  // AC-20/D12 (plan feat/pr-reviewer-shrink-fanout-ab): allowlist extended with the one new
-  // key `review_sha`, and >= 8 entries must carry a verified 40-hex value.
-  const MANIFEST = join(REPO_ROOT, EVAL_DIR, "benchmarks/reviewer-ab.manifest.json");
-  s.check("G65e reviewer-ab.manifest.json exists", existsSync(MANIFEST));
-  if (existsSync(MANIFEST)) {
-    /** @type {any} */
-    const m = JSON.parse(readFileSync(MANIFEST, "utf8"));
-    const entries = Array.isArray(m) ? m : m.entries;
-    const ALLOW = new Set(["repo", "number", "head_sha", "base_sha", "review_sha", "class", "status"]);
-    s.check("G65e manifest has 8-12 entries", Array.isArray(entries) && entries.length >= 8 && entries.length <= 12,
-      String(entries?.length));
-    s.check("G65e manifest covers >=5 of the 6 shape classes",
-      new Set(entries.map((/** @type {any} */ e) => e.class)).size >= 5);
-    s.check("G65e every manifest entry has only the allowed keys (no titles, excerpts, or paths)",
-      entries.every((/** @type {any} */ e) => Object.keys(e).every((k) => ALLOW.has(k))));
-    s.check("G65e every head_sha/base_sha is a full 40-char lowercase hex SHA",
-      entries.every((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.head_sha) && /^[0-9a-f]{40}$/.test(e.base_sha)));
-    s.check("G65e >= 8 manifest entries carry a full 40-char lowercase hex review_sha",
-      entries.filter((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.review_sha || "")).length >= 8,
-      String(entries.filter((/** @type {any} */ e) => /^[0-9a-f]{40}$/.test(e.review_sha || "")).length));
-  }
-}
-
-// ── G66: --fanout is removed ──
-// G66a–k guarded `/pr-review --fanout`, the opt-in parallel orchestration (every finder, lens,
-// and verifier batch its own sub-agent). A/B round 8 measured it at ~57 minutes against 9–13 for
-// one context, and the hybrid default kept the one isolation that paid — the intent finder. G66j
-// held four caller skills byte-unchanged vs. main, a property of #205's own diff rather than a
-// standing invariant (#210 retired it). What stands: G66i — `finalize.mjs --dedupe-candidates`
-// stays a documented CLI subcommand — and G66r, which fails the moment any piece of the parallel
-// path comes back without a guard of its own.
-{
-  const FINALIZE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
-  if (existsSync(FINALIZE_PATH)) {
-    const finSrc = readFileSync(FINALIZE_PATH, "utf8");
-    s.check("G66i finalize.mjs exports dedupeCandidates", /export function dedupeCandidates\(/.test(finSrc));
-    s.check("G66i finalize.mjs's CLI wires up --dedupe-candidates", /opts\["dedupe-candidates"\]/.test(finSrc));
-    s.check("G66i finalize.mjs's usage string documents --dedupe-candidates", /--dedupe-candidates/.test(finSrc.match(/function usage\(\)[\s\S]*?\n\}/)?.[0] || ""));
-  }
-
-  const readIf = (/** @type {string} */ rel) => {
-    const p = join(REPO_ROOT, rel);
-    return existsSync(p) ? readFileSync(p, "utf8") : "";
-  };
-  const skillText = readIf("skills/quality/pr-review/SKILL.md");
-  s.check("G66r pr-review SKILL.md documents no --fanout flag or section", skillText !== "" && !skillText.includes("--fanout"),
-    (skillText.split("\n").find((l) => l.includes("--fanout")) || "").trim().slice(0, 120));
-  const rdSrc = readIf("agents/pr-reviewer/scripts/route-depth.mjs");
-  s.check("G66r route-depth.mjs's resolveBudget returns no parallel topology and reads no fanout input",
-    rdSrc !== "" && !/"parallel"|\.fanout\b/.test(rdSrc));
-  const topo = readIf("agents/pr-reviewer/rules/dispatch-topology.md");
-  s.check("G66r dispatch-topology.md names two topologies and has no parallel row",
-    /^## The two topologies$/m.test(topo) && !/^\| `parallel` \|/m.test(topo));
-  const gone = ["agents/pr-reviewer/scripts/plan-dispatch.mjs", "scripts/eval/fanout-glue.mjs"]
-    .filter((rel) => existsSync(join(REPO_ROOT, rel)));
-  const ts = readIf("agents/pr-reviewer/scripts/tsconfig.json");
-  s.check("G66r plan-dispatch.mjs and fanout-glue.mjs are gone, and tsconfig.json lists neither",
-    gone.length === 0 && !/plan-dispatch\.mjs|fanout-glue\.mjs/.test(ts), gone.join(", "));
-  const prep = readIf("agents/pr-reviewer/scripts/prepare-review.mjs");
-  s.check("G66r prepare-review.mjs writes no sharded packet parts",
-    prep !== "" && !/review-packet\.part-|buildPacketParts/.test(prep));
-}
-
-// ── G81: the intent worker's discipline, and verification's shape contract
-// (plan feat/pr-reviewer-shrink-fanout-ab, D4/D8, AC-7/AC-9; re-scoped when --fanout was removed) ──
-// G81 guarded the --fanout section's worker preamble and its shape/dedupe steps. The preamble
-// survives for the one sub-agent the hybrid default dispatches — the intent worker — and the shape
-// steps moved to dispatch-topology.md § Verification, where the reviewer, verifying in its own
-// turn, is its own verifier. The --fanout-only checks (semantic dedupe handed to Step e, the
-// optimality lens's card_body, the arm-C batching deviations) retired with the orchestration.
-{
-  const SKILL_PATH = join(REPO_ROOT, "skills/quality/pr-review/SKILL.md");
-  if (existsSync(SKILL_PATH)) {
-    const text = readFileSync(SKILL_PATH, "utf8");
-    const preamble = (() => {
-      const start = text.indexOf("### Worker preamble — the intent worker");
-      if (start === -1) return "";
-      const rest = text.slice(start);
-      const next = rest.indexOf("\n### ", 1);
-      return next === -1 ? rest : rest.slice(0, next);
-    })();
-    s.check("G81 SKILL.md has a `### Worker preamble — the intent worker` section", preamble.length > 0);
-    s.check("G81 the preamble requires absolute paths", /ABSOLUTE path/.test(preamble));
-    s.check("G81 the preamble forbids reading agents/pr-reviewer.md", /Do NOT read agents\/pr-reviewer\.md/.test(preamble));
-    s.check("G81 the preamble forbids Skill() calls inside the worker", /Do NOT call Skill\(\)/.test(preamble));
-    s.check("G81 the preamble requires write-to-path/return-path-only", /Return ONLY that path/.test(preamble));
-    s.check("G81 Step 2's worker dispatch links the preamble section",
-      text.includes("[worker preamble](#worker-preamble--the-intent-worker)"));
-    // D8: the worker reviews the same historical commit the reviewer does — now through the one
-    // prepare the caller runs for both (G84r), so the flag rides on that prepare.
-    s.check("G81 the shared prepare carries --review-sha through when the flags do, so the intent worker reads the same commit",
-      /add\s+`--review-sha <sha> --isolated`\s+when the pass-through flags carry `--review-sha`/.test(text)
-        && /Run prepare once, forwarding only the pass-through flags it takes/.test(text));
-  }
-
-  const TOPO = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
-  if (existsSync(TOPO)) {
-    const topo = readFileSync(TOPO, "utf8");
-    const verification = (() => {
-      const start = topo.indexOf("## Verification — in your own context");
-      if (start === -1) return "";
-      const rest = topo.slice(start);
-      const next = rest.indexOf("\n## ", 1);
-      return next === -1 ? rest : rest.slice(0, next);
-    })();
-    s.check("G81 dispatch-topology.md has a `## Verification — in your own context` section", verification.length > 0);
-    // AC-9: the live caps, never a remembered number.
-    s.check("G81 verification reads the live comment-spine.mjs --shape-caps output",
-      /comment-spine\.mjs" --shape-caps/.test(verification));
-    s.check("G81 verification restates no fixed 60-char/200-char cap as the limit to write against",
-      !/(60|200)[- ]char(acter)? (cap|limit)(?! from)/.test(verification.replace("remembered 60/200-character limit", "")));
-    // A candidate still over a cap is routed by finalize.mjs, never dropped — a verified blocker
-    // must not vanish over a title length.
-    s.check("G81 a still-shape-failing candidate is never dropped (finalize.mjs coerceShape routes it)",
-      /is not dropped/.test(verification) && verification.includes("coerceShape()"));
-  }
-}
-
-// ── G80: --review-sha historical write refusals, executed end to end
-// (plan feat/pr-reviewer-shrink-fanout-ab, D8/D9, AC-15/AC-17/AC-18/AC-19) ──
-// Reproduces checks.yaml's AC-15 and AC-18 PATH-shim proofs AS A STANDING L1 GUARD, the same
-// "checks.yaml is the acceptance test, L1 re-derives it so drift is caught on every run, not only
-// at Phase-4 checks.yaml time" pattern G66/G81 already use — except these two ACs are themselves
-// live subprocess spawns with a fake `gh` on PATH, so reproducing them here means actually running
-// the same spawns rather than grepping text, which is what "executed end-to-end" in this block's
-// own name promises. A PATH-shim `gh` that only ever appends its argv to a log file is the
-// evidence: an empty log after a refusal proves the refusal fired BEFORE any `gh` process, not
-// merely that the command exited non-zero for some other reason.
-{
-  const PREPARE_REVIEW_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs");
-  const EXECUTE_WRITE_PLAN_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs");
-  s.check("G80 prepare-review.mjs exists", existsSync(PREPARE_REVIEW_PATH));
-  s.check("G80 execute-write-plan.mjs exists", existsSync(EXECUTE_WRITE_PLAN_PATH));
-
-  if (existsSync(PREPARE_REVIEW_PATH)) {
-    const shimDir = mkdtempSync(join(tmpdir(), "g80-gh-shim-"));
-    const shimGh = join(shimDir, "gh");
-    const logPath = join(shimDir, "log");
-    writeFileSync(shimGh, `#!/bin/sh\necho "$@" >> ${JSON.stringify(logPath)}\n`, { mode: 0o755 });
-    writeFileSync(logPath, "");
-    const env = { ...process.env, PATH: `${shimDir}:${process.env.PATH}` };
-    const sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
-
-    const rNoIsolated = spawnSync(process.execPath, [
-      PREPARE_REVIEW_PATH, "--pr", "o/r#1", "--review-sha", sha, "--out", join(shimDir, "c1.json"),
-    ], { encoding: "utf8", env });
-    s.check("G80 --review-sha without --isolated exits 2", rNoIsolated.status === 2, rNoIsolated.stderr);
-    s.check("G80 --review-sha without --isolated names --isolated in its refusal", /--isolated/.test(rNoIsolated.stderr || ""));
-
-    const rWithPinHead = spawnSync(process.execPath, [
-      PREPARE_REVIEW_PATH, "--pr", "o/r#1", "--review-sha", sha, "--isolated", "--pin-head", sha,
-      "--out", join(shimDir, "c2.json"),
-    ], { encoding: "utf8", env });
-    s.check("G80 --review-sha with --pin-head exits 2", rWithPinHead.status === 2, rWithPinHead.stderr);
-    s.check("G80 --review-sha with --pin-head names --pin-head in its refusal", /--pin-head/.test(rWithPinHead.stderr || ""));
-
-    s.check("G80 neither refusal ever spawned the PATH-shim gh (empty log)",
-      readFileSync(logPath, "utf8").trim() === "", readFileSync(logPath, "utf8"));
-
-    rmSync(shimDir, { recursive: true, force: true });
-  }
-
-  if (existsSync(EXECUTE_WRITE_PLAN_PATH)) {
-    const shimDir = mkdtempSync(join(tmpdir(), "g80-gh-shim-"));
-    const shimGh = join(shimDir, "gh");
-    const logPath = join(shimDir, "log");
-    writeFileSync(shimGh, `#!/bin/sh\necho "$@" >> ${JSON.stringify(logPath)}\n`, { mode: 0o755 });
-    writeFileSync(logPath, "");
-    const env = { ...process.env, PATH: `${shimDir}:${process.env.PATH}` };
-
-    const planPath = join(shimDir, "plan.json");
-    writeFileSync(planPath, JSON.stringify({
-      dry_run: true,
-      historical: { review_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
-      thread_ops: [], lorekit: { write: [] },
-    }));
-    const r = spawnSync(process.execPath, [
-      EXECUTE_WRITE_PLAN_PATH, "--plan", planPath, "--repo", "o/r",
-    ], { encoding: "utf8", env });
-    s.check("G80 execute-write-plan.mjs refuses a historical/dry_run plan with a non-zero exit",
-      r.status !== 0 && r.status !== null, `exit ${r.status}`);
-    s.check("G80 the refusal never spawned the PATH-shim gh (empty log)",
-      readFileSync(logPath, "utf8").trim() === "", readFileSync(logPath, "utf8"));
-
-    // The same plan under --dry-run is a PREVIEW (pipeline.md): exit 0, planned steps listed, the
-    // live-run refusal carried as wouldRefuse, and still zero gh spawns.
-    const rPreview = spawnSync(process.execPath, [
-      EXECUTE_WRITE_PLAN_PATH, "--plan", planPath, "--repo", "o/r", "--dry-run",
-    ], { encoding: "utf8", env });
-    let preview = null;
-    try { preview = JSON.parse(rPreview.stdout || "null"); } catch { preview = null; }
-    s.check("G80 execute-write-plan.mjs --dry-run previews a historical/dry_run plan (exit 0, wouldRefuse set)",
-      rPreview.status === 0 && Array.isArray(preview?.plannedSteps) && /historical/i.test(preview?.wouldRefuse || ""),
-      `exit ${rPreview.status} ${rPreview.stderr}`);
-    s.check("G80 the --dry-run preview never spawned the PATH-shim gh (empty log)",
-      readFileSync(logPath, "utf8").trim() === "", readFileSync(logPath, "utf8"));
-
-    rmSync(shimDir, { recursive: true, force: true });
-  }
-
-  // finalize.mjs's own historical-without-dry-run refusal (AC-17) is already end-to-end proven by
-  // its own --self-test (two real CLI spawns) — re-run it here rather than duplicating the fixture
-  // setup a third time; a regression there fails THIS check the same run it fails finalize.mjs's own.
-  const FINALIZE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
-  if (existsSync(FINALIZE_PATH)) {
-    const r = spawnSync(process.execPath, [FINALIZE_PATH, "--self-test"], { encoding: "utf8" });
-    const out = (r.stdout || "") + (r.stderr || "");
-    s.check("G80 finalize.mjs --self-test passes, including its own historical/--dry-run cases",
-      r.status === 0 && /historical/i.test(out) && /dry_run/i.test(out),
-      out.split("\n").slice(-6).join(" | "));
-  }
-}
-
-// ── G83: A/B readiness — manifest review_sha, plan/score subcommands, the runbook (D15, AC-20-23) ──
-//
-// The manifest allowlist + review_sha count is G65e's job (extended in place, not duplicated
-// here). This guard covers what G65e does not: the CLI surface (pick-review-sha/plan/score exist
-// and are routed), an end-to-end offline `plan` run against the REAL manifest (no live dispatch —
-// building matrix.json is pure filesystem + already-persisted review_sha values), and the runbook.
-{
-  const AB_PATH = join(REPO_ROOT, "scripts/eval/ab-review.mjs");
-  s.check("G83 ab-review.mjs exists", existsSync(AB_PATH));
-  if (existsSync(AB_PATH)) {
-    const src = readFileSync(AB_PATH, "utf8");
-    s.check("G83 ab-review.mjs routes pick-review-sha, plan, and score as CLI subcommands",
-      ['sub === "pick-review-sha"', 'sub === "plan"', 'sub === "score"'].every((needle) => src.includes(needle)));
-    s.check("G83 ab-review.mjs exports pickReviewSha, buildMatrix, and evaluateGate",
-      ["export function pickReviewSha(", "export function buildMatrix(", "export function evaluateGate("].every((needle) => src.includes(needle)));
-
-    const MANIFEST = join(REPO_ROOT, "scripts/eval/benchmarks/reviewer-ab.manifest.json");
-    if (existsSync(MANIFEST)) {
-      const scratch = mkdtempSync(join(tmpdir(), "g83-plan-"));
-      const r = spawnSync(process.execPath, [
-        AB_PATH, "plan", "--manifest", MANIFEST, "--worktree", REPO_ROOT, "--arms", "A,B", "--runs", "3", "--out", scratch,
-      ], { encoding: "utf8" });
-      const matrixPath = join(scratch, "matrix.json");
-      /** @type {any} */
-      let matrix = null;
-      try { matrix = existsSync(matrixPath) ? JSON.parse(readFileSync(matrixPath, "utf8")) : null; } catch { /* left null */ }
-      const dispatches = matrix?.dispatches;
-      s.check("G83 ab-review.mjs plan runs end to end against the real manifest and writes >= 48 dispatch(es)",
-        r.status === 0 && Array.isArray(dispatches) && dispatches.length >= 48,
-        `exit ${r.status}, ${Array.isArray(dispatches) ? dispatches.length : "no"} dispatches`);
-      s.check("G83 every planned dispatch is general-purpose, absolute-path, and carries --dry-run --isolated --review-sha",
-        Array.isArray(dispatches) && dispatches.every((/** @type {any} */ d) => {
-          const p = JSON.stringify(d);
-          return d.subagent_type === "general-purpose" && p.includes(REPO_ROOT)
-            && /--dry-run/.test(p) && /--isolated/.test(p) && /--review-sha [0-9a-f]{40}/.test(p)
-            && !/subagent_type\W+pr-reviewer/.test(p);
-        }));
-      rmSync(scratch, { recursive: true, force: true });
-
-      // Arm B reads a second worktree with arm A's prompt; it used to run the removed --fanout.
-      const scratchB = mkdtempSync(join(tmpdir(), "g83-planb-"));
-      const rb = spawnSync(process.execPath, [
-        AB_PATH, "plan", "--manifest", MANIFEST, "--worktree", REPO_ROOT, "--worktree-b", "/abs/baseline-wt",
-        "--arms", "A,B", "--runs", "1", "--out", scratchB,
-      ], { encoding: "utf8" });
-      /** @type {any[]} */
-      let ds = [];
-      try { ds = JSON.parse(readFileSync(join(scratchB, "matrix.json"), "utf8")).dispatches || []; } catch { /* left empty */ }
-      rmSync(scratchB, { recursive: true, force: true });
-      const armA = ds.find((d) => d.arm === "A"), armB = ds.find((d) => d.arm === "B");
-      s.check("G83 --worktree-b points arm B at a second revision with arm A's prompt, and no arm runs the removed --fanout",
-        rb.status === 0 && !!armA && !!armB && armB.prompt.includes("/abs/baseline-wt/agents/pr-reviewer.md")
-          && armA.prompt.includes(`${REPO_ROOT}/agents/pr-reviewer.md`)
-          && armA.prompt.replace(REPO_ROOT, "X") === armB.prompt.replace("/abs/baseline-wt", "X")
-          && ds.every((d) => !String(d.prompt).includes("--fanout")),
-        `exit ${rb.status}, ${ds.length} dispatches`);
-    }
-  }
-
-  const README_PATH = join(REPO_ROOT, "scripts/eval/benchmarks/README.md");
-  s.check("G83 scripts/eval/benchmarks/README.md exists", existsSync(README_PATH));
-  if (existsSync(README_PATH)) {
-    const readme = readFileSync(README_PATH, "utf8");
-    const ANCHORS = [
-      ["names pick-review-sha", /pick-review-sha/],
-      ["names ab-review.mjs plan", /ab-review\.mjs plan/],
-      ["names --worktree-b, the second revision arm B reads", /--worktree-b/],
-      ["names ab-review.mjs score", /ab-review\.mjs score/],
-      ["names general-purpose as the arm dispatch type", /general-purpose/],
-      ["states the absolute-path arm rule", /absolute path/i],
-      ["cites the measured #205 cost figure (~2.8M tokens, arm C)", /2,?80[0-9],?[0-9]{3}|2\.8 ?M/],
-      ["states the read-only safety contract", /read-only/i],
-      ["states the zero-write dry-run contract", /zero.*write/i],
-    ];
-    for (const [label, re] of ANCHORS) {
-      s.check(`G83 runbook ${label}`, re.test(readme));
-    }
-  }
-}
-
-// ── G84: shape semantics (plan feat/pr-reviewer-shrink-fanout-ab, D5/D6/D7) ──
-//
-// Three independent behaviour fixes bundled under one guard because they share one theme — a
-// renderer that fails a comment closed on a shape it should have accepted, or renders a shape it
-// should have rejected. G46n already re-derives D7's four sentenceCount cases directly against
-// comment-spine.mjs (a second witness on the renderer's own self-test); this guard covers the
-// other two surfaces D7 touches, plus D6's optimality heading and D5's semantic-dedupe decoys.
-{
-  const SPINE_SRC_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs");
-  const PAYLOAD_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/payload.mjs");
-  const SHAPE_MD = join(REPO_ROOT, "agents/shared/rules/comment-shape.md");
-
-  // D7 (part 2 of 2 — G46n above covers sentenceCount itself): firstSentenceOrLine reuses the
-  // shared regex rather than a second hand-rolled `.`/`!`/`?` scan, and the Python reference in
-  // comment-shape.md was rewritten off the old per-character counting line.
-  if (existsSync(PAYLOAD_PATH)) {
-    const payloadSrc = readFileSync(PAYLOAD_PATH, "utf8");
-    s.check("G84a payload.mjs's firstSentenceOrLine imports TERMINAL_PUNCT_RE from comment-spine.mjs, not a local regex",
-      /import\s*\{[^}]*TERMINAL_PUNCT_RE[^}]*\}\s*from\s*["']\.\.\/comment-spine\.mjs["']/.test(payloadSrc)
-        && !/\/\^\[\^\.!?\]\*\[\.!?\]\//.test(payloadSrc));
-  }
-  if (existsSync(SHAPE_MD)) {
-    const shapeSrc = readFileSync(SHAPE_MD, "utf8");
-    s.check("G84a comment-shape.md's Python reference no longer counts individual `.`/`!`/`?` characters",
-      !shapeSrc.includes('prose.count(c) for c in "'));
-    s.check("G84a comment-shape.md's Python reference uses the same terminal-punctuation-run rule",
-      /\[\.\!\?\]\+\(\?=\\s\|\$\)/.test(shapeSrc));
-  }
-
-  // D6: buildOptimalityCard strips a model-echoed leading heading — a second witness, independent
-  // of payload.mjs's own self-test, imported and called directly.
-  if (existsSync(PAYLOAD_PATH)) {
-    const mod = await import(pathToFileURL(PAYLOAD_PATH).href);
-    const echoed = mod.buildOptimalityCard({
-      path: "src/a.ts", line: 42, verdict: "suboptimal", analysis_confidence: 91,
-      card_body: "### Optimality proposal — src/a.ts:42\n\nUse a Map.",
-    });
-    const headingCount = (echoed.match(/^### Optimality proposal — /gm) || []).length;
-    s.check("G84b buildOptimalityCard renders exactly ONE heading when card_body echoes the template's own",
-      headingCount === 1, `got ${headingCount} headings in: ${JSON.stringify(echoed)}`);
-    s.check("G84b buildOptimalityCard keeps the real card_body prose after stripping an echoed heading",
-      echoed.includes("Use a Map."));
-  }
-
-  // D5: the semantic-dedupe decoy suite (AC-11) is present in dedupe.mjs's own self-test — a
-  // reproduction here, same rationale as G63c/G66h/G66j, so a Phase-9-only checks.yaml run isn't
-  // the only thing standing between a decoy-suite deletion and a merged PR.
-  const DEDUPE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/dedupe.mjs");
-  if (existsSync(DEDUPE_PATH)) {
-    const dedupeSrc = readFileSync(DEDUPE_PATH, "utf8");
-    s.check("G84c dedupe.mjs exports SEMANTIC_JACCARD_MIN and semanticDedupe (D5)",
-      /export const SEMANTIC_JACCARD_MIN/.test(dedupeSrc) && /export function semanticDedupe\(/.test(dedupeSrc));
-    const r = spawnSync(process.execPath, [DEDUPE_PATH, "--self-test"], { encoding: "utf8" });
-    s.check("G84c dedupe.mjs --self-test passes, including the semantic-merge and decoy cases",
-      r.status === 0 && /semantic/i.test(r.stdout || "") && /decoy|low-overlap/i.test(r.stdout || ""),
-      (r.stdout || r.stderr || "").split("\n").slice(-6).join(" | "));
-  }
-  // AND: finalize.mjs's own dedupeCandidates() actually WIRES semanticDedupe in — a source-level
-  // check that the pass is called, not merely importable, and that it runs AFTER the exact pass
-  // (D5's ordering rule) — asserted positionally, same idiom as G38's finder/verifier ordering.
-  const G84_FINALIZE_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
-  if (existsSync(G84_FINALIZE_PATH)) {
-    const finSrc = readFileSync(G84_FINALIZE_PATH, "utf8");
-    const semImportIdx = finSrc.indexOf("semanticDedupe");
-    const dedupeCandidatesBody = finSrc.match(/export function dedupeCandidates\([\s\S]*?\n\}/)?.[0] || "";
-    const dedupeCallIdx = dedupeCandidatesBody.indexOf("dedupe(adapted)");
-    const semCallIdx = dedupeCandidatesBody.indexOf("semanticDedupe(promoted)");
-    s.check("G84c finalize.mjs's dedupeCandidates() calls semanticDedupe AFTER the exact/adjacent pass",
-      semImportIdx > -1 && dedupeCallIdx > -1 && semCallIdx > -1 && semCallIdx > dedupeCallIdx);
-  }
-
-  // G84d (A/B round 1 delta): validate-judgments.mjs runs finalize.mjs's OWN checkShape() —
-  // imported, never a second copy of render-comment.mjs's caps — so a judgments.json that
-  // passes validate is proven to pass finalize's real render step too, on EVERY run, not only
-  // a --fanout one that reaches the separate --check-shape pre-flight. Two fixture-driven
-  // self-test cases (an over-200-char BODY the schema's own maxLength-less `body` property lets
-  // through; evidence_anchors on a nitpick, which nothing in the schema ties to prefix) pin the
-  // exact gap A/B round 1 needed a hand workaround for.
-  const VALIDATE_JUDGMENTS_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/validate-judgments.mjs");
-  if (existsSync(VALIDATE_JUDGMENTS_PATH)) {
-    const vjSrc = readFileSync(VALIDATE_JUDGMENTS_PATH, "utf8");
-    s.check("G84d validate-judgments.mjs imports checkShape from finalize.mjs (never a copy)",
-      /import\s*\{\s*checkShape\s*\}\s*from\s*"\.\/finalize\.mjs"/.test(vjSrc));
-    const validateJudgmentsBody = vjSrc.match(/export function validateJudgments\([\s\S]*?\n\}/)?.[0] || "";
-    s.check("G84d validateJudgments() calls renderLegalityErrors() (checkShape), not only schema+domainRules",
-      /renderLegalityErrors\(data\)/.test(validateJudgmentsBody));
-    const FIXTURES = join(REPO_ROOT, "scripts/eval/fixtures/judgments");
-    s.check("G84d the two A/B-round-1 fixtures exist (over-200-char BODY; evidence_anchors on a nitpick)",
-      existsSync(join(FIXTURES, "invalid-render-overlong-body.json"))
-        && existsSync(join(FIXTURES, "invalid-render-evidence-on-nitpick.json")));
-    const r = spawnSync(process.execPath, [VALIDATE_JUDGMENTS_PATH, "--self-test"], { encoding: "utf8" });
-    const out = r.stdout || "";
-    s.check("G84d validate-judgments.mjs --self-test passes, including both new render-legality cases",
-      r.status === 0
-        && /caught by validate \(checkShape\/render-comment\.mjs\), not left for finalize/.test(out)
-        && /caught by validate, not left for finalize/.test(out)
-        && /ALSO passes finalize's real render step/.test(out),
-      (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-  }
-
-  // G84e (A/B round 1 delta, item 3 rescope): resolveBudget() — the continuous thoroughness
-  // knob that replaced the hard-coded per-tier dispatch table — is exported, self-tested
-  // (INCLUDING the monotonicity sweep, executed here rather than re-implemented), and wired
-  // into the report's RUN.thoroughness payload slot.
-  {
-    const RD_PATH = join(REPO_ROOT, "agents/pr-reviewer/scripts/route-depth.mjs");
-    if (existsSync(RD_PATH)) {
-      const rdSrc = readFileSync(RD_PATH, "utf8");
-      s.check("G84e route-depth.mjs exports resolveBudget, TIER_DEFAULT_THOROUGHNESS, and RISK_FLOOR",
-        /export function resolveBudget\(/.test(rdSrc)
-          && /export const TIER_DEFAULT_THOROUGHNESS/.test(rdSrc)
-          && /export const RISK_FLOOR/.test(rdSrc));
-
-      const r = spawnSync(process.execPath, [RD_PATH, "--self-test"], { encoding: "utf8" });
-      const out = r.stdout || "";
-      s.check("G84e route-depth.mjs --self-test passes (includes resolveBudget defaults, risk floor, fail-closed, and monotonicity)",
-        r.status === 0 && /^✓ route-depth self-test: all \d+ cases passed$/m.test(out),
-        (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-
-      const drPath = join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md");
-      const drSrc = existsSync(drPath) ? readFileSync(drPath, "utf8") : "";
-      // Exact, not substring: the three values are read off the code and must appear verbatim in
-      // the doc's defaults line, so a default changed on one side only fails here.
-      const tierDefaults = /export const TIER_DEFAULT_THOROUGHNESS = \{ quick: ([\d.]+), standard: ([\d.]+), deep: ([\d.]+) \};/.exec(rdSrc);
-      s.check("G84e depth-routing.md's Thoroughness budget section exists and states the same three tier defaults route-depth.mjs's TIER_DEFAULT_THOROUGHNESS carries",
-        /## Thoroughness budget/.test(drSrc) && Boolean(tierDefaults)
-          && drSrc.includes(`**quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}.**`),
-        tierDefaults ? `expected "quick → ${tierDefaults[1]}, standard → ${tierDefaults[2]}, deep → ${tierDefaults[3]}" in depth-routing.md` : "TIER_DEFAULT_THOROUGHNESS not found in route-depth.mjs");
-      // standard's default (0.7) sets optimalityLens, so § 2.4c's incremental-mode skip is the only
-      // thing keeping the lens off delta re-reviews, where its own rationale says it answers wrong.
-      // § 2.4c moved verbatim to rules/inline-pipeline.md (pr-reviewer diet).
-      const bodyFor24c = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/inline-pipeline.md"), "utf8");
-      const sec24c = (bodyFor24c.split(/^### 2\.4c /m)[1] || "").split(/^### /m)[0];
-      s.check("G84e pr-reviewer.md § 2.4c skips the optimality lens on incremental re-reviews whatever budget.optimalityLens says",
-        /`RUN_MODE` is `incremental` or `incremental-quick` \(logged `skipped \(incremental\)`\)/.test(sec24c)
-          && /whatever\s+`budget\.optimalityLens` says/.test(sec24c));
-      const reviewCfg = readFileSync(join(REPO_ROOT, "agents/shared/rules/review-config.md"), "utf8");
-      s.check("G84e review-config.md's thoroughness comment names the same three tier defaults",
-        Boolean(tierDefaults) && reviewCfg.includes(`(quick=${tierDefaults[1]}, standard=${tierDefaults[2]}, deep=${tierDefaults[3]})`));
-
-      const dtPath = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
-      const dtSrc = existsSync(dtPath) ? readFileSync(dtPath, "utf8") : "";
-      s.check("G84e dispatch-topology.md reads resolveBudget()'s output rather than hard-coding a per-tier table",
-        /resolveBudget/.test(dtSrc) && /budget\.topology/.test(dtSrc) && !/\| `deep` \| yes \|/.test(dtSrc));
-
-      const rrPath = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-      const rrSrc = existsSync(rrPath) ? readFileSync(rrPath, "utf8") : "";
-      s.check("G84e render-report.mjs accepts an optional RUN.thoroughness and renders it on the Run line",
-        /RUN:\s*\[[^\]]*"thoroughness"/.test(rrSrc) && /run\.thoroughness/.test(rrSrc));
-    }
-  }
-
-  // G84f (A/B round 2 item 5): the shape self-check is WIRED, not only implemented. The
-  // `--shape-only` CLI existed after 895bbc2 but nothing told a verifier to run it, so it would
-  // have caught nothing — the same gap A/B round 1 hit, where the orchestrator hand-trimmed 6 and
-  // 16 verifier bodies. With --fanout removed, verification runs in the reviewer's own turn under
-  // both topologies, so the one copy of the instruction lives in dispatch-topology.md § Verification.
-  {
-    const DT = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
-    const VJ = join(REPO_ROOT, "agents/pr-reviewer/scripts/validate-judgments.mjs");
-    const dtTxt = existsSync(DT) ? readFileSync(DT, "utf8") : "";
-    const selfCheck = (() => {
-      const start = dtTxt.indexOf("## Verification — in your own context");
-      if (start === -1) return "";
-      const rest = dtTxt.slice(start);
-      const next = rest.indexOf("\n## ", 1);
-      return next === -1 ? rest : rest.slice(0, next);
-    })();
-    s.check("G84f the self-check runs validate-judgments.mjs --shape-only before finalize.mjs",
-      /validate-judgments\.mjs" --shape-only \/tmp\/judgments\.json/.test(selfCheck) && /Before `finalize\.mjs`/.test(selfCheck));
-    s.check("G84f the self-check is bounded (2 fix-and-rerun rounds) and names what happens after",
-      /at most 2 fix-and-rerun rounds/.test(selfCheck) && /A third failure goes to `finalize\.mjs` as\s+is/.test(selfCheck));
-    s.check("G84f the self-check forbids changing a verdict/severity/blocking or deleting a candidate to pass",
-      /Never change a verdict, severity, `blocking`/.test(selfCheck) && /never\s+delete a candidate/.test(selfCheck));
-    s.check("G84f the self-check names the severity-crosswalk exception rather than hiding it",
-      /`"blocking": true` requires severity `high` or `critical`/.test(selfCheck));
-    const vjTxt = existsSync(VJ) ? readFileSync(VJ, "utf8") : "";
-    s.check("G84f validate-judgments.mjs exports validateShapeOnly and its CLI routes --shape-only to it",
-      /export function validateShapeOnly\(/.test(vjTxt)
-        && /shapeOnly \? validateShapeOnly\(schema, data\) : validateJudgments\(schema, data\)/.test(vjTxt));
-    const r = spawnSync(process.execPath, [VJ, "--self-test"], { encoding: "utf8" });
-    const out = r.stdout || "";
-    s.check("G84f validate-judgments.mjs --self-test exercises --shape-only through the real CLI (pass and fail)",
-      r.status === 0 && /CLI: --shape-only exits 0 and prints OK/.test(out)
-        && /CLI: --shape-only exits 1 and names the cap/.test(out),
-      (out || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-  }
-
-  // G84g — RETIRED with --fanout. It held plan-dispatch.mjs (verifier batches, the lens bundle,
-  // PR_REVIEW_MAX_PARALLEL, the generated per-band table) to the prose in three files. The default
-  // review dispatches at most one sub-agent, so there is nothing to pack; depth-routing.md's
-  // two-row table is guarded with the budget itself (G84e) and G66r fails if plan-dispatch.mjs
-  // comes back.
-
-  // G84h (A/B round 2 item 7): posted one-liners are counted as NOTES in the headline. A cleared
-  // nitpick/question posts inline but earns no FINDINGS row, so six comments at the code sat under
-  // `5 findings`. The clause is derived from ADDITIONAL_FINDINGS by prefix (never a hand-supplied
-  // number), never counts a claim, and is APPENDED so every documented form stays a prefix.
-  // Executed against the real renderer, like G19.
-  {
-    const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-    const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/pass.json"), "utf8"));
-    const render = (fn) => {
-      const c = structuredClone(base); fn(c);
-      const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(c), encoding: "utf8" });
-      return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
-    };
-    const note = (prefix, line) => ({ path: "n.ts", line, prefix, body: "A short note.", confidence: 91 });
-    const withBoth = render((c) => {
-      c.QUALITY = "produced 4 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
-      c.FINDINGS = [
-        { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
-        { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
-      ];
-      c.NOTES = [note("nitpick", 3)];
-    });
-    s.check("G84h findings + a posted note: the note clause is appended after the blocking clause",
-      withBoth.ok && /^### 🟠 2 findings — 1 blocking · 1 note$/m.test(withBoth.out), withBoth.err);
-    const passNotes = render((c) => { c.NOTES = [note("nitpick", 3), note("question", 4)]; });
-    s.check("G84h a PASS with posted notes counts them rather than reading as if nothing was posted",
-      passNotes.ok && /^### ✅ No issues found · 2 notes$/m.test(passNotes.out), passNotes.err);
-    const claimOnly = render((c) => {
-      c.QUALITY = "produced 2 → posted inline 1 · cleared 2 · carried forward 0 · deferred 1 · below-bar 0";
-      c.FINDINGS = [{ title: "A quieter one", path: "b.ts", line: 2, tier: "low" }];
-      c.ADDITIONAL_FINDINGS = [note("suggestion", 5)];
-    });
-    s.check("G84h an over-cap claim in ADDITIONAL_FINDINGS is never counted as a note",
-      claimOnly.ok && /^### ⚪ 1 finding$/m.test(claimOnly.out) && !/ note/.test(claimOnly.out.split("\n")[1] || ""),
-      claimOnly.err);
-    const warnFixture = readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md"), "utf8");
-    s.check("G84h the warn snapshot (3 findings, a nitpick and a question) renders `3 findings · 2 notes`",
-      /^### 🟠 3 findings · 2 notes$/m.test(warnFixture));
-    const rrTxt = readFileSync(RENDER, "utf8");
-    s.check("G84h the renderer derives note prefixes from comment-spine.mjs (CONV_PREFIXES minus CLAIM_PREFIXES), never a local list",
-      /const NOTE_PREFIXES = CONV_PREFIXES\.filter\(\(p\) => !CLAIM_PREFIXES\.includes\(p\)\)/.test(rrTxt));
-    const rrDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/report-rendering.md"), "utf8");
-    const ingest = readFileSync(join(REPO_ROOT, "agents/shared/rules/reviewer-report-ingest.md"), "utf8");
-    s.check("G84h report-rendering.md documents the appended note clause; reviewer-report-ingest.md says to match the forms as prefixes",
-      /Notes are counted, never folded into findings/.test(rrDoc) && rrDoc.includes("### 🟠 5 findings — 1 blocking · 1 note")
-        && /may end in ` · <M> note\(s\)`/.test(ingest) && /match the forms as prefixes/.test(ingest));
-
-    // G84l (A/B iteration 4): posted notes have their OWN slot. ADDITIONAL_FINDINGS is the accordion
-    // headed "too minor to comment on", which was false for a note that posted; a one-liner there is
-    // an unposted finding and is no longer counted as a note, and a claim in NOTES is refused.
-    const legacyShape = render((c) => { c.ADDITIONAL_FINDINGS = [note("nitpick", 3)]; });
-    s.check("G84l a one-liner in ADDITIONAL_FINDINGS (unposted) is not counted as a posted note",
-      legacyShape.ok && /^### ✅ No issues found$/m.test(legacyShape.out), legacyShape.err);
-    const claimInNotes = render((c) => { c.NOTES = [note("issue", 3)]; });
-    s.check("G84l a claim prefix in NOTES is refused (a posted claim is a FINDINGS row)",
-      !claimInNotes.ok && /NOTES\[0\]\.prefix must be a one-liner prefix/.test(claimInNotes.err));
-    s.check("G84l posted notes render under `Notes (<M>) — posted inline`, never the too-minor accordion",
-      passNotes.ok && /<summary>Notes \(2\) — posted inline<\/summary>/.test(passNotes.out)
-        && !/too minor to comment on/.test(passNotes.out));
-    s.check("G84l the warn snapshot lists its two posted notes under Notes, not under too-minor",
-      /<summary>Notes \(2\) — posted inline<\/summary>/.test(warnFixture) && !/too minor to comment on/.test(warnFixture));
-    const finSrc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
-    s.check("G84l finalize.mjs sends posted one-liners to NOTES and only over-cap findings to ADDITIONAL_FINDINGS",
-      /notes: inlineNonClaims\.map\(toAdvisoryFinding\)/.test(finSrc)
-        && /deferred: overCapDeferred\.map\(toAdvisoryFinding\)/.test(finSrc)
-        && !/inlineNonClaims\.concat\(overCapDeferred\)/.test(finSrc));
-    const cf = readFileSync(join(REPO_ROOT, "skills/workflow/implement-suggestion/rules/comment-fetching.md"), "utf8");
-    s.check("G84l reviewer-report-ingest.md and implement-suggestion never expand a Notes bullet into a finding",
-      /\| Notes \| `<summary>Notes \(<N>\) — posted inline<\/summary>`/.test(ingest) && /Never expand a Notes bullet/.test(ingest)
-        && /\| `Notes` bullet \| \*\*nothing\*\*/.test(cf));
-
-    // G84l (cont.): the severity crosswalk — blocking requires high/critical — is enforced by
-    // validate-judgments.mjs's candidate rules, which --shape-only (the verifier self-check) runs too.
-    const vjPath = join(REPO_ROOT, "agents/pr-reviewer/scripts/validate-judgments.mjs");
-    const vjTxt = readFileSync(vjPath, "utf8");
-    const vjRun = spawnSync(process.execPath, [vjPath, "--self-test"], { encoding: "utf8" });
-    s.check("G84l validate-judgments.mjs rejects blocking on a medium/low finding and keeps the floor-only exception",
-      /export const BLOCKING_TIERS = \["critical", "high"\]/.test(vjTxt)
-        && vjRun.status === 0
-        && /a medium-severity candidate marked blocking is rejected/.test(vjRun.stdout || "")
-        && /a high-severity NON-blocking candidate is accepted/.test(vjRun.stdout || ""));
-
-    // G84l (cont.): a reviewer login is validated, and the body's capture cannot keep gh's error body.
-    const prTxt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-    const bodyTxt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-    s.check("G84l prepare-review.mjs validates --reviewer-login and the body's ME capture resets on a gh failure",
-      /export function isGithubLogin\(/.test(prTxt) && /isGithubLogin\(suppliedLogin\)/.test(prTxt)
-        && bodyTxt.includes(`ME=$(gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login 2>/dev/null) || ME=""`)
-        && !/ME=\$\(gh api [^\n]*\|\| echo ""\)/.test(bodyTxt));
-  }
-  // G84i (A/B round 3 → iteration 1): three pipeline defects the sync-tray#72 arms hit.
-  // (1) Every --isolated write-plan targeted the PR's LIVE sticky; --isolated now requires
-  //     --dry-run in finalize.mjs and the plan's `isolated` marker is refused by
-  //     execute-write-plan.mjs. (2) Distinct claims on one (path, line, prefix) anchor merged and a
-  //     96.5 finding vanished; a finder repeating itself counted as cross-rubric agreement.
-  //     (3) execute-write-plan.mjs required --repo although the plan carries it.
-  {
-    const FIN = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
-    const EWP = join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs");
-    const DED = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/dedupe.mjs");
-    const finSrc = readFileSync(FIN, "utf8");
-    const ewpSrc = readFileSync(EWP, "utf8");
-    const dedSrc = readFileSync(DED, "utf8");
-    s.check("G84i finalize.mjs refuses an --isolated context without --dry-run",
-      /if \(context\?\.isolated && !isDryRun\)/.test(finSrc));
-    s.check("G84i execute-write-plan.mjs refuses a plan marked isolated",
-      /if \(writePlan\?\.isolated\)/.test(ewpSrc));
-    const fin = spawnSync(process.execPath, [FIN, "--self-test"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-    s.check("G84i finalize.mjs --self-test proves the --isolated refusal and marker end to end",
-      fin.status === 0 && /an --isolated context without --dry-run: finalize\.mjs exits non-zero/.test(fin.stdout || "")
-        && /an --isolated, --dry-run write-plan\.json carries isolated: true/.test(fin.stdout || ""),
-      (fin.stdout || fin.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-    const ewp = spawnSync(process.execPath, [EWP, "--self-test"], { encoding: "utf8" });
-    s.check("G84i execute-write-plan.mjs --self-test proves the isolated refusal and the --repo default",
-      ewp.status === 0 && /an --isolated plan is refused with code 5 and zero runner calls/.test(ewp.stdout || "")
-        && /CLI: --dry-run without --repo uses the plan's repo and exits 0/.test(ewp.stdout || ""),
-      (ewp.stdout || ewp.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-    s.check("G84i dedupe.mjs keeps distinct claims apart at one anchor and counts agreement only across finders",
-      /function exactMatch\(a, b\) \{\n  return a\.path === b\.path && a\.line === b\.line && a\.prefix === b\.prefix && !distinctClaims\(a, b\);/.test(dedSrc)
-        && /reason === "exact" && c\.finder !== mergedInto\.finder/.test(dedSrc));
-    const ded = spawnSync(process.execPath, [DED, "--self-test"], { encoding: "utf8" });
-    s.check("G84i dedupe.mjs --self-test covers the same-anchor and same-finder cases",
-      ded.status === 0 && /distinct claims at one \(path, line, prefix\) anchor are both kept/.test(ded.stdout || "")
-        && /a finder repeating its own finding is dropped but is never cross-rubric agreement/.test(ded.stdout || ""),
-      (ded.stdout || ded.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-    const pipe = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/pipeline.md"), "utf8");
-    const rc = readFileSync(join(REPO_ROOT, "agents/shared/rules/rubric-composition.md"), "utf8");
-    s.check("G84i pipeline.md states --isolated requires --dry-run; rubric-composition.md states distinct claims never merge",
-      /\*\*`--isolated` requires `--dry-run`\.\*\*/.test(pipe) && /\*\*Distinct claims never merge\.\*\*/.test(rc));
-  }
-  // G84j (A/B round 4 → iteration 2): report-correctness defects the round-4 arms hit.
-  // (1) A caller-supplied RUN_ANOMALY replaced finalize's computed one (prepare-time anomalies
-  //     vanished; arms re-merged by hand); `--no-dispatch` now computes dispatch-topology.md's line.
-  // (2) A reason copied from a gate's Details sentence rendered "….; …".
-  // (3) QUALITY counted posted notes as "deferred" under a heading that counted them as notes.
-  {
-    const FIN = join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs");
-    const finSrc = readFileSync(FIN, "utf8");
-    s.check("G84j finalize.mjs merges a supplied RUN_ANOMALY with the computed one and parses --no-dispatch",
-      /RUN_ANOMALY: mergeRunAnomaly\(context\?\.render\?\.RUN_ANOMALY, autoRunAnomaly\)/.test(finSrc)
-        && /a === "--no-dispatch"/.test(finSrc) && /context\.dispatchUnavailable = true/.test(finSrc));
-    const fin = spawnSync(process.execPath, [FIN, "--self-test"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-    s.check("G84j finalize.mjs --self-test proves the merge and the no-dispatch line end to end",
-      fin.status === 0 && /finalizeReview merges caller note, the no-dispatch line, and prepare-time anomalies/.test(fin.stdout || ""),
-      (fin.stdout || fin.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-    const rep = spawnSync(process.execPath, [FIN, "--replay-fixtures"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-    s.check("G84j finalize.mjs --replay-fixtures reproduces the report-body and inline snapshots (notes no longer counted as deferred)",
-      // Exits 1 by design while deep.json's documented fixture defect stands; an UNEXPLAINED
-      // mismatch is what this guard is for.
-      !/unexplained mismatch/.test(rep.stderr || "") && /report-body\/warn\.expected\.md — byte-identical/.test(rep.stdout || "")
-        && /8\/9 byte-identical, 1 known fixture defect/.test(rep.stdout || ""),
-      (rep.stdout || rep.stderr || "").split("\n").filter((l) => /✗|FAIL|differ/.test(l)).join(" | ").slice(0, 300));
-    const warnSnap = readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/warn.expected.md"), "utf8");
-    s.check("G84j the warn snapshot's quality line counts its 2 posted notes as notes, not deferred",
-      warnSnap.includes("posted inline 3 · notes 2 · cleared 3 · carried forward 0 · deferred 0"));
-    const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-    const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/pass.json"), "utf8"));
-    base.VERDICT = "WARN"; base.GATE_DOCS_STATUS = "⚠️"; base.GATE_DOCS_DETAILS = "x";
-    base.GATE_DESC_STATUS = base.GATE_DESC_STATUS === undefined ? base.GATE_DESC_STATUS : "⚠️";
-    base.WARN_REASONS = ["probe cadence is 5 s, not 2 minutes."];
-    const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(base), encoding: "utf8" });
-    s.check("G84j a reason ending in a full stop renders without it (no \".;\" in the reasons line)",
-      r.status === 0 && /\*\*Warnings:\*\* probe cadence is 5 s, not 2 minutes$/m.test(r.stdout || ""),
-      (r.stderr || "").trim().slice(0, 200));
-    const dt = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
-    s.check("G84j dispatch-topology.md says to pass --no-dispatch to finalize.mjs rather than hand-write the line",
-      /Set it by passing \*\*`--no-dispatch`\*\* to `finalize\.mjs`, never by hand-writing it\./.test(dt));
-  }
-  // G84k (A/B round 5 → iteration 3): the tool-call budget scales with thoroughness. It scaled
-  // with file count only, so t=0.8/1.0 arms paid for extra finders, votes and lenses out of the
-  // same 60 calls and skipped whole files — the t=0.8 arm missed the highest-severity corroborated
-  // defect in all three rounds, and in round 5 had only grepped the file that holds it.
-  {
-    const RD = join(REPO_ROOT, "agents/pr-reviewer/scripts/route-depth.mjs");
-    const rdSrc = readFileSync(RD, "utf8");
-    s.check("G84k route-depth.mjs exports TOOL_CALL_BANDS (30/60/100) and returns toolCallMultiplier + toolCalls",
-      /export const TOOL_CALL_BANDS/.test(rdSrc) && /\{ maxFiles: 10, calls: 30 \}/.test(rdSrc)
-        && /\{ maxFiles: 30, calls: 60 \}/.test(rdSrc) && /\{ maxFiles: Infinity, calls: 100 \}/.test(rdSrc)
-        && /toolCallMultiplier,\n\s+toolCalls:/.test(rdSrc));
-    const st = spawnSync(process.execPath, [RD, "--self-test"], { encoding: "utf8" });
-    s.check("G84k route-depth.mjs --self-test passes, including the tool-call budget case and its monotonicity",
-      st.status === 0 && !/tool-call budget drifted|toolCallMultiplier regressed/.test(st.stdout || ""),
-      (st.stdout || st.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-    const pr = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-    s.check("G84k prepare-review.mjs passes changedFiles into resolveBudget, so context.budget.toolCalls is a number",
-      /changedFiles: files\.length,\n\s+\}\);/.test(pr));
-    const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-    s.check("G84k pr-reviewer.md's Stop conditions read budget.toolCalls rather than a fixed band",
-      /- Tool-call budget: \*\*30\*\* calls[^\n]*read `budget\.toolCalls` off `context\.json`/.test(body));
-    const dr = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/depth-routing.md"), "utf8");
-    s.check("G84k depth-routing.md's breakpoint table carries the tool-call multiplier row (×1 / ×1.5 at 0.8 / ×2 at 0.95)",
-      /\| Tool-call budget multiplier \| ×1 \| \*\(same\)\* \| \*\(same\)\* \| \*\(same\)\* \| \*\*×1\.5\*\* \| \*\*×2\*\* \|/.test(dr));
-
-    // Second iteration-3 fix: render-comment.mjs enforced a 5-word evidence-note cap that
-    // `--shape-caps` never printed, so verifiers that pasted the caps still broke it (7 rejections
-    // in round 5). One constant, printed by --shape-caps, enforced by the renderer.
-    const cs = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "utf8");
-    const rc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/render-comment.mjs"), "utf8");
-    s.check("G84k the evidence-note word cap is one exported constant the renderer uses (no literal 5)",
-      /export const EVIDENCE_NOTE_MAX_WORDS = \d+;/.test(cs) && /length > EVIDENCE_NOTE_MAX_WORDS\)/.test(rc)
-        && !/split\(\/\\s\+\/\)\.length > 5\)/.test(rc));
-    const caps = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "--shape-caps"], { encoding: "utf8" });
-    const capWords = /export const EVIDENCE_NOTE_MAX_WORDS = (\d+);/.exec(cs)?.[1];
-    s.check("G84k --shape-caps prints the evidence-note word cap verifiers are held to",
-      caps.status === 0 && Boolean(capWords) && (caps.stdout || "").includes(`note is a parenthetical of <= ${capWords} words`));
-    const dt2 = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
-    s.check("G84k dispatch-topology.md makes the reviewer read --shape-caps and self-check like a verifier",
-      /You are then your own verifier/.test(dt2) && /Read the live shape caps once, before writing/.test(dt2)
-        && /comment-spine\.mjs" --shape-caps/.test(dt2));
-  }
-
-
-
-}
-
-// ── G84m (A/B iteration 4, speed): the mechanical parts of a review run before any model turn ──
-// Context assembly (the review packet), Step 1.7b (TRIVIAL_SKIP + standards discovery), and the
-// memory-body reads (one refs batch) are functions or single calls now. Each check below executes
-// the script or reads the owning file; none re-encodes the behaviour.
-{
-  const SCRIPTS = join(REPO_ROOT, "agents/pr-reviewer/scripts");
-  for (const [name, marker] of [["review-packet.mjs", "✓ review-packet self-test: all checks passed"], ["discover-standards.mjs", "✓ discover-standards self-test: all checks passed"]]) {
-    const r = spawnSync(process.execPath, [join(SCRIPTS, name), "--self-test"], { encoding: "utf8" });
-    s.check(`G84m ${name} --self-test passes`, r.status === 0 && (r.stdout || "").includes(marker),
-      (r.stdout || r.stderr || "").split("\n").filter((l) => l.includes("✗")).join(" | "));
-  }
-  const prep = readFileSync(join(SCRIPTS, "prepare-review.mjs"), "utf8");
-  s.check("G84m prepare-review.mjs builds the packet and runs Step 1.7b's functions into the context",
-    /import \{ buildReviewPacket, (buildPacketParts, )?consumersByFile \} from "\.\/review-packet\.mjs"/.test(prep)
-      && /import \{ discoverStandards, trivialSkip \} from "\.\/discover-standards\.mjs"/.test(prep)
-      && /\n    packet,\n    trivialSkip: trivial,\n    standards,/.test(prep));
-  const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-  const s17b = (body.match(/^### 1\.7b Load standards[\s\S]*?(?=^## Step 1\.8)/m) || [""])[0];
-  s.check("G84m Step 1.7b binds TRIVIAL_SKIP and STANDARDS_DOCS from the context, with a manual fallback",
-    s17b.includes("context.trivialSkip.value") && s17b.includes("context.standards")
-      && /falls back to `standards-conformance\.md` § Two input sources/.test(s17b));
-  // Step 2's packet rule moved verbatim to rules/inline-pipeline.md, and 1.2d to
-  // rules/memory-steps.md (pr-reviewer diet).
-  s.check("G84m rules/inline-pipeline.md routes finders and the verifier to the review packet first",
-    /\*\*Finders and the verifier read the review packet first\*\* — `context\.packet\.path`/.test(
-      readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/inline-pipeline.md"), "utf8")));
-  const s12d = (readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/memory-steps.md"), "utf8").match(/^### 1\.2d Resolve the bodies that matter[\s\S]*?(?=^### 1\.2e)/m) || [""])[0];
-  const crm = readFileSync(join(REPO_ROOT, "agents/shared/rules/comment-relevance-memory.md"), "utf8");
-  s.check("G84m memory bodies are read in one refs batch at both call sites (1.2d, comment-relevance § Read)",
-    /mcp__lorekit__memory_read: refs=\[/.test(s12d) && !/One call per candidate/.test(s12d)
-      && /mcp__lorekit__memory_read: refs=\[/.test(crm) && !/One call per fingerprint-matched entry/.test(crm));
-  const skill = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
-  const pre = (skill.match(/### Worker preamble[\s\S]*?```text\n([\s\S]*?)```/) || ["", ""])[1];
-  s.check("G84m the worker preamble tells every worker to read the review packet first",
-    /Read the review packet first \(context\.packet\.path\)/.test(pre));
-  // The self-check moved from SKILL.md's --fanout section to dispatch-topology.md § Verification
-  // when --fanout was removed; verification now runs in the reviewer's own turn.
-  const dtv = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
-  const selfCheck = (dtv.match(/## Verification — in your own context\n([\s\S]*?)\n## /) || ["", ""])[1];
-  s.check("G84m the shape self-check names the severity crosswalk as its one exception",
-    /One exception: `"blocking": true` requires severity `high` or `critical`/.test(selfCheck)
-      && /Never change a verdict, severity, `blocking`/.test(selfCheck));
-}
-
-// ── G84n (A/B round 8 → iteration 5): the default is hybrid, and votes are retired ──
-// Rounds 7–8 showed the isolated intent finder catching the top defect on sync-tray#72 3 of 3
-// times, and round 8's fully parallel run (every finder its own sub-agent, since removed) finding
-// every known defect but projecting to ~57 minutes; its two correctness votes added 49 candidates.
-// Guarded against the code, not the prose alone. The sharding, region-batching and verification-cap
-// checks retired with --fanout (G66r fails if any of it returns).
-{
-  const RD = join(REPO_ROOT, "agents/pr-reviewer/scripts/route-depth.mjs");
-  const DT = join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md");
-  const SK = join(REPO_ROOT, "skills/quality/pr-review/SKILL.md");
-  const BODY = join(REPO_ROOT, "agents/pr-reviewer.md");
-  const rd = readFileSync(RD, "utf8"), dt = readFileSync(DT, "utf8"), sk = readFileSync(SK, "utf8");
-  const body = readFileSync(BODY, "utf8");
-  const probe = (/** @type {string} */ code) => spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", cwd: REPO_ROOT });
-
-  // (1) hybrid is the default at t >= 0.4, and a leftover `fanout` input selects nothing else.
-  const topo = probe(`import { resolveBudget } from "./agents/pr-reviewer/scripts/route-depth.mjs";
-    const b = (i) => { const r = resolveBudget(i); return [r.topology, r.isolatedFinders.length, r.correctnessVotes]; };
-    console.log(JSON.stringify([b({ thoroughness: 0.3 }), b({ thoroughness: 0.8 }), b({ thoroughness: 1 }), b({ thoroughness: 0.8, fanout: true }), b({ thoroughness: 0.8, dispatchAvailable: false })]));`);
-  s.check("G84n resolveBudget: in-context below 0.4 or with no dispatch, hybrid (intent isolated) above it, never parallel, one correctness pass everywhere",
-    topo.status === 0 && (topo.stdout || "").trim() === JSON.stringify([["in-context", 0, 1], ["hybrid", 1, 1], ["hybrid", 1, 1], ["hybrid", 1, 1], ["in-context", 0, 1]]),
-    (topo.stdout || topo.stderr || "").trim().slice(0, 200));
-  s.check("G84n the hybrid path is wired end to end: the body grammar knows --intent-from, SKILL.md Step 2 sends the intent worker in the same message, dispatch-topology.md says how to wait for it",
-    /\| `--intent-from <path>` \|/.test(body)
-      && /[Ii]n \*\*one message\*\*, dispatch both/.test(sk) && sk.includes("--intent-from <dir>/intent/intent.json")
-      && /polling every 2\s+seconds, for at most 10 minutes in total/.test(dt) && /The review never loses the finder itself/.test(dt));
-
-  // (2) votes retired, stated where the old ladder lived.
-  s.check("G84n votes are retired in route-depth.mjs and dispatch-topology.md",
-    /const CORRECTNESS_VOTES = 1;/.test(rd) && /## Diversify then vote \(moved here from the agent body\) — retired/.test(dt));
-}
-
-// ── G84o: run telemetry — per-step spans in the shape Dash0's AI Coding Insights reads ──
-// A/B rounds 3–9 timed only four coarse phases per run, so no single step's wall-clock cost was
-// known. review-telemetry.mjs keeps a cross-process ledger and exports one trace per run. Guarded
-// here: the self-test (tree, contract, harness rule, opt-in export into a real local receiver),
-// the three scripts that record steps without the model, the marker rule, and the CI smoke run.
-{
-  const RT = join(REPO_ROOT, "agents/pr-reviewer/scripts/review-telemetry.mjs");
-  const rtRun = spawnSync(process.execPath, [RT, "--self-test"], { encoding: "utf8" });
-  const out = rtRun.stdout || "";
-  s.check("G84o review-telemetry.mjs --self-test proves the invoke_agent root, no chat/execute_tool spans, the harness rule, opt-in export, and a real export",
-    rtRun.status === 0
-      && /root span is `invoke_agent pr-reviewer`/.test(out)
-      && /no span is a `chat` or `execute_tool` span/.test(out)
-      && /inside a plugin-covered harness with no joined session, no gen_ai\.harness\.name/.test(out)
-      && /rule 1 — a host's OTEL_EXPORTER_OTLP_ENDPOINT alone is never used/.test(out)
-      && /with an endpoint: exported to \/v1\/traces and \/v1\/metrics/.test(out),
-    out.split("\n").filter((l) => l.includes("✗")).join(" | "));
-  const pr = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-  const fin = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
-  const ewp = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/execute-write-plan.mjs"), "utf8");
-  const rtDocEarly = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
-  s.check("G84o prepare-review.mjs starts the run and records `prepare`; --no-telemetry skips it",
-    /beginRun\(runDir,/.test(pr) && /name: "prepare", ns: startNs/.test(pr) && /"--no-telemetry"\) opts\.telemetry = false/.test(pr));
-  s.check("G84o finalize.mjs records `finalize` and the outcome, and finishes the run under --dry-run",
-    /name: "finalize", ns: PROCESS_START_NS/.test(fin) && /\} else if \(how\.dryRun\) \{\n\s+const out = await finishRun\(runDir/.test(fin));
-  // A failed render marks the finalize STEP failed and leaves the run open: A/B arms re-ran a failed
-  // finalize, and finishing on the failure exported a trace that skipped the successful re-run.
-  s.check("G84o a failed finalize is an ERROR step that does not finish the run",
-    /\.\.\.\(how\.failed \? \{ status: "error"/.test(fin) && !/if \(how\.dryRun \|\| how\.failed\)/.test(fin)
-      && /a failed step is an ERROR step span, and the run it recovered from still finishes OK/.test(out));
-  s.check("G84o prepare's internal phases are child spans with their own start and end, and the root carries a session title",
-    /const sub = timing\.segments\(\)/.test(pr) && /timing\.start\("resolve"\)/.test(pr) && /timing\.start\("packet"\)/.test(pr)
-      && /timing\.start\("standards"\)/.test(pr)
-      && /a script's internal phases are child spans of its step/.test(out)
-      && /the root carries a readable session title for AI Coding Insights/.test(out)
-      && /a run joined to a harness session never renames that session/.test(out));
-  // Round 10 (a real review exported to Dash0): the 94 s before `prepare` was missing from the
-  // trace, `verify` was 2 tool calls in 205 s (generation-bound, invisible without per-step calls),
-  // and a delivered hybrid intent worker was reported as having run in-context.
-  const skillTxt = readFileSync(join(REPO_ROOT, "skills/quality/pr-review/SKILL.md"), "utf8");
-  s.check("G84o a hybrid run starts at the caller's dispatch stamp, with the definition read as a `load` step",
-    /a dispatch stamp starts the run and the worker at the dispatch, and the first gap is `load`/.test(out)
-      && /dispatchTime reads the \/pr-review directory suffix/.test(out)
-      && /date \+%s > <dir>\/intent\/dispatched_at/.test(skillTxt)
-      && /dispatchTime reads a ms, a seconds, and a BSD `%3N` stamp/.test(out)
-      && /worker import with only the stamp and the output file still folds the worker in/.test(out));
-  s.check("G84o per-step tool calls come from the model's running count, and run-telemetry.md asks for it on every marker",
-    /per-step tool calls come from consecutive model-reported counts/.test(out)
-      && /\*\*Pass your running tool-call count on every marker\*\*/.test(rtDocEarly));
-  s.check("G84o a delivered hybrid intent worker is never reported as having run in-context",
-    /noDispatchTopology === "hybrid" && context\?\.intentIsolated !== true/.test(fin) && /context\.intentIsolated = true/.test(fin));
-  s.check("G84o execute-write-plan.mjs records `post` and finishes a real run",
-    /name: "post", ns: PROCESS_START_NS/.test(ewp) && /await finishRun\(runDir/.test(ewp));
-  // The memory: a trace that says which LoreKit memories shaped the review, each openable in
-  // LoreKit by its id. finalize records them from judgments.memory; the root span carries them.
-  const postingDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
-  s.check("G84o the root carries the memories the review used and read, one event each with its LoreKit id and deep link, recorded by finalize",
-    /one event per memory on the root/.test(out) && /a memory event carries its LoreKit id, scope, key, kind, and what it did/.test(out)
-      && /the deep link opens the memory by id, falls back to scope \+ key/.test(out)
-      && /rule 3 — a run with no memory record carries no memory attribute and no event/.test(out)
-      && /the received root carries the memory the run used/.test(out)
-      && /t: "memory",\n\s+items: memoryTelemetryItems\(judgments\.memory, result\?\.suppressed\),/.test(fin)
-      && /### The memory/.test(rtDocEarly) && /`pr_review\.memory\.used_ids`/.test(rtDocEarly)
-      && /`memory\.read\[\]`[^\n]*Copy `id`, `scope`, and `key` onto every entry/.test(postingDoc));
-  // The state write credits those memories in LoreKit (`cited`), from finalize's own list — the
-  // model copies citedRefs, it never assembles the refs, and a memory that changed nothing is
-  // never credited. Executed here, not just grepped.
-  const { citedRefs } = await import(pathToFileURL(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs")).href);
-  const citedCase = citedRefs({
-    relevance_rules: [{ scope: "repo::o/r", key: "reviewer-comment-relevance::rule::a", fp: "a" }, { scope: "repo::o/r", key: "reviewer-comment-relevance::rule::b", fp: "b" }],
-    lessons_used: [{ scope: "global", key: "lesson-x", used_as: "u" }, { key: "no-scope", used_as: "u" }],
-    read: [{ scope: "repo::o/r", key: "hotspot::read-only.ts" }],
-  }, [{ _suppressed_by_fp: "a" }]);
-  const step4cDoc = postingDoc.slice(postingDoc.indexOf("### 4c. Record the run state"), postingDoc.indexOf("### 4d."));
-  s.check("G84o the Step 4c state write passes finalize's citedRefs as LoreKit `cited` — acting rules and used lessons only, never a key alone",
-    JSON.stringify(citedCase) === JSON.stringify(["repo::o/r::reviewer-comment-relevance::rule::a", "global::lesson-x"])
-      && /citedRefs: citedRefs\(judgments\?\.memory, suppressed\),/.test(fin)
-      && /^\s+cited\s+= <finalize-result\.json's citedRefs, verbatim>/m.test(step4cDoc) && /Never build the list by hand/.test(step4cDoc),
-    JSON.stringify(citedCase));
-  const rtDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
-  const body = readFileSync(join(REPO_ROOT, "agents/pr-reviewer.md"), "utf8");
-  s.check("G84o run-telemetry.md states the marker rule and the opt-in, and the agent body routes to it",
-    /\*\*Never spend a tool call on a marker\.\*\*/.test(rtDoc) && /Export is opt-in\./.test(rtDoc)
-      && body.includes("(./pr-reviewer/rules/run-telemetry.md)"));
-  // The workflow ships as a template until someone with `workflows` permission installs it; the
-  // guard reads whichever copy exists, the installed one first.
-  const installed = join(REPO_ROOT, ".github/workflows/review-telemetry-smoke.yml");
-  const smoke = existsSync(installed) ? installed : join(REPO_ROOT, "agents/pr-reviewer/templates/review-telemetry-smoke.workflow.yml");
-  const smokeTxt = existsSync(smoke) ? readFileSync(smoke, "utf8") : "";
-  s.check("G84o the CI smoke run exports one synthetic run when the telemetry code changes, and fails if it was not exported",
-    smokeTxt.includes("agents/pr-reviewer/scripts/review-telemetry.mjs") && smokeTxt.includes("PR_REVIEWER_OTLP_ENDPOINT")
-      && /jq -e '\.exported == true'/.test(smokeTxt) && smokeTxt.includes("smoke=true"));
-}
-
-// ── G84p: run telemetry on an Agent0 Automation ──
-// An automation's envVars reach only its setup script. The export settings carry an ingest token,
-// so they are never written to env.sh: the run reads them from its own environment, which a setup
-// script sets through $DASH0_AGENT_ENV (run-telemetry.md § On an Agent0 Automation). Two further
-// gaps are guarded: the harness detector must know the reviewer-only installer's env.sh, and the
-// bundle must inline run-telemetry.md so a run that skips deferred rules still marks its steps.
-// Each check EXECUTES the shipped code: the installer's env.sh block in a scratch root, the
-// telemetry self-test, and the bundle compiler.
-{
-  const SETUP = join(REPO_ROOT, "agents/pr-reviewer/scripts/agent0-setup.sh");
-  const RT = join(REPO_ROOT, "agents/pr-reviewer/scripts/review-telemetry.mjs");
-  const setupTxt = readFileSync(SETUP, "utf8");
-  const from = setupTxt.indexOf('ENV_FILE="$ROOT/env.sh"');
-  const to = setupTxt.indexOf('if [ -n "${DASH0_AGENT_ENV:-}" ]');
-  const token = "Authorization=Bearer l1-canary-token,Dash0-Dataset=default";
-  const dir = mkdtempSync(join(tmpdir(), "l1-envsh-"));
-  let envSh = "";
-  let installerOut = "";
-  let bareOut = "";
-  let status = -1;
-  try {
-    writeFileSync(join(dir, "block.sh"), from > 0 && to > from ? setupTxt.slice(from, to) : "exit 3\n");
-    const base = { PATH: process.env.PATH || "", ROOT: dir, BUNDLE: join(dir, "b.md"), PIN: "abc1234", PR_REVIEWER_LOGIN: "bot" };
-    const r = spawnSync("bash", ["-u", join(dir, "block.sh")], {
-      encoding: "utf8", env: { ...base, PR_REVIEWER_OTLP_ENDPOINT: "https://ingress.example.com", PR_REVIEWER_OTLP_HEADERS: token },
-    });
-    status = r.status ?? -1;
-    installerOut = `${r.stdout || ""}${r.stderr || ""}`;
-    if (existsSync(join(dir, "env.sh"))) envSh = readFileSync(join(dir, "env.sh"), "utf8");
-    const bareDir = join(dir, "bare");
-    mkdirSync(bareDir);
-    const b = spawnSync("bash", ["-u", join(dir, "block.sh")], { encoding: "utf8", env: { ...base, ROOT: bareDir } });
-    bareOut = `${b.stdout || ""}${b.stderr || ""}`;
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-  s.check("G84p the installer writes the run's paths to env.sh and never the export settings or their token",
-    status === 0 && /export PR_REVIEWER_ROOT=/.test(envSh) && !/OTLP|PR_REVIEWER_TELEMETRY|Bearer/.test(envSh),
-    `status=${status} envSh=${JSON.stringify(envSh.slice(0, 200))}`);
-  s.check("G84p settings handed to the installer get a note, never their values; none gets no note",
-    /not written to env\.sh/.test(installerOut) && !installerOut.includes("l1-canary-token") && !installerOut.includes("ingress.example.com")
-      && !/telemetry:/.test(bareOut),
-    `out=${installerOut.slice(0, 200)} bare=${bareOut.slice(0, 120)}`);
-
-  const rtSrc = readFileSync(RT, "utf8");
-  const rtRun = spawnSync(process.execPath, [RT, "--self-test"], { encoding: "utf8" });
-  const out = rtRun.stdout || "";
-  s.check("G84p review-telemetry.mjs reads the export settings from the process environment only (no env-file fallback)",
-    rtRun.status === 0 && /finishRun\(runDir, opts = \{\}, env = process\.env\)/.test(rtSrc)
-      && !/withPersistedExport|parseEnvFile|PERSISTED_EXPORT_KEYS/.test(rtSrc),
-    out.split("\n").filter((l) => l.includes("✗")).join(" | "));
-  s.check("G84p the reviewer-only Agent0 install (pr-reviewer/env.sh) names the harness agent0",
-    /detectHarness: the reviewer-only Agent0 install \(pr-reviewer\/env\.sh\) is agent0/.test(out));
-  // AI SDLC Insights lists sessions only under the Dash0 agent plugin's scope. An Agent0 run, which
-  // no plugin records, exports under it; a plugin-covered run keeps agent-skills/pr-reviewer, or the
-  // plugin's invoke_agent pr-reviewer and the reviewer's would count every review twice.
-  s.check("G84p an agent0 run exports under the AI SDLC Insights scope; every other run, and a plugin harness above all, keeps agent-skills/pr-reviewer",
-    /✓ an agent0 run exports its trace and metrics under the AI SDLC Insights scope/.test(out)
-      && /✓ every other run keeps agent-skills\/pr-reviewer/.test(out)
-      && /✓ no harness is both a session harness and a plugin harness/.test(out));
-  s.check("G84p the root records the OpenCode tool call that started the run, and a later begin never replaces it",
-    /✓ the root carries pr_review\.opencode\.parent_tool_call_id/.test(out)
-      && /✓ a later begin adds facts but keeps the tool call that started the run/.test(out));
-
-  const bdir = mkdtempSync(join(tmpdir(), "l1-bundle-"));
-  let bundle = "";
-  try {
-    const b = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/build-agent0-bundle.mjs"),
-      "--src", join(REPO_ROOT, "agents"), "--out", join(bdir, "b.md"), "--quiet"], { encoding: "utf8" });
-    if (b.status === 0) bundle = readFileSync(join(bdir, "b.md"), "utf8");
-  } finally {
-    rmSync(bdir, { recursive: true, force: true });
-  }
-  s.check("G84p the Agent0 bundle inlines run-telemetry.md, so a run that skips deferred rules still has the step markers",
-    bundle.includes("# Inlined rule — `pr-reviewer/rules/run-telemetry.md`") && bundle.includes("**Never spend a tool call on a marker.**"));
-  const rtDoc = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
-  s.check("G84p run-telemetry.md tells an automation to export the settings through $DASH0_AGENT_ENV with an ingest-only token",
-    /### On an Agent0 Automation/.test(rtDoc) && rtDoc.includes("sandbox.envVars")
-      && rtDoc.includes(`printf 'export PR_REVIEWER_OTLP_HEADERS=%q\\n'`) && rtDoc.includes('>> "$DASH0_AGENT_ENV"')
-      && /Use an ingest-only token limited to one dataset/.test(rtDoc) && !/writes `PR_REVIEWER_OTLP_ENDPOINT`/.test(rtDoc));
-  s.check("G84p run-telemetry.md states the scope per harness, forbids a plugin harness in SESSION_HARNESSES, and links its reasons",
-    /### The scope/.test(rtDoc) && /\| `agent0` \(`SESSION_HARNESSES`\) \| `dash0-agent-plugin`/.test(rtDoc)
-      && /Never add a `PLUGIN_HARNESSES` member/.test(rtDoc) && rtDoc.includes("(../references/insights-scope.md)")
-      && existsSync(join(REPO_ROOT, "agents/pr-reviewer/references/insights-scope.md")));
-}
-
-// ── G84q: on a Dash0 Agent0 Automation, hybrid runs as two workers in one message ──
-// #201 told a top-level Agent0 run to dispatch every finder, every Phase E candidate and every
-// 2.4b trace as its own `general` sub-agent. That was documented, never wired, and never ran (the
-// Review automation was re-pinned to #201 after its last run), and it contradicted
-// dispatch-topology.md's hybrid default. The one measurement of that shape (A/B round 8) projected
-// ~57 minutes against a 12-minute automation timeout. A dispatch there blocks the turn, so hybrid
-// runs as two workers sent together — the intent finder alone, the other finders in one context —
-// and everything from Step 2.5 on, verification included, stays in the top-level run.
-{
-  const RT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/agent0-runtime.md"), "utf8");
-  const DT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
-  const FIN = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
-  const flat = (/** @type {string} */ t) => t.replace(/\s+/g, " ");
-  const HEADING = "## Phase D: two workers in one message; never expect a second rung";
-  const ANCHOR = "#phase-d-two-workers-in-one-message-never-expect-a-second-rung";
-  const sec = (() => {
-    const at = RT.indexOf(`\n${HEADING}\n`);
-    if (at === -1) return "";
-    const rest = RT.slice(at + 1);
-    const next = rest.indexOf("\n## ", 1);
-    return flat(next === -1 ? rest : rest.slice(0, next));
-  })();
-  s.check("G84q agent0-runtime.md has the two-worker Phase D section, linked from its Contents",
-    sec !== "" && RT.includes(`(${ANCHOR})`));
-  s.check("G84q the section takes the topology from dispatch-topology.md and context.budget, with the same 0.4 breakpoint",
-    sec.includes("[`dispatch-topology.md`](./dispatch-topology.md)") && sec.includes("`in-context` below thoroughness 0.4, `hybrid` from 0.4"));
-  s.check("G84q under hybrid it sends exactly two general sub-agents in one message: intent alone, the other finders together",
-    sec.includes("send **exactly two `general` sub-agents in one message**")
-      && /\| intent \| `intent` only \| `<scratch>\/intent\.json` \|/.test(sec)
-      && /\| other finders \| every other finder active in `context\.budget\.finders`[^|]*in one context \| `<scratch>\/others\.json` \|/.test(sec));
-  s.check("G84q verification and 2.4b stay in the top-level run, under dispatch-topology.md's Verification section",
-    sec.includes("(./dispatch-topology.md#verification--in-your-own-context)") && sec.includes("**Never dispatch anything else.**")
-      && /Phase E verifies one candidate at a time in this turn/.test(sec) && /2\.4b's targeted holistic traces are `Skill\(\)` calls in this turn/.test(sec)
-      && /^## Verification — in your own context$/m.test(DT));
-  s.check("G84q the worker prompt names absolute paths, the constraints file, a path-only return, and forbids reading the agent",
-    sec.includes("`/tmp/workspace/pr-reviewer/pr-reviewer/rules/finders.md`") && sec.includes("`/tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md`")
-      && sec.includes("return only that path in the final message") && sec.includes("do not read `pr-reviewer.md` or the bundle"));
-  s.check("G84q a failed worker is never re-dispatched: its finders run in this context and the run says so",
-    sec.includes("**do not dispatch it again**") && sec.includes("worker returned no readable candidates — ran its finders in-context")
-      && sec.includes("`context.render.RUN_ANOMALY`"));
-  // The telemetry marker the rule names is the one finalize.mjs reads to know intent ran isolated.
-  s.check("G84q the rule's `worker intent end` marker is the ledger record finalize.mjs reads as intentIsolated",
-    sec.includes("`worker intent end`") && FIN.includes(`r.unit === "intent" && r.phase === "end"`));
-  s.check("G84q the review-loop path still dispatches nothing",
-    sec.includes("**When `review-loop` dispatched you, there is no dispatch at all.**") && sec.includes("the second rung does not exist"));
-  const all = flat(RT);
-  s.check("G84q #201's per-finder, per-candidate fan-out is gone from the rule, its budget row included",
-    !all.includes("Dispatch them as multiple `general` sub-agents") && !all.includes("per-candidate verifier dispatches")
-      && !/also \*\*top-level\*\* fan-outs/.test(all) && !/\| Phase D \| serial \| concurrent fan-out \|/.test(RT)
-      && /\| Phase D \| serial \| two workers in one message \(intent; the other finders\) \|/.test(RT));
-  s.check("G84q dispatch-topology.md's hybrid wait points Agent0 runs at the two-worker section",
-    DT.includes(`(./agent0-runtime.md${ANCHOR})`));
-  // The rule's intent-only isolation and 0.4 breakpoint are the code's, not a restatement that can drift.
-  const probe = spawnSync(process.execPath, ["--input-type=module", "-e",
-    `import { resolveBudget, HYBRID_ISOLATED_FINDERS } from "./agents/pr-reviewer/scripts/route-depth.mjs";
-     console.log(JSON.stringify([resolveBudget({ thoroughness: 0.39 }).topology, resolveBudget({ thoroughness: 0.4 }).topology, HYBRID_ISOLATED_FINDERS]));`],
-    { encoding: "utf8", cwd: REPO_ROOT });
-  s.check("G84q route-depth.mjs agrees: in-context at 0.39, hybrid at 0.4, and intent is the only isolated finder",
-    probe.status === 0 && (probe.stdout || "").trim() === JSON.stringify(["in-context", "hybrid", ["intent"]]),
-    (probe.stdout || probe.stderr || "").trim().slice(0, 200));
-}
-
-// ── G84r: hybrid never leaves the reviewer idle waiting for the intent worker ──
-// On dash0hq/dash0#20655 the reviewer idled ~125 s before Step 2.5 waiting for the intent file,
-// and the worker had re-run the whole prepare-review.mjs (8–30 s of GitHub reads, a leaked
-// worktree) to get context the reviewer already had. Four fixes, each guarded against the code or
-// the owning rule: (1) the caller prepares ONCE and hands both agents the same context, and cleans
-// up the workspace it made; (2) it dispatches the worker only on a `hybrid` budget; (3) a small
-// incremental re-review is `in-context` (an UNMEASURED default, and the rule must say so); (4) the
-// reviewer reads the intent file only after verifying its own candidates, with a bounded wait that
-// the trace records as `intent_wait_ms`.
-{
-  const rd = (/** @type {string} */ p) => readFileSync(join(REPO_ROOT, p), "utf8");
-  const DT = rd("agents/pr-reviewer/rules/dispatch-topology.md");
-  const SK = rd("skills/quality/pr-review/SKILL.md");
-  const RL = rd("skills/quality/review-loop/SKILL.md");
-  const BODY = rd("agents/pr-reviewer.md");
-  const RTD = rd("agents/pr-reviewer/rules/run-telemetry.md");
-  const PRSRC = rd("agents/pr-reviewer/scripts/prepare-review.mjs");
-  const TELSRC = rd("agents/pr-reviewer/scripts/review-telemetry.mjs");
-  const flat = (/** @type {string} */ t) => t.replace(/\s+/g, " ");
-  const probe = (/** @type {string} */ code) => spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", cwd: REPO_ROOT });
-
-  // (3) the small-incremental default, executed.
-  const topo = probe(`import { resolveBudget } from "./agents/pr-reviewer/scripts/route-depth.mjs";
-    const b = (i) => { const r = resolveBudget(i); return r.topology + "/" + r.topologyReason; };
-    console.log(JSON.stringify([
-      b({ routedTier: "standard", runMode: "incremental" }), b({ routedTier: "quick", runMode: "incremental-quick" }), // quick's 0.4 default reaches the hybrid breakpoint, so the carve-out is what keeps it in-context
-      b({ routedTier: "standard", runMode: "full" }), b({ routedTier: "deep", runMode: "incremental" }),
-      b({ routedTier: "standard", runMode: "incremental", thoroughness: 0.8 })]));`);
-  s.check("G84r resolveBudget: a small incremental re-review (standard/quick, defaulted thoroughness) is in-context; a full run, a deep tier, or an explicit thoroughness stays hybrid",
-    topo.status === 0 && (topo.stdout || "").trim() === JSON.stringify(["in-context/small-incremental", "in-context/small-incremental", "hybrid/hybrid", "hybrid/hybrid", "hybrid/hybrid"]),
-    (topo.stdout || topo.stderr || "").trim().slice(0, 300));
-  s.check("G84r prepare-review.mjs hands resolveBudget the context's run mode",
-    /const budget = resolveBudget\(\{\n\s+runMode: contextMode,/.test(PRSRC) && /mode: contextMode,/.test(PRSRC));
-  const smallRow = DT.split("\n").find((l) => l.startsWith("| `in-context` |") && l.includes("small-incremental")) || "";
-  s.check("G84r dispatch-topology.md's table carries the small-incremental row and says it is unmeasured, against a deep 22-file A/B",
-    /\*\*Unmeasured\.\*\*/.test(smallRow) && /deep, full, 22-file review/.test(smallRow) && /no A\/B round ran an incremental re-review/.test(smallRow));
-
-  // (1)+(2) one prepare, shared, gated on the budget, cleaned up by whoever ran it.
-  const step2 = (() => { const a = SK.indexOf("## Step 2: Dispatch the agent"), b = SK.indexOf("### Worker preamble"); return a === -1 || b === -1 ? "" : SK.slice(a, b); })();
-  const preamble = (SK.match(/### Worker preamble[\s\S]*?```text\n([\s\S]*?)```/) || ["", ""])[1];
-  const iPrep = step2.indexOf('prepare-review.mjs" --pr <PR_REF> --out <dir>/context.json');
-  const iHybrid = step2.indexOf("On `hybrid`, in **one message**, dispatch both");
-  s.check("G84r /pr-review runs prepare once, before any dispatch, and hands the reviewer --context",
-    iPrep !== -1 && iHybrid !== -1 && iPrep < iHybrid && step2.includes("--context <dir>/context.json --intent-from <dir>/intent/intent.json"));
-  s.check("G84r /pr-review dispatches the intent worker only on a hybrid budget, and the reviewer alone otherwise",
-    /jq -r '\.budget\.topology' <dir>\/context\.json/.test(step2) && /On `in-context`[^\n]*\n\s*`pr-reviewer` alone with `--context/.test(step2)
-      && !/--thoroughness`\s+below 0\.4/.test(step2));
-  s.check("G84r the intent worker never runs prepare, and the caller that ran it owns the cleanup",
-    /Do NOT run prepare-review\.mjs/.test(preamble) && step2.includes("It never runs `prepare-review.mjs`.")
-      && step2.includes('prepare-review.mjs" --cleanup <dir>/context.json') && /the cleanup is yours,\s+never the reviewer's/.test(step2)
-      && !/told to run `prepare-review\.mjs/.test(SK));
-  s.check("G84r the agent body knows --context and leaves that workspace's cleanup to the caller",
-    /\| `--context <path>` \| The caller already ran `prepare-review\.mjs`: skip it, read `<path>` as the context, and never clean up its workspace/.test(BODY));
-  s.check("G84r review-loop's named dispatch shares one prepare, gates the worker on hybrid, and cleans up",
-    RL.includes("--context <dir>/context.json --intent-from <dir>/intent/intent.json") && RL.includes("prepare-review.mjs --cleanup <dir>/context.json")
-      && RL.includes("when `context.budget.topology` is `hybrid`"));
-  const prSelf = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "--self-test"], { encoding: "utf8" });
-  const prOut = (prSelf.stdout || "") + (prSelf.stderr || "");
-  s.check("G84r prepare-review.mjs --cleanup removes a worktree through git, rm-rfs only a scratch dir, and leaves `none` (self-test)",
-    prSelf.status === 0 && /✓ cleanupWorkspace removes a worktree through git, leaving no \.git\/worktrees entry, and is idempotent/.test(prOut)
-      && /✓ cleanupWorkspace rm-rfs an rm-rung dir, leaves cleanup:none alone, and refuses a dir outside the scratch root/.test(prOut),
-    prOut.split("\n").filter((l) => /FAIL|THREW/.test(l)).join(" | ").slice(0, 300));
-
-  // (4) the late read, positionally: own verification first, the intent file after.
-  const run = (() => { const a = DT.indexOf("**Running `hybrid`.**"), b = DT.indexOf("## Reading a budget into dispatch"); return a === -1 || b === -1 ? "" : DT.slice(a, b); })();
-  const iOwn = run.indexOf("Step 2.6b verification of");
-  const iRead = run.indexOf("Only then read the intent finder's output file.");
-  const iOwnB = run.indexOf("then Step 2.5 and Step 2.6b over your own candidates");
-  const iWait = run.indexOf("Then wait for `<path>`");
-  s.check("G84r dispatch-topology.md reads the intent file only after Step 2.5 + 2.6b over the reviewer's own candidates, on both hybrid paths",
-    iOwn !== -1 && iRead > iOwn && iOwnB !== -1 && iWait > iOwnB
-      && !/Before Step 2\.5(?: consolidation)?, read/.test(DT) && flat(run).includes("verify only the intent candidates that remain"));
-  s.check("G84r the wait is bounded at 10 minutes in the code and the rule, and a timeout runs intent in-context loudly",
-    /export const WAIT_TOTAL_S = 600;/.test(TELSRC) && run.includes("--wait 540")
-      && run.includes("intent worker returned no readable candidates — ran intent in-context") && run.includes("On `intent: timed out`"));
-  s.check("G84r the agent body's --intent-from row reads the file after Step 2.6b, never before Step 2.5",
-    /\| `--intent-from <path>` \|[^\n]*only after verifying your own candidates at Step 2\.6b/.test(BODY) && !/merge `<path>`'s candidates before Step 2\.5/.test(BODY));
-
-  // (5) the wait is measurable.
-  const steps = probe(`import { modelSteps, STEPS } from "./agents/pr-reviewer/scripts/review-telemetry.mjs";
-    console.log(JSON.stringify([modelSteps({ tier: "deep", topology: "hybrid" }), "intent-verify" in STEPS]));`);
-  const [hyb, hasIV] = (() => { try { return JSON.parse((steps.stdout || "").trim()); } catch { return [[], false]; } })();
-  s.check("G84r modelSteps puts intent-wait after verify and before judgments, followed by intent-verify",
-    hasIV === true && hyb.indexOf("verify") !== -1 && hyb.indexOf("intent-wait") === hyb.indexOf("verify") + 1
-      && hyb.indexOf("intent-verify") === hyb.indexOf("intent-wait") + 1 && hyb.indexOf("judgments") > hyb.indexOf("intent-verify"),
-    (steps.stdout || steps.stderr || "").trim().slice(0, 200));
-  const telSelf = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/review-telemetry.mjs"), "--self-test"], { encoding: "utf8" });
-  const telOut = telSelf.stdout || "";
-  s.check("G84r review-telemetry.mjs --self-test proves the wait is recorded, accumulates, and times out at the bound",
-    telSelf.status === 0 && /✓ --wait on an output already there returns at once, prints `ready`, and records intent_wait_ms/.test(telOut)
-      && /✓ waitForOutput returns once the worker's file appears mid-wait/.test(telOut)
-      && /✓ the wait accumulates across calls and times out at --wait-total, never past it/.test(telOut)
-      && /✓ a dispatch after `prepare` names the gap holding it `load`/.test(telOut),
-    telOut.split("\n").filter((l) => l.includes("✗")).join(" | ").slice(0, 300));
-  s.check("G84r run-telemetry.md names intent_wait_ms and the late intent-wait / intent-verify steps",
-    RTD.includes("`pr_review.intent_wait_ms`") && /\| `intent-wait` \| hybrid only: after `verify`/.test(RTD) && /\| `intent-verify` \|/.test(RTD));
-}
-
-// ── G84s: the verify marker opens before the verification it measures, and carries its count ──
-// A `verify` issued alongside the next marker books the whole verification to that step, so the
-// trace blames the wrong step. Executed, not grepped: the CLI's notes and the summary's empty flag
-// are what a run actually sees.
-// break-shape: drop the markerNotes call from `step`, its empty-verify check, or the verify rule in
-// run-telemetry.md / dispatch-topology.md, and the matching sub-check flips red.
-{
-  const TEL = join(REPO_ROOT, "agents/pr-reviewer/scripts/review-telemetry.mjs");
-  const telSrc = readFileSync(TEL, "utf8");
-  s.check("G84s review-telemetry.mjs requires a candidates count on verify and checks every marker before recording it",
-    /export const STEP_REQUIRED_ATTRS = Object\.freeze\(\{ verify: Object\.freeze\(\["candidates"\]\) \}\);/.test(telSrc)
-      && /const \{ notes, emptyVerify \} = markerNotes\(readLedger\(runDir\), name, attrBag\);/.test(telSrc));
-
-  const probeDir = mkdtempSync(join(tmpdir(), "g84s-"));
-  try {
-    const mark = (/** @type {string[]} */ args) => spawnSync(process.execPath, [TEL, ...args, "--run-dir", probeDir], { encoding: "utf8" });
-    mark(["begin", "--repo", "o/r", "--pr", "1"]);
-    const a = mark(["step", "verify", "--attr", "tool_calls_so_far=30"]);
-    const b = mark(["step", "intent-wait", "--attr", "tool_calls_so_far=30"]);
-    const c = mark(["step", "verify", "--attr", "tool_calls_so_far=31", "--attr", "candidates=0"]);
-    const d = mark(["step", "judgments", "--attr", "tool_calls_so_far=31"]);
-    s.check("G84s a count-less verify and a verify chained onto the next marker each get a note, a verify with candidates=0 none, and every marker exits 0",
-      [a, b, c, d].every((x) => x.status === 0) && /candidates=<n>/.test(a.stderr) && /booked to `intent-wait`/.test(b.stderr)
-        && !/note —/.test(c.stderr) && !/note —/.test(d.stderr),
-      `${a.stderr}|${b.stderr}|${c.stderr}|${d.stderr}`.slice(0, 400));
-    const sum = spawnSync(process.execPath, ["--input-type=module", "-e",
-      `import { buildRun, summarize, readLedger } from ${JSON.stringify(pathToFileURL(TEL).href)};`
-      + ` const r = buildRun(readLedger(${JSON.stringify(probeDir)}));`
-      + ` console.log(JSON.stringify(summarize(r).steps.filter((x) => x.name === "verify").map((x) => ({ empty: x.empty === true, candidates: x.candidates ?? null }))));`],
-      { encoding: "utf8" });
-    s.check("G84s the chained verify is flagged empty in the run summary, and the verify with candidates=0 is not",
-      sum.status === 0 && (sum.stdout || "").trim() === JSON.stringify([{ empty: true, candidates: null }, { empty: false, candidates: 0 }]),
-      (sum.stdout || sum.stderr || "").trim().slice(0, 300));
-  } finally {
-    rmSync(probeDir, { recursive: true, force: true });
-  }
-
-  const RT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/run-telemetry.md"), "utf8");
-  const DT = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/dispatch-topology.md"), "utf8");
-  const verifyRule = (RT.split(/^### `verify` opens before the verification it measures$/m)[1] || "").split(/^#{2,3} /m)[0];
-  s.check("G84s run-telemetry.md's verify rule names the first verification command, the count, and never chaining it onto the next marker",
-    /^\| `verify` \| Step 2\.6b, your own candidates — on the first command that verifies one, with `--attr candidates=<n>`/m.test(RT)
-      && /first command that verifies one of your own candidates/.test(verifyRule)
-      && /--attr candidates=<n>/.test(verifyRule)
-      && /Never put it on the same command as `intent-wait`, `intent-verify`, or `judgments`/.test(verifyRule));
-  s.check("G84s dispatch-topology.md applies the verify rule on both hybrid paths (the reviewer's own dispatch and --intent-from)",
-    (DT.match(/Mark `verify` with `--attr candidates=<n>` on the first\s+verification command|marking `verify` with `--attr candidates=<n>` on the first verification command/g) || []).length === 2);
-  const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-  s.check("G84s prepare-review.mjs hands the run the required marker attributes and prints the verify rule on its markers line",
-    /attrs: STEP_REQUIRED_ATTRS,/.test(PRSRC)
-      && PRSRC.includes("verify: on its first verification command, never chained onto the next marker, adding --attr candidates=<n>"));
-}
-
-// ── G82: pr-reviewer.md size ratchet + the L2-read sections stay byte-identical to base (D15,
-// AC-3/AC-5/AC-6, plan feat/pr-reviewer-shrink-fanout-ab) ──
-//
-// A ratchet, not a live recompute: the ceiling is a COMMITTED number, so a future regrowth reds
-// here instead of the guard silently rising to match whatever the file happens to be. It is set
-// to the whitespace-normalized byte count measured right after the Step 9 posting.md split
-// (199,891), rounded up to the next 1,000 — lowering it is a deliberate future edit, not automatic.
-// Raw bytes get the same treatment as a second, independent number (a normalized-only ratchet
-// cannot see a raw-bytes regression hidden behind removed whitespace).
-{
-  const PRW_PATH = join(REPO_ROOT, "agents/pr-reviewer.md");
-  const PRW_TXT = readFileSync(PRW_PATH, "utf8");
-  const PR_REVIEWER_MD_NORMALIZED_CEILING = 64000;
-  const PR_REVIEWER_MD_RAW_CEILING = 64000;
-  const normalizedBytes = Buffer.byteLength(PRW_TXT.replace(/\s+/g, " "), "utf8");
-  const rawBytes = Buffer.byteLength(PRW_TXT, "utf8");
-  s.check(
-    `G82 pr-reviewer.md normalized bytes (${normalizedBytes}) stay at or under the committed ceiling (${PR_REVIEWER_MD_NORMALIZED_CEILING})`,
-    normalizedBytes <= PR_REVIEWER_MD_NORMALIZED_CEILING,
-    "regrowth past the ratchet — lower the ceiling only after a real cut, never raise it to match a regression");
-  s.check(
-    `G82 pr-reviewer.md raw bytes (${rawBytes}) stay at or under the committed ceiling (${PR_REVIEWER_MD_RAW_CEILING})`,
-    rawBytes <= PR_REVIEWER_MD_RAW_CEILING);
-
-  // The two L2-read sections (code-review-retrieval-relevance's rubric) and
-  // rubric-composition.md's Cross-rubric agreement section (reviewer-agreement-bump's rubric) may
-  // not move UNVERIFIED (R18/AC-5, CLAUDE.md "Keeping the evals honest"). The rule, stated so it
-  // guards every future PR without freezing the sections forever:
-  //
-  //   1. The comparison base is resolved DYNAMICALLY — `git merge-base HEAD <ref>`, where <ref> is
-  //      `$L1_BASE_REF` when set (a stacked PR points it at its parent branch), else `origin/main`,
-  //      else `main`. No hard-coded commit: a SHA that lives only on a stacked base branch vanishes
-  //      when that branch is squash-merged.
-  //   2. An unresolvable base FAILS the check. A guard that passes when it cannot see is not a
-  //      guard (evals-l1.yml checks out with fetch-depth: 0, so origin/main is always present in CI).
-  //   3. A section identical to base passes. A section that DIFFERS from base passes only when the
-  //      same range also shows the edit was verified: the suite's golden file changed (base..working
-  //      tree), or a commit message in base..HEAD carries an `L2-verified: <suite>` trailer — the
-  //      author's statement that the suite was run and its accuracy reported in the PR description.
-  const G82_SECTIONS = [
-    { heading: "### 1.0 Prior-comment awareness + relevance memory load (default ON)", file: "agents/pr-reviewer.md", suite: "code-review-retrieval-relevance" },
-    { heading: "### 1.2c Diff-keyed lesson search (all modes)", file: "agents/pr-reviewer.md", suite: "code-review-retrieval-relevance" },
-    { heading: "## Cross-rubric agreement", file: "agents/shared/rules/rubric-composition.md", suite: "reviewer-agreement-bump" },
-  ];
-  const g82Git = (/** @type {string[]} */ args) => execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
-  const g82Refs = process.env.L1_BASE_REF ? [process.env.L1_BASE_REF] : ["origin/main", "main"];
-  let g82Base = "";
-  let g82BaseRef = "";
-  for (const ref of g82Refs) {
-    try { g82Base = g82Git(["merge-base", "HEAD", ref]).trim(); g82BaseRef = ref; break; } catch { /* try the next ref */ }
-  }
-  s.check(`G82 the L2-read-section comparison base resolves (merge-base HEAD ${g82Refs.join(" | ")})`,
-    /^[0-9a-f]{40}$/.test(g82Base),
-    "no base ref reachable — fetch origin/main (CI uses fetch-depth: 0) or set L1_BASE_REF; an unresolved base FAILS rather than passing blind");
-  if (/^[0-9a-f]{40}$/.test(g82Base)) {
-    let changed = [];
-    let messages = "";
-    try { changed = g82Git(["diff", "--name-only", g82Base]).split("\n").filter(Boolean); } catch { /* empty */ }
-    try { messages = g82Git(["log", "--format=%B", `${g82Base}..HEAD`]); } catch { /* empty */ }
-    const baseDir = mkdtempSync(join(tmpdir(), "l1-g82-base-"));
-    for (const { heading, file, suite } of G82_SECTIONS) {
-      // extractSection() resolves a REPO_ROOT-relative path, so the base copy is written to a temp
-      // file and addressed relative to REPO_ROOT (join() does not special-case an absolute argument).
-      let baseText = "";
-      try { baseText = g82Git(["show", `${g82Base}:${file}`]); } catch { /* file absent at base */ }
-      const baseFile = join(baseDir, `${suite}-${Buffer.from(heading).toString("hex").slice(0, 16)}.md`);
-      writeFileSync(baseFile, baseText);
-      let nowSection = "", baseSection = "";
-      try { nowSection = extractSection(file, heading); } catch { /* asserted below */ }
-      try { baseSection = extractSection(relative(REPO_ROOT, baseFile), heading); } catch { /* new section at base */ }
-      const identical = nowSection !== "" && nowSection === baseSection;
-      const goldenTouched = changed.includes(`scripts/eval/golden/${suite}.jsonl`);
-      const markerRe = new RegExp(`^L2-verified:\\s*.*\\b${suite.replace(/[-]/g, "\\-")}\\b`, "m");
-      const marker = markerRe.test(messages);
-      s.check(`G82 "${heading}" is unchanged from base (${g82BaseRef} ${g82Base.slice(0, 7)}) or its ${suite} edit is verified`,
-        nowSection !== "" && (identical || goldenTouched || marker),
-        nowSection === ""
-          ? "section not found in the current file"
-          : `section drifted from base with neither scripts/eval/golden/${suite}.jsonl changed nor an \`L2-verified: ${suite}\` commit trailer — run the suite and record it`);
-    }
-    rmSync(baseDir, { recursive: true, force: true });
-  }
-}
-
-// ── G86: the root CLAUDE.md stays hot-path only (CLAUDE.md § Where knowledge goes) ──
-// The root file is loaded into every session. It grew to 161k chars because each change appended
-// its design history to its inventory entry; the rule routes rules to a skill's `rules/` and
-// history to the commit/PR. This is the mechanical half of that rule.
-// break-shape: append a 301-char inventory hook, a `(v1.2.3)` tag, or one byte to either archive
-// and the matching sub-check flips red.
-{
-  const G86_ROOT = join(REPO_ROOT, "CLAUDE.md");
-  const root = readFileSync(G86_ROOT, "utf8");
-  const G86_MAX_ROOT = 40000;   // Claude Code's session-start "Large CLAUDE.md" warning threshold
-  const G86_MAX_HOOK = 300;
-  s.check(`G86a root CLAUDE.md is under ${G86_MAX_ROOT} chars`,
-    root.length < G86_MAX_ROOT, `${root.length} chars — move rules to the owning skill's rules/, rationale to references/, history to the PR`);
-  const longHooks = root.split("\n").filter((l) => /^- `/.test(l) && l.length > G86_MAX_HOOK);
-  s.check(`G86b every root inventory hook is ≤ ${G86_MAX_HOOK} chars`,
-    longHooks.length === 0, longHooks.map((l) => `${l.length}: ${l.slice(0, 60)}…`).join(" | "));
-  const tags = root.match(/\(v\d+\.\d+(?:\.\d+)?\)|\bv\d+\.\d+\.\d+\b/g) || [];
-  s.check("G86c root CLAUDE.md carries no version-tag narrative",
-    tags.length === 0, `found ${tags.join(", ")} — version history belongs in the commit message`);
-  // Frozen archives: byte ceilings equal to their size when frozen. They are snapshots that are
-  // never kept current, and they never grow. Lower a ceiling when you shrink a file. Raise one
-  // only when the archive's own freeze-notice header changes, and state the byte delta in the commit.
-  for (const [f, ceiling] of Object.entries(FROZEN_ARCHIVES)) {
-    const size = statSync(join(REPO_ROOT, f)).size;
-    s.check(`G86d ${f} has not grown past its frozen size (${ceiling} bytes)`,
-      size <= ceiling, `${size} bytes — this archive is frozen; write the rule to the owning skill's rules/ and its rationale to references/ instead`);
-  }
-  s.check("G86e root CLAUDE.md states the knowledge-placement rule",
-    /^## Where knowledge goes/m.test(root) && root.includes("`G86`"));
-}
-
-// ── G87: ui-verify adversarial pass — reachable, never verdict-changing, guarded, evidenced ──
-//
-// `ui-verify run` tries to break every passing spec after the happy-path run and documents each
-// probe with screenshots (rules/adversarial.md). Four properties hold it together, each spanning
-// files no single edit sees at once:
-//   1. it is REACHABLE — runner.md Step 4b dispatches it and SKILL.md advertises the opt-out;
-//   2. it NEVER changes the verdict — its block carries no `verdict` key, and every caller that
-//      relays it (runner.md Step 5, review-loop Step 1.6) says so;
-//   3. it is GUARDED — the rule's destructive pattern and benign-injection rules exist, and the
-//      harness template actually aborts off-origin mutations and uses the rule's XSS marker;
-//   4. the Agent0 dispatch keeps runner.md's input lines, and sits AFTER the aw-tester block so
-//      G59b's first-match read still lands on aw-tester.
-// break-shape: delete Step 4b's `adversarial.md` link, add `verdict:` inside the block schema,
-// rename XSS_MARK in the template, drop an input line from the Agent0 block, or move that block
-// above the aw-tester one — the matching sub-check flips red.
-{
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
-  const UV = readOr("skills/testing/ui-verify/SKILL.md");
-  const ADV = readOr("skills/testing/ui-verify/rules/adversarial.md");
-  const TPL = readOr("skills/testing/ui-verify/templates/adversarial-probes.spec.ts.template");
-  const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
-  const STEP4B = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 4b: Adversarial pass — try to break it");
-  const STEP5 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 5: Report the verdict");
-  const RL16 = sectionOr("skills/quality/review-loop/rules/preview-run.md", "# Step 1.6: UI-verify run (report-only, once, on exit)");
-
-  // G87a — reachable: Step 4b exists, delegates to the rule, and records the opt-out.
-  s.check("G87a the guard reads runner.md's Step 4b section", STEP4B.length > 400,
-    "a renamed, removed, or demoted Step 4b heading yields an empty slice, and every check below would read nothing");
-  s.check("G87a runner.md Step 4b delegates to adversarial.md and records the --no-adversarial skip",
-    /\(\.\/adversarial\.md\)/.test(STEP4B) && STEP4B.includes("`adversarial: skipped (--no-adversarial)`"),
-    "Step 4b no longer links rules/adversarial.md or no longer records the opt-out line");
-  s.check("G87a SKILL.md advertises --no-adversarial and links the rule",
-    /argument-hint:[^\n]*--no-adversarial/.test(UV) && UV.includes("(./rules/adversarial.md)"),
-    "ui-verify SKILL.md lost --no-adversarial in argument-hint or its link to rules/adversarial.md");
-
-  // G87b — never verdict-changing: stated in Step 4b and Step 5, and the block schema has no verdict key.
-  // Scoped to § Step 6: § Configuration also opens a ```yaml adversarial: block, so a
-  // whole-file first match would read whichever section happens to come first.
-  const STEP6 = sectionOr("skills/testing/ui-verify/rules/adversarial.md", "## Step 6: Return the adversarial block");
-  const advBlock = (STEP6.match(/```yaml\nadversarial:\n[\s\S]*?\n```/) || [""])[0];
-  s.check("G87b the guard found adversarial.md's return-block schema", advBlock.length > 200,
-    "the ```yaml adversarial: block in rules/adversarial.md § Step 6 is missing");
-  s.check("G87b the adversarial block schema carries no verdict key",
-    advBlock.length > 200 && !/^\s*verdict:/m.test(advBlock),
-    "a `verdict:` key inside the adversarial block lets the pass restate — and so change — the happy-path verdict");
-  s.check("G87b runner.md Step 4b and Step 5 both state the pass never changes the verdict",
-    /never changes the verdict/i.test(STEP4B) && /never by rewriting `verdict`/.test(STEP5),
-    "Step 4b or Step 5 no longer keeps the verdict separate from adversarial findings");
-  s.check("G87b review-loop Step 1.6 relays the adversarial summary and keeps it report-only",
-    RL16.includes("adversarial: …") && /never turns a\s+`green` into a `red`/.test(RL16),
-    "review-loop Step 1.6 drops the adversarial summary line or lets it gate");
-
-  // G87c — guarded: the rule's guardrails exist, and the harness enforces the ones code can.
-  const guards = sectionOr("skills/testing/ui-verify/rules/adversarial.md", "## Guardrails");
-  s.check("G87c adversarial.md § Guardrails keeps the destructive pattern, the created-record exception, and the no-alert rule",
-    /delete\|remove\|destroy/.test(guards) && guards.includes("ui-verify-adv") && /Never `alert\(\)`/.test(guards),
-    "a guardrail the pass depends on was removed from rules/adversarial.md § Guardrails");
-  const tplMark = (TPL.match(/export const XSS_MARK = '([^']+)'/) || [])[1];
-  s.check("G87c the harness template's XSS marker is the one the rule's oracle names",
-    !!tplMark && ADV.includes(`exactly \`${tplMark}\``) && TPL.includes("m.text() === XSS_MARK")
-      && TPL.includes("(c) => c === XSS_MARK"),
-    `template XSS_MARK=${tplMark}; the xss-executed oracle in rules/adversarial.md must name the same marker as an exact match, and both template match sites (the console filter and xssCount) must compare with ===`);
-  s.check("G87c the harness template aborts off-origin mutations and shoots deterministic images",
-    /route\.abort\('blockedbyclient'\)/.test(TPL) && /animations: 'disabled'/.test(TPL) && /caret: 'hide'/.test(TPL),
-    "templates/adversarial-probes.spec.ts.template lost its off-origin abort or its deterministic screenshot options");
-  // Guardrail 8's restore runs LAST in probe(): after the `after` image and the stored-injection
-  // reload, so the images show the probe's result and the reload still sees the payload.
-  const probeFn = (TPL.match(/export async function probe\([\s\S]*?\n}\n/) || [""])[0];
-  const iAfter = probeFn.indexOf("const afterImage = await capture(");
-  const iReload = probeFn.indexOf("await page.reload()");
-  const iRestore = probeFn.indexOf("await restore()");
-  const hasG8 = /\*\*Restore what you overwrote\.\*\*/.test(guards);
-  s.check("G87c the harness runs a probe's restore after its after image and its stored-injection reload",
-    /restoreWith:/.test(TPL) && iAfter > 0 && iReload > iAfter && iRestore > iReload && hasG8,
-    `probe(): afterImage@${iAfter}, reload@${iReload}, restore@${iRestore}; guardrail 8 present: ${hasG8}`);
-
-  // G87d — every oracle has exactly one tier from the severity skill's vocabulary.
-  const oracleRows = ADV.split("\n").filter((l) => /^\| `[a-z0-9-]+` \| .* \| (critical|high|medium|low|\S+) \|$/.test(l) && !/^\| `(input|timing|network|navigation|keyboard|numeric|session|data|layout|preferences|locale)`/.test(l));
-  const badTier = oracleRows.filter((l) => !/\| (critical|high|medium|low) \|$/.test(l));
-  s.check("G87d every adversarial oracle carries a critical/high/medium/low severity",
-    oracleRows.length >= 10 && badTier.length === 0,
-    `oracle rows: ${oracleRows.length}; rows with a tier outside the severity vocabulary: ${badTier.map((l) => l.slice(0, 40)).join(" | ") || "none"}`);
-
-  // G87e — the Agent0 dispatch is general, reads the installed rule, keeps Step 4b's input lines,
-  // and comes AFTER the aw-tester block (G59b reads the first <dispatch>( block).
-  const blocks = A0.match(/<dispatch>\(\n[\s\S]*?\n\)/g) || [];
-  const advA0 = blocks.find((b) => b.includes("rules/adversarial.md")) || "";
-  const step4bTask = (STEP4B.match(/subagent_type: "general-purpose"[\s\S]*?\n\)/) || [""])[0];
-  const inputs = ["Aw-Target file:", "Specs file:", "Probe specs:", "Playwright bin:", "Output dir:", "Lessons:", "Mode:"]
-    .map((k) => (step4bTask.match(new RegExp(`${k}[^\\n]*`)) || [""])[0].trim());
-  const drift = inputs.filter((l) => !l || !advA0.includes(l));
-  s.check("G87e the Agent0 adversarial dispatch is general, reads the installed rule, and keeps Step 4b's inputs",
-    /subagent_type: "general"/.test(advA0) && advA0.includes("/skills/ui-verify/rules/adversarial.md") && drift.length === 0,
-    `input lines missing from the Agent0 adversarial block: ${drift.join(" | ") || "none"}`);
-  s.check("G87e the aw-tester dispatch stays the FIRST <dispatch>( block in agent0-runtime.md",
-    blocks.length >= 2 && blocks[0].includes("templates/aw-tester.agent.md") && blocks.indexOf(advA0) > 0,
-    "G59b reads the first <dispatch>( block as aw-tester's; the adversarial block must come after it");
-}
-
-// ── G88: review-loop --merge re-reviews after the description refresh ──
-// The loop's last review judges the PR body as it was BEFORE Step 2 rewrote it, so a
-// `Description vs. code` WARN the refresh fixed blocked every --merge run that applied code
-// (observed on mthines/agent-skills#224). Step 2.5 now runs one gates-only re-review first, when
-// the refresh changed the body after a non-PASS verdict, and gates on that verdict instead.
-// Guarded:
-//   a. the re-review subsection lives inside Step 2.5, BEFORE the gate table, and its condition
-//      table carries all four rows (a row dropped widens or narrows when it runs);
-//   b. Step 2 sets the flag the subsection reads, and the loop state initialises it;
-//   c. the re-review sets FINAL_VERDICT (the Approval gate's input) and is never an iteration;
-//   d. the report and the --merge hard rule name it, and the Agent0 rule routes it.
-// break-shape: delete one condition row, move the subsection below the gate table, drop Step 2's
-// `DESCRIPTION_REFRESHED = 1` item, drop "Set `FINAL_VERDICT`", or drop the `Merge re-review:`
-// report slot — the matching sub-check flips red.
-{
-  const sectionOr = (heading) => { try { return extractSection("skills/quality/review-loop/SKILL.md", heading); } catch { return ""; } };
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const RL = readOr("skills/quality/review-loop/SKILL.md");
-  // Step 2.5 lives in rules/merge.md (read only under --merge); Steps 2 and 3 stay in SKILL.md.
-  const S25 = (() => { try { return extractSection("skills/quality/review-loop/rules/merge.md", "### Step 2.5: Merge (under `--merge`, on approval)"); } catch { return ""; } })();
-  const S2 = sectionOr("### Step 2: Refresh the PR description and Linear note (on convergence)");
-  const S3 = sectionOr("### Step 3: Report");
-  const A0 = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
-  const iSub = S25.indexOf("#### Post-refresh re-review — before the gates");
-  const iGates = S25.indexOf("| Gate | Merge requires | Read from |");
-  const sub = iSub >= 0 && iGates > iSub ? S25.slice(iSub, iGates) : "";
-  const rows = ["`MERGE == 1`", "`STOP_REASON == \"all-threads-resolved\"`", "`DESCRIPTION_REFRESHED == 1`", "`FINAL_VERDICT != \"PASS\"`"];
-  const missingRows = rows.filter((r) => !sub.split("\n").some((l) => l.startsWith(`| ${r} |`)));
-  s.check("G88a review-loop Step 2.5 runs the post-refresh re-review before its gate table, on all four conditions",
-    sub.length > 400 && missingRows.length === 0,
-    `subsection@${iSub}, gate table@${iGates}; condition rows missing: ${missingRows.join(" · ") || "none"}`);
-  s.check("G88b Step 2 sets DESCRIPTION_REFRESHED only for a changed body, and the loop state initialises it to 0",
-    /^3\. Set `DESCRIPTION_REFRESHED = 1` when the edit succeeded and the new body differs/m.test(S2)
-      && /^DESCRIPTION_REFRESHED = 0\b/m.test(RL),
-    "the flag the re-review reads is never set (or never initialised), so the re-review either never runs or runs on a stale value");
-  s.check("G88c the re-review feeds the Approval gate and is never an iteration",
-    /Set `FINAL_VERDICT` to the verdict it returns/.test(sub)
-      && /does not count against `CAP`, it never runs sub-steps B, C, or D/.test(sub)
-      && /the post-refresh re-review when one ran/.test(S25.slice(iGates)),
-    "the re-review's verdict no longer reaches the Approval gate, or it can now apply or count as an iteration");
-  s.check("G88d the report, the --merge hard rule, and the Agent0 rule all name the post-refresh re-review",
-    /^Merge re-review: <PASS \| WARN \| FAIL \| refused \|/m.test(S3)
-      && /The final verdict is the post-refresh re-review's when Step 2 changed the body/.test(RL)
-      && A0.includes("(./merge.md#post-refresh-re-review--before-the-gates)"),
-    "a run that re-reviewed cannot report it, or the hard rule / Agent0 route lost it");
-}
-
-// ── G89: what a reader sees first — reach diagram, Checked line, Progress line ──
-// The report states coverage where a reader looks first. These execute the renderer (and the
-// pieces that feed it) rather than grepping prose, and each was proven to bite by breaking what
-// it guards: drop the consumers cross-check, emit the diagram outside its accordion, unescape a
-// label quote, stop finalize from forwarding ROUNDS, or drop the round from Step 4c's jq.
-{
-  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-  const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/reach-progress.json"), "utf8"));
-  const render = (payload) => {
-    const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(payload), encoding: "utf8" });
-    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
-  };
-  const clone = () => JSON.parse(JSON.stringify(base));
-
-  const good = render(base);
-  const reachAt = good.out.indexOf("<details>\n<summary>What this change reaches — ");
-  const detailsAt = good.out.indexOf("<details>\n<summary>Review details");
-  const fenceAt = good.out.indexOf("```mermaid");
-  s.check("G89a the reach accordion renders above Review details and holds the only Mermaid block",
-    good.ok && reachAt !== -1 && reachAt < detailsAt && fenceAt > reachAt
-      && fenceAt < good.out.indexOf("</details>", reachAt) && good.out.split("```mermaid").length === 2, good.err);
-  s.check("G89b the Checked and Progress lines render above every accordion",
-    good.ok && /^\*\*Checked:\*\* 22 of 22 changed files read \(1 skipped\) · 7 of 15 dependent files traced · 11 possible issues → 2 confirmed → 1 posted$/m.test(good.out.split("<details>")[0])
-      && /^\*\*Progress:\*\* open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews$/m.test(good.out.split("<details>")[0]));
-
-  const mismatch = clone();
-  mismatch.IMPACT.symbols[0].verified_unaffected = 6;
-  s.check("G89c a consumers list that disagrees with verified_unaffected is rejected",
-    !render(mismatch).ok);
-
-  const quoted = clone();
-  // A flagged file gets its own node and a single-file folder shows its path, so both reach a label.
-  quoted.IMPACT.symbols[0].consumers[0].path = 'src/jobs/we"ird.ts';
-  quoted.IMPACT.symbols[0].consumers[5].path = "src/x#y/poll.ts";
-  const q = render(quoted);
-  const fence = (q.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
-  s.check("G89d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
-    q.ok && fence.includes("we#quot;ird") && !fence.includes('we"ird')
-      && fence.includes("x#35;y") && !fence.includes("x#y"), q.err);
-
-  // G94 owns the threshold itself (one connection draws); this keeps the zero-connection case: a
-  // section whose only row has nothing to connect renders the bullets alone.
-  const smallGraph = clone();
-  smallGraph.IMPACT = { dependencies: [{ name: "left-pad", from: "1.0.0", to: "2.0.0", delta: "major", usage_sites: 0 }] };
-  const sg = render(smallGraph);
-  s.check("G89e a graph with no connection renders the bullets without a diagram",
-    sg.ok && sg.out.includes("<summary>What this change reaches — ") && !sg.out.includes("```mermaid"), sg.err);
-
-  const badRound = clone();
-  badRound.ROUNDS[0].blocking = 9;
-  const partialMismatch = clone();
-  partialMismatch.PARTIAL_REVIEW = { calls: 60, scanned: 13, total: 22 };
-  s.check("G89f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
-    !render(badRound).ok && !render(partialMismatch).ok);
-
-  const noRounds = clone();
-  delete noRounds.ROUNDS;
-  s.check("G89g a first review renders no Progress line",
-    render(noRounds).ok && !render(noRounds).out.includes("**Progress:**"));
-
-  const FIN = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "utf8");
-  const SPINE = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/comment-spine.mjs"), "utf8");
-  const RR = readFileSync(RENDER, "utf8");
-  s.check("G89h the Progress line and the PR-state round use one worklistCounts() from the spine",
-    /export function worklistCounts\(/.test(SPINE) && /worklistCounts\(\{ openThreads, findings, notes: arr\("NOTES"\) \}\)/.test(RR)
-      && /const round = worklistCounts\(/.test(FIN) && /\n\s+round,\n\s+findingsBusRecords,/.test(FIN));
-  const fst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize.mjs"), "--self-test"], { encoding: "utf8" });
-  s.check("G89i finalize forwards context.priorRun.rounds as ROUNDS and reports its own round (self-test)",
-    fst.status === 0 && /✓ ROUNDS reaches the payload from context\.priorRun\.rounds/.test(fst.stdout || "")
-      && /✓ finalize reports this run's worklist as `round`/.test(fst.stdout || ""));
-  const POST = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/posting.md"), "utf8");
-  s.check("G89j Step 4c's state write records this run's open/blocking from finalize-result.json's round",
-    /--argjson round "\$\(jq -c --arg sha "\$\{HEAD_SHA:0:7\}"/.test(POST)
-      && /'if \.payload\.RUN\.sha == \$sha then \(\.round \/\/ \{open: null, blocking: null\}\) else \{open: null, blocking: null\} end'/.test(POST)
-      && /open: \$round\.open, blocking: \$round\.blocking\}/.test(POST));
-  s.check("G89l finalize builds COVERAGE and IMPACT from scanned_files / impact_trace / impact.json, and a supplied value wins (self-test)",
-    fst.status === 0 && /✓ COVERAGE is derived from scanned_files against scopePaths/.test(fst.stdout || "")
-      && /✓ IMPACT is built from impact\.json and impact_trace/.test(fst.stdout || "")
-      && /✓ a caller-supplied COVERAGE \/ IMPACT wins over the auto-built one/.test(fst.stdout || ""));
-  const SCHEMA = JSON.parse(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/schemas/judgments.schema.json"), "utf8"));
-  s.check("G89m judgments.schema.json accepts scanned_files and impact_trace, and posting.md tells the run to supply them",
-    Boolean(SCHEMA.properties?.scanned_files) && Boolean(SCHEMA.properties?.impact_trace)
-      && !(SCHEMA.required || []).includes("scanned_files") && !(SCHEMA.required || []).includes("impact_trace")
-      && /^\| `scanned_files` \|/m.test(POST) && /^\| `impact_trace` \|/m.test(POST));
-  const PRSRC = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "utf8");
-  s.check("G89n prepare-review.mjs writes scopePaths and the review history through its tested helpers",
-    /scopePaths: scopePathsFor\(\{ mode: contextMode, deltaFiles, prFiles: /.test(PRSRC)
-      && /rounds: priorRunRounds\(runMode, state\),/.test(PRSRC));
-  const pst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/prepare-review.mjs"), "--self-test"], { encoding: "utf8" });
-  const pOut = `${pst.stdout}${pst.stderr}`;
-  s.check("G89o scopePathsFor reviews every PR file on a full run (a promoted re-review included) and priorRunRounds drops history under --isolated (self-test)",
-    pst.status === 0 && /✓ scopePathsFor: full mode reviews every PR file/.test(pOut) && /✓ priorRunRounds: the state record's rounds reach the context/.test(pOut));
-
-  // The funnel counts confirmed and posted from the arrays it renders, never from QUALITY's
-  // `cleared` (finalize passes the posted count there): a payload whose QUALITY says otherwise
-  // must not move the line.
-  const funnelProbe = clone();
-  funnelProbe.QUALITY = "produced 11 → posted inline 1 · cleared 99 · carried forward 0 · deferred 1 · below-bar 0";
-  funnelProbe.NOTES = [{ path: "src/a.ts", line: 3, prefix: "nitpick", body: "rename the constant", confidence: 82 }];
-  const fp = render(funnelProbe);
-  s.check("G89p the Checked funnel derives confirmed and posted from FINDINGS + NOTES + ADDITIONAL_FINDINGS, not QUALITY's cleared",
-    fp.ok && /11 possible issues → 3 confirmed → 2 posted/.test(fp.out), fp.err || fp.out.split("\n").find((l) => l.startsWith("**Checked:**")));
-  // A zero-delta run dispatches no finder, so the Checked line must not claim a search came up
-  // empty; the traced-files part still renders. Proven to bite by dropping the zero-delta guard.
-  const zeroDelta = clone();
-  zeroDelta.RUN = { mode: "zero-delta", sha: base.RUN.sha, prior_sha: "8d2e4a1", at: base.RUN.at };
-  zeroDelta.QUALITY = "produced 0 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0";
-  zeroDelta.FINDINGS = [];
-  zeroDelta.NOTES = [];
-  zeroDelta.ADDITIONAL_FINDINGS = [];
-  zeroDelta.WARN_REASONS = ["1 open review thread"];
-  zeroDelta.GATE_CODEREVIEW_STATUS = "✅";
-  zeroDelta.GATE_CODEREVIEW_DETAILS = "No code changes since the last review.";
-  delete zeroDelta.COVERAGE;
-  const zd = render(zeroDelta);
-  s.check("G89u a zero-delta Checked line keeps the traced-files part and never says \"no possible issues found\"",
-    zd.ok && /^\*\*Checked:\*\* 7 of 15 dependent files traced$/m.test(zd.out) && !zd.out.includes("no possible issues found"),
-    zd.err || zd.out.split("\n").find((l) => l.startsWith("**Checked:**")));
-  const shared = clone();
-  shared.IMPACT = { symbols: [
-    { name: "a", path: "src/a.ts", change: "signature", consumer_files: 2, verified_unaffected: 2, findings: 0,
-      consumers: [{ path: "src/x.ts", status: "verified" }, { path: "src/y.ts", status: "verified" }] },
-    { name: "b", path: "src/b.ts", change: "body", consumer_files: 2, verified_unaffected: 1, findings: 0,
-      consumers: [{ path: "src/x.ts", status: "verified" }, { path: "src/y.ts", status: "untraced" }] } ] };
-  const sh = render(shared);
-  s.check("G89q a file that uses two changed exports is one dependent file, checked only when every export it uses was",
-    sh.ok && /<summary>What this change reaches — 2 changed exports · 2 dependent files · 1 checked · 1 not checked<\/summary>/.test(sh.out),
-    sh.err || (sh.out.match(/<summary>What this change reaches[^<]*/) || [""])[0]);
-  const dep = clone();
-  dep.IMPACT.dependencies[0].checked_sites = 0;
-  const overRead = clone();
-  overRead.IMPACT.dependencies[0].checked_sites = 9;
-  s.check("G89r a dependency renders its evidenced checked_sites (\"not checked\" at 0), and more checked than exist is rejected",
-    render(dep).ok && /`p-retry` 5\.1\.2 → 6\.2\.0 \(major\) — 3 usage sites, not checked/.test(render(dep).out) && !render(overRead).ok);
-  s.check("G89s finalize ignores a hand-supplied context.render.ROUNDS (self-test), and RENDER_EXTRAS no longer relays it",
-    fst.status === 0 && /✓ a hand-supplied context\.render\.ROUNDS is ignored/.test(fst.stdout || "")
-      && !/"ROUNDS"/.test(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/payload.mjs"), "utf8")));
-  const rst = spawnSync(process.execPath, [join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/reach.mjs"), "--self-test"], { encoding: "utf8" });
-  s.check("G89t reach keeps bracketed paths, keeps flagged or traced consumers past the 25-file list, and takes skipped files out of the denominator (self-test)",
-    rst.status === 0 && /✓ breaking changes sort first; unexported, consumer-less and unsafe symbols are left out; a bracketed path stays/.test(rst.stdout || "")
-      && /✓ a flagged or traced consumer past impact\.json's list cap is kept with its status, not dropped/.test(rst.stdout || "")
-      && /✓ files triage skipped leave the denominator and are counted on their own/.test(rst.stdout || "")
-      && /import \{ assertPlain \} from "\.\.\/comment-spine\.mjs";/.test(readFileSync(join(REPO_ROOT, "agents/pr-reviewer/scripts/finalize/reach.mjs"), "utf8")));
-  // Executed directly (an import, not the 60 s self-test G84r already runs): a record with one
-  // legacy run (no counts), one malformed run (blocking > open), and two good ones.
-  const rsf = spawnSync(process.execPath, ["--input-type=module", "-e", `
-    import { readStateFile } from "./agents/pr-reviewer/scripts/prepare-review.mjs";
-    import { writeFileSync } from "node:fs"; import { join } from "node:path"; import { tmpdir } from "node:os";
-    import { rmSync } from "node:fs";
-    const p = join(tmpdir(), "g88k-" + process.pid + ".json");
-    writeFileSync(p, JSON.stringify({ v: 1, data: { runs: [
-      { sha: "1111111", mode: "full" },
-      { sha: "2222222", mode: "incremental", open: 1, blocking: 4 },
-      { sha: "3333333aaaa", mode: "incremental", open: 4, blocking: 1 },
-      { sha: "4444444", mode: "full", open: 2, blocking: 0 } ] } }));
-    console.log(JSON.stringify(readStateFile(p).rounds)); rmSync(p, { force: true });`], { encoding: "utf8", cwd: REPO_ROOT });
-  s.check("G89k prepare-review reads runs[] open/blocking into rounds, skipping legacy and malformed runs",
-    rsf.status === 0 && (rsf.stdout || "").trim() === JSON.stringify([{ sha: "3333333", open: 4, blocking: 1 }, { sha: "4444444", open: 2, blocking: 0 }]),
-    (rsf.stdout || rsf.stderr || "").trim().slice(0, 200));
-}
-
-// ── G90: review-loop applies first on iteration 1 when the last review still stands ──
-// A run that starts on a PR whose last pr-reviewer review judged the current head re-reviewed
-// anyway: a zero-delta pass that re-reads nothing and carries the same findings forward, before
-// implement-suggestion could start on them. Iteration 1 now skips sub-step A when context.json
-// says zero-delta, at least one thread is open, no open thread has a reply, and --no-feedback is
-// off. Each condition guards a failure: with no open thread the skip sends a finished PR to
-// polish simplify; with a reply the skip loses the zero-delta pass's only resolver (`declined`).
-// The check is a LITERAL bash block an agent runs as its own tool call, where no function or
-// variable from another call survives — so it must carry its own thread query and print the
-// decision itself.
-// Guarded:
-//   a. the section carries all five condition rows;
-//   b. its bash block, EXECUTED with nothing but `gh` stubbed (no helper, no counter, no echo
-//      supplied by the harness), sets APPLY_FIRST=1 only when every condition holds and fails
-//      closed on every failed read (the thread query, and the reply count on its own) — so a
-//      block that leans on Step 0's helpers or stops printing its decision goes red, which is
-//      what a harness that pre-defined them could never see. The `gh` stub is a stand-in for
-//      the API, not for the block: it answers with a full GraphQL response and applies the
-//      block's OWN `--jq` filter to it, and it refuses a query that does not ask for
-//      `isResolved` and `comments{ totalCount }` — so a typo in either goes red too;
-//   c. the loop's skip branch is gated on iteration 1 + APPLY_FIRST and sets NEW_FINDINGS = true
-//      ahead of the convergence exit (a skipped review can never converge or merge);
-//   d. the report + hard rule name the skip;
-//   e. --external-review / --interval are gone from review-loop and every caller that named them.
-// break-shape: drop a condition row; flip `-ge 1` to `-ge 0`; default REPLIED to 0; count a
-// resolved thread as open; call `unresolved_thread_count` from the block; delete the block's
-// `echo "APPLY_FIRST=…"`; typo the block's `--jq` path; drop `comments{ totalCount }` from its
-// query; set NEW_FINDINGS = false in the skip branch; or put `--external-review` back into
-// aw/SKILL.md — the matching sub-check flips red.
-{
-  const RL_PATH = "skills/quality/review-loop/SKILL.md";
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const sectionOr = (heading) => { try { return extractSection(RL_PATH, heading); } catch { return ""; } };
-  const RL = readOr(RL_PATH);
-  // The apply-first procedure lives in rules/apply-first.md; the loop, report, and hard rule stay in SKILL.md.
-  const AF = (() => { try { return extractSection("skills/quality/review-loop/rules/apply-first.md", "# Iteration 1 — apply first when the last review still stands"); } catch { return ""; } })();
-  const S3 = sectionOr("### Step 3: Report");
-
-  // a. the five conditions, each a row of the section's condition table.
-  const conds = ["`ITERATION == 1`", "`NO_FEEDBACK == 0`", "`.mode == \"zero-delta\"`", "`OPEN >= 1`", "`REPLIED == 0`"];
-  const missing = conds.filter((c) => !AF.split("\n").some((l) => l.startsWith(`| ${c} |`)));
-  s.check("G90a review-loop's apply-first section carries all five condition rows",
-    AF.length > 400 && missing.length === 0,
-    `section ${AF.length ? "found" : "missing"}; condition rows missing: ${missing.join(" · ") || "none"}`);
-
-  // b. the block, executed exactly as an agent's own tool call would run it: placeholders filled,
-  //    `gh` the only stub (a full GraphQL response, run through the block's own `--jq`), and the
-  //    decision read off the block's OWN stdout. A resolved thread with replies rides along in
-  //    every fixture.
-  const blk = (AF.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
-  const run = (c) => {
-    const dir = mkdtempSync(join(tmpdir(), "l1-g90-"));
-    try {
-      const ctx = join(dir, "context.json");
-      if (c.mode !== null) writeFileSync(ctx, JSON.stringify({ mode: c.mode, priorRun: { priorSha: "abc1234" } }));
-      // `malformed` keeps the open count readable but breaks the reply count (jq cannot index a
-      // string), so REPLIED's own fail-closed default is exercised rather than masked by OPEN's.
-      const nodes = c.open === null ? null : [
-        ...Array.from({ length: c.open }, (_, i) => ({ isResolved: false, comments: c.malformed ? "unreadable" : { totalCount: i < c.replied ? 2 : 1 } })),
-        { isResolved: true, comments: { totalCount: 3 } }];
-      const response = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } });
-      // Plain strings, not a template literal: the bash below uses `${…}` parameter expansion.
-      const gh = nodes === null
-        ? 'gh() { echo "HTTP 502" >&2; return 1; }'
-        : ['gh() {',
-          '  local q="" f=""',
-          '  while [ $# -gt 0 ]; do',
-          '    case "$1" in',
-          '      -f) case "$2" in query=*) q="${2#query=}" ;; esac; shift 2 ;;',
-          '      --jq) f="$2"; shift 2 ;;',
-          '      *) shift ;;',
-          '    esac',
-          '  done',
-          '  case "$q" in *isResolved*"comments{ totalCount }"*) ;; *) echo "stub: query lacks isResolved / comments{ totalCount }" >&2; return 1 ;; esac',
-          '  [ -n "$f" ] || { echo "stub: no --jq filter" >&2; return 1; }',
-          "  printf '%s\\n' '" + response + "' | jq \"$f\"",
-          '}'].join("\n");
-      const sh = [gh, blk
-        .replaceAll("<ITERATION>", String(c.iter)).replaceAll("<NO_FEEDBACK>", String(c.nofb))
-        .replaceAll("<OWNER>", "o").replaceAll("<REPO>", "r").replaceAll("<PR_NUMBER>", "1")
-        .replaceAll("<dir>/context.json", ctx)].join("\n");
-      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout;
-    } finally { rmSync(dir, { recursive: true, force: true }); }
-  };
-  const decision = (out) => (out.match(/^APPLY_FIRST=(\d)\b/m) || ["", "∅"])[1];
-  const base = { iter: 1, nofb: 0, mode: "zero-delta", open: 2, replied: 0 };
-  const cases = [
-    ["all five hold", {}, "1"],
-    ["iteration 2", { iter: 2 }, "0"],
-    ["--no-feedback", { nofb: 1 }, "0"],
-    ["mode incremental", { mode: "incremental" }, "0"],
-    ["no open thread (only a resolved one)", { open: 0 }, "0"],
-    ["an open thread has a reply", { replied: 1 }, "0"],
-    ["context.json missing", { mode: null }, "0"],
-    ["thread query fails", { open: null }, "0"],
-    ["reply count unreadable", { malformed: true }, "0"],
-  ];
-  const wrong = cases.map(([n, d, want]) => [n, want, decision(run({ ...base, ...d }))]).filter(([, want, got]) => got !== want);
-  s.check("G90b the apply-first block runs alone (only `gh` stubbed), prints its decision, skips only when all five conditions hold, and fails closed on every failed read (executed)",
-    blk !== "" && wrong.length === 0 && /PRIOR_SHA=abc1234/.test(run(base)),
-    blk === "" ? "no ```bash block in the apply-first section"
-      : `wrong decision for: ${wrong.map(([n, want, got]) => `${n} (want ${want}, got ${got})`).join(" · ") || "none"}${/PRIOR_SHA=abc1234/.test(run(base)) ? "" : "; PRIOR_SHA not printed"}`);
-
-  // c. the loop's skip branch: gated, sets NEW_FINDINGS = true, and sits ahead of the convergence exit.
-  const loop = (RL.match(/^while ITERATION < CAP:\n[\s\S]*?(?=\n# Post-loop)/m) || [""])[0];
-  const iSkip = loop.search(/^ {4}if ITERATION == 1 and APPLY_FIRST == 1:\n {8}NEW_FINDINGS = true\b/m);
-  const iConv = loop.indexOf("if NEW_FINDINGS == false AND unresolved_thread_count() == 0 AND ci_is_settled():");
-  const iCheck = loop.search(/^ {4}if ITERATION == 1 and NO_FEEDBACK == 0:\n {8}APPLY_FIRST = \(context\.json \.mode == "zero-delta"/m);
-  s.check("G90c the loop evaluates the check on iteration 1 only, and its skip branch sets NEW_FINDINGS = true before the convergence exit",
-    iCheck >= 0 && iSkip > iCheck && iConv > iSkip,
-    `check@${iCheck} skip@${iSkip} convergence@${iConv} — a skipped review must never reach the convergence exit with NEW_FINDINGS false`);
-
-  // d. the report slot and the hard rule.
-  s.check("G90d the report renders a skipped iteration-1 review, and a hard rule names the apply-first conditions",
-    /^ {2}Iteration 1: <verdict \| review skipped \(prior review at <PRIOR_SHA> still stands\)>/m.test(S3)
-      && /^Final pr-reviewer verdict: <[^\n]*n\/a \(no review this run — prior review at <PRIOR_SHA>\)>/m.test(S3)
-      && /^- \*\*Iteration 1 skips the review only when the last review still stands\.\*\*/m.test(RL),
-    "a run that skipped iteration 1's review cannot say so in its report, or the hard rule is gone");
-
-  // e. --external-review is gone, from the loop and from every caller that named it.
-  const surfaces = [RL_PATH, "skills/quality/review-loop/rules/agent0-runtime.md",
-    "skills/quality/review-loop/rules/apply-first.md", "skills/quality/review-loop/rules/ci.md",
-    "skills/quality/review-loop/rules/dispatch-skips.md", "skills/quality/review-loop/rules/merge.md",
-    "skills/quality/review-loop/rules/preview-run.md",
-    "skills/workflow/autonomous-workflow/aw/SKILL.md", "skills/quality/pr-review/SKILL.md",
-    "skills/workflow/implement-suggestion/SKILL.md", "skills/quality/review-branch/SKILL.md",
-    "skills/workflow/autonomous-workflow/rules/diagnostic-surface.md",
-    "agents/shared/rules/review-activity-poll.md", "README.md"];
-  const regrown = surfaces.filter((p) => /--external-review|EXTERNAL_REVIEW|sub-step-a--external-review-mode/.test(readOr(p)));
-  s.check("G90e --external-review and --interval are gone from review-loop and every surface that named them",
-    regrown.length === 0 && !/--interval|\bINTERVAL\b|POLL_RESULT/.test(RL),
-    `still named in: ${regrown.join(", ") || "none"}${/--interval|\bINTERVAL\b|POLL_RESULT/.test(RL) ? "; review-loop still parses --interval / POLL_RESULT" : ""}`);
-}
-
-// ── G91: intent specs — one format owner, both runners, ui-verify writes v2 and still reads v1 ──
-//
-// `ui-verify author` writes a Markdown intent spec (`Format: intent`) under `<!-- ui-verify:v2 -->`;
-// both runners explore it, grade every Expected item with evidence, and cache the route. The format
-// is only one format if (a) its field tokens are DERIVED from the template that owns them and every
-// one is restated in the ui-verify authoring table, (b) the contract's § 6 carries the grading table,
-// the closed unreachable list, and the verdict keys, (c) both runners detect `Format: intent` and use
-// the route cache, (d) the Playwright probe refuses an ambiguous locator and never writes the bypass
-// secret, and (e) ui-verify's writers and readers agree on the marker order — the embedded template
-// carries the v2 markers and no legacy one.
-// break-shape: drop a field row from spec-format.md, swap runner.md's v2/v1 order, put
-// `preview-spec:v1` back in the embedded template, delete a grading row, swap two grading rows,
-// delete an unreachable cause, drop the probe's `locator matched` guard, drop the probe's
-// `if (s.dry)` guard, § 6.4's route-drift cause, a heal case that re-explores after a performed
-// mutation, or a runner's `# mutations:` writer or heal rule —
-// the matching sub-check flips red.
-{
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
-  const AW = "skills/workflow/autonomous-workflow";
-  const TPL = readOr(`${AW}/templates/intent-spec.md.template`);
-  const CONTRACT_FILE = `${AW}/rules/spec-run-contract.md`;
-  const C6 = sectionOr(CONTRACT_FILE, "## 6. Intent specs");
-  const AWT = readAwTester();
-  const CHR = readOr(`${AW}/aw-tester-chrome/SKILL.md`);
-  const FMT = readOr("skills/testing/ui-verify/rules/spec-format.md");
-  const EMB = readOr("skills/testing/ui-verify/templates/embedded-spec.md.template");
-  const RUN1 = sectionOr("skills/testing/ui-verify/rules/runner.md", "## Step 1: Get the spec");
-  const UV = readOr("skills/testing/ui-verify/SKILL.md");
-  const DC = readOr("skills/delivery/create-pr/rules/description-contract.md");
-  // review-loop reads the spec block in Step 1.6, which lives in rules/preview-run.md.
-  const RL = readOr("skills/quality/review-loop/SKILL.md") + "\n" + readOr("skills/quality/review-loop/rules/preview-run.md");
-
-  // (a) the field tokens are derived from the template's own format comment, never re-encoded here.
-  const fields = [...new Set([...TPL.matchAll(/^#\s+(\*\*[A-Z][A-Za-z ]+:\*\*)/gm)].map((m) => m[1]))];
-  s.check("G91a the intent template declares its header line and its seven fields",
-    /^Format: intent\b/m.test(TPL) && fields.length === 7 && /\[must-follow\]/.test(TPL),
-    `derived ${fields.length} field(s): ${fields.join(" ") || "none"} — the restatement check below is vacuous unless the owner defines them`);
-  const fmtTable = sectionOr("skills/testing/ui-verify/rules/spec-format.md", "## Writing an intent spec (v2)");
-  const unrestated = fields.filter((f) => !fmtTable.split("\n").some((l) => l.startsWith(`| \`${f}\` |`)));
-  s.check("G91a ui-verify's authoring table restates every field the template owns (none missing)",
-    fields.length === 7 && unrestated.length === 0 && /\[must-follow\]/.test(fmtTable),
-    `fields with no row in spec-format.md § Writing an intent spec (v2): ${unrestated.join(" ") || "none"}`);
-
-  // (b) contract § 6 — the grading table, the closed unreachable list, the evidence forms, the keys.
-  // First-match order is the contract, so each row is pinned to its number: a swap regrades specs.
-  const gradeRows = ["`[must-follow]` step was missing", "is `not-observed`", "is `unreachable`", "`changed: not-exercised`", "otherwise"];
-  const missingGrade = gradeRows.filter((r, i) => !C6.split("\n").some((l) => l.startsWith(`| ${i + 1} |`) && l.includes(r)));
-  s.check("G91b contract § 6.5 grades by a first-match table with all five rows, in order",
-    C6.length > 2000 && missingGrade.length === 0,
-    `grading rows missing or out of order: ${missingGrade.join(" · ") || "none"}`);
-  const unreach = sectionOr(CONTRACT_FILE, "### 6.4 Unreachable — the closed list");
-  const causes = (unreach.match(/^[1-9]\. \*\*/gm) || []).length;
-  // Pinned at the live count, not a floor: a cause folded into another's bullet would stay green
-  // under a floor, so a new cause must be numbered — and must move this number on purpose.
-  s.check("G91b contract § 6.4's unreachable list is closed at exactly six causes, and everything else fails",
-    causes === 6 && /Every other reason[^\n]*`not-observed`, and fails the spec/.test(unreach),
-    `found ${causes} cause(s); the list is pinned at six — another cause widens what can hide a failure as inconclusive, so add it here deliberately`);
-  s.check("G91b contract § 6 carries the evidence forms, the route-cache path, and the verdict keys",
-    ["`locator: <single-braces locator> — <state>`", "`network: METHOD /path → NNN`", ".agent/{branch}/.aw-tester/routes/<spec-id>-<sha8>.md",
-      "route: explored | replayed | healed", "changed: exercised | not-exercised", "result: observed | not-observed | unreachable"].every((t) => C6.includes(t)),
-    "contract § 6 lost an evidence form, the cache path, or one of the § 6.7 verdict keys");
-
-  // (c) both runners detect the format, follow the contract's § 6, and use the same cache.
-  for (const [label, t] of [["aw-tester.agent.md", AWT], ["aw-tester-chrome/SKILL.md", CHR]]) {
-    s.check(`G91c ${label} detects Format: intent and runs it with the shared route cache and evidence keys`,
-      /header[\s\S]{0,120}carries the line `Format: intent`/.test(t) && t.includes(".aw-tester/routes/") && t.includes("[must-follow]")
-        && t.includes("not-exercised") && /route: (explored|`replayed`|replayed)/.test(t) && /§ ?6/.test(t),
-      `${label} is missing the format detection, the routes/ cache, the must-follow rule, or the route/changed keys`);
-  }
-
-  // (d) the probe refuses an ambiguous match and never writes the bypass secret to disk.
-  const probe = (AWT.match(/```ts\n\/\/ \$AW_DIR\/probe\.spec\.ts[\s\S]*?```/) || [""])[0];
-  s.check("G91d aw-tester's probe refuses a locator that matches more than one element and never takes the first",
-    probe.includes("locator matched ${n} elements") && !/\.first\(\)/.test(probe),
-    "the probe can silently act on the wrong instance — the false-completion intent specs exist to stop");
-  s.check("G91d aw-tester's probe reads the bypass header value from the environment, never from probe-in.json",
-    /process\.env\[bypass\.env\]/.test(probe) && !/bypass\.value/.test(probe),
-    "the bypass secret would be written to disk in probe-in.json");
-
-  // (f) mutations run once, and a heal never repeats one — the rules the probe loop depends on.
-  // Each G91f predicate reads the section or sentence it guards: a phrase that also appears
-  // elsewhere in the file would otherwise keep the check true after the guarded copy is deleted.
-  const S62 = sectionOr(CONTRACT_FILE, "### 6.2 Execution — explore the route");
-  const S64 = sectionOr(CONTRACT_FILE, "### 6.4 Unreachable — the closed list");
-  const S66 = sectionOr(CONTRACT_FILE, "### 6.6 Route cache — replay first, heal on failure");
-  s.check("G91f contract § 6.2 runs each mutation once, § 6.4 names route drift, and § 6.6 writes and heals by # mutations:",
-    S62.includes("**Mutations run once.**")
-      && /fired a `POST`, `PUT`, `PATCH`, or `DELETE` was a mutation/.test(S62)
-      && S64.includes("route drifted after a mutation")
-      && /on a `# mutations:` line/.test(S66) && /cause `route drifted after a mutation`/.test(S66)
-      && /every route step ran\*\* → never explore again/.test(S66)
-      && /a later route step failed\*\* → never explore again/.test(S66)
-      && S66.includes("**A route is written only from a full exploration from `start`.**"),
-    "contract § 6 lost the mutation-once rule, its request evidence, § 6.4's route-drift cause, the # mutations: writer or heal, or the full-exploration-only cache rule");
-  s.check("G91f aw-tester's probe dry-resolves a mutation, records issued mutating requests, writes # mutations:, and heals by it",
-    probe.includes("if (s.dry)") && probe.includes("page.on('request'") && probe.includes("apiOrigins")
-      && probe.includes("settleMs") && probe.includes("fired: mutations.slice(before)")
-      && AWT.includes("**commit launch**")
-      && /heal by the route's\s+`# mutations:` line/.test(AWT)
-      && /skipped: route drifted after a mutation/.test(AWT)
-      && /every route step ran → re-judge[\s\S]{0,120}without launching again/.test(AWT)
-      && /a later route step failed → delete the\s+route file/.test(AWT)
-      && /comment lines —\s+`# mutations:` lists the `WHEN` positions/.test(AWT),
-    "a probe that replays a performed mutation or reads `fired` from responses, or a runner that stops writing # mutations: or heals past a performed mutation, would pass L1");
-  s.check("G91f aw-tester-chrome writes # mutations:, heals by it, never repeats a performed mutation, and never caches a continued heal",
-    /heals by the route's `# mutations:` line/.test(CHR) && /never repeat it/.test(CHR) && /writes no route/.test(CHR)
-      && /and `# mutations:` — the `WHEN` positions/.test(CHR)
-      && /re-judge the failed assertions on the current page when every route step\s+ran/.test(CHR)
-      && /continue exploring in this same tab from the\s+failed step/.test(CHR),
-    "the Chrome runner could stop writing # mutations:, repeat a mutation on heal, or cache a route that skips the steps before the cut");
-
-  // (e) ui-verify: writers and readers agree on the marker versions and their order.
-  const iV2 = RUN1.indexOf("<!-- ui-verify:v2 -->"), iV1 = RUN1.indexOf("<!-- ui-verify:v1 -->"), iLeg = RUN1.indexOf("<!-- preview-spec:v1 -->");
-  s.check("G91e runner.md Step 1 reads v2, then v1, then the legacy preview-spec:v1 marker",
-    iV2 >= 0 && iV1 > iV2 && iLeg > iV1,
-    `marker positions in Step 1 — v2@${iV2}, v1@${iV1}, legacy@${iLeg}`);
-  s.check("G91e the embedded template writes the v2 markers and the intent header, and no older marker",
-    EMB.includes("<!-- ui-verify:v2 -->") && EMB.includes("<!-- /ui-verify:v2 -->") && /^Format: intent$/m.test(EMB)
-      && /^Target: preview$/m.test(EMB) && !/<!-- \/?(preview-spec|ui-verify):v1 -->/.test(EMB),
-    "author starts from this file — a v1 or legacy marker here writes the wrong block on every PR");
-  s.check("G91e spec-format.md defines all three marker pairs and SKILL.md's verify keeps any of them",
-    ["<!-- ui-verify:v2 -->", "<!-- /ui-verify:v2 -->", "<!-- ui-verify:v1 -->", "<!-- preview-spec:v1 -->"].every((m) => FMT.includes(m))
-      && ["`<!-- ui-verify:v2 -->`", "`<!-- ui-verify:v1 -->`", "`<!-- preview-spec:v1 -->`"].every((m) => UV.includes(m)),
-    "a marker version the runner reads is undefined in spec-format.md, or verify would overwrite a block of that version");
-  s.check("G91e ui-verify's hard rules keep the outcome strict while the route flexes",
-    UV.includes("**A route may change; an outcome may not.**") && UV.includes("**Never fork either spec format.**"),
-    "ui-verify SKILL.md lost the rule that an intent spec passes only with evidence for every Expected item");
-  // Each of the description contract's four rule sites must know v2 on its own line — one mention
-  // elsewhere in the file must not cover for a site that still only knows v1.
-  const dcLine = (re) => DC.split("\n").find((l) => re.test(l)) ?? "";
-  const dcSites = [
-    ["the length-budget exemption", dcLine(/^\*\*One region is exempt/), (l) => l.includes("<!-- ui-verify:v2 -->")],
-    ["the single owned region", dcLine(/^- \*\*The block is a single owned region\*\*/), (l) => l.includes("<!-- ui-verify:v2 -->")],
-    ["the refresh rule", dcLine(/^\*\*On refresh \(the `review-loop` case\):\*\*/), (l) => /whichever marker version/.test(l)],
-    ["the Step 5 line count", dcLine(/Count the rendered lines of the body/), (l) => l.includes("<!-- ui-verify:v2 -->")],
-  ];
-  const dcStale = dcSites.filter(([, l, ok]) => !ok(l)).map(([n]) => n);
-  s.check("G91e create-pr's description contract knows the v2 block at every rule site, and review-loop reads it",
-    dcStale.length === 0 && /`<!-- ui-verify:v2 -->` \(or `v1`\) block/.test(RL),
-    `description-contract.md sites still v1-only: ${dcStale.join(" · ") || "none"} — a v1-only site counts the v2 block against the budget or drops it on refresh`);
-}
-
-// ── G92: critical deep ↔ optimize-approach --deep — the headings O1b harvests exist in critical's output ──
-// optimize-approach --deep finds its candidates by matching critical deep's report headings. A rename on
-// either side would silently zero the harvest while the run still reports "0 lens candidates judged".
-{
-  const read = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const CD = read("skills/quality/critical/rules/deep-mode.md");
-  const OD = read("skills/quality/optimize-approach/rules/deep-mode.md");
-  const OUT = (CD.split("\n## Output format")[1] || "").split("\n## Hard rules")[0];
-  const HARVESTED = ["Steelman alternative", "Other alternatives raised", "Must-fix", "Should-fix"];
-  const missingOut = HARVESTED.filter((h) => !new RegExp("^### " + h + "\\s*$", "m").test(OUT));
-  const missingUse = HARVESTED.filter((h) => !OD.includes("`" + h + "`"));
-  s.check("G92 critical deep's output template carries every heading optimize-approach --deep harvests",
-    missingOut.length === 0 && /\*\*Independence:\*\*/.test(OUT) && /\*\*Lens discovery:\*\*/.test(OUT),
-    `missing from critical deep output: ${missingOut.join(", ") || "none"} (plus the Independence / Lens discovery header lines)`);
-  s.check("G92 optimize-approach --deep names each harvested heading and relays the Independence line",
-    missingUse.length === 0 && OD.includes("`Independence:`"),
-    `not named in optimize-approach deep-mode.md: ${missingUse.join(", ") || "none"}`);
-  const ORV = read("agents/shared/rules/optimality-review.md");
-  const CS = read("skills/quality/critical/SKILL.md");
-  s.check("G92 callers never pass --deep, and critical recognises deep only as the first token",
-    ORV.includes("It does not pass `--deep` to `optimize-approach`") && CS.includes("A `deep` **first** token is a depth modifier"),
-    "optimality-review.md lost the caller-side --deep ban, or critical/SKILL.md widened deep detection beyond the first token");
-}
-
-// ── G93: ui-verify out-of-bounds brainstorm — author-only, bounded fan-out, capability-checked, recovery outcomes ──
-//
-// `ui-verify author` brainstorms out-of-bounds specs for the pending states the changed component creates.
-// The step is only safe when (a) its mode table keeps six rows in order — the three skips first, then deep, then
-// the capability-checked fan-out before the in-context fallback — and decides dispatch by capability; (b) the
-// fan-out stays at five generators in one message plus one judge, none of which dispatches or calls a tool;
-// (c) a pending state too short to act on is skipped, every lasting one meets the six baseline moves, every move acts through the page alone, and every spec ends in a keep-going step; (d) a written
-// spec is titled `Out of bounds:`, has the move and the keep-going step as must-follow, and expects only recovery
-// outcomes, capped by severity (the severity skill's rubric, gate critical or high) rather than a count, one per baseline move, with ignore, dismiss,
-// and reload as a floor for a pending user decision and deep mode re-judged by Step 4; and (e) SKILL.md, the spec format, the Agent0 rule, and the run report
-// route to it, while the adversarial pass never brainstorms and the rule never asks the user.
-// break-shape: swap rows 5 and 6 of § When it runs, drop a baseline move, delete "never a dispatch from a generator
-// or the judge", drop the keep-going step from the RIGHT example, drop the selection floor, drop SKILL.md's link to the rule, or delete the
-// Agent0 section's "Never brainstorm inside" sentence — the matching sub-check flips red.
-{
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const sectionOr = (file, heading) => { try { return extractSection(file, heading); } catch { return ""; } };
-  const UVD = "skills/testing/ui-verify";
-  const OOB_FILE = `${UVD}/rules/out-of-bounds.md`;
-  const OOB = readOr(OOB_FILE);
-  const WHEN = sectionOr(OOB_FILE, "## When it runs");
-  const STEP1 = sectionOr(OOB_FILE, "## Step 1: Find the pending states");
-  const STEP2 = sectionOr(OOB_FILE, "## Step 2: The baseline moves");
-  const STEP3 = sectionOr(OOB_FILE, "## Step 3: Generate");
-  const STEP4 = sectionOr(OOB_FILE, "## Step 4: Judge and select");
-  const STEP5 = sectionOr(OOB_FILE, "## Step 5: Write each selected idea as an intent spec");
-  const UV = readOr(`${UVD}/SKILL.md`);
-  const AUTHOR = sectionOr(`${UVD}/SKILL.md`, "## Operation `author`");
-  const FMT = readOr(`${UVD}/rules/spec-format.md`);
-  const A0 = sectionOr(`${UVD}/rules/agent0-runtime.md`, "## The out-of-bounds brainstorm dispatches from `author`");
-  const RUNNER = readOr(`${UVD}/rules/runner.md`);
-  const ADV = readOr(`${UVD}/rules/adversarial.md`);
-
-  // (a) the mode table, pinned row by row so a reorder goes red, and the capability rule.
-  const modes = ["skipped", "skipped", "skipped", "deep", "fan-out", "in-context"];
-  const rows = WHEN.split("\n").filter((l) => /^\| \d \|/.test(l));
-  const wrongRows = modes.map((m, i) => (rows[i] && rows[i].startsWith(`| ${i + 1} |`) && rows[i].includes(`| \`${m}\` |`) ? null : i + 1)).filter(Boolean);
-  s.check("G93a out-of-bounds.md § When it runs keeps six mode rows in order: three skips, deep, fan-out, then in-context",
-    rows.length === 6 && wrongRows.length === 0,
-    `found ${rows.length} row(s); wrong at row(s): ${wrongRows.join(", ") || "none"} — a fan-out row below in-context would never run`);
-  s.check("G93a the brainstorm decides dispatch by capability, never by a tool name or a probe dispatch",
-    /never by attempting a dispatch/.test(WHEN) && WHEN.includes('if "Task" not in available_tools') && /Task, Agent, task, or another spelling/.test(WHEN),
-    "the capability rule, its WRONG name check, or its RIGHT spelling list is gone from § When it runs");
-
-  // (b) the fan-out is bounded and flat.
-  s.check("G93b fan-out sends five tool-less generators in one message, then one judge, and none of them dispatches",
-    STEP3.includes("Dispatch the five generators in **one message**")
-      && STEP3.includes("That is 6 dispatches in total — never more, and never a dispatch from a generator or the judge.")
-      && (STEP3.match(/^\| [1-5] \| /gm) || []).length === 5
-      && STEP3.includes("Do not call any tools; work only from this message."),
-    "the one-message rule, the 6-dispatch cap with no nested dispatch, the five personas, or the no-tools prompt line is gone");
-
-  // (c) the baseline moves and the keep-going rule.
-  const moves = ["ignore", "dismiss", "reload", "leave-and-return", "second-tab", "refused-next"];
-  const missingMoves = moves.filter((m) => !STEP2.split("\n").some((l) => l.startsWith(`| \`${m}\` |`)));
-  s.check("G93c short pending states are skipped, every lasting one meets the six baseline moves, each runs on both drivers, and every spec ends in a keep-going step",
-    missingMoves.length === 0 && !STEP2.split("\n").some((l) => l.startsWith("| `offline` |"))
-      && STEP1.includes("Skip a pending state that ends before a user could act on it")
-      && STEP2.includes("**Every move must run on both drivers.**")
-      && STEP4.includes("every idea whose trigger needs network interception, offline mode, or clock or storage control")
-      && STEP2.includes("**Every out-of-bounds spec ends with a keep-going step.**")
-      && OOB.includes("- **Every out-of-bounds spec acts through the page alone**")
-      && !/already cover those disruptions/.test(STEP2) && STEP2.includes("nothing in this skill controls the clock"),
-    `missing move(s): ${missingMoves.join(", ") || "none"}, or an offline move is back, or Step 1's skip rule, the both-drivers rule or its hard rule, the selection filter, the coverage sentence, or the keep-going rule is gone`);
-
-  // (d) what a written spec looks like, and how many get written.
-  const right = STEP5.includes("✅ RIGHT") ? STEP5.slice(STEP5.indexOf("✅ RIGHT")) : "";
-  const mustFollow = (right.match(/^\d+\. \[must-follow\]/gm) || []).length;
-  s.check("G93d an out-of-bounds spec is titled Out of bounds:, has move and keep-going as must-follow, and expects only recovery outcomes",
-    STEP5.includes("Its title starts with `Out of bounds:`.") && STEP5.includes("a second `[must-follow]` step")
-      && STEP5.includes("never a design choice the author cannot know") && mustFollow >= 2
-      && STEP4.includes("**Severity gate:** add every other candidate rated `critical` or `high`. Severity is the cap — there is no fixed count — but take at most one per baseline move; each `Move: new` idea counts as its own move.")
-      && STEP4.includes("**Floor:** for a pending state that waits on a user decision, take the highest-ranked `ignore`, `dismiss`, and `reload` candidate")
-      && STEP4.includes("Load the `severity` skill and inline its `## Severity rubric` section verbatim in the judge's prompt, in `bug` mode")
-      && STEP4.includes("tell the judge to skip that rubric's Step 2 path floor")
-      && STEP4.includes("`dismiss` only when the UI offers a way to close it")
-      && STEP4.includes("2. Rank the rest by Severity, then Likelihood, highest first.") && STEP4.includes("| Severity | `critical` · `high` · `medium` · `low` |")
-      && STEP5.includes("then every out-of-bounds spec Step 4 selected") && AUTHOR.includes("Severity is the cap, not a count")
-      && FMT.includes("the out-of-bounds specs its brainstorm selects by severity") && OOB.includes("- **Severity caps the out-of-bounds specs, not a count**")
-      && !/(at most|up to) \d out-of-bounds|Likelihood \+ Damage/i.test(OOB + UV + FMT)
-      && STEP3.includes("run Step 4 from the start — one judge, all four axes")
-      && STEP4.includes("a fresh sub-agent in `fan-out` and `deep` mode"),
-    `a Step 5 convention, Step 4's severity gate / severity-skill rubric / one per baseline move / ignore-dismiss-reload floor and its dismiss condition, the path-floor skip (or a stale count cap or Likelihood + Damage ranking in SKILL.md, spec-format, or the rule), deep mode's Step 4 re-run, or the RIGHT example's two must-follow steps (found ${mustFollow}) is gone`);
-
-  // (e) the wiring: author routes to it, flags are forwarded, run and the adversarial pass never brainstorm.
-  s.check("G93e ui-verify author routes to the brainstorm, verify forwards its flags, and the rule is wired into format, Agent0, and run",
-    AUTHOR.includes("(./rules/out-of-bounds.md)") && /argument-hint:[^\n]*\[--no-brainstorm\|--brainstorm deep\]/.test(UV)
-      && /honouring\s+`--no-brainstorm` and `--brainstorm deep`/.test(UV)
-      && UV.includes("**The out-of-bounds brainstorm runs only in `author`")
-      && FMT.includes("(./out-of-bounds.md#step-5-write-each-selected-idea-as-an-intent-spec)")
-      && A0.includes("take the `in-context` row") && A0.includes("Never brainstorm inside the `aw-tester` or adversarial-pass dispatches")
-      && RUNNER.includes("under an **Out of bounds** heading")
-      && FMT.includes("the keep-going step after it is a second `[must-follow]` step")
-      && A0.includes("sends five `general` generators in one message, then one `general` judge")
-      && UV.includes("`fan-out` sends exactly five generators in one message and then one judge"),
-    "SKILL.md's author step, argument hint, verify forwarding, or hard rule; spec-format's link; the Agent0 section; or the run report's grouping is gone");
-  s.check("G93e the adversarial pass never brainstorms, and the brainstorm rule never asks the user",
-    OOB.length > 0 && !/brainstorm/i.test(ADV) && !/AskUserQuestion/.test(OOB),
-    "adversarial.md mentions a brainstorm (it must only execute specs), or out-of-bounds.md can ask a question an unattended caller cannot answer");
-}
-
-// ── G94: the reach diagram draws from one connection, says why when it does not, and draws importers ──
-// Executed, not grepped: each check runs the renderer (or the module that feeds it) on a payload.
-// Proven to bite by breaking what it guards: raise REACH_MIN_EDGES back to 3, drop the footnote
-// entry, mark an importer node checked, drop the importers-vs-count check, stop reach.mjs from
-// skipping a file a listed export covers, or stop finalize from sending IMPACT {}.
-{
-  const RENDER = join(REPO_ROOT, "agents/pr-reviewer/scripts/render-report.mjs");
-  const base = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/eval/fixtures/report-body/reach-modules.json"), "utf8"));
-  const render = (/** @type {any} */ payload) => {
-    const r = spawnSync(process.execPath, [RENDER], { input: JSON.stringify(payload), encoding: "utf8" });
-    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
-  };
-  const clone = () => JSON.parse(JSON.stringify(base));
-  const footnote = (/** @type {string} */ out) => (out.match(/^<sup>Nothing to report — (.*)\.<\/sup>$/m) || [])[1] || "";
-  const reachNote = (/** @type {string} */ out) => (footnote(out).match(/reach diagram \(([^)]*)\)/) || [])[1] || "";
-
-  // (a) one connection is enough
-  const one = clone();
-  one.IMPACT = { symbols: [{ name: "f", path: "a.ts", change: "body", consumer_files: 1, verified_unaffected: 1, findings: 0 }] };
-  const r1 = render(one);
-  const reachAt = r1.out.indexOf("<summary>What this change reaches — ");
-  const fenceAt = r1.out.indexOf("```mermaid");
-  s.check("G94a a reach section with one connection renders its diagram, inside the reach accordion",
-    r1.ok && reachAt !== -1 && fenceAt > reachAt && fenceAt < r1.out.indexOf("</details>", reachAt)
-      && /^ {2}s1 --> s1c1$/m.test(r1.out) && reachNote(r1.out) === "", r1.err);
-
-  // (b) a missing diagram is explained, and only when IMPACT was supplied
-  const empty = clone();
-  empty.IMPACT = {};
-  const re = render(empty);
-  const diffOnly = clone();
-  diffOnly.IMPACT = {};
-  diffOnly.RUN = { mode: "full", sha: "c08d5e2", delta_lines: 12, at: "2026-10-03T21:45:00Z", depth: "diff-only" };
-  const rd = render(diffOnly);
-  const unconnected = clone();
-  unconnected.IMPACT = { dependencies: [{ name: "left-pad", from: "1.0.0", to: "2.0.0", delta: "major", usage_sites: 0 }] };
-  const ru = render(unconnected);
-  const absent = clone();
-  delete absent.IMPACT;
-  const ra = render(absent);
-  s.check("G94b the footnote names why there is no diagram: the graph found no consumer or importer, no workspace, or nothing to connect",
-    re.ok && !re.out.includes("What this change reaches") && reachNote(re.out) === "impact graph found no consumer or importer"
-      && rd.ok && reachNote(rd.out) === "no workspace to trace"
-      && ru.ok && ru.out.includes("<summary>What this change reaches — ") && !ru.out.includes("```mermaid")
-      && reachNote(ru.out) === "no connections to draw",
-    [re.err, rd.err, ru.err].filter(Boolean).join(" | ") || `footnotes: ${reachNote(re.out)} / ${reachNote(rd.out)} / ${reachNote(ru.out)}`);
-  s.check("G94b an absent IMPACT adds no reach entry — it claims nothing about the run",
-    ra.ok && reachNote(ra.out) === "" && !footnote(ra.out).includes("reach diagram"), ra.err);
-
-  // (c) changed files draw to their importers, never as checked
-  const rm = render(base);
-  const fence = (rm.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
-  const importNodes = fence.split("\n").filter((l) => l.endsWith(":::imports"));
-  s.check("G94c a changed file draws dotted edges to importer nodes that say they import it, never checked",
-    rm.ok && fence.includes('m1["src/api/backoff.ts<br/>file changed"]:::changed')
-      && importNodes.length === 4 && importNodes.every((l) => /<br\/>imports? this file"\]:::imports$/.test(l))
-      && !importNodes.some((l) => l.includes("✓")) && /^ {2}m1 -\.-> m1i1$/m.test(fence) && !/^ {2}m1 --> /m.test(fence)
-      && rm.out.includes("- `src/api/backoff.ts` — changed file · imported by 9 files, not traced")
-      && rm.out.includes("· 1 changed file imported by 9 files</summary>")
-      && rm.out.includes("**Checked:** 3 of 3 changed files read · 1 of 1 dependent file traced"), rm.err);
-
-  // (d) a modules entry that contradicts itself is rejected
-  const bad = (/** @type {(m: any) => void} */ mutate) => { const c = clone(); mutate(c.IMPACT.modules[0]); return render(c).ok; };
-  s.check("G94d the renderer rejects importers over importer_files, the file as its own importer, a repeated importer, or a stray field",
-    !bad((m) => { m.importer_files = 2; })
-      && !bad((m) => { m.importers.push("src/api/backoff.ts"); })
-      && !bad((m) => { m.importers.push("src/jobs/sync.ts"); })
-      && !bad((m) => { m.checked = true; }));
-
-  // (e) the builders: reach.mjs leaves a file to its listed export, finalize sends {} for a quiet graph
-  // A file, not `-e`: fingerprint.mjs (imported by finalize.mjs) reads process.argv[1] at load.
-  const probeDir = mkdtempSync(join(tmpdir(), "g94e-"));
-  const probeFile = join(probeDir, "probe.mjs");
-  const at = (/** @type {string} */ rel) => pathToFileURL(join(REPO_ROOT, rel)).href;
-  writeFileSync(probeFile, `
-    import { buildImpact } from ${JSON.stringify(at("agents/pr-reviewer/scripts/finalize/reach.mjs"))};
-    import { finalizeReview } from ${JSON.stringify(at("agents/pr-reviewer/scripts/finalize.mjs"))};
-    const built = buildImpact({ impact: {
-      symbols: [{ name: "f", path: "src/f.ts", change: "body", exported: true, consumer_files: 1, consumers: [{ path: "src/a.ts" }] }],
-      modules: [{ path: "src/f.ts", importers: 2, importer_paths: ["src/a.ts", "src/b.ts"] },
-        { path: "src/h.ts", importers: 2, importer_paths: ["src/h.ts", "src/c.ts"] }] } });
-    const j = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
-      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
-    const ctx = { mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, anomalies: [] };
-    const quiet = finalizeReview({ context: { ...ctx, impact: { symbols: [], modules: [] } }, judgments: j }).payload;
-    const none = finalizeReview({ context: ctx, judgments: j }).payload;
-    const diffOnly = finalizeReview({ context: { ...ctx, workspace: { depthCapability: "diff-only" } }, judgments: j }).payload.IMPACT ?? null;
-    console.log(JSON.stringify({ modules: built?.modules, quiet: quiet.IMPACT ?? null, none: "IMPACT" in none, diffOnly }));`);
-  const probe = spawnSync(process.execPath, [probeFile], { encoding: "utf8", cwd: REPO_ROOT });
-  rmSync(probeDir, { recursive: true, force: true });
-  s.check("G94e reach.mjs builds a module only for a file no listed export covers, and finalize sends IMPACT {} only when a graph exists or the run is diff-only",
-    probe.status === 0 && (probe.stdout || "").trim().split("\n").pop()
-      === JSON.stringify({ modules: [{ path: "src/h.ts", importer_files: 1, importers: ["src/c.ts"] }], quiet: {}, none: false, diffOnly: {} }),
-    (probe.stdout || probe.stderr || "").trim().slice(-300));
-
-  // (f) the rule states what the renderer does
-  const RR = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/report-rendering.md"), "utf8");
-  const IG = readFileSync(join(REPO_ROOT, "agents/pr-reviewer/rules/impact-graph.md"), "utf8");
-  s.check("G94f report-rendering.md states the 1-connection diagram, all three footnote entries, and the importer node; impact-graph.md names the modules input",
-    RR.includes("The diagram renders with ≥ 1 connection") && !RR.includes("≥ 3 edges")
-      && ["reach diagram (no workspace to trace)", "reach diagram (impact graph found no consumer or importer)", "reach diagram (no connections to draw)"].every((t) => RR.includes(`\`${t}\``))
-      && RR.includes("**Changed files to their importers.**") && RR.includes("`modules` is `[{path, importer_files, importers?}]`")
-      && IG.includes("`modules[].importer_paths`") && IG.includes("`IMPACT: {}`"));
-}
-
-// ── G95: ui-verify recordings, Dash0 telemetry check, and the review-loop --ui lane ──
-// Three contracts that only hold if every surface agrees: the Playwright dispatch must pass
-// --record-video (a runner that supports video records nothing if no caller asks), the
-// telemetry check must stay verdict-neutral and use the Dash0 web-events tool, and the --ui
-// lane only converges if the marker ui-verify posts is the marker implement-suggestion
-// refuses to self-filter — two spellings of one string drift silently otherwise.
-{
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const RUN = readOr("skills/testing/ui-verify/rules/runner.md");
-  const CONTRACT = readOr("skills/workflow/autonomous-workflow/rules/spec-run-contract.md");
-  const AWT = readAwTester();
-  const A0 = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
-  const TEL = readOr("skills/testing/ui-verify/rules/telemetry.md");
-  const POST = readOr("skills/testing/ui-verify/rules/post-findings.md");
-  const IS = readOr("skills/workflow/implement-suggestion/rules/comment-fetching.md");
-  const RL = readOr("skills/quality/review-loop/SKILL.md");
-  const LANE = readOr("skills/quality/review-loop/rules/ui-lane.md");
-
-  // a. recordings: the contract defines the option, aw-tester implements it, ui-verify wires it
-  //    on in the Playwright block (and its Agent0 mirror) but never in the Chrome block.
-  const modes = RUN.match(/^\s*Mode: .*$/gm) || [];
-  const recordModes = modes.filter((m) => m.includes("--record-video")).length;
-  s.check("G95a --record-video is defined by the contract, implemented by aw-tester, and passed only by ui-verify's Playwright dispatches",
-    /### Record video \(a Playwright run option\)/.test(CONTRACT) && /recordings:/.test(CONTRACT)
-      && /recordVideo: cfg\.video/.test(AWT) && /video\.saveAs\(cfg\.video\)/.test(AWT)
-      && recordModes === 1
-      && /Mode: --all --auto-capture --record-video/.test(A0),
-    `Mode lines with --record-video in runner.md: ${recordModes} (want exactly 1, the Playwright block)`);
-
-  // b. the telemetry check is wired in, verdict-neutral, and reads Dash0 web events with lag handling.
-  s.check("G95b runner Step 4c runs the Dash0 telemetry check, which never changes the verdict and waits out ingestion lag",
-    /## Step 4c: Telemetry check/.test(RUN) && RUN.includes("](./telemetry.md)")
-      && /getWebEvents/.test(TEL) && /never changes the verdict/i.test(TEL)
-      && /at most 4 attempts/.test(TEL) && /telemetry: skipped \(no Dash0 MCP server connected\)/.test(TEL));
-
-  // c. one marker, three files: ui-verify posts it, implement-suggestion includes it, the lane reads it.
-  const MARK = "<!-- ui-verify:finding";
-  s.check("G95c the ui-verify finding marker is posted by ui-verify and never self-filtered by implement-suggestion",
-    POST.includes(MARK) && IS.includes("`<!-- ui-verify:finding` is always included") && POST.includes("<!-- ui-verify:lane -->") && LANE.includes("<!-- ui-verify:lane -->"));
-
-  // d. --ui: parsed, refused with --no-feedback / --no-preview-run, gated at convergence, and the
-  //    lane only reports (unattended + post-findings), never fixes.
-  s.check("G95d review-loop --ui parses, refuses its two conflicts, gates convergence on ui_settled(), and launches a report-only lane",
-    /if \[\[ " \$ARGUMENTS " == \*" --ui "\* \]\]; then\n\s+UI=1/.test(RL)
-      && RL.includes("--ui needs the apply loop; drop --no-feedback.")
-      && RL.includes("--ui runs the preview verification; drop --no-preview-run.")
-      && /if UI == 0 or ui_settled\(\):/.test(RL)
-      && LANE.includes("/ui-verify run <PR-URL> --unattended --post-findings --wait-preview 15")
-      && /UI_CAP\s+= 3/.test(LANE));
-}
-
-// ── G96: attach-media's owned region — one marker pair on every surface that writes or carries it ──
-// The region survives a description refresh only when the writer (attach-media), the contract
-// (create-pr), and the refresher (review-loop) spell the same pair; the per-file marker is what
-// lets a re-run merge by filename instead of erasing earlier media.
-{
-  const readOr = (r) => { try { return readFileSync(join(REPO_ROOT, r), "utf8"); } catch { return ""; } };
-  const SURFACES = [
-    "skills/delivery/attach-media/rules/body-region.md",
-    "skills/delivery/create-pr/rules/description-contract.md",
-    "skills/quality/review-loop/SKILL.md",
-  ];
-  const OPEN = "<!-- attach-media:v1 -->";
-  const CLOSE = "<!-- /attach-media:v1 -->";
-  const missing = SURFACES.filter((f) => { const t = readOr(f); return !t.includes(OPEN) || !t.includes(CLOSE); });
-  s.check("G96a every attach-media region surface names both the open and the close marker",
-    missing.length === 0,
-    `missing ${OPEN} or ${CLOSE} in: ${missing.join(", ") || "none"}`);
-  s.check("G96b body-region.md names the per-file attach-media:file= marker the merge keys on",
-    readOr(SURFACES[0]).includes("attach-media:file="),
-    "body-region.md lost the attach-media:file=<basename> entry marker");
-}
-
-// ── G110: `claude plugin eval` suite — every case loads, and every case can be graded for free ──
-// A case without a deterministic grader is scored only by a judge model, so its with-without Δ is
-// judge noise; a prompt.md without frontmatter (or with an unknown key) fails to load at run time,
-// after the money is spent. The manifest half guards that the plugin under test actually carries
-// every skill: `skills` entries are scanned one level deep, so a nested SKILL.md no entry reaches
-// is silently absent from both arms. (G110 rather than the next free number: parallel branches.)
+// ── G110: plugin.json and the `claude plugin eval` cases — an unreachable skill or unloadable case ships broken ──
 {
   const EVALS = join(REPO_ROOT, "evals");
   const PROMPT_KEYS = new Set(["schema_version", "name", "description", "tags", "plugins", "runs", "expected_outcome",
@@ -11628,11 +235,13 @@ const isPollBlock = (block) =>
         .map((d) => d.name)
         .filter((n) => existsSync(join(EVALS, n, "prompt.md")) || existsSync(join(EVALS, n, "case.yaml")))
     : [];
-  s.check("G110a evals/ holds plugin-eval cases", cases.length >= 10, `found ${cases.length}`);
+  // Guards the loop below: zero discovered cases would pass every per-case check vacuously.
+  s.check("G110a evals/ holds plugin-eval cases", cases.length > 0, `found ${cases.length}`);
   for (const c of cases) {
     const promptPath = join(EVALS, c, "prompt.md");
     const block = existsSync(promptPath) ? fmBlock(readFileSync(promptPath, "utf8")) : null;
     const unknown = block ? fmKeys(block).filter((k) => !PROMPT_KEYS.has(k)) : [];
+    // An unknown key or missing frontmatter fails the case at load time, after the run is paid for.
     s.check(`G110b evals/${c}/prompt.md has frontmatter with only known keys`, block !== null && unknown.length === 0,
       block === null ? "missing prompt.md or its --- frontmatter block" : `unknown keys: ${unknown.join(", ")}`);
     const gdir = join(EVALS, c, "graders");
@@ -11640,36 +249,1364 @@ const isPollBlock = (block) =>
       ? readdirSync(gdir).filter((f) => f.endsWith(".md"))
           .map((f) => /^type:\s*(\S+)/m.exec(fmBlock(readFileSync(join(gdir, f), "utf8")) ?? "")?.[1])
       : [];
+    // A judge-only case scores noise: the with/without delta needs a free deterministic grader.
     s.check(`G110c evals/${c} has ≥ 1 deterministic grader (regex / tool_used / tool_order / file_exists)`,
       types.some((t) => DETERMINISTIC.has(t)), `grader types: ${types.join(", ") || "none"}`);
     s.check(`G110d evals/${c} has at most one llm grader`, types.filter((t) => t === "llm").length <= 1,
       `${types.filter((t) => t === "llm").length} llm graders`);
   }
-  const manifest = JSON.parse(readFileSync(join(REPO_ROOT, ".claude-plugin/plugin.json"), "utf8"));
+  const manifest = JSON.parse(read(".claude-plugin/plugin.json"));
   const skillRoots = [manifest.skills ?? []].flat().map((p) => join(REPO_ROOT, p));
   const reachable = (skillDir) => skillRoots.some((root) => {
     const r = root.replace(/\/$/, "");
     return skillDir === r || join(skillDir, "..") === r;
   });
-  const unreached = walk(join(REPO_ROOT, "skills"))
-    .filter((f) => f.endsWith("/SKILL.md"))
-    .map((f) => join(f, ".."))
-    .filter((d) => !reachable(d));
+  const unreached = walk(join(REPO_ROOT, "skills")).filter((f) => f.endsWith("/SKILL.md"))
+    .map((f) => join(f, "..")).filter((d) => !reachable(d));
   s.check("G110e every SKILL.md is reachable from a plugin.json `skills` entry (scanned one level deep)",
     unreached.length === 0, `unreached: ${unreached.map(rel).join(", ")}`);
   const agents = [manifest.agents ?? []].flat();
-  s.check("G110f plugin.json `agents` lists .md files only (a directory invalidates the whole manifest)",
+  s.check("G110f plugin.json `agents` lists existing .md files only (a directory invalidates the whole manifest)",
     agents.every((a) => a.endsWith(".md") && existsSync(join(REPO_ROOT, a))), `agents: ${agents.join(", ")}`);
-  // aw-planner / aw-executor / aw-tester are dispatched by name but live as templates, not in agents/.
   const shippedAgents = (dir, suffix) => readdirSync(join(REPO_ROOT, dir), { withFileTypes: true })
-    .filter((d) => d.isFile() && d.name.endsWith(suffix))
-    .map((d) => `./${dir}/${d.name}`);
+    .filter((d) => d.isFile() && d.name.endsWith(suffix)).map((d) => `./${dir}/${d.name}`);
   const unlisted = [...shippedAgents("agents", ".md"), ...shippedAgents("skills/workflow/autonomous-workflow/templates", ".agent.md")]
     .filter((a) => !agents.includes(a));
-  s.check("G110h every agents/*.md and autonomous-workflow templates/*.agent.md is listed in plugin.json `agents` (an unlisted agent ships in no plugin)",
+  s.check("G110h every agents/*.md and autonomous-workflow templates/*.agent.md is listed in plugin.json `agents`",
     unlisted.length === 0, `unlisted: ${unlisted.join(", ")}`);
-  s.check("G110g evals/results/ is gitignored",
-    /^evals\/results\/?$/m.test(readFileSync(join(REPO_ROOT, ".gitignore"), "utf8")));
+}
+
+// ── G111: marketplace.json and skills-lock.json point at things that exist, or installs fail ──
+{
+  const market = JSON.parse(read(".claude-plugin/marketplace.json"));
+  const plugins = market.plugins ?? [];
+  s.check("G111a marketplace.json lists plugins", plugins.length > 0);
+  for (const p of plugins) {
+    const path = p.source?.path;
+    if (p.source?.source !== "git-subdir" || !path) continue;
+    s.check(`G111a marketplace plugin '${p.name}' source path ${path} exists`, existsSync(join(REPO_ROOT, path)));
+  }
+  const lock = JSON.parse(read("skills-lock.json"));
+  const skillNames = new Set(walk(join(REPO_ROOT, "skills")).filter((p) => p.endsWith("/SKILL.md"))
+    .map((p) => p.split("/").slice(-2)[0]));
+  const missing = Object.entries(lock.skills ?? {})
+    .filter(([, v]) => v.source === "mthines/agent-skills").map(([k]) => k).filter((k) => !skillNames.has(k));
+  s.check("G111b every skills-lock.json skill sourced from this repo exists", missing.length === 0, missing.join(", "));
+}
+
+// ── G112: the CI typecheck job only covers tsconfig files[]; an unlisted @ts-check script is never typechecked ──
+{
+  const ts = read("agents/pr-reviewer/scripts/tsconfig.json");
+  const scripts = execFileSync("git", ["ls-files", "*.mjs"], { cwd: PRS, encoding: "utf8" }).split("\n").filter(Boolean);
+  const unlisted = scripts.filter((f) => /@ts-check/.test(readFileSync(join(PRS, f), "utf8").split("\n").slice(0, 3).join("\n"))
+    && !ts.includes(`"${f}"`));
+  s.check("G112 every // @ts-check pr-reviewer script is listed in its tsconfig.json files[]",
+    unlisted.length === 0, unlisted.join(", "));
+}
+
+// ── G113: every tracked shell script parses — a syntax error surfaces only when a host runs it ──
+{
+  const shells = execFileSync("git", ["ls-files", "*.sh"], { cwd: REPO_ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
+  for (const f of shells) {
+    const r = spawnSync("bash", ["-n", join(REPO_ROOT, f)], { encoding: "utf8" });
+    s.check(`G113 ${f} parses (bash -n)`, r.status === 0, (r.stderr || "").trim().slice(0, 160));
+  }
+}
+
+// ── G58 / G85 / G59: the Agent0 sandbox install — what the rules expect must be what the installer lays down ──
+{
+  const host = readOr("agents/shared/rules/agent0-host.md");
+  const loop = readOr("skills/quality/review-loop/SKILL.md");
+  const rule = readOr("skills/quality/review-loop/rules/agent0-runtime.md");
+  const uv = readOr("skills/testing/ui-verify/SKILL.md");
+  const uvRule = readOr("skills/testing/ui-verify/rules/agent0-runtime.md");
+  const SETUP_REL = "scripts/agent0-setup.sh";
+  const setup = readOr(SETUP_REL);
+  const RAW = "https://raw.githubusercontent.com/mthines/agent-skills/main/";
+
+  // A rule that reads an installed file the installer never verifies fails on a half-installed sandbox.
+  const named = new Set();
+  for (const t of [host, rule, uvRule]) {
+    for (const m of t.matchAll(/(?:\$AGENT_SKILLS_ROOT|\/tmp\/workspace\/pr-reviewer)\/skills\/([a-z0-9-]+\/[A-Za-z0-9._/-]+\.(?:md|mjs))/g)) named.add(m[1]);
+  }
+  const unverified = [...named].filter((n) => !setup.includes(`"$S/${n}"`));
+  s.check("G58e the installer verifies every installed file the Agent0 rules name",
+    named.size > 0 && unverified.length === 0,
+    `named=${[...named].join(",") || "∅"}; unverified by ${SETUP_REL}: ${unverified.join(",") || "none"}`);
+
+  // The on-demand install block runs verbatim on the sandbox: it must parse and fetch a script that exists.
+  const step0 = (loop.match(/### Step 0:[\s\S]*?(?=\n### Step 1:)/) || [""])[0];
+  const installBlock = ((step0.match(/#### On-demand install — Step 0 row 4\n[\s\S]*?\n```bash\n([\s\S]*?)\n```/) || ["", ""])[1]);
+  const synI = installBlock ? spawnSync("bash", ["-n"], { input: installBlock, encoding: "utf8" }) : { status: -1 };
+  s.check("G58i review-loop's on-demand install block parses and fetches the shipped setup script",
+    synI.status === 0 && installBlock.includes(`${RAW}${SETUP_REL}`) && existsSync(join(REPO_ROOT, SETUP_REL)),
+    `bash -n=${synI.status}; the block must fetch ${RAW}${SETUP_REL}`);
+
+  // The Agent0 host test, executed against fake roots: a wrong answer installs on a laptop or never on Agent0.
+  const probeHost = (hostLine, mk) => {
+    const root = mkdtempSync(join(tmpdir(), "l1-a0-"));
+    try {
+      for (const m of mk) mkdirSync(join(root, m), { recursive: true });
+      if (mk.includes(".opencode/agents")) writeFileSync(join(root, ".opencode/agents/general.md"), "x");
+      const sh = hostLine.replaceAll("/tmp/", `${root}/`) + "\necho $A0";
+      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout.trim();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  };
+  const uvBlk = ((uv.match(/#### On-demand browser install — run and verify\n[\s\S]*?```bash\n([\s\S]*?)\n```/) || ["", ""])[1]);
+  for (const [name, blk] of [["review-loop", installBlock], ["ui-verify", uvBlk]]) {
+    const hostLine = (blk.match(/^if \[ -d \/tmp\/workspace \][^\n]*A0=0; fi$/m) || [""])[0];
+    const probes = hostLine
+      ? [[], ["workspace"], [".opencode/skills"], [".opencode/agents"]].map((mk) => probeHost(hostLine, mk)).join("/")
+      : "-";
+    s.check(`G85b ${name}'s Agent0 host test answers none/workspace/skills/agents = 0/1/1/1 (executed)`,
+      probes === "0/1/1/1", `host line ${hostLine ? "found" : "missing"}; probes ${probes}`);
+  }
+  // Both browser-install URLs the ui-verify block fetches must be files this repo ships.
+  for (const u of [...uvBlk.matchAll(/https:\/\/raw\.githubusercontent\.com\/mthines\/agent-skills\/main\/(\S+?\.sh)/g)].map((m) => m[1])) {
+    s.check(`G85e ui-verify's on-demand install fetches ${u}, which exists`, existsSync(join(REPO_ROOT, u)));
+  }
+
+  // agent0-playwright.sh rewrites env.sh; a duplicated or dropped export breaks the next run's browser lookup.
+  {
+    const d = mkdtempSync(join(tmpdir(), "l1-pw-env-"));
+    const envFile = join(d, "env.sh");
+    writeFileSync(envFile, "export AGENT_SKILLS_ROOT=/x\nexport UI_VERIFY_BROWSER=ok\nexport PLAYWRIGHT_BROWSERS_PATH=/old\n");
+    let allOk = true;
+    for (let i = 0; i < 2; i++) {
+      const r = spawnSync("bash", [join(REPO_ROOT, "scripts/agent0-playwright.sh")], {
+        encoding: "utf8",
+        env: { ...process.env, ENV_FILE: envFile, PW: join(d, "pw"), WITH_PLAYWRIGHT: "0" },
+      });
+      if (r.status !== 0) allOk = false;
+    }
+    const out = (() => { try { return readFileSync(envFile, "utf8"); } catch { return ""; } })();
+    const once = (re) => (out.match(re) || []).length === 1;
+    const keepsOtherLines = once(/^export AGENT_SKILLS_ROOT=\/x$/gm);
+    const fourOnce = ["UI_VERIFY_BROWSER", "UI_VERIFY_BROWSER_REASON", "UI_VERIFY_PLAYWRIGHT_NODE_MODULES", "PLAYWRIGHT_BROWSERS_PATH"]
+      .every((v) => once(new RegExp(`^export ${v}=`, "gm")));
+    const skippedValue = once(/^export UI_VERIFY_BROWSER=skipped$/gm);
+    rmSync(d, { recursive: true, force: true });
+    s.check("G59g agent0-playwright.sh WITH_PLAYWRIGHT=0 rewrites the four export lines idempotently, keeping every other line (executed)",
+      allOk && keepsOtherLines && fourOnce && skippedValue,
+      `exit-ok=${allOk} keeps-other-lines=${keepsOtherLines} four-lines-once=${fourOnce} skipped-value=${skippedValue}`);
+  }
+
+  // The reviewer installer's env.sh block, executed: it must write the run's paths and never the OTLP token.
+  {
+    const setupTxt = read("agents/pr-reviewer/scripts/agent0-setup.sh");
+    const from = setupTxt.indexOf('ENV_FILE="$ROOT/env.sh"');
+    const to = setupTxt.indexOf('if [ -n "${DASH0_AGENT_ENV:-}" ]');
+    const token = "Authorization=Bearer l1-canary-token,Dash0-Dataset=default";
+    const dir = mkdtempSync(join(tmpdir(), "l1-envsh-"));
+    let envSh = "", installerOut = "", status = -1;
+    try {
+      writeFileSync(join(dir, "block.sh"), from > 0 && to > from ? setupTxt.slice(from, to) : "exit 3\n");
+      const r = spawnSync("bash", ["-u", join(dir, "block.sh")], {
+        encoding: "utf8",
+        env: { PATH: process.env.PATH || "", ROOT: dir, BUNDLE: join(dir, "b.md"), PIN: "abc1234", PR_REVIEWER_LOGIN: "bot",
+          PR_REVIEWER_OTLP_ENDPOINT: "https://ingress.example.com", PR_REVIEWER_OTLP_HEADERS: token },
+      });
+      status = r.status ?? -1;
+      installerOut = `${r.stdout || ""}${r.stderr || ""}`;
+      if (existsSync(join(dir, "env.sh"))) envSh = readFileSync(join(dir, "env.sh"), "utf8");
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+    s.check("G84p the reviewer installer writes the run's paths to env.sh and never the export settings or their token (executed)",
+      status === 0 && /export PR_REVIEWER_ROOT=/.test(envSh) && !/OTLP|PR_REVIEWER_TELEMETRY|Bearer/.test(envSh)
+        && !installerOut.includes("l1-canary-token"),
+      `status=${status} envSh=${JSON.stringify(envSh.slice(0, 200))}`);
+  }
+}
+
+// ── G49: the skill runs is-ui-diff.mjs through a symlink; a main-guard that compares raw paths never fires there ──
+{
+  const realScript = join(REPO_ROOT, "skills/testing/ui-verify/scripts/is-ui-diff.mjs");
+  let fired = false, detail = "";
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "uiv-symlink-"));
+    const link = join(dir, "is-ui-diff.mjs");
+    symlinkSync(realScript, link);
+    const r = spawnSync(process.execPath, [link, "--self-test"], { encoding: "utf8" });
+    fired = r.status === 0 && (r.stdout || "").includes("passed, 0 failed");
+    detail = `status=${r.status} stdout=${JSON.stringify((r.stdout || "").trim().slice(0, 80))}`;
+    rmSync(dir, { recursive: true, force: true });
+  } catch (e) { detail = `spawn error: ${e.message}`; }
+  s.check("G49 is-ui-diff's CLI main-guard fires through a symlink (documented invocation)", fired, detail);
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 4. Eval-harness integrity
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── G21: the L2 suites — an unparseable golden, an unextractable rubric, or an unexercised choice grades nothing ──
+{
+  for (const f of readdirSync(join(REPO_ROOT, "scripts/eval/golden")).filter((x) => x.endsWith(".jsonl"))) {
+    const lines = read(`scripts/eval/golden/${f}`).split("\n").filter(Boolean);
+    const bad = lines.findIndex((ln) => { try { JSON.parse(ln); return false; } catch { return true; } });
+    s.check(`G21b golden/${f} is non-empty and every line is valid JSON`, lines.length > 0 && bad === -1,
+      bad === -1 ? "" : `line ${bad + 1} does not parse`);
+  }
+
+  // extractSection is the function l2.mjs feeds the model; a missing anchor throws, a bare heading grades an empty rubric.
+  const BODY_MIN = 80;
+  for (const suite of SUITES) {
+    const sections = suite.rubric.sections ?? (suite.rubric.section === null ? [] : [suite.rubric.section]);
+    if (suite.rubric.section === null) {
+      s.check(`G21g ${suite.name}: whole-file rubric ${suite.rubric.file} exists`, existsSync(join(REPO_ROOT, suite.rubric.file)));
+    }
+    for (const section of sections) {
+      let body = "", err = null;
+      try { body = extractSection(suite.rubric.file, section).slice(section.length).trim(); }
+      catch (e) { err = e instanceof Error ? e.message : String(e); }
+      s.check(`G21g ${suite.name}: rubric '${section}' in ${suite.rubric.file} extracts a non-empty body`,
+        err === null && body.length > BODY_MIN, err ?? `body length ${body.length} <= ${BODY_MIN}`);
+    }
+
+    // A choice with no golden case is untested; a renamed choice leaves every label unmatchable (0%).
+    const goldenAbs = join(REPO_ROOT, "scripts/eval", suite.golden);
+    if (!existsSync(goldenAbs)) { s.check(`G21j ${suite.name}: golden file exists`, false, suite.golden); continue; }
+    const seen = new Set(readFileSync(goldenAbs, "utf8").split("\n").filter(Boolean)
+      .map((l) => { try { return JSON.parse(l).expected; } catch { return null; } }).filter(Boolean));
+    const uncovered = suite.choices.filter((c) => !seen.has(c));
+    const unknown = [...seen].filter((e) => !suite.choices.includes(e));
+    s.check(`G21j ${suite.name}: every choice has at least one golden case`,
+      uncovered.length === 0, uncovered.length ? `no case labelled: ${uncovered.join(", ")}` : "");
+    s.check(`G21j ${suite.name}: every golden label is one of the suite's choices`,
+      unknown.length === 0, unknown.length ? `label not in choices: ${unknown.join(", ")}` : "");
+  }
+  s.check("G21g the detection eval's declared inputs exist",
+    [DETECTION.runner, ...DETECTION.rubrics, DETECTION.golden].every((p) => existsSync(join(REPO_ROOT, p))));
+
+  // A golden set whose majority label clears the CI floor lets an always-one-answer responder pass.
+  const yml = read(".github/workflows/evals-l2.yml");
+  {
+    const labels = read("scripts/eval/golden/code-review-retrieval-relevance.jsonl").split("\n").filter(Boolean)
+      .map((ln) => JSON.parse(ln).expected);
+    const tally = new Map();
+    for (const v of labels) tally.set(v, (tally.get(v) ?? 0) + 1);
+    const baseline = (Math.max(...tally.values()) / labels.length) * 100;
+    const gateLiteral = (yml.match(/EVAL_GATE:\s*"?(\d+)"?/) || [])[1];
+    const gate = gateLiteral === undefined ? null : Number(gateLiteral);
+    s.check("G21n code-review-retrieval-relevance majority-class baseline is below the EVAL_GATE floor",
+      gate !== null && baseline < gate,
+      gate === null ? "no EVAL_GATE literal in evals-l2.yml — fails closed" : `baseline ${baseline.toFixed(1)}% >= gate ${gate}%`);
+  }
+
+  // CI wiring: these are the paths by which a red, skipped, or unselected eval reads as a green check.
+  {
+    const suiteIf = (yml.match(/^\s{2}suite:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+    s.check("G21i the suite jobs run only on an opted-in run (no unasked token spend)",
+      suiteIf.includes("needs.gate.outputs.opted_in == 'true'"), `suite if: ${suiteIf.trim()}`);
+    const l2If = (yml.match(/^\s{2}l2:[\s\S]*?^\s{4}if:\s*(.+)$/m) || [])[1] || "";
+    s.check("G21i the aggregator check runs on every PR (a gated required check hangs forever)",
+      l2If.trim() === "always()" && /^on:[\s\S]*?^\s{2}pull_request:/m.test(yml), `l2 if: ${l2If.trim()}`);
+    s.check("G21d evals-l2.yml derives the affected suites from the selector",
+      yml.includes("scripts/eval/select-suites.mjs") && yml.includes("fromJSON(needs.select.outputs.suites)"));
+    const l2Job = (yml.match(/^\s{2}l2:[\s\S]*$/m) || [""])[0];
+    const detCase = (l2Job.match(/case "\$DETECTION_RESULT" in[\s\S]*?esac/) || [""])[0];
+    s.check("G21m the aggregator reads the detection job's result and fails on it",
+      /needs:\s*\[[^\]]*\bdetection\b[^\]]*\]/.test(l2Job)
+        && /DETECTION_RESULT:\s*\$\{\{\s*needs\.detection\.result\s*\}\}/.test(l2Job)
+        && /^\s*\*\)[^\n]*FAILED=/m.test(detCase) && /if \[ -n "\$FAILED" \][\s\S]{0,120}exit 1/.test(l2Job));
+    s.check("G50f a selection that did not succeed fails the run, loudly",
+      /^\s*SELECT_RESULT: \$\{\{ needs\.select\.result \}\}$/m.test(l2Job)
+        && /affected subset is unknown[\s\S]{0,120}exit 1/.test(l2Job));
+  }
+
+  // The runner must reject an unknown --suite: CI drives it from a generated matrix, so a no-op exit 0 reads as a pass.
+  const bad = spawnSync(process.execPath, [join(REPO_ROOT, "scripts/eval/l2.mjs"), "--suite", "no-such-suite"],
+    { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
+  s.check("G21h l2.mjs exits non-zero on an unknown --suite name", bad.status !== 0, `exit ${bad.status}`);
+
+  // The detection runner skips without a key; that skip must say so rather than pass silently.
+  const noKey = spawnSync(process.execPath, [join(REPO_ROOT, DETECTION.runner)], { encoding: "utf8", env: { ...process.env, ANTHROPIC_API_KEY: "" } });
+  s.check("G39c the detection runner skips cleanly and visibly with no API key",
+    noKey.status === 0 && /no ANTHROPIC_API_KEY/.test(noKey.stdout || ""));
+
+  // The scorer decides every L2 accuracy; a parse that picks the first enumerated choice scores template text.
+  const l2runner = read("scripts/eval/l2.mjs");
+  const fnSrc = l2runner.slice(l2runner.indexOf("function parseChoice"), l2runner.indexOf("const summary = []"));
+  let parseChoice = null;
+  try { parseChoice = eval(`(${fnSrc.slice(fnSrc.indexOf("function parseChoice"))})`); } catch { /* reported below */ }
+  s.check("G21l parseChoice is extractable and callable from the live runner", typeof parseChoice === "function");
+  if (typeof parseChoice === "function") {
+    const C = ["Micro", "Lite", "Full"];
+    const amb = (r) => typeof r === "string" && r.startsWith("?(");
+    s.check("G21l a one-word reply parses to that choice",
+      parseChoice("Full", C) === "Full" && parseChoice("  lite ", C) === "Lite");
+    s.check("G21l a reply that enumerates every choice is ambiguous, never the first one",
+      amb(parseChoice("- Tier: [Micro | Lite | Full]", C)) && amb(parseChoice("Micro | Lite | Full", C)));
+    s.check("G21l a structured reply still parses", parseChoice("MODE SELECTION:\n- Tier: Full", C) === "Full");
+    s.check("G21l a bracketed placeholder is scaffolding, not a second claim", parseChoice("Tier: Full [not Micro]", C) === "Full");
+    s.check("G21l an unparseable reply carries its own raw text", parseChoice("I decline", C).includes("I decline"));
+    const N = ["optimal", "suboptimal"], P = ["promoted", "not-promoted"];
+    s.check("G21l a choice that contains another parses to the one that was said",
+      parseChoice("suboptimal.", N) === "suboptimal" && parseChoice("not-promoted.", P) === "not-promoted");
+    s.check("G21l the contained choice is still reachable",
+      parseChoice("optimal.", N) === "optimal" && parseChoice("promoted.", P) === "promoted");
+  }
+}
+
+// ── G82: an L2-read rubric section edited without its suite re-run is an unverified behaviour change ──
+{
+  const G82_SECTIONS = [
+    { heading: "### 1.0 Prior-comment awareness + relevance memory load (default ON)", file: "agents/pr-reviewer.md", suite: "code-review-retrieval-relevance" },
+    { heading: "### 1.2c Diff-keyed lesson search (all modes)", file: "agents/pr-reviewer.md", suite: "code-review-retrieval-relevance" },
+    { heading: "## Cross-rubric agreement", file: "agents/shared/rules/rubric-composition.md", suite: "reviewer-agreement-bump" },
+  ];
+  const git = (args) => execFileSync("git", args, { cwd: REPO_ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  const refs = process.env.L1_BASE_REF ? [process.env.L1_BASE_REF] : ["origin/main", "main"];
+  let base = "", baseRef = "";
+  for (const ref of refs) {
+    try { base = git(["merge-base", "HEAD", ref]).trim(); baseRef = ref; break; } catch { /* try the next ref */ }
+  }
+  // An unresolvable base fails rather than passing blind (CI checks out with fetch-depth: 0).
+  s.check(`G82 the L2-read-section comparison base resolves (merge-base HEAD ${refs.join(" | ")})`,
+    /^[0-9a-f]{40}$/.test(base), "fetch origin/main or set L1_BASE_REF");
+  if (/^[0-9a-f]{40}$/.test(base)) {
+    let changed = [], messages = "";
+    try { changed = git(["diff", "--name-only", base]).split("\n").filter(Boolean); } catch { /* empty */ }
+    try { messages = git(["log", "--format=%B", `${base}..HEAD`]); } catch { /* empty */ }
+    const baseDir = mkdtempSync(join(tmpdir(), "l1-g82-base-"));
+    for (const { heading, file, suite } of G82_SECTIONS) {
+      let baseText = "";
+      try { baseText = git(["show", `${base}:${file}`]); } catch { /* absent at base */ }
+      const baseFile = join(baseDir, `${suite}-${Buffer.from(heading).toString("hex").slice(0, 16)}.md`);
+      writeFileSync(baseFile, baseText);
+      let now = "", then = "";
+      try { now = extractSection(file, heading); } catch { /* asserted below */ }
+      try { then = extractSection(relative(REPO_ROOT, baseFile), heading); } catch { /* new section */ }
+      const verified = changed.includes(`scripts/eval/golden/${suite}.jsonl`)
+        || new RegExp(`^L2-verified:\\s*.*\\b${suite.replace(/[-]/g, "\\-")}\\b`, "m").test(messages);
+      s.check(`G82 "${heading}" is unchanged from base (${baseRef} ${base.slice(0, 7)}) or its ${suite} edit is verified`,
+        now !== "" && (now === then || verified),
+        now === "" ? "section not found" : `drifted with neither golden/${suite}.jsonl changed nor an \`L2-verified: ${suite}\` trailer`);
+    }
+    rmSync(baseDir, { recursive: true, force: true });
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 5. Script self-tests and script behaviour
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── G114: every script that ships a `--self-test` runs it here — its own cases are its regression suite ──
+// Discovered, not listed: a new script's self-test is covered the day it lands.
+{
+  const tracked = execFileSync("git", ["ls-files", "agents", "skills", "scripts", "plugins"], { cwd: REPO_ROOT, encoding: "utf8" })
+    .split("\n").filter((f) => /\.m?js$/.test(f) && !f.startsWith("scripts/eval/fixtures/") && f !== "scripts/eval/l1.mjs");
+  const HANDLER = /(?:===|includes\(|indexOf\()\s*["']--self-test["']|\[["']self-test["']\]/;
+  const withSelfTest = tracked.filter((f) => HANDLER.test(read(f)));
+  // Guards the discovery itself: a regex that stops matching would pass with zero self-tests run.
+  for (const must of ["skills/workflow/autonomous-workflow/scripts/run-checks.mjs", "scripts/eval/select-suites.mjs",
+    "scripts/eval/telemetry.mjs", "scripts/eval/l2-detection.mjs", "scripts/eval/escaping-links.mjs",
+    "skills/authoring/create-skill/scripts/validate-skill.mjs", "agents/pr-reviewer/scripts/finalize.mjs"]) {
+    s.check(`G114 self-test discovery finds ${must}`, withSelfTest.includes(must));
+  }
+  const runOne = (f) => new Promise((resolve) => {
+    const child = spawn(process.execPath, [join(REPO_ROOT, f), "--self-test"], { cwd: REPO_ROOT, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    child.stdout.on("data", (d) => { out += d; });
+    child.stderr.on("data", (d) => { out += d; });
+    const timer = setTimeout(() => child.kill("SIGKILL"), 120000);
+    child.on("close", (code) => { clearTimeout(timer); resolve({ f, code, out }); });
+  });
+  const results = [];
+  const queue = [...withSelfTest];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (queue.length) results.push(await runOne(queue.shift()));
+  }));
+  for (const { f, code, out } of results.sort((a, b) => a.f.localeCompare(b.f))) {
+    s.check(`G114 ${f} --self-test passes`, code === 0,
+      `exit ${code}: ${out.split("\n").filter((l) => /✗|FAIL|Error/.test(l)).slice(0, 4).join(" | ").slice(0, 300)}`);
+  }
+}
+
+// ── G25 / G19 / G46m / G61f / G84 / G89 / G94: render-report.mjs has no self-test; these are its tests ──
+// A renderer that accepts a bad payload posts a wrong report; one that rejects a good one posts nothing.
+{
+  const FIX = REPORT_FIX;
+  // Snapshot parity: a renderer or template change must land with a regenerated, reviewed snapshot.
+  for (const name of REPORT_FIXTURES) {
+    const payload = join(FIX, `${name}.json`);
+    const expectedPath = join(FIX, `${name}.expected.md`);
+    if (!existsSync(expectedPath)) { s.check(`G25 ${name} fixture + snapshot present`, false); continue; }
+    const r = renderReport(readFileSync(payload, "utf8"));
+    const expected = readFileSync(expectedPath, "utf8");
+    let detail = r.err;
+    if (r.ok && r.out !== expected) {
+      let i = 0;
+      while (i < Math.min(r.out.length, expected.length) && r.out[i] === expected[i]) i++;
+      detail = `drifted at index ${i}: got ${JSON.stringify(r.out.slice(i, i + 40))} want ${JSON.stringify(expected.slice(i, i + 40))}`;
+    }
+    s.check(`G25 ${name} output matches its committed snapshot`, r.ok && r.out === expected, detail);
+  }
+
+  const base = JSON.parse(readFileSync(join(FIX, "pass.json"), "utf8"));
+  const mutate = (fn) => { const c = structuredClone(base); fn(c); return JSON.stringify(c); };
+  const render = (fn) => renderReport(mutate(fn));
+
+  // Headline forms the ingest grammar and readers depend on.
+  s.check("G19a the renderer emits the PASS form", /^### ✅ No issues found$/m.test(renderReport(base).out));
+  const warnForm = render((c) => { c.VERDICT = "WARN"; c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x"; c.WARN_REASONS = ["1 doc gap"]; });
+  s.check("G19b the renderer emits the zero-finding non-PASS form", warnForm.ok
+    && /^### ⚠️ No findings — 1 gate needs? attention$/m.test(warnForm.out), warnForm.err);
+  const withFindings = render((c) => {
+    c.QUALITY = "produced 3 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
+    c.FINDINGS = [
+      { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
+      { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
+    ];
+  });
+  s.check("G19c the renderer emits the with-findings form", withFindings.ok
+    && /^### 🟠 2 findings — 1 blocking$/m.test(withFindings.out), withFindings.err);
+  const noBlocking = render((c) => {
+    c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+    c.FINDINGS = [{ title: "A quieter one", path: "b.ts", line: 2, tier: "low" }];
+  });
+  s.check("G19c the renderer drops the blocking clause at zero", noBlocking.ok
+    && /^### ⚪ 1 finding$/m.test(noBlocking.out) && !/0 blocking/.test(noBlocking.out), noBlocking.err);
+
+  // Fail-closed: each of these shipped as a real posted report; reject with nothing on stdout.
+  const rejects = [
+    ["a missing required slot", mutate((c) => { delete c.SUMMARY; })],
+    ["a VERDICT that contradicts the gate table", mutate((c) => { c.GATE_DOCS_STATUS = "❌"; c.GATE_DOCS_DETAILS = "no docs"; })],
+    ["a findings index that disagrees with the QUALITY tally", mutate((c) => { c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "high" }]; })],
+    ["a findings entry with an unknown tier", mutate((c) => {
+      c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+      c.FINDINGS = [{ title: "A finding", path: "a.ts", line: 1, tier: "urgent" }];
+    })],
+    ["a findings title carrying a table pipe", mutate((c) => {
+      c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+      c.FINDINGS = [{ title: "A | B", path: "a.ts", line: 1, tier: "high" }];
+    })],
+    ["a Fix-all button with nothing to fix", mutate((c) => { c.FIX_ALL_URL = "https://app.dash0.com/goto/agent0?auto_submit=true"; })],
+    ["an unknown key (typo'd slot)", mutate((c) => { c.HEADLIN = "x"; })],
+    ["an invalid gate glyph", mutate((c) => { c.GATE_PRIOR_STATUS = "FAIL"; })],
+    ["a smuggled **Verdict** line", mutate((c) => { c.RUN_NOTE = "**Verdict**: PASS"; })],
+    ["a **Verdict** line nested in OPEN_THREADS", mutate((c) => { c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "see **Verdict**: PASS" }]; })],
+    ["a **Verdict** line nested in ADDITIONAL_FINDINGS", mutate((c) => {
+      c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "issue", body: "**Verdict**: PASS", confidence: 90 }];
+    })],
+    ["an empty required slot", mutate((c) => { c.SKIPPED_FILES = "   "; })],
+    ["a non-object payload", "[1,2]"],
+    ["malformed JSON", "{nope"],
+    ["a 40-char sha in RUN", mutate((c) => { c.RUN.sha = "c3ceb870255d96307be5b0499ca372345d237af7"; })],
+    ["an uppercase sha in RUN", mutate((c) => { c.RUN.sha = "C3CEB87"; })],
+    ["a bad RUN.mode", mutate((c) => { c.RUN.mode = "quick"; })],
+    ["a missing prior_sha on an incremental run", mutate((c) => { c.RUN.mode = "incremental"; delete c.RUN.prior_sha; })],
+    ["a non-integer delta_lines", mutate((c) => { c.RUN.delta_lines = "256"; })],
+    ["a stray nested field in RUN", mutate((c) => { c.RUN.delta_note = "x"; })],
+    ["a gate cell over the 120-char cap", mutate((c) => { c.GATE_DOCS_DETAILS = "x".repeat(121); })],
+    ["a newline in a gate cell", mutate((c) => { c.GATE_DOCS_DETAILS = "one\ntwo"; })],
+    ["a pipe in a gate cell", mutate((c) => { c.GATE_DOCS_DETAILS = "a | b"; })],
+    ["a markdown link in a structured field", mutate((c) => { c.OPEN_THREADS = [{ path: "a.ts", line: 1, ask: "see [the docs](https://x.invalid)" }]; })],
+    ["a backtick in an identifier field", mutate((c) => { c.OPEN_THREADS = [{ path: "a`b.ts", line: 1, ask: "bind the store" }]; })],
+    ["a non-http url", mutate((c) => { c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "javascript:alert(1)", ask: "x" }]; })],
+    ["a non-numeric line", mutate((c) => { c.OPEN_THREADS = [{ path: "a.ts", line: "top", url: "https://x.invalid/1", ask: "x" }]; })],
+    ["a bad Conventional-Comments prefix", mutate((c) => { c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "warning", body: "x", confidence: 90 }]; })],
+    ["an out-of-range confidence", mutate((c) => { c.ADDITIONAL_FINDINGS = [{ path: "a.ts", line: 1, prefix: "issue", body: "x", confidence: 150 }]; })],
+    ["RESOLVED_SINCE with no open threads", mutate((c) => { c.RESOLVED_SINCE = { count: 4, sha: "70cf147" }; })],
+    ["an optimality card with no anchored heading", mutate((c) => { c.OPTIMALITY_CARDS = ["> just prose"]; })],
+    ["a log slot that does not start ran/skipped", mutate((c) => { c.STANDARDS_LOG = "2 docs · 0 findings"; })],
+    ["a QUALITY line in the wrong shape", mutate((c) => { c.QUALITY = "4 findings posted"; })],
+    ["a v1 payload (FOOTER_LINE / MEMORIES / counts)", mutate((c) => {
+      c.FOOTER_LINE = "Reviewed for commit `abc1234`."; c.MEMORIES = "53 indexed"; c.OPEN_THREADS_COUNT = "2";
+    })],
+    ["OPEN_THREADS supplied as a markdown string", mutate((c) => { c.OPEN_THREADS = "- x"; })],
+    ["a non-zero delta_lines on a zero-delta run", mutate((c) => { c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147", delta_lines: 12 }; })],
+    ["a MEMORIES_USED entry with no key", mutate((c) => { c.MEMORIES_USED = [{ url: "https://lorekit.io/lore?x=1", note: "promoted" }]; })],
+    ["a hand-written used count in MEMORIES_SUMMARY", mutate((c) => { c.MEMORIES_SUMMARY = "53 indexed · 3 used"; })],
+    ["MEMORIES_USED beside a not-connected summary", mutate((c) => { c.MEMORIES_SUMMARY = "not connected"; c.MEMORIES_USED = [{ key: "a-lesson-key" }]; })],
+    ["more memories used than indexed", mutate((c) => { c.MEMORIES_SUMMARY = "1 indexed"; c.MEMORIES_USED = [{ key: "a" }, { key: "b" }]; })],
+    ["PARTIAL_REVIEW scanned over total", mutate((c) => { c.PARTIAL_REVIEW = { calls: 40, scanned: 90, total: 12 }; })],
+    ["RESOLVED_SINCE supplied as a pre-rendered string", mutate((c) => { c.RESOLVED_SINCE = " <sup>7 resolved since `abc1234`</sup>"; })],
+    ["a markdown link caged in a code span in a prose field", mutate((c) => {
+      c.MEMORIES_USED = [{ key: "a-lesson-key", note: "``[a-lesson-key](https://lorekit.io/lore?x=1)`` — promoted" }];
+    })],
+    ["a markdown link caged in a code span in an optimality card", mutate((c) => {
+      c.OPTIMALITY_CARDS = ["### Optimality proposal — a.ts:1\n\n``[the docs](https://lorekit.io/lore?x=1)``"];
+    })],
+    ["a RUN_NOTE carrying a ⚠️", mutate((c) => { c.RUN_NOTE = "⚠️ compare range polluted"; })],
+    ["a RUN_ANOMALY supplying its own glyph", mutate((c) => { c.RUN_ANOMALY = "⚠️ compare range polluted"; })],
+    ["a title over TITLE_MAX", mutate((c) => {
+      c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+      c.FINDINGS = [{ title: "W".repeat(400), path: "a.ts", line: 1, tier: "low" }];
+    })],
+    ["a title carrying sentence punctuation", mutate((c) => {
+      c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+      c.FINDINGS = [{ title: "The registry is never wired up.", path: "a.ts", line: 1, tier: "low" }];
+    })],
+    ["a claim prefix in NOTES", mutate((c) => { c.NOTES = [{ path: "n.ts", line: 3, prefix: "issue", body: "A short note.", confidence: 91 }]; })],
+  ];
+  // Only these two may fail on the unknown-key check; any other case failing there has lost its own guard.
+  const UNKNOWN_KEY_CASES = new Set(["an unknown key (typo'd slot)", "a v1 payload (FOOTER_LINE / MEMORIES / counts)"]);
+  for (const [why, input] of rejects) {
+    const r = renderReport(input);
+    s.check(`G25 the renderer rejects ${why}, with nothing on stdout`, !r.ok && r.out === "", r.ok ? "ACCEPTED" : r.out.slice(0, 60));
+    if (!UNKNOWN_KEY_CASES.has(why)) {
+      s.check(`G25 rejecting ${why} is not an unknown-key rejection`, !/unknown payload key/.test(r.err), r.err.slice(0, 90));
+    }
+  }
+
+  // The discriminating half: well-formed inputs in the same slots still render.
+  const mem = render((c) => { c.MEMORIES_USED = [{ key: "a-lesson-key", url: "https://lorekit.io/lore?x=1", note: "promoted" }]; });
+  s.check("G25 MEMORIES_USED renders as a renderer-built link with a derived used count",
+    mem.ok && mem.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted") && mem.out.includes("Memories — 53 indexed · 1 used"), mem.err);
+  const zd = render((c) => { c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147", at: "2026-08-15T09:12:00Z" }; });
+  s.check("G25 a zero-delta run renders under the incremental grammar with its footer form",
+    zd.ok && /^incremental · 0 lines in delta$/m.test(zd.out)
+      && zd.out.includes("commit `bde3c2f` · no code changes since `70cf147`, gate checks only"), zd.err);
+  const ask = render((c) => { c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "bind `LocalStore.search`" }]; });
+  s.check("G25 a backticked ask renders verbatim", ask.ok && ask.out.includes("— bind `LocalStore.search`"), ask.err);
+  const threads = render((c) => { c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "bind the store" }]; });
+  s.check("G25 a structured OPEN_THREADS array renders its derived count inside the accordion",
+    threads.ok && threads.out.includes("**Open review threads (1)**")
+      && threads.out.includes("<summary>Review details — 1 open review thread</summary>")
+      && !threads.out.split("<details>")[0].includes("**Open review threads ("), threads.err);
+  const ciOnly = render((c) => { c.CI_NOTE = "2 checks red on `bde3c2f`."; });
+  s.check("G25 red CI alone renders the clean PASS headline (Gate 2 is informational)",
+    ciOnly.ok && !ciOnly.out.includes("**Needs attention**") && /^### ✅ No issues found$/m.test(ciOnly.out), ciOnly.err);
+  const anom = render((c) => { c.RUN_ANOMALY = "a base-branch merge polluted the compare range"; });
+  s.check("G25 RUN_ANOMALY renders on its own ⚠️ line",
+    anom.ok && /^⚠️ a base-branch merge polluted the compare range$/m.test(anom.out), anom.err);
+
+  // Headline counts posted notes, never claims.
+  const note = (prefix, line) => ({ path: "n.ts", line, prefix, body: "A short note.", confidence: 91 });
+  const withNote = render((c) => {
+    c.QUALITY = "produced 4 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
+    c.FINDINGS = [
+      { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
+      { title: "A quieter one", path: "b.ts", line: 2, tier: "low" },
+    ];
+    c.NOTES = [note("nitpick", 3)];
+  });
+  s.check("G84h the note clause is appended after the blocking clause",
+    withNote.ok && /^### 🟠 2 findings — 1 blocking · 1 note$/m.test(withNote.out), withNote.err);
+  const passNotes = render((c) => { c.NOTES = [note("nitpick", 3), note("question", 4)]; });
+  s.check("G84l posted notes render under `Notes (<M>) — posted inline` and are counted in a PASS headline",
+    passNotes.ok && /^### ✅ No issues found · 2 notes$/m.test(passNotes.out)
+      && /<summary>Notes \(2\) — posted inline<\/summary>/.test(passNotes.out), passNotes.err);
+
+  // WARN_REASONS cross-checked against the ⚠️ gates, both polarities.
+  const warnPayload = JSON.parse(readFileSync(join(FIX, "warn.json"), "utf8"));
+  const warnGates = Object.entries(warnPayload).filter(([k, v]) => /^GATE_[A-Z]+_STATUS$/.test(k) && v === "⚠️").length;
+  const tooMany = renderReport({ ...warnPayload, WARN_REASONS: Array.from({ length: warnGates + 2 }, (_, i) => `phantom ${i + 1}`) });
+  s.check("G46m the renderer rejects more WARN_REASONS than ⚠️ gates", !tooMany.ok && /WARN_REASONS has \d+ phrases but only \d+ gate/.test(tooMany.err));
+  s.check("G46m a WARN verdict with no WARN_REASONS is rejected", !renderReport({ ...warnPayload, WARN_REASONS: [] }).ok);
+
+  // A depth capped to diff-only must render, and only with the anomaly that names the cap.
+  const deep = JSON.parse(readFileSync(join(FIX, "deep.json"), "utf8"));
+  const capped = { ...deep, RUN: { ...deep.RUN, tier: "standard", depth: "diff-only" },
+    RUN_ANOMALY: "workspace ladder exhausted — DEPTH_CAPABILITY=diff-only, tier capped at standard" };
+  s.check("G61f a capped run renders", renderReport(capped).ok, renderReport(capped).err.slice(0, 200));
+  const silentCap = { ...capped }; delete silentCap.RUN_ANOMALY;
+  s.check("G61f the same capped run with no RUN_ANOMALY is rejected", !renderReport(silentCap).ok);
+  s.check("G61f mode=full + tier=quick is still rejected under the cap",
+    !renderReport({ ...capped, RUN: { ...capped.RUN, tier: "quick" } }).ok);
+
+  // The reach section and the Checked/Progress lines.
+  {
+    const reach = JSON.parse(readFileSync(join(FIX, "reach-progress.json"), "utf8"));
+    const clone = () => JSON.parse(JSON.stringify(reach));
+    const good = renderReport(reach);
+    const reachAt = good.out.indexOf("<details>\n<summary>What this change reaches — ");
+    const detailsAt = good.out.indexOf("<details>\n<summary>Review details");
+    const fenceAt = good.out.indexOf("```mermaid");
+    s.check("G89a the reach accordion renders above Review details and holds the only Mermaid block",
+      good.ok && reachAt !== -1 && reachAt < detailsAt && fenceAt > reachAt
+        && fenceAt < good.out.indexOf("</details>", reachAt) && good.out.split("```mermaid").length === 2, good.err);
+    const mismatch = clone(); mismatch.IMPACT.symbols[0].verified_unaffected = 6;
+    s.check("G89c a consumers list that disagrees with verified_unaffected is rejected", !renderReport(mismatch).ok);
+    const quoted = clone();
+    quoted.IMPACT.symbols[0].consumers[0].path = 'src/jobs/we"ird.ts';
+    quoted.IMPACT.symbols[0].consumers[5].path = "src/x#y/poll.ts";
+    const q = renderReport(quoted);
+    const fence = (q.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
+    s.check("G89d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
+      q.ok && fence.includes("we#quot;ird") && !fence.includes('we"ird') && fence.includes("x#35;y") && !fence.includes("x#y"), q.err);
+    const badRound = clone(); badRound.ROUNDS[0].blocking = 9;
+    const partial = clone(); partial.PARTIAL_REVIEW = { calls: 60, scanned: 13, total: 22 };
+    s.check("G89f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
+      !renderReport(badRound).ok && !renderReport(partial).ok);
+    const overRead = clone(); overRead.IMPACT.dependencies[0].checked_sites = 9;
+    s.check("G89r more checked dependency sites than exist is rejected", !renderReport(overRead).ok);
+
+    const modules = JSON.parse(readFileSync(join(FIX, "reach-modules.json"), "utf8"));
+    const bad = (mut) => { const c = JSON.parse(JSON.stringify(modules)); mut(c.IMPACT.modules[0]); return renderReport(c).ok; };
+    s.check("G94d the renderer rejects importers over importer_files, the file as its own importer, a repeated importer, or a stray field",
+      !bad((m) => { m.importer_files = 2; }) && !bad((m) => { m.importers.push("src/api/backoff.ts"); })
+        && !bad((m) => { m.importers.push("src/jobs/sync.ts"); }) && !bad((m) => { m.checked = true; }));
+  }
+}
+
+// ── G29: render-pointer.mjs has no self-test; a pointer it should refuse would post as a hand-shaped body ──
+{
+  const RENDER = join(PRS, "render-pointer.mjs");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/report-pointer");
+  const run = (args, input) => {
+    const r = spawnSync(process.execPath, [RENDER, ...args], { input, encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+  };
+  for (const name of ["pointer", "degraded"]) {
+    const expectedPath = join(FIX, `${name}.expected.md`);
+    if (!existsSync(expectedPath)) { s.check(`G29 ${name} fixture + snapshot present`, false); continue; }
+    const r = run([join(FIX, `${name}.json`)]);
+    s.check(`G29 ${name} output matches its committed snapshot`, r.ok && r.out === readFileSync(expectedPath, "utf8"), r.err);
+  }
+  const rejects = [
+    ["a missing FORM", '{"HEAD_SHA":"bde3c2f"}'],
+    ["an invalid FORM", '{"FORM":"summary","HEAD_SHA":"bde3c2f"}'],
+    ["a non-7-char sha", '{"FORM":"pointer","HEAD_SHA":"abc","FINDINGS_COUNT":1}'],
+    ["an uppercase sha", '{"FORM":"pointer","HEAD_SHA":"BDE3C2F","FINDINGS_COUNT":1}'],
+    ["the retired escalation form", '{"FORM":"escalation","HEAD_SHA":"bde3c2f","VERDICT":"FAIL","PRIOR_VERDICT":"PASS","REASONS":"x","STICKY_URL":"https://x/1"}'],
+    ["degraded missing DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x"}'],
+    ["degraded HEADLINE_LINE carrying the report marker", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"<!-- PR_REVIEWER_REPORT -->","DEGRADED_REASON":"x"}'],
+    ["a ledger block smuggled into DEGRADED_REASON", '{"FORM":"degraded","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"HEADLINE_LINE":"x","DEGRADED_REASON":"see <!-- PR_REVIEWER_LEDGER {\\"v\\":1} -->"}'],
+    ["an unknown payload key", '{"FORM":"pointer","HEAD_SHA":"bde3c2f","FINDINGS_COUNT":1,"EXTRA":"nope"}'],
+    ["a non-object payload", "[1,2]"],
+    ["malformed JSON", "{nope"],
+  ];
+  for (const [label, input] of rejects) {
+    const r = run([], input);
+    s.check(`G29 rejects ${label}, with nothing on stdout`, !r.ok && r.out === "", r.out ? `stdout: ${r.out.slice(0, 80)}` : r.err);
+  }
+}
+
+// ── G31: build-agent0-link.mjs has no self-test; a bad encoding ships a button that opens the wrong prompt or org ──
+{
+  const LINK_MOD = join(PRS, "build-agent0-link.mjs");
+  const { encodePrompt, buildLink } = await import(pathToFileURL(LINK_MOD).href);
+  const throws = (fn) => { try { fn(); return false; } catch { return true; } };
+  s.check("G31a encodePrompt escapes '(', ')', and \"'\"", encodePrompt("fix(this)'now") === "fix%28this%29%27now");
+  s.check("G31b buildLink never leaves a literal ')' in the URL (it would end the markdown link)",
+    !buildLink("close (this) paren", "production", "fix-all").includes(")"));
+  s.check("G31c buildLink prefixes the Agent0 base and auto_submit flag",
+    buildLink("hi", "production", "fix-all").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
+  s.check("G31g buildLink throws on a missing or unknown source",
+    throws(() => buildLink("hi", "production", undefined)) && throws(() => buildLink("hi", "production", "bogus")));
+  s.check("G31h buildLink appends the utm_source tag matching the source",
+    buildLink("hi", "production", "fix-all").includes("&utm_source=pr-reviewer-fix-all")
+      && buildLink("hi", "production", "fix-this").includes("&utm_source=pr-reviewer-fix-this"));
+  for (const [what, org] of [["omitted", undefined], ["null", null], ["empty", ""], ["blank", "  "]]) {
+    s.check(`G31j buildLink sends no org param when the org is ${what}`, !buildLink("hi", "production", "fix-all", org).includes("org="));
+  }
+  s.check("G31k buildLink appends &org=<slug> last when one is configured",
+    buildLink("hi", "production", "fix-all", "dash0-development") === `${buildLink("hi", "production", "fix-all")}&org=dash0-development`);
+  for (const bad of ["a&b=c", "a#b", "a b", "-leading", "x".repeat(64), "a/b", "a?b"]) {
+    s.check(`G31l buildLink rejects the malformed org ${JSON.stringify(bad)}`, throws(() => buildLink("hi", "production", "fix-all", bad)));
+  }
+  const runCli = (args) => spawnSync(process.execPath, [LINK_MOD, ...args], { encoding: "utf8" });
+  const empty = runCli(["--source", "fix-all", ""]);
+  s.check("G31d CLI rejects an empty prompt with nothing on stdout", empty.status !== 0 && empty.stdout === "");
+  const oversized = runCli(["--source", "fix-all", "a".repeat(4500)]);
+  s.check("G31e CLI rejects a prompt whose URL exceeds MAX_URL", oversized.status !== 0 && oversized.stdout === "" && /over 4000/.test(oversized.stderr));
+  const ok = runCli(["--source", "fix-all", "fix this thing"]);
+  s.check("G31f CLI prints one URL for a normal prompt", ok.status === 0 && ok.stdout.trim() === buildLink("fix this thing", "production", "fix-all"));
+  const noSource = runCli(["fix this thing"]);
+  s.check("G31i CLI rejects a missing --source", noSource.status !== 0 && noSource.stdout === "" && /source must be one of/.test(noSource.stderr));
+  const withOrg = runCli(["--env", "development", "--org", "dash0-development", "--source", "fix-this", "fix it"]);
+  s.check("G31m CLI --org composes with --env / --source",
+    withOrg.status === 0 && withOrg.stdout.trim() === buildLink("fix it", "development", "fix-this", "dash0-development"));
+  const badOrg = runCli(["--org", "bad&org", "--source", "fix-all", "fix it"]);
+  s.check("G31m CLI rejects a malformed --org", badOrg.status !== 0 && badOrg.stdout === "" && /org must match/.test(badOrg.stderr));
+}
+
+// ── G46: comment-spine.mjs has no self-test; render-comment.mjs's output must pass the post pre-flight ──
+{
+  const SPINE = join(PRS, "comment-spine.mjs");
+  const RENDER = join(PRS, "render-comment.mjs");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/inline-comment");
+  const spine = await import(pathToFileURL(SPINE).href);
+  const { payloadIsSafe } = await import(pathToFileURL(join(PRS, "execute-write-plan.mjs")).href);
+  const run = (args, input) => {
+    const r = spawnSync(process.execPath, [RENDER, ...args], { input, encoding: "utf8" });
+    return { ok: r.status === 0, out: r.stdout || "", err: (r.stderr || "").trim() };
+  };
+
+  // sentenceCount gates the one-liner shape; counting characters scores a dotted filename as sentences.
+  const cases = [["Bump `x` to 3.2.6 in foo.md", 0], ["One. Two. Three.", 3], ["Really?! Yes.", 2], ["See foo.md.", 1]];
+  const wrong = cases.filter(([input, want]) => spine.sentenceCount(input) !== want);
+  s.check("G46n sentenceCount counts terminal-punctuation runs, not characters", wrong.length === 0,
+    wrong.map(([i]) => JSON.stringify(i)).join("; "));
+
+  // assetUrls drives the live asset check before posting; a miss posts a broken button.
+  const btn = spine.fixButton({ kind: "this", url: "https://app.dash0.com/goto/agent0?x=1" });
+  s.check("G46k assetUrls() finds all three of a button's assets, and ignores a non-asset url",
+    spine.assetUrls(btn).length === 3 && spine.assetUrls("see https://example.com/x.svg").length === 0);
+
+  const fixtures = existsSync(FIX) ? readdirSync(FIX).filter((f) => f.endsWith(".json")).map((f) => f.replace(/\.json$/, "")).sort() : [];
+  s.check("G46c the inline surface has committed reference renderings", fixtures.length > 0);
+  for (const name of fixtures) {
+    const expectedPath = join(FIX, `${name}.expected.md`);
+    if (!existsSync(expectedPath)) { s.check(`G46d ${name} fixture + snapshot present`, false); continue; }
+    const r = run([join(FIX, `${name}.json`)]);
+    const body = readFileSync(expectedPath, "utf8");
+    s.check(`G46d ${name} output matches its committed snapshot`, r.ok && r.out === body, r.err);
+    const first = body.split("\n")[0];
+    // record-comment-relevance.mjs reads the tier with this regex, verbatim.
+    s.check(`G46e ${name} tier is readable by the relevance recorder's SEVERITY_RE`,
+      /^\s*\*{0,2}(?:issue|suggestion|nitpick|nit|question|praise|chore)\s*\((critical|high|medium|low)\)/i.test(body), first.slice(0, 60));
+    // Gate 3 parses the bold (blocking) token off line 1 to decide whether an open thread fails a PR.
+    if (/\*\*\(blocking\)\*\*|\*\*\(non-blocking\)\*\*/.test(body)) {
+      s.check(`G46e ${name} keeps its bold blocking decoration on line 1`, /\*\*\((?:non-)?blocking\)\*\*\s*$/.test(first), first.slice(-40));
+    }
+  }
+  // payloadIsSafe aborts the WHOLE post: every rendered reference body, and every maximal legal one, must pass.
+  const refVerdict = payloadIsSafe({ event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->",
+    comments: fixtures.map((name) => ({ path: "a.ts", line: 1, side: "RIGHT", body: readFileSync(join(FIX, `${name}.expected.md`), "utf8") })) });
+  s.check("G46i the post pre-flight accepts every rendered reference body", refVerdict.ok === true, `rejected: ${refVerdict.reason}`);
+  const { buildLink } = await import(pathToFileURL(join(PRS, "build-agent0-link.mjs")).href);
+  const maxFixUrl = buildLink(`/pr-fix https://github.com/${"o".repeat(20)}/${"r".repeat(20)}/pull/165 pr-reviewer — `
+    + "apply only the finding at ".repeat(6), "development", "fix-this");
+  const tenLineFence = { lang: "ts", code: Array.from({ length: 10 }, (_, i) => `  const someValue${i} = computeSomething(argumentOne, argumentTwo);`).join("\n") };
+  for (const [label, baseName, over] of [
+    ["a claim at every cap, unverified", "suggestion-pseudo", { TITLE: "T".repeat(spine.TITLE_MAX), BODY: "P".repeat(spine.PROSE_MAX), UNVERIFIED: "U".repeat(spine.UNVERIFIED_MAX), EVIDENCE: undefined }],
+    ["a one-liner at its cap", "nitpick", { BODY: "P".repeat(spine.PROSE_MAX) }],
+    ["a blocking claim at every cap with a 10-line fence and a fix button", "issue-blocking",
+      { TITLE: "T".repeat(spine.TITLE_MAX), BODY: "P".repeat(spine.PROSE_MAX), FENCE: tenLineFence, FIX_URL: maxFixUrl }],
+  ]) {
+    const payload = { ...JSON.parse(readFileSync(join(FIX, `${baseName}.json`), "utf8")), ...over };
+    for (const k of Object.keys(over)) if (over[k] === undefined) delete payload[k];
+    const r = run([], JSON.stringify(payload));
+    const verdict = r.ok ? payloadIsSafe({ event: "COMMENT", body: "<!-- PR_REVIEWER_POINTER -->", comments: [{ path: "a.ts", line: 1, side: "RIGHT", body: r.out }] }) : { ok: false, reason: r.err };
+    s.check(`G46l ${label} renders and passes payloadIsSafe`, verdict.ok === true, `rejected: ${verdict.reason}`);
+  }
+
+  // --relay-check: exit 1 withholds the fix link, exit 3 posts as rendered; a wrong code loses the review or the button.
+  const relay = (body) => {
+    const f = join(tmpdir(), `l1-relay-${Math.random().toString(36).slice(2)}.md`);
+    writeFileSync(f, body);
+    const r = spawnSync(process.execPath, [SPINE, "--relay-check", f], { encoding: "utf8" });
+    rmSync(f, { force: true });
+    return r;
+  };
+  const budget = spine.RELAY_SAFE_URL_MAX;
+  const shortUrl = "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix";
+  const longUrl = shortUrl + "%20" + "x".repeat(budget);
+  const longDoc = `https://lorekit.example.com/${"d".repeat(budget)}`;
+  s.check("G46j a URL inside the budget is relay-safe",
+    relay(`<a href="${shortUrl}"><img alt="Fix with Agent0" src="x"></a>`).status === 0);
+  const over = relay(`<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`);
+  s.check("G46j an over-budget fix link exits 1 with its length and the budget",
+    over.status === 1 && new RegExp(`relay-unsafe url \\(\\d+ chars, over ${budget}\\)`).test(over.stderr), (over.stderr || "").slice(0, 200));
+  s.check("G46j a long URL inside a fence is not a relay finding",
+    relay(`before\n\n\`\`\`\n${longUrl}\n\`\`\`\n\nafter\n`).status === 0);
+  s.check("G46j a long URL that is not a fix link exits 3", relay(`see <${longDoc}>\n`).status === 3);
+  s.check("G46j a fix link still exits 1 when both kinds are over budget",
+    relay(`see <${longDoc}>\n\n<a href="${longUrl}"><img alt="Fix with Agent0" src="x"></a>`).status === 1);
+}
+
+// ── G26: validate-report-shape.mjs has no self-test; it is the only guard that sees what reached a PR ──
+{
+  const VALIDATOR = join(REPO_ROOT, "scripts/validate-report-shape.mjs");
+  const POSTED = join(REPO_ROOT, "scripts/eval/fixtures/posted-bodies");
+  const run = (input) => {
+    const r = spawnSync(process.execPath, [VALIDATOR], { input, encoding: "utf8" });
+    let verdict = null;
+    try { verdict = JSON.parse(r.stdout); } catch { /* reported below */ }
+    return { status: r.status, verdict, err: (r.stderr || "").trim() };
+  };
+  const codes = (r) => (r.verdict?.violations || []).map((v) => v.code);
+  for (const [file, expected] of [
+    ["lorekit-503-flat.md", ["missing-report-marker", "no-review-details-accordion", "accordion-owned-line-at-top-level"]],
+    ["lorekit-503-report-as-pointer.md", ["report-marked-as-pointer"]],
+    ["agent-skills-165-escaped-button.md", ["escaped-inline-html", "backtick-in-href", "caged-link-target"]],
+  ]) {
+    const p = join(POSTED, file);
+    if (!existsSync(p)) { s.check(`G26 posted fixture ${file} present`, false); continue; }
+    const r = run(readFileSync(p, "utf8"));
+    const got = codes(r);
+    s.check(`G26 ${file} is rejected with ${expected.join(", ")}`, r.status === 1 && expected.every((c) => got.includes(c)),
+      `exit ${r.status}; got ${got.join(", ")}`);
+  }
+  // The renderer's own output must pass the external validator, or the two disagree about the contract.
+  for (const name of REPORT_FIXTURES) {
+    const p = join(REPORT_FIX, `${name}.expected.md`);
+    if (!existsSync(p)) continue;
+    const r = run(readFileSync(p, "utf8"));
+    s.check(`G26 the rendered ${name} snapshot passes the external validator`, r.status === 0, `exit ${r.status}: ${r.err.slice(0, 120)}`);
+  }
+  for (const [why, sep] of [["tight pipes", "|---|---|---|"], ["padded pipes", "| --- | --- | --- |"]]) {
+    const r = run(`Reviewed your changes — no blocking issues.\n\n| Gate | Status | Details |\n${sep}\n| Code review | ✅ | fine |\n`);
+    s.check(`G26 the gate table alone classifies a body as a report (${why})`, r.status === 1 && r.verdict?.kind === "report-unmarked");
+  }
+  {
+    const marker = "<!-- PR_REVIEWER_POINTER -->";
+    const r = run(`${marker}\n${"x".repeat(600 - marker.length + 5)}\n`);
+    s.check("G26 the pointer budget counts the marker", r.status === 1 && codes(r).includes("pointer-too-long"));
+  }
+  {
+    const r = run("Reviewed your changes.\n\n| Gate | Status | Details |\n|---|---|---|\n| Code review | OK | x |\n");
+    const notice = ["<!-- PR_REVIEWER_SHAPE_GUARD -->", "⚠️ **The last `pr-reviewer` body does not match the report shape contract.**", "",
+      ...(r.verdict?.violations || []).map((v) => `- \`${v.code}\` — ${v.detail}`), ""].join("\n");
+    const back = run(notice);
+    s.check("G26 the guard's own notice is not itself a reviewer body", back.status === 0 && back.verdict?.kind === "not-a-reviewer-body");
+  }
+  for (const [why, body] of [["a plain human comment", "LGTM, nice work on the caching layer."], ["an incidental bold label", "**Note** — rebased onto main."]]) {
+    const r = run(body);
+    s.check(`G26 the validator ignores ${why}`, r.status === 0 && r.verdict?.kind === "not-a-reviewer-body");
+  }
+  for (const [why, body] of [
+    ["a one-line pointer", '<!-- PR_REVIEWER_POINTER -->\nReviewed `abc1234` — 3 finding(s) inline.\n\n<!-- PR_REVIEWER_LEDGER {"v":1,"runs":[]} -->\n'],
+    ["a marker-only pointer", "<!-- PR_REVIEWER_POINTER -->\n"],
+  ]) {
+    const r = run(body);
+    s.check(`G26 ${why} conforms`, r.status === 0 && r.verdict?.kind === "pointer");
+  }
+  const good = readOr("scripts/eval/fixtures/report-body/warn.expected.md");
+  s.check("G26 report-body snapshot warn.expected.md present (the synthesis base)", good !== "");
+  for (const [why, body, code] of good ? [
+    ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details"), "accordion-pre-expanded"],
+    ["a **Verdict** line", `${good}\n**Verdict**: PASS\n`, "verdict-in-posted-body"],
+    ["a caged markdown link", good.replace(/^- (\[[^\]]*\]\([^)]*\))/m, "- ``$1``"), "link-caged-in-code-span"],
+    ["a count disagreeing with its list", good.replace("**Open review threads (2)**", "**Open review threads (5)**"), "count-disagrees-with-list"],
+    ["a drift-worded count disagreeing with its list", good.replace("**Open review threads (2)**", "**Open threads (5)**"), "count-disagrees-with-list"],
+    ["a flat body preceded by an unrelated <details> fold",
+      "Reviewed your changes.\n\n<details>\n<summary>Additional findings</summary>\n\n- a\n\n</details>\n\n"
+        + "| Gate | Status | Details |\n|---|---|---|\n| Code review | ✅ | fine |\n\n**Run mode** — full\n", "accordion-owned-line-at-top-level"],
+  ] : []) {
+    const r = run(body);
+    s.check(`G26 the validator flags ${why} as ${code}`, r.status === 1 && codes(r).includes(code), codes(r).join(", "));
+  }
+  // The reusable workflow and its caller template are how a consuming repo reaches the validator.
+  const wf = readOr(".github/workflows/reviewer-report-shape.yml");
+  s.check("G26 the reusable workflow runs the validator", wf.includes("scripts/validate-report-shape.mjs") && wf.includes("workflow_call"));
+  s.check("G26 the caller template targets the reusable workflow",
+    readOr("plugins/pr-reviewer-shape-guard/templates/report-shape-caller.yml").includes("mthines/agent-skills/.github/workflows/reviewer-report-shape.yml@main"));
+}
+
+// ── Cross-script and fixture-driven behaviour of scripts that do have self-tests ──
+{
+  // G33: classify-shape.mjs must parse GitHub's real /tmp/pr-files.json shapes (NDJSON and a one-file object).
+  const CLS = join(PRS, "classify-shape.mjs");
+  const DT = join(REPO_ROOT, "scripts/eval/fixtures/delta-triage");
+  const run = spawnSync(process.execPath, [CLS, join(DT, "pr-files.ndjson")], { encoding: "utf8" });
+  let cls = {};
+  try { cls = JSON.parse(run.stdout || "{}"); } catch { /* asserted below */ }
+  s.check("G33d the NDJSON fixture classifies auth as a risky high-stakes shape",
+    run.status === 0 && Array.isArray(cls.shapes) && cls.shapes.includes("auth") && cls.risky === true
+      && (cls.high_stakes_files || []).includes("src/auth/login.ts"), (run.stderr || "").slice(0, 120));
+  const one = spawnSync(process.execPath, [CLS, join(DT, "one-file.ndjson")], { encoding: "utf8" });
+  let oneCls = {};
+  try { oneCls = JSON.parse(one.stdout || "{}"); } catch { /* asserted below */ }
+  s.check("G33h a single-file PR classifies instead of failing the parse",
+    one.status === 0 && Array.isArray(oneCls.shapes) && oneCls.shapes.includes("auth"));
+
+  // G52c: branch-reviewer's adapter must feed the UNMODIFIED impact-graph builder, or a local review finds nothing.
+  const ADAPTER = join(REPO_ROOT, "agents/branch-reviewer/scripts/local-diff-files.mjs");
+  const GRAPH = join(PRS, "build-impact-graph.mjs");
+  const tmp = mkdtempSync(join(tmpdir(), "g52-"));
+  try {
+    const fixture = join(tmp, "repo");
+    mkdirSync(join(fixture, "src"), { recursive: true });
+    const git = (...a) => spawnSync("git", ["-C", fixture, ...a], { encoding: "utf8" });
+    writeFileSync(join(fixture, "src/parse.ts"), "export function parseThing(raw: string): number {\n  return Number(raw);\n}\n");
+    writeFileSync(join(fixture, "src/use.ts"), "import { parseThing } from './parse';\nexport const run = (s: string) => parseThing(s) + 1;\n");
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "l1@example.invalid");
+    git("config", "user.name", "l1");
+    git("config", "commit.gpgsign", "false");
+    git("add", "-A");
+    git("commit", "-qm", "fixture base");
+    writeFileSync(join(fixture, "src/parse.ts"), "export function parseThing(raw: string, radix: number): number {\n  return parseInt(raw, radix);\n}\n");
+    const adapt = spawnSync(process.execPath, [ADAPTER, "--base", "HEAD", "--workdir", fixture], { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
+    let files = [];
+    try { files = JSON.parse(adapt.stdout || "[]"); } catch { /* asserted below */ }
+    const REQUIRED = ["filename", "patch", "status", "additions", "deletions", "sha"];
+    s.check("G52c the adapter emits records carrying the graph builder's six keys",
+      adapt.status === 0 && Array.isArray(files) && files.length > 0 && files.every((f) => REQUIRED.every((k) => k in f)),
+      `exit ${adapt.status}`);
+    if (Array.isArray(files) && files.length > 0) {
+      const filesPath = join(tmp, "files.json");
+      writeFileSync(filesPath, JSON.stringify(files));
+      const g = spawnSync(process.execPath, [GRAPH, filesPath, "--workdir", fixture, "--base-ref", "HEAD"], { encoding: "utf8", maxBuffer: 128 * 1024 * 1024 });
+      let graph = null;
+      try { graph = JSON.parse(g.stdout || "null"); } catch { /* asserted below */ }
+      s.check("G52c the adapter's output drives the unmodified impact-graph builder",
+        g.status === 0 && graph && typeof graph === "object" && "symbols" in graph, (g.stderr || "").slice(0, 200));
+    }
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+
+  // G80: a historical (--review-sha) review must refuse before any `gh` process — it would write to a live PR.
+  const PREPARE = join(PRS, "prepare-review.mjs");
+  const EWP = join(PRS, "execute-write-plan.mjs");
+  const withShim = (fn) => {
+    const shimDir = mkdtempSync(join(tmpdir(), "g80-gh-shim-"));
+    const logPath = join(shimDir, "log");
+    writeFileSync(join(shimDir, "gh"), `#!/bin/sh\necho "$@" >> ${JSON.stringify(logPath)}\n`, { mode: 0o755 });
+    writeFileSync(logPath, "");
+    try { return fn(shimDir, { ...process.env, PATH: `${shimDir}:${process.env.PATH}` }, () => readFileSync(logPath, "utf8").trim()); }
+    finally { rmSync(shimDir, { recursive: true, force: true }); }
+  };
+  const sha = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef";
+  withShim((dir, env, log) => {
+    const a = spawnSync(process.execPath, [PREPARE, "--pr", "o/r#1", "--review-sha", sha, "--out", join(dir, "c1.json")], { encoding: "utf8", env });
+    const b = spawnSync(process.execPath, [PREPARE, "--pr", "o/r#1", "--review-sha", sha, "--isolated", "--pin-head", sha, "--out", join(dir, "c2.json")], { encoding: "utf8", env });
+    s.check("G80 prepare-review refuses --review-sha without --isolated, and with --pin-head, before spawning gh",
+      a.status === 2 && /--isolated/.test(a.stderr || "") && b.status === 2 && /--pin-head/.test(b.stderr || "") && log() === "",
+      `exits ${a.status}/${b.status}; gh log ${JSON.stringify(log())}`);
+  });
+  withShim((dir, env, log) => {
+    const planPath = join(dir, "plan.json");
+    writeFileSync(planPath, JSON.stringify({ dry_run: true, historical: { review_sha: sha }, thread_ops: [], lorekit: { write: [] } }));
+    const r = spawnSync(process.execPath, [EWP, "--plan", planPath, "--repo", "o/r"], { encoding: "utf8", env });
+    s.check("G80 execute-write-plan refuses a historical/dry_run plan before spawning gh",
+      r.status !== 0 && r.status !== null && log() === "", `exit ${r.status}; gh log ${JSON.stringify(log())}`);
+  });
+
+  // G62: validate-judgments interprets judgments.schema.json; an unsupported keyword or a drifted enum is ignored silently.
+  const SCHEMA_PATH = join(REPO_ROOT, "agents/pr-reviewer/schemas/judgments.schema.json");
+  const vj = await import(pathToFileURL(join(PRS, "validate-judgments.mjs")).href);
+  const fp = await import(pathToFileURL(join(PRS, "fingerprint.mjs")).href);
+  const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
+  s.check("G62b judgments.schema.json uses only the keyword subset the validator interprets",
+    vj.checkSchemaKeywords(schema).length === 0, vj.checkSchemaKeywords(schema).join(" | "));
+  const sortedEq = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  s.check("G62c schema finder / defect_class enums equal fingerprint.mjs FINDERS / DEFECT_CLASSES",
+    sortedEq(schema.$defs?.finder?.enum ?? [], fp.FINDERS) && sortedEq(schema.$defs?.defect_class?.enum ?? [], fp.DEFECT_CLASSES));
+  const JF = join(REPO_ROOT, "scripts/eval/fixtures/judgments");
+  const loadJ = (n) => JSON.parse(readFileSync(join(JF, n), "utf8"));
+  s.check("G62d fixtures/judgments/valid.json validates with zero errors", vj.validateJudgments(schema, loadJ("valid.json")).length === 0);
+  for (const [name, needle] of [["invalid-unknown-top-level-key.json", "unknown property"], ["invalid-secret-exempt.json", "secret"],
+    ["invalid-title-mismatch.json", "title"], ["invalid-unverified-reason.json", "unverified_reason"], ["invalid-thread-reply.json", "reply"]]) {
+    const errs = existsSync(join(JF, name)) ? vj.validateJudgments(schema, loadJ(name)) : [];
+    s.check(`G62d fixtures/judgments/${name} is rejected (mentions "${needle}")`, errs.some((e) => e.includes(needle)));
+  }
+
+  // G84j: finalize must reproduce the committed report-body and inline snapshots from their judgments.
+  const rep = spawnSync(process.execPath, [join(PRS, "finalize.mjs"), "--replay-fixtures"], { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
+  s.check("G84j finalize.mjs --replay-fixtures reproduces the snapshots with no unexplained mismatch",
+    !/unexplained mismatch/.test(rep.stderr || "") && /report-body\/warn\.expected\.md — byte-identical/.test(rep.stdout || ""),
+    (rep.stdout || rep.stderr || "").split("\n").filter((l) => /✗|FAIL|differ/.test(l)).join(" | ").slice(0, 300));
+
+  // G83 / G65e: the A/B benchmark plans from the real manifest; a malformed entry breaks every arm.
+  const MANIFEST = join(REPO_ROOT, "scripts/eval/benchmarks/reviewer-ab.manifest.json");
+  const m = JSON.parse(readFileSync(MANIFEST, "utf8"));
+  const entries = Array.isArray(m) ? m : m.entries;
+  const ALLOW = new Set(["repo", "number", "head_sha", "base_sha", "review_sha", "class", "status"]);
+  s.check("G65e every manifest entry has only the allowed keys and full lowercase SHAs",
+    entries.every((e) => Object.keys(e).every((k) => ALLOW.has(k)) && /^[0-9a-f]{40}$/.test(e.head_sha) && /^[0-9a-f]{40}$/.test(e.base_sha)));
+  const scratch = mkdtempSync(join(tmpdir(), "g83-plan-"));
+  const planRun = spawnSync(process.execPath, [join(REPO_ROOT, "scripts/eval/ab-review.mjs"), "plan", "--manifest", MANIFEST,
+    "--worktree", REPO_ROOT, "--arms", "A,B", "--runs", "1", "--out", scratch], { encoding: "utf8" });
+  let dispatches = null;
+  try { dispatches = JSON.parse(readFileSync(join(scratch, "matrix.json"), "utf8")).dispatches; } catch { /* asserted below */ }
+  rmSync(scratch, { recursive: true, force: true });
+  s.check("G83 ab-review.mjs plan runs end to end against the real manifest, every dispatch dry-run and isolated",
+    planRun.status === 0 && Array.isArray(dispatches) && dispatches.length > 0
+      && dispatches.every((d) => { const p = JSON.stringify(d); return /--dry-run/.test(p) && /--isolated/.test(p) && /--review-sha [0-9a-f]{40}/.test(p); }),
+    `exit ${planRun.status} ${(planRun.stderr || "").slice(0, 120)}`);
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 6. Size and token budgets
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── G86: the root CLAUDE.md loads into every session; the frozen archives never grow ──
+{
+  const root = read("CLAUDE.md");
+  const MAX_ROOT = 40000;   // Claude Code's session-start "Large CLAUDE.md" warning threshold
+  const MAX_HOOK = 300;
+  s.check(`G86a root CLAUDE.md is under ${MAX_ROOT} chars`, root.length < MAX_ROOT, `${root.length} chars`);
+  const longHooks = root.split("\n").filter((l) => /^- `/.test(l) && l.length > MAX_HOOK);
+  s.check(`G86b every root inventory hook is ≤ ${MAX_HOOK} chars`, longHooks.length === 0,
+    longHooks.map((l) => `${l.length}: ${l.slice(0, 60)}…`).join(" | "));
+  const tags = root.match(/\(v\d+\.\d+(?:\.\d+)?\)|\bv\d+\.\d+\.\d+\b/g) || [];
+  s.check("G86c root CLAUDE.md carries no version-tag narrative", tags.length === 0, tags.join(", "));
+  for (const [f, ceiling] of Object.entries(FROZEN_ARCHIVES)) {
+    const size = statSync(join(REPO_ROOT, f)).size;
+    s.check(`G86d ${f} has not grown past its frozen size (${ceiling} bytes)`, size <= ceiling, `${size} bytes`);
+  }
+}
+
+// ── G82: pr-reviewer.md is read on every review; a ratchet stops it regrowing ──
+{
+  const txt = read("agents/pr-reviewer.md");
+  const CEILING = 64000;
+  const normalized = Buffer.byteLength(txt.replace(/\s+/g, " "), "utf8");
+  const raw = Buffer.byteLength(txt, "utf8");
+  s.check(`G82 pr-reviewer.md normalized bytes (${normalized}) stay at or under ${CEILING}`, normalized <= CEILING);
+  s.check(`G82 pr-reviewer.md raw bytes (${raw}) stay at or under ${CEILING}`, raw <= CEILING);
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 7. Executable idioms run against fixtures
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── C: the confidence plan-rule idioms, executed against plan fixtures (rules #2, #3, #9, #10, #11) ──
+{
+  const sh = (cmd) => execSync(cmd, { shell: "/bin/bash" }).toString().trim();
+  const passes = (cmd) => { try { execSync(cmd, { shell: "/bin/bash" }); return true; } catch { return false; } };
+  const coreSectionCount = (plan) => Number(sh(`grep -E '^## (TL;DR|Requirements|Decisions|Acceptance Criteria|Implementation Order|File Changes|Verification|Progress Log)' "${plan}" | wc -l`));
+  const briefSectionCount = (plan) => Number(sh(`grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)' "${plan}" || true`));
+  const acceptanceCriteriaCount = (plan) => Number(sh(`awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' "${plan}" | grep -c '^- \\|^[0-9]' || true`));
+  const requirementCoveragePasses = (plan) => passes(
+    `awk '/^## Requirements/ {rs=1; as=0; next} /^## Acceptance Criteria/ {as=1; rs=0; next} /^###? / {rs=0; as=0} rs && /^[-0-9]/ {n++; if (index($0,"[user-stated]")) us[n]=1} as {s=$0; while (match(s, /covers:[^)]*/)) {seg=substr(s,RSTART,RLENGTH); s=substr(s,RSTART+RLENGTH); while (match(seg,/R[0-9]+/)) {cov[substr(seg,RSTART+1,RLENGTH-1)]=1; seg=substr(seg,RSTART+RLENGTH)}}} END {for (i in us) if (!(i in cov)) exit 1; exit 0}' "${plan}"`);
+  const existingCodeSurveyPasses = (plan) => passes(
+    `awk -F'[|]' '/^## File Changes/ {fc=1; es=0; next} /^## Existing Code Survey/ {es=1; fc=0; next} /^###? / {fc=0; es=0} fc && /^[|]/ && $2 ~ /create/ {creates++} es && /^[|]/ {if (index($0,"EXTEND") + index($0,"WRAP") + index($0,"BUILD NEW") > 0) rows++} END {if (creates == 0) exit 0; exit (rows < 1)}' "${plan}"`);
+  const checksInSync = (plan, checks) => {
+    const planIds = sh(`awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' "${plan}" | grep -oE 'AC-[0-9]+' | sort -u`).split("\n").filter(Boolean);
+    const checkIds = sh(`grep -oE '^- id: AC-[0-9]+' "${checks}" | grep -oE 'AC-[0-9]+' | sort -u`).split("\n").filter(Boolean);
+    return planIds.length > 0 && JSON.stringify(planIds) === JSON.stringify(checkIds);
+  };
+  const fx = join(REPO_ROOT, "scripts/eval/fixtures/plans");
+  const valid = join(fx, "valid-core.md");
+  s.check("rule#2: valid plan has all 8 Core sections", coreSectionCount(valid) >= 8, `got ${coreSectionCount(valid)}`);
+  s.check("rule#2: missing-core plan fails (< 8)", coreSectionCount(join(fx, "missing-core.md")) < 8);
+  s.check("rule#2: valid brief plan has all 6 brief Core sections", briefSectionCount(join(fx, "valid-brief.md")) >= 6);
+  s.check("rule#2: brief missing Guardrails + Turn Cap fails (< 6)", briefSectionCount(join(fx, "missing-brief.md")) < 6);
+  s.check("rule#3: valid plan has ≥1 Acceptance Criterion", acceptanceCriteriaCount(valid) >= 1);
+  s.check("rule#3 (#31 guard): empty-AC plan counts 0", acceptanceCriteriaCount(join(fx, "empty-ac.md")) === 0);
+  s.check("rule#9: valid plan covers every [user-stated] requirement", requirementCoveragePasses(valid));
+  s.check("rule#9: uncovered-req plan fails", !requirementCoveragePasses(join(fx, "uncovered-req.md")));
+  s.check("rule#10: valid plan (create + survey) passes", existingCodeSurveyPasses(valid));
+  s.check("rule#10: create-no-survey plan fails", !existingCodeSurveyPasses(join(fx, "create-no-survey.md")));
+  s.check("rule#10: modification-only plan passes vacuously", existingCodeSurveyPasses(join(fx, "empty-ac.md")));
+  s.check("rule#11: in-sync checks.yaml passes", checksInSync(valid, join(fx, "checks-valid.yaml")));
+  s.check("rule#11: drifted checks.yaml fails", !checksInSync(valid, join(fx, "checks-drifted.yaml")));
+
+  // G130: the executor's bail greps, extracted and run — a grep that rejects a valid plan stops every Full run.
+  const EXE = read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md");
+  const grepOf = (name) => (EXE.match(new RegExp(`echo "${name}=\\$\\(grep -cE '([^']+)' "\\$P"\\)"`)) || [])[1];
+  const count = (re, file) => (re ? Number(sh(`grep -cE '${re}' "${file}" || true`)) : -1);
+  const BRIEF = grepOf("BRIEF"), FASTLANE = grepOf("FASTLANE");
+  s.check("G130b the executor's BRIEF and FASTLANE greps are extractable", Boolean(BRIEF && FASTLANE));
+  s.check("G130b the BRIEF grep accepts a valid brief (6) and rejects one missing sections",
+    count(BRIEF, join(fx, "valid-brief.md")) >= 6 && count(BRIEF, join(fx, "missing-brief.md")) < 6);
+  s.check("G130b the FASTLANE grep accepts a valid fast-lane plan (8)", count(FASTLANE, valid) >= 8);
+  // aw-create-plan's brief template is what every planner emits; the executor's grep must count it as complete.
+  const ACP = read("skills/workflow/aw-create-plan/SKILL.md");
+  const tpl = (ACP.match(/^## The brief \(Core\)[\s\S]*?````markdown\n([\s\S]*?)\n````/m) || ["", ""])[1];
+  const tplFile = join(tmpdir(), `l1-brief-${process.pid}.md`);
+  writeFileSync(tplFile, tpl);
+  s.check("G130a aw-create-plan's brief template passes the executor's BRIEF grep (6 Core headings)",
+    tpl !== "" && count(BRIEF, tplFile) >= 6, `template ${tpl ? "found" : "missing"}; count ${count(BRIEF, tplFile)}`);
+  rmSync(tplFile, { force: true });
+}
+
+// ── G35: Step 1.2b's delta-triage jq/awk snippets, extracted and run — a syntax error throws mid-review ──
+{
+  const prm = read("agents/pr-reviewer/rules/fetch-and-triage.md");
+  const FIX = join(REPO_ROOT, "scripts/eval/fixtures/delta-triage");
+  const compareJq = /--jq '(\{\n\s*delta_lines:[\s\S]*?\n {2}\})'\)/.exec(prm)?.[1];
+  s.check("G35a the compare-extraction jq program is extractable", !!compareJq);
+  if (compareJq) {
+    const r = spawnSync("jq", [compareJq], { input: readFileSync(join(FIX, "compare-intact.json"), "utf8"), encoding: "utf8" });
+    let out = {};
+    try { out = JSON.parse(r.stdout || "{}"); } catch { /* asserted below */ }
+    s.check("G35c compare jq runs clean and extracts delta_lines=8, new_files=1, files=2",
+      r.status === 0 && out.delta_lines === 8 && out.new_files === 1 && Array.isArray(out.files) && out.files.length === 2,
+      (r.stderr || "").slice(0, 160));
+  }
+  const hsAwk = /awk '([^']*)' "\$HS_CFG"/.exec(prm)?.[1];
+  s.check("G35g the high_stakes_paths awk program is extractable", !!hsAwk);
+  if (hsAwk) {
+    const r = spawnSync("awk", [hsAwk, join(FIX, "review.yaml")], { encoding: "utf8" });
+    s.check("G35h the awk strips inline comments, quotes, and empty entries",
+      r.status === 0 && r.stdout === " --extra-high-stakes (^|/)ledger(/|$) --extra-high-stakes packages/tenant-isolation/",
+      `status=${r.status} out=${JSON.stringify(r.stdout)}`);
+  }
+  const blobJq = /jq -s --slurpfile prior \S+ '\n([\s\S]*?)' \\/.exec(prm)?.[1];
+  s.check("G35d the blob-diff jq program is extractable", !!blobJq);
+  if (blobJq) {
+    const r = spawnSync("jq", ["-s", "--slurpfile", "prior", join(FIX, "tree-prior.json"), blobJq],
+      { input: readFileSync(join(FIX, "pr-files.ndjson"), "utf8"), encoding: "utf8" });
+    let files = [];
+    try { files = JSON.parse(r.stdout || "[]"); } catch { /* asserted below */ }
+    s.check("G35f blob diff keeps changed + added + removed files and drops the identical blob",
+      r.status === 0 && JSON.stringify(files.map((f) => f.filename).sort()) === JSON.stringify(["assets/logo.png", "src/legacy/cleanup.ts", "src/util.ts"]),
+      (r.stderr || "").slice(0, 160));
+  }
+}
+
+// ── G32q: the review-config resolution block, executed — a wrong default hides or forces the Agent0 buttons ──
+{
+  const cfg = read("agents/shared/rules/review-config.md");
+  const block = [...cfg.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]).find((b) => /^AGENT0_FIX_LINKS=/m.test(b));
+  const tail = block?.slice(block.search(/^AGENT0_FIX_LINKS=/m));
+  const resolve = (content, readFailed = 0) => (spawnSync("bash", ["-c",
+    `CONFIG_READ_FAILED=${readFailed}\nBASE_CONFIG_CONTENT=$(cat)\n${tail}\n`
+    + `printf '%s %s %s\\n' "$AGENT0_FIX_LINKS" "$AGENT0_ENVIRONMENT" "\${AGENT0_ORG:-(none)}"`,
+  ], { input: content, encoding: "utf8" }).stdout || "").trim();
+  s.check("G32q the review-config resolution block is extractable", !!tail && /agent0_fix_links/.test(tail));
+  if (tail) {
+    s.check("G32q nothing configured resolves the buttons ON at the production host", resolve("") === "true production (none)", resolve(""));
+    s.check("G32q a config that never mentions Agent0 still resolves ON", resolve("profile: balanced\nfilters:\n  - naming-nits\n") === "true production (none)");
+    s.check("G32q `agent0_fix_links: false` is a real opt-out, inline comment or not",
+      resolve("agent0_fix_links: false\n").startsWith("false") && resolve("agent0_fix_links: false   # no\n").startsWith("false")
+        && resolve("agent0_fix_links: false#x\n").startsWith("false"));
+    s.check("G32q agent0_environment picks the host and does not gate rendering",
+      resolve("agent0_environment: development\n") === "true development (none)"
+        && resolve("agent0_fix_links: false\nagent0_environment: development\n") === "false development (none)");
+    s.check("G32q agent0_org resolves, survives an inline comment, and gates nothing",
+      resolve("agent0_org: dash0-development\n") === "true production dash0-development"
+        && resolve("agent0_org: dash0-development   # our org\n") === "true production dash0-development"
+        && resolve("agent0_fix_links: false\nagent0_org: dash0-development\n") === "false production dash0-development");
+    for (const bad of ["a&b=c", "a b c", "-leading", "x".repeat(64), "org#123", "a#b", '"org # 123"', "'org # 123'", '"org#123"', 'org "x"']) {
+      s.check(`G32q a malformed agent0_org (${JSON.stringify(bad)}) resolves to no org`, resolve(`agent0_org: ${bad}\n`).endsWith(" (none)"));
+    }
+    s.check("G32q an unreadable config withholds the buttons", resolve("", 1).startsWith("false"));
+    // The fetch must tell an absent config (404) from an unreadable one (403), and survive a stderr warning.
+    const fetchFn = block.slice(0, block.indexOf("\nCONFIG_READ_FAILED=0"));
+    const B64 = Buffer.from("agent0_fix_links: false\n").toString("base64");
+    const withStub = (ghBody) => {
+      const dir = mkdtempSync(join(tmpdir(), "l1-cfg-"));
+      writeFileSync(join(dir, "gh"), `#!/bin/bash\n${ghBody}\n`, { mode: 0o755 });
+      const r = spawnSync("bash", ["-c", `RESOLVED_REPO=o/r\n${fetchFn}\nout=$(fetch_base_config .github/review.yaml)\nprintf '%s|%s' "$?" "$out"`],
+        { encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+      rmSync(dir, { recursive: true, force: true });
+      return (r.stdout || "").trim();
+    };
+    for (const [what, stub, want] of [
+      ["a readable config returns its content", `echo "${B64}"`, "0|agent0_fix_links: false"],
+      ["an absent config (404) is an answer, not a failure", 'echo "gh: Not Found (HTTP 404)" >&2; exit 1', "0|"],
+      ["an unreadable config (403) exits 2", 'echo "gh: Resource not accessible (HTTP 403)" >&2; exit 1', "2|"],
+      ["a warning on the success path does not erase the config", `echo "warning: token from env" >&2; echo "${B64}"`, "0|agent0_fix_links: false"],
+    ]) {
+      const got = withStub(stub);
+      s.check(`G32q fetch_base_config — ${what}`, got === want, `got "${got}", want "${want}"`);
+    }
+  }
+}
+
+// ── G43 / G38g: the agent runs its fenced shell verbatim — a bad flag, an unbound variable, or an undefined helper fails mid-review ──
+{
+  const SHELL_MD = ["agents/pr-reviewer.md",
+    ...readdirSync(join(REPO_ROOT, "agents/pr-reviewer/rules")).filter((f) => f.endsWith(".md")).map((f) => `agents/pr-reviewer/rules/${f}`)];
+  const bashBlocks = (text) => [...text.matchAll(/```bash\n([\s\S]*?)```/g)].map((m) => m[1]);
+  const commandsIn = (block) => block.replace(/\\\n\s*/g, " ").split("\n")
+    .map((l) => l.replace(/\$\{[A-Z_]+:\+(.*?)\}/g, "$1").trim()).filter((l) => /^node\s/.test(l));
+  const tokenize = (cmd) => cmd.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+  // The parser contract, read out of each script rather than restated.
+  const flagContract = (src) => {
+    const takesValue = new Set(), boolean = new Set();
+    for (const m of src.matchAll(/a === "(--[a-z-]+)"\)\s*(?:flags|opts)\.\w+\s*=\s*([^;\n]+)/g)) (/argv\[\+\+i\]/.test(m[2]) ? takesValue : boolean).add(m[1]);
+    for (const m of src.matchAll(/\bflag\(args,\s*"([a-z-]+)"\)/g)) takesValue.add(`--${m[1]}`);
+    for (const m of src.matchAll(/args\[\d+\] === "(--[a-z-]+)"/g)) boolean.add(m[1]);
+    for (const m of src.matchAll(/cmd === "(--[a-z-]+)"/g)) boolean.add(m[1]);
+    for (const m of src.matchAll(/\b(?:argv|process\.argv|args)\.includes\("(--[a-z-]+)"\)/g)) boolean.add(m[1]);
+    for (const m of src.matchAll(/const (\w+) = (?:argv|args)\.indexOf\("(--[a-z-]+)"\);/g)) {
+      if (new RegExp(`\\b(?:argv|args)\\[${m[1]} \\+ 1\\]`).test(src)) takesValue.add(m[2]);
+    }
+    return { takesValue, boolean };
+  };
+  let invocations = 0;
+  for (const mdPath of SHELL_MD) {
+    for (const block of bashBlocks(read(mdPath))) {
+      for (const cmd of commandsIn(block)) {
+        const all = tokenize(cmd);
+        const scriptTok = all.find((t) => t.replace(/"/g, "").endsWith(".mjs"));
+        if (!scriptTok) continue;
+        const base = scriptTok.replace(/"/g, "").split("/").pop();
+        const scriptPath = join(PRS, base);
+        if (!existsSync(scriptPath)) continue;
+        invocations++;
+        const src = readFileSync(scriptPath, "utf8");
+        const { takesValue, boolean } = flagContract(src);
+        const needsPositional = /usage: \S+ <[a-z-]+\.json>/.test(src);
+        const where = `${mdPath} → ${base}`;
+        const toks = all.slice(all.indexOf(scriptTok) + 1);
+        const positional = [], flagValues = [], unknownFlags = [], valuelessFlags = [];
+        for (let i = 0; i < toks.length; i++) {
+          const t = toks[i];
+          if (t === ">" || t === ">>" || t === "2>" || t === "|") { i++; continue; }
+          if (t.startsWith(">") || t.startsWith("2>")) continue;
+          if (!t.startsWith("--")) { positional.push(t); continue; }
+          if (takesValue.has(t)) {
+            const next = toks[i + 1];
+            if (!next || next.startsWith("-") || next.startsWith(">")) valuelessFlags.push(t);
+            else { flagValues.push(next); i++; }
+            continue;
+          }
+          if (!boolean.has(t)) unknownFlags.push(t);
+        }
+        const flagsUsed = toks.filter((t) => t.startsWith("--"));
+        s.check(`G43a ${where}: valid invocation (flags known, values present, input positional, not on stdin)`,
+          (flagsUsed.length === 0 || takesValue.size + boolean.size > 0) && unknownFlags.length === 0 && valuelessFlags.length === 0
+            && (!needsPositional || !/(^|\s)<\s/.test(cmd))
+            && (!needsPositional || [...positional, ...flagValues].some((p) => p.replace(/"/g, "").endsWith(".json"))),
+          `unknown: ${unknownFlags.join(" ") || "none"}; bare: ${valuelessFlags.join(" ") || "none"}`);
+      }
+    }
+  }
+  // Guards the extractor: matching nothing would pass every invocation vacuously.
+  s.check(`G43a the invocation extractor found the documented commands (${invocations})`, invocations >= 4);
+
+  const SHELL_PROVIDED = new Set(["HOME", "PATH", "ARG", "BASH_REMATCH", "DASH0_EXPOSURE", "DASH0_AGENT_ENV"]);
+  const RUN_CONSTRUCTED = new Set(["VERDICT", "PR_STATE", "CARRIED_FINDINGS_JSON", "DIAGNOSTICS_JSON", "INLINE_COMMENTS_JSON", "OPEN_BOT_COMMENT_IDS_JSON"]);
+  const boundVars = new Set();
+  const varReads = new Set();
+  for (const mdPath of SHELL_MD) {
+    const text = read(mdPath);
+    for (const m of text.matchAll(/\b([A-Z][A-Z0-9_]{2,})=/g)) boundVars.add(m[1]);
+    for (const block of bashBlocks(text)) {
+      const live = block.replace(/(^|\s)#[^\n]*/g, "$1");
+      for (const m of live.matchAll(/\$\{?([A-Z][A-Z0-9_]{2,})\b/g)) varReads.add(m[1]);
+    }
+  }
+  const unbound = [...varReads].filter((v) => !boundVars.has(v) && !SHELL_PROVIDED.has(v) && !RUN_CONSTRUCTED.has(v)).sort();
+  s.check(`G43b every variable read in a normative block is bound (unbound: ${unbound.join(", ") || "none"})`, unbound.length === 0);
+
+  for (const name of ["agents/pr-reviewer/rules/workspace.md", "agents/pr-reviewer.md", "agents/pr-reviewer/rules/fetch-and-triage.md"]) {
+    const src = read(name);
+    const blocks = bashBlocks(src).join("\n");
+    const called = new Set();
+    for (const m of blocks.matchAll(/\$\(([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\)/g)) called.add(m[1]);
+    for (const m of blocks.matchAll(/(?:^|&&|\|\||;|\bthen\b|\belif\b|\bif\b)[ \t]*([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b(?![ \t]*[=(:,])/gm)) called.add(m[1]);
+    const undef = [...called].filter((fn) => !new RegExp(`^\\s*${fn}\\(\\)`, "m").test(src));
+    s.check(`G38g every snake_case helper the ${name} shell calls is defined in it`, undef.length === 0, undef.join(", "));
+  }
+}
+
+// ── G25e: posting.md's pre-write assertion block, extracted and run — a net that cannot fire posts a broken report ──
+{
+  const postingMd = read("agents/pr-reviewer/rules/posting.md");
+  const preWrite = sliceBetween(postingMd, "things on `REPORT_BODY` immediately before the write", "On any `abort`: post no report object");
+  const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
+  s.check("G25e the pre-write assertion block is extractable", !!fence);
+  if (fence) {
+    const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
+    const good = renderReport(readFileSync(join(REPORT_FIX, "warn.json"), "utf8")).out;
+    const runAssert = (body) => spawnSync("bash", ["-c", script],
+      { env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") }, encoding: "utf8" });
+    const ok = runAssert(good);
+    s.check("G25e the pre-write assertions accept a valid rendered body", ok.status === 0, `exit ${ok.status}: ${(ok.stdout || "").trim()}`);
+    for (const [why, body] of [
+      ["a body with no marker", good.replace("<!-- PR_REVIEWER_REPORT -->\n", "")],
+      ["a flattened body (no accordion)", good.replace(/<details>\n<summary>Review details[^\n]*\n/, "")],
+      ["a pre-expanded accordion", good.replace("<details>\n<summary>Review details", "<details open>\n<summary>Review details")],
+      ["a smuggled **Verdict** line", `${good}\n**Verdict**: PASS\n`],
+      ["a body whose inline HTML was escaped in transit", good.replace('"><picture><source', '"&gt;&lt;picture&gt;&lt;source')],
+      ["a body with a backtick smuggled into an href", good.replace('<a href="https://', '<a href="``https://')],
+    ]) {
+      s.check(`G25e the pre-write assertions reject ${why}`, runAssert(body).status === 3);
+    }
+  }
+}
+
+// ── G90b: review-loop's apply-first block, run alone with only `gh` stubbed — a wrong decision skips a needed review ──
+{
+  const AF = (() => { try { return extractSection("skills/quality/review-loop/rules/apply-first.md", "# Iteration 1 — apply first when the last review still stands"); } catch { return ""; } })();
+  const blk = (AF.match(/```bash\n([\s\S]*?)\n```/) || ["", ""])[1];
+  const run = (c) => {
+    const dir = mkdtempSync(join(tmpdir(), "l1-g90-"));
+    try {
+      const ctx = join(dir, "context.json");
+      if (c.mode !== null) writeFileSync(ctx, JSON.stringify({ mode: c.mode, priorRun: { priorSha: "abc1234" } }));
+      const nodes = c.open === null ? null : [
+        ...Array.from({ length: c.open }, (_, i) => ({ isResolved: false, comments: c.malformed ? "unreadable" : { totalCount: i < c.replied ? 2 : 1 } })),
+        { isResolved: true, comments: { totalCount: 3 } }];
+      const response = JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes } } } } });
+      const gh = nodes === null
+        ? 'gh() { echo "HTTP 502" >&2; return 1; }'
+        : ['gh() {', '  local q="" f=""', '  while [ $# -gt 0 ]; do', '    case "$1" in',
+          '      -f) case "$2" in query=*) q="${2#query=}" ;; esac; shift 2 ;;', '      --jq) f="$2"; shift 2 ;;',
+          '      *) shift ;;', '    esac', '  done',
+          '  case "$q" in *isResolved*"comments{ totalCount }"*) ;; *) echo "stub: query lacks isResolved / comments{ totalCount }" >&2; return 1 ;; esac',
+          '  [ -n "$f" ] || { echo "stub: no --jq filter" >&2; return 1; }',
+          "  printf '%s\\n' '" + response + "' | jq \"$f\"", '}'].join("\n");
+      const sh = [gh, blk.replaceAll("<ITERATION>", String(c.iter)).replaceAll("<NO_FEEDBACK>", String(c.nofb))
+        .replaceAll("<OWNER>", "o").replaceAll("<REPO>", "r").replaceAll("<PR_NUMBER>", "1").replaceAll("<dir>/context.json", ctx)].join("\n");
+      return spawnSync("bash", ["-c", sh], { encoding: "utf8" }).stdout;
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+  const decision = (out) => (out.match(/^APPLY_FIRST=(\d)\b/m) || ["", "∅"])[1];
+  const base = { iter: 1, nofb: 0, mode: "zero-delta", open: 2, replied: 0 };
+  const wrong = [
+    ["all five hold", {}, "1"], ["iteration 2", { iter: 2 }, "0"], ["--no-feedback", { nofb: 1 }, "0"],
+    ["mode incremental", { mode: "incremental" }, "0"], ["no open thread", { open: 0 }, "0"],
+    ["an open thread has a reply", { replied: 1 }, "0"], ["context.json missing", { mode: null }, "0"],
+    ["thread query fails", { open: null }, "0"], ["reply count unreadable", { malformed: true }, "0"],
+  ].map(([n, d, want]) => [n, want, decision(run({ ...base, ...d }))]).filter(([, want, got]) => got !== want);
+  s.check("G90b the apply-first block decides correctly on all nine cases and fails closed (executed)",
+    blk !== "" && wrong.length === 0 && /PRIOR_SHA=abc1234/.test(run(base)),
+    blk === "" ? "no ```bash block in the apply-first section" : wrong.map(([n, w, g]) => `${n} (want ${w}, got ${g})`).join(" · "));
+}
+
+// ════════════════════════════════════════════════════════════════════════════════════════════
+// 8. Machine-parsed contracts
+// ════════════════════════════════════════════════════════════════════════════════════════════
+
+// ── G130c: Phase 4 exits on run-checks.mjs's sentinel line; a renamed sentinel never exits Phase 4 ──
+{
+  const P4 = read("skills/workflow/autonomous-workflow/rules/phase-4-testing.md");
+  const EXE = read("skills/workflow/autonomous-workflow/templates/aw-executor.agent.md");
+  const RC = read("skills/workflow/autonomous-workflow/scripts/run-checks.mjs");
+  const SENT = /CHECKS M\/M PASS \(<sha>\)|CHECKS <M>\/<M> PASS \(<sha>\)/;
+  s.check("G130c run-checks.mjs prints the sentinel phase-4 and the executor gate on",
+    /sentinel: `CHECKS \$\{passed\}\/\$\{total\} PASS \(\$\{shortSha\(cwd\)\}\)`/.test(RC) && SENT.test(P4) && SENT.test(EXE));
+}
+
+// ── G25h: reviewer-report-ingest.md's grammar parses the rendered report; a shape it cannot read is re-ingested wrong ──
+{
+  const EXTRACT = {
+    "Footer SHA": (b) => {
+      const line = (b.match(/^<sup>`pr-reviewer` · commit[^\n]*<\/sup>$/m) || [""])[0];
+      return /commit `[0-9a-f]{7}`/.test(line);
+    },
+    "Run mode": (b) => /^(full|incremental|incremental-quick) · (\d+) lines in delta/m.test(b),
+    "Marker": (b) => b.includes("<!-- PR_REVIEWER_REPORT -->"),
+    "Review details accordion": (b) => /<details>\n<summary>Review details/.test(b),
+  };
+  for (const name of REPORT_FIXTURES) {
+    const p = join(REPORT_FIX, `${name}.expected.md`);
+    if (!existsSync(p)) continue;
+    const body = readFileSync(p, "utf8");
+    for (const [section, fn] of Object.entries(EXTRACT)) {
+      s.check(`G25h ${name}: the ingest grammar parses "${section}"`, fn(body));
+    }
+    const rows = [...body.matchAll(/^\| (Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
+    s.check(`G25h ${name}: the gate table parses to 5 typed rows`, rows.length === 5, `parsed ${rows.length}`);
+    const declared = body.match(/\*\*Open review threads \((\d+)\)\*\*/);
+    if (declared) {
+      const region = body.split("**Open review threads (")[1].split("\n\n")[1] || "";
+      const bullets = region.split("\n").filter((l) => l.startsWith("- ")).length;
+      s.check(`G25h ${name}: the open-threads count equals the bullets rendered`, Number(declared[1]) === bullets);
+    }
+  }
+
+  // The agent builds REPORT_BODY from report-rendering.md's payload table; a key the renderer does not know exits 1.
+  const rendererSrc = readFileSync(RENDER_REPORT, "utf8");
+  const keysIn = (arr) => new Set([...sliceBetween(rendererSrc, `const ${arr} = [`, "];").matchAll(/"([A-Z0-9_]+)"/g)].map((m) => m[1]));
+  const payloadKeys = new Set([...keysIn("REQUIRED_SCALARS"), ...keysIn("OPTIONAL_SCALARS"), ...keysIn("STRUCTURED")]);
+  const contract = sliceBetween(read("agents/pr-reviewer/rules/report-rendering.md"), "#### REPORT_BODY payload", "#### Headlines");
+  const named = [...contract.matchAll(/^\|\s*((?:`[A-Z][A-Z0-9_]{3,}`(?:\s*[·+]\s*)?)+)\s*\|/gm)]
+    .flatMap((m) => [...m[1].matchAll(/`([A-Z][A-Z0-9_]{3,})`/g)].map((x) => x[1]));
+  const wrong = [...new Set(named)].filter((n) => !payloadKeys.has(n));
+  s.check("G25g every slot named in the payload contract is a real payload key", named.length > 0 && wrong.length === 0, wrong.join(", "));
+}
+
+// ── G44: the memory read path must use the tools' real parameters and the recorder's real keys, or it reads nothing ──
+{
+  const MEMORY_MD = read("agents/pr-reviewer/rules/memory.md");
+  const RELEVANCE_MD = read("agents/shared/rules/comment-relevance-memory.md");
+  const RECORDER = read("scripts/record-comment-relevance.mjs");
+  const memoryCalls = (text, tool) => [...text.matchAll(new RegExp(`mcp__lorekit__${tool}\\b([^\\n]*)`, "g"))].map((m) => m[1]);
+  for (const [file, text] of [["memory.md", MEMORY_MD], ["comment-relevance-memory.md", RELEVANCE_MD]]) {
+    for (const args of memoryCalls(text, "memory_search")) {
+      if (!/[:=]/.test(args)) continue;
+      s.check(`G44a ${file}: memory_search takes \`q\` and \`scopes\`, not \`query\` / \`scope\``,
+        /\bq\s*=/.test(args) && !/\bquery\s*=/.test(args) && /\bscopes\s*=/.test(args) && !/(^|[^s])\bscope\s*=/.test(args), args.slice(0, 100));
+    }
+    for (const args of memoryCalls(text, "memory_list")) {
+      if (!/[:=]/.test(args)) continue;
+      s.check(`G44a ${file}: memory_list takes a singular \`scope\`, not \`scopes\``, !/\bscopes\s*=/.test(args), args.slice(0, 100));
+    }
+  }
+  const recorderKeys = [...RECORDER.matchAll(/\bkey\s*[:=][^`;]*`([a-z-]+(?:::[a-z-]+)*::)\$\{/g)].map((m) => m[1]);
+  s.check(`G44b the recorder's key prefixes were extractable (saw: ${recorderKeys.join(" ") || "none"})`, recorderKeys.length > 0);
+  for (const prefix of new Set(recorderKeys)) {
+    s.check(`G44b memory.md quotes the key \`${prefix}…\` exactly as the recorder builds it`, MEMORY_MD.includes(prefix));
+  }
+}
+
+// ── G96: review-loop's description refresh preserves the attach-media region by its markers; a mismatch erases the media ──
+{
+  const OPEN = "<!-- attach-media:v1 -->";
+  const CLOSE = "<!-- /attach-media:v1 -->";
+  const missing = ["skills/delivery/attach-media/rules/body-region.md", "skills/delivery/create-pr/rules/description-contract.md",
+    "skills/quality/review-loop/SKILL.md"].filter((f) => { const t = readOr(f); return !t.includes(OPEN) || !t.includes(CLOSE); });
+  s.check("G96a every attach-media region writer and refresher names both markers", missing.length === 0, missing.join(", "));
 }
 
 process.exit(s.report() ? 0 : 1);

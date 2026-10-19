@@ -18,10 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # G63d (AC-12) diffs specific paths against `origin/main` directly. The
-          # default shallow, single-ref checkout leaves no local `origin/main` to
-          # diff against (`git diff --quiet origin/main` exits 128, "unknown
-          # revision"), so this fetches full history for every ref.
+          # G82 compares L2-read rubric sections against `merge-base HEAD origin/main`.
+          # The default shallow, single-ref checkout has no local `origin/main`, so
+          # the comparison base would not resolve; this fetches full history.
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
