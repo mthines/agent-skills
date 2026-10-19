@@ -247,6 +247,20 @@ export const HYBRID_ISOLATED_FINDERS = Object.freeze(["intent"]);
 export const SMALL_INCREMENTAL_MODES = Object.freeze(["incremental", "incremental-quick", "zero-delta"]);
 const SMALL_INCREMENTAL_TIERS = new Set(["standard", "quick"]);
 
+/** `finder_passes` (review-config.md § Run-level knobs). `1` is the single finder pass every run has
+ *  always made. `2` adds a second pass: the same active finders, run again by two dispatched workers
+ *  that never see pass 1's output, unioned with pass 1 before verification
+ *  (dispatch-topology.md § Two finder passes). Bounded at 2, because each pass costs two sub-agents'
+ *  base. This is a union for recall, not the retired correctness vote: nothing is promoted for
+ *  being raised twice. */
+export const MAX_FINDER_PASSES = 2;
+/** The worker units pass 2 dispatches, as the run ledger records them (`worker <unit> end`). */
+export const SECOND_PASS_UNITS = Object.freeze(["intent-2", "other-finders-2"]);
+/** UNMEASURED: pass 2's new candidates are verified in the reviewer's own turn, so its tool-call
+ *  budget grows by half. Without it a two-pass run at `t < 0.8` (30 calls for ≤ 10 files) would
+ *  truncate verification. */
+export const FINDER_PASS_CALL_MULTIPLIER = 1.5;
+
 /** @param {string[]} shape @param {string} band */
 function highStakesReason(shape, band) {
   const hit = (shape ?? []).find((s) => HIGH_STAKES_SHAPES.has(s));
@@ -259,7 +273,7 @@ function highStakesReason(shape, band) {
  *   thoroughness?: number, routedTier?: "deep"|"standard"|"quick",
  *   shape?: string[], band?: string, depthCapability?: string,
  *   dispatchAvailable?: boolean, effortHigh?: boolean, changedFiles?: number,
- *   runMode?: string,
+ *   runMode?: string, finderPasses?: number, priorShaFromState?: boolean,
  * }} ResolveBudgetInput
  * @typedef {{
  *   effectiveThoroughness: number, requestedThoroughness: number,
@@ -272,6 +286,8 @@ function highStakesReason(shape, band) {
  *   maxVerificationTier: 1|2|3, holisticEscalationCap: number,
  *   optimalityLens: boolean, measurabilityLens: boolean, holisticBroadPass: boolean,
  *   toolCallMultiplier: 1|1.5|2, toolCalls: number|null,
+ *   finderPasses: 1|2, finderPassesRequested: 1|2,
+ *   finderPassesReason: "single"|"requested"|"no-dispatch"|"zero-delta", secondPassUnits: string[],
  *   capabilityNotes: string[],
  * }} Budget
  */
@@ -350,6 +366,22 @@ export function resolveBudget(i = {}) {
   const topology = topologyReason === "hybrid" ? "hybrid" : "in-context";
   const isolatedFinders = topology === "hybrid" ? [...HYBRID_ISOLATED_FINDERS] : [];
 
+  // finder_passes: a second pass needs a dispatch (two isolated workers), so with none it collapses
+  // to one pass and says why. A zero-delta run drops pass 2 only when its prior SHA came from the
+  // PR-state record (`priorShaFromState`): only then does pr-reviewer.md Step 0.8 take the gates-only
+  // fast path. On the GitHub fallback rung it falls through to Step 1.2b, which promotes it to `full`,
+  // so pass 2 still runs. Pass 1's topology is left exactly as routed — pass 2 is additive. Any value
+  // other than 2 is a single pass.
+  /** @type {1|2} */
+  const finderPassesRequested = i.finderPasses === MAX_FINDER_PASSES ? MAX_FINDER_PASSES : 1;
+  const gatesOnlyZeroDelta = i.runMode === "zero-delta" && i.priorShaFromState === true;
+  /** @type {"single"|"requested"|"no-dispatch"|"zero-delta"} */
+  const finderPassesReason = finderPassesRequested === 1 ? "single"
+    : gatesOnlyZeroDelta ? "zero-delta" : !dispatchAvailable ? "no-dispatch" : "requested";
+  /** @type {1|2} */
+  const finderPasses = finderPassesReason === "requested" ? MAX_FINDER_PASSES : 1;
+  const passCallMultiplier = finderPasses === MAX_FINDER_PASSES ? FINDER_PASS_CALL_MULTIPLIER : 1;
+
   return {
     effectiveThoroughness: t,
     requestedThoroughness: base,
@@ -379,7 +411,11 @@ export function resolveBudget(i = {}) {
     holisticBroadPass: t >= T_HOLISTIC_BROAD || i.routedTier === "deep",
     toolCallMultiplier,
     toolCalls: typeof i.changedFiles === "number" && Number.isFinite(i.changedFiles) && i.changedFiles >= 0
-      ? Math.round(toolCallBand(i.changedFiles) * toolCallMultiplier) : null,
+      ? Math.round(toolCallBand(i.changedFiles) * toolCallMultiplier * passCallMultiplier) : null,
+    finderPasses,
+    finderPassesRequested,
+    finderPassesReason,
+    secondPassUnits: finderPasses === MAX_FINDER_PASSES ? [...SECOND_PASS_UNITS] : [],
     capabilityNotes,
   };
 }
@@ -607,6 +643,38 @@ function selfTest() {
       && JSON.stringify(incStd.finders) === JSON.stringify(noMode.finders);
     if (ok) passed++;
     else fails.push(`small-incremental topology drifted: ${JSON.stringify({ incStd: [incStd.topology, incStd.topologyReason], incQuick: incQuick.topology, zero: zero.topology, fullStd: fullStd.topology, incDeep: incDeep.topology, asked: incStdAsked.topology, effort: incStdEffort.topology, noMode: noMode.topology })}`);
+  }
+
+  // ---- resolveBudget: finder_passes — one pass by default; two with a dispatch, except on Step 0.8's gates-only path ----
+  total++;
+  {
+    const one = resolveBudget({ routedTier: "deep", changedFiles: 22 });
+    const two = resolveBudget({ routedTier: "deep", changedFiles: 22, finderPasses: 2 });
+    const twoLow = resolveBudget({ thoroughness: 0.5, changedFiles: 8, finderPasses: 2 });
+    const twoSmallInc = resolveBudget({ routedTier: "standard", runMode: "incremental", finderPasses: 2 });
+    const twoNoDispatch = resolveBudget({ routedTier: "deep", changedFiles: 22, finderPasses: 2, dispatchAvailable: false });
+    const twoZero = resolveBudget({ routedTier: "quick", runMode: "zero-delta", finderPasses: 2, priorShaFromState: true });
+    // the GitHub fallback rung: zero-delta against the sticky's commit with no state record, which Step 1.2b reviews in full
+    const twoZeroFallback = resolveBudget({ routedTier: "deep", runMode: "zero-delta", finderPasses: 2, changedFiles: 22 });
+    const three = resolveBudget({ routedTier: "deep", finderPasses: 3 });
+    const ok = one.finderPasses === 1 && one.finderPassesReason === "single" && one.secondPassUnits.length === 0
+      && two.finderPasses === 2 && two.finderPassesRequested === 2 && two.finderPassesReason === "requested"
+      && JSON.stringify(two.secondPassUnits) === '["intent-2","other-finders-2"]'
+      // the call budget grows by half; nothing else on the budget moves
+      && one.toolCalls === 120 && two.toolCalls === 180 && twoLow.toolCalls === 45
+      && JSON.stringify({ ...two, toolCalls: 0, finderPasses: 0, finderPassesRequested: 0, finderPassesReason: "", secondPassUnits: [] })
+        === JSON.stringify({ ...one, toolCalls: 0, finderPasses: 0, finderPassesRequested: 0, finderPassesReason: "", secondPassUnits: [] })
+      // pass 1's topology stays as routed; pass 2 still runs on a small incremental re-review
+      && twoSmallInc.topology === "in-context" && twoSmallInc.finderPasses === 2
+      && twoNoDispatch.finderPasses === 1 && twoNoDispatch.finderPassesRequested === 2
+      && twoNoDispatch.finderPassesReason === "no-dispatch" && twoNoDispatch.secondPassUnits.length === 0
+      && twoNoDispatch.toolCalls === 120
+      && twoZero.finderPasses === 1 && twoZero.finderPassesReason === "zero-delta"
+      && twoZeroFallback.finderPasses === 2 && twoZeroFallback.finderPassesReason === "requested"
+      && JSON.stringify(twoZeroFallback.secondPassUnits) === '["intent-2","other-finders-2"]' && twoZeroFallback.toolCalls === 180
+      && three.finderPasses === 1 && three.finderPassesReason === "single";
+    if (ok) passed++;
+    else fails.push(`finder_passes drifted: ${JSON.stringify({ one: [one.finderPasses, one.toolCalls], two: [two.finderPasses, two.finderPassesReason, two.secondPassUnits, two.toolCalls], twoLow: twoLow.toolCalls, smallInc: [twoSmallInc.topology, twoSmallInc.finderPasses], noDispatch: [twoNoDispatch.finderPasses, twoNoDispatch.finderPassesReason], zero: [twoZero.finderPasses, twoZero.finderPassesReason], zeroFallback: [twoZeroFallback.finderPasses, twoZeroFallback.finderPassesReason], three: three.finderPasses })}`);
   }
 
   // ---- resolveBudget: monotonicity — for any t1 < t2, budget(t2) is a

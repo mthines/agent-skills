@@ -164,10 +164,10 @@ export function hydrateImpact(context) {
  * this run actually reviewed". Pure (D18): the caller resolves `capApplied`/`depthCapability`/
  * `contextAnomalies` from the context; this only formats them, and never begins with a glyph
  * (the renderer prepends its own ⚠️ — a value that did would double it).
- * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number }} args
+ * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number, secondPassMissing?: string[], secondPassNotUnioned?: string[] }} args
  * @returns {string|undefined}
  */
-export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt }) {
+export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt, secondPassMissing, secondPassNotUnioned }) {
   const parts = [];
   // A/B iteration 2: every in-context arm hand-wrote dispatch-topology.md's no-dispatch line into
   // context.render.RUN_ANOMALY, which REPLACED this function's output and dropped prepare-review's
@@ -179,6 +179,20 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
     parts.push("no sub-agent dispatch available — the intent finder ran in-context with the other finders"
       + ` at effective thoroughness ${noDispatchAt}, instead of as its own sub-agent`);
   }
+  // finder_passes: 2 whose second pass did not deliver (dispatch-topology.md § Two finder passes): a
+  // review resting on one pass must never read as a two-pass review.
+  const missing = Array.isArray(secondPassMissing) ? secondPassMissing.filter(Boolean) : [];
+  if (missing.length) {
+    parts.push(`finder_passes: 2, but finder pass 2 delivered nothing from ${missing.join(", ")}`
+      + " — those finders ran once, in pass 1 only");
+  }
+  // A pass-2 unit that delivered counts only once the union merged it with pass 1 (step 4): with no
+  // union record on the run ledger, its candidates never went through the documented merge.
+  const notUnioned = Array.isArray(secondPassNotUnioned) ? secondPassNotUnioned.filter(Boolean) : [];
+  if (notUnioned.length) {
+    parts.push(`finder_passes: 2, but finder pass 2 was never unioned with pass 1 — ${notUnioned.join(", ")}`
+      + " delivered, and the run ledger holds no finalize.mjs --first-pass/--second-pass record");
+  }
   if (capApplied) {
     parts.push(`depth capability (${depthCapability || "diff-only"}) capped this run below the deep tier its mode would otherwise require`);
   }
@@ -189,6 +203,30 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
     parts.push(`${n} prepare-time anomal${n === 1 ? "y" : "ies"} (${lead}${n > 1 ? `, +${n - 1} more` : ""})`);
   }
   return parts.length ? parts.join(" — ") : undefined;
+}
+
+/**
+ * The workers a run ledger proves delivered: a `worker <unit> end` record carrying `delivered: true`,
+ * which review-telemetry.mjs stamps only when the `--done` file it was given parses as a candidate
+ * array. A bare `end` proves the worker returned, not that it left a readable file — on Agent0 the
+ * marker rides the command that reads the file, whatever the file holds — so it never counts.
+ * @param {Array<{ t?: string, unit?: unknown, phase?: string, attrs?: Record<string, unknown> }>} ledger
+ * @returns {string[]}
+ */
+export function deliveredWorkers(ledger) {
+  return [...new Set(ledger.filter((r) => r.t === "worker" && r.phase === "end" && r.attrs?.delivered === true)
+    .map((r) => String(r.unit)))];
+}
+
+/**
+ * Whether a run ledger proves the finder_passes: 2 union ran: the run `attr` record the
+ * `--first-pass/--second-pass` branch appends when given `--run-dir`, read by its `finder_union_kept`
+ * count (a number, `0` included). A union that exited 2, or ran without `--run-dir`, leaves no record.
+ * @param {Array<{ t?: string, target?: unknown, unit?: unknown, phase?: string, attrs?: Record<string, unknown> }>} ledger
+ * @returns {boolean}
+ */
+export function finderUnionRan(ledger) {
+  return ledger.some((r) => r.t === "attr" && typeof r.attrs?.finder_union_kept === "number");
 }
 
 /**
@@ -733,11 +771,25 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     && noDispatchTopology === "hybrid" && context?.intentIsolated !== true
     && typeof context?.budget?.effectiveThoroughness === "number"
     ? context.budget.effectiveThoroughness : undefined;
+  // finder_passes: 2 — a second-pass worker is delivered when the run ledger holds a `worker <unit>
+  // end` record stamped `delivered: true` (context.workersDelivered, read by the CLI through
+  // deliveredWorkers()); any unit the budget planned without one is named, so a single-pass review
+  // never passes for a two-pass one. A delivered unit is named too when the ledger holds no union
+  // record (context.finderUnionRan, read through finderUnionRan()): delivery without the union is not
+  // a two-pass review either.
+  const delivered = new Set(Array.isArray(context?.workersDelivered) ? context.workersDelivered.map(String) : []);
+  const plannedSecondPass = context?.budget?.finderPasses === 2 && Array.isArray(context?.budget?.secondPassUnits)
+    ? context.budget.secondPassUnits.map(String) : [];
+  const secondPassMissing = plannedSecondPass.filter((/** @type {string} */ u) => !delivered.has(u));
+  const secondPassNotUnioned = context?.finderUnionRan === true ? []
+    : plannedSecondPass.filter((/** @type {string} */ u) => delivered.has(u));
   const autoRunAnomaly = buildAutoRunAnomaly({
     capApplied,
     depthCapability: context?.workspace?.depthCapability || context?.depthCapability,
     contextAnomalies: context?.anomalies,
     noDispatchAt,
+    secondPassMissing,
+    secondPassNotUnioned,
   });
 
   // MEMORIES_USED / MEMORIES_SUMMARY — computed from judgments.memory's two arrays (D4:
@@ -919,6 +971,132 @@ export function dedupeCandidates(candidates) {
   return { kept: semKept.map(strip), dropped: [...dropped, ...semDropped].map(strip) };
 }
 
+/** finding-verifier.md's verdicts, strongest first: a union group holding several verified members keeps
+ *  the strongest, so a merge never turns a confirmed defect into a contradicted one. */
+const VERDICT_RANK = /** @type {Record<string, number>} */ ({ confirmed: 4, ambiguous: 3, unobtainable: 2, contradicted: 1 });
+
+/**
+ * `finder_passes: 2` (dispatch-topology.md § Two finder passes): the union of independent finder
+ * passes, deduped by the same rules as one pass (`dedupeCandidates`), before verification.
+ * `passes[n]` is pass n+1's candidates, every finder of that pass concatenated; list pass 1 first so
+ * an exact-duplicate group keeps pass 1's record. Each kept record gains:
+ *   - `_found_in_passes` — the passes whose candidates merged into it, e.g. `[1, 2]`. Recorded for the
+ *     report and the trace only: being raised twice is NOT agreement and never lowers a bar.
+ *   - `_needs_verification` — false when a member of its group already carries a `verdict` (the
+ *     reviewer verified it before the union). The kept record is then that member, never an unverified
+ *     framing the dedupe order ranked first, and the group's other members go to `dropped`; with
+ *     several verified members the strongest verdict is kept (`VERDICT_RANK`).
+ * Every kept record is rebuilt from its own input, so `dedupeCandidates()`'s `prefix` / `body` strip
+ * never reaches it: a verified record keeps every field it had.
+ * No record carries `agreement_promoted` or `_also_flagged_by`: they are `dedupeCandidates()`'s
+ * cross-finder agreement signal, a union is not a vote, and judgments.schema.json rejects both.
+ * A semantic survivor keeps `_semantic_merged`, the audit record rubric-composition.md § Dedupe
+ * names; the reviewer drops it with the union's own fields before writing judgments.json.
+ * @param {any[][]} passes
+ * @returns {{ kept: any[], dropped: any[], stats: { passes: number, raised: number[], kept: number,
+ *   inEveryPass: number, onlyIn: number[], toVerify: number } }}
+ */
+export function unionFinderPasses(passes) {
+  const lists = (Array.isArray(passes) ? passes : []).map((p) => (Array.isArray(p) ? p : []));
+  const tagged = lists.flatMap((list, pi) => list.map((c, ci) => ({ ...c, _pass: pi + 1, _uid: `p${pi + 1}:${ci}` })));
+  const { kept, dropped } = dedupeCandidates(tagged);
+  // The pre-dedupe input, `prefix` / `body` intact: every kept record is rebuilt from it.
+  const src = new Map(tagged.map((t) => [t._uid, t]));
+
+  // A dropped record may point at a candidate that was itself dropped later (an exact merge followed
+  // by a semantic one), so walk each link to the record that survived.
+  const parentOf = new Map(dropped.map((d) => [d._uid, d._dedupe_dropped_for_uid]));
+  /** @param {string} uid */
+  const rootOf = (uid) => {
+    let u = uid;
+    for (let hops = 0; parentOf.get(u) !== undefined && hops < tagged.length; hops++) u = parentOf.get(u);
+    return u;
+  };
+  /** @type {Map<string, any[]>} */
+  const members = new Map(kept.map((k) => [k._uid, [k]]));
+  for (const d of dropped) members.get(rootOf(d._uid))?.push(d);
+
+  /** @param {any} c */
+  const clean = (c) => {
+    const rest = { ...c };
+    delete rest._uid;
+    delete rest._dedupe_dropped_for_uid;
+    delete rest.agreement_promoted;
+    delete rest._also_flagged_by;
+    return rest;
+  };
+  /** @param {any} m */
+  const framing = (m) => ({ finder: m.finder, defect_class: m.defect_class, line: m.line, claim: m.claim });
+  // Dropped members promoted to represent their group, and the dedupe survivors they replaced.
+  /** @type {Set<string>} */
+  const promoted = new Set();
+  /** @type {any[]} */
+  const demoted = [];
+  const out = kept.map((k) => {
+    const group = members.get(k._uid) || [k];
+    // A verified group is represented by its strongest verdict (ties: the dedupe survivor, then drop
+    // order), never by an unverified framing the exact or semantic order happened to rank first.
+    const verified = group.filter((m) => m.verdict !== undefined && m.verdict !== null)
+      .sort((a, b) => (VERDICT_RANK[b.verdict] || 0) - (VERDICT_RANK[a.verdict] || 0));
+    const rep = verified[0] ?? k;
+    let semanticMerged = k._semantic_merged;
+    if (rep !== k) {
+      // The record the semantic pass saw for `rep`: itself, or the exact-pass survivor it merged into.
+      const repNode = rep._dedupe_reason === "semantic" ? rep._uid : parentOf.get(rep._uid);
+      if (repNode !== k._uid) {
+        semanticMerged = [k, ...group.filter((m) => m._dedupe_reason === "semantic")]
+          .filter((m) => m._uid !== repNode).map(framing);
+      }
+      promoted.add(rep._uid);
+      const replaced = { ...k, _dedupe_dropped_for: rep.finder, _dedupe_reason: repNode === k._uid ? rep._dedupe_reason : "semantic" };
+      delete replaced._semantic_merged;
+      demoted.push(replaced);
+    }
+    return {
+      ...clean(src.get(rep._uid)),
+      ...(semanticMerged ? { _semantic_merged: semanticMerged } : {}),
+      _found_in_passes: [...new Set(group.map((m) => m._pass))].sort((a, b) => a - b),
+      _needs_verification: verified.length === 0,
+    };
+  });
+
+  const n = lists.length;
+  const onlyIn = Array.from({ length: n }, (_, pi) => out.filter((k) => k._found_in_passes.length === 1 && k._found_in_passes[0] === pi + 1).length);
+  return {
+    kept: out,
+    dropped: [...dropped.filter((d) => !promoted.has(d._uid)), ...demoted].map(clean),
+    stats: {
+      passes: n,
+      raised: lists.map((l) => l.length),
+      kept: out.length,
+      inEveryPass: n > 0 ? out.filter((k) => k._found_in_passes.length === n).length : 0,
+      onlyIn,
+      toVerify: out.filter((k) => k._needs_verification).length,
+    },
+  };
+}
+
+/**
+ * Reads one pass's candidate files (comma-separated paths), each a JSON array or `{candidates:[...]}`,
+ * and concatenates them in the order given. A file that is missing or does not parse throws, naming
+ * it: a pass that silently contributed nothing would read as a pass that found nothing.
+ * @param {string} list
+ * @returns {any[]}
+ */
+export function readPassFiles(list) {
+  return String(list || "").split(",").map((p) => p.trim()).filter(Boolean).flatMap((p) => {
+    let raw;
+    try {
+      raw = JSON.parse(readFileSync(p, "utf8"));
+    } catch (e) {
+      throw new Error(`${p}: ${/** @type {Error} */ (e).message}`);
+    }
+    const candidates = Array.isArray(raw) ? raw : raw?.candidates;
+    if (!Array.isArray(candidates)) throw new Error(`${p}: not a JSON array or {candidates:[...]}`);
+    return candidates;
+  });
+}
+
 /**
  * Whether a finding renders as an inline comment through the REAL payload -> render path.
  * @param {any} f @param {string} sha
@@ -1015,8 +1193,14 @@ function parseArgs(argv) {
   const opts = { writer: "github" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") { opts[a.slice(2)] = true; continue; }
-    if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; continue; }
+    // The union's value flags are declared one per branch, the shape L1 G43a reads a parser contract
+    // from, because the docs invoke them in a bash block; every other flag keeps the generic parse.
+    if (a === "--first-pass") opts.firstPass = argv[++i];
+    else if (a === "--second-pass") opts.secondPass = argv[++i];
+    else if (a === "--out") opts.out = argv[++i];
+    else if (a === "--run-dir") opts.runDir = argv[++i];
+    else if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") opts[a.slice(2)] = true;
+    else if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; }
   }
   return opts;
 }
@@ -1024,6 +1208,7 @@ function parseArgs(argv) {
 function usage() {
   console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-dispatch] [--skip-gates] [--no-fix-links] [--fix-links] [--self-test] [--replay-fixtures]\n"
     + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
+    + "   or: finalize.mjs --first-pass <a.json,b.json> --second-pass <c.json,d.json> [--out <file>] [--run-dir <dir>]\n"
     + "   or: finalize.mjs --check-shape <judgments.json>");
 }
 
@@ -2068,6 +2253,254 @@ async function selfTest() {
       r2.status === 0 && (() => { try { const p = JSON.parse(r2.stdout); return p.kept.length === 1 && p.dropped.length === 1; } catch { return false; } })());
   }
 
+  // finder_passes: 2 — unionFinderPasses(), the union of two independent finder passes before
+  // verification (dispatch-topology.md § Two finder passes).
+  {
+    const fc = (/** @type {any} */ over) => ({ finder: "correctness", defect_class: "logic", path: "s.swift", line: 10, symbol: "run",
+      claim: "x", bad_outcome: "y", evidence: ["s.swift:10"], verify_by: "read", ...over });
+    // The same defect in both passes from the same finder: an exact duplicate.
+    const exact1 = fc({ finder: "intent", defect_class: "intent-mismatch", line: 40, symbol: "profileErrors",
+      claim: "the abort line replaces the stored EPERM", bad_outcome: "the banner never fires" });
+    const exact2 = { ...exact1, claim: "the abort line replaces the stored EPERM", bad_outcome: "the banner never fires" };
+    // The same defect framed by two different finders, one per pass: only the semantic pass catches it.
+    const sem1 = fc({ finder: "correctness", defect_class: "logic", line: 2935, symbol: "storeError",
+      claim: "the bisync abort line overwrites the stored EPERM error so the macOS banner never fires",
+      bad_outcome: "the macOS block banner and telemetry never fire on Two-Way profiles" });
+    const sem2 = fc({ finder: "quality", defect_class: "edge-case", line: 2937, symbol: "storeError",
+      claim: "bisync abort line replaces the stored EPERM error and the macOS banner never fires",
+      bad_outcome: "the macOS block banner never fires on Two-Way profiles" });
+    const only1 = fc({ line: 100, symbol: "a", claim: "pass one only finding about retries", bad_outcome: "retries forever" });
+    const only2 = fc({ line: 200, symbol: "b", claim: "pass two only finding about the privacy button", bad_outcome: "settings never open" });
+    const u = unionFinderPasses([[exact1, sem1, only1], [exact2, sem2, only2]]);
+    const at = (/** @type {number} */ line) => u.kept.find((k) => Math.abs(k.line - line) <= 3);
+    check("unionFinderPasses merges an exact cross-pass duplicate into pass 1's record, found in [1, 2]",
+      at(40)?._pass === 1 && JSON.stringify(at(40)?._found_in_passes) === "[1,2]");
+    check("unionFinderPasses merges the same defect framed by different finders in each pass (semantic), found in [1, 2]",
+      JSON.stringify(at(2935)?._found_in_passes) === "[1,2]");
+    check("unionFinderPasses keeps each pass's own findings, each found in that pass alone",
+      JSON.stringify(at(100)?._found_in_passes) === "[1]" && JSON.stringify(at(200)?._found_in_passes) === "[2]");
+    check("unionFinderPasses stats: raised per pass, kept, in both, only-in per pass, to verify",
+      JSON.stringify(u.stats) === JSON.stringify({ passes: 2, raised: [3, 3], kept: 4, inEveryPass: 2, onlyIn: [1, 1], toVerify: 4 }),
+      JSON.stringify(u.stats));
+    check("the same finder raising a defect in both passes is never agreement-promoted — a union is not a vote",
+      at(40) !== undefined && !("agreement_promoted" in at(40)) && !("_also_flagged_by" in at(40)));
+    check("unionFinderPasses never leaks its internal _uid / _dedupe_dropped_for_uid fields",
+      [...u.kept, ...u.dropped].every((c) => !("_uid" in c) && !("_dedupe_dropped_for_uid" in c)) && u.dropped.every((d) => d._pass === 2));
+
+    // Two DIFFERENT finders raise one defect at one anchor, one per pass: dedupeCandidates() records
+    // cross-finder agreement on the survivor, which a union must not emit. After step 6's strip, every
+    // kept record must pass the judgments candidate validation (validate-judgments.mjs --shape-only).
+    const agreeA = fc({ finder: "correctness", line: 50, symbol: "uploadNow",
+      claim: "uploadNow cancels the Task but OverlaySyncService.run never checks cancellation",
+      bad_outcome: "two keep-mode upload runs execute concurrently on one overlay" });
+    const agreeB = fc({ finder: "quality", line: 50, symbol: "uploadNow",
+      claim: "Upload Now cancellation never stops OverlaySyncService.run, which has no cancellation checks",
+      bad_outcome: "concurrent upload runs race on the overlay manifest" });
+    const agree = unionFinderPasses([[agreeA, sem1, only1], [agreeB, sem2, only2]]);
+    const agreed = agree.kept.find((k) => k.line === 50);
+    check("two different finders raising one defect across passes merge into pass 1's record, found in [1, 2]",
+      agree.kept.length === 4 && agreed?.finder === "correctness" && JSON.stringify(agreed?._found_in_passes) === "[1,2]"
+        && agree.dropped.some((d) => d.finder === "quality" && d._dedupe_reason === "exact" && d._pass === 2));
+    check("unionFinderPasses emits no agreement_promoted / _also_flagged_by on any record, even across two finders",
+      [...agree.kept, ...agree.dropped].every((c) => !("agreement_promoted" in c) && !("_also_flagged_by" in c)));
+    check("a semantic survivor keeps its _semantic_merged audit record (rubric-composition.md § Dedupe)",
+      agree.kept.find((k) => Math.abs(k.line - 2935) <= 3)?._semantic_merged?.length === 1);
+    const { loadSchema, validateShapeOnly } = await import("./validate-judgments.mjs");
+    const judged = agree.kept.map((k) => {
+      const c = { ...k, verdict: "confirmed", R: 90, A: 90, Ac: 90, final: 90, severity: "medium", prefix: "issue",
+        blocking: false, title: "T", body: "B", materiality: true, category: "c" };
+      for (const f of ["_pass", "_found_in_passes", "_needs_verification", "_semantic_merged"]) delete c[f];
+      return c;
+    });
+    const shapeErrors = validateShapeOnly(loadSchema(), judged);
+    check("union output, verified and stripped per dispatch-topology.md step 6, passes the judgments candidate validation",
+      shapeErrors.length === 0, shapeErrors.slice(0, 3).join("; "));
+
+    // A chain: an exact duplicate inside pass 2, whose survivor then merges semantically into pass 1.
+    const chainA = { ...sem2 };
+    const chainB = { ...sem2, finder: "consumer-impact" };
+    const chain = unionFinderPasses([[sem1], [chainA, chainB]]);
+    check("a pass-2 record merged by an exact match and then semantically still credits pass 2 on the survivor",
+      chain.kept.length === 1 && JSON.stringify(chain.kept[0]._found_in_passes) === "[1,2]" && chain.dropped.length === 2);
+
+    // The reviewer verified its own pass-1 candidate before the union: the group is not verified again.
+    const verified = unionFinderPasses([[{ ...sem1, verdict: "confirmed" }, only1], [sem2, only2]]);
+    const vg = verified.kept.find((k) => Math.abs(k.line - 2935) <= 3);
+    check("a group holding an already-verified member is marked _needs_verification: false; new ones true",
+      vg?._needs_verification === false && verified.kept.find((k) => k.line === 200)?._needs_verification === true
+        && verified.kept.find((k) => k.line === 100)?._needs_verification === true && verified.stats.toVerify === 2);
+
+    // A verified record keeps its group: a pass-2 framing the semantic order ranks first (higher
+    // severity_hint, earlier line) is dropped, and the kept record is the verified input, every field intact.
+    const judgedFields = { verdict: "confirmed", R: 90, A: 90, Ac: 90, final: 90, severity: "medium", prefix: "issue",
+      blocking: false, title: "T", body: "B", materiality: true, category: "c" };
+    const ownVerified = { ...sem2, ...judgedFields };
+    const outranking = { ...sem1, severity_hint: "high" };
+    const outranked = unionFinderPasses([[ownVerified, only1], [outranking, only2]]);
+    const og = outranked.kept.find((k) => Math.abs(k.line - 2935) <= 3);
+    check("a pass-2 duplicate that outranks a verified pass-1 record never replaces it: the verified record is kept, the duplicate dropped",
+      og?.verdict === "confirmed" && og?._pass === 1 && og?.line === 2937 && og?._needs_verification === false
+        && JSON.stringify(og?._found_in_passes) === "[1,2]"
+        && og?._semantic_merged?.length === 1 && og._semantic_merged[0].line === 2935
+        && outranked.dropped.length === 1 && outranked.dropped[0]._pass === 2 && outranked.dropped[0].line === 2935
+        && outranked.dropped[0]._dedupe_reason === "semantic" && outranked.dropped[0].verdict === undefined
+        && outranked.kept.length === 3 && outranked.stats.toVerify === 2,
+      JSON.stringify({ og, dropped: outranked.dropped }).slice(0, 300));
+    check("the verified record kept for its group keeps every field it had — verdict, scores, prefix, and body",
+      Object.entries(judgedFields).every(([f, v]) => og?.[f] === v), JSON.stringify(og).slice(0, 300));
+    const ownWins = unionFinderPasses([[{ ...sem1, ...judgedFields }], [sem2]]);
+    check("a verified record that wins its group outright still keeps prefix and body (dedupeCandidates strips both)",
+      ownWins.kept.length === 1 && ownWins.kept[0].prefix === "issue" && ownWins.kept[0].body === "B" && ownWins.kept[0]._pass === 1);
+    // The exact pass keeps the first record in load order: a verified record listed after its unverified twin.
+    const twin = unionFinderPasses([[exact1, { ...exact1, ...judgedFields }], [exact2]]);
+    check("a verified record listed after its unverified exact twin is still the one kept",
+      twin.kept.length === 1 && twin.kept[0].verdict === "confirmed" && twin.kept[0].prefix === "issue"
+        && JSON.stringify(twin.kept[0]._found_in_passes) === "[1,2]" && twin.dropped.length === 2
+        && twin.dropped.every((d) => d.verdict === undefined && d._dedupe_reason === "exact" && !("_semantic_merged" in d)));
+    // Two verified members of one group: the strongest verdict is kept, whichever the dedupe order ranked first.
+    const twoVerdicts = unionFinderPasses([[{ ...sem1, ...judgedFields, verdict: "contradicted" }, { ...sem2, ...judgedFields }], []]);
+    check("a group with two verified members keeps the confirmed one over a contradicted one ranked first",
+      twoVerdicts.kept.length === 1 && twoVerdicts.kept[0].verdict === "confirmed" && twoVerdicts.kept[0].line === 2937
+        && twoVerdicts.dropped.length === 1 && twoVerdicts.dropped[0].verdict === "contradicted");
+    // Steps 5–6 end to end: verify only _needs_verification: true, carry every other kept record as it
+    // is, strip the union's fields — and every candidate passes the judgments candidate validation.
+    const carried = unionFinderPasses([[ownVerified, { ...only1, ...judgedFields }], [outranking, only2]]);
+    const stepSix = carried.kept.map((k) => {
+      const c = k._needs_verification ? { ...k, ...judgedFields } : { ...k };
+      for (const f of ["_pass", "_found_in_passes", "_needs_verification", "_semantic_merged"]) delete c[f];
+      return c;
+    });
+    const carriedErrors = validateShapeOnly(loadSchema(), stepSix);
+    check("verified records carried through the union without re-verification pass the judgments candidate validation after step 6",
+      carried.stats.toVerify === 1 && carriedErrors.length === 0, carriedErrors.slice(0, 3).join("; "));
+
+    // Order: listing the passes the other way round finds the same groups.
+    const swapped = unionFinderPasses([[exact2, sem2, only2], [exact1, sem1, only1]]);
+    const shape = (/** @type {any} */ r) => r.kept.map((/** @type {any} */ k) => `${k.line - (k.line % 10)}:${k._found_in_passes.length}`).sort().join(",");
+    check("unionFinderPasses finds the same groups whichever pass is listed first",
+      shape(swapped) === shape(u) && swapped.stats.kept === u.stats.kept && swapped.stats.inEveryPass === u.stats.inEveryPass);
+
+    const empty2 = unionFinderPasses([[only1, exact1], []]);
+    check("an empty pass 2 leaves every finding in pass 1 alone",
+      empty2.stats.kept === 2 && JSON.stringify(empty2.stats.onlyIn) === "[2,0]" && empty2.stats.inEveryPass === 0);
+
+    // The CLI, through the real process boundary the reviewer invokes.
+    const uDir = join(scratchRoot(), "finalize-union-cli");
+    rmSync(uDir, { recursive: true, force: true });
+    mkdirSync(uDir, { recursive: true });
+    const w = (/** @type {string} */ name, /** @type {any} */ body) => { const p = join(uDir, name); writeFileSync(p, JSON.stringify(body)); return p; };
+    const p1a = w("own.json", [exact1, sem1]);
+    const p1b = w("intent.json", { candidates: [only1] });
+    const p2a = w("intent-2.json", [exact2]);
+    const p2b = w("others-2.json", [sem2, only2]);
+    const outPath = join(uDir, "union.json");
+    const runDir = join(uDir, "run");
+    const cli = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--first-pass", `${p1a},${p1b}`, "--second-pass", `${p2a},${p2b}`,
+      "--out", outPath, "--run-dir", runDir], { encoding: "utf8" });
+    const written = existsSync(outPath) ? JSON.parse(readFileSync(outPath, "utf8")) : null;
+    check("finalize.mjs --first-pass/--second-pass exits 0 and writes the same union as the pure function",
+      cli.status === 0 && written?.stats?.kept === 4 && written?.stats?.inEveryPass === 2 && /2 in both/.test(cli.stdout),
+      (cli.stderr || cli.stdout || "").trim().slice(0, 300));
+    const attrs = readLedger(runDir).find((r) => r.t === "attr" && r.target === "run")?.attrs;
+    check("--run-dir records the union on the run's trace as scalar attributes",
+      attrs?.finder_passes === 2 && attrs?.finder_pass1_candidates === 3 && attrs?.finder_pass2_candidates === 3
+        && attrs?.finder_union_kept === 4 && attrs?.finder_union_in_every_pass === 2 && attrs?.finder_union_pass2_only === 1);
+    const missing = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--first-pass", p1a, "--second-pass", join(uDir, "nope.json")], { encoding: "utf8" });
+    check("a pass file that is missing exits 2 and names it — never a silent empty pass",
+      missing.status === 2 && missing.stderr.includes("nope.json"), missing.stderr.trim().slice(0, 200));
+  }
+
+  // finder_passes: 2 whose second pass never delivered is named in RUN_ANOMALY, never passed off as two passes.
+  {
+    const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+    const pctx = { mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, workspace: { depthCapability: "checkout" }, anomalies: [],
+      budget: { topology: "hybrid", effectiveThoroughness: 0.95, finderPasses: 2, secondPassUnits: ["intent-2", "other-finders-2"] } };
+    const ra = (/** @type {any} */ ctx) => String(finalizeReview({ context: ctx, judgments: j0 }).payload.RUN_ANOMALY || "");
+    const none = ra(pctx);
+    // A delivered pass 2 counts once its files went through the union (finderUnionRan), as step 4 prescribes.
+    const half = ra({ ...pctx, workersDelivered: ["intent", "intent-2"], finderUnionRan: true });
+    const all = ra({ ...pctx, workersDelivered: ["intent", "intent-2", "other-finders-2"], finderUnionRan: true });
+    const single = ra({ ...pctx, budget: { ...pctx.budget, finderPasses: 1, secondPassUnits: [] } });
+    check("a two-pass budget with no pass-2 worker delivered names both units in RUN_ANOMALY",
+      none.includes("finder pass 2 delivered nothing from intent-2, other-finders-2"), none);
+    check("a half-delivered pass 2 names only the missing unit; a full one and a single-pass budget add nothing",
+      half.includes("from other-finders-2") && !half.includes("intent-2,") && !all.includes("finder pass 2") && !single.includes("finder pass 2"),
+      `${half} | ${all} | ${single}`);
+    // Delivered but never unioned: pass 2's candidates never met pass 1, so it is not a two-pass review either.
+    const notUnioned = ra({ ...pctx, workersDelivered: ["intent", "intent-2", "other-finders-2"] });
+    const halfNotUnioned = ra({ ...pctx, workersDelivered: ["intent", "intent-2"] });
+    check("a delivered pass 2 with no union record names its delivered units as never unioned; an undelivered one adds no union line",
+      notUnioned.includes("finder pass 2 was never unioned with pass 1 — intent-2, other-finders-2 delivered")
+        && !notUnioned.includes("delivered nothing")
+        && halfNotUnioned.includes("delivered nothing from other-finders-2")
+        && halfNotUnioned.includes("never unioned with pass 1 — intent-2 delivered")
+        && !none.includes("never unioned"),
+      `${notUnioned} | ${halfNotUnioned} | ${none}`);
+    check("finderUnionRan reads only the union's run attr, finder_union_kept: 0 included",
+      finderUnionRan([{ t: "attr", target: "run", attrs: { finder_union_kept: 0 } }])
+        && !finderUnionRan([{ t: "worker", unit: "intent-2", phase: "end", attrs: { delivered: true } }])
+        && !finderUnionRan([{ t: "attr", target: "run", attrs: { finder_passes: 2 } }]) && !finderUnionRan([]));
+    // A bare `end` marker (on Agent0 it rides the command that reads the file, whatever the file
+    // holds) is not delivery; only the stamp review-telemetry.mjs writes from a parsed --done file is.
+    const proven = deliveredWorkers([
+      { t: "worker", unit: "intent", phase: "end" },
+      { t: "worker", unit: "intent-2", phase: "start" },
+      { t: "worker", unit: "intent-2", phase: "end" },
+      { t: "worker", unit: "other-finders-2", phase: "start", attrs: { delivered: true } },
+      { t: "worker", unit: "other-finders-2", phase: "end", attrs: { delivered: true, candidates: 3 } },
+    ]);
+    const fromLedger = ra({ ...pctx, workersDelivered: proven, finderUnionRan: true });
+    check("only an end record stamped delivered counts: a bare pass-2 end marker is still named in RUN_ANOMALY",
+      JSON.stringify(proven) === '["other-finders-2"]'
+        && fromLedger.includes("finder pass 2 delivered nothing from intent-2 —") && !fromLedger.includes("other-finders-2"),
+      `${JSON.stringify(proven)} | ${fromLedger}`);
+    // End to end: the ledger review-telemetry.mjs writes for the Agent0 markers, read back here.
+    const lDir = join(scratchRoot(), "finalize-delivered-cli");
+    rmSync(lDir, { recursive: true, force: true });
+    mkdirSync(join(lDir, "pass2"), { recursive: true });
+    writeFileSync(join(lDir, "pass2", "intent.json"), "[]");
+    const tel = (/** @type {string[]} */ a) => spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), ...a, "--run-dir", lDir],
+      { encoding: "utf8", env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+    tel(["begin"]);
+    tel(["worker", "intent-2", "end", "--done", join(lDir, "pass2", "intent.json")]);
+    tel(["worker", "other-finders-2", "end", "--done", join(lDir, "pass2", "others.json")]);
+    tel(["worker", "other-finders-2", "end"]);
+    const telEnds = readLedger(lDir).filter((r) => r.t === "worker");
+    check("through the real telemetry CLI, only the pass-2 unit whose --done file parsed is delivered",
+      JSON.stringify(deliveredWorkers(telEnds)) === '["intent-2"]', JSON.stringify(telEnds));
+    // Through finalize.mjs's own CLI on that ledger: the delivered intent-2 is named as never unioned
+    // until the real union runs with --run-dir; a union that exits 2 records nothing.
+    writeFileSync(join(lDir, "context.json"), JSON.stringify(pctx));
+    writeFileSync(join(lDir, "judgments.json"), JSON.stringify(j0));
+    writeFileSync(join(lDir, "own.json"), "[]");
+    const finAnomaly = () => {
+      const out = join(lDir, "out");
+      rmSync(out, { recursive: true, force: true });
+      spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(lDir, "context.json"), "--judgments", join(lDir, "judgments.json"),
+        "--out-dir", out, "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+      const res = join(out, "finalize-result.json");
+      return existsSync(res) ? String(JSON.parse(readFileSync(res, "utf8")).payload?.RUN_ANOMALY || "") : "no finalize-result.json";
+    };
+    const runUnion = (/** @type {string} */ second) => spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--first-pass", join(lDir, "own.json"),
+      "--second-pass", second, "--out", join(lDir, "union.json"), "--run-dir", lDir], { encoding: "utf8" });
+    const beforeUnion = finAnomaly();
+    const failedUnion = runUnion(join(lDir, "pass2", "others.json"));
+    const afterFailed = finAnomaly();
+    const okUnion = runUnion(join(lDir, "pass2", "intent.json"));
+    const afterUnion = finAnomaly();
+    check("through finalize.mjs's CLI, a delivered pass 2 reads as never unioned until the union runs with --run-dir; a failed union records nothing",
+      beforeUnion.includes("never unioned with pass 1 — intent-2 delivered") && failedUnion.status === 2
+        && afterFailed.includes("never unioned with pass 1 — intent-2 delivered") && okUnion.status === 0
+        && !afterUnion.includes("never unioned") && afterUnion.includes("delivered nothing from other-finders-2"),
+      `${beforeUnion} | ${afterFailed} | ${afterUnion}`);
+    rmSync(lDir, { recursive: true, force: true });
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    check("the CLI reads context.workersDelivered through deliveredWorkers(), and intent isolation still reads any intent end record",
+      /context\.workersDelivered = deliveredWorkers\(ledger\);/.test(src)
+        && src.includes(`r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;`));
+  }
+
   // D4 / AC-10: checkShape() — the pure function, called directly.
   {
     const conforming = { candidates: [mkCandidate({ title: "Handle the null case", final: 90 })] };
@@ -2614,6 +3047,40 @@ async function main() {
     return;
   }
 
+  // finder_passes: 2 — the union of the passes before verification (dispatch-topology.md § Two finder
+  // passes). `--first-pass a.json,b.json --second-pass c.json,d.json [--out <file>] [--run-dir <dir>]`
+  // writes {kept, dropped, stats}; with --run-dir it also records the stats on the run's trace, the
+  // record finderUnionRan() reads back as proof the union ran.
+  if (opts.firstPass !== undefined || opts.secondPass !== undefined) {
+    let passes;
+    try {
+      passes = [readPassFiles(String(opts.firstPass ?? "")), readPassFiles(String(opts.secondPass ?? ""))];
+    } catch (e) {
+      console.error(`finalize.mjs --first-pass/--second-pass: ${/** @type {Error} */ (e).message} — pass only the files that exist and parse`);
+      process.exit(2);
+    }
+    const result = unionFinderPasses(passes);
+    const s = result.stats;
+    if (typeof opts.runDir === "string") {
+      appendRecord(opts.runDir, { t: "attr", target: "run", attrs: {
+        finder_passes: s.passes, finder_pass1_candidates: s.raised[0], finder_pass2_candidates: s.raised[1],
+        finder_union_kept: s.kept, finder_union_in_every_pass: s.inEveryPass, finder_union_pass2_only: s.onlyIn[1],
+        finder_union_to_verify: s.toVerify,
+      } });
+    }
+    const summary = `finalize: union of ${s.passes} finder passes — raised ${s.raised.join(" + ")} -> ${s.kept} kept`
+      + ` (${s.inEveryPass} in both, ${s.onlyIn[0]} pass 1 only, ${s.onlyIn[1]} pass 2 only), ${s.toVerify} to verify`;
+    if (typeof opts.out === "string") {
+      mkdirSync(dirname(opts.out), { recursive: true });
+      writeFileSync(opts.out, JSON.stringify(result, null, 2));
+      console.log(`${summary} -> ${opts.out}`);
+    } else {
+      console.log(JSON.stringify(result, null, 2));
+      console.error(summary);
+    }
+    return;
+  }
+
   if (!opts.context || !opts.judgments || !opts["out-dir"]) {
     usage();
     process.exit(2);
@@ -2628,7 +3095,12 @@ async function main() {
   // The hybrid intent worker delivered when the run ledger folded it in (review-telemetry.mjs
   // `worker intent import`) — the one record of it a later script can read.
   try {
-    if (readLedger(dirname(/** @type {string} */ (opts.context))).some((r) => r.t === "worker" && r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;
+    const ledger = readLedger(dirname(/** @type {string} */ (opts.context)));
+    if (ledger.some((r) => r.t === "worker" && r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;
+    // Every worker whose --done file parsed, the finder_passes: 2 units included (finalizeReview names a missing one).
+    context.workersDelivered = deliveredWorkers(ledger);
+    // The union's own run record (finalizeReview names a delivered pass 2 that was never unioned).
+    context.finderUnionRan = finderUnionRan(ledger);
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
