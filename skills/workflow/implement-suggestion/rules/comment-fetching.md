@@ -158,7 +158,7 @@ such block at all (`reviewer-report-ingest.md § There is no ledger block`).
 | `Additional findings` bullet | one entry, carrying the bullet's Conventional-Comments prefix, body text and confidence score | `report-finding` | `path` + `line` from the bullet |
 | `Notes` bullet | **nothing** — each is a one-liner that already posted inline and is fetched as an ordinary review comment; expanding it too would process the same note twice | — | — |
 | Gate row `❌` / `⚠️` | one entry per row, body = the gate's Details cell | `report-gate` | none |
-| Optimality card | one entry, body = the card captured verbatim | `report-optimality` | `path` + `line` from the card heading |
+| Optimality card (legacy reports only) | one entry, body = the card captured verbatim | `report-optimality` | `path` + `line` from the card heading |
 
 The keeper entry for the review itself is **replaced** by its expansion — the
 original body is not also carried as a `review` entry, or every finding is
@@ -192,9 +192,8 @@ Hard rules:
    PR-level verdict ("docs missing", "unresolved bot feedback"), not a
    line-level edit. Classify it, surface it, let the user decide.
 3. **A `report-optimality` entry is never auto-applied by default.** Optimality
-   proposals are report-only by construction
-   (`agents/shared/rules/optimality-review.md`) — applying one is an
-   architectural decision, not a review fix.
+   proposals (legacy cards in older reports) are report-only by construction —
+   applying one is an architectural decision, not a review fix.
 4. **`reportedConfidence` is advisory.** It is an input to Phase 4, never a
    substitute for it. The two-gate validation runs on a synthetic entry exactly
    as it does on a human comment.

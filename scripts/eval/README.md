@@ -112,7 +112,6 @@ them re-parsing the other. See [Cost](#cost) below.
 | `complexity-triage` | simple or complex bug? | fix-bug `## Phase 0.5` | simple / complex |
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
 | `reviewer-agreement-bump` | is the surviving finding agreement-promoted? | reviewer `## Cross-rubric agreement` | promoted / not-promoted |
-| `optimize-approach-optimality` | is this approach optimal or suboptimal? | optimize-approach `optimality-rubric.md` (whole file) | optimal / suboptimal |
 | `code-review-retrieval-relevance` | would the documented Step 1.0 + 1.2c read surface this candidate memory for the given PR diff? | `agents/pr-reviewer.md` `### 1.0` + `### 1.2c` (the two-section `rubric.sections` form — deliberately **not** the `## Step 1` parent, see the methodology note) | surface / skip |
 
 **`shape-depth-routing` is retired (pr-reviewer deterministic pipeline, D11).** Phase C's depth

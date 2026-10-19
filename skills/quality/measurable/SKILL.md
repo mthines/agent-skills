@@ -179,7 +179,7 @@ checked for coverage gaps, without writing anything.
    `missing` findings on `web`/`mobile`/`api`/`worker` paths block the
    caller's gate (`unlinked` stays advisory even in `--strict`, since not
    every signal needs a bespoke dashboard on day one). This mirrors how
-   `critical` and `optimize-approach` ship non-blocking by default in this
+   `critical` ships non-blocking by default in this
    registry — a brand-new coverage heuristic earns a hard gate only once a
    team has opted in, not on day one.
 5. Never auto-edit in `audit` mode — that is what `implement` mode is for.

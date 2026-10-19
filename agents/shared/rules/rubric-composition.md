@@ -38,6 +38,8 @@ Strict order so dedup is deterministic:
    - **Naming:** names state intent (`pendingOrders`, not `data2`).
    - **Duplication and reuse:** no new helper or block that duplicates an existing one in the repo.
    - **Neighbour patterns:** the change matches the structure and conventions of neighbouring files.
+   - **Approach:** is there a materially simpler approach or an existing utility that does this?
+     Flag it as a `suggestion:` naming the simpler approach or the utility's `path:line`; never flag a matter of taste.
 2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
 3. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
    `--no-critical` suppresses the config and the heuristic.

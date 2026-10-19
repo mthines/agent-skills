@@ -51,8 +51,8 @@ whose `HEAD_SHA` has not moved):
 | Mode | When | What runs |
 |---|---|---|
 | `full` | No prior review found, OR `--full` passed, OR delta > 100 lines, OR new files in delta, OR high-stakes paths touched (classifier-owned list + repo `high_stakes_paths:`), OR **a propagation shape in the delta** (governing doc + restatements — Step 1.2b), OR **cumulative delta since the last full review > `FULL_REFRESH_DELTA` (150) lines**, OR **≥ `FULL_REFRESH_RUNS` (3) incremental reviews since the last full review**, OR **no prior full review is recorded** (including every run on the Step 0.7 fallback rung, which recovers a baseline but no history) | Tier `deep`: every finder, holistic broad + targeted escalation (budget-capped), optimality. Gate 4 and inline review scan the full PR diff. |
-| `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths, no propagation shape | Tier `standard`: every finder, holistic broad pass (2.4) skipped; **targeted escalation (2.4b) runs on the delta findings (cap 3) when the delta carries a risky content shape** (`ESCALATE_IN_INCREMENTAL`, Step 1.2b). Optimality (2.4c) skipped — whole changes only, whatever the budget says (§ 2.4c); measurability (2.4e) runs on the delta files. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
-| `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths, no propagation shape | Tier `quick`: correctness, quality, and description finders only. Holistic broad pass (2.4), optimality (2.4c), and the consumer-impact and dependency finders skipped; measurability (2.4e) runs on the delta files; **targeted escalation (2.4b) still runs (cap 3) when the delta carries a risky content shape**. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
+| `incremental` | Prior review found, delta 11–100 lines, no new files, no high-stakes paths, no propagation shape | Tier `standard`: every finder, holistic broad pass (2.4) skipped; **targeted escalation (2.4b) runs on the delta findings (cap 3) when the delta carries a risky content shape** (`ESCALATE_IN_INCREMENTAL`, Step 1.2b). measurability (2.4e) runs on the delta files. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
+| `incremental-quick` | Prior review found, delta ≤ 10 lines, no new files, no high-stakes paths, no propagation shape | Tier `quick`: correctness, quality, and description finders only. Holistic broad pass (2.4) and the consumer-impact and dependency finders skipped; measurability (2.4e) runs on the delta files; **targeted escalation (2.4b) still runs (cap 3) when the delta carries a risky content shape**. Inline review and Gate 4 scan the delta diff only. All other gates run on the full PR state. |
 | *(zero-delta)* | Prior review found, zero lines changed, no new files | Gate checks only (no inline review). Announced and handled as a special case of `incremental-quick`. Detected at Step 0.8 (identical `HEAD_SHA`, no fetch pipeline spent) or, on a rebase/amend that changes `HEAD_SHA` without an authored delta, at Step 1.2b. |
 
 Findings carried forward from a prior run's `Additional findings` list are re-admitted in **every** mode, including the incremental ones — they were already found on the full diff, so scanning only the delta does not lose them (`prior-comment-awareness.md § Carry-forward of deferred findings`).
@@ -119,7 +119,6 @@ The value is one JSON object with a version stamp:
     ],
     "diagnostics": {
       "gate_rows": [{ "gate": "Documentation", "status": "❌", "details": "no docs for the new retry policy" }],
-      "optimality_cards": ["### Optimality proposal — src/api/client.ts:180\n…"],
       "standards": { "ran": true, "docs_scanned": 4, "finding_count": 1 },
       "skipped_files": [],
       "partial": false
@@ -137,7 +136,7 @@ The value is one JSON object with a version stamp:
 | `runs[]` | `PRIOR_SHA`, `LAST_FULL_SHA`, `INCR_RUNS_SINCE_FULL`, Step 5, the report's `**Progress:**` line | Oldest first, **capped at 50** — drop from the front. `open`/`blocking` are finalize's `round` (Step 4c). Nothing branches on `verdict`. |
 | `open_thread_ids` | `RESOLVED_SINCE_PRIOR` | Gate 3's open set after the writing run's Step 2.9c. **Top-level, not per-run** — current state, not history. |
 | `carried_findings[]` | `CARRIED_FINDINGS` | The deferred findings from Step 2.9b, **structured**. Capped at 50. |
-| `diagnostics` | `PRIOR_DIAGNOSTICS` | The anchorless outputs, structured. `optimality_cards` holds each card's markdown verbatim; capped at 2, same as Step 2.4c's proposal cap. |
+| `diagnostics` | `PRIOR_DIAGNOSTICS` | The anchorless outputs, structured. A legacy `optimality_cards` field is dropped on the next write. |
 
 **The record is bounded by construction**, so there is no truncation ladder: 50 runs at ~110
 bytes, 50 findings at ~200 bytes, and 2 cards at ~1 KB sit an order of magnitude under the 64 KB
@@ -276,11 +275,11 @@ forward of deferred findings`, in **every** mode including `--full`. `PRIOR_DIAG
 `data.diagnostics`, re-admitted per `prior-comment-awareness.md § Carry-forward of anchorless
 findings` at Step 2.5c, also every mode, as **input context, never a verdict shortcut** — Step 1.8
 still evaluates every gate against the current PR state, and a carried entry survives into this
-run's body only when Step 1.8 / 2.4c / 2.4d confirm it or the owning step was skipped this run.
+run's body only when Step 1.8 / 2.4d confirm it or the owning step was skipped this run.
 `RUN_MODE = "incremental"`, subject to upgrade in Step 1.2b, unless `--full` was passed (stays
 `full`, Step 1.2b skips on the mode alone). `IS_RE_REVIEW = true`.
 
-Announce: `PR-state record read (<R> run(s), baseline \`<PRIOR_SHA_SHORT>\`) — <C> deferred finding(s), <G> open gate finding(s), <O> optimality proposal(s) carried forward.`
+Announce: `PR-state record read (<R> run(s), baseline \`<PRIOR_SHA_SHORT>\`) — <C> deferred finding(s), <G> open gate finding(s) carried forward.`
 
 ### First run
 

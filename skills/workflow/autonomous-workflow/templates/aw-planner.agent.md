@@ -16,7 +16,7 @@ tools:
   - WebSearch
   # Sub-agent dispatch for the Phase 1 parallel `Explore` fan-out.
   - Task
-  # LoreKit lessons loop (read at Phase 1; optimize-approach writes at O5).
+  # LoreKit lessons loop (read at Phase 1).
   # Sub-agents do not inherit the parent's MCP tools, so grant them by name.
   - mcp__lorekit__memory_list
   - mcp__lorekit__memory_search
@@ -91,7 +91,6 @@ Every registry row for a phase you ran gets one line — `companion: <name> — 
 | 1 | `lorekit-memory` | Always — read lessons before design | `memory.list loop::aw-lessons` |
 | 1 | `holistic-analysis` | Complex, multi-domain, or unfamiliar task | — |
 | 1 | `critical` | Only with `--critical` | `plan` |
-| 1 | `optimize-approach` | Full default-on (skip `--no-optimize`) | `plan` |
 | 1 | `confidence` | Always — the plan gate; cannot be disabled | `plan` |
 | 2 | `aw-create-plan` | Always | — |
 

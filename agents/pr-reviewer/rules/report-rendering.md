@@ -93,7 +93,7 @@ of those was a real defect before it became derived.
 | `MEMORIES_SUMMARY` | The **indexed half only** — `<MEMORIES_READ_COUNT> indexed`, or `not connected`. It counts all three record families (relevance rules, knowledge, hotspot), because `MEMORIES_USED` does. Never write ` · <N> used`: the renderer derives that from `MEMORIES_USED`'s length and rejects a payload that supplies its own, reports fewer indexed than used, or pairs `not connected` with a non-empty `MEMORIES_USED`. |
 | `QUALITY` | Must begin `produced <N> → posted inline <N> …`. `posted inline <N>` counts claims only; cleared one-liners posted as notes follow it as ` · notes <M>` when `M > 0`, and are never counted as `deferred`. |
 | `INTEGRATIONS` | Names + versions + spec URLs, or `not activated`, or `skipped (<reason>)` — e.g. `skipped (tier: quick)`. |
-| `OPTIMALITY_LOG` · `STANDARDS_LOG` · `MEASURABILITY_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
+| `STANDARDS_LOG` · `MEASURABILITY_LOG` | Must begin `ran` or `skipped (reason)` so the run-state parses. |
 | `SKIPPED_FILES` | A list, or `none`. |
 
 **Required — `RUN`**, the object the footer line, the `Run mode` line, and the top-level freshness
@@ -212,7 +212,6 @@ length**, so there is no count to supply and none to get wrong:
 | `NOTES` | `[{path, line, url?, prefix, body, confidence}]` | The cleared one-liners (`nitpick` / `question` / `praise`) that **posted inline**. Renders as the `Notes (<M>) — posted inline` accordion and drives the heading's ` · <M> notes` clause. A claim prefix (`issue` / `suggestion`) is rejected here — a posted claim is a `FINDINGS` row. |
 | `ADDITIONAL_FINDINGS` | `[{path, line, url?, prefix, body, confidence}]` | Findings that cleared review but did **not** post (over the inline caps). `prefix` is a Conventional-Comments prefix; `confidence` an integer 0–100. A posted note never belongs here — the accordion calls this list "too minor to comment on". |
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
-| `OPTIMALITY_CARDS` | `[markdown, …]` | The one place model-authored markdown remains, because a card is a multi-line block with its own table. Each must contain a `### Optimality proposal — <path>:<line>` heading, which the renderer checks. The heading itself is BUILT by `finalize/payload.mjs`'s `buildOptimalityCard()` from the judgment's own `path`/`line`, never taken from the model — `card_body` (the field the optimality lens actually supplies) is expected to EXCLUDE the heading, and `buildOptimalityCard()` strips a leading one if the model echoes its own `proposal.template.md` (which opens with the same heading) rather than starting its content after it, so a card never renders the heading twice. |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
 | `COVERAGE` | `{files_read, files_total, files_skipped?}` | Integers: the files read and the changed files in scope (every PR file on a `full` run — a promoted re-review included — the delta on an incremental one), less the files triage skipped (`SKIPPED_FILES`), which `files_skipped` counts. Built by `finalize/reach.mjs` from `judgments.scanned_files` against `context.scopePaths`, or from `PARTIAL_REVIEW` when the walk was truncated; a `context.render.COVERAGE` overrides it. Feeds the `**Checked:**` line. Rejected when `files_read > files_total`, or when it disagrees with `PARTIAL_REVIEW`'s `scanned` / `total`. |
 | `ROUNDS` | `[{sha, open, blocking}]` | Earlier runs' worklists, oldest first — built by `finalize.mjs` from the PR-state record's `runs[]`; never hand-supplied — `finalize.mjs` ignores a `context.render.ROUNDS`. Feeds the `**Progress:**` line; the renderer shows the last 4 plus this run. Rejected when a `sha` is not 7 hex chars or `blocking > open`. |
@@ -241,7 +240,7 @@ unchanged apart from the new `RUN_ANOMALY` slot — the grouping is entirely ren
 | Group | Heading | Holds | Rendered when |
 | --- | --- | --- | --- |
 | Attention | `**Needs attention**` | the gate table, then `Open review threads` | the heading only when a gate row is ⚠️ or ❌; the table always |
-| Found | `**Found**` | `Quality`, `Dropped`, `Severity`, `Optimality`, `Standards`, `Measurability`, `Verified` | always (`QUALITY` is required, so the group is never empty) |
+| Found | `**Found**` | `Quality`, `Dropped`, `Severity`, `Standards`, `Measurability`, `Verified` | always (`QUALITY` is required, so the group is never empty) |
 | Run | `**Run**` | the run line, the `⚠️` anomaly line, `Skipped files`, `Integrations`, `CI`, `Memories` + its bullets | always |
 
 Three properties are load-bearing rather than cosmetic, and the committed snapshots L1 `G25` diffs pin each:
@@ -258,16 +257,15 @@ Three properties are load-bearing rather than cosmetic, and the committed snapsh
 #### Quiet lenses collapse into a footnote
 
 ```markdown
-<sup>Nothing to report — standards (1 doc), optimality (3 judged), measurability (4 paths classified), integrations (not activated), severity, 0 files skipped.</sup>
+<sup>Nothing to report — standards (1 doc), measurability (4 paths classified), integrations (not activated), severity, 0 files skipped.</sup>
 ```
 
-Six slots are collapsible, and **emptiness is read from each one's own documented grammar** — never
+Five slots are collapsible, and **emptiness is read from each one's own documented grammar** — never
 guessed from prose length or a bare substring search:
 
 | Slot | Quiet when | Footnote entry |
 | --- | --- | --- |
 | `STANDARDS_LOG` | begins `skipped`, or contains `0 finding(s)` | `standards (<N> doc[s]>)` · `standards (skipped)` |
-| `OPTIMALITY_LOG` | begins `skipped`, or contains both `0 proposal(s)` and `0 withheld` | `optimality (<N> judged)` · `optimality (skipped)` |
 | `MEASURABILITY_LOG` | begins `skipped`, or contains both `0 missing` and `0 unlinked` | `measurability (<N> paths classified)` · `measurability (skipped)` |
 | `INTEGRATIONS` | exactly `not activated`, or begins `skipped` | `integrations (not activated)` · `integrations (skipped)` |
 | `SKIPPED_FILES` | exactly `none` | `0 files skipped` |
@@ -553,44 +551,13 @@ Rules for the list:
   tally, or other findings. It is a rendering of Gate 3 state, not a new finding, so it is never
   auto-applied or ingested (`reviewer-report-ingest.md`).
 
-**The three accordion summaries are written for a PR author, not for the pipeline.** They used to
-read `Additional findings (3) — cleared review, not inlined`, `Low-confidence findings (1)`, and
-`Optimality review (1) — is this the best approach?`. "Cleared review" means *passed the verifier*,
+**The accordion summaries are written for a PR author, not for the pipeline.** They used to
+read `Additional findings (3) — cleared review, not inlined` and `Low-confidence findings (1)`. "Cleared review" means *passed the verifier*,
 and every author reads it as *dismissed* — so the one accordion holding real, verified findings was
 labelled as the one holding nothing. The pipeline vocabulary (`cleared`, `deferred`, `below-bar`,
 `produced → posted inline`) stays in the state record, the diagnostics, and the terminal report,
 where the audience is the operator. `reviewer-report-ingest.md` keys on these literals, so a reword
 here changes that grammar in the same commit — which is exactly what its own rule requires.
-
-`OPTIMALITY_SECTION` renders the Step 2.4c proposals. Omit the placeholder entirely when there
-are no proposals — the quiet early-exit must stay quiet. Otherwise substitute:
-
-```markdown
-<details>
-<summary>Is there a better approach? (<OP>)</summary>
-
-### Optimality proposal — src/api/client.ts:180
-
-> **Reuse \`withRetry()\` instead of hand-rolling a retry loop**
-
-| | Approach |
-| --- | --- |
-| **Now** | A hand-rolled retry loop with a fixed 200 ms sleep. |
-| **Better** | Have you considered \`withRetry()\` from \`src/lib/retry.ts\`, already used by the other three clients? |
-
-**Why it's better** · _codebase-fit_ — one backoff policy instead of four, and it already honours the abort signal.
-**Trade-off** · none material — \`withRetry\` is a drop-in with the same call shape.
-**Evidence** · \`withRetry\` — \`src/lib/retry.ts:14\`, 3 call sites
-
-<sub>Intent: Retry transient upstream failures. · Blast radius: \`src/api/client.ts\` only · Confidence: 88%</sub>
-
-</details>
-```
-
-One card per proposal, at most 2, from
-`skills/quality/optimize-approach/templates/proposal.template.md`. Keep the headline a crisp
-statement, but frame the **Better** row as a question — cross-review context asymmetry. Proposals
-are **never** posted as inline comments and never affect the gate table or the verdict.
 
 `ADDITIONAL_FINDINGS_SECTION` renders the deferred findings from Step 2.9b — the findings that
 cleared every quality gate but did not fit the inline caps. Omit the placeholder entirely when
@@ -633,8 +600,7 @@ cap) and must not be mixed into that section — the two carry different confide
 
 **Carried anchorless entries.** Entries carried from the prior review body per
 `prior-comment-awareness.md § Carry-forward of anchorless findings` render in their own section —
-a carried gate finding in the gate-status table's Details cell, a carried optimality card in
-`OPTIMALITY_SECTION`, a carried 2.4d run-state on the `Standards — ` log line — each
+a carried gate finding in the gate-status table's Details cell, a carried 2.4d run-state on the `Standards — ` log line — each
 suffixed ` (carried from <PRIOR_SHA_SHORT>)`. The suffix is mandatory: it is the only
 thing distinguishing a finding this run verified from one it merely preserved because the owning
 step was skipped. A carried entry never changes the gate table's ✅/⚠️/❌ status, which Step 1.8

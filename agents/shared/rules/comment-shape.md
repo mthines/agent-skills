@@ -22,7 +22,6 @@ So the caps, the decorations, the evidence line, the fingerprint marker, the but
 
 Research grounding: AI-review tools that ship < 5 % false-positive rate and short, scannable comments (CodeRabbit, Greptile in their 2026 field tests) are the ones developers keep reading. Long comments are skipped; skipped comments make the entire review feel like noise. The title added below is not a relaxation of that: it *replaces* the opening clause that used to do a title's job badly, and the prose cap drops from 240 to 200 to pay for most of it.
 
-Optimality proposals (Step 2.4c) are **out of scope** for this rule: they render as cards in a report section, not as comments, and are exempt from every cap below (`optimality-review.md § Gates`).
 
 ## Contents
 

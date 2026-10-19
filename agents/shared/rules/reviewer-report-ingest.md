@@ -19,7 +19,6 @@ lives*):
 - gate findings, which have **no inline anchor by design** — a `❌` on *Prior review feedback*,
   *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior review feedback*)
   exists only as a row in the gate-status table;
-- optimality proposals (Step 2.4c), which are body cards and are **never** posted inline;
 - deferred findings (Step 2.9b), which cleared every quality gate but did not fit the inline caps.
 
 Any consumer that reads only the inline comments therefore sees an incomplete review.
@@ -126,14 +125,14 @@ finding.
 | Progress line | a line beginning `**Progress:**` | none — the open/blocking worklist across recent reviews. **Never a finding.** | n/a |
 | Reach | `<summary>What this change reaches — …</summary>` | none — a Mermaid diagram plus consequence notes about coverage. **Never a finding**: the findings it mentions are already inline. | n/a |
 | Gate-status table | the `\| Gate \| Status \| Details \|` table inside `<details><summary>Review details…` | one unit per row whose Status is `❌` or `⚠️`: `{gate, status, details}`. `✅` rows carry no finding. | **No** — gate findings have no `path:line` |
-| Optimality cards | `<summary>Is there a better approach? (<N>)</summary>` | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |
+| Optimality cards (legacy) | `<summary>Is there a better approach? (<N>)</summary>` — only in bodies written before the optimality lens was removed | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |
 | Findings index | the `\| Finding \| Where \| Severity \|` table above the accordions | one unit per row: `{title, path, line, url, tier, blocking}` — the findings this run posted **inline**, which are also fetchable from `pulls/<n>/comments`. **Do not double-count**: a consumer reading both surfaces must dedupe on `path:line`, since the index is a pointer to the comment, not a second finding. | Yes |
 | Notes | `<summary>Notes (<N>) — posted inline</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` — one-liners this run **posted inline**, so each is also a comment in `pulls/<n>/comments`. **Never expand a Notes bullet into a finding to act on**: it is a pointer to a comment that already exists, the same double-count rule as the findings index. A body written before this section existed listed posted notes under *Additional findings*; the dedupe-against-inline rule below still covers those. | Yes |
 | Additional findings | `<summary><N> more findings — verified, too minor to comment on</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` — findings that cleared review and did **not** post. | Yes |
 | Low-confidence findings | `<summary>Less certain (<N>) — advisory, below the confidence bar</summary>` | one unit per bullet: `` `<path>:<line>` — <prefix>: <body> (confidence <N>) `` | Yes |
 | Run mode | a line **beginning** `<mode> · <N> lines in delta` — `/^(full\|incremental\|incremental-quick) · (\d+) lines in delta/m` | `{mode, delta_lines}`, from that single shape — every mode renders it, a zero-delta run as `incremental · 0 lines in delta`. The zero-delta form is named by the Footer SHA line, not here. | n/a |
 | Standards log | `Standards —`, the first line of the `Found` group's standards entry | `{ran, docs_scanned, finding_count}` — run-state only. **Absent when the lens had nothing to report** (see *Quiet lenses collapse into a footnote*). | n/a |
-| Optimality log | `Optimality —` | `{ran, judged, optimal, proposals, withheld}` — run-state only. Absent when quiet. | n/a |
+| Optimality log (legacy) | `Optimality —` — only in bodies written before the optimality lens was removed | `{ran, judged, optimal, proposals, withheld}` — run-state only. Absent when quiet. | n/a |
 | Measurability log | `Measurability —` | `{ran, paths_classified, missing, unlinked}` — run-state only. Absent when quiet (`0 missing` and `0 unlinked`). | n/a |
 | Skipped files | `Skipped files —` | file paths. **Absent on `none`** — an empty skip list renders as `0 files skipped` in the footnote, never as its own line. | n/a |
 | Footer SHA | `<sup>\`pr-reviewer\` · commit \`<sha>\`` — one shared line, built by `comment-spine.mjs`'s `footerLine()` and rendered **below** the `Review details` accordion | the reviewed SHA. Match on `` commit \`<sha>\` `` **alone**, never on a leading phrase — the rule that already applied to the three retired run-mode forms (`Reviewed for commit`, `Incremental review for commit`, `No code changes since`), and the reason this line's rewording costs a conforming consumer nothing. The run mode now rides as a phrase after the sha (`full review`, `incremental review, delta since \`<prior>\``, `no code changes since \`<prior>\`, gate checks only`) and the freshness stamp as `updated <YYYY-MM-DD HH:MM> UTC`, so the old standalone `<sub>Updated … UTC</sub>` line is gone. This is load-bearing provenance for a sticky, which has no `commit_id` — and it is what `pr-reviewer`'s own fallback rung reads to recover a delta baseline when its state record is unusable. A body written before this change still carries one of the three retired forms; a consumer matching on `` commit \`<sha>\` `` reads both. | n/a |
@@ -172,7 +171,7 @@ Inside `Review details` the run-state lines sit under three bold group headings 
 `**Needs attention**` (rendered only when a gate is not ✅), `**Found**`, and `**Run**`. The
 headings are **layout, not sections**: they have no row in the table above, carry no extractable
 unit, and must never be matched as a section boundary. Their sole grammatical consequence is that
-the in-group labels are plain (`Standards — `, `Optimality — `, `Measurability — `, `Skipped files — `)
+the in-group labels are plain (`Standards — `, `Measurability — `, `Skipped files — `)
 rather than
 bold, because the heading carries the visual weight.
 
@@ -189,14 +188,14 @@ A lens that ran and found nothing is named once, in a `<sup>` footnote at the en
 instead of spending a full line on a value that carries no information:
 
 ```markdown
-<sup>Nothing to report — standards (1 doc), optimality (3 judged), measurability (4 paths classified), integrations (not activated), severity, 0 files skipped.</sup>
+<sup>Nothing to report — standards (1 doc), measurability (4 paths classified), integrations (not activated), severity, 0 files skipped.</sup>
 ```
 
 Consequences for a consumer, and they matter more than the cosmetics:
 
-- **An absent `Standards —` / `Optimality —` / `Measurability —` / `Skipped files —` line is not a
-  missing section.** It means the lens had nothing to report — `0 finding(s)`, `0 proposal(s)` and
-  `0 withheld`, `0 missing` and `0 unlinked`, or `none` respectively. Parsing rule 1 already says an absent heading yields an empty result, which is the
+- **An absent `Standards —` / `Measurability —` / `Skipped files —` line is not a
+  missing section.** It means the lens had nothing to report — `0 finding(s)`, `0 missing` and
+  `0 unlinked`, or `none` respectively. Parsing rule 1 already says an absent heading yields an empty result, which is the
   correct reading here; do not infer that the lens was skipped.
 - **A lens renders as a line xor a footnote entry, never both and never neither.** That exclusivity
   is enforced by L1, so a consumer can rely on exactly one of the two being present per lens.
@@ -208,11 +207,11 @@ Consequences for a consumer, and they matter more than the cosmetics:
 
 The `Low-confidence findings` section holds `issue` / `suggestion` findings that were grounded and receipt-checked but scored just under the per-comment confidence bar (`per-comment-confidence.md § Drop vs. defer`). The grammar parses them like any other anchored unit, but the **consumer contract is that they are advisory**: `implement-suggestion` MUST NOT auto-apply them, because the reviewer itself was not confident enough to inline them. A consumer may surface them to a human, never act on them unattended.
 
-**Not carried forward — by design.** `pr-reviewer`'s PR-state record has **no field** for this section, and that absence is intentional, not an omission: advisory findings are the one anchorless body output that is **not** carried into a re-review. A full re-review re-derives them from the diff, and an incremental run that skips them loses nothing durable (unlike deferred `Additional findings`, gate rows, or optimality cards, which are not re-derivable and therefore *are* carried). A consumer parsing this section must not expect a matching `diagnostics` field in the state record.
+**Not carried forward — by design.** `pr-reviewer`'s PR-state record has **no field** for this section, and that absence is intentional, not an omission: advisory findings are the one anchorless body output that is **not** carried into a re-review. A full re-review re-derives them from the diff, and an incremental run that skips them loses nothing durable (unlike deferred `Additional findings` or gate rows, which are not re-derivable and therefore *are* carried). A consumer parsing this section must not expect a matching `diagnostics` field in the state record.
 
-### The optimality inline pointer is an ordinary inline comment
+### A legacy optimality inline pointer is an ordinary inline comment
 
-A high-confidence optimality proposal (`optimality-review.md § Inline pointer`) may leave a short inline `suggestion:` pointer at the proposal's anchor. That pointer is a normal inline comment fetched from `pulls/<n>/comments`, not a body section — do not mine the `Optimality cards` block for it, and do not double-count the pointer against its card.
+A body written before the optimality lens was removed may pair a card with a short inline `suggestion:` pointer at the card's anchor. That pointer is a normal inline comment fetched from `pulls/<n>/comments`, not a body section — do not double-count the pointer against its card.
 
 ### The open-threads checklist is not a body section
 
@@ -257,8 +256,7 @@ consumer that also mined the log line for findings would double-count them.
 
 ### Verbatim capture
 
-An optimality card is captured as a whole block, never summarised at parse time. Consumers need the
-original wording: `pr-reviewer` re-renders it unchanged when carrying it, and
+A legacy optimality card is captured as a whole block, never summarised at parse time.
 `implement-suggestion` needs the Now / Better rows to know what change is being proposed at all.
 
 ---

@@ -5,7 +5,7 @@ description: >
   and reports its verdict and findings without touching your code. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`; invoke with /pr-review.
 disable-model-invocation: false
-argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
@@ -60,7 +60,7 @@ Everything after the PR reference is a **pass-through flag**: forward it verbati
 ```bash
 # Known agent flags, listed for the argument-hint only — NOT a validation allowlist.
 #   --critical --full --effort high --with a,b,c --no-holistic --no-escalate
-#   --no-optimize --no-standards --skip-gates --fix-links
+#   --no-standards --skip-gates --fix-links
 ```
 
 **Never validate the flag list.** Let the agent reject what it does not know.

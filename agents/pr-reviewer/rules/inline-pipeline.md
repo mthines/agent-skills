@@ -18,7 +18,6 @@ tags:
   - [2.3 Filter suppression](#23-filter-suppression)
   - [2.4 Holistic review (default ON in `full` mode)](#24-holistic-review-default-on-in-full-mode)
   - [2.4b Targeted holistic escalation (default ON in `full` mode; shape-gated in incremental)](#24b-targeted-holistic-escalation-default-on-in-full-mode-shape-gated-in-incremental)
-  - [2.4c Optimality review (default ON in `full` mode)](#24c-optimality-review-default-on-in-full-mode)
   - [2.4d Standards conformance (default ON at the `deep` and `standard` tiers)](#24d-standards-conformance-default-on-at-the-deep-and-standard-tiers)
   - [2.4e Measurability review (default ON at every tier)](#24e-measurability-review-default-on-at-every-tier)
   - [2.5 Dedupe + consolidate](#25-dedupe--consolidate)
@@ -151,8 +150,6 @@ rubrics + finders produce raw candidates
   → 2.3  review-config.md § Filters   (drop findings in categories suppressed by review config)
   → 2.4  holistic-review.md           (Skill("holistic-analysis", "review") — default on; may be skipped per 1.8 heuristic)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
-  → 2.4c optimality-review.md         (Skill("optimize-approach", "report") — report-only; proposals exit
-                                       via the review-body Optimality section, NOT the inline stream)
   → 2.4d standards-conformance.md     (governing-docs enforcement — default on; skip via --no-standards or trivial-skip;
                                        findings cite governing-doc path:line and pass all downstream gates)
   → 2.4e measurability-review.md      (Skill("measurable", "audit") — default on; two gates keep it quiet;
@@ -234,35 +231,6 @@ from), highest-severity first. This is the depth lever for a small-but-dangerous
 15-line mutex change gets its call-graph trace without paying for a whole-PR full pass. With
 `ESCALATE_IN_INCREMENTAL` false, incremental runs skip 2.4b exactly as before
 (`holistic-review.md § Risky-shape incremental escalation`).
-
-### 2.4c Optimality review (default ON in `full` mode)
-
-See `agents/shared/rules/optimality-review.md`. Cross-review is **report-only** — never
-apply. Skip via `--no-optimize`, when the `TRIVIAL_SKIP` cache from Step 1.7b is true, when
-`RUN_MODE` is `incremental` or `incremental-quick` (logged `skipped (incremental)`) — whatever
-`budget.optimalityLens` says — or when `!budget.optimalityLens`, logged `skipped (t=<t>)`.
-
-The lens runs on full reviews only because approach analysis needs the whole change to judge: an
-approach question asked of a delta is asked of a fragment of the approach, and the answer is
-either unanswerable or wrong. It is exactly the lens the deep-lens refresh exists to bring back —
-a long series of small commits gets it on every refreshed full pass, not never.
-
-A proposal's **full argument** never becomes an inline comment. Proposals are rendered as cards in
-the review body's `Optimality review` section (`OPTIMALITY_SECTION`), so they skip 2.7, 2.8, 2.9 and
-2.9b and keep only dedupe (2.5), grounding (2.6), and the verification receipt (2.6b). Their
-confidence gate is the skill's own `analysis_confidence` ≥ 85.
-
-A proposal that is both very confident (`analysis_confidence ≥ 95`) and anchored to a resolvable
-`path:line` additionally leaves **one short inline `suggestion:` pointer** at that anchor, routing
-the author to the body card (`optimality-review.md § Inline pointer for high-confidence proposals`).
-The pointer is the only inline artifact optimality produces; it is non-blocking, passes comment-shape
-(2.8), conventional-comments (2.9), and line-validity (3.5), is exempt from the 2.7 gate and the
-placement caps, and is counted as `OPTR` in the Optimality log line — never in the `produced` /
-`cleared` quality counts.
-
-Frame each proposal as a question — cross-review context asymmetry — and never let one drive the
-verdict. Emit the `Optimality review (2.4c)` log block in the diagnostics even when there are zero
-proposals.
 
 ### 2.4d Standards conformance (default ON at the `deep` and `standard` tiers)
 

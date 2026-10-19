@@ -122,7 +122,6 @@ host invent its own.
 | `implement-suggestion` | apply seam, once the target files are known | Reader |
 | `fix-bug` | fast-lane plan seam (`aw-create-plan`) | Reader |
 | `ci-auto-fix` | the fix subagent, once the failing files are known | Reader |
-| `optimize-approach` | plan mode, judging a plan's approach (aw-planner Phase 1) | Reader |
 | `e2e-pr-stabilizer` | Phase 7, on the CI-ratified verdict | Writer (`hotspot` `flaky`) |
 | `holistic-analysis` | its verification output, best-effort | Writer-primary (no read) |
 

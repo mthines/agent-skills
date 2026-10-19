@@ -93,7 +93,6 @@ hosts and silently halve every usage roll-up.
 | `ci-auto-fix-lessons` | `ci-auto-fix` | Phase 3 → Phase 8·9 | **`repo::`** | More conservative: `seen_count ≥ 5` promotion; regression lessons `volatile`, 30d. |
 | `e2e-pr-stabilizer-lessons` | `e2e-pr-stabilizer` | Phase 4 → Phase 7 | `global` (race-shapes) \| `repo::` (locators) | Writes gated on telemetry ratification. |
 | `ideate-lessons` | `ideate` | Phase 0 → Phase 7 | `global` \| `repo::` | Mechanics only — divergence runs lessons-blind. |
-| `optimize-approach-lessons` | `optimize-approach` | O0 → O5 | `global` \| `repo::` | Optimal/suboptimal bar + apply-safety calibration. |
 
 ### Bus (`loop::review-outcomes`, key `review-outcomes::<fingerprint-slug>`)
 

@@ -23,7 +23,3 @@ This is the anti-circularity guarantee: `review-loop` drives `pr-reviewer` itsel
 ## Why full mode runs review before simplify
 
 The review pass surfaces correctness and obvious cleanups; simplify then applies structural refactors to the already-cleaner code, so the confidence gates evaluate the final shape.
-
-## Why `optimize` is not part of full mode
-
-`full`'s reviewer pass already covers optimality via `pr-reviewer` Step 2.4c (report mode); running `optimize-approach` again would double the work.

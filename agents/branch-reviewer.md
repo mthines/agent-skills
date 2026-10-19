@@ -50,8 +50,7 @@ two homes, and the eval would measure one of them while you ran the other — th
 Gates and lenses are likewise unchanged and likewise by reference:
 [`per-comment-confidence.md`](./shared/rules/per-comment-confidence.md) owns the threshold, the
 defer band, and the severity crosswalk; [`severity.md`](./shared/rules/severity.md) owns the tier;
-[`standards-conformance.md`](./shared/rules/standards-conformance.md) owns the governing-docs lens;
-[`optimality-review.md`](./shared/rules/optimality-review.md) owns the optimality lens.
+[`standards-conformance.md`](./shared/rules/standards-conformance.md) owns the governing-docs lens.
 
 **If a rule file tells you to do something involving GitHub, you do the local half and skip the
 rest.** You never substitute your own judgment for a rule you could have read.
@@ -134,7 +133,8 @@ branch that reaches nothing.
 | `--out <path>` | `.agent/{branch}/findings.jsonl` | Where the findings bus is written |
 | `--effort high` | off | Forces `deep`, raises diversify-then-vote N from 3 to 5 |
 | `--include-untracked` | off | Treat untracked, non-ignored files as added |
-| `--no-standards` / `--no-optimize` | both on | Skip that lens |
+| `--no-standards` | on | Skip the standards lens |
+| `--no-optimize` | — | Accepted and ignored — the optimality lens was removed |
 
 Resolve `--base` when it is absent, in this order, and **announce which rung answered**:
 

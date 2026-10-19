@@ -342,10 +342,10 @@
       }
     },
     "lenses": {
-      "description": "One log field per default-on lens (optimize-approach, standards-conformance, measurability-review, holistic-review), each render-report.mjs's ^(ran|skipped) grammar, plus the optimality proposal cards.",
+      "description": "One log field per default-on lens (standards-conformance, measurability-review, holistic-review), each render-report.mjs's ^(ran|skipped) grammar. optimality_cards / optimality_log are legacy and optional — the optimality lens was removed; omit them.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["optimality_cards", "optimality_log", "standards_log", "measurability_log", "holistic_log"],
+      "required": ["standards_log", "measurability_log", "holistic_log"],
       "properties": {
         "optimality_cards": {
           "type": "array",

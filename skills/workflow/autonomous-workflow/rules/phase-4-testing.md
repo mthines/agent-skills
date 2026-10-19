@@ -667,7 +667,7 @@ read-only audit before Phase 4 can be declared done.
 `test-provenance-guard` (mechanically verified via mutation testing),
 `measurable`'s `missing`/`unlinked` classification is a judgment
 call with no track record yet in this registry. Following the precedent set
-by `critical` and `optimize-approach` (both opt-in/quiet rather than
+by `critical` (opt-in rather than
 hard-blocking on introduction), this gate reports findings but does not stop
 the run unless the caller opted into `--observability-strict`.
 

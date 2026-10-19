@@ -166,7 +166,6 @@ for the full contract.
 `loop::aw-tester-lessons`, `loop::fix-bug-lessons`,
 `loop::reviewer-lessons`, `loop::implement-suggestion-lessons`,
 `loop::ci-auto-fix-lessons`, `loop::e2e-pr-stabilizer-lessons`,
-`loop::optimize-approach-lessons`,
 `loop::ideate-lessons`) carry an extended entry schema, defined on this skill's
 side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries) and
 templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).

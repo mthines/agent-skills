@@ -38,7 +38,6 @@ It is a depth modifier, not a target: combine it with `plan`, `code`, or `analys
 | The change spans ≥ 2 domains (e.g. UI + data model + infra) | A caller agent (`pr-reviewer --critical`, `implement-suggestion`) — they always use the single pass |
 
 Cost: one lens-discovery sub-agent plus one sub-agent per lens (about 5 dispatches at the default of 4 lenses), each lens re-reading the full target, plus D3's re-grounding reads.
-Under `optimize-approach --deep`, add O4's `holistic-analysis` trace for every lens candidate that survives the rubric.
 Caller agents never add `deep` on their own; it is a human or orchestrator opt-in.
 
 `deep` here is unrelated to `pr-reviewer`'s `deep` depth tier and to `ideate deep` — deep mode calls `ideate` in `quick` mode, and no reviewer tier turns it on.
@@ -175,7 +174,7 @@ Do these in order:
 5. **Pick one steelman.** From the lens alternatives, pick one by these tie-breakers, in order: its `reuses` target resolves in the codebase, smallest blast radius, the wildcard lens's alternative.
    Never break ties by how many lenses proposed something similar — the lenses share one model and one target, so agreement measures shared blind spots, not confirmation.
    Write it in the [steelman structure](../SKILL.md#mandatory-steelman-alternative).
-   List every other distinct alternative in one line each under `Other alternatives raised` — `optimize-approach --deep` consumes that list.
+   List every other distinct alternative in one line each under `Other alternatives raised`.
 6. **Add nothing.** A concern that no lens raised does not enter the report, even if synthesis notices it.
    Name it under `Next step` as a reason to re-run on the revised target instead.
 

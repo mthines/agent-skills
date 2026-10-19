@@ -294,7 +294,7 @@ export function buildReportPayload({ gates, run, findings, notes = [], deferred,
     MEMORIES_SUMMARY: run.memoriesSummary || "no relevance rules or lessons consulted",
     QUALITY: quality,
     INTEGRATIONS: run.integrations || "none",
-    OPTIMALITY_LOG: run.optimalityLog || "skipped",
+    ...(run.optimalityLog ? { OPTIMALITY_LOG: run.optimalityLog } : {}),
     STANDARDS_LOG: run.standardsLog || "skipped",
     MEASURABILITY_LOG: run.measurabilityLog || "skipped",
     // REQUIRED_SCALARS (render-report.mjs) checks this slot for non-emptiness only — an empty

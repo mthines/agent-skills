@@ -1,6 +1,6 @@
 ---
 name: pr-reviewer
-description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a depth-routed review built from independent finders and an independent verifier — correctness, quality, description accuracy, consumer impact, dependency deltas, holistic fit, optimality, governing-doc conformance, and measurability. Incrementally aware — a re-run reviews only the delta since the last reviewed SHA. Writes one sticky report comment per PR, rewritten in place, plus append-only inline findings on a COMMENT review. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-optimize] [--no-standards] [--no-measurable] [--skip-gates] [--no-fix-links]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
+description: Code reviewer for GitHub PRs — your own (self relation) and other people's (cross relation). Runs a pre-merge gate check (description vs. code, CI, unresolved review feedback, self-review signals, docs) then a depth-routed review built from independent finders and an independent verifier — correctness, quality, description accuracy, consumer impact, dependency deltas, holistic fit, governing-doc conformance, and measurability. Incrementally aware — a re-run reviews only the delta since the last reviewed SHA. Writes one sticky report comment per PR, rewritten in place, plus append-only inline findings on a COMMENT review. Read-only — it never auto-fixes. Trigger with `/pr-review <PR-URL|#n>` or the Task tool — `Task(subagent_type="pr-reviewer", prompt="<PR-URL> [--critical] [--full] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--no-measurable] [--skip-gates] [--no-fix-links]")`. An agent, not a skill — `Skill("pr-reviewer", …)` errors with `Unknown skill`.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, WebFetch, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write, mcp__github__pull_request_read, mcp__github__create_pull_request, mcp__github__update_pull_request, mcp__github__add_issue_comment, mcp__github__issue_read, mcp__github__pull_request_review_write, mcp__github__add_comment_to_pending_review, mcp__github__resolve_review_thread, mcp__github__get_job_logs, mcp__github__actions_list, mcp__github__actions_run_trigger, mcp__github__get_me
 model: opus
 ---
@@ -124,7 +124,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--critical` / `--no-critical` | Force / suppress `Skill("critical", "code")` |
 | `--no-holistic` | Skip the holistic review step (Step 2.4) and targeted escalation (Step 2.4b) |
 | `--no-escalate` | Skip only the targeted holistic escalation (Step 2.4b) |
-| `--no-optimize` | Skip the optimality review step (Step 2.4c) |
+| `--no-optimize` | Accepted for compatibility and ignored — the optimality lens was removed |
 | `--no-standards` | Skip the standards-conformance review step (Step 2.4d) |
 | `--no-measurable` | Skip the measurability review step (Step 2.4e) |
 | `--measurable-strict` / `--measurable-advisory` | Measurability lens strict / advisory this run (config `measurable:`; strict is the default) |
@@ -698,7 +698,7 @@ See `agents/shared/rules/review-config.md` — `.github/review.yaml`, else the l
 ### 1.7b Load standards (default ON)
 
 See `agents/shared/rules/standards-conformance.md` § Step 1.7b — Standards discovery.
-Bind `TRIVIAL_SKIP` from `context.trivialSkip.value` (read by Steps 2.4, 2.4c, 2.4d, even under
+Bind `TRIVIAL_SKIP` from `context.trivialSkip.value` (read by Steps 2.4 and 2.4d, even under
 `--no-standards`) and `STANDARDS_DOCS` from `context.standards` (sidecar `context.paths.standards`;
 merge config `standards:` by hand when `reviewConfigStandards` is true). Skip the sidecar under
 `--no-standards`, `TRIVIAL_SKIP`, or `incremental-quick`. Announce `context.standards.announce` verbatim. A context without these fields falls back to `standards-conformance.md` § Two input sources.
@@ -780,10 +780,10 @@ The writes fail independently and none cascades.
 After posting:
 
 ```text
-Updated report on PR #<n> — <created | updated | NOT updated (<reason>)> sticky · <posted review with <N> inline comments (+ <OPTR> optimality pointer(s)) | no review posted (nothing new inline)> · state record <written | NOT written (<error>)>.
+Updated report on PR #<n> — <created | updated | NOT updated (<reason>)> sticky · <posted review with <N> inline comments | no review posted (nothing new inline)> · state record <written | NOT written (<error>)>.
 ```
 
-Append the `OPTR` parenthetical only when `OPTR > 0`; name the reason when no review was posted;
+Name the reason when no review was posted;
 when the sticky was **not** updated, print `REPORT_BODY` verbatim beneath this line. Include: the
 state (`COMMENTED` or `sticky-only`); the sticky URL or why there is none; `verdict <VERDICT> (was
 <PRIOR_VERDICT> at \`<PRIOR_SHA_SHORT>\`)` (parenthetical dropped when `PRIOR_VERDICT` is empty); one

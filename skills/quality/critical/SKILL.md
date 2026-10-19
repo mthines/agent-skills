@@ -167,7 +167,7 @@ If `Must-fix` and `Should-fix` are both empty, output `No blocking concerns foun
 
 - `/confidence` — suggest `/confidence <mode>` in `Next step`; never score here.
 - `/holistic-analysis` — when an `analysis` finding suggests the root cause is wrong, suggest re-running it before the `/confidence` gate.
-- `/ideate` — `deep` lens discovery ([`rules/deep-mode.md`](./rules/deep-mode.md#d1--lens-selection)); `/optimize-approach --deep` calls `Skill("critical", "deep code")` and consumes `Other alternatives raised`.
+- `/ideate` — `deep` lens discovery ([`rules/deep-mode.md`](./rules/deep-mode.md#d1--lens-selection)).
 
 ## Hard rules and non-goals
 

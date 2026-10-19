@@ -126,10 +126,8 @@ failures on diffable files, not the structurally-expected gap on binary assets.
 ## Step 5 — reporting every write
 
 All three writes are reported, since they fail independently (Step 4) and a reader must be able to
-tell which one did. `<N>` is the quality-line `posted inline` count (line-level + finder findings);
-when `OPTR > 0` append `+ <OPTR> optimality pointer(s)` so the total isn't understated (a pointer is
-a real inline comment even though the quality line excludes it, `optimality-review.md § Inline
-pointer`) — omit the parenthetical when `OPTR == 0`. A run that posted no review must say so
+tell which one did. `<N>` is the quality-line `posted inline` count (line-level + finder findings).
+A run that posted no review must say so
 explicitly and name the reason (currently only `nothing new inline`), so a silent run and a broken
 run never read the same. When the sticky was **not** updated (§ *When the sticky cannot be
 written*), print `REPORT_BODY` verbatim beneath this line — it is the only surface the report

@@ -190,7 +190,6 @@ trigger registry is in
 | 0     | `interview`            | Optional  | Default-on scope alignment in Full Mode (adaptive — silent on a crisp request; `--no-interview` skips, `--interview` forces). Restate-and-diff + missing-information gate; writes `brief.md` |
 | 1     | `lorekit-memory`       | Optional  | Reads `loop::aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
 | 1     | `holistic-analysis`    | Optional  | Multi-domain execution-path tracing           |
-| 1     | `optimize-approach`    | Optional  | Default-on approach-optimality check (`--no-optimize` to skip); adopted proposals trigger a bounded re-plan |
 | 1     | `confidence`           | **Required** | Plan gate (>= 90% to proceed)              |
 | 2     | `aw-create-plan`       | Optional  | Writes `.agent/{branch}/plan.md`              |
 | 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
