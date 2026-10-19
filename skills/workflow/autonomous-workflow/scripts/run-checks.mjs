@@ -18,7 +18,7 @@
 // `status: unsatisfiable` is never overwritten and never passes.
 // `--seal` writes checks.lock (sha256 of id, requirement, ears, kind, expect per check);
 // a later run whose definitions differ from the lock fails every changed or removed check.
-// A missing or unreadable checks.lock stops the run before any check executes (exit 2):
+// A missing or unreadable (non-JSON or non-object) checks.lock stops the run before any check executes (exit 2):
 // aw-create-plan always seals, so an unsealed checks.yaml is never a valid run.
 
 import { spawnSync, execFileSync } from "node:child_process";
@@ -135,8 +135,10 @@ export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = 
   const lockFile = join(dirname(file), "checks.lock");
   if (!existsSync(lockFile)) return { exit: 2, sentinel: "CHECKS 0/0 FAIL: checks.lock missing — re-derive and seal via aw-create-plan" };
   let lock;
-  try { lock = JSON.parse(readFileSync(lockFile, "utf8")); }
-  catch (e) { return { exit: 2, sentinel: `CHECKS 0/0 FAIL: checks.lock unreadable (${e.message})` }; }
+  try {
+    lock = JSON.parse(readFileSync(lockFile, "utf8"));
+    if (lock === null || typeof lock !== "object" || Array.isArray(lock)) throw new Error("not a JSON object");
+  } catch (e) { return { exit: 2, sentinel: `CHECKS 0/0 FAIL: checks.lock unreadable (${e.message})` }; }
 
   const lines = text.split("\n");
   const failed = [];
@@ -320,6 +322,15 @@ function selfTest() {
     expectEq("corrupt lock: exit code", r.status, 2);
     expectEq("corrupt lock: sentinel prefix", last(r.stdout).startsWith("CHECKS 0/0 FAIL: checks.lock unreadable"), true);
     rmSync(join(dir, "checks.lock"));
+
+    // A lock that parses to a non-object (null, array) is unreadable too, not a TypeError.
+    for (const [label, body] of [["null lock", "null"], ["array lock", "[]"]]) {
+      writeFileSync(join(dir, "checks.lock"), body);
+      r = cli(["green.yaml"]);
+      expectEq(`${label}: exit code`, r.status, 2);
+      expectEq(`${label}: sentinel`, last(r.stdout), "CHECKS 0/0 FAIL: checks.lock unreadable (not a JSON object)");
+      rmSync(join(dir, "checks.lock"));
+    }
 
     writeFileSync(join(dir, "green.yaml"), green);
     cli(["green.yaml", "--seal"]);
