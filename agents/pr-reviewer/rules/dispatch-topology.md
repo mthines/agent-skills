@@ -294,7 +294,7 @@ verification keeps the extra recall without verifying any defect twice.
    - Where the reviewer verifies its own pass-1 candidates before reading any worker file (the
      `--intent-from` path), write that verified pool to `<run-dir>/pass1/own.json` and pass
      `<run-dir>/pass1/own.json,<intent file>` as pass 1.
-     This replaces step 3's `--dedupe-candidates` call: one merge covers the intent worker and pass 2.
+     This replaces the `--dedupe-candidates` call in step 3 of [*Running `hybrid`*](#the-two-topologies): one merge covers the intent worker and pass 2.
    - Where every finder ran as a worker (Agent0), pass 1 is `<scratch>/intent.json,<scratch>/others.json`.
 5. **Verify** only the kept candidates with `_needs_verification: true`.
    A kept candidate with `_needs_verification: false` is the candidate you already verified, with
