@@ -26,7 +26,7 @@ This file is the place to disable, swap, or add companions.
 Each phase rule contains lines like:
 
 ```
-Skill("ux")     # if companion installed and trigger matches
+Skill("tdd")    # if companion installed and trigger matches
 ```
 
 If the skill isn't installed, the skill tool returns an error; the workflow
@@ -100,7 +100,6 @@ line is what lets the next measurement confirm or refute them.
 | `aw-create-plan`     | 2     | Full Mode only                                                          | —                     | Switch task to Lite Mode                                                 |
 | `lorekit-memory`     | 3     | Executor entry — only when `plan.md` has no `## Lessons applied` (no-planner paths: Lite Mode, `fix-bug` fast-lane, direct dispatch) | `memory.list loop::aw-lessons` | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#lessons-read) |
 | `tdd`                | 3     | Pure logic / business rules / "test-driven" requested                   | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#tdd-trigger) |
-| `ux`                 | 3     | Files touched include `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#ux-trigger)  |
 | `measurable` | 3 | Matches a `web`/`mobile`/`api`/`worker` pattern in the skill's own `rules/scope-detection.md` (single source of truth for the pattern list — not restated here) | `implement`           | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#observability-trigger) |
 | `confidence`         | 4     | At iteration cap on same failing area (3 in Lite Mode, 5 in Full Mode) — automatic | `analysis`        | Adjust cap or threshold in [`phase-4-testing.md`](./phase-4-testing.md#stuck-loop-detection) |
 | `test-provenance-guard` | 4  | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written or extended | `--diff --base $(git merge-base HEAD main) --fix` — autofix is **gated by `confidence(code) ≥ 90 %`** before any file is mutated, plus the three post-heal mechanical gates afterwards. Either failure ⇒ no refactor; stuck-loop protocol takes over | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#test-provenance-trigger) |

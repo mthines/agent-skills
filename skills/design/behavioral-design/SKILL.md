@@ -108,7 +108,7 @@ Every intervention carries its lever, the barrier it targets, the evidence grade
 
 | Situation | Hand off to |
 | --- | --- |
-| The intervention is a UI change and needs a usability / WCAG review | `Skill("ux")` |
+| The intervention is a UI change and needs a visual / WCAG-floor review | `Skill("visual-design")` |
 | The intervention needs telemetry to measure the behavior | `Skill("measurable")` |
 | The plan is high-stakes and needs a pre-mortem | `Skill("critical")` |
 | The user wants many intervention ideas before converging | `Skill("ideate")` |

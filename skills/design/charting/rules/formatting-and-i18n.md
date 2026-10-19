@@ -105,7 +105,7 @@ const plural = new Intl.PluralRules(locale).select(count);
 // → "one" | "other"
 ```
 
-Defer the actual copy to the `ux` skill (`rules/ux-writing.md`) — this rule owns formatting only.
+The actual copy is the author's call — this rule owns formatting only.
 
 ## Time zones
 

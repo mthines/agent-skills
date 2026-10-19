@@ -337,14 +337,12 @@ live in
 - [`screen-recorder`](../../analysis/screen-recorder/SKILL.md) — captures short
   videos of multi-frame interactions where a still screenshot cannot
   prove the change (transitions, focus order, hover-revealed UI).
-- [`ux`](../ux/SKILL.md) — call after stories are scaffolded to audit
-  the rendered states for accessibility and microcopy.
 - [`visual-design`](../visual-design/SKILL.md) — call **before**
   scaffolding when the component is new and the visual direction is
   not yet committed (palette, type, signature details). Call **after**
   scaffolding in `review` mode if the rendered variants look generic
-  or drift from the chosen direction. Pairs with `ux` — `ux` audits
-  the floor, `visual-design` shapes the ceiling.
+  or drift from the chosen direction. Its accessibility floor
+  sets the minimum; its direction shapes the ceiling.
 - [`confidence`](../../quality/confidence/SKILL.md) — gate before declaring the
   scaffold done if the user disputes a generated variant.
 

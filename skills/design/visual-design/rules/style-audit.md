@@ -105,14 +105,11 @@ Before finishing the report:
 
 ## What the audit is **not** for
 
-- **WCAG findings.** Defer to `/ux/rules/accessibility.md` and
-  `/ux/rules/visual-design.md`.
-- **Touch-target failures.** Defer to `/ux/rules/touch-and-interaction.md`.
-- **Microcopy quality.** Defer to `/ux/rules/ux-writing.md`.
-- **Dark-pattern detection.** Defer to `/ux/rules/dark-patterns.md`.
+- **WCAG and touch-target findings.** Check them once against [`SKILL.md` § Accessibility floor](../SKILL.md#accessibility-floor), in a separate section.
+- **Microcopy quality.** Out of scope.
+- **Dark-pattern detection.** Route to `Skill("behavioral-design")`.
 
-Do not duplicate those findings here. A complete UI review should run
-both `/ux` and `/visual-design` and let the user merge them.
+Do not mix floor failures into the style findings.
 
 ## Worked snippet — the bottom of a review report
 

@@ -209,7 +209,7 @@ Cap haptics to **one per logical event** — never one per frame.
 
 ## Accessibility for interactive charts
 
-Defer cross-cutting touch-target and contrast rules to the `ux` skill.
+Apply the cross-cutting touch-target and contrast floor from the `visual-design` skill.
 Chart-specific:
 
 - Keyboard arrows must move focus across data points (web).

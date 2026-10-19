@@ -42,7 +42,7 @@ const FINAL_WEIGHTS = Object.freeze({ R: 0.4, A: 0.3, Ac: 0.3 });
  * authoritative source for every downstream disposal/placement/display use of a candidate's
  * score. Falls back to the reported `final` (never NaN, never a thrown error) when any axis is
  * not a finite 0-100 number — a candidate missing an axis (a lens outside the finder pipeline,
- * `ux`/`--with`, per per-comment-confidence.md's fallback path) is not silently zeroed out.
+ * `critical`/`--with`, per per-comment-confidence.md's fallback path) is not silently zeroed out.
  * @param {{ R?: number, A?: number, Ac?: number, final?: number }} candidate
  * @returns {number}
  */

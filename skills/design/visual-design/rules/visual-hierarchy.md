@@ -23,8 +23,8 @@ tags:
 - Cross-references
 
 This rule covers **aesthetic hierarchy** — guiding the eye for impact,
-not just for accessibility readability. `/ux` covers structural
-hierarchy (semantic headings, focus order, ARIA landmarks). Both are
+not just for accessibility readability. Structural hierarchy (semantic
+headings, focus order, ARIA landmarks) is an accessibility requirement. Both are
 required; this one is about whether the component feels designed or
 assembled.
 
@@ -168,7 +168,7 @@ is fine and often necessary — just make the transition explicit
 
 ## Cross-references
 
-- Mechanics of focus order, semantic structure, and headings → `/ux/rules/accessibility.md`.
-- Spacing scale defaults (4 px / 8 px units) → `/ux/rules/visual-design.md`.
+- Mechanics of focus order, semantic structure, and headings → WCAG 2.2 SC 1.3.1 and SC 2.4.3.
+- Spacing scale defaults (4 px / 8 px units) → [`SKILL.md` § Accessibility floor](../SKILL.md#accessibility-floor).
 - Motion choreography for hierarchy (stagger, hero-element transitions)
   → `Skill("animations")`.

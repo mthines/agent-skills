@@ -111,9 +111,8 @@ the cheapest signature wins:
 - **Glow** — coloured shadow at low alpha. Avoid combining with default
   outline (double ring conflict).
 
-Always defer **contrast threshold** to `/ux/rules/accessibility.md`.
-This rule chooses the *style* and *posture*; `/ux` enforces the
-*minimum*.
+The **contrast threshold** is fixed: ≥ 3:1 for the focus ring against its background ([`SKILL.md` § Accessibility floor](../SKILL.md#accessibility-floor)).
+This rule chooses the *style* and *posture*; the floor sets the *minimum*.
 
 ### Selection / active state
 
@@ -148,9 +147,8 @@ Combining 2 cues is fine (tint + bold). Combining 4 is loud.
 - **Custom illustrations** — branded but expensive to maintain.
 - **No icons** — Brutalist, Editorial, type-only directions. Underrated.
 
-Don't mix outlined and filled in the same surface. `/ux/rules/visual-design.md`
-covers this from the consistency angle; this rule covers it as a
-signature decision.
+Don't mix outlined and filled in the same surface — it reads as inconsistent
+and it dilutes the signature decision.
 
 ### Numeric & ID treatment
 
@@ -160,8 +158,7 @@ signature decision.
 - **Large stat + small unit** — `42 ms` with the `ms` at 0.5–0.7×
   numeric size. Signature dashboard move.
 - **Coloured numbers** — green for positive delta, red for negative.
-  Pair with sign or arrow (see `/ux/rules/visual-design.md` —
-  never colour alone).
+  Pair with sign or arrow — never colour alone (SC 1.4.1).
 
 ### Empty and loading states
 

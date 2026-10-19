@@ -2,8 +2,8 @@
 name: visual-design
 description: >
   Guides and reviews visual design and brand identity for web and React Native
-  UI — color, typography, hierarchy, and named style directions — deferring
-  contrast math and a11y mechanics to /ux. Triggers on "make this look good",
+  UI — color, typography, hierarchy, and named style directions — holding
+  contrast and a11y mechanics to a fixed WCAG 2.2 floor. Triggers on "make this look good",
   "visual design", "style direction", "does this look generic",
   "/visual-design".
 argument-hint: '[guide|review|direction]'
@@ -32,10 +32,29 @@ correct. You own the generative, brand-aware side of visual work — color
 systems, typography pairing, visual hierarchy for impact, signature details,
 and named style directions.
 
-`/ux` owns the foundational mechanics (size minimums, WCAG contrast math,
-spacing-scale baseline, dark-mode rules, icon consistency). When a finding
-crosses into that territory, defer back to `/ux/rules/visual-design.md`
-explicitly. Do not duplicate.
+Foundational mechanics (size minimums, WCAG contrast math, spacing-scale
+baseline, dark-mode rules, icon consistency) are a fixed floor, not a design
+choice. Check them against the [Accessibility floor](#accessibility-floor)
+table and move on. Do not re-derive them.
+
+### Accessibility floor
+
+| Mechanic | Floor (WCAG 2.2) |
+| --- | --- |
+| Body text contrast | ≥ 4.5:1 (SC 1.4.3); large text (≥ 24 px, or ≥ 18.66 px bold) ≥ 3:1 |
+| Non-text contrast (focus rings, input borders, icons that carry meaning) | ≥ 3:1 (SC 1.4.11) |
+| Touch / pointer target | ≥ 24×24 CSS px (SC 2.5.8); platform minimum 44 pt iOS / 48 dp Android |
+| Colour as the only signal | Never — pair with text, sign, icon, or pattern (SC 1.4.1) |
+| Focus visibility | Every focusable element shows a visible focus indicator (SC 2.4.7) |
+| Spacing scale | 4 px / 8 px units |
+| Dark mode | Re-verify every contrast pair in the dark palette; never invert the light palette mechanically |
+
+```css
+/* ✗ Wrong — #999 on white is 2.8:1 */
+.meta { color: #999; }
+/* ✓ Right — #6b6b6b on white is 5.3:1 */
+.meta { color: #6b6b6b; }
+```
 
 > **This `SKILL.md` is a thin index.** Detailed rules live in `rules/*.md`
 > and load on demand. The output template for `direction` mode lives in
@@ -104,7 +123,7 @@ restating its rules.
 | Charts, graphs, dashboards, data-viz                           | `Skill("charting")` — chart type and library; keep this review focused on visual identity.    |
 | Motion, transitions, hover-revealed state, scroll choreography | `Skill("animations")` — motion personality is a brand signal but the mechanics live there.    |
 | New stories or visual-regression coverage                      | `Skill("storybook")` — scaffold a Playground story for the component under design.            |
-| Foundational mechanics: contrast math, size minimums, dark-mode, icon consistency, ARIA | Defer to `/ux/rules/visual-design.md` + `/ux/rules/accessibility.md`. Do not re-derive. |
+| Foundational mechanics: contrast math, size minimums, dark-mode, icon consistency, ARIA | Check against the [Accessibility floor](#accessibility-floor). Do not re-derive. |
 
 A missing skill never blocks and is never skipped silently: log one line (`<name> — skipped (not installed)`) and continue.
 
@@ -141,16 +160,16 @@ Produce a **build sheet** for the component:
 <implementation — concrete, copy-pasteable, with the tokens applied>
 ```
 
-### Defer to /ux
+### Accessibility floor
 - Contrast pairs to verify: <list>
 - Size minimums to verify: <list>
-- Dark-mode posture: <one-liner pointing at /ux/rules/visual-design.md>
+- Dark-mode posture: <one-liner — every pair re-verified in the dark palette>
 ```
 
 #### `review` mode
 
-Use the same severity ladder as `/ux` (Critical / High / Medium / Low) so
-the two skills produce mergeable reports. Findings cite **file:line**, the
+Use the severity ladder Critical / High / Medium / Low so the report merges
+with other review output. Findings cite **file:line**, the
 **named principle** (e.g. "weak focal hierarchy", "palette role collision",
 "generic shadow"), why it matters, and a concrete fix with code.
 
@@ -186,12 +205,11 @@ These are always in context. Detailed rules are in `rules/` files.
 
 ### What this skill defers
 
-- **WCAG contrast math** → `/ux/rules/visual-design.md` + `/ux/rules/accessibility.md`.
-- **Touch-target / hit-area minimums** → `/ux/rules/touch-and-interaction.md`.
-- **Microcopy / UX writing** → `/ux/rules/ux-writing.md`.
+- **WCAG contrast math and touch-target minimums** → checked against the [Accessibility floor](#accessibility-floor), never re-derived.
+- **Microcopy / UX writing** → out of scope; leave the wording to the author.
 - **Motion mechanics** → `/animations`.
 - **Chart-type / data-viz library choice** → `/charting`.
-- **Dark patterns** → `/ux/rules/dark-patterns.md` (Critical by default there).
+- **Dark patterns** → `Skill("behavioral-design")` (never recommends one).
 
 ### The single best question this skill asks
 
@@ -220,4 +238,4 @@ product?"** If no, the signature details are weak — see
 7. **Never invent a brand voice the project doesn't claim.** If the user
    hasn't named one, ask before writing it into the output.
 8. **Defer foundational mechanics.** Do not re-derive WCAG, touch
-   targets, or dark-mode color math — point at `/ux` and move on.
+   targets, or dark-mode color math — check the [Accessibility floor](#accessibility-floor) and move on.

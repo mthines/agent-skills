@@ -9,7 +9,7 @@ tags:
 
 # Standards conformance
 
-The line-level rubrics (`quality`, `ux`, `critical`, lenses) and the holistic pass all assume
+The line-level rubrics (`quality`, `critical`, lenses) and the holistic pass all assume
 the change's code-level quality and approach are the concern.
 None of them asks the governance question: **does the diff violate a normative rule the repo
 has already written down?**

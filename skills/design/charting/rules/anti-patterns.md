@@ -135,7 +135,7 @@ For RN charts and crowded mobile screens, prefer **abbreviated tick labels** (`$
 - **Loading** — skeleton sized to the chart's final dimensions; `aria-busy="true"`.
 - **Error** — `role="alert"`, retry button, error code.
 
-Copy belongs to `ux` (`rules/ux-writing.md`); the requirement that the states exist belongs here.
+Copy wording is the author's call; the requirement that the states exist belongs here.
 
 ## 18. Mobile charts that ignore the canvas
 

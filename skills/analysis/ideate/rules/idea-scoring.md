@@ -140,7 +140,6 @@ Before recommending, run each finalist through:
    | < 70   | Do not recommend — return to Phase 4 (one more evolution round if budget remains) or rerun divergence with the gap named in the burst prompt. |
 
 3. **Optional lenses.** Deep mode: `Skill("critical", "analysis")` on the top finalist (adversarial pre-mortem).
-   UI/product-surface finalists: offer `Skill("ux")` as a review lens.
 4. **Incubation offer (interactive sessions only).** When presenting the report, note that the verdict can wait — returning to selection after a break measurably helps (incubation, d = 0.29, §1.6).
    Autonomous runs skip this.
 

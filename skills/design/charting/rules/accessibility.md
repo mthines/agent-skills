@@ -12,19 +12,18 @@ tags:
 # Chart Accessibility
 
 This file owns **chart-specific** accessibility only.
-For cross-cutting visual-design and microcopy concerns (contrast ratios, touch-target minimums, typography, label copy), invoke the `ux` skill instead of restating its rules.
+For cross-cutting visual-design concerns (contrast ratios, touch-target minimums, typography), use the `visual-design` skill's accessibility floor instead of restating it.
 
-## Defer to `ux`
+## Defer to `visual-design`
 
-Do not duplicate. When the user's chart has any of these concerns, point them at `ux`:
+Do not duplicate. When the user's chart has any of these concerns, apply the floor and move on:
 
-| Concern                                  | Owner |
+| Concern                                  | Floor |
 | ---------------------------------------- | ----- |
-| Color contrast ratios (text vs. background, UI-component contrast) | `ux` (`rules/visual-design.md`, `rules/accessibility.md`) |
-| Touch-target sizing for legends, tooltips, interactive points       | `ux` (`rules/touch-and-interaction.md`)                    |
-| Typography (axis label size, tick label size, title hierarchy)      | `ux` (`rules/visual-design.md`)                            |
-| Microcopy (chart titles, axis labels, empty/error states)           | `ux` (`rules/ux-writing.md`)                               |
-| Platform conventions (Apple HIG / Material Design 3 chart guidance) | `ux` (`rules/platform-specific.md`)                        |
+| Color contrast ratios (text vs. background, UI-component contrast) | text ≥ 4.5:1, non-text ≥ 3:1 (WCAG 2.2 SC 1.4.3 / 1.4.11) |
+| Touch-target sizing for legends, tooltips, interactive points       | ≥ 24×24 CSS px; 44 pt iOS / 48 dp Android                  |
+| Typography (axis label size, tick label size, title hierarchy)      | `visual-design` `rules/typography-pairing.md`              |
+| Microcopy (chart titles, axis labels, empty/error states)           | the author's call — require that it exists, not its wording |
 
 ## Own here — chart-specific rules
 
@@ -121,7 +120,7 @@ Reject the palette if two adjacent series collapse to the same value under deute
 
 Chart strokes, marker outlines, and gridlines that **convey meaning** must have ≥ 3:1 contrast against their background.
 Decorative gridlines and minor ticks are exempt.
-Defer the actual ratio math to `ux` — but flag the requirement here.
+Flag the requirement here; compute the ratio with any WCAG contrast checker.
 
 ### 8. Empty, loading, and error states
 
@@ -131,7 +130,7 @@ A chart skeleton with no labels is inaccessible. Each state needs:
 - A loading indicator with `aria-busy="true"` on the container.
 - An error state that announces the problem via `role="alert"`.
 
-Defer the **wording** of these states to `ux` (`rules/ux-writing.md`).
+The **wording** of these states is the author's call; this rule requires only that they exist.
 
 ### 9. Sonification (optional, advanced)
 
@@ -148,4 +147,4 @@ Treat it as an enhancement, not a replacement for points 1–8.
 - [ ] A data-table fallback exists for heatmaps, treemaps, and sankeys.
 - [ ] Animation honors `prefers-reduced-motion`.
 - [ ] Empty / loading / error states have copy and an `aria-live` or `role="alert"` channel.
-- [ ] Cross-cutting concerns (contrast, touch targets, typography, copy) routed to the `ux` skill.
+- [ ] Cross-cutting concerns (contrast, touch targets, typography, copy) checked against the `visual-design` accessibility floor.

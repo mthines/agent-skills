@@ -106,8 +106,8 @@ Both runners (Vitest addon, test-runner) integrate
 `@storybook/addon-a11y` automatically when it is installed — a11y
 violations then surface in the runner's own output for every story
 without any extra scaffolding.
-For deeper a11y review (WCAG 2.2 coverage, microcopy, focus order),
-delegate to the [`ux`](../../ux/SKILL.md) skill.
+For deeper a11y review (WCAG 2.2 coverage, focus order), check the
+rendered states against the `visual-design` skill's accessibility floor.
 This skill stops at interaction semantics.
 
 ## Why a separate file

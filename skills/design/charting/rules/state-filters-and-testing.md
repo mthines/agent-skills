@@ -193,7 +193,7 @@ A chart's state matrix:
 | Error    | `role="alert"`; show error code; "Retry" button.                     |
 | Populated| The chart.                                                           |
 
-Cover all four in Storybook stories. Defer the **wording** to `ux` (`rules/ux-writing.md`).
+Cover all four in Storybook stories. The **wording** is the author's call.
 
 ## Anti-patterns
 

@@ -10,7 +10,7 @@ tags:
 
 # Holistic review
 
-Line-level rubrics (`quality`, `ux`, `critical`, lenses) evaluate each hunk locally. They cannot catch two classes of failure that matter most:
+Line-level rubrics (`quality`, `critical`, lenses) evaluate each hunk locally. They cannot catch two classes of failure that matter most:
 
 1. **Intent mismatch** — the diff does not implement what its PR description claims.
 2. **System fit** — the change makes sense in isolation but is wrong in the bigger picture (callers in a loop, missing cache invalidation, neighbouring patterns it diverges from, contract breaks the local view doesn't see).
@@ -153,7 +153,7 @@ Run it in-context; it scores nothing and proposes no fixes.
 ✓ claim: "`getUser()` now caches, but `updateUser()` at `src/users/write.ts:88` never invalidates it"
 ```
 
-Never emit a finding a line-level rubric (`quality`, `ux`) already owns — dedupe would drop it anyway.
+Never emit a finding a line-level rubric (`quality`, `critical`) already owns — dedupe would drop it anyway.
 
 ## Targeted escalation (Step 2.4b)
 

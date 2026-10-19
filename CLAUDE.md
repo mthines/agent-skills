@@ -81,7 +81,6 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `behavioral-design` (`auto`) — behavior-change diagnosis (COM-B, B=MAP), ethical interventions (EAST, defaults, System 1 / System 2), and team-adoption workshops. Never recommends a dark pattern or sludge
 - `charting` (`auto`) — chart type + library for web and mobile
 - `storybook` (`auto`) — visual regression, Playground, and interaction-test stories
-- `ux` (`auto`) — UX, a11y, microcopy, dark-pattern review. Never recommends a dark pattern
 - `visual-design` (`auto`) — brand-aware visual direction
 
 ### `analysis/` — investigate data, diagnose issues

@@ -120,7 +120,6 @@ Agent companions (`pr-reviewer`, `aw-tester`) follow the same rule: [`rules/comp
 | ----- | --------- | ------- | ---- |
 | 3 | `lorekit-memory` | Entry, only when `plan.md` has no `## Lessons applied` | `memory.list loop::aw-lessons` |
 | 3 | `tdd` | Pure logic / business rules / "test-driven" | — |
-| 3 | `ux` | UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens) | — |
 | 3 | `measurable` | API/handler/job entry point or user-facing component touched | `implement` |
 | 4 (UI) | `aw-tester` *(agent)* | Phase 4 entry and hot-loop escalation, when `specs.md` and an aw-target exist | `specs.md + aw-target + --bail-on-first-red` |
 | 4 | `test-provenance-guard` | Any new or extended `*.test.*` / `*.spec.*` file ([`§ Test Provenance Trigger`](../rules/phase-4-testing.md#test-provenance-trigger)) | `--diff --base $(git merge-base HEAD main) --fix` |

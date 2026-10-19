@@ -10,11 +10,6 @@
       "source": "mthines/agent-skills",
       "sourceType": "github",
       "computedHash": "301efa3a472f7323c27831b061ade55044315b74a06bfff370b865bb8038645c"
-    },
-    "ux": {
-      "source": "mthines/agent-skills",
-      "sourceType": "github",
-      "computedHash": "2e58e4eccb8e081bb7f923f8db9d0c5052785a69d5d0f5b9bb6807919e3471b8"
     }
   }
 }

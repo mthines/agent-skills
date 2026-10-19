@@ -76,7 +76,7 @@ and are not carried forward. Track the deferred count as `CADV`
 (`Confidence-deferred (advisory)`); it is **excluded** from the `<CL> − <DEF> == <F>` identity.
 
 `Skill("confidence", "code")` remains the scoring path for candidates that did not come from a
-finder — the `quick`-tier rubric output, the `ux` / `critical` / `--with` lenses — so nothing loses
+finder — the `quick`-tier rubric output, the `critical` / `--with` lenses — so nothing loses
 a score when Phase E did not run on it. A finding with no score from **either** path is dropped:
 an unscored finding cannot be compared to a threshold, and posting it would mean posting it
 ungated.

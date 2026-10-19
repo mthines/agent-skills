@@ -17,7 +17,7 @@ A curated collection of skills, slash commands, and agents that encode how I act
   /fix-bug <stack-trace | span-url | file:line>
   ```
 
-- 🎨 **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
+- 🎨 **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`visual-design`, `charting`, `rum-tracking`).
 
   ```
   Fix the accessibility problems on this screen
@@ -137,8 +137,7 @@ Plumbing for shipping code.
 | **[behavioral-design](./skills/design/behavioral-design/SKILL.md)** | Behavior-change design for team adoption and product flows: COM-B / Fogg B=MAP diagnosis, EAST and choice-architecture interventions with evidence grades and metrics, System 1 / System 2 fit, and workshop plans. Hard rule: never a dark pattern or sludge. | `auto` |
 | **[charting](./skills/design/charting/SKILL.md)** | Selects chart type + visualization library for web (React/Next.js) and mobile (Expo/RN). Maps intent → chart → library based on platform and dataset size. | `auto` |
 | **[storybook](./skills/design/storybook/SKILL.md)** | Scaffolds three artefacts per component: visual regression story, Playground, interaction test. Opt-in OS-keychain auth profiles. | `auto` |
-| **[ux](./skills/design/ux/SKILL.md)** | Reviews UI for usability, WCAG 2.2 accessibility, platform compliance (Apple HIG, Material Design 3), and **dark-pattern detection**. Hard rule: never recommends a dark pattern. | `auto` |
-| **[visual-design](./skills/design/visual-design/SKILL.md)** | Generative, brand-aware visual design. Style-direction taxonomy (minimal, swiss, brutalist, glass, …), color systems, typography, signature details. Defers WCAG math to `/ux`. | `auto` |
+| **[visual-design](./skills/design/visual-design/SKILL.md)** | Generative, brand-aware visual design. Style-direction taxonomy (minimal, swiss, brutalist, glass, …), color systems, typography, signature details. Holds contrast and touch targets to a fixed WCAG 2.2 floor. | `auto` |
 
 ### `analysis/` — investigate data, diagnose issues
 
@@ -236,7 +235,7 @@ The table above is scoped to what `aw` itself routes to; the installer links a t
 | 0 | Validation (restate-and-diff + missing-information gate) | — |
 | 1 | Planning (Existing Code Survey + traceable ACs) | **`confidence(plan)` (mandatory)** |
 | 2 | Worktree + plan.md + checks.yaml | `aw-create-plan` (Full Mode) |
-| 3 | Implementation | `tdd`, `ux`, `measurable` |
+| 3 | Implementation | `tdd`, `measurable` |
 | 4 | Testing (+ executable checks loop) | `confidence(analysis)`, execution-path re-trace (auto-replan once at cap) |
 | 5 | Documentation | `docs update` |
 | 6 | PR creation | `review-loop` (`--critical --no-ci`; `pr-reviewer` self mode → `implement-suggestion` → `polish simplify`), `aw-create-walkthrough`, `create-pr` |
@@ -254,7 +253,7 @@ The [clone + symlink](#recommended-clone--symlink) install already links the `aw
 bash ~/.claude/skills/autonomous-workflow/install.sh --global
 ```
 
-Companions (`tdd`, `ux`, `docs`, `ci-auto-fix`, …) never block the workflow; an absent one is reported `skipped (not installed)` — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. Drop `--global` for a per-project install. Requires [`gh`](https://cli.github.com); [`gw`](https://github.com/mthines/gw-tools) is optional (native `git worktree` fallback).
+Companions (`tdd`, `docs`, `ci-auto-fix`, …) never block the workflow; an absent one is reported `skipped (not installed)` — see [Customizing](./skills/workflow/autonomous-workflow/README.md) to opt out individually. Drop `--global` for a per-project install. Requires [`gh`](https://cli.github.com); [`gw`](https://github.com/mthines/gw-tools) is optional (native `git worktree` fallback).
 
 ### Further reading
 
@@ -269,7 +268,7 @@ Agent-invokable skills activate from natural language — just describe what you
 
 ```
 Implement this feature autonomously / end-to-end / in a worktree
-Check the accessibility of this component
+Give this dashboard a style direction
 Add this feature using TDD
 Rate your confidence in this implementation
 Analyse this screen recording for bugs

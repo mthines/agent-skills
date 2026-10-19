@@ -22,7 +22,7 @@ tags:
 This rule covers **palette construction and role hierarchy** — how to
 compose a colour system that feels intentional, not assembled. For the
 foundational contrast math, dark-mode rules, and "never rely on colour
-alone" check, defer to [`/ux/rules/visual-design.md`](../../ux/rules/visual-design.md).
+alone" check, use [`SKILL.md` § Accessibility floor](../SKILL.md#accessibility-floor).
 
 ## The four-layer palette
 
@@ -49,7 +49,7 @@ shouldn't exist as a token. Decoration colours are not a layer.
 
 - **One background** + **2–3 elevated surfaces** (card, popover, modal).
 - Each elevation steps **2–5 % luminance** brighter (light mode) or
-  brighter (dark mode — see `/ux` dark-mode rules).
+  brighter (dark mode — re-verify every contrast pair).
 - Surfaces should be **near-neutral**, occasionally tinted toward the
   accent for character (e.g. cool grey surfaces in a blue brand).
 - Avoid pure white (`#FFF`) and pure black (`#000`) unless the
@@ -65,7 +65,7 @@ A typical content scale, in luminance order:
 | `content.primary` | Headlines, body text — highest contrast on surface         |
 | `content.secondary` | Subdued copy, metadata                                  |
 | `content.tertiary` | De-emphasised — placeholder, captions                     |
-| `content.disabled` | Inactive state — still readable per `/ux` rules           |
+| `content.disabled` | Inactive state — still readable (≥ 4.5:1 when it carries information) |
 | `content.inverse` | Text on dark accent surfaces (white on brand)              |
 
 Define these as a **single neutral hue ramp** (e.g. `slate-900 → slate-400`),
@@ -83,7 +83,7 @@ is a brand signal — cool = engineering / honest, warm = editorial / human.
   accent at 8–12 % alpha for badges, callouts).
 - **One focus colour** — usually the accent at full saturation. Focus
   rings are an accessibility-and-identity moment: defer the contrast
-  threshold to `/ux/rules/accessibility.md`, but make the *style* of the
+  threshold to the ≥ 3:1 non-text floor, but make the *style* of the
   ring a brand signature (offset, double-ring, glow — see
   `signature-details.md`).
 
@@ -125,7 +125,7 @@ If the user gives you a single brand hex:
 4. **Pick one semantic accent per meaning** — red, green, amber, blue.
    Tune each toward the brand's chroma palette so they don't feel
    imported.
-5. **Verify contrast pairs** with `/ux/rules/visual-design.md`. Adjust
+5. **Verify contrast pairs** against the [Accessibility floor](../SKILL.md#accessibility-floor). Adjust
    luminance, not hue, to fix contrast failures.
 
 ## Tokens, not raw hex

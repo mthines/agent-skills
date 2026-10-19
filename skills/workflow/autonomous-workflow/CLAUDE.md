@@ -34,7 +34,7 @@ Concretely:
 If you find yourself adding domain knowledge to this skill (how to write a
 React component, how to fix a TypeScript error, how to write a good commit
 message), you're in the wrong place — that knowledge belongs in a companion
-skill (`ux`, `tdd`, `create-pr`, etc.) which this skill invokes.
+skill (`tdd`, `create-pr`, etc.) which this skill invokes.
 
 ---
 

@@ -68,7 +68,7 @@ Pull working code from these. Cite the URL; copy the integration delta only.
 
 ## Accessibility references
 
-For chart-specific accessibility checks. For cross-cutting concerns, route to the `ux` skill.
+For chart-specific accessibility checks. For cross-cutting concerns, use the `visual-design` accessibility floor.
 
 | Resource                                                                                                              | Use for                                                          |
 | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
