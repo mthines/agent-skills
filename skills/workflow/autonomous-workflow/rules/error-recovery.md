@@ -102,7 +102,7 @@ beyond this rarely converges.
    the single automatic re-plan permitted by the Phase 4 auto-replan protocol.**
 
 If the user asks for a fresh analysis, re-trace the execution path
-end-to-end (dispatch `rca-investigator` when a dispatch tool exists) before attempting again.
+end-to-end in this context (entry point → each contract boundary → data flow → exit, ruling out at least 2 alternative causes with evidence) before attempting again.
 
 ---
 

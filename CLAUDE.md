@@ -116,9 +116,6 @@ The agents below live as `agents/*.md` files and are dispatched by skills:
 
 - `pr-reviewer` — PR reviewer for self and cross relations; read-only; one sticky report comment plus append-only inline findings
 - `branch-reviewer` — PR-less reviewer for `/review-branch`; writes `.agent/{branch}/findings.jsonl`, zero GitHub calls
-- `linear-ticket-investigator` — Linear ticket → Evidence Record for `/fix-bug` Phase 2
-- `rca-investigator` — context-isolated root-cause analysis; returns a distilled Root-Cause Record
-- `bug-fix-verifier` — independent verifier for `/fix-bug` PRs. Only agent allowed to undraft
 - `feature-pr-verifier` — independent verifier for `/autonomous-workflow` Full Mode PRs
 
 ## Commands and gotchas

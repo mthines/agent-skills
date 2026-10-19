@@ -13,7 +13,7 @@ tags:
 
 A durable artefact written to `.agent/<branch-or-slug>/bug-notes.md`. Captures hypotheses,
 ruled-out causes, counterexamples, and the confidence trajectory across all phases. Designed to
-survive compaction so a re-invoked `/fix-bug` (or `rca-investigator`) does not re-explore dead
+survive compaction so a re-invoked `/fix-bug` does not re-explore dead
 ends.
 
 Source: [Effective context engineering for AI agents (Anthropic, Sep 2025)](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
@@ -41,10 +41,10 @@ Also [`anthropics/cwc-long-running-agents`](https://github.com/anthropics/cwc-lo
 
 The ledger is consumed by:
 
-- `rca-investigator` (Phase 3 entry) — to skip ruled-out hypotheses.
+- Phase 3 root-cause analysis — to skip ruled-out hypotheses.
 - `aw-planner` (Phase 6 entry) — to plan around known counterexamples.
 - `aw-executor` (Phase 6 entry) — to load counterexamples for the CEGIS refinement loop.
-- `bug-fix-verifier` (Phase 7) — read-only.
+- Phase 7 verification — read-only.
 
 ---
 
@@ -64,7 +64,7 @@ Under the normal flow the first write — and therefore the creation point — i
 | Phase 5 (after branch decision) | **Append** the chosen branch (auto-fix / proposal / stop) |
 | Phase 6 (after planner) | **Append** the planner's `plan.md` summary + plan confidence |
 | Phase 6 (after each executor refinement round) | **Append** counterexamples (failing input/output) |
-| Phase 7 (after verifier) | **Append** the verifier's verdict + evidence |
+| Phase 7 (after verification) | **Append** the verification verdict + evidence |
 | Phase 8 (after telemetry verification) | **Append** the post-deploy rate decay |
 
 A phase that re-runs (e.g., user says "try again") **must** preserve prior entries — only ever
@@ -93,7 +93,7 @@ append. Do not overwrite.
 | # | Hypothesis | State | Evidence-for | Evidence-against | Source |
 |---|------------|-------|--------------|------------------|--------|
 | 1 | Null-deref in UserService.fetchUser | confirmed | repro fails on commit f3a2b1c | — | pre-flight + bisect |
-| 2 | Race condition between fetch and cache write | ruled-out | — | repro is single-threaded; cache mock disabled | rca-investigator |
+| 2 | Race condition between fetch and cache write | ruled-out | — | repro is single-threaded; cache mock disabled | Phase 3 |
 
 States:
 - `open` — under investigation.

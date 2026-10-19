@@ -38,7 +38,7 @@ This skill **does not score** — it never assigns a confidence score and never 
 It runs a command, captures the raw output, and classifies the result against the *claim itself* as `confirms` / `contradicts` / `ambiguous` / `null`.
 
 - `confidence(code)` owns the number — this skill supplies sharper evidence to that gate, it does not replace it.
-- A calling agent's own grading (e.g. `bug-fix-verifier`'s `FAIL_TO_PASS`, the `aw-executor` Phase 4 `expect` comparison) stays with the caller — this skill supplies the run-and-observe mechanic underneath that grading, not the grading itself.
+- A calling agent's own grading (e.g. `/fix-bug` Phase 7's `FAIL_TO_PASS`, the `aw-executor` Phase 4 `expect` comparison) stays with the caller — this skill supplies the run-and-observe mechanic underneath that grading, not the grading itself.
 
 See [`rules/receipt.md`](./rules/receipt.md) for the full contract, including the hard invariant that a null or non-reproducing result **drops or contradicts** a finding and is never confirmation.
 
@@ -49,7 +49,7 @@ See [`rules/receipt.md`](./rules/receipt.md) for the full contract, including th
 | Shape | Question it answers | Consumers |
 | --- | --- | --- |
 | **Claim-verification** | "Is this specific behavioral assertion true?" — read-only, feeds `confidence(code)` as Evidence | `agents/shared/rules/verification-receipt.md` (pr-reviewer Tier 2/3) |
-| **Change-verification** | "Did this applied change produce the expected green/red result?" — a post-apply gate | `bug-fix-verifier`, `feature-pr-verifier`, `aw-executor` Phase 4 checks loop |
+| **Change-verification** | "Did this applied change produce the expected green/red result?" — a post-apply gate | `/fix-bug` Phase 7, `feature-pr-verifier`, `aw-executor` Phase 4 checks loop |
 
 Both shapes share the same core: toolchain discovery, isolated execution, and the receipt format.
 Only the output framing differs — see [`rules/receipt.md`](./rules/receipt.md).

@@ -78,7 +78,7 @@ Returns the receipt **plus** a green/red verdict against a caller-supplied `expe
 [gate] expected: "exit 0" | observed: "exit 0" | result: green
 ```
 
-The caller keeps its own grading semantics on top of this result — `bug-fix-verifier`'s `FAIL_TO_PASS` still decides what a green/red result *means* for the PR; the `aw-executor` Phase 4 checks loop still compares against its own `expect:` field and still owns the `pass`/`fail`/`unsatisfiable` status.
+The caller keeps its own grading semantics on top of this result — `/fix-bug` Phase 7's `FAIL_TO_PASS` still decides what a green/red result *means* for the PR; the `aw-executor` Phase 4 checks loop still compares against its own `expect:` field and still owns the `pass`/`fail`/`unsatisfiable` status.
 This skill supplies the run-and-observe mechanic; it does not replace the caller's grading.
 
 ## The execute-not-score boundary (recap)

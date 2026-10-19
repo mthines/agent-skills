@@ -21,11 +21,8 @@
   ],
   "agents": [
     "./agents/branch-reviewer.md",
-    "./agents/bug-fix-verifier.md",
     "./agents/feature-pr-verifier.md",
-    "./agents/linear-ticket-investigator.md",
     "./agents/pr-reviewer.md",
-    "./agents/rca-investigator.md",
     "./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md",
     "./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md",
     "./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md"

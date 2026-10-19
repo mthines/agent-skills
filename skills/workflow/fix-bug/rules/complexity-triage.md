@@ -5,7 +5,7 @@ tags:
   - triage
   - complexity
   - fast-lane
-  - rca-investigator
+  - root-cause
   - bypass
 ---
 
@@ -15,7 +15,7 @@ Phase 0.5. Runs after Phase 0 (intake + classification) and **before** Phase 1
 (evidence resolution). Classifies the bug as **`simple`** or **`complex`** so
 later phases can pick the right lane.
 
-The goal is honest economy: an isolated `rca-investigator` trace is the right tool for a
+The goal is honest economy: a full execution-path trace is the right tool for a
 schema-mismatch across three services; it is the wrong tool for a stack trace
 that lands on one specific line of one file with a missing null check. Running
 the full eight-phase pipeline on a one-liner is wasted tokens and wasted
@@ -79,7 +79,7 @@ next section.
 | 3 | `bugClass ∈ {null-deref, off-by-one, contract-mismatch}` AND the stack trace / pointer is single-file | simple | Three classes with high "obvious from the line" base rates per [RepairAgent (ICSE 2025)](https://software-lab.org/publications/icse2025_RepairAgent.pdf) |
 | 4 | `bugClass = regression` AND pre-flight will plausibly produce a `last_green_sha` (Dash0 URL or recent deploy tag in repo) | simple | Bisect fast-path is likely; aw-planner adds little |
 | 5 | Symptom is one paragraph, no ambiguity, expected vs actual is concrete | simple | The Evidence Record will be small and self-contained |
-| 6 | Linear ticket with single reproducible scenario, single failing assertion | simple | `linear-ticket-investigator` already produces a focused Evidence Record |
+| 6 | Linear ticket with single reproducible scenario, single failing assertion | simple | The Linear intake already produces a focused Evidence Record |
 | 7 | `bugClass ∈ {race, perf, config, unknown}` | complex | None of these are usually "the line is the bug" |
 | 8 | Stack trace top frame is in a vendored / framework file, not user code | complex | Real cause is upstream; needs holistic analysis |
 | 9 | Symptom contains "intermittent", "sometimes", "only on prod", "after deploy X", "after Y users" | complex | Race / cohort / release-attribution signals |
@@ -167,7 +167,7 @@ The Phase pipeline for a `simple` bug:
 | 4 (confidence gate) | run | run |
 | 5 (branch decision) | run with 92 % auto-threshold | run with 92 % auto-threshold |
 | 6 (handoff) | **fast-lane** — see [`autonomous-handoff.md`](./autonomous-handoff.md#fast-lane) | **standard-lane** — see [`autonomous-handoff.md`](./autonomous-handoff.md#standard-lane) |
-| 7 (verifier) | run | run |
+| 7 (verification) | run | run |
 | 8 (telemetry) | run | run |
 
 The lightweight analysis the simple path runs **in place of** Phase 3:
@@ -176,7 +176,7 @@ The lightweight analysis the simple path runs **in place of** Phase 3:
 2. Identify the minimal change that satisfies the failing repro (Phase 2.5)
    and does not break neighbours.
 3. Write the proposed change to the Evidence Record as plain prose, exactly
-   the way `rca-investigator` would have written its root-cause paragraph.
+   in the shape of the [Root-Cause Record](./root-cause-analysis.md#step-3--write-the-root-cause-record).
 4. Invoke `Skill("confidence", "analysis")` directly — same gate as
    Phase 4 for the complex path. **No self-grading; the score is from
    confidence as a separate skill.**

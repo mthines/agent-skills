@@ -141,10 +141,10 @@ test('AlertBanner renders the dismiss button when dismissible is true', () => {
 });
 ```
 
-Anti-patterns to avoid (also flagged by the [Phase 7 verifier](./independent-verification.md#verifier-checks)):
+Anti-patterns to avoid (also flagged by the [Phase 7 verification](./independent-verification.md#check-3--diff-sanity)):
 
 - **Snapshot tests as the only assertion** — a snapshot freezes implementation, not behaviour.
-  The verifier cannot tell whether a snapshot diff is the bug fix or unrelated drift. Use
+  Phase 7 cannot tell whether a snapshot diff is the bug fix or unrelated drift. Use
   explicit assertions on what the user sees (text, role, aria attributes).
 - **Testing internal state** — `expect(wrapper.state().count).toBe(1)` couples the test to
   implementation. Test through the rendered output instead.
@@ -200,7 +200,7 @@ viewport) often cannot be captured by behavioural tests. Two options:
 | **Storybook story + visual diff** | The project has Chromatic / Percy / Loki wired up. The story becomes the repro. |
 | **Markdown checklist** (`repro/<id>.md`) | No visual-diff tooling — document the manual reproduction steps with screenshots, mark as best-effort |
 
-Neither produces a `FAIL_TO_PASS` contract the [Phase 7 verifier](./independent-verification.md)
+Neither produces a `FAIL_TO_PASS` contract the [Phase 7 verification](./independent-verification.md)
 can mechanically check. Surface this to the user and document in the bug-notes ledger.
 
 ---
@@ -258,7 +258,7 @@ reproduction steps. Mark it explicitly:
 ```
 
 Do **not** block on this — Phase 3 proceeds. The executor (Phase 6) cannot use it as a
-`FAIL_TO_PASS` contract; the [Phase 7 verifier](./independent-verification.md) will skip its
+`FAIL_TO_PASS` contract; the [Phase 7 verification](./independent-verification.md) will skip its
 `FAIL_TO_PASS` check and rely on the broader test suite plus diff-sanity instead.
 
 ---
@@ -353,7 +353,7 @@ When bisect finishes, capture the offending commit:
 If the offending commit's diff is **≤ 50 lines**, route to Phase 5 directly with proposal "revert
 or amend `<sha>`". The bug-notes ledger records `hypotheses[0].state = confirmed`.
 
-If the diff is larger, continue to Phase 3 — but pass the offending commit to `rca-investigator` as
+If the diff is larger, continue to Phase 3 — but pass the offending commit to the Phase 3 trace as
 a strong hint.
 
 Source: [git-bisect docs](https://git-scm.com/docs/git-bisect),

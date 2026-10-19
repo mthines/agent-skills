@@ -69,7 +69,7 @@ Match these patterns when scanning. Each is documented with a worked example in 
   telemetry-verify pipeline (10 phases, one cross-cutting bug-notes ledger).
   Takes any starting evidence (Dash0 span / log / web event URL with UTC
   timezone compensation, raw stack trace, error message, code pointer
-  `file:line`, Linear ticket URL via `linear-ticket-investigator`, screen
+  `file:line`, Linear ticket URL via the Linear MCP, screen
   recording via `/video-analyser`, free-text symptom). Phase 0 infers a
   `bugClass` … [continues for 3,500 chars]
 ```

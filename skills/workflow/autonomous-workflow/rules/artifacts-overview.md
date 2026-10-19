@@ -126,9 +126,8 @@ caller's bookkeeping (and any agent the caller later spawns to consume it).
 ledger of the bug's evidence, hypotheses, ruled-out causes, counterexamples
 seen during the executor's CEGIS refinement loop, and the confidence
 trajectory across phases. The planner appends a one-line plan summary on
-exit; the executor appends counterexamples on each refinement round; the
-fresh-context `bug-fix-verifier` agent reads the ledger as evidence at
-Phase 7 verification time.
+exit; the executor appends counterexamples on each refinement round; `/fix-bug`
+reads the ledger as evidence at Phase 7 verification time.
 
 Schema and lifecycle live in
 [`/fix-bug rules/bug-notes-ledger.md`](../../fix-bug/rules/bug-notes-ledger.md);

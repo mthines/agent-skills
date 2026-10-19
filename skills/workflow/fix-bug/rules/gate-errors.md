@@ -55,7 +55,7 @@ dispatched via `aw-executor` (which opens a draft PR). Editing files inline on a
 protected trunk branch bypasses:
   - worktree isolation
   - draft PR creation
-  - bug-fix-verifier (Phase 7) fresh-context grading
+  - Phase 7 verification against a draft PR
 
 Run `gw checkout fix/<slug>` first, then re-enter Phase 6. There is no force-proceed
 below this gate — committing implementation work directly to a protected branch is
@@ -79,7 +79,7 @@ If you find that:
   - You are still on a protected branch (main / master / develop / trunk)
   - Implementation files were edited inline by the main agent
   - `git log` shows implementation commits already on a protected branch
-…then Phase 6 was bypassed. The bug-fix-verifier cannot run in this state.
+…then Phase 6 was bypassed. Phase 7 verification cannot run in this state.
 
 Recovery:
   1. Revert / cherry-pick the implementation off the protected branch (manual — destructive).
@@ -87,7 +87,7 @@ Recovery:
   3. Re-enter Phase 6 via the documented dispatch path (Step 6.main).
   4. Phase 7 will re-run once aw-executor produces the draft PR.
 
-Skipping the verifier on the grounds of "diff is small", "pattern matches existing code",
-or "verifier exists for diff-sanity grading only" is forbidden — see
+Skipping Phase 7 verification on the grounds of "diff is small", "pattern matches existing code",
+or "verification is for diff-sanity grading only" is forbidden — see
 rules/diagnostic-surface.md hard invariants.
 ```

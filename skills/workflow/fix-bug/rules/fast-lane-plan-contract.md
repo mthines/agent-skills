@@ -69,7 +69,7 @@ Because every Core section is present by name, the plan satisfies the `aw-create
 5. **Symptom** — verbatim from Evidence Record
 6. **Bug class** — from Phase 0
 7. **Reproduction** — repro path, command, status
-8. **Root cause** — from in-skill lightweight analysis (NOT `rca-investigator`)
+8. **Root cause** — from in-skill lightweight analysis (NOT the full `root-cause-analysis.md` trace)
 9. **Decisions** *(Core)* — chosen fix + alternatives rejected + rationale
 10. **Proposed change** — file + line + before/after sketch
 11. **Acceptance Criteria** *(Core)* — testable done conditions; replaces the former "Done criteria" section name to match the Core schema
@@ -175,7 +175,7 @@ section will never carry a best-effort repro on the fast-lane.
 One paragraph, written by `/fix-bug` itself during the simple-path
 lightweight analysis (see
 [`complexity-triage.md`](./complexity-triage.md#what-simple-actually-skips)).
-The shape matches what `rca-investigator` produces for the complex path:
+The shape matches the Root-Cause Record the complex path writes ([`root-cause-analysis.md`](./root-cause-analysis.md#step-3--write-the-root-cause-record)):
 
 ```markdown
 ## Root cause
@@ -252,7 +252,7 @@ Renamed from the former "Done criteria" so the Core schema's section name appear
       (worktree creation, CEGIS rounds, final patch summary).
 
 Executor opens the draft PR when every criterion is checked.
-Verifier (Phase 7) decides undraft. Executor does NOT undraft.
+Phase 7 writes its verification evidence into the PR body. Nobody but a human undrafts.
 ```
 
 ### 12. Implementation Order
@@ -321,7 +321,7 @@ After each implementation edit:
 - Test: `<repro path>::<test name>`
 - Pre-fix: MUST FAIL with `<exact assertion or error message>`
 - Post-fix: MUST PASS
-- Verifier (Phase 7) re-runs this in a fresh context.
+- Phase 7 re-runs this against the base and PR head SHAs.
 ```
 
 ### 17. PASS_TO_PASS contract
@@ -464,6 +464,6 @@ must not propose to relax any of these without explicit user confirmation:
 - **Round-3 CEGIS failure on fast-lane falls back to standard-lane.** The
   fallback is the safety net for "triage classified simple but the bug
   wasn't." See [`autonomous-handoff.md`](./autonomous-handoff.md#fast-lane-round-3-fallback).
-- **The verifier (Phase 7) is identical for both lanes.** Fresh context,
-  same four checks, only the verifier may undraft. No lane-specific
+- **Phase 7 verification is identical for both lanes.** Same four checks,
+  and `/fix-bug` never undrafts — a human does. No lane-specific
   loosening.

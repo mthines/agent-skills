@@ -27,7 +27,7 @@ This file declares the contract `/create-skill diagnose verify-behavior` reads t
 
 `skills/quality/verify-behavior/`
 
-`git apply` runs from the repo root against files under this directory. The skill body is `SKILL.md`; rules live under `rules/`. Adapters that call this skill (`agents/shared/rules/verification-receipt.md`, `agents/bug-fix-verifier.md`, `agents/feature-pr-verifier.md`, `skills/workflow/autonomous-workflow/rules/phase-4-testing.md`) live outside this source root — changes there are a coordinated multi-file edit (D6 in `plan.md`), not part of a diagnose apply against this skill alone.
+`git apply` runs from the repo root against files under this directory. The skill body is `SKILL.md`; rules live under `rules/`. Adapters that call this skill (`agents/shared/rules/verification-receipt.md`, `skills/workflow/fix-bug/rules/independent-verification.md`, `agents/feature-pr-verifier.md`, `skills/workflow/autonomous-workflow/rules/phase-4-testing.md`) live outside this source root — changes there are a coordinated multi-file edit (D6 in `plan.md`), not part of a diagnose apply against this skill alone.
 
 ---
 

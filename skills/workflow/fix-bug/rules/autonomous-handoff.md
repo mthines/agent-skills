@@ -246,14 +246,14 @@ distinguishes them.
 | Root cause | <one line> |
 | Confidence (analysis) | <X%> |
 | Plan confidence | <Y%> if standard-lane, "n/a (fast-lane)" otherwise |
-| PR | <url> (draft — verifier pending) |
+| PR | <url> (draft — Phase 7 verification pending) |
 | Branch | fix/<slug> |
 | Worktree | .agent/fix/<slug>/ |
 | CI | watching (aw-executor still running) |
 ```
 
-Do **not** undraft the PR here — that is Phase 7 (independent verification)'s
-decision after the executor completes.
+Do **not** undraft the PR here or anywhere else — `/fix-bug` never undrafts.
+Phase 7 writes the verification evidence into the PR body and a human undrafts.
 
 ---
 

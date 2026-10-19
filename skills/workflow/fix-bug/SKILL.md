@@ -16,24 +16,21 @@ metadata:
   workflow_type: orchestrator
   architecture: classify/triage/preflight/reproduce/analyse/gate/handoff(fast|standard)/verify/telemetry
   agents:
-    rca: rca-investigator
     planner: aw-planner
     executor: aw-executor
-    verifier: bug-fix-verifier
-    investigator: linear-ticket-investigator
   composes: [confidence, aw-create-plan, tdd, e2e-testing, e2e-testing-mobile, video-analyser, autonomous-workflow]
-  phases: [intake, complexity_triage, evidence_resolution_with_preflight, source_mapping_with_reproduction, holistic_analysis_or_lightweight, confidence_gate, branch_decision, autonomous_handoff_lane_split, independent_verification, telemetry_verification]
+  phases: [intake, complexity_triage, evidence_resolution_with_preflight, source_mapping_with_reproduction, root_cause_analysis_or_lightweight, confidence_gate, branch_decision, autonomous_handoff_lane_split, verification, telemetry_verification]
   tags: [bug-fix, debugging, telemetry, dash0, confidence-gated, reproduction-first, cegis, autonomous-workflow, root-cause, orchestrator, complexity-triage, fast-lane]
 ---
 
 # Fix Bug
 
 Take a bug in any form and either ship a verified draft PR or hand back an evidence-backed proposal.
-This skill orchestrates; analysis, gating, repro authoring, planning, implementation, and grading run in the skills and agents each phase names.
+This skill runs evidence intake, root-cause analysis, and verification itself; gating, repro authoring, planning, and implementation run in the skills and agents each phase names.
 
 ## Contents
 
-Phases: [0 Intake](#phase-0--intake--classification) → [0.5 Triage](#phase-05--complexity-triage) → [1 Evidence](#phase-1--evidence-resolution) → [2 Repro lock](#phase-2--source-mapping--reproduction-lock) → [3 Analysis](#phase-3--analysis) → [4 Confidence](#phase-4--confidence-gate) → [5 Decision](#phase-5--branch-decision) → [6 Handoff](#phase-6--autonomous-handoff-lane-split) → [7 Verify](#phase-7--independent-verification) → [8 Telemetry](#phase-8--telemetry-verification); then [Lesson writes](#lesson-writes) and [Output Format](#output-format).
+Phases: [0 Intake](#phase-0--intake--classification) → [0.5 Triage](#phase-05--complexity-triage) → [1 Evidence](#phase-1--evidence-resolution) → [2 Repro lock](#phase-2--source-mapping--reproduction-lock) → [3 Analysis](#phase-3--analysis) → [4 Confidence](#phase-4--confidence-gate) → [5 Decision](#phase-5--branch-decision) → [6 Handoff](#phase-6--autonomous-handoff-lane-split) → [7 Verify](#phase-7--verification) → [8 Telemetry](#phase-8--telemetry-verification); then [Lesson writes](#lesson-writes) and [Output Format](#output-format).
 
 The **bug-notes ledger** at `.agent/<branch>/bug-notes.md` is read on entry and appended on exit by every phase — [`rules/bug-notes-ledger.md`](./rules/bug-notes-ledger.md).
 Read [`rules/prerequisites.md`](./rules/prerequisites.md) when a dependency (agent, skill, CLI, MCP) is missing or may be optional.
@@ -90,8 +87,8 @@ Infer a `bugClass` tag from the symptom and any stack-trace / error-message text
 | `logic` | none of the above match — generic logic bug |
 | `unknown` | classification not possible from the evidence |
 
-Append to the Evidence Record under `Bug class`. The class is passed as a hint to
-`rca-investigator` (Phase 3) and informs strategy selection in `aw-planner` (Phase 6). Source:
+Append to the Evidence Record under `Bug class`. The class is a hint for the
+Phase 3 trace and informs strategy selection in `aw-planner` (Phase 6). Source:
 RepairAgent ([ICSE 2025](https://software-lab.org/publications/icse2025_RepairAgent.pdf)),
 [NIST Seven Pernicious Kingdoms](https://samate.nist.gov/SSATTM_Content/papers/Seven%20Pernicious%20Kingdoms%20-%20Taxonomy%20of%20Sw%20Security%20Errors%20-%20Tsipenyuk%20-%20Chess%20-%20McGraw.pdf).
 
@@ -105,7 +102,7 @@ After step 0c, continue to Phase 0.5; Phase 1 does not start until triage commit
 ## Phase 0.5 — Complexity Triage
 
 Pick between two routing lanes for the rest of the pipeline: **`simple`** (lightweight in-skill
-analysis + fast-lane handoff) or **`complex`** (isolated `rca-investigator` analysis + standard-lane
+analysis + fast-lane handoff) or **`complex`** (full execution-path root-cause analysis + standard-lane
 handoff). This is a **routing decision, not a quality decision** — confidence (Phase 4) still
 owns the auto-implement call.
 
@@ -130,7 +127,7 @@ apply the decision rule (conservative default: pick `complex` when in doubt). Th
 | Outcome | Phase 3 | Phase 6 lane (provisional) |
 |---------|---------|----------------------------|
 | `simple` | **skip** — lightweight in-skill analysis | fast-lane (if confidence ≥ 92 % + non-best-effort repro) |
-| `complex` | dispatch `Task(rca-investigator)` — isolated execution-path trace + confidence | standard-lane |
+| `complex` | [`rules/root-cause-analysis.md`](./rules/root-cause-analysis.md) — execution-path trace + confidence | standard-lane |
 
 Append the classification, signals, decision, and provisional lane to the bug-notes ledger under
 a `Complexity triage` section.
@@ -163,7 +160,7 @@ Then pick the lowest layer that captures the bug and delegate:
 - Expo / React Native user flow → `Skill("e2e-testing-mobile", ...)`
 - Visual-only / pixel-perfect → best-effort markdown checklist
 
-The repro is the executor's `FAIL_TO_PASS` contract (Phase 6) and the verifier's `FAIL_TO_PASS` check (Phase 7).
+The repro is the executor's `FAIL_TO_PASS` contract (Phase 6) and Phase 7's `FAIL_TO_PASS` check.
 Path convention: `repro/<short-bug-id>.<ext>`.
 
 **Step 2c — Bisect fast-path (regression class only).** If pre-flight produced a `last_green_sha` AND a non-best-effort repro exists, run `git bisect run <repro-command>`.
@@ -173,30 +170,30 @@ If the offending commit's diff is ≤ 50 lines, route to Phase 5 with proposal "
 
 ## Phase 3 — Analysis
 
-### `complex` path — isolated holistic analysis
+### `complex` path — full root-cause analysis
 
-```text
-Task(subagent_type="rca-investigator", prompt="<Evidence Record from Phase 2>")
-```
+Read [`rules/root-cause-analysis.md`](./rules/root-cause-analysis.md) and run it in this context, starting from the Phase 2 Evidence Record, the `bugClass` hint, any pre-flight or bisect finding, and every ledger hypothesis with `state = ruled-out`:
 
-Include the `bugClass` hint, any pre-flight short-circuit findings, and every ledger hypothesis with `state = ruled-out`.
-The agent traces the execution path entry to exit, rules out alternative causes, scores the result with `/confidence analysis` in its own context, and returns a Root-Cause Record (root cause, causal chain, evidence, ruled-out alternatives, confidence score, fix direction); do not re-run either here.
-If no tool can dispatch `rca-investigator`, run the same protocol in-context: trace the execution path from entry to exit across files, list ≥ 2 alternative causes with the evidence ruling each out, name the root cause (not the symptom hop) at `file:line`, then run `Skill("confidence", "analysis\n\n<conclusion + evidence>")`.
+1. Trace the execution path from entry to exit across files, recording each hop at `file:line`.
+2. Rule out at least 2 alternative causes, each with concrete evidence.
+3. Name the root cause — the earliest hop whose fix makes the symptom impossible, not the symptom hop.
+4. Score it with `Skill("confidence", "analysis\n\n<conclusion + evidence>")`; below 90 %, re-trace the weakest hop once and re-score.
+5. Append the Root-Cause Record to the ledger.
 
 ### `simple` path — lightweight in-skill analysis
 
-Skip `rca-investigator` ([what simple skips](./rules/complexity-triage.md#what-simple-actually-skips)):
+Skip the full trace ([what simple skips](./rules/complexity-triage.md#what-simple-actually-skips)):
 
 1. Read the suspect file at the suspect line + 30 lines of context.
 2. Identify the minimal change that satisfies the failing repro (Phase 2.5) and does not break neighbours.
-3. Write a root-cause paragraph to the Evidence Record — same shape `rca-investigator`'s Root-Cause Record uses, including a `Falsifiable prediction:` line that the repro confirms.
+3. Write a root-cause paragraph to the Evidence Record — same shape as the [Root-Cause Record](./rules/root-cause-analysis.md#step-3--write-the-root-cause-record), including a `Falsifiable prediction:` line that the repro confirms.
 4. Continue to Phase 4 — the score comes from the `confidence` skill, never self-graded.
 
-If the lightweight analysis cannot propose a fix (suspect file not in the failing path, or more than one plausible cause), upgrade triage to `complex`, dispatch `rca-investigator`, and log `triage upgrade: simple → complex (lightweight analysis under-determined)`.
+If the lightweight analysis cannot propose a fix (suspect file not in the failing path, or more than one plausible cause), upgrade triage to `complex`, run the `complex` path, and log `triage upgrade: simple → complex (lightweight analysis under-determined)`.
 
 ## Phase 4 — Confidence Gate
 
-Reuse the Phase 3 score (from the Root-Cause Record, or from the in-context fallback's `/confidence analysis`).
+Reuse the Phase 3 score from the Root-Cause Record.
 Re-run `/confidence analysis` only if new evidence arrived since Phase 3 or the proposed fix materially changed.
 Append the score and breakdown to the ledger's `Confidence trajectory` table.
 
@@ -251,20 +248,21 @@ Both lanes share the CEGIS 3-round cap; a fast-lane round-3 failure falls back t
 
 **The main agent does not edit files in Phase 6.** All implementation runs inside `Task(subagent_type="aw-executor", ...)`; Step 7.pre fails closed when no draft PR exists.
 
-## Phase 7 — Independent Verification
+## Phase 7 — Verification
 
 ### Step 7.pre — Draft PR assertion (mechanical)
 
 Run `gh pr view --json url,isDraft,headRefName 2>/dev/null` for the current branch.
 **All** must hold: a PR exists (exit 0 with JSON, not the `MISSING` fallback); `isDraft = true`; `headRefName` equals `git rev-parse --abbrev-ref HEAD`.
 On pass, capture the PR URL.
-On any failure, emit the [Step 7.pre error](./rules/gate-errors.md#step-7pre--draft-pr-assertion) and stop — there is no force-proceed, and skipping the verifier for a "small diff" is forbidden.
+On any failure, emit the [Step 7.pre error](./rules/gate-errors.md#step-7pre--draft-pr-assertion) and stop — there is no force-proceed, and skipping verification for a "small diff" is forbidden.
 
-### Step 7.main — Spawn the verifier
+### Step 7.main — Run the four checks
 
-Spawn `bug-fix-verifier` in a fresh context with no planner / executor reasoning, per [`rules/independent-verification.md`](./rules/independent-verification.md).
-Green → it runs `gh pr ready`; red → the PR stays draft and you surface its evidence.
-On a verifier RED, write a lesson with trigger `verifier-red`, naming which earlier phase under-caught it (triage too `simple`? repro false-green? analysis wrong file?).
+Read [`rules/independent-verification.md`](./rules/independent-verification.md) and run, in this context, against the repro, the diff, and the Evidence Record (not `plan.md`): FAIL_TO_PASS (the repro fails on base and passes on the PR head), PASS_TO_PASS (no previously passing test fails), diff sanity (no catch-all swallows, debug statements, deleted tests, or `.skip` / `.only`), and repro integrity (the repro was not weakened).
+Write the verdict and evidence into the PR body's `## Verification` section.
+**`/fix-bug` never undrafts:** on green and on red the PR stays draft for a human to review and run `gh pr ready`.
+On a RED, write a lesson with trigger `verifier-red`, naming which earlier phase under-caught it (triage too `simple`? repro false-green? analysis wrong file?).
 
 ## Phase 8 — Telemetry Verification
 
@@ -283,7 +281,7 @@ Implementation-phase lessons live in `aw-lessons`, not here.
 | Trigger | When |
 |---------|------|
 | `phase-5-stop` | Phase 5 stop, triage upgrade, or fast-lane → standard-lane fallback |
-| `verifier-red` | Phase 7 verifier RED |
+| `verifier-red` | Phase 7 verification RED |
 | `telemetry-firing` | Phase 8 signal does not decay or recurs |
 
 Slow tier: if a run shipped wrong code despite all three confidence gates, a post-merge regression traces to a missed check, or a lesson recurs `seen_count >= 3`, invoke [`/create-skill diagnose fix-bug`](../../authoring/create-skill/SKILL.md#diagnose-workflow) while the failing session is still in context; it reads [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md).

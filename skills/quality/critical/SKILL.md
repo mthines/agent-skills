@@ -166,7 +166,7 @@ If `Must-fix` and `Should-fix` are both empty, output `No blocking concerns foun
 ## Composition with other skills
 
 - `/confidence` — suggest `/confidence <mode>` in `Next step`; never score here.
-- `rca-investigator` — when an `analysis` finding suggests the root cause is wrong, suggest re-running the root-cause analysis (dispatch the agent) before the `/confidence` gate.
+- Root-cause re-trace — when an `analysis` finding suggests the root cause is wrong, recommend re-tracing the execution path from entry to exit (ruling out at least 2 alternative causes with evidence) before the `/confidence` gate; inside `/fix-bug` that is its Phase 3.
 - `/ideate` — `deep` lens discovery ([`rules/deep-mode.md`](./rules/deep-mode.md#d1--lens-selection)).
 
 ## Hard rules and non-goals

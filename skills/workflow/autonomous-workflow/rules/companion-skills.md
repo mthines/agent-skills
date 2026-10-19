@@ -129,7 +129,7 @@ Phase 6 invokes `review-loop` (or `pr-reviewer` directly via `create-pr` Step 6.
 Phase 7 invokes `review-loop` against the PR after CI green (self-review relation; `pr-reviewer` detects authorship automatically via `REVIEW_RELATION`).
 Both passes keep the graceful-skip contract — log one line and continue if `review-loop` or `pr-reviewer` is absent.
 
-The `feature-pr-verifier` agent runs in fresh context with no access to the planner's or executor's reasoning — only `plan.md`, `walkthrough.md`, the PR diff, and the project test command. It returns a green / red verdict against the four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity). The verdict is advisory: only the user undrafts the PR. This is the feature-PR counterpart to `bug-fix-verifier` (which is owned by `/fix-bug`), and serves the same purpose — closing the self-grading loophole Anthropic's harness research warns about.
+The `feature-pr-verifier` agent runs in fresh context with no access to the planner's or executor's reasoning — only `plan.md`, `walkthrough.md`, the PR diff, and the project test command. It returns a green / red verdict against the four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity). The verdict is advisory: only the user undrafts the PR. It closes the self-grading loophole Anthropic's harness research warns about.
 
 ---
 

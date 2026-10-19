@@ -410,7 +410,7 @@ The `auto_replan_used` flag is the **one-shot guard** — it prevents an infinit
 `analysis → re-trace → replan → fail` cycle.
 
 **`re_trace()`** — re-trace the execution path from entry to exit and re-state the root cause before re-planning.
-When a sub-agent dispatch tool exists, dispatch `Task(subagent_type="rca-investigator", prompt="<failing area + hypotheses tried>")` and use its Root-Cause Record; otherwise run the trace in-context: entry point → each contract boundary → data flow → exit, naming the first hop where a guarantee breaks. After one replan-and-retry,
+Run the trace in this context: entry point → each contract boundary → data flow → exit, naming the first hop where a guarantee breaks and ruling out at least 2 alternative causes with evidence (skip the hypotheses already tried). After one replan-and-retry,
 the next cap hit goes straight to user escalation.
 
 ### Companion Behavior
@@ -419,8 +419,7 @@ the next cap hit goes straight to user escalation.
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `confidence("analysis")` installed | Returns confidence score + root-cause / outcome-confidence findings      |
 | `confidence` missing        | Logs `skipped (not installed)`; treat as confidence < 90% (conservative default)  |
-| `rca-investigator` dispatchable | Re-traces the execution path end-to-end in isolation; its Root-Cause Record feeds the next `aw-create-plan` invocation, which overwrites `plan.md` at the next version (v{N+1}) |
-| No dispatch tool            | Run the same trace in-context; its result feeds `aw-create-plan` the same way      |
+| `re_trace()`                | Re-traces the execution path end-to-end in context; its root cause feeds the next `aw-create-plan` invocation, which overwrites `plan.md` at the next version (v{N+1}) |
 
 ### Mandatory User Escalation
 

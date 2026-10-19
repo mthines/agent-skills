@@ -32,9 +32,9 @@ The shape stays stable; only the `Outcome` tail varies.
 
 ### Outcome
 <one of:>
-- Auto-implemented (<lane>) + verified: PR <url> on branch <name>. Verifier green. Telemetry decayed.
-- Auto-implemented (<lane>), verifier red: PR <url> still draft. Concerns: <list>.
-- Auto-implemented (fast-lane → standard-lane fallback): PR <url>. Round-3 CEGIS triggered fallback. Verifier <status>.
+- Auto-implemented (<lane>) + verified: draft PR <url> on branch <name>, verification green — a human undrafts. Telemetry decayed.
+- Auto-implemented (<lane>), verification red: PR <url> still draft. Concerns: <list>.
+- Auto-implemented (fast-lane → standard-lane fallback): PR <url>. Round-3 CEGIS triggered fallback. Verification <status>.
 - Analyse-only (no PR): proposal returned at X% confidence; triage = <simple | complex>.
 - Below gate (X%): proposal returned for review. To raise the score, collect: <specific evidence>.
 - Stopped: <reason>.
