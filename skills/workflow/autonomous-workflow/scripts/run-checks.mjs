@@ -335,7 +335,7 @@ function selfTest() {
     expectEq("parse error: exit code", r.status, 2);
     expectEq("parse error: sentinel prefix", last(r.stdout).startsWith("CHECKS 0/0 FAIL: parse error"), true);
 
-    // A path-like expect is not a regex: its trailing segment is not a flag set.
+    // A path-like expect is a literal because it has no `re:` prefix.
     writeFileSync(join(dir, "path.yaml"), ["- id: AC-1", "  kind: command", "  run: echo /usr/bin/node", "  expect: /usr/bin/node", "  status: pending", ""].join("\n"));
     cli(["path.yaml", "--seal"]);
     r = cli(["path.yaml"]);
