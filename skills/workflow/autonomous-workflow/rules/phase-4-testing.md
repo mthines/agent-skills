@@ -292,6 +292,7 @@ The runner runs each check's `setup` then `run`, compares against `expect` (exac
 | `CHECKS M/M PASS (<sha>)` | Every check passed on `<sha>` | Exit Phase 4; copy the line into the Progress Log and the walkthrough |
 | `CHECKS p/M FAIL: AC-2 AC-5` | The listed checks failed | Fix the implementation for each listed ID, then re-run the runner |
 | `CHECKS 0/0 FAIL: <reason>` | Missing file, parse error, or no checks | Re-derive `checks.yaml` via `aw-create-plan`; never hand-edit sealed fields |
+| `CHECKS 0/0 FAIL: checks.lock unreadable (…)` (exit 2) | `checks.lock` exists but is not valid JSON | Re-seal via `aw-create-plan`; never hand-edit or delete `checks.lock` |
 
 Rules of the loop:
 
@@ -300,6 +301,8 @@ Rules of the loop:
 3. The runner never executes a `kind: judge` check. Resolve it by rubric-scored judgment against the AC text, set its `status:` to `pass` or `fail` yourself, and log the verdict with a one-line rationale. A judge check never gates alone; flag a plan whose checks are mostly judge-kind as weakly verifiable.
 4. To diagnose a failing check, run `Skill("verify-behavior", "change")` with the check's `setup` + `run` as `target` and its `expect` as `expected`; it returns a receipt, and the runner's sentinel stays the gate. Without the skill, log `verify-behavior — skipped (not installed)`.
 5. Sealed-field edits are caught mechanically: the runner fails every check whose `id`, `requirement`, `ears`, `kind`, or `expect` differs from `checks.lock`.
+   A sealed check removed from `checks.yaml` fails by id, counted in the sentinel's total, with `<id> fail — sealed check removed from checks.yaml (only aw-create-plan may re-seal)`.
+   An unreadable `checks.lock` stops the run before any check executes, with `CHECKS 0/0 FAIL: checks.lock unreadable (…)` and exit 2.
 
 ### Check-integrity rules (NON-RELAXABLE)
 
