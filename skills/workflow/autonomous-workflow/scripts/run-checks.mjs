@@ -11,8 +11,9 @@
 //   CHECKS <passed>/<total> FAIL: <ids…>
 // Exit 0 only when every check passes. Node >= 20, no dependencies.
 //
-// `expect` forms: `exit <n>` compares the exit code; `/re/flags` matches stdout;
-// anything else must equal trimmed stdout exactly.
+// `expect` forms: `exit <n>` compares the exit code; `re:<pattern>` (or `re/<flags>:<pattern>`,
+// flags from [dgimsuyv]) regex-tests trimmed stdout, and an invalid pattern fails the check;
+// anything else, including a value starting with `/`, must equal trimmed stdout exactly.
 // `kind: judge` is never executed: it passes only when its status is already `pass`.
 // `status: unsatisfiable` is never overwritten and never passes.
 // `--seal` writes checks.lock (sha256 of id, requirement, ears, kind, expect per check);
@@ -96,9 +97,14 @@ function sh(cmd, cwd, timeoutMs) {
 export function compare(expect, res) {
   const exit = expect.match(/^exit\s+(-?\d+)$/);
   if (exit) return { ok: res.code === Number(exit[1]), got: `exit ${res.code}` };
-  // Regex form only with valid JS flags, so a path like `/usr/bin/node` stays a literal.
-  const re = expect.match(/^\/(.*)\/([dgimsuyv]*)$/s);
-  if (re) return { ok: new RegExp(re[1], re[2]).test(res.out), got: clip(res.out) };
+  // An explicit `re:` prefix, so a path like `/home/us` is always a literal, never a regex.
+  const re = expect.match(/^re(?:\/([dgimsuyv]*))?:(.*)$/s);
+  if (re) {
+    let rx;
+    try { rx = new RegExp(re[2], re[1] ?? ""); }
+    catch (e) { return { ok: false, got: clip(res.out), invalid: `invalid regex in expect: ${e.message}` }; }
+    return { ok: rx.test(res.out), got: clip(res.out) };
+  }
   return { ok: res.out === expect.trim(), got: clip(res.out) };
 }
 const clip = (s) => (s.length > 120 ? s.slice(0, 117) + "..." : s) || "<empty>";
@@ -158,7 +164,7 @@ export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = 
         const r = sh(c.run, cwd, timeoutMs);
         const cmp = compare(String(c.expect), r);
         status = cmp.ok ? "pass" : "fail";
-        why = `expect ${JSON.stringify(String(c.expect))}, got ${JSON.stringify(cmp.got)}${r.timedOut ? " (timed out)" : ""}`;
+        why = cmp.invalid ?? `expect ${JSON.stringify(String(c.expect))}, got ${JSON.stringify(cmp.got)}${r.timedOut ? " (timed out)" : ""}`;
       }
     }
     log(`${id} ${status} — ${why}`);
@@ -222,7 +228,7 @@ function selfTest() {
       "  kind: grep",
       '  setup: "printf \'hello world\\n\' > f.txt"',
       "  run: cat f.txt",
-      '  expect: "/^hello w.rld$/"',
+      '  expect: "re:^hello w.rld$"',
       "  status: pending",
       "- id: AC-4",
       "  requirement: R2",
@@ -257,7 +263,7 @@ function selfTest() {
       "  run: |",
       "    printf 'a\\n'",
       "    printf 'b\\n'",
-      "  expect: \"/a\\\\nb/\"",
+      "  expect: \"re:a\\\\nb\"",
       "  status: pending",
       "",
     ].join("\n");
@@ -286,7 +292,7 @@ function selfTest() {
     expectEq("green: sentinel", last(r.stdout), `CHECKS 2/2 PASS (${sha})`);
 
     // An executor that edits an immutable field after --seal is caught, even when the new expect would pass.
-    writeFileSync(join(dir, "green.yaml"), green.replace('expect: "401"', 'expect: "/40/"'));
+    writeFileSync(join(dir, "green.yaml"), green.replace('expect: "401"', 'expect: "re:40"'));
     r = cli(["green.yaml"]);
     expectEq("tamper: exit code", r.status, 1);
     expectEq("tamper: sentinel", last(r.stdout), "CHECKS 1/2 FAIL: AC-1");
@@ -325,6 +331,23 @@ function selfTest() {
     r = cli(["path.yaml"]);
     expectEq("path expect: exit code", r.status, 0);
     expectEq("path expect: sentinel", last(r.stdout), `CHECKS 1/1 PASS (${sha})`);
+
+    // `re:` is the only regex form: plain, flagged, a slash-led literal, and an invalid pattern.
+    const one = (name, out, expect) => ["- id: " + name, "  kind: command", `  run: echo ${out}`, `  expect: '${expect}'`, "  status: pending", ""].join("\n");
+    writeFileSync(join(dir, "re.yaml"), one("AC-1", "hello", "re:^he") + one("AC-2", "hello", "re/i:^HE"));
+    r = cli(["re.yaml"]);
+    expectEq("re expect: exit code", r.status, 0);
+    expectEq("re expect: sentinel", last(r.stdout), `CHECKS 2/2 PASS (${sha})`);
+    writeFileSync(join(dir, "slash.yaml"), one("AC-1", "/home/other", "/home/us"));
+    r = cli(["slash.yaml"]);
+    expectEq("slash literal: exit code", r.status, 1);
+    expectEq("slash literal: sentinel", last(r.stdout), "CHECKS 0/1 FAIL: AC-1");
+    writeFileSync(join(dir, "badre.yaml"), one("AC-1", "x", "re:("));
+    r = cli(["badre.yaml"]);
+    expectEq("invalid regex: exit code", r.status, 1);
+    expectEq("invalid regex: one sentinel line", r.stdout.split("\n").filter((l) => /^CHECKS /.test(l)).length, 1);
+    expectEq("invalid regex: sentinel", last(r.stdout), "CHECKS 0/1 FAIL: AC-1");
+    expectEq("invalid regex: reason", /AC-1 fail — invalid regex in expect: /.test(r.stdout), true);
 
     // Exactly one sentinel line per run.
     const sentinels = cli(["checks.yaml", "--no-write"]).stdout.split("\n").filter((l) => /^CHECKS /.test(l));

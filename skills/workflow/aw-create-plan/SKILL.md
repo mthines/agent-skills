@@ -184,7 +184,7 @@ The two compatibility headings (`## Requirements`, `## Acceptance Criteria (Defi
   kind: command                  # command | grep | judge
   setup: "none"                  # or a shell command that must exit 0
   run: "curl -s -o /dev/null -w '%{http_code}' localhost:3000/me -H 'Authorization: Bearer expired'"
-  expect: "401"                  # exact stdout | `exit <n>` | `/regex/flags`
+  expect: "401"                  # exact stdout | `exit <n>` | `re:<pattern>` | `re/<flags>:<pattern>`
   status: pending                # pending | pass | fail | unsatisfiable
 ```
 

@@ -285,7 +285,7 @@ DIR=".agent/$(git branch --show-current)"
 node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$DIR/checks.yaml" | tee "$DIR/checks.run.log"
 ```
 
-The runner runs each check's `setup` then `run`, compares against `expect` (exact stdout, `exit <n>`, or `/regex/`), rewrites only the `status:` lines, and prints one final line:
+The runner runs each check's `setup` then `run`, compares against `expect` (exact stdout, `exit <n>`, or `re:<pattern>` / `re/<flags>:<pattern>`; a `/`-led value is a literal, and an invalid pattern fails the check), rewrites only the `status:` lines, and prints one final line:
 
 | Sentinel | Meaning | Next action |
 | --- | --- | --- |
