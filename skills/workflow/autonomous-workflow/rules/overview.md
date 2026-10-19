@@ -112,7 +112,7 @@ for full details.
 Phase 0: Validation + Mode Detection
     | (user confirms, mode selected)
 Phase 1: Planning (Full: deep analysis + confidence gate, Lite: mental plan)
-    | holistic-analysis (if complex), confidence(plan) >= 90%
+    | execution-path trace (if complex), confidence(plan) >= 90%
     | (plan validated)
 Phase 2: Worktree Setup - MANDATORY
     | Skill("aw-create-plan") <- generates plan.md INSIDE worktree at .agent/{branch}/

@@ -124,9 +124,8 @@ move on. Do not log it.
 
 Component source has a larger blast radius than a story, so it is gated:
 
-1. For anything past a one-line, obviously-correct fix, run
-   [`holistic-analysis`](../../../analysis/holistic-analysis/SKILL.md) in
-   `fix` mode to find the root cause, and [`critical`](../../../quality/critical/SKILL.md)
+1. For anything past a one-line, obviously-correct fix, trace the execution
+   path from entry to exit to find the root cause, and [`critical`](../../../quality/critical/SKILL.md)
    to pressure-test the fix direction. Do not patch the symptom at the
    call site when the cause is upstream.
 2. Score the fix with [`confidence`](../../../quality/confidence/SKILL.md)

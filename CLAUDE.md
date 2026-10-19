@@ -86,7 +86,6 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 ### `analysis/` — investigate data, diagnose issues
 
-- `holistic-analysis` (`auto`) — full entry-to-exit execution-path trace; `review` mode feeds `pr-reviewer`
 - `ideate` (`auto`) — research-grounded brainstorming; divergence runs lessons-blind
 - `interview` (`auto`) — pre-plan scope-alignment interview; emits `.agent/{branch}/brief.md`
 - `playwright-trace-analyzer` (`/`) — analyze `trace.zip`; names the race behind a flake

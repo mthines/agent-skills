@@ -345,7 +345,7 @@ The executor's scope starts at Phase 3 and ends at Phase 7 CI gate. It must not:
 | Revisit Phase 1 design decisions silently        | If the plan is wrong, escalate to the user (or trigger Phase 4 stuck-loop auto-replan). Don't quietly redesign. |
 | Skip Phase 2 verification                        | Even though the planner created the worktree, the executor still verifies it's inside the right one. |
 
-If the executor discovers mid-implementation that the plan is fundamentally flawed, it follows the [Phase 4 stuck-loop protocol](./companion-skills.md#stuck-loop-protocol-phase-4) — auto-replan via `confidence(analysis)` + `holistic-analysis` is the recovery, not silent improvisation.
+If the executor discovers mid-implementation that the plan is fundamentally flawed, it follows the [Phase 4 stuck-loop protocol](./companion-skills.md#stuck-loop-protocol-phase-4) — auto-replan via `confidence(analysis)` + an execution-path re-trace is the recovery, not silent improvisation.
 
 ---
 

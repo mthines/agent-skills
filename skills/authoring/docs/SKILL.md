@@ -146,7 +146,7 @@ Detects drift, applies targeted fixes, and pushes new rules to the innermost-anc
 | `paths <glob>`    |         | Limit the diff to `<glob>`. The Placement Resolver still decides destinations.               |
 | `nested <dir>`    |         | Route all updates for changes under `<dir>` to `<dir>/CLAUDE.md` (scaffold if missing).      |
 | `pattern <glob>`  |         | Discovery-driven — scan files matching `<glob>` for shared structure, emit one rule.         |
-| `holistic`        |         | Run `holistic-analysis refactor` on each affected area before drafting docs updates.         |
+| `holistic`        |         | Trace each affected area's execution path end to end before drafting docs updates.           |
 | `dry-run`         |         | Preview only. Print proposed changes; do not write.                                          |
 | `all`             |         | Full audit against the current codebase (no diff). Equivalent to `audit` mode for sync only. |
 

@@ -15,7 +15,7 @@ only** — `plan.md` is written in [Phase 2](./phase-2-worktree.md#plan-generati
 inside the worktree, never on the main branch.
 
 > **Order of operations:** research (parallel `Explore` if complex) →
-> optional `holistic-analysis` → technical design (incl. Existing Code Survey
+> optional execution-path trace → technical design (incl. Existing Code Survey
 > for planned `create`s + executable checks drafting) →
 > optional `critical(plan)` → `confidence(plan)` gate → Phase 2.
 
@@ -232,23 +232,18 @@ the searches as you run them.
 **Anchor:** `complex-task-detection`
 
 If the task triggers complexity (5+ files, 2+ packages, OR user calls it
-complex / unfamiliar / deep), invoke the `holistic-analysis` companion to trace
-the end-to-end execution path before designing.
-
-```
-Skill("holistic-analysis")     # missing ⇒ companion: <name> — skipped (not installed)
-```
+complex / unfamiliar / deep), trace the end-to-end execution path of the code the
+task touches before designing: entry point → each contract boundary → data flow →
+exit, recording each hop as `file:line`.
+Split the trace across the parallel `Explore` sub-agents when they run.
 
 Log to the conversation and to `plan.md` Progress Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: holistic-analysis() — ran
-- [TIMESTAMP] Phase 1: holistic-analysis() — skipped (not installed)
+- [TIMESTAMP] Phase 1: execution-path trace — ran (<N> hops, <M> contract boundaries)
 ```
 
-Use the holistic findings to refine the technical approach before drafting
-file-level changes. Disable this step by removing the invocation here (see
-[`companion-skills.md`](./companion-skills.md#registry)).
+Use the trace to refine the technical approach before drafting file-level changes.
 
 ---
 
@@ -595,7 +590,7 @@ contract and message format.
 - [ ] Scope brief read from `.agent/{branch}/brief.md` if Phase 0 ran `interview`; plan seeded from it, not re-derived (anchor: `scope-brief`)
 - [ ] Codebase analyzed (structure, patterns, stack) — dependency-graph localization (def/ref walk) before keyword sweep
 - [ ] Parallel `Explore` sub-agents used if complexity triggered (anchor: `parallel-research`)
-- [ ] `holistic-analysis` invoked if complexity triggered (anchor: `complex-task-detection`)
+- [ ] Execution path traced if complexity triggered (anchor: `complex-task-detection`)
 - [ ] Technical approach designed with specific file references
 - [ ] Existing Code Survey completed for every planned `create` — searches recorded, verdicts assigned (anchor: `existing-code-survey`)
 - [ ] Acceptance Criteria carry `AC-{n}` IDs + `(covers: R{m})` annotations; every `[user-stated]` requirement covered; EARS shape preferred; a runner sketched per criterion (anchor: `acceptance-criteria-drafting`)
@@ -614,7 +609,6 @@ contract and message format.
 - Next phase: [phase-2-worktree](./phase-2-worktree.md)
 - Companion registry: [companion-skills](./companion-skills.md)
 - Related skill: [`confidence`](../../../quality/confidence/SKILL.md)
-- Related skill: [`holistic-analysis`](../../../analysis/holistic-analysis/SKILL.md)
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
 - Related rule: [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — where specs.md is consumed
 - Related rule: [`phase-4-testing.md#executable-checks-loop`](./phase-4-testing.md#executable-checks-loop) — where checks.yaml is consumed

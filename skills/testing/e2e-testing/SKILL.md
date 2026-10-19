@@ -189,8 +189,8 @@ If the heal loop fails to converge:
 - [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) — runs after
   Generator output to catch tests-by-construction.
 - [`confidence`](../../quality/confidence/SKILL.md) — gate when the heal loop fails.
-- [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — if a flow is failing
-  for reasons no test rewrite can fix, step back instead of patching.
+- If a flow is failing for reasons no test rewrite can fix, step back instead of
+  patching: re-trace the execution path from entry to exit and re-state the root cause.
 - [`playwright-trace-analyzer`](../../analysis/playwright-trace-analyzer/SKILL.md) —
   consume the trace produced by a failed test on retry.
 

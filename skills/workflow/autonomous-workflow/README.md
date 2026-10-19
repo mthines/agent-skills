@@ -189,14 +189,12 @@ trigger registry is in
 | ----- | ---------------------- | --------- | --------------------------------------------- |
 | 0     | `interview`            | Optional  | Default-on scope alignment in Full Mode (adaptive — silent on a crisp request; `--no-interview` skips, `--interview` forces). Restate-and-diff + missing-information gate; writes `brief.md` |
 | 1     | `lorekit-memory`       | Optional  | Reads `loop::aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
-| 1     | `holistic-analysis`    | Optional  | Multi-domain execution-path tracing           |
 | 1     | `confidence`           | **Required** | Plan gate (>= 90% to proceed)              |
 | 2     | `aw-create-plan`       | Optional  | Writes `.agent/{branch}/plan.md`              |
 | 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
 | 3     | `ux`                   | Optional  | UI / accessibility review when UI files touched |
 | 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + aw-target exist |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
-| 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
 | 6     | `review-loop` *(skill)* | Optional  | Post-draft convergence loop — `pr-reviewer` (self-relation) → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved (fix or reply); dispatched by `create-pr` after the draft PR is open |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
@@ -467,7 +465,6 @@ to this skill's source.
 - [`polish`](../../quality/polish/) — simplifies the branch diff and prunes comments (via `review-loop`)
 - [`tdd`](../../quality/tdd/) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/) — UI / accessibility review
-- [`holistic-analysis`](../../analysis/holistic-analysis/) — execution-path analysis
 - [`docs`](../../authoring/docs/) — keeps `CLAUDE.md`, `README.md`, and `docs/` in sync
 - [`review-loop`](../../quality/review-loop/) — review → apply → simplify convergence
 - [`create-pr`](../../delivery/create-pr/) — narrative PR description + push + watch

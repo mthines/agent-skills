@@ -19,7 +19,7 @@ The shape stays stable; only the `Outcome` tail varies.
 <repro path + command + status>
 
 ### Root cause
-<one paragraph from holistic-analysis OR lightweight in-skill analysis — labelled accordingly>
+<one paragraph from the Root-Cause Record OR lightweight in-skill analysis — labelled accordingly>
 
 ### Proposed change
 <plain-language description + impact + verification plan>

@@ -173,7 +173,7 @@ all force-proceed cases. Identical to the pre-upgrade Phase 6.
 Use the Agent tool with `subagent_type: "aw-planner"` and
 `isolation: "worktree"`. Pass the **Bug Fix Pack** from
 [`templates/bug-fix-pack.md`](../templates/bug-fix-pack.md), filled in from
-the Evidence Record (Phase 2) and holistic-analysis output (Phase 3).
+the Evidence Record (Phase 2) and Root-Cause Record (Phase 3).
 If the harness does not support the `isolation` parameter, omit it — the
 planner creates and enters the worktree itself as part of its Phase 2.
 

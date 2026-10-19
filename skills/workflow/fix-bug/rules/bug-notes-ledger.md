@@ -13,7 +13,7 @@ tags:
 
 A durable artefact written to `.agent/<branch-or-slug>/bug-notes.md`. Captures hypotheses,
 ruled-out causes, counterexamples, and the confidence trajectory across all phases. Designed to
-survive compaction so a re-invoked `/fix-bug` (or `holistic-analysis`) does not re-explore dead
+survive compaction so a re-invoked `/fix-bug` (or `rca-investigator`) does not re-explore dead
 ends.
 
 Source: [Effective context engineering for AI agents (Anthropic, Sep 2025)](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents)
@@ -41,7 +41,7 @@ Also [`anthropics/cwc-long-running-agents`](https://github.com/anthropics/cwc-lo
 
 The ledger is consumed by:
 
-- `holistic-analysis` (Phase 3 entry) — to skip ruled-out hypotheses.
+- `rca-investigator` (Phase 3 entry) — to skip ruled-out hypotheses.
 - `aw-planner` (Phase 6 entry) — to plan around known counterexamples.
 - `aw-executor` (Phase 6 entry) — to load counterexamples for the CEGIS refinement loop.
 - `bug-fix-verifier` (Phase 7) — read-only.
@@ -59,7 +59,7 @@ Under the normal flow the first write — and therefore the creation point — i
 | Phase 0.5 (after triage) | **Create** the ledger (first write) and append the `Complexity triage` section |
 | Phase 1 (after pre-flight) | **Append** the partial Evidence Record + pre-flight findings |
 | Phase 2 (after repro lock) | **Append** the repro path + status |
-| Phase 3 (after holistic analysis) | **Append** the hypotheses table from holistic-analysis Phase 4 |
+| Phase 3 (after root-cause analysis) | **Append** the `Alternatives ruled out` table from the Root-Cause Record |
 | Phase 4 (after confidence gate) | **Append** the confidence score + breakdown |
 | Phase 5 (after branch decision) | **Append** the chosen branch (auto-fix / proposal / stop) |
 | Phase 6 (after planner) | **Append** the planner's `plan.md` summary + plan confidence |
@@ -93,7 +93,7 @@ append. Do not overwrite.
 | # | Hypothesis | State | Evidence-for | Evidence-against | Source |
 |---|------------|-------|--------------|------------------|--------|
 | 1 | Null-deref in UserService.fetchUser | confirmed | repro fails on commit f3a2b1c | — | pre-flight + bisect |
-| 2 | Race condition between fetch and cache write | ruled-out | — | repro is single-threaded; cache mock disabled | holistic-analysis Phase 4 |
+| 2 | Race condition between fetch and cache write | ruled-out | — | repro is single-threaded; cache mock disabled | rca-investigator |
 
 States:
 - `open` — under investigation.

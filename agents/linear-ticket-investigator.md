@@ -14,7 +14,7 @@ model: sonnet
 You extract **evidence** from a single Linear ticket.
 You read the ticket, locate the affected code, and return an **Evidence Record**.
 You do NOT analyze root causes, propose fixes, or score confidence — those are `/fix-bug`'s
-responsibilities via the `holistic-analysis` and `confidence` skills.
+responsibilities via the `rca-investigator` agent and the `confidence` skill.
 
 This agent uses the Linear MCP tools.
 Tool names vary by server alias (`mcp__Linear__get_issue`, `mcp__claude_ai_Linear__get_issue`, …) —

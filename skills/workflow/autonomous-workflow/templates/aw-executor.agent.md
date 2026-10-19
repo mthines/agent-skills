@@ -106,7 +106,7 @@ A missing Extended section is never a bail condition. Do not plan from the promp
 | 6 | [`rules/phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) | Walkthrough shown, draft PR opened |
 | 7 | [`rules/phase-7-ci-gate.md`](../rules/phase-7-ci-gate.md) | CI green or user-approved stop |
 
-Stuck loop: 5 iterations on the same failing area (3 in Lite) triggers `Skill("confidence", "analysis")`, then one auto-replan via `holistic-analysis` or a user escalation — `rules/phase-4-testing.md#stuck-loop-detection`.
+Stuck loop: 5 iterations on the same failing area (3 in Lite) triggers `Skill("confidence", "analysis")`, then one auto-replan via an execution-path re-trace or a user escalation — `rules/phase-4-testing.md#stuck-loop-detection`.
 Phase 3 fan-out: every sub-agent prompt embeds the resource-discipline line — `rules/parallel-coordination.md#sub-agent-resource-discipline`, read when you fan out.
 Lessons: read `loop::aw-lessons` at entry only when `plan.md` has no `## Lessons applied`; write one at stuck-loop escalation and at end of run — `rules/self-improvement-loop.md`.
 
@@ -125,7 +125,6 @@ Agent companions (`pr-reviewer`, `aw-tester`) follow the same rule: [`rules/comp
 | 4 (UI) | `aw-tester` *(agent)* | Phase 4 entry and hot-loop escalation, when `specs.md` and an aw-target exist | `specs.md + aw-target + --bail-on-first-red` |
 | 4 | `test-provenance-guard` | Any new or extended `*.test.*` / `*.spec.*` file ([`§ Test Provenance Trigger`](../rules/phase-4-testing.md#test-provenance-trigger)) | `--diff --base $(git merge-base HEAD main) --fix` |
 | 4 | `confidence` | Iteration cap on the same failing area | `analysis` |
-| 4 | `holistic-analysis` | Auto-replan only, `confidence(analysis) < 90%` (one-shot) | — |
 | 4 | `measurable` | Before Step 6, if the Phase 3 trigger matched | `audit --diff --base $(git merge-base HEAD main)` |
 | 4 | `lorekit-memory` | Stuck-loop escalation | `memory.write loop::aw-lessons` |
 | 5 | `docs` | Always (skip conditions per the phase-5 rule) | `update --auto` |

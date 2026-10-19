@@ -62,7 +62,7 @@ Read the existing `version:` from `plan.md` when it exists; the new write uses t
 
 1. Write the Core brief per [The brief (Core)](#the-brief-core) — always, in that order.
 2. On a Full-tier plan, or when File Changes has a `create` row, add Extended sections per [`rules/extended-sections.md`](rules/extended-sections.md) — read when the tier is Full or a `create` row exists.
-3. On an iteration, append a Progress Log entry naming the new version: `- [{TIMESTAMP}] Phase 4: plan version 3 written (auto-replan after holistic-analysis)`.
+3. On an iteration, append a Progress Log entry naming the new version: `- [{TIMESTAMP}] Phase 4: plan version 3 written (auto-replan after re-trace)`.
 
 ### Step 3: Derive and seal `checks.yaml`
 

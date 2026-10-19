@@ -15,13 +15,13 @@ The rules live in [`SKILL.md`](../SKILL.md) and `rules/`; this file is read on d
 
 ## Principles
 
-1. **Orchestrate, don't analyse.** Holistic analysis lives in `holistic-analysis`, gating in
+1. **Orchestrate, don't analyse.** Root-cause analysis lives in `rca-investigator`, gating in
    `confidence`, test authoring in `/tdd` / `/e2e-testing` / `/e2e-testing-mobile`, plan
    authoring in `aw-planner` (standard-lane) or `aw-create-plan` (fast-lane), implementation in
    `aw-executor`, grading in `bug-fix-verifier`.
 2. **Match the harness to the bug.** A null-check fix in one file does not need an eight-phase
    pipeline. Phase 0.5 triage routes simple bugs to a lightweight in-skill analysis and a fast
-   handoff lane; complex bugs get the full holistic-analysis + planner treatment. The conservative
+   handoff lane; complex bugs get the full `rca-investigator` + planner treatment. The conservative
    default is `complex` — when in doubt, run the slower lane.
 3. **Reproduce before fixing.** The repro is the executor's `FAIL_TO_PASS` contract and the
    verifier's primary check. Best-effort fallback is allowed but flagged — and blocks the
@@ -58,7 +58,7 @@ is the extra safety net when analysis confidence is marginal.
 
 ## Why Phase 3 runs isolated
 
-`rca-investigator` keeps the verbose 8-phase holistic walkthrough in its own context and returns
+`rca-investigator` keeps the verbose execution-path trace in its own context and returns
 only the distilled Root-Cause Record, so the orchestrator's window is not polluted.
 It is a single dispatch (one bug, nothing to parallelize); the win is isolation, not parallelism.
 

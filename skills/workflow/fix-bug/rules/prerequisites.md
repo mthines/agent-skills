@@ -5,8 +5,8 @@ Load when a dependency is missing or you need to know whether one is optional.
 | Dependency | Purpose | Required? |
 |-----------|---------|-----------|
 | `rca-investigator` agent ([`agents/rca-investigator.md`](../../../../agents/rca-investigator.md)) | Phase 3 complex-lane root-cause analysis — isolated; returns a Root-Cause Record carrying the `confidence(analysis)` score | **Yes** for complex lane |
-| `holistic-analysis` skill | Phase 3 analysis protocol — run transitively inside `rca-investigator`; in-context fallback if the agent is unavailable | **Yes** |
-| `confidence` skill | Phase 4 gate (also used inside holistic-analysis / rca-investigator) | **Yes** |
+| `rca-investigator` agent | Phase 3 analysis protocol; in-context fallback (same protocol) when no tool can dispatch it | No |
+| `confidence` skill | Phase 4 gate (also used inside `rca-investigator`) | **Yes** |
 | `/tdd` skill | Phase 2.5 reproduction at unit / component layer | **Yes** for non-best-effort repros |
 | `/e2e-testing` skill | Phase 2.5 reproduction at user-flow layer (web) | If web E2E repro |
 | `/e2e-testing-mobile` skill | Phase 2.5 reproduction at user-flow layer (Expo / React Native) | If mobile E2E repro |

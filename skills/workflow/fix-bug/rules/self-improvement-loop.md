@@ -121,7 +121,7 @@ memory.search { q: "<bugClass or error keywords>", scopes: ["repo::{owner}/*", "
 2. Apply matches as **inputs** to the decision they target: a triage lesson
    biases the `simple`/`complex` call (it never overrides the conservative
    default toward `complex`); a reproduction-layer lesson biases Phase 2.5's
-   layer routing; an analysis lesson is passed to `holistic-analysis` (or the
+   layer routing; an analysis lesson is passed to `rca-investigator` (or the
    lightweight analysis) as a "previously this bugClass was misattributed to X"
    hint.
 3. Lessons are **advisory** — they never relax a confidence gate, the Phase 5

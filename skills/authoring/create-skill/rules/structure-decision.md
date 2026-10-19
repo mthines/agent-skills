@@ -153,7 +153,7 @@ Parse `$ARGUMENTS`...
 ```
 
 If any one mode exceeds 150 lines, split that mode into
-`rules/mode-<name>.md`. `holistic-analysis` is a good example of mode-aware
+`rules/mode-<name>.md`. `confidence` is a good example of mode-aware
 single-file design.
 
 ## Companion skills (a separate decision)

@@ -42,7 +42,7 @@ recorded failure behind it.
 | # | Fact | What it breaks if assumed away |
 |---|---|---|
 | 1 | The native file reader is scoped to the **workspace**. `$HOME/.claude/**` is outside it. | Every read of an installed file degrades to `sed -n 'a,bp'` through Bash against a ~50 KB output cap. `pr-reviewer.md` alone is ~277 KB, and a single `cat` is silently truncated — costing Steps 0 through 1.8. |
-| 2 | The host's **skill tool resolves a fixed enum** of its own built-ins, never the filesystem. | Three of the four composed lenses error with `Skill "<name>" not found`; `measurable` silently name-collides with an unrelated built-in and returns the wrong recipe **with no error at all**. A week of runs showed 20/29 hitting this and a mandated retry recovering **0 of 26** across two weeks — because no retry can repopulate an enum that is not filesystem-derived. |
+| 2 | The host's **skill tool resolves a fixed enum** of its own built-ins, never the filesystem. | Two of the three composed lenses error with `Skill "<name>" not found`; `measurable` silently name-collides with an unrelated built-in and returns the wrong recipe **with no error at all**. A week of runs showed 20/29 hitting this and a mandated retry recovering **0 of 26** across two weeks — because no retry can repopulate an enum that is not filesystem-derived. |
 | 3 | **Custom agent types are not dispatchable.** `general` sub-agents are, and delegation is exactly **one level deep**. | A pipeline that plans to dispatch `pr-reviewer` and let it fan out further has no second rung. Dispatch from the top-level run or not at all. |
 | 4 | The GitHub credential is **injected per request and repo-scoped**. `gh api /user` and `/rate_limit` return 401. | Identity comes from GraphQL `viewer { login }` (measured: `dash0-dev[bot]`), never `/user`. If that read fails too, treat it as *identity unknown* — never as an empty login, and never as a reason to retry. |
 
@@ -60,7 +60,7 @@ resolves against on this host: `$PR_REVIEWER_ROOT/skills/<name>/SKILL.md`, not
 /tmp/workspace/pr-reviewer/pr-reviewer.agent0.md the compiled bundle
 /tmp/workspace/pr-reviewer/pr-reviewer/rules/    deferred rules
 /tmp/workspace/pr-reviewer/shared/rules/         shared rules
-/tmp/workspace/pr-reviewer/skills/<lens>/        the four lenses, as files
+/tmp/workspace/pr-reviewer/skills/<lens>/        the three lenses, as files
 /tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md    standing constraints
 ```
 

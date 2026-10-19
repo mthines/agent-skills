@@ -134,7 +134,7 @@ This is not a degraded mode to apologize for — the verifier is a genuine indep
 
 ## Independence, and what breaks it
 
-Run finders concurrently where the runtime allows parallel `Skill()` calls in one turn (the fan-out idiom in [`holistic-review.md`](../../shared/rules/holistic-review.md)); serially otherwise.
+Run finders concurrently where the runtime allows parallel calls in one turn; serially otherwise.
 
 **The split is about independence of framing, not speed.** Two things break it even when the calls are parallel:
 

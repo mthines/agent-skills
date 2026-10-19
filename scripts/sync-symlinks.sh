@@ -61,7 +61,6 @@ AW_SKILLS=(
   aw-create-walkthrough
   confidence
   polish
-  holistic-analysis
   tdd
   ux
   docs

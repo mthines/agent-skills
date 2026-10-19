@@ -69,7 +69,7 @@ Because every Core section is present by name, the plan satisfies the `aw-create
 5. **Symptom** — verbatim from Evidence Record
 6. **Bug class** — from Phase 0
 7. **Reproduction** — repro path, command, status
-8. **Root cause** — from in-skill lightweight analysis (NOT holistic-analysis)
+8. **Root cause** — from in-skill lightweight analysis (NOT `rca-investigator`)
 9. **Decisions** *(Core)* — chosen fix + alternatives rejected + rationale
 10. **Proposed change** — file + line + before/after sketch
 11. **Acceptance Criteria** *(Core)* — testable done conditions; replaces the former "Done criteria" section name to match the Core schema
@@ -175,7 +175,7 @@ section will never carry a best-effort repro on the fast-lane.
 One paragraph, written by `/fix-bug` itself during the simple-path
 lightweight analysis (see
 [`complexity-triage.md`](./complexity-triage.md#what-simple-actually-skips)).
-The shape matches what `holistic-analysis` produces for the complex path:
+The shape matches what `rca-investigator` produces for the complex path:
 
 ```markdown
 ## Root cause

@@ -148,7 +148,7 @@ strict order. Each gate is a drop point; no retries.
 ```text
 rubrics + finders produce raw candidates
   → 2.3  review-config.md § Filters   (drop findings in categories suppressed by review config)
-  → 2.4  holistic-review.md           (Skill("holistic-analysis", "review") — default on; may be skipped per 1.8 heuristic)
+  → 2.4  holistic-review.md           (in-context intent + system-fit pass — default on; may be skipped per 1.8 heuristic)
   → 2.4b holistic-review.md § Targeted escalation (parallel focused traces — default on)
   → 2.4d standards-conformance.md     (governing-docs enforcement — default on; skip via --no-standards or trivial-skip;
                                        findings cite governing-doc path:line and pass all downstream gates)

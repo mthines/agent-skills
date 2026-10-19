@@ -107,7 +107,7 @@ The distinction is not cosmetic — three calls in one file is one file's worth 
 
    A body-only hunk is attributed to its **enclosing** export, not to a local `const` inside it. Top-level-only patterns are indentation-guarded for exactly this reason.
 
-2. **Consumers** by `rg -n` for the symbol across `$WORKDIR`, excluding the defining file. Import lines are **not** consumers — they are `modules.importers` — because counting both double-counts every importing file. Upgrade to `codexray --call-graph callers` when it is on `PATH`, the accelerator [`call-graph-map.md`](../../../skills/analysis/holistic-analysis/rules/call-graph-map.md) already describes.
+2. **Consumers** by `rg -n` for the symbol across `$WORKDIR`, excluding the defining file. Import lines are **not** consumers — they are `modules.importers` — because counting both double-counts every importing file. Upgrade to `codexray --project-root . --call-graph callers --call-graph-function <fn> --format toon` when `codexray` is on `PATH`; treat its output as a lead and read each caller.
 
 3. **Importers** by import specifier resolving to the changed module path: relative forms, `tsconfig` `paths` aliases, and the `go.mod` module path.
 

@@ -66,7 +66,7 @@ LLM agents tend to fail in three predictable ways during long-running tasks:
    design intent below.
 3. **Phase 4 stuck-loop has a mode-aware hard cap** — 3 iterations in Lite
    Mode, 5 in Full Mode. At the cap, the agent runs `confidence(analysis)`;
-   if confidence is below 90% the workflow auto-invokes `holistic-analysis`,
+   if confidence is below 90% the workflow re-traces the execution path,
    regenerates the affected `plan.md` section, and resumes ONCE more before
    mandatory user escalation. No more 20-iteration token burns.
 
@@ -273,7 +273,7 @@ while not all_tests_pass:
       if confidence_score >= 90%:
         → escalate to user with findings
       else if not auto_replan_used:
-        Skill("holistic-analysis")
+        re_trace()   # entry → exit; re-state the root cause
         Update affected plan.md sections
         iterations_on_same_area = 0
         auto_replan_used = True

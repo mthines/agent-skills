@@ -5,7 +5,7 @@ tags:
   - triage
   - complexity
   - fast-lane
-  - holistic-analysis
+  - rca-investigator
   - bypass
 ---
 
@@ -15,7 +15,7 @@ Phase 0.5. Runs after Phase 0 (intake + classification) and **before** Phase 1
 (evidence resolution). Classifies the bug as **`simple`** or **`complex`** so
 later phases can pick the right lane.
 
-The goal is honest economy: holistic-analysis is the right tool for a
+The goal is honest economy: an isolated `rca-investigator` trace is the right tool for a
 schema-mismatch across three services; it is the wrong tool for a stack trace
 that lands on one specific line of one file with a missing null check. Running
 the full eight-phase pipeline on a one-liner is wasted tokens and wasted
@@ -176,7 +176,7 @@ The lightweight analysis the simple path runs **in place of** Phase 3:
 2. Identify the minimal change that satisfies the failing repro (Phase 2.5)
    and does not break neighbours.
 3. Write the proposed change to the Evidence Record as plain prose, exactly
-   the way `holistic-analysis` would have written its root-cause paragraph.
+   the way `rca-investigator` would have written its root-cause paragraph.
 4. Invoke `Skill("confidence", "analysis")` directly — same gate as
    Phase 4 for the complex path. **No self-grading; the score is from
    confidence as a separate skill.**

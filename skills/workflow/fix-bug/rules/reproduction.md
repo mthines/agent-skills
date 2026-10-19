@@ -353,7 +353,7 @@ When bisect finishes, capture the offending commit:
 If the offending commit's diff is **≤ 50 lines**, route to Phase 5 directly with proposal "revert
 or amend `<sha>`". The bug-notes ledger records `hypotheses[0].state = confirmed`.
 
-If the diff is larger, continue to Phase 3 — but pass the offending commit to holistic-analysis as
+If the diff is larger, continue to Phase 3 — but pass the offending commit to `rca-investigator` as
 a strong hint.
 
 Source: [git-bisect docs](https://git-scm.com/docs/git-bisect),

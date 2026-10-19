@@ -160,12 +160,12 @@ optional — each one is a measured failure of a real run, not a precaution.
    A rule NOT in the index is deferred — read it from \`$AGENT_SUPPORT/<path>\` at
    the step that needs it, with the host's native file reader.
 
-2. **Never resolve one of the four composed lenses through the host's skill tool.**
-   \`measurable\`, \`confidence\`, \`holistic-analysis\` and \`verify-behavior\`
-   resolve by **file presence** at
+2. **Never resolve one of the three composed lenses through the host's skill tool.**
+   \`measurable\`, \`confidence\` and \`verify-behavior\` resolve by
+   **file presence** at
    \`$PR_REVIEWER_ROOT/skills/<name>/SKILL.md\` — read that file and follow it
    in-context. This host's skill tool accepts only a fixed enum of its own
-   built-ins: three of the four error, and \`measurable\` silently name-collides with
+   built-ins: two of the three error, and \`measurable\` silently name-collides with
    an unrelated built-in and returns the wrong recipe with no error at all. Full
    rule: the \`lens-invocation.md\` section below.
 

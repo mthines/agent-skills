@@ -40,7 +40,7 @@ This skill is convergent and pre-plan. It does not do these neighbors' jobs:
 | `/ideate`     | Diverge — generate multiple solution options.                   | Converge — pin the one scope. If the user needs options, point to `/ideate`. |
 | `/critical`   | Adversarially red-team an existing plan or change.              | Pressure-test the *request's* completeness, before a plan exists. Deep failure-mode analysis waits for `/critical` post-plan. |
 | `/confidence` | Score readiness on a rubric.                                    | Elicit the inputs a score would need. Do not emit a percentage.          |
-| `holistic-analysis` | Trace an execution path to root-cause a failure.          | Locate affected areas for grounding, not a full end-to-end trace.        |
+| `rca-investigator` | Trace an execution path to root-cause a failure.          | Locate affected areas for grounding, not a full end-to-end trace.        |
 
 Surface completeness gaps as questions or recorded assumptions. Do not escalate a gap into a full adversarial review — hand that to `/critical` once there is a plan to attack.
 

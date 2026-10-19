@@ -125,8 +125,8 @@ Trigger phrases are the strings the user is likely to type. Look for:
 - Pet phrases your team uses: "ship it", "make it pretty", "ratchet up".
 - The slash form: `/<name>` — always include this.
 
-If the skill has a clear "ask for help" phrase ("step back", "rethink
-this", "zoom out" for `holistic-analysis`), include it verbatim.
+If the skill has a clear "ask for help" phrase ("challenge this",
+"pre-mortem" for `critical`), include it verbatim.
 
 ## Length budget
 

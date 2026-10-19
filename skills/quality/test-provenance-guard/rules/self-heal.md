@@ -81,7 +81,7 @@ The skill returns a confidence score that the refactor preserves correctness wit
 | Score   | Action                                                                                          |
 | ------- | ----------------------------------------------------------------------------------------------- |
 | ≥ 90 %  | Proceed to Step 4 (extract) and Step 5 (re-verify).                                             |
-| < 90 %  | **Do not write any files.** Emit the finding as `heal-skipped-low-confidence` and exit with the score in the report. The autonomous-workflow stuck-loop protocol takes over (per-iteration self-check → `confidence(analysis)` → `holistic-analysis` auto-replan → user escalation). |
+| < 90 %  | **Do not write any files.** Emit the finding as `heal-skipped-low-confidence` and exit with the score in the report. The autonomous-workflow stuck-loop protocol takes over (per-iteration self-check → `confidence(analysis)` → execution-path re-trace auto-replan → user escalation). |
 
 Outside the autonomous loop (slash invocation with `--fix`), the gate is still
 recommended but the user can override with `--no-confidence-gate` to force the
@@ -118,7 +118,7 @@ Three gates, in order — proceed only if each passes:
    This is the proof that the heal was effective: the test is now actually exercising production.
 
 If any gate fails, **revert the heal** with `git restore` (or `git checkout -- <files>`) and emit the finding as `heal-failed`.
-Do not iterate locally — the autonomous-workflow's Phase 4 stuck-loop protocol handles second attempts via `confidence(analysis)` and `holistic-analysis`.
+Do not iterate locally — the autonomous-workflow's Phase 4 stuck-loop protocol handles second attempts via `confidence(analysis)` and an execution-path re-trace.
 
 ### Step 6 — Commit (if running inside autonomous-workflow)
 

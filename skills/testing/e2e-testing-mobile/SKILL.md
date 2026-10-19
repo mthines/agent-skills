@@ -242,9 +242,8 @@ If the heal loop fails to converge:
 - [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) — runs
   on TypeScript helpers imported by flows to catch tests-by-construction.
 - [`confidence`](../../quality/confidence/SKILL.md) — gate when the heal loop fails.
-- [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — if a flow is
-  failing for reasons no flow rewrite can fix, step back instead of
-  patching.
+- If a flow is failing for reasons no flow rewrite can fix, step back instead of
+  patching: re-trace the execution path from entry to exit and re-state the root cause.
 - [`ux`](../../design/ux/SKILL.md) — review accessibility labels separately from
   test IDs (the two should never share a value).
 

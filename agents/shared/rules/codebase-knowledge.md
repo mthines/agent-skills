@@ -123,7 +123,6 @@ host invent its own.
 | `fix-bug` | fast-lane plan seam (`aw-create-plan`) | Reader |
 | `ci-auto-fix` | the fix subagent, once the failing files are known | Reader |
 | `e2e-pr-stabilizer` | Phase 7, on the CI-ratified verdict | Writer (`hotspot` `flaky`) |
-| `holistic-analysis` | its verification output, best-effort | Writer-primary (no read) |
 
 A reader that verifies a structural fact while doing its work may write it back
 under the contract above; otherwise it reads only.

@@ -94,7 +94,6 @@ line is what lets the next measurement confirm or refute them.
 | Skill                | Phase | Trigger condition                                                       | Args                  | Disable by                                                               |
 | -------------------- | ----- | ----------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
 | `interview`          | 0     | Full Mode default-on (adaptive — silent on a crisp request; skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `brief.md` + readiness verdict | —              | Remove invocation in [`phase-0-validation.md`](./phase-0-validation.md#step-3a-scope-alignment) |
-| `holistic-analysis`  | 1     | Task touches 5+ files, 2+ packages, OR user calls it complex/unfamiliar | —                     | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#complex-task-detection) |
 | `critical`           | 1     | Opt-in only — user passed `--critical` to the workflow. Single adversarial pre-mortem pass before `confidence(plan)`; advisory, does not gate. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#adversarial-pre-mortem) |
 | `confidence`         | 1     | Full Mode (plan gate — MANDATORY there; Lite has no `plan.md` to gate, Micro skips all companions) | `plan`                | **Cannot disable** — required gate (Full Mode)                           |
 | `lorekit-memory`     | 1     | Always — load accumulated workflow lessons before design (fast tier of the self-improvement loop) | `memory.list loop::aw-lessons`     | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#lessons-read) |
@@ -104,7 +103,6 @@ line is what lets the next measurement confirm or refute them.
 | `ux`                 | 3     | Files touched include `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#ux-trigger)  |
 | `measurable` | 3 | Matches a `web`/`mobile`/`api`/`worker` pattern in the skill's own `rules/scope-detection.md` (single source of truth for the pattern list — not restated here) | `implement`           | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#observability-trigger) |
 | `confidence`         | 4     | At iteration cap on same failing area (3 in Lite Mode, 5 in Full Mode) — automatic | `analysis`        | Adjust cap or threshold in [`phase-4-testing.md`](./phase-4-testing.md#stuck-loop-detection) |
-| `holistic-analysis`  | 4     | Auto: when `confidence(analysis) < 90%` (one-shot per area). User-driven: when user picks `try different approach` after escalation | — | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#stuck-recovery)            |
 | `test-provenance-guard` | 4  | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written or extended | `--diff --base $(git merge-base HEAD main) --fix` — autofix is **gated by `confidence(code) ≥ 90 %`** before any file is mutated, plus the three post-heal mechanical gates afterwards. Either failure ⇒ no refactor; stuck-loop protocol takes over | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#test-provenance-trigger) |
 | `measurable` | 4 | Before Step 6 Final Validation — read-only audit of Phase 3's telemetry. **Advisory by default** (findings reported, never block); pass `--strict` (opt-in, e.g. `aw --observability-strict`) to make `missing` findings on `web`/`mobile`/`api`/`worker` paths block like a failing test. `unlinked` findings never block, `--strict` or not | `audit --diff --base $(git merge-base HEAD main) [--strict]` | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#observability-gate) |
 | `lorekit-memory`     | 4     | At stuck-loop escalation (cap hit / user escalation) — record the failing area and resolution | `memory.write loop::aw-lessons` | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#lessons-write) |
@@ -165,7 +163,7 @@ burning tokens on hallucinated fixes when root-cause analysis is wrong.
 
 The cap is **mode-aware**: 3 iterations for Lite Mode, 5 for Full Mode. When the
 cap is hit, an **auto-replan protocol** fires — confidence gate first, then
-conditional holistic-analysis + plan.md regeneration, with a one-shot guard
+a conditional execution-path re-trace + plan.md regeneration, with a one-shot guard
 that prevents infinite recovery loops. User escalation is the final, mandatory
 step if recovery fails.
 
@@ -188,7 +186,7 @@ while not all_tests_pass:
         score = Skill("confidence", "analysis")
 
         if score < 90% and not auto_replan_used:
-            Skill("holistic-analysis")
+            re_trace()   # entry → exit; re-state the root cause (phase-4-testing.md)
             Update affected sections of plan.md.
             iterations_on_same_area = 0
             auto_replan_used = True
@@ -202,11 +200,11 @@ while not all_tests_pass:
     fix → run tests → if pass: break
 ```
 
-`holistic-analysis` runs **automatically** when confidence is below 90% at the
+The re-trace runs **automatically** when confidence is below 90% at the
 cap. It also runs again **on user request** if the user picks
 `try different approach` from the mandatory escalation menu. The
 `auto_replan_used` flag is the one-shot guard — without it, repeated
-`analysis → holistic → replan → fail` cycles could loop indefinitely.
+`analysis → re-trace → replan → fail` cycles could loop indefinitely.
 
 **Why mode-aware caps (3 vs 5)?** Lite Mode tasks are simpler and should
 converge fast — a tight cap is correct. Full Mode tasks are more complex and

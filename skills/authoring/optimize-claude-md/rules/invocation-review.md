@@ -40,7 +40,7 @@ Map each skill to one of four invocation outcomes:
 | Workflow companion called only by another skill via `Skill()`                           | **slash-only + hidden** | Recommend `disable-model-invocation: true` **and** `user-invocable: false`.            |
 | Used rarely (< 1× per project on average), invoked by user when needed                  | **slash-only**       | Recommend `disable-model-invocation: true`.                                               |
 | Verbose `description` (> 800 chars) but used infrequently                                | **slash-only**       | Recommend `disable-model-invocation: true`. Big baseline win.                              |
-| Advisory / composable skill the model should auto-invoke on relevant phrases (`tdd`, `critical`, `ux`, `holistic-analysis`) | **leave**            | No change.                                                                                |
+| Advisory / composable skill the model should auto-invoke on relevant phrases (`tdd`, `critical`, `confidence`) | **leave**            | No change.                                                                                |
 | Skill with a `paths:` glob that scopes auto-load to specific files                       | **leave**            | No change — `paths:` already minimizes the trigger surface.                                |
 | Background knowledge the model applies silently, no user-facing command                  | **hidden**           | Recommend `user-invocable: false` (keep model invocation).                                 |
 

@@ -88,7 +88,7 @@ beyond this rarely converges.
 
 1. Run `Skill("confidence", "analysis")` to root-cause the failure.
 2. If the score is < 90% and the one-shot auto-replan has not yet been used:
-   run `Skill("holistic-analysis")`, regenerate the affected `plan.md` sections
+   re-trace the execution path from entry to exit and re-state the root cause, regenerate the affected `plan.md` sections
    via `aw-create-plan`, reset the counter, set `auto_replan_used`, and resume
    the Phase 4 loop once more (the [auto-replan protocol](./phase-4-testing.md#stuck-loop-detection)).
 3. Otherwise (score ≥ 90%, or auto-replan already used), append to `plan.md`
@@ -97,13 +97,12 @@ beyond this rarely converges.
    - The attempts (what was tried, why each failed — pre- and post-replan)
    - Confidence findings (root cause, blocked assumptions)
    - Three options: **continue** with new approach / **try a different angle**
-     (e.g. holistic-analysis) / **stop and hand back**
+     (a fresh execution-path re-trace) / **stop and hand back**
 4. Wait for user response. **Never auto-continue past the mode's cap, except
    the single automatic re-plan permitted by the Phase 4 auto-replan protocol.**
 
-If the user asks for a fresh analysis, invoke
-`Skill("holistic-analysis")` to step back and re-trace the execution path
-end-to-end before attempting again.
+If the user asks for a fresh analysis, re-trace the execution path
+end-to-end (dispatch `rca-investigator` when a dispatch tool exists) before attempting again.
 
 ---
 

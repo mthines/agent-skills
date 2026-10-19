@@ -57,7 +57,7 @@ Trigger on any of:
 
 Do **not** run Diagnose Mode for:
 
-- Routine bugs in the user's product code unrelated to a skill's gaps — use `/fix-bug` or `/holistic-analysis` instead.
+- Routine bugs in the user's product code unrelated to a skill's gaps — use `/fix-bug` instead.
 - Failures in-progress mid-workflow — use the target skill's own stuck-loop or `confidence(analysis)` instead.
 - Diagnosis of a skill whose source is not on the local checkout — Diagnose Mode needs to be able to resolve the source path to write a unified diff.
 

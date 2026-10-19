@@ -30,8 +30,7 @@ frontmatter, the layout, and what makes the shape worth using.
 
 ## A1 — Advisory skill (review-style)
 
-**Examples in this repo:** `critical`, `ux`,
-`holistic-analysis`.
+**Examples in this repo:** `critical`, `confidence`.
 
 **Shape:**
 
@@ -258,24 +257,24 @@ worked examples.
 
 ## A7 — Multi-mode skill
 
-**Examples in this repo:** `holistic-analysis` (`fix` / `refactor` modes),
-`confidence` (`plan` / `code` / `analysis` modes).
+**Examples in this repo:** `confidence` (`plan` / `code` / `analysis` modes),
+`critical` (`plan` / `code` / `analysis` modes).
 
 **Shape:** usually single-file with a `## Mode Detection` section near the
 top.
 
 ```yaml
 ---
-name: holistic-analysis
+name: confidence
 description: >
-  Forces a holistic re-analysis when a fix or refactor isn't working.
-  Modes: "fix" (default — bug analysis), "refactor" (restructuring).
-  Triggers on "step back", "rethink this", "/holistic".
+  Rates confidence that the current work fully solves the requirement.
+  Modes: "plan" (default — plan validation), "code" (review), "analysis" (root cause).
+  Triggers on "confidence check", "rate confidence", "/confidence".
 ---
 ```
 
 ```markdown
-# Holistic Analysis
+# Confidence
 
 ## Mode Detection
 
@@ -283,8 +282,9 @@ Check `$ARGUMENTS` for mode:
 
 | Mode       | Default | Use case                                |
 | ---------- | ------- | --------------------------------------- |
-| `fix`      | yes     | Bug, broken behavior, failing test      |
-| `refactor` |         | Restructuring, cleanup, improvement     |
+| `plan`     | yes     | Validate a plan before execution        |
+| `code`     |         | Review an implementation                |
+| `analysis` |         | Check a root-cause conclusion           |
 ```
 
 **When to split modes into rule files:** if any one mode exceeds 150

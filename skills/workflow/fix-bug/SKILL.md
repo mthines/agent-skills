@@ -21,7 +21,7 @@ metadata:
     executor: aw-executor
     verifier: bug-fix-verifier
     investigator: linear-ticket-investigator
-  composes: [holistic-analysis, confidence, aw-create-plan, tdd, e2e-testing, e2e-testing-mobile, video-analyser, autonomous-workflow]
+  composes: [confidence, aw-create-plan, tdd, e2e-testing, e2e-testing-mobile, video-analyser, autonomous-workflow]
   phases: [intake, complexity_triage, evidence_resolution_with_preflight, source_mapping_with_reproduction, holistic_analysis_or_lightweight, confidence_gate, branch_decision, autonomous_handoff_lane_split, independent_verification, telemetry_verification]
   tags: [bug-fix, debugging, telemetry, dash0, confidence-gated, reproduction-first, cegis, autonomous-workflow, root-cause, orchestrator, complexity-triage, fast-lane]
 ---
@@ -91,7 +91,7 @@ Infer a `bugClass` tag from the symptom and any stack-trace / error-message text
 | `unknown` | classification not possible from the evidence |
 
 Append to the Evidence Record under `Bug class`. The class is passed as a hint to
-holistic-analysis (Phase 3) and informs strategy selection in `aw-planner` (Phase 6). Source:
+`rca-investigator` (Phase 3) and informs strategy selection in `aw-planner` (Phase 6). Source:
 RepairAgent ([ICSE 2025](https://software-lab.org/publications/icse2025_RepairAgent.pdf)),
 [NIST Seven Pernicious Kingdoms](https://samate.nist.gov/SSATTM_Content/papers/Seven%20Pernicious%20Kingdoms%20-%20Taxonomy%20of%20Sw%20Security%20Errors%20-%20Tsipenyuk%20-%20Chess%20-%20McGraw.pdf).
 
@@ -105,7 +105,7 @@ After step 0c, continue to Phase 0.5; Phase 1 does not start until triage commit
 ## Phase 0.5 — Complexity Triage
 
 Pick between two routing lanes for the rest of the pipeline: **`simple`** (lightweight in-skill
-analysis + fast-lane handoff) or **`complex`** (canonical holistic-analysis + standard-lane
+analysis + fast-lane handoff) or **`complex`** (isolated `rca-investigator` analysis + standard-lane
 handoff). This is a **routing decision, not a quality decision** — confidence (Phase 4) still
 owns the auto-implement call.
 
@@ -130,7 +130,7 @@ apply the decision rule (conservative default: pick `complex` when in doubt). Th
 | Outcome | Phase 3 | Phase 6 lane (provisional) |
 |---------|---------|----------------------------|
 | `simple` | **skip** — lightweight in-skill analysis | fast-lane (if confidence ≥ 92 % + non-best-effort repro) |
-| `complex` | dispatch `Task(rca-investigator)` — isolated holistic-analysis + confidence | standard-lane |
+| `complex` | dispatch `Task(rca-investigator)` — isolated execution-path trace + confidence | standard-lane |
 
 Append the classification, signals, decision, and provisional lane to the bug-notes ledger under
 a `Complexity triage` section.
@@ -180,23 +180,23 @@ Task(subagent_type="rca-investigator", prompt="<Evidence Record from Phase 2>")
 ```
 
 Include the `bugClass` hint, any pre-flight short-circuit findings, and every ledger hypothesis with `state = ruled-out`.
-The agent runs `holistic-analysis` `fix` + `/confidence analysis` in its own context and returns a Root-Cause Record (root cause, causal chain, evidence, ruled-out alternatives, confidence score, fix direction); do not re-run either here.
-If `rca-investigator` is unavailable, run `Skill("holistic-analysis", "fix\n\n<Evidence Record>")` in-context instead (it calls `/confidence analysis` at its Phase 6).
+The agent traces the execution path entry to exit, rules out alternative causes, scores the result with `/confidence analysis` in its own context, and returns a Root-Cause Record (root cause, causal chain, evidence, ruled-out alternatives, confidence score, fix direction); do not re-run either here.
+If no tool can dispatch `rca-investigator`, run the same protocol in-context: trace the execution path from entry to exit across files, list ≥ 2 alternative causes with the evidence ruling each out, name the root cause (not the symptom hop) at `file:line`, then run `Skill("confidence", "analysis\n\n<conclusion + evidence>")`.
 
 ### `simple` path — lightweight in-skill analysis
 
-Skip `holistic-analysis` ([what simple skips](./rules/complexity-triage.md#what-simple-actually-skips)):
+Skip `rca-investigator` ([what simple skips](./rules/complexity-triage.md#what-simple-actually-skips)):
 
 1. Read the suspect file at the suspect line + 30 lines of context.
 2. Identify the minimal change that satisfies the failing repro (Phase 2.5) and does not break neighbours.
-3. Write a root-cause paragraph to the Evidence Record — same shape `holistic-analysis` produces, including a `Falsifiable prediction:` line that the repro confirms.
+3. Write a root-cause paragraph to the Evidence Record — same shape `rca-investigator`'s Root-Cause Record uses, including a `Falsifiable prediction:` line that the repro confirms.
 4. Continue to Phase 4 — the score comes from the `confidence` skill, never self-graded.
 
-If the lightweight analysis cannot propose a fix (suspect file not in the failing path, or more than one plausible cause), upgrade triage to `complex`, run `holistic-analysis`, and log `triage upgrade: simple → complex (lightweight analysis under-determined)`.
+If the lightweight analysis cannot propose a fix (suspect file not in the failing path, or more than one plausible cause), upgrade triage to `complex`, dispatch `rca-investigator`, and log `triage upgrade: simple → complex (lightweight analysis under-determined)`.
 
 ## Phase 4 — Confidence Gate
 
-Reuse the Phase 3 score (from the Root-Cause Record, or from holistic-analysis's Phase 6 on the fallback).
+Reuse the Phase 3 score (from the Root-Cause Record, or from the in-context fallback's `/confidence analysis`).
 Re-run `/confidence analysis` only if new evidence arrived since Phase 3 or the proposed fix materially changed.
 Append the score and breakdown to the ledger's `Confidence trajectory` table.
 

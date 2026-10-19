@@ -3,7 +3,7 @@ title: Holistic review — intent match + system fit (default on)
 impact: HIGH
 tags:
   - pr-reviewer
-  - holistic-analysis
+  - execution-path
   - intent
   - system-fit
 ---
@@ -15,27 +15,27 @@ Line-level rubrics (`quality`, `ux`, `critical`, lenses) evaluate each hunk loca
 1. **Intent mismatch** — the diff does not implement what its PR description claims.
 2. **System fit** — the change makes sense in isolation but is wrong in the bigger picture (callers in a loop, missing cache invalidation, neighbouring patterns it diverges from, contract breaks the local view doesn't see).
 
-This rule routes both checks through `Skill("holistic-analysis", "review")`, which returns structured findings — every one that clears the severity floor in § When to run, with no count budget. Findings flow through the rest of the pipeline (`finding-grounding`, `per-comment-confidence`, `comment-shape`, `conventional-comments`) like any other rubric output.
+This rule owns both checks: it runs the in-context pass in [§ The pass](#the-pass--r1--r2--r3), which returns structured findings — every one that clears the severity floor in § When to run, with no count budget. Findings flow through the rest of the pipeline (`finding-grounding`, `per-comment-confidence`, `comment-shape`, `conventional-comments`) like any other rubric output.
 
 ## Contents
 
 - [Default-on, opt-out via `--no-holistic`](#default-on-opt-out-via---no-holistic)
 - [Trivial-skip set](#trivial-skip-set)
 - [When to run (the call)](#when-to-run-the-call)
+- [The pass — R1 → R2 → R3](#the-pass--r1--r2--r3)
 - [Targeted escalation (Step 2.4b)](#targeted-escalation-step-24b)
 - [Relationship to the consumer-impact finder](#relationship-to-the-consumer-impact-finder)
 - [Output mapping (caller-aware)](#output-mapping-caller-aware)
 - [Wiring into the rest of the pipeline](#wiring-into-the-rest-of-the-pipeline)
 - [Blocking verdict](#blocking-verdict)
 - [Logging](#logging)
-- [When holistic is unavailable](#when-holistic-is-unavailable)
 - [What this rule does not do](#what-this-rule-does-not-do)
 
 ---
 
 ## Default-on, opt-out via `--no-holistic`
 
-Holistic review is **default-on** for `pr-reviewer` in `full` mode. The token cost is real (~20–60 s and one extra `Skill()` call per PR), but PR review is async and the value asymmetry is large: catching one system-fit bug is worth dozens of unnecessary holistic runs.
+Holistic review is **default-on** for `pr-reviewer` in `full` mode. The token cost is real (~20–60 s of extra reading per PR), but PR review is async and the value asymmetry is large: catching one system-fit bug is worth dozens of unnecessary holistic runs.
 
 Five conditions decide whether the broad pass runs, and each skip has its own logged token. A skip that cannot name its own reason is indistinguishable from a clean run, which is the whole point of the third column:
 
@@ -60,7 +60,7 @@ Skip the call (not the flag — the heuristic) when the diff is genuinely trivia
 | Pure whitespace / formatting changes | No semantics to validate |
 | Dependency-bump-only PRs (`package-lock.json` + `package.json` version field, or equivalent for other ecosystems) | Intent is mechanical; system fit is the lockfile resolver's job |
 | Test-only changes (no source touched) | Tests do not change system contracts |
-| `< 10 lines changed` AND no path matches `**/auth/**`, `**/billing/**`, `**/payments/**`, `**/migrations/**`, `**/infra/**` | Below this threshold, holistic-analysis over-engages |
+| `< 10 lines changed` AND no path matches `**/auth/**`, `**/billing/**`, `**/payments/**`, `**/migrations/**`, `**/infra/**` | Below this threshold, the holistic pass over-engages |
 
 Heuristic implementation:
 
@@ -86,19 +86,19 @@ NON_TEST_FILES=$(git diff --name-only origin/main...HEAD | grep -vE '(\.test\.|\
 
 Any single trivial-skip condition triggers skip. If in doubt, run holistic — the cost of a redundant run is bounded; the cost of a missed system-fit bug is not.
 
-This section owns the **conditions**; it does not own their evaluation point. In `pr-reviewer` the set is evaluated exactly once, by `prepare-review.mjs` (`discover-standards.mjs`'s `trivialSkip()`), bound at Step 1.7b (the earliest consumer) from `context.trivialSkip`, and cached as `TRIVIAL_SKIP`; Steps 2.4, 2.4c, and 2.4d read that cache and never recompute the heuristic. The snippet above is the reference implementation of the conditions, not a per-step recomputation.
+This section owns the **conditions**; it does not own their evaluation point. In `pr-reviewer` the set is evaluated exactly once, by `prepare-review.mjs` (`discover-standards.mjs`'s `trivialSkip()`), bound at Step 1.7b (the earliest consumer) from `context.trivialSkip`, and cached as `TRIVIAL_SKIP`; Steps 2.4 and 2.4d read that cache and never recompute the heuristic. The snippet above is the reference implementation of the conditions, not a per-step recomputation.
 
 ## When to run (the call)
 
 After the rubrics produce raw findings and **before** Step 2.5 (Dedupe + consolidate), so holistic findings participate in dedupe and can collide-and-win against line-level findings on the same `(file, line)`. The new step is **2.4 Holistic review** in `pr-reviewer`.
 
-```
-Skill("holistic-analysis", "review")
-  intent_summary: <2–3 lines from Step 1.3>
-  diff: <full unified diff>
-  changed_files: <list of {path, patch} entries from /tmp/pr-files.json or git>
-  caller: "pr-reviewer"
-  review_relation: "self" | "cross"
+Run [§ The pass](#the-pass--r1--r2--r3) in whole-PR mode with these inputs:
+
+```text
+intent_summary: <2–3 lines from Step 1.3>
+diff: <full unified diff>
+changed_files: <list of {path, patch} entries from /tmp/pr-files.json or git>
+review_relation: "self" | "cross"
 ```
 
 ### No count budget — a severity floor instead
@@ -113,7 +113,7 @@ The pass returns **every** finding that clears this floor, however many that is:
 
 A size-scaled count ceiling used to sit here (3 / 6 / 10 by changed-file count). It was the same defect [`rubric-composition.md § Consolidation pass`](./rubric-composition.md#consolidation-pass) removed from Step 2.5, one step earlier in the pipeline: it discarded findings **before** anything scored them, so a real blocker could lose its slot to a `minor` the 2.7 confidence gate would have dropped anyway, and the loss left no trace. Quantity is governed at placement (Step 2.9b), where overflow is **deferred** to the review body rather than dropped, and never at generation.
 
-The floor is stated in **severity** because severity is the only bar available here. Review mode does not score — per-comment confidence runs downstream at Step 2.7 (§ What review mode does NOT do in [`review-mode.md`](../../../skills/analysis/holistic-analysis/rules/review-mode.md)) — so a generator pruning against the confidence bar would be prejudging a number it cannot compute. That is the same polarity rule [`finders.md`](../../pr-reviewer/rules/finders.md) holds every finder to: flag, and let the verifier filter.
+The floor is stated in **severity** because severity is the only bar available here. The pass does not score — per-comment confidence runs downstream at Step 2.7 — so a generator pruning against the confidence bar would be prejudging a number it cannot compute. That is the same polarity rule [`finders.md`](../../pr-reviewer/rules/finders.md) holds every finder to: flag, and let the verifier filter.
 
 **Cost, stated plainly.** Every emitted finding costs one Phase E verification at Step 2.6b, so removing the ceiling does raise the worst-case bill. The floor is what bounds it: a pass that emits a dozen `minor` findings on a 60-file PR has mis-set the floor, and the fix is the floor, never a ceiling that hides the mis-set by truncating it. Never pad — a clean 40-file PR returns zero findings.
 Everything the pass returns re-enters the pipeline at 2.5 and is subject to grounding, receipt, confidence, and shape exactly like a rubric finding.
@@ -123,14 +123,43 @@ Inputs:
 - `intent_summary` — produced by Step 1.3 of the calling agent.
 - `diff` — full unified diff (already in scope by Step 1.1).
 - `changed_files` — list of file objects with `path` and `patch`. Source is `/tmp/pr-files.json`, cached by `pr-reviewer` Step 1.2 in both relations.
-- `caller` — always `"pr-reviewer"` (the only reviewer agent). Determines the recommended Conventional-Comments category mapping (see below).
 - `review_relation` — `"self"` (own PR) or `"cross"` (someone else's PR). Determines assertion vs. question framing.
+
+## The pass — R1 → R2 → R3
+
+Run it in-context; it scores nothing and proposes no fixes.
+
+1. **R1 — scope the paths.** For each changed region, walk **upstream** to entry points (route handlers, event handlers, jobs, UI actions) and **downstream** to side effects (DB writes, network calls, render output).
+   Record each hop as `file:line`.
+   **Focused mode** (a `focus` block is present): walk only `focus.symbol` — every call site (grep the symbol) and every side effect it triggers.
+2. **R2 — two checks.**
+   - **Intent match** (whole-PR mode only): a claim in `intent_summary` with no implementing hunk is an `intent-mismatch`; a hunk changing behaviour the intent never mentions is a `scope-creep`.
+   - **System fit**: for each changed export, ask of every caller R1 found — does its expectation still hold (return type, thrown errors, side-effect order, caching, transactions)? Does the diff miss a coordinated update (cache invalidation, consumer migration, compat contract)? Does it diverge from the neighbouring pattern without reason? Each gap is one `system-fit` finding.
+   - **Focused mode** runs system fit only, seeded by `focus.finding`, and reaches one verdict: `confirm` (real — emit it with caller evidence), `enrich` (real, but the root issue is broader — emit the upgraded claim), `reshape` (mis-stated, but a different real issue sits on the symbol — emit that), or `clear` (the context proves the change correct — emit nothing).
+3. **R3 — emit.** Return every finding that clears the severity floor below; focused mode returns at most one.
+   `intent-mismatch` is always `blocker`; `system-fit` defaults to `major` (`minor` only when the missing update is a safe follow-up); `scope-creep` defaults to `minor`.
+
+```yaml
+- type: intent-mismatch | scope-creep | system-fit
+  file: <path of the most relevant hunk>       # focused mode: focus.file
+  line: <RIGHT-side line, or 0 when PR-scoped>  # focused mode: focus.line
+  claim: <one sentence — what is wrong or missing>
+  evidence: <one sentence — the caller / contract / pattern that proves it>
+  severity: blocker | major | minor
+```
+
+```text
+✗ claim: "consider revisiting the caching strategy"          (generic — fails the minor floor)
+✓ claim: "`getUser()` now caches, but `updateUser()` at `src/users/write.ts:88` never invalidates it"
+```
+
+Never emit a finding a line-level rubric (`quality`, `ux`) already owns — dedupe would drop it anyway.
 
 ## Targeted escalation (Step 2.4b)
 
 The Step 2.4 pass above is **broad and shallow**: one whole-PR scan spreading attention across the entire diff. It catches PR-wide intent mismatch and obvious system-fit, but it cannot deep-trace any single changed function's call graph. That deep trace is exactly the class the user cares about — *a function change that is clean in isolation but wrong for how the function is actually used*.
 
-Step 2.4b adds the deep tier. It runs **after** the broad 2.4 pass and the rubric findings are collected, and **before** Step 2.5 (dedupe). It takes the line-level findings that look context-dependent and fans out **parallel, single-target** holistic traces — one per finding — each scoped to that finding's symbol via the `focus` input (see `review-mode.md § Inputs`). This is the pipeline analogue of an agentic reviewer that "decides which areas need deeper investigation and follows code paths across files."
+Step 2.4b adds the deep tier. It runs **after** the broad 2.4 pass and the rubric findings are collected, and **before** Step 2.5 (dedupe). It takes the line-level findings that look context-dependent and fans out **parallel, single-target** holistic traces — one per finding — each scoped to that finding's symbol via a `focus` block ([§ The pass](#the-pass--r1--r2--r3), focused mode). This is the pipeline analogue of an agentic reviewer that "decides which areas need deeper investigation and follows code paths across files."
 
 It is **default-on for `pr-reviewer`** and **opt-in for `reviewer`** (the `--escalate` flag). It is suppressed by `--no-escalate` (finer than `--no-holistic`, which also skips 2.4) and skipped wholesale when 2.4 itself was trivial-skipped.
 
@@ -184,24 +213,18 @@ A finding that fails any test is left untouched and flows on to 2.5 as-is. Selec
 
 ### Fan-out (the parallel mechanism)
 
-For each selected finding, emit one `Skill("holistic-analysis", "review")` call **with a `focus` block**. Emit the calls **in a single turn** so they run concurrently — this is the parallelism; no `Task` tool is required, and `pr-reviewer` already has `Skill`.
+For each selected finding, run [§ The pass](#the-pass--r1--r2--r3) in focused mode with this `focus` block.
+When a sub-agent dispatch tool is available, dispatch the traces together as parallel `Explore` sub-agents; otherwise run them in-context one after another.
 
-```
-# one call per selected finding, all emitted together
-Skill("holistic-analysis", "review")
-  intent_summary: <from Step 1.3>
-  diff: <full unified diff>
-  changed_files: <from /tmp/pr-files.json or git>
-  caller: "pr-reviewer"
-  review_relation: "self" | "cross"
-  focus:
-    file: <finding file>
-    line: <finding RIGHT-side line>
-    symbol: <changed export name>
-    finding: <the line-level claim being deepened>
+```yaml
+focus:
+  file: <finding file>
+  line: <finding RIGHT-side line>
+  symbol: <changed export name>
+  finding: <the line-level claim being deepened>
 ```
 
-Each focused call returns **≤ 1 finding** — the verdict on the seeded finding (`confirm` / `enrich` / `reshape` / `clear`; see `review-mode.md § Phase R2`). A `clear` returns nothing and the original line-level finding is **dropped** (the context proved it a false positive — this is the signal-to-noise win, not a loss).
+Each focused trace returns **≤ 1 finding** — the verdict on the seeded finding (`confirm` / `enrich` / `reshape` / `clear`). A `clear` returns nothing and the original line-level finding is **dropped** (the context proved it a false positive — this is the signal-to-noise win, not a loss).
 
 ### Cost bound
 
@@ -232,7 +255,7 @@ A run with several `clear` verdicts is healthy — escalation earning its cost b
 
 ## Output mapping (caller-aware)
 
-`holistic-analysis` returns every finding clearing the severity floor (§ No count budget), each with `type` ∈ {`intent-mismatch`, `scope-creep`, `system-fit`} and `severity` ∈ {`blocker`, `major`, `minor`}.
+The pass returns every finding clearing the severity floor (§ No count budget), each with `type` ∈ {`intent-mismatch`, `scope-creep`, `system-fit`} and `severity` ∈ {`blocker`, `major`, `minor`}.
 
 Map each finding to the calling agent's Conventional-Comments category:
 
@@ -253,7 +276,7 @@ Map each finding to the calling agent's Conventional-Comments category:
 Holistic findings are not exempt from the downstream gates:
 
 1. **dedupe + consolidate** (`rubric-composition.md § Consolidation`) — holistic findings enter the same dedupe pass as rubric findings; on a `(file, line)` collision with a line-level finding, the holistic claim wins (broader context).
-2. **finding-grounding** — every backticked symbol must grep-resolve in the changed file or in a caller surfaced during Phase R1.
+2. **finding-grounding** — every backticked symbol must grep-resolve in the changed file or in a caller surfaced during R1.
 3. **per-comment-confidence** — `Skill("confidence", "code")` ≥ 80, same threshold as line-level findings.
 4. **comment-shape** — a ≤ 60-char title plus ≤ 200 chars of prose, ≤ 2 sentences. A holistic finding that needs more space than this either (a) gets trimmed once and re-checked, or (b) gets dropped and listed in the terminal Quality Gate summary so the user can paste manually.
 
@@ -281,23 +304,7 @@ Every skip condition in § Default-on has a token here, and no other value is le
 
 A run that ran holistic and emitted 0 findings is healthy — most PRs have neither intent mismatch nor obvious system-fit gaps. The shape to spot-check is not the raw count, which no longer has a ceiling to be measured against, but the **survival ratio**: `Findings produced` well above `Final` means the pass made claims it could not ground or could not support at confidence, and that is worth reading whether it produced two or twelve. A high produced count with a high `Final` on a large diff is unremarkable.
 
-## When holistic is unavailable
-
-Resolution follows [`lens-invocation.md`](./lens-invocation.md): try `$HOME/.claude/skills/holistic-analysis/SKILL.md` on disk (file-presence, never an error string) before trusting any host resolution.
-`holistic-analysis` is classified **enhancement** in that rule — a genuine skip is logged loudly via `RUN_ANOMALY` and the rest of the pipeline still produces useful comments; it never caps the review tier.
-The same `RUN_ANOMALY` also fires on `lens-invocation.md`'s other case: any fall-through to host `Skill()` for `holistic-analysis` at all, not only when the fallback also fails, since this side of the call has no local copy to check the host's answer against.
-
-A local file predating the `review` mode is a distinct case from an absent one: the file-presence check passes, the in-context follow succeeds, and only then does the loaded skill itself return an unknown-mode error — no host `Skill()` call happens at all in this branch, so it matches neither of `lens-invocation.md`'s two enumerated cases by name. The lens still did not run, though, and the review must not report clean on that fact silently — log the skip on the terminal token **and** raise `RUN_ANOMALY` on the posted report:
-
-```
-Holistic review: skipped (holistic-analysis skill predates `review` mode — update the skill to enable)
-RUN_ANOMALY: holistic-analysis skill predates `review` mode on this host — findings on this run carry no intent-match or system-fit analysis
-```
-
-Do not block the run.
-
 ## What this rule does not do
 
-- It does not run holistic itself. It dispatches to the skill, accepts the structured findings, and routes them through the pipeline.
 - It does not set the blocker rules — those live in each agent's verdict step.
 - It does not change the inline placement caps (`rubric-composition.md § Placement (Step 2.9b)`) — holistic findings compete for the same inline slots, and like any other cleared finding they are deferred to the review body rather than dropped when the slots run out. If dedupe consolidates a holistic finding with a line-level finding on the same file:line, the holistic claim wins (it has the broader context).
