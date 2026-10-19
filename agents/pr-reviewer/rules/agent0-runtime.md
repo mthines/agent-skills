@@ -173,6 +173,7 @@ finders here first, without reading their files.
 Then union both passes before verifying anything, verify only `_needs_verification: true`, and leave
 an unreadable pass-2 file out of the union without retrying it
 ([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes)).
+Give the union `--run-dir`: its ledger record is how `finalize.mjs` knows the union ran, and a delivered pass 2 without one is named in `RUN_ANOMALY` as never unioned.
 
 **Never dispatch anything else.** Phase E verifies one candidate at a time in this turn, and Step
 2.4b's targeted holistic traces are `Skill()` calls in this turn too. Neither is a fan-out, on this

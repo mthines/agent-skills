@@ -164,10 +164,10 @@ export function hydrateImpact(context) {
  * this run actually reviewed". Pure (D18): the caller resolves `capApplied`/`depthCapability`/
  * `contextAnomalies` from the context; this only formats them, and never begins with a glyph
  * (the renderer prepends its own ⚠️ — a value that did would double it).
- * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number, secondPassMissing?: string[] }} args
+ * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number, secondPassMissing?: string[], secondPassNotUnioned?: string[] }} args
  * @returns {string|undefined}
  */
-export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt, secondPassMissing }) {
+export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt, secondPassMissing, secondPassNotUnioned }) {
   const parts = [];
   // A/B iteration 2: every in-context arm hand-wrote dispatch-topology.md's no-dispatch line into
   // context.render.RUN_ANOMALY, which REPLACED this function's output and dropped prepare-review's
@@ -185,6 +185,13 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
   if (missing.length) {
     parts.push(`finder_passes: 2, but finder pass 2 delivered nothing from ${missing.join(", ")}`
       + " — those finders ran once, in pass 1 only");
+  }
+  // A pass-2 unit that delivered counts only once the union merged it with pass 1 (step 4): with no
+  // union record on the run ledger, its candidates never went through the documented merge.
+  const notUnioned = Array.isArray(secondPassNotUnioned) ? secondPassNotUnioned.filter(Boolean) : [];
+  if (notUnioned.length) {
+    parts.push(`finder_passes: 2, but finder pass 2 was never unioned with pass 1 — ${notUnioned.join(", ")}`
+      + " delivered, and the run ledger holds no finalize.mjs --first-pass/--second-pass record");
   }
   if (capApplied) {
     parts.push(`depth capability (${depthCapability || "diff-only"}) capped this run below the deep tier its mode would otherwise require`);
@@ -209,6 +216,17 @@ export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomal
 export function deliveredWorkers(ledger) {
   return [...new Set(ledger.filter((r) => r.t === "worker" && r.phase === "end" && r.attrs?.delivered === true)
     .map((r) => String(r.unit)))];
+}
+
+/**
+ * Whether a run ledger proves the finder_passes: 2 union ran: the run `attr` record the
+ * `--first-pass/--second-pass` branch appends when given `--run-dir`, read by its `finder_union_kept`
+ * count (a number, `0` included). A union that exited 2, or ran without `--run-dir`, leaves no record.
+ * @param {Array<{ t?: string, target?: unknown, unit?: unknown, phase?: string, attrs?: Record<string, unknown> }>} ledger
+ * @returns {boolean}
+ */
+export function finderUnionRan(ledger) {
+  return ledger.some((r) => r.t === "attr" && typeof r.attrs?.finder_union_kept === "number");
 }
 
 /**
@@ -756,16 +774,22 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // finder_passes: 2 — a second-pass worker is delivered when the run ledger holds a `worker <unit>
   // end` record stamped `delivered: true` (context.workersDelivered, read by the CLI through
   // deliveredWorkers()); any unit the budget planned without one is named, so a single-pass review
-  // never passes for a two-pass one.
+  // never passes for a two-pass one. A delivered unit is named too when the ledger holds no union
+  // record (context.finderUnionRan, read through finderUnionRan()): delivery without the union is not
+  // a two-pass review either.
   const delivered = new Set(Array.isArray(context?.workersDelivered) ? context.workersDelivered.map(String) : []);
-  const secondPassMissing = context?.budget?.finderPasses === 2 && Array.isArray(context?.budget?.secondPassUnits)
-    ? context.budget.secondPassUnits.map(String).filter((/** @type {string} */ u) => !delivered.has(u)) : [];
+  const plannedSecondPass = context?.budget?.finderPasses === 2 && Array.isArray(context?.budget?.secondPassUnits)
+    ? context.budget.secondPassUnits.map(String) : [];
+  const secondPassMissing = plannedSecondPass.filter((/** @type {string} */ u) => !delivered.has(u));
+  const secondPassNotUnioned = context?.finderUnionRan === true ? []
+    : plannedSecondPass.filter((/** @type {string} */ u) => delivered.has(u));
   const autoRunAnomaly = buildAutoRunAnomaly({
     capApplied,
     depthCapability: context?.workspace?.depthCapability || context?.depthCapability,
     contextAnomalies: context?.anomalies,
     noDispatchAt,
     secondPassMissing,
+    secondPassNotUnioned,
   });
 
   // MEMORIES_USED / MEMORIES_SUMMARY — computed from judgments.memory's two arrays (D4:
@@ -2394,14 +2418,29 @@ async function selfTest() {
       budget: { topology: "hybrid", effectiveThoroughness: 0.95, finderPasses: 2, secondPassUnits: ["intent-2", "other-finders-2"] } };
     const ra = (/** @type {any} */ ctx) => String(finalizeReview({ context: ctx, judgments: j0 }).payload.RUN_ANOMALY || "");
     const none = ra(pctx);
-    const half = ra({ ...pctx, workersDelivered: ["intent", "intent-2"] });
-    const all = ra({ ...pctx, workersDelivered: ["intent", "intent-2", "other-finders-2"] });
+    // A delivered pass 2 counts once its files went through the union (finderUnionRan), as step 4 prescribes.
+    const half = ra({ ...pctx, workersDelivered: ["intent", "intent-2"], finderUnionRan: true });
+    const all = ra({ ...pctx, workersDelivered: ["intent", "intent-2", "other-finders-2"], finderUnionRan: true });
     const single = ra({ ...pctx, budget: { ...pctx.budget, finderPasses: 1, secondPassUnits: [] } });
     check("a two-pass budget with no pass-2 worker delivered names both units in RUN_ANOMALY",
       none.includes("finder pass 2 delivered nothing from intent-2, other-finders-2"), none);
     check("a half-delivered pass 2 names only the missing unit; a full one and a single-pass budget add nothing",
       half.includes("from other-finders-2") && !half.includes("intent-2,") && !all.includes("finder pass 2") && !single.includes("finder pass 2"),
       `${half} | ${all} | ${single}`);
+    // Delivered but never unioned: pass 2's candidates never met pass 1, so it is not a two-pass review either.
+    const notUnioned = ra({ ...pctx, workersDelivered: ["intent", "intent-2", "other-finders-2"] });
+    const halfNotUnioned = ra({ ...pctx, workersDelivered: ["intent", "intent-2"] });
+    check("a delivered pass 2 with no union record names its delivered units as never unioned; an undelivered one adds no union line",
+      notUnioned.includes("finder pass 2 was never unioned with pass 1 — intent-2, other-finders-2 delivered")
+        && !notUnioned.includes("delivered nothing")
+        && halfNotUnioned.includes("delivered nothing from other-finders-2")
+        && halfNotUnioned.includes("never unioned with pass 1 — intent-2 delivered")
+        && !none.includes("never unioned"),
+      `${notUnioned} | ${halfNotUnioned} | ${none}`);
+    check("finderUnionRan reads only the union's run attr, finder_union_kept: 0 included",
+      finderUnionRan([{ t: "attr", target: "run", attrs: { finder_union_kept: 0 } }])
+        && !finderUnionRan([{ t: "worker", unit: "intent-2", phase: "end", attrs: { delivered: true } }])
+        && !finderUnionRan([{ t: "attr", target: "run", attrs: { finder_passes: 2 } }]) && !finderUnionRan([]));
     // A bare `end` marker (on Agent0 it rides the command that reads the file, whatever the file
     // holds) is not delivery; only the stamp review-telemetry.mjs writes from a parsed --done file is.
     const proven = deliveredWorkers([
@@ -2411,7 +2450,7 @@ async function selfTest() {
       { t: "worker", unit: "other-finders-2", phase: "start", attrs: { delivered: true } },
       { t: "worker", unit: "other-finders-2", phase: "end", attrs: { delivered: true, candidates: 3 } },
     ]);
-    const fromLedger = ra({ ...pctx, workersDelivered: proven });
+    const fromLedger = ra({ ...pctx, workersDelivered: proven, finderUnionRan: true });
     check("only an end record stamped delivered counts: a bare pass-2 end marker is still named in RUN_ANOMALY",
       JSON.stringify(proven) === '["other-finders-2"]'
         && fromLedger.includes("finder pass 2 delivered nothing from intent-2 —") && !fromLedger.includes("other-finders-2"),
@@ -2430,6 +2469,31 @@ async function selfTest() {
     const telEnds = readLedger(lDir).filter((r) => r.t === "worker");
     check("through the real telemetry CLI, only the pass-2 unit whose --done file parsed is delivered",
       JSON.stringify(deliveredWorkers(telEnds)) === '["intent-2"]', JSON.stringify(telEnds));
+    // Through finalize.mjs's own CLI on that ledger: the delivered intent-2 is named as never unioned
+    // until the real union runs with --run-dir; a union that exits 2 records nothing.
+    writeFileSync(join(lDir, "context.json"), JSON.stringify(pctx));
+    writeFileSync(join(lDir, "judgments.json"), JSON.stringify(j0));
+    writeFileSync(join(lDir, "own.json"), "[]");
+    const finAnomaly = () => {
+      const out = join(lDir, "out");
+      rmSync(out, { recursive: true, force: true });
+      spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(lDir, "context.json"), "--judgments", join(lDir, "judgments.json"),
+        "--out-dir", out, "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+      const res = join(out, "finalize-result.json");
+      return existsSync(res) ? String(JSON.parse(readFileSync(res, "utf8")).payload?.RUN_ANOMALY || "") : "no finalize-result.json";
+    };
+    const runUnion = (/** @type {string} */ second) => spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--first-pass", join(lDir, "own.json"),
+      "--second-pass", second, "--out", join(lDir, "union.json"), "--run-dir", lDir], { encoding: "utf8" });
+    const beforeUnion = finAnomaly();
+    const failedUnion = runUnion(join(lDir, "pass2", "others.json"));
+    const afterFailed = finAnomaly();
+    const okUnion = runUnion(join(lDir, "pass2", "intent.json"));
+    const afterUnion = finAnomaly();
+    check("through finalize.mjs's CLI, a delivered pass 2 reads as never unioned until the union runs with --run-dir; a failed union records nothing",
+      beforeUnion.includes("never unioned with pass 1 — intent-2 delivered") && failedUnion.status === 2
+        && afterFailed.includes("never unioned with pass 1 — intent-2 delivered") && okUnion.status === 0
+        && !afterUnion.includes("never unioned") && afterUnion.includes("delivered nothing from other-finders-2"),
+      `${beforeUnion} | ${afterFailed} | ${afterUnion}`);
     rmSync(lDir, { recursive: true, force: true });
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     check("the CLI reads context.workersDelivered through deliveredWorkers(), and intent isolation still reads any intent end record",
@@ -2985,7 +3049,8 @@ async function main() {
 
   // finder_passes: 2 — the union of the passes before verification (dispatch-topology.md § Two finder
   // passes). `--first-pass a.json,b.json --second-pass c.json,d.json [--out <file>] [--run-dir <dir>]`
-  // writes {kept, dropped, stats}; with --run-dir it also records the stats on the run's trace.
+  // writes {kept, dropped, stats}; with --run-dir it also records the stats on the run's trace, the
+  // record finderUnionRan() reads back as proof the union ran.
   if (opts.firstPass !== undefined || opts.secondPass !== undefined) {
     let passes;
     try {
@@ -3034,6 +3099,8 @@ async function main() {
     if (ledger.some((r) => r.t === "worker" && r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;
     // Every worker whose --done file parsed, the finder_passes: 2 units included (finalizeReview names a missing one).
     context.workersDelivered = deliveredWorkers(ledger);
+    // The union's own run record (finalizeReview names a delivered pass 2 that was never unioned).
+    context.finderUnionRan = finderUnionRan(ledger);
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);

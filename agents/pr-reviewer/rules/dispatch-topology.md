@@ -283,12 +283,19 @@ verification keeps the extra recall without verifying any defect twice.
    node "$TELEMETRY" worker intent-2 end --run-dir "$RUN_DIR"; cat <run-dir>/pass2/intent.json
    ```
 
-4. **Union before verification.** Run the union once, after every readable file exists:
+4. **Union before verification.** Run the union once, after every readable file exists, and always with `--run-dir`.
+   Its run-ledger record is how `finalize.mjs` knows the union ran: a pass-2 unit that delivered with no union record is named in `RUN_ANOMALY` as never unioned.
 
    ```bash
+   # correct: --run-dir records the union on the run ledger finalize.mjs reads
    node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" \
      --first-pass <pass-1 candidate files> --second-pass <run-dir>/pass2/intent.json,<run-dir>/pass2/others.json \
      --out <run-dir>/union.json --run-dir "$RUN_DIR"
+
+   # incorrect: no --run-dir — no union record, so finalize.mjs names every delivered pass-2 unit as never unioned
+   node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" \
+     --first-pass <pass-1 candidate files> --second-pass <run-dir>/pass2/intent.json,<run-dir>/pass2/others.json \
+     --out <run-dir>/union.json
    ```
 
    - Where the reviewer verifies its own pass-1 candidates before reading any worker file (the
@@ -309,14 +316,13 @@ verification keeps the extra recall without verifying any defect twice.
    strips `agreement_promoted` and `_also_flagged_by` from every record it writes.
 7. **A pass-2 worker with no readable file** is left out of `--second-pass` and is neither retried nor
    run in your context — you have seen pass 1, so a pass 2 run by you is not independent.
-   `finalize.mjs` reads the run ledger and names in `RUN_ANOMALY` every planned unit with no `end`
-   record stamped `delivered: true` (step 3), so the report never claims two passes it did not run.
+   `finalize.mjs` reads the run ledger and names in `RUN_ANOMALY` every planned unit with no `end` record stamped `delivered: true` (step 3), and every delivered unit when the ledger holds no union record (step 4), so the report never claims two passes it did not run.
 
 ```text
 # correct (finder_passes: 2, /pr-review): one message, four dispatches; one union before verifying worker candidates
 dispatch pr-reviewer + intent + intent-2 + other-finders-2 → reviewer verifies its own pass-1 candidates
 → imports intent, intent-2, other-finders-2 → finalize.mjs --first-pass own.json,intent.json
-  --second-pass pass2/intent.json,pass2/others.json → verify _needs_verification: true → finalize
+  --second-pass pass2/intent.json,pass2/others.json --run-dir "$RUN_DIR" → verify _needs_verification: true → finalize
 
 # incorrect: pass 2 run by the reviewer after reading pass 1 — correlated, not independent
 reviewer runs its finders → reads intent.json → "runs the finders again" → unions them
