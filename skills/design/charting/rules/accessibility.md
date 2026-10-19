@@ -21,10 +21,10 @@ Do not duplicate. When the user's chart has any of these concerns, point them at
 | Concern                                  | Owner |
 | ---------------------------------------- | ----- |
 | Color contrast ratios (text vs. background, UI-component contrast) | `ux` (`rules/visual-design.md`, `rules/accessibility.md`) |
-| Touch-target sizing for legends, tooltips, interactive points       | `ux` (`rules/touch-and-interaction.md`)                    |
+| Touch-target sizing for legends, tooltips, interactive points       | `ux` (`rules/accessibility.md`)                           |
 | Typography (axis label size, tick label size, title hierarchy)      | `ux` (`rules/visual-design.md`)                            |
 | Microcopy (chart titles, axis labels, empty/error states)           | `ux` (`rules/ux-writing.md`)                               |
-| Platform conventions (Apple HIG / Material Design 3 chart guidance) | `ux` (`rules/platform-specific.md`)                        |
+| Platform conventions (Apple HIG / Material Design 3 chart guidance) | `ux` (`rules/accessibility.md`)                           |
 
 ## Own here — chart-specific rules
 

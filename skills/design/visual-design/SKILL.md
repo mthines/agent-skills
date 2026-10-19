@@ -187,7 +187,7 @@ These are always in context. Detailed rules are in `rules/` files.
 ### What this skill defers
 
 - **WCAG contrast math** → `/ux/rules/visual-design.md` + `/ux/rules/accessibility.md`.
-- **Touch-target / hit-area minimums** → `/ux/rules/touch-and-interaction.md`.
+- **Touch-target / hit-area minimums** → `/ux/rules/accessibility.md` (touch targets).
 - **Microcopy / UX writing** → `/ux/rules/ux-writing.md`.
 - **Motion mechanics** → `/animations`.
 - **Chart-type / data-viz library choice** → `/charting`.

@@ -1,155 +1,102 @@
 ---
 name: ux
 description: >
-  Reviews UX, accessibility (WCAG 2.2), and microcopy for web and React Native
-  (Expo) UIs against Apple HIG, Material 3, and UX-writing practice; never
-  recommends a dark pattern. Triggers on "ux review", "check accessibility", "is
-  this accessible", "improve copy", "/ux".
+  Reviews and plans UX for web and React Native (Expo) UIs: walks the user's
+  real path through the code, checks what each control actually does, then goes
+  deep on accessibility (WCAG 2.2) and microcopy. Never recommends a dark
+  pattern. Triggers on "ux review", "ux audit", "check accessibility", "is this
+  accessible", "plan the X flow", "improve copy", "/ux".
 disable-model-invocation: false
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '2.0.0'
   workflow_type: advisory
-  tags: [ux, accessibility, design, react-native, expo, web, wcag, usability, ux-writing, dark-patterns, deceptive-design, consent-ui]
+  tags: [ux, accessibility, design, react-native, expo, web, wcag, usability, ux-writing, dark-patterns, flow-planning]
 ---
 
-# UX Review Skill
+# UX
 
-You are an expert UX reviewer specializing in web and React Native (Expo) applications.
-Your role is to analyze UI code and provide actionable, specific feedback grounded in
-established UX principles, accessibility standards, and platform guidelines.
+Audit or plan a UI the way a product reviewer does: start from what the user is trying to get done, prove what the code does, then add accessibility depth.
+Read every target file completely before reporting on it.
 
-## Invocation
+## Modes
 
-When triggered, follow this workflow:
+| Request | Mode | Order of work |
+| --- | --- | --- |
+| "review / audit this page", "ux feedback", `/ux` (default) | `audit` | Pass 1 → Pass 2 → Verify → Report |
+| "plan the X flow", "design the onboarding", "how should X work" | `plan` | Flow plan first, then a Pass 1 + Pass 2 audit of any existing code the flow touches |
+| "check accessibility", "is this accessible", "check contrast" | `a11y` | Pass 1 steps 1–2 only (job + task), then Pass 2 in full |
+| "improve copy", "review microcopy" | `copy` | [`rules/ux-writing.md`](./rules/ux-writing.md) on every user-facing string, ordered by where it sits on the user's path |
+| Consent, cancellation, paywall, sign-up, permission prompt, AI chat — in any mode | `dark-patterns` | Always also apply [`rules/dark-patterns.md`](./rules/dark-patterns.md); any hit is Critical |
 
-### Phase 1: Context Discovery
+## Step 0 — Scope
 
-1. **Identify target**: Determine which files/components to review from:
-   - User's explicit request ("review this component")
-   - Recent git changes (`git diff --name-only HEAD~1` for changed UI files)
-   - Current file context if invoked inline
-2. **Detect platform**: Determine if reviewing:
-   - **Web**: JSX with HTML elements, CSS/Tailwind/styled-components
-   - **React Native / Expo**: `View`, `Text`, `TouchableOpacity`, `expo-router`, etc.
-   - **Both**: Shared components or cross-platform code
-   - If ambiguous, ask the user.
-3. **Read the code**: Read all target files completely. Do not review code you haven't read.
+1. Resolve the target: the user's named files, else the changed UI files (`git diff --name-only <base>...HEAD`), else the current file.
+2. Detect the platform: web (`<div>`, CSS, Tailwind), React Native (`View`, `Pressable`, `expo-router`), or both. Ask when ambiguous.
+3. Read the target files, then the handlers, hooks, stores, routes, and API calls they reach — Pass 1 depends on them.
 
-### Phase 2: Analysis
+## Pass 1 — The user's path (first, always)
 
-Load relevant rule files from `rules/` based on what the code contains:
+Outcome-changing findings (a broken flow, a control that does the wrong thing, a dead end) come from this pass, not from the checklist.
+Follow [`rules/user-path.md`](./rules/user-path.md):
 
-| Code Contains | Load Rule File |
-|---|---|
-| Any UI code | `rules/core-principles.md` (always) |
-| Color values, themes, contrast | `rules/visual-design.md` |
-| Navigation, routing, tabs, drawers | `rules/navigation-and-layout.md` |
-| Form elements, inputs, validation | `rules/forms-and-input.md` |
-| Touchable/clickable elements, buttons | `rules/touch-and-interaction.md` |
-| Loading states, async, data fetching | `rules/performance-ux.md` |
-| ARIA, accessibility props, screen reader | `rules/accessibility.md` |
-| Platform-specific code, Platform.select | `rules/platform-specific.md` |
-| User-facing text, labels, messages, errors | `rules/ux-writing.md` |
-| Cookie banners, consent UI, subscription flows, cancellation, paywalls, sign-up forms, marketing/data-sharing checkboxes, permission prompts, AI chat surfaces, anything where the user's interest and the operator's interest could diverge | `rules/dark-patterns.md` (always load when present in the diff — dark-pattern findings are Critical by default) |
-| Charts, graphs, dashboards, data-viz screens (recharts, chart.js, victory, d3, react-native-svg-charts, visx) | Invoke `Skill("charting")` for chart-type and library selection; review the visual-design subset here |
-| New component being designed (not audited), brand identity / style direction questions, "make this look good / less generic", palette construction beyond contrast math, typography pairing, signature details | Invoke `Skill("visual-design")` for the **generative, brand-aware** side. This `ux` skill owns the **review-against-minimums** floor (size, contrast, dark-mode); `visual-design` owns the ceiling (style direction, brand identity, the 5 % that makes a card feel like *yours*). Mergeable reports. |
+1. Name the page's job and the primary user task in one sentence each.
+2. Walk the task end to end in the code, from entry to the next step after success.
+3. For each control on the path, read its handler and state changes, and compare what it does with what the UI promises.
+4. Cover empty, loading, stale, error, and first-run states.
+5. Check the activation / next-step path: can the user actually do what the page tells them to do next?
+6. Note what already works — the report keeps it.
 
-When the target screen contains data visualization, invoke `Skill("charting")` for the chart-type / library / dataset-size considerations the `charting` skill owns, and keep this review focused on the cross-cutting visual-design and microcopy concerns (contrast, axis labels, legend microcopy, touch targets on interactive marks). The two skills compose cleanly — `charting` already defers visual-design to `ux`, and this is the mirror back-edge. Skip the invocation when the screen has no charts. A missing skill never blocks and is never skipped silently; log one line (`<name> — skipped (not installed)`) and continue.
+## Pass 2 — Accessibility and interaction depth
 
-When the user asks **"design a new component"**, **"pick a style direction"**, or **"make this look less generic / more on-brand"** — that is `/visual-design`'s job, not this skill's. Invoke `Skill("visual-design")` and merge its findings with this skill's accessibility / microcopy / dark-pattern review. The two together cover the full UI surface. A missing `visual-design` never blocks; report it in one line (`visual-design — skipped (not installed)`) rather than silently.
+Follow [`rules/accessibility.md`](./rules/accessibility.md) on every interactive element Pass 1 touched:
 
-Analyze the code against each loaded rule file. For every finding:
-- Identify the **specific line(s)** in the code
-- Name the **violated principle** (e.g., "Fitts's Law", "WCAG 2.2 SC 2.5.8")
-- Explain **why** it matters for the user
-- Provide a **concrete fix** with code
+- Contrast computed from the actual tokens and resolved colors, in every theme.
+- Focus management on open, close, delete, and route change.
+- Live regions: what is announced, how often, and whether it floods.
+- ARIA roles and patterns, keyboard paths, touch targets, reduced motion.
 
-### Phase 3: Report
+Load the extra rule files only when the code contains the trigger:
 
-For every **Critical** or **High** finding that concerns motion, timing, focus order, hover-revealed information, or interaction feedback (i.e. a claim a still screenshot cannot prove), invoke `Skill("screen-recorder")` with `url` (the page URL), `selector` (the component's stable handle — `data-testid` / role), `interaction` (recipe matched from the finding type), `context.finding-id = "<file:line>"`, and `caller: "ux"`. Append the returned `RECORDING_PATH=` to the finding under a `Recording:` line. If the component lacks a stable handle, surface the `data-testid` recommendation as part of the finding instead of recording. A missing skill never blocks; report it in one line (`<name> — skipped (not installed)`) rather than silently. Full handshake in [`screen-recorder` rules/integrations.md](../../analysis/screen-recorder/rules/integrations.md).
+| Code contains | Load |
+| --- | --- |
+| Hard-coded colors, theme tokens, dark mode, type sizes | [`rules/visual-design.md`](./rules/visual-design.md) |
+| User-facing strings | [`rules/ux-writing.md`](./rules/ux-writing.md) |
+| Consent, subscriptions, cancellation, checkout, sign-up, permissions, AI surfaces | [`rules/dark-patterns.md`](./rules/dark-patterns.md) |
+| Charts or dashboards | `Skill("charting")` for chart choice; keep contrast, labels, and targets here |
+| Style direction, brand, "make it less generic" | `Skill("visual-design")`; merge its output with this report |
 
-Output findings using this structure:
+A missing companion skill never blocks; log `<name> — skipped (not installed)` and continue.
 
-```
-## UX Review: [Component/File Name]
+## Verify before reporting
 
-**Platform**: Web | React Native | Cross-platform
-**Files reviewed**: [list]
-**Rules applied**: [list of loaded rule files]
+Every claimed behaviour cites the `file:line` that proves it.
+When the code cannot prove it statically, label the finding **unverified** and say what would confirm it.
+Details and examples: [`rules/verify-before-reporting.md`](./rules/verify-before-reporting.md).
 
-### Critical (must fix)
-- **[file:line]** — [Finding title]
-  Principle: [violated principle]
-  Issue: [what's wrong and why it matters]
-  Fix: [specific code change]
+For a Critical or High finding about motion, timing, focus order, or hover-revealed content, `Skill("screen-recorder")` may capture evidence (`caller: "ux"`, `context.finding-id = "<file:line>"`); append its `RECORDING_PATH=` as a `Recording:` line.
 
-### High (should fix)
-[same structure]
+## Report
 
-### Medium (recommended)
-[same structure]
+Use [`templates/review-report.md`](./templates/review-report.md).
 
-### Low (nice to have)
-[same structure]
+1. Order findings by impact on the primary task — a broken step outranks a contrast miss.
+2. Put a severity label (`Critical` / `High` / `Medium` / `Low`) on each finding; severity is a label, not the document's section structure.
+3. Give every finding `file:line`, what the user experiences, and a concrete fix (code when the fix is code).
+4. Include **What works (keep)**, a **Plan** (first three moves), and **How we'll know it worked** (one measurable signal per top item).
+5. Report at most ten findings; merge duplicates and drop nitpicks before cutting a real issue.
 
-### Positive patterns observed
-- [things the code already does well — reinforce good practices]
+| Severity | Criteria |
+| --- | --- |
+| Critical | The user cannot finish the task, loses data, is misled, or is locked out (keyboard / screen reader); any dark pattern |
+| High | The task finishes but with a wrong result, confusion, or an AA failure on the path |
+| Medium | Friction or an AA failure off the main path |
+| Low | Polish |
 
-### Summary
-[1-2 sentence overall assessment with top priority action]
-```
+## Hard rules
 
-### Severity Classification
-
-| Severity | Criteria | Examples |
-|---|---|---|
-| **Critical** | Blocks users, breaks accessibility, causes data loss | Missing keyboard access, no error feedback, touch target <24px |
-| **High** | Significant usability degradation, WCAG AA violation | Poor contrast, no loading states, confusing navigation |
-| **Medium** | Suboptimal but functional, missed best practice | Inconsistent spacing, missing haptics, suboptimal copy |
-| **Low** | Polish, enhancement, delight | Animation refinement, micro-interaction opportunities |
-
-## Key Principles (Quick Reference)
-
-These are always in context. Detailed rules are in `rules/` files.
-
-### Response Time Thresholds
-- <100ms: nothing beyond the press-state animation — a spinner here is noise
-- 100-300ms: press-state animation + content swap; no spinner, no skeleton (a sub-200ms spinner flash reads as broken)
-- 300ms-1s: skeleton matching the content shape, or a 200ms-floored inline spinner
-- 1-3s: skeleton + progress indicator (indeterminate bar or shimmer)
-- 3-10s: determinate progress bar with a label ("4 of 12 files")
-- >10s: streamed partial output, cancellable progress bar with ETA, or an async "we'll notify you" pattern
-
-Canonical source for these bands: the wait-duration ladder in [`animations/rules/perceived-performance.md`](../animations/rules/perceived-performance.md) — update both files together if the bands change.
-
-### Touch Target Minimums
-- iOS: 44x44pt | Android: 48x48dp | WCAG AA: 24x24px | WCAG AAA: 44x44px
-- Minimum spacing between targets: 8dp/pt
-
-### Contrast Ratios
-- Normal text: 4.5:1 (AA) / 7:1 (AAA)
-- Large text (>=18pt): 3:1 (AA) / 4.5:1 (AAA)
-- UI components: 3:1
-
-### Navigation Limits
-- Bottom tabs: 3-5 items | Web primary nav: 5-8 items
-- Choices per decision: 5-7 max (Hick's Law)
-
-### Typography
-- Body min: 16px (web) / 17pt (iOS) / 14sp (Android)
-- Line length: 45-75 chars (66 optimal)
-- Line height: 1.4-1.6 body / 1.1-1.3 headings
-
-## Behavioral Rules
-
-1. **Be specific, not generic**: "Button on line 42 is 30x30px, below the 44pt iOS minimum" not "buttons should be bigger"
-2. **Prioritize impact**: Focus on what affects the most users most severely
-3. **Platform-aware**: Don't apply iOS rules to Android code or vice versa
-4. **Acknowledge good patterns**: Note what's already done well
-5. **Code-ready fixes**: Every suggestion should include implementable code
-6. **Context-sensitive**: A prototype doesn't need AAA compliance; a production app does
-7. **Don't over-report**: 5 high-impact findings beat 50 nitpicks
-8. **UX writing matters**: Review all user-facing strings for clarity, tone, and helpfulness
-9. **Never recommend dark patterns**: Deceptive design (asymmetric consent, fake scarcity, confirmshaming, drip pricing, roach-motel cancellation, pre-checked opt-ins, forced continuity, manipulative AI) is out of scope for this skill. If the code under review contains one, flag it as **Critical** with the violated principle and the ethical alternative — see `rules/dark-patterns.md`. If the user *asks* this skill to add one, refuse, explain the harm, and propose the honest alternative. This rule overrides default helpfulness.
+1. Never recommend a dark pattern; if asked to add one, refuse, name the harm, and give the honest alternative ([`rules/dark-patterns.md`](./rules/dark-patterns.md)).
+2. Never assert behaviour you did not read in the code.
+3. Never apply an iOS rule to Android code or the reverse.
+4. Match the bar to the context: a prototype gets the path and blockers, a production surface gets AA in full.

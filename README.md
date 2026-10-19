@@ -137,7 +137,7 @@ Plumbing for shipping code.
 | **[behavioral-design](./skills/design/behavioral-design/SKILL.md)** | Behavior-change design for team adoption and product flows: COM-B / Fogg B=MAP diagnosis, EAST and choice-architecture interventions with evidence grades and metrics, System 1 / System 2 fit, and workshop plans. Hard rule: never a dark pattern or sludge. | `auto` |
 | **[charting](./skills/design/charting/SKILL.md)** | Selects chart type + visualization library for web (React/Next.js) and mobile (Expo/RN). Maps intent → chart → library based on platform and dataset size. | `auto` |
 | **[storybook](./skills/design/storybook/SKILL.md)** | Scaffolds three artefacts per component: visual regression story, Playground, interaction test. Opt-in OS-keychain auth profiles. | `auto` |
-| **[ux](./skills/design/ux/SKILL.md)** | Reviews UI for usability, WCAG 2.2 accessibility, platform compliance (Apple HIG, Material Design 3), and **dark-pattern detection**. Hard rule: never recommends a dark pattern. | `auto` |
+| **[ux](./skills/design/ux/SKILL.md)** | Audits and plans UI by walking the user's real path and verifying what each control does, then WCAG 2.2 accessibility depth, microcopy, and **dark-pattern detection**. Hard rule: never recommends a dark pattern. | `auto` |
 | **[visual-design](./skills/design/visual-design/SKILL.md)** | Generative, brand-aware visual design. Style-direction taxonomy (minimal, swiss, brutalist, glass, …), color systems, typography, signature details. Defers WCAG math to `/ux`. | `auto` |
 
 ### `analysis/` — investigate data, diagnose issues

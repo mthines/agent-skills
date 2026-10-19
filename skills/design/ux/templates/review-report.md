@@ -1,56 +1,46 @@
-# UX Review Report Template
+# UX report template
 
-Use this structure for every review output.
+Order findings by impact on the primary task; severity is a label on each finding.
+In `plan` mode, put **Flow plan** first and the audit sections after it.
 
-````
-## UX Review: [Component/File Name]
+````markdown
+## UX: <page or component>
 
-**Platform**: Web | React Native (iOS) | React Native (Android) | Cross-platform
-**Files reviewed**: [list with paths]
-**Rules applied**: [core-principles, accessibility, visual-design, etc.]
+**Job:** <one sentence>
+**Primary task:** <step → step → step>
+**Platform:** Web | React Native | Cross-platform · **Files:** <paths>
 
----
+### Flow plan  <!-- plan mode only -->
+1. <step> — <what the user sees, does, and needs>
+2. …
 
-### Critical (must fix — blocks users or breaks accessibility)
+### Findings (by impact on the task)
 
-1. **[file:line]** — [Short finding title]
-   - **Principle**: [e.g., WCAG 2.2 SC 2.5.8 Target Size, Fitts's Law]
-   - **Issue**: [What's wrong and why it hurts UX]
-   - **Fix**:
-   ```tsx
-   // suggested code change
-   ```
+1. **Critical** — <title> · `<file:line>`
+   - User experiences: <what goes wrong on the path>
+   - Evidence: <handler / option / value that proves it>
+   - Fix:
+     ```tsx
+     // concrete change
+     ```
 
-### High (should fix — significant UX degradation)
+2. **Medium (unverified)** — <title> · `<file:line>`
+   - Confirm by: <the check that settles it>
 
-[same structure]
+### Copy  <!-- when strings were reviewed -->
+| Location | Current | Problem | Suggested |
+| --- | --- | --- | --- |
 
-### Medium (recommended — missed best practice)
+### What works (keep)
+- <pattern> · `<file:line>`
 
-[same structure]
+### Plan
+1. <first move — the fix that unblocks the task>
+2. <second>
+3. <third>
 
-### Low (nice to have — polish and delight)
-
-[same structure]
-
----
-
-### UX Writing Review
-
-| Location | Current Copy | Issue | Suggested Copy |
-|----------|-------------|-------|----------------|
-| [file:line] | "Submit" | Generic, doesn't describe action | "Create account" |
-
----
-
-### Positive Patterns
-
-- [Things the code already does well — reinforce good practices]
-
----
-
-### Summary
-
-[1-2 sentence overall assessment]
-**Top priority**: [single most impactful change to make first]
+### How we'll know it worked
+| Item | Signal |
+| --- | --- |
+| <plan item 1> | <measurable signal, e.g. setup-to-first-event completion rate, filter-removal undo rate, axe violations on the page = 0> |
 ````

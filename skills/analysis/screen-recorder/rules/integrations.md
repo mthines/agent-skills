@@ -320,7 +320,7 @@ When this skill's contract changes, update these call sites:
 | Skill / agent                                             | Section that calls                                                         |
 | --------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [`skills/design/animations/SKILL.md`](../../../design/animations/SKILL.md) | Phase 7 "Measure" — append two `Skill("screen-recorder")` calls.           |
-| [`skills/design/ux/SKILL.md`](../../../design/ux/SKILL.md)                 | Phase 3 "Report" — invoke for Critical / High findings on motion concerns. |
+| [`skills/design/ux/SKILL.md`](../../../design/ux/SKILL.md)                 | "Verify before reporting" — invoke for Critical / High findings on motion. |
 | [`agents/pr-reviewer.md`](../../../../agents/pr-reviewer.md)  | Step 2 "Analysis" — after UX rubric, when motion heuristics match.         |
 | [`skills/design/storybook/rules/visual-verification.md`](../../../design/storybook/rules/visual-verification.md) | "When `screen-recorder` is the right tool" — `Skill()` call for multi-frame interactions. |
 
