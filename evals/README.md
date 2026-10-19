@@ -30,7 +30,7 @@ pnpm plugin-eval --case critical-premortem --runs 1 --ablation none
 
 ## Cost knobs
 
-- A smoke run (3 cases × 1 run × 2 arms) costs about $1.40; the full ablation suite at `--runs 3` is roughly 13 cases × 6 runs.
+- A smoke run (3 cases × 1 run × 2 arms) costs about $1.40; the full ablation suite at `--runs 3` is roughly 7 cases × 6 runs.
 - `--max-cost-usd` stops new runs once the estimate is spent (exit 2, partial results).
 - `--runs 1` while editing a case, `--runs 3` (the default) before trusting a `Δ`.
 - `--ablation none` halves the cost when you only need to know the case loads and grades.
@@ -75,5 +75,7 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 | `confidence-plan-gaps` | `confidence` | `Final:` ≤ 89%, names missing Acceptance Criteria, names the dangling path |
 | `aw-create-plan-artifact` | `aw-create-plan` | `.agent/*/plan.md`, `.agent/*/checks.yaml`, `AC-n (covers: Rn)`, llm: testable criteria |
 | `behavioral-design-local-tests` | `behavioral-design` | names a barrier, no shaming, llm: diagnosis → intervention → metric |
-| `trigger-critical`, `trigger-confidence` | each named skill | `Skill` fired |
+| `behavioral-design-hard-postmortems` | `behavioral-design` | comparison or re-measure design, llm: diagnosis, steers off the performance-review link, ease lever first, system-of-record metric |
+| `behavioral-design-hard-review-sla` | `behavioral-design` | baseline measured, llm: ≥ 2 barriers, friction-removing default first, no individual ranking, GitHub-data metric |
+| `trigger-critical`, `trigger-confidence`, `trigger-behavioral-design-1on1s` | each named skill | `Skill` fired |
 | `trigger-neg-aw-question`, `trigger-neg-aw-here` | `aw` | `aw` / `autonomous-workflow` not fired |

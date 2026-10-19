@@ -1,11 +1,12 @@
 ---
 name: behavioral-design
 description: >
-  Applies behavioral science (COM-B, B=MAP, EAST, defaults, friction) to make a
-  desired behavior the easy default, for team adoption as much as product flows;
-  never recommends a dark pattern or sludge. Use for "why don't people do X" or
-  "how do we drive adoption"; triggers on "behavior change", "nudge",
-  "/behavioral-design".
+  Applies behavioral science (COM-B, B=MAP, EAST, defaults) to change
+  behavior in teams and organizations (employees, managers, or engineers
+  adopting a practice or tool) and in product flows; plans rollouts, workshops,
+  and presentations; never recommends a dark pattern or sludge. Triggers on
+  "how do I get my team to X", "why don't people do X", "roll this out",
+  "nudge", "/behavioral-design".
 disable-model-invocation: false
 argument-hint: '[diagnose|design|workshop|review] <target behavior or context>'
 license: MIT
