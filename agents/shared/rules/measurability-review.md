@@ -95,7 +95,7 @@ The lens proceeds only when at least one changed path classifies as **`web`**, *
 | --- | --- |
 | any of `web` / `mobile` / `api` / `worker` | **pass** |
 | only `infra` / `shared-lib` | fail — no user-facing or request-serving surface of its own |
-| only test / fixture / generated / docs paths | fail — the same exclusion set [`severity`](../../../skills/quality/severity/SKILL.md) applies to its path floor |
+| only test / fixture / generated / docs paths | fail — the same exclusion set [`severity.md`](./severity.md) applies to its path floor |
 
 A `shared-lib` change that *reaches* a `web` or `api` consumer is still gate-1 fail here.
 The consumer's own signal already covers the call site, and Phase B's `impact.json` is the surface

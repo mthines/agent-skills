@@ -77,7 +77,7 @@ same reason — a loop that can edit the finding it is being graded on will even
 
 `prefix`, `severity`, and `blocking` come from the unchanged gates:
 [`per-comment-confidence.md`](../../../../agents/shared/rules/per-comment-confidence.md) for the
-threshold and the crosswalk, `Skill("severity", "finding")` for the tier. `score` and `verdict` come
+threshold and the crosswalk, `agents/shared/rules/severity.md` for the tier. `score` and `verdict` come
 from [`finding-verifier.md`](../../../../agents/shared/rules/finding-verifier.md).
 
 ## Identity is the fingerprint

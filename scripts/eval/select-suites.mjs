@@ -5,7 +5,7 @@
 // `golden`), so nothing here restates them and nothing can drift out of sync.
 //
 //   git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
-//   node scripts/eval/select-suites.mjs --json  skills/quality/severity/SKILL.md
+//   node scripts/eval/select-suites.mjs --json  agents/shared/rules/severity.md
 //   node scripts/eval/select-suites.mjs --all           # every suite (workflow_dispatch)
 //   node scripts/eval/select-suites.mjs --self-test     # offline, no changed files
 //

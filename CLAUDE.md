@@ -47,7 +47,6 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `ai-engineering` (`/`) — LLM/AI app review across 13 concerns
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps the LLM score at 89%
-- `severity` (`auto`) — severity/blast-radius tier (`critical`/`high`/`medium`/`low`) for a finding or bug; policy-free
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates; `deep` runs 3–5 parallel persona lenses (found via `ideate`) and merges them
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
 - `observe-run` (`Skill() + /`) — runs a command and grades the telemetry that run emitted against behavioral assertions only

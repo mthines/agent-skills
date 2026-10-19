@@ -183,8 +183,8 @@ rationale and the two never-suppressible classes — standards findings and anyt
 ### Confidence thresholds for inline findings
 
 `agents/shared/rules/per-comment-confidence.md` owns every number. **Severity-aware thresholds are
-the default**, so the effective inline bar is `severity_thresholds[tier]` from the `severity` skill's
-emitted tier (`per-comment-confidence.md` § Severity-aware threshold; `review-config.md`
+the default**, so the effective inline bar is `severity_thresholds[tier]` for the tier
+[`severity.md`](../../shared/rules/severity.md) emits (`per-comment-confidence.md` § Severity-aware threshold; `review-config.md`
 § Severity-aware thresholds); the flat per-finding-type table in that rule applies only under a
 `per_comment_confidence_threshold` override. Do not restate either set here — a third copy of a
 threshold is a third thing to keep in sync, and the two that already existed drifted.

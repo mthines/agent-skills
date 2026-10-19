@@ -184,10 +184,9 @@ One judge — a fresh sub-agent in `fan-out` and `deep` mode, a separate pass in
 | Fit | 1–10 | Does it exercise the component this PR changed? |
 | Checkability | 1–10 | Can its check be observed in the page, console, or network without knowing the product's intended design? |
 
-**Severity comes from the `severity` skill.**
-Load the `severity` skill and inline its `## Severity rubric` section verbatim in the judge's prompt, in `bug` mode, and tell the judge to skip that rubric's Step 2 path floor: every candidate shares the diff's paths, and a tier only the floor raised never decides anything — the same exception severity's crosswalk makes for `(blocking)`.
+**Severity uses the reviewers' tier vocabulary.**
+Inline this table in the judge's prompt; it restates the `bug`-mode tiers of the shared reviewer rubric (`agents/shared/rules/severity.md`) without its path floor, because every candidate shares the diff's paths.
 The judge rates every candidate in its one pass, never one call per candidate.
-When the `severity` skill is not installed, inline this restatement instead and append `(severity skill not installed)` to the report line; where the two disagree, the skill wins:
 
 | Tier | If it breaks… |
 | --- | --- |

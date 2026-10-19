@@ -236,7 +236,7 @@ export function candidateDomainRules(candidates, errors) {
     if (c.verdict !== "unobtainable" && hasReason) {
       errors.push(`${path}: "unverified_reason" is only valid when verdict is "unobtainable" (got ${JSON.stringify(c.verdict)})`);
     }
-    // A/B iteration 4: the severity skill's crosswalk (`skills/quality/severity/SKILL.md § Mapping
+    // A/B iteration 4: the severity rule's crosswalk (`agents/shared/rules/severity.md § Mapping
     // to a reviewer's blocking flag`) makes the tier the source of `(blocking)` — critical/high
     // block, medium/low never do — and says "do not encode a second, divergent blocking rule".
     // Nothing enforced it, and round 3 on sync-tray#72 had two arms mark a `medium` finding

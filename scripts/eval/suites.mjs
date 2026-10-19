@@ -120,8 +120,8 @@ export const SUITES = [
   {
     name: "severity-tiering",
     golden: "golden/severity-tiering.jsonl",
-    rubric: { file: "skills/quality/severity/SKILL.md", section: "## Severity rubric" },
-    instruction: "You are the severity skill. Using ONLY the rubric below, classify the finding into exactly one severity tier. Run the exclusion gate and the reachability cap before applying any path floor or escalator.",
+    rubric: { file: "agents/shared/rules/severity.md", section: "## Severity rubric" },
+    instruction: "You apply the severity rule. Using ONLY the rubric below, classify the finding into exactly one severity tier. Run the exclusion gate and the reachability cap before applying any path floor or escalator.",
     inputKey: "input", inputLabel: "Finding",
     choices: ["critical", "high", "medium", "low"],
   },

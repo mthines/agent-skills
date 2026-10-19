@@ -49,7 +49,7 @@ two homes, and the eval would measure one of them while you ran the other — th
 
 Gates and lenses are likewise unchanged and likewise by reference:
 [`per-comment-confidence.md`](./shared/rules/per-comment-confidence.md) owns the threshold, the
-defer band, and the severity crosswalk; `Skill("severity", "finding")` owns the tier;
+defer band, and the severity crosswalk; [`severity.md`](./shared/rules/severity.md) owns the tier;
 [`standards-conformance.md`](./shared/rules/standards-conformance.md) owns the governing-docs lens;
 [`optimality-review.md`](./shared/rules/optimality-review.md) owns the optimality lens.
 

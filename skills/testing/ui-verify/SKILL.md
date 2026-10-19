@@ -51,7 +51,7 @@ This skill's own rules are linked where they apply below. It reuses these and ne
 | Spec formats: intent (`Format: intent`) and grammar (`WHEN/THEN/AND`, locators, `url:`, `network:`, `semantic:` via [`jev-assert`](../../quality/jev-assert/SKILL.md)) | `aw-tester`'s `templates/intent-spec.md.template` and [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template) |
 | Spec-run contract (locators, auth, verdict, intent grading — § 6, `--record-video`) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) |
 | Browser context | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template) |
-| Out-of-bounds severity cap (`critical` or `high`, one per move) | the `severity` skill's `## Severity rubric` |
+| Out-of-bounds severity cap (`critical` or `high`, one per move) | the tier table in [`rules/out-of-bounds.md`](./rules/out-of-bounds.md) |
 
 Why `SKILL.md` is shaped this way: [`references/skill-design.md`](./references/skill-design.md).
 

@@ -443,7 +443,7 @@ Report the read count and the unread remainder in the `Memory` block — a budge
 
 ## What this rule does not do
 
-- **It does not lower a severity tier.** Amplify lowers a *verifier threshold*, which decides whether a finding survives; it never changes what the finding is. Severity comes from the `severity` skill, on the code.
+- **It does not lower a severity tier.** Amplify lowers a *verifier threshold*, which decides whether a finding survives; it never changes what the finding is. Severity comes from [`severity.md`](../../shared/rules/severity.md), on the code.
 - **It does not write lessons.** All `reviewer-lessons` writes flow through [`outcome-learning.md`](../../shared/rules/outcome-learning.md) after the PR closes.
 - **It does not delete anything.** `mcp__lorekit__memory_delete` is deliberately absent from this agent's `tools:` grant. Records lapse at TTL; a rule that should stop firing goes `disabled`, which is a write, not a delete.
 - **It does not treat an empty record as evidence of safety.** No knowledge record for a symbol means nobody has traced it yet. No hotspot counter means no defect has been *recorded* there. Neither is a reason to look less hard.

@@ -73,12 +73,10 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 | `tdd-discount-codes` | `tdd` | red run before the first `src/cart.mjs` write, ≥ 4 passing tests, suite ran ≥ 2× |
 | `critical-premortem` | `critical` | steelman heading, line-cited finding, no self-score, llm: grounded findings |
 | `confidence-plan-gaps` | `confidence` | `Final:` ≤ 89%, names missing Acceptance Criteria, names the dangling path |
-| `severity-billing-floor` | `severity` | `Severity: high` (billing path floor) |
-| `severity-fixture-exclusion` | `severity` | `Severity: low` (fixture exclusion gate) |
 | `aw-create-plan-artifact` | `aw-create-plan` | `.agent/*/plan.md`, `.agent/*/checks.yaml`, `AC-n (covers: Rn)`, llm: testable criteria |
 | `holistic-analysis-wrong-total` | `holistic-analysis` | names the string concatenation, llm: fix at the load boundary |
 | `optimize-approach-reuse` | `optimize-approach` | names `uniqueBy`, llm: approach-level, behaviour-preserving |
 | `ux-signup-form` | `ux` | error association, labelled toggle or target size, llm: ≥ 5 of 7 defects |
 | `behavioral-design-local-tests` | `behavioral-design` | names a barrier, no shaming, llm: diagnosis → intervention → metric |
-| `trigger-critical`, `trigger-confidence`, `trigger-severity` | each named skill | `Skill` fired |
+| `trigger-critical`, `trigger-confidence` | each named skill | `Skill` fired |
 | `trigger-neg-aw-question`, `trigger-neg-aw-here` | `aw` | `aw` / `autonomous-workflow` not fired |

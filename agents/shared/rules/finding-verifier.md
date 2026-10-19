@@ -130,7 +130,7 @@ Only the score's **source** moves: from `Skill("confidence", "code")` on the cod
 Score and severity answer different questions and are never merged.
 
 - **This rubric**: is the finding real? (`confidence`)
-- **`Skill("severity", "finding")`**: how bad if it is? (`critical` / `high` / `medium` / `low`)
+- **[`severity.md`](./severity.md)**: how bad if it is? (`critical` / `high` / `medium` / `low`)
 
 Both run in the same pass. The severity-tiered thresholds and the `(blocking)` crosswalk are unchanged.
 

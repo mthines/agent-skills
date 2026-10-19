@@ -328,7 +328,7 @@ job per suite — so labelling a one-rubric PR costs one suite, not nine.
 
 ```bash
 git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
-node scripts/eval/select-suites.mjs --json skills/quality/severity/SKILL.md
+node scripts/eval/select-suites.mjs --json agents/shared/rules/severity.md
 node scripts/eval/select-suites.mjs --self-test    # executed by L1 G114
 ```
 
