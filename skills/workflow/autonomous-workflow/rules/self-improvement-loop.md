@@ -36,7 +36,7 @@ contain thin invocation blocks that reference the anchors here.
 
 ## Why two tiers
 
-A run that learns something — "the accessibility-check trigger didn't fire because the glob
+A run that learns something — "the `ux` trigger didn't fire because the glob
 missed `.tsx` in a nested dir" — needs somewhere to put that lesson so the
 **next** run does better. There are two places it can go, and the loop uses
 **both**, connected by a recurrence gate:
@@ -119,7 +119,7 @@ with a **tag** and a **key namespace**:
 
 - Every `aw-lessons` lesson carries the tag `loop::aw-lessons`.
 - Every key lives in the `aw-lessons::` namespace, e.g.
-  `aw-lessons::a11y-check-missed-nested-tsx`.
+  `aw-lessons::ux-trigger-missed-nested-tsx`.
 
 Reads filter by the tag; writes always include it. Same `scope` + `key`
 overwrites in place — that is what makes recurrence (below) countable.

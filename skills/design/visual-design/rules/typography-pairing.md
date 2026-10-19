@@ -25,8 +25,8 @@ tags:
 
 This rule covers **type personality and pairing** — choosing fonts and
 combining them so the result feels intentional. For size minimums, line
-length, line height, and dynamic-type rules, use the fixed floor in
-[`SKILL.md` § Accessibility floor](../SKILL.md#accessibility-floor).
+length, line height, and dynamic-type rules, defer to
+[`/ux/rules/visual-design.md`](../../ux/rules/visual-design.md).
 
 ## The one-family rule
 
@@ -160,7 +160,7 @@ A skill for delivery is a skill for design, briefly:
 - **Body font used at 72 px.** Body fonts are designed for legibility,
   not drama. They look weak at display sizes.
 - **No mono for numbers or IDs.** Misalignment in tables and dashboards.
-- **Weight 100–300 body on white.** Often fails the 4.5:1 contrast floor,
+- **Weight 100–300 body on white.** Often fails contrast (see `/ux`),
   also looks anaemic.
 - **`text-transform: uppercase` on long passages.** Reads slowly. Use
   ALL CAPS only on short labels.

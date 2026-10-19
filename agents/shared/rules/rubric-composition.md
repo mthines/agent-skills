@@ -9,7 +9,7 @@ tags:
 
 # Rubric composition
 
-`pr-reviewer` loads multiple review rubrics: `quality` (always for substantive diffs — the inline checklist under [Load order](#load-order)), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
+`pr-reviewer` loads multiple review rubrics: `quality` (always for substantive diffs — the inline checklist under [Load order](#load-order)), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 
@@ -40,11 +40,10 @@ Strict order so dedup is deterministic:
    - **Neighbour patterns:** the change matches the structure and conventions of neighbouring files.
    - **Approach:** is there a materially simpler approach or an existing utility that does this?
      Flag it as a `suggestion:` naming the simpler approach or the utility's `path:line`; never flag a matter of taste.
-   - **Accessibility (UI files only — `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}`):** check accessibility (labels, keyboard, focus, contrast) for UI changes.
-     Flag a missing accessible name, an unreachable control, a lost focus ring, or a contrast regression as an `issue:` citing the element's `path:line`.
-2. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
+2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
+3. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
    `--no-critical` suppresses the config and the heuristic.
-3. `--with` lenses (max 3, in the order given on the command line).
+4. `--with` lenses (max 3, in the order given on the command line).
 
 ## Auto-engage heuristics for `critical`
 
@@ -232,6 +231,10 @@ Each rubric uses its own severity vocabulary. Map to the 5-category Conventional
 | `quality` | error / blocking | `issue` |
 | `quality` | warn / non-blocking | `suggestion` |
 | `quality` | info / nit | `nitpick` |
+| `ux` | Critical | `issue` |
+| `ux` | High | `issue` |
+| `ux` | Medium | `suggestion` |
+| `ux` | Low | `nitpick` |
 | `critical` | Must-fix | `issue` |
 | `critical` | Should-fix | `suggestion` |
 | `critical` | Nice-to-have | `nitpick` |

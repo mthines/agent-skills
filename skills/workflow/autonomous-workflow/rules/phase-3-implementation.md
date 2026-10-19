@@ -18,7 +18,7 @@ tags:
 - [Core Principles](#core-principles)
 - [Procedure](#procedure)
 - [TDD Trigger](#tdd-trigger)
-- [Accessibility Check](#accessibility-check)
+- [UX Trigger](#ux-trigger)
 - [Observability Trigger](#observability-trigger)
 - [Implementation Checklist](#implementation-checklist)
 - [References](#references)
@@ -172,7 +172,7 @@ Invoke companions at the moments described below. Detailed trigger conditions,
 invocation, and disable instructions live in:
 
 - [TDD Trigger](#tdd-trigger) — pure logic / business rules
-- [Accessibility Check](#accessibility-check) — UI files touched (inline check, no companion)
+- [UX Trigger](#ux-trigger) — UI files touched
 - [Observability Trigger](#observability-trigger) — API/handler or user-facing files touched
 
 **No companion blocks the workflow, and every one is reported `ran` or `skipped (<reason>)`** — log the result and continue.
@@ -212,7 +212,7 @@ Progress Log in `.agent/{branch}/plan.md`:
 ```markdown
 - [2026-04-29T15:42:10Z] Phase 3: Implemented ThemeContext + ThemeToggle
 - [2026-04-29T15:48:33Z] Phase 3: Updated Tailwind config for dark mode classes
-- [2026-04-29T15:51:05Z] Phase 3: accessibility check — ran (2 contrast fixes integrated)
+- [2026-04-29T15:51:05Z] Phase 3: ux() — ran (2 contrast suggestions integrated)
 - [2026-04-29T15:55:12Z] Phase 3: measurable(implement) — skipped (not installed)
 ```
 
@@ -296,9 +296,9 @@ Disable: remove the `Skill("tdd")` invocation from this section. Registry:
 
 ---
 
-## Accessibility Check
+## UX Trigger
 
-This is an inline check, not a companion skill — it has no registry row and cannot be missing.
+This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
 
 **When:** files written or edited in this phase include any of:
 
@@ -309,24 +309,16 @@ This is an inline check, not a companion skill — it has no registry row and ca
 | `*.svelte`                           | Svelte components                                 |
 | React Native screens                 | `screens/**/*.tsx`, Expo Router `app/**/*.tsx`    |
 
-Check accessibility (labels, keyboard, focus, contrast) for UI changes, after the UI files are written and before Phase 4 testing:
-
-| Check    | Pass criterion                                                                 |
-| -------- | ------------------------------------------------------------------------------ |
-| Labels   | Every interactive element has an accessible name (visible label, `aria-label`, or `aria-labelledby`) |
-| Keyboard | Every control is reachable and operable with Tab / Enter / Space / Escape       |
-| Focus    | A visible focus indicator exists; focus moves to opened dialogs and returns on close |
-| Contrast | Text ≥ 4.5:1 (≥ 3:1 for large text and UI component boundaries)                |
-
-```tsx
-// ✗ Wrong — icon-only button with no accessible name
-<button onClick={close}><XIcon /></button>
-// ✓ Right
-<button onClick={close} aria-label="Close dialog"><XIcon /></button>
+```bash
+Skill("ux")
 ```
 
-Fix every failing row in this phase.
-Progress Log entry: `[TIMESTAMP] Phase 3: accessibility check — ran (<N> fixes)` (or `skipped (no UI files)`).
+| Behavior                       | Detail                                                              |
+| ------------------------------ | ------------------------------------------------------------------- |
+| When to invoke                 | After the UI files are written, before Phase 4 testing              |
+| Purpose                        | Catch accessibility / design issues while changes are fresh         |
+| If skill missing               | Log `ux() — skipped (not installed)`; do a manual a11y scan if confident |
+| Progress Log entry             | `[TIMESTAMP] Phase 3: ux() — ran` (or `skipped (<reason>)`) |
 
 **Locator stability note.** Accessible names also serve E2E test stability.
 When implementing UI, prefer semantic HTML and accessible names (`getByRole`,
@@ -337,6 +329,8 @@ canvas-rendered elements, ambiguous repeated rows). When you do, commit the
 selector workaround in a test. Full criteria:
 [`e2e-testing/rules/locator-strategy.md`](../../../testing/e2e-testing/rules/locator-strategy.md).
 
+Disable: remove the `Skill("ux")` invocation from this section. Registry:
+[`companion-skills.md`](./companion-skills.md#registry).
 
 ---
 

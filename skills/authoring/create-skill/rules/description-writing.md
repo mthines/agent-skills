@@ -159,7 +159,7 @@ description: >
   Reviews UI diffs for accessibility and dark-pattern violations. Applies
   even when the user only asks for a general code review of a
   frontend change — not just when they say "accessibility" or "a11y".
-  Triggers on "check accessibility", "review this UI", "/a11y-review".
+  Triggers on "check accessibility", "review this UI", "/ux".
 ```
 
 For a `disable-model-invocation: true` skill, do the opposite: keep the

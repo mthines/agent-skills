@@ -132,6 +132,7 @@ Problem framing measurably shapes ideation breadth and direction (§2.5) — ski
 | ------------------- | --------------------------------------------------------------- | ----------------------------------------------------------- |
 | `confidence`        | Phase 5, on the finalist recommendation.                        | `Skill("confidence", "analysis")`                           |
 | `critical`          | Deep mode, top finalist (automatic); any finalist on request.   | `Skill("critical", "analysis")` — run inside a fresh subagent so the pre-mortem stays adversarial and the main context stays lean. |
+| `ux`                | Finalists that are UI/UX or product-surface concepts.           | `Skill("ux")` as a lens on the finalist.                    |
 | `lorekit-memory` (LoreKit `memory.*` tools) | Phases 0 and 7.                        | See [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md). |
 
 `confidence` is required; the others are optional — a missing one never blocks, and is reported in one line (`<name> — skipped (not installed | not connected)`), never silently.

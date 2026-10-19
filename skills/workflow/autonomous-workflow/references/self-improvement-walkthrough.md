@@ -30,11 +30,11 @@ authoritative contract is the loop file.
 
 ## The recurring failure
 
-The Phase 3 accessibility check is triggered by the glob `*.tsx`, `*.jsx`,
+The `ux` companion (Phase 3) is triggered by the glob `*.tsx`, `*.jsx`,
 `*.vue`, `*.svelte`. A React Native project keeps screens at
 `src/screens/**/Foo.screen.tsx`. The glob matches `.tsx`, but on three separate
 features the agent edited files under a nested `components/` dir whose names did
-not surface in the trigger's path check, so the check never ran and an a11y
+not surface in the trigger's path check, so `ux` never ran and an a11y
 regression shipped each time.
 
 ---
@@ -45,7 +45,7 @@ Phase 4 escalates (a UX bug surfaced late). The executor writes a lesson:
 
 ```
 # Universal candidate → global.
-memory.write { scope: "global", key: "aw-lessons::a11y-check-missed-nested-tsx", value: "<body below>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop", ttl_days: 90 }
+memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<body below>", tags: ["loop::aw-lessons", "source::stuck-loop"], source_agent: "aw", trigger: "stuck-loop", ttl_days: 90 }
 ```
 
 Resolves to **ADD** (no existing `global` entry under that key). The `value` is
@@ -53,18 +53,18 @@ markdown and nothing else — the count, the expiry, and the trigger all travel 
 first-class `memory.write` fields, never as a hidden block inside the body:
 
 ```markdown
-# Run the accessibility check for any *.tsx at any depth, not just flat globs
+# Run `ux` for any *.tsx at any depth, not just flat globs
 
 **Applies when:** RN / nested `*.tsx` under `components/` or `screens/`
 
-**What happened:** The Phase 3 accessibility-check trigger didn't fire on `src/screens/.../X.tsx`;
+**What happened:** The Phase 3 `ux` trigger didn't fire on `src/screens/.../X.tsx`;
 an a11y regression shipped.
 **Why:** trigger path-check matched flat globs only; nested RN screens slipped.
-**Do this instead:** when the diff touches any `*.tsx`/`*.jsx` at any depth, run the accessibility check.
-**Promotion target:** phase-3-implementation.md#accessibility-check (widen the glob)
+**Do this instead:** when the diff touches any `*.tsx`/`*.jsx` at any depth, run `ux`.
+**Promotion target:** phase-3-implementation.md#ux-trigger (widen the glob)
 ```
 
-Log: `Phase 4: lorekit(memory.write global aw-lessons::a11y-check-missed-nested-tsx) — ADD, seen_count=1`.
+Log: `Phase 4: lorekit(memory.write global aw-lessons::ux-trigger-missed-nested-tsx) — ADD, seen_count=1`.
 
 ---
 
@@ -72,9 +72,9 @@ Log: `Phase 4: lorekit(memory.write global aw-lessons::a11y-check-missed-nested-
 
 A different RN feature, weeks later. At **Phase 1** the planner reads
 `loop::aw-lessons` (`global` scope); the lesson's **Applies when** line ("nested
-`*.tsx`") matches the task, so it is applied as a plan constraint ("run the accessibility check for
+`*.tsx`") matches the task, so it is applied as a plan constraint ("run `ux` for
 the nested screens").
-The agent runs the accessibility check this time — good, the fast tier already helped.
+The agent runs `ux` this time — good, the fast tier already helped.
 
 This write is mandated by the applied-lesson UPDATE contract
 ([`self-improvement-loop.md`](../rules/self-improvement-loop.md#fast-tier--write-lessons)):
@@ -88,8 +88,8 @@ recurrence:
 
 ```
 # Dedup finds the existing entry; same scope + key → UPDATE in place.
-memory.search { q: "a11y check nested tsx", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
-memory.write { scope: "global", key: "aw-lessons::a11y-check-missed-nested-tsx", value: "<updated body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run", ttl_days: 90 }
+memory.search { q: "ux trigger nested tsx", scopes: ["repo::{owner}/{repo}", "global"], limit: 10 }
+memory.write { scope: "global", key: "aw-lessons::ux-trigger-missed-nested-tsx", value: "<updated body>", tags: ["loop::aw-lessons", "source::end-of-run"], source_agent: "aw", trigger: "end-of-run", ttl_days: 90 }
 ```
 
 The candidate matches the existing entry (same scope + key) → resolves to
@@ -97,7 +97,7 @@ The candidate matches the existing entry (same scope + key) → resolves to
 `ttl_days` refreshes the expiry.
 Neither number is written by hand into the body.
 
-Log: `Phase 7: lorekit(memory.write global aw-lessons::a11y-check-missed-nested-tsx) — UPDATE, seen_count=2`.
+Log: `Phase 7: lorekit(memory.write global aw-lessons::ux-trigger-missed-nested-tsx) — UPDATE, seen_count=2`.
 
 ---
 
@@ -108,9 +108,9 @@ end-of-run UPDATE bumps `seen_count → 3`. The read/write step now sees
 `seen_count >= 3` and surfaces the **promotion suggestion** (it does not act):
 
 ```
-Lesson "Run the accessibility check for any *.tsx at any depth, not just flat globs" has recurred 3 times
+Lesson "Run `ux` for any *.tsx at any depth, not just flat globs" has recurred 3 times
 (phase 3). Promote it to a permanent guard?  Run:
-/create-skill diagnose autonomous-workflow --symptom "a11y check misses nested .tsx"
+/create-skill diagnose autonomous-workflow --symptom "ux trigger misses nested .tsx"
 ```
 
 ---
@@ -124,8 +124,8 @@ The user runs the suggested command. Diagnose Mode:
 2. **Step 2** reads `aw-lessons` as evidence and finds the promotion-eligible
    lesson — `seen_count=3` is strong evidence this is a real recurring class,
    and the lesson already names the fix and target file.
-3. **Step 4** attributes the failure to Phase 3 (`accessibility-check`).
-4. **Step 5** proposes one diff: widen the accessibility-check trigger to match `*.tsx`/`*.jsx`
+3. **Step 4** attributes the failure to Phase 3 (`ux-trigger`).
+4. **Step 5** proposes one diff: widen the `ux` trigger to match `*.tsx`/`*.jsx`
    at any depth.
 5. **Step 6** runs `confidence(analysis)` → 93 % (the recurrence evidence and a
    concrete, mechanical change clear the gate).

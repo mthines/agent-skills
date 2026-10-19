@@ -118,7 +118,7 @@ Phase 2: Worktree Setup - MANDATORY
     | Skill("aw-create-plan") <- generates plan.md INSIDE worktree at .agent/{branch}/
     | (worktree created, plan.md written)
 Phase 3: Implementation (Full: follow plan.md, update Progress Log)
-    | tdd companion + a11y check per task type, fast-check after each edit
+    | tdd / ux companions per task type, fast-check after each edit
     | (code complete)
 Phase 4: Testing & Iteration <- mode-aware cap (3 Lite / 5 Full) per failing area
     | At the cap: confidence(analysis) -> one-shot auto-replan, then escalate to user

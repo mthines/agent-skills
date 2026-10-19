@@ -62,6 +62,7 @@ AW_SKILLS=(
   confidence
   polish
   tdd
+  ux
   docs
   review-loop
   implement-suggestion

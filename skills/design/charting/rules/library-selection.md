@@ -74,7 +74,7 @@ Pin every recommendation to a **dataset-size bracket** and a **design-system con
 
 ### Mobile-specific constraints
 
-- **Touch targets and gestures** — 44pt iOS / 48dp Android minimum. Charts are not exempt.
+- **Touch targets and gestures** — defer to the `ux` skill (44pt iOS / 48dp Android minimum). Charts are not exempt.
 - **Canvas size** — never render a chart smaller than 280 × 160 pt on a phone. If smaller, use a sparkline.
 - **GPU rendering** — prefer Skia-backed libraries for any chart with > 200 points or animation; SVG-only paths jank on mid-range Android.
 - **Server-rendered apps** — Next.js / web SSR rules do not apply on RN; hydration is not a concern.

@@ -74,6 +74,7 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 | `critical-premortem` | `critical` | steelman heading, line-cited finding, no self-score, llm: grounded findings |
 | `confidence-plan-gaps` | `confidence` | `Final:` ≤ 89%, names missing Acceptance Criteria, names the dangling path |
 | `aw-create-plan-artifact` | `aw-create-plan` | `.agent/*/plan.md`, `.agent/*/checks.yaml`, `AC-n (covers: Rn)`, llm: testable criteria |
+| `ux-signup-form` | `ux` | error association, labelled toggle or target size, llm: ≥ 5 of 7 defects |
 | `behavioral-design-local-tests` | `behavioral-design` | names a barrier, no shaming, llm: diagnosis → intervention → metric |
 | `behavioral-design-hard-postmortems` | `behavioral-design` | comparison or re-measure design, llm: diagnosis, steers off the performance-review link, ease lever first, system-of-record metric |
 | `behavioral-design-hard-review-sla` | `behavioral-design` | baseline measured, llm: ≥ 2 barriers, friction-removing default first, no individual ranking, GitHub-data metric |

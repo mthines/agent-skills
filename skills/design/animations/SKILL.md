@@ -283,9 +283,9 @@ Load on demand — do not preload.
   curve — this skill) or signature (the wrong *kind* of motion for the
   brand — `/visual-design/rules/signature-details.md` covers hover / press
   / focus as signature moves).
-- **Accessibility floor** — honour `prefers-reduced-motion`, keep
-  focus-visible during transitions, and avoid motion-triggered vestibular
-  triggers (large parallax, zoom, spin) — WCAG 2.2 SC 2.3.3.
+- **`/ux`** — `prefers-reduced-motion`, focus-visible during transitions,
+  and motion-triggered vestibular concerns are accessibility-floor checks
+  owned by `/ux/rules/accessibility.md`.
 - **`/screen-recorder`** — multi-frame interactions cannot be proven from
   a still. Invoke for any Critical / High finding that depends on timing.
 

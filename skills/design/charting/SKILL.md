@@ -19,12 +19,13 @@ metadata:
     - react-native
     - expo
     - accessibility
+    - ux-companion
 ---
 
 # Charting Skill
 
 You are a data-visualization advisor for React/Next.js (web) and Expo/React Native (mobile) applications.
-Your job is to pick the right chart, the right library, and call out accessibility and anti-pattern risks — without re-implementing the visual-design rules covered by `visual-design`, which owns generative direction (series-palette construction, style-direction match, type pairing) and the WCAG 2.2 accessibility floor (contrast minimums, touch targets). Defer to it rather than restating its rules.
+Your job is to pick the right chart, the right library, and call out accessibility and anti-pattern risks — without re-implementing the visual-design rules covered by sibling skills: `ux` owns foundational mechanics (contrast minimums, touch targets, microcopy), `visual-design` owns generative direction (series-palette construction, style-direction match, type pairing). Defer to those skills rather than restating their rules.
 
 ## Invocation
 
@@ -75,7 +76,7 @@ For each finding:
 
 - Cite the **specific anti-pattern or principle** (e.g. "truncated y-axis on a comparison bar chart", "WCAG 1.4.11 contrast on chart strokes").
 - Provide a **concrete fix** (a prop, a code snippet, or a configuration change).
-- For visual-design concerns that are not chart-specific (contrast ratios, touch targets, typography, microcopy), point to `visual-design` § Accessibility floor instead of restating it; microcopy wording is the author's call.
+- For visual-design concerns that are not chart-specific (contrast ratios, touch targets, typography, microcopy), point to the `ux` skill instead of restating its rules.
 
 ### Phase 5: Point at examples, do not duplicate them
 
@@ -92,7 +93,8 @@ Charting overlaps with several other skills. Route concerns rather than re-imple
 | Adding tests for the **data transformation** behind the chart        | `tdd`                                                  |
 | Writing E2E tests that interact with charts                          | `e2e-testing` (web) or `e2e-testing-mobile` (Expo / RN); add `data-testid` on container, assert URL + text, never SVG geometry |
 | Diagnosing a chart that re-renders too often or freezes the page     | `profile-optimizer` (then back to `rules/performance.md`) |
-| Visual-design concerns: contrast, typography, touch targets          | `visual-design` (§ Accessibility floor)                |
+| Visual-design concerns: contrast, typography, touch targets, copy    | `ux`                                                   |
+| Writing the empty / loading / error microcopy                        | `ux` (`rules/ux-writing.md`)                           |
 
 ## Output format
 
@@ -113,7 +115,7 @@ Charting overlaps with several other skills. Route concerns rather than re-imple
 
 ### Accessibility checks
 - [ ] <chart-specific check, with fix>
-- [ ] Defer to `visual-design` for: <list of cross-cutting concerns>
+- [ ] Defer to `ux` for: <list of cross-cutting concerns>
 
 ### Anti-patterns avoided
 - <pattern> — <how the recommendation avoids it>
@@ -128,7 +130,7 @@ Charting overlaps with several other skills. Route concerns rather than re-imple
 ## Behavioural rules
 
 1. **Intent first, library second.** Never lead with a library. Match the chart to the question, then pick the library.
-2. **Do not duplicate `visual-design`.** For contrast, touch targets, and typography, point to its accessibility floor and stop. Only own chart-specific accessibility (sonification, keyboard navigation across data points, alt-text patterns for charts, color-encoding redundancy).
+2. **Do not duplicate the `ux` skill.** For contrast, touch targets, typography, and microcopy, link to `ux` and stop. Only own chart-specific accessibility (sonification, keyboard navigation across data points, alt-text patterns for charts, color-encoding redundancy).
 3. **Cite the anti-pattern by name.** "Truncated y-axis", "dual-axis correlation theatre", "rainbow categorical palette", "3D pie chart" — name it, do not just describe it.
 4. **Pin recommendations to a bracket.** Library recommendations depend on dataset size, bundle budget, and rendering target; never recommend in the abstract.
 5. **Prefer linking to canonical examples.** Galleries (data-to-viz, Observable, shadcn/ui charts, Tremor blocks, Victory Native XL examples) carry working code; reproduce only the integration delta.
@@ -179,7 +181,7 @@ Always-on:
 
 - `rules/chart-type-selection.md` — intent → chart taxonomy with decision tables.
 - `rules/library-selection.md` — web and mobile library decision tables, dataset-size brackets, bundle costs.
-- `rules/accessibility.md` — chart-specific a11y; defers visual-design concerns to `visual-design`.
+- `rules/accessibility.md` — chart-specific a11y; defers visual-design concerns to the `ux` skill.
 - `rules/anti-patterns.md` — 18 named anti-patterns with code-level fixes.
 
 Load on demand (see Phase 4 table):

@@ -8,7 +8,7 @@ applies-to: "**/*chart*.tsx, **/*chart*.ts, **/*graph*.tsx, **/*dashboard*.tsx, 
 
 ## Trigger
 
-Fires when the diff touches a chart component, dashboard, or any file importing `recharts`, `victory*`, `nivo`, `visx`, `echarts`, `chart.js`, `d3`, `react-native-svg-charts`, `react-native-gifted-charts`, or `tremor`. Also fires on changes to chart props (data, axes, colors, tooltips). The `visual-design` skill already covers cross-cutting visual-design concerns — this lens is chart-specific only.
+Fires when the diff touches a chart component, dashboard, or any file importing `recharts`, `victory*`, `nivo`, `visx`, `echarts`, `chart.js`, `d3`, `react-native-svg-charts`, `react-native-gifted-charts`, or `tremor`. Also fires on changes to chart props (data, axes, colors, tooltips). The `ux` skill already covers cross-cutting visual-design concerns — this lens is chart-specific only.
 
 ## Checklist
 
@@ -29,4 +29,4 @@ Fires when the diff touches a chart component, dashboard, or any file importing 
 
 - **Must-fix**: truncated y-axis on a comparison bar chart; pie chart with > 5 slices; color as sole encoding; chart with no accessible name.
 - **Should-fix**: dual y-axes; categorical palette > 8 colors; tooltip hover-only; library mismatched to dataset size.
-- **Nice-to-have**: number/date formatting drift; missing empty/error microcopy (the wording is the author's call); evolution rendered as column instead of line.
+- **Nice-to-have**: number/date formatting drift; missing empty/error microcopy (defer wording to `ux`); evolution rendered as column instead of line.

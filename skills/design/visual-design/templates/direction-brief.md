@@ -62,11 +62,11 @@ Scale ratio: <1.125 / 1.25 / 1.333 / 1.5>.
 <copy-pasteable code applying tokens, type, signature moves>
 ```
 
-### Accessibility floor
+### Defer to /ux
 
 - Contrast pairs to verify with WCAG: <list of pairs>
 - Touch targets to verify: <list>
-- Dark mode posture: <one line — light variant first, every pair re-verified in dark>
+- Dark mode posture: <one line — light variant first, dark via /ux>
 
 ---
 
@@ -96,4 +96,4 @@ stay sans-only?">
 3. Build sample component(s): <list>.
 4. Run `/visual-design review` after the first 2–3 components ship to
    verify direction holds.
-5. Verify every contrast pair and touch target against the accessibility floor in `SKILL.md`.
+5. Run `/ux` for accessibility + microcopy pass.

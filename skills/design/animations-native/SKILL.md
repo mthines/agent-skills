@@ -140,7 +140,7 @@ Load on demand — do not preload.
 
 - **[`animations`](../animations/SKILL.md)** — the web sibling. It owns CSS, Motion, View Transitions, and the shared brainstorm / verb→motion catalog this skill references. Use it for web targets; use this for React Native / Expo.
 - **[`/visual-design`](../visual-design/SKILL.md)** — motion personality is a brand signal. Commit to a style direction there, then return here for the mechanics.
-- **Accessibility floor** — honour Reduce Motion (`useReducedMotion()`), keep touch targets ≥ 44 pt iOS / 48 dp Android, and give every gesture a tappable alternative.
+- **[`/ux`](../ux/SKILL.md)** — Reduce Motion, touch-target sizing, and gesture affordances are accessibility-floor checks owned by `/ux`.
 
 ---
 

@@ -1,16 +1,17 @@
 ---
-title: Integrations — Handshake with `animations`, `pr-reviewer`, and `storybook`
+title: Integrations — Handshake with `animations`, `ux`, and `pr-reviewer`
 impact: HIGH
 tags:
   - integrations
   - animations
+  - ux
   - pr-reviewer
   - skill-call
 ---
 
 # Integrations
 
-This skill is callable by three other consumers via `Skill("screen-recorder")`.
+This skill is callable by four other consumers via `Skill("screen-recorder")`.
 Each consumer has a specific reason to invoke and a specific input shape.
 The rule below is the **contract** — when changing this skill, update the
 call sites listed at the bottom.
@@ -19,8 +20,9 @@ call sites listed at the bottom.
 
 - Contract — what callers pass
 - Caller 1 — `animations` skill
-- Caller 2 — `pr-reviewer` agent
-- Caller 3 — `storybook` skill
+- Caller 2 — `ux` skill
+- Caller 3 — `pr-reviewer` agent
+- Caller 4 — `storybook` skill
 - Downstream sink — `video-analyser` skill (record → analyse → iterate)
 - Return value contract
 - Call-site inventory
@@ -99,7 +101,56 @@ attachToDelivery({ default: baseClip, reduced: reducedClip });
 Two recordings (`default` + `reduced`) is the canonical pattern — never
 ship a `prefers-reduced-motion`-aware animation without both clips.
 
-## Caller 2 — `pr-reviewer` agent
+## Caller 2 — `ux`
+
+### When `ux` calls
+
+When a finding's severity is Critical or High **and** the finding
+concerns one of:
+
+- Timing claims (response thresholds, debounce, perceived latency).
+- Motion claims (entry / exit animations, choreography).
+- Focus order / focus-ring visibility.
+- Hover- or focus-revealed information.
+- Interaction feedback (haptics-equivalent: press states, ripple,
+  highlight).
+
+Lower-severity findings get a still screenshot, not a recording.
+
+### Required inputs from `ux`
+
+- `url` — the page hosting the component.
+- `selector` — the component's stable handle (raise the `data-testid`
+  recommendation if it does not have one — see
+  [`interactions.md`](./interactions.md)).
+- `interaction` — encoded from the finding type:
+
+  | Finding concerns… | `interaction` recipe    |
+  | ----------------- | ----------------------- |
+  | Hover reveal      | `hover`                 |
+  | Focus ring        | `tab-to`                |
+  | Entry animation   | `idle`                  |
+  | Modal entrance    | `click` (on the opener) |
+  | Drag affordance   | `drag-to`               |
+
+- `context.finding-id` — the finding's `[file:line]` from the `ux`
+  report, so the artifact filename references back to the finding.
+
+### `ux` report integration
+
+The `ux` skill emits findings under `### Critical (must fix)` and
+`### High (should fix)`.
+When a recording is produced, append a line under the finding:
+
+```markdown
+- **services/Sidebar.tsx:42** — Hover reveal hides primary nav
+  Principle: Fitts's Law / discoverability
+  Issue: …
+  Fix: …
+  Recording: `.agent/recordings/<slug>/<slug>.webm`
+```
+
+## Caller 3 — `pr-reviewer` agent
 
 ### When `pr-reviewer` calls
 
@@ -155,7 +206,7 @@ It does not touch `gh`, and `pr-reviewer` has no `Motion evidence` slot — its 
 The recording is a local artifact for the reviewer to inspect.
 To put it on a PR, the caller that owns the PR, never `pr-reviewer`, delegates: `Skill("attach-media", "<pr-url> <RECORDING_PATH> --to comment")`. Never paste the local path into the PR.
 
-## Caller 3 — `storybook`
+## Caller 4 — `storybook`
 
 ### When `storybook` calls
 
@@ -181,7 +232,7 @@ recordings this skill produces, and the encode defaults are tuned for
 it. The relationship is one-directional:
 
 ```text
-caller (animations / pr-reviewer / storybook)
+caller (animations / ux / pr-reviewer)
    │
    ▼  Skill("screen-recorder", { ... })
 screen-recorder ──► .agent/recordings/<slug>/<slug>.webm
@@ -269,7 +320,8 @@ When this skill's contract changes, update these call sites:
 | Skill / agent                                             | Section that calls                                                         |
 | --------------------------------------------------------- | -------------------------------------------------------------------------- |
 | [`skills/design/animations/SKILL.md`](../../../design/animations/SKILL.md) | Phase 7 "Measure" — append two `Skill("screen-recorder")` calls.           |
-| [`agents/pr-reviewer.md`](../../../../agents/pr-reviewer.md)  | Step 2 "Analysis" — after the rubrics, when motion heuristics match.         |
+| [`skills/design/ux/SKILL.md`](../../../design/ux/SKILL.md)                 | Phase 3 "Report" — invoke for Critical / High findings on motion concerns. |
+| [`agents/pr-reviewer.md`](../../../../agents/pr-reviewer.md)  | Step 2 "Analysis" — after UX rubric, when motion heuristics match.         |
 | [`skills/design/storybook/rules/visual-verification.md`](../../../design/storybook/rules/visual-verification.md) | "When `screen-recorder` is the right tool" — `Skill()` call for multi-frame interactions. |
 
 ## Common mistakes
@@ -281,11 +333,11 @@ When this skill's contract changes, update these call sites:
   The skill cannot disambiguate default behaviour (e.g., `mp4` for
   pr-reviewer, double-recording for `animations`).
   **Fix:** every call site sets `caller:`.
-- **Skipping the `data-testid` ladder.**
-  The skill rejects brittle selectors; the caller must propose a
+- **Skipping the `data-testid` ladder when `ux` calls.**
+  The skill rejects brittle selectors; the `ux` caller must propose a
   source diff first.
   **Fix:** if no stable handle exists, surface the recommendation in
-  the caller's finding instead of recording.
+  the `ux` finding instead of recording.
 - **Recording without the dev server / preview deploy reachable.**
   Caller responsibility — the skill probes but does not start servers.
   **Fix:** caller ensures reachability before invoking.

@@ -153,7 +153,7 @@ The tier field answers *how deep this run was routed*; it was never the right pl
 
 **Why `confidence` is enhancement, not spine.**
 `confidence` looks load-bearing — it used to gate every posted comment — but [`finding-verifier.md`](./finding-verifier.md) § Step 4 moved the per-comment score's *source* from `Skill("confidence", "code")` to the in-agent verifier rubric (Reproducible 40 % / Attributable 30 % / Actionable 30 %).
-[`per-comment-confidence.md`](./per-comment-confidence.md) § Where the score comes from now states plainly that `confidence(code)` is only the **fallback** path — a `quick`-tier run with no workspace, or a finding from a lens that emits outside the finder pipeline (`critical`, `--with …`).
+[`per-comment-confidence.md`](./per-comment-confidence.md) § Where the score comes from now states plainly that `confidence(code)` is only the **fallback** path — a `quick`-tier run with no workspace, or a finding from a lens that emits outside the finder pipeline (`ux`, `--with …`).
 Its one other use, the advisory overall-verdict check in `terminal-report.md`, is terminal-only and never posted.
 Neither use sits on the critical inline-scoring path, so a genuine `confidence` skip degrades a fallback the run may not even need, not the spine — enhancement, same loud `RUN_ANOMALY` treatment as the other enhancement lenses, `RUN.tier` untouched either way.
 

@@ -244,8 +244,8 @@ If the heal loop fails to converge:
 - [`confidence`](../../quality/confidence/SKILL.md) — gate when the heal loop fails.
 - If a flow is failing for reasons no flow rewrite can fix, step back instead of
   patching: re-trace the execution path from entry to exit and re-state the root cause.
-- Review accessibility labels separately from test IDs (the two should
-  never share a value).
+- [`ux`](../../design/ux/SKILL.md) — review accessibility labels separately from
+  test IDs (the two should never share a value).
 
 ---
 

@@ -192,6 +192,7 @@ trigger registry is in
 | 1     | `confidence`           | **Required** | Plan gate (>= 90% to proceed)              |
 | 2     | `aw-create-plan`       | Optional  | Writes `.agent/{branch}/plan.md`              |
 | 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
+| 3     | `ux`                   | Optional  | UI / accessibility review when UI files touched |
 | 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + aw-target exist |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
@@ -236,8 +237,8 @@ Best for per-machine or one-off customization. After running
 you don't want:
 
 ```bash
-# Drop tdd from this machine's install
-rm ~/.claude/skills/tdd
+# Drop tdd and ux from this machine's install
+rm ~/.claude/skills/tdd ~/.claude/skills/ux
 ```
 
 Re-running `bash scripts/sync-symlinks.sh --aw` would re-create them, so commit
@@ -463,6 +464,7 @@ to this skill's source.
 - [`aw-create-walkthrough`](../aw-create-walkthrough/) — `walkthrough.md` artifact generator
 - [`polish`](../../quality/polish/) — simplifies the branch diff and prunes comments (via `review-loop`)
 - [`tdd`](../../quality/tdd/) — RED-GREEN-REFACTOR enforcement
+- [`ux`](../../design/ux/) — UI / accessibility review
 - [`docs`](../../authoring/docs/) — keeps `CLAUDE.md`, `README.md`, and `docs/` in sync
 - [`review-loop`](../../quality/review-loop/) — review → apply → simplify convergence
 - [`create-pr`](../../delivery/create-pr/) — narrative PR description + push + watch

@@ -146,7 +146,7 @@ metadata:
 `metadata.workflow_type` is a free-form repo convention. Use it
 consistently:
 
-- `advisory` — read-only review skill (`critical`, `confidence`).
+- `advisory` — read-only review skill (`critical`, `ux`).
 - `applied` — writes code (`tdd`, `implement-suggestion`).
 - `orchestrator` — calls other skills (`autonomous-workflow`,
   `fix-bug`).

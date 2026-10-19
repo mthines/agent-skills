@@ -59,7 +59,7 @@ What that changes here: **nothing but the source of the number.**
 
 The `confidence(code)` call and its rubric-composition inputs described in § The check remain the
 **fallback** when the verifier did not run — a `quick`-tier run without a workspace, or a finding
-from a lens that emits outside the finder pipeline (`critical`, `--with …`). Both paths return a 0–100
+from a lens that emits outside the finder pipeline (`ux`, `--with …`). Both paths return a 0–100
 **Final** score against the same threshold, so a mixed run does not need two bars.
 
 This file is the canonical owner of `Skill("confidence", "code")`'s cross-harness resolution.

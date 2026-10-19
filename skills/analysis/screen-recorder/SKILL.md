@@ -17,6 +17,7 @@ metadata:
     - video
     - recording
     - animation-validation
+    - ux-validation
     - visual-regression
     - ffmpeg
     - browser-automation
@@ -53,7 +54,7 @@ Reach for this skill when **any** of the following is true:
   a moving image, not a description.
 - The `animations` skill has produced an animation and wants visual
   evidence it hits 60 fps and respects `prefers-reduced-motion`.
-- A review flagged a flow (drag, focus ring, hover reveal,
+- The `ux` skill flagged a flow (drag, focus ring, hover reveal,
   expanding nav, modal entrance) where the asserted UX claim is
   about timing, not layout.
 
@@ -208,13 +209,14 @@ no narration.
 
 ## Phase 6 — Integration callers
 
-This skill is called by three other consumers via `Skill("screen-recorder")`.
+This skill is called by four other consumers via `Skill("screen-recorder")`.
 Full handshake spec: [`rules/integrations.md`](./rules/integrations.md).
 
 | Caller        | When                                                                              | Required inputs                                |
 | ------------- | --------------------------------------------------------------------------------- | ---------------------------------------------- |
 | `animations`  | After Phase 7 ("Measure") to attach a clip to the delivery, or when the user asks "show me". | `url`, `selector`, animation name (becomes `output-name`). |
-| `pr-reviewer` | In PR Mode when the diff matches `animations` / motion heuristics and the PR author has not attached a recording. | `url`, `selector`, PR number (slugs the local artifact — `pr-reviewer` never uploads it). |
+| `ux`          | When a finding is severity Critical / High and concerns timing, motion, focus order, or interaction feedback. | `url`, `selector`, the finding ID.             |
+| `pr-reviewer` | In PR Mode when the diff matches `animations` / `ux` heuristics and the PR author has not attached a recording. | `url`, `selector`, PR number (slugs the local artifact — `pr-reviewer` never uploads it). |
 | `storybook`   | When a scaffolded story includes motion or transitions that a still screenshot cannot prove (multi-frame interactions). | `url` (story permalink), `selector`, story name (becomes `output-name`). |
 
 Callers pass inputs in their `Skill()` call body; this skill never asks
