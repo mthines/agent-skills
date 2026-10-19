@@ -1431,8 +1431,9 @@ export function resolveDepthOverrides(opts, settings) {
 
 /**
  * How many finder passes a run asks for (review-config.md § Run-level knobs, `finder_passes`): a CLI
- * `--finder-passes` beats the config, and the default is one. A CLI value other than 1 or 2 is not
- * coerced — it stays a single pass and comes back in `invalid`, which the caller turns into an anomaly.
+ * `--finder-passes` beats the config, and the default is one. A CLI value other than 1 or 2 is ignored,
+ * never coerced: the config (else the default) decides, and the value comes back in `invalid`, which
+ * the caller turns into an anomaly.
  * @param {{ finderPasses?: string }} opts
  * @param {{ finderPasses?: number|null }} settings
  * @returns {{ passes: 1|2, source: "cli"|"config"|"default", invalid: string|null }}
@@ -1441,11 +1442,23 @@ export function resolveFinderPasses(opts, settings) {
   const cli = opts.finderPasses;
   if (cli !== undefined && cli !== "") {
     if (cli === "1" || cli === "2") return { passes: cli === "2" ? 2 : 1, source: "cli", invalid: null };
-    return { passes: 1, source: "cli", invalid: `--finder-passes ${cli} (expected 1 or 2)` };
+    return { ...resolveFinderPasses({}, settings), invalid: `--finder-passes ${cli} (expected 1 or 2)` };
   }
   if (settings.finderPasses === 2) return { passes: 2, source: "config", invalid: null };
   if (settings.finderPasses === 1) return { passes: 1, source: "config", invalid: null };
   return { passes: 1, source: "default", invalid: null };
+}
+
+/**
+ * The RUN_ANOMALY line for an ignored `--finder-passes` value. It names the pass count the run fell
+ * back to and where that came from, so it never claims one pass on a run whose config makes two.
+ * @param {{ passes: number, source: string, invalid: string|null }} setting
+ * @returns {string[]}
+ */
+export function finderPassesAnomalies(setting) {
+  if (!setting.invalid) return [];
+  const passes = setting.passes === 2 ? "two finder passes" : "one finder pass";
+  return [`ignored invalid ${setting.invalid} — ${passes} from the ${setting.source}`];
 }
 
 /**
@@ -1763,7 +1776,7 @@ async function prepare(opts) {
   anomalies.push(...reviewConfigAnomalies(baseConfig, settings));
   const depthOverrides = resolveDepthOverrides(opts, settings);
   const finderPassesSetting = resolveFinderPasses(opts, settings);
-  if (finderPassesSetting.invalid) anomalies.push(`ignored invalid ${finderPassesSetting.invalid} — one finder pass`);
+  anomalies.push(...finderPassesAnomalies(finderPassesSetting));
   const hsArgs = mergedHighStakes(baseConfig.text, reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
   if (classify.ok) {
@@ -2499,22 +2512,33 @@ async function selfTest() {
     return two.finderPasses === 2 && two.invalid.length === 0 && one.finderPasses === 1
       && bad.every((r) => r.finderPasses === null && r.invalid.length === 1 && r.invalid[0].startsWith("finder_passes:"));
   });
-  t("resolveFinderPasses: the CLI beats the config, the default is one, and a bad CLI value stays one pass", () => {
+  t("resolveFinderPasses: the CLI beats the config, the default is one, and a bad CLI value is ignored, never coerced", () => {
     const cfg2 = { finderPasses: 2 };
     const cliOne = resolveFinderPasses({ finderPasses: "1" }, cfg2);
     const cliTwo = resolveFinderPasses({ finderPasses: "2" }, { finderPasses: null });
     const cfgTwo = resolveFinderPasses({ finderPasses: "" }, cfg2);
     const none = resolveFinderPasses({}, { finderPasses: null });
-    const bad = resolveFinderPasses({ finderPasses: "5" }, cfg2);
+    const badCfg = resolveFinderPasses({ finderPasses: "two" }, cfg2);
+    const badNone = resolveFinderPasses({ finderPasses: "5" }, { finderPasses: null });
     return cliOne.passes === 1 && cliOne.source === "cli" && cliTwo.passes === 2 && cliTwo.source === "cli"
       && cfgTwo.passes === 2 && cfgTwo.source === "config" && none.passes === 1 && none.source === "default"
-      && bad.passes === 1 && bad.source === "cli" && /--finder-passes 5/.test(String(bad.invalid))
+      && badCfg.passes === 2 && badCfg.source === "config" && badCfg.invalid === "--finder-passes two (expected 1 or 2)"
+      && badNone.passes === 1 && badNone.source === "default" && badNone.invalid === "--finder-passes 5 (expected 1 or 2)"
       && [cliOne, cliTwo, cfgTwo, none].every((r) => r.invalid === null);
   });
-  t("prepare() feeds the resolved finder passes into resolveBudget and records them in context.reviewConfig", () => {
+  t("finderPassesAnomalies names the pass count an ignored --finder-passes fell back to, and nothing for a valid value", () => {
+    const two = finderPassesAnomalies(resolveFinderPasses({ finderPasses: "two" }, { finderPasses: 2 }));
+    const one = finderPassesAnomalies(resolveFinderPasses({ finderPasses: "5" }, { finderPasses: null }));
+    const valid = finderPassesAnomalies(resolveFinderPasses({ finderPasses: "2" }, { finderPasses: null }));
+    return two.length === 1 && two[0] === "ignored invalid --finder-passes two (expected 1 or 2) — two finder passes from the config"
+      && one.length === 1 && one[0] === "ignored invalid --finder-passes 5 (expected 1 or 2) — one finder pass from the default"
+      && valid.length === 0;
+  });
+  t("prepare() feeds the resolved finder passes into resolveBudget, records them in context.reviewConfig, and reports an ignored CLI value", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     return /finderPasses: finderPassesSetting\.passes,\n\s+changedFiles: files\.length,\n\s+\}\);/.test(src)
-      && /finderPasses: finderPassesSetting\.passes,\n\s+finderPassesSource: finderPassesSetting\.source,/.test(src);
+      && /finderPasses: finderPassesSetting\.passes,\n\s+finderPassesSource: finderPassesSetting\.source,/.test(src)
+      && /anomalies\.push\(\.\.\.finderPassesAnomalies\(finderPassesSetting\)\);/.test(src);
   });
   t("resolveDepthOverrides: a CLI flag beats the config, config effort beats config thoroughness", () => {
     const cfg = { effort: "high", thoroughness: 0.6 };
