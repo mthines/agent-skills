@@ -8,13 +8,13 @@ Methodology follows the repo's own [`ai-engineering/rules/evals.md`](../../skill
 
 | | **L1 — deterministic contract checks** | **L2 — behavioral evals** |
 | --- | --- | --- |
-| **What it asks** | "Does the artifact obey its mechanical contract?" | "Does the model, given this skill, *behave* correctly?" |
+| **What it asks** | "Is the repo intact — does every link, manifest, script, and parsed contract still work?" | "Does the model, given this skill, *behave* correctly?" |
 | **Runs an LLM?** | **No.** Pure file parsing + the skills' own `grep`/`awk` idioms. | **Yes.** Calls a model with the skill's rubric + an input. |
 | **Determinism** | Fully deterministic — same result every run. | Stochastic — score with a threshold, expect some noise. |
 | **Cost / speed** | Free, milliseconds. Runs in CI on every PR. | Costs API tokens, seconds–minutes. Run locally / nightly. |
 | **Scoring** | Exact assertions (pass/fail). | Accuracy vs human-labelled golden set (here: exact-match on a label; no LLM-judge needed for classification). |
-| **Catches** | Broken links/anchors, missing plan sections, gate-logic regressions, doc drift, version-collision. | "The skill biases the model the wrong way" — wrong tier routing, mis-classification, mis-calibrated confidence. Things reading the markdown can't prove. |
-| **Example here** | `l1.mjs` — incl. the #31 confidence-gate regression, the tier table's single home (`G2b`), and the `aw-` agent count (`G2c`). | `l2.mjs` — does `aw` route tasks to the right tier? does `/fix-bug` classify the bug right? |
+| **Catches** | Broken links/anchors, invalid frontmatter, manifest ↔ disk drift, red script self-tests, budget breaches, broken shell idioms, renderer/parser contract breaks. | "The skill biases the model the wrong way" — wrong tier routing, mis-classification, mis-calibrated confidence. Things reading the markdown can't prove. |
+| **Example here** | `l1.mjs` — incl. the #31 confidence-gate regression (the rule #3 `awk` idiom run against fixtures) and the installer ↔ `templates/` agent set (`G2c`). | `l2.mjs` — does `aw` route tasks to the right tier? does `/fix-bug` classify the bug right? |
 
 **Why both?** L1 proves the *contract* (cheap, every PR). L2 proves the
 *behavior* (expensive, periodic). L1 would never have caught "the dispatcher
@@ -34,64 +34,63 @@ It is opt-in and never runs in CI; L1 `G110` keeps every case loadable and grada
 
 ## L1 — `node scripts/eval/l1.mjs`
 
-Zero dependencies, no network. Exits non-zero on failure (CI gate). Checks:
+Zero dependencies, no network, no LLM.
+It exits non-zero on any failure and gates every PR in CI.
+It runs in about 25 seconds, most of it the script self-tests.
 
-- **Links/anchors** resolve across `skills/`, `memory/`, root docs (skips code
-  fences + templates; ratchets on a baseline of pre-existing debt — see the
-  `BASELINE` set, burn it down, never add to it).
-- **Tier table** has exactly one home: present in `SKILL.md` Step 1, absent from the `aw` dispatcher skill, which links it (`G2b`).
-- **plan.md Core contract** — runs the *actual* `confidence` rule #2 (8 Core
-  sections), rule #3 (Acceptance Criteria non-empty, the #31 fix), rule #9
-  (every `[user-stated]` requirement covered by a `(covers: R…)` annotation),
-  rule #10 (a `create` row requires an Existing Code Survey verdict;
-  modify-only passes vacuously), and rule #11 (checks.yaml `AC-{n}` IDs in
-  sync with the plan, both directions) against fixtures in `fixtures/plans/`.
-- **diagnose resolvability** — every skill with a `diagnostic-surface.md` is
-  uniquely resolvable by `skills/*/<name>/` (locks the path-resolution fix).
-- **lesson scopes** — no `memory/<scope>/` is committed in this repo (the loops'
-  fast tier runs on LoreKit now, not committed markdown).
-- **the L2 wiring itself** (`G21`) — every suite extracts a non-empty rubric body
-  (`G21g`), the workflow derives its suite selection instead of mirroring the rubric
-  files (`G21d`), the selector's mapping self-test and the unknown-`--suite` exit
-  (`G21h`), the opt-in gate and its documented label (`G21i`), and every suite's
-  `choices` ↔ golden labels in both directions (`G21j`), and the telemetry module's
-  own self-test plus its four rules — off by default, a miss is not a span error, the
-  flush precedes the gate exit, and CI forwards the OTLP config (`G21k`), and the
-  **scorer and the gate** — `parseChoice` is extracted from the live runner and
-  *executed*, so a reply enumerating every choice must read as ambiguous rather than
-  as the first one; a miss must print the raw reply; only a suite at or above the
-  case floor can breach the gate; an absent key fails an opted-in run; the rubric
-  travels as a cached system block (`G21l`), and the **`bug-detection` CI chain** —
-  its inputs are declared in the suite table, the selector derives one boolean from
-  that declaration rather than restating the paths, the job consumes the boolean and
-  runs gated, and the aggregator both depends on the job *and* branches on its result
-  (`G21m`). L1 gates the
-  *plumbing* of L2, which is why an unrun L2 still cannot silently rot.
-- **frontmatter** — SKILL versions are semver; `name` matches the directory.
-- **cross-file contracts** — locks contracts that span producer and consumer
-  files (the drift class link checks cannot see): the `seen_count` UPDATE
-  sentence shared verbatim by persistent-memory and the autonomous-workflow
-  loop, the fast-lane plan ⊇ Core-8 sections, implement-suggestion keyed on
-  `/critical`'s real Must-fix bucket, the per-comment gate consuming
-  `confidence(code)`'s real output, a forbidden-phrase list for audited
-  contradictions and phantom references, and the
-  `code-quality` Recipe Class table being exhaustive over every R-recipe in
-  the Contents list (G7 — `simplify` mode keys auto-apply on this
-  classification, so an unclassified or doubly-classified recipe is a hard
-  failure).
-- **L2 cost controls** (`G50`) — asserts the selector *imports* the suite table
-  (and the harness set) rather than re-parsing or restating either, pins the
-  cached system block (and the absence of the bare-string form it replaced) plus
-  the three-way cache notice that makes an uncacheable prefix distinguishable
-  from a missed cache, pins the `--suite` comma list and its empty-selection
-  exit, pins the harness-file set **and its two deliberate exclusions**
-  (`telemetry.mjs`, `evals-l2.yml` — neither can move a label), and reads the
-  `l2` aggregator to assert that a selection which did not *succeed* fails the
-  run loudly while the only thing that may suppress the matrix is a genuinely
-  empty count. Executing the selector's self-test is `G21h`'s job, not `G50`'s —
-  two IDs asserting one contract make a red build ambiguous about which broke.
+L1 answers one question: is the repo intact?
+It does not judge what a skill says or whether a skill works; plugin-eval and L2 answer that.
+The checks are grouped by the eight admission categories below, in the same order as in `l1.mjs`.
 
-Add a check: append a `s.check(label, condition, detail)` in `l1.mjs`.
+### L1 admission rule
+
+A check is admitted to `l1.mjs` only when all three hold:
+
+1. It falls in one of the eight categories below.
+2. A one-line comment above it names the runtime failure it prevents.
+3. It is shown to bite: break the thing it guards, watch L1 go red, restore it, and say so in the PR description.
+
+The categories are a closed list:
+
+1. **Link, anchor, and reference resolution** — relative links, heading anchors, `Skill("<name>")` targets, and the `G71` escaping-link ratchet.
+2. **Frontmatter validity** — semver, `name` equals the directory, the 1024-char description cap, and a strict-YAML parse.
+3. **Manifest ↔ disk sync** — `plugin.json`, `marketplace.json`, `skills-lock.json`, `install.sh` symlinks, and `tsconfig.json` coverage.
+4. **Eval-harness integrity** — golden JSONL parses, every rubric section extracts (`G21g`), `choices` ↔ golden labels (`G21j`), and the CI wiring that makes a red eval read red.
+5. **Script self-tests** — every tracked script with a `--self-test` handler is discovered and run (`G114`); a script without one gets its behaviour probes here.
+6. **Size and budget ceilings** — the root `CLAUDE.md` budget (`G86`), the `pr-reviewer.md` ratchet (`G82`), and description caps.
+7. **Executable idioms run against fixtures** — a `grep`, `awk`, `jq`, or `bash` block an agent runs verbatim, extracted from the shipped file and executed.
+8. **Machine-parsed contracts** — markers, payload keys, sentinels, and grammar that code or another agent's parser reads.
+
+These are never admitted:
+
+- A check that a sentence, heading, phrase, or word is present in a prose file, or absent from one.
+- A check that two prose copies of a rule agree.
+- A pinned count (`=== 14`) unless removing the pin lets a category 1–8 failure through, such as a discovery loop that would pass vacuously at zero.
+
+A claim about behaviour — "the skill makes the agent do X" — belongs in a `claude plugin eval` case under [`evals/`](../../evals/README.md) or in an L2 golden case, never in L1.
+
+```js
+// ✗ Not admitted: asserts prose. Rewording the sentence breaks nothing at runtime.
+s.check("G200 SKILL.md says it never force-pushes", /never force-push/i.test(skillMd));
+
+// ✓ Admitted (category 3): a skill no plugin.json entry reaches is never installed.
+s.check("G110e every SKILL.md is reachable from a plugin.json `skills` entry", unreached.length === 0,
+  `unreached: ${unreached.join(", ")}`);
+
+// ✓ Admitted (category 7): the executor runs this grep verbatim; a wrong pattern bails every Full run.
+s.check("G130b the BRIEF grep accepts a valid brief (6)", count(BRIEF, validBrief) >= 6);
+```
+
+Check IDs are never renumbered; gaps are expected.
+
+### Adding a check
+
+1. Name the category and the runtime failure.
+   If you cannot name a failure a user or agent would hit, the check is not admitted.
+2. Prefer extending an existing discovered loop (links, frontmatter, self-tests) over a new check.
+   A new script gets L1 coverage by shipping a `--self-test` handler, with no edit to `l1.mjs`.
+3. Read the guarded value from the file that owns it — extract and execute the shipped block, import the script — never restate it in `l1.mjs`.
+4. Prove it bites, then restore.
 
 ## L2 — `ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs`
 
@@ -108,7 +107,7 @@ them re-parsing the other. See [Cost](#cost) below.
 
 | Suite | Question | Rubric read from | Choices |
 | --- | --- | --- | --- |
-| `tier-routing` | Which tier for this task? | autonomous-workflow `### Step 1: Detect Workflow Mode` — the table's one home; the `aw` dispatcher links it rather than restating it (`G2b`) | Micro / Lite / Full |
+| `tier-routing` | Which tier for this task? | autonomous-workflow `### Step 1: Detect Workflow Mode` — the table's one home; the `aw` dispatcher links it rather than restating it | Micro / Lite / Full |
 | `bug-class` | What `bugClass` for this evidence? | fix-bug `### Step 0c` | the 9 classes |
 | `complexity-triage` | simple or complex bug? | fix-bug `## Phase 0.5` | simple / complex |
 | `aw-should-trigger` | should the routing rule auto-trigger? | the whole routing rule | trigger / skip |
@@ -192,7 +191,7 @@ The shape, flushed once at exit (a batch job has no reason to stream):
 | metric | `eval.case.duration` | Histogram, `s` |
 | metric | `gen_ai.client.token.usage` | Histogram, `{token}`, split by `gen_ai.token.type` — `input` / `output` / `cache_read` / `cache_write`, never summed together (a read bills at 0.1× and a write at 1.25×, so one total misreports the cost in both directions) |
 
-Four rules the module holds, each guarded by L1 `G21k`:
+Four rules the module holds, each guarded by its own `--self-test`, which L1 `G114` runs:
 
 1. **A miss is not an error.** A wrong answer *is* the measurement, so the case span stays `UNSET`; only a transport or API failure sets `ERROR`. Conflating them makes every rubric regression look like an outage in the trace list.
 2. **An absent attribute is omitted, never a placeholder.** `unknown` is not queryable as absent.
@@ -267,7 +266,7 @@ controls, in order of effect — measure, don't assume: every run prints its own
    ```bash
    git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
    node scripts/eval/select-suites.mjs skills/workflow/fix-bug/SKILL.md  # → bug-class,complexity-triage
-   node scripts/eval/select-suites.mjs --self-test                        # offline; L1 G21h runs this
+   node scripts/eval/select-suites.mjs --self-test                        # offline; L1 G114 runs this
    ```
 
    Selection **widens** rather than narrows when in doubt: a change to a harness
@@ -277,7 +276,7 @@ controls, in order of effect — measure, don't assume: every run prints its own
    must never collapse: selection runs as its own `select` job, so a failure
    arrives at the aggregator as a value to read and the run goes **red** with
    "the affected subset is unknown". Only a genuine empty count skips, and that
-   is the single condition guarding the matrix (`G50f`). Running all nine on a
+   is the single condition guarding the matrix (`G50f` asserts the red half). Running all nine on a
    selector crash — the fail-open answer an inline step is forced into, having no
    check to report on — would spend the full bill to hide a bug instead.
 
@@ -311,8 +310,7 @@ whether the *check* appears; the gate governs whether *suites run*. A workflow w
 only `workflow_dispatch` never reports on a PR, so requiring its check leaves every
 PR pending forever — the same trap the old `paths:` filter set. Keeping the trigger
 and gating the spend gets both: an always-resolving required check and zero cost by
-default. `G21i` asserts both halves, and that the label name in the workflow is the
-one documented here.
+default. `G21i` asserts both halves.
 
 ### Which suites run once you opt in
 
@@ -331,7 +329,7 @@ job per suite — so labelling a one-rubric PR costs one suite, not nine.
 ```bash
 git diff --name-only main...HEAD | node scripts/eval/select-suites.mjs
 node scripts/eval/select-suites.mjs --json skills/quality/severity/SKILL.md
-node scripts/eval/select-suites.mjs --self-test    # executed by L1 G21h
+node scripts/eval/select-suites.mjs --self-test    # executed by L1 G114
 ```
 
 Matching is **exact** on repo-relative paths — the spelling `git diff --name-only`
@@ -343,13 +341,13 @@ suite that never ran reports as a green PR exactly like a suite that passed.
 `paths:` mirror of the rubric files. It drifted: four of the nine rubric files were
 missing from it (`severity/SKILL.md`, `optimality-rubric.md`, `depth-routing.md`,
 `rubric-composition.md`), so editing those rubrics never ran their own eval, and two
-listed paths backed no suite at all. `G21d` now asserts the derivation *and* the
-absence of a rubric-path mirror, so that class of drift cannot come back.
+listed paths backed no suite at all. `G21d` asserts the workflow derives the
+selection from the selector.
 
 **`bug-detection` rides the same derivation, in its own job.** It is a separate
 runner, not a single-choice suite, so it cannot ride the `--suite` flag — but it had
 the same CI problem every suite has, and for a long time the wrong answer: it ran in
-**no workflow at all**. Only its `--self-test` executed (L1 `G39`), so the scoring
+**no workflow at all**. Only its `--self-test` executed (in L1), so the scoring
 plumbing was guarded while the measurement it exists for — `recall ≥ 0.7` and
 `fp ≤ 0.2` against 30 golden records — had never once run in CI. Its inputs are now
 declared in `suites.mjs` as `SUITES.DETECTION` next to the suites, `select-suites.mjs`
@@ -357,8 +355,7 @@ reports one extra boolean off that declaration, and the workflow's `detection` j
 consumes the boolean. No `paths:` mirror here either, and unlike the suites it runs
 **gated** (`EVAL_DETECTION_GATE=1`): the two rates *are* the contract, and a detection
 core that stops finding bugs while reporting green is the failure it was written for.
-`G21m` asserts the whole chain — declaration → selector → job → aggregator — with the
-last link the load-bearing one: the aggregator is `if: always()`, so a failed
+`G21m` asserts the load-bearing link of the chain: the aggregator is `if: always()`, so a failed
 dependency arrives as a value to read, and reading only `needs.suite.result` is how a
 red detection run would report green.
 
@@ -394,7 +391,7 @@ That is a real diff filter, correctly placed, but it answers a **different** que
 reaches the finders* — from the one these labels state, *what the documented read returns*.
 With `1.2d` in the rubric a list-reachable lesson unrelated to the diff is legitimately `skip`,
 and the suite contradicts its own `instruction` string.
-Re-widening the rubric to the parent is a regression, and `G21a` reds on it.
+Re-widening the rubric to the parent is a regression.
 
 **The question is procedure application, not relevance, and the `instruction` says so.**
 The earlier wording asked whether the record "would be surfaced by the documented read *for the
@@ -1084,15 +1081,6 @@ Three secondary observations, all on identical fixtures:
 borderline originals, so nothing here disturbs the precision conclusion. It is recall that
 is not yet measurable.
 
-### The L1 baseline
-
-`l1.mjs` keeps a `BASELINE` set of known pre-existing broken links so the gate
-catches *new* breakage without failing on history. It is currently **empty** —
-all internal links resolve. Keep it that way: fix new breaks, don't baseline
-them. (The three original entries were resolved: `from-to-morphs.md` →
-`state-choreography.md`; the fix-bug verifier anchor → `#verifier-checks`; and
-`playwright-test-healer` → the external [Playwright Test Agents](https://playwright.dev/docs/test-agents) docs.)
-
 ## Report-body snapshots
 
 `fixtures/report-body/` holds the reference renderings of the `pr-reviewer` report:
@@ -1107,9 +1095,9 @@ by the renderer from `{path, line, url}`, and the footer/`Run mode` lines are de
 object. So a count cannot disagree with its list and a sha cannot appear at two lengths.
 
 L1's **G25** executes `agents/pr-reviewer/scripts/render-report.mjs` against each payload and diffs
-the result byte-for-byte against the snapshot, then asserts the structural invariants (marker
-present, `Review details` accordion present, nothing pre-expanded, nothing the accordion owns
-rendered above it) and that the renderer rejects **every payload in G25's `rejects` table** while
+the result byte-for-byte against the snapshot, `G26` runs the external shape validator over every
+snapshot (marker present, `Review details` accordion present, nothing pre-expanded, nothing the
+accordion owns rendered above it), and `G25` asserts that the renderer rejects **every payload in G25's `rejects` table** while
 printing nothing on stdout. The count is deliberately not repeated here — it grows with the table,
 and a mirrored number goes stale on the next case added. Read `rejects` in `l1.mjs` for the list.
 

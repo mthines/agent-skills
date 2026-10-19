@@ -149,7 +149,7 @@ pnpm install                             # from repo root, for packages/
 Harness docs: [`scripts/eval/README.md`](./scripts/eval/README.md).
 - **plugin-eval** (`pnpm plugin-eval --tag ablation`): [`evals/`](./evals/README.md) runs each key skill with and without the plugin loaded; a skill whose `Δ` stays ≤ 0 is a slimming candidate. Opt-in, never in CI; L1 `G110` keeps every case loadable.
 
-- **L1** (`node scripts/eval/l1.mjs`): deterministic, free, CI-gated on every PR. Add an `s.check` for any mechanical contract and prove it bites by breaking what it guards.
+- **L1** (`node scripts/eval/l1.mjs`): deterministic integrity checks, free, CI-gated on every PR. A new check must pass the [L1 admission rule](./scripts/eval/README.md#l1-admission-rule); prose, wording, and sync checks are never admitted.
 - **L2** (`ANTHROPIC_API_KEY=… node scripts/eval/l2.mjs [--suite a,b]`): one suite per labelled decision; goldens in `scripts/eval/golden/`, suites in `scripts/eval/suites.mjs`. Opt-in in CI via the `run-evals` PR label (aggregator check `evals · L2 (behavioral) / l2`).
 - **L2-detection** (`ANTHROPIC_API_KEY=… node scripts/eval/l2-detection.mjs`, `--self-test` offline): finder → verifier over `golden/bug-detection.jsonl`, hard-gated on `recall ≥ 0.7` and `fp ≤ 0.2`. Never lower a gate or loosen the parse to pass.
 
@@ -168,8 +168,8 @@ These triggers are exhaustive:
 | added a new enumerable decision (routing table, tier ladder, taxonomy) | add `golden/<name>.jsonl` plus a `SUITES` entry; selection is derived, no CI wiring |
 | deleted a skill, agent, or rule file | grep `suites.mjs` for its path first; a suite reading a deleted file fails L1 |
 | added, moved, or removed a relative link inside `skills/` | a link may not climb out of its own skill folder; L1 `G71` ratchets `scripts/eval/escaping-links.baseline.json` — lower it with `node scripts/eval/escaping-links.mjs --write` when the count drops |
-| a mechanical contract (section list, payload key, gate glyph, shared verbatim sentence) | add or extend an `s.check` in `l1.mjs` and prove it bites by breaking the guarded thing |
-| the harness telemetry (`telemetry.mjs`, `eval.*` / `gen_ai.*` attributes) | extend its `--self-test` (run by L1 `G21k`); keep it off by default, a miss is not a span error, absent attributes are omitted, the flush precedes the gate exit; flag an attribute rename as dashboard-breaking in the PR |
+| a runtime contract code or a parser reads (link, manifest entry, payload key, marker, executed shell block) | add an `s.check` only if it passes the [L1 admission rule](./scripts/eval/README.md#l1-admission-rule), name the failure it prevents, and prove it bites; a behaviour claim goes to a plugin-eval case in `evals/` or an L2 golden case, never L1 |
+| the harness telemetry (`telemetry.mjs`, `eval.*` / `gen_ai.*` attributes) | extend its `--self-test` (run by L1 `G114`); keep it off by default, a miss is not a span error, absent attributes are omitted, the flush precedes the gate exit; flag an attribute rename as dashboard-breaking in the PR |
 | a finder or verifier rule (`finders.md`, `finding-verifier.md`) | add a `golden/bug-detection.jsonl` record, plus a decoy when raising recall; label the PR `run-evals` or run `l2-detection.mjs` and report recall and fp |
 | promoted a lesson via `diagnose` (`seen_count ≥ 3`) | add the golden case |
 

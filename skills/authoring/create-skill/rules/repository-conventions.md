@@ -176,9 +176,10 @@ this skill's own `scripts/validate-skill.mjs`, which checks a superset
 (FM/BD/PD/SC ids) intended to run before a PR exists.
 
 Root `CLAUDE.md` § "Keeping the evals honest" also obligates: a new
-enumerable decision needs a golden-case suite, and a mechanical contract
-needs its own L1 check proven to bite. Check this table before declaring
-a new skill (or a new decision inside one) done — see `evaluation.md`.
+enumerable decision needs a golden-case suite.
+Do not add an L1 check that asserts the skill's prose; L1 admits only
+integrity checks (links, frontmatter, manifests, script self-tests,
+budgets, executed idioms, machine-parsed contracts) — see `evaluation.md`.
 
 ## Prose rules (also in repo-root `CLAUDE.md`)
 
