@@ -16,7 +16,7 @@ inside the worktree, never on the main branch.
 
 > **Order of operations:** research (parallel `Explore` if complex) →
 > optional `holistic-analysis` → technical design (incl. Existing Code Survey
-> for planned `create`s + executable checks drafting) → `code-quality(plan)` →
+> for planned `create`s + executable checks drafting) →
 > optional `critical(plan)` → `optimize-approach(plan)` (default-on, quiet) →
 > `confidence(plan)` gate → Phase 2.
 
@@ -30,7 +30,6 @@ inside the worktree, never on the main branch.
 - [Step 2: Draft Technical Design](#step-2-draft-technical-design)
   - [Existing Code Survey (anti-reinvention)](#existing-code-survey-anti-reinvention)
   - [Draft traceable, executable Acceptance Criteria](#2d-draft-traceable-executable-acceptance-criteria)
-- [Design Quality](#design-quality)
 - [Spec Emission (UI tasks)](#spec-emission-ui-tasks)
 - [Adversarial Pre-Mortem](#adversarial-pre-mortem)
 - [Approach Optimality](#approach-optimality)
@@ -257,7 +256,8 @@ file-level changes. Disable this step by removing the invocation here (see
 
 ## Step 2: Draft Technical Design
 
-Be specific. The design feeds `code-quality(plan)` next, then `confidence(plan)`.
+Be specific. The design feeds `confidence(plan)`.
+Plan to follow neighbouring files' patterns and reuse existing helpers (the Existing Code Survey records the search).
 
 ### 2a. Capture Phase 0 context
 
@@ -378,31 +378,6 @@ right commands.
 | ------------------- | ---------- | ------ | ----------------------- |
 | Breaking API change | LOW        | HIGH   | Add deprecation warning |
 ```
-
----
-
-## Design Quality
-
-**Anchor:** `design-quality`
-
-After drafting the technical approach but **before** the confidence gate,
-invoke `code-quality` in `plan` mode. Purpose: shape the design toward
-low-complexity structures **before** writing code (early returns,
-single-responsibility, naming, function size). Cheaper than refactoring later.
-
-```
-Skill("code-quality", "plan")     # missing ⇒ companion: <name> — skipped (not installed)
-```
-
-Apply suggestions to the design. Log:
-
-```markdown
-- [TIMESTAMP] Phase 1: code-quality(plan) — applied (N suggestions integrated)
-- [TIMESTAMP] Phase 1: code-quality(plan) — skipped (not installed)
-```
-
-Disable by removing the invocation here (see
-[`companion-skills.md`](./companion-skills.md#registry)).
 
 ---
 
@@ -539,7 +514,7 @@ Purpose: surface plan defects that pass static rules but would fail under
 adversarial review, and force exploration of at least one alternative design
 before the confidence gate locks the plan in.
 
-Run between `code-quality(plan)` and `confidence(plan)`:
+Run after the technical design and before `confidence(plan)`:
 
 ```
 Skill("critical", "plan")
@@ -554,7 +529,7 @@ Treat the output as follows:
   they meaningfully improve the design.
 - **Steelman alternative** → preserve verbatim under a `## Considered
   alternatives` section of the plan. This is the load-bearing differentiator
-  vs. `code-quality` and `confidence` — record it even when the chosen
+  vs. `confidence` — record it even when the chosen
   approach wins.
 
 `critical` is **advisory** — it does not gate. `confidence(plan)` remains the
@@ -579,8 +554,7 @@ Disable by removing the invocation here (see
 **Anchor:** `approach-optimality`
 
 **Default-on in Full Mode, quiet early-exit.** Once the technical design is
-drafted (including the Existing Code Survey) and after `code-quality(plan)` /
-`critical`, ask the one design-level question the other Phase 1 gates assume
+drafted (including the Existing Code Survey) and after `critical`, ask the one design-level question the other Phase 1 gates assume
 away: **is this the most optimal approach for the intent, and if not what is?**
 Plan time is the cheapest moment to switch — the approach is still words, not
 code. Skip when the user passed `--no-optimize`.
@@ -641,8 +615,7 @@ Disable by removing the invocation here (see
 Lite Mode skips this gate — its plan is inline and the gate's deterministic rules require a `plan.md`.
 Micro skips all quality companions, this one included.
 
-After design is finalized and `code-quality(plan)` suggestions are applied,
-run the plan-confidence gate:
+After design is finalized, run the plan-confidence gate:
 
 ```
 Skill("confidence", "plan")
@@ -686,7 +659,6 @@ contract and message format.
 - [ ] Technical approach designed with specific file references
 - [ ] Existing Code Survey completed for every planned `create` — searches recorded, verdicts assigned (anchor: `existing-code-survey`)
 - [ ] Acceptance Criteria carry `AC-{n}` IDs + `(covers: R{m})` annotations; every `[user-stated]` requirement covered; EARS shape preferred; a runner sketched per criterion (anchor: `acceptance-criteria-drafting`)
-- [ ] `code-quality(plan)` invoked and design refined (anchor: `design-quality`)
 - [ ] UI surface check: if plan touches UI files, aw-target exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
 - [ ] `optimize-approach(plan)` invoked (Full Mode, unless `--no-optimize`); proposals adopted-and-replanned or logged (anchor: `approach-optimality`)
 - [ ] `confidence(plan)` ≥ 90% OR user-approved (anchor: `confidence-gate`)
@@ -703,7 +675,6 @@ contract and message format.
 - Next phase: [phase-2-worktree](./phase-2-worktree.md)
 - Companion registry: [companion-skills](./companion-skills.md)
 - Related skill: [`confidence`](../../../quality/confidence/SKILL.md)
-- Related skill: [`code-quality`](../../../quality/code-quality/SKILL.md)
 - Related skill: [`holistic-analysis`](../../../analysis/holistic-analysis/SKILL.md)
 - Related skill: [`optimize-approach`](../../../quality/optimize-approach/SKILL.md)
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)

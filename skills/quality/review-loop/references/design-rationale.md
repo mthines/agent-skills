@@ -90,7 +90,7 @@ The check-state read is a query, not a watch: it adds no `gh … --watch` site a
 
 ## Only `polish simplify`
 
-The `simplify` mode applies Class M mechanical refactors and dispatches no `pr-reviewer`.
+The `simplify` mode applies mechanical cleanups and dispatches no `pr-reviewer`.
 Every other `polish` mode runs an internal reviewer pass, which would create a dispatch cycle.
 
 ## Step 1.6

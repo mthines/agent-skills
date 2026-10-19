@@ -74,7 +74,7 @@ npm test && npm run build && npm run lint
 After the draft PR is open, `create-pr` runs the `review-loop` skill against it as `Skill("review-loop", "<pr-url> --no-ci")` (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved via fix or reply). The `--no-ci` is not optional: Phase 7's CI gate owns the CI budget for this PR, so the loop must not spend a second one. The executor invokes `create-pr` bare — `create-pr` drives the loop, and passes that flag, internally.
 
 The `review-loop` posts a `COMMENT` review via `pr-reviewer` (with `REVIEW_RELATION = self` since the executor authored the PR), applies findings via `implement-suggestion`, and runs `polish simplify` each iteration.
-`pr-reviewer` loads the `code-quality` rubric on substantive diffs and walks the full review checklist — not just the comment pass.
+`pr-reviewer` runs its quality finder on substantive diffs and walks the full review checklist — not just the comment pass.
 Expect findings across correctness, holistic intent/system-fit, naming, complexity, comments, error handling, and (with `--critical`) the adversarial pre-mortem.
 
 The `review-loop` skill gracefully skips if not installed — log one line and continue.

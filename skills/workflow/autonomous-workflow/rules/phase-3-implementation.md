@@ -20,7 +20,6 @@ tags:
 - [TDD Trigger](#tdd-trigger)
 - [UX Trigger](#ux-trigger)
 - [Observability Trigger](#observability-trigger)
-- [Code Quality Trigger](#code-quality-trigger)
 - [Implementation Checklist](#implementation-checklist)
 - [References](#references)
 
@@ -100,7 +99,7 @@ If the worktree was not created, **STOP and return to Phase 2.**
 | Implement incrementally                | Small, focused changes — one concern per edit    |
 | Verify after every edit                | Fast type-check / compile before moving on       |
 | Commit at logical milestones           | Atomic commits with conventional format          |
-| Invoke companions per signal           | TDD / UX / code-quality at the right moments     |
+| Invoke companions per signal           | TDD / UX / measurable at the right moments       |
 | Controlled fan-out when file-disjoint  | Cap 3 concurrent sub-agents; each inherits Sub-Agent Resource Discipline (see [`rules/parallel-coordination.md#sub-agent-resource-discipline`](./parallel-coordination.md#sub-agent-resource-discipline)) |
 
 ---
@@ -175,7 +174,6 @@ invocation, and disable instructions live in:
 - [TDD Trigger](#tdd-trigger) — pure logic / business rules
 - [UX Trigger](#ux-trigger) — UI files touched
 - [Observability Trigger](#observability-trigger) — API/handler or user-facing files touched
-- [Code Quality Trigger](#code-quality-trigger) — once at end of phase
 
 **No companion blocks the workflow, and every one is reported `ran` or `skipped (<reason>)`** — log the result and continue.
 
@@ -215,7 +213,7 @@ Progress Log in `.agent/{branch}/plan.md`:
 - [2026-04-29T15:42:10Z] Phase 3: Implemented ThemeContext + ThemeToggle
 - [2026-04-29T15:48:33Z] Phase 3: Updated Tailwind config for dark mode classes
 - [2026-04-29T15:51:05Z] Phase 3: ux() — ran (2 contrast suggestions integrated)
-- [2026-04-29T15:55:12Z] Phase 3: code-quality(code) — skipped (not installed)
+- [2026-04-29T15:55:12Z] Phase 3: measurable(implement) — skipped (not installed)
 ```
 
 **(b) Drift write-back.** When implementation reveals that a *decision* or
@@ -263,7 +261,7 @@ for the recovery pattern.
 
 ### Step 7: Pre-Testing Commit
 
-After all implementation is complete and `code-quality(code)` has been invoked:
+After all implementation is complete:
 
 ```bash
 git add .
@@ -288,7 +286,7 @@ Skill("tdd")
 
 | Behavior                       | Detail                                                              |
 | ------------------------------ | ------------------------------------------------------------------- |
-| Owns the inner loop            | TDD drives RED-GREEN-REFACTOR cycle; you do not run code-quality per file while TDD is active |
+| Owns the inner loop            | TDD drives RED-GREEN-REFACTOR cycle; you do not run a separate review per file while TDD is active |
 | Replaces verify-after-editing  | TDD's GREEN step is the verification                                |
 | If skill missing               | Log `tdd() — skipped (not installed)` and fall back to verify-after-editing in Step 2 |
 | Progress Log entry             | `[TIMESTAMP] Phase 3: tdd() — ran` (or `skipped (<reason>)`) |
@@ -329,8 +327,7 @@ When implementing UI, prefer semantic HTML and accessible names (`getByRole`,
 canvas-rendered elements, ambiguous repeated rows). When you do, commit the
 `data-testid` in the same diff as the consuming code, never as a brittle CSS
 selector workaround in a test. Full criteria:
-[`code-quality/rules/testability.md#ui-testability--accessible-names-are-locators`](../../../quality/code-quality/rules/testability.md#ui-testability--accessible-names-are-locators)
-and [`e2e-testing/rules/locator-strategy.md`](../../../testing/e2e-testing/rules/locator-strategy.md).
+[`e2e-testing/rules/locator-strategy.md`](../../../testing/e2e-testing/rules/locator-strategy.md).
 
 Disable: remove the `Skill("ux")` invocation from this section. Registry:
 [`companion-skills.md`](./companion-skills.md#registry).
@@ -369,30 +366,6 @@ from this section. Registry: [`companion-skills.md`](./companion-skills.md#regis
 
 ---
 
-## Code Quality Trigger
-
-This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
-
-**When:** **once** at the end of Phase 3, after all files are written and
-**before** Phase 4 testing begins. **Not per-file** — TDD owns the per-file
-inner loop when active.
-
-```bash
-Skill("code-quality", "code")
-```
-
-| Behavior                       | Detail                                                              |
-| ------------------------------ | ------------------------------------------------------------------- |
-| Frequency                      | Exactly once per phase                                              |
-| Purpose                        | Catch cognitive complexity, naming, structural smells, and **comment hygiene** (apply **R35** to trim any verbose multi-paragraph block) that emerged during implementation. Walks the full `code-quality` review checklist, not just one pass. |
-| If skill missing               | Log `code-quality(code) — skipped (not installed)`                |
-| Progress Log entry             | `[TIMESTAMP] Phase 3: code-quality(code) — ran` (or `skipped (<reason>)`) |
-
-Disable: remove the `Skill("code-quality", "code")` invocation from this section.
-Registry: [`companion-skills.md`](./companion-skills.md#registry).
-
----
-
 ## Implementation Checklist
 
 - [ ] `aw-lessons` read at executor entry when `plan.md` had no `## Lessons applied` (anchor: `lessons-read`)
@@ -403,7 +376,6 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] UX invoked if UI files touched
 - [ ] UI components are locatable by role / label without `data-testid`, or any `data-testid` is committed in the source diff alongside its consumer
 - [ ] `measurable(implement)` invoked if API/handler or user-facing files touched
-- [ ] `code-quality(code)` invoked once at end of phase
 - [ ] Commits are logical, atomic, conventional
 - [ ] Progress Log updated in `.agent/{branch}/plan.md` (Full Mode); plan/checks drift written back if a decision or AC changed
 - [ ] Ready for Phase 4 testing

@@ -10,7 +10,7 @@ tags:
 
 # Holistic review
 
-Line-level rubrics (`code-quality`, `ux`, `critical`, lenses) evaluate each hunk locally. They cannot catch two classes of failure that matter most:
+Line-level rubrics (`quality`, `ux`, `critical`, lenses) evaluate each hunk locally. They cannot catch two classes of failure that matter most:
 
 1. **Intent mismatch** — the diff does not implement what its PR description claims.
 2. **System fit** — the change makes sense in isolation but is wrong in the bigger picture (callers in a loop, missing cache invalidation, neighbouring patterns it diverges from, contract breaks the local view doesn't see).

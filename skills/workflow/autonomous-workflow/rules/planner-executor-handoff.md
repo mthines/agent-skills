@@ -242,7 +242,6 @@ The loop fires whenever the user replies `iterate` to either handoff message. Th
    - If the user edited a downstream section in a way that contradicts an upstream section, **surface the contradiction** and ask whether to update the upstream section, revert the downstream edit, or accept both as-is.
    - Apply the same coherence check to every user feedback comment from step 3 — a comment in `Acceptance Criteria` that contradicts the `Requirements` section is a contradiction, not just a comment.
 6. **Re-run planning companions** with the user's edits and comments as constraints:
-   - `Skill("code-quality", "plan")` — surface design concerns introduced by the edits.
    - `Skill("confidence", "plan")` — re-score the revised plan against the multi-signal gate.
 7. **Invoke `aw-create-plan`** to write `plan.md` with `version: N+1` in the frontmatter. The Progress Log entry for this write MUST cite the user's edits AND the comments addressed:
 

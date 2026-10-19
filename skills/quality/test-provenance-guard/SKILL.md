@@ -219,5 +219,4 @@ When called from `autonomous-workflow` Phase 4, also append one line to `.agent/
 
 - [`autonomous-workflow`](../../workflow/autonomous-workflow/SKILL.md) — invokes this skill from Phase 4 Step 5.
 - [`tdd`](../../quality/tdd/SKILL.md) — Test-After Mode's "mutate to verify" rule is the conceptual ancestor of Phase 2 here.
-- [`code-quality`](../code-quality/SKILL.md) — Pass 12 ("Testability") covers adjacent design issues; this skill targets the specific by-construction failure.
 - [`confidence`](../confidence/SKILL.md) — when self-heal cannot resolve a finding, the autonomous-workflow Phase 4 stuck-loop protocol calls `confidence(analysis)` next.

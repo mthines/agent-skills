@@ -89,7 +89,7 @@ Charting overlaps with several other skills. Route concerns rather than re-imple
 
 | If the user is doing this                                            | Hand off to                                           |
 | -------------------------------------------------------------------- | ----------------------------------------------------- |
-| Reviewing or improving the chart's component code (memoization, dataKey types, pure data transforms) | `code-quality`                |
+| Reviewing or improving the chart's component code (memoization, dataKey types, pure data transforms) | `pr-reviewer` (review) or `polish` (simplify) |
 | Adding tests for the **data transformation** behind the chart        | `tdd`                                                  |
 | Writing E2E tests that interact with charts                          | `e2e-testing` (web) or `e2e-testing-mobile` (Expo / RN); add `data-testid` on container, assert URL + text, never SVG geometry |
 | Diagnosing a chart that re-renders too often or freezes the page     | `profile-optimizer` (then back to `rules/performance.md`) |

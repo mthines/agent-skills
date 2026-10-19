@@ -46,14 +46,13 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 ### `quality/` — code, tests, plans, AI apps
 
 - `ai-engineering` (`/`) — LLM/AI app review across 13 concerns
-- `code-quality` (`auto`) — readability, complexity, maintainability; modes `plan` / authoring / `review` / `simplify`
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps the LLM score at 89%
 - `severity` (`auto`) — severity/blast-radius tier (`critical`/`high`/`medium`/`low`) for a finding or bug; policy-free
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates; `deep` runs 3–5 parallel persona lenses (found via `ideate`) and merges them
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
 - `observe-run` (`Skill() + /`) — runs a command and grades the telemetry that run emitted against behavioral assertions only
 - `optimize-approach` (`Skill()`) — approach-level optimality lens; modes `report` / `apply` / `plan`; standalone `--deep` also judges `critical deep` lens alternatives. Never blocks
-- `polish` (`/`) — re-runnable pre-PR branch quality gate (review + simplify)
+- `polish` (`/`) — re-runnable pre-PR branch quality gate: review, then simplify the diff and prune restating or ticket comments, each change behind a test check
 - `review-loop` (`Skill()`) — bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5; `--ui` runs `ui-verify` in a parallel lane and resolves its findings. Run at the top level of a session that holds a dispatch tool
 - `review-branch` (`/`) — PR-less sibling of `review-loop`; findings bus `.agent/{branch}/findings.jsonl`, zero GitHub calls
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule

@@ -69,7 +69,7 @@ The skill body is `SKILL.md`; rules live under `rules/`; the shared wiring rule 
 | ID | Class | Symptom | Primary phase |
 | --- | --- | --- | --- |
 | `F-manufactured-proposal` | False escalation | A proposal emitted on a change that clears the materiality bar (should have been `optimal`) | O2 |
-| `F-overlap-with-lens` | Anti-overlap bypass | Proposal restates a `code-quality` / `critical` / `holistic-review` finding | O2 |
+| `F-overlap-with-lens` | Anti-overlap bypass | Proposal restates a `polish simplify` / `critical` / `holistic-review` finding | O2 |
 | `F-shallow-proposal` | Ungrounded proposal | "Better way" emitted without a holistic trace or with unfounded evidence | O4 / O5 report |
 | `F-apply-widened` | Blast-radius escape | Apply touched files outside the diff, or a public API/type | O5 apply |
 | `F-apply-not-reverted` | Broken tree | A failed scoped check did not revert the rewrite | O5 apply |

@@ -14,7 +14,7 @@ Review a **drafted plan's chosen approach** before any code exists — the cheap
 Plan mode is invoked by `aw-planner` at Phase 1, after the technical design (including the Existing Code Survey) and before the `confidence(plan)` gate.
 There is no diff and nothing to edit: the input is `plan.md`'s approach, and the "apply" is a **plan revision**, not a code change.
 
-This mirrors `code-quality`, `confidence`, and `critical`, which all have a plan-time mode for the same reason.
+This mirrors `confidence` and `critical`, which both have a plan-time mode for the same reason.
 
 ## Contents
 

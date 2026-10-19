@@ -2,8 +2,8 @@
 name: tdd
 description: >
   Enforces strict RED-GREEN-REFACTOR test-driven development — one failing test
-  at a time, minimal code to pass, then refactor with `code-quality` and
-  `test-provenance-guard`. Triggers on "tdd", "write tests", "test driven", "red
+  at a time, minimal code to pass, then refactor against an inline quality
+  checklist and `test-provenance-guard`. Triggers on "tdd", "write tests", "test driven", "red
   green refactor", "/tdd".
 disable-model-invocation: false
 argument-hint: '[after] [<feature-description>]'
@@ -23,7 +23,6 @@ metadata:
     - test-first
     - test-after
     - refactoring
-    - code-quality
 ---
 
 # Test-Driven Development
@@ -81,14 +80,14 @@ See `rules/green.md`
 
 Write the MINIMUM code to make the failing test pass. No more. Run the test. Confirm it passes. Run the full relevant test suite to check for regressions.
 
-**Even in this phase, apply the basic readability primitives** while you write: meaningful names, guard clauses for the cases the test forces, no nesting beyond 2 levels. These cost almost nothing during authoring but are expensive to bolt on later. Don't optimize, abstract, or add unrequested features — REFACTOR will handle deeper improvements via `Skill('code-quality')`.
+**Even in this phase, apply the basic readability primitives** while you write: meaningful names, guard clauses for the cases the test forces, no nesting beyond 2 levels. These cost almost nothing during authoring but are expensive to bolt on later. Don't optimize, abstract, or add unrequested features — REFACTOR will handle deeper improvements.
 
 ### REFACTOR Phase
 See `rules/refactor.md`
 
 Evaluate whether refactoring is needed. If yes, refactor while keeping all tests green. If no, move to the next cycle.
 
-**Invoke `Skill('code-quality')` for this phase.** The `code-quality` skill is the source of truth for what "clean" means — guard clauses, low cognitive complexity, single-responsibility functions, intent-revealing names, single source of truth for union-type metadata, schema-first validation with type inference, total functions, type-driven design, functional core / imperative shell, and the named refactor recipes catalog (R1–R20). Routing through the skill — rather than reading individual rule files — picks up its Review Mode procedure, the structured output contract, and any rules added since this skill was written. Cite recipes by ID in commit messages and PR descriptions (e.g., "R1 Consolidate Parallel Maps", "R10 Total-ise the Function") so reviews are reproducible.
+Judge the GREEN output against the quality checklist in `rules/refactor.md` — readability, nesting, naming, duplication and reuse, and neighbour-pattern match — and apply one named move at a time (e.g., "Extract Guarded Function", "Consolidate Parallel Maps"). Name each move in commit messages so reviews are reproducible.
 
 ---
 
@@ -135,7 +134,7 @@ Follow the project's existing convention. If none exists, use:
 - Example: `describe('createOrder')` → `it('should reject order when inventory is zero')`
 
 ### Code Quality (during GREEN and REFACTOR)
-The `code-quality` skill is the source of truth for what "well-written code" means in this workflow. Apply during GREEN as inline primitives; invoke as a full pass during REFACTOR via `Skill('code-quality')`.
+Apply these primitives inline during GREEN; walk the full checklist in `rules/refactor.md` during REFACTOR.
 
 GREEN-phase primitives (apply inline while writing the minimal implementation):
 
@@ -145,7 +144,7 @@ GREEN-phase primitives (apply inline while writing the minimal implementation):
 - **One responsibility per function** — if you cannot name it without "and", split it.
 - **Validate at boundaries, trust internally.** No defensive null checks for impossible states.
 
-For REFACTOR, invoke `Skill('code-quality')` so the skill's Review Mode procedure runs against the GREEN output. The skill returns findings under the High / Medium / Low / Maintainability / Correctness / Testability headings; address each as a separate refactoring move (one change at a time per the "Procedure" below). Cite recipe IDs (R1–R20) in commit messages.
+For REFACTOR, address each checklist finding as a separate refactoring move (one change at a time per the "Procedure" below), and name the move in the commit message.
 
 ### Anti-Patterns to Avoid
 | Anti-Pattern | Why It's Bad | What to Do Instead |

@@ -17,33 +17,13 @@ tags:
 
 Evaluate and improve code quality while keeping all tests green.
 
-This phase delegates the *what counts as quality* question to the
-`code-quality` skill. **Invoke `Skill('code-quality')`** so its Review
-Mode procedure runs against the GREEN output and returns structured
-findings — rather than reading individual rule files yourself, which
-misses the skill's procedure, output contract, and any rules added since
-this file was written.
+Judge the GREEN output against this checklist:
 
-The skill covers (and routes to the relevant rule file):
-
-- Cognitive complexity, control flow, guard clauses, naming, comments
-- Functions and parameters; single level of abstraction per body
-- Maintainability: reuse, single source of truth for union metadata,
-  change footprint, co-location
-- Schema-first validation with type inference (Zod / Pydantic / valibot)
-- Type-driven design: illegal states unrepresentable, branded
-  primitives, exhaustive matching, generics discipline, `any`/cast
-  justification
-- Architecture: module boundaries, dependency direction, functional
-  core / imperative shell, DTO ↔ domain ↔ persistence, immutability
-  defaults, no side-effecting imports
-- API design: parameter ordering, total functions, error type design,
-  tell-don't-ask, file reading order
-- Correctness hotspots: idempotency, money, floats, dates,
-  identifiers, encoding, determinism, async / concurrency, resources
-- Testability: dependency injection of clock / RNG / IDs
-- Collaboration: PR scope, neighbour-symmetry, migration discipline
-- Refactor recipes catalog (R1–R20) — cite by ID in reports
+- **Readability:** the function reads top-to-bottom in one pass; one level of abstraction per body.
+- **Nesting:** no `if` nested beyond 2 levels; guard clauses and early returns instead.
+- **Naming:** names describe intent (`pendingOrders`, not `arr2`); a function name needs no "and".
+- **Duplication and reuse:** no 3+ near-identical lines; reuse an existing helper before writing a new one.
+- **Neighbour patterns:** the code matches the structure and conventions of neighbouring files.
 
 Ground refactoring decisions in objective criteria from these rules,
 not personal taste.
@@ -53,10 +33,10 @@ not personal taste.
 ## Decision: Refactor or Skip?
 
 ### Refactor when:
-- Cognitive complexity score is over ~15 (deep nesting, long branching, dense boolean logic — see `code-quality/rules/cognitive-complexity.md`)
-- A function nests beyond 2 levels — apply guard clauses or extract (see `code-quality/rules/control-flow.md`)
+- Cognitive complexity score is over ~15 (deep nesting, long branching, dense boolean logic)
+- A function nests beyond 2 levels — apply guard clauses or extract
 - Clear duplication exists (3+ similar lines of code)
-- Names are unclear or misleading (see `code-quality/rules/naming.md`)
+- Names are unclear or misleading
 - A function does more than one thing — name fails the "no `and`" test
 - Test code has duplicated setup that could be a shared fixture
 - Code is hard to read top-to-bottom in one pass
@@ -91,34 +71,32 @@ Each refactoring step should be atomic:
 
 Never batch multiple refactoring steps into one edit. If a test breaks, you need to know exactly which change caused it.
 
-### 3. Refactoring Moves (cite recipes by ID)
+### 3. Refactoring Moves (name the move)
 
-The detailed catalog lives in `code-quality/rules/refactor-recipes.md`.
-Cite recipes by ID in commit messages and progress reports so the move is
-unambiguous and the rationale is one click away.
+Name the move in commit messages and progress reports so it is unambiguous.
 
-The recipes that come up most often in TDD's REFACTOR phase:
+The moves that come up most often in TDD's REFACTOR phase:
 
-- **R4 Extract Guarded Function** — replace nested conditions with guard
+- **Extract Guarded Function** — replace nested conditions with guard
   clauses at the top and an unindented happy path. Usually the highest-
   value first move.
-- **R16 Extract by Abstraction Level** — split when the body mixes
+- **Extract by Abstraction Level** — split when the body mixes
   orchestration sentences with low-level mechanics.
-- **R3 Replace Conditional with Lookup** — `if/else if` chains
+- **Replace Conditional with Lookup** — `if/else if` chains
   dispatching on a value become a record or `Map`.
-- **R1 Consolidate Parallel Maps** — multiple maps keyed by the same
+- **Consolidate Parallel Maps** — multiple maps keyed by the same
   union collapse into one `Record<Union, { ...metadata }>`.
-- **R6 Replace Type Declaration with Inferred Type** — drop hand-written
+- **Replace Type Declaration with Inferred Type** — drop hand-written
   `type Foo = {...}` parallel to a Zod schema; use `z.infer<typeof FooSchema>`.
-- **R10 Total-ise the Function** — return `null` / `Result<T, E>` instead
+- **Total-ise the Function** — return `null` / `Result<T, E>` instead
   of throwing for "not found" or returning sentinel values.
-- **R8 Push Impurity Outward** — extract a pure core; keep I/O at the edges.
-- **R9 Inject the Clock / RNG / IDs** — for any function whose tests
+- **Push Impurity Outward** — extract a pure core; keep I/O at the edges.
+- **Inject the Clock / RNG / IDs** — for any function whose tests
   proved flaky or required real time / randomness.
 - **Extract test fixture** — when 3+ tests share setup, replace with a
   factory like `buildUser(overrides)`.
 
-Orientation example (R4 Extract Guarded Function):
+Orientation example (Extract Guarded Function):
 
 ```javascript
 // Before
@@ -140,9 +118,6 @@ function transfer(from, to, amount) {
   // do the transfer
 }
 ```
-
-For the full catalog and trigger / replacement / rationale of every
-recipe, read `code-quality/rules/refactor-recipes.md`.
 
 ### 4. Run Full Suite
 
@@ -168,16 +143,14 @@ Catching tests-by-construction here — at the moment the test is written — is
 
 ### 6. Report
 
-Output, citing the recipe IDs applied:
+Output, naming the moves applied:
 ```
-REFACTOR: applied R4 (guard clauses in transfer) + R16 (extracted reserveStock) — all tests still passing.
+REFACTOR: applied Extract Guarded Function (transfer) + Extract by Abstraction Level (reserveStock) — all tests still passing.
 ```
 Or:
 ```
 REFACTOR: skipped — code is clean.
 ```
-
-Recipe IDs come from `code-quality/rules/refactor-recipes.md`.
 
 ---
 

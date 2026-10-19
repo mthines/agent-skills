@@ -42,7 +42,7 @@ Two scopes, used together, exactly as the canonical contract defines them:
 Lessons here are **procedural** and about *this skill's own judgment*, never about product data:
 
 - The optimal-vs-suboptimal bar (an axis that recurrently fired false; a materiality call that was wrong).
-- The anti-overlap guards (a proposal that was really a `code-quality` / `critical` / `holistic-review` finding in disguise).
+- The anti-overlap guards (a proposal that was really a `polish simplify` / `critical` / `holistic-review` finding in disguise).
 - The apply-safety judgment (a rewrite marked `apply_safe` that had to be reverted).
 - The plan-time judgment (a plan-mode proposal that duplicated the Existing Code Survey / `critical`, or a re-plan the planner rejected).
 

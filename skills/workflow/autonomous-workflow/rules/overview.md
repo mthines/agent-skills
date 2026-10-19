@@ -112,14 +112,13 @@ for full details.
 Phase 0: Validation + Mode Detection
     | (user confirms, mode selected)
 Phase 1: Planning (Full: deep analysis + confidence gate, Lite: mental plan)
-    | code-quality(plan), holistic-analysis (if complex), confidence(plan) >= 90%
+    | holistic-analysis (if complex), confidence(plan) >= 90%
     | (plan validated)
 Phase 2: Worktree Setup - MANDATORY
     | Skill("aw-create-plan") <- generates plan.md INSIDE worktree at .agent/{branch}/
     | (worktree created, plan.md written)
 Phase 3: Implementation (Full: follow plan.md, update Progress Log)
     | tdd / ux companions per task type, fast-check after each edit
-    | code-quality(code) once at end
     | (code complete)
 Phase 4: Testing & Iteration <- mode-aware cap (3 Lite / 5 Full) per failing area
     | At the cap: confidence(analysis) -> one-shot auto-replan, then escalate to user

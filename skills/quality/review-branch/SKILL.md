@@ -14,7 +14,6 @@ metadata:
   workflow_type: command
   tags:
     - review
-    - code-quality
     - convergence
     - local
     - pre-pr

@@ -16,7 +16,6 @@ metadata:
   workflow_type: command
   tags:
     - review
-    - code-quality
     - simplify
     - convergence
     - thread-resolution

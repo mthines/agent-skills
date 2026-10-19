@@ -100,7 +100,7 @@ As of v3.3 the skill uses exactly ONE architecture: Planner + Executor (two agen
 The deprecated monolithic single-agent template still exists for backward compat, but is not the default.
 
 It does NOT have five roles (clarifier → planner → implementer → tester → reviewer as separate agents).
-The companion skills (`tdd`, `ux`, `code-quality`, `confidence`, `docs`, `review-loop`, `aw-create-plan`, `aw-create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
+The companion skills (`tdd`, `ux`, `confidence`, `docs`, `review-loop`, `aw-create-plan`, `aw-create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
 A skill is a tool the agent reaches for — it does not own a context window of its own.
 
 ### 2.5 Three roles when complexity warrants: Planner, Generator, Evaluator

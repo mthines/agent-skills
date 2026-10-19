@@ -45,7 +45,7 @@ Why one pass, a fixed taxonomy, and no scores: [`references/why-single-pass.md`]
 ## When to use
 
 Use it before locking a plan or handing off to autonomous execution, before a high-stakes PR (migrations, auth, billing, shared infra), when a proposed root cause feels off, or at the end of a feature (`/critical deep code`).
-Skip it on routine, low-stakes edits, after `/confidence` already passed at ≥ 90% with zero concerns, and for syntactic checks (`/code-quality` covers those); `deep` costs ~5 sub-agent dispatches, so not on routine changes.
+Skip it on routine, low-stakes edits, after `/confidence` already passed at ≥ 90% with zero concerns, and for syntactic or style checks (`/polish simplify` and `pr-reviewer` cover those); `deep` costs ~5 sub-agent dispatches, so not on routine changes.
 
 ## Mode detection
 
@@ -165,7 +165,6 @@ If `Must-fix` and `Should-fix` are both empty, output `No blocking concerns foun
 
 ## Composition with other skills
 
-- `/code-quality` — confirm a code-mode finding with `Skill("code-quality")` before classifying it `must-fix`.
 - `/confidence` — suggest `/confidence <mode>` in `Next step`; never score here.
 - `/holistic-analysis` — when an `analysis` finding suggests the root cause is wrong, suggest re-running it before the `/confidence` gate.
 - `/ideate` — `deep` lens discovery ([`rules/deep-mode.md`](./rules/deep-mode.md#d1--lens-selection)); `/optimize-approach --deep` calls `Skill("critical", "deep code")` and consumes `Other alternatives raised`.

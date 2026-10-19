@@ -90,7 +90,6 @@ Every registry row for a phase you ran gets one line — `companion: <name> — 
 | 0 | `interview` | Full default-on (skip `--no-interview`, force `--interview`); owns restate-and-diff and the Missing-Information Gate; writes `brief.md` | — |
 | 1 | `lorekit-memory` | Always — read lessons before design | `memory.list loop::aw-lessons` |
 | 1 | `holistic-analysis` | Complex, multi-domain, or unfamiliar task | — |
-| 1 | `code-quality` | Always | `plan` |
 | 1 | `critical` | Only with `--critical` | `plan` |
 | 1 | `optimize-approach` | Full default-on (skip `--no-optimize`) | `plan` |
 | 1 | `confidence` | Always — the plan gate; cannot be disabled | `plan` |

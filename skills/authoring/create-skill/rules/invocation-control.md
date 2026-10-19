@@ -72,7 +72,7 @@ you want the user to also have access, leave this default (`true`).
 
 The skill is reasonably autonomous and useful in both directions:
 
-- Advisory skills (`code-quality`, `tdd`, `ux`, `holistic-analysis`).
+- Advisory skills (`critical`, `tdd`, `ux`, `holistic-analysis`).
 - Orchestrators with no destructive side effects until the user approves.
 
 This is the most permissive setting. The model auto-loads when relevant,

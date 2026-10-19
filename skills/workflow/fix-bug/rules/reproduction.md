@@ -122,7 +122,7 @@ The `/tdd` skill handles:
 - Framework discovery (Vitest / Jest / pytest / Go testing / cargo test).
 - File naming and directory placement matching project convention.
 - The RED phase — confirming the test fails for the right reason before any fix.
-- Coordinating with `code-quality` during REFACTOR.
+- The REFACTOR quality checklist.
 
 `/fix-bug` consumes only the **RED phase output**: the test path and the failing-on-HEAD command.
 GREEN/REFACTOR happen later inside the executor (Phase 6) under `/tdd`'s discipline.

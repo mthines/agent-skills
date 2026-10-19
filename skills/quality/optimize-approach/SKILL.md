@@ -34,7 +34,7 @@ This skill is the fourth review lens in this repo, distinct from the three that 
 | --- | --- | --- |
 | `holistic-analysis` review | Does the diff *do what it claims* and *fit the system*? | No |
 | `critical` | How could this *fail*? | No |
-| `code-quality` simplify | Can this be *mechanically* simpler? | Yes — Class M only |
+| `polish` simplify | Can this be *mechanically* simpler? | Yes — mechanical items only |
 | **`optimize-approach`** *(this skill)* | Is this the *most optimal approach*, and if not what is? | Yes — gated |
 
 > **This `SKILL.md` is a thin index.** Detailed rules live in `rules/*.md` and load on demand.
@@ -143,7 +143,7 @@ Full contract: [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.
 
 ## Core Principles
 
-1. **Approach-level only.** Judge the *shape of the solution*, not lines. Line-level cleanups belong to `code-quality`; failure modes to `critical`; intent/system-fit to `holistic-review`.
+1. **Approach-level only.** Judge the *shape of the solution*, not lines. Line-level cleanups belong to `polish simplify`; failure modes to `critical`; intent/system-fit to `holistic-review`.
 2. **Silence is the default outcome.** Most changes are already optimal enough — say nothing rather than manufacture a "better way".
 3. **Understand before proposing.** A proposal requires a holistic trace and a `confidence(analysis)` gate — never a shallow "you could also…".
 4. **Apply only behind the gate.** An approach rewrite is applied only at `confidence(code) ≥ 90 %`, scoped to the diff's files, with revert-on-failure. Otherwise it is proposed, not applied.
@@ -151,7 +151,7 @@ Full contract: [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.
 
 ## Anti-patterns (one-liners — full list in the rules)
 
-- Proposing a "better way" that just restates a `code-quality` mechanical refactor.
+- Proposing a "better way" that just restates a `polish simplify` mechanical cleanup.
 - Manufacturing a suboptimal verdict on a change that clears the materiality bar.
 - Applying an approach change across files outside the diff, or without the confidence gate.
 - Emitting more than the cap of proposals — approach review is quality-over-quantity.

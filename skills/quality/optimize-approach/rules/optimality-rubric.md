@@ -40,7 +40,7 @@ The axis is recorded on the proposal so the caller and the reader can see *why* 
 The dominant failure mode is producing noise the other three lenses already own.
 **Drop the candidate (verdict stays `optimal`) when any guard fires:**
 
-1. **Mechanical-tidy guard (vs `code-quality simplify`).** If the improvement is a Class M mechanical refactor — rename, guard-clause flip, dead-code removal, magic-number extraction, comment trim — it is *not* an approach change. `code-quality` owns it. Only escalate when the *shape of the solution* changes, not its surface.
+1. **Mechanical-tidy guard (vs `polish simplify`).** If the improvement is a mechanical cleanup — rename, guard-clause flip, dead-code removal, magic-number extraction, comment trim — it is *not* an approach change. `polish simplify` owns it. Only escalate when the *shape of the solution* changes, not its surface.
 2. **Failure-mode guard (vs `critical`).** If the finding is "this could fail because X" without a better *approach* that structurally avoids X, it is a `critical` concern, not an optimality proposal. Only the robustness axis escalates, and only when it names the safer approach.
 3. **Intent / system-fit guard (vs `holistic-review`).** If the finding is "the diff does not do what it claims" or "a caller breaks", that is `intent-mismatch` / `system-fit` — `holistic-review` owns it. Optimize-approach assumes the diff is correct and asks whether a *better correct* approach exists.
 4. **Rewrite-for-taste guard.** If the alternative is a lateral move (equally good, just different style), the verdict is `optimal`. A proposal must be *materially* better, not merely a preference.
@@ -83,13 +83,13 @@ Verdict: suboptimal → propose reusing `withRetry`.
 ```text
 Unit: `const timeoutMs = 5000` inline in the new fetch call
 Axis: simplicity — could be a named constant.
-Guard 1 (mechanical-tidy) FIRES: magic-number extraction is a Class M code-quality fix.
-Verdict: optimal (drop — code-quality owns this).
+Guard 1 (mechanical-tidy) FIRES: magic-number extraction is a `polish simplify` cleanup.
+Verdict: optimal (drop — `polish simplify` owns this).
 ```
 
 ## Common mistakes
 
-- Escalating a rename or dead-code removal. **Fix:** anti-overlap guard 1 — that is `code-quality`, verdict `optimal`.
+- Escalating a rename or dead-code removal. **Fix:** anti-overlap guard 1 — that is `polish simplify`, verdict `optimal`.
 - Escalating "this might throw" with no better approach. **Fix:** anti-overlap guard 2 — that is `critical`, verdict `optimal`.
 - Escalating a lateral style preference. **Fix:** rewrite-for-taste guard — a proposal must be materially better.
 - Proposing a large-blast rewrite for a marginal win. **Fix:** the materiality bar's "worth the switch" test — verdict `optimal`.

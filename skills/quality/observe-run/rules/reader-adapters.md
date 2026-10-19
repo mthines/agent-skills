@@ -29,8 +29,7 @@ dependency whatsoever.
 
 No plugin registry, no discovery protocol, no reader-configuration schema exists for a fifth
 reader. Adding one is a one-row edit to this table when it becomes needed — building the
-abstraction ahead of that need is exactly the premature generality `code-quality` rule 4 warns
-against.
+abstraction ahead of that need is premature generality.
 
 ## The `dash0 -X otlp proxy` reference
 

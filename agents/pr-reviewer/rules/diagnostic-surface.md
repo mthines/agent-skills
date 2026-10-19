@@ -31,7 +31,7 @@ It rewrites **exactly one sticky report comment** per PR on every run, and posts
 Its own run state lives in a per-PR LoreKit **state record**, not in the report body: the `<!-- PR_REVIEWER_LEDGER … -->` block, the legacy and pointer fetch ladders, and the `PRIOR_DIAGNOSTICS` Markdown parse are all retired.
 
 The retired `reviewer` agent no longer exists; its own-work sub-modes were folded into this agent's self relation.
-Auto-fix now lives only in `implement-suggestion` and `code-quality simplify` — an auto-fix attempt by `pr-reviewer` is a guard failure.
+Auto-fix now lives only in `implement-suggestion` and `polish simplify` — an auto-fix attempt by `pr-reviewer` is a guard failure.
 
 ---
 
@@ -61,7 +61,7 @@ Auto-fix now lives only in `implement-suggestion` and `code-quality simplify` �
 | 1.7 | Review config load | [shared/rules/review-config.md](../../shared/rules/review-config.md) | Review-config hierarchy resolved (default `.github/review.yaml`, legacy root `.review.yaml` honoured, subtree `.review.yaml` overrides); absent config → `profile: balanced` (threshold 80, inline placement cap 5, no filters) |
 | 1.7b | Standards discovery (default ON) | [shared/rules/standards-conformance.md](../../shared/rules/standards-conformance.md) | Reuses `review-config.md` upward walk to discover governing docs (`CLAUDE.md`, `.claude/rules/*.md`, `AGENTS.md`, root slice); merges review-config `standards:` entries (`.github/review.yaml` + subtree `.review.yaml`); applies 30,000-char nearest-first cap; logs drops; caches as `STANDARDS_DOCS`; skips on `--no-standards`, trivial-skip, or `incremental-quick` (the same three conditions Step 2.4d skips on) |
 | 1.8 | Pre-merge gate checks | [pr-reviewer.md § Step 1.8](../../pr-reviewer.md) | Gates 1–5 evaluated against the full PR state; `--skip-gates` sets them `SKIPPED`; token-economy holistic-skip heuristic on ≥ 3 failing gates |
-| 2 | Review (multi-rubric + personas) | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | `code-quality` always; `ux` on UI globs; `critical` on auto-engage / `--critical`; lenses; Personas 1–4 (Persona 4 skipped in `incremental-quick`) |
+| 2 | Review (multi-rubric + personas) | [shared/rules/rubric-composition.md](../../shared/rules/rubric-composition.md) | `quality` checklist always; `ux` on UI globs; `critical` on auto-engage / `--critical`; lenses; Personas 1–4 (Persona 4 skipped in `incremental-quick`) |
 | 2.2 | Relevance-memory filtering | [shared/rules/comment-relevance-memory.md § Read](../../shared/rules/comment-relevance-memory.md) | Drop / downgrade not-relevant patterns; promote reliably-resolved ones; `APPLIED_MEMORIES[]` built for the review-body diagnostics |
 | 2.3 | Filter suppression | [shared/rules/review-config.md § Filters](../../shared/rules/review-config.md) | Drop findings whose category is in the effective `filters:` list; runs before holistic; no-op when no review config is present; also the **materiality filter** — cosmetic nitpick/suggestion on a docs/comment-only incremental delta dropped here (pre-clearing, `Materiality drops`, never enters `<CL>`) |
 | 2.4 | Holistic review (default ON in `full`) | [shared/rules/holistic-review.md](../../shared/rules/holistic-review.md), `Skill("holistic-analysis", "review")` | Runs unless `--no-holistic`, trivial-skip, token-economy skip, or an incremental run; findings mapped to `issue` (intent-mismatch) / `question` (system-fit, scope-creep) in cross relation |
@@ -148,7 +148,7 @@ The matrix is not exhaustive — when a real failure exposes a guard not listed 
 | `F-rubric-uncoordinated` | Multi-rubric collision | Two rubrics produce conflicting fixes on the same line; no consolidation step ran | 2.5 |
 | `F-holistic-skipped-on-non-trivial` | Default-on bypass | Holistic review skipped on a non-trivial diff (false-positive trivial-skip heuristic, or unannounced `--no-holistic`) | 2.4 |
 | `F-system-fit-framed-as-issue` | Cross-review framing | A `system-fit` finding posted as `issue:` instead of `question:` in the cross relation — violates the cross-review framing rule | 2.4 → 2.9 |
-| `F-auto-fix-attempted` | Read-only violation | The agent edited code, applied an optimality rewrite, or otherwise wrote outside `gh api pulls/{n}/reviews`; auto-fix lives only in `implement-suggestion` / `code-quality simplify` | 2 / 2.4c |
+| `F-auto-fix-attempted` | Read-only violation | The agent edited code, applied an optimality rewrite, or otherwise wrote outside `gh api pulls/{n}/reviews`; auto-fix lives only in `implement-suggestion` / `polish simplify` | 2 / 2.4c |
 | `F-multiple-reviews-posted` | Posting invariant | More than one GitHub review posted in a single run | 4 |
 | `F-event-fallback` | Anti-pattern fallback | On API failure, the agent retried with a different event or endpoint instead of reporting verbatim and stopping | 4 |
 | `F-line-out-of-hunk` | Diff geometry | Proposed `(file, line)` falls outside any RIGHT-side hunk; payload rejected entirely | 3.5 |
@@ -286,7 +286,7 @@ Diagnoses lean on the transcript, the GitHub-side sticky and reviews (inspectabl
 - Manual end-to-end: invoke against a known PR with a deliberately out-of-hunk proposed comment line; confirm `line-validity.md` retargets or drops it.
 - Manual end-to-end: invoke against your own PR; confirm `REVIEW_RELATION` is set to `self`, the agent does not refuse, and the review posts as a visible `COMMENT`.
 - Manual end-to-end: invoke against someone else's PR; confirm `REVIEW_RELATION` is `cross`, `system-fit` findings are framed as `question:`, and no optimality proposal is applied.
-- Manual end-to-end: invoke with `--with code-quality,ux,critical,extra` (4 lenses); confirm the agent aborts with `--with: max 3 lenses (got 4)`.
+- Manual end-to-end: invoke with `--with tdd,ux,critical,extra` (4 lenses); confirm the agent aborts with `--with: max 3 lenses (got 4)`.
 - Manual end-to-end: invoke with one comment naming a backticked symbol absent from the diff; confirm `finding-grounding.md` drops it and logs the drop.
 - Manual end-to-end: invoke with one deliberately overlong comment; confirm `comment-shape.md` drops it before posting.
 - Manual end-to-end: re-invoke on a PR with a prior `<!-- PR_REVIEWER_REPORT -->` review; confirm `CARRIED_FINDINGS` are re-admitted and Step 2.9c resolves only this agent's own fixed / declined threads.

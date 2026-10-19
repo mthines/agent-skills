@@ -139,7 +139,7 @@ Review mode is opt-out at the calling agent's layer (the calling agent enables i
 ## Anti-patterns
 
 - Do NOT withhold a finding that clears the Phase R3 severity floor because the list is getting long — there is no count ceiling, and a finding dropped here is one no downstream gate can recover. Equally, do NOT pad: emit nothing when nothing clears the floor.
-- Do NOT produce findings that overlap with line-level rubrics (`code-quality`, `ux`). Those are the caller's job and would be deduped out anyway.
+- Do NOT produce findings that overlap with line-level rubrics (`quality`, `ux`). Those are the caller's job and would be deduped out anyway.
 - Do NOT propose fixes — `system-fit` finding describes the gap; the calling agent or PR author decides how to close it.
 - Do NOT emit a confidence score per finding — that's `Skill("confidence", "code")`'s job, downstream.
 - Do NOT walk the full 8-phase protocol — `review` mode is streamlined R1 → R2 → R3 only. Reach for `fix` mode if the work is actually root-cause analysis.

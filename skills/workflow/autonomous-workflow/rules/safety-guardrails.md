@@ -41,7 +41,7 @@ clean recovery.
 | 0     | Tier selected (Micro / Lite / Full). User confirmed understanding. No unresolved `blocking` missing-information item — even under `--no-confirm`. |
 | 1     | Plan matches requirements. `Skill("confidence", "plan")` >= 90% (mandatory companion, Full Mode only — Lite and Micro have no `plan.md`). Every `[user-stated]` requirement covered by an Acceptance Criterion; every planned `create` has an Existing Code Survey verdict. |
 | 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` + `checks.yaml` written under `.agent/{branch}/` (Full Mode). |
-| 3     | Working in isolated worktree. Build/lint passes after each edit. `code-quality(code)` run at end.  |
+| 3     | Working in isolated worktree. Build/lint passes after each edit. |
 | 4     | All tests pass AND every `checks.yaml` check passes (or `unsatisfiable` user-approved) OR user-approved stop after stuck-loop escalation. |
 | 5     | Docs reflect changes. `Skill("docs", "update --auto")` run.                               |
 | 6     | `pr-reviewer` dispatched via `review-loop` (`--critical`; self mode; read-only — findings applied by `implement-suggestion`); blocking findings resolved. Walkthrough shown. Draft PR opened via `Skill("create-pr")`. |

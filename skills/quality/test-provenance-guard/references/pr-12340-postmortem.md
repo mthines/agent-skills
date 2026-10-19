@@ -74,7 +74,7 @@ PR opened.
 | Layer                                            | Outcome                                                                                                                                         |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
 | Phase 3 fast type-check                          | PASS — local copy and test agree.                                                                                                              |
-| Phase 3 `code-quality(code)`                     | Reviewed production code; tests not in scope.                                                                                                   |
+| Phase 3 quality review                           | Reviewed production code; tests not in scope.                                                                                                   |
 | Phase 4 Step 5 ("validate the requirement")      | Vague principle — no mechanical check.                                                                                                          |
 | Phase 4 Step 6 final validation                  | `pnpm test:unit url.unit.ts` — all 5 green.                                                                                                     |
 | Phase 6 `review-changes`                         | Pre-push review focused on commit hygiene, walked the diff — saw a new test file with tests, did not flag the local declaration.                |

@@ -9,7 +9,7 @@ tags:
 
 # Rubric composition
 
-`pr-reviewer` loads multiple review rubrics: `code-quality` (always for substantive diffs), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
+`pr-reviewer` loads multiple review rubrics: `quality` (always for substantive diffs — the inline checklist under [Load order](#load-order)), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 
@@ -31,7 +31,13 @@ Without a consolidation step, each rubric emits findings independently and the a
 
 Strict order so dedup is deterministic:
 
-1. `code-quality` (always, unless diff is trivial — single-line typo, ≤ 5 line whitespace fix).
+1. `quality` (always, unless diff is trivial — single-line typo, ≤ 5 line whitespace fix).
+   Walk each changed hunk against this checklist:
+   - **Readability:** the code reads top-to-bottom in one pass; no comment restates what the code does.
+   - **Nesting:** no `if` nested 3 or more levels deep where guard clauses would flatten it.
+   - **Naming:** names state intent (`pendingOrders`, not `data2`).
+   - **Duplication and reuse:** no new helper or block that duplicates an existing one in the repo.
+   - **Neighbour patterns:** the change matches the structure and conventions of neighbouring files.
 2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
 3. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
    `--no-critical` suppresses the config and the heuristic.
@@ -220,9 +226,9 @@ Each rubric uses its own severity vocabulary. Map to the 5-category Conventional
 
 | Source rubric | Severity | Category |
 | --- | --- | --- |
-| `code-quality` | error / blocking | `issue` |
-| `code-quality` | warn / non-blocking | `suggestion` |
-| `code-quality` | info / nit | `nitpick` |
+| `quality` | error / blocking | `issue` |
+| `quality` | warn / non-blocking | `suggestion` |
+| `quality` | info / nit | `nitpick` |
 | `ux` | Critical | `issue` |
 | `ux` | High | `issue` |
 | `ux` | Medium | `suggestion` |

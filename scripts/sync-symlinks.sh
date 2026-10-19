@@ -60,7 +60,7 @@ AW_SKILLS=(
   aw-create-plan
   aw-create-walkthrough
   confidence
-  code-quality
+  polish
   holistic-analysis
   tdd
   ux

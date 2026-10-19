@@ -61,7 +61,7 @@ partial/triaged run for files nobody read, reopening the hole the predicate exis
 
 Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
-1. Load `code-quality` (always, unless `REVIEW_DIFF` is trivial).
+1. Load the `quality` checklist (always, unless `REVIEW_DIFF` is trivial).
 2. Load `ux` (UI globs — against `REVIEW_DIFF`).
 3. Load `critical` (`--critical`, `context.reviewConfig.critical: always`, or auto-engage heuristic).
 4. Load `--with` lenses (max 3).

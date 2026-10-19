@@ -134,8 +134,8 @@ Otherwise evaluate in this precedence order (first match wins):
 
 | # | Flags present | Invoke | What runs |
 | - | --- | --- | --- |
-| 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")` | Light mechanical pass (comments, naming, dead code). |
-| 2 | `--no-review` | `Skill("polish", "simplify")` | code-quality simplify — apply Class M refactors once. |
+| 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")` | Light mechanical pass (comments, docstrings, `else` after `return`, naming). |
+| 2 | `--no-review` | `Skill("polish", "simplify")` | Mechanical cleanups (comments, dead code, nesting, constants) applied once, each behind a test check. |
 | 3 | `--no-simplify` | `Task(subagent_type="pr-reviewer", prompt="<pr-url>")` | `pr-reviewer` **agent** (Task tool, not `Skill()`) one-shot — findings surfaced, not applied. |
 | 4 | **none of the above (default)** | `Skill("review-loop", "<pr-url> --no-ci")` | `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations, until every thread is resolved (fix or reply); refreshes the PR description. |
 

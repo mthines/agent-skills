@@ -190,13 +190,11 @@ trigger registry is in
 | 0     | `interview`            | Optional  | Default-on scope alignment in Full Mode (adaptive — silent on a crisp request; `--no-interview` skips, `--interview` forces). Restate-and-diff + missing-information gate; writes `brief.md` |
 | 1     | `lorekit-memory`       | Optional  | Reads `loop::aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
 | 1     | `holistic-analysis`    | Optional  | Multi-domain execution-path tracing           |
-| 1     | `code-quality`         | Optional  | Design-quality review (informs the plan)      |
 | 1     | `optimize-approach`    | Optional  | Default-on approach-optimality check (`--no-optimize` to skip); adopted proposals trigger a bounded re-plan |
 | 1     | `confidence`           | **Required** | Plan gate (>= 90% to proceed)              |
 | 2     | `aw-create-plan`       | Optional  | Writes `.agent/{branch}/plan.md`              |
 | 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
 | 3     | `ux`                   | Optional  | UI / accessibility review when UI files touched |
-| 3     | `code-quality`         | Optional  | End-of-Phase-3 code-quality pass              |
 | 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + aw-target exist |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
@@ -467,7 +465,7 @@ to this skill's source.
 - [`confidence`](../../quality/confidence/) — quality gate (plan / code / analysis)
 - [`aw-create-plan`](../aw-create-plan/) — `plan.md` artifact generator
 - [`aw-create-walkthrough`](../aw-create-walkthrough/) — `walkthrough.md` artifact generator
-- [`code-quality`](../../quality/code-quality/) — readability and complexity review
+- [`polish`](../../quality/polish/) — simplifies the branch diff and prunes comments (via `review-loop`)
 - [`tdd`](../../quality/tdd/) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/) — UI / accessibility review
 - [`holistic-analysis`](../../analysis/holistic-analysis/) — execution-path analysis

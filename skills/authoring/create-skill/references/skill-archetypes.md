@@ -30,7 +30,7 @@ frontmatter, the layout, and what makes the shape worth using.
 
 ## A1 — Advisory skill (review-style)
 
-**Examples in this repo:** `code-quality`, `ux`,
+**Examples in this repo:** `critical`, `ux`,
 `holistic-analysis`.
 
 **Shape:**
@@ -48,11 +48,11 @@ my-advisory/
 
 ```yaml
 ---
-name: code-quality
+name: readability-review
 description: >
   Reviews code for cognitive complexity, readability, and maintainability.
   Use during PR review, after writing code, or when asked to "clean this up".
-  Triggers on "review code", "audit complexity", "/code-quality".
+  Triggers on "review code", "audit complexity", "/readability-review".
 metadata:
   workflow_type: advisory
 ---

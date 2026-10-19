@@ -95,7 +95,7 @@ refactoring and testing".
 **Why bad:** Lower accuracy, harder to compose, larger context cost. One
 skill, one job.
 
-**Fix:** Split into focused skills (`code-quality`, `pr-review`,
+**Fix:** Split into focused skills (`critical`, `pr-review`,
 `tdd`) and compose with `Skill()` calls.
 
 ### S2 — Deeply nested references

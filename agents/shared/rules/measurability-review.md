@@ -261,7 +261,7 @@ report's `Nothing to report` footnote ([`report-rendering.md`](../../pr-reviewer
   [`rum-tracking`](../../../skills/analysis/rum-tracking/SKILL.md), reached through `measurable`, not
   from here.
 - **It does not judge instrumentation quality.** A span with the wrong attribute name is a
-  `code-quality` or standards finding; this lens only asks whether the signal exists and is watched.
+  `quality` or standards finding; this lens only asks whether the signal exists and is watched.
 - **It does not create or edit dashboards, alerts, SLOs, or check rules.** `measurable` itself
   forbids that in every mode, and a reviewer has even less business doing it.
 - **It does not gate on test coverage.** A well-tested change with no production signal is exactly

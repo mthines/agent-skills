@@ -95,8 +95,7 @@ line is what lets the next measurement confirm or refute them.
 | -------------------- | ----- | ----------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
 | `interview`          | 0     | Full Mode default-on (adaptive — silent on a crisp request; skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `brief.md` + readiness verdict | —              | Remove invocation in [`phase-0-validation.md`](./phase-0-validation.md#step-3a-scope-alignment) |
 | `holistic-analysis`  | 1     | Task touches 5+ files, 2+ packages, OR user calls it complex/unfamiliar | —                     | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#complex-task-detection) |
-| `code-quality`       | 1     | Always (informs design — favors low-complexity structures upfront)      | `plan`                | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#design-quality)         |
-| `critical`           | 1     | Opt-in only — user passed `--critical` to the workflow. Single adversarial pre-mortem pass between `code-quality(plan)` and `confidence(plan)`; advisory, does not gate. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#adversarial-pre-mortem) |
+| `critical`           | 1     | Opt-in only — user passed `--critical` to the workflow. Single adversarial pre-mortem pass before `confidence(plan)`; advisory, does not gate. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#adversarial-pre-mortem) |
 | `optimize-approach`  | 1     | Default-on in Full Mode (quiet early-exit; skip on `--no-optimize`). "Is this the most optimal approach?" — one pass between the pre-mortem and `confidence(plan)`; advisory, adopted proposals trigger a bounded re-plan. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#approach-optimality) |
 | `confidence`         | 1     | Full Mode (plan gate — MANDATORY there; Lite has no `plan.md` to gate, Micro skips all companions) | `plan`                | **Cannot disable** — required gate (Full Mode)                           |
 | `lorekit-memory`     | 1     | Always — load accumulated workflow lessons before design (fast tier of the self-improvement loop) | `memory.list loop::aw-lessons`     | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#lessons-read) |
@@ -105,7 +104,6 @@ line is what lets the next measurement confirm or refute them.
 | `tdd`                | 3     | Pure logic / business rules / "test-driven" requested                   | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#tdd-trigger) |
 | `ux`                 | 3     | Files touched include `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#ux-trigger)  |
 | `measurable` | 3 | Matches a `web`/`mobile`/`api`/`worker` pattern in the skill's own `rules/scope-detection.md` (single source of truth for the pattern list — not restated here) | `implement`           | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#observability-trigger) |
-| `code-quality`       | 3     | Once at end of Phase 3 (not per-file — TDD owns inner loop)             | `code`                | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#code-quality-trigger) |
 | `confidence`         | 4     | At iteration cap on same failing area (3 in Lite Mode, 5 in Full Mode) — automatic | `analysis`        | Adjust cap or threshold in [`phase-4-testing.md`](./phase-4-testing.md#stuck-loop-detection) |
 | `holistic-analysis`  | 4     | Auto: when `confidence(analysis) < 90%` (one-shot per area). User-driven: when user picks `try different approach` after escalation | — | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#stuck-recovery)            |
 | `test-provenance-guard` | 4  | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written or extended | `--diff --base $(git merge-base HEAD main) --fix` — autofix is **gated by `confidence(code) ≥ 90 %`** before any file is mutated, plus the three post-heal mechanical gates afterwards. Either failure ⇒ no refactor; stuck-loop protocol takes over | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#test-provenance-trigger) |
@@ -268,7 +266,7 @@ When a companion is invoked, append a one-liner to the `plan.md` Progress Log
 (Full Mode only):
 
 ```markdown
-- [2026-04-29T15:30:00Z] Phase 1: code-quality(plan) — applied (3 design suggestions integrated)
+- [2026-04-29T15:30:00Z] Phase 1: critical(plan) — applied (2 must-fixes addressed, steelman recorded)
 - [2026-04-29T15:32:00Z] Phase 1: confidence(plan) — 92% (passed gate)
 ```
 

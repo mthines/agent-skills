@@ -10,7 +10,7 @@ tags:
 
 # Optimality review
 
-The line-level rubrics (`code-quality`, `ux`, `critical`, lenses) and the holistic pass (`intent-match` + `system-fit`) all assume the change's *approach* is a given and check it locally.
+The line-level rubrics (`quality`, `ux`, `critical`, lenses) and the holistic pass (`intent-match` + `system-fit`) all assume the change's *approach* is a given and check it locally.
 None of them asks the design-level question: **is this the most optimal way to do it, and if not what is?**
 
 This rule routes that question through `Skill("optimize-approach", "<report|apply>")`, which returns 0–2 structured proposals (or nothing when the approach is already optimal).
