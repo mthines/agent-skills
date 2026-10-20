@@ -126,6 +126,14 @@ export const SUITES = [
     choices: ["critical", "high", "medium", "low"],
   },
   {
+    name: "skill-correction-route",
+    golden: "golden/skill-correction-route.jsonl",
+    rubric: { file: "skills/authoring/create-skill/rules/run-first.md", section: "## Step 4 — Route each correction" },
+    instruction: "You are the create-skill skill at Distill. Using ONLY the routing table below, give the correction exactly one route. Answer with the route in kebab-case: skill gotcha → skill-gotcha, workspace fact → workspace-fact, check script → check-script, subagent step → subagent-step.",
+    inputKey: "input", inputLabel: "Correction",
+    choices: ["skill-gotcha", "workspace-fact", "hook", "check-script", "subagent-step", "drop"],
+  },
+  {
     name: "behavioral-barrier",
     golden: "golden/behavioral-barrier.jsonl",
     rubric: { file: "skills/design/behavioral-design/rules/diagnosis.md", section: "## Classification procedure" },
