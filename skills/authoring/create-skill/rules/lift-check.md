@@ -50,6 +50,8 @@ Scaffold with `claude plugin eval init`, then write at least 3 cases under `eval
 | The skill's own `evals/evals.json` prompts | when present |
 | Real requests from the user's history that should trigger the skill | to reach 3 |
 
+For a slash-only skill (`disable-model-invocation: true`), start every case prompt with `/<name>`: a plain prompt never loads it, so it would score as inert and prune would propose deleting it.
+
 Each case is `evals/<case>/prompt.md` (frontmatter `runs`, `model`, `max_turns`; body = the prompt) plus at least one `evals/<case>/graders/<grader>.md`.
 Turn each ledger correction and each definition-of-done clause into a grader; prefer deterministic types (`regex`, `file_exists`, `tool_used`) over `llm`.
 
