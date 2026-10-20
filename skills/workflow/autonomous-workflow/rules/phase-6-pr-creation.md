@@ -31,7 +31,7 @@ Hand the work off to the user as a reviewable DRAFT pull request — but only af
 
 1. Pre-flight checks pass (build, lint, tests).
 2. `Skill("aw-create-walkthrough")` (Full Mode) generates `.agent/{branch}/walkthrough.md`.
-3. `Skill("create-pr", "--no-post-review")` writes the narrative description, converges the branch with a local `review-loop` (Step 5.5), pushes, opens the draft PR, and watches CI initialization.
+3. `Skill("create-pr", <the tier's flags>)` — see [PR Creation](#pr-creation) — writes the narrative description, converges the branch with a local `review-loop` (Step 5.5, Lite; Full reviewed in its Step 3), pushes, opens the draft PR, and watches CI initialization.
 4. The walkthrough content is shown inline in the conversation. **The PR is not "delivered" until the user has seen the walkthrough.**
 
 Gate: walkthrough shown in chat, draft PR opened, CI watch started.
@@ -50,7 +50,7 @@ Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 | ---- | ----------------------------------------------------------------------------- | --------------- |
 | 1    | Pre-flight checks (clean tree, build, lint, test)                             | Full + Lite     |
 | 2    | `Skill("aw-create-walkthrough")` → `.agent/{branch}/walkthrough.md`           | **Full only**   |
-| 3    | `Skill("create-pr", "--no-post-review")` → local review-loop, push, open draft PR, watch initial CI | Full + Lite     |
+| 3    | `Skill("create-pr", <the tier's flags>)` ([PR Creation](#pr-creation)) → local review-loop (Lite), push, open draft PR, watch initial CI | Full + Lite     |
 | 4    | Show `walkthrough.md` content inline in conversation                          | **Full only**   |
 | 5    | Report PR URL + summary, log Progress                                         | Full + Lite     |
 
@@ -77,8 +77,8 @@ Both loops gracefully skip if `review-loop` is not installed — log one line an
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
-| Runs in Full Mode         | Yes                                                                    |
-| Runs in Lite Mode         | Yes                                                                    |
+| Runs in Full Mode         | Only with `--pr-review` (posted Step 6.5)                              |
+| Runs in Lite Mode         | Only with `--pr-review` (posted Step 6.5)                              |
 | If missing | Report `skipped (not installed)`, then if `review-loop` and `pr-reviewer` are absent, log and continue with manual diff review |
 | Disable                   | Pass `--no-pre-review` to `create-pr` (not recommended; the PR opens unreviewed) |
 
@@ -121,7 +121,7 @@ Skill("aw-create-walkthrough")
 
 The skill gathers context from `plan.md`, git history, and test results to produce the walkthrough. It writes to `.agent/{branch}/walkthrough.md` inside the worktree.
 
-**Regenerate after the review-loop when it changed files.** The walkthrough is generated here, but `create-pr` Step 5.5 then runs `review-loop`, which applies findings as new commits — so a walkthrough written before the loop describes the pre-review branch. If the `review-loop` applied any findings (`M findings applied > 0` in its Progress Log line), re-run `Skill("aw-create-walkthrough")` after the loop so the narrative matches the final pushed diff.
+**Regenerate after a review-loop that runs after it and changed files.** On Full the local review ran in Step 3, before the walkthrough. Under `--pr-review`, `create-pr` Step 6.5 then runs `review-loop`, which applies findings as new commits — so a walkthrough written before the loop describes the pre-review branch. If the `review-loop` applied any findings (`M findings applied > 0` in its Progress Log line), re-run `Skill("aw-create-walkthrough")` after the loop so the narrative matches the final pushed diff.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
@@ -149,7 +149,7 @@ Skill("create-pr", "--no-pre-review --no-post-review")  # Full: Step 3 already r
 
 On Lite that runs Step 5.5's local `review-loop` (`branch-reviewer` → apply → `polish simplify`, cap 3) → push → open draft PR → Steps 7–8 watch CI and hand red CI to `ci-auto-fix`; on Full it skips Step 5.5. `--pr-review` drops only `--no-post-review`, so Step 6.5 also runs one posted `review-loop`. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, or `--no-quality`, nor `--no-pre-review` on Lite,** unless the user explicitly asked to skip a pass.
 
-> **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It does NOT let you skip the quality passes. `create-pr`'s `review-loop` (`pr-reviewer`, `implement-suggestion`, `polish simplify`) and the Phase 6 quality gate are sequential reasoning passes — the single-sequential-loop variant is explicitly permitted. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5).
+> **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It does NOT let you skip the quality passes. The local `review-loop` (`branch-reviewer`, apply, `polish simplify`) and the Phase 6 quality gate are sequential reasoning passes — the single-sequential-loop variant is explicitly permitted. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5).
 
 What `create-pr` handles:
 
@@ -275,7 +275,7 @@ Then move to Phase 7 to watch CI to green.
 
 - [ ] Pre-flight validation passed (clean tree, build, lint, test)
 - [ ] `Skill("aw-create-walkthrough")` invoked (Full Mode)
-- [ ] `Skill("create-pr", "--no-post-review")` invoked OR manual fallback executed
+- [ ] `Skill("create-pr", <the tier's flags>)` invoked ([PR Creation](#pr-creation)) OR manual fallback executed
 - [ ] PR opened as draft
 - [ ] Local `review-loop` converged the branch before the push (`create-pr` Step 5.5 on Lite, Step 3 on Full); open findings surfaced
 - [ ] Walkthrough content shown inline in conversation (Full Mode)
