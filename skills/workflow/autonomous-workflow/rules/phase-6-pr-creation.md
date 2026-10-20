@@ -189,9 +189,9 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 ```
 ### Phase 6 Delivery Receipt
 - aw-create-walkthrough: <walkthrough.md present | Lite Mode — skipped | skipped (<reason>)>
-- create-pr → local review-loop (branch-reviewer pass): <N iterations, M findings, B open | skipped (<reason>)>
-- create-pr → local review-loop (apply): <N findings applied, D declined | skipped (<reason>)>
-- create-pr → local review-loop (polish simplify): <recipe IDs applied | none | skipped (<reason>)>
+- local review-loop (branch-reviewer pass; create-pr Step 5.5 on Lite, Step 3 on Full): <N iterations, M findings, B open | skipped (<reason>)>
+- local review-loop (apply): <N findings applied, D declined | skipped (<reason>)>
+- local review-loop (polish simplify): <recipe IDs applied | none | skipped (<reason>)>
 ```
 
 If any line above would be blank, or would carry a reason outside the admissible four, the pass was skipped in error: run it, then re-emit the receipt.
@@ -277,7 +277,7 @@ Then move to Phase 7 to watch CI to green.
 - [ ] `Skill("aw-create-walkthrough")` invoked (Full Mode)
 - [ ] `Skill("create-pr", "--no-post-review")` invoked OR manual fallback executed
 - [ ] PR opened as draft
-- [ ] Local `review-loop` converged the branch before the push (via `create-pr` Step 5.5); open findings surfaced
+- [ ] Local `review-loop` converged the branch before the push (`create-pr` Step 5.5 on Lite, Step 3 on Full); open findings surfaced
 - [ ] Walkthrough content shown inline in conversation (Full Mode)
 - [ ] PR URL delivered to user
 - [ ] Worktree preserved for review
