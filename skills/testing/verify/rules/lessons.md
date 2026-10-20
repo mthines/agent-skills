@@ -47,6 +47,8 @@ Re-verify against the code before relying on a lesson; an absent lesson is never
 
 Write at these failure points — not on smooth runs:
 
+Never write a lesson whose fix works around a defect in the code under verification ("start without `--turbopack`"): that is a finding for `findings.jsonl`, and as a lesson it hides the defect from the next run.
+
 | Failure point | `trigger` | Example lesson |
 | --- | --- | --- |
 | Stack start or takeover failed, or needed an undocumented step | `command-failure` | Daemon bound to another worktree; `--repo-root` teardown was required |

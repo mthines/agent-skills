@@ -57,8 +57,12 @@ Nothing in `rules/` names a repo: repo values come from `.agents/aw/` ([`rules/c
 1. Resolve config per [`rules/config.md § Resolve`](./rules/config.md#resolve-the-config-every-skill-before-any-other-step). No `.agents/aw/environments.yml`, or the chosen environment is missing → run `setup` inline first. Never guess a URL, a dataset, or a start command.
 2. Read lessons — [`rules/lessons.md § Read`](./rules/lessons.md#read-step).
 3. Create `.agent/{branch}/verify/`, record `run_started_at` (UTC ISO-8601), and write `aw-tester`'s target `.agent/{branch}/aw-target.<env>.yml` from the environment per `config.md`.
+4. Keep every log, env file, script, and screenshot this run writes under `.agent/{branch}/verify/`; never under `/tmp`, where another run on this machine uses the same names.
 
 ## Pipeline
+
+This page is the map; each phase's rule file is the procedure.
+`Read` a phase's rule file (and, in phase 2, the driver file) before that phase's first action; a phase run from this page alone skips its log windows, edge matrix, and witness contract.
 
 | Phase | Name | Rule | Gate |
 | --- | --- | --- | --- |
@@ -79,6 +83,10 @@ Skill("ui-verify", "run .agent/<branch>/specs.md --env <env> --url <url> --no-te
 Agent(subagent_type="general-purpose",
       prompt='Run Skill("telemetry-verify", "--env <env> --from <window_start> --to <window_end> [--host <preview host>] [--driver <driver>] --brief .agent/<branch>/plan.md --out .agent/<branch>/verify/findings.jsonl") and return only its TELEMETRY block')
 ```
+
+Before the first dispatch, check that a tool named `mcp__<telemetry.yml mcp_server>__getSpans` exists when the backend is `dash0-mcp`.
+Absent → record `telemetry: skipped (Dash0 MCP server '<name>' not connected)` and dispatch nothing; never query another Dash0 server, because another org's empty answer proves nothing.
+No `plan.md` (an ad-hoc request) → pass `--brief .agent/<branch>/verify/intent.md`; the dispatch is still mandatory.
 
 Dispatch `telemetry-verify` for each window as soon as it closes, in parallel with the remaining browser work, so its ingest wait overlaps the edge and API runs. Both `ui-verify` runs pass `--no-telemetry`: `verify` owns the read, so no window is read twice.
 It returns `TELEMETRY …`, `pipe:`, one `AC-n <verdict> — <journey>` line per AC, `signals:`, `findings:`, and `[receipt] verdict: confirms|contradicts|ambiguous|null`; its findings land in the same `findings.jsonl` as `T-<n>`.
@@ -106,8 +114,9 @@ Every phase writes findings per [`rules/findings.md`](./rules/findings.md).
 2. **The running code is the PR's code.** Prove the change is in the checkout and the environment serves it.
 3. **Evidence or it did not happen.** Every pass and finding cites a screenshot, a response, a span, or a log line.
 4. **Graceful is a requirement.** A crash, blank screen, unhandled rejection, raw stack trace, or silent no-op on bad input is a finding.
-5. **Telemetry is the second witness.** A green UI with an ERROR span behind it, or a request whose trace never reached the API, is a finding.
-6. **Fix at the root, one commit per finding**, then re-verify the exact probe that found it.
+5. **Break what the AC creates.** An AC that creates a record on load, render, or submit gets a concurrency probe: fire the trigger twice in parallel, then count the rows.
+6. **Telemetry is the second witness.** A green UI with an ERROR span behind it, or a request whose trace never reached the API, is a finding.
+7. **Fix at the root, one commit per finding**, then re-verify the exact probe that found it.
 
 ## Anti-patterns
 

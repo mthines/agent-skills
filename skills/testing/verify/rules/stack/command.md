@@ -90,4 +90,6 @@ The window is the byte range between them: `tail -c +$((start+1)) <log> | head -
 ## Common mistakes
 
 - Running `pnpm dev` in the foreground of the tool call. **Fix:** it never returns; always detach and poll `ready_url`.
+- Starting a second server (another bundler, another flag) to isolate a build error on a guessed port. **Fix:** take a port `lsof` shows free and no `.agents/aw` environment names, log it to its own `procs/<name>.log`, and record it in `stack.json` so cleanup stops it.
+- Slicing a log with `tail -n`. **Fix:** slice by the byte offsets recorded around the probe; another writer's lines shift line numbers.
 - Killing only the shell PID. **Fix:** stop the process group; the dev server is a child.
