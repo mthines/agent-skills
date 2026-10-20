@@ -361,6 +361,7 @@ It adds:
 2. **The intent worker, in the same message, when `context.budget.topology` is `hybrid`.** A re-review that routes `standard` or `quick` is `in-context` and sends the reviewer alone.
 3. **A dispatch record and stamp** (`review-telemetry.mjs dispatch`, and `dispatched_at` in the intent dir).
 4. **`--repo-dir <path>`, when a local clone of the PR's repository exists** and this session's cwd is not one (the session's own checkout when its `origin` is the PR's repo, or a clone the user named).
+5. **The two pass-2 workers, in the same message, when `context.budget.finderPasses` is `2`** — `pr-review` Step 2's step 5b; the dispatched reviewer cannot send them itself.
 
 ```text
 # RIGHT — one message, both dispatches, as /pr-review Step 2 sends them

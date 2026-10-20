@@ -104,6 +104,14 @@ critical: always                         # auto (default) | always — `always` 
                                          # the invocation still suppresses it. There is no `off`.
                                          # See rubric-composition.md § Auto-engage heuristics
 
+finder_passes: 2                         # 1 (default) | 2 — `2` runs the active finders a second
+                                         # time in two isolated workers that never see pass 1, and
+                                         # unions both passes' candidates before verification. Costs
+                                         # two more sub-agents and 1.5x the tool-call budget per run.
+                                         # --finder-passes 1|2 on prepare-review.mjs beats it.
+                                         # See agents/pr-reviewer/rules/dispatch-topology.md
+                                         # § Two finder passes
+
 high_stakes_paths:                       # repo-specific critical paths (regex, case-insensitive)
   - "(^|/)ledger(/|$)"                   # EXTENDS the built-in list (auth, payments, migrations,
   - "(^|/)provisioning(/|$)"             # infra, secrets, …) owned by
@@ -459,7 +467,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 
 ## Run-level knobs
 
-`profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, and `critical` govern the whole run, not one file's findings.
+`profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, `critical`, and `finder_passes` govern the whole run, not one file's findings.
 `prepare-review.mjs` resolves them once, from the repo-level config (`.github/review.yaml`, else the legacy root `.review.yaml`) **at the PR's base commit**, and writes them to `context.reviewConfig`.
 **Why:** read from the head, a PR could lower its own review bar by editing the file it is reviewed under.
 
@@ -471,6 +479,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 | `effort` | `high` | `prepare-review.mjs` — forces `deep` and thoroughness 1 | CLI `--effort` or `--thoroughness` |
 | `thoroughness` | 0–1 | `prepare-review.mjs` — the budget's thoroughness | CLI `--effort` or `--thoroughness`; config `effort: high` |
 | `critical` | `auto` (default) / `always` | `pr-reviewer.md` Step 2 — the rubric load ([`rubric-composition.md` § Load order](./rubric-composition.md#load-order)) | CLI `--no-critical` |
+| `finder_passes` | `1` (default) / `2` | `prepare-review.mjs` — `budget.finderPasses`; the caller dispatches pass 2 ([`dispatch-topology.md` § Two finder passes](../../pr-reviewer/rules/dispatch-topology.md#two-finder-passes)) | CLI `--finder-passes` on `prepare-review.mjs` |
 
 1. Take these values from `context.reviewConfig`.
    Never re-read the head's `.github/review.yaml` for them, and never apply a head value the context does not carry.
@@ -493,10 +502,11 @@ profile: assertive
 ```
 
 ```yaml
-# ✗ ignored — `strict` is not a profile and 1.5 is outside 0–1; the run keeps balanced and the
-#   routed thoroughness, and lists both keys in RUN_ANOMALY
+# ✗ ignored — `strict` is not a profile, 1.5 is outside 0–1, and 3 is not 1 or 2; the run keeps
+#   balanced, the routed thoroughness, and one finder pass, and lists all three keys in RUN_ANOMALY
 profile: strict
 thoroughness: 1.5
+finder_passes: 3
 ```
 
 ---

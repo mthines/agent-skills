@@ -165,6 +165,16 @@ A worker's trace is coverage, never a finding: it marks consumer files and usage
 and nothing in it is posted. A missing or unreadable trace file folds as `[]`, so its consumers
 render as not checked, never as verified.
 
+**`budget.finderPasses == 2` adds two workers to that same message** — `intent-2` and
+`other-finders-2`, writing `<scratch>/pass2/intent.json` and `<scratch>/pass2/others.json` — so four
+`general` sub-agents go out at once and the wait is still the slowest worker's.
+Under an `in-context` budget the message carries only the two pass-2 workers, and you run pass 1's
+finders here first, without reading their files.
+Then union both passes before verifying anything, verify only `_needs_verification: true`, and leave
+an unreadable pass-2 file out of the union without retrying it
+([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes)).
+Give the union `--run-dir`: its ledger record is how `finalize.mjs` knows the union ran, and a delivered pass 2 without one is named in `RUN_ANOMALY` as never unioned.
+
 **Never dispatch anything else.** Phase E verifies one candidate at a time in this turn, and Step
 2.4b's targeted holistic traces are `Skill()` calls in this turn too. Neither is a fan-out, on this
 host or any other: a dispatch per candidate pays a sub-agent's whole base cost for one verdict.
@@ -194,11 +204,19 @@ Mark both workers on commands you already run ([`run-telemetry.md`](./run-teleme
 `worker intent start` and `worker other-finders start` on the command before the message, and the
 two `end` markers on the command that reads the files. The `worker intent end` record is what tells
 `finalize.mjs` the intent finder ran isolated.
+A pass-2 unit's `end` marker also takes `--done <its file>`, as in
+`worker intent-2 end --done <scratch>/pass2/intent.json`: `finalize.mjs` counts a pass-2 unit as run
+only from the `delivered` stamp that flag writes when the file parses
+([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes), step 3).
 
 If a worker returns no readable file, **do not dispatch it again**: here a retry runs in series,
-against the same timeout. Run that worker's finders in this context and add
+against the same timeout. For pass 1's two workers, run that worker's finders in this context and add
 `<worker> worker returned no readable candidates — ran its finders in-context` to `RUN_ANOMALY`
 through `context.render.RUN_ANOMALY`. The review never loses a finder.
+A pass-2 worker (`intent-2`, `other-finders-2`) is the exception: never run its finders here, because
+you have seen pass 1 and a pass 2 run by you is not independent.
+Leave its file out of the union and add nothing by hand: `finalize.mjs` names the unit in `RUN_ANOMALY`
+([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes), step 7).
 
 Fact 3 still binds: a worker cannot dispatch further, so no worker prompt may ask it to.
 
@@ -207,7 +225,9 @@ automation the top-level run is the loop, and this review is its one `general`
 sub-agent ([`review-loop/rules/agent0-runtime.md`](../../../skills/quality/review-loop/rules/agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)).
 Run every finder, the intent finder included, and the verifier in this context — the `in-context`
 topology, which the pipeline already permits — and return the verdict, the new-finding count, and
-the sticky URL in the final message. Never attempt a dispatch to recover the isolation: the second
+the sticky URL in the final message.
+A `finder_passes: 2` budget gets no pass 2 here; `finalize.mjs` names both pass-2 units in
+`RUN_ANOMALY` because the ledger holds no `end` record for them. Never attempt a dispatch to recover the isolation: the second
 rung does not exist.
 
 ## The dispatch prompt is short on purpose

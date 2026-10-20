@@ -72,9 +72,10 @@
 //   node review-telemetry.mjs step   <name> --run-dir <dir> [--attr key=value …]
 //   node review-telemetry.mjs end    [<name>] --run-dir <dir> [--attr key=value …]
 //   node review-telemetry.mjs attr   --run-dir <dir> [--target run|step] --attr key=value …
-//   node review-telemetry.mjs worker <unit> start|end --run-dir <dir> [--attr key=value …]
+//   node review-telemetry.mjs worker <unit> start|end --run-dir <dir> [--done <output-file>] [--attr key=value …]
 //   node review-telemetry.mjs worker <unit> import --from <worker-dir> [--done <output-file>] --run-dir <dir>
 //        [--wait <s>] [--wait-total <s>]   (poll for --done first; see rules/run-telemetry.md § Sub-agents)
+//        (on `end` and `import`, a --done file that parses stamps delivered=true and candidates=<n>)
 //   node review-telemetry.mjs dispatch --run-dir <dir>   (the caller's dispatch time, on a run it prepared)
 //   node review-telemetry.mjs finish --run-dir <dir> [--status ok|error] [--message m] [--force]
 //   node review-telemetry.mjs summary --run-dir <dir>
@@ -1088,6 +1089,22 @@ function gitOut(args) {
   }
 }
 
+/**
+ * A worker's `--done` output, read the way finalize.mjs's `--second-pass` reads it: a JSON array or
+ * `{candidates:[...]}`. Returns the candidate count, or null when the file is missing or does not
+ * parse — the `delivered` stamp finalize.mjs counts a finder_passes: 2 unit as run from.
+ * @param {string} path @returns {number|null}
+ */
+export function deliveredCount(path) {
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8"));
+    const list = Array.isArray(raw) ? raw : raw?.candidates;
+    return Array.isArray(list) ? list.length : null;
+  } catch {
+    return null;
+  }
+}
+
 /* ---------------------------------------- CLI ---------------------------------------- */
 
 /** @param {string} v @returns {string|number|boolean} */
@@ -1187,6 +1204,10 @@ async function main(argv) {
       const unit = positional[1] || "";
       const phase = positional[2];
       if (!/^[a-z][a-z0-9@_-]{0,39}$/.test(unit) || !["start", "end", "import"].includes(String(phase))) { warn("usage: worker <unit> start|end|import"); return; }
+      // `delivered` is this script's to set, from a --done file that parses, never from --attr: a bare
+      // `end` records that the worker returned, not that it left a readable file.
+      delete attrBag.delivered;
+      const doneNote = `${opts.done} is missing or not a JSON candidate array — recorded as not delivered`;
       if (phase === "import") {
         // `--wait <s>`: poll for the worker's output first, and record how long this run waited
         // (`<unit>_wait_ms` on the open step and the run), so a trace shows whether the late read
@@ -1236,13 +1257,19 @@ async function main(argv) {
         const first = dispatched ?? firstSeen;
         if (dispatched !== null) appendRecord(runDir, { t: "dispatch", ns: dispatched });
         const end = doneAt > last ? doneAt : last;
+        const count = donePath ? deliveredCount(donePath) : null;
         appendRecord(runDir, { t: "worker", unit, phase: "start", ns: first, attrs: attrBag });
-        appendRecord(runDir, { t: "worker", unit, phase: "end", ns: end });
+        appendRecord(runDir, { t: "worker", unit, phase: "end", ns: end, ...(count === null ? {} : { attrs: { delivered: true, candidates: count } }) });
         const runStart = BigInt(readLedger(runDir).find((r) => r.t === "run")?.ns || end);
         const secs = (/** @type {bigint} */ x) => Math.round(Number(x) / 1e8) / 10;
         process.stderr.write(`review-telemetry: worker ${unit} folded in — ${secs(end - first)}s long, done ${secs(end - runStart)}s after prepare began`
-          + `${dispatched !== null ? " (run now starts at the dispatch)" : ""}\n`);
+          + `${dispatched !== null ? " (run now starts at the dispatch)" : ""}${donePath && count === null ? `; ${doneNote}` : ""}\n`);
         return;
+      }
+      if (phase === "end" && opts.done) {
+        const count = deliveredCount(opts.done);
+        if (count === null) process.stderr.write(`review-telemetry: worker ${unit} end — ${doneNote}\n`);
+        else Object.assign(attrBag, { delivered: true, candidates: count });
       }
       appendRecord(runDir, { t: "worker", unit, phase, attrs: attrBag });
     } else if (cmd === "finish") {
@@ -1767,6 +1794,26 @@ async function selfTest() {
         && !readLedger(toRun).some((r) => r.t === "worker"), toCli.stdout + toCli.stderr);
     const dCli = spawnSync(process.execPath, [self, "dispatch", "--run-dir", toRun], { encoding: "utf8" });
     ok("CLI: `dispatch` appends the caller's dispatch record", dCli.status === 0 && readLedger(toRun).some((r) => r.t === "dispatch"));
+    // finder_passes: 2 — finalize.mjs counts a pass-2 unit as run only from the `delivered` stamp, so
+    // only a --done file that parses may write it: never a bare `end`, a broken file, or an --attr.
+    const p2Run = join(dir, "pass2-run");
+    beginRun(p2Run, facts);
+    const p2Dir = join(p2Run, "pass2");
+    mkdirSync(p2Dir, { recursive: true });
+    writeFileSync(join(p2Dir, "intent.json"), JSON.stringify([{ title: "a" }, { title: "b" }]));
+    writeFileSync(join(p2Dir, "others.json"), "{\"candidates\": [");
+    const w2 = (/** @type {string[]} */ a) => spawnSync(process.execPath, [self, "worker", ...a, "--run-dir", p2Run], { encoding: "utf8" });
+    const good = w2(["intent-2", "end", "--done", join(p2Dir, "intent.json")]);
+    const broken = w2(["other-finders-2", "end", "--done", join(p2Dir, "others.json")]);
+    const forged = w2(["other-finders-2", "end", "--attr", "delivered=true"]);
+    const viaImport = w2(["intent-2", "import", "--from", p2Dir, "--done", join(p2Dir, "intent.json")]);
+    const brokenImport = w2(["other-finders-2", "import", "--from", p2Dir, "--done", join(p2Dir, "others.json")]);
+    const p2Ends = readLedger(p2Run).filter((r) => r.t === "worker" && r.phase === "end").map((r) => r.attrs?.delivered === true ? r.attrs.candidates : "no");
+    ok("CLI: worker end/import --done stamps delivered and candidates only from a file that parses; a broken file and a forged --attr do not",
+      [good, broken, forged, viaImport, brokenImport].every((x) => x.status === 0)
+        && JSON.stringify(p2Ends) === JSON.stringify([2, "no", "no", 2, "no"])
+        && /recorded as not delivered/.test(broken.stderr) && /recorded as not delivered/.test(brokenImport.stderr),
+      JSON.stringify(p2Ends) + broken.stderr + brokenImport.stderr);
 
     // A second review in a directory whose previous run was exported is exported too.
     const reuse = join(dir, "reuse");

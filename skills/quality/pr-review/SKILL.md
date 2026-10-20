@@ -5,7 +5,7 @@ description: >
   and reports its verdict and findings without touching your code. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`; invoke with /pr-review.
 disable-model-invocation: false
-argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
@@ -108,7 +108,7 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    scope `branch::<owner>/<repo>::<headRefName>`, key `ci-state::pr-review-<n>` — and save a hit to
    `<dir>/state.json`. Skip it under `--isolated`; on a miss, or with no LoreKit tool, pass no `--state`.
 3. Run prepare once, forwarding only the pass-through flags it takes (`--full`, `--effort`,
-   `--thoroughness`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
+   `--thoroughness`, `--finder-passes`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
    when the pass-through flags carry `--review-sha`), and read the topology on the same command:
 
    ```bash
@@ -118,6 +118,12 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    ```
 
    Write whole seconds (`%s`); BSD `date` has no `%N`.
+   When the repo asked for a second finder pass, stamp it too:
+
+   ```bash
+   if [ "$(jq -r '.budget.finderPasses // 1' <dir>/context.json)" = 2 ]; then mkdir -p <dir>/pass2 && date +%s > <dir>/pass2/dispatched_at; fi
+   ```
+
 4. On `hybrid`, in **one message**, dispatch both:
    - `pr-reviewer` with `<PR_REF> <pass-through flags> --context <dir>/context.json --intent-from <dir>/intent/intent.json`;
    - a general-purpose worker (the harness's general sub-agent type) with the [worker preamble](#worker-preamble--the-intent-worker),
@@ -126,6 +132,17 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
      It never runs `prepare-review.mjs`.
 5. On `in-context` — below thoroughness 0.4, or a small incremental re-review — dispatch
    `pr-reviewer` alone with `--context <dir>/context.json`, and no worker.
+5b. When `budget.finderPasses` is `2`, add two more general workers to the message from step 4 or 5,
+   whichever topology: both get the [worker preamble](#worker-preamble--the-intent-worker) and
+   `<dir>/context.json`, and neither runs `prepare-review.mjs`.
+   - `intent-2` acts as the `intent` finder only and writes `<dir>/pass2/intent.json`;
+   - `other-finders-2` runs every other finder `budget.finders` turns on, from `finders.md` (plus
+     `finder-consumer-impact.md` and `finder-dependency.md` when those are on), and writes
+     `<dir>/pass2/others.json`.
+
+   Pass the reviewer nothing extra: it finds `<dir>/pass2/` beside its `--context` file and unions both
+   passes; `finalize.mjs` names any pass-2 unit that never delivered
+   (`agents/pr-reviewer/rules/dispatch-topology.md` § Two finder passes).
 6. When every dispatch has returned, release the workspace: you ran prepare, so the cleanup is yours,
    never the reviewer's.
 
@@ -223,7 +240,7 @@ fi
 ## Hard rules
 
 - **Read-only, always.** Never edit a file, commit, push, resolve a thread, or write to GitHub — the agent posts its own sticky report and inline findings.
-- **One prepare, one review dispatch per invocation, plus the intent worker in the same message when the budget is `hybrid`. Do not loop.** The caller that ran prepare runs `--cleanup`.
+- **One prepare, one review dispatch per invocation, plus the intent worker in the same message when the budget is `hybrid`, and the two pass-2 workers when `budget.finderPasses` is `2`. Do not loop.** The caller that ran prepare runs `--cleanup`.
 - **Absent sub-agent dispatch is a skip, not a fallback — and it is a capability test, not a name test.** Never review in this context and label it a `pr-reviewer` review, and never retry the dispatch.
 - **Never re-adjudicate the verdict.** Report `PASS` / `WARN` / `FAIL` as returned, with the blocking findings named.
 - **`remember` writes an `fp`-keyed rule with `explicit: true`, or asks** — never an invented key — and never suppresses a `standards` or `(blocking)` finding ([`rules/remember.md`](./rules/remember.md)).
