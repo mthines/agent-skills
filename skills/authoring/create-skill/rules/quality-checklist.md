@@ -151,6 +151,11 @@ the `(judgment)` items require the checklist below.
 
 ## Testing
 
+- [ ] No `SKILL.md` instruction documents a step the agent already does
+      unaided. In scaffold mode, every instruction traces to a ledger
+      correction, a guardrail, or the definition of done. (judgment)
+- [ ] Every must-never rule is a hook, not capitalised prose — except in a
+      `portable` skill, which cannot ship hooks. (judgment)
 - [ ] At least 3 realistic test prompts written and run (baseline vs.
       with-skill). (judgment)
 - [ ] `evals/triggers.jsonl` written for any `auto` skill (8–10
