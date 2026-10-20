@@ -91,8 +91,8 @@ The lens emits **suggestions**, not edits. The skill does not modify any `SKILL.
 For each candidate, surface a routing instruction:
 
 ```
-To apply: /create-skill review <skill-name> --convert-to-slash
-(or edit `skills/<name>/SKILL.md` frontmatter directly and re-run `scripts/sync-symlinks.sh`)
+To apply: set `disable-model-invocation: true` in skills/<name>/SKILL.md, then run
+node skills/authoring/create-skill/scripts/validate-skill.mjs skills/<name> && bash scripts/sync-symlinks.sh
 ```
 
 If the user accepts the conversion via `/create-skill`, they should also:

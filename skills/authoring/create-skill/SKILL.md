@@ -1,54 +1,37 @@
 ---
 name: create-skill
 description: >
-  Scaffolds, reviews, upgrades, or diagnoses agent skills against
-  best-practice frontmatter, progressive disclosure, token-aware
-  structure, and the agent-skills.git symlink + inventory wiring.
+  Scaffolds, diagnoses, and prunes agent skills.
   Modes: `scaffold` (default — runs the job once without a skill on a
   real input, records every correction, then writes a skill made of
-  only those corrections), `review` (audit existing
-  skill), `upgrade` (split a single-file skill into multi-file),
-  `diagnose` (retrospective failure analysis that emits a
-  confidence-gated unified diff against any skill declaring a
-  diagnostic surface), `prune` (deletes unused skills and trims or
+  only those corrections), `diagnose` (retrospective failure analysis
+  that emits a confidence-gated unified diff against any skill declaring
+  a diagnostic surface), `prune` (deletes unused skills and trims or
   deletes those whose with/without-skill eval shows no lift over a
   same-length dummy). Triggers on "create a skill", "scaffold a skill",
-  "new SKILL.md", "review this skill", "audit my skill", "upgrade this
-  skill", "split this skill", "diagnose this skill", "why did the skill
-  miss this", "prune my skills", "clean up my skills", "/create-skill".
+  "new SKILL.md", "diagnose this skill", "why did the skill miss this",
+  "prune my skills", "clean up my skills", "/create-skill".
 disable-model-invocation: true
-argument-hint: '[scaffold|review|upgrade|diagnose|prune] [<skill-name>|<path>...]'
+argument-hint: '[scaffold|diagnose|prune] [<skill-name>|<path>...]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.5.0'
-  workflow_type: scaffolder-advisory-and-diagnoser
+  version: '2.0.0'
+  workflow_type: scaffolder-and-diagnoser
   tags:
     - skill-authoring
     - scaffolding
     - meta
-    - progressive-disclosure
-    - token-optimization
-    - frontmatter
-    - best-practices
     - diagnose
     - self-improvement
-    - evaluation
-    - portability
+    - lift-check
     - run-first
 ---
 
 # Create Skill
 
-Author new agent skills — and audit existing ones — against the best practices
-distilled from Anthropic's official Skill authoring guide and the patterns
-already in this repo. Output is a complete skill directory plus the
-agent-skills.git symlink wiring and inventory updates.
-
-> **This `SKILL.md` is a thin index.** Detailed authoring rules live in
-> `rules/*.md`, worked examples in `references/*.md`, literal scaffolding
-> templates in `templates/*.md` — all load on demand. Reading them all
-> up-front would burn tokens you do not need yet.
+Write a skill from what a real run of the job got wrong, harden an existing skill after it failed, and delete skills that do not earn their context.
+Detailed rules live in `rules/*.md` and templates in `templates/*.md`; load them on demand.
 
 ---
 
@@ -59,13 +42,11 @@ Parse `$ARGUMENTS` (first token) and detect the mode:
 | Mode       | Default | Trigger                                                                  |
 | ---------- | ------- | ------------------------------------------------------------------------ |
 | `scaffold` | **yes** | Default. "create", "scaffold", "new skill", or no mode argument.         |
-| `review`   |         | "review", "audit", "check this skill", or `$0 == "review"`.              |
-| `upgrade`  |         | "upgrade", "split", "convert to multi-file", or `$0 == "upgrade"`.       |
 | `diagnose` |         | "diagnose", "why did <skill> miss this", or `$0 == "diagnose"`.          |
 | `prune`    |         | "prune", "clean up my skills", "which skills are useless", or `$0 == "prune"`. |
 
 If the user typed a path or skill name as `$ARGUMENTS`, treat it as the
-target for `review`/`upgrade`/`diagnose`/`prune`; for `scaffold` it is the proposed
+target for `diagnose`/`prune`; for `scaffold` it is the proposed
 skill name.
 
 State the detected mode and target in one line before continuing. Example:
@@ -171,37 +152,7 @@ Re-run the Phase 0 brief in a sub-agent with the skill installed, on a fresh inp
 A recurring correction means the line meant to prevent it is wrong or missing: fix that line and re-run once.
 Report `Verify: PASS — fresh run, 0 of <n> corrections recurred`.
 
-The lift check ([`rules/lift-check.md`](./rules/lift-check.md)) and eval files ([`rules/evaluation.md`](./rules/evaluation.md)) are not part of a scaffold: run them when the user asks, or before the skill is shipped to other people.
-
----
-
-## Review Workflow
-
-For `review` mode, do not write any files. Read the target skill (the path
-or skill name from `$ARGUMENTS`) and run the mechanical pre-pass, then work
-through the judgment items:
-
-1. Run `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> [--portable]`; record every `FAIL`/`WARN` as evidence, then load `rules/quality-checklist.md` for the remaining `(judgment)` items.
-2. Read the target `SKILL.md`. If it has `rules/`, `references/`,
-   `templates/`, list each file with line count.
-3. For every judgment checklist item, mark **PASS / WARN / FAIL** with one
-   line of evidence (file path + line number where applicable).
-4. End with a prioritised "Top 3 fixes" list — biggest token / clarity wins
-   first.
-
-Do not mutate the skill in `review` mode.
-
-## Upgrade Workflow
-
-For `upgrade` mode, take a single-file skill and split it into multi-file:
-
-1. Read the target `SKILL.md`.
-2. Identify orthogonal concerns (each H2 section is a candidate).
-3. Propose a layout tree (`rules/`, `references/`, `templates/`) and **show
-   it to the user for approval before writing**.
-4. Move each concern into its own rule file. Replace the section in
-   `SKILL.md` with a one-line pointer + link to the new file.
-5. Re-run the Phase 7 self-check.
+The lift check ([`rules/lift-check.md`](./rules/lift-check.md)) is not part of a scaffold: run it when the user asks, or before the skill is shipped to other people.
 
 ---
 
@@ -271,21 +222,17 @@ Load these on demand — do not preload them all.
 | 0–2      | `rules/run-first.md`, `rules/description-writing.md`, `rules/invocation-control.md` |
 | 3        | `rules/scripts-and-assets.md`, `rules/structure-decision.md` (only past 200 lines), `templates/SKILL.minimal.md` |
 | 4        | `rules/repository-conventions.md` (inside this repo only) |
-| review   | `rules/quality-checklist.md`, `rules/anti-patterns.md`, `rules/token-economics.md`, `rules/arguments-and-injection.md`, `rules/workflow-patterns.md` |
-| upgrade  | `rules/structure-decision.md`, `rules/progressive-disclosure.md` |
 | prune    | `rules/prune-mode.md`, `rules/lift-check.md` |
 | diagnose | `rules/diagnose-mode.md`, `rules/diagnostic-surface.md`, plus the target's `rules/diagnostic-surface.md` |
 | loop     | `rules/self-improvement-loop-pattern.md` (adding a self-improvement loop to an orchestrator skill) |
 | lens     | `rules/review-lens-contract.md` + `templates/lens.md` (making an existing skill lens-eligible for `pr-reviewer`) |
-
-`references/skill-archetypes.md` and `references/good-vs-bad-examples.md` are optional — load only when the user asks for a worked shape or pair.
 
 ---
 
 ## Core Principles
 
 1. **A skill is the list of what the agent got wrong.** Do the job once without it and write only the corrections; a run that needed none means no skill ([`rules/run-first.md`](./rules/run-first.md)).
-2. **Every line is a recurring cost.** Write nothing the model already does ([`rules/token-economics.md`](./rules/token-economics.md)).
+2. **Every line is a recurring cost.** Write nothing the model already does; a loaded skill stays in context, and compaction re-attaches up to 5,000 tokens of it.
 3. **The description is the discovery surface.** Third person, what and when, trigger phrases first.
 4. **Guarantees are hooks and scripts, not capitals.** What must never happen becomes a hook; a done condition that can be checked becomes a script the skill runs.
 

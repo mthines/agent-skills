@@ -28,7 +28,7 @@ tags:
 ## Overview
 
 Diagnose Mode is `create-skill`'s retrospective entry point.
-It does not scaffold, review, or upgrade.
+It does not scaffold or prune.
 It analyses a session in which **another skill** executed and produced an unsatisfactory result, identifies which of that skill's phases / gates / companions should have caught the problem, and emits a proposed change to the **target skill's source** so the same class of failure cannot recur.
 
 The procedure is **skill-agnostic**.

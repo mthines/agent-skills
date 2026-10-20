@@ -6578,7 +6578,7 @@ const isPollBlock = (block) =>
 //
 // The plan that added this script split the work across two concurrently-edited agents: one
 // wrote the validator (scripts/validate-skill.mjs), the other rewrote create-skill's OWN
-// markdown to point at it (rules/quality-checklist.md's "## Mechanical pre-pass" section,
+// markdown to point at it (SKILL.md's Phase 4 Check,
 // SKILL.md's link to the script). A script with no self-test is a script nobody can prove
 // still does what it claims after the next edit — the same argument G39b/G46b/G33b make for
 // their own scripts; a script with a self-test but no link from the skill's own docs is dead
@@ -6608,21 +6608,14 @@ const isPollBlock = (block) =>
       (run.stdout || "").split("\n").filter((l) => l.startsWith("FAIL")).join("; ").slice(0, 500));
   }
 
-  // (c) The script cannot go orphaned: SKILL.md must link it, and quality-checklist.md must
-  // name it under a "Mechanical pre-pass" heading, so a reader who opens the checklist lands
-  // on the script instead of re-deriving these checks by hand.
+  // (c) The script cannot go orphaned: SKILL.md must link it.
   const skillMdPath = join(CS, "SKILL.md");
   const skillMd = existsSync(skillMdPath) ? readFileSync(skillMdPath, "utf8") : "";
   s.check("G51c SKILL.md links scripts/validate-skill.mjs",
     /scripts\/validate-skill\.mjs/.test(skillMd),
     existsSync(skillMdPath) ? "SKILL.md never mentions scripts/validate-skill.mjs" : "SKILL.md not found");
-  const checklistPath = join(CS, "rules/quality-checklist.md");
-  const checklist = existsSync(checklistPath) ? readFileSync(checklistPath, "utf8") : "";
-  s.check("G51c quality-checklist.md names the validator under a Mechanical pre-pass section",
-    /## Mechanical pre-pass/.test(checklist) && /validate-skill\.mjs/.test(checklist),
-    existsSync(checklistPath) ? "no ## Mechanical pre-pass section naming validate-skill.mjs" : "rules/quality-checklist.md not found");
 
-  // (d) The skill obeys its own two-branch TOC rule (rules/progressive-disclosure.md § Long
+  // (d) The skill obeys its own two-branch TOC rule (the repo's long-file TOC rule § Long
   // reference and rule files need a TOC): rules/*.md past 150 lines and references/*.md past
   // 100 lines both need a ## Contents / ## Table of contents heading. Both branches are guarded
   // here because the validator grades PD03 as WARN, so G51b exits 0 either way.

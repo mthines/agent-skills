@@ -41,10 +41,10 @@ Non-negotiable invariants for every run. Violating any of these is a defect — 
 | Root `CLAUDE.md`                         | Trim, extract, rewrite inventory entries             | Delete sections without preserving the content        |
 | Nested `<dir>/CLAUDE.md`                 | Same as above                                        | Same as above                                         |
 | `.claude/rules/*.md`                     | Trim, extract, recommend merges                      | Delete a rule file without confirming with user       |
-| `skills/<name>/SKILL.md` frontmatter     | Read for comparison; flag slash-conversion candidates | **Edit. Ever.** Route to `/create-skill review`.       |
+| `skills/<name>/SKILL.md` frontmatter     | Read for comparison; flag slash-conversion candidates | **Edit. Ever.** Hand the user the frontmatter edit.    |
 | `docs/inventory.md` and similar          | Create, append to, link from `CLAUDE.md`             | Overwrite without showing the diff                    |
 
-The frontmatter authority boundary covers **all** YAML fields, not just `description`. Edits to `disable-model-invocation`, `user-invocable`, `metadata.workflow_type`, and others must route through `/create-skill review` so the full review checklist runs (including the description-vs-purpose check and the symlink resync).
+The frontmatter authority boundary covers **all** YAML fields, not just `description`. Edits to `disable-model-invocation`, `user-invocable`, `metadata.workflow_type`, and others are handed to the user as a proposed edit; after applying it, they run `node skills/authoring/create-skill/scripts/validate-skill.mjs <dir>` and `bash scripts/sync-symlinks.sh`.
 
 ## User confirmation
 

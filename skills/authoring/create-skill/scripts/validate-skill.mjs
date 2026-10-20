@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// validate-skill.mjs — mechanical pre-pass for the create-skill review checklist
-// (rules/quality-checklist.md § Mechanical pre-pass). Checks the frontmatter and
+// validate-skill.mjs — mechanical pre-pass for a skill's frontmatter, body size, and links
+// (the mechanical pre-pass in SKILL.md Phase 4). Checks the frontmatter and
 // body contracts a skill promises that are objectively checkable, so the
 // judgment-only items in the checklist are the only ones left to a human/agent
 // read. Zero dependencies, Node >= 20, ESM.
@@ -29,12 +29,12 @@ const DESC_MAX = 1024;      // Agent Skills spec / Claude Code docs: `descriptio
 const DESC_WHEN_MAX = 1536; // this skill's rule (rules/description-writing.md): description +
                              // when_to_use combined <= 1536 chars before the listing truncates it.
 const COMPAT_MAX = 500;     // Agent Skills spec: the `compatibility` field is capped at 500 chars.
-const BODY_FAIL_MAX = 500;  // this skill's rule (rules/progressive-disclosure.md): SKILL.md body
+const BODY_FAIL_MAX = 500;  // this skill's rule: SKILL.md body
                              // hard ceiling — content past this is effectively unreachable in Tier 2.
 const BODY_WARN_MAX = 250;  // this skill's rule: soft target for the body; escalates to FAIL under
                              // --strict, matching how this repo treats 250 as the "should" line and
                              // 500 as the "must" line.
-const REF_TOC_MIN = 100;    // this skill's rule (rules/progressive-disclosure.md): references/*.md
+const REF_TOC_MIN = 100;    // this skill's rule: references/*.md
                              // over 100 lines need a `## Contents` TOC (references are the deepest,
                              // most skippable tier, so the TOC is the partial-read safety net).
 const RULE_TOC_MIN = 150;   // this skill's rule: rules/*.md over 150 lines need the same TOC — rules
