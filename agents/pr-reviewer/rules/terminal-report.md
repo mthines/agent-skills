@@ -81,7 +81,7 @@ conclusion: there is then nothing to reconcile. **The terminal line and the post
 byte-identity rule this paragraph used to state (terminal WARN ≡ the posted WARN headline) is
 retired, because the posted headline — specified in
 [`report-rendering.md § Headlines`](./report-rendering.md#headlines) — counts **findings**
-(`### 🟠 4 findings — 1 blocking`, derived from `FINDINGS[]`), while this line counts **gates**,
+(`### 🟠 1 blocking · 3 non-blocking`, derived from `FINDINGS[]`), while this line counts **gates**,
 which is what an operator reading a terminal verdict wants. Two audiences, two numbers; forcing one string to serve both is what made the posted
 headline count gates in the first place, and left the report's number unable to reconcile with the
 inline comments it sat above.

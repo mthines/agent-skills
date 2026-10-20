@@ -6,7 +6,7 @@ description: >
   what is already settled. Every claim is checked against code, tests, and docs first.
   --comment or --body posts it to the PR with light and dark PNGs. Triggers on
   "impact map", "visualize this PR", "/impact-map".
-argument-hint: '<pr-url|#n> [--comment] [--body] [--dry-run]'
+argument-hint: '<pr-url|#n> [--comment] [--body] [--dry-run] [--findings <report-body.md>]'
 license: MIT
 metadata:
   author: mthines
@@ -46,6 +46,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/render-png.mjs" <page.html> <out-dir>        #
 | `--comment` | — | Also post the map as a PR comment with the diagram as light and dark PNGs. A re-run edits the same comment. |
 | `--body` | — | Also write the map into the PR description's owned region, above the author's text. A re-run replaces the region. |
 | `--dry-run` | — | Build the page, the PNGs, and the comment Markdown; post nothing. |
+| `--findings <report-body.md>` | — | Diagram only, for a `pr-reviewer` report: badge each box with the numbers of that report's findings table and print the PNG paths and the alt text. Skips phases 3, 5, and 6 and writes nothing to GitHub. Procedure: [`rules/diagram.md § Badges from a pr-reviewer report`](./rules/diagram.md#badges-from-a-pr-reviewer-report). |
 
 `--comment` and `--body` are the user's consent to write to GitHub.
 Without either flag, write nothing to GitHub.

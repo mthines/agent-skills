@@ -106,11 +106,41 @@ REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 | `gates.gate4` | Self-review-signals judgment (Gate 4). |
 | `gates.gate5` | Docs judgment (Gate 5). |
 | `candidates[]`, `threads[]`, `lenses[]`, `memory` | Everything Steps 2/2.4–2.9c produced. `finalize.mjs` computes thresholds, the defer band, suppression, placement, caps, and the gates/verdict from these — it invents none of it. |
-| `scanned_files` | `SCANNED_FILES` (Step 2), as repo-relative paths. `finalize.mjs` counts it against `context.scopePaths` for the report's `**Checked:**` line. Omitted, the line drops its files-read part. |
-| `impact_trace` | Per changed export the consumer-impact finder traced, and per dependency the dependency finder read (`symbol` = package, `path` = manifest), `{symbol, path, verified: [<files read that still hold>]}` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)). `finalize.mjs` builds the `What this change reaches` section from it, `impact.json`, and the posted consumer-impact claims. |
+| `scanned_files` | `SCANNED_FILES` (Step 2), as repo-relative paths. `finalize.mjs` counts it against `context.scopePaths` for the report's `Checked` row. Omitted, the row drops its files-read part. |
+| `impact_trace` | Per changed export the consumer-impact finder traced, and per dependency the dependency finder read (`symbol` = package, `path` = manifest), `{symbol, path, verified: [<files read that still hold>]}` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)). `finalize.mjs` builds the report's `Reach`, `Dependencies`, and `Overlapping PRs` rows from it, `impact.json`, and the posted consumer-impact claims. |
+| `candidates[].decide` | `true` on a claim that is the author's choice between two acceptable options — rendered `Decide: <title>` and counted `to decide`. Never together with `blocking`. |
+| `candidates[].fix` | The remedy. When it is one line of ≤ 140 chars, the findings table shows it under the title; on a `decide` candidate, write the context for the choice instead. |
 | `memory.relevance_rules[]`, `memory.lessons_used[]`, `memory.read[]` | Copy `id`, `scope`, and `key` onto every entry. Take `id` from the `memory_list` / `memory_search` entry that surfaced the key — `memory_read` returns none. Take `scope` from the entry, or from the scope the call was made with when the entry omits it — a `scope="global"` `memory_list` does, and a ref without a scope is never cited. `read[]` lists `{ id, scope, key }` for every body this run fetched with `memory_read` (Steps 1.2a, 1.2d, 2.7b). The run trace opens each memory by these ([`run-telemetry.md § The memory`](./run-telemetry.md#the-memory)). |
 
-There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`, and — only to override what `finalize/reach.mjs` builds from `scanned_files` / `impact_trace` — `COVERAGE` and `IMPACT`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
+There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `IMPACT_IMAGE` — § The impact image, below — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`, and — only to override what `finalize/reach.mjs` builds from `scanned_files` / `impact_trace` — `COVERAGE` and `IMPACT`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
+
+#### The impact image
+
+Add the impact-map diagram above the findings table when **both** hold:
+
+1. `FINDINGS` is non-empty.
+2. The diff changes how parts connect: it adds, removes, or rewires a component another part calls, or a finding's consequence lands outside the file it anchors in.
+
+Skip it on a docs-only, test-only, or single-file diff, and on a run with no findings. A skipped image costs nothing; the Run table still carries every count.
+
+```bash
+# 1. Number the findings: a dry run writes the body without posting it.
+node "$FINALIZE" --context /tmp/review-context.json --judgments /tmp/judgments.json \
+  --out-dir /tmp/finalize-dry --dry-run
+# 2. Draw the diagram with those numbers as badges (impact-map § Badges from a pr-reviewer report).
+#    Skill("impact-map", "<pr-url> --findings /tmp/finalize-dry/report-body.md") → light, dark, alt
+# 3. Upload both PNGs and get their urls; open each with the Read tool first.
+#    Skill("attach-media", "<pr-url> <light.png>#<alt> <dark.png>#<alt> --to urls")
+# 4. Bind what steps 2 and 3 printed, hand it to the renderer, then run the real finalize (above).
+LIGHT_URL="<attach-media url for the light PNG>"
+DARK_URL="<attach-media url for the dark PNG>"
+ALT="<impact-map's alt line>"
+jq --arg l "$LIGHT_URL" --arg d "$DARK_URL" --arg a "$ALT" \
+  '.render.IMPACT_IMAGE = {light: $l, dark: $d, alt: $a}' /tmp/review-context.json > /tmp/ctx.json \
+  && mv /tmp/ctx.json /tmp/review-context.json
+```
+
+The row numbers are a pure function of `judgments.json` (blocking, then decisions, then by tier), so the dry run and the real run number the findings identically. Change no judgment between the two runs, or the badges point at the wrong rows. When any step fails, post the report without `IMPACT_IMAGE` and say so in the Step 5 output.
 
 **Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
 The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is

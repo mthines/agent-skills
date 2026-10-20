@@ -55,8 +55,11 @@ export function buildQualitySummary(counters) {
   return suppressed > 0 ? `${line} · memory suppressions ${suppressed}` : line;
 }
 
+/** render-report.mjs's FIX_MAX: the longest remedy that renders under a findings row's title. */
+const FIX_LINE_MAX = 140;
+
 /**
- * A candidate → render-report.mjs `FINDINGS[]` row: title/path/line/url/tier/blocking.
+ * A candidate → render-report.mjs `FINDINGS[]` row: title/path/line/url/tier/blocking/decide/fix.
  * @param {any} c
  */
 export function toFindingBullet(c) {
@@ -64,6 +67,12 @@ export function toFindingBullet(c) {
   const out = { title: c.title, path: c.path, line: c.line, tier: c.severity };
   if (c.url) out.url = c.url;
   if (c.blocking === true) out.blocking = true;
+  if (c.decide === true) out.decide = true;
+  // The report shows the remedy as one line under the title; a multi-line or long fix stays in the
+  // inline comment only.
+  if (typeof c.fix === "string" && c.fix.trim() !== "" && !c.fix.includes("\n") && c.fix.trim().length <= FIX_LINE_MAX) {
+    out.fix = c.fix.trim();
+  }
   return out;
 }
 
@@ -231,7 +240,7 @@ export function toInlineCommentPayload(c, { sha }) {
 const RENDER_EXTRAS = [
   "RUN_NOTE", "RUN_ANOMALY", "CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "FIX_ALL_URL",
   "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED", "IMPACT", "WITHHELD", "OPTIMALITY_CARDS",
-  "COVERAGE",
+  "COVERAGE", "IMPACT_IMAGE",
 ];
 
 /**
@@ -369,6 +378,11 @@ async function selfTest() {
     });
     check("SKIPPED_FILES passes through verbatim when the run supplies one", withSkipped.SKIPPED_FILES === "a.ts (binary), b.png (binary)");
   }
+  {
+    const image = { light: "https://github.com/user-attachments/assets/a", dark: "https://github.com/user-attachments/assets/b", alt: "x" };
+    const withImage = buildReportPayload({ gates, run, findings: [], deferred: [], lowConfidence: [], quality, extras: { IMPACT_IMAGE: image } });
+    check("IMPACT_IMAGE passes through from context.render", withImage.IMPACT_IMAGE === image);
+  }
 
   {
     const withSuppressions = buildQualitySummary({ produced: 9, confidenceDeferred: 1, suppressed: 1, cleared: 4, deferredOverCap: 0, posted: 4 });
@@ -380,6 +394,10 @@ async function selfTest() {
     check("toFindingBullet maps severity→tier and keeps blocking/url", finding.tier === "high" && finding.blocking === true && finding.url === "https://x");
     const noUrl = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "low" });
     check("toFindingBullet omits url/blocking when absent", noUrl.url === undefined && noUrl.blocking === undefined);
+    const decided = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "medium", decide: true, fix: "Pick one" });
+    check("toFindingBullet keeps decide and a one-line fix", decided.decide === true && decided.fix === "Pick one");
+    const longFix = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "low", fix: "```ts\nx\n```" });
+    check("toFindingBullet drops a multi-line fix", longFix.fix === undefined);
   }
   {
     const adv = toAdvisoryFinding({ path: "a.ts", line: 1, prefix: "nitpick", body: "b", final: 61.6 });

@@ -1,22 +1,28 @@
 <!-- PR_REVIEWER_REPORT -->
 ⚠️ **Partial review — tool budget exhausted after 180 calls; 22 of 31 files scanned.**
 
-### 🟠 4 findings — 1 blocking
+### 🟠 1 blocking · 3 non-blocking
 
 Adds `github.check_run` to the trigger-kind union but leaves four keyed registries unwired.
 
-**Blocking:** 1 unanswered blocking review thread
-
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
-**Checked:** 22 of 31 changed files read · 6 possible issues → 4 confirmed → 4 posted
+| | Finding | Where |
+|:-:|---|---|
+| 🟠&nbsp;**1** | **Check-run variables rejected at runtime**<br><sub>Blocking</sub> | [`variables.ts:12`](https://github.com/o/r/pull/1#discussion_r21 "src/triggers/variables.ts") |
+| 🟡&nbsp;**2** | **Hover card has no label for the new kind** | [`hover-card.tsx:40`](https://github.com/o/r/pull/1#discussion_r22 "src/ui/hover-card.tsx") |
+| 🟡&nbsp;**3** | **`triggerKinds` fixture asserts the old arity** | [`kinds.test.ts:64`](https://github.com/o/r/pull/1#discussion_r23 "src/triggers/kinds.test.ts") |
+| ⚪&nbsp;**4** | **Migration backfill skips existing rows** | [`0042.sql:7`](https://github.com/o/r/pull/1#discussion_r24 "db/migrations/0042.sql") |
 
-| Finding | Where | Severity |
-|---|---|---|
-| Check-run variables rejected at runtime | [`src/triggers/variables.ts:12`](https://github.com/o/r/pull/1#discussion_r21) | 🟠 high · blocking |
-| Hover card has no label for the new kind | [`src/ui/hover-card.tsx:40`](https://github.com/o/r/pull/1#discussion_r22) | 🟡 medium |
-| `triggerKinds` fixture asserts the old arity | [`src/triggers/kinds.test.ts:64`](https://github.com/o/r/pull/1#discussion_r23) | 🟡 medium |
-| Migration backfill skips existing rows | [`db/migrations/0042.sql:7`](https://github.com/o/r/pull/1#discussion_r24) | ⚪ low |
+<details>
+<summary>Less certain (1) — advisory, below the confidence bar</summary>
+<br>
+
+| | Finding | Where |
+|:-:|---|---|
+| **5** | issue: this early-return may skip the audit log write<br><sub>Confidence 76</sub> | `src/api/client.ts:88` |
+
+</details>
 
 <details>
 <summary>Is there a better approach? (1)</summary>
@@ -30,19 +36,11 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 </details>
 
 <details>
-<summary>Less certain (1) — advisory, below the confidence bar</summary>
-
-- `src/api/client.ts:88` — issue: this early-return may skip the audit log write (confidence 76)
-
-</details>
-
-<details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
+<br>
 
-**Needs attention**
-
-| Gate | Status | Details |
-|---|---|---|
+| Gate | | Details |
+|---|:-:|---|
 | Description vs. code | ⚠️ | Claims `nx affected` is green; not true at this SHA. |
 | Prior review feedback | ❌ | 1 unresolved review thread(s) — see the thread list below |
 | Documentation | ✅ | The change is documented well enough to follow. |
@@ -53,19 +51,17 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 
 - [`supabase/functions/memories/handlers/list.ts:235`](https://github.com/o/r/pull/1#discussion_r3) — applyScalarFilter still puts the whole dimension into a PostgREST URL operand (bot · `cursor`)
 
-**Found**
-
-Quality — produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1
-Dropped — relevance 0 · dedupe 0 · grounding 0 · confidence 2 · shape 0
-Severity — 🟠 1 high · 🟡 2 medium · ⚪ 1 low
-Optimality — ran · 4 judged · 3 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld
-
-**Run**
-
-full · 2172 lines in delta
-Skipped files — packages/legacy/**
-CI — `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.
-Memories — not connected
+| Run | Details |
+|---|---|
+| Mode | full · 2172 lines in delta |
+| Checked | 22 of 31 changed files read · 6 possible issues → 4 confirmed → 4 posted |
+| Found | produced 6 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1 |
+| Dropped | relevance 0 · dedupe 0 · grounding 0 · confidence 2 · shape 0 |
+| Severity | 🟠 1 high · 🟡 2 medium · ⚪ 1 low |
+| Optimality | ran · 4 judged · 3 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld |
+| Skipped files | packages/legacy/** |
+| CI | `Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking. |
+| Memories | Not connected for this run |
 
 <sup>Nothing to report — standards (skipped), measurability (skipped), integrations (skipped).</sup>
 

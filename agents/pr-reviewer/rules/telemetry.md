@@ -154,7 +154,7 @@ Under `production+preview`, one comparison per touched route or service, preview
 | Signal | Treatment |
 | --- | --- |
 | An `exception.type` or error span name on the preview that the production baseline has **never** emitted on that route | an `issue (medium)` lead, verified against the diff like any other. The one preview signal strong enough to become a finding. |
-| Error-rate rise on a route the diff touches | consequence note in `What this change reaches` — preview traffic is a handful of requests |
+| Error-rate rise on a route the diff touches | a clause in the report's `Telemetry` row — preview traffic is a handful of requests |
 | Latency shift (p50 / p99) | note only, marked `preview, n=<spans>`; **never** a finding. Cold starts and region make preview latency uninformative. |
 | No spans for the head SHA | `Telemetry: production (no preview spans for <sha7>)`; nothing inferred |
 
@@ -176,13 +176,10 @@ The comparison runs **outside** the reviewer: the `reviewer-comment-relevance.ym
 
 ## Report surface
 
-Inside the `What this change reaches` accordion, one `Telemetry` line plus one consequence note per exposed symbol:
+One `Telemetry` row in the report's Run table, from `IMPACT.telemetry`:
 
 ```markdown
-**Telemetry:** production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`)
-
-- `retryRequest` (`src/api/client.ts`) — ~1.2 M spans/week in `api`, p99 2.3 s, `TimeoutError` ~130×/day. Signature change; 14 consumers.
-- `POST /v1/charges` — 38 req/min, error rate 0.2 %. Body change only.
+| Telemetry | production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`) |
 ```
 
 Rendered from `impact.json` by `render-report.mjs` like every other slot.

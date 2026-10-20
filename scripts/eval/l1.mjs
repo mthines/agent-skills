@@ -680,13 +680,14 @@ const renderReport = (payload) => {
     ];
   });
   s.check("G19c the renderer emits the with-findings form", withFindings.ok
-    && /^### 🟠 2 findings — 1 blocking$/m.test(withFindings.out), withFindings.err);
+    && /^### 🟠 1 blocking · 1 non-blocking$/m.test(withFindings.out)
+    && /^\| \| Finding \| Where \|$/m.test(withFindings.out), withFindings.err);
   const noBlocking = render((c) => {
     c.QUALITY = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
     c.FINDINGS = [{ title: "A quieter one", path: "b.ts", line: 2, tier: "low" }];
   });
   s.check("G19c the renderer drops the blocking clause at zero", noBlocking.ok
-    && /^### ⚪ 1 finding$/m.test(noBlocking.out) && !/0 blocking/.test(noBlocking.out), noBlocking.err);
+    && /^### ⚪ 1 non-blocking finding$/m.test(noBlocking.out) && !/0 blocking/.test(noBlocking.out), noBlocking.err);
 
   // Fail-closed: each of these shipped as a real posted report; reject with nothing on stdout.
   const rejects = [
@@ -773,10 +774,10 @@ const renderReport = (payload) => {
   // The discriminating half: well-formed inputs in the same slots still render.
   const mem = render((c) => { c.MEMORIES_USED = [{ key: "a-lesson-key", url: "https://lorekit.io/lore?x=1", note: "promoted" }]; });
   s.check("G25 MEMORIES_USED renders as a renderer-built link with a derived used count",
-    mem.ok && mem.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted") && mem.out.includes("Memories — 53 indexed · 1 used"), mem.err);
+    mem.ok && mem.out.includes("[`a-lesson-key`](https://lorekit.io/lore?x=1) — promoted") && mem.out.includes("| Memories | 53 indexed · 1 used |"), mem.err);
   const zd = render((c) => { c.RUN = { mode: "zero-delta", sha: "bde3c2f", prior_sha: "70cf147", at: "2026-08-15T09:12:00Z" }; });
   s.check("G25 a zero-delta run renders under the incremental grammar with its footer form",
-    zd.ok && /^incremental · 0 lines in delta$/m.test(zd.out)
+    zd.ok && /^\| Mode \| incremental · 0 lines in delta \|$/m.test(zd.out)
       && zd.out.includes("commit `bde3c2f` · no code changes since `70cf147`, gate checks only"), zd.err);
   const ask = render((c) => { c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://x.invalid/1", ask: "bind `LocalStore.search`" }]; });
   s.check("G25 a backticked ask renders verbatim", ask.ok && ask.out.includes("— bind `LocalStore.search`"), ask.err);
@@ -789,8 +790,8 @@ const renderReport = (payload) => {
   s.check("G25 red CI alone renders the clean PASS headline (Gate 2 is informational)",
     ciOnly.ok && !ciOnly.out.includes("**Needs attention**") && /^### ✅ No issues found$/m.test(ciOnly.out), ciOnly.err);
   const anom = render((c) => { c.RUN_ANOMALY = "a base-branch merge polluted the compare range"; });
-  s.check("G25 RUN_ANOMALY renders on its own ⚠️ line",
-    anom.ok && /^⚠️ a base-branch merge polluted the compare range$/m.test(anom.out), anom.err);
+  s.check("G25 RUN_ANOMALY renders on its own ⚠️ row",
+    anom.ok && /^\| Anomaly \| ⚠️ a base-branch merge polluted the compare range \|$/m.test(anom.out), anom.err);
 
   // Headline counts posted notes, never claims.
   const note = (prefix, line) => ({ path: "n.ts", line, prefix, body: "A short note.", confidence: 91 });
@@ -803,7 +804,7 @@ const renderReport = (payload) => {
     c.NOTES = [note("nitpick", 3)];
   });
   s.check("G84h the note clause is appended after the blocking clause",
-    withNote.ok && /^### 🟠 2 findings — 1 blocking · 1 note$/m.test(withNote.out), withNote.err);
+    withNote.ok && /^### 🟠 1 blocking · 1 non-blocking · 1 note$/m.test(withNote.out), withNote.err);
   const passNotes = render((c) => { c.NOTES = [note("nitpick", 3), note("question", 4)]; });
   s.check("G84l posted notes render under `Notes (<M>) — posted inline` and are counted in a PASS headline",
     passNotes.ok && /^### ✅ No issues found · 2 notes$/m.test(passNotes.out)
@@ -831,21 +832,18 @@ const renderReport = (payload) => {
     const reach = JSON.parse(readFileSync(join(FIX, "reach-progress.json"), "utf8"));
     const clone = () => JSON.parse(JSON.stringify(reach));
     const good = renderReport(reach);
-    const reachAt = good.out.indexOf("<details>\n<summary>What this change reaches — ");
     const detailsAt = good.out.indexOf("<details>\n<summary>Review details");
-    const fenceAt = good.out.indexOf("```mermaid");
-    s.check("G89a the reach accordion renders above Review details and holds the only Mermaid block",
-      good.ok && reachAt !== -1 && reachAt < detailsAt && fenceAt > reachAt
-        && fenceAt < good.out.indexOf("</details>", reachAt) && good.out.split("```mermaid").length === 2, good.err);
+    const reachAt = good.out.search(/^\| Reach \| /m);
+    s.check("G89a reach renders as a Run-table row inside Review details, with no Mermaid block",
+      good.ok && detailsAt !== -1 && reachAt > detailsAt && !good.out.includes("```mermaid"), good.err);
     const mismatch = clone(); mismatch.IMPACT.symbols[0].verified_unaffected = 6;
     s.check("G89c a consumers list that disagrees with verified_unaffected is rejected", !renderReport(mismatch).ok);
     const quoted = clone();
     quoted.IMPACT.symbols[0].consumers[0].path = 'src/jobs/we"ird.ts';
     quoted.IMPACT.symbols[0].consumers[5].path = "src/x#y/poll.ts";
     const q = renderReport(quoted);
-    const fence = (q.out.match(/```mermaid\n([\s\S]*?)```/) || [])[1] || "";
-    s.check("G89d Mermaid labels are entity-escaped (a quote or # in a path cannot break the diagram)",
-      q.ok && fence.includes("we#quot;ird") && !fence.includes('we"ird') && fence.includes("x#35;y") && !fence.includes("x#y"), q.err);
+    s.check("G89d a quote or # in a consumer path renders without breaking the report",
+      q.ok && !q.out.includes("```mermaid"), q.err);
     const badRound = clone(); badRound.ROUNDS[0].blocking = 9;
     const partial = clone(); partial.PARTIAL_REVIEW = { calls: 60, scanned: 13, total: 22 };
     s.check("G89f ROUNDS with blocking > open, and COVERAGE that disagrees with PARTIAL_REVIEW, are rejected",
@@ -1566,7 +1564,7 @@ const renderReport = (payload) => {
       const line = (b.match(/^<sup>`pr-reviewer` · commit[^\n]*<\/sup>$/m) || [""])[0];
       return /commit `[0-9a-f]{7}`/.test(line);
     },
-    "Run mode": (b) => /^(full|incremental|incremental-quick) · (\d+) lines in delta/m.test(b),
+    "Run mode": (b) => /^\| Mode \| (full|incremental|incremental-quick) · (\d+) lines in delta/m.test(b),
     "Marker": (b) => b.includes("<!-- PR_REVIEWER_REPORT -->"),
     "Review details accordion": (b) => /<details>\n<summary>Review details/.test(b),
   };

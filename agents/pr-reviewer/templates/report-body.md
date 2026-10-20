@@ -8,57 +8,52 @@
 {{REASONS_LINE}}
 {{/REASONS_LINE}}{{#ADVISORY_LINE}}
 {{ADVISORY_LINE}}
-{{/ADVISORY_LINE}}{{#COVERAGE_LINE}}
-{{COVERAGE_LINE}}
-{{/COVERAGE_LINE}}{{#PROGRESS_LINE}}
+{{/ADVISORY_LINE}}{{#PROGRESS_LINE}}
 {{PROGRESS_LINE}}
-{{/PROGRESS_LINE}}{{#FINDINGS_INDEX}}
+{{/PROGRESS_LINE}}{{#IMPACT_IMAGE}}
+{{IMPACT_IMAGE}}
+{{/IMPACT_IMAGE}}{{#FINDINGS_INDEX}}
 {{FINDINGS_INDEX}}
 {{/FINDINGS_INDEX}}{{#FIX_ALL_BUTTON}}
 {{FIX_ALL_BUTTON}}
-{{/FIX_ALL_BUTTON}}{{#IMPACT_SECTION}}
+{{/FIX_ALL_BUTTON}}{{#ADDITIONAL_FINDINGS}}
 <details>
-<summary>What this change reaches — {{IMPACT_SUMMARY}}</summary>
+<summary>{{ADDITIONAL_COUNT}} more findings — verified, too minor to comment on</summary>
+<br>
 
-{{IMPACT_SECTION}}
+{{ADDITIONAL_FINDINGS}}
 
 </details>
-{{/IMPACT_SECTION}}{{#OPTIMALITY_CARDS}}
+{{/ADDITIONAL_FINDINGS}}{{#NOTES}}
+<details>
+<summary>Notes ({{NOTES_COUNT}}) — posted inline</summary>
+<br>
+
+{{NOTES}}
+
+</details>
+{{/NOTES}}{{#LOW_CONFIDENCE_FINDINGS}}
+<details>
+<summary>Less certain ({{LOW_CONFIDENCE_COUNT}}) — advisory, below the confidence bar</summary>
+<br>
+
+{{LOW_CONFIDENCE_FINDINGS}}
+
+</details>
+{{/LOW_CONFIDENCE_FINDINGS}}{{#OPTIMALITY_CARDS}}
 <details>
 <summary>Is there a better approach? ({{OPTIMALITY_COUNT}})</summary>
 
 {{OPTIMALITY_CARDS}}
 
 </details>
-{{/OPTIMALITY_CARDS}}{{#NOTES}}
-<details>
-<summary>Notes ({{NOTES_COUNT}}) — posted inline</summary>
-
-{{NOTES}}
-
-</details>
-{{/NOTES}}{{#ADDITIONAL_FINDINGS}}
-<details>
-<summary>{{ADDITIONAL_COUNT}} more findings — verified, too minor to comment on</summary>
-
-{{ADDITIONAL_FINDINGS}}
-
-</details>
-{{/ADDITIONAL_FINDINGS}}{{#LOW_CONFIDENCE_FINDINGS}}
-<details>
-<summary>Less certain ({{LOW_CONFIDENCE_COUNT}}) — advisory, below the confidence bar</summary>
-
-{{LOW_CONFIDENCE_FINDINGS}}
-
-</details>
-{{/LOW_CONFIDENCE_FINDINGS}}
+{{/OPTIMALITY_CARDS}}
 <details>
 <summary>Review details{{OPEN_THREADS_SUFFIX}}</summary>
+<br>
 
-{{#NEEDS_ATTENTION}}**Needs attention**
-
-{{/NEEDS_ATTENTION}}| Gate | Status | Details |
-|---|---|---|
+| Gate | | Details |
+|---|:-:|---|
 | Description vs. code | {{GATE_DESCRIPTION_STATUS}} | {{GATE_DESCRIPTION_DETAILS}} |
 | Prior review feedback | {{GATE_PRIOR_STATUS}} | {{GATE_PRIOR_DETAILS}} |
 | Documentation | {{GATE_DOCS_STATUS}} | {{GATE_DOCS_DETAILS}} |
@@ -76,14 +71,14 @@
 
 </details>
 
-{{/WITHHELD}}**Found**
+{{/WITHHELD}}| Run | Details |
+|---|---|
+{{RUN_ROWS}}
+{{#MEMORIES_LIST}}
+**Memories used**
 
-{{FOUND_LINES}}
-
-**Run**
-
-{{RUN_LINES}}
-{{#NOTHING_TO_REPORT}}
+{{MEMORIES_LIST}}
+{{/MEMORIES_LIST}}{{#NOTHING_TO_REPORT}}
 <sup>Nothing to report — {{NOTHING_TO_REPORT}}.</sup>
 {{/NOTHING_TO_REPORT}}
 </details>

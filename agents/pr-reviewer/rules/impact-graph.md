@@ -149,7 +149,7 @@ With `--overlaps`, the script asks GitHub for the 30 most recently updated open 
 
 | `kind` | Meaning | Effect |
 | --- | --- | --- |
-| `same-symbol` | both PRs change the same exported symbol | a `standard`-tier trigger, and a consequence note in `What this change reaches` |
+| `same-symbol` | both PRs change the same exported symbol | a `standard`-tier trigger, and an entry in the report's `Overlapping PRs` row |
 | `same-file` | both touch the file, different symbols | a note only |
 
 ```markdown
@@ -176,19 +176,19 @@ A finding cites the code the graph pointed at. The graph itself is never the evi
 
 ## In the report
 
-The trace renders as the report's `What this change reaches` accordion, a Mermaid diagram above the
-bullets ([`report-rendering.md` § What a reader sees first](./report-rendering.md#what-a-reader-sees-first--reach-coverage-progress)).
+The trace renders as the `Reach`, `Dependencies`, and `Overlapping PRs` rows of the report's Run table
+([`report-rendering.md` § The Run table](./report-rendering.md#the-run-table)).
 `finalize.mjs` builds it (`finalize/reach.mjs`) from three inputs, so the run supplies only the
 trace:
 
 | Input | Source | Becomes |
 | --- | --- | --- |
-| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); each changed file with importers and no listed export, from `modules[].importer_paths` (`importer_files` from `modules[].importers`); `same-symbol` overlaps; each dependency delta that is direct or has a usage site, plus `dependencies_omitted` — the count of transitive deltas with no usage site, rendered as one bullet, never dropped |
+| `impact.json` | this script, via `context.paths.impact` | the changed exports with consumers, one entry per consumer **file** (defining file excluded, capped at `consumer_files`); each changed file with importers and no listed export, from `modules[].importer_paths` (`importer_files` from `modules[].importers`); `same-symbol` overlaps; each dependency delta that is direct or has a usage site, plus `dependencies_omitted` — the count of transitive deltas with no usage site, rendered as one entry, never dropped |
 | `judgments.impact_trace` | the consumer-impact and dependency finders | `verified` for each consumer file read and found holding — kept even past impact.json's 25-file list; for a dependency (`symbol` = package name, `path` = its manifest), the usage sites in the files listed become `checked_sites` |
 | a posted inline claim with `finder: "consumer-impact"` | Step 2.9 | `finding` for the file it anchors in (narrowed by its `symbol` when set; with `symbol` set, kept even past the 25-file list) |
 
-Every other listed consumer renders as `? not checked`, and every importer as `imports this file`.
-An impact graph that reached nothing, or a `diff-only` run that built no graph, still sends `IMPACT: {}`, so the report's footnote can say why it drew no diagram.
+Every other listed consumer counts as `not checked`, and every importer as `not traced`.
+An impact graph that reached nothing, or a `diff-only` run that built no graph, still sends `IMPACT: {}`, so the report's footnote can say why there is no `Reach` row.
 Record the trace as you go:
 
 ```json

@@ -34,18 +34,21 @@ const LEDGER_RE = /<!-- PR_REVIEWER_LEDGER [\s\S]*?-->/;
 // Lines the `Review details` accordion owns. Any of these above the first `<details>` means the
 // report was flattened — the exact regression seen in production.
 // The gate table is NOT in this list: its column spacing varies between runs, so a literal misses
-// `|  Gate  | Status | Details |`. It is matched with GATE_TABLE_RE below, the same regex the
+// `|  Gate  |  | Details |`. It is matched with GATE_TABLE_RE below, the same regex the
 // classifier uses — otherwise a body could classify as a report on the regex and then escape this
 // check on the literal.
 const ACCORDION_OWNED = [
-  // Current shape — the three group headings and the collapsed-lens footnote. Only the headings
-  // are listed, never a plain in-group label (`Quality — `, `Memories — `): model-authored
-  // optimality cards render above the accordion, and a card discussing quality would trip a
-  // substring match on one.
+  // Current shape — the Run table, the memories list, and the collapsed-lens footnote. Only
+  // structural literals are listed, never a row label (`| Found |`): model-authored optimality
+  // cards render above the accordion, and a card could quote one.
+  "| Run | Details |",
+  "**Memories used**",
+  "<sup>Nothing to report —",
+  // Grouped shape, before the Run table. Kept because this validator runs against LIVE bodies, and
+  // a report posted under that contract is still judged by it.
   "**Needs attention**",
   "**Found**",
   "**Run**",
-  "<sup>Nothing to report —",
   // Pre-grouping shape. Kept because this validator runs against LIVE bodies, and a report posted
   // before the accordion was grouped is still judged by the contract it was written under — the
   // same reason `**Open bot threads (` survives below.
@@ -83,14 +86,15 @@ const SHARED_FOOTER = "<sup>`pr-reviewer` · commit `";
 // body this script exists to catch.
 //
 // The gate-table header is decisive on its own: no other object in this pipeline emits a
-// `| Gate | Status | Details |` header, and the real flat body carried the table while omitting
+// `| Gate | | Details |` header (`| Gate | Status | Details |` before it), and the real flat body carried the table while omitting
 // `**Run mode**`, so a two-of-N rule over the diagnostic lines missed it. Column spacing varies
 // between runs (`| --- |` vs `|---|`), so match the header cells, not a fixed string.
-const GATE_TABLE_RE = /^\|\s*Gate\s*\|\s*Status\s*\|\s*Details\s*\|/m;
-// Both shapes are listed: a current body carries `**Found**` + `**Run**`, a pre-grouping one
-// carries two or more of the bold diagnostic labels. Two signals is still the bar, so one
-// incidental bold label in a human comment never classifies as a report.
+const GATE_TABLE_RE = /^\|\s*Gate\s*\|\s*(?:Status\s*)?\|\s*Details\s*\|/m;
+// Every shape is listed: a current body carries `| Run | Details |` and the footer, a grouped one
+// `**Found**` + `**Run**`, a pre-grouping one two or more of the bold diagnostic labels. Two signals
+// is still the bar, so one incidental bold label in a human comment never classifies as a report.
 const REPORT_SIGNALS = [
+  "| Run | Details |",
   "**Found**",
   "**Run**",
   SHARED_FOOTER,
@@ -179,7 +183,7 @@ export function validate(body) {
     }
   }
   if (GATE_TABLE_RE.test(head)) {
-    add("accordion-owned-line-at-top-level", "`| Gate | Status | Details |` renders above the accordion");
+    add("accordion-owned-line-at-top-level", "the `| Gate | | Details |` table renders above the accordion");
   }
 
   // ── the report's own identity: a `### ` headline ─────────────────────────────────────────────
