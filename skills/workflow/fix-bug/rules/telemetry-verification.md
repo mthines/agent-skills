@@ -43,7 +43,7 @@ Runs only when **all** hold:
 
 - Phase 0 classified the input as a Dash0 / telemetry URL (or a Linear ticket that resolved to
   one).
-- Phase 7 verifier returned green and the PR was undrafted.
+- Phase 7 verification returned green and a human undrafted the PR.
 - The PR has been merged and deployed to the environment that produced the original signal.
 
 Skipped, with one report line (`telemetry verification — skipped (trigger not met: input was not a telemetry URL)`), when the input was not a telemetry URL.

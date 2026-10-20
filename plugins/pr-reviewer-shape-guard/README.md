@@ -10,7 +10,7 @@ controls:
 
 | Guard | Where it runs | Sees a posted report? |
 | --- | --- | --- |
-| L1 `G25` (439 checks) | CI, against `agent-skills` | **No** — it validates the repository |
+| L1 `G25` | CI, against `agent-skills` | **No** — it validates the repository |
 | `render-report.mjs` fail-closed | inside the run | Only if the run invokes it |
 | Step 4a pre-write assertions | inside the run | Only if the run reaches them |
 | ingest round-trip | CI, against fixtures | **No** — committed fixtures, not live output |

@@ -1,15 +1,10 @@
 ---
 name: video-analyser
 description: >
-  Analyse a video file — primarily a screen recording of a bug — to extract errors,
-  UI state, and reproduction steps. Resolves input from a Linear ticket URL, a local
-  file path, or a direct video URL. Extracts keyframes with ffmpeg, runs optional
-  Tesseract OCR and Whisper audio transcription, then delivers structured findings.
-  Trigger phrases: "analyse this video", "analyze this recording", "what does this
-  video show", "extract bugs from this recording", "analyse this screen recording",
-  "investigate this mp4", "investigate this mov", "analyse this clip",
-  "look at this screen capture", "what is happening in this video",
-  "analyse this screen capture", "video-analyser", "/video-analyser".
+  Analyses a video — usually a bug screen recording from a file, URL, or Linear
+  ticket — with ffmpeg keyframes plus optional OCR and transcription, extracting
+  errors, UI state, and repro steps. Triggers on "analyse this video", "analyze
+  this recording", "what does this video show", "/video-analyser".
 argument-hint: '<video-path|linear-url|video-url>'
 license: MIT
 metadata:

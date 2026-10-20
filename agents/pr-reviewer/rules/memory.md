@@ -49,7 +49,7 @@ a re-phrased finding starts over. See [`references/detection-research.md`](../re
 | Record | Tag / key | Scope | TTL | Holds | Can it suppress? |
 | --- | --- | --- | --- | --- | --- |
 | **Symbol knowledge** | `codebase-knowledge` / `knowledge::<symbol>@<path>` | `repo::{owner}/{repo}` | 90 d | verified facts about one symbol — contracts, invariants callers rely on, consumer count at last trace, covering tests — each with `verified_at_sha`; plus `history[]` of findings raised on it (`{pr, sha, fp, verdict, outcome}`, capped at 20) | No |
-| **Hotspot** | `codebase-knowledge` / `hotspot::<path>` | `repo::{owner}/{repo}` | 90 d | per-file counters: `confirmed`, `missed` (a human caught something here that this agent did not flag), `regressed`, `flaky` (a test file empirically flaky then stabilised, written by `e2e-pr-stabilizer`), `last_touched_by[]` | No |
+| **Hotspot** | `codebase-knowledge` / `hotspot::<path>` | `repo::{owner}/{repo}` | 90 d | per-file counters: `confirmed`, `missed` (a human caught something here that this agent did not flag), `regressed`, `flaky` (no current writer; carried through), `last_touched_by[]` | No |
 | **Relevance rule** | `loop::reviewer-comment-relevance` / `reviewer-comment-relevance::rule::<fp>` | `repo::{owner}/{repo}` | 60 d | `direction: suppress \| amplify`, `status`, `evidence[]`, optional `scope_globs[]` | Yes — and only this one |
 | **PR state** | `ci::pr-review-state` / `ci-state::pr-review-<n>` | `branch::{owner}/{repo}::{head-branch-name}` | 7 d | this agent's own run history for one PR | No |
 
@@ -374,7 +374,7 @@ Two failure modes make this worth stating rather than leaving to taste, and both
 **Never restate what LoreKit already stores as a first-class property.** `scope`, `tags`, `kind`, `host`, `source_agent`, `trigger`, `ttl_days`, the created/updated timestamps, and the usage count are columns on the row, shown in its metadata panel and queryable — so a `window_days: 90` in the value is a second copy of `ttl_days` with no owner, and the two disagree the moment either changes.
 
 The one deliberate exception is the in-value **`expires`**, and it is an exception for a mechanical reason rather than a stylistic one: LoreKit drops an expired row server-side, but only when the write set one — `lorekit_memory_list` and the search handler both filter `expires_at is null or expires_at > now()`, so a row written *without* `ttl_days` has no `expires_at` and never expires on any read.
-[`record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs) is exactly that case: the GitHub Actions write path emits `expires` in the value and passes no `ttl_days`, so the in-value field is the only expiry these rows have and the reader has to skip on it ([`comment-relevance-memory.md`](../../shared/rules/comment-relevance-memory.md) — "Skip any entry whose `expires` is in the past", guarded by L1 `G16b`).
+[`record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs) is exactly that case: the GitHub Actions write path emits `expires` in the value and passes no `ttl_days`, so the in-value field is the only expiry these rows have and the reader has to skip on it ([`comment-relevance-memory.md`](../../shared/rules/comment-relevance-memory.md) — "Skip any entry whose `expires` is in the past").
 That is a **divergence worth closing**, not a design: the agent's own writes below pass `ttl_days = 90` and are dropped for free, so the two write paths to the same records expire by different mechanisms.
 Until the recorder passes `ttl_days`, both must keep emitting `expires` and every reader must keep skipping on it — dropping the field first would leave the workflow's records immortal. That applies to the hotspot as much as to the relevance rule: a 91-day-old counter that still answers a read is a stale defect history presented as a current one, and `writeHotspot` in [`record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs) has always emitted it. `window_days` is not that field — it names the window in the abstract instead of dating this row, so nothing can compare it to `now`.
 
@@ -443,7 +443,7 @@ Report the read count and the unread remainder in the `Memory` block — a budge
 
 ## What this rule does not do
 
-- **It does not lower a severity tier.** Amplify lowers a *verifier threshold*, which decides whether a finding survives; it never changes what the finding is. Severity comes from the `severity` skill, on the code.
+- **It does not lower a severity tier.** Amplify lowers a *verifier threshold*, which decides whether a finding survives; it never changes what the finding is. Severity comes from [`severity.md`](../../shared/rules/severity.md), on the code.
 - **It does not write lessons.** All `reviewer-lessons` writes flow through [`outcome-learning.md`](../../shared/rules/outcome-learning.md) after the PR closes.
 - **It does not delete anything.** `mcp__lorekit__memory_delete` is deliberately absent from this agent's `tools:` grant. Records lapse at TTL; a rule that should stop firing goes `disabled`, which is a write, not a delete.
 - **It does not treat an empty record as evidence of safety.** No knowledge record for a symbol means nobody has traced it yet. No hotspot counter means no defect has been *recorded* there. Neither is a reason to look less hard.

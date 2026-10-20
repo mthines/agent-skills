@@ -95,7 +95,7 @@ The lens proceeds only when at least one changed path classifies as **`web`**, *
 | --- | --- |
 | any of `web` / `mobile` / `api` / `worker` | **pass** |
 | only `infra` / `shared-lib` | fail — no user-facing or request-serving surface of its own |
-| only test / fixture / generated / docs paths | fail — the same exclusion set [`severity`](../../../skills/quality/severity/SKILL.md) applies to its path floor |
+| only test / fixture / generated / docs paths | fail — the same exclusion set [`severity.md`](./severity.md) applies to its path floor |
 
 A `shared-lib` change that *reaches* a `web` or `api` consumer is still gate-1 fail here.
 The consumer's own signal already covers the call site, and Phase B's `impact.json` is the surface
@@ -261,7 +261,7 @@ report's `Nothing to report` footnote ([`report-rendering.md`](../../pr-reviewer
   [`rum-tracking`](../../../skills/analysis/rum-tracking/SKILL.md), reached through `measurable`, not
   from here.
 - **It does not judge instrumentation quality.** A span with the wrong attribute name is a
-  `code-quality` or standards finding; this lens only asks whether the signal exists and is watched.
+  `quality` or standards finding; this lens only asks whether the signal exists and is watched.
 - **It does not create or edit dashboards, alerts, SLOs, or check rules.** `measurable` itself
   forbids that in every mode, and a reviewer has even less business doing it.
 - **It does not gate on test coverage.** A well-tested change with no production signal is exactly

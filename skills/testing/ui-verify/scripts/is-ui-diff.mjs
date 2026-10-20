@@ -7,7 +7,7 @@
 // agent had to remember to run it at all, and the glob list was web-JS-only, so
 // a UI change shipped through .ts / Lit / .html / .astro / a component dir went
 // unrecorded. This script makes the decision mechanical and identical for every
-// caller (create-pr, aw-planner, review-loop), and lets each repo teach it what
+// caller (create-pr, aw-executor, review-loop), and lets each repo teach it what
 // "UI" means via a learned surface, falling back to broad defaults so a repo
 // with no learnings yet still gets a correct answer.
 //

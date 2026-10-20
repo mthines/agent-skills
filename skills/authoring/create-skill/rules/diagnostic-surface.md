@@ -94,7 +94,7 @@ The diagnoser uses this table to spot **gaps**: a failure that bypasses every li
 | Phase | Existing guards                                                     | Typical gaps                                                           |
 | ----- | ------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | 0     | <Mode detection; user confirms understanding>                       | <Mode set to Lite for a task that should have been Full>               |
-| 1     | <`code-quality(plan)`; `confidence(plan)` ≥ 90 % gate>              | <Plan missed a hidden constraint>                                      |
+| 1     | <`critical(plan)`; `confidence(plan)` ≥ 90 % gate>                  | <Plan missed a hidden constraint>                                      |
 | ...   | ...                                                                 | ...                                                                    |
 ```
 

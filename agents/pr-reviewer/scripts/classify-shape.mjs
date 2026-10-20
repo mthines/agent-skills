@@ -23,7 +23,7 @@
 // --extra-high-stakes regex exits non-zero and prints NOTHING on stdout, so a piping
 // caller can never act on a partial classification.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 // ── Shape detectors ────────────────────────────────────────────────────────────────────
@@ -71,7 +71,7 @@ const DOCS_RE = /\.(md|mdx|rst|txt)$|(^|\/)docs\//;
 // path detector and pushed every review of THIS repository onto the forced-full path. The
 // shape name is still recorded — a file under `auth/` is auth whatever it is for — but the
 // high-stakes escalation is not. Same exemption set, and the same reasoning, as the
-// `severity` skill's path floor: test, fixture, mock, example, generated, reverse migration.
+// `agents/shared/rules/severity.md` path floor: test, fixture, mock, example, generated, reverse migration.
 const NON_PRODUCTION_RE =
   /(^|\/)(__mocks__|__fixtures__|fixtures?|mocks?|examples?|generated|testdata)\/|\.(gen|generated)\.|\.down\.(sql|ts|js)$/i;
 const isNonProduction = (name) => TEST_RE.test(name) || NON_PRODUCTION_RE.test(name);
@@ -282,4 +282,4 @@ function main() {
   process.stdout.write(JSON.stringify(classify(files, extras)) + "\n");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

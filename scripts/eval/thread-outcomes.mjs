@@ -11,7 +11,7 @@
  *
  * For every review thread on a PR, classifies the outcome by reusing the
  * SAME decision tables `record-comment-relevance.mjs` already ships and is
- * L1-tested (G24f) — never a re-derivation:
+ * self-tested — never a re-derivation:
  *   - a RESOLVED thread routes through `decideResolvedThread` (declined via a
  *     wont-fix reply/reaction, or fixed if a later commit touched its region,
  *     or fixed on a live anchor with no decline detected);
@@ -45,7 +45,7 @@
  *   node thread-outcomes.mjs --self-test
  */
 
-import { writeFileSync } from "node:fs";
+import { writeFileSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   ghApi, ghApiAll, fetchReviewThreads, hasFixCommit,
@@ -326,7 +326,7 @@ async function main() {
 }
 
 import { readFileSync } from "node:fs";
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   main().catch((err) => { console.error(err); process.exit(1); });
 }

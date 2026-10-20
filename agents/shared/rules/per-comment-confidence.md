@@ -52,7 +52,7 @@ What that changes here: **nothing but the source of the number.**
 | Unchanged, and owned by this rule | Moved |
 | --- | --- |
 | the effective threshold and the profile table | the rubric that produces the score |
-| the severity-aware fan-out and `Skill("severity", "finding")` | the receipt tiers and the four-way verdict |
+| the severity-aware fan-out and [`severity.md`](./severity.md) | the receipt tiers and the four-way verdict |
 | the near-miss defer band and its floor | the adversarial re-derivation |
 | the path-instruction injection | |
 | the `(blocking)` decoration and its cap exemption | |
@@ -79,8 +79,8 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
    The default (no review config present or `profile: balanced`) is **80**.
    See `review-config.md` for the full profile→threshold table.
 
-   **Severity-aware threshold (default).** Assess the finding's tier once with
-   `Skill("severity", "finding")` — in this same pass as the confidence rating, never a
+   **Severity-aware threshold (default).** Assess the finding's tier once by applying
+   [`severity.md`](./severity.md) — in this same pass as the confidence rating, never a
    separate per-finding call — and use the profile's `severity_thresholds[tier]` as the
    effective threshold (`review-config.md` § Severity-aware thresholds). The `medium` tier
    anchors the profile's historical bar (**80** for `balanced`), so a typical finding is

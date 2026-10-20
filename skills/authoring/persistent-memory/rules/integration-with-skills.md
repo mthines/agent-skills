@@ -165,8 +165,7 @@ for the full contract.
 **Lesson-scope schema contract.** The loop lessons (tags `loop::aw-lessons`,
 `loop::aw-tester-lessons`, `loop::fix-bug-lessons`,
 `loop::reviewer-lessons`, `loop::implement-suggestion-lessons`,
-`loop::ci-auto-fix-lessons`, `loop::e2e-pr-stabilizer-lessons`,
-`loop::optimize-approach-lessons`,
+`loop::ci-auto-fix-lessons`,
 `loop::ideate-lessons`) carry an extended entry schema, defined on this skill's
 side in [`write-pipeline.md`](./write-pipeline.md#lesson-scope-entries) and
 templated at [`../templates/lesson-entry.md`](../templates/lesson-entry.md).
@@ -183,7 +182,7 @@ the host skill's loop rules in the same PR — the two surfaces must never drift
 
 Some skills should never call `persistent-memory`:
 
-- One-shot utilities (`changelog`, `resolve-conflicts`, `ci-auto-fix`)
+- One-shot utilities (`resolve-conflicts`, `ci-auto-fix`)
   — they have no durable subject.
 - Skills that operate on secrets or credentials (would risk routing
   them through extraction).

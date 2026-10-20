@@ -1,21 +1,16 @@
 ---
 name: autonomous-workflow
 description: >
-  The phase-based machinery (0–7) behind the `aw` dispatcher — task intake
-  through tested PR delivery in an isolated Git worktree, with optional
-  companion skills for planning, quality gates, TDD, UX, code quality, docs,
-  and CI verification. Companions never block; a skipped one is reported, never silent. NOT the entry
-  point and not auto-triggered: a natural-language request to do work
-  autonomously, end-to-end, in isolation, or in a worktree belongs to the `aw`
-  skill, which detects the task tier and routes. Reach for this skill only to
-  read or run the phase machinery directly, bypassing tier detection — invoke
-  with /autonomous-workflow.
+  The phase machinery (0–7) behind the `aw` dispatcher: task intake through a tested draft PR in an
+  isolated worktree, gated by the plan.md brief and the run-checks.mjs sentinel, with companions that
+  never block. Not the entry point — natural-language requests for autonomous work go to the `aw`
+  skill; invoke /autonomous-workflow only to run the phases directly.
 disable-model-invocation: false
 argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no-interview]'
 license: MIT
 metadata:
   author: mthines
-  version: '3.28.0'
+  version: '4.0.0'
   workflow_type: orchestrator
   tags:
     - autonomous
@@ -27,54 +22,20 @@ metadata:
 
 # Autonomous Workflow
 
-Phase-based autonomous feature development. Each phase has a gate that must pass
-before continuing. Phases optionally invoke companion skills based on the task —
-companions never block; a skipped one is reported, never silent.
+Phase-based autonomous feature development: each phase has a gate that must pass before the next.
+This file is an index; procedures live in `rules/*.md` and load on demand.
 
-> **Source of truth.** This `SKILL.md` is a thin index. Detailed procedures
-> live in `rules/*.md` and load on demand. Companion-skill triggers and
-> disable instructions live in [`rules/companion-skills.md`](./rules/companion-skills.md).
+## Contents
 
----
+- [Before Starting Any Work](#before-starting-any-work) — Step 1 tier detection, Step 2 prerequisites
+- [Workflow Phases](#workflow-phases)
+- [Core Principles](#core-principles)
+- [Artifacts](#artifacts)
+- [Lite and Micro path](#lite-and-micro-path)
+- [Companions and parallelization](#companions-and-parallelization)
+- [Units and install](#units-and-install)
 
-## Self-Improvement
-
-The workflow improves across runs through a **two-tier loop** (full contract in
-[`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md)):
-
-**Fast tier — episodic lessons (LoreKit `memory.*` tools, optional companion).**
-The workflow reads accumulated `loop::aw-lessons` lessons before planning
-(Phase 1) and writes new ones when it gets stuck (Phase 4) or finishes (Phase 7),
-mapping universal lessons to LoreKit's `global` scope and repo-bound lessons to
-`repo::{owner}/{repo}`. Lessons are **advisory** — they bias the plan, never
-silently change a gate. Skipped with one report line when LoreKit's `memory.*` tools are not
-connected.
-**When invoked through the `aw` dispatcher, the read/write is hoisted to the
-dispatcher** (intake + exit) so **every tier** — Micro, Lite, and Full — both
-benefits from and contributes lessons; the phase-level reads/writes are the
-Full-tier specialization. This is how self-improvement stays universal without
-forcing planning on simple tasks.
-
-**Slow tier — retrospective diagnosis.** When a run shipped wrong code despite
-all gates passing — or a post-merge bug traces back to a missed check, or a
-lesson recurs `seen_count >= 3` — invoke
-[`/create-skill diagnose autonomous-workflow`](../../authoring/create-skill/SKILL.md#diagnose-workflow)
-**while the failing session is still in context**. The diagnoser reads this
-skill's [diagnostic surface](./rules/diagnostic-surface.md) (phase model,
-failure taxonomy, existing-guards table, hard invariants) — and the `aw-lessons`
-history as evidence — then emits a confidence-gated unified-diff proposal
-against this skill's source, applied only at `confidence(analysis) ≥ 90 %` with
-explicit user confirmation.
-
-The fast tier captures lessons cheaply and reversibly; recurrence promotes a
-proven lesson into a permanent guard through the gated slow tier. The diagnose
-engine is owned by `create-skill` so the same procedure works across every
-skill in the repo (`fix-bug`, future ones) — they each
-declare their own diagnostic surface.
-
----
-
-## CRITICAL: Before Starting Any Work
+## Before Starting Any Work
 
 ### Step 1: Detect Workflow Mode (MANDATORY)
 
@@ -90,13 +51,12 @@ questions in order — the first `yes` selects Full Mode:
 
 | Tier      | Files / shape                                                        | Artifacts | Planning            | Companions      |
 | --------- | -------------------------------------------------------------------- | --------- | ------------------- | --------------- |
-| **Full**  | complex / 4+ files / unfamiliar / cause or location unknown          | Required  | planner → `plan.md` | all applicable  |
-| **Lite**  | 2–3 files, **or 1 file carrying non-trivial logic**                  | None      | brief mental plan   | per signal      |
-| **Micro** | 1 file **and** purely mechanical (typo, copy, bump, string change)   | None      | none (skip planning)| none (docs if drift) |
+| **Full**  | complex / 4+ files / unfamiliar / cause or location unknown          | Required  | `aw` writes a short `plan.md` brief, works to its checks, then a fresh-eyes review | required ones; the rest at judgment |
+| **Lite**  | 2–3 files, **or 1 file carrying non-trivial logic**                  | None      | in-conversation brief | per signal      |
+| **Micro** | 1 file **and** purely mechanical (typo, copy, bump, string change)   | None      | in-conversation brief, no planning | none (docs if drift) |
 
 **The walk decides; the table only describes its outcomes.** Where the two seem to
-disagree, the walk wins. Two readings this exists to rule out, because the earlier
-wording invited both:
+disagree, the walk wins. Two readings this exists to rule out:
 
 - **Q4's `OR` is load-bearing.** A **one-file** change with non-trivial logic is
   **Lite**, not Micro — Micro needs *both* one file *and* nothing to reason about.
@@ -108,13 +68,8 @@ wording invited both:
   unknown until the investigation finishes. Tiering on the *guessed* size of the
   eventual patch is what Q1 and Q2 exist to prevent.
 
-**Micro** follows the same phase path as Lite but skips planning and all quality
-companions — it is the "skip planning when it's trivial" tier. **Phase 0 and
-Phase 2 stay mandatory in every tier**, including Micro.
-
-The first two questions ground the decision in complexity rather than raw file
-count (one large monolithic change can exceed four trivial edits in scope).
-Question 3 is the file-count tie-breaker — only fires when complexity is low.
+Questions 1–2 ground the decision in complexity rather than raw file count (one large change can exceed four trivial edits in scope); question 3 is the file-count tie-breaker.
+**Phase 0 and Phase 2 stay mandatory in every tier**, including Micro.
 
 **When in doubt, choose Full.** Output mode selection in this exact format:
 
@@ -127,257 +82,103 @@ MODE SELECTION:
 - Lessons applied: [N matched, or none]
 ```
 
-This block is canonical — the [`aw` dispatcher skill](./aw/SKILL.md), the
-planner template, and
-[`rules/phase-0-validation.md`](./rules/phase-0-validation.md) emit it
-field-for-field identically.
+This block is canonical: the [`aw` dispatcher skill](./aw/SKILL.md) and [`rules/phase-0-validation.md`](./rules/phase-0-validation.md) emit it field-for-field.
 
 ### Step 2: Verify Prerequisites
 
 | Capability | Status | Check | If missing |
 | ---------- | ------ | ----- | ---------- |
-| GitHub access | **REQUIRED (the capability, not the binary)** | Resolve `ACCESS_PATH` per [`github-access.md` § Step 0](../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step) — **never** `which gh`, never `gh auth status` | Only `ACCESS_PATH = none` degrades Phases 6–7; name it in `Degraded:` and never report a GitHub step you could not perform as done |
-| `gw` | Recommended | `which gw`  | Continue with native `git worktree` fallback (warn user once)|
+| GitHub access | Required (the capability, not the binary) | Resolve `ACCESS_PATH` per [`github-access.md` § Step 0](../../../agents/shared/rules/github-access.md#step-0--resolve-your-path-once-before-any-github-step) — never `which gh`, never `gh auth status` | Only `ACCESS_PATH = none` degrades Phases 6–7; name it in `Degraded:` and never report a GitHub step you could not perform as done |
+| `gw` | Recommended | `which gw` | Fall back to native `git worktree` (warn once) |
 
-**`gh` is not hard-required — it is one of two GitHub paths**, and it is absent
-in Claude Code cloud sessions where the `mcp__github__*` tools are present (both
-`aw-planner` and `aw-executor` carry them in their `tools:` frontmatter). Gating
-on `which gh` turns a workable cloud session into a hard stop; detail in
-[`rules/prerequisites.md`](./rules/prerequisites.md#github-access-path).
-`gw` is recommended — it adds auto-copy of secrets, pre/post-checkout hooks,
-and smart cleanup — but the workflow falls back to native `git worktree` if
-it's not installed. See [`rules/prerequisites.md`](./rules/prerequisites.md)
-for the full feature comparison and installation steps.
-
----
+`gh` is one of two GitHub paths; in cloud sessions it is absent and the `mcp__github__*` tools both agents carry are the path.
+Details: [`rules/prerequisites.md`](./rules/prerequisites.md) — read when a prerequisite is missing.
 
 ## Workflow Phases
 
-| Phase | Name                       | Rule file                                                      | Gate                                          |
-| ----- | -------------------------- | -------------------------------------------------------------- | --------------------------------------------- |
-| 0     | Validation                 | [phase-0-validation.md](./rules/phase-0-validation.md)         | User confirmed understanding                  |
-| 1     | Planning                   | [phase-1-planning.md](./rules/phase-1-planning.md)             | `confidence(plan)` ≥ 90% or user-approved     |
-| 2     | Worktree Setup             | [phase-2-worktree.md](./rules/phase-2-worktree.md)             | Worktree created, `plan.md` written           |
-| 3     | Implementation             | [phase-3-implementation.md](./rules/phase-3-implementation.md) | Code complete, fast checks pass               |
-| 4     | Testing                    | [phase-4-testing.md](./rules/phase-4-testing.md)               | All tests pass OR user-approved stop          |
-| 5     | Documentation              | [phase-5-documentation.md](./rules/phase-5-documentation.md)   | Docs reflect changes (incl. `CLAUDE.md`)      |
-| 6     | PR Creation                | [phase-6-pr-creation.md](./rules/phase-6-pr-creation.md)       | Walkthrough shown, draft PR opened            |
-| 7     | CI Gate + Optional Cleanup | [phase-7-ci-gate.md](./rules/phase-7-ci-gate.md)               | CI green OR user-approved stop                |
+| Phase | Name | Rule file | Gate |
+| ----- | ---- | --------- | ---- |
+| 0 | Validation | [phase-0-validation.md](./rules/phase-0-validation.md) | User confirmed understanding |
+| 1 | Planning | [phase-1-planning.md](./rules/phase-1-planning.md) | Six Core headings, one check per `AC-{n}`, `checks.lock` sealed — deterministic, no LLM score |
+| 2 | Worktree Setup | [phase-2-worktree.md](./rules/phase-2-worktree.md) | Worktree created, brief + `checks.yaml` written, `/goal` line printed |
+| 3 | Implementation | [phase-3-implementation.md](./rules/phase-3-implementation.md) | Code complete, fast checks pass, only File Changes touched |
+| 4 | Testing | [phase-4-testing.md](./rules/phase-4-testing.md) | Suite green, then `run-checks.mjs` prints `CHECKS M/M PASS` |
+| 5 | Documentation | [phase-5-documentation.md](./rules/phase-5-documentation.md) | Docs reflect changes (incl. `CLAUDE.md`) |
+| 6 | PR Creation | [phase-6-pr-creation.md](./rules/phase-6-pr-creation.md) | Walkthrough shown, draft PR opened, `AW EVIDENCE` printed |
+| 7 | CI Gate + Optional Cleanup | [phase-7-ci-gate.md](./rules/phase-7-ci-gate.md) | CI green or user-approved stop |
 
 **Phase 0 and Phase 2 are MANDATORY.** All others gate progression to the next.
-
-**Phase 0 pre-authorization (`--no-confirm`).**
-If the invocation contains an explicit autonomy grant — the phrase "proceed without confirmation" or the `--no-confirm` flag — Phase 0 still runs, but posts its understanding summary and proceeds immediately instead of waiting for the user's "proceed".
-The grant never covers a `blocking` missing-information gap: a load-bearing unknown (Phase 0 Step 3c) halts and asks regardless.
-Default behavior without the grant is unchanged.
-See [phase-0-validation.md](./rules/phase-0-validation.md#step-5-get-explicit-confirmation).
-
----
-
-## Companion Skills
-
-Optional companions are invoked at specific phases based on task signals.
-**No companion blocks the workflow, and every one is reported `ran` or
-`skipped (<reason>)`** — never omitted. See [`rules/companion-skills.md`](./rules/companion-skills.md)
-for the full registry, trigger conditions, and **how to disable any companion**.
-
-| Phase | Companion              | Trigger                                                | Args             |
-| ----- | ---------------------- | ------------------------------------------------------ | ---------------- |
-| 0     | `interview`            | Full Mode default-on (adaptive — silent on a crisp request; skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `.agent/{branch}/brief.md` + readiness verdict | — |
-| 1     | `lorekit-memory`       | Always — read accumulated workflow lessons before design (fast-tier self-improvement) | `memory.list loop::aw-lessons` |
-| 1     | `holistic-analysis`    | Complex / multi-domain / unfamiliar task               | —                |
-| 1     | `code-quality`         | Always (informs design)                                | `plan`           |
-| 1     | `critical`             | Opt-in only (user passed `--critical` to the workflow). Single adversarial pre-mortem pass between `code-quality(plan)` and `confidence(plan)`. Findings flow into `aw-create-plan` as plan defects (must-fix) and considered-alternatives notes (steelman). Advisory — does not gate. | `plan` |
-| 1     | `optimize-approach`    | Default-on in Full Mode (quiet early-exit; skip on `--no-optimize`). "Is this the most optimal approach?" pass between the pre-mortem and `confidence(plan)`. Adopted proposals trigger a bounded re-plan via `aw-create-plan`. Advisory — does not gate. | `plan` |
-| 1     | `confidence`           | Always (plan gate, MANDATORY)                          | `plan`           |
-| 2     | `aw-create-plan`       | Full Mode only                                         | —                |
-| 3     | `lorekit-memory`       | Executor entry — read lessons when `plan.md` has no `## Lessons applied` (no-planner paths) | `memory.list loop::aw-lessons` |
-| 3     | `tdd`                  | Pure logic / business rules / "test-driven"            | —                |
-| 3     | `ux`                   | UI files touched (`*.tsx`, `*.jsx`, `*.vue`, RN)       | —                |
-| 3     | `code-quality`         | Once at end of Phase 3 (not per-file)                  | `code`           |
-| 4     | `test-provenance-guard` | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written | `--diff --base $(git merge-base HEAD main) --fix` *(autofix gated by `confidence(code) ≥ 90 %`)* |
-| 4     | `confidence`           | At iteration cap (3 Lite / 5 Full) on same failing area | `analysis`   |
-| 4     | `holistic-analysis`    | After confidence at Phase 4 if user asks for retry     | —                |
-| 4     | `lorekit-memory`       | At stuck-loop escalation — record failing area + resolution as a lesson | `memory.write loop::aw-lessons` |
-| 5     | `docs`                 | Always (self-improving doc loop — updates `CLAUDE.md`, `README.md`, `docs/`) | `update --auto`  |
-| 6     | `aw-create-walkthrough` | Full Mode only                                        | —                |
-| 6     | `create-pr`            | Always — push, open draft PR, run review-loop, watch CI | —               |
-| 6 (UI)| `ui-verify`         | Via `create-pr` Step 6.4 on a UI diff — PR-body verification spec, seeded from `specs.md` when present | `author` |
-| 7     | `ci-auto-fix`          | CI run completes with status `failure`                 | `<run-id\|pr-url>` |
-| 7     | `review-loop` *(skill)* | After CI green — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically) | `<pr-url> --critical` |
-| 7     | `lorekit-memory`       | End-of-run (CI green / user stop / post-merge bug) — record durable run lessons; check promotion | `memory.write loop::aw-lessons` |
-
----
+`--no-confirm` (or "proceed without confirmation") makes Phase 0 post its summary and proceed without waiting; it never covers a `blocking` missing-information gap — [phase-0-validation.md](./rules/phase-0-validation.md#step-5-get-explicit-confirmation).
 
 ## Core Principles
 
-1. **Detect the tier FIRST** — Micro vs Lite vs Full before any other action.
-2. **Phase 0 and Phase 2 are MANDATORY** — no skipping validation or worktree.
-3. **`checks.yaml` is the living contract; `plan.md` is the handoff document** in Full Mode — both generated by `Skill("aw-create-plan")`. Gate on the checks; keep the plan lean and current (write drift back — see Phase 3).
-4. **Verify after editing** — fast check before continuing.
-5. **Stuck-loop has a mode-aware limit**: 3 iterations (Lite) / 5 iterations (Full) on the same failing area triggers `Skill("confidence", "analysis")` and auto-replan or escalation.
-6. **Companions are optional** — never block on a missing companion.
-7. **Stop and ask when blocked** — don't guess on ambiguity. A `blocking` missing-information gap (Phase 0 Step 3c) halts even under `--no-confirm`.
-8. **Acceptance criteria are traceable and executable** in Full Mode — `AC-{n}` IDs cover every user-stated requirement (rule #9), planned `create`s carry an Existing Code Survey verdict (rule #10), and `checks.yaml` (rule #11) is Phase 4's mechanical termination condition. Check definitions are executor-immutable; all-green is necessary, never sufficient.
-9. **User-requested changes are never scope creep** — a change the user asks for is a new requirement, welcome at any lifecycle point including **after the work is "done"**. Fold post-completion improvements in (re-detect the tier for the delta, reuse the existing branch/PR); the scope-creep guard restrains only *your own* unrequested expansion. See [`rules/safety-guardrails.md`](./rules/safety-guardrails.md#user-requested-changes-are-never-scope-creep).
+1. **Detect the tier first** — Micro, Lite, or Full before any other action.
+2. **Phase 0 and Phase 2 are mandatory** — no skipping validation or the worktree.
+3. **Plan as a brief, review after the fact.** The brief is at most 60 lines of outcomes and sourced limits — Task, Requirements, Guardrails, Acceptance Criteria (Definition of Done), Turn Cap, and starting File Changes — never a design; a fresh-context reviewer and the human's one-page walkthrough check the result.
+4. **Done is a command, not a judgment.** In Full Mode, Phase 4 ends only on the `run-checks.mjs` sentinel `CHECKS M/M PASS (<sha>)`; check definitions are sealed and executor-immutable, and all-green is necessary, never sufficient.
+5. **Print the goal and the evidence.** At the end of planning print a paste-ready `/goal` line; before the terminal contract print the `AW EVIDENCE` block — [`rules/goal-emission.md`](./rules/goal-emission.md).
+6. **Verify after editing** — the brief's After-editing command before continuing.
+7. **Stuck-loop cap is mode-aware**: 3 (Lite) / 5 (Full) iterations on the same failing area trigger `Skill("confidence", "analysis")`, then one auto-replan or escalation.
+8. **Companions never block, and never skip silently.**
+9. **Stop and ask when blocked.** A `blocking` missing-information gap halts even under `--no-confirm`.
+10. **User-requested changes are never scope creep** — fold post-completion improvements in as a new iteration — [`rules/safety-guardrails.md`](./rules/safety-guardrails.md#user-requested-changes-are-never-scope-creep).
 
----
+## Artifacts
 
-## Artifact System (Full Mode)
+Full Mode artifacts live in `.agent/{branch}/` (add `.agent/` to `.gitignore`):
 
-Artifacts in `.agent/{branch-name}/`, each generated by a dedicated skill:
+| File | Generated by | When |
+| ---- | ------------ | ---- |
+| `plan.md` | `Skill("aw-create-plan")` | Phase 2 and every plan iteration — the brief |
+| `checks.yaml` + `checks.lock` | `Skill("aw-create-plan")` | With the plan — one check per `AC-{n}`, sealed; Phase 4's termination condition |
+| `checks.run.log` | `scripts/run-checks.mjs` (teed by the executor) | Every Phase 4 run — ends with the sentinel line |
+| `walkthrough.md` | `Skill("aw-create-walkthrough")` | Phase 6 — the one-page post-hoc review |
 
-| File(s)                                | Generated by                     | When                                              |
-| -------------------------------------- | -------------------------------- | ------------------------------------------------- |
-| `checks.yaml`                          | `Skill("aw-create-plan")` (Step 2b) | With the plan — one executable check per `AC-{n}`; **the living contract** and Phase 4's termination condition |
-| `plan.md`                              | `Skill("aw-create-plan")`        | After Phase 2 — and on every plan iteration; the planner→executor **handoff document** |
-| `walkthrough.md`                       | `Skill("aw-create-walkthrough")` | Phase 6                                           |
+Snapshots (`plan.v{N}.md`) are opt-in via `Skill("aw-create-plan", "snapshot")`.
+Artifact details: [`rules/artifacts-overview.md`](./rules/artifacts-overview.md) — read when resuming a run or reading artifacts cold.
 
-`checks.yaml` is the artifact the executor is held to — it self-validates
-against reality on every Phase 4 loop, so it never goes silently stale. `plan.md`
-is a self-contained-but-lean handoff document (not an exhaustive knowledge base);
-the executor writes decision/AC drift back into it so it stays honest (Phase 3).
+## Lite and Micro path
 
-**Plan snapshots are opt-in.** By default `aw-create-plan` writes only `plan.md`
-(overwritten each iteration; the `version:` frontmatter still increments). Pass
-the `snapshot` arg — `Skill("aw-create-plan", "snapshot")` — to also write an
-immutable `plan.v{N}.md` audit trail; it is off by default because `.agent/` is
-gitignored scratch and the chain is rarely re-read. See
-[`rules/artifacts-overview.md#plan-versioning`](./rules/artifacts-overview.md#plan-versioning).
+Single-pass in the caller's context; no `plan.md`, no `confidence(plan)`.
 
-Add `.agent/` to `.gitignore`. Files are grouped by branch for easy browsing.
+| Phase | Lite | Micro |
+| ----- | ---- | ----- |
+| Setup | MODE SELECTION | MODE SELECTION |
+| 0 | Quick clarification | Quick confirm |
+| 1 | In-conversation brief (Task, Guardrails, verify command, Turn Cap 12, files) + `/goal` line | Same brief, Turn Cap 5, no companions |
+| 2 | `gw add <branch>` | `gw add <branch>` |
+| 3 | Code, commit; touch only the brief's files | Edit, fast check |
+| 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>` | Fast check |
+| 5 | `Skill("docs", "update --auto")` | Only on doc drift |
+| 6 | `Skill("create-pr")`, then the `AW EVIDENCE` block | Same |
+| 7 | Watch CI, `ci-auto-fix` if needed, then `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` | Watch CI |
 
-> The directory is named `.agent/` (singular) to align with the `~/.agents/skills/`
-> cross-tool discovery convention used by Codex, Cursor, OpenCode, and other
-> Agent Skills–compatible clients. The agent identity is implicit in artifact
-> frontmatter; the directory itself is a per-project agent workspace.
+## Companions and parallelization
 
----
+The registry — triggers, args, the mandatory `companion: <name> — ran | skipped (<reason>)` report line, and how to disable a companion — is [`rules/companion-skills.md`](./rules/companion-skills.md); each agent template carries the rows for its phases.
+Lessons: the fast tier (`loop::aw-lessons` on LoreKit) and the slow tier (`/create-skill diagnose autonomous-workflow`) are in [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md); the diagnoser reads [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md).
 
-## Parallelization
+Fan-out points, each read when it applies:
 
-Three phases benefit from sub-agent fan-out:
+- Phase 1 — at most two `Explore` sub-agents, only for an unfamiliar area: [phase-1-planning.md](./rules/phase-1-planning.md).
+- Phase 3 — up to 3 concurrent sub-agents on file-disjoint slices, each embedding the resource-discipline line: [parallel-coordination.md](./rules/parallel-coordination.md#sub-agent-resource-discipline).
+- Phase 7 — one `ci-auto-fix` sub-agent per independent failure, cap 2 handoffs per PR: [phase-7-ci-gate.md](./rules/phase-7-ci-gate.md#parallel-ci-fixes).
 
-- **Phase 1 (Planning)** — when the task is complex/multi-domain, spawn parallel `Explore` sub-agents during research (one per package, one for past PRs, one for related docs). See [phase-1-planning.md](./rules/phase-1-planning.md#parallel-research).
-- **Phase 3 (Implementation)** — when the task decomposes into file-disjoint slices, fan out up to **3 concurrent sub-agents** (hard cap, RAM-bounded). Each sub-agent MUST embed the Sub-Agent Resource Discipline line — scoped commands only, no whole-project `tsc`/`lint`/`test`/`build`. See [parallel-coordination.md#sub-agent-resource-discipline](./rules/parallel-coordination.md#sub-agent-resource-discipline).
-- **Phase 7 (CI Gate)** — when multiple CI checks fail, spawn one `ci-auto-fix` sub-agent per independent failure. Cap: 2 handoffs per PR. See [phase-7-ci-gate.md](./rules/phase-7-ci-gate.md#parallel-ci-fixes).
+## Units and install
 
----
+The skill ships **one dispatcher skill** and **two agents** (`aw-` = autonomous-workflow):
 
-## Quick Reference
+| Unit | Kind | Role | Exit gate |
+| ---- | ---- | ---- | --------- |
+| [`aw`](./aw/SKILL.md) | skill | Opt-in dispatcher: lessons, tier, routing, `/goal` line; on Full, the brief + sealed `checks.yaml`, then the work in this session per `aw-executor`, then a `branch-reviewer` pass | Task routed, exit lesson written |
+| [`aw-executor`](./templates/aw-executor.agent.md) | procedure (and agent) | Full, Phases 3–7 from the brief, applying [`corrections.md`](./rules/corrections.md) → review, walkthrough, draft PR; `aw` follows it in-session, and `/fix-bug` or a parallel request dispatches it | `CHECKS M/M PASS`, walkthrough shown, CI gate run |
+| [`aw-tester`](./templates/aw-tester.agent.md) | agent | Phase 4 (UI) spec verification, cold pass only | `green` or `inconclusive` before lint/type/test |
 
-### Full Mode
+Other files: [`routing.rule.md`](./templates/routing.rule.md) (auto-trigger rule), [`aw-target.yml.template`](./templates/aw-target.yml.template), [`specs.md.template`](./templates/specs.md.template), [`intent-spec.md.template`](./templates/intent-spec.md.template), [`scripts/run-checks.mjs`](./scripts/run-checks.mjs) (the check runner; `--self-test` proves it).
+Related skills: [`aw-setup`](./aw-setup/SKILL.md) (run `/aw-setup` once per project before the first UI task), [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) (in-session Chrome runner), [`aw-create-plan`](../aw-create-plan/SKILL.md), [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md).
+Design rationale: [`CLAUDE.md`](./CLAUDE.md) and [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md).
 
-| Phase | Action                                                                                          |
-| ----- | ----------------------------------------------------------------------------------------------- |
-| Setup | MODE SELECTION + prerequisite check                                                             |
-| 0     | Scope alignment via `interview` (Full default; `--no-interview` falls back to inline) — restate-and-diff, missing-information gate (`blocking` halts even under `--no-confirm`), clarifying questions, `brief.md`; get explicit "proceed" |
-| 1     | Analyze codebase (dependency-graph localization first; parallel `Explore` if complex), Existing Code Survey per planned `create`, traceable EARS-shaped ACs, design with `code-quality(plan)`, `optimize-approach(plan)` approach check, `confidence(plan)` gate |
-| 2     | `gw add`, `gw cd`, install deps, `Skill("aw-create-plan")` inside worktree (writes `plan.md` + `checks.yaml`)   |
-| 3     | Code per `plan.md` → companions per task type (`tdd`, `ux`) → fast-check after each edit; `code-quality(code)` once at end |
-| 4 (UI)| **First:** `aw-tester` cold pass at Phase 4 entry (full sub-agent, structured verdict); subsequent iterations run the persisted `last-run.spec.ts` directly via Bash (hot loop, no sub-agent) until `green`/`inconclusive`; promote `critical-path` specs via `e2e-testing` Generator |
-| 4     | Run tests → iterate (cap: 5 same area in Full Mode) → run `checks.yaml` checks (all must pass; definitions immutable; `unsatisfiable` escalates) → `confidence(analysis)` at cap → one-shot auto-replan or escalate to user |
-| 5     | `Skill("docs", "update --auto")` always — refreshes `CLAUDE.md`, `.claude/rules/`, `README.md`, `docs/`, `CHANGELOG.md` |
-| 6     | `Skill("aw-create-walkthrough")` → `Skill("create-pr")` (push → open draft PR → `review-loop` convergence → watch CI) |
-| 7     | Watch CI → `Skill("ci-auto-fix")` per failure (parallel) → after CI green `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` (self-relation; optional, skips if not installed) → `gw remove` after merge (optional) |
-
-### Lite Mode
-
-Skip artifacts and most companions. Phase 0, Phase 2, Phase 5 (`docs update`), and Phase 6 (`create-pr`) still required.
-
-| Phase | Action                                          |
-| ----- | ----------------------------------------------- |
-| Setup | MODE SELECTION                                  |
-| 0     | Quick clarification                             |
-| 1     | Brief mental plan (no `plan.md`)                |
-| 2     | `gw add fix/bug-name`                           |
-| 3     | Code, commit                                    |
-| 4     | Test, fix failures (3-iteration limit applies)  |
-| 5     | `Skill("docs", "update --auto")`       |
-| 6     | `Skill("create-pr")`                            |
-| 7     | Watch CI, `ci-auto-fix` if needed, then `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` (self-relation; skips if not installed) |
-
----
-
-## Customization
-
-Disable companions by editing [`rules/companion-skills.md`](./rules/companion-skills.md)
-(single source of truth for which skills run when) or by removing the
-invocation block from the relevant phase rule. See [`README.md`](./README.md#disabling-companions)
-for the full how-to.
-
----
-
-## Templates
-
-The skill ships **one dispatcher skill** and **three agents**. The agents use the
-**`aw-` namespace prefix** (short for "autonomous-workflow") so they group
-together in `.claude/agents/` and are unmistakable when listed alongside
-unrelated agents:
-
-| Unit           | Kind  | Role | Terminal artifact                              | Exit gate                                          |
-| -------------- | ----- | ---- | ---------------------------------------------- | -------------------------------------------------- |
-| `aw`           | **skill** | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes single-pass vs the split, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner`   | agent | Full-tier, phases 0–2 | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved) |
-| `aw-executor`  | agent | Full-tier, phases 3–7 | `.agent/{branch}/walkthrough.md` + draft PR    | Walkthrough shown inline, Phase 7 CI gate run      |
-| `aw-tester`    | agent | Phase 4 (UI) spec verification — **cold pass only** (Phase 4 entry, escalation, Phase 7 rehearsal). Iteration uses the persisted `last-run.spec.ts` directly via Bash, not a sub-agent. | Verdict block (~200 tokens) with `hot_loop:` paths for direct re-run | `green` or `inconclusive` before lint/type/test |
-
-**`aw` is the single entry point developers opt into** (a trigger phrase or
-`/aw`). It is adaptive, not always-heavy: Micro/Lite run single-pass in the
-caller's context; **Full** hands off to the planner→executor split. The split is
-along the Phase 2 → Phase 3 context boundary, mediated by `plan.md`, and is
-reserved for Full because its context-isolation + resumable-artifact benefits
-only pay for complex/long tasks (always-planning wastes compute and degrades
-long-horizon performance — see `references/anthropic-architecture-research.md`). The handoff is gated: high-confidence plans flow through
-automatically; borderline plans pause for user approval. The design rationale
-(with verbatim Anthropic citations) lives in
-[`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md);
-the full handoff contract is in
-[`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md).
-
-**The dispatcher is a skill, not an agent** (since v3.23). It fails the repo's
-own third-agent test — `references/anthropic-architecture-research.md` §2.2:
-*"any future proposal to add a third agent must demonstrate a third independent
-context — not a third role"* — and being an agent cost it a delegation rung, a
-duplicated tier table with an L1 guard to police it, and a triplicated tool
-grant. As a skill it runs in the caller's context, so `aw-planner` /
-`aw-executor` are dispatched from the top-level session. Rationale:
-[`CLAUDE.md`](./CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent).
-
-**When the harness disables sub-agent dispatch** (no available tool dispatches a
-sub-agent — `Task`, `Agent`, or another spelling — e.g. Claude Code on the web),
-the split is structurally unavailable and Full does **not**
-drop to the Micro/Lite single-pass path. `aw` runs a **single-context Full**
-instead: it plays the planner role (Phases 0–2, producing `plan.md` +
-`checks.yaml` and clearing `confidence(plan) ≥ 90%`) then the executor role
-(Phases 3–7) in one window, preserving the plan artifact and the confidence gate
-and conceding only context isolation. Note the dispatcher itself needs no
-dispatch tool to start — that is the difference from the agent form, which could
-not be reached at all. The step-by-step procedure — and the rule that this is never a
-licence to skip an *available* split — lives in
-[`aw/SKILL.md`](./aw/SKILL.md) under "When sub-agent dispatch is unavailable".
-
-**UI verification prerequisite:** run `/aw-setup` once per project before the
-first autonomous UI task. This scaffolds `.claude/aw-targets/local.yml` and
-validates it with a smoke spec. The planner halts and prompts if no aw-target
-exists — do not auto-scaffold.
-
-| Template                                                         | Purpose                                  |
-| ---------------------------------------------------------------- | ---------------------------------------- |
-| [aw/SKILL.md](./aw/SKILL.md) *(a skill, not a template)*          | `aw` dispatcher (tier routing + loop) — installed as a skill, invoked `/aw` |
-| [aw-planner.agent.md](./templates/aw-planner.agent.md)           | Planner agent definition (phases 0-2) — emits specs.md for UI tasks |
-| [aw-executor.agent.md](./templates/aw-executor.agent.md)         | Executor agent definition (phases 3-7)   |
-| [aw-tester.agent.md](./templates/aw-tester.agent.md)             | Spec-driven UI verification (Phase 4) — dispatched by executor |
-| [routing.rule.md](./templates/routing.rule.md)                   | Auto-trigger rule for `.claude/rules/`   |
-| [aw-target.yml.template](./templates/aw-target.yml.template)     | Aw-Target schema (base URL, auth, fixtures) |
-| [specs.md.template](./templates/specs.md.template)               | Specs file schema with example blocks    |
-| [intent-spec.md.template](./templates/intent-spec.md.template)   | Markdown intent spec format (`Format: intent`) — steps guide the runner, Expected is checked with evidence; rules in `rules/spec-run-contract.md` § 6 |
-
----
-
-## Auto-Trigger Setup (Recommended)
-
-Install the skill, its companions, and the `aw-*` agents in one step:
+Install the skill, its companions, and the agents:
 
 ```bash
 git clone https://github.com/mthines/agent-skills.git
@@ -385,54 +186,4 @@ cd agent-skills
 bash scripts/sync-symlinks.sh --aw
 ```
 
-`--aw` symlinks the autonomous-workflow skill, the `aw` dispatcher skill, and
-the companion skills into `~/.claude/skills/`, plus the `aw-planner` /
-`aw-executor` / `aw-tester` agents into `~/.claude/agents/`. The `review-loop`
-skill (Phase 6/7 review passes) is also linked; if absent Phase 7 logs
-`review-loop — skipped (not installed)` and proceeds. Edits to the cloned repo
-are picked up live on the next agent turn.
-
-The routing rule invokes `Skill("aw")`, which detects the tier and routes —
-Micro/Lite single-pass, or planner→executor for Full. After install, Claude
-auto-triggers on phrases like *"implement X independently"*, *"in isolation"*,
-*"end-to-end"*.
-
-To install the full repo (not just the AW bundle) drop the `--aw` flag. For
-the per-project install, the no-clone `npx skills add` alternative, or
-per-companion disabling, see the [README](./README.md#installation) and
-[`rules/companion-skills.md`](./rules/companion-skills.md).
-
----
-
-## Related Skills
-
-- [`confidence`](../../quality/confidence/SKILL.md) — quality gate (plan, code, analysis)
-- [`aw-create-plan`](../aw-create-plan/SKILL.md) — `plan.md` artifact generator
-- [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md) — `walkthrough.md` artifact generator
-- [`aw-setup`](./aw-setup/SKILL.md) — **one-time UI aw-target scaffolding** (prerequisite for `aw-tester`; run `/aw-setup` once per project before the first autonomous UI task)
-- [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) — in-session Chrome runner; the fast local sibling of the `aw-tester` agent. Same spec grammar and verdict, driven through the claude-in-chrome extension instead of Playwright. Picked by `ui-verify run --driver chrome|auto`; not for sub-agent / CI flows (no extension there)
-- [`code-quality`](../../quality/code-quality/SKILL.md) — readability and complexity review
-- [`tdd`](../../quality/tdd/SKILL.md) — RED-GREEN-REFACTOR enforcement
-- [`ux`](../../design/ux/SKILL.md) — UI / accessibility review
-- [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — execution-path analysis for complex tasks
-- [`docs`](../../authoring/docs/SKILL.md) — keeps `CLAUDE.md`, `.claude/rules/`, `README.md`, and `docs/` in sync with code changes
-- [`review-loop`](../../quality/review-loop/SKILL.md) — bounded review → apply → simplify convergence (Phases 6–7)
-- [`pr-review`](../../quality/pr-review/SKILL.md) — one-shot read-only review
-- [`review-loop`](../../quality/review-loop/SKILL.md) — bounded `pr-reviewer` → `implement-suggestion` → `polish simplify` convergence loop; Phase 6/7 review passes
-- [`create-pr`](../../delivery/create-pr/SKILL.md) — narrative PR description + push + open draft PR + review-loop + watch
-- [`ci-auto-fix`](../../delivery/ci-auto-fix/SKILL.md) — diagnose and fix failed CI checks
-- `lorekit-memory` (LoreKit `memory.*` tools) — backs the `aw-lessons` and `aw-tester-lessons` fast-tier self-improvement loops. See also [`persistent-memory`](../../authoring/persistent-memory/SKILL.md) for the LoreKit backend docs (`rules/scaling-tiers.md`)
-- [`e2e-testing`](../../testing/e2e-testing/SKILL.md) — Generator for promoting `critical-path` specs to saved `*.spec.ts` at end of Phase 4
-
-### Related Agents
-
-- [`aw-tester`](./templates/aw-tester.agent.md) — spec-driven UI verification agent (Playwright, sub-agent). Dispatched by the executor in Phase 4 (before lint/type/test) and optionally in Phase 7 (spec rehearsal against preview). Requires an aw-target at `.claude/aw-targets/` — run `/aw-setup` first. Shares the engine-agnostic [spec-run contract](./rules/spec-run-contract.md) with the in-session [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) runner.
-- [`pr-reviewer`](../../../agents/pr-reviewer.md) — Phase 6 and Phase 7 review passes, invoked via the `review-loop` skill. Handles both self-relation (own PR — `REVIEW_RELATION = self`) and cross-relation (someone else's PR). Stays read-only; apply passes are delegated to `implement-suggestion` and `polish simplify`.
-
----
-
-## Research Sources
-
-- [Addy Osmani's LLM Workflow](https://addyosmani.com/blog/ai-coding-workflow/) — fast feedback loops
-- [Claude Code Worktree Support](https://code.claude.com/docs/en/common-workflows) — worktree practices
-- Full Anthropic architecture citations: [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md)
+Other install modes and per-companion disabling: [`README.md`](./README.md#installation).

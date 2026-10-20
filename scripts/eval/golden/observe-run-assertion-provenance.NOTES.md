@@ -55,13 +55,13 @@ The sharpest decoy opens with *"without running anything further"* — near-verb
 another case uses to signal `by-construction` — and is nonetheless `behavioral`, because the trace
 it reads is something a run produced.
 
-L1 `G53e` scores three declared tells per suite, **in both polarities** (a keyword that is wrong
-80% of the time is an 80%-accurate classifier with its polarity flipped), and requires each to sit
+The former L1 `G53e` guard scored three declared tells per suite, **in both polarities** (a keyword that is wrong
+80% of the time is an 80%-accurate classifier with its polarity flipped), and required each to sit
 below the `EVAL_GATE` floor read out of `evals-l2.yml` rather than re-encoded.
 Negated run verbs are stripped before any tell is matched — *without running* is a static tell, not
 a run, and counting it as one let an earlier version of this guard pass on two cases that execute
 nothing at all.
-Deleting the decoys reds the build, so the set cannot silently re-degenerate into a keyword lookup.
+No L1 check enforces this any more: the decoys are what keeps the set from re-degenerating into a keyword lookup, so never delete them, and re-run the keyword scan below when adding cases.
 When adding cases here, pair any new label with a decoy rather than letting the surface verb become
 the answer again.
 
@@ -73,9 +73,8 @@ all land near 70% on these sets, and `confirm` scores ~76% while pointing at **o
 the two suites — which is the proof it is sampling noise rather than a shortcut anything could
 learn.
 A guard chasing that maximum would chase chance forever and could never be satisfied.
-So the tells are declared, one per decision dimension, and fixed in `l1.mjs`; run the scan when
-authoring new cases, and if it surfaces a token that is genuinely a shortcut rather than a
-stopword, add it to the declared list with its own decoys.
+So no guard chases it: run the scan when authoring new cases, and if it surfaces a token that is
+genuinely a shortcut rather than a stopword, add decoys for it.
 
 ### Measured after the decoys landed
 
@@ -83,7 +82,7 @@ CI run `34656896182` on the 39-case set: **39/39 (100.0%)**, every decoy include
 That is the pair of readings the set needs to be worth running — a rubric-reading model answers
 every decoy correctly, while a rubric-free keyword responder now scores **53.8% / 61.5% / 61.5%** on
 the three declared tells (run verb / `startSpan` / static verb).
-Those are the figures `G53e` itself computes, negation strip included, so the numbers here and the
+Those are the figures the former `G53e` guard computed, negation strip included, so the numbers here and the
 numbers the guard gates on are the same reading — an earlier draft quoted 48.7% for the run tell,
 scored without the strip, which is not what anything enforces.
 All three sit **above** 50%, so `max(acc, 100 - acc)` selects the accuracy itself: the strength the

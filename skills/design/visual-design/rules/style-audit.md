@@ -107,7 +107,7 @@ Before finishing the report:
 
 - **WCAG findings.** Defer to `/ux/rules/accessibility.md` and
   `/ux/rules/visual-design.md`.
-- **Touch-target failures.** Defer to `/ux/rules/touch-and-interaction.md`.
+- **Touch-target failures.** Defer to `/ux/rules/accessibility.md` (touch targets).
 - **Microcopy quality.** Defer to `/ux/rules/ux-writing.md`.
 - **Dark-pattern detection.** Defer to `/ux/rules/dark-patterns.md`.
 

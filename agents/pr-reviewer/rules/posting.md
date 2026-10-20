@@ -510,11 +510,11 @@ NEW_STATE=$(jq -c \
                                      open: $round.open, blocking: $round.blocking}]) | .[-50:]),
      open_thread_ids: $ids,
      carried_findings: ($carried | .[:50]),
-     diagnostics: ($diag | .optimality_cards = ((.optimality_cards // []) | .[:2]))
+     diagnostics: ($diag | del(.optimality_cards))
   }}' <<< "${PR_STATE:-{\}}")
 ```
 
-The three caps (`runs` 50, `carried_findings` 50, `optimality_cards` 2) apply **on every write**,
+The two caps (`runs` 50, `carried_findings` 50) apply **on every write**,
 even when the input is already short — a cap that only fires when someone remembers it is not a cap.
 
 `CARRIED_FINDINGS_JSON` / `DIAGNOSTICS_JSON` are **this run's** outputs, not Step 0.7's:
@@ -524,7 +524,6 @@ even when the input is already short — a cap that only fires when someone reme
 | `runs[-1].open` · `runs[-1].blocking` | `finalize-result.json`'s `round` | The review threads this run leaves open, and the blocking subset — the next run's `**Progress:**` line. Copied, never recounted: finalize computes it with the report's own formula. `null` when finalize did not run, or when the file's `payload.RUN.sha` is not this run's head (a result left by an earlier run); the next run then skips this point. |
 | `carried_findings` | Step 2.9b's `Additional findings`, plus any surviving Step 0.7 entry | Posted-inline or resolved findings are dropped — they'd come back as duplicates. |
 | `diagnostics.gate_rows` | Step 1.8's ⚠️/❌ rows | `✅` rows are not recorded. |
-| `diagnostics.optimality_cards` | Step 2.4c's cards verbatim, or entries Step 2.5c dispositioned `CARRY` | Verbatim — a card is a multi-line block with its own table. |
 | `diagnostics.standards` | Step 2.4d's run-state | `{ran, docs_scanned, finding_count}`. |
 | `diagnostics.measurability` | Step 2.4e's run-state | `{ran, paths_classified, missing, unlinked}` — a `missing` finding itself carries via `carried_findings`, not here. |
 | `diagnostics.skipped_files` · `diagnostics.partial` | Step 1.4 / the budget stop | Context-only for the next run, never re-rendered. |

@@ -13,7 +13,8 @@
 // Exit codes: 0 ok · 1 nothing found / self-test failure · 2 usage error.
 
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 const DIFF_FILE_LIMIT = 300; // GitHub refuses PR diffs above 300 files (HTTP 406 too_large).
 
@@ -112,4 +113,4 @@ function main(argv) {
   return 2;
 }
 
-if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith("line-link.mjs")) process.exitCode = main(process.argv.slice(2));
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) process.exitCode = main(process.argv.slice(2));

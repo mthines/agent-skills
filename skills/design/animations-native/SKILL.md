@@ -1,17 +1,10 @@
 ---
 name: animations-native
 description: >
-  Authors performant React Native / Expo animations with Reanimated
-  and gesture handling with react-native-gesture-handler, running motion
-  on the UI thread so it stays at 60/120 fps. Covers worklets, shared
-  values, useAnimatedStyle, withTiming/withSpring, layout animations,
-  the Gesture API (pan/pinch/drag/swipe), Moti, Lottie, Rive, reduced
-  motion, haptics, and UI-thread profiling. Use when building RN motion,
-  wiring a gesture, or when an RN animation feels janky. For WEB
-  animations (CSS, Motion, View Transitions) use the `animations` skill
-  instead. Triggers on "reanimated", "gesture handler", "react native
-  animation", "expo animation", "useSharedValue", "withSpring", "moti",
-  "swipe gesture", "drag", "pinch to zoom", "/animations-native".
+  Authors performant React Native / Expo animations and gestures with Reanimated
+  and react-native-gesture-handler on the UI thread; web animations go to
+  `animations`. Triggers on "reanimated", "react native animation", "gesture
+  handler", "swipe gesture", "/animations-native".
 argument-hint: '[brainstorm]'
 license: MIT
 metadata:

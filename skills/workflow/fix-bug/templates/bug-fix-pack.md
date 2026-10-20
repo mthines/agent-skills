@@ -26,11 +26,11 @@ This repro is the executor's `FAIL_TO_PASS` contract. **The plan must:**
 3. Cap refinement at **3 rounds**. After the third failure, stop and return to
    `confidence(analysis fix)` rather than guessing further.
 
-## Root cause (from holistic-analysis)
-<root cause paragraph + supporting evidence from holistic-analysis Phase 4>
+## Root cause (from the Root-Cause Record)
+<root cause paragraph + supporting evidence from the Root-Cause Record>
 
-## Proposed change (from holistic-analysis)
-<plain-language description + impact analysis from holistic-analysis Phase 7>
+## Proposed change (from the Root-Cause Record)
+<plain-language description + impact from the Root-Cause Record's proposed fix direction>
 
 ## Confidence
 - analysis: <X%>
@@ -46,13 +46,13 @@ This repro is the executor's `FAIL_TO_PASS` contract. **The plan must:**
 
 ## Bug-notes ledger
 - Path: `.agent/<branch>/bug-notes.md`
-- Pre-existing entries from Phases 0–5 are present; the planner and executor must read on entry
+- Pre-existing entries from Phases 0–5 are present; the brief and the executor must read on entry
   and append on exit per the [bug-notes-ledger contract](../rules/bug-notes-ledger.md).
 
 ## Requirements
 - Branch: fix/<short-slug>
 - The PR description (created later by the executor) must reference the Dash0 span / Linear
   ticket / source URL where applicable.
-- Open the PR as a draft. The Phase 7 verifier decides when to undraft.
-- Do **not** modify the repro file under `repro/` to make tests pass — the verifier checks for
-  this and will reject the PR.
+- Open the PR as a draft and leave it draft. `/fix-bug` never undrafts; a human does after Phase 7 verification.
+- Do **not** modify the repro file under `repro/` to make tests pass — Phase 7 checks for
+  this and will mark the verification red.

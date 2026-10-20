@@ -608,8 +608,8 @@ Check 6 remains the one inference with resolution as its *sole* evidence, and it
 `pr-reviewer` Step 2.9c: that step resolves threads it classified `declined` as well as `fixed`, so
 a decline whose wording misses `WONT_FIX_RE` — a different matcher, free to drift from Step 2.9c's
 phrase list — resolves, fires this trigger, and records `relevant / fixed` for a rejected finding.
-The two matchers are coupled; L1 (`G24g` / `G24h`) holds `WONT_FIX_RE` set-equal to
-``outcome-learning.md``'s list precisely so the drift cannot open silently.
+The two matchers are coupled: change `WONT_FIX_RE` and ``outcome-learning.md``'s list in the same
+commit, and keep them set-equal, or the drift opens silently.
 
 **`pull_request: closed` (merged)** (mode `pr-merged`) —
 Sweeps the PR's review threads and records `weak-not-relevant / ignored-at-merge` for the ones it

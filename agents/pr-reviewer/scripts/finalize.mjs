@@ -28,7 +28,7 @@
  * separate deliverable — see the plan's Progress Log.
  */
 
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, rmSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -3154,7 +3154,7 @@ async function main() {
   // disk and calls no renderer and builds no GitHub payload.
   if (opts.writer === "findings-bus") {
     // `--bus-path` overrides the default `<dirname(--out-dir)>/findings.jsonl` — branch-reviewer's
-    // own `--out <path>` grammar (skills/quality/review-branch/rules/findings-bus.md) lets a caller
+    // own `--out <path>` grammar (skills/quality/review-loop/rules/findings-bus.md) lets a caller
     // name an arbitrary file, and finalize.mjs cannot infer that filename from `--out-dir` alone.
     const busPath = typeof opts["bus-path"] === "string"
       ? /** @type {string} */(opts["bus-path"])
@@ -3281,7 +3281,7 @@ async function main() {
   if (renderFailed) process.exit(1);
 }
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   main();
 }

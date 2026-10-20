@@ -1,17 +1,11 @@
 ---
 name: visual-design
 description: >
-  Guides and reviews the visual design and brand identity of UI components for
-  web and React Native — color systems, typography pairing, visual hierarchy,
-  signature details, and named style directions (minimal, swiss, editorial,
-  brutalist, neo-brutalist, glass, soft-UI, terminal, playful, retro). Owns
-  the generative, brand-aware side; defers WCAG contrast math, size minimums,
-  and dark-mode mechanics back to /ux. Modes: `guide` (default — build a
-  component from scratch), `review` (audit existing visuals against
-  direction), `direction` (propose a style direction for a new product or
-  feature). Triggers on "visual design", "make this look good", "brand
-  identity", "style direction", "improve the visuals", "review the look",
-  "does this look generic", "/visual-design".
+  Guides and reviews visual design and brand identity for web and React Native
+  UI — color, typography, hierarchy, and named style directions — deferring
+  contrast math and a11y mechanics to /ux. Triggers on "make this look good",
+  "visual design", "style direction", "does this look generic",
+  "/visual-design".
 argument-hint: '[guide|review|direction]'
 license: MIT
 metadata:
@@ -193,7 +187,7 @@ These are always in context. Detailed rules are in `rules/` files.
 ### What this skill defers
 
 - **WCAG contrast math** → `/ux/rules/visual-design.md` + `/ux/rules/accessibility.md`.
-- **Touch-target / hit-area minimums** → `/ux/rules/touch-and-interaction.md`.
+- **Touch-target / hit-area minimums** → `/ux/rules/accessibility.md` (touch targets).
 - **Microcopy / UX writing** → `/ux/rules/ux-writing.md`.
 - **Motion mechanics** → `/animations`.
 - **Chart-type / data-viz library choice** → `/charting`.

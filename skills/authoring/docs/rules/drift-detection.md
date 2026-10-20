@@ -243,8 +243,8 @@ does. Less automatable, more judgment-dependent.
 
 ## 5. Holistic Mode (the `holistic` argument)
 
-When the user passes `holistic`, run `holistic-analysis` in refactor
-mode for each affected area before drafting docs updates. Useful when:
+When the user passes `holistic`, trace each affected area's execution path
+from entry to exit (modules, contracts, dependency direction) before drafting docs updates. Useful when:
 
 - Multiple architectural patterns changed at once.
 - New conventions were established during the work that future Claude

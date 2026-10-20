@@ -6,29 +6,18 @@
 
 ## In plain English
 
-![How aw works: you say one thing, it sizes the job (Micro / Lite / Full), then runs an isolated pipeline — Understand, Plan, Build, Test, Document, Open PR, Green CI, Self-Review — to a ready-to-merge pull request, learning from every run.](../../../assets/aw-overview.png)
+![aw: one sentence in, a reviewed pull request out. It sizes the job (Micro, Lite, Full); a Full task runs Brief, Build until green, Fresh-eyes review, and Draft PR in an isolated worktree.](../../../assets/aw-flow.png)
 
-**You write one sentence. `aw` delivers a finished, tested, reviewed pull request — on its own.**
+**You write one sentence. `aw` delivers a tested, reviewed pull request.**
 
-That's the whole thing. You describe the change you want, and `aw` does everything a careful engineer would do, in order, without you babysitting it:
+1. **Sizes the job.** Micro (one file) and Lite (a small change) finish in one pass; Full gets the loop below.
+2. **Writes a short brief.** At most 60 lines: what done means, what must not change, and one sealed, runnable check per goal.
+3. **Builds until green.** In your session, in its own Git worktree, looping on the checks until they print `CHECKS n/n PASS`.
+4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed or rejected with evidence.
+5. **Opens a draft PR** with a walkthrough and evidence, then gets CI green. Stuck after five attempts, it stops with `BLOCKED:` instead of guessing.
+6. **Learns** from every run.
 
-1. **Sizes the job.** Typo? Small tweak? Real feature? It picks how much process to run, so small things stay fast.
-2. **Works in isolation.** Spins up its own Git worktree, so your main branch is never touched.
-3. **Plans → builds → tests → documents.** Writes the code, runs the tests, fixes what fails, updates the docs.
-4. **Opens the PR.** Writes a real description and pushes a draft for you to approve.
-5. **Gets CI green.** Watches the pipeline and fixes what breaks.
-6. **Reviews its own work.** Runs an adversarial self-review and applies the easy fixes before you ever look.
-7. **Learns.** Records lessons each run, so the next run is a little smarter.
-
-### It looks complex. Using it is one sentence.
-
-The machinery below — a dispatcher skill, three agents, eight phases, a dozen companion skills, confidence gates — is the part that *does the work for you*. None of it is setup you have to do.
-
-| What you see in the docs | What you actually do |
-| ------------------------ | -------------------- |
-| 1 dispatcher skill, 3 agents, 8 phases, 12 companions, confidence gates | Type one sentence (or `/aw`). |
-| "Do I need to configure all this?" | No — it auto-picks how much process to run. |
-| "Will it run off and break things?" | No — isolated worktree, a gate at every step, and a draft PR you approve. |
+None of the machinery below is setup: you type one sentence (or `/aw`) and approve the PR at the end.
 
 **Try it:**
 
@@ -53,7 +42,7 @@ each is reported `ran` or `skipped (<reason>)`.
 | Phase | Name                       | Gate                                             |
 | ----- | -------------------------- | ------------------------------------------------ |
 | 0     | Validation                 | User confirmed understanding, mode selected; requirements restated + diffed; no unresolved `blocking` missing-information item |
-| 1     | Planning                   | `confidence(plan)` >= 90% (or user-approved) — incl. requirement→criterion traceability and an Existing Code Survey per planned `create`; `specs.md` drafted for UI tasks |
+| 1     | Planning                   | Brief validation (deterministic) — six Core headings, every `[user-stated]` requirement covered by a sealed check; boundary entry points listed |
 | 2     | Worktree Setup             | Worktree created, `plan.md` + `checks.yaml` (+ `specs.md`) written |
 | 3     | Implementation             | Code complete, fast checks pass                  |
 | 4 (UI)| Spec Verification          | `aw-tester` verdict `green`/`inconclusive` — runs before lint/type/test |
@@ -126,19 +115,20 @@ bash scripts/sync-symlinks.sh --aw
 ```
 
 `--aw` symlinks the autonomous-workflow skill, the `aw` dispatcher skill, and
-its 12 companion skills, plus the `aw-planner` / `aw-executor` / `aw-tester`
+its 12 companion skills, plus the `aw-executor` / `aw-tester`
 agents, into your `~/.claude/` directory. Edits to the cloned repo are picked up live on the next agent
 turn — `git pull` is the whole upgrade story.
 
 To install **every** skill and agent in this repo (not just the AW bundle),
 drop the `--aw` flag. To preview without applying, add `--dry-run` (or `-n`).
 
-> **Prefer a no-clone install?** `npx skills add` still works — see the root
-> [README](../../../README.md#install) for the npx path and other options.
+> **Prefer a no-clone install?** `npx skills add` still works — see the
+> [setup guide](../../../docs/setup.md#quick-try-npx-skills-add) for the npx path and other options.
 
 Then say *"implement X independently"* (or invoke `/aw`) — the routing rule
 invokes the **`aw` dispatcher**, which detects the tier and routes: Micro/Lite
-run single-pass; Full hands off to the planner→executor split.
+run single-pass; Full writes a short brief, works to its checks in your session,
+and gets a fresh-eyes review before the PR.
 
 #### What gets installed
 
@@ -147,26 +137,25 @@ in your own context, which is what lets the agents it dispatches sit at the
 top-level rung and keep their own sub-agent dispatch (see
 [`CLAUDE.md`](./CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent)).
 
-Plus three agents linked into your `.claude/agents/` directory under the
+Plus two agents linked into your `.claude/agents/` directory under the
 **`aw-` namespace** (short for "autonomous-workflow") so they group together
 and are unmistakable when listed alongside unrelated agents.
 
-All four units, dispatcher included:
+All three units, dispatcher included:
 
 | Unit | Kind | Role | Terminal artifact | Exit gate |
 |---|---|---|---|---|
-| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner` | agent | Full tier, phases 0–2 (validation, planning, worktree + plan.md + checks.yaml + specs.md) | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved override) |
-| `aw-executor` | agent | Full tier, phases 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
-| `aw-tester` | agent | Phase 4 spec-driven UI verification — dispatched by executor before lint/type/test | Verdict block (~200 tokens) | `green` or `inconclusive` |
+| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. On Full, writes the brief (`plan.md` + sealed `checks.yaml`), works to it in your session, and dispatches one `branch-reviewer`. | `plan.md`, `walkthrough.md`, draft PR (Full) | Checks pass, review findings fixed or rejected, exit lesson written |
+| `aw-executor` | agent | Runs a Full brief as a background sub-agent — only for an explicit background or parallel request | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+| `aw-tester` | agent | Spec-driven UI verification, dispatched when the diff touches UI | Verdict block (~200 tokens) | `green` or `inconclusive` |
 
-`aw` is **adaptive and opt-in**: it only pays the planner→executor handoff cost
-on Full tasks (where context isolation + a resumable `plan.md` earn it), and runs
-Micro/Lite single-pass. It is invoked deliberately, not as a wrapper on every prompt.
+`aw` is **adaptive and opt-in**: it only writes a brief and runs a review on Full
+tasks, and runs Micro/Lite single-pass. It is invoked deliberately, not as a
+wrapper on every prompt.
 
 **One-time UI setup:** run `/aw-setup` once per project before the first autonomous
 UI task. This scaffolds `.claude/aw-targets/local.yml` (the aw-target `aw-tester` reads)
-and validates it with a smoke spec. The planner halts and prompts if no aw-target exists.
+and validates it with a smoke spec. Without one, specs run against localhost defaults.
 See [`aw-setup/SKILL.md`](./aw-setup/SKILL.md).
 
 > **Upgrading from a pre-`aw-` install?** The installer detects legacy
@@ -175,7 +164,7 @@ See [`aw-setup/SKILL.md`](./aw-setup/SKILL.md).
 > no manual cleanup needed. Hand-authored files at those paths are left
 > untouched.
 
-See [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md) for the full handoff contract and [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md) for the design rationale (with verbatim Anthropic citations).
+See [`rules/planner-executor-handoff.md`](./rules/planner-executor-handoff.md) for the brief contract and [`aw/references/dispatcher-rationale.md`](./aw/references/dispatcher-rationale.md#full-tier-short-brief-work-in-session-review-after) for why Full works in your session.
 
 ---
 
@@ -189,17 +178,12 @@ trigger registry is in
 | ----- | ---------------------- | --------- | --------------------------------------------- |
 | 0     | `interview`            | Optional  | Default-on scope alignment in Full Mode (adaptive — silent on a crisp request; `--no-interview` skips, `--interview` forces). Restate-and-diff + missing-information gate; writes `brief.md` |
 | 1     | `lorekit-memory`       | Optional  | Reads `loop::aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
-| 1     | `holistic-analysis`    | Optional  | Multi-domain execution-path tracing           |
-| 1     | `code-quality`         | Optional  | Design-quality review (informs the plan)      |
-| 1     | `optimize-approach`    | Optional  | Default-on approach-optimality check (`--no-optimize` to skip); adopted proposals trigger a bounded re-plan |
 | 1     | `confidence`           | **Required** | Plan gate (>= 90% to proceed)              |
 | 2     | `aw-create-plan`       | Optional  | Writes `.agent/{branch}/plan.md`              |
 | 3     | `tdd`                  | Optional  | RED-GREEN-REFACTOR for pure logic / business rules |
 | 3     | `ux`                   | Optional  | UI / accessibility review when UI files touched |
-| 3     | `code-quality`         | Optional  | End-of-Phase-3 code-quality pass              |
 | 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + aw-target exist |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
-| 4     | `holistic-analysis`    | Optional  | Step-back analysis after stuck-loop confidence |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
 | 6     | `review-loop` *(skill)* | Optional  | Post-draft convergence loop — `pr-reviewer` (self-relation) → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved (fix or reply); dispatched by `create-pr` after the draft PR is open |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
@@ -467,10 +451,9 @@ to this skill's source.
 - [`confidence`](../../quality/confidence/) — quality gate (plan / code / analysis)
 - [`aw-create-plan`](../aw-create-plan/) — `plan.md` artifact generator
 - [`aw-create-walkthrough`](../aw-create-walkthrough/) — `walkthrough.md` artifact generator
-- [`code-quality`](../../quality/code-quality/) — readability and complexity review
+- [`polish`](../../quality/polish/) — simplifies the branch diff and prunes comments (via `review-loop`)
 - [`tdd`](../../quality/tdd/) — RED-GREEN-REFACTOR enforcement
 - [`ux`](../../design/ux/) — UI / accessibility review
-- [`holistic-analysis`](../../analysis/holistic-analysis/) — execution-path analysis
 - [`docs`](../../authoring/docs/) — keeps `CLAUDE.md`, `README.md`, and `docs/` in sync
 - [`review-loop`](../../quality/review-loop/) — review → apply → simplify convergence
 - [`create-pr`](../../delivery/create-pr/) — narrative PR description + push + watch

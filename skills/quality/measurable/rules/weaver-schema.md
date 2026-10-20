@@ -326,7 +326,7 @@ verdict it has no row for is a finding that reaches no surface.
 One boundary, stated because the two files would otherwise disagree: the `pr-reviewer` measurability
 lens does not turn a naming or conformance finding into a review comment.
 Its own "What this rule does not do" section assigns a wrong attribute name to the standards or
-`code-quality` lens.
+quality lens.
 Registry conformance is for a standalone `audit` run, for `implement` mode, and for the
 `autonomous-workflow` gate — not for that lens.
 

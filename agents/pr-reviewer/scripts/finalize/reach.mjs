@@ -22,6 +22,7 @@
  */
 
 import { assertPlain } from "../comment-spine.mjs";
+import { realpathSync } from "node:fs";
 
 /** @type {Record<string, number>} */
 const CHANGE_RANK = { removed: 0, signature: 1, body: 2, added: 3 };
@@ -342,7 +343,7 @@ function selfTest() {
 }
 
 import { pathToFileURL } from "node:url";
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain && process.argv.includes("--self-test")) {
   selfTest();
 }

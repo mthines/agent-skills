@@ -132,7 +132,7 @@ posting conditions retired, a re-review whose output is entirely body-only produ
 object at all, so `created_at` sees nothing whatsoever.
 
 A probe filtering on `created_at` alone therefore misses a re-review whose only new output is
-body-only — gate rows, optimality cards, deferred `Additional findings`. The caller would report
+body-only — gate rows, deferred `Additional findings`. The caller would report
 `reviewers quiet` and stop with those findings unaddressed, and the stop reason would look like
 success. Hence the `updated_at` field above, which GitHub guarantees is `>= created_at` and so
 covers newly-created comments too.

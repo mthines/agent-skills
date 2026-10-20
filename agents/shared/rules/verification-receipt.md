@@ -56,7 +56,7 @@ Do not block the review on a missing skill.
 > **Future work:** Once generation-aggression tuning (prompt reframing) is in place, the threshold on what triggers a receipt check can be relaxed for lower-severity findings.
 > The receipt gate is the *shippable static* version of code-execution verification — similar in spirit to CodeRabbit's generate-then-judge grounding, which runs sandbox execution to verify behavioral claims.
 > Bugbot does not do this today; execution verification is on their roadmap.
-> `verify-behavior`'s Tier 2/3 delegation is exactly that upgrade, wired through this rule the same way `holistic-analysis` is wired through `holistic-review.md`.
+> `verify-behavior`'s Tier 2/3 delegation is exactly that upgrade, wired through this rule.
 
 ---
 

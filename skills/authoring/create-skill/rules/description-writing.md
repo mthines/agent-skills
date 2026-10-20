@@ -61,7 +61,7 @@ description: >
   unions. Use during PR review, after writing new code, or whenever the
   user asks to "clean this up", "make this readable", or "reduce
   complexity". Triggers on "review code", "audit complexity",
-  "/code-quality".
+  "/readability-review".
 ```
 
 Why: starts with a strong verb (`Reviews`), names the artefact (`TypeScript
@@ -104,7 +104,7 @@ description: Does everything related to code reviews and refactoring
 ```
 
 Why bad: "everything" is not a trigger. Claude cannot decide whether this
-skill applies. Split into focused skills (`code-quality`,
+skill applies. Split into focused skills (`readability-review`,
 `pr-review`, `refactor`).
 
 ## Voice
@@ -125,8 +125,8 @@ Trigger phrases are the strings the user is likely to type. Look for:
 - Pet phrases your team uses: "ship it", "make it pretty", "ratchet up".
 - The slash form: `/<name>` — always include this.
 
-If the skill has a clear "ask for help" phrase ("step back", "rethink
-this", "zoom out" for `holistic-analysis`), include it verbatim.
+If the skill has a clear "ask for help" phrase ("challenge this",
+"pre-mortem" for `critical`), include it verbatim.
 
 ## Length budget
 

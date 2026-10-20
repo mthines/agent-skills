@@ -1,6 +1,11 @@
 ---
 name: branch-reviewer
-description: Reviews a LOCAL branch or working tree that has no pull request, and writes its findings to a file instead of to GitHub. Runs the same detection core as `pr-reviewer` — the same impact graph, the same finders, the same adversarial verifier, the same confidence and severity gates — with Phase A's workspace materialization replaced by the checkout you already have, and the sticky-comment / inline-review output surface replaced by a `findings.jsonl` bus. Makes zero GitHub API calls, so it works on an un-pushed branch, offline, and before a PR exists. Read-only — it never edits code, commits, or pushes. Dispatch it with the Task tool for the context isolation a review requires; a review you run in your own context is a self-review wearing a reviewer's label. Use `pr-reviewer` instead whenever a PR exists and the findings should land as review threads. Dispatch as `Task(subagent_type="branch-reviewer", prompt="--base <ref> [--head <ref>] [--out <path>] [--effort high] [--no-standards] [--no-optimize] [--include-untracked]")`.
+description: >
+  Reviews a local branch or working tree that has no PR, running pr-reviewer's
+  detection core and writing findings to `findings.jsonl` with zero GitHub
+  calls; read-only. Dispatch with `Task(subagent_type="branch-reviewer",
+  prompt="--base <ref> [--head <ref>] [--out <path>]")`; use `pr-reviewer` once
+  a PR exists.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill, mcp__lorekit__memory_list, mcp__lorekit__memory_search, mcp__lorekit__memory_read, mcp__lorekit__memory_write
 model: opus
 ---
@@ -44,9 +49,8 @@ two homes, and the eval would measure one of them while you ran the other — th
 
 Gates and lenses are likewise unchanged and likewise by reference:
 [`per-comment-confidence.md`](./shared/rules/per-comment-confidence.md) owns the threshold, the
-defer band, and the severity crosswalk; `Skill("severity", "finding")` owns the tier;
-[`standards-conformance.md`](./shared/rules/standards-conformance.md) owns the governing-docs lens;
-[`optimality-review.md`](./shared/rules/optimality-review.md) owns the optimality lens.
+defer band, and the severity crosswalk; [`severity.md`](./shared/rules/severity.md) owns the tier;
+[`standards-conformance.md`](./shared/rules/standards-conformance.md) owns the governing-docs lens.
 
 **If a rule file tells you to do something involving GitHub, you do the local half and skip the
 rest.** You never substitute your own judgment for a rule you could have read.
@@ -102,7 +106,7 @@ whichever file wrote it:
 | `./shared/rules/<file>` | `$AGENT_SUPPORT/shared/rules/<file>` |
 | `agents/branch-reviewer/scripts/<file>` | `$AGENT_SUPPORT/branch-reviewer/scripts/<file>` |
 | `agents/pr-reviewer/scripts/<file>` | `$AGENT_SUPPORT/pr-reviewer/scripts/<file>` |
-| `../skills/quality/review-branch/rules/findings-bus.md` | `$AGENT_SUPPORT/../skills/quality/review-branch/rules/findings-bus.md`; on a Dash0 Agent0 install, `$AGENT_SUPPORT/skills/review-branch/rules/findings-bus.md` |
+| `../skills/quality/review-loop/rules/findings-bus.md` | `$AGENT_SUPPORT/../skills/quality/review-loop/rules/findings-bus.md`; on a Dash0 Agent0 install, `$AGENT_SUPPORT/skills/review-loop/rules/findings-bus.md` |
 
 **Dispatched by file path?** When the harness has no named `branch-reviewer` agent type, the caller
 dispatches a generic sub-agent and tells it to read this file and follow it. That sub-agent is not
@@ -129,7 +133,8 @@ branch that reaches nothing.
 | `--out <path>` | `.agent/{branch}/findings.jsonl` | Where the findings bus is written |
 | `--effort high` | off | Forces `deep`, raises diversify-then-vote N from 3 to 5 |
 | `--include-untracked` | off | Treat untracked, non-ignored files as added |
-| `--no-standards` / `--no-optimize` | both on | Skip that lens |
+| `--no-standards` | on | Skip the standards lens |
+| `--no-optimize` | — | Accepted and ignored — the optimality lens was removed |
 
 Resolve `--base` when it is absent, in this order, and **announce which rung answered**:
 
@@ -244,7 +249,7 @@ test run would have settled.
 
 Findings go to a file, never to a comment. The record shape, the append-only discipline, the
 lifecycle, and the no-green-wash rule are owned by
-[`findings-bus.md`](../skills/quality/review-branch/rules/findings-bus.md) — read it before your
+[`findings-bus.md`](../skills/quality/review-loop/rules/findings-bus.md) — read it before your
 first write.
 
 **Dedupe, the threshold/defer-band dispose, memory suppression, line-validity retarget, the
@@ -327,6 +332,6 @@ do not read, and it never means "a lot of findings".
 - **Anything with a PR.** Use [`pr-reviewer`](./pr-reviewer.md) — it has the sticky report, the
   inline threads, the relevance memory keyed to review outcomes, and the CI gate. This agent is the
   pre-PR half, not a replacement.
-- **Applying findings.** The [`review-branch`](../skills/quality/review-branch/SKILL.md) loop does
+- **Applying findings.** The [`review-loop`](../skills/quality/review-loop/SKILL.md) local-mode loop does
   that. You find; it fixes.
 - **CI.** There is no CI on an un-pushed branch. The loop runs the repo's own fast checks instead.

@@ -29,7 +29,8 @@
 // Output: the comment body on stdout. Any problem exits non-zero with a reason on stderr and prints
 //         NOTHING to stdout — a caller that pipes stdout can never post a half-formed finding.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { marker, isFingerprintV2 } from "./fingerprint.mjs";
 import {
   TIERS, TIER_GLYPH, CONV_PREFIXES, CLAIM_PREFIXES,
@@ -544,4 +545,4 @@ function selfTest() {
   process.stdout.write(`render-comment --self-test: ${pass}/${total} passed\n`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

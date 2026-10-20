@@ -1,27 +1,18 @@
 ---
 name: ui-verify
 description: >
-  Makes a UI pull request autonomously verifiable. `author` writes a Markdown
-  intent spec — happy path plus out-of-bounds cases from a PR-scoped
-  brainstorm — into the PR description as a collapsed, machine-findable block
-  (delegated to by `create-pr` on UI diffs). `run` resolves the preview
-  URL and runs the spec there through `aw-tester`, checking every expected
-  outcome with evidence, with full-page screenshots and, on Playwright, a
-  screen recording per spec. It then tries to break the change (hostile
-  input, double submits, failed requests, small viewports) and reads the
-  run's own web events from the Dash0 Dev MCP to confirm the telemetry too —
-  neither changes the verdict. `--post-findings` turns blocking results into
-  PR review threads for `review-loop --ui`. `verify` is author-if-needed, then
-  run. `setup` delegates to `aw-setup --target preview`. Web only. Triggers on
-  "write a preview spec", "verify this PR's preview", "try to break this PR's
-  preview", "check the preview's web events in Dash0", "/ui-verify".
+  Makes a UI PR autonomously verifiable: `author` writes an intent spec into the
+  PR body; `run` checks it on the preview with evidence, an adversarial pass, and
+  Dash0 web events; `verify` does both; `--post-findings` feeds `review-loop --ui`.
+  Web only; triggers on "write a preview spec", "verify this PR's preview", "try
+  to break this PR's preview", "/ui-verify".
 disable-model-invocation: false
 argument-hint: '[setup|author|run|verify] [pr-url|pr-number|specs-path] [--url <preview-url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--post-findings] [--attach-media] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__github__pull_request_review_write mcp__github__add_comment_to_pending_review mcp__github__add_issue_comment mcp__github__update_issue_comment mcp__Dash0__getWebEvents mcp__Dash0__getAttributeKeys mcp__Dash0__generateDash0Url mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '1.11.0'
+  version: '1.11.1'
   workflow_type: slash-command
   tags:
     - playwright
@@ -40,88 +31,58 @@ metadata:
 # UI Verify
 
 Attach an executable UI verification spec to a pull request, then run it against the live preview deployment.
-
-A reviewer verifies a UI change by clicking through the preview.
-`ui-verify` turns that click-through into an artifact an agent can follow: a short Markdown spec in the PR description, run against the deployed preview by `aw-tester`, reporting pass or fail.
 The runner may take a different route than the written steps — it records each deviation — but it passes a spec only when every expected outcome was observed, with evidence, on the component the PR changed.
 
-> **This `SKILL.md` is a thin index.**
-> Detailed procedures live in [`rules/*.md`](./rules) and [`templates/*.md`](./templates).
-> Each operation loads only what it needs.
+## Contents
 
-## What this skill reuses
+- [Files](#files)
+- [Operations](#operations)
+- [On a Dash0 Agent0 host](#on-a-dash0-agent0-host)
+- [Step 0: Resolve your GitHub access path](#step-0-resolve-your-github-access-path)
+- [Operation `setup`](#operation-setup) · [`author`](#operation-author) · [`run`](#operation-run) · [`verify`](#operation-verify)
+- [Hard rules](#hard-rules)
 
-This skill owns four things and reuses the rest.
+## Files
+
+This skill's own rules are linked where they apply below. It reuses these and never forks them:
 
 | Concern | Owner |
 | --- | --- |
-| The two spec formats — the **intent** format this skill writes (`Format: intent`: `**Changed:**`, `**Start:**`, `**Steps:**` with `[must-follow]`, `**Expected:**`), and the **grammar** it lifts (`WHEN/THEN/AND`, the locator mini-grammar, `url:`, `network:`, `semantic:`) | `aw-tester` — `templates/intent-spec.md.template` and [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template), side by side. This skill references both and never forks either. The `semantic:` assertion (delegated to [`jev-assert`](../../quality/jev-assert/SKILL.md)) flows through unchanged because it lives in the shared grammar the runner parses. |
-| The spec-run contract (locator ladder, auth semantics, verdict schema, and how an intent spec is explored, graded, cached, and replayed — § 6) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) — the engine-agnostic contract both runners implement. |
-| The runners + the compact verdict | Two, one contract: [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) (Playwright sub-agent) and [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) (in-session Chrome). `run --driver` picks one. |
-| The browser context (`base_url`, auth, fixtures) | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template). |
-| Scaffolding the committed preview aw-target (auth detection, the two walls, the confirming login, the repo-scoped records) | `aw-setup` — the `setup` operation is a thin delegator (`aw-setup --target preview`); this skill never reimplements it. |
-| The two-way lessons loop | `aw-tester-lessons` (locator friction, existing) + `ui-verify-lessons` (navigation / spec-quality friction, new). See [`rules/memory.md`](./rules/memory.md). |
-| **Embedding the spec in the PR body** (marker + collapsed block, ceiling exemption) | this skill — [`rules/spec-format.md`](./rules/spec-format.md). |
-| **Resolving the PR's preview URL** (GitHub deployments API) | this skill — [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). |
-| **The author + run orchestration** | this skill — this file + [`rules/runner.md`](./rules/runner.md). |
-| **The adversarial pass** (probe catalog, oracles, guardrails, evidence report) | this skill — [`rules/adversarial.md`](./rules/adversarial.md), harness [`templates/adversarial-probes.spec.ts.template`](./templates/adversarial-probes.spec.ts.template); rationale and sources in [`references/adversarial-testing.md`](./references/adversarial-testing.md). |
-| **The out-of-bounds brainstorm** (pending states, baseline moves, the `fan-out` / `in-context` modes, recovery outcomes) | this skill — [`rules/out-of-bounds.md`](./rules/out-of-bounds.md); rationale in [`references/out-of-bounds-rationale.md`](./references/out-of-bounds-rationale.md). `--brainstorm deep` delegates to the `ideate` skill. |
-| **Screen recordings** (Playwright-only, per spec and per adversarial finding) | this skill wires them on — [`rules/recording.md`](./rules/recording.md); the `--record-video` run option itself is the spec-run contract's (`autonomous-workflow/rules/spec-run-contract.md` § Record video). |
-| **The telemetry check** (the run's Dash0 web events, read from the Dash0 Dev MCP, judged by fixed oracles) | this skill — [`rules/telemetry.md`](./rules/telemetry.md). |
-| **Posting findings as review threads** (`--post-findings`, the `review-loop --ui` hand-off) | this skill — [`rules/post-findings.md`](./rules/post-findings.md). |
-| The severity tier that caps the out-of-bounds specs | `severity` — its `## Severity rubric` section, inlined into the brainstorm judge's prompt; this skill owns only the gate (`critical` or `high`, one per move). |
+| Spec formats: intent (`Format: intent`) and grammar (`WHEN/THEN/AND`, locators, `url:`, `network:`, `semantic:` via [`jev-assert`](../../quality/jev-assert/SKILL.md)) | `aw-tester`'s `templates/intent-spec.md.template` and [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template) |
+| Spec-run contract (locators, auth, verdict, intent grading — § 6, `--record-video`) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) |
+| Browser context | `aw-target.yml` — [`aw-target.yml.template`](../../workflow/autonomous-workflow/templates/aw-target.yml.template) |
+| Out-of-bounds severity cap (`critical` or `high`, one per move) | the tier table in [`rules/out-of-bounds.md`](./rules/out-of-bounds.md) |
+
+Why `SKILL.md` is shaped this way: [`references/skill-design.md`](./references/skill-design.md).
 
 ## Operations
 
-Parse `$ARGUMENTS`. The first token selects the operation.
+The first token of `$ARGUMENTS` selects the operation.
+With no operation token, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given; `setup` is always explicit.
 
-| Operation | Trigger | What it does |
-| --- | --- | --- |
-| `setup` | first token `setup` | Scaffold the committed **preview** aw-target (`.claude/aw-targets/preview.yml`) this skill runs against — auth strategy, the two walls, the confirming login, the repo-scoped LoreKit auth profile + UI surface. A thin delegator to `aw-setup --target preview`; the discoverable front door so you never need the `aw` namespace. |
-| `author` | first token `author`, or delegated from `create-pr` | Lift an existing grammar spec verbatim (the aw planner's `specs.md`), or write a Markdown intent spec from a `/fix-bug` repro or the diff, add the out-of-bounds specs a PR-scoped brainstorm selects by severity ([`rules/out-of-bounds.md`](./rules/out-of-bounds.md)), then inject the marked collapsed block into the PR body. Reads memory first. |
-| `run` | first token `run` | Extract the block from the PR (or read a local `specs.md` path), resolve the preview URL, run the spec via the selected driver, then run the **adversarial pass** against every passing spec, report the verdict, the adversarial findings, **and the screenshots it captured**, write lessons. Screenshots are on by default (`--auto-capture`): full-page, each spec's final state plus each navigating step, into `.agent/{branch}/.aw-tester/captures/` for the PR description; `--no-screenshots` opts out. |
-| `verify` | first token `verify` | One-shot composite for a PR with no spec: author-if-needed (author only when the block is absent — never overwrite a hand-written one), then `run` (with screenshots on, as above), then report a single combined verdict. The autonomous entry point for others' PRs and CI / agent0 automation. |
+| Operation | Does |
+| --- | --- |
+| `setup` | Scaffold the committed preview aw-target via `aw-setup --target preview`. |
+| `author` | Write the spec block into the PR body (also delegated to by `create-pr`). |
+| `run` | Run the block (or a local `specs.md`) on the preview, try to break it, check telemetry, report; screenshots on by default (`--no-screenshots` opts out). |
+| `verify` | `author` if no block exists, then `run` — the entry point for others' PRs and automation. |
 
-If no operation token is present, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given. `setup` is always explicit.
+`run` picks a driver with `--driver`; `author` never touches a browser and takes no `--driver`.
 
-### Drivers
+| `--driver` | Runner |
+| --- | --- |
+| `auto` (default) | Chrome if the extension is connected; otherwise Playwright, announced with a one-line notice — never a question |
+| `chrome` | [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md) in-session; never falls back to Playwright |
+| `playwright` | [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) sub-agent — CI, remote envs, no browser extension |
 
-`run` executes the spec through one of two runners — same grammar, same verdict, different engine. Pick with `--driver`:
+`--unattended` (for loops, CI, and Agent0): read [`rules/unattended.md`](./rules/unattended.md) when the flag is passed or the host is Agent0.
 
-| `--driver` | Runner | When |
-| --- | --- | --- |
-| `auto` (default) | Chrome if the extension is connected; otherwise Playwright, announced with a one-line notice — never a question | Everyday use — fast locally, correct everywhere. |
-| `chrome` | [`aw-tester-chrome`](../../workflow/autonomous-workflow/aw-tester-chrome/SKILL.md), in-session | Force the fast see→act loop against your logged-in Chrome; never falls back to Playwright. |
-| `playwright` | [`aw-tester`](../../workflow/autonomous-workflow/templates/aw-tester.agent.md) sub-agent | CI, remote envs, or no browser extension. |
-
-`author` never touches a browser and takes no `--driver`.
-
-### `--unattended` — never ask, never hang
-
-`run` and `verify` take `--unattended` for callers with nobody to answer a question: a convergence loop (`review-loop` Step 1.6 always passes it), a CI job, or any Agent0 Automation.
-Under `--unattended` the skill **never calls `AskUserQuestion`**, because on a host with no user an unanswered question blocks forever or errors, and on a host without the tool it cannot be asked at all.
-Driver selection asks no question in either mode — `auto` falls back from Chrome to Playwright on its own ([`rules/runner.md § Step 4`](./rules/runner.md)) — so the flag changes only these points:
-
-| Point | Attended | `--unattended` |
-| --- | --- | --- |
-| `auto`, Chrome unavailable or `inconclusive` with `fallback: playwright` | Playwright, with the one-line fallback notice | same |
-| `auto`, no Chrome **and** no sub-agent dispatch | `NOT RUN (no Chrome extension and no sub-agent dispatch available)` | `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` — no verdict, never `red` |
-| `setup` | runs the interview | not accepted — `blocked (needs a human: setup is an interview)` |
-
-A forced `--driver` behaves exactly as it does attended.
-
-```text
-❌ WRONG — an automated caller that may reach an interactive step
-Skill("ui-verify", "run <PR-URL>")                 # no --unattended: nothing guarantees a question-free run
-
-✅ RIGHT
-Skill("ui-verify", "run <PR-URL> --unattended")    # Playwright, or an inconclusive line — never a question
-```
+## On a Dash0 Agent0 host
 
 **In a Dash0 Agent0 Automation sandbox** (`/tmp/workspace/agent-skills/env.sh` exists), read [`rules/agent0-runtime.md`](./rules/agent0-runtime.md) before Step 0.
 It works from a checkout of the PR head, resolves `auto` straight to Playwright (no user is present, and Playwright is the only driver on an Agent0 host — installed by the automation's setup script or by the [on-demand install below](#on-demand-browser-install--run-and-verify)), checks the browser the setup installed, and dispatches `aw-tester` as a `general` sub-agent that reads its definition file — the host cannot dispatch the custom type.
 `setup` is interactive and stops there as `blocked (needs a human …)`.
-Agent0 mode implies [`--unattended`](#--unattended--never-ask-never-hang) whether or not the caller passed it.
+Agent0 mode implies [`--unattended`](./rules/unattended.md) whether or not the caller passed it.
 
 **Read linked files from the install, never from the imported folder.**
 An Agent0 import can hold this `SKILL.md` alone, with no `rules/` or `scripts/` beside it.
@@ -234,13 +195,9 @@ Read the outcome from the last line:
 
 ## Step 0: Resolve your GitHub access path
 
-Both operations touch GitHub.
-Resolve which path you have — `gh` CLI, `mcp__github__*` tools, or neither — per **[`agents/shared/rules/github-access.md`](../../../agents/shared/rules/github-access.md)**.
+Resolve which path you have — `gh` CLI, `mcp__github__*` tools, or neither — per [`agents/shared/rules/github-access.md`](../../../agents/shared/rules/github-access.md).
 Resolve once, state the path, and use it for the whole run.
-The commands below are the `gh`-path form.
-
-**On the `mcp` path, use these equivalents.**
-Naming them here is load-bearing: the `gh`-path form above is not a mapping, and a reader who has to invent one writes nothing to the PR.
+The commands in this skill are the `gh`-path form; on the `mcp` path use these equivalents:
 
 | `gh`-path command | `mcp`-path equivalent |
 | --- | --- |
@@ -251,141 +208,72 @@ Naming them here is load-bearing: the `gh`-path form above is not a mapping, and
 | `gh api repos/<owner>/<repo>/deployments?sha=…` | **none — see below** |
 
 **`author` works on both paths; `run`'s URL resolution does not.**
-[`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md) reads the GitHub deployments API, and no `mcp__github__*` tool exposes deployments.
-So on the `mcp` path, `run` must take an explicit `--url <preview-url>` argument.
+No `mcp__github__*` tool exposes deployments, so on the `mcp` path `run` must take an explicit `--url <preview-url>`.
 Without one, report `inconclusive: no access path for deployment lookup (pass --url)` and stop — never report `inconclusive: preview not deployed`, which claims a fact about the deployment that was never checked.
-
-This paragraph is a summary; the branch is **enforced** in [`rules/preview-url-resolution.md § The access-path precondition`](./rules/preview-url-resolution.md#the-access-path-precondition-check-this-before-step-1), which owns the resolution decision and which [`rules/runner.md § Step 2`](./rules/runner.md) treats as terminal.
-It has to live there because its condition is *`run` invoked without `--url`* — an argument this step cannot see.
+[`rules/preview-url-resolution.md § The access-path precondition`](./rules/preview-url-resolution.md#the-access-path-precondition-check-this-before-step-1) enforces this branch, and [`rules/runner.md § Step 2`](./rules/runner.md) treats it as terminal.
 
 ## Operation `setup`
 
-Scaffold the committed preview aw-target this skill runs against. This is a
-**thin delegator** — the setup logic (auth detection, storage-state capture,
-the two-wall / env-var flow, the confirming login, and the repo-scoped LoreKit
-records) lives in one place, `aw-setup`, and is not reimplemented here. `setup`
-is the discoverable front door: a `/ui-verify` user who hits a preview-auth wall
-runs `/ui-verify setup` without needing to know the `aw` namespace.
-
-Delegate, forwarding any extra tokens verbatim:
+Delegate, forwarding any extra tokens verbatim; never reimplement setup here:
 
 ```text
 Skill("aw-setup", "--target preview")
 ```
 
-If `aw-setup` is not installed, say so and point the user at
-[`rules/preview-auth.md`](./rules/preview-auth.md) to configure
-`.claude/aw-targets/preview.yml` by hand — never scaffold a parallel setup here.
-
-**What it produces** (all team-shared, by two mechanisms):
-
-- **Committed files** — `.claude/aw-targets/preview.yml` and, for a
-  non-interactive login, `refresh-auth.mjs`. These are the source of truth the
-  tools execute (`aw-tester` reads the YAML, `node` runs the script, Playwright
-  loads the gitignored `storage_state` by path), shared with the team **by git**.
-- **Repo-scoped LoreKit records** — the UI surface and the auth profile, shared
-  **by LoreKit**. These are agent-facing discovery indexes, not authoritative
-  config; when a record and `preview.yml` disagree, the YAML wins. See
-  [`rules/memory.md`](./rules/memory.md).
+It writes the committed `.claude/aw-targets/preview.yml` (plus `refresh-auth.mjs` for a non-interactive login) and the repo-scoped LoreKit UI-surface and auth-profile records ([`rules/memory.md`](./rules/memory.md)).
+If `aw-setup` is not installed, say so and point the user at [`rules/preview-auth.md`](./rules/preview-auth.md) to configure `.claude/aw-targets/preview.yml` by hand.
 
 ## Operation `author`
 
 Inject one collapsed, marked UI verification spec into the PR body.
 
-**Step 0 — decide "is this a UI change?" mechanically. Do not eyeball the diff.**
-Run the shared `is-ui-diff` gate, which classifies the changed files against the repo's learned UI surface (falling back to broad defaults), so every caller — `create-pr`, `aw-planner`, `review-loop`, a standalone run — decides identically:
+**Step 0 — decide "is this a UI change?" with the shared gate, never by eyeballing the diff.**
+First read the repo's UI surface record (`memory.read` scope `repo::{owner}/{repo}`, key `ui-verify-lessons::ui-surface`; [`rules/memory.md § The UI surface record`](./rules/memory.md#the-ui-surface-record)) — the script cannot call LoreKit — and forward its JSON body when present:
 
 ```bash
-node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base "$(git merge-base origin/HEAD HEAD)"
+node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base "$(git merge-base origin/HEAD HEAD)" [--surface-json '<the record body>']
 ```
 
-Read the final `UI_DIFF:` line. `no` → stop and report `not authored (no UI files in diff)`; never author a spec for a non-UI diff. `yes` → continue.
+Read the final `UI_DIFF:` line: `no` → stop with `not authored (no UI files in diff)`; `yes` → continue.
+A misclassified diff is a signal to refine the surface record.
 
-**Reflect the repo's learned UI surface when one exists.** The gate cannot call LoreKit itself — a script cannot reach an MCP tool — so read the surface record first (`memory.read` scope `repo::{owner}/{repo}`, key `ui-verify-lessons::ui-surface`; see [`rules/memory.md § The UI surface record`](./rules/memory.md#the-ui-surface-record)) and, when present, forward its JSON body so the gate reflects what *this* repo counts as UI:
+1. **Read memory first** — spec-authoring and locator lessons per [`rules/memory.md § Read at author time`](./rules/memory.md).
+2. **Reuse an existing spec source** in priority order ([`rules/spec-sources.md`](./rules/spec-sources.md)): `.agent/{branch}/specs.md` (written by `/aw` or `/local-verify`) — lift its `## Spec N:` blocks verbatim, never translated, into a `<!-- ui-verify:v2 -->` block when its header has `Format: intent`, else a `<!-- ui-verify:v1 -->` block; else a `/fix-bug` repro artifact for a UI bug — rewrite it as an intent spec whose `**Expected:**` items are the fixed behavior. When a source is found, seed the block from it and skip step 3.
+3. **Otherwise write an intent spec from the diff** per [`rules/spec-format.md § Writing an intent spec (v2)`](./rules/spec-format.md#writing-an-intent-spec-v2): one `## Spec N:` per user-visible behavior, name the `**Changed:**` target, mark the step that exercises it `[must-follow]`, list each outcome under `**Expected:**`, and put known locators under `**Hints:**`. 1 to 3 specs.
+4. **Brainstorm out-of-bounds specs** for the pending states the changed component creates, per [`rules/out-of-bounds.md`](./rules/out-of-bounds.md); its [When it runs](./rules/out-of-bounds.md#when-it-runs) table picks `fan-out`, `in-context`, or `skipped`. Append the `Out of bounds:` specs it selects: `ignore`, `dismiss`, and `reload` for a pending user decision, then every candidate the `severity` rubric rates `critical` or `high`. Severity is the cap, not a count; each spec ends in a keep-going step and expects only recovery outcomes.
+5. **Wrap and inject** the block per [`rules/spec-format.md`](./rules/spec-format.md) with the body-write call for your [access path](#step-0-resolve-your-github-access-path), preserving everything already in the body. When that write cannot be made, report `failed (no GitHub access path)` — never the drafted specs.
 
-```bash
-node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base <merge-base> --surface-json '<the record body>'
-```
+The block is exempt from the `create-pr` description length ceiling and preserved verbatim by `review-loop`'s body refresh ([`rules/spec-format.md`](./rules/spec-format.md), [description contract](../../delivery/create-pr/rules/description-contract.md)).
 
-With no record the broad defaults apply, so a repo with no learnings yet still gets a correct answer. When a UI change slips through as `no` (or a non-UI diff as `yes`), that is a signal to refine the surface — see [`rules/memory.md § The UI surface record`](./rules/memory.md#the-ui-surface-record).
-
-1. **Read memory first.** Load spec-authoring lessons and locator lessons per [`rules/memory.md § Read at author time`](./rules/memory.md). These tell you the app's navigation quirks and stable locators before you write a single step.
-2. **Reuse an existing spec source when present.** Before writing anything, check for a spec artifact the surrounding flow already produced, in priority order (full contract: [`rules/spec-sources.md`](./rules/spec-sources.md)):
-   - `.agent/{branch}/specs.md` — the autonomous-workflow planner's `aw-tester` specs, already run locally at Phase 4. Lift its `## Spec N:` blocks verbatim into a `<!-- ui-verify:v1 -->` block — never translate them.
-   - A `/fix-bug` reproduction artifact for a UI or visual bug — an `e2e-testing` flow or a `repro/<id>.md` checklist. Rewrite it as an intent spec whose `**Expected:**` items are the fixed behavior.
-   Both sources are gitignored, local-only files. This works because `author` runs in the same worktree that wrote them, and it copies their content into the **committed** PR body — the durable artifact `run` later reads. The gitignored file is never committed; only its lifted content reaches GitHub. See [`rules/spec-sources.md § Two artifacts, two lifetimes`](./rules/spec-sources.md#two-artifacts-two-lifetimes). When a source is found, seed the block from it and skip step 3, so the PR block matches what was verified locally rather than a second, divergent description of the same behavior.
-3. **Otherwise, write an intent spec from the diff.** Read the diff (`git diff <base>...HEAD --name-status` plus the relevant files), then write one `## Spec N:` block per user-visible behavior the diff changes, per [`rules/spec-format.md § Writing an intent spec (v2)`](./rules/spec-format.md#writing-an-intent-spec-v2): name the `**Changed:**` target, start the step that exercises it with `[must-follow]`, and list each outcome under `**Expected:**` on that target. Put locators you know from lessons under `**Hints:**` in the role-and-name form. Keep it to the behaviors a reviewer would actually click through — 1 to 3 specs, not an exhaustive suite.
-4. **Brainstorm out-of-bounds specs** for the pending states the changed component creates — what a user hits after ignoring, dismissing, reloading, leaving and returning to, or acting from a second tab on something the UI is waiting on — per [`rules/out-of-bounds.md`](./rules/out-of-bounds.md).
-   Its [When it runs](./rules/out-of-bounds.md#when-it-runs) table picks the mode: `fan-out` (five generator sub-agents in one message, then one judge) whenever some available tool dispatches a sub-agent, `in-context` when none does, and `skipped` for `--no-brainstorm`, a lifted grammar block, or a diff with no pending state.
-   Append the `Out of bounds:` intent specs it selects after the happy-path specs: `ignore`, `dismiss`, and `reload` for a pending user decision, then every candidate the `severity` rubric rates `critical` or `high`. Severity is the cap, not a count; each spec ends in a keep-going step and expects only recovery outcomes.
-5. **Wrap and inject** the spec in the marked collapsed block per [`rules/spec-format.md`](./rules/spec-format.md), and write it into the PR body with the body-write call for your resolved [access path](#step-0-resolve-your-github-access-path), preserving everything already there.
-Writing the block into the PR body is this operation's **only** deliverable, so a run that could not perform that write has not authored a spec.
-Report it as `failed (no GitHub access path)` rather than reporting the specs you drafted — a drafted spec that never reached the PR is indistinguishable from none to every later reader, including `run`.
-
-The block is **exempt from the `create-pr` description length ceiling** and is **preserved verbatim** by `review-loop`'s body refresh — both rules live in [`rules/spec-format.md`](./rules/spec-format.md) and in the [description contract](../../delivery/create-pr/rules/description-contract.md).
-
-Report: how many specs were authored, and the one-line goal of each, then the brainstorm line from [`rules/out-of-bounds.md § Step 6`](./rules/out-of-bounds.md#step-6-report).
+Report the number of specs authored with the one-line goal of each, then the brainstorm line from [`rules/out-of-bounds.md § Step 6`](./rules/out-of-bounds.md#step-6-report).
 
 ## Operation `run`
 
-Run the embedded spec against the live preview.
+Follow [`rules/runner.md`](./rules/runner.md). In outline:
 
-Full procedure: **[`rules/runner.md`](./rules/runner.md)**. In outline:
-
-1. **Get the spec.** Extract it from the PR body between the `<!-- ui-verify:v2 -->` markers, else the `<!-- ui-verify:v1 -->` markers, else the legacy `<!-- preview-spec:v1 -->` ones — the committed PR body is the only source that works on any checkout and in any later session. As a shortcut for a local author→run loop, `run <specs-path>` reads a local `specs.md` directly (no PR, no extraction). Absent → report `no spec` and stop.
-2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md). A `--url <preview-url>` argument overrides resolution (required with a local `specs-path`, and required on the `mcp` path). Any `inconclusive: …` outcome from that file is terminal — report it and stop, without a pass or a fail. Its two commonest are `inconclusive: no access path for deployment lookup (pass --url)` (no lookup was possible) and `inconclusive: preview not deployed` (the lookup ran and found nothing). For a repo whose previews aren't GitHub-integrated (CLI-deployed in the repo's own CI, surfaced by a `github-actions[bot]` comment or a stable alias that isn't `*-git-*`), commit a `preview_url` block in `.claude/aw-targets/preview.yml` so resolution finds the URL without a manual `--url` each run — see [Repo-configured resolution](./rules/preview-url-resolution.md#repo-configured-resolution-when-previews-arent-github-integrated).
-3. **Materialize** an ephemeral `specs.md` and an `aw-target.yml` overlay (`base_url` = resolved URL) under `.agent/{branch}/.ui-verify/`, reading auth and fixtures from a committed `.claude/aw-targets/preview.yml` when one exists.
-4. **Select the driver and run** per `--driver` (see [Drivers](#drivers) and [`rules/runner.md § Step 4`](./rules/runner.md)). `auto` invokes `aw-tester-chrome` in-session when the Chrome extension is connected; when Chrome is unavailable or a Chrome run returns `fallback: playwright`, it prints a one-line fallback notice and runs the `aw-tester` sub-agent — no question, attended or under [`--unattended`](#--unattended--never-ask-never-hang). A forced `--driver chrome` never falls back; a forced `--driver playwright` skips Chrome. Mode `--all`.
-   An intent spec (`Format: intent`) needs nothing extra from this skill: the runner replays a cached route when one matches the spec's text, otherwise explores the route from the steps, adapts plain steps, follows `[must-follow]` steps exactly, and grades every `**Expected:**` item with an evidence line (contract § 6).
-   - **Then try to break it** ([`runner.md § Step 4b`](./rules/runner.md#step-4b-adversarial-pass--try-to-break-it)). Run the adversarial pass per [`rules/adversarial.md`](./rules/adversarial.md) against every spec that passed: hostile input, double submits, failed and slow requests, interrupted navigation, keyboard-only use, small viewports — only the categories the spec's surface exposes. Each probe leaves before/after screenshots under `.agent/{branch}/.ui-verify/adversarial/captures/` and a line in `report.md`; each finding carries steps, expected vs actual, and a severity. It **never changes the verdict** from step 4. `--no-adversarial` (or `adversarial.enabled: false` in `preview.yml`) skips it.
-   - **Then check the telemetry** ([`runner.md § Step 4c`](./rules/runner.md#step-4c-telemetry-check--read-the-runs-dash0-web-events)). Read the web events the run's own sessions emitted on the preview from the Dash0 Dev MCP and judge them per [`rules/telemetry.md`](./rules/telemetry.md): events arrived, no error events, no 5xx requests, a page view per spec start, every custom event the diff adds. It **never changes the verdict** either. `--no-telemetry` skips it.
-   - On the Playwright driver every spec is **screen-recorded** (`--record-video`), and so is every adversarial finding ([`rules/recording.md`](./rules/recording.md)); `--no-recording` opts out.
-5. **Report** the verdict (pass / fail / inconclusive, per spec) — identical shape from either driver — then, for an intent spec, each spec's route, its `Expected` items with their evidence, and its deviations ([`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict)), then the screenshots, the recordings, the adversarial summary line and its findings, and the telemetry summary line and its findings.
-   Under `--post-findings`, also write the blocking results to the PR as review threads plus one sticky summary comment ([`rules/post-findings.md`](./rules/post-findings.md)) — the hand-off `review-loop --ui` resolves.
-   Under `--attach-media`, also put the screenshots and passing-spec recordings into the PR body through `Skill("attach-media", …)` ([`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict)). A local `specs-path` run has no PR and ignores the flag with `attach-media: skipped (no PR)`.
-6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) when a spec failed for a navigation or precondition reason — not for a locator miss, which is the runner's own lesson to write.
+1. **Get the spec** from the PR body between the `<!-- ui-verify:v2 -->` markers, else `<!-- ui-verify:v1 -->`, else the legacy `<!-- preview-spec:v1 -->`. `run <specs-path>` reads a local `specs.md` instead. Absent → report `no spec` and stop.
+2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md); `--url` overrides it and is required with a local `specs-path` or on the `mcp` path. Any `inconclusive: …` from that file is terminal.
+3. **Materialize** `specs.md` and an `aw-target.yml` overlay under `.agent/{branch}/.ui-verify/`, reading auth and fixtures from `.claude/aw-targets/preview.yml` when it exists.
+4. **Run** with the selected driver, mode `--all` ([`runner.md § Step 4`](./rules/runner.md#step-4-select-the-driver-and-run)). Then the adversarial pass against every passing spec ([`rules/adversarial.md`](./rules/adversarial.md); `--no-adversarial` skips), then the telemetry check ([`rules/telemetry.md`](./rules/telemetry.md); `--no-telemetry` skips). Neither changes the verdict. Playwright runs record every spec and adversarial finding ([`rules/recording.md`](./rules/recording.md); `--no-recording` skips).
+5. **Report** per [`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict): per-spec verdict, intent-spec routes, evidence and deviations, screenshots, recordings, then the adversarial and telemetry lines and findings. `--post-findings` also writes blocking results as review threads ([`rules/post-findings.md`](./rules/post-findings.md)). `--attach-media` puts screenshots and passing-spec recordings into the PR body via `Skill("attach-media", …)`; a local `specs-path` run reports `attach-media: skipped (no PR)`.
+6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) for a navigation or precondition failure — never for a locator miss, which is the runner's own lesson.
 
 ## Operation `verify`
 
-One-shot: make a PR autonomously verifiable and verify it, in a single call.
-This is the entry point for a PR you did not author — a teammate's, or one an
-agent0 / CI automation is checking against a Vercel-style preview — where no
-spec exists yet.
-
-1. **Author if, and only if, the block is absent.** Read the PR body. If it
-   already carries a ui-verify block of any version — `<!-- ui-verify:v2 -->`,
-   `<!-- ui-verify:v1 -->`, or the legacy `<!-- preview-spec:v1 -->` — keep it
-   verbatim — never overwrite a hand-written or previously-authored spec. If it is absent, run
-   Operation `author` (including its Step 0 `is-ui-diff` gate, and honouring
-   `--no-brainstorm` and `--brainstorm deep` exactly as `author` does): a `no` from the
-   gate ends `verify` here with `not verified (no UI files in diff)`, and a
-   `failed (no GitHub access path)` from `author` ends it with that same reason —
-   there is nothing to run.
-2. **Run.** Then run Operation `run` against the resolved preview URL, honouring
-   `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--post-findings`, `--attach-media`, `--wait-preview`, and `--unattended` exactly as `run` does —
-   including its adversarial pass. On the `mcp` path (or a local
-   `specs-path`), `--url` is required — without it, report
-   `inconclusive: no access path for deployment lookup (pass --url)` and stop,
-   never `preview not deployed`.
-3. **Report one combined verdict.** State whether the spec was authored fresh or
-   reused, then the `run` verdict (pass / fail / inconclusive, per spec), then the
-   adversarial and telemetry summary lines. A red verdict is a finding about the PR, not a
-   `verify` failure.
-
-`verify` composes the two existing operations and adds no new browser or
-GitHub behaviour — every hard rule below applies unchanged. It is idempotent:
-a second `verify` on the same PR reuses the block authored by the first.
+1. **Author only when no block exists.** If the PR body carries `<!-- ui-verify:v2 -->`, `<!-- ui-verify:v1 -->`, or the legacy `<!-- preview-spec:v1 -->`, keep it verbatim. Otherwise run Operation `author`, honouring
+   `--no-brainstorm` and `--brainstorm deep` exactly as `author` does; a gate `no` ends with `not verified (no UI files in diff)`, and `author`'s `failed (no GitHub access path)` ends `verify` with that reason.
+2. **Run** Operation `run`, honouring `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--post-findings`, `--attach-media`, `--wait-preview`, and `--unattended` exactly as `run` does. On the `mcp` path or with a local `specs-path`, no `--url` → `inconclusive: no access path for deployment lookup (pass --url)`.
+3. **Report one combined verdict**: spec authored fresh or reused, the `run` verdict per spec, then the adversarial and telemetry lines. A red verdict is a finding about the PR.
 
 ## Hard rules
 
-- **Never fork either spec format.** Both are `aw-tester`'s: the grammar in `specs.md.template`, the intent format in `intent-spec.md.template`. If a behavior cannot be expressed in them, say so — do not invent syntax or fields.
-- **A route may change; an outcome may not.** An intent spec passes only when every `**Expected:**` item was observed with an evidence line, every `[must-follow]` step was performed as written, and the `**Changed:**` target was exercised — the contract's grading table decides, never judgment. Deviations on plain steps are reported, never failed.
-- **Never weaken a spec to make it pass.** A red verdict is a finding, not a failure of this skill.
-- **Never store a secret in the spec, the target file, or a lesson.** Preview-auth credentials live in the committed `preview.yml`'s refresh command or in the environment, never in the PR body — the spec is public.
-- **On Agent0, `aw-tester` is still a dispatched sub-agent.** Never run the spec in the orchestrating context; dispatch a `general` sub-agent pointed at its definition file ([`rules/agent0-runtime.md`](./rules/agent0-runtime.md)). A missing sandbox browser is `NOT RUN (…)` with the setup script's reason, never `red`.
-- **The out-of-bounds brainstorm runs only in `author`, from the session that can dispatch.** `fan-out` sends exactly five generators in one message and then one judge, none of which dispatches; with no dispatch tool it runs `in-context`. `run` and the adversarial pass never brainstorm ([`rules/out-of-bounds.md`](./rules/out-of-bounds.md)).
-- **`--unattended` never asks.** No `AskUserQuestion` on any path; every question point takes the fixed answer in [`--unattended`](#--unattended--never-ask-never-hang), and a run with no driver is `inconclusive`, never a hang and never `red`.
-- **The runner reports; it does not fix.** Applying a fix for a failing spec is the author's job (a better spec) or the PR author's (a code change).
-- **The telemetry check is read-only and never changes the verdict.** It reads only the run's own window on the preview host, waits out ingestion lag before calling `no-events`, and never writes to Dash0 ([`rules/telemetry.md`](./rules/telemetry.md)).
-- **Only `--post-findings` writes review threads, and only blocking results.** A failing spec, a `critical`/`high` adversarial finding, or a `high` telemetry finding — deduped by fingerprint, never an `inconclusive` or a skip ([`rules/post-findings.md`](./rules/post-findings.md)).
-- **The adversarial pass never changes the verdict, and never acts destructively.** Its findings travel in their own `adversarial:` block; it probes only specs that passed, stays on the preview origin, stubs configured side-effect endpoints, and activates a destructive control only on a record it created ([`rules/adversarial.md § Guardrails`](./rules/adversarial.md#guardrails)).
+- **Never fork either spec format.** Both are `aw-tester`'s: the grammar in `specs.md.template`, the intent format in `intent-spec.md.template`. If a behavior cannot be expressed in them, say so — never invent syntax or fields.
+- **A route may change; an outcome may not.** An intent spec passes only when every `**Expected:**` item was observed with an evidence line, every `[must-follow]` step was performed as written, and the `**Changed:**` target was exercised — the contract's grading table decides. Deviations on plain steps are reported, never failed.
+- **Never weaken a spec to make it pass, and never fix code.** A red verdict is a finding; the runner reports.
+- **Never store a secret in the spec, the target file, or a lesson.** Preview-auth credentials live in `preview.yml`'s refresh command or the environment; the spec is public.
+- **On Agent0, `aw-tester` is still a dispatched sub-agent** — a `general` sub-agent pointed at its definition file ([`rules/agent0-runtime.md`](./rules/agent0-runtime.md)). A missing sandbox browser is `NOT RUN (…)`, never `red`.
+- **The out-of-bounds brainstorm runs only in `author`, from the session that can dispatch.** `fan-out` sends exactly five generators in one message and then one judge, none of which dispatches; with no dispatch tool it runs `in-context`. `run` and the adversarial pass never brainstorm.
+- **`--unattended` never asks** ([`rules/unattended.md`](./rules/unattended.md)): no `AskUserQuestion` on any path, and a run with no driver is `inconclusive`, never a hang or `red`.
+- **The telemetry check is read-only and never changes the verdict** — only the run's own window on the preview host, waiting out ingestion lag before `no-events` ([`rules/telemetry.md`](./rules/telemetry.md)).
+- **Only `--post-findings` writes review threads, and only blocking results**: a failing spec, a `critical`/`high` adversarial finding, or a `high` telemetry finding, deduped by fingerprint ([`rules/post-findings.md`](./rules/post-findings.md)).
+- **The adversarial pass never changes the verdict, and never acts destructively** — passing specs only, preview origin only, side-effect endpoints stubbed, destructive controls only on records it created ([`rules/adversarial.md § Guardrails`](./rules/adversarial.md#guardrails)).

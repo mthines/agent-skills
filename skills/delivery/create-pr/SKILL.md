@@ -1,21 +1,10 @@
 ---
 name: create-pr
 description: >
-  Generates a short, narrative GitHub pull request description (≤ 25 lines,
-  hard ceiling 40), pushes the branch, opens the PR as a draft, then runs
-  review-loop (pr-reviewer → implement-suggestion → polish simplify, up to 5
-  iterations) until every review thread is resolved via fix or reply. Scale
-  down with --no-review, --no-simplify, --quick (light mechanical pass only),
-  or --no-quality (skip the loop). On a UI diff, injects a preview
-  verification spec by default (--no-ui-verify to skip), and attaches the
-  branch's screenshots and recordings via attach-media (--no-media to
-  skip). Before the push,
-  converges the branch by default with review-branch, which needs no PR, so
-  the draft opens already review-clean (--no-pre-review to skip). With
-  --split, breaks the branch diff into 2–4 focused,
-  dependency-ordered draft PRs after user approval. Hands red CI to
-  ci-auto-fix, which fixes or escalates. Invoke with /create-pr or
-  /create-pr --split.
+  Writes a short narrative PR description (≤ 25 lines, hard ceiling 40), converges the branch with
+  review-loop in local mode, pushes, opens a draft PR, runs review-loop until every thread is resolved, and hands red
+  CI to ci-auto-fix. Flags: --split (2–4 dependency-ordered draft PRs), --quick, --no-review,
+  --no-simplify, --no-quality, --no-pre-review, --no-ui-verify, --no-media; invoke with /create-pr.
 disable-model-invocation: false
 argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-ui-verify] [--attach <file>] [--no-media]'
 license: MIT
@@ -25,85 +14,73 @@ metadata:
   workflow_type: command
 ---
 
-# Generate Pull Request Description
+# Create Pull Request
 
-Generate a **short, narrative** PR description that tells reviewers *why* this change exists and *what* to expect when they open the diff.
-Reviewers skim.
-If the description is long, they skip it.
-Respect their time.
+Write a short, narrative PR description that tells reviewers *why* the change exists and *what* to expect in the diff, open it as a draft, converge it, and watch CI.
+
+## Contents
+
+- [Modes](#modes)
+- [Step 0: Resolve your GitHub access path](#step-0-resolve-your-github-access-path)
+- [Steps 1–5: Write the title and body](#steps-15-write-the-title-and-body-shared-contract)
+- [Step 5.5: Pre-push branch convergence](#step-55-pre-push-branch-convergence-local-review-loop)
+- [Step 6: Push and Create Draft PR](#step-6-push-and-create-draft-pr)
+- [Step 6.2: Attach media](#step-62-attach-screenshots-and-recordings-delegated-to-attach-media)
+- [Step 6.4: UI verification spec](#step-64-author-the-ui-verification-spec-default-on-for-ui-changes)
+- [Step 6.5: Post-draft quality loop](#step-65-post-draft-quality-loop-delegated-to-review-loop)
+- [Step 7: Wait for CI](#step-7-wait-for-ci-to-settle) · [Step 8: Red CI](#step-8-hand-red-ci-to-ci-auto-fix) · [Step 10: Report](#step-10-report)
+- [Split Mode](#split-mode---split) · [Anti-patterns](#anti-patterns-to-avoid)
 
 ## Modes
 
-Parse `$ARGUMENTS`. `--split` selects an alternate workflow. The post-draft quality step (Step 6.5) runs the **full review + simplify loop by default**; the `--no-*` / `--quick` flags below **scale it down**. All flags compose with the default and split workflows.
+Parse `$ARGUMENTS`. `--split` selects an alternate workflow; the other flags scale down the default full review + simplify loop (Step 6.5) and compose with both workflows.
 
-| Mode / Flag    | Trigger                                            | Behaviour                                                                                                                                                                     |
-| -------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`      | No flag                                            | One PR for the whole branch. After opening the draft PR (Step 6), Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")` — up to 5 iterations of `pr-reviewer` → `implement-suggestion` → `polish simplify`, converging until every review thread is resolved (fix or reply) and refreshing the PR description. |
-| `split`        | `--split`, `-s`, or first positional token `split` | Analyse the branch diff, propose 2–4 dependency-ordered draft PRs (hard cap 5), execute only after user approval. Jump to the **Split Mode** section after the description-contract step. |
-| `no-review`    | `--no-review`                                       | Step 6.5 drops the `pr-reviewer` pass from the loop → runs only `polish simplify` once.                                                                                     |
-| `no-simplify`  | `--no-simplify`                                     | Step 6.5 drops the simplify pass from the loop → runs only `pr-reviewer` (one-shot, no apply).                                                                              |
-| `quick`        | `--quick`                                           | Step 6.5 runs only the light mechanical pass → `Skill("polish", "quick")` (no pr-reviewer, no structural refactors).                                                        |
-| `no-quality`   | `--no-quality` anywhere in arguments               | Skip Step 6.5 entirely. Wins over every other quality flag.                                                                  |
-| `no-ui-verify` | `--no-ui-verify` (or the legacy alias `--no-preview-spec`) anywhere in arguments | Skip the **default-on** UI verification spec authoring (Step 6.4). Composes with everything. `--no-preview-spec` is the pre-rename spelling, still honoured so existing scripts and muscle memory keep working. |
-| `no-pre-review` | `--no-pre-review` anywhere in arguments            | Skip the **default-on** Step 5.5 — `Skill("review-branch", …)` **before** the push, which opens the draft already converged. Split mode then falls back to the review-less `Skill("polish", "simplify")` pre-split pass.        |
-| `attach` / `no-media` | `--attach <file>` (repeatable) / `--no-media` | `--attach` adds a local screenshot or recording to Step 6.2, ahead of the branch's own captures. `--no-media` skips Step 6.2. |
+| Mode / Flag | Trigger | Behaviour |
+| --- | --- | --- |
+| `default` | No flag | One PR for the whole branch; Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")`. |
+| `split` | `--split`, `-s`, or first positional token `split` | 2–4 dependency-ordered draft PRs (hard cap 5), executed only after user approval. See [Split Mode](#split-mode---split). |
+| `no-review` | `--no-review` | Step 6.5 runs only `polish simplify` once. |
+| `no-simplify` | `--no-simplify` | Step 6.5 runs only `pr-reviewer` (one-shot, no apply). |
+| `quick` | `--quick` | Step 6.5 runs only `Skill("polish", "quick")`. |
+| `no-quality` | `--no-quality` anywhere | Skip Step 6.5 entirely. Wins over every other quality flag. |
+| `no-ui-verify` | `--no-ui-verify` anywhere | Skip the default-on Step 6.4. |
+| `no-pre-review` | `--no-pre-review` anywhere | Skip the default-on Step 5.5. |
+| `attach` / `no-media` | `--attach <file>` (repeatable) / `--no-media` | `--attach` adds a local file to Step 6.2 ahead of the branch's captures; `--no-media` skips Step 6.2. |
 
-> **Legacy positive flags.** `--review` and `--simplify` are still accepted as explicit single-pass scoping: `--review` alone ≡ `--no-simplify` (pr-reviewer only), `--simplify` alone ≡ `--no-review` (simplify only), and `--review --simplify` ≡ the default (full loop). `--pre-review` is likewise still accepted and is now a **no-op affirmation** of the default. `--no-feedback` is accepted and ignored: the background external-bot watch it disabled was removed in v4.0.0 (see [Step 6.5](#step-65-post-draft-quality-loop-delegated-to-review-loop)). Prefer the `--no-*` form — with the full loop now the default, the negative flags read more clearly.
-
-In split mode, skip the contract's length self-check "PR too big" trim — the split *is* the response to that signal.
-Each resulting sub-PR must still pass it on its own.
-
-Split mode depends on Step 5.5 more than default mode does: Step 6.5 is post-draft and its `review-loop` needs an open PR, which does not exist before S1, so nothing else reviews the whole branch there. Step 5.5 runs on the full branch before computing the split, and each sub-PR inherits reviewed-and-converged code rather than merely simplified code. Each sub-PR then gets the per-PR quality pass defined in [`rules/split-mode.md`](./rules/split-mode.md).
-
-Until now that pre-split slot ran `Skill("polish", "simplify")` — mechanical refactors and **no review at all**, because no reviewer could run without a PR. That is now the *fallback*, taken only when Step 5.5 reports a skip (no sub-agent dispatch) or `--no-pre-review` was passed. Say which one ran; a split whose sub-PRs were never reviewed must not be reported as one whose sub-PRs were.
+`rules/legacy-flags.md` — read when `$ARGUMENTS` carries `--review`, `--simplify`, `--pre-review`, `--no-feedback`, or `--no-preview-spec`.
 
 ## Step 0: Resolve your GitHub access path
 
 Before any GitHub step, resolve which path you have — `gh` CLI, `mcp__github__*` tools, or neither — per **[`agents/shared/rules/github-access.md`](../../../agents/shared/rules/github-access.md)**. Resolve once, state the path you took, and use it for the whole run.
 
-`gh` is **absent in Claude Code cloud sessions**, so the commands written below are the `gh`-path form; on the MCP path use the verb mapping in that file rather than attempting them. With **neither** path, GitHub steps cannot be performed: say so precisely, do the `git` work you can, and hand the rest back — never report a step you could not perform as blocked-by-something-else.
+`gh` is absent in Claude Code cloud sessions; the commands below are the `gh`-path form, so on the MCP path use that file's verb mapping. With **neither** path, say so precisely, do the `git` work you can, and hand the rest back — never report a step you could not perform as blocked-by-something-else.
 
 ## Steps 1–5: Write the title and body (shared contract)
 
-The narrative rules, the length budget, and the five authoring steps (gather
-information → understand the narrative → choose output format → write the title →
-length self-check) live in one shared file so `create-pr` and `review-loop` write
-identical-quality descriptions: **[`rules/description-contract.md`](./rules/description-contract.md)**.
+Follow **[`rules/description-contract.md`](./rules/description-contract.md)** (gather information → understand the narrative → choose output format → write the title → length self-check); `review-loop` uses the same contract.
+If its Step 5 length self-check says the PR is too big, offer `/create-pr --split` instead of expanding the body.
+If you can't infer the *why* / *what* from the diff, ask the user — never pad with guesses.
+Worked examples: [`rules/description-examples.md`](./rules/description-examples.md).
 
-Follow that contract to produce the title and body. Two `create-pr`-specific notes:
+## Step 5.5: Pre-push branch convergence (local `review-loop`)
 
-- The contract's Step 5 length self-check is the same "PR too big → `/create-pr --split`" signal referenced in the Modes section; in split mode you skip it (the split *is* the response).
-- If you can't infer the *why* / *what* from the diff, ask the user — never pad with guesses.
-
-Then continue to Step 5.5, and from there to Step 6 to push and open the draft PR.
-
-## Step 5.5: Pre-push branch convergence (delegated to `review-branch`)
-
-The branch is still local here, so there is no PR and no review thread — which is exactly the gap
-[`review-branch`](../../quality/review-branch/SKILL.md) fills. It dispatches `branch-reviewer`,
-which runs the same detection core as `pr-reviewer` and carries findings in
-`.agent/{branch}/findings.jsonl` instead of GitHub threads. Zero GitHub calls, no PR required.
-
-**It runs by default**, in both default and split mode.
-**Skip it** on `--no-pre-review`, `--no-quality`, `--no-review`, or a non-code diff.
+Runs by default, in both default and split mode; skip on `--no-pre-review`, `--no-quality`, `--no-review`, or a non-code diff.
+[`review-loop`](../../quality/review-loop/SKILL.md) with no PR reference runs local mode: it dispatches `branch-reviewer` with zero GitHub calls, so the draft opens already converged.
 
 | Mode | Invoke |
 | --- | --- |
-| default | `Skill("review-branch", "--cap 3")` |
-| split (`--split`) | `Skill("review-branch", "")` |
+| default | `Skill("review-loop", "--cap 3")` |
+| split (`--split`) | `Skill("review-loop", "")` |
 
-**Full procedure lives in [`rules/pre-push-review.md`](./rules/pre-push-review.md).** Load it when
-entering this step; it covers the skip conditions, why the step is on by default and why the caps
-differ, what to do with each return, and the outcome value to record for Step 10. Three rules from
-it are load-bearing enough to restate here:
+`rules/pre-push-review.md` — read when entering this step (skip conditions, handling each return, the outcome value for Step 10). Load-bearing:
 
-- **Surface every `flagged` finding to the user before pushing.** Pushing past them silently converts the safety valve into a green-wash.
-- **Absent sub-agent dispatch is `NOT REVIEWED`, never a skip.** In split mode, fall back to `Skill("polish", "simplify")` and say which one ran — it is the difference between sub-PRs that were reviewed and sub-PRs that were only simplified.
+- **Surface every `flagged` finding to the user before pushing.**
+- **Absent sub-agent dispatch is `NOT REVIEWED`, never a skip.**
 - **Record the outcome now**, before continuing. Step 10's slot for it is mandatory on every run.
 
 ## Step 6: Push and Create Draft PR
 
-Push the branch and open the PR as a **draft** first — the quality loop runs after the PR exists so `pr-reviewer` can post inline comments.
+Open the PR as a **draft** so `pr-reviewer` can post inline comments during Step 6.5.
 
 ```bash
 git push                    # tracking already configured by gw add
@@ -116,66 +93,28 @@ EOF
 )"
 ```
 
-Capture the PR URL/number from the output — the next steps need it.
+Capture the PR URL/number from the output.
 
 ## Step 6.2: Attach screenshots and recordings (delegated to `attach-media`)
 
-When the branch has visual evidence, put the real files into the PR body; never a placeholder for a human to fill.
-Skip on `--no-media` or when no file is selected below.
-
-Select files in this order, stopping at **6 images and 2 videos**:
-
-1. Every path passed with `--attach <file>` in `$ARGUMENTS`, in order.
-2. Explicit `CAPTURE` screenshots from this branch's runs: `.agent/{branch}/.aw-tester/captures/*.png`, excluding `*-auto-*`.
-3. Final-state auto-captures: `.agent/{branch}/.aw-tester/captures/*-auto-final.png`.
-4. Recordings of passing specs: `.agent/{branch}/.aw-tester/recordings/spec-*.webm`.
-
-Rows 2–4 take only files newer than the merge base with the PR's own base branch, so a capture from an older branch with the same name is never shown:
-
-```bash
-PR_NUMBER=$(gh pr view --json number -q .number)
-BASE_REF=$(gh pr view "$PR_NUMBER" --json baseRefName -q .baseRefName)
-BASE=$(git merge-base "origin/$BASE_REF" HEAD 2>/dev/null)
-if [ -z "$BASE" ]; then
-  echo "none (merge base unresolved)"   # skip rows 2–4; record this for Step 10
-else
-  SINCE=$(git log -1 --format=%cI "$BASE")
-  find ".agent/$BRANCH/.aw-tester/captures" -name '*.png' -newermt "$SINCE" 2>/dev/null | sort
-fi
-```
-
-When `BASE` is empty, skip rows 2–4 and record `none (merge base unresolved)` as the Step 10 `Media` line, unless row 1 supplied files.
-Never run the `find` with an empty `SINCE`: it silently selects nothing, which reads as "no captures".
-
-Use the capture's label as its alt text: `<file>#<label>`.
-Then delegate:
-
-```text
-Skill("attach-media", "<pr-url> <file>#<alt> ... --to body")
-```
-
-`attach-media` owns the upload, the secret check, and the owned `<!-- attach-media:v1 -->` region.
-Record its first report line for Step 10.
-If it reports rung 3 (`not attached`), continue: the PR stays valid without media, and the report says so.
+Skip on `--no-media`. Otherwise `rules/attach-media-step.md` — read now: it selects up to 6 images and 2 videos (`--attach` files, then this branch's captures newer than the merge base) and delegates to `Skill("attach-media", "<pr-url> <file>#<alt> ... --to body")`.
+Record its first report line for Step 10. Never write a media placeholder.
 
 ## Step 6.4: Author the UI verification spec (default ON for UI changes)
 
-When the diff touches the UI, attach a collapsed, machine-findable verification spec to the PR description so an agent can later run it against the preview deployment. This is authored once, here, right after the draft opens.
+**Skip this step** when `--no-ui-verify` or `--no-quality` is in `$ARGUMENTS`, or when `ui-verify` is not installed (`Skill()` raises — catch, log one line, continue).
 
-**Skip this step** when any of the following hold:
-
-- `--no-ui-verify` or `--no-quality` is in `$ARGUMENTS`.
-- `ui-verify` is not installed (`Skill()` raises — catch, log one line, continue).
-
-**Do not eyeball the diff to decide whether it is UI.** `ui-verify author` now makes that call mechanically with its shared `is-ui-diff` gate (the repo's learned UI surface, falling back to broad defaults) and returns `not authored (no UI files in diff)` for a non-UI diff. That removes the old under-firing heuristic — a web-JS-only glob an agent had to remember to apply — so **delegate unconditionally** when neither skip condition above holds, and record whatever the delegate returns:
+Do not eyeball the diff to decide whether it is UI: `ui-verify author` decides mechanically with its shared `is-ui-diff` gate and returns `not authored (no UI files in diff)` for a non-UI diff.
+So delegate unconditionally when neither skip condition holds:
 
 ```
 Skill("ui-verify", "author <pr-url>")
 ```
 
-`ui-verify` owns the spec grammar, the marker contract, and its authoring memory loop; it edits the PR body in place, adding one `<!-- ui-verify:v2 -->` block (a Markdown intent spec). The block is exempt from the description length budget and is preserved verbatim by the Step 6.5 review-loop's description refresh — both rules live in the [description contract](./rules/description-contract.md#ui-verification-spec-optional). Continue to Step 6.5 regardless of whether a spec was authored.
+`ui-verify` edits the PR body in place, adding one `<!-- ui-verify:v2 -->` block; the block is exempt from the length budget and preserved by the review-loop's description refresh ([description contract](./rules/description-contract.md#ui-verification-spec-optional)).
+Continue to Step 6.5 regardless. This step only authors; Step 6.5's `review-loop` runs the spec against the preview once at exit (do not pass `--no-preview-run`).
 
-**Record which branch you took, now, before continuing.** The Step 10 report has a mandatory ui-verify slot, and a slot whose value is reconstructed from memory at the end of a long run is the blind spot this step's own history demonstrates. Write down exactly one of the six values as you leave this step:
+**Record which branch you took, now, before continuing.** Write down exactly one of the six values for the Step 10 `UI verify` slot:
 
 | What happened here | Record |
 | --- | --- |
@@ -186,92 +125,44 @@ Skill("ui-verify", "author <pr-url>")
 | Skipped: `Skill()` raised — `ui-verify` not installed | `skipped (ui-verify not available)` |
 | Delegated, and `ui-verify` reported a failure — including its own `failed (no GitHub access path)`, which means the block never reached the PR body | `failed (<reason>)`, quoting its reason verbatim |
 
-The last row is the one that must never be softened into a skip. `ui-verify`'s `author` treats the PR-body write as its only deliverable, so a `failed` return means no later reader — the Step 6.5 review-loop's Step 1.6 included — will find a block to run. Reporting that as `not authored` claims a decline where there was an error.
-
-This step only **authors** the spec. The **run** is the review-loop's job: the default Step 6.5 invocation (`Skill("review-loop", "<pr-url> --no-ci")`) executes the block once against the live preview deployment at exit, report-only (its Step 1.6). `create-pr` deliberately does **not** pass `--no-preview-run` — that opt-out is for `autonomous-workflow`, whose Phase 7 rehearses the same specs itself. So a hand-driven UI PR gets both halves here: authored at 6.4, verified at 6.5.
+Never soften the last row into a skip: a `failed` return means no block exists for any later reader to run.
 
 ## Step 6.5: Post-draft quality loop (delegated to `review-loop`)
 
-After the draft PR is open, run the bounded review-apply-simplify convergence loop.
+Skip entirely on `--no-quality` or a non-code-only diff (docs, generated artefacts, lockfiles, asset binaries).
+Otherwise evaluate in this precedence order (first match wins):
 
-Skip this step entirely if any of the following hold:
+| # | Flags present | Invoke | What runs |
+| - | --- | --- | --- |
+| 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")` | Light mechanical pass (comments, docstrings, `else` after `return`, naming). |
+| 2 | `--no-review` | `Skill("polish", "simplify")` | Mechanical cleanups (comments, dead code, nesting, constants) applied once, each behind a test check. |
+| 3 | `--no-simplify` | `Task(subagent_type="pr-reviewer", prompt="<pr-url>")` | `pr-reviewer` **agent** (Task tool, not `Skill()`) one-shot — findings surfaced, not applied. |
+| 4 | **none of the above (default)** | `Skill("review-loop", "<pr-url> --no-ci")` | `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations, until every thread is resolved (fix or reply); refreshes the PR description. |
 
-- `--no-quality` was passed in `$ARGUMENTS`.
-- The branch diff is non-code only (docs, generated artefacts, lockfiles, asset binaries).
+Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it.
+**Always pass `--no-ci` to `review-loop` here** — Steps 7–8 own CI for this invocation and cover every commit the loop pushes.
 
-Otherwise, map the `create-pr` flags to the appropriate invocation. Evaluate in this precedence order (first match wins):
-
-| # | Flags present                                            | Invoke                                           | What runs                                                       |
-| - | -------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------- |
-| 1 | `--quick`, or both `--no-review` **and** `--no-simplify` | `Skill("polish", "quick")`                      | Light mechanical pass (comments, naming, dead code).            |
-| 2 | `--no-review` (or legacy `--simplify` alone)             | `Skill("polish", "simplify")`                   | code-quality simplify — apply Class M refactors once.           |
-| 3 | `--no-simplify` (or legacy `--review` alone)             | `Task(subagent_type="pr-reviewer", prompt="<pr-url>")` | `pr-reviewer` **agent** (Task tool, not `Skill()`) one-shot only — findings surfaced, not applied. |
-| 4 | **none of the above (default)**                          | `Skill("review-loop", "<pr-url> --no-ci")`      | Full loop: `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations; converges until every review thread is resolved (fix or reply) and refreshes the PR description. |
-
-(`--no-quality` is handled above as an outright skip and never reaches this table.)
-
-Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it to `create-pr`.
-
-**Always pass `--no-ci` to `review-loop` here.** The loop has its own CI sub-step that
-would dispatch `ci-auto-fix`; letting it run would make it a second spender of the
-handoff budget that Steps 7–8 own for this invocation. `create-pr` does not
-need it: Steps 7–8 run **after** this step, so every commit the loop pushes is
-covered by the watch that follows. Suppressing the loop's CI step here is what keeps
-this invocation's budget accountable to one owner — the counters live in this
-skill's own transcript, never in a state file carried between phases.
-
-**Rows 3 and 4 both need sub-agent dispatch.** The reviewer runs in a separate context with no in-context substitute. Before taking either row, confirm that **some** available tool dispatches a sub-agent — a capability check, never a tool-name check: the tool is `Task` in the Claude Code CLI, `Agent` in the Claude Agent SDK, and `task` in OpenCode-based hosts such as Dash0 Agent0. If no tool dispatches a sub-agent, do not attempt the dispatch and do not silently fall through to row 2 — record `NOT REVIEWED (sub-agent dispatch unavailable)` and carry it into Step 10.
-
-```text
-❌ WRONG — a name check; skips the review on every harness that does not spell it `Task`
-if "Task" not in available_tools: NOT REVIEWED
-
-✅ RIGHT — a capability check, name-agnostic
-if no available tool dispatches a sub-agent (Task, Agent, task, or another spelling): NOT REVIEWED
-```
+**Rows 3 and 4 both need sub-agent dispatch.** Before taking either row, confirm that **some** available tool dispatches a sub-agent — a capability check, never a tool-name check (`Task` in Claude Code, `Agent` in the Agent SDK, `task` in OpenCode-based hosts such as Dash0 Agent0). If none does, do not attempt the dispatch and do not fall through to row 2 — record `NOT REVIEWED (sub-agent dispatch unavailable)` for Step 10.
 
 After the loop returns:
 
-- If the loop converged (every review thread resolved via fix or reply), continue to Step 7. The loop also refreshes the PR description to match the converged diff, so do not re-edit the body here.
-- If the cap was hit with threads still open — human-judgment flags or unresolved blockers — surface them to the user before continuing to CI watch.
-- **If the loop returned a skip**, the PR has **not been reviewed**. Continue, but carry `NOT REVIEWED` into the Step 10 report verbatim. Never describe such a PR as converged, clean, or review-ready.
+- Converged → continue to Step 7. The loop already refreshed the PR description; do not re-edit the body.
+- Cap hit with threads still open → surface them to the user before Step 7.
+- **Loop returned a skip** → the PR has **not been reviewed**. Continue, carrying `NOT REVIEWED` into Step 10 verbatim; never describe the PR as converged, clean, or review-ready.
 
-**Hard rules for this step:**
-
-- Never delete or weaken a test, never change public API or exported types as a mechanical fix.
-- One `review-loop` invocation per PR creation — the loop has its own cap.
-
-**There is no separate external-bot watch.** Up to v3.5 a Step 6.7 backgrounded
-`/implement-suggestion <pr> --watch` for bot and human comments posted after the
-loop. It was removed because every job it did is already done or cannot be done:
-
-- `review-loop`'s apply step is `implement-suggestion --resolve-all`, which reads
-  **every** open thread on the PR — any author, bot or human — on every iteration,
-  so a comment that lands while the loop runs is already applied or answered.
-- It pushed to the branch **concurrently** with the Step 7 CI watch, so the watch
-  could certify a head that the background loop had already moved past.
-- A background sub-agent needs a harness that keeps running after the turn ends
-  and a dispatch tool at this rung; an Agent0 Automation has neither.
-
-A reviewer who comments after `create-pr` returns is picked up by the next
-`review-loop` run, or by `/implement-suggestion <pr> --watch` run on purpose.
+Never delete or weaken a test or change public API / exported types as a mechanical fix. One `review-loop` invocation per PR creation.
+There is no background external-bot watch; a later reviewer is picked up by the next `review-loop` run or by `/implement-suggestion <pr> --watch` run on purpose.
 
 ## Step 7: Wait for CI to Settle
 
-The job isn't done when the PR is created. Block on CI so the user doesn't have to come back to a red PR later.
+Block on CI so the user doesn't come back to a red PR. Two harness facts govern this step:
 
-**Two harness facts govern this step. Get either wrong and the watch hangs instead of waiting.**
-
-1. **The Bash tool's timeout defaults to 120 000 ms; 600 000 ms is the opt-in maximum.** A long `timeout N` *inside* the command is irrelevant if the tool call is killed first — the agent then sees an opaque tool timeout with no exit code, and every rule below becomes unreachable. **Issue each watch call with the tool's `timeout` parameter explicitly set to `600000`.** Setting it is not optional; omitting it caps the watch at 2 minutes regardless of the inner `timeout`.
-2. **`gh pr checks` exits non-zero while checks are merely pending** (exit 8), printing them to stdout. Non-zero does **not** mean failure here, so classify on the exit code plus a literal stderr match — never on "was there output".
+1. **Issue each watch call with the Bash tool's `timeout` parameter explicitly set to `600000`.** The default is 120 000 ms; without it the call is killed at 2 minutes with no exit code, whatever the inner `timeout`.
+2. **`gh pr checks` exits non-zero (8) while checks are merely pending.** Classify on the exit code plus a literal stderr match, never on "was there output".
 
 ### Step 7a: wait for checks to register
 
-`--watch` does not wait for checks that do not exist yet, and registration takes seconds after a push. Run the shared poll — **do not restate it here**:
-
-**→ [`rules/registration-poll.md`](./rules/registration-poll.md)**
-
-Map its caller-neutral outcomes onto this step:
+Run the shared poll — **[`rules/registration-poll.md`](./rules/registration-poll.md)** — and map its outcomes:
 
 | Poll outcome | Step 7 does |
 | ------------ | ----------- |
@@ -294,41 +185,21 @@ timeout 540 gh pr checks <pr-number> --watch
 | 127, or stderr matching `command not found` / `could not resolve` / `authentication` / `rate limit` | **Tooling failure, not a CI failure** (`timeout` is absent on stock macOS — use `gtimeout`). Report it; do **not** fan out CI-log triage against a run that never failed |
 | Any other non-zero | A check genuinely failed — go to Step 8 |
 
-**Count both caps within this skill invocation, and write each attempt down.** Print `ci-watch attempt N/4` (or `registration poll N/3`) as you make it, and carry those lines into the Step 10 report. Externalising the count into the transcript is the point: prose asking an agent to *remember* a number across a step transition and a subagent fan-out is fragile, whereas prose asking it to *record* one is not. Increment *before* comparing — a counter still at 0 compared against `< 4` runs five attempts, not four.
-
-There is deliberately **no shared counter across skills or subagents.** Miscounting a local cap costs one extra 9-minute watch or one early escalation; miscounting a shared one produced a false green. That trade — a correctness risk converted into a latency risk — is why the shared budget was removed; see [`phase-7-ci-gate.md`](../../workflow/autonomous-workflow/rules/phase-7-ci-gate.md).
+Print `ci-watch attempt N/4` (or `registration poll N/3`) as you make each attempt and carry the lines into Step 10. Increment before comparing. Both caps are local to this invocation; there is no shared counter across skills or sub-agents.
 
 ## Step 8: Hand red CI to `ci-auto-fix`
 
-A check genuinely failed. Invoke `ci-auto-fix` on the PR — **once**:
+A check genuinely failed. Invoke once:
 
 ```text
-Skill("ci-auto-fix", "<pr-url>")
-```
-
-`ci-auto-fix` owns the whole failure path, so this step adds none of its own:
-it captures and groups every failing check, reads the logs, separates mechanical
-failures from ones that need diagnosis, allows one corroborated infrastructure
-rerun for a flake, applies the smallest justified fix, verifies locally, pushes,
-and re-verifies CI on the new revision — up to four fix-push cycles — and it
-escalates what it cannot justify instead of guessing.
-
-```text
-❌ WRONG — re-implementing ci-auto-fix around ci-auto-fix
-fan out one log-triage sub-agent per check → classify → hand each class to
-a /ci-auto-fix sub-agent → run /confidence on the rest in this thread
-
-✅ RIGHT — one owner for the failure path
 Skill("ci-auto-fix", "<pr-url>")   → fixed | still-failing | escalated, with its report
 ```
 
-**Cap: 2 invocations per `create-pr` run.** Invoke a second time only when the
-first returned `fixed` and a *different* check went red on the pushed revision.
-Never re-invoke on a check the first invocation gave up on: it already spent its
-fix-push budget there, and a repeat is not mechanical work any more. Print
-`ci-auto-fix invocation N/2` as you make each one and carry the lines into Step 10.
+`ci-auto-fix` owns the whole failure path (grouping, log reading, flake rerun, fix, local verify, push, re-verify); add no triage fan-out or `/confidence` pass of your own around it.
 
-**Hard rules — never do these to make CI green** (they are `ci-auto-fix`'s rules too; a caller must not undo them):
+**Cap: 2 invocations per `create-pr` run.** Invoke a second time only when the first returned `fixed` and a *different* check went red on the pushed revision; never re-invoke on a check the first gave up on. Print `ci-auto-fix invocation N/2` as you make each one.
+
+**Never do these to make CI green:**
 
 - Disable, skip, or set `continue-on-error` on a failing check
 - Delete or weaken tests, lint rules, or type checks
@@ -337,19 +208,13 @@ fix-push budget there, and a repeat is not mechanical work any more. Print
 
 ## Step 10: Report
 
-Short summary:
-
-- Final check status (all green, or which are red and why)
-- What was auto-fixed, one line per fix
-- Anything left for the user (only if Step 8 escalated or hit the cap)
-
-Final report shape:
+Short summary: final check status, one line per auto-fix, and anything left for the user (only if Step 8 escalated or hit the cap).
 
 ```
 PR: <pr-url>
 Title: <imperative title>
 
-Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
+Pre-push review (Step 5.5, local review-loop): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
 
 Media (Step 6.2): <the attach-media summary line | none (no captures or --attach files) | none (merge base unresolved) | skipped (--no-media) | skipped (attach-media not available)>
 
@@ -371,69 +236,22 @@ CI:
 Head commit: <sha — the head CI was last verified on>
 ```
 
-**The `UI verify` line is mandatory on every run, including a non-UI diff.**
-Step 6.4 has four skip conditions (`--no-ui-verify`, `--no-quality`, a non-UI diff, `ui-verify` not installed) and one failure mode, and every one of them previously reported as a clean, successful PR — the report had no slot for the spec at all, so an absent block was indistinguishable from a diff that needed none.
-That is the same self-concealing shape as failure modes `F6`/`F7` in [`diagnostic-surface.md`](../../workflow/autonomous-workflow/rules/diagnostic-surface.md): a degraded path that reports as a legitimate outcome is never fixed, because nobody learns it happened.
-State which of the six outcomes applied, and never omit the line on the grounds that the diff was not a UI change — `not authored (no UI files in diff)` is the informative answer there, not silence.
-
-**The `Pre-push review` line is mandatory on every run too**, including every run where the step was skipped.
-A named skip tells the reader the pass exists and why it did not run; omitting the line tells them nothing and reads identically to a run that took it.
-And when the value is `flagged`, list every flagged finding underneath — they are the reason a human is still needed, and the Step 5.5 surfacing happened before the push, several steps and one CI watch ago.
+**The `UI verify` line is mandatory on every run, including a non-UI diff** — `not authored (no UI files in diff)` is the informative answer there, not silence.
+**The `Pre-push review` line is mandatory on every run too**, including every skipped one; when it is `flagged`, list every flagged finding underneath.
+Why these slots exist: [`references/design-rationale.md`](./references/design-rationale.md).
 
 ## Split Mode (`--split`)
 
-Use when the branch has accumulated several unrelated changes and a single PR would be hard to review.
-The skill analyses the diff, proposes a small number of focused PRs, and after explicit user approval executes the split as dependency-ordered draft PRs.
-
-**Full procedure lives in [`rules/split-mode.md`](./rules/split-mode.md).**
-Load that file when entering split mode; it covers when to split, file grouping rules, dependency detection across seven coupling categories, the per-PR execution loop, abort/rollback, and split-specific hard rules.
-
-Quick reference for the shape of the workflow:
-
-| Step | Name                              | Output                                              |
-| ---- | --------------------------------- | --------------------------------------------------- |
-| S1   | Analyze the diff                  | Conceptual classification of every changed file    |
-| S2   | Group files into PRs              | 2–4 candidate groups (hard cap 5)                  |
-| S3   | Detect dependencies               | Topological order + file-level-only constraint     |
-| S4   | Propose to user                   | Table; **stop and wait** for `approve / modify / abort` |
-| S5   | Execute (preflight + per-PR loop) | Patch-based file extraction, sanity check, push    |
-| S6   | Watch CI bottom-up, rebase stack  | Auto-fix bottom; rebase upward PRs with `--force-with-lease` |
-| S7   | Abort and rollback                | Restore original SHA; ask before deleting remotes  |
-| S8   | Report                            | Stack diagram + recommended merge order            |
-
-**Hard preconditions** (enforced in S5 preflight):
-
-- Working tree clean (`git status --porcelain` empty)
-- `git fetch origin` ran; first PR bases on `origin/main`, not local `main`
-- Original branch SHA recorded for rollback
-
-**Hard prohibitions** (full list in `rules/split-mode.md`):
-
-- Never `git checkout <ref> -- <files>` to extract a PR — it loses deletions and corrupts renames. Use `git diff <parent> <original-sha> -- <files> | git apply --index --3way`.
-- Never push or open a PR before the user approves the Step S4 proposal.
-- Never force-push a stacked branch with plain `--force` — `--force-with-lease` only.
-- Never delete a pushed split branch or close a draft split PR during rollback without explicit user confirmation.
+`rules/split-mode.md` — read when `--split` is set, before Step 1. It defines how split mode changes Steps 1–5.5, then Steps S1–S8 (analyse, group, detect dependencies, propose and **wait for approval**, execute, watch CI bottom-up, rollback, report) and the split-mode hard rules.
 
 ## Anti-patterns to Avoid
 
-- **Listing every file changed.** The diff already shows that. Describe ideas, not paths.
-- **Restating the title in the summary.** Use the summary to add information the title can't carry.
-- **Padded checklists** (`[x] Code follows style guidelines` on every PR). Only include checkboxes from a real template, and only check ones that actually apply.
-- **"This PR adds X, Y, Z and also..."** strings of features. If a PR has many unrelated additions, suggest splitting.
-- **Internal narration of process** ("First I tried X, then Y didn't work, so I refactored Z"). Reviewers want the result, not the journey.
+- **Listing every file changed.** Describe ideas, not paths.
+- **Restating the title in the summary.**
+- **Padded checklists.** Only checkboxes from a real template, checked only when they apply.
+- **Strings of unrelated features** ("adds X, Y, Z and also…") — suggest splitting.
+- **Narrating the process** ("First I tried X…"). Reviewers want the result.
 - **Vague verbs** ("improved", "enhanced", "updated"). Say what changed and why it's better.
-- **Media placeholders.** Never write `TODO: add screenshots`, an empty `<!-- screenshots -->`, or a local `.agent/` path in the body. Attach the real file through Step 6.2, or leave the section empty.
+- **Media placeholders.** Never `TODO: add screenshots`, an empty `<!-- screenshots -->`, or a local `.agent/` path in the body.
 - **Co-Authored-By lines.** Never include `Co-Authored-By: Claude` or any AI co-author attribution.
-
-## Examples
-
-Four worked descriptions — a lean feature, a feature in a repo with a PR template, a bug fix, and
-a **bad** verbose file-by-file one to recognise and avoid — live with the contract they exemplify:
-**[`rules/description-examples.md`](./rules/description-examples.md)**.
-
-## Tips
-
-- **If the PR is hard to summarize concisely, the PR is probably too big.** Offer `/create-pr --split` before writing prose to paper over it.
-- **One concept = one PR.** Mixed-purpose PRs make narrative descriptions awkward — that's the description telling you something.
-- **Prefer linking** (`Closes #123`) over re-explaining context that's already in the issue.
-- **Always push first** — `gh pr create` requires the branch on the remote. With `gw add`, tracking is pre-configured so plain `git push` works.
+- Prefer linking (`Closes #123`) over re-explaining context already in the issue.

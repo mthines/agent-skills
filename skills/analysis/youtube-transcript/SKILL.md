@@ -1,13 +1,8 @@
 ---
 name: youtube-transcript
 description: >
-  Fetches the transcript (captions) of a YouTube video as plain text, with
-  optional [mm:ss] timestamps, using one stdlib-only Python script that works
-  from cloud and datacenter IPs where youtube-transcript-api, yt-dlp, and
-  fetching the watch page are bot-blocked. Use before summarising, quoting, or
-  analysing a YouTube video. Triggers on a youtube.com or youtu.be link plus
-  "transcript", "summarise this video", "what does this video say",
-  "/youtube-transcript".
+  Fetches a YouTube video's transcript as plain text (optional [mm:ss] timestamps) with a stdlib-only Python script that works from cloud IPs where yt-dlp and youtube-transcript-api are blocked.
+  Use before summarising or quoting a video; triggers on a youtube.com / youtu.be link plus "transcript", "summarise this video", or "/youtube-transcript".
 disable-model-invocation: false
 license: MIT
 metadata:

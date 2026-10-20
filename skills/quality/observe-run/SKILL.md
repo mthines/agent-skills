@@ -1,20 +1,10 @@
 ---
 name: observe-run
 description: >
-  Runs a command and reads the telemetry that run just emitted, returning a
-  `verify-behavior` receipt (confirms / contradicts / ambiguous / null) that
-  grades a behavioral assertion — span count, parent/child structure,
-  duration, error-path status, fan-out, attribute cardinality, ordering —
-  against the observed spans, never against the diff read back. Inputs are a
-  command plus an expectation set. Walks two cheapest-first rungs (an
-  in-memory/file exporter, then `dash0 -X otlp proxy --agent-mode` plus `dash0
-  spans query`), stamps two-layer run identity, and self-skips when the repo
-  has no Observability Profile dev target. Vendor-neutral: OTLP is the
-  contract, Dash0 one implementation of the read. Use when a fan-out count, a
-  retry that fired twice, an error swallowed into a 200, an N+1, or an
-  unbounded cardinality needs proof from a real run rather than a reading of
-  the code. Triggers only on an explicit ask — "observe this run's telemetry",
-  "prove this behavior with a trace", "/observe-run".
+  Runs a command and grades a behavioral assertion (span count, structure, error
+  path, fan-out, cardinality) against the telemetry that run emitted, returning
+  a verify-behavior receipt. Triggers only on an explicit ask — "observe this
+  run's telemetry", "prove this behavior with a trace", "/observe-run".
 disable-model-invocation: false
 argument-hint: '<command> <expectation...> [--rung 1|2] [--run-id <id>] [--caller <name>]'
 license: MIT
@@ -144,7 +134,7 @@ skill returns the same quiet self-skip rather than a vacuous `confirms`.
 | --- | --- |
 | The four canonical receipt verdicts and their shape | `verify-behavior` — [`rules/receipt.md`](../verify-behavior/rules/receipt.md). This skill maps into it and never redefines it. |
 | The cheapest-first ladder vocabulary (Tier 1/2/3) | `verify-behavior` — [`rules/ladder.md`](../verify-behavior/rules/ladder.md). This skill's two rungs live inside that ladder's Tier 3. |
-| The by-construction framing | `test-provenance-guard` — cited by
+| The by-construction framing | the `tdd` provenance check — cited by
 [`rules/assertion-provenance.md`](./rules/assertion-provenance.md), never forked. |
 | The self-improvement lesson loop (bucket, schema, recurrence, promotion gate) | the external `lorekit-setup` skill (`rules/self-improvement-loops.md`). [`rules/lessons.md`](./rules/lessons.md) instantiates it for dev-run lessons; it never redefines it. |
 

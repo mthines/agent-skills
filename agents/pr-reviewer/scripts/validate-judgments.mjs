@@ -41,7 +41,7 @@
  *   node validate-judgments.mjs --self-test
  */
 
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -236,7 +236,7 @@ export function candidateDomainRules(candidates, errors) {
     if (c.verdict !== "unobtainable" && hasReason) {
       errors.push(`${path}: "unverified_reason" is only valid when verdict is "unobtainable" (got ${JSON.stringify(c.verdict)})`);
     }
-    // A/B iteration 4: the severity skill's crosswalk (`skills/quality/severity/SKILL.md § Mapping
+    // A/B iteration 4: the severity rule's crosswalk (`agents/shared/rules/severity.md § Mapping
     // to a reviewer's blocking flag`) makes the tier the source of `(blocking)` — critical/high
     // block, medium/low never do — and says "do not encode a second, divergent blocking rule".
     // Nothing enforced it, and round 3 on sync-tray#72 had two arms mark a `medium` finding
@@ -625,7 +625,7 @@ async function main() {
   console.log("OK");
 }
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   main();
 }

@@ -8,26 +8,27 @@ applies-to: "**/*.tsx, **/*.jsx, **/*.vue, **/*.svelte, app/**/*.ts, app/**/*.ts
 
 ## Trigger
 
-Fires when the diff touches UI files (web JSX/TSX/Vue/Svelte, React Native screens, App Router screens). NOTE: the `pr-reviewer` agent already auto-loads `ux` when UI files are present — `--with ux` is normally a no-op (deduped). This lens exists as the canonical interface and lets external review tooling consume the same checklist.
+Fires when the diff touches UI files. `pr-reviewer` already auto-loads `ux` on UI files, so `--with ux` is deduped; this lens is the canonical checklist for external tooling.
 
 ## Checklist
 
-- [ ] Interactive elements meet touch-target minimums: iOS 44×44 pt, Android 48×48 dp, WCAG AA 24×24 px, with ≥ 8 dp/pt spacing between adjacent targets.
-- [ ] Text contrast ratios meet WCAG AA: 4.5:1 for normal text, 3:1 for large text (≥ 18 pt) or UI components.
-- [ ] Body text size meets platform minimum: ≥ 16 px on web, ≥ 17 pt on iOS, ≥ 14 sp on Android.
-- [ ] Async actions have explicit loading states: spinner for 300 ms–1 s, skeleton/progress for 1 s–5 s, percentage + cancel beyond 5 s.
-- [ ] Form inputs have associated `<label>` (web) or `accessibilityLabel` (RN); placeholders are NOT used as labels.
-- [ ] Interactive non-native elements have an explicit role and accessible name (`role="button"` + `aria-label`, or RN `accessibilityRole` + `accessibilityLabel`).
-- [ ] Focus is visible on keyboard interaction; tab order matches visual order; focus is not trapped except in modals.
-- [ ] Color is never the sole carrier of meaning (WCAG 1.4.1) — pair with icon, label, or position.
-- [ ] Navigation respects limits: bottom tabs 3–5 items, primary web nav 5–8 items, Hick's-Law decisions ≤ 5–7 options.
-- [ ] Error messages explain WHAT failed AND what the user can do next — no bare "Something went wrong" or raw exception text.
-- [ ] Empty states have illustration / icon + one-line context + primary CTA (not a blank screen).
-- [ ] Motion / transitions are gated on `@media (prefers-reduced-motion: reduce)` (web) or `AccessibilityInfo.isReduceMotionEnabled()` (RN).
-- [ ] No dark patterns: Accept/Reject buttons in consent UI have equal visual weight; non-essential opt-ins default to OFF; cancellation is symmetric to sign-up (FTC Click-to-Cancel); no fake urgency / scarcity / social-proof; no confirmshaming; total cost (incl. shipping, taxes, fees) shown before payment step; AI surfaces disclose AI involvement and surface uncertainty.
+- [ ] Each changed control does what its label promises — read the handler, including its keyboard branch.
+- [ ] Changed filters, tabs, and pagination keep URL and Back-button behaviour consistent with their siblings (`push` vs `replace`).
+- [ ] The changed flow can be completed with what the page provides; no step needs a value the user cannot reach.
+- [ ] Empty, loading, stale-while-refetching, error, and truncated states are handled and visible.
+- [ ] Contrast computed from resolved tokens meets AA (4.5:1 text, 3:1 large text, UI parts, and focus rings) in every theme.
+- [ ] Focus moves correctly on dialog open / close, route change, and delete; no `outline: none` without a replacement.
+- [ ] Live regions announce outcomes once and do not wrap streaming or looping content.
+- [ ] Interactive non-native elements have a role, an accessible name, and Enter / Space handling; hover-only tooltips are also reachable by focus.
+- [ ] Touch targets meet 24×24 px (WCAG AA), 44 pt (iOS), and 48 dp (Android).
+- [ ] Motion stops under `prefers-reduced-motion` / `isReduceMotionEnabled()`.
+- [ ] Errors say what failed and what to do; labels name outcomes, not "Submit".
+- [ ] No dark patterns: equal-weight Accept / Reject, opt-ins default OFF, cancellation symmetric to sign-up, no fake urgency or scarcity, no confirmshaming, total cost before payment, AI disclosed.
 
 ## Severity hints
 
-- **Must-fix**: touch target below platform minimum; contrast below WCAG AA; missing form label; missing accessible name on interactive non-native element; color as sole carrier of meaning; **any dark pattern** (asymmetric consent, pre-checked non-essential opt-in, roach-motel cancellation, fake urgency/scarcity, drip pricing, confirmshaming, forced continuity without pre-charge notice, undisclosed AI).
-- **Should-fix**: missing loading state on async action; missing error state; focus invisible on keyboard; nav exceeding item limits; no `prefers-reduced-motion` branch on a non-trivial animation.
-- **Nice-to-have**: microcopy improvements; body text exactly at minimum (could go larger); empty state without illustration.
+- **Critical**: a step of the changed flow cannot be completed; a control does the opposite of its label; keyboard or screen-reader lockout; any dark pattern.
+- **High**: wrong or stale result shown as current; AA failure on the primary path; missing error state.
+- **Medium**: AA failure off the main path; missing reduced-motion branch; inconsistent history behaviour.
+- **Low**: copy polish.
+- Behaviour not provable from the diff is labelled **unverified**, never asserted.

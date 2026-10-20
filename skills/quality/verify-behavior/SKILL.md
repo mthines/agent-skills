@@ -1,18 +1,11 @@
 ---
 name: verify-behavior
 description: >
-  Owns a cheapest-first three-tier verification ladder — Tier 1 syntactic
-  (grep / ast-grep / read), Tier 2 semantic-no-execution (typecheck / build /
-  lint), Tier 3 execution (run the covering test, or a minimal synthesized
-  repro) — and reports the result as an evidence receipt (confirms /
-  contradicts / ambiguous / null). It never scores; `confidence(code)` owns
-  the number. Two consumer shapes: claim-verification (read-only, feeds
-  `confidence(code)`) and change-verification (post-apply green/red gate).
-  Called by `verification-receipt.md` (pr-reviewer Tier 2/3), `bug-fix-verifier`,
-  `feature-pr-verifier`, and the `aw-executor` Phase 4 checks loop. Use when a
-  finding or a change needs executed proof, not just a plausible-sounding
-  claim. Triggers on "verify this claim", "does this actually happen at
-  runtime", "prove this behavior", "run this to confirm", "/verify-behavior".
+  Runs a cheapest-first verification ladder (syntactic, then typecheck / build /
+  lint, then execution) and reports an evidence receipt — confirms, contradicts,
+  ambiguous, or null — never a score. Use when a claim or change needs executed
+  proof; triggers on "verify this claim", "prove this behavior", "run this to
+  confirm", "/verify-behavior".
 disable-model-invocation: false
 argument-hint: '[claim|change]'
 license: MIT
@@ -45,7 +38,7 @@ This skill **does not score** — it never assigns a confidence score and never 
 It runs a command, captures the raw output, and classifies the result against the *claim itself* as `confirms` / `contradicts` / `ambiguous` / `null`.
 
 - `confidence(code)` owns the number — this skill supplies sharper evidence to that gate, it does not replace it.
-- A calling agent's own grading (e.g. `bug-fix-verifier`'s `FAIL_TO_PASS`, the `aw-executor` Phase 4 `expect` comparison) stays with the caller — this skill supplies the run-and-observe mechanic underneath that grading, not the grading itself.
+- A calling agent's own grading (e.g. `/fix-bug` Phase 7's `FAIL_TO_PASS`, the `aw-executor` Phase 4 `expect` comparison) stays with the caller — this skill supplies the run-and-observe mechanic underneath that grading, not the grading itself.
 
 See [`rules/receipt.md`](./rules/receipt.md) for the full contract, including the hard invariant that a null or non-reproducing result **drops or contradicts** a finding and is never confirmation.
 
@@ -56,7 +49,7 @@ See [`rules/receipt.md`](./rules/receipt.md) for the full contract, including th
 | Shape | Question it answers | Consumers |
 | --- | --- | --- |
 | **Claim-verification** | "Is this specific behavioral assertion true?" — read-only, feeds `confidence(code)` as Evidence | `agents/shared/rules/verification-receipt.md` (pr-reviewer Tier 2/3) |
-| **Change-verification** | "Did this applied change produce the expected green/red result?" — a post-apply gate | `bug-fix-verifier`, `feature-pr-verifier`, `aw-executor` Phase 4 checks loop |
+| **Change-verification** | "Did this applied change produce the expected green/red result?" — a post-apply gate | `/fix-bug` Phase 7, `feature-pr-verifier`, `aw-executor` Phase 4 checks loop |
 
 Both shapes share the same core: toolchain discovery, isolated execution, and the receipt format.
 Only the output framing differs — see [`rules/receipt.md`](./rules/receipt.md).

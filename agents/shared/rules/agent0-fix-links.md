@@ -207,9 +207,9 @@ committing, and pushing. The prompt's whole job is to say *which* PR and *whose*
 That is what took **Fix all** from ~1100 encoded chars to **~155** (flat) and **Fix this** from ~880
 to **~320** at its worst case — a 96-char path; a typical path lands nearer 230. Both are flat in the
 finding count: neither carries per-finding data beyond the one `{path}:{line}` **Fix this** exists to
-name. The figures are not guesses: L1 `G32d` fills the live templates and measures them against the
-2500 design target, and `G32k` holds both under a **500**-char regression bound so a re-added clause
-is caught as a length regression rather than absorbed into 2000+ chars of headroom (the
+name. Keep both under a **500**-char bound when you edit a template: measure the filled live
+template, so a re-added clause shows up as a length regression rather than vanishing into 2000+
+chars of headroom under the 2500 design target (the
 `&utm_source=...` tag from § Click attribution is a small, fixed addition on top of each).
 
 The last ~35 of those chars came from addressing the PR by its **short reference**,

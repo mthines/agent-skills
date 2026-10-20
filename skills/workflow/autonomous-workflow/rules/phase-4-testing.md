@@ -51,7 +51,7 @@ agent burning tokens on hallucinated fixes when the root-cause analysis is wrong
 | Full Mode | 5                       | Well-scoped complex tasks benefit from one extra attempt before escalation |
 
 When the cap is hit, the **auto-replan protocol** (see [Stuck-Loop Detection](#stuck-loop-detection))
-fires automatically — confidence gate, then conditional holistic-analysis, then
+fires automatically — confidence gate, then a conditional execution-path re-trace, then
 mandatory user escalation if recovery fails.
 
 Companions invoked from this phase **never block, and are always reported** (`ran` or `skipped (<reason>)`) — see
@@ -66,7 +66,7 @@ Companions invoked from this phase **never block, and are always reported** (`ra
 | Lightweight per-iteration self-reflection       | Brief self-check before each iteration — NOT a full `confidence` run |
 | Fix root causes, not symptoms                   | A passing test on a wrong fix is worse than a red one               |
 | Checks gate mechanically (Full Mode)            | Phase 4 exits when every `checks.yaml` check passes — not when "criteria feel met". Check definitions are executor-immutable; gaming a check is a hard stop |
-| Auto-replan on low confidence                   | When stuck and confidence < 90%, trigger holistic-analysis and re-invoke `aw-create-plan` to produce the next plan version (v{N+1}) |
+| Auto-replan on low confidence                   | When stuck and confidence < 90%, re-trace the execution path and re-invoke `aw-create-plan` to produce the next plan version (v{N+1}) |
 | One-shot retry only                             | After auto-replan, Phase 4 may resume at most ONCE before mandatory escalation |
 | Track everything in `plan.md` Progress Log      | Auditable trail of attempts and outcomes                            |
 
@@ -192,10 +192,10 @@ describe('DarkModeToggle', () => {
 });
 ```
 
-#### Step 5a: Test Provenance Guard
+#### Step 5a: Test provenance
 
 After any new `*.test.*` / `*.unit.*` / `*.spec.*` file has been written
-(or an existing one extended), invoke the test-provenance-guard companion
+(or an existing one extended), run the `tdd` provenance check
 to catch tests-by-construction *before* the loop declares Phase 4 done.
 See [Test Provenance Trigger](#test-provenance-trigger) below for the full
 invocation contract.
@@ -220,14 +220,11 @@ npm run build
 
 All three must pass before exiting Phase 4.
 
-### Step 6b: Run the Executable Checks (Full Mode)
+### Step 6b: Gate on the check runner (Full Mode)
 
-After the suite is green, run every check in `.agent/{branch}/checks.yaml`
-per the [Executable Checks Loop](#executable-checks-loop) below. **Phase 4 is
-not complete until every check's `status` is `pass`** (or a check was declared
-`unsatisfiable` and the user approved). Self-skips (one log line) when no
-`checks.yaml` exists — legacy plans and non-aw authors gate on the Acceptance
-Criteria by judgment, as before.
+After the suite is green, run the [Executable Checks Loop](#executable-checks-loop).
+Phase 4 is complete only when `run-checks.mjs` prints `CHECKS <M>/<M> PASS (<sha>)` on the current head, or a check is `unsatisfiable` and the user approved.
+Self-skips with one log line when no `checks.yaml` exists — then gate on the Acceptance Criteria by judgment.
 
 ### Step 7: Update Progress Log (Full Mode)
 
@@ -250,7 +247,7 @@ Example with auto-replan triggering on confidence < 90%:
 - [2026-04-29T16:36:45Z] Phase 4: Fix attempt 3 — context propagation, still failing
 - [2026-04-29T16:39:00Z] Phase 4: Fix attempt 4 — middleware order, still failing
 - [2026-04-29T16:41:30Z] Phase 4: Cap hit (5) — confidence(analysis) — 62% (root cause unclear)
-- [2026-04-29T16:42:05Z] Phase 4: Auto-replan triggered (confidence < 90%) — holistic-analysis() invoked
+- [2026-04-29T16:42:05Z] Phase 4: Auto-replan triggered (confidence < 90%) — re-trace ran
 - [2026-04-29T16:44:50Z] Phase 4: plan.v2.md created (auto-replan, "Auth flow" rewritten); plan.md updated; counter reset; auto_replan_used=True
 - [2026-04-29T16:48:12Z] Phase 4: Resumed — fix attempt 1 (post-replan), session middleware moved earlier, passing
 ```
@@ -274,51 +271,39 @@ git commit -m "test(scope): add coverage for <feature>
 
 **Anchor:** `executable-checks`
 
-Full Mode plans ship with `.agent/{branch}/checks.yaml` — one runnable check
-per `AC-{n}` acceptance criterion, authored by the planner via
-[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#step-2b-derive-checksyaml-from-the-acceptance-criteria).
-This loop replaces "the LLM judges whether the criteria are met" with "the
-harness runs the checks": `checks.yaml` is the Phase 4 **termination condition
-and progress ledger**.
+Full Mode plans ship `.agent/{branch}/checks.yaml` — one runnable check per `AC-{n}`, written and sealed by [`aw-create-plan`](../../aw-create-plan/SKILL.md#checksyaml).
+The harness decides "done", not the model: the gate is the one sentinel line `run-checks.mjs` prints.
 
-**Self-skip:** if `checks.yaml` does not exist, log
-`executable-checks — skipped (no checks.yaml)` and gate on the Acceptance
-Criteria by judgment (the pre-v3.15 behavior). Never bail because it's absent.
+**Self-skip:** if `checks.yaml` does not exist, log `executable-checks — skipped (no checks.yaml)` and gate on the Acceptance Criteria by judgment.
+Never bail because it is absent.
 
 ### The loop
 
-The "run `setup` + `run`, compare against `expect`" mechanic delegates to
-`Skill("verify-behavior", "change")` — the shared change-verification shape
-(isolated execution, toolchain discovery, the receipt format). The loop, the
-mode-aware iteration cap, the check-integrity rules, and the `unsatisfiable`
-abort affordance below are unchanged; only the run-and-compare mechanic moves
-to the shared skill. If the skill is unavailable, log
-`verify-behavior — skipped (not installed)` and run `setup`/`run` directly,
-exactly as before this delegation existed.
-
+```bash
+AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"   # the dir Skill("autonomous-workflow") loaded from
+DIR=".agent/$(git branch --show-current)"
+node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$DIR/checks.yaml" | tee "$DIR/checks.run.log"
 ```
-for each check in checks.yaml with status pending or fail:
-    1. Skill("verify-behavior", "change")
-         target: <the check's `setup` + `run`>
-         expected: <the check's `expect`>
-         review_relation: "self"
-         caller: "aw-executor"
-       (or, if unavailable: run `setup` (if not "none"), then `run` directly)
-    2. Compare the observed output / exit code against `expect`.
-    3. Match     → set status: pass. Log: `[TS] Phase 4: check AC-n — pass`
-       Mismatch  → set status: fail. The check joins the failing-area queue —
-                   fix the IMPLEMENTATION, then re-run. Failing checks count
-                   toward the same mode-aware iteration cap (3 Lite / 5 Full)
-                   and stuck-loop protocol as failing tests.
-    4. kind: judge → resolve by rubric-scored LLM judgment against the AC's
-       text; record the verdict + one-line rationale in the Progress Log.
-       A judge check NEVER gates alone: it cannot be the only evidence that
-       an irreversible step is safe, and a plan whose checks are majority
-       judge-kind should be flagged to the user as weakly verifiable.
 
-Phase 4 exit gate: every check status == pass
-                   (or unsatisfiable + user approval — see below).
-```
+The runner runs each check's `setup` then `run`, compares against `expect` (exact stdout, `exit <n>`, or `re:<pattern>` / `re/<flags>:<pattern>`; a `/`-led value is a literal, and an invalid pattern fails the check), rewrites only the `status:` lines, and prints one final line:
+
+| Sentinel | Meaning | Next action |
+| --- | --- | --- |
+| `CHECKS M/M PASS (<sha>)` | Every check passed on `<sha>` | Exit Phase 4; copy the line into the Progress Log and the walkthrough |
+| `CHECKS p/M FAIL: AC-2 AC-5` | The listed checks failed | Fix the implementation for each listed ID, then re-run the runner |
+| `CHECKS 0/0 FAIL: <reason>` | Missing file, parse error, or no checks | Re-derive `checks.yaml` via `aw-create-plan`; never hand-edit sealed fields |
+| `CHECKS 0/0 FAIL: checks.lock missing — re-derive and seal via aw-create-plan` (exit 2) | `checks.yaml` has no `checks.lock` beside it, so its definitions are unsealed | Re-derive and seal via `aw-create-plan`; never run `--seal` yourself to get past it |
+| `CHECKS 0/0 FAIL: checks.lock unreadable (…)` (exit 2) | `checks.lock` exists but is not valid JSON | Re-seal via `aw-create-plan`; never hand-edit or delete `checks.lock` |
+
+Rules of the loop:
+
+1. Read the verdict from the sentinel line only; never declare Phase 4 done from your own reading of the per-check lines.
+2. Failing checks join the failing-area queue and count toward the same mode-aware iteration cap (3 Lite / 5 Full) and [Stuck-Loop Detection](#stuck-loop-detection) as failing tests.
+3. The runner never executes a `kind: judge` check. Resolve it by rubric-scored judgment against the AC text, set its `status:` to `pass` or `fail` yourself, and log the verdict with a one-line rationale. A judge check never gates alone; flag a plan whose checks are mostly judge-kind as weakly verifiable.
+4. To diagnose a failing check, run `Skill("verify-behavior", "change")` with the check's `setup` + `run` as `target` and its `expect` as `expected`; it returns a receipt, and the runner's sentinel stays the gate. Without the skill, log `verify-behavior — skipped (not installed)`.
+5. Sealed-field edits are caught mechanically: the runner fails every check whose `id`, `requirement`, `ears`, `kind`, or `expect` differs from `checks.lock`.
+   A sealed check removed from `checks.yaml` fails by id, counted in the sentinel's total, with `<id> fail — sealed check removed from checks.yaml (only aw-create-plan may re-seal)`.
+   A missing or unreadable `checks.lock` stops the run before any check executes, with exit 2 and `CHECKS 0/0 FAIL: checks.lock missing — …` or `CHECKS 0/0 FAIL: checks.lock unreadable (…)`; there is no unsealed run.
 
 ### Check-integrity rules (NON-RELAXABLE)
 
@@ -331,8 +316,8 @@ The rules:
    `status:` freely. It may amend `run:`/`setup:` ONLY to make the draft
    command runnable against the real code, and every amendment requires a
    Progress Log entry: `[TS] Phase 4: check-run-amended AC-n — <why>`.
-   `id:`, `requirement:`, `ears:`, and `expect:` are **never** edited by the
-   executor. A diff that changes them is a hard stop → user escalation.
+   `id:`, `requirement:`, `ears:`, `kind:`, and `expect:` are **never** edited by the
+   executor, and neither is `checks.lock`. A diff that changes them is a hard stop → user escalation.
 2. **Forbidden strategies — never satisfy a check by:** (a) modifying the
    check or a test to match wrong behavior, (b) overloading operators /
    comparisons to fake equality, (c) recording or replaying state to bypass
@@ -352,10 +337,10 @@ The rules:
 
 ```markdown
 - [2026-04-29T16:50:00Z] Phase 4: executable-checks — 5 checks loaded (4 command, 1 judge)
-- [2026-04-29T16:51:10Z] Phase 4: check AC-1 — pass (expect 401, got 401)
-- [2026-04-29T16:52:30Z] Phase 4: check AC-3 — fail (expect 401, got 500); joining iteration loop
+- [2026-04-29T16:51:10Z] Phase 4: CHECKS 3/5 FAIL: AC-3 AC-5 — AC-5 is the judge check, AC-3 joins the iteration loop
 - [2026-04-29T16:55:02Z] Phase 4: check-run-amended AC-3 — port 3000 → 4001 (dev server config)
-- [2026-04-29T16:58:44Z] Phase 4: check AC-3 — pass; all 5 checks green
+- [2026-04-29T16:56:30Z] Phase 4: judge AC-5 — pass (copy matches the tone rubric: short, second person)
+- [2026-04-29T16:58:44Z] Phase 4: CHECKS 5/5 PASS (a1b2c3d)
 ```
 
 Disable: remove this section's invocation from Step 6b — but note the
@@ -413,7 +398,7 @@ when iterations_on_same_area == iteration_cap:
             # Already retried once after replan and still stuck.
             goto: Mandatory User Escalation (below)
 
-        Skill("holistic-analysis")
+        re_trace()                # entry → exit across files; re-state the root cause (see below)
         Skill("aw-create-plan")   # overwrites plan.md, bumps to v{N+1} (snapshot only in snapshot mode)
         iterations_on_same_area = 0
         auto_replan_used = True
@@ -422,7 +407,10 @@ when iterations_on_same_area == iteration_cap:
 ```
 
 The `auto_replan_used` flag is the **one-shot guard** — it prevents an infinite
-`analysis → holistic → replan → fail` cycle. After one replan-and-retry,
+`analysis → re-trace → replan → fail` cycle.
+
+**`re_trace()`** — re-trace the execution path from entry to exit and re-state the root cause before re-planning.
+Run the trace in this context: entry point → each contract boundary → data flow → exit, naming the first hop where a guarantee breaks and ruling out at least 2 alternative causes with evidence (skip the hypotheses already tried). After one replan-and-retry,
 the next cap hit goes straight to user escalation.
 
 ### Companion Behavior
@@ -431,8 +419,7 @@ the next cap hit goes straight to user escalation.
 | --------------------------- | ----------------------------------------------------------------------------------- |
 | `confidence("analysis")` installed | Returns confidence score + root-cause / outcome-confidence findings      |
 | `confidence` missing        | Logs `skipped (not installed)`; treat as confidence < 90% (conservative default)  |
-| `holistic-analysis` installed | Re-traces execution path end-to-end; output feeds the next `aw-create-plan` invocation, which overwrites `plan.md` at the next version (v{N+1}) |
-| `holistic-analysis` missing | Logs `skipped (not installed)`; perform a manual end-to-end trace yourself        |
+| `re_trace()`                | Re-traces the execution path end-to-end in context; its root cause feeds the next `aw-create-plan` invocation, which overwrites `plan.md` at the next version (v{N+1}) |
 
 ### Mandatory User Escalation
 
@@ -451,7 +438,7 @@ A concise summary message containing:
   attempts when applicable)
 - Confidence score and analysis findings
 - Whether auto-replan was attempted, and the new mental model from
-  `holistic-analysis` if so
+  the re-trace if so
 - The current understanding of root cause
 
 **Step 2: Ask the user**
@@ -479,7 +466,7 @@ Log every step of the auto-replan protocol in `plan.md` Progress Log:
 - [2026-04-29T16:35:10Z] Phase 4: cap hit (3 iterations on ThemeToggle initial state, Lite Mode)
 - [2026-04-29T16:35:42Z] Phase 4: confidence(analysis) — ran (74%, suspects provider boundary)
 - [2026-04-29T16:35:55Z] Phase 4: confidence < 90% — auto-replan triggered
-- [2026-04-29T16:36:30Z] Phase 4: holistic-analysis() — re-traced provider chain, identified missing context default
+- [2026-04-29T16:36:30Z] Phase 4: re-trace — re-traced provider chain, identified missing context default
 - [2026-04-29T16:37:05Z] Phase 4: plan.v2.md created (auto-replan); plan.md updated; counter reset; auto_replan_used=True
 - [2026-04-29T16:40:18Z] Phase 4: Resumed iteration — fix attempt 1 (post-replan), still failing through cap
 - [2026-04-29T16:42:00Z] Phase 4: Cap hit again — auto_replan_used guard fires; escalating to user
@@ -497,7 +484,7 @@ This section is the anchor referenced from [`companion-skills.md`](./companion-s
 It defines what happens when the user, after the **mandatory escalation**, asks
 to **try a different approach**.
 
-> **Note:** `holistic-analysis` also fires **automatically** during the
+> **Note:** `re_trace()` also fires **automatically** during the
 > [auto-replan protocol](#auto-replan-protocol-at-the-cap) when confidence is
 > below 90%. This section covers the case where the user explicitly requests a
 > further fresh-analysis pass after escalation — typically because auto-replan
@@ -510,18 +497,16 @@ User selected `try different approach` from the mandatory user escalation menu.
 
 ### Action
 
-```bash
-Skill("holistic-analysis")
-```
+Run `re_trace()` as defined in the [auto-replan protocol](#auto-replan-protocol-at-the-cap).
 
 | Behavior                       | Detail                                                              |
 | ------------------------------ | ------------------------------------------------------------------- |
 | Purpose                        | Step back, re-trace the **entire** execution path end-to-end before any further fix attempts |
 | When invoked here              | After the mandatory user escalation, when the user requested a fresh analysis path |
 | Also invoked automatically     | Inside the [auto-replan protocol](#auto-replan-protocol-at-the-cap) when `confidence(analysis) < 90%` |
-| If skill missing               | Log `skipped (not installed)`; perform a manual end-to-end trace yourself: entry point → each contract boundary → data flow → exit |
+| No dispatch tool               | Run the trace in-context: entry point → each contract boundary → data flow → exit |
 
-### After Holistic Analysis
+### After the Re-trace
 
 1. Reset `iterations_on_same_area = 0` (this is a genuinely new attempt).
 2. **Re-invoke `Skill("aw-create-plan")`** with the new mental model — the
@@ -532,8 +517,8 @@ Skill("holistic-analysis")
 3. Resume the iteration loop in [Step 3](#step-3-the-iteration-loop) — the
    mode-aware iteration cap applies again to the new area.
 
-If a subsequent escalation also stalls at the cap, **do not** invoke
-`holistic-analysis` again automatically from this path. The auto-replan
+If a subsequent escalation also stalls at the cap, **do not** run
+`re_trace()` again automatically from this path. The auto-replan
 one-shot guard already governs in-loop replans; user-driven replans are
 explicit and the user should decide whether to continue, refactor the
 approach, or stop.
@@ -541,11 +526,11 @@ approach, or stop.
 ### Logging
 
 ```markdown
-- [2026-04-29T16:42:18Z] Phase 4: holistic-analysis() — ran (user-driven, re-traced provider chain, identified missing context default)
+- [2026-04-29T16:42:18Z] Phase 4: re-trace — ran (user-driven, re-traced provider chain, identified missing context default)
 - [2026-04-29T16:45:50Z] Phase 4: plan.v3.md created — ThemeProvider must mount above StoreProvider; plan.md updated; counter reset to 0
 ```
 
-Disable: remove the `Skill("holistic-analysis")` call from this section **and**
+Disable: remove the `re_trace()` call from this section **and**
 from the auto-replan protocol above. Registry:
 [`companion-skills.md`](./companion-skills.md#registry).
 
@@ -623,51 +608,27 @@ Disable by removing this invocation (see
 ## Test Provenance Trigger
 
 This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
-It defines when and how to invoke the `test-provenance-guard` companion to
+It defines when and how to run the `tdd` provenance check to
 catch tests-by-construction in the autonomous loop.
 
 **When:** any new `*.test.*` / `*.unit.*` / `*.spec.*` file has been written
 or extended in this Phase 4 iteration.
 
 ```bash
-Skill("test-provenance-guard", "--diff --base $(git merge-base HEAD main) --fix")
+Skill("tdd", "provenance --base $(git merge-base HEAD main)")
 ```
 
-> **Autofix is allowed inside the autonomous loop, but only behind a
-> pre-heal confidence gate.** The skill MUST run `Skill("confidence", "code")`
-> on its own proposed extract-and-rewrite **before** touching any file. The
-> autofix proceeds only when **both** of these are true:
->
-> 1. **Pre-heal:** `confidence(code) ≥ 90 %` on the proposed extraction.
-> 2. **Post-heal:** the three existing mechanical gates in
->    `test-provenance-guard/rules/self-heal.md` Step 4 (build passes,
->    target test passes, mutation re-verifies) all pass.
->
-> If pre-heal confidence is < 90 %, the skill **does not write any files**
-> and emits the finding as `heal-skipped-low-confidence`. If a post-heal
-> gate fails, the heal is reverted with `git restore` and the finding is
-> emitted as `heal-failed`. In both cases, the autonomous-workflow
-> stuck-loop protocol takes over (per-iteration self-check →
-> `confidence(analysis)` → `holistic-analysis` auto-replan → user escalation).
+The check runs the static and mutation checks in the `tdd` skill's `rules/test-provenance.md`.
+Its fix (extract the copied logic into a production export) applies only when `confidence(code)` ≥ 90; below that it reports the finding and the stuck-loop protocol takes over.
 
-| Behavior                       | Detail                                                              |
-| ------------------------------ | ------------------------------------------------------------------- |
-| Frequency                      | Once per Phase 4 iteration after new tests are committed            |
-| What it checks                 | (1) static — test file imports the SUT and does not shadow exported names. (2) mutation — sabotaging the SUT body makes the test FAIL |
-| Self-heal authority            | **Confidence-gated autofix.** `--fix` is allowed in the autonomous loop, but the skill must clear `confidence(code) ≥ 90 %` before mutating files and the three post-heal mechanical gates after. Either failure ⇒ no autonomous refactor; the finding is reported to the Progress Log and the stuck-loop protocol handles it |
-| If pre-heal confidence < 90 %  | Emit `heal-skipped-low-confidence`; do not write any files. Stuck-loop protocol takes over |
-| If a post-heal gate fails      | Revert the heal with `git restore`; emit `heal-failed`. Stuck-loop protocol takes over     |
-| If skill missing               | Log `test-provenance-guard() — skipped (not installed)` and proceed |
-| Progress Log entry             | `[TIMESTAMP] Phase 4: test-provenance-guard — N file(s), M finding(s), K healed (confidence X%), L skipped-low-confidence` |
+| Behavior | Detail |
+| --- | --- |
+| Frequency | Once per Phase 4 iteration after new tests are committed |
+| If `tdd` is missing | Log `companion: tdd provenance — skipped (not installed)` and proceed |
+| Progress Log entry | `[TIMESTAMP] Phase 4: provenance: N file(s), M finding(s), K fixed` |
 
-The skill addresses the failure mode where an LLM-authored test re-implements
-the function under test as a local copy and asserts against that copy — tests
-pass, CI is green, but no regression protection exists.
-See the skill's [PR #12340 post-mortem](../../../quality/test-provenance-guard/references/pr-12340-postmortem.md)
-for the origin case.
-
-Disable: remove the `Skill("test-provenance-guard", ...)` invocation from
-[Step 5a](#step-5a-test-provenance-guard) and from this section.
+Disable: remove the `Skill("tdd", "provenance …")` invocation from
+[Step 5a](#step-5a-test-provenance) and from this section.
 Registry: [`companion-skills.md`](./companion-skills.md#registry).
 
 ---
@@ -679,10 +640,10 @@ It defines when and how to invoke the `measurable` companion as a
 read-only audit before Phase 4 can be declared done.
 
 **Advisory by default.** This is a new, unvalidated heuristic — unlike
-`test-provenance-guard` (mechanically verified via mutation testing),
+the `tdd` provenance check (mechanically verified via mutation testing),
 `measurable`'s `missing`/`unlinked` classification is a judgment
 call with no track record yet in this registry. Following the precedent set
-by `critical` and `optimize-approach` (both opt-in/quiet rather than
+by `critical` (opt-in rather than
 hard-blocking on introduction), this gate reports findings but does not stop
 the run unless the caller opted into `--observability-strict`.
 
@@ -731,13 +692,13 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] Per-iteration lightweight self-check ran from iteration 2 onward (NOT a full `confidence` call)
 - [ ] Per-iteration in-loop self-reflection completed after each fix
 - [ ] `confidence(analysis)` invoked automatically when cap hit
-- [ ] `holistic-analysis` invoked automatically when confidence < 90% (auto-replan)
+- [ ] Execution path re-traced automatically when confidence < 90% (auto-replan)
 - [ ] `plan.md` updated to the next version (v{N+1}) after auto-replan (via `aw-create-plan`)
 - [ ] One-shot guard respected — auto_replan_used not bypassed
 - [ ] User escalation triggered when confidence >= 90% OR auto-replan exhausted
 - [ ] `lorekit(memory.write aw-lessons)` invoked at stuck-loop escalation; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] New tests added for new functionality
-- [ ] `test-provenance-guard` invoked after new test files written; findings healed or escalated
+- [ ] the `tdd` provenance check invoked after new test files written; findings healed or escalated
 - [ ] `measurable(audit)` invoked before Step 6 if Phase 3 touched API/handler or user-facing files; findings reported (advisory by default; no `missing` findings remain if `--observability-strict` is set)
 - [ ] Full suite + lint + build all green
 - [ ] Every `checks.yaml` check `status: pass` — or `unsatisfiable` escalated and user-approved; skip logged if no `checks.yaml` (anchor: `executable-checks`)

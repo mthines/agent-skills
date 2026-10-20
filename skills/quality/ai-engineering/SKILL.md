@@ -1,16 +1,10 @@
 ---
 name: ai-engineering
 description: >
-  Reviews and guides LLM/AI application engineering: prompt design,
-  prompt caching, multimodal inputs, RAG, agent loops and tool design,
-  resilience (rate limits, retries, fallbacks), memory, model migration,
-  evals, testing, prompt-injection defence, and observability.
-  Synthesises practices from Anthropic, OpenAI, Google, OWASP LLM Top
-  10, and practitioners (Hamel Husain, Eugene Yan, Chip Huyen). Triggers
-  on "review my prompt", "design a system prompt", "optimise tokens",
-  "set up RAG", "build an agent", "handle rate limits", "migrate to a
-  new model", "write evals", "test my prompt", "audit AI code",
-  "/ai-engineering".
+  Reviews and guides LLM/AI application engineering — prompts, caching, RAG,
+  agent loops and tools, resilience, model migration, evals, prompt-injection
+  defence, and observability. Invoke with /ai-engineering for "review my
+  prompt", "set up RAG", or "write evals".
 disable-model-invocation: true
 argument-hint: '[guide|review|design] [<area>|<file>]'
 license: MIT

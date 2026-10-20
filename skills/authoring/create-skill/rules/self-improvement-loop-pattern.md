@@ -39,7 +39,7 @@ Add a loop when **all** of these hold:
 
 Do **NOT** add a loop to:
 
-- **One-shot utilities** (`changelog`, `resolve-conflicts`, `ci-auto-fix`) — no
+- **One-shot utilities** (`resolve-conflicts`, `ci-auto-fix`) — no
   durable cross-run subject; the cost outweighs the value.
 - **Adversarial / audit skills** (`critical`, reviewers) — they must not be
   biased by prior conversations; that is the whole point of a fresh adversarial

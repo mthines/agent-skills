@@ -1,14 +1,31 @@
 {
   "name": "mthines-agent-skills",
-  "description": "Agent skills for code review, DX/UX analysis, TDD, holistic analysis, and developer productivity",
+  "description": "Agent skills for code review, UX analysis, TDD, autonomous workflows, and developer productivity",
   "version": "1.0.0",
   "author": {
     "name": "mthines"
   },
   "repository": "https://github.com/mthines/agent-skills",
   "license": "MIT",
-  "skills": "./skills/",
-  "agents": "./agents/",
+  "skills": [
+    "./skills/analysis/",
+    "./skills/authoring/",
+    "./skills/delivery/",
+    "./skills/design/",
+    "./skills/quality/",
+    "./skills/testing/",
+    "./skills/workflow/",
+    "./skills/workflow/autonomous-workflow/aw/",
+    "./skills/workflow/autonomous-workflow/aw-setup/",
+    "./skills/workflow/autonomous-workflow/aw-tester-chrome/"
+  ],
+  "agents": [
+    "./agents/branch-reviewer.md",
+    "./agents/feature-pr-verifier.md",
+    "./agents/pr-reviewer.md",
+    "./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md",
+    "./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md"
+  ],
   "keywords": [
     "claude-code",
     "claude-code-plugin",
@@ -16,10 +33,8 @@
     "skills",
     "agentic",
     "code-review",
-    "dx",
     "ux",
     "tdd",
-    "holistic-analysis",
     "confidence",
     "developer",
     "productivity"

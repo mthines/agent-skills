@@ -29,7 +29,7 @@ A fixed count cuts real dead ends: ranked by likelihood plus damage, it can cut 
 
 So the three interruptions a waiting prompt meets first are taken unconditionally, and everything else is kept or cut by how bad it would be if it broke, not by its place in a list.
 How many dead ends a change can create depends on the change, and a count cannot know that; a severity tier can.
-The tier comes from the `severity` skill, the same `critical` / `high` / `medium` / `low` vocabulary the adversarial pass and the reviewers use, so a reader of the PR block and a reader of a review see one scale.
+The tier uses the same `critical` / `high` / `medium` / `low` vocabulary the adversarial pass and the reviewers use, so a reader of the PR block and a reader of a review see one scale.
 The gate is `high`: on severity's rubric that is broken core behavior on a common path, which is what a user stuck after a dismiss or a reload is; a `medium` dead end has a workaround the user can find.
 Severity's Step 2 path floor is skipped because every candidate shares the diff's paths, so a floor would raise all of them together and rank none.
 

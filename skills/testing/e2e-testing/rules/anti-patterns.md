@@ -85,7 +85,7 @@ If the API is mocked, this is an integration test — write it as such.
 function formatPrice(cents: number) { return `$${(cents / 100).toFixed(2)}`; }
 ```
 
-Run [`test-provenance-guard`](../../../quality/test-provenance-guard/SKILL.md) and
+Run [the `tdd` provenance check](../../../quality/tdd/rules/test-provenance.md) and
 import the production export instead.
 
 ## Refuse to raise the heal-loop cap

@@ -35,7 +35,7 @@
  * prepare-review.mjs imports `buildReviewPacket` and writes the packet next to context.json.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -420,5 +420,6 @@ function selfTest() {
   console.log("\n✓ review-packet self-test: all checks passed");
 }
 
-const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+// Node resolves import.meta.url through symlinks but leaves argv[1] as typed.
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1]);
 if (isMain) main(process.argv.slice(2));

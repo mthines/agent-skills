@@ -1,91 +1,94 @@
-# Accessibility Rules (WCAG 2.2)
+# Pass 2 — Accessibility and interaction depth
 
-## Contrast Requirements
+Apply to every interactive element on the path from [`user-path.md`](./user-path.md).
+Cite the WCAG 2.2 success criterion on each finding; this file carries the checks reviewers get wrong, not the criteria list.
 
-| Element | AA Minimum | AAA Minimum |
-|---------|-----------|-------------|
-| Normal text (<18pt / <14pt bold) | 4.5:1 | 7:1 |
-| Large text (>=18pt / >=14pt bold) | 3:1 | 4.5:1 |
-| UI components & graphical objects | 3:1 | — |
-| Focus indicators | 3:1 against adjacent | — |
+## Contrast — compute, do not eyeball
 
-**Check**: Never use color as the sole indicator of state (error, success, active, selected). Always pair with icon, text, or pattern.
+1. Resolve each token to its final value in every theme (follow CSS variables, Tailwind config, theme objects).
+2. Composite alpha over the actual background before computing (`rgba(255,255,255,0.6)` on `#1C1C1E` is a new color).
+3. Compute the ratio and report both values and the result.
 
-## WCAG 2.2 New Requirements
+| Element | AA |
+| --- | --- |
+| Text < 24 px (or < 18.66 px bold) | 4.5:1 |
+| Larger text | 3:1 |
+| UI component boundaries, icons that carry meaning, focus indicators | 3:1 against adjacent colors |
 
-| Success Criterion | Level | Check |
-|---|---|---|
-| 2.4.11 Focus Not Obscured (Min) | AA | Focused element not entirely hidden by sticky headers, modals, toasts |
-| 2.4.13 Focus Appearance | AAA | Focus indicator >=2px thick, 3:1 contrast vs unfocused |
-| 2.5.7 Dragging Movements | AA | Every drag operation has a non-dragging alternative (click/tap) |
-| 2.5.8 Target Size (Min) | AA | Interactive targets >=24x24 CSS px (inline text links exempt) |
-| 3.2.6 Consistent Help | A | Help mechanisms in consistent location across pages |
-| 3.3.7 Redundant Entry | A | Don't re-ask for previously provided info in same flow |
-| 3.3.8 Accessible Auth (Min) | AA | No cognitive function test for auth unless alternative exists |
+Commonly missed: placeholder text, disabled-but-readable labels, text on images or gradients, dark-mode secondary text, and focus rings against the component's own fill.
 
-## Screen Reader Support
+```markdown
+✗ "The gray text looks low contrast."
+✓ `Card.tsx:22` — `text-muted` resolves to `#8A8F98` on `#FFFFFF` = 3.2:1; needs 4.5:1. Use `#6B7079` (4.9:1).
+```
 
-### Web (HTML/JSX)
-- Use semantic elements: `<nav>`, `<main>`, `<header>`, `<footer>`, `<section>`, `<article>`, `<button>`, `<a>`
-- Heading hierarchy: logical H1->H2->H3. One H1 per page. Never skip levels.
-- Image alt text: descriptive for meaningful, `alt=""` for decorative
-- `aria-live` for dynamic content announcements
-- `aria-label` / `aria-labelledby` for non-text interactive elements
-- Reading order matches visual order (DOM order = visual order)
+## Focus management
 
-### React Native
-- `accessibilityLabel`: describe the element's purpose (like alt text)
-- `accessibilityHint`: describe what happens on activation
-- `accessibilityRole`: `button`, `link`, `header`, `image`, `search`, `tab`, etc.
-- `accessibilityState`: `{ disabled, selected, checked, busy, expanded }`
-- `accessibilityValue`: `{ min, max, now, text }` for sliders/progress
-- `accessibilityLiveRegion`: `"polite"` or `"assertive"` for dynamic content
-- `importantForAccessibility`: `"yes"`, `"no"`, `"no-hide-descendants"`
-- Group related elements with `accessible={true}` on container
+| Event | Move focus to |
+| --- | --- |
+| Dialog / drawer opens | the dialog heading or its first field; trap Tab inside; Escape closes |
+| Dialog closes | the control that opened it |
+| Route change in a SPA | the new page's `<h1>` or main region |
+| Item deleted from a list | the next item, else the previous, else the list heading |
+| Inline edit saved / cancelled | the control that started the edit |
 
-### Common Violations to Flag
-- `<div onClick>` or `<span onClick>` without `role="button"` and `tabIndex={0}` — use `<button>` instead
-- Images without alt text
-- Form inputs without associated labels
-- Custom components missing accessibility props
-- Icon-only buttons without `accessibilityLabel` / `aria-label`
-- Color-only state indication
-- Auto-playing media without controls
+Also check WCAG 2.4.11: a focused element must not be fully hidden by a sticky header, toast, or cookie banner.
+Never accept `outline: none` without a replacement indicator of at least 2 px and 3:1.
 
-## Keyboard Navigation (Web)
+## Live regions
 
-- All interactive elements reachable via Tab
-- Enter/Space activates buttons and links
-- Escape dismisses modals, dropdowns, popovers
-- Arrow keys navigate within composite widgets (tabs, menus, radio groups)
-- Visible focus indicator: >=2px solid, 3:1 contrast. Never `outline: none` without replacement.
-- Skip link as first focusable element: "Skip to main content"
-- No keyboard traps (except intentional modal focus traps with Escape exit)
-- Tab order follows visual layout
+- Put `aria-live="polite"` (or `role="status"`) on a node that exists before its content changes; a region mounted with its content is not announced.
+- Announce the outcome, not every tick: a typing demo, ticker, or streaming log inside a live region floods the screen reader — mark it `aria-hidden` or move it out and announce a summary.
+- Use `assertive` / `role="alert"` only for errors that block the task.
+- Loading: set `aria-busy="true"` on the region and announce completion once.
+- Auto-advancing or looping content needs a pause control (WCAG 2.2.2) and must stop under reduced motion.
 
-## Focus Management
+## ARIA patterns and roles
 
-| Event | Focus Should Move To |
-|---|---|
-| Modal opens | First focusable element or modal heading |
-| Modal closes | Element that triggered the modal |
-| Page navigation | New page's main heading or content |
-| Item deleted from list | Previous/next item or list container |
-| Drawer opens | First item in drawer |
-| Toast/alert appears | Alert element (if actionable) |
-| Dynamic content loads | Optionally announce via live region |
+- Use the native element first: `<button>`, `<a href>`, `<input type="checkbox">`, `<select>`, `<dialog>`.
+- A `<div onClick>` needs `role`, `tabIndex={0}`, and Enter **and** Space handlers; replace it with `<button>`.
+- Match the APG pattern for composite widgets: tabs (`tablist` / `tab` / `tabpanel`, arrow keys, `aria-selected`), menus, comboboxes (`aria-expanded`, `aria-controls`, `aria-activedescendant`), and listbox options.
+- Toggle buttons expose `aria-pressed`; disclosure buttons expose `aria-expanded`.
+- Information shown only in a tooltip on hover is unreachable by keyboard and screen readers; make the trigger focusable, show on focus, link with `aria-describedby`, and dismiss on Escape (WCAG 1.4.13) — or put definitions in visible text.
+- Icon-only controls need an accessible name that says the action ("Remove filter: status"), not the icon ("X").
 
-## Motion & Animation
+## Keyboard paths
+
+- Walk the primary task with Tab, Shift+Tab, Enter, Space, Escape, and arrows; every step must be completable.
+- Tab order follows visual order; no positive `tabIndex`.
+- Keyboard handlers must do what the click handler does — compare both branches.
+- Every drag interaction needs a single-pointer alternative (WCAG 2.5.7).
+
+## Touch targets and interaction states
+
+| Standard | Minimum |
+| --- | --- |
+| WCAG 2.2 AA (2.5.8) | 24×24 CSS px, or 24 px spacing |
+| iOS (HIG) | 44×44 pt |
+| Android (Material 3) | 48×48 dp |
+
+- Padding and `hitSlop` count toward the target; the visual icon may be smaller.
+- The dismiss ×, inline row actions, and filter-chip remove buttons are the usual failures.
+- Every pressable needs a pressed state; `TouchableWithoutFeedback` on a primary action has none.
+- A submitting control must disable itself and show progress; a disabled control must say why.
+
+## Reduced motion
 
 ```css
-/* Web */
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
 ```
 
-- React Native: check `AccessibilityInfo.isReduceMotionEnabled()` or `useReducedMotion()` from reanimated
-- Essential motion (progress bars, loading) can stay but simplify
-- Decorative motion (parallax, auto-play, bouncing) must be disabled
-- No content flashes >3 times per second (seizure risk)
-- Provide in-app motion toggle as additional control
+- React Native: `AccessibilityInfo.isReduceMotionEnabled()` or Reanimated `useReducedMotion()`.
+- Stop parallax, autoplay, and loops; keep progress indicators.
+- Nothing flashes more than three times per second.
+
+## React Native specifics
+
+- Set `accessibilityRole`, `accessibilityLabel`, and `accessibilityState` (`disabled`, `selected`, `checked`, `expanded`, `busy`) on every custom control.
+- Group a row with `accessible={true}` so it reads as one element; otherwise each `Text` is a separate stop.
+- Hide decorative or duplicated nodes with `importantForAccessibility="no-hide-descendants"` (Android) and `accessibilityElementsHidden` (iOS) — both, they are platform-specific.
+- `accessibilityLiveRegion` works on Android only; on iOS call `AccessibilityInfo.announceForAccessibility()`.
+- Respect font scaling: no fixed heights on text containers; test at the largest accessibility size.
+- Respect safe-area insets (`useSafeAreaInsets()`); do not override the iOS edge-swipe back gesture; support Android predictive back.

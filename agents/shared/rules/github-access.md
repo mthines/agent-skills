@@ -1,6 +1,6 @@
 # GitHub access — resolve the path, then use it
 
-**This file is the owner of the procedure.** Consumed by every agent and skill that touches GitHub: `pr-reviewer`, `aw` / `aw-planner` / `aw-executor`, `create-pr`, `review-loop`, `implement-suggestion`, `ci-auto-fix`, `e2e-pr-stabilizer`.
+**This file is the owner of the procedure.** Consumed by every agent and skill that touches GitHub: `pr-reviewer`, `aw` / `aw-executor`, `create-pr`, `review-loop`, `implement-suggestion`, `ci-auto-fix`.
 
 Do not restate the mapping in a caller. Change it here.
 

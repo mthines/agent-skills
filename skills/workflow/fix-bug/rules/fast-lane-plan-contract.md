@@ -6,7 +6,7 @@ tags:
   - plan-md
   - aw-create-plan
   - aw-executor
-  - bypass-planner
+  - fast-lane-plan
 ---
 
 # Fast-Lane Plan Contract
@@ -14,13 +14,12 @@ tags:
 Loaded by Phase 6 of `/fix-bug` when triage picked `simple` AND
 `confidence(analysis) ≥ 92 %`. Defines the minimum `plan.md` shape that
 `/fix-bug` must produce — via `Skill("aw-create-plan", ...)` — for
-`aw-executor` to consume without `aw-planner` ever running.
+`aw-executor` to consume.
 
 The contract exists because `aw-executor` expects a plan.md written to the
-autonomous-workflow shape; without aw-planner in the loop, `/fix-bug` is the
-author. The structural requirements below match what aw-planner would have
-produced, minus the planner's deep architectural analysis (which a simple bug
-does not need).
+autonomous-workflow shape, and `/fix-bug` is the author. The fast-lane plan
+keeps the pre-brief section set, which `aw-executor` accepts alongside the
+six-Core brief the standard-lane writes.
 
 Source: [autonomous-workflow Phase 2 plan-artifact spec](../../autonomous-workflow/SKILL.md)
 — the plan.md shape aw-executor reads from.
@@ -38,8 +37,9 @@ Source: [autonomous-workflow Phase 2 plan-artifact spec](../../autonomous-workfl
 
 ## When this rule loads
 
-Phase 6 fast-lane only. The complex path uses the existing bug-fix-pack →
-aw-planner flow and never touches this rule.
+Phase 6 fast-lane only. The complex path writes the six-Core brief from the
+bug-fix-pack ([standard-lane](./autonomous-handoff.md#standard-lane)) and never
+touches this rule.
 
 Preconditions checked by Phase 6 step 6a before this rule loads:
 
@@ -69,7 +69,7 @@ Because every Core section is present by name, the plan satisfies the `aw-create
 5. **Symptom** — verbatim from Evidence Record
 6. **Bug class** — from Phase 0
 7. **Reproduction** — repro path, command, status
-8. **Root cause** — from in-skill lightweight analysis (NOT holistic-analysis)
+8. **Root cause** — from in-skill lightweight analysis (NOT the full `root-cause-analysis.md` trace)
 9. **Decisions** *(Core)* — chosen fix + alternatives rejected + rationale
 10. **Proposed change** — file + line + before/after sketch
 11. **Acceptance Criteria** *(Core)* — testable done conditions; replaces the former "Done criteria" section name to match the Core schema
@@ -121,7 +121,7 @@ This is the human-review surface the Core schema requires — direction must be 
 - Branch: `fix/<slug>`
 - Worktree: `.agent/fix/<slug>/`
 - Base: `main`
-- Created by: `/fix-bug` fast-lane (no aw-planner)
+- Created by: `/fix-bug` fast-lane
 ```
 
 ### 4. Requirements
@@ -175,7 +175,7 @@ section will never carry a best-effort repro on the fast-lane.
 One paragraph, written by `/fix-bug` itself during the simple-path
 lightweight analysis (see
 [`complexity-triage.md`](./complexity-triage.md#what-simple-actually-skips)).
-The shape matches what `holistic-analysis` produces for the complex path:
+The shape matches the Root-Cause Record the complex path writes ([`root-cause-analysis.md`](./root-cause-analysis.md#step-3--write-the-root-cause-record)):
 
 ```markdown
 ## Root cause
@@ -252,7 +252,7 @@ Renamed from the former "Done criteria" so the Core schema's section name appear
       (worktree creation, CEGIS rounds, final patch summary).
 
 Executor opens the draft PR when every criterion is checked.
-Verifier (Phase 7) decides undraft. Executor does NOT undraft.
+Phase 7 writes its verification evidence into the PR body. Nobody but a human undrafts.
 ```
 
 ### 12. Implementation Order
@@ -280,7 +280,7 @@ Keep steps atomic and bug-specific — add one step per `File` block when the pr
 
 Every file listed here must also appear in the Evidence Record's affected-files table — the Out of Scope rule and the verifier's diff-sanity check both key off that table.
 
-Once this table is drafted, issue the fast-lane `codebase-knowledge` read for exactly these paths, per [`self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./self-improvement-loop.md#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam). The fast lane skips `aw-planner`, so this is the only point the shared bucket is read before the fix is written; fold a matched hotspot or invariant into the plan and note it under `## Lessons applied`.
+Once this table is drafted, issue the fast-lane `codebase-knowledge` read for exactly these paths, per [`self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./self-improvement-loop.md#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam). `/fix-bug` dispatches the executor without `aw`, so this is the only point the shared bucket is read before the fix is written; fold a matched hotspot or invariant into the plan and note it under `## Lessons applied`.
 
 ### 14. Verification
 
@@ -321,7 +321,7 @@ After each implementation edit:
 - Test: `<repro path>::<test name>`
 - Pre-fix: MUST FAIL with `<exact assertion or error message>`
 - Post-fix: MUST PASS
-- Verifier (Phase 7) re-runs this in a fresh context.
+- Phase 7 re-runs this against the base and PR head SHAs.
 ```
 
 ### 17. PASS_TO_PASS contract
@@ -417,8 +417,8 @@ references.
 
    ```text
    Execute the plan at .agent/fix/<slug>/plan.md in the current worktree.
-   This plan was authored directly by /fix-bug (fast-lane); aw-planner did
-   not run. The CEGIS refinement contract in the plan is binding.
+   This plan was authored directly by /fix-bug (fast-lane). The CEGIS
+   refinement contract in the plan is binding.
    ```
 
    If the harness's Agent tool does not support the `isolation` parameter,
@@ -453,10 +453,10 @@ standard-lane** — that is the signal the bug was not actually simple.
 The diagnoser at [`/create-skill diagnose fix-bug`](../../../authoring/create-skill/SKILL.md#diagnose-workflow)
 must not propose to relax any of these without explicit user confirmation:
 
-- **Fast-lane requires confidence ≥ 92 %.** The threshold is the substitute
-  for aw-planner's `confidence(plan) ≥ 90 %` gate that fast-lane bypasses.
-  Lowering the threshold without re-introducing planner would leave only two
-  independent confidence gates instead of three.
+- **Fast-lane requires confidence ≥ 92 %.** The fast-lane plan skips the
+  six-Core brief and its sealed checks, so the stricter analysis threshold is
+  what keeps a marginal diagnosis off it. Lowering it would admit marginal
+  diagnoses to the lane with the fewest guards.
 - **Fast-lane requires a non-best-effort repro.** The repro IS the
   executor's contract; without it, there's nothing to gate CEGIS on.
 - **`/fix-bug` validates plan.md before dispatching the executor.** The
@@ -464,6 +464,6 @@ must not propose to relax any of these without explicit user confirmation:
 - **Round-3 CEGIS failure on fast-lane falls back to standard-lane.** The
   fallback is the safety net for "triage classified simple but the bug
   wasn't." See [`autonomous-handoff.md`](./autonomous-handoff.md#fast-lane-round-3-fallback).
-- **The verifier (Phase 7) is identical for both lanes.** Fresh context,
-  same four checks, only the verifier may undraft. No lane-specific
+- **Phase 7 verification is identical for both lanes.** Same four checks,
+  and `/fix-bug` never undrafts — a human does. No lane-specific
   loosening.

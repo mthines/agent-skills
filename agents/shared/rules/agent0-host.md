@@ -101,7 +101,7 @@ Keep the prompt short and pointing at files.
 Four of 34 measured runs refused a dense constraint-laden prompt as a suspected injection ([`pr-reviewer/rules/agent0-runtime.md § The dispatch prompt is short on purpose`](../../pr-reviewer/rules/agent0-runtime.md#the-dispatch-prompt-is-short-on-purpose)).
 A reply that opens with a refusal or a `BLOCKED` line is a distinct outcome, reported as such — never read as a pass.
 
-An agent with **no** definition file on this host (`aw-planner`) has no `general` substitute: the step is reported by name as `not run (<agent> not dispatchable on this host)`.
+An agent with **no** definition file on this host (`aw-executor`) has no `general` substitute: the step is reported by name as `not run (<agent> not dispatchable on this host)`.
 Never perform a custom agent's role in the dispatching context — that removes the isolation it exists for.
 
 ## No user to ask

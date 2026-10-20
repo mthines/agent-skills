@@ -56,27 +56,27 @@ companion: <name> — skipped (<reason>)
 
 ```text
 ❌ WRONG — the three reasons a line can be absent look identical in a transcript
-(no line for test-provenance-guard)
+(no line for the tdd provenance check)
 
 ✅ RIGHT
-companion: test-provenance-guard — skipped (trigger not met: no new *.test.* file)
+companion: tdd provenance — skipped (trigger not met: no new *.test.* file)
 ```
 
-**Why this is mandatory, not courtesy.** Across 39 `aw-planner` and 48
+**Why this is mandatory, not courtesy.** Across 39 planning-agent and 48
 `aw-executor` runs in the author's local transcripts (`~/.claude/projects`,
 2026-08-20 → 2026-09-25 — local sessions only, not Agent0 or cloud runs), `Skill("interview")`, `Skill("tdd")`, and
-`Skill("test-provenance-guard")` were each invoked **zero** times, and the
+the provenance guard were each invoked **zero** times, and the
 transcripts could not say why: the contract's headline read *skip silently*, so
 an uninstalled companion, an untriggered one, and one the agent never reached all
 left the same nothing behind. Reading the definitions turned up three concrete
 contributors, each now fixed or made visible:
 
-1. **`test-provenance-guard` was absent from the executor's own companion
+1. **The provenance check was absent from the executor's own companion
    table** — the table the executor reads first — and lived only ~630 lines into
    `phase-4-testing.md`. A run working from the template never met it. The row is
    now in the template.
 2. **`interview`'s question round runs through `AskUserQuestion`, which
-   `aw-planner`'s tool grant does not include.** A planner that decided the
+   a dispatched agent's tool grant does not include.** An agent that decided the
    companion could not do its job there fell back to the inline gate and said
    nothing; that decision now has to be written down as
    `skipped (tool unavailable: AskUserQuestion)` — or the line says `ran`.
@@ -93,22 +93,16 @@ line is what lets the next measurement confirm or refute them.
 
 | Skill                | Phase | Trigger condition                                                       | Args                  | Disable by                                                               |
 | -------------------- | ----- | ----------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
-| `interview`          | 0     | Full Mode default-on (adaptive — silent on a crisp request; skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `brief.md` + readiness verdict | —              | Remove invocation in [`phase-0-validation.md`](./phase-0-validation.md#step-3a-scope-alignment) |
-| `holistic-analysis`  | 1     | Task touches 5+ files, 2+ packages, OR user calls it complex/unfamiliar | —                     | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#complex-task-detection) |
-| `code-quality`       | 1     | Always (informs design — favors low-complexity structures upfront)      | `plan`                | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#design-quality)         |
-| `critical`           | 1     | Opt-in only — user passed `--critical` to the workflow. Single adversarial pre-mortem pass between `code-quality(plan)` and `confidence(plan)`; advisory, does not gate. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#adversarial-pre-mortem) |
-| `optimize-approach`  | 1     | Default-on in Full Mode (quiet early-exit; skip on `--no-optimize`). "Is this the most optimal approach?" — one pass between the pre-mortem and `confidence(plan)`; advisory, adopted proposals trigger a bounded re-plan. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#approach-optimality) |
-| `confidence`         | 1     | Full Mode (plan gate — MANDATORY there; Lite has no `plan.md` to gate, Micro skips all companions) | `plan`                | **Cannot disable** — required gate (Full Mode)                           |
+| `interview`          | 0     | Full Mode on demand — two or more `blocking` questions remain after Phase 0 (skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `brief.md` + readiness verdict | —              | Remove invocation in [`phase-0-validation.md`](./phase-0-validation.md#step-3a-scope-alignment) |
+| `critical`           | 1     | Opt-in only — user passed `--critical` to the workflow. Single adversarial pre-mortem pass before brief validation; advisory, does not gate. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#adversarial-pre-mortem) |
 | `lorekit-memory`     | 1     | Always — load accumulated workflow lessons before design (fast tier of the self-improvement loop) | `memory.list loop::aw-lessons`     | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#lessons-read) |
 | `aw-create-plan`     | 2     | Full Mode only                                                          | —                     | Switch task to Lite Mode                                                 |
 | `lorekit-memory`     | 3     | Executor entry — only when `plan.md` has no `## Lessons applied` (no-planner paths: Lite Mode, `fix-bug` fast-lane, direct dispatch) | `memory.list loop::aw-lessons` | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#lessons-read) |
 | `tdd`                | 3     | Pure logic / business rules / "test-driven" requested                   | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#tdd-trigger) |
 | `ux`                 | 3     | Files touched include `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#ux-trigger)  |
 | `measurable` | 3 | Matches a `web`/`mobile`/`api`/`worker` pattern in the skill's own `rules/scope-detection.md` (single source of truth for the pattern list — not restated here) | `implement`           | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#observability-trigger) |
-| `code-quality`       | 3     | Once at end of Phase 3 (not per-file — TDD owns inner loop)             | `code`                | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#code-quality-trigger) |
 | `confidence`         | 4     | At iteration cap on same failing area (3 in Lite Mode, 5 in Full Mode) — automatic | `analysis`        | Adjust cap or threshold in [`phase-4-testing.md`](./phase-4-testing.md#stuck-loop-detection) |
-| `holistic-analysis`  | 4     | Auto: when `confidence(analysis) < 90%` (one-shot per area). User-driven: when user picks `try different approach` after escalation | — | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#stuck-recovery)            |
-| `test-provenance-guard` | 4  | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written or extended | `--diff --base $(git merge-base HEAD main) --fix` — autofix is **gated by `confidence(code) ≥ 90 %`** before any file is mutated, plus the three post-heal mechanical gates afterwards. Either failure ⇒ no refactor; stuck-loop protocol takes over | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#test-provenance-trigger) |
+| `tdd` (provenance) | 4  | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written or extended | `provenance --base $(git merge-base HEAD main)` — the fix is **gated by `confidence(code) ≥ 90 %`**; below it, the finding is reported and the stuck-loop protocol takes over | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#test-provenance-trigger) |
 | `measurable` | 4 | Before Step 6 Final Validation — read-only audit of Phase 3's telemetry. **Advisory by default** (findings reported, never block); pass `--strict` (opt-in, e.g. `aw --observability-strict`) to make `missing` findings on `web`/`mobile`/`api`/`worker` paths block like a failing test. `unlinked` findings never block, `--strict` or not | `audit --diff --base $(git merge-base HEAD main) [--strict]` | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#observability-gate) |
 | `lorekit-memory`     | 4     | At stuck-loop escalation (cap hit / user escalation) — record the failing area and resolution | `memory.write loop::aw-lessons` | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#lessons-write) |
 | `docs`               | 5     | Always (self-improving doc loop — keeps `CLAUDE.md`, `README.md`, `docs/` aligned) | `update --auto`      | Remove invocation in [`phase-5-documentation.md`](./phase-5-documentation.md#documentation-trigger). Skip per-task by user override or skip-condition match (see [`phase-5-documentation.md#when-to-skip`](./phase-5-documentation.md#when-to-skip)). |
@@ -134,7 +128,7 @@ Phase 6 invokes `review-loop` (or `pr-reviewer` directly via `create-pr` Step 6.
 Phase 7 invokes `review-loop` against the PR after CI green (self-review relation; `pr-reviewer` detects authorship automatically via `REVIEW_RELATION`).
 Both passes keep the graceful-skip contract — log one line and continue if `review-loop` or `pr-reviewer` is absent.
 
-The `feature-pr-verifier` agent runs in fresh context with no access to the planner's or executor's reasoning — only `plan.md`, `walkthrough.md`, the PR diff, and the project test command. It returns a green / red verdict against the four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity). The verdict is advisory: only the user undrafts the PR. This is the feature-PR counterpart to `bug-fix-verifier` (which is owned by `/fix-bug`), and serves the same purpose — closing the self-grading loophole Anthropic's harness research warns about.
+The `feature-pr-verifier` agent runs in fresh context with no access to the planner's or executor's reasoning — only `plan.md`, `walkthrough.md`, the PR diff, and the project test command. It returns a green / red verdict against the four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity). The verdict is advisory: only the user undrafts the PR. It closes the self-grading loophole Anthropic's harness research warns about.
 
 ---
 
@@ -168,7 +162,7 @@ burning tokens on hallucinated fixes when root-cause analysis is wrong.
 
 The cap is **mode-aware**: 3 iterations for Lite Mode, 5 for Full Mode. When the
 cap is hit, an **auto-replan protocol** fires — confidence gate first, then
-conditional holistic-analysis + plan.md regeneration, with a one-shot guard
+a conditional execution-path re-trace + plan.md regeneration, with a one-shot guard
 that prevents infinite recovery loops. User escalation is the final, mandatory
 step if recovery fails.
 
@@ -191,7 +185,7 @@ while not all_tests_pass:
         score = Skill("confidence", "analysis")
 
         if score < 90% and not auto_replan_used:
-            Skill("holistic-analysis")
+            re_trace()   # entry → exit; re-state the root cause (phase-4-testing.md)
             Update affected sections of plan.md.
             iterations_on_same_area = 0
             auto_replan_used = True
@@ -205,11 +199,11 @@ while not all_tests_pass:
     fix → run tests → if pass: break
 ```
 
-`holistic-analysis` runs **automatically** when confidence is below 90% at the
+The re-trace runs **automatically** when confidence is below 90% at the
 cap. It also runs again **on user request** if the user picks
 `try different approach` from the mandatory escalation menu. The
 `auto_replan_used` flag is the one-shot guard — without it, repeated
-`analysis → holistic → replan → fail` cycles could loop indefinitely.
+`analysis → re-trace → replan → fail` cycles could loop indefinitely.
 
 **Why mode-aware caps (3 vs 5)?** Lite Mode tasks are simpler and should
 converge fast — a tight cap is correct. Full Mode tasks are more complex and
@@ -254,11 +248,8 @@ See [`rules/parallel-coordination.md#sub-agent-resource-discipline`](./parallel-
 
 ## Why some skills can't be disabled
 
-`confidence` at Phase 1 is the only non-removable companion. Without it, the
-plan gate is gone and the workflow loses its primary safety mechanism. If you
-want to remove the gate entirely, fork the skill and adjust
-`phase-1-planning.md` directly — but understand the autonomous safety guarantee
-changes meaningfully.
+Every companion can be disabled.
+The Full tier's gates are not companions: the deterministic [brief validation](./phase-1-planning.md#brief-validation) and the sealed `run-checks.mjs` gate ([`phase-4-testing.md`](./phase-4-testing.md#executable-checks-loop)) always run.
 
 ---
 
@@ -268,8 +259,8 @@ When a companion is invoked, append a one-liner to the `plan.md` Progress Log
 (Full Mode only):
 
 ```markdown
-- [2026-04-29T15:30:00Z] Phase 1: code-quality(plan) — applied (3 design suggestions integrated)
-- [2026-04-29T15:32:00Z] Phase 1: confidence(plan) — 92% (passed gate)
+- [2026-04-29T15:30:00Z] Phase 1: critical(plan) — applied (2 must-fixes addressed, steelman recorded)
+- [2026-04-29T15:32:00Z] Phase 1: brief validation — passed (6 Core headings, 7 ACs = 7 checks, sealed)
 ```
 
 This makes the companion footprint visible across phases and helps tune which

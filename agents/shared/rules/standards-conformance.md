@@ -9,8 +9,8 @@ tags:
 
 # Standards conformance
 
-The line-level rubrics (`code-quality`, `ux`, `critical`, lenses), the holistic pass, and the
-optimality lens all assume the change's code-level quality and approach are the concern.
+The line-level rubrics (`quality`, `ux`, `critical`, lenses) and the holistic pass all assume
+the change's code-level quality and approach are the concern.
 None of them asks the governance question: **does the diff violate a normative rule the repo
 has already written down?**
 
@@ -159,7 +159,7 @@ done
 
 ### Step 2.4d — Standards-conformance lens
 
-Runs **after Step 2.4c** (optimality review) and **before Step 2.5** (dedupe), so
+Runs **after Step 2.4b** (targeted holistic escalation) and **before Step 2.5** (dedupe), so
 standards findings participate in dedupe and can collide-and-win against a line-level finding on
 the same `(file, line)`.
 

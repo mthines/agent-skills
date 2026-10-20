@@ -1,0 +1,10 @@
+{
+  "name": "parcel-checkout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "lint": "for f in src/*.mjs test/*.mjs; do node --check \"$f\" || exit 1; done"
+  }
+}

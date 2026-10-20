@@ -59,7 +59,7 @@ const CORE_RULES = [
   "shared/rules/finding-verifier.md",
   "pr-reviewer/rules/report-rendering.md",
   // Not one of the six the skill names, but load-bearing on THIS host specifically:
-  // it is the rule that stops all six composed lenses from silently degrading.
+  // it is the rule that stops every composed lens from silently degrading.
   // Deferring it would mean the one host that needs it reads it last.
   "shared/rules/lens-invocation.md",
   // Not a phase rule either: it carries the step markers the run chains in front of the commands it
@@ -160,12 +160,12 @@ optional — each one is a measured failure of a real run, not a precaution.
    A rule NOT in the index is deferred — read it from \`$AGENT_SUPPORT/<path>\` at
    the step that needs it, with the host's native file reader.
 
-2. **Never resolve one of the six composed lenses through the host's skill tool.**
-   \`severity\`, \`optimize-approach\`, \`measurable\`, \`confidence\`,
-   \`holistic-analysis\` and \`verify-behavior\` resolve by **file presence** at
+2. **Never resolve one of the three composed lenses through the host's skill tool.**
+   \`measurable\`, \`confidence\` and \`verify-behavior\` resolve by
+   **file presence** at
    \`$PR_REVIEWER_ROOT/skills/<name>/SKILL.md\` — read that file and follow it
    in-context. This host's skill tool accepts only a fixed enum of its own
-   built-ins: five of the six error, and \`measurable\` silently name-collides with
+   built-ins: two of the three error, and \`measurable\` silently name-collides with
    an unrelated built-in and returns the wrong recipe with no error at all. Full
    rule: the \`lens-invocation.md\` section below.
 

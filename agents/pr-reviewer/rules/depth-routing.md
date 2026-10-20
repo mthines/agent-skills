@@ -117,7 +117,7 @@ neither `D4` nor `D5`, and its *absence* is `D6` firing on its own.
 
 | Tier | Chosen when | Runs |
 | --- | --- | --- |
-| **deep** | **ANY** of `D1`–`D13` above | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available; optimality lens (report-only) |
+| **deep** | **ANY** of `D1`–`D13` above | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available |
 | **standard** | `DELTA_RISKY_SHAPES` non-empty · `blast_radius.band == low` · any `semver_delta` **with ≥ 1 usage site** · an `overlaps[].kind == same-symbol` · `11 ≤ DELTA_LINES ≤ 100` | correctness + quality on the delta **with enclosing-function context**; consumer-impact over changed exports in the delta; dependency finder over this push's deltas; intent over the PR; standards on delta files; verifier Tier 1–2 |
 | **quick** | otherwise (the `quick` override above reaches here directly) | correctness on delta hunks with enclosing-function context; thread reconciliation; gates; nothing else |
 
@@ -204,7 +204,7 @@ This is the explicit-cost lever: more findings per run at the same precision, pa
 
 `routeDepth()` above still decides `DEPTH_TIER` — nothing on this page changes that. What used to be
 hard-coded *per tier* (which finders run as sub-agents, how many `correctness` votes, how deep the
-verifier's evidence ladder goes, whether the optimality/measurability lenses fire) is now a single
+verifier's evidence ladder goes, whether the measurability lens fires) is now a single
 continuous value, **thoroughness**, `t ∈ [0, 1]`, resolved by
 [`route-depth.mjs`](../scripts/route-depth.mjs)'s `resolveBudget({ thoroughness, routedTier, shape,
 dispatchAvailable })` — a second pure function, the same routing-vs-execution split as `routeDepth`
@@ -230,7 +230,7 @@ Config keys come from the PR's base commit, already resolved in `context.reviewC
    | Tier | Default `t` | What the default turns on, over the band below it |
    | --- | --- | --- |
    | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode); holistic escalation cap 2 → 4; `hybrid` topology lever — a defaulted quick run still dispatches nothing, because `prepare-review.mjs` gives a quick routing the `incremental-quick` mode (unless `--full`/`--isolated` forces `full`) and [`dispatch-topology.md`](./dispatch-topology.md#the-two-topologies)'s small-incremental row keeps that mode `in-context` |
-   | `standard` | 0.7 | optimality lens lever — the lens itself runs on `full`-mode runs only, because [`pr-reviewer.md` § 2.4c](../../pr-reviewer.md) skips it on incremental re-reviews; holistic escalation cap 5 → 7 |
+   | `standard` | 0.7 | holistic escalation cap 5 → 7 |
    | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2; holistic escalation cap 8 → 10 |
 
    **Why:** a review's silence is read as coverage, so the default spends one band more than the minimum for its tier.
@@ -253,7 +253,6 @@ otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.
 | Topology | in-context | **hybrid**: one context, plus the intent finder as its own sub-agent | *(same)* | *(same)* | *(same)* | *(same)* |
 | `correctness` votes | 1 | *(same)* | *(same)* | *(same)* | *(same — votes retired)* | *(same — votes retired)* |
 | Max verifier evidence tier | 1 | *(same)* | **2** | *(same)* | *(same)* | **3** |
-| Optimality lens | off | *(same)* | *(same)* | **on** | *(same)* | *(same)* |
 | Measurability lens | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
 | Holistic broad pass (Step 2.4) | off | **on** | *(same)* | *(same)* | *(same)* | *(same)* |
 | Holistic escalation cap | `round(10t)` | *(same formula, every column)* | | | | |

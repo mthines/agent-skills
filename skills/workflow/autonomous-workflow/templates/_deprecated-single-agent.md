@@ -1,23 +1,22 @@
 <!--
 DEPRECATED — kept for backward compatibility only.
 
-The autonomous-workflow now installs two agents (`aw-planner` +
-`aw-executor`) under the `aw-` namespace, connected by `plan.md`. This
+The autonomous-workflow now runs Full tasks as a brief written by the `aw`
+skill plus one `aw-executor` agent, connected by `plan.md`. This
 single-agent template is no longer linked by `install.sh`.
 
 Existing installs that point at this file still work, but new installs
-should use `aw-planner.agent.md` + `aw-executor.agent.md`.
+should use the `aw` skill + `aw-executor.agent.md`.
 
 See:
 - `../rules/planner-executor-handoff.md` — handoff contract
-- `./aw-planner.agent.md`
 - `./aw-executor.agent.md`
 -->
 
 ---
 name: autonomous-workflow
 description: >
-  DEPRECATED single-agent template. Use the planner + executor split instead.
+  DEPRECATED single-agent template. Use the `aw` skill + `aw-executor` instead.
   Kept only so existing installs that still reference this file keep working.
 tools: Read, Write, Edit, Bash, Glob, Grep, Skill
 model: sonnet
@@ -26,8 +25,7 @@ model: sonnet
 # Autonomous Workflow Agent (deprecated single-agent template)
 
 This template is preserved for users with existing installs that still link
-to it. New installs use the planner + executor split — see
-[`aw-planner.agent.md`](./aw-planner.agent.md) and
+to it. New installs use the `aw` skill's brief +
 [`aw-executor.agent.md`](./aw-executor.agent.md), with the contract
 described in
 [`../rules/planner-executor-handoff.md`](../rules/planner-executor-handoff.md).

@@ -84,16 +84,14 @@ hosts and silently halve every usage roll-up.
 
 | Bucket | Host | Read → Write | Scope default | Notes |
 | --- | --- | --- | --- | --- |
-| `aw-lessons` | `aw` (dispatcher, shared by `aw-planner` / `aw-executor`) | dispatcher start → on friction | `global` \| `repo::` | Universal loop hoisted to the dispatcher; promotes to `diagnose`. |
+| `aw-lessons` | `aw` (dispatcher, shared with `aw-executor`) | dispatcher start → on friction | `global` \| `repo::` | Universal loop hoisted to the dispatcher; promotes to `diagnose`. |
 | `aw-tester-lessons` | `aw-tester` | spec run start → on spec-verify friction | `global` \| `repo::` | UI-verification lessons. Also read by `ui-verify` at author time (cross-bucket read). |
 | `ui-verify-lessons` | `ui-verify` | `author` (read) → `run` on spec-navigation friction (write) | `global` \| `repo::` | Spec-quality / navigation lessons for PR-preview verification. The author also reads `aw-tester-lessons`; the runner writes navigation friction here, locator friction goes to `aw-tester-lessons`. |
 | `fix-bug-lessons` | `fix-bug` | Phase 0.5 → Phase 5·7·8 | `global` \| `repo::` | Diagnostic-phase lessons; inherits `aw-lessons` via `aw-executor`. |
 | `reviewer-lessons` | `reviewer` (agent: `pr-reviewer`) | Step 0.7 / Step 1.0 → post-merge promotion only | `global` \| `repo::` | Distilled from the `review-outcomes` bus at promotion time. `pr-reviewer` NEVER writes in-run — writes come from `outcome-learning.md` after the PR closes. |
 | `implement-suggestion-lessons` | `implement-suggestion` | Phase 3 → Phase 7 + `--watch` | `global` \| `repo::` | Classification, gate calibration, lane selection. |
 | `ci-auto-fix-lessons` | `ci-auto-fix` | Phase 3 → Phase 8·9 | **`repo::`** | More conservative: `seen_count ≥ 5` promotion; regression lessons `volatile`, 30d. |
-| `e2e-pr-stabilizer-lessons` | `e2e-pr-stabilizer` | Phase 4 → Phase 7 | `global` (race-shapes) \| `repo::` (locators) | Writes gated on telemetry ratification. |
 | `ideate-lessons` | `ideate` | Phase 0 → Phase 7 | `global` \| `repo::` | Mechanics only — divergence runs lessons-blind. |
-| `optimize-approach-lessons` | `optimize-approach` | O0 → O5 | `global` \| `repo::` | Optimal/suboptimal bar + apply-safety calibration. |
 
 ### Bus (`loop::review-outcomes`, key `review-outcomes::<fingerprint-slug>`)
 
@@ -217,7 +215,7 @@ The bucket names are a **cross-tool contract**, not internal identifiers:
 
 - The `loop::<host>-lessons` tag convention is defined by the external `lorekit-setup` and `lorekit-memory` skills — renaming forks from it.
 - `reviewer-comment-relevance` is written verbatim by `scripts/record-comment-relevance.mjs`, by the caller template in `plugins/pr-relevance-memory/`, and by the committed `reviewer-comment-relevance.yml` GitHub Action those two are built around. A rename would have to land in the shipped script, the template, and the workflow together.
-- The L1 eval enumerates the lessons bucket names: Check E (`scripts/eval/l1.mjs`) asserts that no `memory/<bucket>/` directory is committed here, one assertion per bucket, so a rename must be mirrored into that array. Note what it does **not** do — it keys on the bucket *name*, never on the `loop::…` tag, so no check would catch a tag rename that left the names alone. Nothing in the evals pins the tag strings.
+- Nothing in the evals pins the bucket names or the `loop::…` tag strings, so no check catches a rename; grep the repo for the old name before you land one.
 - LoreKit keys memories by `scope` + `key`; a rename orphans every memory already written under the old name — it does not migrate them.
 
 The clarity fix is the first-class `kind` + `host` **property** (lorekit #372) plus **this document** as the enum — not a tag rename.

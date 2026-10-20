@@ -73,10 +73,12 @@ const REQUIRED_SCALARS = [
   "GATE_SELFREVIEW_STATUS", "GATE_SELFREVIEW_DETAILS",
   "GATE_CODEREVIEW_STATUS", "GATE_CODEREVIEW_DETAILS",
   "MEMORIES_SUMMARY", "QUALITY", "INTEGRATIONS",
-  "OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG", "SKIPPED_FILES",
+  "STANDARDS_LOG", "MEASURABILITY_LOG", "SKIPPED_FILES",
 ];
+// OPTIMALITY_LOG is legacy: the optimality lens was removed, so it is optional and rendered only
+// when a caller still supplies it.
 const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE", "RUN_ANOMALY",
-  "FIX_ALL_URL"];
+  "FIX_ALL_URL", "OPTIMALITY_LOG"];
 
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
@@ -781,6 +783,7 @@ function main() {
 
   // ── the log slots reviewer-report-ingest.md parses for run-state ───────────────────────────
   for (const k of ["OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG"]) {
+    if (k === "OPTIMALITY_LOG" && (data[k] === undefined || data[k] === null)) continue;
     const s = String(data[k]);
     if (!/^(ran|skipped)\b/.test(s)) {
       fail(`${k} must begin with "ran" or "skipped (reason)" so its run-state parses — got`
@@ -1359,6 +1362,7 @@ function main() {
   const lens = {};
   const footnotes = {};
   for (const l of QUIET_LENSES) {
+    if (l.key === "OPTIMALITY_LOG" && (data[l.key] === undefined || data[l.key] === null)) continue;
     const s = String(data[l.key]).trim();
     lens[l.key] = l.quiet(s) ? "" : `${l.label} — ${s}`;
     if (l.quiet(s)) footnotes[l.key] = l.footnote(s);

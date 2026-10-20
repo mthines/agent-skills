@@ -8,6 +8,7 @@
  */
 
 import { CLAIM_PREFIXES as SPINE_CLAIM_PREFIXES } from "../comment-spine.mjs";
+import { realpathSync } from "node:fs";
 
 /** @type {Record<string, { thresholds: Record<string, number>, perFileCap: number }>} */
 export const PROFILES = {
@@ -183,7 +184,7 @@ async function selfTest() {
 }
 
 import { pathToFileURL } from "node:url";
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain && process.argv.includes("--self-test")) {
   selfTest();
 }

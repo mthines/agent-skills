@@ -13,6 +13,8 @@
 //
 // The division of labour with each renderer: this file owns what the two surfaces AGREE on, each
 // renderer owns its own layout. A constant used by one surface only does not belong here.
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 /** Severity tiers, worst first. Order is load-bearing: `worstTier` and the tally both rely on it. */
 export const TIERS = ["critical", "high", "medium", "low"];
@@ -552,7 +554,7 @@ export function shapeCapsBlock() {
 //
 // `--shape-caps` prints `shapeCapsBlock()` and exits 0 — no file argument, since it reads nothing
 // but this module's own constants.
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const argv = process.argv.slice(2);
   if (argv.includes("--shape-caps")) {
     process.stdout.write(`${shapeCapsBlock()}\n`);

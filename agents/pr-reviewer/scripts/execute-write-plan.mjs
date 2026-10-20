@@ -25,7 +25,7 @@
  * independently, exactly as in prose — one failing does not block the rest.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { run as defaultRun, scratchRoot } from "./prepare-review.mjs";
@@ -321,7 +321,7 @@ export async function executeWritePlan(writePlan, opts = {}) {
       // `gh api -f`/`--raw-field` always serialize their value as a JSON STRING — there is no
       // flag that sends one as a JSON array or object, so `-f comments=<json>` 422s with
       // `For 'properties/comments', "[...]" is not an array` (5 independent reviewer-lessons
-      // converged on this fix; L1 G36a locks it). Write the whole payload to a scratch file and
+      // converged on this fix). Write the whole payload to a scratch file and
       // POST it with `--input`, which
       // sends the file verbatim as the request body and keeps `comments` a real array.
       const reviewPayloadPath = join(scratchRoot(), `review-payload-${Date.now()}.json`);
@@ -584,7 +584,7 @@ async function selfTest() {
 
   // review.create posts via --input (a real JSON array on disk), never `-f comments=<json>` —
   // `gh api -f`/`--raw-field` always serialize as a JSON STRING, which 422s the reviews endpoint
-  // (the bug this case guards against; L1 G36a locks it statically too).
+  // (the bug this case guards against).
   {
     const { spy, calls } = mkSpy();
     const writePlan = {
@@ -731,7 +731,7 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   main();
 }

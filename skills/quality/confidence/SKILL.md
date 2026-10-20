@@ -1,15 +1,10 @@
 ---
 name: confidence
 description: >
-  Rates confidence that the current work fully solves the stated requirement.
-  Supports plan validation, code review, and analysis (root-cause, refactor,
-  diagnose) modes. Plan mode combines LLM judgment with deterministic rule
-  checks (multi-signal gate); a failed rule caps the gate at 89% regardless
-  of LLM score. Use before committing to autonomous execution, after
-  implementation, or during investigation. Triggers on "confidence check",
-  "validate plan", "rate confidence", "quality gate", "/confidence".
+  Rates confidence that work fully solves the stated requirement, in plan, code (default), or analysis mode; plan mode adds deterministic rule checks, and a failed rule caps the gate at 89% regardless of LLM score.
+  Use before autonomous execution, after implementation, or during investigation; triggers on "confidence check", "validate plan", "rate confidence", "quality gate", "/confidence".
 disable-model-invocation: false
-argument-hint: '[plan|code|analysis]'
+argument-hint: '[plan|code|analysis] [fix]'
 license: MIT
 metadata:
   author: mthines
@@ -29,111 +24,73 @@ metadata:
 # Confidence Assessment
 
 Rate your confidence that the current work fully solves the stated requirement.
+Plan mode is gated on two signals — LLM dimensional scoring and deterministic rule checks; rationale: [`references/multi-signal-rationale.md`](./references/multi-signal-rationale.md).
 
-> **Multi-signal evaluation.** A single LLM-confidence number is unreliable as
-> a stand-alone gate (token probability ≠ correctness). This skill combines
-> the LLM's dimensional scoring with **deterministic rule checks** the agent
-> must run alongside. The final score is gated on BOTH passing.
-
-## Contents
-
-- [Mode Detection](#mode-detection)
-- [Assessment Dimensions](#assessment-dimensions)
-  - [For `plan` mode](#for-plan-mode) — multi-signal: LLM scoring + rule checks (89% cap on failure)
-  - [For `code` mode](#for-code-mode)
-  - [For `analysis` mode](#for-analysis-mode)
-- [Output Format](#output-format)
-- [Score Thresholds](#score-thresholds)
-- [Iteration Protocol (plan mode)](#iteration-protocol-plan-mode)
-- [Auto-Fix (Fix Mode Only)](#auto-fix-fix-mode-only)
-
----
+**Contents:** [Mode Detection](#mode-detection) · [Assessment Dimensions](#assessment-dimensions) · [Output Format](#output-format) · [Score Thresholds](#score-thresholds) · [Iteration Protocol](#iteration-protocol-plan-mode)
 
 ## Mode Detection
 
 Check the arguments: `$ARGUMENTS`
 
-| Argument         | Default | Validates                                                          | When to use                                                                  |
-| ---------------- | ------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `plan`           |         | Implementation plan completeness                                   | After Phase 1 planning, before autonomous execution                          |
-| `code`           | **yes** | Code implementation correctness                                    | After writing code, before PR                                                |
-| `analysis`       |         | Analysis accuracy (root cause, refactor rationale, or skill gap)   | During investigation, before proposing a fix, refactor, or skill-source diff |
-| `bug-analysis`   |         | **Deprecated alias for `analysis`** — behaves identically          | Backwards-compatible; emit a one-line deprecation note in the report header  |
+| Argument | Default | Validates | When to use |
+| --- | --- | --- | --- |
+| `plan` | | Implementation plan completeness | After Phase 1 planning, before autonomous execution |
+| `code` | **yes** | Code implementation correctness | After writing code, before PR |
+| `analysis` | | Analysis accuracy (root cause, refactor rationale, or skill gap) | During investigation, before proposing a fix, refactor, or skill-source diff |
+| `bug-analysis` | | **Deprecated alias for `analysis`** — behaves identically | Backwards-compatible; emit a one-line deprecation note in the report header |
 
 If no argument is provided, default to `code`.
 
-**Alias handling.** `bug-analysis` is accepted as a deprecated alias and resolves to `analysis` with identical dimensions, weights, thresholds, and Fix Mode behaviour. When invoked with the alias, prepend a single line to the report header: `> Note: \`bug-analysis\` is a deprecated alias for \`analysis\`. Update the caller when convenient.` The alias keeps in-flight workflows and existing transcripts working through the transition; remove it after callers have migrated.
+**Alias handling.** `bug-analysis` resolves to `analysis` with identical dimensions, weights, thresholds, and Fix Mode behaviour. When invoked with the alias, prepend a single line to the report header: `> Note: \`bug-analysis\` is a deprecated alias for \`analysis\`. Update the caller when convenient.`
 
-If arguments contain **"fix"** (e.g., `code fix`, `plan fix`, `analysis fix`), run in **Fix Mode** — after the review, automatically apply fixes for any concerns found.
-
----
+If arguments contain **"fix"** (e.g., `code fix`, `plan fix`, `analysis fix`), run in **Fix Mode**: after the review, apply fixes for every concern found — read [`rules/fix-mode.md`](./rules/fix-mode.md) when in Fix Mode.
 
 ## Assessment Dimensions
 
 ### For `plan` mode
 
-**Plan mode is multi-signal: LLM dimensional scoring + deterministic rule checks.** Both must pass for the gate to clear.
+Both signals must pass for the gate to clear.
 
-#### Step 1 — LLM dimensional scoring
+**Step 1 — LLM dimensional scoring**
 
-| Dimension        | Weight | What to evaluate                                                                                                 |
-| ---------------- | ------ | ---------------------------------------------------------------------------------------------------------------- |
-| **Completeness** | 40%    | Are ALL Phase 0 requirements captured? Are the Core sections populated (and the Extended sections present where the task needs them)? Could a new session execute from this plan alone? Do NOT penalize an Extended section that is legitimately omitted because its `Include when` trigger does not apply (e.g. no Existing Code Survey on a modification-only plan). DO score down an Existing Code Survey whose "Searched for" column is vague ("looked around") or whose `BUILD NEW` verdicts show no searches — rule #10 checks presence, this dimension checks search quality. |
-| **Feasibility**  | 30%    | Is the technical approach sound? Are patterns consistent with the codebase? Are risks identified where applicable?                |
-| **No ambiguity** | 30%    | Are implementation steps specific enough to execute without interpretation? Are edge cases addressed where applicable?            |
+| Dimension | Weight | What to evaluate |
+| --- | --- | --- |
+| **Completeness** | 40% | Are ALL Phase 0 requirements captured? Are the Core sections populated (and the Extended sections present where the task needs them)? Could a new session execute from this plan alone? Do not penalize an Extended section legitimately omitted because its `Include when` trigger does not apply (e.g. no Existing Code Survey on a modification-only plan). Score down an Existing Code Survey whose "Searched for" column is vague ("looked around") or whose `BUILD NEW` verdicts show no searches — rule #10 checks presence, this dimension checks search quality. |
+| **Feasibility** | 30% | Is the technical approach sound? Are patterns consistent with the codebase? Are risks identified where applicable? |
+| **No ambiguity** | 30% | Are implementation steps specific enough to execute without interpretation? Are edge cases addressed where applicable? |
 
-#### Step 2 — Deterministic rule checks (run via Bash)
+**Step 2 — Deterministic rule checks (run via Bash).**
+Run all 11 rules in [`rules/plan-rule-checks.md`](./rules/plan-rule-checks.md) — read it in every plan-mode run.
+A single failed rule caps the gate at **89% regardless of LLM score**; surface the failed rule and either fix the plan or escalate to the user.
 
-Every check below MUST pass for plan mode. A single failed rule caps the gate at **89% regardless of LLM score** — the agent must surface the failed rule and either fix the plan or escalate to the user. Rules #10 and #11 are **conditionally applicable** (their trigger condition is part of the rule); when the condition does not hold they pass vacuously with a logged note — they never silently skip.
-
-| # | Rule check                                                | Verification                                                                                       |
-| - | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| 1 | `plan.md` exists at the expected path                     | `test -f .agent/$(git branch --show-current)/plan.md`                                              |
-| 2 | All Core sections present                                 | `grep -E '^## (TL;DR\|Requirements\|Decisions\|Acceptance Criteria\|Implementation Order\|File Changes\|Verification\|Progress Log)' plan.md \| wc -l` ≥ 8 — these are the always-on Core tier. Extended sections (Background, Technical Approach, Patterns, Edge Cases, API, Tests, Dependencies, Risks) are include-when-needed and are NOT counted here. |
-| 3 | Acceptance Criteria section is non-empty                  | `awk '/^## Acceptance Criteria/{f=1;next} /^###? /{f=0} f' plan.md \| grep -c '^- \|^[0-9]'` ≥ 1                       |
-| 4 | Every file in `## File Changes` resolves OR is `create`   | For each modify/delete row, `git ls-files <path>` returns the path. Create rows skip this check.   |
-| 5 | Every requirement is tagged `[user-stated]` or `[inferred]`| `awk '/^## Requirements/{f=1;next} /^###? /{f=0} !f{next} /^[-0-9]/{n++} /\[user-stated\]/{t++} /\[inferred\]/{t++} END{exit n!=t}' plan.md` exits 0 — the tag count must equal the requirement count (the range stops at `### Out of Scope`, so excluded items are not counted). Single awk command with no shell pipes, so the table row executes verbatim. |
-| 6 | Every decision row has a Rationale column populated       | `awk -F'[\|]' '/^## Decisions/{f=1;next} /^###? /{f=0} !f{next} !/^[\|]/{next} {r++} r<3{next} NF<5{bad=1} $4 ~ /^[ \t]*$/{bad=1} END{exit bad}' plan.md` exits 0 — no missing or empty cells in the Rationale (third) column of the Decisions table. The field separator and row match use the bracket class `[\|]`, so the command needs no shell pipes and executes verbatim. |
-| 7 | All timestamps are ISO 8601 with time component           | `awk '/^## Progress Log/{f=1;next} /^###? /{f=0} !f{next} /^- /{n++} /^- \[20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z\]/{t++} END{exit n!=t}' plan.md` exits 0 — every Progress Log entry starts with a `[YYYY-MM-DDTHH:MM:SSZ]` timestamp. Single awk command with no shell pipes, so the table row executes verbatim. |
-| 8 | Verification commands are non-template                    | "After editing" and "Before PR" lines do not contain `{` or `}` placeholder braces                 |
-| 9 | Every `[user-stated]` requirement is covered by an Acceptance Criterion | `awk '/^## Requirements/ {rs=1; as=0; next} /^## Acceptance Criteria/ {as=1; rs=0; next} /^###? / {rs=0; as=0} rs && /^[-0-9]/ {n++; if (index($0,"[user-stated]")) us[n]=1} as {s=$0; while (match(s, /covers:[^)]*/)) {seg=substr(s,RSTART,RLENGTH); s=substr(s,RSTART+RLENGTH); while (match(seg,/R[0-9]+/)) {cov[substr(seg,RSTART+1,RLENGTH-1)]=1; seg=substr(seg,RSTART+RLENGTH)}}} END {for (i in us) if (!(i in cov)) exit 1; exit 0}' plan.md` exits 0 — requirements are numbered by list position (first item = R1; Out of Scope items excluded by the `###` reset); every position tagged `[user-stated]` must appear in a `(covers: R…)` annotation in the Acceptance Criteria. This is the requirement→criterion traceability gate: a plan cannot silently drop a user-stated requirement. Single awk command with no shell pipes, so the table row executes verbatim. |
-| 10 | Every planned `create` has an Existing Code Survey verdict | `awk -F'[\|]' '/^## File Changes/ {fc=1; es=0; next} /^## Existing Code Survey/ {es=1; fc=0; next} /^###? / {fc=0; es=0} fc && /^[\|]/ && $2 ~ /create/ {creates++} es && /^[\|]/ {if (index($0,"EXTEND") + index($0,"WRAP") + index($0,"BUILD NEW") > 0) rows++} END {if (creates == 0) exit 0; exit (rows < 1)}' plan.md` exits 0 — when the File Changes table has ≥ 1 `create` row, the `## Existing Code Survey` section must exist with ≥ 1 verdict row (`EXTEND` / `WRAP` / `BUILD NEW`). Modification-only plans pass vacuously (the section is legitimately omitted). This is the anti-reinvention gate: no new unit without a recorded reuse search. The field separator uses the bracket class `[\|]` and the verdict match uses pipe-free `index()` sums, so the command needs no shell pipes and executes verbatim. |
-| 11 | `checks.yaml` exists and its IDs are in sync with the plan | Applies only when the Acceptance Criteria carry `AC-{n}` IDs (un-IDed plans — e.g. `/fix-bug` fast-lane — skip with a logged note). Verify: `test -f .agent/$(git branch --show-current)/checks.yaml`, then for each `AC-{n}` in the plan's Acceptance Criteria section, `grep -c "^- id: AC-{n}$" checks.yaml` returns ≥ 1, and every `id:` in checks.yaml resolves to an AC in the plan. Any orphan in either direction fails. |
-
-Run each check, list pass/fail in the output table. **A failing rule is a blocker the gate must surface even if the LLM dimensional score is high.**
-
-#### Step 3 — Combined gate
+**Step 3 — Combined gate**
 
 ```
 overall_score = min(weighted_LLM_score, max_allowed_by_rule_checks)
 where max_allowed_by_rule_checks = 100% if all rules pass, else 89%
 ```
 
-The intent: a plan that scores 95% on LLM judgment but fails rule check #4 (references a file path that doesn't exist) is capped at 89% — and the gate fails. This catches the failure mode where the model is confident but the plan is grounded in hallucinated paths.
-
 ### For `code` mode
 
-| Dimension          | Weight | What to evaluate                                              |
-| ------------------ | ------ | ------------------------------------------------------------- |
-| **Correctness**    | 40%    | Does the logic actually address the problem as described?     |
-| **Completeness**   | 30%    | Are all cases, edge cases, and requirements covered?          |
-| **No regressions** | 30%    | Could this break existing behavior or introduce side effects? |
+| Dimension | Weight | What to evaluate |
+| --- | --- | --- |
+| **Correctness** | 40% | Does the logic actually address the problem as described? |
+| **Completeness** | 30% | Are all cases, edge cases, and requirements covered? |
+| **No regressions** | 30% | Could this break existing behavior or introduce side effects? |
 
 ### For `analysis` mode
 
-Use this mode whenever the artifact being graded is **an analysis** — a root-cause write-up, a refactor rationale, a `/create-skill diagnose` proposal, a holistic re-analysis after a stuck loop, or any other reasoning artifact that precedes a proposed change.
+Use when the graded artifact is an analysis — a root-cause write-up, a refactor rationale, a `/create-skill diagnose` proposal, a holistic re-analysis after a stuck loop, or any reasoning artifact that precedes a proposed change.
 
-| Dimension                | Weight | What to evaluate                                                                                                            |
-| ------------------------ | ------ | --------------------------------------------------------------------------------------------------------------------------- |
-| **Evidence strength**    | 40%    | Is the analysis backed by concrete evidence (logs, traces, code paths, file:line references, reproduced behaviour)?         |
-| **Root cause certainty** | 30%    | Is this the underlying cause or just a symptom? How deep did the investigation go? For refactor / diagnose analyses, read "root cause" as "the actual structural reason," not literal bug aetiology. |
-| **Outcome confidence**   | 30%    | Will the proposed action (fix, refactor, skill-source diff) resolve the situation without introducing new problems?         |
-
----
+| Dimension | Weight | What to evaluate |
+| --- | --- | --- |
+| **Evidence strength** | 40% | Is the analysis backed by concrete evidence (logs, traces, code paths, file:line references, reproduced behaviour)? |
+| **Root cause certainty** | 30% | Is this the underlying cause or just a symptom? How deep did the investigation go? For refactor / diagnose analyses, read "root cause" as "the actual structural reason," not literal bug aetiology. |
+| **Outcome confidence** | 30% | Will the proposed action (fix, refactor, skill-source diff) resolve the situation without introducing new problems? |
 
 ## Output Format
 
-**You MUST output in this exact format:**
+Output in this exact format:
 
 ```
 ## Confidence: X%
@@ -160,21 +117,19 @@ Use this mode whenever the artifact being graded is **an analysis** — a root-c
 - **Final: X%**
 ```
 
-Calculate the weighted LLM score as a weighted average using the dimension weights above. For `plan` mode, the **Final** is `min(weighted_LLM_score, rule_check_cap)`. For `code` and `analysis` modes (including invocations via the deprecated `bug-analysis` alias), omit the rule-check section and `Final = weighted_LLM_score`.
+The weighted LLM score is the weighted average over the dimension weights above.
+For `plan` mode, **Final** is `min(weighted_LLM_score, rule_check_cap)`.
+For `code` and `analysis` modes (including the deprecated `bug-analysis` alias), omit the rule-check section and `Final = weighted_LLM_score`.
 
-**Be honest and critical — do not inflate scores. A low score with clear reasoning is more valuable than a false 95%. A failed rule check is non-negotiable — surface it even if the LLM score is high.**
-
----
+Do not inflate scores: a low score with clear reasoning beats a false 95%, and a failed rule check is always surfaced, even when the LLM score is high.
 
 ## Score Thresholds
 
-| Score         | Action                                                                                      |
-| ------------- | ------------------------------------------------------------------------------------------- |
-| **90-100%**   | Proceed — work is ready                                                                     |
-| **70-89%**    | List specific concerns and what would raise confidence. If in Fix Mode, apply fixes.        |
+| Score | Action |
+| --- | --- |
+| **90-100%** | Proceed — work is ready |
+| **70-89%** | List specific concerns and what would raise confidence. If in Fix Mode, apply fixes. |
 | **Below 70%** | Recommend concrete next steps to validate or fix. Do NOT proceed with autonomous execution. |
-
----
 
 ## Iteration Protocol (plan mode)
 
@@ -183,55 +138,3 @@ When used as a quality gate before autonomous execution:
 > If confidence is below 90%, do up to **2 iterations** of additional research, analysis, and evidence collection to raise the score.
 > After each iteration, re-run the confidence assessment.
 > If still below 90% after 2 iterations, present findings to the user and ask whether to proceed or refine further.
-
----
-
-## Auto-Fix (Fix Mode Only)
-
-**Skip this section entirely if not in Fix Mode.**
-
-When running in Fix Mode (`plan fix`, `code fix`, `analysis fix` — or the deprecated `bug-analysis fix` alias), automatically address every concern that lowered your score:
-
-### Simple Fixes (apply immediately)
-
-Fix these without asking — they are low-risk and mechanical:
-
-- Missing edge case handling with obvious implementation
-- Missing null/undefined checks
-- Off-by-one errors or incorrect boundary conditions
-- Typos in strings, comments, or variable names
-- Missing return types or type annotations where the type is clear
-- Small logic errors with an unambiguous correction
-- (plan mode) Missing sections, incomplete requirements, vague implementation steps
-
-After applying each fix, briefly note what was changed (one line per fix).
-
-### Complex Fixes (plan, then apply)
-
-For issues requiring more thought:
-
-- Missing test coverage for uncovered paths
-- Incomplete implementations (missing cases, unhandled states)
-- Architectural concerns or incorrect abstractions
-- (plan mode) Fundamental approach issues, missing technical design
-
-For each, output:
-
-```
-### [Issue title]
-**Why:** [1-sentence explanation]
-**Fix plan:**
-1. [Step 1]
-2. [Step 2]
-**Files involved:** [list]
-```
-
-Then execute the plan.
-
-### Post-Fix Re-Assessment
-
-After all fixes are applied:
-
-1. Re-run the confidence assessment with updated scores
-2. List what was fixed and how each fix improved the score
-3. If confidence is still below 90%, list remaining concerns that could not be auto-fixed

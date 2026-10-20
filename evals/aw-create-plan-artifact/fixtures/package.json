@@ -1,0 +1,1 @@
+{ "name": "report", "private": true, "type": "module", "bin": { "report": "src/cli.mjs" }, "scripts": { "test": "node --test" } }

@@ -110,10 +110,9 @@ An unknown value exits non-zero rather than producing a key nothing else will ev
 | **dependency** | `impact.json.dependencies[]` | changelog for `(from, to]`, breaking and deprecated APIs, intersected with `usage_sites` | Persona 4, which never resolved a version. See [`finder-dependency.md`](./finder-dependency.md) |
 | **intent** | the whole PR | description vs diff, semantically; scope creep; unmentioned behavior change | Gate 1's semantic half, Persona 3, and holistic intent-match |
 | **standards** | delta files (all files in `deep`) | the repo's own governing docs | [`standards-conformance.md`](../../shared/rules/standards-conformance.md), unchanged |
-| **quality** | delta | maintainability, tests, naming — **material only**; cosmetic emits nothing inline outside `deep` | Persona 2 and `code-quality` review mode |
+| **quality** | delta | maintainability, tests, naming — **material only**; cosmetic emits nothing inline outside `deep` | Persona 2, judged against the `quality` checklist in [`rubric-composition.md` § Load order](../../shared/rules/rubric-composition.md#load-order) |
 | `ux`, `critical`, `--with …` | as today | as today | unchanged |
 
-The optimality lens stays report-only and `deep`-only, via [`optimality-review.md`](../../shared/rules/optimality-review.md).
 
 **Persona 4 is retired, not renamed.** It was gated on the diff touching a manifest, which meant a transitive major bump through a lockfile — the common case — never triggered it, and it never resolved a version even when it did fire. The dependency finder runs off resolved lockfile deltas instead.
 
@@ -135,7 +134,7 @@ This is not a degraded mode to apologize for — the verifier is a genuine indep
 
 ## Independence, and what breaks it
 
-Run finders concurrently where the runtime allows parallel `Skill()` calls in one turn (the fan-out idiom in [`holistic-review.md`](../../shared/rules/holistic-review.md)); serially otherwise.
+Run finders concurrently where the runtime allows parallel calls in one turn; serially otherwise.
 
 **The split is about independence of framing, not speed.** Two things break it even when the calls are parallel:
 

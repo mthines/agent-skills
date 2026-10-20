@@ -36,9 +36,9 @@ Cited in: [`SKILL.md`](../SKILL.md), [`rules/preflight.md`](../rules/preflight.m
 | Source | Why it matters |
 |--------|----------------|
 | [Best practices for Claude Code](https://www.anthropic.com/engineering/claude-code-best-practices) | The canonical "how to drive Claude Code" guide. Read-before-write principle, sub-agent isolation, separating planning from implementation. |
-| [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) | Source of the **separate generator from grader** principle (verifier agent), the **read context before acting** rule (pre-flight), and the **deterministic init** pattern. |
+| [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) | Source of the **separate generator from grader** principle (Phase 7 grades against artefacts and leaves the undraft to a human), the **read context before acting** rule (pre-flight), and the **deterministic init** pattern. |
 | [Effective context engineering for AI agents (Sep 2025)](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) | Source for **memory as structured note-taking** — the bug-notes ledger pattern. Survives compaction across sessions. |
-| [Building effective agents](https://www.anthropic.com/research/building-effective-agents) | Foundational patterns for agentic workflows: orchestrator-workers, evaluator-optimizer (verifier), routing. |
+| [Building effective agents](https://www.anthropic.com/research/building-effective-agents) | Foundational patterns for agentic workflows: orchestrator-workers, evaluator-optimizer (Phase 7 verification), routing. |
 | [anthropics/cwc-long-running-agents](https://github.com/anthropics/cwc-long-running-agents) | Working repo demonstrating the long-running-agent harness — `init.sh`, `claude-progress.txt`, `feature-list.json`. The bug-notes ledger is modelled after these. |
 | [Claude Cookbook — context engineering](https://platform.claude.com/cookbook/tool-use-context-engineering-context-engineering-tools) | Concrete code examples of the structured-note pattern. |
 
@@ -51,7 +51,7 @@ Cited in: [`rules/reproduction.md`](../rules/reproduction.md),
 
 | Source | Why it matters |
 |--------|----------------|
-| [SWE-bench Verified harness](https://www.swebench.com/SWE-bench/) | The canonical evaluation harness for AI bug-fixing. Built around `FAIL_TO_PASS` and `PASS_TO_PASS` — every patch must turn a failing test green without breaking any previously passing test. The verifier in Phase 7 implements this contract. |
+| [SWE-bench Verified harness](https://www.swebench.com/SWE-bench/) | The canonical evaluation harness for AI bug-fixing. Built around `FAIL_TO_PASS` and `PASS_TO_PASS` — every patch must turn a failing test green without breaking any previously passing test. Phase 7 verification implements this contract. |
 | [SWE-agent NeurIPS 2024](https://proceedings.neurips.cc/paper_files/paper/2024/file/5a7c947568c1b1328ccc5230172e1e7c-Paper-Conference.pdf) | Trace analysis of high-scoring agents on SWE-bench. "Create new file → add reproduction code → run with python" is the most popular triple of actions. The Reproduction Lock phase is modelled on this. |
 | [SWT-Bench (NeurIPS 2024)](https://proceedings.neurips.cc/paper_files/paper/2024/file/94f093b41fc2666376fb1f667fe282f3-Paper-Conference.pdf) | Test-writing benchmark — formalises the "write the test before the fix" phase as distinct from patch generation. |
 | [RepairAgent (ICSE 2025)](https://software-lab.org/publications/icse2025_RepairAgent.pdf) | Finite-state machine APR agent. Source of the **failure-class routing** idea — different bug classes need different sub-routines. |

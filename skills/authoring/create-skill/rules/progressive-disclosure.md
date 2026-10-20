@@ -130,7 +130,7 @@ my-skill/
     └── mode-B.md
 ```
 
-`holistic-analysis` and `confidence` are good examples of this pattern.
+`confidence` and `critical` are good examples of this pattern.
 
 ## One-level-deep references
 

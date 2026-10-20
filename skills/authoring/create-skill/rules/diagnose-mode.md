@@ -57,7 +57,7 @@ Trigger on any of:
 
 Do **not** run Diagnose Mode for:
 
-- Routine bugs in the user's product code unrelated to a skill's gaps — use `/fix-bug` or `/holistic-analysis` instead.
+- Routine bugs in the user's product code unrelated to a skill's gaps — use `/fix-bug` instead.
 - Failures in-progress mid-workflow — use the target skill's own stuck-loop or `confidence(analysis)` instead.
 - Diagnosis of a skill whose source is not on the local checkout — Diagnose Mode needs to be able to resolve the source path to write a unified diff.
 
@@ -75,7 +75,7 @@ Or via `Skill()`:
 Skill("create-skill", "diagnose <target-skill-name>")
 ```
 
-`<target-skill-name>` is the directory name under `skills/` (e.g. `autonomous-workflow`, `fix-bug`) **or** the basename of an agent under `agents/` without the `.md` suffix (e.g. `pr-reviewer`, `bug-fix-verifier`). Step 1 disambiguates by checking both locations.
+`<target-skill-name>` is the directory name under `skills/` (e.g. `autonomous-workflow`, `fix-bug`) **or** the basename of an agent under `agents/` without the `.md` suffix (e.g. `pr-reviewer`, `branch-reviewer`). Step 1 disambiguates by checking both locations.
 If omitted, ask the user — do not guess.
 
 ### Optional flags

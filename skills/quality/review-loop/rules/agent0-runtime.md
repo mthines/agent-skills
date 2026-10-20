@@ -88,15 +88,15 @@ Three properties of that prompt are load-bearing:
 A reply that opens with a refusal or a `BLOCKED` line is **not** a review.
 Set `STOP_REASON = "reviewer-refused"`, report the reply's first line verbatim, and stop — never read it as `NEW_FINDINGS == false`, which would converge an unreviewed PR.
 
-Step 2.5's [post-refresh re-review](../SKILL.md#post-refresh-re-review--before-the-gates) is a sub-step A dispatch and uses this same prompt.
+Step 2.5's [post-refresh re-review](./merge.md#post-refresh-re-review--before-the-gates) is a sub-step A dispatch and uses this same prompt.
 A refusal there is `MERGE_REREVIEW = refused` and the PR is not merged; the loop has already converged, so `STOP_REASON` stays as it was.
 
-The [iteration-1 apply-first check](../SKILL.md#iteration-1--apply-first-when-the-last-review-still-stands) needs `context.json` before this dispatch, and the `general` reviewer prepares its own.
+The [iteration-1 apply-first check](./apply-first.md#iteration-1--apply-first-when-the-last-review-still-stands) needs `context.json` before this dispatch, and the `general` reviewer prepares its own.
 So on iteration 1 the loop runs one prepare in its own context, runs the apply-first block against the `context.json` it wrote, and cleans the prepare up whether or not the check passed:
 
 ```bash
 node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json
-# then, as its own Bash call: the apply-first block from SKILL.md, which reads <dir>/context.json
+# then, as its own Bash call: the apply-first block from apply-first.md, which reads <dir>/context.json
 node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --cleanup <dir>/context.json
 ```
 
@@ -109,7 +109,7 @@ When the check fails, dispatch the prompt above unchanged.
 | Sub-step | `SKILL.md` call | Agent0 file |
 | --- | --- | --- |
 | B | `Skill("implement-suggestion", "<PR> --resolve-all")` | `$AGENT_SKILLS_ROOT/skills/implement-suggestion/SKILL.md` |
-| C | `Skill("polish", "simplify")` | `$AGENT_SKILLS_ROOT/skills/polish/SKILL.md` (which in turn reads `$AGENT_SKILLS_ROOT/skills/code-quality/SKILL.md`) |
+| C | `Skill("polish", "simplify")` | `$AGENT_SKILLS_ROOT/skills/polish/SKILL.md` (which in turn reads `$AGENT_SKILLS_ROOT/skills/polish/rules/simplify.md`) |
 | D | `ci-auto-fix` sub-agent | `general` sub-agent told to read `$AGENT_SKILLS_ROOT/skills/ci-auto-fix/SKILL.md`, with `/tmp/workspace/agent-skills/CONSTRAINTS.md` named in its prompt as its standing constraints — it pushes, and `AGENTS.md` may not load into a sub-agent |
 | 1.6 | `ui-verify run` | `$AGENT_SKILLS_ROOT/skills/ui-verify/SKILL.md`, which follows [its own Agent0 rule](../../../testing/ui-verify/rules/agent0-runtime.md) — Playwright via a `general` `aw-tester`, one level deep from this loop |
 

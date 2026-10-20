@@ -1,15 +1,10 @@
 ---
 name: e2e-testing
 description: >
-  Plans, generates, runs, and heals end-to-end tests using Playwright Test
-  Agents (Planner, Generator, Healer) and the official `@playwright/mcp`
-  server. Drives a spec-first feature-flow loop, proposes `data-testid`
-  source diffs only when accessibility-tree locators fail, and stays
-  token-aware via snapshot mode and `--last-failed` reruns. Use when adding
-  E2E coverage, verifying a user journey, hardening a flaky flow, or wiring
-  Playwright MCP into a repo. Triggers on "test this flow", "add e2e",
-  "verify the user journey", "write e2e test", "feature test", "playwright
-  agents", "/e2e-testing".
+  Plans, generates, runs, and heals Playwright end-to-end tests through a
+  spec-first loop with Playwright Test Agents and `@playwright/mcp`. Use when
+  adding E2E coverage or hardening a flaky flow; triggers on "add e2e", "test
+  this flow", "verify the user journey", "/e2e-testing".
 disable-model-invocation: false
 license: MIT
 metadata:
@@ -159,7 +154,7 @@ After the Generator produces a test:
 
 1. Run the test once against the live app.
    It must pass on first run, or the Healer must converge in ≤ 3 attempts.
-2. Invoke [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) on
+2. Invoke [the `tdd` provenance check](../../quality/tdd/rules/test-provenance.md) on
    the generated file to ensure the test imports production code instead
    of a private re-implementation.
 3. Open `playwright.config.ts` and confirm `trace: 'on-first-retry'` is set
@@ -183,7 +178,7 @@ If the heal loop fails to converge:
 | Locator unstable, no stable role / label                     | Propose `data-testid` diff (rule: locator-strategy).          |
 | Repo missing Playwright or MCP                               | Phase 0 halt + ask permission.                                |
 | Heal loop > 3 attempts                                       | Stop, run `confidence(analysis)`, escalate.               |
-| Test passes on first run, never seen failing                 | Run `test-provenance-guard` before declaring done.            |
+| Test passes on first run, never seen failing                 | Run the `tdd` provenance check before declaring done.            |
 
 ---
 
@@ -191,11 +186,11 @@ If the heal loop fails to converge:
 
 - [`tdd`](../../quality/tdd/SKILL.md) — owns the unit and component layers.
   This skill defers to it for anything below E2E.
-- [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) — runs after
+- [the `tdd` provenance check](../../quality/tdd/rules/test-provenance.md) — runs after
   Generator output to catch tests-by-construction.
 - [`confidence`](../../quality/confidence/SKILL.md) — gate when the heal loop fails.
-- [`holistic-analysis`](../../analysis/holistic-analysis/SKILL.md) — if a flow is failing
-  for reasons no test rewrite can fix, step back instead of patching.
+- If a flow is failing for reasons no test rewrite can fix, step back instead of
+  patching: re-trace the execution path from entry to exit and re-state the root cause.
 - [`playwright-trace-analyzer`](../../analysis/playwright-trace-analyzer/SKILL.md) —
   consume the trace produced by a failed test on retry.
 
@@ -240,6 +235,6 @@ If the heal loop fails to converge:
 - [ ] Phase 0 preflight passed or installs were user-approved.
 - [ ] `specs/<flow>.md` exists and the user reviewed it.
 - [ ] `tests/<flow>.spec.ts` passes against the live app.
-- [ ] `test-provenance-guard` reports no violations on the new test.
+- [ ] the `tdd` provenance check reports no violations on the new test.
 - [ ] `playwright.config.ts` has `trace: 'on-first-retry'`.
 - [ ] If a `data-testid` was added, it is in the source diff and committed.

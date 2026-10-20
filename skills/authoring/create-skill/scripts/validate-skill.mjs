@@ -17,7 +17,7 @@
 // the Agent Skills spec, the Claude Code docs, or this repo's own rule files —
 // so none of them is a voodoo number nobody can trace back to a source.
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, relative, resolve } from "node:path";
@@ -47,8 +47,7 @@ const LENS_MAX = 80;        // rules/review-lens-contract.md: a lens.md file is 
 // repo-relative path stays legal. `deno` and `bun` carry an OPTIONAL `run` subcommand:
 // without it their real form (`deno run x.ts`) puts `run` in the path slot and the pattern
 // can never match, so listing them bare made both unreachable. The leading \b stops `mysh`
-// from matching via `sh`. Duplicated verbatim in l1.mjs's G51e — see the note there for why
-// that copy is deliberate rather than shareable.
+// from matching via `sh`.
 const INTERPRETER = String.raw`\b(?:node|npx|python3?|bash|sh|tsx|(?:deno|bun)(?:\s+run)?)\s+`;
 
 const MONTHS = "January|February|March|April|May|June|July|August|September|October|November|December";
@@ -508,8 +507,7 @@ function checkPortabilityDocs(f, ctx) {
     // Two arms, because one prefix shape cannot express both cases. The first keys on this
     // skill's own directory name and so catches any depth of repo-relative path. The second
     // exists because the BARE and `./`-prefixed forms have no directory segment to key on at
-    // all, and were silent here while l1.mjs's G51e caught them — two guards disagreeing
-    // about one rule. It is keyed on the skill's own script FILENAMES, which is what keeps
+    // all. It is keyed on the skill's own script FILENAMES, which is what keeps
     // both protected forms above legal: `sync-symlinks.sh` is not a file in create-skill's
     // scripts/, and a `<skill_dir>/` placeholder is neither bare nor `./`-prefixed.
     const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -582,7 +580,7 @@ function printJson(result) {
 // ── --self-test ───────────────────────────────────────────────────────────────
 // Builds temp fixtures under os.tmpdir() and asserts each check id fires exactly
 // where expected and nowhere else, then cleans up. Executed directly by
-// scripts/eval/l1.mjs's G51a (spawnSync(process.execPath, [..., "--self-test"])).
+// scripts/eval/l1.mjs's G114 (every tracked script with a --self-test handler).
 // `build` receives the temp root and returns the SKILL DIRECTORY to validate
 // (its basename must equal the fixture's `name:` for a "clean" fixture to pass
 // FM04 — the directory-basename match check — so every fixture below nests its
@@ -910,4 +908,4 @@ function main() {
   process.exit(result.ok ? 0 : 1);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

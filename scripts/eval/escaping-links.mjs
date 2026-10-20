@@ -20,7 +20,7 @@
 //
 // L1 (G71) imports `escapingLinks` and fails when any skill's count rises above its baseline.
 // Lower the baseline with --write in the same commit that removes links — it is a ratchet.
-import { readFileSync, writeFileSync, existsSync, mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, relative, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -83,7 +83,7 @@ function selfTest() {
 
 // pathToFileURL, not a `file://` template: a path with a space percent-encodes in import.meta.url,
 // and the template would then never match — `--self-test` would silently do nothing and exit 0.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const argv = process.argv.slice(2);
   if (argv.includes("--self-test")) selfTest();
   const now = counts(escapingLinks());

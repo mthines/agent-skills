@@ -145,20 +145,6 @@ Shape routing (1.2 / 1.2b):
   Delta source:       compare | blob-diff (…) | n/a (full mode)
   Escalate-in-incr.:  true | false | n/a
 
-Optimality review (2.4c):
-  Status:             ran | skipped (trivial diff) | skipped (--no-optimize) | skipped (tier: standard|quick) | skipped (skill not installed)
-  Units judged:       <UN>
-  Optimal:            <UO>
-  Proposals:          <OP> (cap 2)
-  Inline pointers:    <OPTR> (analysis_confidence ≥ 95 with a resolvable anchor)
-  Applied:            0    (cross-review never applies)
-  Withheld/reverted:  <OW>
-
-### Optimality Review
-
-Omit this section when `<OP> == 0`. Otherwise one card per proposal, rendered from
-`skills/quality/optimize-approach/templates/proposal.template.md`.
-
 `anchorless carried <AC>` and `anchorless resolved <AR>` are the `Anchorless carried: <C> · resolved: <R>`
 counts from `prior-comment-awareness.md § Carry-forward of anchorless findings`; this terminal block is
 their only rendering slot — the posted body has none, and Step 4 forbids prose outside its template.

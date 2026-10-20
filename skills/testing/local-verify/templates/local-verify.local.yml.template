@@ -1,0 +1,35 @@
+# local-verify — your settings (gitignored; wins over the repo file and the skill defaults).
+# Written by `/local-verify setup`. Holds no secrets: tokens stay in .mcp.json
+# and tool configs.
+#
+# ~/.claude/local-verify.local.yml holds your policies at the top level and one
+# `repos.<owner>/<name>` block per repo, so every worktree of a repo inherits it
+# and no repo's values leak into another. A worktree's .claude/local-verify.local.yml
+# uses the same keys without the `repos` wrapper and wins over both.
+version: 2
+
+stack:
+  # A stack already running that this run did not start:
+  #   teardown — stop it and take over (no question)
+  #   ask      — ask once per run
+  #   abort    — stop the run with `blocked`
+  foreign_stack: {{FOREIGN_STACK}}
+  # After the run: leave (keep it up for you) | teardown (only what this run owns)
+  cleanup: {{CLEANUP}}
+
+fix:
+  # always | own-prs (push only to PRs you authored) | never
+  push: {{PUSH}}
+
+report:
+  # always | own-prs | never
+  pr_comment: {{PR_COMMENT}}
+
+repos:
+  {{REPO_SLUG}}:
+    # Only the keys setup detected or you answered for this repo, for example:
+    #   notes: ~/.claude/local-verify/acme-shop.md
+    #   app_url: http://localhost:5173
+    #   stack: { driver: command, commands: [ … ] }
+    #   telemetry: { backend: dash0-mcp, mcp_server: <server key>, dataset: alice-local, namespace: local }
+{{REPO_BLOCK}}

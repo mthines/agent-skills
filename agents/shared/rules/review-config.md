@@ -71,7 +71,7 @@ thoroughness: 0.8                        # repo-wide default for the continuous 
 
 severity_thresholds:                     # DEFAULT — values shown are the `balanced` defaults.
   critical: 65                           # The reviewer tiers every finding via
-  high: 70                               # Skill("severity","finding") and gates it on the
+  high: 70                               # agents/shared/rules/severity.md and gates it on the
   medium: 80                             # matching bar. `medium` anchors the profile's
   low: 90                                # historical flat threshold; high/critical get a
                                          # lower bar (surface more), low a higher one.
@@ -165,8 +165,8 @@ Use only in repos with high author trust in automated review (experienced team, 
 and it is **on by default** — the goal is that what the reviewer surfaces is what an
 author actually wants to react on.
 
-`pr-reviewer` tiers every finding with `Skill("severity", "finding")` in the same pass as
-the confidence rating (never a separate per-finding call — see `severity`'s cost note),
+`pr-reviewer` tiers every finding with [`severity.md`](./severity.md) in the same pass as
+the confidence rating (never a separate per-finding call),
 then uses `severity_thresholds[tier]` as the effective threshold in
 `per-comment-confidence.md`. The `medium` tier anchors the profile's historical bar
 (**80** for `balanced`), so a typical finding is gated exactly as before; `critical` /
@@ -183,12 +183,12 @@ severity_thresholds:
   low: 90
 ```
 
-Two invariants keep this from re-deriving policy the `severity` skill deliberately does
+Two invariants keep this from re-deriving policy the severity rule deliberately does
 not own:
 
-- The **numbers live here**, not in the `severity` skill — it emits the tier only.
+- The **numbers live here**, not in [`severity.md`](./severity.md) — it emits the tier only.
 - The tier also drives the `(blocking)` decoration (`critical` / `high` ⇒ `(blocking)`),
-  per `skills/quality/severity/SKILL.md` § Mapping to a reviewer's blocking flag — **except** a
+  per [`severity.md`](./severity.md) § Mapping to a reviewer's blocking flag — **except** a
   tier raised only by the Step 2 path floor, which stays non-blocking (see that section).
 
 ---

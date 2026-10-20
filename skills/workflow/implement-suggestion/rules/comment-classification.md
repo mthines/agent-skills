@@ -56,8 +56,8 @@ wording — so it wins outright and the heuristics below are skipped:
 
 - A **gate finding** is a PR-level verdict ("documentation missing", "unresolved
   bot feedback"), not a line-level edit. There is nothing mechanical to apply.
-- An **optimality proposal** is report-only by construction
-  (`agents/shared/rules/optimality-review.md` — cross-review never applies one).
+- An **optimality proposal** (a legacy card from a report written before the
+  reviewer's optimality lens was removed) was report-only by construction.
   Adopting one is an architectural decision that belongs to a human.
 
 Both still reach the user: under `--resolve-all` they carry into the pack's

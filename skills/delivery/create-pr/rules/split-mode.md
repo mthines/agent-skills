@@ -6,6 +6,15 @@ Loaded only when the user invokes split mode; default-mode users skip this file.
 Use when the branch has accumulated several unrelated changes and a single PR would be hard to review.
 The skill analyses the diff, proposes a small number of focused PRs, and after explicit user approval executes the split as dependency-ordered draft PRs.
 
+**Contents:** [How split mode changes the default steps](#how-split-mode-changes-the-default-steps) · [When to split](#when-to-split-and-when-not-to) · [S1](#step-s1-analyze-the-diff) · [S2](#step-s2-group-files-into-prs) · [S3](#step-s3-detect-dependencies) · [S4](#step-s4-propose-the-split-to-the-user) · [S5](#step-s5-execute-the-split) · [S6](#step-s6-watch-ci-bottom-up-rebase-the-stack-after-auto-fix) · [S7](#step-s7-abort-and-rollback) · [S8](#step-s8-report) · [Hard rules](#split-mode-hard-rules)
+
+## How split mode changes the default steps
+
+- Run Steps 1–5 (the description contract) but skip the Step 5 length self-check's "PR too big" trim — the split is the response to that signal. Each resulting sub-PR must still pass it on its own.
+- Step 5.5 runs `Skill("review-loop", "")` on the full branch before the split is computed, so each sub-PR inherits reviewed-and-converged code. Step 6.5 never runs for the whole branch here (it needs an open PR, which does not exist before S1).
+- Only when Step 5.5 reports a skip (no sub-agent dispatch) or `--no-pre-review` was passed, run the fallback `Skill("polish", "simplify")` instead — mechanical refactors, no review. Say which one ran; a split whose sub-PRs were never reviewed must not be reported as one whose sub-PRs were.
+- Then continue at Step S1 below.
+
 ## When to split (and when not to)
 
 Split is worth it when **at least one** of these is true:
@@ -124,7 +133,7 @@ For each PR in dependency order:
    - For pure-rename PRs (`R` rows in `git diff --name-status`), include **both** the old and new paths in the file list so the rename is captured as a rename, not as add+delete.
    - Dry-run first: `git diff <parent-branch> <original-sha> -- <files> | git apply --check`. If `--check` fails, the file-level split is wrong (a file's hunks depend on a sibling that's in another group) — stop, report which file(s) failed, and ask the user.
 3. **Sanity check the result.** If the user has a quick build/lint/type command, run it. A failure here means a coupling category from Step S3 was missed — stop, report, and ask the user (do **not** silently pull in extra files to make it green).
-4. **Quick code-quality pass** (skip if `--no-quality` is in `$ARGUMENTS`). Run `Skill('code-quality', 'review')` scoped to this PR's staged diff (`git diff --cached`). Auto-apply the same mechanical-only subset the `quick` pass uses in default-mode Step 6.5 (comments, naming, dead code, guard-clause flips, magic numbers); surface judgment-required findings without applying. Fold any fixes into the same commit in the next step — do NOT create a separate cleanup commit per split PR; it bloats the stack.
+4. **Quick mechanical pass** (skip if `--no-quality` is in `$ARGUMENTS`). On this PR's staged diff (`git diff --cached`), apply the same items `polish quick` applies: delete restating comments and internal ticket references, trim docstrings to a summary plus contract tags, drop `else` after `return`, and rename cryptic locals; never remove a license header or a lint pragma. Surface anything structural without applying. Fold any fixes into the same commit in the next step — do NOT create a separate cleanup commit per split PR; it bloats the stack.
 5. **Commit** with a message that matches the proposed title.
 6. **Push with explicit upstream and create the draft PR.** New branches have no tracking, so the default-mode `git push` will fail — use `-u`:
    ```bash

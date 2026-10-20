@@ -52,8 +52,8 @@ afford to load three of them.
    criteria go through Step 2.5 (dedupe + consolidate) just like
    built-in findings. A lens cannot bypass the gate.
 6. **Lenses are additive.** The `pr-reviewer`'s existing auto-loads
-   (`code-quality`, `ux`, `critical`) still fire on the same triggers.
-   Passing `--with code-quality` when code-quality already auto-loads is
+   (`quality`, `ux`, `critical`) still fire on the same triggers.
+   Passing `--with critical` when `critical` already auto-loads is
    a no-op (the `pr-reviewer` dedupes by skill name).
 
 ## File shape

@@ -34,12 +34,10 @@ tag, and this bucket is not tagged that way.
 Both records are a **closed JSON object** (the `hotspot` and `knowledge` shapes in
 [`pr-reviewer/rules/memory.md`](../../pr-reviewer/rules/memory.md) are the
 reference), the value is that JSON and nothing else, and a `hotspot` field set is
-shared across writers: `flaky` counts the times a test file was empirically flaky
-then stabilised (written by `e2e-pr-stabilizer`), the way `confirmed` / `missed` /
-`regressed` count review outcomes. A writer **increments only the counters it
-earned this run and carries the rest through unchanged** — which is what lets a
-`pr-reviewer` write and an `e2e-pr-stabilizer` write to the same `hotspot::<path>`
-compose instead of clobber.
+shared across writers. A writer **increments only the counters it earned this run
+and carries the rest through unchanged**, so two writers to the same
+`hotspot::<path>` compose instead of clobber. `flaky` has no current writer; carry
+an existing value through unchanged.
 
 ## Read side — automatic for any code-changing host
 
@@ -122,9 +120,6 @@ host invent its own.
 | `implement-suggestion` | apply seam, once the target files are known | Reader |
 | `fix-bug` | fast-lane plan seam (`aw-create-plan`) | Reader |
 | `ci-auto-fix` | the fix subagent, once the failing files are known | Reader |
-| `optimize-approach` | plan mode, judging a plan's approach (aw-planner Phase 1) | Reader |
-| `e2e-pr-stabilizer` | Phase 7, on the CI-ratified verdict | Writer (`hotspot` `flaky`) |
-| `holistic-analysis` | its verification output, best-effort | Writer-primary (no read) |
 
 A reader that verifies a structural fact while doing its work may write it back
 under the contract above; otherwise it reads only.

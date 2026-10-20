@@ -134,7 +134,7 @@ Build prerequisites:
   running, pass `--device <id>`.
 
 If the flow passes on the first run, run
-[`test-provenance-guard`](../../../quality/test-provenance-guard/SKILL.md) on any
+[the `tdd` provenance check](../../../quality/tdd/rules/test-provenance.md) on any
 TypeScript helpers the flow imports (fixture builders, deep-link
 generators) before declaring done.
 A first-pass green is a signal those helpers may not exercise

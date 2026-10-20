@@ -35,7 +35,7 @@ Read the rows in order; the first row whose condition holds decides the mode.
 | # | Condition | Mode | Report line |
 | --- | --- | --- | --- |
 | 1 | `--no-brainstorm` was passed | `skipped` | `brainstorm: skipped (--no-brainstorm)` |
-| 2 | The block is a lifted grammar block (`<!-- ui-verify:v1 -->`, from the planner's `specs.md`) | `skipped` | `brainstorm: skipped (lifted grammar block — intent specs only)` |
+| 2 | The block is a lifted legacy grammar block (`<!-- ui-verify:v1 -->`, from a grammar `specs.md`) | `skipped` | `brainstorm: skipped (lifted grammar block — intent specs only)` |
 | 3 | Step 1 finds no pending state in the diff | `skipped` | `brainstorm: skipped (no pending state in the diff)` |
 | 4 | `--brainstorm deep` was passed, the `ideate` skill is installed, and some available tool dispatches a sub-agent | `deep` | `brainstorm: deep (ideate)` |
 | 5 | Some available tool dispatches a sub-agent | `fan-out` | `brainstorm: fan-out (5 generators, 1 judge)` |
@@ -184,10 +184,9 @@ One judge — a fresh sub-agent in `fan-out` and `deep` mode, a separate pass in
 | Fit | 1–10 | Does it exercise the component this PR changed? |
 | Checkability | 1–10 | Can its check be observed in the page, console, or network without knowing the product's intended design? |
 
-**Severity comes from the `severity` skill.**
-Load the `severity` skill and inline its `## Severity rubric` section verbatim in the judge's prompt, in `bug` mode, and tell the judge to skip that rubric's Step 2 path floor: every candidate shares the diff's paths, and a tier only the floor raised never decides anything — the same exception severity's crosswalk makes for `(blocking)`.
+**Severity uses the reviewers' tier vocabulary.**
+Inline this table in the judge's prompt; it restates the `bug`-mode tiers of the shared reviewer rubric (`agents/shared/rules/severity.md`) without its path floor, because every candidate shares the diff's paths.
 The judge rates every candidate in its one pass, never one call per candidate.
-When the `severity` skill is not installed, inline this restatement instead and append `(severity skill not installed)` to the report line; where the two disagree, the skill wins:
 
 | Tier | If it breaks… |
 | --- | --- |

@@ -1,16 +1,8 @@
 ---
 name: aw-tester-chrome
 description: >
-  Runs UI verification specs in-session through the claude-in-chrome extension —
-  the Chrome sibling of the aw-tester agent. Reads the same specs.md (WHEN/THEN
-  grammar or a Markdown intent spec) and aw-target.yml, drives Chrome interactively (navigate → read → act → assert,
-  seeing the page between steps), and emits the same compact verdict block. Runs
-  in the current session against an already-logged-in Chrome, so it is faster
-  than the Playwright sub-agent for local runs, but it needs the browser
-  extension and does not work in remote / CI envs. Falls back to aw-tester when
-  the extension is not connected. Triggers on "run the spec in chrome", "verify
-  with the chrome driver", "aw-tester-chrome", or a "ui-verify run
-  --driver chrome" dispatch.
+  Runs aw-tester UI specs in-session through the claude-in-chrome extension against an already-logged-in Chrome, emitting the same verdict block; falls back to aw-tester when the extension is absent.
+  Triggers on "run the spec in chrome", "verify with the chrome driver", or `ui-verify run --driver chrome`.
 disable-model-invocation: false
 argument-hint: '[specs-path] [aw-target] [--all|--bail-on-first-red]'
 license: MIT

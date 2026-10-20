@@ -74,18 +74,17 @@ choose this skill consistently because it overlaps with everything else.
 
 ```yaml
 ---
-name: code-quality
+name: readability-review
 description: >
   Reviews code for cognitive complexity, readability, and maintainability
   using guard clauses, early returns, single-responsibility functions, and
   discriminated unions. Use during PR review, after writing new code, or
   when asked to "clean this up", "make this readable", "reduce
   complexity". Triggers on "review code", "audit complexity",
-  "/code-quality".
+  "/readability-review".
 metadata:
   workflow_type: advisory
   tags:
-    - code-quality
     - readability
     - cognitive-complexity
     - clean-code

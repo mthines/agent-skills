@@ -1,16 +1,10 @@
 ---
 name: ideate
 description: >
-  Generates, stress-tests, and iteratively evolves ideas for a stated problem —
-  product concepts, features, solution options, strategies — using
-  research-grounded divergent/convergent agent loops: parallel persona
-  generators (nominal-group simulation), independent judges scoring novelty,
-  feasibility, impact, and fit on separate axes, and bounded recombination
-  rounds gated by /confidence. Auto-triages run depth (quick in-context vs
-  deep multi-agent; override with quick|deep). Use when brainstorming,
-  exploring solution options, or pressure-testing a concept. Triggers on
-  "brainstorm", "give me ideas", "help me come up with", "ideate on",
-  "what could we build", "/ideate".
+  Generates, stress-tests, and evolves ideas for a stated problem with
+  research-grounded divergent/convergent loops — persona generators, independent
+  judges, recombination — at quick or deep depth. Triggers on "brainstorm",
+  "give me ideas", "ideate on", "what could we build", "/ideate".
 disable-model-invocation: false
 argument-hint: '[quick|deep] [--n <count>] [--no-framing] [<problem statement>]'
 license: MIT

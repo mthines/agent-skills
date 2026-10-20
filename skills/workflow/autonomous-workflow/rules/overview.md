@@ -35,9 +35,9 @@ tags:
 | **Lite**  | 2–3 files AND simple/straightforward                    | No                  |
 | **Micro** | 1 file, purely mechanical (typo, copy, version bump)    | No                  |
 
-**For Full Mode:** Plan during Phase 1, validate with `Skill("confidence", "plan")`,
-then generate `plan.md` via `Skill("aw-create-plan")` inside the worktree AFTER
-Phase 2 setup. **Never create artifact files on the main branch.**
+**For Full Mode:** `aw` writes a short brief: generate `plan.md` + sealed
+`checks.yaml` via `Skill("aw-create-plan")` inside the worktree AFTER Phase 2
+setup, validate it deterministically, then dispatch one `aw-executor`. **Never create artifact files on the main branch.**
 
 **State your mode selection explicitly before proceeding.**
 
@@ -111,15 +111,14 @@ for full details.
 ```
 Phase 0: Validation + Mode Detection
     | (user confirms, mode selected)
-Phase 1: Planning (Full: deep analysis + confidence gate, Lite: mental plan)
-    | code-quality(plan), holistic-analysis (if complex), confidence(plan) >= 90%
+Phase 1: Planning (Full: short brief, Lite: mental plan)
+    | entry points named (boundary tasks), brief validation
     | (plan validated)
 Phase 2: Worktree Setup - MANDATORY
     | Skill("aw-create-plan") <- generates plan.md INSIDE worktree at .agent/{branch}/
     | (worktree created, plan.md written)
 Phase 3: Implementation (Full: follow plan.md, update Progress Log)
     | tdd / ux companions per task type, fast-check after each edit
-    | code-quality(code) once at end
     | (code complete)
 Phase 4: Testing & Iteration <- mode-aware cap (3 Lite / 5 Full) per failing area
     | At the cap: confidence(analysis) -> one-shot auto-replan, then escalate to user
@@ -166,8 +165,8 @@ See [prerequisites](./prerequisites.md#github-access-path) for details.
 
 Use for complex, multi-file changes:
 
-- Validates plan via `Skill("confidence", "plan")` before execution
-- Generates `.agent/{branch}/plan.md` via `Skill("aw-create-plan")`
+- Generates `.agent/{branch}/plan.md` + sealed `checks.yaml` via `Skill("aw-create-plan")`
+- Validates the brief deterministically before dispatching one `aw-executor`
 - Tracks progress via `plan.md` Progress Log
 - Generates `.agent/{branch}/walkthrough.md` via `Skill("aw-create-walkthrough")`
   at PR time

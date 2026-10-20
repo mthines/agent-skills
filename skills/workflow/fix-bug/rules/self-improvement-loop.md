@@ -121,7 +121,7 @@ memory.search { q: "<bugClass or error keywords>", scopes: ["repo::{owner}/*", "
 2. Apply matches as **inputs** to the decision they target: a triage lesson
    biases the `simple`/`complex` call (it never overrides the conservative
    default toward `complex`); a reproduction-layer lesson biases Phase 2.5's
-   layer routing; an analysis lesson is passed to `holistic-analysis` (or the
+   layer routing; an analysis lesson is fed into the Phase 3 trace (or the
    lightweight analysis) as a "previously this bugClass was misattributed to X"
    hint.
 3. Lessons are **advisory** — they never relax a confidence gate, the Phase 5
@@ -149,12 +149,12 @@ Log to the ledger:
 The read above is this loop's **own** bucket. There is one cross-bucket read worth
 making: the shared `codebase-knowledge` signal — the cross-branch, cross-author
 record of what prior reviews learned about this repo's symbols and files
-(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). On the
-**standard lane** `aw-executor` runs through `aw`, which reads this bucket itself
-([`autonomous-workflow/rules/self-improvement-loop.md § knowledge-read`](../../autonomous-workflow/rules/self-improvement-loop.md#fast-tier--read-the-repos-codebase-knowledge-cross-bucket-read-only)).
-The **fast lane** dispatches `aw-executor` from an `aw-create-plan` plan **without
-`aw-planner`**, so that read never fires — `/fix-bug` must issue it itself, once the
-fast-lane `plan.md` File Changes table is drafted:
+(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). `aw` reads this
+bucket itself when it writes a Full brief
+([`autonomous-workflow/rules/self-improvement-loop.md § knowledge-read`](../../autonomous-workflow/rules/self-improvement-loop.md#fast-tier--read-the-repos-codebase-knowledge-cross-bucket-read-only)),
+but `/fix-bug` writes its own brief on both lanes and dispatches `aw-executor`
+without `aw`, so that read never fires — `/fix-bug` must issue it itself, once the
+`plan.md` File Changes table is drafted:
 
 ```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
@@ -182,7 +182,7 @@ have under-performed — these are the high-signal moments:
 
 | Write point | When | Lesson captures |
 | ----------- | ---- | --------------- |
-| **Phase 7 verifier RED** | `bug-fix-verifier` left the PR draft | The fix was wrong despite the gates — which earlier phase under-caught it (triage too `simple`? repro false-green? analysis wrong file?) |
+| **Phase 7 verification RED** | A Phase 7 check failed | The fix was wrong despite the gates — which earlier phase under-caught it (triage too `simple`? repro false-green? analysis wrong file?) |
 | **Phase 8 telemetry still firing** | Post-deploy signal did not decay / recurred | The "fix" did not fix the production symptom — strongest signal; almost always a Phase 3 analysis or Phase 2.5 repro-fidelity lesson |
 | **Triage upgrade** | `simple → complex` upgrade, or fast-lane → standard-lane CEGIS round-3 fallback | A `simple`/fast-lane misclassification for this `bugClass` / input shape |
 | **Phase 5 stop** | `< 92 %` stop, or below-70 % hand-back | An evidence / analysis gap pattern for this `bugClass` (what evidence would have raised the score) |
@@ -276,7 +276,7 @@ Identical to the canonical loop — the dominant risk is self-reinforcing error:
 A fix-bug lesson must **never** be allowed to relax a hard invariant from
 [`diagnostic-surface.md`](./diagnostic-surface.md) — e.g. it can bias triage
 toward `complex`, but it can never lower the fast-lane `≥ 92 %` bar, skip the
-reproduction gate, or let the agent self-undraft.
+reproduction gate, or let the agent undraft the PR.
 
 ---
 

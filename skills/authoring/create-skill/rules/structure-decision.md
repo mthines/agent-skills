@@ -60,8 +60,8 @@ my-skill/
     └── walkthrough.md
 ```
 
-When the skill emits structured artefacts. `changelog` follows this
-pattern (a single `SKILL.md` plus a `templates/changelog.md` it fills in).
+When the skill emits structured artefacts. `handoff` follows this
+pattern (a `SKILL.md` plus a `templates/handoff.template.md` it fills in).
 
 ### C — Multi-file with rules
 
@@ -153,7 +153,7 @@ Parse `$ARGUMENTS`...
 ```
 
 If any one mode exceeds 150 lines, split that mode into
-`rules/mode-<name>.md`. `holistic-analysis` is a good example of mode-aware
+`rules/mode-<name>.md`. `confidence` is a good example of mode-aware
 single-file design.
 
 ## Companion skills (a separate decision)

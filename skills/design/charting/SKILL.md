@@ -1,16 +1,10 @@
 ---
 name: charting
 description: >
-  Selects the right chart type and visualization library for React/Next.js
-  (web) and Expo/React Native (mobile) data visualization tasks, then applies
-  accessibility and anti-pattern guardrails. Maps data shape and intent
-  (comparison, composition, distribution, relationship, evolution, flow,
-  geographic, hierarchical) to a recommended chart, then to a recommended
-  library based on platform, dataset size, and design system. Defers
-  cross-cutting UI concerns (contrast, touch targets, typography, copy) to
-  the `ux` skill rather than restating them. Triggers on: "what chart should
-  I use", "visualize this data", "build a chart", "build a dashboard",
-  "data visualization", "pick a chart library", "graph this", "/charting".
+  Selects the chart type and visualization library for React/Next.js and
+  Expo/React Native data visualization, with accessibility and anti-pattern
+  guardrails. Triggers on "what chart should I use", "visualize this data",
+  "build a dashboard", "pick a chart library", "/charting".
 license: MIT
 metadata:
   author: mthines
@@ -95,7 +89,7 @@ Charting overlaps with several other skills. Route concerns rather than re-imple
 
 | If the user is doing this                                            | Hand off to                                           |
 | -------------------------------------------------------------------- | ----------------------------------------------------- |
-| Reviewing or improving the chart's component code (memoization, dataKey types, pure data transforms) | `code-quality`                |
+| Reviewing or improving the chart's component code (memoization, dataKey types, pure data transforms) | `pr-reviewer` (review) or `polish` (simplify) |
 | Adding tests for the **data transformation** behind the chart        | `tdd`                                                  |
 | Writing E2E tests that interact with charts                          | `e2e-testing` (web) or `e2e-testing-mobile` (Expo / RN); add `data-testid` on container, assert URL + text, never SVG geometry |
 | Diagnosing a chart that re-renders too often or freezes the page     | `profile-optimizer` (then back to `rules/performance.md`) |

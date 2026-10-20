@@ -106,11 +106,18 @@ Both are read on demand, never preloaded — see `progressive-disclosure.md`.
 This repo additionally requires (root `CLAUDE.md` § "Keeping the evals
 honest"): a new enumerable decision (a routing table, a tier ladder, a
 class taxonomy) needs `scripts/eval/golden/<name>.jsonl` plus a `SUITES`
-entry in `scripts/eval/suites.mjs`; a purely mechanical contract (a
-section list, a required field, a line-count cap) belongs in
-`scripts/eval/l1.mjs` instead, proven to bite by breaking the thing it
-guards and watching it go red. Check both obligations before declaring a
-new skill or a new decision inside an existing skill done.
+entry in `scripts/eval/suites.mjs`.
+A claim about what the skill makes an agent *do* is a behaviour claim: it
+belongs in a `claude plugin eval` case under `evals/` or an L2 golden case,
+never in `scripts/eval/l1.mjs`.
+Add an L1 check only when it passes the L1 admission rule in this repo's
+`scripts/eval/README.md`:
+it guards a silent runtime failure in one of its eight categories, names that
+failure in a one-line comment, and is proven to bite.
+A check that asserts a sentence, a heading, or a phrase is present is never
+admitted.
+Check both obligations before declaring a new skill or a new decision inside
+an existing skill done.
 
 ## Definition of done for this phase
 

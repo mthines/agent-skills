@@ -22,7 +22,7 @@
 # What it installs, and why each piece is where it is
 # ---------------------------------------------------
 #   /tmp/workspace/pr-reviewer/          the agent tree (rules, scripts, assets)
-#   /tmp/workspace/pr-reviewer/skills/   the six composed lenses, AS FILES
+#   /tmp/workspace/pr-reviewer/skills/   the three composed lenses, AS FILES
 #   /tmp/workspace/pr-reviewer/pr-reviewer.agent0.md   the compiled bundle
 #
 # INSIDE the workspace, never `$HOME/.claude/`. The host's native file reader is
@@ -158,8 +158,8 @@ You are performing one read-only pass over one pull request.
   reader; it works there. `$HOME/.claude/` does not.
 - Resolve a lens by reading
   `/tmp/workspace/pr-reviewer/skills/<name>/SKILL.md` and following it in the
-  current context. Do NOT call the host's skill tool for one of the six
-  repo-owned lenses: five error with `Skill "<name>" not found`, and
+  current context. Do NOT call the host's skill tool for one of the three
+  repo-owned lenses: two error with `Skill "<name>" not found`, and
   `measurable` silently name-collides with an unrelated built-in and returns the
   wrong recipe with no error at all. Every fall-through to host resolution
   raises `RUN_ANOMALY`, including one that appeared to succeed.
@@ -245,7 +245,7 @@ check "run telemetry"    "$ROOT/pr-reviewer/scripts/review-telemetry.mjs"
 check "constraints"      "$ROOT/RUN-CONSTRAINTS.md"
 
 LENSES=0
-for l in severity optimize-approach measurable confidence holistic-analysis verify-behavior; do
+for l in measurable confidence verify-behavior; do
   if [ -f "$ROOT/skills/$l/SKILL.md" ]; then
     LENSES=$((LENSES + 1))
   else
@@ -253,7 +253,7 @@ for l in severity optimize-approach measurable confidence holistic-analysis veri
     ok=0
   fi
 done
-echo "  lenses $LENSES/6"
+echo "  lenses $LENSES/3"
 
 node --version >/dev/null 2>&1 && echo "  ok   node $(node --version)" || { echo "  MISS node — every .mjs renderer will fail at run time"; ok=0; }
 

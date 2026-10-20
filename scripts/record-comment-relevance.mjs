@@ -55,12 +55,12 @@
  */
 
 import { execSync, execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { extractFingerprint, isFingerprintV2, parseFingerprint } from "../agents/pr-reviewer/scripts/fingerprint.mjs";
 
 /** Relevance-signal TTL. Mirrored in CLAUDE.md, comment-relevance-memory.md, the plugin
- *  README and implement-suggestion's SKILL.md; L1 G16 fails on a partial revert. */
+ *  README and implement-suggestion's SKILL.md; change every copy in the same commit. */
 const RELEVANCE_TTL_MS = 60 * 24 * 60 * 60 * 1000;
 /** Knowledge and hotspot records outlive branches by design (proposal § 4.7.2). */
 const KNOWLEDGE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
@@ -1041,7 +1041,7 @@ function selfTest() {
 // this file too). No behavior change for direct invocation (`node
 // record-comment-relevance.mjs --mode=... | --self-test`), which is still `isMain` here.
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   const mode = process.argv.find((a) => a.startsWith("--mode="))?.split("=")[1];
 

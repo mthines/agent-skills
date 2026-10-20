@@ -74,7 +74,7 @@ npm test && npm run build && npm run lint
 After the draft PR is open, `create-pr` runs the `review-loop` skill against it as `Skill("review-loop", "<pr-url> --no-ci")` (`pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved via fix or reply). The `--no-ci` is not optional: Phase 7's CI gate owns the CI budget for this PR, so the loop must not spend a second one. The executor invokes `create-pr` bare — `create-pr` drives the loop, and passes that flag, internally.
 
 The `review-loop` posts a `COMMENT` review via `pr-reviewer` (with `REVIEW_RELATION = self` since the executor authored the PR), applies findings via `implement-suggestion`, and runs `polish simplify` each iteration.
-`pr-reviewer` loads the `code-quality` rubric on substantive diffs and walks the full review checklist — not just the comment pass.
+`pr-reviewer` runs its quality finder on substantive diffs and walks the full review checklist — not just the comment pass.
 Expect findings across correctness, holistic intent/system-fit, naming, complexity, comments, error handling, and (with `--critical`) the adversarial pre-mortem.
 
 The `review-loop` skill gracefully skips if not installed — log one line and continue.
@@ -171,7 +171,7 @@ What `create-pr` handles:
 On a UI diff, `create-pr` Step 6.4 delegates to `ui-verify` (`Skill("ui-verify", "author <pr-url>")`), which injects a collapsed, machine-findable UI verification spec into the PR body so an agent can later run it against the preview deployment.
 You do not invoke `ui-verify` here — `create-pr` owns the call. Two workflow-specific facts:
 
-- **It seeds from the planner's specs.** When this task emitted `.agent/{branch}/specs.md` (Phase 1, UI tasks), `ui-verify` lifts those already-locally-verified specs into the PR block rather than regenerating from the diff — so the PR-embedded spec matches what Phase 4 ran. `specs.md` is gitignored, but the lift works because `author` runs here in the same worktree; it copies the content into the **committed** PR body, and `specs.md` itself is never committed. Contract: [`ui-verify/rules/spec-sources.md`](../../../testing/ui-verify/rules/spec-sources.md).
+- **It seeds from the executor's specs.** When this task wrote `.agent/{branch}/specs.md` (Phase 4, UI tasks), `ui-verify` lifts those already-locally-verified specs into the PR block rather than regenerating from the diff — so the PR-embedded spec matches what Phase 4 ran. `specs.md` is gitignored, but the lift works because `author` runs here in the same worktree; it copies the content into the **committed** PR body, and `specs.md` itself is never committed. Contract: [`ui-verify/rules/spec-sources.md`](../../../testing/ui-verify/rules/spec-sources.md).
 - **It is distinct from Phase 7 Spec Rehearsal — two artifacts, two lifetimes.** Phase 7 re-runs the gitignored `.agent/{branch}/specs.md` against the preview *during this run* (local, in-worktree). The ui-verify block *persists in the committed PR description*, so `ui-verify run` and any on-demand agent can repeat the check on a fresh checkout after this run ends. Both are supported; they read different files.
 
 A missing `ui-verify` is reported `companion: ui-verify — skipped (not installed)` (`create-pr` catches and logs). Disable by passing `--no-ui-verify` — but only when the user asked to skip it.

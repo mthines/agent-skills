@@ -45,7 +45,7 @@ For each inventory entry that names a `\`skill-name\`` in the first backticks:
   telemetry-verify pipeline (10 phases, one cross-cutting bug-notes ledger).
   Takes any starting evidence (Dash0 span / log / web event URL with UTC
   timezone compensation, raw stack trace, error message, code pointer
-  `file:line`, Linear ticket URL via `linear-ticket-investigator`, screen
+  `file:line`, Linear ticket URL via the Linear MCP, screen
   recording via `/video-analyser`, free-text symptom). Phase 0 infers a
   `bugClass` (null-deref, race, off-by-one, contract-mismatch, perf,
   config, regression, logic). Phase 0.5 runs complexity triage on a 14-row

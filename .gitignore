@@ -55,3 +55,6 @@ dist
 # for checkouts/clones/tarballs and finalize.mjs --replay-fixtures's scratch dir;
 # never committed content.
 .pr-reviewer-scratch/
+
+# claude plugin eval run output (evals/README.md).
+evals/results/

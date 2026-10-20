@@ -40,7 +40,7 @@ Map each skill to one of four invocation outcomes:
 | Workflow companion called only by another skill via `Skill()`                           | **slash-only + hidden** | Recommend `disable-model-invocation: true` **and** `user-invocable: false`.            |
 | Used rarely (< 1× per project on average), invoked by user when needed                  | **slash-only**       | Recommend `disable-model-invocation: true`.                                               |
 | Verbose `description` (> 800 chars) but used infrequently                                | **slash-only**       | Recommend `disable-model-invocation: true`. Big baseline win.                              |
-| Advisory / composable skill the model should auto-invoke on relevant phrases (`tdd`, `code-quality`, `ux`, `dx`, `holistic-analysis`) | **leave**            | No change.                                                                                |
+| Advisory / composable skill the model should auto-invoke on relevant phrases (`tdd`, `critical`, `confidence`) | **leave**            | No change.                                                                                |
 | Skill with a `paths:` glob that scopes auto-load to specific files                       | **leave**            | No change — `paths:` already minimizes the trigger surface.                                |
 | Background knowledge the model applies silently, no user-facing command                  | **hidden**           | Recommend `user-invocable: false` (keep model invocation).                                 |
 
@@ -129,7 +129,7 @@ This rule **never edits** another skill's `SKILL.md` frontmatter — that violat
 
 ### Bad — recommending conversion of a frequently-needed skill
 
-If `code-quality` were flagged as a slash-conversion candidate, the agent would lose the ability to auto-apply it during cross-cutting reviews. **Fix:** leave default for advisory skills the model legitimately auto-invokes.
+If `critical` were flagged as a slash-conversion candidate, the agent would lose the ability to auto-apply it during cross-cutting reviews. **Fix:** leave default for advisory skills the model legitimately auto-invokes.
 
 ## Common mistakes
 

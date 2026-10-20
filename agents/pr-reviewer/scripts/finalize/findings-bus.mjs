@@ -4,7 +4,7 @@
  * .agent/{branch}/findings.jsonl records for branch-reviewer reuse, instead
  * of a GitHub write plan. Pure. No I/O (D18) — the CLI layer does the append.
  *
- * Record shape is skills/quality/review-branch/rules/findings-bus.md's own
+ * Record shape is skills/quality/review-loop/rules/findings-bus.md's own
  * worked example, verbatim field set:
  *   fp, iteration, state, prefix, severity, blocking, score, verdict,
  *   path, line, title, body, fix, evidence[], note, sha
@@ -14,6 +14,7 @@
  */
 
 import { buildFingerprint } from "../fingerprint.mjs";
+import { realpathSync } from "node:fs";
 
 export const FINDINGS_BUS_FIELDS = Object.freeze([
   "fp", "iteration", "state", "prefix", "severity", "blocking", "score", "verdict",
@@ -80,7 +81,7 @@ async function selfTest() {
 }
 
 import { pathToFileURL } from "node:url";
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain && process.argv.includes("--self-test")) {
   selfTest();
 }

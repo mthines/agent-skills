@@ -45,7 +45,7 @@ The categories condense three standard heuristic sources into what applies to a 
 - the Big List of Naughty Strings — whitespace, zero-width, RTL, emoji, and benign script injection.
 
 Each oracle is a concrete, checkable condition rather than a judgment, because an agent's "this looks wrong" is not reproducible.
-The severities use the same `critical` / `high` / `medium` / `low` vocabulary as the `severity` skill, so a caller can gate on them without a mapping.
+The severities use the same `critical` / `high` / `medium` / `low` vocabulary as the reviewers' shared severity rubric, so a caller can gate on them without a mapping.
 
 ## Why the guardrails look the way they do
 

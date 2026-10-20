@@ -1,20 +1,10 @@
 ---
 name: optimize-claude-md
 description: >
-  Audits CLAUDE.md files (root, nested, `.claude/rules/*.md`) for context
-  bloat and emits ranked suggestions across two levers — (1) shrink
-  inventory entries, (2) flag rarely-used agent-invokable skills that
-  should become slash-only to drop their description from the always-on
-  available-skills list. Triggers on Claude Code's "Large CLAUDE.md will
-  impact performance" warning (> 40k chars), inventory entries duplicating
-  harness-loaded skill descriptions, "CLAUDE.md is too big", "shrink
-  CLAUDE.md", "optimize CLAUDE.md", "/optimize-claude-md". Three modes —
-  `audit` (read-only ranked report + slash-conversion candidates), `trim`
-  (interactive one-line hook + diff approval), `extract` (moves sections
-  to linked files preserving content). Composes with `docs`
-  (Placement Resolver) and `create-skill` (invocation matrix). Hard rules:
-  refuses files < 10k chars; never deletes silently; never edits any
-  skill's canonical `SKILL.md` frontmatter — routes to `/create-skill`.
+  Audits CLAUDE.md files and `.claude/rules/` for context bloat and emits ranked
+  fixes — trim inventory entries, extract sections, flag rarely-used skills for
+  slash-only. Invoke with /optimize-claude-md [audit|trim|extract] for
+  "CLAUDE.md is too big" or the large-CLAUDE.md warning.
 disable-model-invocation: true
 argument-hint: '[audit|trim|extract] [<path>]'
 license: MIT

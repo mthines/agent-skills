@@ -48,11 +48,11 @@ Use this section as the lookup table when proposing new agent flavors, splits, o
 As of v3.3, the skill installs the split planner/executor pair by default.
 The original monolithic agent (`_deprecated-single-agent.md`) is deprecated and retained only for backward compatibility with existing installs.
 
-The "start simple" prescription is honored in the *design* of the split: the boundary is at Phase 2 → Phase 3, exactly one context boundary, not a five-role pipeline. The deprecated monolithic agent was the v1/v2 incarnation of this principle; v3.3 chose the split because empirical evidence showed that the planner's exploration history measurably crowds out the executor's working context even on medium-complexity tasks.
+The "start simple" prescription is honored in the *design* of the Full tier: the brief is written in the caller's context and one executor does the work, exactly one context boundary at Phase 2 → Phase 3, not a five-role pipeline. The deprecated monolithic agent was the v1/v2 incarnation of this principle; v3.3 chose the split because empirical evidence showed that the planner's exploration history measurably crowds out the executor's working context even on medium-complexity tasks.
 
 | Agent | Status | When used |
 |---|---|---|
-| `aw-planner` + `aw-executor` (under the `aw-` namespace) | Default (v3.3+) | All new installs |
+| Brief by the `aw` skill + one `aw-executor` agent | Default | All new installs |
 | `_deprecated-single-agent.md` (monolithic) | Deprecated | Existing installs only — backward compat |
 
 ### 2.2 Multi-agent costs 3-10× more tokens
@@ -100,7 +100,7 @@ As of v3.3 the skill uses exactly ONE architecture: Planner + Executor (two agen
 The deprecated monolithic single-agent template still exists for backward compat, but is not the default.
 
 It does NOT have five roles (clarifier → planner → implementer → tester → reviewer as separate agents).
-The companion skills (`tdd`, `ux`, `code-quality`, `confidence`, `docs`, `review-loop`, `aw-create-plan`, `aw-create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
+The companion skills (`tdd`, `ux`, `confidence`, `docs`, `review-loop`, `aw-create-plan`, `aw-create-walkthrough`, `create-pr`, `ci-auto-fix`) are advisory companions called by `Skill()`, not coordinator agents.
 A skill is a tool the agent reaches for — it does not own a context window of its own.
 
 ### 2.5 Three roles when complexity warrants: Planner, Generator, Evaluator

@@ -20,7 +20,7 @@ tags:
 - [When to Skip (Rare)](#when-to-skip-rare)
 - [Procedure](#procedure)
 - [Plan Generation](#plan-generation)
-- [Planner Handoff](#planner-handoff)
+- [Brief Handoff](#brief-handoff)
 - [Command Reference](#command-reference)
 - [Setup Checklist](#setup-checklist)
 - [Troubleshooting](#troubleshooting)
@@ -244,7 +244,7 @@ The skill writes to `.agent/{branch-name}/plan.md`, capturing the full Phase 0
 testing strategy, risks, verification commands) — **and derives
 `.agent/{branch-name}/checks.yaml`** (one executable check per `AC-{n}`
 acceptance criterion; see
-[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#step-2b-derive-checksyaml-from-the-acceptance-criteria)).
+[`aw-create-plan` Step 2b](../../aw-create-plan/SKILL.md#checksyaml)).
 The executor's Phase 4 loop gates on those checks mechanically.
 
 Log the invocation in the plan's Progress Log:
@@ -269,7 +269,6 @@ Progress Log section of `plan.md`. Example milestones:
 | 2     | Worktree created, deps installed   |
 | 2     | `aw-create-plan` invoked           |
 | 3     | Each file modified, fast-check run |
-| 3     | `code-quality(code)` at end        |
 | 4     | Each test run + result             |
 | 5     | Docs updated, `docs update` run |
 | 6     | `create-pr` (→ `review-loop`)      |
@@ -285,13 +284,10 @@ The log is the durable trail a fresh Claude session uses to resume mid-flight.
 
 ---
 
-## Planner Handoff
+## Brief Handoff
 
-Phase 2 is the last phase the planner runs. After `plan.md` is written and
-the confidence gate has cleared:
-
-- **Confidence ≥ 90%**: emit the auto-handoff message (see [`planner-executor-handoff.md#handoff-message-format`](./planner-executor-handoff.md#handoff-message-format)) and STOP. Wait for the user (or main session) to dispatch the executor.
-- **Confidence < 90%** (after up to 2 retries): emit the user-approval message and STOP.
+Phase 2 is the last phase the brief writer runs.
+After `plan.md` and the sealed `checks.yaml` are written and the brief's validation passes, print the handoff message ([`planner-executor-handoff.md#handoff-message-format`](./planner-executor-handoff.md#handoff-message-format)) and dispatch one `aw-executor` per [`aw/rules/full-tier.md`](../aw/rules/full-tier.md).
 
 ---
 

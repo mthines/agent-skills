@@ -1,19 +1,11 @@
 ---
 name: screen-recorder
 description: >
-  Records short videos of specific page sections using Playwright's
-  `recordVideo` API, plays scripted interactions (hover, click, focus,
-  scroll, keypress), crops the output to a target element via `ffmpeg`,
-  and saves a `.webm` (or `.mp4` / `.gif`) artifact to
-  `.agent/recordings/`. Use when a still screenshot cannot prove the
-  change — verifying a View Transition, a Motion `layout` morph, a hover
-  stagger, a scroll-driven timeline, an `@starting-style` entry, or any
-  multi-frame interaction. Called by the `animations` skill to validate
-  a generated animation, by the `ux` skill to capture an interaction the
-  `pr-reviewer` cannot read from code, and by the `pr-reviewer` agent to
-  produce a local clip it can inspect on motion-heavy diffs. Triggers on "record
-  this interaction", "capture this animation", "video of this section",
-  "validate the transition visually", "screen recording", "/screen-recorder".
+  Records short cropped videos of a page section with Playwright `recordVideo`
+  and ffmpeg while playing scripted interactions, saved to `.agent/recordings/`.
+  Use when a screenshot cannot prove a multi-frame change; triggers on "record
+  this interaction", "capture this animation", "screen recording",
+  "/screen-recorder".
 disable-model-invocation: false
 license: MIT
 metadata:

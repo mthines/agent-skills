@@ -50,11 +50,11 @@ export const SUITES = [
     // convergence" reasoning into a question about disposition, which is how a `flagged`
     // case starts looking like a `declined` one (neither is `open`, so neither blocks).
     rubric: {
-      file: "skills/quality/review-branch/rules/findings-bus.md",
+      file: "skills/quality/review-loop/rules/findings-bus.md",
       sections: ["## The lifecycle", "## The no-green-wash valve"],
     },
     instruction:
-      "You are the review-branch loop deciding the disposition of ONE finding after acting on it. " +
+      "You are the review-loop local-mode loop deciding the disposition of ONE finding after acting on it. " +
       "Using ONLY the rules below, pick the single state the loop appends for it.",
     inputKey: "input", inputLabel: "Finding and what the loop did",
     choices: ["applied", "declined", "flagged"],
@@ -102,14 +102,6 @@ export const SUITES = [
     choices: ["deep", "single"],
   },
   {
-    name: "optimize-approach-optimality",
-    golden: "golden/optimize-approach-optimality.jsonl",
-    rubric: { file: "skills/quality/optimize-approach/rules/optimality-rubric.md", section: null }, // whole rubric
-    instruction: "You are the optimize-approach skill at Phase O2. Using ONLY the optimality rubric below, classify the described approach unit: 'suboptimal' only when a materially better approach exists AND no anti-overlap guard fires AND the materiality bar clears; otherwise 'optimal'.",
-    inputKey: "input", inputLabel: "Approach unit",
-    choices: ["optimal", "suboptimal"],
-  },
-  {
     name: "reviewer-agreement-bump",
     golden: "golden/reviewer-agreement-bump.jsonl",
     rubric: { file: "agents/shared/rules/rubric-composition.md", section: "## Cross-rubric agreement" },
@@ -120,8 +112,8 @@ export const SUITES = [
   {
     name: "severity-tiering",
     golden: "golden/severity-tiering.jsonl",
-    rubric: { file: "skills/quality/severity/SKILL.md", section: "## Severity rubric" },
-    instruction: "You are the severity skill. Using ONLY the rubric below, classify the finding into exactly one severity tier. Run the exclusion gate and the reachability cap before applying any path floor or escalator.",
+    rubric: { file: "agents/shared/rules/severity.md", section: "## Severity rubric" },
+    instruction: "You apply the severity rule. Using ONLY the rubric below, classify the finding into exactly one severity tier. Run the exclusion gate and the reachability cap before applying any path floor or escalator.",
     inputKey: "input", inputLabel: "Finding",
     choices: ["critical", "high", "medium", "low"],
   },
@@ -225,8 +217,8 @@ export const SUITES = [
     // whose SURFACE VOCABULARY points at the wrong rung (a rung-1 claim that names a
     // separately-deployed service but asserts only on the caller's own span; a rung-2 claim that
     // never says "cross-process"), because the original fourteen were balanced AND
-    // keyword-separable — 78.6% off the word "process" alone. L1 G53e scores three declared tells
-    // per suite in both polarities against the EVAL_GATE floor, so deleting the decoys reds L1.
+    // keyword-separable — 78.6% off the word "process" alone. No L1 check enforces the decoys;
+    // keep them, and re-run the keyword scan in the .NOTES.md when adding cases.
     rubric: { file: "skills/quality/observe-run/rules/rungs.md", section: null }, // whole file
     instruction: "You are the observe-run skill choosing a rung for a claim. Using ONLY the rung rules below, pick the cheapest rung that can decide the claim — never escalate to rung 2 when rung 1 can already decide it.",
     inputKey: "input", inputLabel: "Claim",
@@ -241,8 +233,8 @@ export const SUITES = [
     // by "run the suite, then grep the source"; a behavioral one fronted by "grep the exported
     // OTLP"; a behavioral one that names `startSpan`), because the original fourteen were balanced
     // AND keyword-separable — a responder keying on the run verb alone scored a perfect 14/14.
-    // L1 G53e scores three declared tells per suite in both polarities against the EVAL_GATE
-    // floor, so deleting the decoys reds L1.
+    // No L1 check enforces the decoys; keep them, and re-run the keyword scan in the .NOTES.md
+    // when adding cases.
     rubric: { file: "skills/quality/observe-run/rules/assertion-provenance.md", section: null }, // whole file
     instruction: "You are the observe-run skill's assertion-provenance check. Using ONLY the discriminator rule below, classify the claim-plus-assertion pair as 'behavioral' (verifiable only by observing a run) or 'by-construction' (satisfiable by reading source alone).",
     inputKey: "input", inputLabel: "Claim + assertion",

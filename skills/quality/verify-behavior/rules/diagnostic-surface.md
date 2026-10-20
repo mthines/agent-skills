@@ -27,7 +27,7 @@ This file declares the contract `/create-skill diagnose verify-behavior` reads t
 
 `skills/quality/verify-behavior/`
 
-`git apply` runs from the repo root against files under this directory. The skill body is `SKILL.md`; rules live under `rules/`. Adapters that call this skill (`agents/shared/rules/verification-receipt.md`, `agents/bug-fix-verifier.md`, `agents/feature-pr-verifier.md`, `skills/workflow/autonomous-workflow/rules/phase-4-testing.md`) live outside this source root — changes there are a coordinated multi-file edit (D6 in `plan.md`), not part of a diagnose apply against this skill alone.
+`git apply` runs from the repo root against files under this directory. The skill body is `SKILL.md`; rules live under `rules/`. Adapters that call this skill (`agents/shared/rules/verification-receipt.md`, `skills/workflow/fix-bug/rules/independent-verification.md`, `agents/feature-pr-verifier.md`, `skills/workflow/autonomous-workflow/rules/phase-4-testing.md`) live outside this source root — changes there are a coordinated multi-file edit (D6 in `plan.md`), not part of a diagnose apply against this skill alone.
 
 ---
 
@@ -97,7 +97,6 @@ The skill produces no durable repo artifact of its own and writes nothing outsid
 
 ## Validators
 
-- `node scripts/eval/l1.mjs` — G28 asserts the adapter wiring (delegation call, position, invariant preservation) in the real shipped files.
 - Manual: verify a claim a `grep` can decide; confirm Tier 2/3 are never invoked.
 - Manual: verify a claim requiring a runtime return value; confirm Tier 3 runs in a throwaway worktree and the scratch repro is gone afterward.
 - Manual: verify a claim in the `cross` relation with no sandbox opt-in; confirm Tier 3 is refused and only Tier 1/2 run.
