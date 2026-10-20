@@ -13,7 +13,7 @@
 1. **Sizes the job.** Micro (one file) and Lite (a small change) finish in one pass; Full gets the loop below.
 2. **Writes a short brief.** At most 60 lines: what done means, what must not change, and one sealed, runnable check per goal.
 3. **Builds until green.** In your session, in its own Git worktree, looping on the checks until they print `CHECKS n/n PASS`.
-4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed or rejected with evidence.
+4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed, rejected with evidence, or flagged for you.
 5. **Opens a draft PR** with a walkthrough and evidence, then gets CI green. Stuck after five attempts, it stops with `BLOCKED:` instead of guessing.
 6. **Learns** from every run.
 
@@ -143,7 +143,7 @@ All three units, dispatcher included:
 
 | Unit | Kind | Role | Terminal artifact | Exit gate |
 |---|---|---|---|---|
-| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. On Full, writes the brief (`plan.md` + sealed `checks.yaml`), works to it in your session, and dispatches one `branch-reviewer`. | `plan.md`, `walkthrough.md`, draft PR (Full) | Checks pass, review findings fixed or rejected, exit lesson written |
+| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. On Full, writes the brief (`plan.md` + sealed `checks.yaml`), works to it in your session, and converges it with one local `review-loop` before the PR. | `plan.md`, `walkthrough.md`, draft PR (Full) | Checks pass, review findings fixed, rejected, or flagged, exit lesson written |
 | `aw-executor` | agent | Runs a Full brief as a background sub-agent — only for an explicit background or parallel request | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
 | `aw-tester` | agent | Spec-driven UI verification, dispatched when the diff touches UI | Verdict block (~200 tokens) | `green` or `inconclusive` |
 
@@ -183,13 +183,12 @@ trigger registry is in
 | 4 (UI)| `aw-tester` *(agent)*  | Optional  | Spec-driven UI verification — dispatched before lint/type/test when `specs.md` + aw-target exist |
 | 4     | `confidence`           | Optional  | `analysis` at iteration cap (3 Lite / 5 Full) |
 | 5     | `docs update`          | Optional  | Self-improving doc loop (keeps `CLAUDE.md`, `README.md`, and `docs/` in sync) |
-| 6     | `review-loop` *(skill)* | Optional  | Post-draft convergence loop — `pr-reviewer` (self-relation) → `implement-suggestion --resolve-all` → `polish simplify`, up to 5 iterations, converging until every review thread is resolved (fix or reply); dispatched by `create-pr` after the draft PR is open |
+| 6     | `review-loop` *(skill)* | Optional  | Local pre-push convergence — `branch-reviewer` → apply → `polish simplify`, zero GitHub calls; run by `create-pr` Step 5.5 (Full: by `aw` Step 3). With `--pr-review`, `create-pr` also runs one posted pass on the draft |
 | 6     | `aw-create-walkthrough` | Optional  | Writes `.agent/{branch}/walkthrough.md`      |
-| 6     | `create-pr`            | Optional  | Narrative PR description + push + open draft PR + review-loop + watch |
+| 6     | `create-pr`            | Optional  | Narrative PR description + local review-loop + push + open draft PR + watch |
 | 4     | `lorekit-memory`       | Optional  | Writes a lesson at stuck-loop escalation (`memory.write loop::aw-lessons`) |
 | 7     | `ci-auto-fix`          | Optional  | Diagnose + fix failed CI checks               |
 | 7     | `lorekit-memory`       | Optional  | End-of-run: writes durable run lessons; suggests promotion when `seen_count >= 3` |
-| 7     | `review-loop` *(skill)* | Optional  | After CI green: bounded `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` convergence (self-relation; `pr-reviewer` detects authorship automatically via `REVIEW_RELATION`); up to 5 iterations, converging until every review thread is resolved (fix or reply) |
 
 **`confidence` at Phase 1 is the only non-removable companion.** Without it,
 the plan gate is gone and the workflow loses its primary safety mechanism.

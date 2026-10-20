@@ -312,7 +312,7 @@ Once all checks are green:
 
 Tell the user: PR URL, all checks green, and that the worktree is preserved pending their review/merge.
 
-Then proceed to [Auto Review](#auto-review) before any cleanup (verification is not this phase's job — see [Auto Verify](#auto-verify)). Capture any
+Then proceed to [Observability Recheck](#observability-recheck) before any cleanup (verification is not this phase's job — see [Auto Verify](#auto-verify)). Capture any
 durable run lesson per [Lessons Write](#lessons-write) (also applies on a
 user-approved stop, or when a post-merge bug surfaces in the same session).
 
@@ -406,7 +406,7 @@ The old trigger ("after CI is green, before Auto Review") was never reached by a
 The verifier's four checks (Acceptance-Criteria match, PASS_TO_PASS, diff sanity, walkthrough integrity) run their own commands against the PR head and read no CI, so they are dispatched **at PR open** by the session one rung up — the `aw` dispatcher's § *Verify at PR open*, which owns the preconditions, the dispatch prompt, and the mandatory `Verified:` line of its terminal contract.
 
 When you are playing the executor role inside a single-context Full run (no sub-agent dispatch anywhere), do **not** grade the PR yourself — that is the self-grading the verifier exists to remove.
-Log one line and continue to Auto Review:
+Log one line and continue:
 
 ```markdown
 - [TIMESTAMP] Phase 7: feature-pr-verifier — skipped (not dispatchable on this host: single-context run, so there is no second context to verify from)
@@ -414,120 +414,9 @@ Log one line and continue to Auto Review:
 
 ## Auto Review
 
-After CI is green, automatically run `review-loop` against the PR with `--critical`.
-Because Phase 7 PRs are always self-authored (aw-executor opens them), `pr-reviewer`
-sets `REVIEW_RELATION = self` automatically in Step 0.5.
-The loop runs `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` up to 5 iterations
-(or until every review thread is resolved via fix or reply), posts a visible `COMMENT` review, applies
-findings inline, and answers-and-resolves the non-fix threads. On convergence it refreshes the PR description.
-**`review-loop` is a skill companion**, invoked via `Skill()`.
-
-| Property                  | Value                                                                  |
-| ------------------------- | ---------------------------------------------------------------------- |
-| Runs in Full Mode         | Yes                                                                    |
-| Runs in Lite Mode         | Yes                                                                    |
-| If missing | Report `skipped (not installed)`, then log one line and continue to cleanup step                        |
-| Posts comments live?      | Yes — `pr-reviewer` posts one visible `COMMENT` review per iteration   |
-| Args                      | `<pr-url> [--critical]` passed to `review-loop`                       |
-| Disable                   | Remove this section; CI green becomes the terminal gate                |
-
-**Why a post-CI review pass?** Phase 6 runs the review-loop before CI completes;
-Phase 7 runs it again after CI is green, when the merged state is settled and CI feedback
-may have prompted further commits. The two passes catch issues at different lifecycle points
-and together ensure the PR is clean before the user undrafts.
-
-### Step 1: Detect `review-loop`
-
-Check for the skill in the standard locations:
-
-```bash
-[ -f "$HOME/.claude/skills/review-loop/SKILL.md" ] && REVIEW_LOOP_AVAILABLE=1
-[ -z "$REVIEW_LOOP_AVAILABLE" ] && [ -f "$HOME/.agents/skills/review-loop/SKILL.md" ] && REVIEW_LOOP_AVAILABLE=1
-```
-
-If not found, log and skip:
-
-```markdown
-- [TIMESTAMP] Phase 7: review-loop — skipped (not installed) (install review-loop skill from agent-skills.git)
-```
-
-Then proceed to [Optional Post-Merge Cleanup](#optional-post-merge-cleanup).
-
-### Step 2: Invoke `review-loop`
-
-```
-Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")
-```
-
-`pr-reviewer` detects self-authorship via `REVIEW_RELATION` in Step 0.5 automatically.
-The loop applies findings via `implement-suggestion` and runs `polish simplify` each iteration.
-Complex findings that the loop cannot apply are surfaced to the user inline.
-
-Do **not** wrap in a retry loop — `review-loop` owns its own iteration cap.
-
-**`--no-ci` is required here, and Step 2.5 is what makes it safe.** `review-loop`
-has its own CI sub-step that would dispatch `ci-auto-fix` on a red check. Letting it
-run would create a **second spender** of the per-PR handoff budget this phase owns —
-the exact defect the CI-watch contract exists to prevent. So this phase keeps the
-budget and does the re-check itself, immediately below.
-
-**`--no-preview-run` is required here for the same reason.** `review-loop` has its own
-report-only ui-verify run at exit (its Step 1.6). This phase's
-[Spec Rehearsal](#spec-rehearsal-optional-ui-tasks-only) already runs the same specs
-against the same preview deployment, so letting the loop also run them would double the
-`aw-tester` dispatch for no new signal. This phase owns the rehearsal; the loop opts out.
-
-This covers only the **direct** review-loop call above. Phase 6 invokes `create-pr`
-bare, and `create-pr` Step 6.5 runs `review-loop --no-ci` **without** `--no-preview-run`,
-so Step 1.6 can also fire once in Phase 6. That is not a second real dispatch: at Phase 6
-the just-opened draft's preview is not deployed yet, so Step 1.6 returns `inconclusive`
-without running `aw-tester`. Phase 7's Spec Rehearsal is the authoritative run.
-
-### Step 2.5: Re-check CI if `review-loop` pushed
-
-`review-loop` **pushes** — sub-step B commits applied findings and sub-step C commits
-simplify recipes. Those commits land *after* the Step 1 watch already went green, so
-the watch this phase performed says nothing about the current head. Handing back here
-reports a green PR on an unobserved commit.
-
-Skip this step only if `review-loop` pushed nothing. Its report carries no run
-total — the `applied`, `answered/resolved`, and `simplify recipes` counts appear
-**per iteration**, in the `Per-iteration summary:` block — so **sum each of the
-three columns across every iteration row** and skip only when all three sums are
-zero. A non-zero sum in any one of them means a commit landed. Otherwise:
-
-```bash
-# No --watch: returns immediately with the state of the CURRENT head.
-# ACCESS_PATH=mcp → `pull_request_read` method `get_check_runs`.
-gh pr checks <pr-number>
-```
-
-Classify with the **same** Step 1 table — "no checks reported" is still three states,
-and a bare `gh pr checks` still exits non-zero while merely pending.
-
-| Result | Phase 7 does |
-| ------ | ------------ |
-| All terminal and passing | Continue to Step 3 |
-| Any failing | Route back into [Auto Fix](#auto-fix), **spending the same `attempts` budget** — do not reset it. If it is already exhausted, stop and surface the failing checks rather than starting a fresh budget |
-| Any still pending | Watch, bounded, per the Step 1 block — reusing this phase's counters |
-| Query errored | Tooling failure. Report and escalate; do **not** route to Auto Fix |
-
-Because this phase never handed the budget to `review-loop`, `attempts` is spent by
-this phase alone and still means what Step 1 set it to mean. The counter lives in this
-phase's own transcript — no state file carries it across phases
-([`diagnostic-surface.md`](./diagnostic-surface.md) — *watch state is queried, never
-carried*).
-
-### Step 3: Log and hand back
-
-When the skill returns, log:
-
-```markdown
-- [TIMESTAMP] Phase 7: review-loop — self-review complete (N iterations; M findings applied; CI re-checked at <sha>: <green|fixed after K attempts|red>; inline report above)
-```
-
-Tell the user: PR URL, that the review-loop applied M findings and surfaced any remaining blockers inline, and that they should review before undrafting.
-Then proceed to [Observability Recheck](#observability-recheck).
+No review pass runs in this phase.
+The run reviewed its diff once, locally, before the PR (`create-pr` Step 5.5, or Full's Step 3), and with `--pr-review` `create-pr` Step 6.5 is the one posted pass — [`aw` § Review](../aw/SKILL.md#review).
+A `ci-auto-fix` commit is covered by the CI run it triggers, not by another review.
 
 ## Observability Recheck
 
@@ -535,7 +424,7 @@ This section is the anchor referenced from [`companion-skills.md`](./companion-s
 
 **Why this exists.** The Phase 4 [Observability Gate](./phase-4-testing.md#observability-gate)
 audits telemetry before Step 6 — but `ci-auto-fix` ([Auto Fix](#auto-fix)) and
-`review-loop` ([Auto Review](#auto-review)) both mutate code **after** that
+`review-loop` (local, or posted with `--pr-review`) both mutate code **after** that
 point: a mechanical CI fix can delete an unused-looking `catch` log, and
 `polish simplify` can refactor away a span or an error path Phase 3 added
 in the name of cleanliness. Phase 4's audit has no visibility into either —
@@ -543,8 +432,7 @@ it already ran. This is the one point in the run, after every code-mutating
 step has settled, where a final check can catch that drift before the run
 is declared done.
 
-**When:** once, after [Auto Review](#auto-review) completes (or is skipped
-because `review-loop` is not installed), only on runs where the original
+**When:** once, after [Auto Fix](#auto-fix) settles, only on runs where the original
 [Observability Trigger](./phase-3-implementation.md#observability-trigger)
 condition matched in Phase 3 — i.e. only when there is coverage to have
 lost. Skip entirely on a run where Phase 3 never touched a
@@ -564,10 +452,10 @@ Skill("measurable", "audit --diff --base $(git merge-base HEAD main) --strict")
 
 | Behavior                       | Detail                                                              |
 | ------------------------------ | ------------------------------------------------------------------- |
-| Frequency                      | Once, after Auto Fix and Auto Review have both settled              |
+| Frequency                      | Once, after Auto Fix has settled              |
 | What it checks                 | Same checklist as the Phase 4 gate, against the **current** head — catches coverage Phase 4 confirmed but a later mechanical edit removed, not just coverage that was never added |
 | Default behavior (no `--observability-strict`) | Advisory — log the finding, note it in the hand-back message, never block |
-| `--observability-strict` behavior | A `missing` finding that **Phase 4 did not already flag** (i.e. newly introduced by Auto Fix or Auto Review) is a regression: fix it directly (it's a small, localized diff — restore the removed span/log/event) and re-run this recheck **once**. If it still reports `missing` after that one attempt, stop and escalate to the user rather than looping — this is a tail check, not a second stuck-loop instance. A `missing` finding that Phase 4 **already** flagged and the user accepted is not re-litigated here |
+| `--observability-strict` behavior | A `missing` finding that **Phase 4 did not already flag** (i.e. newly introduced by Auto Fix) is a regression: fix it directly (it's a small, localized diff — restore the removed span/log/event) and re-run this recheck **once**. If it still reports `missing` after that one attempt, stop and escalate to the user rather than looping — this is a tail check, not a second stuck-loop instance. A `missing` finding that Phase 4 **already** flagged and the user accepted is not re-litigated here |
 | Read-only until the regression fix | The recheck itself never writes files; only the one-shot regression fix (under `--observability-strict`) does |
 | If skill missing               | Log `measurable() — skipped (not installed)`                      |
 | Progress Log entry             | `[TIMESTAMP] Phase 7: measurable(audit) — recheck: N missing (K new since Phase 4), M unlinked` (or `— skipped (not installed)`) |
@@ -723,8 +611,7 @@ Disable by removing this invocation (see
 - [ ] CI is green OR user has approved stopping
 - [ ] (Optional, UI tasks) `aw-tester` spec rehearsal dispatched against preview URL; verdict surfaced or skip logged
 - [ ] (Full Mode) `feature-pr-verifier` is **not** dispatched here — `aw` dispatches it at PR open; in a single-context run the `not run` line is logged
-- [ ] (Optional) `review-loop` invoked after CI green with `--critical`; inline report surfaced or skip logged
-- [ ] (If Phase 3's Observability Trigger matched) `measurable(audit)` recheck invoked after Auto Fix + Auto Review settle; findings surfaced (advisory) or, under `--observability-strict`, a newly-introduced `missing` finding fixed and re-checked once before escalating (anchor: `observability-recheck`)
+- [ ] (If Phase 3's Observability Trigger matched) `measurable(audit)` recheck invoked after Auto Fix settles; findings surfaced (advisory) or, under `--observability-strict`, a newly-introduced `missing` finding fixed and re-checked once before escalating (anchor: `observability-recheck`)
 - [ ] (Optional) PR merged → worktree removed with user confirmation
 - [ ] `lorekit(memory.write aw-lessons)` invoked at end-of-run; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] Final status reported to user
@@ -735,7 +622,6 @@ Disable by removing this invocation (see
 - Related rule: [phase-4-spec-verification](./phase-4-spec-verification.md) — Phase 4 spec runner (local)
 - Companion registry: [companion-skills.md](./companion-skills.md)
 - Related skill: [ci-auto-fix](../../../delivery/ci-auto-fix/SKILL.md)
-- Related skill: [review-loop](../../../quality/review-loop/SKILL.md) — optional Phase 7 auto-review (self-relation)
 - Related skill: [create-pr — Step 8 parallel pattern](../../../delivery/create-pr/SKILL.md)
 - Related agent: [aw-tester](../templates/aw-tester.agent.md) — optional Phase 7 spec rehearsal (UI tasks)
 - Related agent: [feature-pr-verifier](../../../../agents/feature-pr-verifier.md) — dispatched by `aw` at PR open (Full Mode), not by this phase

@@ -2,11 +2,11 @@
 name: aw
 description: >
   Ships coding work to a tested draft PR from one opt-in entry point: detects the tier, runs
-  Micro/Lite here, and on Full writes a short brief with sealed checks, works to them here, and gets a fresh-eyes review; prints a paste-ready /goal. Use when
+  Micro/Lite here, and on Full writes a short brief with sealed checks, works to them here, and converges once with a local review loop before the PR; prints a paste-ready /goal. Use when
   asked to "implement autonomously", "independently", "in isolation", "in a worktree", "end-to-end",
   "all the way to a PR", "ship this", "land this", "take care of this", "handle this without me", or /aw.
 disable-model-invocation: false
-argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no-interview] [--observability-strict]'
+argument-hint: '<task-description> [--no-confirm] [--critical] [--interview|--no-interview] [--observability-strict] [--pr-review]'
 license: MIT
 metadata:
   author: mthines
@@ -38,6 +38,7 @@ Why it is built this way: [`references/dispatcher-rationale.md`](references/disp
 - [First actions](#first-actions)
 - [Tier detection](#tier-detection)
 - [Routing](#routing)
+- [Review](#review)
 - [Brief and goal](#brief-and-goal)
 - [Follow-ups after completion](#follow-ups-after-completion)
 - [Terminal contract](#terminal-contract)
@@ -70,13 +71,35 @@ MODE SELECTION:
 
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
-| **Micro** | You, single-pass: Phase 0 quick confirm → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr` | in-conversation brief | none (docs if needed) |
+| **Micro** | You, single-pass: Phase 0 quick confirm → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) | in-conversation brief | none (docs if needed) |
 | **Lite** | You, single-pass: the Lite path from `SKILL.md` | in-conversation brief | per signal; Phase 5 docs and Phase 6 `create-pr` always |
-| **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a fresh-context `branch-reviewer` reviews the diff | `plan.md` + `checks.yaml` | `branch-reviewer`, `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
+| **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a local `review-loop` converges the diff | `plan.md` + `checks.yaml` | `review-loop` (local), `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
 
-Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the fresh-eyes review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.
+Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the local review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.
 
 `--interview`: run `Skill("interview")` before writing the brief, on any tier. Without it, the Full brief runs `interview` only when two or more `blocking` questions remain.
+
+## Review
+
+Every tier converges once, locally, before the PR; nothing is posted to the PR unless the user passes `--pr-review`.
+**Why:** [`references/dispatcher-rationale.md`](references/dispatcher-rationale.md#one-local-review-before-the-pr).
+
+| Tier | Local pass (unposted, zero GitHub calls) | `create-pr` call |
+| --- | --- | --- |
+| Micro / Lite | `create-pr` Step 5.5 (`review-loop --cap 3`, local mode) | `Skill("create-pr", "--no-post-review")` |
+| Full | [`full-tier.md`](rules/full-tier.md#step-3--local-review) Step 3 (`review-loop --cap 2`, local mode) | `Skill("create-pr", "--no-pre-review --no-post-review")` |
+
+- `--pr-review` drops `--no-post-review`, so `create-pr` Step 6.5 runs one posted `review-loop` on the draft; it is the only posted pass, and nothing reviews again after CI.
+- `--critical` implies `--pr-review` and is passed through to `create-pr`: the critical lens exists only in `pr-reviewer`, never in the local `branch-reviewer`.
+- Run `review-loop` in the context doing the work — this session, or a dispatched `aw-executor`'s own context — never in a sub-agent dispatched just to run it: it dispatches `branch-reviewer` itself.
+- A follow-up on an open PR runs the same local pass before pushing, and posts nothing unless `--pr-review`.
+
+```text
+✗ Wrong — Full converges locally, then create-pr reviews the same diff twice more
+  Skill("review-loop", "--cap 2"); Skill("create-pr")
+✓ Right — one local pass, then a PR that create-pr does not review again
+  Skill("review-loop", "--cap 2"); Skill("create-pr", "--no-pre-review --no-post-review")
+```
 
 ## Brief and goal
 
@@ -127,7 +150,7 @@ AW RUN COMPLETE
 
 Micro and Lite may collapse it to one line, keeping `Degraded:`: `AW RUN COMPLETE — Micro, PR <url>, Degraded: none, Needs you: nothing`.
 
-- Every companion or agent that did not run is named in `Degraded:` with its reason; a skipped `review-loop` means the PR was not reviewed.
+- Every companion or agent that did not run is named in `Degraded:` with its reason; a skipped local `review-loop` means the change was not reviewed.
 - "PR opened" means you hold the URL; a step that could not complete goes in `Needs you:`.
 - Run the exit write of [`rules/lessons.md`](rules/lessons.md) before emitting the block.
 

@@ -101,7 +101,7 @@ for full details.
 | 3     | Implementation             | Autonomous    | Code changes in isolated worktree            |
 | 4     | Testing                    | Autonomous    | Iterate until tests pass (mode-aware cap: 3 Lite / 5 Full) |
 | 5     | Documentation              | Autonomous    | `docs update` for `CLAUDE.md`, `README.md`, `docs/` |
-| 6     | PR Creation                | Autonomous    | `review-loop` (via `create-pr`), walkthrough, draft PR |
+| 6     | PR Creation                | Autonomous    | local `review-loop` (via `create-pr` Step 5.5), walkthrough, draft PR |
 | 7     | CI Gate + Optional Cleanup | Autonomous    | Watch CI, `ci-auto-fix` per failure, prune   |
 
 **Phase 0 and Phase 2 are MANDATORY.** All others gate progression.
@@ -127,7 +127,7 @@ Phase 5: Documentation
     | Skill("docs", "update --auto") always (self-improving docs loop across CLAUDE.md, README.md, docs/)
     | (docs complete)
 Phase 6: PR Creation
-    | Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run") -> Skill("aw-create-walkthrough") -> Skill("create-pr")
+    | Skill("aw-create-walkthrough") -> Skill("create-pr", <tier flags per aw § Review>)  (local review-loop: Step 5.5 on Lite, Step 3 on Full)
     | (draft PR delivered, walkthrough.md written)
 Phase 7: CI Gate + Optional Cleanup
     | Watch CI -> Skill("ci-auto-fix") per failed check (parallel, cap 2)

@@ -1,5 +1,5 @@
 ---
-title: 'Full tier — short brief, work here against checks, fresh-eyes review'
+title: 'Full tier — short brief, work here against checks, local review'
 impact: HIGH
 tags:
   - aw
@@ -18,7 +18,7 @@ The brief says what done looks like and what must not change — never how to bu
 
 - [Step 1 — Brief (minutes)](#step-1--brief-minutes)
 - [Step 2 — Work here until the checks pass](#step-2--work-here-until-the-checks-pass)
-- [Step 3 — Fresh-eyes review](#step-3--fresh-eyes-review)
+- [Step 3 — Local review](#step-3--local-review)
 - [Step 4 — Verify, walkthrough, PR, evidence](#step-4--verify-walkthrough-pr-evidence)
 - [Shared machines](#shared-machines)
 - [When sub-agent dispatch is unavailable](#when-sub-agent-dispatch-is-unavailable)
@@ -45,7 +45,7 @@ The brief says what done looks like and what must not change — never how to bu
 7. **Print the brief and the goal line,** then start working:
 
    ```text
-   /goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.
+   /goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed, rejected, or flagged, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.
    ```
 
    `<M>` is the number of checks. A user constraint that forbids the PR replaces the PR clause with `a line starting "PR: none —" is printed`. Follow it with: `Paste this line to let the session drive itself to done hands-off; the run continues normally if you do not.`
@@ -75,20 +75,22 @@ node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" > "$D/checks.run.lo
 6. Stuck: 5 attempts on the same failing area → re-trace the path end to end, write the finding to the Progress Log, try once more, then print `BLOCKED: <evidence>`.
 7. **Run every gate in the foreground** — the checks, the Before-PR command, tests, and the reviewer — with a Bash timeout up to 600000 ms; split a suite that needs longer. Never end a turn while work you started in the background is unfinished: a headless or `/goal` run ends with the turn, and the result is lost. Send long output to a log and print its tail.
 
-## Step 3 — Fresh-eyes review
+## Step 3 — Local review
 
-After Step 2 ends, get one review from a context that did not write the code — in the foreground:
+After Step 2 ends, converge the diff with `review-loop` in local mode — from this session, in the foreground:
 
 ```text
-Agent(subagent_type="branch-reviewer", prompt="--base <base sha> --head HEAD --out .agent/<branch>/findings.jsonl")
+Skill("review-loop", "--base <base sha> --cap 2")
 ```
 
-1. For every finding: fix it, or log `finding <id> rejected: <evidence>`. A finding about correctness, data loss, concurrency, or security is fixed unless the code refutes it.
-2. After fixes, re-run the checks and the Before-PR command.
-3. A second round only when round 1 produced a correctness fix; never a third.
-4. No dispatch tool, or the reviewer fails → `review: not run (<reason>)` under `Degraded:`; never review your own diff and call it independent.
+It dispatches `branch-reviewer` (a context that did not write the code), applies or declines each finding in `.agent/<branch>/findings.jsonl`, runs `polish simplify`, and re-reviews; it makes zero GitHub calls.
 
-Once a PR exists, the reviewer is `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` instead.
+1. A finding about correctness, data loss, concurrency, or security is fixed unless the code refutes it; a declined finding carries its evidence in the bus.
+2. After the loop returns, re-run the checks and the Before-PR command.
+3. `flagged` or `cap-reached` with open findings → print each as `flagged` in the evidence block and list it under `Needs you:`; never run a third iteration.
+4. The loop returns `skipped (sub-agent dispatch unavailable)` → `review: not run (<reason>)` under `Degraded:`; never review your own diff and call it independent.
+
+A follow-up on an open PR runs this step again before pushing; only with `--pr-review` is the reviewer `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` instead.
 
 ## Step 4 — Verify, walkthrough, PR, evidence
 
@@ -98,14 +100,14 @@ Once a PR exists, the reviewer is `Skill("review-loop", "<pr-url> --critical --n
    - A `telemetry:` check that is `contradicts`, or a failed `ui:` criterion, re-enters Step 2 under the same turn cap; then run Step 4.1 again.
    - No `.agents/aw/environments.yml` → `verify run: not configured — run /aw-verify setup` under `Degraded:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
 2. **Walkthrough:** `Skill("aw-create-walkthrough")` — one page of what changed and what you assumed.
-3. **PR:** `Skill("create-pr")` unless a user constraint forbids the push; then, only once you hold a PR URL, dispatch `feature-pr-verifier` once with the plan, walkthrough, head and base SHAs, and the Before-PR command, and watch CI (`ci-auto-fix` on failure, cap 2). No PR → `Verified: not run (no PR)`; the fresh-eyes review already covered the local diff.
+3. **PR:** `Skill("create-pr", "--no-pre-review --no-post-review")` unless a user constraint forbids the push — Step 3 already reviewed the diff, and `--pr-review` drops `--no-post-review` ([`aw` § Review](../SKILL.md#review)); then, only once you hold a PR URL, dispatch `feature-pr-verifier` once with the plan, walkthrough, head and base SHAs, and the Before-PR command, and watch CI (`ci-auto-fix` on failure, cap 2). No PR → `Verified: not run (no PR)`; Step 3 already covered the local diff.
 4. **Lessons:** the exit write in [`lessons.md`](lessons.md), unless a user constraint forbids LoreKit writes.
 5. **Evidence,** verbatim, then the terminal contract:
 
    ```text
    AW EVIDENCE
    <the run-checks sentinel line> | verify: <Before-PR command> exit=<code>
-   review: <N> findings — <F> fixed, <R> rejected | not run (<reason>)
+   review: <N> findings — <F> fixed, <R> rejected, <G> flagged | not run (<reason>)
    PR: <draft PR URL | none — <the user constraint>>
    Changed files (git diff --name-only <base>...HEAD):
    <one path per line>

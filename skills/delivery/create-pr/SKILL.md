@@ -4,9 +4,9 @@ description: >
   Writes a short narrative PR description (≤ 25 lines, hard ceiling 40), converges the branch with
   review-loop in local mode, pushes, opens a draft PR, runs review-loop until every thread is resolved, and hands red
   CI to ci-auto-fix. Flags: --split (2–4 dependency-ordered draft PRs), --quick, --no-review,
-  --no-simplify, --no-quality, --no-pre-review, --no-ui-verify, --no-media; invoke with /create-pr.
+  --no-simplify, --no-quality, --no-pre-review, --no-post-review, --no-ui-verify, --no-media; invoke with /create-pr.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-pre-review] [--no-review] [--no-simplify] [--no-quality] [--no-ui-verify] [--attach <file>] [--no-media]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-post-review] [--no-review] [--no-simplify] [--no-quality] [--no-ui-verify] [--attach <file>] [--no-media]'
 license: MIT
 metadata:
   author: mthines
@@ -45,6 +45,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow; the other flags sca
 | `no-quality` | `--no-quality` anywhere | Skip Step 6.5 entirely. Wins over every other quality flag. |
 | `no-ui-verify` | `--no-ui-verify` anywhere | Skip the default-on Step 6.4. |
 | `no-pre-review` | `--no-pre-review` anywhere | Skip the default-on Step 5.5. |
+| `no-post-review` | `--no-post-review` anywhere | Skip Step 6.5 only; the PR gets no posted review. `aw` passes it because the branch already converged locally. |
 | `attach` / `no-media` | `--attach <file>` (repeatable) / `--no-media` | `--attach` adds a local file to Step 6.2 ahead of the branch's captures; `--no-media` skips Step 6.2. |
 
 `rules/legacy-flags.md` — read when `$ARGUMENTS` carries `--review`, `--simplify`, `--pre-review`, `--no-feedback`, or `--no-preview-spec`.
@@ -129,7 +130,7 @@ Never soften the last row into a skip: a `failed` return means no block exists f
 
 ## Step 6.5: Post-draft quality loop (delegated to `review-loop`)
 
-Skip entirely on `--no-quality` or a non-code-only diff (docs, generated artefacts, lockfiles, asset binaries).
+Skip entirely on `--no-quality`, `--no-post-review`, or a non-code-only diff (docs, generated artefacts, lockfiles, asset binaries).
 Otherwise evaluate in this precedence order (first match wins):
 
 | # | Flags present | Invoke | What runs |
@@ -222,7 +223,7 @@ UI verify (Step 6.4): <authored (<N> specs) | not authored (no UI files in diff)
 
 Review loop (review-loop / pr-reviewer):
   Iterations: <N> of <cap>
-  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality) | NOT REVIEWED (sub-agent dispatch unavailable)>
+  Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | skipped (--no-quality) | skipped (--no-post-review) | NOT REVIEWED (sub-agent dispatch unavailable)>
   Open threads at exit: <count>
   Description refreshed: <yes | unchanged | skipped>
   Final verdict: <PASS | FAIL>

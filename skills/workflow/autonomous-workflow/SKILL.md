@@ -150,8 +150,8 @@ Single-pass in the caller's context; no `plan.md`, no `confidence(plan)`.
 | 3 | Code, commit; touch only the brief's files | Edit, fast check |
 | 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>` | Fast check |
 | 5 | `Skill("docs", "update --auto")` | Only on doc drift |
-| 6 | `Skill("create-pr")`, then the `AW EVIDENCE` block | Same |
-| 7 | Watch CI, `ci-auto-fix` if needed, then `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` | Watch CI |
+| 6 | `Skill("create-pr", "--no-post-review")` (its Step 5.5 is the local review; see [`aw` § Review](./aw/SKILL.md#review)), then the `AW EVIDENCE` block | Same |
+| 7 | Watch CI, `ci-auto-fix` if needed | Watch CI |
 
 ## Companions and parallelization
 
@@ -170,7 +170,7 @@ The skill ships **one dispatcher skill** and **two agents** (`aw-` = autonomous-
 
 | Unit | Kind | Role | Exit gate |
 | ---- | ---- | ---- | --------- |
-| [`aw`](./aw/SKILL.md) | skill | Opt-in dispatcher: lessons, tier, routing, `/goal` line; on Full, the brief + sealed `checks.yaml`, then the work in this session per `aw-executor`, then a `branch-reviewer` pass | Task routed, exit lesson written |
+| [`aw`](./aw/SKILL.md) | skill | Opt-in dispatcher: lessons, tier, routing, `/goal` line; on Full, the brief + sealed `checks.yaml`, then the work in this session per `aw-executor`, then a local `review-loop` pass | Task routed, exit lesson written |
 | [`aw-executor`](./templates/aw-executor.agent.md) | procedure (and agent) | Full, Phases 3–7 from the brief, applying [`corrections.md`](./rules/corrections.md) → review, walkthrough, draft PR; `aw` follows it in-session, and `/fix-bug` or a parallel request dispatches it | `CHECKS M/M PASS`, walkthrough shown, CI gate run |
 | [`aw-tester`](./templates/aw-tester.agent.md) | agent | Phase 4 (UI) spec verification, cold pass only | `green` or `inconclusive` before lint/type/test |
 
