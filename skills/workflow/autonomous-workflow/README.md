@@ -13,7 +13,7 @@
 1. **Sizes the job.** Micro (one file) and Lite (a small change) finish in one pass; Full gets the loop below.
 2. **Writes a short brief.** At most 60 lines: what done means, what must not change, and one sealed, runnable check per goal.
 3. **Builds until green.** In your session, in its own Git worktree, looping on the checks until they print `CHECKS n/n PASS`.
-4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed or rejected with evidence.
+4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed, rejected with evidence, or flagged for you.
 5. **Opens a draft PR** with a walkthrough and evidence, then gets CI green. Stuck after five attempts, it stops with `BLOCKED:` instead of guessing.
 6. **Learns** from every run.
 
@@ -143,7 +143,7 @@ All three units, dispatcher included:
 
 | Unit | Kind | Role | Terminal artifact | Exit gate |
 |---|---|---|---|---|
-| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. On Full, writes the brief (`plan.md` + sealed `checks.yaml`), works to it in your session, and converges it with one local `review-loop` before the PR. | `plan.md`, `walkthrough.md`, draft PR (Full) | Checks pass, review findings fixed or rejected, exit lesson written |
+| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. On Full, writes the brief (`plan.md` + sealed `checks.yaml`), works to it in your session, and converges it with one local `review-loop` before the PR. | `plan.md`, `walkthrough.md`, draft PR (Full) | Checks pass, review findings fixed, rejected, or flagged, exit lesson written |
 | `aw-executor` | agent | Runs a Full brief as a background sub-agent — only for an explicit background or parallel request | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
 | `aw-tester` | agent | Spec-driven UI verification, dispatched when the diff touches UI | Verdict block (~200 tokens) | `green` or `inconclusive` |
 

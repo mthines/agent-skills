@@ -56,7 +56,7 @@ The brief says what to do, what must not change, and what done looks like; how y
 
 1. `run-checks.mjs` printed `CHECKS M/M PASS (<sha>)` on the final head (or a check is `unsatisfiable` and the user approved).
 2. The brief's Before-PR command exited 0 on the final head (correction C4).
-3. One fresh-context review ran on the diff and every finding is fixed or rejected with evidence in the Progress Log — or `review: not run (<reason>)` is in `Degraded:`.
+3. One local `review-loop` ran on the diff and every finding is fixed, rejected with evidence, or flagged under `Needs you:` — or `review: not run (<reason>)` is in `Degraded:`.
 4. On a UI diff, `specs.md` was written against the built UI and run, its verdict logged — or `verify run: not run (<reason>)` is in `Degraded:` (correction C5).
 5. `.agent/{branch}/walkthrough.md` exists and its Review summary was printed inline.
 6. The draft PR is open and its URL printed, and the Phase 7 CI gate ran at least once.

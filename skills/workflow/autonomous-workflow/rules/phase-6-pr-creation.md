@@ -70,7 +70,7 @@ npm test && npm run build && npm run lint
 
 ## Post-Draft Review
 
-None by default: `create-pr` Step 5.5 already converged the branch with `review-loop` in local mode before the push, so the executor passes `--no-post-review` and the draft gets no posted review.
+None by default: the branch already converged with `review-loop` in local mode before the push (`create-pr` Step 5.5 on Lite, Step 3 on Full), so the executor passes `--no-post-review` and the draft gets no posted review.
 With `--pr-review`, drop `--no-post-review` from the call: Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")`, which posts a `COMMENT` review via `pr-reviewer` and applies findings via `implement-suggestion`. The `--no-ci` is not optional: Phase 7's CI gate owns the CI budget for this PR.
 
 Both loops gracefully skip if `review-loop` is not installed — log one line and continue.
@@ -80,7 +80,7 @@ Both loops gracefully skip if `review-loop` is not installed — log one line an
 | Runs in Full Mode         | Only with `--pr-review` (posted Step 6.5)                              |
 | Runs in Lite Mode         | Only with `--pr-review` (posted Step 6.5)                              |
 | If missing | Report `skipped (not installed)`, then if `review-loop` and `pr-reviewer` are absent, log and continue with manual diff review |
-| Disable                   | Pass `--no-pre-review` to `create-pr` (not recommended; the PR opens unreviewed) |
+| Disable                   | Default: `--no-post-review` already disables it; `--pr-review` enables it |
 
 ## Review Output
 
