@@ -333,18 +333,30 @@ else
   log "summary: $created created, $repaired repaired, $skipped_ok already ok, $skipped_unsafe skipped (unsafe)"
 fi
 
-# Prune links left dangling by a deleted or renamed skill/agent. Each tier
-# only touches links this script owns:
+# Prune links left dangling by a deleted or renamed skill/agent — a name the
+# repo no longer ships. Each tier only touches links this script owns:
 #   ~/.agents/{skills,agents}/X  dangling, target inside this repo
 #   ~/.claude/{skills,agents}/X  dangling, target inside ~/.agents
 # `-e` follows the whole chain, so a ~/.claude link whose ~/.agents hop is
 # dangling counts as dangling too, in a dry run as well as a real one.
+# in_repo <name> — true when the repo still ships a skill or agent of that name.
+in_repo() {
+  local name="${1%.md}" have
+  for have in "${all_names[@]}"; do
+    [[ "$have" == "$name" ]] && return 0
+  done
+  return 1
+}
+
 prune_dir() {
   local dir="$1" owner="$2" link
   [[ -d "$dir" ]] || return 0
   for link in "$dir"/*; do
     [[ -L "$link" && ! -e "$link" ]] || continue
     [[ "$(canonicalize_link "$link")" == "$owner"/* ]] || continue
+    # Still in the repo (moved category, or out of scope for a named run):
+    # a full run repairs it, so never delete it here.
+    in_repo "$(basename "$link")" && continue
     if (( DRY_RUN )); then
       log "would prune       $link → $(readlink "$link")"
     else
