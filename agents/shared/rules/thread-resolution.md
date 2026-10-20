@@ -178,7 +178,7 @@ declined — the question was withdrawn. Recording it as `fixed` would reward a 
 nobody acted on; recording it as `not-relevant` would punish one nobody rejected.
 
 **Closed — the Action now consults `isOutdated`.** `scripts/record-comment-relevance.mjs`
-fires on `pull_request_review_thread: resolved` and still has no way to know *why* a thread
+classifies each resolved thread at merge and still has no way to know *why* a thread
 was resolved, so the inference it used to make was wrong in exactly this case: its
 region-touch branch matched (a deletion always touches the line) and its terminal branch
 read "resolved with none of the above ⇒ `relevant / fixed`". Resolving a thread as

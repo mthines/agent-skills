@@ -587,8 +587,13 @@ resolution at all, and the three defects below were all downstream of reading th
 When the GraphQL read fails or is incomplete, thread state is *unknown* and both event modes skip
 rather than guess.
 
-**`pull_request_review_thread: resolved`** (mode `thread-resolved`) —
-Fires the moment a reviewer resolves a thread. Precedence, highest first:
+GitHub Actions has **no thread-resolved event**, and a caller that names `pull_request_review_thread`
+is an invalid workflow file in which no job runs.
+Resolved threads are therefore classified at merge, by the `pr-merged` sweep, with the decision below.
+L1 `G44g` rejects the trigger in the caller and the template.
+
+**Resolved-thread decision** (`decideResolvedThread`; also mode `thread-resolved` for manual runs) —
+Applies to every thread that is `isResolved` when the sweep reads it. Precedence, highest first:
 
 1. 👎 reaction from the PR author on the root comment → `not-relevant / wont-fix`
 2. `WONT_FIX_RE` language in any reply → `not-relevant / wont-fix`
@@ -599,23 +604,23 @@ Fires the moment a reviewer resolves a thread. Precedence, highest first:
 
 The author's own words (1–2) outrank anything inferred from the diff, and an undecidable anchor (4)
 outranks both inference branches — which is what closes the third defect below. Checks 5 and 6 are
-sound **only** in this mode: the trigger is the resolution event, so resolution is present by
-construction and the corroboration ``outcome-learning.md § Signal (c) requires corroboration``
+sound **only** for a resolved thread: `isResolved` is read before either applies, so resolution is present and the corroboration ``outcome-learning.md § Signal (c) requires corroboration``
 demands is satisfied. The same region-touch test is **not** sound on the post-merge fallback path,
 which carries no such guarantee.
 
 Check 6 remains the one inference with resolution as its *sole* evidence, and it stays coupled to
 `pr-reviewer` Step 2.9c: that step resolves threads it classified `declined` as well as `fixed`, so
 a decline whose wording misses `WONT_FIX_RE` — a different matcher, free to drift from Step 2.9c's
-phrase list — resolves, fires this trigger, and records `relevant / fixed` for a rejected finding.
+phrase list — resolves, reaches this decision at merge, and records `relevant / fixed` for a rejected finding.
 The two matchers are coupled: change `WONT_FIX_RE` and ``outcome-learning.md``'s list in the same
 commit, and keep them set-equal, or the drift opens silently.
 
 **`pull_request: closed` (merged)** (mode `pr-merged`) —
-Sweeps the PR's review threads and records `weak-not-relevant / ignored-at-merge` for the ones it
-can actually account for. It skips, writing nothing, on all of:
+Sweeps the PR's review threads.
+A resolved thread gets the resolved-thread decision above (signal `thread-resolved`), and nothing else.
+An open thread is recorded `weak-not-relevant / ignored-at-merge` only where the sweep can account for it.
+For an open thread it skips, writing nothing, on all of:
 
-- **`already-recorded-on-resolve`** — the thread is `isResolved`, so the first trigger owns it.
 - **`wont-fix`** (recorded, not skipped) — a reply decline, or a 👎 from anyone. Reactions are
   looked up on the root comment, capped at 30 lookups per sweep so a PR with hundreds of threads
   cannot exhaust the API budget.
@@ -656,7 +661,7 @@ correctness argument that rests on a deployment claim has to re-check the deploy
    resolved with no region touch was recorded twice on one fingerprint: `relevant / fixed` by the
    resolve trigger, then `weak-not-relevant / ignored-at-merge` by the sweep. Two **opposite**
    directional records, surfacing as a contradiction rather than resolving. Closed by the GraphQL
-   read plus the `already-recorded-on-resolve` skip. A 👎-declined thread was the same bug in one
+   read: a resolved thread gets only the resolved-thread decision. A 👎-declined thread was the same bug in one
    direction: recorded once by the resolve trigger, then again by a sweep that inspected replies and
    never reactions, so one event counted twice toward the `≥ 3` bar. The sweep now reads reactions.
 2. **File-level comments.** The touch guard's `line > 0` clause failed on a file-level comment,

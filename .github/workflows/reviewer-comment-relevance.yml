@@ -7,8 +7,10 @@
 # told them it was dismissed.
 #
 # Four modes, driven from GitHub webhooks (and, for the last one, a deployment) by the caller:
-#   thread-resolved    A reviewer resolved one thread  -> relevant/fixed or not-relevant/wont-fix.
-#   pr-merged          A PR merged                     -> sweep still-open threads as ignored-at-merge.
+#   thread-resolved    One resolved thread             -> relevant/fixed or not-relevant/wont-fix.
+#                      Manual only: Actions has no thread-resolved event, so callers rely on pr-merged.
+#   pr-merged          A PR merged                     -> resolved threads as above; still-open threads
+#                                                         as ignored-at-merge.
 #   human-comment      A human commented on a changed line this agent did not flag -> a `missed`
 #                      hotspot signal, the only direct evidence that detection came up short.
 #   deploy-regression  A post-deploy telemetry comparison -> amplify a dismissed finding that

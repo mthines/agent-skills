@@ -11,7 +11,7 @@
  * Context arrives through environment variables the workflow sets from the webhook.
  *
  * Modes:
- *   --mode=thread-resolved     One resolved thread          (pull_request_review_thread.resolved)
+ *   --mode=thread-resolved     One resolved thread          (manual only: Actions has no thread-resolved event)
  *   --mode=pr-merged           Sweep threads open at merge  (pull_request.closed, merged)
  *   --mode=human-comment       A human reviewed a line we did not flag  (pull_request_review_comment)
  *   --mode=deploy-regression   Post-deploy telemetry regression         (deployment_status.success)
@@ -27,8 +27,9 @@
  *      resolved with no region touch was therefore recorded twice on one fingerprint:
  *      `relevant/fixed` by the resolve trigger and `weak-not-relevant/ignored-at-merge`
  *      by the sweep — two OPPOSITE directional records. Fixed by reading thread state
- *      over GraphQL (`reviewThreads { isResolved isOutdated }`) and skipping any thread
- *      the resolve trigger owns.
+ *      over GraphQL (`reviewThreads { isResolved isOutdated }`). GitHub Actions has no
+ *      thread-resolved event, so the sweep is also the one writer for resolved threads:
+ *      it classifies them with the resolve decision and the unresolved rest as before.
  *
  *   2. FILE-LEVEL COMMENTS. A file-level comment carries a `path` but no line, so the
  *      touch guard's `line > 0` clause failed, execution fell PAST the guard, and the
@@ -354,6 +355,8 @@ export function decideResolvedThread({ thumbsDownBy, replies, thread, regionTouc
 
 /**
  * One thread at merge time → a record, or a documented refusal to write.
+ * A resolved thread is classified by `decideResolvedThread`, because no Actions event
+ * fires on resolution and the sweep is the only writer that sees it.
  * `ignored-at-merge` is only written where the evidence actually supports it: the thread
  * was open, nobody declined it, and no commit touched the region (or, for a file-level
  * comment, the file).
@@ -362,10 +365,11 @@ export function decideMergeSweep({ thread, replies, thumbsDownBy, commentPath, c
   if (!thread) {
     return { skip: "thread-state-unknown", reason: "Thread not present in the thread map; cannot establish it was open at merge" };
   }
-  // Defect 1. The resolve trigger owns every resolved thread; sweeping it again writes
-  // a second, often opposite, record on the same fingerprint.
+  // One record per thread: a resolved thread gets the resolve verdict, never also the
+  // open-thread verdict below.
   if (thread.isResolved) {
-    return { skip: "already-recorded-on-resolve", reason: "Thread was resolved; the thread-resolved trigger owns its outcome" };
+    const regionTouched = touch?.touched === true && touch.granularity === "line";
+    return decideResolvedThread({ thumbsDownBy, replies, thread, regionTouched, commentPath, commentLine });
   }
   if (hasWontFixReply(replies ?? [])) {
     return { relevance: "not-relevant", resolutionMethod: "wont-fix", reason: "Thread was declined in a reply" };
@@ -586,10 +590,10 @@ async function modePrMerged() {
     return;
   }
 
-  log(`Sweeping open threads at merge: PR #${prNumber}`);
+  log(`Sweeping review threads at merge: PR #${prNumber}`);
 
-  // Thread state FIRST: without it the sweep cannot tell an open thread from one the
-  // resolve trigger already recorded, and every write would risk contradicting itself.
+  // Thread state FIRST: without it the sweep cannot tell a resolved thread from an open
+  // one, and would record a fixed finding as ignored.
   const { complete, byRootComment } = fetchReviewThreads({ repo, prNumber });
   if (!complete) {
     log("Thread-state walk incomplete — aborting the sweep. A tooling gap must not become a stream of false ignored-at-merge records.");
@@ -659,12 +663,12 @@ async function modePrMerged() {
       resolutionMethod: verdict.resolutionMethod,
       reason: verdict.reason,
       severity: severityFromBody(root.body ?? ""),
-      signal: "pr-merged-sweep",
+      signal: thread.isResolved ? "thread-resolved" : "pr-merged-sweep",
     });
     swept++;
   }
 
-  log(`Sweep complete: ${swept} recorded, ${skipped} skipped as undecidable or already-owned.`);
+  log(`Sweep complete: ${swept} recorded, ${skipped} skipped as undecidable or not this agent's.`);
 }
 
 /** Any 👎 from anyone with write access counts as a decline signal (proposal § 4.7.4). */
@@ -917,8 +921,16 @@ function selfTest() {
     decideResolvedThread({ thumbsDownBy: null, replies: [], thread: open, regionTouched: false, commentPath: "a.ts", commentLine: 3 }).relevance === "relevant");
 
   // ── pr-merged sweep ──
-  t("DEFECT 1: a resolved thread is never swept (no second, opposite record)", () =>
-    decideMergeSweep({ thread: resolved, replies: [], commentPath: "a.ts", commentLine: 3, touch: { touched: false, granularity: "line" } }).skip === "already-recorded-on-resolve");
+  t("DEFECT 1: a resolved, untouched thread is relevant/fixed, never ignored-at-merge", () => {
+    const v = decideMergeSweep({ thread: resolved, replies: [], commentPath: "a.ts", commentLine: 3, touch: { touched: false, granularity: "line" } });
+    return v.relevance === "relevant" && v.resolutionMethod === "fixed";
+  });
+
+  t("a resolved thread with a won't-fix reply is a decline at merge", () =>
+    decideMergeSweep({ thread: resolved, replies: [{ body: "by design" }], commentPath: "a.ts", commentLine: 3, touch: { touched: false, granularity: "line" } }).resolutionMethod === "wont-fix");
+
+  t("a resolved, outdated thread writes nothing at merge", () =>
+    decideMergeSweep({ thread: { isResolved: true, isOutdated: true }, replies: [], commentPath: "a.ts", commentLine: 3, touch: { touched: true, granularity: "line" } }).skip === "anchor-gone");
 
   t("DEFECT 1: a 👎-declined thread is recorded as a decline, not as neglect", () => {
     const v = decideMergeSweep({ thread: open, replies: [], thumbsDownBy: "alice", commentPath: "a.ts", commentLine: 3, touch: { touched: false, granularity: "line" } });
@@ -953,34 +965,28 @@ function selfTest() {
   t("no path means nothing to corroborate against", () =>
     decideMergeSweep({ thread: open, replies: [], commentPath: "", commentLine: 0, touch: { touched: false, granularity: "file" } }).skip === "no-anchor");
 
-  // ── the two triggers cannot both write for one thread ──
+  // ── one verdict per thread ──
   //
-  // The two events are separated by `isResolved`, not by anything the deciders inspect
-  // in common: `thread_resolved` fires only on a thread GitHub has already marked
-  // resolved, and the merge sweep sees each thread in whatever state it ended in. So the
-  // invariant is a sequencing one, and asserting it means holding the resolve verdict
-  // against the sweep verdict *for the state the sweep would actually observe*.
-  t("a thread the resolve trigger wrote for is never swept again", () => {
-    for (const touchedThen of [true, false]) {
-      for (const touchedAtMerge of [true, false]) {
-        const a = decideResolvedThread({ thumbsDownBy: null, replies: [], thread: resolved, regionTouched: touchedThen, commentPath: "a.ts", commentLine: 3 });
-        if (a.skip) continue; // the resolve trigger declined to write; the sweep is free to
-        // The thread is resolved from that moment on, which is the state the sweep sees.
-        const b = decideMergeSweep({ thread: resolved, replies: [], commentPath: "a.ts", commentLine: 3, touch: { touched: touchedAtMerge, granularity: "line" } });
-        if (b.skip !== "already-recorded-on-resolve") return false; // the double-write defect
+  // The sweep is the only writer for both resolved and open threads, so the invariant is
+  // that a resolved thread gets exactly the resolve verdict and an open one never does.
+  t("a resolved thread at merge gets exactly the resolve verdict", () => {
+    for (const touched of [true, false]) {
+      for (const replies of [[], [{ body: "won't fix" }]]) {
+        for (const thumbsDownBy of [null, "alice"]) {
+          const a = decideResolvedThread({ thumbsDownBy, replies, thread: resolved, regionTouched: touched, commentPath: "a.ts", commentLine: 3 });
+          const b = decideMergeSweep({ thumbsDownBy, replies, thread: resolved, commentPath: "a.ts", commentLine: 3, touch: { touched, granularity: "line" } });
+          if (JSON.stringify(a) !== JSON.stringify(b)) return false;
+        }
       }
     }
     return true;
   });
 
-  t("every thread the sweep writes for is one the resolve trigger never saw", () => {
-    for (const thread of [open, resolved, outdated]) {
+  t("an open thread at merge is never recorded as fixed", () => {
+    for (const thread of [open, outdated]) {
       for (const touched of [true, false]) {
         const b = decideMergeSweep({ thread, replies: [], commentPath: "a.ts", commentLine: 3, touch: { touched, granularity: "line" } });
-        if (b.skip) continue;
-        // A write here is only sound if the thread is unresolved — an unresolved thread
-        // cannot have fired `pull_request_review_thread.resolved`.
-        if (thread.isResolved) return false;
+        if (b.resolutionMethod === "fixed") return false;
       }
     }
     return true;
