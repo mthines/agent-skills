@@ -151,6 +151,10 @@ the `(judgment)` items require the checklist below.
 
 ## Testing
 
+- [ ] Every `SKILL.md` instruction traces to a correction from a no-skill
+      run, a guardrail, or the definition of done — none documents a
+      step the agent already does unaided. (judgment)
+- [ ] Every must-never rule is a hook, not capitalised prose. (judgment)
 - [ ] At least 3 realistic test prompts written and run (baseline vs.
       with-skill). (judgment)
 - [ ] `evals/triggers.jsonl` written for any `auto` skill (8–10
