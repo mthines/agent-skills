@@ -1,12 +1,12 @@
 ---
-name: verify
+name: aw-verify
 description: >
   Proves a feature works end to end, locally or on the PR preview: reuses the
   brief and specs `/aw` wrote, gets the environment ready, runs the browser
   witness (ui-verify) and the telemetry witness (telemetry-verify) in parallel,
   fixes what it finds on a local stack one commit per finding, and reports with
   real screenshots. `setup` writes the committed `.agents/aw/` config every
-  suite skill reads. Triggers on "/verify".
+  suite skill reads. Triggers on "/aw-verify".
 disable-model-invocation: false
 argument-hint: '[run [local|preview]|setup|report] [<pr-url>|<pr-number>|<ticket-id>] [--no-fix] [--no-push] [--no-comment] [--loops <n>] [--keep-stack] [--foreign-stack teardown|ask|abort]'
 license: MIT
@@ -59,10 +59,24 @@ Nothing in `rules/` names a repo: repo values come from `.agents/aw/` ([`rules/c
 3. Create `.agent/{branch}/verify/`, record `run_started_at` (UTC ISO-8601), and write `aw-tester`'s target `.agent/{branch}/aw-target.<env>.yml` from the environment per `config.md`.
 4. Keep every log, env file, script, and screenshot this run writes under `.agent/{branch}/verify/`; never under `/tmp`, where another run on this machine uses the same names.
 
-## Pipeline
+## Run card
 
-This page is the map; each phase's rule file is the procedure.
-`Read` a phase's rule file (and, in phase 2, the driver file) before that phase's first action; a phase run from this page alone skips its log windows, edge matrix, and witness contract.
+Do these in order; each step names the rule that holds its detail.
+Before a step's first action, `Read` its rule when it is not already in context.
+
+1. **Intent** ([`rules/intent.md`](./rules/intent.md)). Write `.agent/{branch}/verify/intent.md`: the brief's `AC-n` verbatim, each tagged `ui:` / `api:` / `worker:`, and the edge-case matrix.
+   The matrix always has a **Concurrency** row for any AC that creates a record (fire the trigger twice in parallel, count rows) and one **Failure** row per guardrail in the brief (break the dependency the guardrail names: make the file unwritable, block the route, stop the service).
+2. **Stack** ([`rules/local-stack.md`](./rules/local-stack.md) + the driver file). Start it detached; logs to `.agent/{branch}/verify/procs/<name>.log`; poll the ready URL.
+   A sandbox that refuses `listen` → drive the app's own request handler in-process, and say `browser: not run (no local port)`.
+3. **Probe in windows** ([`rules/browser-verification.md`](./rules/browser-verification.md)). For each batch: append `window_start`, then run it, then `window_end` and each log's byte `log_offsets` to `probes.jsonl`. Batches: acceptance specs, then edge rows, then fault rows; restore every injected fault before the next batch.
+4. **Read every window** ([The two witnesses](#the-two-witnesses)). Dispatch `telemetry-verify` when a window closes; collect each `TELEMETRY` block into `telemetry.md`.
+   A window with no block and no `telemetry: skipped (<reason>)` line leaves the run incomplete.
+5. **Findings** ([`rules/findings.md`](./rules/findings.md)): one JSON line per defect in `findings.jsonl`, with the probe and the evidence.
+6. **Fix** (`local`, unless `--no-fix`: [`rules/fix-loop.md`](./rules/fix-loop.md)), **report** ([`rules/report.md`](./rules/report.md)), **lessons and cleanup** ([`rules/lessons.md § Write`](./rules/lessons.md#write-step)).
+
+The verdict is `BROKEN` when any AC fails or any guardrail does not hold; a defect outside the ACs and guardrails is reported but does not flip the verdict.
+
+## Pipeline
 
 | Phase | Name | Rule | Gate |
 | --- | --- | --- | --- |
@@ -88,7 +102,7 @@ Before the first dispatch, check that a tool named `mcp__<telemetry.yml mcp_serv
 Absent → record `telemetry: skipped (Dash0 MCP server '<name>' not connected)` and dispatch nothing; never query another Dash0 server, because another org's empty answer proves nothing.
 No `plan.md` (an ad-hoc request) → pass `--brief .agent/<branch>/verify/intent.md`; the dispatch is still mandatory.
 
-Dispatch `telemetry-verify` for each window as soon as it closes, in parallel with the remaining browser work, so its ingest wait overlaps the edge and API runs. Both `ui-verify` runs pass `--no-telemetry`: `verify` owns the read, so no window is read twice.
+Dispatch `telemetry-verify` for each window as soon as it closes, in parallel with the remaining browser work, so its ingest wait overlaps the edge and API runs. Both `ui-verify` runs pass `--no-telemetry`: `aw-verify` owns the read, so no window is read twice.
 It returns `TELEMETRY …`, `pipe:`, one `AC-n <verdict> — <journey>` line per AC, `signals:`, `findings:`, and `[receipt] verdict: confirms|contradicts|ambiguous|null`; its findings land in the same `findings.jsonl` as `T-<n>`.
 On Dash0 Agent0 use the sub-agent type `general`; with no dispatch tool, run it in this context and say `telemetry: same-context (reduced independence)`.
 

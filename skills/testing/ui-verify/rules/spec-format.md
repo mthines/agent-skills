@@ -69,7 +69,7 @@ Rules:
 
 | Spec source ([`spec-sources.md`](./spec-sources.md)) | Marker and format |
 | --- | --- |
-| `.agent/{branch}/specs.md` with `Format: intent` — written by `/aw` (already run at its Phase 4) or `/verify` | v2, its `## Spec N:` blocks lifted verbatim |
+| `.agent/{branch}/specs.md` with `Format: intent` — written by `/aw` (already run at its Phase 4) or `/aw-verify` | v2, its `## Spec N:` blocks lifted verbatim |
 | `.agent/{branch}/specs.md` without `Format: intent` — a legacy grammar spec | v1, its `## Spec N:` blocks lifted verbatim — no translation |
 | A `/fix-bug` reproduction artifact | v2 intent |
 | The diff | v2 intent |

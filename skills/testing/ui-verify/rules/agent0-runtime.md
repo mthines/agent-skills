@@ -153,4 +153,4 @@ Every credential is read from an environment variable named in `.agents/aw/envir
 On this host those variables are the automation's `envVars` / secrets — set each one that file names.
 One that is unset makes the authed specs `skipped`, exactly as it does in CI, and the report says which variable was missing.
 
-Setup is interactive: run `/verify setup` locally and commit `.agents/aw/`; this host only reads it.
+Setup is interactive: run `/aw-verify setup` locally and commit `.agents/aw/`; this host only reads it.

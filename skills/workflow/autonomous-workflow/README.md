@@ -151,9 +151,9 @@ All three units, dispatcher included:
 tasks, and runs Micro/Lite single-pass. It is invoked deliberately, not as a
 wrapper on every prompt.
 
-**One-time setup:** run `/verify setup` once per project before the first autonomous
+**One-time setup:** run `/aw-verify setup` once per project before the first autonomous
 UI task. It writes the committed `.agents/aw/` config (environments, login, telemetry);
-Full-tier `aw` then proves its work with `/verify local`. Without it, specs are written
+Full-tier `aw` then proves its work with `/aw-verify local`. Without it, specs are written
 but not run.
 
 > **Upgrading from a pre-`aw-` install?** The installer detects legacy

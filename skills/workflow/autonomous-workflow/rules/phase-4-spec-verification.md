@@ -37,7 +37,7 @@ Playwright test files.
 
 Specs are written by the executor in `specs.md`, in the intent format, once the UI exists (see
 [`phase-1-planning.md` — Spec Emission](./phase-1-planning.md#spec-emission-ui-tasks) and correction C5).
-The same file is later lifted into the PR body by `ui-verify author` and re-run on a local stack by `/verify`.
+The same file is later lifted into the PR body by `ui-verify author` and re-run on a local stack by `/aw-verify`.
 A legacy grammar `specs.md` still runs; its `critical-path` specs are promoted to saved `*.spec.ts` via the `e2e-testing` skill's Generator.
 
 **This sub-rule is separate from the main `phase-4-testing.md` rule.** It runs
@@ -95,10 +95,10 @@ Valid skip reasons:
 
 The `Target:` header in `specs.md` names an environment in `.agents/aw/environments.yml`;
 the run writes `aw-tester`'s target `.agent/{branch}/aw-target.{aw_target_name}.yml` from it
-(the `verify` skill's `rules/config.md`).
+(the `aw-verify` skill's `rules/config.md`).
 
 **If the file exists, use it.** If it is missing, do **not** halt — a cold-start
-repo has no committed target, and stranding the run on an interactive `/verify setup`
+repo has no committed target, and stranding the run on an interactive `/aw-verify setup`
 is exactly the cliff this flow removes. Synthesize an implicit defaults target in
 [Step 1](#step-1-detect-the-aw-target) instead:
 
@@ -110,7 +110,7 @@ fixtures: { references: {} }
 ```
 
 Any spec that needs auth or a fixture the defaults cannot provide is reported
-`skipped` with its reason by `aw-tester`, never failed. Suggest `/verify setup` once
+`skipped` with its reason by `aw-tester`, never failed. Suggest `/aw-verify setup` once
 to pin a real target; never block on it and never scaffold it yourself (it is the
 user-run setup flow).
 
@@ -145,7 +145,7 @@ degradation:
 
 ```markdown
 - [TIMESTAMP] Phase 4: spec-verification — no aw-target ({AW_TARGET}); running
-  against localhost defaults. /verify setup suggested (non-blocking).
+  against localhost defaults. /aw-verify setup suggested (non-blocking).
 ```
 
 Also detect the `aw-tester` agent:
@@ -388,6 +388,6 @@ dispatches (~30 s + sub-agent tokens × 2). Two hot-loop iterations cost
 - Parent rule: [`phase-4-testing.md`](./phase-4-testing.md) — stuck-loop detection and mode-aware cap
 - Agent: [`aw-tester.agent.md`](../templates/aw-tester.agent.md) — the spec runner
 - Skill: [`e2e-testing`](../../../testing/e2e-testing/SKILL.md) — Generator for critical-path spec promotion
-- Setup: `/verify setup` — writes `.agents/aw/` (user-run prerequisite)
+- Setup: `/aw-verify setup` — writes `.agents/aw/` (user-run prerequisite)
 - Templates: [`specs.md.template`](../templates/specs.md.template)
 - Planning: [`phase-1-planning.md`](./phase-1-planning.md) — where specs.md is emitted

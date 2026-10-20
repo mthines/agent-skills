@@ -36,7 +36,7 @@ Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> --url <
 - Always pass `--url`: on `local` it is the stack's `url`, so `ui-verify` never falls through to the deployed preview; on `preview` it is the URL Phase 2 resolved.
 - `--env` picks the login and fixtures from `.agents/aw/environments.yml` via `.agent/{branch}/aw-target.<env>.yml`.
 - Keep the adversarial pass on for the acceptance run: hostile input, double submit, failed requests, keyboard-only, small viewports.
-- Login fails → run `/verify setup` once and retry; never hand-roll a login. `.agents/aw/notes.md` names any repo-specific login step.
+- Login fails → run `/aw-verify setup` once and retry; never hand-roll a login. `.agents/aw/notes.md` names any repo-specific login step.
 
 One `probes.jsonl` line per spec, joined to its criterion by the `AC-n` / `EC-n` in the spec title:
 
@@ -59,7 +59,7 @@ Agent(subagent_type="general-purpose",
 - Its ingest wait overlaps the remaining browser work; collect every `TELEMETRY` block before Phase 4.
 - Store each block in `.agent/{branch}/verify/telemetry.md`; Phase 5 takes the `AC-n` journey lines from it.
 - `telemetry.yml` `backend: none` or `telemetry-verify` not installed → one line `telemetry: skipped (<reason>)`; never a pass.
-- `verify` owns the telemetry read, so both runs pass `--no-telemetry`; a window is never read twice.
+- `aw-verify` owns the telemetry read, so both runs pass `--no-telemetry`; a window is never read twice.
 
 **`ui-verify` unavailable:** load the `playwright-cli` skill and execute the same spec files step by step, capturing a full-page screenshot per `**Expected:**` item into `.agent/{branch}/verify/captures/`.
 

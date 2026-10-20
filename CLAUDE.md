@@ -70,7 +70,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
-- `verify` (`/`) — proves a feature works on `local` or `preview`: runs the brief's specs through `ui-verify` and reads each window through `telemetry-verify`, fixes locally, reports. `setup` writes the committed `.agents/aw/` config every suite skill reads
+- `aw-verify` (`/`) — proves a feature works on `local` or `preview`: runs the brief's specs through `ui-verify` and reads each window through `telemetry-verify`, fixes locally, reports. `setup` writes the committed `.agents/aw/` config every suite skill reads
 - `ui-verify` (`Skill()` + `/`) — browser witness: Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); checks every outcome with evidence, then tries to break it and records it
 - `telemetry-verify` (`Skill()`) — telemetry witness: reads one traffic window's web events, traces, and logs; follows each criterion from web event to API to database; grades the brief's `telemetry:` criteria
 

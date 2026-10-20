@@ -93,10 +93,10 @@ Once a PR exists, the reviewer is `Skill("review-loop", "<pr-url> --critical --n
 ## Step 4 — Verify, walkthrough, PR, evidence
 
 1. **Verify (C5).** When the diff touches UI files, write `specs.md` against the built UI first.
-   - `.agents/aw/environments.yml` exists → `Skill("verify", "run local --no-push --no-comment --foreign-stack abort")`. It starts the stack without touching another checkout's ([Shared machines](#shared-machines)), runs the specs through `ui-verify` and each window through `telemetry-verify`, fixes what it finds as separate commits, and writes `.agent/<branch>/verify/report.md`.
+   - `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`. It starts the stack without touching another checkout's ([Shared machines](#shared-machines)), runs the specs through `ui-verify` and each window through `telemetry-verify`, fixes what it finds as separate commits, and writes `.agent/<branch>/verify/report.md`.
    - For each `telemetry:` judge check, read its `AC-<n>` line in the TELEMETRY blocks in `.agent/<branch>/verify/telemetry.md`: `confirms` → set its `status: pass` in `checks.yaml`; anything else → leave it and log the line. Re-run run-checks.
    - A `telemetry:` check that is `contradicts`, or a failed `ui:` criterion, re-enters Step 2 under the same turn cap; then run Step 4.1 again.
-   - No `.agents/aw/environments.yml` → `verify run: not configured — run /verify setup` under `Degraded:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
+   - No `.agents/aw/environments.yml` → `verify run: not configured — run /aw-verify setup` under `Degraded:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
 2. **Walkthrough:** `Skill("aw-create-walkthrough")` — one page of what changed and what you assumed.
 3. **PR:** `Skill("create-pr")` unless a user constraint forbids the push; then, only once you hold a PR URL, dispatch `feature-pr-verifier` once with the plan, walkthrough, head and base SHAs, and the Before-PR command, and watch CI (`ci-auto-fix` on failure, cap 2). No PR → `Verified: not run (no PR)`; the fresh-eyes review already covered the local diff.
 4. **Lessons:** the exit write in [`lessons.md`](lessons.md), unless a user constraint forbids LoreKit writes.

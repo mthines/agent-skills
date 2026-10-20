@@ -93,7 +93,7 @@ Mark the rest `n/a` with a one-line reason; never drop them silently.
 | Numbers & time | 0, negative, max int, decimal where int expected, a future time range, a range spanning a DST change |
 | State | Reload mid-flow, back/forward, deep link to a deleted or foreign entity, two tabs editing one entity, stale cache after an edit |
 | Concurrency | Double submit, rapid toggle, navigating away during a request |
-| Failure | Backend 500, 403, timeout, offline (block the route), malformed response |
+| Failure | Backend 500, 403, timeout, offline (block the route), malformed response; one row per guardrail in the brief, breaking the dependency it names |
 | Permissions | Read-only member, feature flag off, another tenant's entity ID |
 | Viewport & input | 375 px width, keyboard-only path, 200 % zoom |
 

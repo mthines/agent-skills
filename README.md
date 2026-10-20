@@ -70,11 +70,11 @@ Independent finders flag, a verifier filters, and only grounded findings reach y
 The brief's spec runs on your local stack or the preview and tries to break the change. Then the telemetry is read back to check that every click reached the API and the database the way it should. Screenshots and recordings are attached.
 
 ```text
-/verify setup        # once per repo; commits .agents/aw/
-/verify preview 42
+/aw-verify setup        # once per repo; commits .agents/aw/
+/aw-verify preview 42
 ```
 
-[`verify`](./skills/testing/verify/SKILL.md) · [`ui-verify`](./skills/testing/ui-verify/SKILL.md) · [`telemetry-verify`](./skills/testing/telemetry-verify/SKILL.md)
+[`aw-verify`](./skills/testing/aw-verify/SKILL.md) · [`ui-verify`](./skills/testing/ui-verify/SKILL.md) · [`telemetry-verify`](./skills/testing/telemetry-verify/SKILL.md)
 
 </td>
 </tr>
@@ -137,7 +137,7 @@ Refactor the API client to use retry logic — handle it in isolation
 3. **Builds until green.** In your session, in its own Git worktree, looping until the checks print `CHECKS n/n PASS`.
 4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed or rejected with evidence.
 5. **Opens a draft PR** with a walkthrough and evidence, then gets CI green. Stuck after five attempts, it stops with `BLOCKED:` instead of guessing.
-6. **Proves it works.** With `.agents/aw/` set up, [`/verify`](./skills/testing/verify/SKILL.md) runs the brief's specs on your local stack, tries to break the change, and reads the telemetry back: each criterion is traced from the web event to the API to the database. A `telemetry:` criterion in the brief must be confirmed before the run counts as done.
+6. **Proves it works.** With `.agents/aw/` set up, [`/aw-verify`](./skills/testing/aw-verify/SKILL.md) runs the brief's specs on your local stack, tries to break the change, and reads the telemetry back: each criterion is traced from the web event to the API to the database. A `telemetry:` criterion in the brief must be confirmed before the run counts as done.
 
 Every run prints a paste-ready `/goal` line to let the session drive itself to done, and records what it learned for the next run.
 How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/rules/full-tier.md) · [design notes](./skills/workflow/autonomous-workflow/CLAUDE.md).
@@ -167,7 +167,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/attach-media`](./skills/delivery/attach-media/SKILL.md) | Uploads screenshots and recordings into a PR so they render inline. |
 | [`/github-actions-author`](./skills/delivery/github-actions-author/SKILL.md) | Writes and reviews fast, cheap GitHub Actions workflows. |
 | **`testing/`** | *UI verification and end-to-end tests* |
-| [`/verify`](./skills/testing/verify/SKILL.md) | Proves a feature works on your local stack or the preview — browser and telemetry — and fixes what fails. `setup` writes the shared `.agents/aw/` config. |
+| [`/aw-verify`](./skills/testing/aw-verify/SKILL.md) | Proves a feature works on your local stack or the preview — browser and telemetry — and fixes what fails. `setup` writes the shared `.agents/aw/` config. |
 | [`/ui-verify`](./skills/testing/ui-verify/SKILL.md) | Puts a plain-language UI spec in the PR, runs it, then tries to break it. |
 | [`telemetry-verify`](./skills/testing/telemetry-verify/SKILL.md) | Reads back what the services recorded during a run and checks each journey from web event to database. |
 | [`/e2e-testing`](./skills/testing/e2e-testing/SKILL.md) | Plans, writes, and heals Playwright end-to-end tests. |

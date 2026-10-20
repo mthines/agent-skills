@@ -9,7 +9,7 @@ tags:
 # Backend: `logs`
 
 For a repo with no queryable telemetry backend.
-Set `ingest_wait_seconds: 0`: logs are local and immediate.
+Set `ingest_wait_seconds: 0`: logs are local and immediate, unless the app writes some events asynchronously (a queue, a batch flusher, a retry timer); then set it to that flush interval plus a margin, so a delayed error lands inside the read.
 
 | Source | From |
 | --- | --- |

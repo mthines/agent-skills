@@ -11,7 +11,7 @@ tags:
 
 # Auth
 
-Read during `/verify setup` when an environment needs a login, and when a run's login fails.
+Read during `/aw-verify setup` when an environment needs a login, and when a run's login fails.
 Every environment's `auth` block in `.agents/aw/environments.yml` uses the fields below; `aw-tester` and the scripts read the same names.
 
 **Secrets never touch a tracked file.** Credentials live in env vars or the OS keychain; config names *which* env var, never a value.

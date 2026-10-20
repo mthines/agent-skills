@@ -76,7 +76,7 @@ Package Map table is the load-bearing part — keep it as the first table
 in the file so [`scope-detection.md`](./scope-detection.md) Step 1 can read
 it without scanning the whole document.
 
-Running the code and reading its telemetry back is configured in `.agents/aw/` by `/verify setup`, not in this profile.
+Running the code and reading its telemetry back is configured in `.agents/aw/` by `/aw-verify setup`, not in this profile.
 
 ## Re-running setup
 

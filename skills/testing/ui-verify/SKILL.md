@@ -50,7 +50,7 @@ This skill's own rules are linked where they apply below. It reuses these and ne
 | --- | --- |
 | Spec formats: intent (`Format: intent`) and grammar (`WHEN/THEN/AND`, locators, `url:`, `network:`, `semantic:` via [`jev-assert`](../../quality/jev-assert/SKILL.md)) | `aw-tester`'s `templates/intent-spec.md.template` and [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template) |
 | Spec-run contract (locators, auth, verdict, intent grading — § 6, `--record-video`) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) |
-| Config: environments, login, fixtures, UI surface, adversarial settings | `.agents/aw/environments.yml` and `.agents/aw/ui.yml` — the `verify` skill's `rules/config.md`; written by `/verify setup` |
+| Config: environments, login, fixtures, UI surface, adversarial settings | `.agents/aw/environments.yml` and `.agents/aw/ui.yml` — the `aw-verify` skill's `rules/config.md`; written by `/aw-verify setup` |
 | Telemetry of the run | `telemetry-verify`, dispatched per window ([`rules/runner.md § Step 4c`](./rules/runner.md#step-4c-telemetry--telemetry-verify-on-each-window)) |
 | Out-of-bounds severity cap (`critical` or `high`, one per move) | the tier table in [`rules/out-of-bounds.md`](./rules/out-of-bounds.md) |
 
@@ -60,7 +60,7 @@ Why `SKILL.md` is shaped this way: [`references/skill-design.md`](./references/s
 
 The first token of `$ARGUMENTS` selects the operation.
 With no operation token, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given.
-Setup is `/verify setup`; this skill has none.
+Setup is `/aw-verify setup`; this skill has none.
 
 | Operation | Does |
 | --- | --- |
@@ -227,7 +227,7 @@ Read the final `UI_DIFF:` line: `no` → stop with `not authored (no UI files in
 A misclassified diff is a signal to refine `ui.yml`'s `surface` ([`rules/memory.md § The UI surface`](./rules/memory.md#the-ui-surface)).
 
 1. **Read memory first** — spec-authoring and locator lessons per [`rules/memory.md § Read at author time`](./rules/memory.md).
-2. **Reuse an existing spec source** in priority order ([`rules/spec-sources.md`](./rules/spec-sources.md)): `.agent/{branch}/specs.md` (written by `/aw` or `/verify`) — lift its `## Spec N:` blocks verbatim, never translated, into a `<!-- ui-verify:v2 -->` block when its header has `Format: intent`, else a `<!-- ui-verify:v1 -->` block; else a `/fix-bug` repro artifact for a UI bug — rewrite it as an intent spec whose `**Expected:**` items are the fixed behavior. When a source is found, seed the block from it and skip step 3.
+2. **Reuse an existing spec source** in priority order ([`rules/spec-sources.md`](./rules/spec-sources.md)): `.agent/{branch}/specs.md` (written by `/aw` or `/aw-verify`) — lift its `## Spec N:` blocks verbatim, never translated, into a `<!-- ui-verify:v2 -->` block when its header has `Format: intent`, else a `<!-- ui-verify:v1 -->` block; else a `/fix-bug` repro artifact for a UI bug — rewrite it as an intent spec whose `**Expected:**` items are the fixed behavior. When a source is found, seed the block from it and skip step 3.
 3. **Otherwise write an intent spec from the diff** per [`rules/spec-format.md § Writing an intent spec (v2)`](./rules/spec-format.md#writing-an-intent-spec-v2): one `## Spec N:` per user-visible behavior, name the `**Changed:**` target, mark the step that exercises it `[must-follow]`, list each outcome under `**Expected:**`, and put known locators under `**Hints:**`. 1 to 3 specs.
 4. **Brainstorm out-of-bounds specs** for the pending states the changed component creates, per [`rules/out-of-bounds.md`](./rules/out-of-bounds.md); its [When it runs](./rules/out-of-bounds.md#when-it-runs) table picks `fan-out`, `in-context`, or `skipped`. Append the `Out of bounds:` specs it selects: `ignore`, `dismiss`, and `reload` for a pending user decision, then every candidate the `severity` rubric rates `critical` or `high`. Severity is the cap, not a count; each spec ends in a keep-going step and expects only recovery outcomes.
 5. **Wrap and inject** the block per [`rules/spec-format.md`](./rules/spec-format.md) with the body-write call for your [access path](#step-0-resolve-your-github-access-path), preserving everything already in the body. When that write cannot be made, report `failed (no GitHub access path)` — never the drafted specs.

@@ -290,7 +290,7 @@ The Chrome driver runs in the user's own browser profile, so its skipped categor
 
 ## Configuration
 
-An optional `adversarial:` block in the committed `.agents/aw/ui.yml` tunes the pass (personal overrides merge per the `verify` skill's `rules/config.md`).
+An optional `adversarial:` block in the committed `.agents/aw/ui.yml` tunes the pass (personal overrides merge per the `aw-verify` skill's `rules/config.md`).
 Every key is optional, and an absent block means the defaults.
 
 ```yaml

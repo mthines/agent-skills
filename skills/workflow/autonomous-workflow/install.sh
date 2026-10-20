@@ -300,8 +300,8 @@ vlog "  Micro/Lite run single-pass via aw; Full: aw writes the brief + sealed ch
 vlog "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
 vlog ""
 vlog "UI verification setup (one-time, per project):"
-vlog "  Run /verify setup to write .agents/aw/ (environments, login, telemetry) before the first UI autonomous task."
-vlog "  See: skills/testing/verify/SKILL.md"
+vlog "  Run /aw-verify setup to write .agents/aw/ (environments, login, telemetry) before the first UI autonomous task."
+vlog "  See: skills/testing/aw-verify/SKILL.md"
 
 if [[ "$MODE" == "development" ]]; then
   vlog ""

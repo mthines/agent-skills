@@ -93,7 +93,7 @@ Narrow checks routinely pass while a neighbouring test, an unmocked new call, or
 ## C5 — A UI spec is written against the built UI and run
 
 When the diff touches UI files, write `.agent/{branch}/specs.md` **after** the UI exists, from the code you wrote, then run it.
-Write it in the intent format (`Format: intent`, [`templates/intent-spec.md.template`](../templates/intent-spec.md.template)): the same file is run by `aw-tester`, lifted into the PR body by `ui-verify author`, and re-run on a local stack by `/verify`.
+Write it in the intent format (`Format: intent`, [`templates/intent-spec.md.template`](../templates/intent-spec.md.template)): the same file is run by `aw-tester`, lifted into the PR body by `ui-verify author`, and re-run on a local stack by `/aw-verify`.
 
 1. **Targets come from the code.** Every route, accessible name, and visible text in the spec is grepped from the branch's components and locale files; put each locator under `**Hints:**` with its `file:line`.
 2. **One spec per `ui:` acceptance criterion,** titled with its ID: `## Spec 2: AC-2 — <user goal>`. The control the diff adds is `**Changed:**`, and the step that uses it is `[must-follow]`.
@@ -102,7 +102,7 @@ Write it in the intent format (`Format: intent`, [`templates/intent-spec.md.temp
 5. **Expected items are exact.** No either/or outcome ("shows X or Y"); name the fixture item and the exact text, value, or count.
 6. **Shared data is restored.** A spec that saves records the original value and puts it back in its last steps, or uses the UI's cancel path and never saves.
 7. **Cover the negative paths the UI exposes:** flag off, a user without permission, the empty state, a removed or stale item, a failed save on a local target.
-8. **Run it** with `Skill("verify", "run local …")` when `.agents/aw/environments.yml` exists (it runs the specs and reads their telemetry), or `ui-verify run` on the preview once the PR is open, and log the verdict line.
+8. **Run it** with `Skill("aw-verify", "run local …")` when `.agents/aw/environments.yml` exists (it runs the specs and reads their telemetry), or `ui-verify run` on the preview once the PR is open, and log the verdict line.
    When no target can be reached, print `verify run: not run (<reason>)` under `Degraded:` — never imply it ran.
 
 ```markdown

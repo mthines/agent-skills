@@ -82,5 +82,5 @@ Never paraphrase the sentinel line, and never print `PR:` without a URL you rece
 When the run wrote `specs.md` or the brief has a `telemetry:` criterion, print one handoff line right after the block, so the same proof can be re-run:
 
 ```text
-verify run: .agent/<branch>/verify/report.md — browser <green|red|inconclusive|not run (<reason>)>, telemetry <confirms|contradicts|ambiguous|null|not run (<reason>)> · preview: /ui-verify run <pr-url> · local: /verify <pr-url>
+verify run: .agent/<branch>/verify/report.md — browser <green|red|inconclusive|not run (<reason>)>, telemetry <confirms|contradicts|ambiguous|null|not run (<reason>)> · preview: /ui-verify run <pr-url> · local: /aw-verify <pr-url>
 ```

@@ -11,9 +11,9 @@ tags:
 
 # Config
 
-Every skill in the verification suite — `verify`, `ui-verify`, `telemetry-verify`, `aw-tester`, and `aw` — reads its repo values from `.agents/aw/`.
-`/verify setup` writes it; nothing else does.
-It is committed, so a teammate who clones the repo runs `/verify` with no setup.
+Every skill in the verification suite — `aw-verify`, `ui-verify`, `telemetry-verify`, `aw-tester`, and `aw` — reads its repo values from `.agents/aw/`.
+`/aw-verify setup` writes it; nothing else does.
+It is committed, so a teammate who clones the repo runs `/aw-verify` with no setup.
 
 ## Files
 
@@ -27,7 +27,7 @@ It is committed, so a teammate who clones the repo runs `/verify` with no setup.
 | `~/.agents/aw/config.yml` | never | every skill in the suite | Your policies, and your per-repo overrides under `repos.<owner>/<name>` |
 
 Templates: [`templates/aw/`](../templates/aw/).
-A missing file means its defaults; a missing `environments.yml` means the suite is not set up — run `/verify setup`.
+A missing file means its defaults; a missing `environments.yml` means the suite is not set up — run `/aw-verify setup`.
 
 ## Resolve the config (every skill, before any other step)
 

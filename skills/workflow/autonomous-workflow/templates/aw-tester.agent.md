@@ -98,7 +98,7 @@ Resolve the following from the invocation prompt:
 
 ### 3. Load the aw-target
 
-Read the aw-target file at `aw_target_path`. Missing → stop with `verdict: inconclusive` and `notes: no aw-target at <path> — the caller writes it from .agents/aw/environments.yml (run /verify setup)`. Parse:
+Read the aw-target file at `aw_target_path`. Missing → stop with `verdict: inconclusive` and `notes: no aw-target at <path> — the caller writes it from .agents/aw/environments.yml (run /aw-verify setup)`. Parse:
 - `base_url`
 - `auth.strategy` and `auth.storage_state` (if strategy is `storage-state`)
 - `fixtures.references` (for placeholder resolution)

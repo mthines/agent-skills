@@ -195,7 +195,7 @@ The two compatibility headings (`## Requirements`, `## Acceptance Criteria (Defi
 1. One entry per `AC-{n}`, same IDs as the plan, no orphans in either direction (`confidence(plan)` rule #11).
 2. Pin the contract, not the implementation: `ears` and `expect` are exact; `run` is a first draft the executor may make runnable.
 3. Prefer `command` and `grep`; use `judge` only where no command can decide (visual direction, copy tone). A judge check never gates alone — except a `telemetry:` one, which an executed receipt decides (rule 4).
-4. An AC prefixed `telemetry:` is always `kind: judge`, with `run: "verify run local"` and `expect: "confirms"`: `verify`'s `telemetry-verify` receipt for that `AC-{n}` decides it, and the executor sets `status: pass` only on `confirms`.
+4. An AC prefixed `telemetry:` is always `kind: judge`, with `run: "aw-verify run local"` and `expect: "confirms"`: `aw-verify`'s `telemetry-verify` receipt for that `AC-{n}` decides it, and the executor sets `status: pass` only on `confirms`.
 5. No `{` `}` placeholders in `run:`.
 
 ```yaml
@@ -205,7 +205,7 @@ The two compatibility headings (`## Requirements`, `## Acceptance Criteria (Defi
   ears: "When checkout is submitted, the system shall emit a checkout.submit span with order.id, with ERROR status on decline"
   kind: judge
   setup: none
-  run: "verify run local"
+  run: "aw-verify run local"
   expect: "confirms"
   status: pending
 ```

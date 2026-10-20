@@ -42,16 +42,16 @@ Use `general` as the sub-agent type on OpenCode and Dash0 Agent0.
 | `--host` | The preview host; filters web events to this run's pages |
 | `--driver` | The browser driver; `chrome` is the user's own browser, so sessions cannot be isolated |
 | `--brief` | `plan.md`; its `telemetry:` acceptance criteria become expectations. Default `.agent/{branch}/plan.md` when it exists |
-| `--out` | Append findings to this file in the `verify` skill's findings record shape |
+| `--out` | Append findings to this file in the `aw-verify` skill's findings record shape |
 
 ## Step 0 — Resolve config and skip honestly
 
-Resolve `.agents/aw/telemetry.yml` and `environments.yml` plus the personal overlay (`~/.agents/aw/config.yml` → `repos.<owner>/<name>`), as the `verify` skill's `rules/config.md` defines.
+Resolve `.agents/aw/telemetry.yml` and `environments.yml` plus the personal overlay (`~/.agents/aw/config.yml` → `repos.<owner>/<name>`), as the `aw-verify` skill's `rules/config.md` defines.
 Take the first row that applies; each prints its line and returns `verdict: null`:
 
 | Condition | `pipe:` line |
 | --- | --- |
-| No `.agents/aw/environments.yml` | `skipped (no .agents/aw config — run /verify setup)` |
+| No `.agents/aw/environments.yml` | `skipped (no .agents/aw config — run /aw-verify setup)` |
 | `backend: none` | `skipped (telemetry.backend: none)` |
 | `backend: dash0-mcp` and no connected tool ends in `getSpans` or `getWebEvents` | `skipped (no Dash0 MCP server connected)` |
 | The window holds only browser traffic and the app ships no web SDK (no `telemetry.yml` → `web` block, no `@dash0/sdk-web` dependency) | `skipped (no web SDK in this app)` |

@@ -1,5 +1,5 @@
 # .agents/aw/environments.yml — where the suite runs. Committed; no secrets.
-# Field reference: the verify skill's rules/config.md. Written by /verify setup.
+# Field reference: the verify skill's rules/config.md. Written by /aw-verify setup.
 version: 1
 environments:
   local:

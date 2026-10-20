@@ -44,7 +44,7 @@ Group by (service, operation, message with IDs and numbers stripped); one findin
 
 ## 4. Findings record
 
-With `--out`, append one JSON line per finding in the `verify` skill's findings shape, IDs `T-<n>`:
+With `--out`, append one JSON line per finding in the `aw-verify` skill's findings shape, IDs `T-<n>`:
 
 ```json
 {"id":"T-1","kind":"unlinked","severity":"medium","source":"AC-2","surface":"api:PUT /api/views","observed":"fetch PUT /api/views has no backend spans in trace 4bf92f35","expected":"the web event's trace continues into views-service","evidence":["trace:4bf92f3577b34da6"],"in_scope":true,"status":"open"}

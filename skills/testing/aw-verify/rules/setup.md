@@ -10,7 +10,7 @@ tags:
 
 # Setup
 
-`/verify setup` makes the whole suite (`verify`, `ui-verify`, `telemetry-verify`, `aw-tester`, `aw`) runnable in this repo.
+`/aw-verify setup` makes the whole suite (`aw-verify`, `ui-verify`, `telemetry-verify`, `aw-tester`, `aw`) runnable in this repo.
 It detects what it can, asks once for the rest, and writes the files in [`config.md`](./config.md).
 It is safe to re-run: a re-run validates what exists and asks only about what broke or is missing.
 `run` calls it inline when `.agents/aw/environments.yml` is absent.
@@ -94,7 +94,7 @@ Ask only what Phase A did not settle; pre-fill the detected value as the first o
 5. **Repo facts** — "Anything a new developer must know to run and test this repo (login, seed data, tenant, test commands, commit format)?" → `notes.md`. Skip when it exists.
 6. **Your policies** — foreign stack (`teardown` / `ask` / `abort`), cleanup (`leave` / `teardown`), push and PR comment (`own-prs` / `always` / `never`). Skip when `~/.agents/aw/config.yml` has them.
 
-`manual` login → warn: `Authed specs will be skipped (auth.strategy: manual). Add a test-mode login and re-run /verify setup to enable them.`
+`manual` login → warn: `Authed specs will be skipped (auth.strategy: manual). Add a test-mode login and re-run /aw-verify setup to enable them.`
 
 ## Phase C — Probe the login
 

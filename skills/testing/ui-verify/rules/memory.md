@@ -111,7 +111,7 @@ The **Applies when** line must be a concrete matching signal (a route glob, a co
 
 ## The UI surface
 
-What counts as UI for the `is-ui-diff` gate is config, not a lesson: `surface` in the committed `.agents/aw/ui.yml`, written by `/verify setup`.
+What counts as UI for the `is-ui-diff` gate is config, not a lesson: `surface` in the committed `.agents/aw/ui.yml`, written by `/aw-verify setup`.
 `author` Step 0 forwards it to the gate as `--surface-json`; its fields are the gate's (`mode`, `extensions`, `dirExtensions`, `dirs`, `globs` or `include`, `exclude`).
 
 ```yaml

@@ -175,7 +175,7 @@ The skill ships **one dispatcher skill** and **two agents** (`aw-` = autonomous-
 | [`aw-tester`](./templates/aw-tester.agent.md) | agent | Phase 4 (UI) spec verification, cold pass only | `green` or `inconclusive` before lint/type/test |
 
 Other files: [`routing.rule.md`](./templates/routing.rule.md) (auto-trigger rule), [`specs.md.template`](./templates/specs.md.template), [`intent-spec.md.template`](./templates/intent-spec.md.template), [`scripts/run-checks.mjs`](./scripts/run-checks.mjs) (the check runner; `--self-test` proves it).
-Related skills: `verify` (run `/verify setup` once per project; it writes `.agents/aw/`, which `aw-tester` targets come from), [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) (in-session Chrome runner), [`aw-create-plan`](../aw-create-plan/SKILL.md), [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md).
+Related skills: `aw-verify` (run `/aw-verify setup` once per project; it writes `.agents/aw/`, which `aw-tester` targets come from), [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) (in-session Chrome runner), [`aw-create-plan`](../aw-create-plan/SKILL.md), [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md).
 Design rationale: [`CLAUDE.md`](./CLAUDE.md) and [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md).
 
 Install the skill, its companions, and the agents:

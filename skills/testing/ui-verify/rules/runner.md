@@ -28,10 +28,10 @@ The runner is an **on-demand orchestrator** — it resolves once, dispatches the
 
 ## Step 0: Resolve the config and the environment
 
-Resolve the suite config per the `verify` skill's `rules/config.md`: `.agents/aw/environments.yml` and `.agents/aw/ui.yml`, with `~/.agents/aw/config.yml` → `repos.<owner>/<name>` merged over them.
+Resolve the suite config per the `aw-verify` skill's `rules/config.md`: `.agents/aw/environments.yml` and `.agents/aw/ui.yml`, with `~/.agents/aw/config.yml` → `repos.<owner>/<name>` merged over them.
 `ENV` is `--env` (default `preview`); `environments.<ENV>` supplies the URL source, `auth`, and `fixtures`, and `ui.yml` supplies `driver`, `screenshots`, `recording`, `constraints`, and `adversarial`.
 A flag beats `ui.yml`; `ui.yml` beats the defaults.
-No `.agents/aw/environments.yml` → run with `auth.strategy: none` and say `no login configured (run /verify setup)` in the report; never guess a login.
+No `.agents/aw/environments.yml` → run with `auth.strategy: none` and say `no login configured (run /aw-verify setup)` in the report; never guess a login.
 
 ## Step 1: Get the spec
 
@@ -75,7 +75,7 @@ Write two git-ignored files (the branch is the PR's head ref):
    Never touch `.agent/{branch}/.aw-tester/routes/`: it is the runners' route cache for intent specs (spec-run contract § 6.6), and a later run in this worktree replays from it.
 2. **`.agent/{branch}/aw-target.<ENV>.yml`** — `aw-tester`'s target: `name: <ENV>`, `base_url:` the resolved URL (no trailing slash), then `environments.<ENV>.auth` and `.fixtures` verbatim, `ui.yml`'s `constraints`, and `ui.yml`'s `adversarial.allowed_origins` (as `adversarial.allowed_origins`).
 
-**Auth runs here, before the spec run, and is env-var-driven** (full flow: the `verify` skill's `rules/auth.md`):
+**Auth runs here, before the spec run, and is env-var-driven** (full flow: the `aw-verify` skill's `rules/auth.md`):
 
 - Export `PREVIEW_URL` (the resolved URL) for the auth commands to read.
 - When `auth.refresh` is set and `when: always`, or the `storage_state` file is missing or stale, run `refresh.command`. It reads the credentials named in `refresh.env` from the environment and writes the gitignored `storage_state`. An unset variable fails the command loudly, and the authed specs report `skipped`, never a false pass.
@@ -151,7 +151,7 @@ It is one line of output, printed before the dispatch, never a question:
 ```text
 ✅ RIGHT
 ui-verify: Chrome extension not connected — running with Playwright (aw-tester); logs in via .agents/aw/environments.yml (preview), not your Chrome session. Pass --driver chrome to require Chrome.
-ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester); first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/; no preview login configured (run /verify setup if the preview needs one). Pass --driver chrome to require Chrome.
+ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester); first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/; no preview login configured (run /aw-verify setup if the preview needs one). Pass --driver chrome to require Chrome.
 
 ❌ WRONG
 AskUserQuestion("The Chrome extension isn't connected. Run with Playwright instead?")
@@ -166,7 +166,7 @@ Then append each clause whose condition holds, in this order, separated by `; `:
 | `first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/` | Neither `node_modules/.bin/playwright` nor `.agent/{branch}/.aw-tester/node_modules/.bin/playwright` exists, so `aw-tester`'s binary resolution will install one |
 | `logs in via .agents/aw/environments.yml (<ENV>), not your Chrome session` | The `aw-target.<ENV>.yml` from Step 3 has `auth.strategy` `storage-state` or `env-credentials` |
 | `authed specs will be skipped (auth.strategy: manual)` | Its `auth.strategy` is `manual` |
-| `no preview login configured (run /verify setup if the preview needs one)` | Its `auth.strategy` is `none` or absent |
+| `no preview login configured (run /aw-verify setup if the preview needs one)` | Its `auth.strategy` is `none` or absent |
 
 Exactly one of the three login clauses always applies, because the Playwright run never inherits the Chrome session.
 Step 5 names the driver that produced the verdict, so the report always says `playwright` after a fallback.

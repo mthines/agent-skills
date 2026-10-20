@@ -9,7 +9,7 @@ tags:
 
 # Lessons
 
-`verify` runs a two-tier LoreKit lessons loop, wired from the `lorekit-setup` skill's code-changing-agent recipe card.
+`aw-verify` runs a two-tier LoreKit lessons loop, wired from the `lorekit-setup` skill's code-changing-agent recipe card.
 Fast tier: advisory lessons read at the start of every run and written at the run's failure points.
 Slow tier: a lesson that recurs is promoted, by a human-reviewed edit, into one of this skill's `rules/` files.
 Without the `memory.*` tools the loop is a silent no-op; the run proceeds unchanged.
@@ -53,7 +53,7 @@ Never write a lesson whose fix works around a defect in the code under verificat
 | --- | --- | --- |
 | Stack start or takeover failed, or needed an undocumented step | `command-failure` | Daemon bound to another worktree; `--repo-root` teardown was required |
 | Setup guessed the driver, port, or test command wrong | `assumption-wrong` | Vite app served on `5174` because `5173` was taken; set `port` explicitly |
-| Login or locator friction in `ui-verify` that cost a retry | `gotcha` | The identity provider's sign-in on localhost needed `/verify setup` to capture a local login |
+| Login or locator friction in `ui-verify` that cost a retry | `gotcha` | The identity provider's sign-in on localhost needed `/aw-verify setup` to capture a local login |
 | Telemetry query returned nothing for a known reason | `assumption-wrong` | The assumed span-status key matched nothing; the real key came from `getAttributeKeys` |
 | A fix took ≥ 2 attempts | `stuck-loop` | Views form state resets on remount; fix lives in the store, not the component |
 | A finding was missed until telemetry caught it | `near-miss` | Spec passed while api logged a 500 on retry |
