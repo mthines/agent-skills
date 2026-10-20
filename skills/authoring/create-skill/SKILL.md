@@ -93,7 +93,7 @@ The full procedure for Phases 0–2 is [`rules/run-first.md`](./rules/run-first.
 | 5     | File generation       | Every skill line traces to a ledger row, the guardrails, or the definition of done; none over budget |
 | 6     | Wiring & inventories  | Symlinks created (if local-dev), `CLAUDE.md` + `README.md` updated |
 | 7     | Self-check            | Mechanical pre-pass (`scripts/validate-skill.mjs`) is PASS, and every judgment item in `rules/quality-checklist.md` passes |
-| 8     | Evaluation            | The Phase 0 brief re-run with the skill beats the Phase 1 run, plus ≥ 2 more prompts — or the user explicitly waived it |
+| 8     | Evaluation            | The Phase 0 brief re-run with the skill closes the ledger's corrections, ≥ 2 more prompts run, and the lift check verdict is `lift` — or the user explicitly waived it |
 
 ### Phase 0 — Brief
 
@@ -104,7 +104,7 @@ Do not ask for the skill's name, description, or structure yet.
 
 Do the job on the real input, in this session, without the skill, following `rules/run-first.md` § Step 2.
 Show the output with its definition-of-done result, take the user's corrections, and repeat until they accept it.
-Write each correction to the ledger at `.agent/{branch}/skill-run-<name>.md` as it happens.
+Write each correction to the ledger at `.agent/{branch}/skill-run-<task-slug>.md` as it happens.
 
 ```text
 ✗ Wrong — writing the skill from the user's description of the process
@@ -257,7 +257,7 @@ Follow `rules/evaluation.md`.
 The Phase 1 run is the no-skill baseline: re-run the Phase 0 brief on a fresh input with the skill installed and confirm every `skill gotcha` row no longer needs a correction.
 Add at least 2 more realistic prompts, observe at least one with-skill run, and check the repo eval obligation table.
 Then run the lift check in [`rules/lift-check.md`](./rules/lift-check.md): the skill must beat both no skill and a same-length dummy, or it is trimmed or not shipped.
-Report `Evaluation: PASS — 3 prompts run, ledger corrections closed, with-skill navigation observed`, or state explicitly that the user waived this phase.
+Report `Evaluation: PASS — 3 prompts run, ledger corrections closed, with-skill navigation observed`, then the lift check's `Lift:` line, or state explicitly that the user waived this phase.
 
 ---
 
@@ -419,7 +419,7 @@ are optional — load only when the user asks for a worked shape or pair.
 
 A **scaffold** run is done when:
 
-- [ ] The job ran once without the skill on a real input (or the waiver is recorded), and the ledger at `.agent/{branch}/skill-run-<name>.md` routes every correction.
+- [ ] The job ran once without the skill on a real input (or the waiver is recorded), and the ledger at `.agent/{branch}/skill-run-<task-slug>.md` routes every correction.
 - [ ] Every `SKILL.md` line traces to a ledger row, a guardrail, or the definition of done.
 - [ ] All planned files written and within their line caps.
 - [ ] `name` and `description` validate against the rules in
@@ -430,6 +430,8 @@ A **scaffold** run is done when:
 - [ ] Phase 7 self-check (mechanical + judgment) is `PASS`.
 - [ ] Phase 8 evaluation has ≥ 3 eval prompts written (or the user
       explicitly waived evaluation).
+- [ ] `rules/lift-check.md` verdict is `lift`, with both deltas reported (or the user
+      explicitly waived it).
 - [ ] Target runtime (`claude-code` or `portable`) is recorded.
 - [ ] One sentence summary delivered to the user with the install command
       they can run to start using the skill.
