@@ -93,16 +93,17 @@ A step the agent did correctly unaided is not a skill line.
 
 ## Step 4 — Route each correction
 
-Give every ledger row exactly one route:
+Give every ledger row exactly one route: the first row below that fits, top to bottom.
+`skill gotcha` is checked last, because almost every correction is "something the agent got wrong".
 
-| The correction is… | Route | Lands in |
-| --- | --- | --- |
-| Something the agent got wrong and would get wrong again on this job | skill gotcha | `SKILL.md` body, one line or one short block |
-| A fact or command true for the whole workspace, not this one job | workspace fact | the project's `CLAUDE.md`, not the skill |
-| Something that must never happen | hook | a `PreToolUse` hook that blocks it; the skill states the guardrail once without capitals |
-| A definition-of-done clause the agent can check mechanically | check script | `scripts/check-<name>.mjs` the skill runs before reporting done |
-| A large research step or an MCP-heavy step that floods the context | subagent step | a `SKILL.md` instruction to run that step in a sub-agent and return only the result |
-| A one-off detail of this input that will not recur | drop | nowhere |
+| # | The correction is… | Route | Lands in |
+| - | --- | --- | --- |
+| 1 | Something that must never happen | hook | a `PreToolUse` hook that blocks it; the skill states the guardrail once without capitals |
+| 2 | A definition-of-done clause the agent can check mechanically | check script | `scripts/check-<name>.mjs` the skill runs before reporting done |
+| 3 | A fact or command true for the whole workspace, not this one job | workspace fact | the project's `CLAUDE.md`, not the skill |
+| 4 | A large research step or an MCP-heavy step that floods the context | subagent step | a `SKILL.md` instruction to run that step in a sub-agent and return only the result |
+| 5 | A one-off detail of this input that will not recur | drop | nowhere |
+| 6 | Anything else the agent got wrong and would get wrong again on this job | skill gotcha | `SKILL.md` body, one line or one short block |
 
 ```markdown
 <!-- ✗ Wrong — the skill re-documents the whole process -->
