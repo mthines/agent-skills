@@ -121,7 +121,7 @@ Agent: Give me this week's export, what I must not touch, and what "done" means.
 ### Phase 2 — Distill
 
 1. Route every ledger row (`rules/run-first.md` § Step 4) and apply the no-skill exit (§ Step 5).
-   On a zero count, stop here and say no skill is needed.
+   On a zero count, stop here and say no skill is needed — unless the run was waived, which skips the exit.
 2. Propose answers to the questions below, derived from the run, and ask the user to confirm or change them in **one** message:
    1. **Working name** (kebab-case, ≤ 64 chars).
    2. **One-line purpose**, third person ("Reviews X for Y", not "Helps you with X").
