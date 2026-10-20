@@ -2,7 +2,7 @@
 
 Full procedure for the step `SKILL.md` routes to.
 The branch is still local at Step 5.5, so there is no PR and no review thread — which is exactly the
-gap [`review-branch`](../../../quality/review-branch/SKILL.md) fills.
+gap [`review-loop` local mode](../../../quality/review-loop/rules/local-mode.md) fills.
 It dispatches `branch-reviewer`, which runs the same detection core as `pr-reviewer` (same impact
 graph, same finders, same verifier, same confidence and severity gates) and carries findings in
 `.agent/{branch}/findings.jsonl` instead of GitHub threads.
@@ -45,7 +45,7 @@ That is now the *fallback*, taken only on `--no-pre-review` or an absent-dispatc
 
 Both arguments above are reasoning, not measurement.
 What is measured is the shape of the cost: a `branch-reviewer` run over this repo's own
-`review-branch` branch made **zero** GitHub calls and still cost ~198k tokens across 45 tool calls,
+local `review-loop` branch made **zero** GitHub calls and still cost ~198k tokens across 45 tool calls,
 of which posting would have been two or three.
 Review passes dominate; the comment round trip does not.
 So do not defend or attack this default on comment-posting grounds — the levers are CI cycles and
@@ -54,17 +54,17 @@ the number of reviewer passes.
 ## How to invoke it
 
 Both invocations run at the **top level** of the session, never inside a sub-agent.
-`review-branch`'s first sub-step is a delegation, so dispatching the loop itself into a sub-agent
+local `review-loop`'s first sub-step is a delegation, so dispatching the loop itself into a sub-agent
 leaves it nothing to review with — its own caller contract, the same one `review-loop` states.
 
 | Mode | Invoke | Cap rationale |
 | --- | --- | --- |
-| default | `Skill("review-branch", "--cap 3")` | Step 6.5's `review-loop` still runs after the push with its own cap of 5. This pass exists to make that one cheap, not to replace it. |
-| split (`--split`) | `Skill("review-branch", "")` | Nothing reviews the whole branch after this. Take the full default cap of 5. |
+| default | `Skill("review-loop", "--cap 3")` | Step 6.5's `review-loop` still runs after the push with its own cap of 5. This pass exists to make that one cheap, not to replace it. |
+| split (`--split`) | `Skill("review-loop", "")` | Nothing reviews the whole branch after this. Take the full default cap of 5. |
 
 Pass `--no-simplify` through if the user passed it to `create-pr`, and `--effort high` if they passed
 `--critical`.
-Pass nothing else: `review-branch` owns its own grammar.
+Pass nothing else: no PR reference: that is what selects local mode.
 
 ## Acting on what comes back
 

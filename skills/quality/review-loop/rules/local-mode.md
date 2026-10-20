@@ -1,48 +1,27 @@
 ---
-name: review-branch
-description: >
-  Converges a local branch with no PR through a bounded review-apply-simplify
-  loop via the `branch-reviewer` agent, carrying findings in
-  `.agent/{branch}/findings.jsonl` with zero GitHub calls. Use before opening a
-  PR (once one exists, use /review-loop); invoke with /review-branch.
-disable-model-invocation: false
-argument-hint: '[--base <ref>] [--head <ref>] [--cap N] [--effort high] [--no-simplify] [--no-checks] [--report] [--include-untracked]'
-license: MIT
-metadata:
-  author: mthines
-  version: '1.0.1'
-  workflow_type: command
-  tags:
-    - review
-    - convergence
-    - local
-    - pre-pr
-    - orchestrator
+title: Local mode — converge a branch with no PR
+impact: HIGH
+tags:
+  - review-loop
+  - local
+  - findings-bus
 ---
 
-# review-branch — local convergence, no PR required
+# Local mode
 
-Drive a branch to a clean state by iterating **review → apply → simplify → re-review**, with every
-finding carried in a local file instead of a GitHub review thread.
+Read when `review-loop` runs without a PR reference.
+The loop is the same — **review → apply → simplify → re-review** — but every finding lives in
+[`.agent/{branch}/findings.jsonl`](./findings-bus.md) instead of a GitHub review thread, the reviewer is
+the [`branch-reviewer`](../../../../agents/branch-reviewer.md) agent (the same detection core as
+`pr-reviewer`, with no PR needed), and the run makes **zero GitHub calls**.
 
-This is [`review-loop`](../review-loop/SKILL.md) with the GitHub round trip removed. The findings
-are the same findings — the [`branch-reviewer`](../../../agents/branch-reviewer.md) agent runs the
-same detection core `pr-reviewer` does, by reference rather than by copy — but nothing is posted,
-nothing is fetched, and the loop's state lives in
-[`.agent/{branch}/findings.jsonl`](./rules/findings-bus.md).
-
-**When to use which:**
-
-| | `review-branch` | [`review-loop`](../review-loop/SKILL.md) |
+| | Local mode | PR mode |
 | --- | --- | --- |
 | Needs a PR | no | yes |
 | Bus | local `findings.jsonl` | GitHub review threads |
 | GitHub calls | **zero** | many |
 | Green gate | the repo's own fast checks | CI |
 | Right when | iterating on your own work, pre-PR, offline | a PR exists and other people read the threads |
-
-The thread is not overhead once someone else is reading it — it is the record, and it is how a human
-reviewer sees what the agent already handled. Reach for `review-loop` the moment a PR exists.
 
 ## Modes
 
@@ -54,7 +33,7 @@ reviewer sees what the agent already handled. Reach for `review-loop` the moment
 | `--effort high` | Forces the `deep` tier and raises diversify-then-vote from 3 finders to 5. |
 | `--no-simplify` | Skip sub-step C (`polish simplify`). |
 | `--no-checks` | Skip sub-step D. Convergence then means findings-clean only, and the report says so. |
-| `--report` | Report-only. Forces `CAP=1`, skips B/C/D, applies nothing. The local counterpart of `review-loop`'s `--no-feedback`. |
+| `--report` | Report-only. Forces `CAP=1`, skips B/C/D, applies nothing. The local counterpart of `--no-feedback`. |
 | `--include-untracked` | Treat untracked, non-ignored files as added. Off by default. |
 
 ## Dispatch mechanics
@@ -75,11 +54,11 @@ if no available tool dispatches a sub-agent (Task, Agent, or another spelling): 
 ```
 
 **Absent dispatch is a skip, not a fallback.** Reviewing in this context would be a self-review
-wearing a reviewer's label — the same reasoning [`pr-review`](../pr-review/SKILL.md) applies. Report
+wearing a reviewer's label — the same reasoning [`pr-review`](../../pr-review/SKILL.md) applies. Report
 it and stop:
 
 ```markdown
-- [TIMESTAMP] review-branch — skipped (sub-agent dispatch unavailable; branch-reviewer requires it)
+- [TIMESTAMP] review-loop (local) — skipped (sub-agent dispatch unavailable; branch-reviewer requires it)
 ```
 
 One absent-dispatch return is **conclusive**; never retry. And this loop, like `review-loop`, must
@@ -100,7 +79,7 @@ mkdir -p "$(dirname "$BUS")"
 ```
 
 Abort before any work if the range is empty — `git diff --quiet "$BASE"` — with
-`review-branch: no changes against <base>.` **An empty range is never a pass**; reporting one as a
+`review-loop (local): no changes against <base>.` **An empty range is never a pass**; reporting one as a
 converged branch is the local spelling of green-washing.
 
 Do **not** create the bus file yet. Its absence is how iteration 1 knows `FINDING_OVERLAP` is 0.
@@ -160,13 +139,13 @@ while ITERATION < CAP:
 
 ### Sub-step B — apply, in this context
 
-Unlike `review-loop`, the apply runs **here**, not in a worker sub-agent. There is no bus to hand a
+Unlike PR mode, the apply runs **here**, not in a worker sub-agent. There is no bus to hand a
 worker and no thread for it to resolve, and the round trip buys nothing once the findings are
 already on disk.
 
 That is safe in a way the *review* is not: applying a finding is not judging it. The judgment
 already happened in an isolated context, and its verdict, score, and severity are in the bus and
-[reviewer-immutable](./rules/findings-bus.md#the-record).
+[reviewer-immutable](./findings-bus.md#the-record).
 
 Work highest severity first. Per finding:
 
@@ -174,7 +153,7 @@ Work highest severity first. Per finding:
 2. Apply the smallest change that addresses the claim. Never widen it.
 3. Commit it alone, so a bad fix reverts without taking a good one with it.
 4. Append the new state — `applied`, `declined` with a `note`, or `flagged` — per
-   [`findings-bus.md`](./rules/findings-bus.md#the-lifecycle).
+   [`findings-bus.md`](./findings-bus.md#the-lifecycle).
 
 **A finding you disagree with is `declined` with a rationale, never deleted.** A finding that is real
 and out of scope is `flagged`, never declined. If you cannot write an honest rationale, that is the
@@ -192,18 +171,18 @@ discovered in this order, first hit wins:
 
 Scope them to the touched packages where the repo supports it; run them unscoped at least once
 before the loop exits, because a scoped pass cannot see a consumer the edit broke elsewhere. That is
-the same lesson [`implement-suggestion`](../../workflow/implement-suggestion/SKILL.md)'s Phase 6
+the same lesson [`implement-suggestion`](../../../workflow/implement-suggestion/SKILL.md)'s Phase 6
 pre-push gate encodes.
 
 **Red checks are this loop's own mess to clean.** There is no `ci-auto-fix` handoff here: nothing
 was pushed, so a red check is a regression this loop just wrote. Fix it, or revert the commit that
 caused it. Never weaken a check, skip a test, or push past it — every
-[`ci-auto-fix` anti-pattern](../../delivery/ci-auto-fix/rules/anti-patterns.md) holds.
+[`ci-auto-fix` anti-pattern](../../../delivery/ci-auto-fix/rules/anti-patterns.md) holds.
 
 ### Step 2 — report
 
 ```text
-review-branch on <branch> (<base>..<head>)
+review-loop (local) on <branch> (<base>..<head>)
 
 Iterations: <N> of <CAP>
 Stop reason: <converged | no-progress (flags remain) | cap-reached | checks-red
@@ -232,8 +211,7 @@ run that buries them has converted the safety valve back into a green-wash.
 ## Hard rules
 
 - **Zero GitHub calls.** Not `gh`, not `mcp__github__*`, in this skill or the agent it dispatches.
-  That promise is the whole point; a run that quietly reaches for `gh` is a `review-loop` run with a
-  misleading name.
+  That promise is the whole point; a run that quietly reaches for `gh` has left local mode.
 - **The review is dispatched; the apply is not.** Reviewing in this context is a self-review wearing
   a reviewer's label. Applying in this context is fine — the judgment already happened elsewhere.
 - **The dispatch precondition tests a capability, never the literal name `Task`.**
@@ -243,22 +221,11 @@ run that buries them has converted the safety valve back into a green-wash.
 - **`flagged` is reported, always.** Converging with flags is an honest outcome; hiding them is not.
 - **An empty diff is not a pass.** Report *no changes* and exit.
 - **Never rewrite the bus.** Append; the last record for an `fp` is its state
-  ([`findings-bus.md`](./rules/findings-bus.md#append-only-and-why)).
+  ([`findings-bus.md`](./findings-bus.md#append-only-and-why)).
 - **Never edit a reviewer-written field.** Claim, score, severity, and verdict are immutable to this
   loop — the same discipline `checks.yaml` applies to the executor.
 - **Only `Skill("polish", "simplify")`.** Any other `polish` mode dispatches a reviewer pass and
-  creates a cycle — the same anti-circularity guarantee `review-loop` holds.
+  creates a cycle.
 - **Cap is a hard limit.** Surface what is open and stop; never extend it silently.
-- **Hand off at the PR boundary.** Once a PR exists, `review-loop` owns convergence. Do not re-run
-  this loop against a branch whose PR is open and being read.
-
-## Relationship to other skills
-
-| Skill | Relationship |
-| --- | --- |
-| [`branch-reviewer`](../../../agents/branch-reviewer.md) | Sub-step A — the PR-less reviewer, dispatched per iteration. Composes the detection core by reference. |
-| [`review-loop`](../review-loop/SKILL.md) | **Sibling, never nested.** Same loop shape over a different bus. This one runs pre-PR; that one runs once a PR exists. |
-| [`polish`](../polish/SKILL.md) | Sub-step C (`simplify` only). `polish`'s own review pass needs a PR; this loop is what makes a pre-PR review possible at all. |
-| [`create-pr`](../../delivery/create-pr/SKILL.md) | **Caller**, at its pre-push Step 5.5 — default-on in both modes (`--no-pre-review` opts out), and load-bearing under `--split`, where its post-draft `review-loop` cannot run at all and the slot otherwise gets `polish simplify` with no review. Converge here, then open the PR with less left for the post-draft loop to find. |
-| [`pr-review`](../pr-review/SKILL.md) | The one-shot read-only counterpart, for a PR. `--report` is this skill's equivalent for a branch. |
-| [`findings-bus.md`](./rules/findings-bus.md) | Owns the record, the lifecycle, and the convergence predicate. Read it; never restate it. |
+- **Hand off at the PR boundary.** Once a PR exists, run PR mode with the PR reference; do not run
+  local mode against a branch whose PR is open and being read.

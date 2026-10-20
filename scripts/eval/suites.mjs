@@ -50,11 +50,11 @@ export const SUITES = [
     // convergence" reasoning into a question about disposition, which is how a `flagged`
     // case starts looking like a `declined` one (neither is `open`, so neither blocks).
     rubric: {
-      file: "skills/quality/review-branch/rules/findings-bus.md",
+      file: "skills/quality/review-loop/rules/findings-bus.md",
       sections: ["## The lifecycle", "## The no-green-wash valve"],
     },
     instruction:
-      "You are the review-branch loop deciding the disposition of ONE finding after acting on it. " +
+      "You are the review-loop local-mode loop deciding the disposition of ONE finding after acting on it. " +
       "Using ONLY the rules below, pick the single state the loop appends for it.",
     inputKey: "input", inputLabel: "Finding and what the loop did",
     choices: ["applied", "declined", "flagged"],

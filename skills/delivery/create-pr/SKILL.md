@@ -2,7 +2,7 @@
 name: create-pr
 description: >
   Writes a short narrative PR description (≤ 25 lines, hard ceiling 40), converges the branch with
-  review-branch, pushes, opens a draft PR, runs review-loop until every thread is resolved, and hands red
+  review-loop in local mode, pushes, opens a draft PR, runs review-loop until every thread is resolved, and hands red
   CI to ci-auto-fix. Flags: --split (2–4 dependency-ordered draft PRs), --quick, --no-review,
   --no-simplify, --no-quality, --no-pre-review, --no-ui-verify, --no-media; invoke with /create-pr.
 disable-model-invocation: false
@@ -23,7 +23,7 @@ Write a short, narrative PR description that tells reviewers *why* the change ex
 - [Modes](#modes)
 - [Step 0: Resolve your GitHub access path](#step-0-resolve-your-github-access-path)
 - [Steps 1–5: Write the title and body](#steps-15-write-the-title-and-body-shared-contract)
-- [Step 5.5: Pre-push branch convergence](#step-55-pre-push-branch-convergence-delegated-to-review-branch)
+- [Step 5.5: Pre-push branch convergence](#step-55-pre-push-branch-convergence-local-review-loop)
 - [Step 6: Push and Create Draft PR](#step-6-push-and-create-draft-pr)
 - [Step 6.2: Attach media](#step-62-attach-screenshots-and-recordings-delegated-to-attach-media)
 - [Step 6.4: UI verification spec](#step-64-author-the-ui-verification-spec-default-on-for-ui-changes)
@@ -62,15 +62,15 @@ If its Step 5 length self-check says the PR is too big, offer `/create-pr --spli
 If you can't infer the *why* / *what* from the diff, ask the user — never pad with guesses.
 Worked examples: [`rules/description-examples.md`](./rules/description-examples.md).
 
-## Step 5.5: Pre-push branch convergence (delegated to `review-branch`)
+## Step 5.5: Pre-push branch convergence (local `review-loop`)
 
 Runs by default, in both default and split mode; skip on `--no-pre-review`, `--no-quality`, `--no-review`, or a non-code diff.
-[`review-branch`](../../quality/review-branch/SKILL.md) dispatches `branch-reviewer` with zero GitHub calls, so the draft opens already converged.
+[`review-loop`](../../quality/review-loop/SKILL.md) with no PR reference runs local mode: it dispatches `branch-reviewer` with zero GitHub calls, so the draft opens already converged.
 
 | Mode | Invoke |
 | --- | --- |
-| default | `Skill("review-branch", "--cap 3")` |
-| split (`--split`) | `Skill("review-branch", "")` |
+| default | `Skill("review-loop", "--cap 3")` |
+| split (`--split`) | `Skill("review-loop", "")` |
 
 `rules/pre-push-review.md` — read when entering this step (skip conditions, handling each return, the outcome value for Step 10). Load-bearing:
 
@@ -214,7 +214,7 @@ Short summary: final check status, one line per auto-fix, and anything left for 
 PR: <pr-url>
 Title: <imperative title>
 
-Pre-push review (Step 5.5, review-branch): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
+Pre-push review (Step 5.5, local review-loop): <converged (<N> iterations, <A> applied, <D> declined) | flagged (<G> findings) | cap-reached (<O> open) | checks-red (<checks>) | skipped (<flag>) | skipped (non-code diff) | NOT REVIEWED (sub-agent dispatch unavailable; fallback: <polish simplify | none>)>
 
 Media (Step 6.2): <the attach-media summary line | none (no captures or --attach files) | none (merge base unresolved) | skipped (--no-media) | skipped (attach-media not available)>
 

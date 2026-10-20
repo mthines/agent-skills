@@ -52,8 +52,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
 - `observe-run` (`Skill() + /`) — runs a command and grades the telemetry that run emitted against behavioral assertions only
 - `polish` (`/`) — re-runnable pre-PR branch quality gate: review, then simplify the diff and prune restating or ticket comments, each change behind a test check
-- `review-loop` (`Skill()`) — bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5; `--ui` runs `ui-verify` in a parallel lane and resolves its findings. Run at the top level of a session that holds a dispatch tool
-- `review-branch` (`/`) — PR-less sibling of `review-loop`; findings bus `.agent/{branch}/findings.jsonl`, zero GitHub calls
+- `review-loop` (`Skill()`) — bounded convergence loop, cap 5: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` on a PR; with no PR, local mode over `.agent/{branch}/findings.jsonl`, zero GitHub calls; `--ui` adds a `ui-verify` lane. Run at the top level
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule
 - `tdd` (`auto`) — strict RED-GREEN-REFACTOR; `provenance` mode checks a test exercises the production code (static + mutation)
 - `verify-behavior` (`Skill()`) — cheapest-first three-tier verification ladder; emits an evidence receipt, never a score
@@ -63,7 +62,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `attach-media` (`Skill()` + `/`) — uploads screenshots and recordings to a PR or issue via `gh --attach`, with a curl fallback; owns the `<!-- attach-media:v1 -->` body region. Never writes placeholders
 - `ci-auto-fix` (`/`) — evidence-gated CI diagnosis and fix; never weakens checks
-- `create-pr` (`/`) — narrative PR description; pre-push `review-branch`, draft PR, post-draft `review-loop`, CI watch
+- `create-pr` (`/`) — narrative PR description; pre-push local `review-loop`, draft PR, post-draft `review-loop`, CI watch
 - `github-actions-author` (`/`) — author / review GHA workflows
 - `resolve-conflicts` (`/`) — analyze and resolve merge / rebase conflicts
 
@@ -114,7 +113,7 @@ The agents it hands off to are **generated from templates** in `skills/workflow/
 The agents below live as `agents/*.md` files and are dispatched by skills:
 
 - `pr-reviewer` — PR reviewer for self and cross relations; read-only; one sticky report comment plus append-only inline findings
-- `branch-reviewer` — PR-less reviewer for `/review-branch`; writes `.agent/{branch}/findings.jsonl`, zero GitHub calls
+- `branch-reviewer` — PR-less reviewer for `review-loop` local mode; writes `.agent/{branch}/findings.jsonl`, zero GitHub calls
 - `feature-pr-verifier` — independent verifier for `/autonomous-workflow` Full Mode PRs
 
 ## Commands and gotchas

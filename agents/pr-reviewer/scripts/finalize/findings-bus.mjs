@@ -4,7 +4,7 @@
  * .agent/{branch}/findings.jsonl records for branch-reviewer reuse, instead
  * of a GitHub write plan. Pure. No I/O (D18) — the CLI layer does the append.
  *
- * Record shape is skills/quality/review-branch/rules/findings-bus.md's own
+ * Record shape is skills/quality/review-loop/rules/findings-bus.md's own
  * worked example, verbatim field set:
  *   fp, iteration, state, prefix, severity, blocking, score, verdict,
  *   path, line, title, body, fix, evidence[], note, sha

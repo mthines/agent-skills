@@ -106,7 +106,7 @@ whichever file wrote it:
 | `./shared/rules/<file>` | `$AGENT_SUPPORT/shared/rules/<file>` |
 | `agents/branch-reviewer/scripts/<file>` | `$AGENT_SUPPORT/branch-reviewer/scripts/<file>` |
 | `agents/pr-reviewer/scripts/<file>` | `$AGENT_SUPPORT/pr-reviewer/scripts/<file>` |
-| `../skills/quality/review-branch/rules/findings-bus.md` | `$AGENT_SUPPORT/../skills/quality/review-branch/rules/findings-bus.md`; on a Dash0 Agent0 install, `$AGENT_SUPPORT/skills/review-branch/rules/findings-bus.md` |
+| `../skills/quality/review-loop/rules/findings-bus.md` | `$AGENT_SUPPORT/../skills/quality/review-loop/rules/findings-bus.md`; on a Dash0 Agent0 install, `$AGENT_SUPPORT/skills/review-loop/rules/findings-bus.md` |
 
 **Dispatched by file path?** When the harness has no named `branch-reviewer` agent type, the caller
 dispatches a generic sub-agent and tells it to read this file and follow it. That sub-agent is not
@@ -249,7 +249,7 @@ test run would have settled.
 
 Findings go to a file, never to a comment. The record shape, the append-only discipline, the
 lifecycle, and the no-green-wash rule are owned by
-[`findings-bus.md`](../skills/quality/review-branch/rules/findings-bus.md) — read it before your
+[`findings-bus.md`](../skills/quality/review-loop/rules/findings-bus.md) — read it before your
 first write.
 
 **Dedupe, the threshold/defer-band dispose, memory suppression, line-validity retarget, the
@@ -332,6 +332,6 @@ do not read, and it never means "a lot of findings".
 - **Anything with a PR.** Use [`pr-reviewer`](./pr-reviewer.md) — it has the sticky report, the
   inline threads, the relevance memory keyed to review outcomes, and the CI gate. This agent is the
   pre-PR half, not a replacement.
-- **Applying findings.** The [`review-branch`](../skills/quality/review-branch/SKILL.md) loop does
+- **Applying findings.** The [`review-loop`](../skills/quality/review-loop/SKILL.md) local-mode loop does
   that. You find; it fixes.
 - **CI.** There is no CI on an un-pushed branch. The loop runs the repo's own fast checks instead.

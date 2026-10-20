@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills spec](https://img.shields.io/badge/spec-Agent%20Skills-7c3aed)](https://agentskills.io/)
-[![Skills](https://img.shields.io/badge/skills-49-0a7)](#skills)
+[![Skills](https://img.shields.io/badge/skills-48-0a7)](#skills)
 [![Agents](https://img.shields.io/badge/agents-5-0a7)](#skills)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
@@ -57,10 +57,10 @@ Independent finders flag, a verifier filters, and only grounded findings reach y
 
 ```text
 /pr-review 42
-/review-branch
+/review-loop          # no PR yet? it reviews the local branch
 ```
 
-[`pr-reviewer`](./agents/pr-reviewer.md) · [`review-loop`](./skills/quality/review-loop/SKILL.md) · [`review-branch`](./skills/quality/review-branch/SKILL.md)
+[`pr-reviewer`](./agents/pr-reviewer.md) · [`review-loop`](./skills/quality/review-loop/SKILL.md)
 
 </td>
 <td valign="top">
@@ -151,8 +151,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/implement-suggestion`](./skills/workflow/implement-suggestion/SKILL.md) | Applies PR review comments, one commit each, and resolves the threads. |
 | **`quality/`** | *Code, tests, plans, AI apps* |
 | [`/pr-review`](./skills/quality/pr-review/SKILL.md) | One read-only review of a PR: a single report plus inline findings. |
-| [`/review-loop`](./skills/quality/review-loop/SKILL.md) | Reviews, fixes, and resolves a PR's threads until it converges. |
-| [`/review-branch`](./skills/quality/review-branch/SKILL.md) | The same loop on a local branch, before any PR exists. |
+| [`/review-loop`](./skills/quality/review-loop/SKILL.md) | Reviews, fixes, and resolves a PR's threads until it converges; with no PR, it does the same on the local branch. |
 | [`/polish`](./skills/quality/polish/SKILL.md) | Pre-PR cleanup: simplifies the changed code and prunes noise comments. |
 | [`critical`](./skills/quality/critical/SKILL.md) | A hostile pre-mortem of a plan or diff, with a steelman alternative. |
 | [`confidence`](./skills/quality/confidence/SKILL.md) | Scores how sure you can be that the work meets the requirement. |

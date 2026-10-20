@@ -3,12 +3,14 @@ name: review-loop
 description: >
   Bounded PR convergence loop: up to 5 iterations of pr-reviewer →
   implement-suggestion --resolve-all → polish simplify until every thread is
-  fixed or answered and CI is not red, then a description refresh. Run it at
+  fixed or answered and CI is not red, then a description refresh. With no PR
+  reference it runs local mode: branch-reviewer over a local findings file,
+  zero GitHub calls, for an un-pushed branch. Run it at
   the top level of a session with a dispatch tool; flags --ui (parallel
   ui-verify lane), --merge (squash on clean approval), --no-ci, --no-feedback;
   triggers on "/review-loop".
 disable-model-invocation: false
-argument-hint: '<PR-URL|#n> [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--ui] [--merge]'
+argument-hint: '[<PR-URL|#n>] [--base <ref>] [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--ui] [--merge]'
 license: MIT
 metadata:
   author: mthines
@@ -24,6 +26,7 @@ metadata:
     - ci
     - merge
     - ui-verify
+    - local
 ---
 
 # review-loop — Bounded Review-Apply-Resolve Convergence
@@ -32,6 +35,8 @@ Iterate `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simpl
 A thread is resolved by a **fix** or an honest **reply**; only genuine human-judgment flags stay open, and the loop never resolves a live finding to terminate.
 This skill is an orchestrator with no quality rules of its own.
 Why it is shaped this way: [`references/design-rationale.md`](./references/design-rationale.md).
+
+With no PR reference, the same loop runs locally against `.agent/{branch}/findings.jsonl` with zero GitHub calls: follow [`rules/local-mode.md`](./rules/local-mode.md) instead of the procedure below.
 
 Each iteration runs sub-steps A (`pr-reviewer`), B (`implement-suggestion --resolve-all`), C (`polish simplify`), and D (`ci-auto-fix`); after the loop come Step 1.6 (preview run), Step 2 (description refresh), Step 2.5 (`--merge`), and Step 3 (report).
 
@@ -102,6 +107,7 @@ When Step 0 finds no reviewer route, or the row-4 install fails, read [`rules/di
 ## Modes
 
 Parse the **first positional argument** as the PR reference; everything else is a flag.
+No PR reference → **local mode**: read [`rules/local-mode.md`](./rules/local-mode.md) and follow it; its own flags (`--base`, `--head`, `--no-simplify`, `--no-checks`, `--report`, `--include-untracked`) apply there only.
 
 | Flag | Effect |
 | --- | --- |
@@ -134,7 +140,7 @@ OWNER="${RESOLVED_REPO%/*}"
 REPO="${RESOLVED_REPO#*/}"
 ```
 
-If no PR reference is found, abort: `review-loop requires a PR URL or #<n>.`
+If no PR reference is found, switch to local mode ([`rules/local-mode.md`](./rules/local-mode.md)) and do not run the rest of this procedure.
 
 **Precondition — a reviewer route.** Resolve `REVIEWER_ROUTE` from capabilities, never from a tool name. Take the **first** row that matches:
 

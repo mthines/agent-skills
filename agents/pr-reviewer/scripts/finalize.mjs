@@ -3154,7 +3154,7 @@ async function main() {
   // disk and calls no renderer and builds no GitHub payload.
   if (opts.writer === "findings-bus") {
     // `--bus-path` overrides the default `<dirname(--out-dir)>/findings.jsonl` — branch-reviewer's
-    // own `--out <path>` grammar (skills/quality/review-branch/rules/findings-bus.md) lets a caller
+    // own `--out <path>` grammar (skills/quality/review-loop/rules/findings-bus.md) lets a caller
     // name an arbitrary file, and finalize.mjs cannot infer that filename from `--out-dir` alone.
     const busPath = typeof opts["bus-path"] === "string"
       ? /** @type {string} */(opts["bus-path"])
