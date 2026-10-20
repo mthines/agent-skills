@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills spec](https://img.shields.io/badge/spec-Agent%20Skills-7c3aed)](https://agentskills.io/)
-[![Skills](https://img.shields.io/badge/skills-48-0a7)](#skills)
+[![Skills](https://img.shields.io/badge/skills-49-0a7)](#skills)
 [![Agents](https://img.shields.io/badge/agents-5-0a7)](#skills)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
@@ -152,6 +152,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | **`quality/`** | *Code, tests, plans, AI apps* |
 | [`/pr-review`](./skills/quality/pr-review/SKILL.md) | One read-only review of a PR: a single report plus inline findings. |
 | [`/review-loop`](./skills/quality/review-loop/SKILL.md) | Reviews, fixes, and resolves a PR's threads until it converges; with no PR, it does the same on the local branch. |
+| [`/optimize-approach`](./skills/quality/optimize-approach/SKILL.md) | Asks whether a change or plan takes the best approach, and names a better one only when it clearly wins. |
 | [`/polish`](./skills/quality/polish/SKILL.md) | Pre-PR cleanup: simplifies the changed code and prunes noise comments. |
 | [`critical`](./skills/quality/critical/SKILL.md) | A hostile pre-mortem of a plan or diff, with a steelman alternative. |
 | [`confidence`](./skills/quality/confidence/SKILL.md) | Scores how sure you can be that the work meets the requirement. |

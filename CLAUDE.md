@@ -51,6 +51,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates; `deep` runs 3–5 parallel persona lenses (found via `ideate`) and merges them
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
 - `observe-run` (`Skill() + /`) — runs a command and grades the telemetry that run emitted against behavioral assertions only
+- `optimize-approach` (`/`) — is this the best approach for the intent (codebase-fit, simplicity, performance, robustness); at most two material proposals, silent when sound. Report only
 - `polish` (`/`) — re-runnable pre-PR branch quality gate: review, then simplify the diff and prune restating or ticket comments, each change behind a test check
 - `review-loop` (`Skill()`) — bounded convergence loop, cap 5: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` on a PR; with no PR, local mode over `.agent/{branch}/findings.jsonl`, zero GitHub calls; `--ui` adds a `ui-verify` lane. Run at the top level
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule
