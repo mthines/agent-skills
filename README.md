@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills spec](https://img.shields.io/badge/spec-Agent%20Skills-7c3aed)](https://agentskills.io/)
-[![Skills](https://img.shields.io/badge/skills-50-0a7)](#skills)
+[![Skills](https://img.shields.io/badge/skills-49-0a7)](#skills)
 [![Agents](https://img.shields.io/badge/agents-5-0a7)](#skills)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
@@ -156,8 +156,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/polish`](./skills/quality/polish/SKILL.md) | Pre-PR cleanup: simplifies the changed code and prunes noise comments. |
 | [`critical`](./skills/quality/critical/SKILL.md) | A hostile pre-mortem of a plan or diff, with a steelman alternative. |
 | [`confidence`](./skills/quality/confidence/SKILL.md) | Scores how sure you can be that the work meets the requirement. |
-| [`tdd`](./skills/quality/tdd/SKILL.md) | Strict red-green-refactor, one failing test at a time. |
-| [`test-provenance-guard`](./skills/quality/test-provenance-guard/SKILL.md) | Catches tests that pass by copying the code they test. |
+| [`tdd`](./skills/quality/tdd/SKILL.md) | Strict red-green-refactor, then checks each test really exercises the production code. |
 | [`measurable`](./skills/quality/measurable/SKILL.md) | Ships each change with the telemetry that proves it worked. |
 | [`/ai-engineering`](./skills/quality/ai-engineering/SKILL.md) | Reviews an LLM app: prompts, RAG, agents, evals, safety, cost. |
 | **`delivery/`** | *Git, PR, CI* |

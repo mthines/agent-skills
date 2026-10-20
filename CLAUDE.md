@@ -55,8 +55,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `review-loop` (`Skill()`) — bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5; `--ui` runs `ui-verify` in a parallel lane and resolves its findings. Run at the top level of a session that holds a dispatch tool
 - `review-branch` (`/`) — PR-less sibling of `review-loop`; findings bus `.agent/{branch}/findings.jsonl`, zero GitHub calls
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule
-- `tdd` (`auto`) — strict RED-GREEN-REFACTOR
-- `test-provenance-guard` (`auto`) — detects tests-by-construction (static + mutation checks)
+- `tdd` (`auto`) — strict RED-GREEN-REFACTOR; `provenance` mode checks a test exercises the production code (static + mutation)
 - `verify-behavior` (`Skill()`) — cheapest-first three-tier verification ladder; emits an evidence receipt, never a score
 - `jev-assert` (`Skill()` + `/`) — semantic UI assertion via TypeSafe Jev; backs the `THEN semantic:` spec form
 

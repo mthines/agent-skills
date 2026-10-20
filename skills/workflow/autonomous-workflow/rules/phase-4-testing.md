@@ -192,10 +192,10 @@ describe('DarkModeToggle', () => {
 });
 ```
 
-#### Step 5a: Test Provenance Guard
+#### Step 5a: Test provenance
 
 After any new `*.test.*` / `*.unit.*` / `*.spec.*` file has been written
-(or an existing one extended), invoke the test-provenance-guard companion
+(or an existing one extended), run the `tdd` provenance check
 to catch tests-by-construction *before* the loop declares Phase 4 done.
 See [Test Provenance Trigger](#test-provenance-trigger) below for the full
 invocation contract.
@@ -608,51 +608,27 @@ Disable by removing this invocation (see
 ## Test Provenance Trigger
 
 This section is the anchor referenced from [`companion-skills.md`](./companion-skills.md#registry).
-It defines when and how to invoke the `test-provenance-guard` companion to
+It defines when and how to run the `tdd` provenance check to
 catch tests-by-construction in the autonomous loop.
 
 **When:** any new `*.test.*` / `*.unit.*` / `*.spec.*` file has been written
 or extended in this Phase 4 iteration.
 
 ```bash
-Skill("test-provenance-guard", "--diff --base $(git merge-base HEAD main) --fix")
+Skill("tdd", "provenance --base $(git merge-base HEAD main)")
 ```
 
-> **Autofix is allowed inside the autonomous loop, but only behind a
-> pre-heal confidence gate.** The skill MUST run `Skill("confidence", "code")`
-> on its own proposed extract-and-rewrite **before** touching any file. The
-> autofix proceeds only when **both** of these are true:
->
-> 1. **Pre-heal:** `confidence(code) ≥ 90 %` on the proposed extraction.
-> 2. **Post-heal:** the three existing mechanical gates in
->    `test-provenance-guard/rules/self-heal.md` Step 4 (build passes,
->    target test passes, mutation re-verifies) all pass.
->
-> If pre-heal confidence is < 90 %, the skill **does not write any files**
-> and emits the finding as `heal-skipped-low-confidence`. If a post-heal
-> gate fails, the heal is reverted with `git restore` and the finding is
-> emitted as `heal-failed`. In both cases, the autonomous-workflow
-> stuck-loop protocol takes over (per-iteration self-check →
-> `confidence(analysis)` → re-trace auto-replan → user escalation).
+The check runs the static and mutation checks in the `tdd` skill's `rules/test-provenance.md`.
+Its fix (extract the copied logic into a production export) applies only when `confidence(code)` ≥ 90; below that it reports the finding and the stuck-loop protocol takes over.
 
-| Behavior                       | Detail                                                              |
-| ------------------------------ | ------------------------------------------------------------------- |
-| Frequency                      | Once per Phase 4 iteration after new tests are committed            |
-| What it checks                 | (1) static — test file imports the SUT and does not shadow exported names. (2) mutation — sabotaging the SUT body makes the test FAIL |
-| Self-heal authority            | **Confidence-gated autofix.** `--fix` is allowed in the autonomous loop, but the skill must clear `confidence(code) ≥ 90 %` before mutating files and the three post-heal mechanical gates after. Either failure ⇒ no autonomous refactor; the finding is reported to the Progress Log and the stuck-loop protocol handles it |
-| If pre-heal confidence < 90 %  | Emit `heal-skipped-low-confidence`; do not write any files. Stuck-loop protocol takes over |
-| If a post-heal gate fails      | Revert the heal with `git restore`; emit `heal-failed`. Stuck-loop protocol takes over     |
-| If skill missing               | Log `test-provenance-guard() — skipped (not installed)` and proceed |
-| Progress Log entry             | `[TIMESTAMP] Phase 4: test-provenance-guard — N file(s), M finding(s), K healed (confidence X%), L skipped-low-confidence` |
+| Behavior | Detail |
+| --- | --- |
+| Frequency | Once per Phase 4 iteration after new tests are committed |
+| If `tdd` is missing | Log `companion: tdd provenance — skipped (not installed)` and proceed |
+| Progress Log entry | `[TIMESTAMP] Phase 4: provenance: N file(s), M finding(s), K fixed` |
 
-The skill addresses the failure mode where an LLM-authored test re-implements
-the function under test as a local copy and asserts against that copy — tests
-pass, CI is green, but no regression protection exists.
-See the skill's [PR #12340 post-mortem](../../../quality/test-provenance-guard/references/pr-12340-postmortem.md)
-for the origin case.
-
-Disable: remove the `Skill("test-provenance-guard", ...)` invocation from
-[Step 5a](#step-5a-test-provenance-guard) and from this section.
+Disable: remove the `Skill("tdd", "provenance …")` invocation from
+[Step 5a](#step-5a-test-provenance) and from this section.
 Registry: [`companion-skills.md`](./companion-skills.md#registry).
 
 ---
@@ -664,7 +640,7 @@ It defines when and how to invoke the `measurable` companion as a
 read-only audit before Phase 4 can be declared done.
 
 **Advisory by default.** This is a new, unvalidated heuristic — unlike
-`test-provenance-guard` (mechanically verified via mutation testing),
+the `tdd` provenance check (mechanically verified via mutation testing),
 `measurable`'s `missing`/`unlinked` classification is a judgment
 call with no track record yet in this registry. Following the precedent set
 by `critical` (opt-in rather than
@@ -722,7 +698,7 @@ Registry: [`companion-skills.md`](./companion-skills.md#registry).
 - [ ] User escalation triggered when confidence >= 90% OR auto-replan exhausted
 - [ ] `lorekit(memory.write aw-lessons)` invoked at stuck-loop escalation; promotion suggested if `seen_count >= 3` (anchor: `lessons-write`)
 - [ ] New tests added for new functionality
-- [ ] `test-provenance-guard` invoked after new test files written; findings healed or escalated
+- [ ] the `tdd` provenance check invoked after new test files written; findings healed or escalated
 - [ ] `measurable(audit)` invoked before Step 6 if Phase 3 touched API/handler or user-facing files; findings reported (advisory by default; no `missing` findings remain if `--observability-strict` is set)
 - [ ] Full suite + lint + build all green
 - [ ] Every `checks.yaml` check `status: pass` — or `unsatisfiable` escalated and user-approved; skip logged if no `checks.yaml` (anchor: `executable-checks`)

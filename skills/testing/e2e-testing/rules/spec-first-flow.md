@@ -100,7 +100,7 @@ npx playwright test tests/dashboard/create-project.spec.ts
 ```
 
 If the test passes on the first run, run
-[`test-provenance-guard`](../../../quality/test-provenance-guard/SKILL.md) before
+[the `tdd` provenance check](../../../quality/tdd/rules/test-provenance.md) before
 declaring done.
 A first-pass green is a signal the test may not exercise production code.
 

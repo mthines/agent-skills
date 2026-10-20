@@ -64,7 +64,7 @@ catch the bugs that show up in real flows.
 
 Two practical implications:
 
-1. Run [`test-provenance-guard`](../../../quality/test-provenance-guard/SKILL.md)
+1. Run [the `tdd` provenance check](../../../quality/tdd/rules/test-provenance.md)
    on AI-authored unit and RNTL tests to catch tests-by-construction.
 2. Spend slightly more E2E budget on AI-touched flows than on
    hand-written ones — the marginal return is higher.

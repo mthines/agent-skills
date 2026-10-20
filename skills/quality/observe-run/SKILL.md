@@ -134,7 +134,7 @@ skill returns the same quiet self-skip rather than a vacuous `confirms`.
 | --- | --- |
 | The four canonical receipt verdicts and their shape | `verify-behavior` — [`rules/receipt.md`](../verify-behavior/rules/receipt.md). This skill maps into it and never redefines it. |
 | The cheapest-first ladder vocabulary (Tier 1/2/3) | `verify-behavior` — [`rules/ladder.md`](../verify-behavior/rules/ladder.md). This skill's two rungs live inside that ladder's Tier 3. |
-| The by-construction framing | `test-provenance-guard` — cited by
+| The by-construction framing | the `tdd` provenance check — cited by
 [`rules/assertion-provenance.md`](./rules/assertion-provenance.md), never forked. |
 | The self-improvement lesson loop (bucket, schema, recurrence, promotion gate) | the external `lorekit-setup` skill (`rules/self-improvement-loops.md`). [`rules/lessons.md`](./rules/lessons.md) instantiates it for dev-run lessons; it never redefines it. |
 

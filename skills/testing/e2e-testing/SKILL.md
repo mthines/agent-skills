@@ -154,7 +154,7 @@ After the Generator produces a test:
 
 1. Run the test once against the live app.
    It must pass on first run, or the Healer must converge in ≤ 3 attempts.
-2. Invoke [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) on
+2. Invoke [the `tdd` provenance check](../../quality/tdd/rules/test-provenance.md) on
    the generated file to ensure the test imports production code instead
    of a private re-implementation.
 3. Open `playwright.config.ts` and confirm `trace: 'on-first-retry'` is set
@@ -178,7 +178,7 @@ If the heal loop fails to converge:
 | Locator unstable, no stable role / label                     | Propose `data-testid` diff (rule: locator-strategy).          |
 | Repo missing Playwright or MCP                               | Phase 0 halt + ask permission.                                |
 | Heal loop > 3 attempts                                       | Stop, run `confidence(analysis)`, escalate.               |
-| Test passes on first run, never seen failing                 | Run `test-provenance-guard` before declaring done.            |
+| Test passes on first run, never seen failing                 | Run the `tdd` provenance check before declaring done.            |
 
 ---
 
@@ -186,7 +186,7 @@ If the heal loop fails to converge:
 
 - [`tdd`](../../quality/tdd/SKILL.md) — owns the unit and component layers.
   This skill defers to it for anything below E2E.
-- [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) — runs after
+- [the `tdd` provenance check](../../quality/tdd/rules/test-provenance.md) — runs after
   Generator output to catch tests-by-construction.
 - [`confidence`](../../quality/confidence/SKILL.md) — gate when the heal loop fails.
 - If a flow is failing for reasons no test rewrite can fix, step back instead of
@@ -235,6 +235,6 @@ If the heal loop fails to converge:
 - [ ] Phase 0 preflight passed or installs were user-approved.
 - [ ] `specs/<flow>.md` exists and the user reviewed it.
 - [ ] `tests/<flow>.spec.ts` passes against the live app.
-- [ ] `test-provenance-guard` reports no violations on the new test.
+- [ ] the `tdd` provenance check reports no violations on the new test.
 - [ ] `playwright.config.ts` has `trace: 'on-first-retry'`.
 - [ ] If a `data-testid` was added, it is in the source diff and committed.

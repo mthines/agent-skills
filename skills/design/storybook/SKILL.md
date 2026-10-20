@@ -328,7 +328,7 @@ live in
 
 - [`tdd`](../../quality/tdd/SKILL.md) — owns unit / hook tests.
   This skill defers below the visual surface to it.
-- [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) —
+- [the `tdd` provenance check](../../quality/tdd/rules/test-provenance.md) —
   run on the generated `.test.stories.tsx` to ensure the test imports
   production component code, not a private shim.
 - [`pr-reviewer`](../../../agents/pr-reviewer.md) — runs the visual check pass

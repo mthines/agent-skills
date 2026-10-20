@@ -13,7 +13,7 @@ tags:
 An agent that writes the instrumentation **and** asserts on the instrumentation it wrote passes by
 construction.
 This is the telemetry-shaped version of exactly what
-[`skills/quality/test-provenance-guard`](../../test-provenance-guard/SKILL.md) exists to catch for
+[the `tdd` provenance check](../../tdd/rules/test-provenance.md) exists to catch for
 test files — a test that re-implements the function it claims to test, then asserts against its
 own copy, passes every time and protects against nothing.
 Here the copy is a span the agent added specifically so the assertion would find it, rather than a
@@ -89,5 +89,5 @@ If no — the answer depends on what happened when the code ran — it is behavi
   [`rules/receipt-mapping.md`](./receipt-mapping.md).
 - It does not detect by-construction **tests** (test files that shadow their SUT's exports) — that
   static + mutation check belongs to
-  [`skills/quality/test-provenance-guard`](../../test-provenance-guard/SKILL.md), which this rule
+  [the `tdd` provenance check](../../tdd/rules/test-provenance.md), which this rule
   cites for framing only.

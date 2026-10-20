@@ -56,22 +56,22 @@ companion: <name> — skipped (<reason>)
 
 ```text
 ❌ WRONG — the three reasons a line can be absent look identical in a transcript
-(no line for test-provenance-guard)
+(no line for the tdd provenance check)
 
 ✅ RIGHT
-companion: test-provenance-guard — skipped (trigger not met: no new *.test.* file)
+companion: tdd provenance — skipped (trigger not met: no new *.test.* file)
 ```
 
 **Why this is mandatory, not courtesy.** Across 39 planning-agent and 48
 `aw-executor` runs in the author's local transcripts (`~/.claude/projects`,
 2026-08-20 → 2026-09-25 — local sessions only, not Agent0 or cloud runs), `Skill("interview")`, `Skill("tdd")`, and
-`Skill("test-provenance-guard")` were each invoked **zero** times, and the
+the provenance guard were each invoked **zero** times, and the
 transcripts could not say why: the contract's headline read *skip silently*, so
 an uninstalled companion, an untriggered one, and one the agent never reached all
 left the same nothing behind. Reading the definitions turned up three concrete
 contributors, each now fixed or made visible:
 
-1. **`test-provenance-guard` was absent from the executor's own companion
+1. **The provenance check was absent from the executor's own companion
    table** — the table the executor reads first — and lived only ~630 lines into
    `phase-4-testing.md`. A run working from the template never met it. The row is
    now in the template.
@@ -102,7 +102,7 @@ line is what lets the next measurement confirm or refute them.
 | `ux`                 | 3     | Files touched include `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, RN screens | —                     | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#ux-trigger)  |
 | `measurable` | 3 | Matches a `web`/`mobile`/`api`/`worker` pattern in the skill's own `rules/scope-detection.md` (single source of truth for the pattern list — not restated here) | `implement`           | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#observability-trigger) |
 | `confidence`         | 4     | At iteration cap on same failing area (3 in Lite Mode, 5 in Full Mode) — automatic | `analysis`        | Adjust cap or threshold in [`phase-4-testing.md`](./phase-4-testing.md#stuck-loop-detection) |
-| `test-provenance-guard` | 4  | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written or extended | `--diff --base $(git merge-base HEAD main) --fix` — autofix is **gated by `confidence(code) ≥ 90 %`** before any file is mutated, plus the three post-heal mechanical gates afterwards. Either failure ⇒ no refactor; stuck-loop protocol takes over | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#test-provenance-trigger) |
+| `tdd` (provenance) | 4  | After Step 5 — any new `*.test.*` / `*.unit.*` / `*.spec.*` file written or extended | `provenance --base $(git merge-base HEAD main)` — the fix is **gated by `confidence(code) ≥ 90 %`**; below it, the finding is reported and the stuck-loop protocol takes over | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#test-provenance-trigger) |
 | `measurable` | 4 | Before Step 6 Final Validation — read-only audit of Phase 3's telemetry. **Advisory by default** (findings reported, never block); pass `--strict` (opt-in, e.g. `aw --observability-strict`) to make `missing` findings on `web`/`mobile`/`api`/`worker` paths block like a failing test. `unlinked` findings never block, `--strict` or not | `audit --diff --base $(git merge-base HEAD main) [--strict]` | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#observability-gate) |
 | `lorekit-memory`     | 4     | At stuck-loop escalation (cap hit / user escalation) — record the failing area and resolution | `memory.write loop::aw-lessons` | Remove invocation in [`phase-4-testing.md`](./phase-4-testing.md#lessons-write) |
 | `docs`               | 5     | Always (self-improving doc loop — keeps `CLAUDE.md`, `README.md`, `docs/` aligned) | `update --auto`      | Remove invocation in [`phase-5-documentation.md`](./phase-5-documentation.md#documentation-trigger). Skip per-task by user override or skip-condition match (see [`phase-5-documentation.md#when-to-skip`](./phase-5-documentation.md#when-to-skip)). |

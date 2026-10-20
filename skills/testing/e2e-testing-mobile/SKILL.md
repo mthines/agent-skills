@@ -196,7 +196,7 @@ After the agent emits a flow:
 
 1. Run the flow once against a simulator or device.
    It must pass on first run, or the Healer must converge in ≤ 3 attempts.
-2. Invoke [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) on
+2. Invoke [the `tdd` provenance check](../../quality/tdd/rules/test-provenance.md) on
    any TypeScript helpers the flow imports (e.g. fixture builders) to
    ensure they call production code instead of a private re-implementation.
 3. Open `.github/workflows/eas-e2e.yml` (or the EAS Workflow YAML) and
@@ -225,7 +225,7 @@ If the heal loop fails to converge:
 | Locator unstable, no stable `testID`                              | Propose `testID` diff via the `setTestId` helper.                                   |
 | Repo missing Maestro CLI or `.maestro/` or `eas.json` E2E profile | Phase 0 halt + ask permission.                                                      |
 | Heal loop > 3 attempts                                            | Stop, run `confidence(analysis)`, escalate.                                     |
-| Flow passes on first run, never seen failing                      | Verify any imported helpers via `test-provenance-guard` before declaring done.      |
+| Flow passes on first run, never seen failing                      | Verify any imported helpers via the `tdd` provenance check before declaring done.      |
 | Existing Detox suite is green and stable                          | Keep it; see [`references/detox-legacy.md`](./references/detox-legacy.md).          |
 | Detox suite is brittle through RN upgrades                        | Migrate flow-by-flow to Maestro; do not rewrite the whole suite at once.            |
 
@@ -239,7 +239,7 @@ If the heal loop fails to converge:
 - [`tdd`](../../quality/tdd/SKILL.md) — owns the unit and component layers
   (Jest + React Native Testing Library). This skill defers for
   anything below E2E.
-- [`test-provenance-guard`](../../quality/test-provenance-guard/SKILL.md) — runs
+- [the `tdd` provenance check](../../quality/tdd/rules/test-provenance.md) — runs
   on TypeScript helpers imported by flows to catch tests-by-construction.
 - [`confidence`](../../quality/confidence/SKILL.md) — gate when the heal loop fails.
 - If a flow is failing for reasons no flow rewrite can fix, step back instead of
@@ -302,7 +302,7 @@ If the heal loop fails to converge:
 - [ ] Phase 0 preflight passed or installs were user-approved.
 - [ ] `specs/<flow>.md` exists and the user reviewed it.
 - [ ] `.maestro/<flow>.yaml` passes against a real build.
-- [ ] Any imported TS helpers pass `test-provenance-guard`.
+- [ ] Any imported TS helpers pass the `tdd` provenance check.
 - [ ] EAS Workflow `maestro-cloud` job runs the flow on Cloud with
       `retries: 2` and `record_screen: false`.
 - [ ] If a `testID` was added, it is in the source diff and committed,

@@ -3,10 +3,10 @@ name: tdd
 description: >
   Enforces strict RED-GREEN-REFACTOR test-driven development — one failing test
   at a time, minimal code to pass, then refactor against an inline quality
-  checklist and `test-provenance-guard`. Triggers on "tdd", "write tests", "test driven", "red
+  checklist and a test-provenance check (`provenance` runs it alone). Triggers on "tdd", "write tests", "test driven", "red
   green refactor", "/tdd".
 disable-model-invocation: false
-argument-hint: '[after] [<feature-description>]'
+argument-hint: '[after | provenance] [<feature-description> | <test files>]'
 license: MIT
 metadata:
   author: mthines
@@ -36,6 +36,7 @@ Enforce strict RED-GREEN-REFACTOR discipline. One test at a time. Tests describe
 Check `$ARGUMENTS` for the feature or behavior description.
 
 - If `$ARGUMENTS` contains a feature description, use it directly.
+- If `$ARGUMENTS` starts with **`provenance`**, run only the provenance check on the named or changed test files. See `rules/test-provenance.md`.
 - If `$ARGUMENTS` contains **"after"** (e.g., `/tdd after`), run in **Test-After Mode** — write tests for existing code. See `rules/test-after.md`.
 - If `$ARGUMENTS` is empty, ask the user what behavior they want to implement or test.
 

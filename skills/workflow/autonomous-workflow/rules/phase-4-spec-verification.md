@@ -299,9 +299,9 @@ Pass the critical-path spec to the `e2e-testing` skill's Generator. The
 Generator produces a saved `tests/{flow}.spec.ts`. Follow the Generator's
 locator ladder and ensure the test imports production code (not a local copy).
 
-After generation, invoke `test-provenance-guard`:
+After generation, invoke the `tdd` provenance check:
 ```bash
-Skill("test-provenance-guard", "--diff --base $(git merge-base HEAD main) --fix")
+Skill("tdd", "provenance --base $(git merge-base HEAD main)")
 ```
 
 `verify-only` specs are NOT promoted. They served their purpose (verifying the

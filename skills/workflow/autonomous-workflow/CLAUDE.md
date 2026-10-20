@@ -824,7 +824,7 @@ contract is unchanged.
 | Instance                                                   | Confidence mode             | Threshold | Action gated                                                      |
 | ---------------------------------------------------------- | --------------------------- | --------- | ----------------------------------------------------------------- |
 | `/create-skill diagnose <skill> --apply`                  | `confidence(analysis)`  | ≥ 90 %    | `git apply` of a proposed change to the **target skill's** source |
-| `test-provenance-guard --fix` in loop                      | `confidence(code)`          | ≥ 90 %    | Extract-and-rewrite refactor of production code to fix a test     |
+| `tdd provenance` fix in loop                               | `confidence(code)`          | ≥ 90 %    | Extract-and-rewrite refactor of production code to fix a test     |
 
 Both instances share three contracts:
 

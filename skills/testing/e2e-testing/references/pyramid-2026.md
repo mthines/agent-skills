@@ -44,7 +44,7 @@ real behaviour shows up.
 
 Two practical implications:
 
-1. Run [`test-provenance-guard`](../../../quality/test-provenance-guard/SKILL.md) on
+1. Run [the `tdd` provenance check](../../../quality/tdd/rules/test-provenance.md) on
    AI-authored unit tests to catch tests-by-construction.
 2. Spend slightly more E2E budget on AI-touched flows than on hand-written
    ones — the marginal return is higher.
