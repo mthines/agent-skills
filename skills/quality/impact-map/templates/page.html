@@ -1,0 +1,211 @@
+<title><!-- SLOT: subject --> Impact Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one narrow column — verdict rows, one badged diagram, decisions holding their own line links, then what is already settled. */
+:root{
+  --bg:#F3F4F7; --sheet:#FFFFFF; --ink:#14161B; --muted:#5A6070; --line:#D8DCE4; --line-soft:#E8EBF0;
+  --new:#2346C8; --new-bg:#E9EEFD;
+  --mod:#9A5800; --mod-bg:#FBF0DB;
+  --risk:#B8321F; --risk-bg:#FBE5E1;
+  --same:#848A99; --same-bg:#F1F2F5;
+  --ok:#1F7A4D;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --bg:#0E1014; --sheet:#161920; --ink:#E7E9EF; --muted:#9BA2B3; --line:#2B303B; --line-soft:#21252E;
+  --new:#86A0FF; --new-bg:#1B2445; --mod:#E6A94A; --mod-bg:#33270F; --risk:#FF8573; --risk-bg:#3B1C18;
+  --same:#727889; --same-bg:#1D2028; --ok:#5BCB92;
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0E1014; --sheet:#161920; --ink:#E7E9EF; --muted:#9BA2B3; --line:#2B303B; --line-soft:#21252E;
+  --new:#86A0FF; --new-bg:#1B2445; --mod:#E6A94A; --mod-bg:#33270F; --risk:#FF8573; --risk-bg:#3B1C18;
+  --same:#727889; --same-bg:#1D2028; --ok:#5BCB92;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:32px 64px}
+.sheet{max-width:880px;margin:0 auto;display:flex;flex-direction:column;gap:36px}
+h1,h2{font-family:var(--f-display);font-weight:600;text-wrap:balance;margin:0}
+h1{font-size:clamp(24px,3.2vw,32px);line-height:1.15}
+h2{font-size:20px}
+p{margin:0;max-width:68ch}
+code{font-family:var(--f-mono);font-size:.86em}
+a{color:var(--new);text-underline-offset:2px}
+a:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.eyebrow{font:500 11.5px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.section{display:flex;flex-direction:column;gap:14px}
+.section-head{display:flex;flex-direction:column;gap:6px;border-top:2px solid var(--ink);padding-top:12px}
+.lede{color:var(--muted)}
+
+/* decision badge, shared by the diagram and the cards */
+.badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;
+  background:var(--ink);color:var(--sheet);font:600 13px/1 var(--f-mono);flex:none}
+
+header{display:flex;flex-direction:column;gap:12px}
+.meta{display:flex;flex-wrap:wrap;gap:4px 16px;font:13px/1.4 var(--f-mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.meta b{color:var(--ink);font-weight:500}
+.why{font-size:15.5px;color:var(--muted)}
+.why strong{color:var(--ink);font-weight:500}
+.verdict{background:var(--sheet);border:1px solid var(--line);border-left:6px solid var(--mod);padding:16px 20px;display:flex;flex-direction:column;gap:10px}
+.verdict .lead{font-size:17px;line-height:1.45;font-weight:500}
+.points{display:flex;flex-direction:column}
+.points details{border-top:1px solid var(--line-soft)}
+.points details:first-child{border-top:0}
+.points summary{display:grid;grid-template-columns:24px 1fr 16px;gap:10px;align-items:start;padding:7px 4px;font-size:15px;cursor:pointer;list-style:none;border-radius:2px}
+.points summary::-webkit-details-marker{display:none}
+.points summary::after{content:"";width:7px;height:7px;margin-top:7px;border-right:1.5px solid var(--muted);border-bottom:1.5px solid var(--muted);transform:rotate(45deg);transition:transform .15s}
+.points details[open] summary::after{transform:rotate(-135deg);margin-top:10px}
+.points summary:hover .sum{text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.points summary:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.points summary .badge{margin-top:1px}
+.points .dot{width:8px;height:8px;margin:8px 0 0 8px;background:var(--mod);border-radius:1px}
+.points dl{margin:2px 0 0 38px;display:grid;grid-template-columns:44px 1fr;gap:4px 12px;font-size:14px;max-width:72ch}
+.points dt{font:500 11px/2 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.points dd{margin:0;color:var(--ink)}
+.points dt:nth-of-type(2){color:var(--risk)}
+.points .jump{display:inline-block;margin:6px 0 12px 38px;font:500 12.5px var(--f-mono)}
+@media (max-width:520px){.points dl{margin-left:0;grid-template-columns:1fr;gap:0}.points dd{margin-bottom:6px}.points .jump{margin-left:0}}
+@media (prefers-reduced-motion:reduce){.points summary::after{transition:none}}
+.decision{scroll-margin-top:16px}
+.proof{font-size:13.5px;color:var(--muted);border-top:1px solid var(--line-soft);padding-top:10px}
+.proof strong{color:var(--ink);font-weight:500}
+
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;font-size:12.5px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:7px}
+.sw{width:16px;height:12px;border-radius:2px;border:1.5px solid}
+.sw.new{background:var(--new-bg);border-color:var(--new)}
+.sw.mod{background:var(--mod-bg);border-color:var(--mod)}
+.sw.same{background:var(--same-bg);border-color:var(--same)}
+.sw.risk{background:var(--risk-bg);border-color:var(--risk);border-style:dashed}
+.sw.dash{background:transparent;border:0;border-top:2px dashed var(--new);height:0;width:20px}
+.legend .badge{width:18px;height:18px;font-size:10.5px}
+
+figure{margin:0;background:var(--sheet);border:1px solid var(--line);display:flex;flex-direction:column}
+.fig-scroll{overflow-x:auto;padding:16px}
+.fig-scroll svg{display:block;width:100%;min-width:720px;height:auto}
+figcaption{border-top:1px solid var(--line);padding:10px 16px;font-size:13px;color:var(--muted)}
+svg text{font-family:var(--f-body)}
+svg .hdr{font:600 11px var(--f-mono);letter-spacing:.08em;fill:var(--muted)}
+svg .t{font-size:13px;font-weight:600;fill:var(--ink)}
+svg .s{font-size:11px;fill:var(--muted)}
+svg .lbl{font-size:11px;font-family:var(--f-mono)}
+svg .n rect{stroke-width:1.5}
+svg .n.new rect{fill:var(--new-bg);stroke:var(--new)}
+svg .n.mod rect{fill:var(--mod-bg);stroke:var(--mod)}
+svg .n.same rect{fill:var(--same-bg);stroke:var(--same)}
+svg .n.risk rect{fill:var(--risk-bg);stroke:var(--risk);stroke-dasharray:4 3}
+svg .e{fill:none;stroke-width:1.5}
+svg .e.new{stroke:var(--new)} svg .e.mod{stroke:var(--mod)} svg .e.same{stroke:var(--same)} svg .e.risk{stroke:var(--risk);stroke-width:2}
+svg .e.dash{stroke-dasharray:5 4}
+svg .mk-new path{fill:var(--new)} svg .mk-mod path{fill:var(--mod)} svg .mk-same path{fill:var(--same)} svg .mk-risk path{fill:var(--risk)}
+svg .fill-risk{fill:var(--risk)}
+svg .bdg circle{fill:var(--ink);stroke:var(--sheet);stroke-width:2}
+svg .bdg text{fill:var(--sheet);font:600 11px var(--f-mono);text-anchor:middle}
+
+.decisions{display:flex;flex-direction:column;gap:16px}
+.decision{background:var(--sheet);border:1px solid var(--line);display:flex;flex-direction:column}
+.decision-head{display:grid;grid-template-columns:24px 1fr;gap:12px;padding:16px 16px 14px}
+.decision-head .b{display:flex;flex-direction:column;gap:6px}
+.decision h3{margin:0;font:600 16px/1.4 var(--f-body)}
+.decision p{font-size:14px;color:var(--muted)}
+.undoc{font:500 11px/1 var(--f-mono);background:var(--risk-bg);color:var(--risk);padding:3px 6px;border-radius:2px;white-space:nowrap;align-self:flex-start}
+.spots{list-style:none;margin:0;padding:0;border-top:1px solid var(--line-soft);background:var(--bg)}
+.spots li{display:flex;flex-direction:column;gap:3px;padding:10px 16px 10px 52px;border-bottom:1px solid var(--line-soft)}
+.spots li:last-child{border-bottom:0}
+.spot-link{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.spot-link a:first-child{font:500 13px/1.4 var(--f-mono);word-break:break-word}
+.spot-link .alt{font:11.5px var(--f-mono);color:var(--muted)}
+.spots p{font-size:14px;color:var(--ink)}
+@media (max-width:520px){.spots li{padding-left:16px}}
+.also{background:var(--sheet);border:1px solid var(--line);border-left:6px solid var(--mod)}
+.also .decision-head{grid-template-columns:1fr}
+
+.settled{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.settled li{display:grid;grid-template-columns:18px 1fr;gap:8px;font-size:14px;color:var(--muted);max-width:76ch}
+.settled li::before{content:"✓";color:var(--ok);font-weight:600}
+.settled strong{color:var(--ink);font-weight:500}
+.skip{font-size:13.5px;color:var(--muted)}
+footer{font-size:12.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+svg .n.gone rect{fill:none;stroke:var(--same);stroke-dasharray:5 4}
+svg .n.gone .t{text-decoration:line-through;fill:var(--muted)}
+svg .e.gone{stroke:var(--same);stroke-dasharray:4 4}
+svg .fill-muted{fill:var(--muted)}
+.sw.gone{background:transparent;border-color:var(--same);border-style:dashed}
+.undoc.drift{background:var(--mod-bg);color:var(--mod)}
+</style>
+
+<main class="sheet">
+
+<header>
+  <span class="eyebrow">Impact map · <!-- SLOT: owner/repo --> <a href="<!-- SLOT: pr url -->">#<!-- SLOT: n --></a></span>
+  <h1><!-- SLOT: what the PR does, one line --></h1>
+  <p class="why"><strong>Why:</strong> <!-- SLOT: the PR's purpose, one sentence --></p>
+  <div class="meta"><span>by <b><!-- SLOT: author --></b></span><span><b><!-- SLOT: files --></b> files · +<!-- SLOT --> −<!-- SLOT --></span></div>
+  <div class="verdict">
+    <span class="eyebrow">Verdict</span>
+    <p class="lead"><!-- SLOT: one sentence --></p>
+    <div class="points">
+      <!-- One <details> per decision (badge 1..3), then at most one with <span class="dot"> for "also live on merge". -->
+      <details>
+        <summary><span class="badge">1</span><span class="sum"><!-- SLOT: the decision as one statement --></span></summary>
+        <dl>
+          <dt>What</dt><dd><!-- SLOT --></dd>
+          <dt>Risk</dt><dd><!-- SLOT --></dd>
+          <dt>Ask</dt><dd><!-- SLOT --></dd>
+        </dl>
+        <a class="jump" href="#d1">Lines to check →</a>
+      </details>
+    </div>
+    <p class="proof"><strong>Verified by the author:</strong> <!-- SLOT --> <strong>Not run:</strong> <!-- SLOT --></p>
+  </div>
+</header>
+
+<section class="section" aria-labelledby="arch">
+  <div class="section-head"><span class="eyebrow">What changes</span><h2 id="arch"><!-- SLOT: e.g. The system after merge --></h2></div>
+  <div class="legend"><span><i class="sw new"></i>New</span><span><i class="sw mod"></i>Changed</span><span><i class="sw same"></i>Unchanged</span><span><i class="sw gone"></i>Removed</span><span><i class="sw risk"></i>Exposed on merge</span><span><i class="sw dash"></i>Not called yet</span><span><i class="badge">1</i>Decision above</span></div>
+  <!-- Drop legend entries the diagram does not use. -->
+  <figure>
+    <div class="fig-scroll">
+      <!-- SLOT: the SVG from rules/diagram.md -->
+    </div>
+    <figcaption><!-- SLOT: the diagram's one-sentence claim --></figcaption>
+  </figure>
+</section>
+
+<section class="section" aria-labelledby="dec">
+  <div class="section-head"><span class="eyebrow">What to decide</span><h2 id="dec"><!-- SLOT: e.g. Three things to agree on before approving --></h2>
+    <p class="lede">Each decision lists the lines that carry it, with the question to answer there.</p></div>
+  <div class="decisions">
+    <article class="decision" id="d1">
+      <div class="decision-head"><span class="badge">1</span><div class="b">
+        <h3><!-- SLOT: the Ask, as a question --></h3>
+        <p><!-- SLOT: two or three sentences of context --></p>
+        <!-- Optional: <span class="undoc">not in the PR description</span> or <span class="undoc drift">description says X; the code does Y</span> -->
+      </div></div>
+      <ul class="spots">
+        <li><span class="spot-link"><a href="<!-- SLOT: primary -->"><!-- SLOT: short/path.ext:a–b --></a><a class="alt" href="<!-- SLOT: file -->">file</a></span>
+          <p><!-- SLOT: the question to answer at this line --></p></li>
+      </ul>
+    </article>
+    <!-- "Also live on merge": <article class="decision also" id="d4"> with no badge. -->
+  </div>
+</section>
+
+<section class="section" aria-labelledby="settled">
+  <div class="section-head"><span class="eyebrow">Already settled</span><h2 id="settled">Intended, and covered by a test or the docs</h2>
+    <p class="lede">These look surprising in the diff. They are deliberate, so there is no need to raise them again.</p></div>
+  <ul class="settled">
+    <li><span><strong><!-- SLOT: the behavior --></strong> <!-- SLOT: where it is settled, with a link --></span></li>
+  </ul>
+  <p class="skip">Safe to skim: <!-- SLOT --></p>
+</section>
+
+<footer>Built from the PR at <code><!-- SLOT: short head sha --></code>, <!-- SLOT: date -->. <!-- SLOT: what was checked, and how -->. Nothing was run.</footer>
+</main>

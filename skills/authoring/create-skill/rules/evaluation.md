@@ -10,24 +10,30 @@ tags:
 # Evaluation
 
 A skill that has never been run against a realistic prompt is a draft, not
-a finished skill. Evaluation is Phase 6 of the scaffold workflow and the
+a finished skill. Evaluation is Phase 8 of the scaffold workflow and the
 `## Testing` section of the review checklist.
 
 ## Eval-first workflow
 
 1. **Identify the gap.** Run the target task *without* the skill and note
    where the agent goes wrong (wrong file, wrong convention, skipped
-   step, wrong tone).
+   step, wrong tone). In `scaffold` this is the Phase 1 run and its
+   corrections ledger — see `run-first.md`; do not repeat it.
 2. **Write at least 3 realistic test prompts** — phrased the way an actual
    user or agent would phrase them, not as a restatement of the skill's
    own description.
 3. **Baseline.** Run each prompt with the skill unavailable. Capture the
-   result.
+   result. The Phase 1 run is the baseline for the first prompt.
+   When `claude plugin eval` is available, use it to run the same task
+   with and without the skill and score the difference.
 4. **Minimal skill.** Write the smallest `SKILL.md` that closes the
    observed gap. Do not front-load content the baseline run never needed.
 5. **Iterate.** Re-run the same prompts with the skill installed; compare
    against the baseline. Add content only for gaps the comparison still
-   shows.
+   shows. When with-skill and baseline score the same, the skill is
+   decoration: cut it down to the lines that moved the score, or delete it.
+
+For the with-skill vs. no-skill vs. dummy measurement, follow `lift-check.md`.
 
 ## Observe navigation, not just output
 
@@ -117,11 +123,15 @@ an existing skill done.
 
 - [ ] At least 3 realistic test prompts written, none copied verbatim from
       the `description`.
-- [ ] A baseline (no-skill) run captured for comparison.
+- [ ] A baseline (no-skill) run captured for comparison — the Phase 1
+      run counts, unless it was waived.
+- [ ] Every `skill gotcha` row in the Phase 1 ledger needed no correction
+      in the with-skill run.
 - [ ] At least one with-skill run observed, including navigation (not just
       final output).
 - [ ] Tested on every model the skill targets, or the user has explicitly
       waived a tier.
 - [ ] `evals/triggers.jsonl` written for any `auto` skill.
+- [ ] `lift-check.md` verdict is `lift`, or the user waived it.
 - [ ] The repo eval obligation table checked and its outcome stated (which
       row applied, or that none did).

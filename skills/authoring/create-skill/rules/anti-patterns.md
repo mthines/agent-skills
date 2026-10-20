@@ -17,7 +17,7 @@ to maintain. Each entry shows the bad pattern, why it's bad, and the fix.
 - Discovery anti-patterns (A1–A4)
 - Structure anti-patterns (S1–S6)
 - Content anti-patterns (C1–C7)
-- Behaviour anti-patterns (B1–B6)
+- Behaviour anti-patterns (B1–B7)
 - Quick triage
 
 ## Discovery anti-patterns
@@ -363,6 +363,29 @@ suite, then fails the first real request phrased differently.
 **Fix:** validate against at least one held-out prompt that was not used
 during iteration before declaring the skill done.
 
+### B7 — Skill written before the job has run
+
+The skill was drafted from the author's description of the process,
+before the agent ever attempted the job without it.
+
+```markdown
+# Bad — a process manual written from memory
+## Steps
+1. Open the export. 2. Read the template. 3. Compute each figure.
+4. Fill each section. 5. IMPORTANT: NEVER email the client.
+
+# Good — only what the no-skill run got wrong
+## Gotchas
+- Revenue is gross minus refunds, never gross alone.
+Do not email the client; a hook blocks it.
+```
+
+**Why bad:** most lines restate what the agent already does, so they
+cost tokens and change nothing, and the real failure modes are missing.
+
+**Fix:** follow `run-first.md`: run the job once without the skill,
+record the corrections, and write only those.
+
 ## Quick triage
 
 When reviewing a skill, run the mechanical pre-pass first:
@@ -379,6 +402,9 @@ Then scan for what the validator cannot check:
    throat-clearing prose?
 3. Is each rule file self-contained — loadable in isolation?
 4. Does every actionable rule pair a good and a bad example?
-5. Are there all-caps MUST/NEVER rules that could instead explain the why?
+5. Are there all-caps MUST/NEVER rules that could instead explain the why,
+   or become a hook?
+6. Does any line describe a step the agent does correctly without the
+   skill? Delete it.
 
 If the validator reports any FAIL, fix that before looking at content.

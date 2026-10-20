@@ -1,15 +1,27 @@
 ---
 name: create-skill
 description: >
-  Scaffolds, reviews, upgrades, or diagnoses agent skills against best-practice
-  frontmatter, progressive disclosure, and this repo's symlink and inventory
-  wiring. Invoke with /create-skill [scaffold|review|upgrade|diagnose].
+  Scaffolds, reviews, upgrades, or diagnoses agent skills against
+  best-practice frontmatter, progressive disclosure, token-aware
+  structure, and the agent-skills.git symlink + inventory wiring.
+  Modes: `scaffold` (default — runs the job once without a skill on a
+  real input, records every correction, then writes a skill made of
+  only those corrections), `review` (audit existing
+  skill), `upgrade` (split a single-file skill into multi-file),
+  `diagnose` (retrospective failure analysis that emits a
+  confidence-gated unified diff against any skill declaring a
+  diagnostic surface), `prune` (deletes unused skills and trims or
+  deletes those whose with/without-skill eval shows no lift over a
+  same-length dummy). Triggers on "create a skill", "scaffold a skill",
+  "new SKILL.md", "review this skill", "audit my skill", "upgrade this
+  skill", "split this skill", "diagnose this skill", "why did the skill
+  miss this", "prune my skills", "clean up my skills", "/create-skill".
 disable-model-invocation: true
-argument-hint: '[scaffold|review|upgrade|diagnose] [<skill-name>|<path>]'
+argument-hint: '[scaffold|review|upgrade|diagnose|prune] [<skill-name>|<path>...]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.4.0'
+  version: '1.5.0'
   workflow_type: scaffolder-advisory-and-diagnoser
   tags:
     - skill-authoring
@@ -23,6 +35,7 @@ metadata:
     - self-improvement
     - evaluation
     - portability
+    - run-first
 ---
 
 # Create Skill
@@ -49,9 +62,10 @@ Parse `$ARGUMENTS` (first token) and detect the mode:
 | `review`   |         | "review", "audit", "check this skill", or `$0 == "review"`.              |
 | `upgrade`  |         | "upgrade", "split", "convert to multi-file", or `$0 == "upgrade"`.       |
 | `diagnose` |         | "diagnose", "why did <skill> miss this", or `$0 == "diagnose"`.          |
+| `prune`    |         | "prune", "clean up my skills", "which skills are useless", or `$0 == "prune"`. |
 
 If the user typed a path or skill name as `$ARGUMENTS`, treat it as the
-target for `review`/`upgrade`/`diagnose`; for `scaffold` it is the proposed
+target for `review`/`upgrade`/`diagnose`/`prune`; for `scaffold` it is the proposed
 skill name.
 
 State the detected mode and target in one line before continuing. Example:
@@ -65,54 +79,68 @@ Target: skills/<category>/<proposed-name>/
 
 ## Scaffold Workflow (default)
 
-A seven-phase pipeline. Each phase has a gate; do not proceed until it passes.
+Run the job first, write the skill second.
+Phases 0–2 do the job the skill is for, with no skill loaded, and record every correction it needed; Phases 3–8 write a skill made of those corrections only.
+The full procedure for Phases 0–2 is [`rules/run-first.md`](./rules/run-first.md); why it beats designing the skill up front is [`references/run-first-rationale.md`](./references/run-first-rationale.md).
 
 | Phase | Name                  | Gate                                                          |
 | ----- | --------------------- | ------------------------------------------------------------- |
-| 0     | Requirements          | User confirmed name, description, modes, structure choice, target runtime |
-| 1     | Structure decision    | Single-file vs multi-file decided with reasoning              |
-| 2     | Frontmatter draft     | Name + description + flags pass validation                    |
-| 3     | File generation       | All planned files written, none over budget                   |
-| 4     | Wiring & inventories  | Symlinks created (if local-dev), `CLAUDE.md` + `README.md` updated |
-| 5     | Self-check            | Mechanical pre-pass (`scripts/validate-skill.mjs`) is PASS, and every judgment item in `rules/quality-checklist.md` passes |
-| 6     | Evaluation            | ≥ 3 eval prompts written and at least one with-skill run observed, or the user explicitly waived it |
+| 0     | Brief                 | Task, real input, guardrails, and a definition of done that can fail |
+| 1     | Run                   | The job ran on the real input with no skill, the user accepted the output, and every correction is in the ledger — or the run was waived with a recorded reason |
+| 2     | Distill               | Every ledger row routed; no-skill exit evaluated; user confirmed name, description, modes, invocation, and target runtime |
+| 3     | Structure decision    | Single-file vs multi-file decided with reasoning              |
+| 4     | Frontmatter draft     | Name + description + flags pass validation                    |
+| 5     | File generation       | Every skill line traces to a ledger row, the guardrails, or the definition of done; none over budget |
+| 6     | Wiring & inventories  | Symlinks created (if local-dev), `CLAUDE.md` + `README.md` updated |
+| 7     | Self-check            | Mechanical pre-pass (`scripts/validate-skill.mjs`) is PASS, and every judgment item in `rules/quality-checklist.md` passes |
+| 8     | Evaluation            | The Phase 0 brief re-run with the skill closes the ledger's corrections, ≥ 2 more prompts run, and the lift check verdict is `lift` — or the user explicitly waived it |
 
-### Phase 0 — Requirements (interview)
+### Phase 0 — Brief
 
-Ask the user — in **one** message, batched, so they answer once:
+Ask the user, in **one** message, for the four brief fields in `rules/run-first.md` § Step 1: task, a real input, guardrails, and a definition of done.
+Do not ask for the skill's name, description, or structure yet.
 
-1. **Working name** (kebab-case, ≤ 64 chars). What should the directory and
-   `name:` field be?
-2. **One-line purpose** — what does this skill do? Phrased as a third-person
-   action ("Reviews X for Y", not "Helps you with X").
-3. **Trigger phrases** — what would the user (or another agent) type to
-   reach for this skill? Collect 3–8 phrases.
-4. **Invocation control** — slash-only (`disable-model-invocation: true`),
-   model-invokable (default), or hidden background (`user-invocable: false`)?
-   See `rules/invocation-control.md`.
-5. **Modes** — does the skill have one mode or several? If several, list
-   them with a one-line description each.
-6. **Inputs** — does the skill take `$ARGUMENTS`? Positional (`$0`, `$1`)?
-   None?
-7. **Tools** — should `allowed-tools` pre-approve any specific tools (e.g.
-   `Bash(git *)`)? Default: leave unset.
-8. **Scope** — is this an advisory skill (read-only), an applied skill
-   (writes code), an orchestrator (calls other skills), a slash command, or
-   a workflow companion?
-9. **Target runtime** — `claude-code` (default, full frontmatter) or
-   `portable` (Skills API / claude.ai upload, six spec fields only)? See
-   `rules/frontmatter.md` § Portability profile.
-10. **Verification** — does the output have objectively checkable results
-    (right shape or not, exit 0 or not)? If yes, plan `evals/` now rather
-    than after the fact — see `rules/evaluation.md`.
+### Phase 1 — Run
 
-Confirm the answers back to the user verbatim before moving on. **Do not
-guess any of these.**
+Do the job on the real input, in this session, without the skill, following `rules/run-first.md` § Step 2.
+Show the output with its definition-of-done result, take the user's corrections, and repeat until they accept it.
+Write each correction to the ledger at `.agent/{branch}/skill-run-<task-slug>.md` as it happens.
 
-### Phase 1 — Structure decision
+```text
+✗ Wrong — writing the skill from the user's description of the process
+User: create a skill for our weekly client report
+Agent: Here is skills/…/weekly-client-report/SKILL.md with 9 steps …
+
+✓ Right — doing the report first
+User: create a skill for our weekly client report
+Agent: Give me this week's export, what I must not touch, and what "done" means.
+       I'll produce the report without a skill, you correct me, and the skill
+       will be made of those corrections.
+```
+
+### Phase 2 — Distill
+
+1. Route every ledger row (`rules/run-first.md` § Step 4) and apply the no-skill exit (§ Step 5).
+   On a zero count, stop here and say no skill is needed — unless the run was waived, which skips the exit.
+2. Propose answers to the questions below, derived from the run, and ask the user to confirm or change them in **one** message:
+   1. **Working name** (kebab-case, ≤ 64 chars).
+   2. **One-line purpose**, third person ("Reviews X for Y", not "Helps you with X").
+   3. **Trigger phrases** — 3–8, including the phrasing the user used to start Phase 0.
+   4. **Invocation control** — slash-only (`disable-model-invocation: true`), model-invokable (default), or hidden background (`user-invocable: false`). See `rules/invocation-control.md`.
+   5. **Modes** — one, or several with a one-line description each.
+   6. **Inputs** — `$ARGUMENTS`, positional (`$0`, `$1`), or none; mirror what the run's real input was.
+   7. **Tools** — `allowed-tools` to pre-approve, if the run needed repeated permission prompts. Default: unset.
+   8. **Scope** — advisory (read-only), applied (writes code), orchestrator, slash command, or workflow companion.
+   9. **Target runtime** — `claude-code` (default) or `portable` (six spec fields only). See `rules/frontmatter.md` § Portability profile.
+   10. **Routed extras** — confirm each `hook`, `workspace fact`, and `check script` row will be written where `rules/run-first.md` § Step 4 routes it.
+3. Confirm the answers back verbatim before moving on.
+   **Do not guess any of these.**
+
+### Phase 3 — Structure decision
 
 Decide: **single-file** or **multi-file**? Apply this decision flow before
 generating anything — see `rules/structure-decision.md` for the full rubric.
+A ledger with fewer than ten routed rows almost always fits a single file.
 
 **Quick decision table:**
 
@@ -136,7 +164,7 @@ skills/<category>/<name>/
 └── templates/...
 ```
 
-### Phase 2 — Frontmatter draft
+### Phase 4 — Frontmatter draft
 
 Draft the YAML frontmatter using `rules/frontmatter.md` and
 `rules/description-writing.md`. **Validate before writing**:
@@ -146,13 +174,18 @@ Draft the YAML frontmatter using `rules/frontmatter.md` and
   **when** (trigger phrases), front-loaded with the most important keywords.
 - `disable-model-invocation: true` is set if the user picked slash-only.
 - `argument-hint` is set (unless the skill is `user-invocable: false`),
-  derived from the **Modes** (Q5) and **Inputs** (Q6) answers from Phase 0.
+  derived from the **Modes** and **Inputs** answers from Phase 2.
   Mirror the actual modes / flags; use `[…]` for optional, `<…>` for
   placeholders, `|` for alternatives. If the skill takes no arguments,
   emit `argument-hint: ''` explicitly rather than omitting the field.
 - `metadata.tags` are populated (5–10 specific terms).
 
-### Phase 3 — File generation
+### Phase 5 — File generation
+
+Write the skill from the ledger, not from the process.
+Each `skill gotcha` row becomes one line or one short block; each `check script` row becomes the script and one instruction to run it before reporting done; each `subagent step` row becomes one instruction to run that step in a sub-agent.
+Never add a step the agent did correctly in the run.
+Write each `hook` and `workspace fact` row to its routed destination, not into the skill.
 
 Write each planned file. For each one:
 
@@ -173,7 +206,8 @@ Write each planned file. For each one:
   a `--self-test` mode. See `rules/scripts-and-assets.md`.
 - **`evals/evals.json`, `evals/triggers.jsonl`** — this skill's own test
   prompts and trigger set, from `templates/evals.json` and
-  `templates/triggers.jsonl`. See `rules/evaluation.md`.
+  `templates/triggers.jsonl`. The Phase 0 brief is the first eval. See
+  `rules/evaluation.md`.
 
 After each file, verify:
 
@@ -182,7 +216,7 @@ After each file, verify:
 - One sentence per line (semantic line breaks) — repo prose rule.
 - No backslash-style paths. No time-sensitive claims ("after August 2025").
 
-### Phase 4 — Wiring & inventories
+### Phase 6 — Wiring & inventories
 
 If the user runs the local-dev symlink chain (the default for this repo),
 follow `rules/repository-conventions.md` to:
@@ -202,7 +236,7 @@ follow `rules/repository-conventions.md` to:
 If the user is publishing the skill via `npx skills add` only, skip steps
 2–3 but still update the inventories.
 
-### Phase 5 — Self-check
+### Phase 7 — Self-check
 
 Run `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> [--portable]`
 first, then work through the remaining `(judgment)` items in
@@ -217,12 +251,13 @@ FAIL FM05 SKILL.md:3 — description must be non-empty and <= 1024 chars, got 11
 Self-check: FAIL — 1 failing
 ```
 
-### Phase 6 — Evaluation
+### Phase 8 — Evaluation
 
-Follow `rules/evaluation.md`: write and run at least 3 realistic test
-prompts, observe at least one with-skill run, and check the repo eval
-obligation table. Report `Evaluation: PASS — 3 prompts run, with-skill
-navigation observed`, or state explicitly that the user waived this phase.
+Follow `rules/evaluation.md`.
+The Phase 1 run is the no-skill baseline: re-run the Phase 0 brief on a fresh input with the skill installed and confirm every `skill gotcha` row no longer needs a correction.
+Add at least 2 more realistic prompts, observe at least one with-skill run, and check the repo eval obligation table.
+Then run the lift check in [`rules/lift-check.md`](./rules/lift-check.md): the skill must beat both no skill and a same-length dummy, or it is trimmed or not shipped.
+Report `Evaluation: PASS — 3 prompts run, ledger corrections closed, with-skill navigation observed`, then the lift check's `Lift:` line, or state explicitly that the user waived this phase.
 
 ---
 
@@ -252,7 +287,7 @@ For `upgrade` mode, take a single-file skill and split it into multi-file:
    it to the user for approval before writing**.
 4. Move each concern into its own rule file. Replace the section in
    `SKILL.md` with a one-line pointer + link to the new file.
-5. Re-run the Phase 5 self-check.
+5. Re-run the Phase 7 self-check.
 
 ---
 
@@ -300,19 +335,34 @@ When a target declares a `## Lessons scope`, Diagnose Mode reads it as evidence
 
 ---
 
+## Prune Workflow
+
+For `prune` mode, clean up an installed skill set; follow [`rules/prune-mode.md`](./rules/prune-mode.md):
+
+1. Inventory each skill's context cost and usage with `claude -p "/skill-doctor"`.
+2. Delete candidates: skills never invoked.
+3. Lift-check every used skill ([`rules/lift-check.md`](./rules/lift-check.md)), highest cost first; no lift over the dummy makes it a trim or delete candidate.
+4. Find and migrate callers, then get the user's explicit yes per skill before deleting or trimming anything.
+
+Why: [`references/lift-and-prune-rationale.md`](./references/lift-and-prune-rationale.md).
+
+---
+
 ## Required Reading by Phase
 
 Load these on demand — do not preload them all.
 
 | Phase    | Files                                                                                   |
 | -------- | --------------------------------------------------------------------------------------- |
-| 0        | `rules/description-writing.md`, `rules/invocation-control.md`                           |
-| 1        | `rules/structure-decision.md`, `rules/progressive-disclosure.md`                        |
-| 2        | `rules/frontmatter.md`, `rules/description-writing.md`, `rules/arguments-and-injection.md` |
-| 3        | `rules/token-economics.md`, `rules/anti-patterns.md`, `rules/arguments-and-injection.md`, `rules/scripts-and-assets.md`, `rules/workflow-patterns.md`, plus templates in `templates/` |
-| 4        | `rules/repository-conventions.md`                                                       |
-| 5        | `rules/quality-checklist.md`                                                            |
-| 6        | `rules/evaluation.md`                                                                   |
+| 0–1      | `rules/run-first.md`                                                                    |
+| 2        | `rules/run-first.md`, `rules/description-writing.md`, `rules/invocation-control.md`     |
+| 3        | `rules/structure-decision.md`, `rules/progressive-disclosure.md`                        |
+| 4        | `rules/frontmatter.md`, `rules/description-writing.md`, `rules/arguments-and-injection.md` |
+| 5        | `rules/token-economics.md`, `rules/anti-patterns.md`, `rules/arguments-and-injection.md`, `rules/scripts-and-assets.md`, `rules/workflow-patterns.md`, plus templates in `templates/` |
+| 6        | `rules/repository-conventions.md`                                                       |
+| 7        | `rules/quality-checklist.md`                                                            |
+| 8        | `rules/evaluation.md`, `rules/lift-check.md`                                            |
+| prune    | `rules/prune-mode.md`, `rules/lift-check.md`                                            |
 | diagnose | `rules/diagnose-mode.md`, `rules/diagnostic-surface.md`, plus the target's `rules/diagnostic-surface.md` |
 | loop     | `rules/self-improvement-loop-pattern.md` (adding a self-improvement loop to an orchestrator skill) |
 | lens     | `rules/review-lens-contract.md` + `templates/lens.md` (making an existing skill lens-eligible for `pr-reviewer`) |
@@ -338,15 +388,20 @@ are optional — load only when the user asks for a worked shape or pair.
    `rules/structure-decision.md`.
 5. **One skill, one job.** Resist the mega-skill. Split into companions and
    compose with `Skill()` calls.
-6. **Eval-first, not test-as-afterthought.** Identify the gap without the
-   skill, write ≥ 3 realistic test prompts, run a baseline, then the
-   minimal skill that closes the gap — iterate from there rather than
-   front-loading content. See `rules/evaluation.md`.
+6. **Run first, write second.** Do the job once without the skill and
+   write only the corrections it needed — a skill is a list of what the
+   agent got wrong, not a manual for the process. A run that needed no
+   corrections means no skill. See `rules/run-first.md`.
+7. **Guarantees are hooks, not capitals.** Something that must never
+   happen becomes a hook; a definition of done that can be checked
+   mechanically becomes a check script the skill runs.
 
 ---
 
 ## Anti-patterns (one-liner — full list in `rules/anti-patterns.md`)
 
+- Writing the skill before the job has run once without it.
+- Documenting steps the agent already does correctly.
 - Vague descriptions ("Helps with documents").
 - First-person voice in `description` ("I can help you …").
 - Time-sensitive claims ("after August 2025 …").
@@ -364,18 +419,29 @@ are optional — load only when the user asks for a worked shape or pair.
 
 A **scaffold** run is done when:
 
+- [ ] The job ran once without the skill on a real input (or the waiver is recorded), and the ledger at `.agent/{branch}/skill-run-<task-slug>.md` routes every correction.
+- [ ] Every `SKILL.md` line traces to a ledger row, a guardrail, or the definition of done.
 - [ ] All planned files written and within their line caps.
 - [ ] `name` and `description` validate against the rules in
       `rules/frontmatter.md`.
 - [ ] Symlinks resolve (local-dev) or `npx skills` install path documented.
 - [ ] Inventory rows in `CLAUDE.md` and `README.md` added.
 - [ ] `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir>` reports `PASS`.
-- [ ] Phase 5 self-check (mechanical + judgment) is `PASS`.
-- [ ] Phase 6 evaluation has ≥ 3 eval prompts written (or the user
+- [ ] Phase 7 self-check (mechanical + judgment) is `PASS`.
+- [ ] Phase 8 evaluation has ≥ 3 eval prompts written (or the user
       explicitly waived evaluation).
+- [ ] `rules/lift-check.md` verdict is `lift`, with both deltas reported (or the user
+      explicitly waived it).
 - [ ] Target runtime (`claude-code` or `portable`) is recorded.
 - [ ] One sentence summary delivered to the user with the install command
       they can run to start using the skill.
+
+A **prune** run is done when:
+
+- [ ] Every skill in scope has a cost, a usage class, and (if used) a lift verdict or an `unchecked` mark.
+- [ ] No skill was deleted or trimmed without the user's explicit per-skill confirmation.
+- [ ] Every deleted skill's callers were repointed or removed in the same change.
+- [ ] The report states the context saved per turn.
 
 A **diagnose** run is done when:
 
