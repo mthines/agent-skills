@@ -69,7 +69,7 @@ When it is not, record the model you ran on in the ledger; Phase 8 re-checks on 
 
 ## Step 3 — The corrections ledger
 
-Record every correction as it happens, in `.agent/{branch}/skill-run-<name>.md` (scratchpad when there is no repo).
+Record every correction as it happens, in `.agent/{branch}/skill-run-<task-slug>.md` (scratchpad when there is no repo).
 One row per correction, including the ones you caught yourself against the definition of done:
 
 ```markdown
@@ -126,6 +126,8 @@ Before reporting done, run `node ${CLAUDE_SKILL_DIR}/scripts/check-report.mjs re
 
 Count the rows routed `skill gotcha`, `check script`, or `subagent step`.
 
+Skip this step when the run was waived (§ Waiving the run): an empty ledger then means no evidence, not no gap.
+
 | Count | Do this |
 | --- | --- |
 | 0 | Stop. Tell the user the agent already does this job; no skill is written. Offer to write any `workspace fact` rows to `CLAUDE.md` and any `hook` rows as hooks. |
@@ -139,7 +141,8 @@ Skip the run only when one of these holds, and record which in the ledger:
 2. The job cannot run in this session and has no draft-only form, for example it needs hardware or a production system the session cannot reach.
 
 "The skill is simple" and "I already know the steps" are not reasons to skip.
-A waived run leaves the ledger empty, so Phase 8 must capture a no-skill baseline before the skill counts as done.
+A waived run leaves the ledger empty: skip the no-skill exit (Step 5) and go straight to Distill (Phase 2).
+Phase 8 must then capture a no-skill baseline before the skill counts as done.
 
 ## Definition of done
 
@@ -147,4 +150,4 @@ A waived run leaves the ledger empty, so Phase 8 must capture a no-skill baselin
 - [ ] The job ran on the real input with the target skill absent, or the waiver reason is recorded.
 - [ ] The user accepted the run's output.
 - [ ] Every correction is a ledger row with exactly one route.
-- [ ] The no-skill exit was evaluated and its outcome stated.
+- [ ] The no-skill exit was evaluated and its outcome stated, or skipped because the run was waived.
