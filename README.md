@@ -1,6 +1,6 @@
 # Agent Skills
 
-> Give your coding agent the habits of a senior engineer — and the evals to prove they work.
+> An opinionated workflow for coding agents — my own way of working, current best practices, and lessons from real projects — kept only where evals show it helps.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills spec](https://img.shields.io/badge/spec-Agent%20Skills-7c3aed)](https://agentskills.io/)
@@ -8,9 +8,9 @@
 [![Agents](https://img.shields.io/badge/agents-5-0a7)](#agents-at-a-glance)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
-A plain coding agent writes code. These skills make it **ship**: scope the task, build against checks it can't bend, get a second pair of eyes on the diff, prove the UI works, and keep CI green — the way a careful engineer would, without you babysitting it.
-
-Every skill is kept only if an eval shows it changes what the agent does. They install into Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
+These skills encode how I build software with agents: scope the task, build against checks, get a second pair of eyes on the diff, prove the UI works, and keep CI green.
+Each one is run with and without itself; a skill that doesn't change the outcome gets cut.
+They install into Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
 
 ```bash
 git clone https://github.com/mthines/agent-skills.git
