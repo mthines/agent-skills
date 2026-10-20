@@ -120,8 +120,8 @@ Load on demand — do not preload.
 5. **Never delete silently.** `trim` and `extract` always preserve content
    somewhere reachable. If you cannot find a destination, abort and ask.
 6. **The canonical source wins.** A skill's own `SKILL.md` frontmatter is
-   the authority for that skill. Never edit it from this skill — route
-   invocation-flag changes to `/create-skill review`.
+   the authority for that skill. Never edit it from this skill — hand
+   invocation-flag changes to the user as a frontmatter edit to apply.
 
 ---
 
@@ -141,11 +141,6 @@ Load on demand — do not preload.
 - Calls [`docs` skill](../docs/SKILL.md)'s Placement
   Resolver via `Skill("docs", "pattern <glob>")` when an extraction
   needs cross-cutting placement (e.g. a rule applies to multiple subtrees).
-- References [`create-skill`](../create-skill/SKILL.md)'s
-  [`token-economics.md`](../create-skill/rules/token-economics.md) and
-  [`progressive-disclosure.md`](../create-skill/rules/progressive-disclosure.md)
-  for the underlying conciseness principles — do not duplicate that
-  guidance here.
 
 ---
 
@@ -159,6 +154,6 @@ A **run** is complete when:
 - [ ] Phase 2.5 invocation review run if `skills/` exists in the repo; candidates listed with baseline-savings estimates.
 - [ ] For `audit`: ranked report emitted with top-N concrete suggestions (lever 1 + lever 2), each tagged hot-path / cold-path or slash-conversion.
 - [ ] For `trim` and `extract`: every applied change shows before/after chars + estimated tokens saved.
-- [ ] No content silently deleted. No canonical `SKILL.md` frontmatter edited (route to `/create-skill` for invocation flag changes).
+- [ ] No content silently deleted. No canonical `SKILL.md` frontmatter edited (hand invocation-flag changes to the user as an edit).
 - [ ] If the file is now < 40k chars, report "below performance warning threshold".
 - [ ] If invocation candidates were suggested, report total estimated baseline savings separately from CLAUDE.md savings.

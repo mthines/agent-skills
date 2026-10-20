@@ -98,7 +98,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 ### `authoring/` — skills about Claude Code itself
 
-- `create-skill` (`/`) — scaffold (runs the job once without a skill, then writes only the corrections), review, upgrade, diagnose, and prune (unused or zero-lift vs. a dummy) skills
+- `create-skill` (`/`) — scaffold (runs the job once without a skill, then writes only the corrections), diagnose, and prune (unused or zero-lift vs. a dummy) skills
 - `docs` (`auto`) — author / audit `CLAUDE.md`, `AGENTS.md`, `README.md`, Diátaxis `docs/` trees
 - `optimize-claude-md` (`/`) — audit `CLAUDE.md` for context bloat
 - `persistent-memory` (`/`) — cross-conversation markdown memory store. Self-improvement loops run on LoreKit instead; bucket taxonomy: [`memory-buckets.md`](./agents/shared/rules/memory-buckets.md)

@@ -76,7 +76,7 @@ Lever (2). Reduces the always-on **available-skills list**, not the CLAUDE.md fi
 
 Total estimated baseline saving: **~820 tokens / session**.
 
-To apply: `/create-skill review <skill-name> --convert-to-slash` per candidate, or edit `skills/<name>/SKILL.md` frontmatter and re-run `scripts/sync-symlinks.sh`. After conversion, run `/optimize-claude-md trim` to move the inventory entry from "Agent-invokable skills" to "Slash commands".
+To apply: set `disable-model-invocation: true` in `skills/<name>/SKILL.md` per candidate and re-run `scripts/sync-symlinks.sh`. After conversion, run `/optimize-claude-md trim` to move the inventory entry from "Agent-invokable skills" to "Slash commands".
 
 ## Companion files
 
@@ -86,7 +86,7 @@ To apply: `/create-skill review <skill-name> --convert-to-slash` per candidate, 
 ## Recommended next steps
 
 1. Run `/optimize-claude-md trim` to walk the top 17 entries interactively. Estimated savings: ~21,000 chars / ~5,250 tokens. File drops below the warning threshold.
-2. Convert the 3 invocation candidates above via `/create-skill review`. Additional baseline saving: ~820 tokens / session.
+2. Convert the 3 invocation candidates above with a frontmatter edit. Additional baseline saving: ~820 tokens / session.
 
 Or run `/optimize-claude-md extract` to move the full inventory to `docs/inventory.md` and replace with a brief link. Estimated savings: ~35,000 chars / ~8,750 tokens.
 ```

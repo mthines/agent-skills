@@ -65,7 +65,7 @@ Do the job on the real input, in this session, with the target skill absent.
 6. Apply each correction the user gives, re-check the definition of done, and repeat until the user accepts the output.
 
 Run on the model the skill will run on when that model is available in this session.
-When it is not, record the model you ran on in the ledger; Phase 8 re-checks on the target model.
+When it is not, record the model you ran on in the ledger; Phase 5 (Verify) re-checks on the target model.
 
 ## Step 3 — The corrections ledger
 
@@ -143,7 +143,7 @@ Skip the run only when one of these holds, and record which in the ledger:
 
 "The skill is simple" and "I already know the steps" are not reasons to skip.
 A waived run leaves the ledger empty: skip the no-skill exit (Step 5) and go straight to Distill (Phase 2).
-Phase 8 must then capture a no-skill baseline before the skill counts as done.
+Phase 5 (Verify) must then capture a no-skill baseline before the skill counts as done.
 
 ## Definition of done
 

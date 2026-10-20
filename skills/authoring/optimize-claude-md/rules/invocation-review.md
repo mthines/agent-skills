@@ -91,11 +91,11 @@ The lens emits **suggestions**, not edits. The skill does not modify any `SKILL.
 For each candidate, surface a routing instruction:
 
 ```
-To apply: /create-skill review <skill-name> --convert-to-slash
-(or edit `skills/<name>/SKILL.md` frontmatter directly and re-run `scripts/sync-symlinks.sh`)
+To apply: set `disable-model-invocation: true` in skills/<name>/SKILL.md, then run
+node skills/authoring/create-skill/scripts/validate-skill.mjs skills/<name> && bash scripts/sync-symlinks.sh
 ```
 
-If the user accepts the conversion via `/create-skill`, they should also:
+If the user applies the conversion, they should also:
 
 - Move the skill's row in root `CLAUDE.md` from "Agent-invokable skills" to "Slash commands".
 - Verify the README table notes the slash form.
@@ -111,7 +111,7 @@ Both of those are CLAUDE.md edits that fall under this skill's mandate — offer
 
 ## Authority boundary
 
-This rule **never edits** another skill's `SKILL.md` frontmatter — that violates [`hard-rules.md`](./hard-rules.md). It flags candidates and routes the user to `/create-skill`.
+This rule **never edits** another skill's `SKILL.md` frontmatter — that violates [`hard-rules.md`](./hard-rules.md). It flags candidates and hands the user the frontmatter edit.
 
 ## Examples
 
@@ -136,4 +136,4 @@ If `critical` were flagged as a slash-conversion candidate, the agent would lose
 - **Confusing `disable-model-invocation` with `user-invocable`**. They control different axes — see [`create-skill/rules/invocation-control.md`](../../create-skill/rules/invocation-control.md).
 - **Recommending conversion based on description length alone.** Length matters, but a verbose-description skill that the model legitimately auto-invokes (e.g. `autonomous-workflow`) must stay default. **Fix:** the "rarely used" axis trumps length.
 - **Forgetting the CLAUDE.md inventory move.** After conversion, the entry should move sections. **Fix:** offer the inventory move as a follow-up trim.
-- **Editing the target skill's frontmatter directly.** Forbidden. **Fix:** route to `/create-skill`.
+- **Editing the target skill's frontmatter directly.** Forbidden. **Fix:** hand the user the edit.
