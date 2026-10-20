@@ -202,7 +202,7 @@ The rule lives in [`aw/SKILL.md#review`](./aw/SKILL.md#review).
 Detection is implicit — `Skill()` raises if the skill is missing; catch and log.
 The full registry entry, dispatch contract, and rationale live in
 [`rules/companion-skills.md#agent-companions`](./rules/companion-skills.md#agent-companions)
-and [`rules/phase-7-ci-gate.md#auto-review`](./rules/phase-7-ci-gate.md#auto-review).
+and [`aw/SKILL.md#review`](./aw/SKILL.md#review).
 
 The `feature-pr-verifier` agent is dispatched as `subagent_type: feature-pr-verifier`
 by the **`aw` dispatcher at PR open**, not by Phase 7 after CI green — that trigger

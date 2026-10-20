@@ -44,7 +44,7 @@ clean recovery.
 | 3     | Working in isolated worktree. Build/lint passes after each edit. |
 | 4     | All tests pass AND every `checks.yaml` check passes (or `unsatisfiable` user-approved) OR user-approved stop after stuck-loop escalation. |
 | 5     | Docs reflect changes. `Skill("docs", "update --auto")` run.                               |
-| 6     | `branch-reviewer` dispatched via a local `review-loop` before the push (unposted; findings applied or declined in `findings.jsonl`); blocking findings resolved. Walkthrough shown. Draft PR opened via `Skill("create-pr")`. |
+| 6     | `branch-reviewer` dispatched via a local `review-loop` before the push (unposted; findings applied or declined in `findings.jsonl`); blocking findings resolved. Walkthrough shown. Draft PR opened via `Skill("create-pr", "--no-post-review")` (Full adds `--no-pre-review`). |
 | 7     | CI green OR user-approved stop. Optional `gw remove` (or `git worktree remove` + `git branch -d`) after merge. |
 
 See each `phase-N-*.md` rule for full gate details.
