@@ -18,13 +18,13 @@ metadata:
 # Telemetry verify
 
 The browser proves what the user saw; this skill proves what the services saw while they saw it.
-It reads one closed time window of traffic someone else produced and returns one `TELEMETRY` block.
+It reads closed time windows of traffic someone else produced and returns one `TELEMETRY` block.
 It never produces traffic, never edits code, and never widens the window to find something.
 
 ## Invocation
 
 ```text
-Skill("telemetry-verify", "--env <local|preview> --from <ISO-8601 UTC> --to <ISO-8601 UTC> [--host <preview host>] [--driver playwright|chrome] [--brief <plan.md path>] [--out <findings.jsonl path>]")
+Skill("telemetry-verify", "--env <local|preview> (--windows <probes.jsonl> | --from <ISO-8601 UTC> --to <ISO-8601 UTC>) [--host <preview host>] [--driver playwright|chrome] [--brief <plan.md path>] [--out <findings.jsonl path>]")
 ```
 
 Callers run it in a sub-agent, so query results stay out of their context:
@@ -39,6 +39,7 @@ Use `general` as the sub-agent type on OpenCode and Dash0 Agent0.
 | --- | --- |
 | `--env` | The environment in `.agents/aw/environments.yml` the traffic ran against |
 | `--from`, `--to` | The traffic window, recorded by the caller immediately before and after it |
+| `--windows` | A `probes.jsonl` whose lines carry `id`, `window_start`, `window_end`, and optional `log_offsets`: read them all in one pass, from the first start to the last end, and attribute each record to the window that contains it |
 | `--host` | The preview host; filters web events to this run's pages |
 | `--driver` | The browser driver; `chrome` is the user's own browser, so sessions cannot be isolated |
 | `--brief` | `plan.md`; its `telemetry:` acceptance criteria become expectations. Default `.agent/{branch}/plan.md` when it exists |
@@ -58,6 +59,7 @@ Take the first row that applies; each prints its line and returns `verdict: null
 
 ## Step 1 — Wait for ingest
 
+With `--windows`, `--from` is the first `window_start` and `--to` the last `window_end`.
 If `now < --to + ingest_wait_seconds`, sleep the difference.
 Query `from = --from − 30 s` and `to = --to + 30 s`, the same on every retry.
 
@@ -80,6 +82,15 @@ Collect them per [`rules/expectations.md`](./rules/expectations.md):
 2. Every signal the diff adds: spans, attributes, logs, metrics, and custom web events.
 
 ## Step 4 — Read and judge
+
+Spend queries in this order and stop as soon as every expectation and AC has a verdict; about 12 calls covers a run:
+
+1. **Errors, whole span:** one query each for ERROR spans, ERROR/WARN logs, and error web events, scoped to this run's service or instance. Attribute each hit to its window.
+2. **Expectations:** one query per `telemetry:` criterion and per new signal.
+3. **Journeys:** `getTraceDetails` only for an AC whose window had an error, or whose path you cannot otherwise confirm.
+4. **Performance:** only for routes a journey exercised.
+
+Read only the backend file and [`rules/receipt.md § Output`](./rules/receipt.md#output); the other rule files are for disputes.
 
 Run the backend file's queries for steps 2–4 of [`rules/receipt.md`](./rules/receipt.md): journeys, errors, performance.
 

@@ -46,18 +46,18 @@ One `probes.jsonl` line per spec, joined to its criterion by the `AC-n` / `EC-n`
 
 `screenshots` lists every image path `ui-verify` reported for that spec, relative to the checkout root; Phase 5 attaches them.
 
-## Step 3 — Read each window with `telemetry-verify`, in parallel
+## Step 3 — Read all windows with `telemetry-verify`, once
 
-As soon as a run's window closes, dispatch the telemetry witness for it and continue with the next browser or API run; do not wait for it.
+After the last batch of Step 2 and Step 4 closes, dispatch the telemetry witness once over every window in `probes.jsonl`:
 
 ```text
 Agent(subagent_type="general-purpose",
-      prompt='Run Skill("telemetry-verify", "--env <env> --from <window_start> --to <window_end> --driver <driver> [--host <preview host>] --brief .agent/<branch>/plan.md --out .agent/<branch>/verify/findings.jsonl") and return only its TELEMETRY block')
+      prompt='Run Skill("telemetry-verify", "--env <env> --windows .agent/<branch>/verify/probes.jsonl --driver <driver> [--host <preview host>] --brief <plan.md or verify/intent.md> --out .agent/<branch>/verify/findings.jsonl") and return only its TELEMETRY block')
 ```
 
-- One dispatch per `ui-verify` invocation (its window spans the specs and the adversarial pass), and one per batch of API probes.
-- Its ingest wait overlaps the remaining browser work; collect every `TELEMETRY` block before Phase 4.
-- Store each block in `.agent/{branch}/verify/telemetry.md`; Phase 5 takes the `AC-n` journey lines from it.
+- One dispatch per run: a sub-agent's setup costs about as much as its reads, so per-window dispatches multiply cost without adding evidence.
+- A fix loop dispatches once more, over the windows it re-probed.
+- Store the block in `.agent/{branch}/verify/telemetry.md`; the report takes the `AC-n` journey lines from it.
 - `telemetry.yml` `backend: none` or `telemetry-verify` not installed → one line `telemetry: skipped (<reason>)`; never a pass.
 - `aw-verify` owns the telemetry read, so both runs pass `--no-telemetry`; a window is never read twice.
 
