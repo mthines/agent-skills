@@ -66,7 +66,7 @@ Only under `--comment` or `--body`; `--dry-run` stops before the upload.
 
    | Flag | Target | Re-run |
    | --- | --- | --- |
-   | `--comment` | One PR comment whose first line is `<!-- impact-map:v1 -->` | Find the comment carrying the marker and edit it (`gh api -X PATCH repos/{o}/{r}/issues/comments/{id} -f body=@…`); post a new one only when none exists |
+   | `--comment` | One PR comment whose first line is `<!-- impact-map:v1 -->` | Find the comment carrying the marker and edit it (`gh api -X PATCH repos/{o}/{r}/issues/comments/{id} -F body=@…`); post a new one only when none exists |
    | `--body` | The region `<!-- impact-map:v1 -->` … `<!-- /impact-map:v1 -->` at the top of the PR body | Replace the region; never touch text outside it |
 
 ## Verify before reporting
