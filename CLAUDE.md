@@ -79,6 +79,7 @@ Type markers (by primary entry point — all three are technically model-invocab
 - `dx` (`/`) — CLI / shell-script DX review
 - `review-branch` (`/`) — PR-less sibling of `review-loop`; findings bus `.agent/{branch}/findings.jsonl`, zero GitHub calls
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule
+- `impact-map` (`auto`) — impact-first PR view: verdict with expandable What/Risk/Ask rows, one badged diagram, ≤ 3 decisions with linked lines, a settled list; `--comment` / `--body` posts it with light and dark PNGs
 - `tdd` (`auto`) — strict RED-GREEN-REFACTOR
 - `test-provenance-guard` (`auto`) — detects tests-by-construction (static + mutation checks)
 - `verify-behavior` (`Skill()`) — cheapest-first three-tier verification ladder; emits an evidence receipt, never a score
