@@ -3,7 +3,7 @@
 //
 // Usage:
 //   node line-link.mjs locate <diff-file> <path> <regex>
-//   node line-link.mjs url --repo <owner/name> --pr <n> --sha <head-sha> --path <path> --lines <a>[-<b>] [--files <count>]
+//   node line-link.mjs url --repo <owner/name> --pr <n> --sha <head-sha> --path <path> --lines <a>[-<b>] --files <count>
 //   node line-link.mjs --self-test
 //
 // `locate` prints "<line>: <text>" for every added or context line of <path> in the
@@ -108,7 +108,7 @@ function main(argv) {
     console.log(JSON.stringify(links(f)));
     return 0;
   }
-  console.error("usage: line-link.mjs locate <diff> <path> <regex> | url --repo … --pr … --sha … --path … --lines a[-b] [--files n] | --self-test");
+  console.error("usage: line-link.mjs locate <diff> <path> <regex> | url --repo … --pr … --sha … --path … --lines a[-b] --files n | --self-test");
   return 2;
 }
 
