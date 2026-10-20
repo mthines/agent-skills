@@ -122,8 +122,8 @@ turn — `git pull` is the whole upgrade story.
 To install **every** skill and agent in this repo (not just the AW bundle),
 drop the `--aw` flag. To preview without applying, add `--dry-run` (or `-n`).
 
-> **Prefer a no-clone install?** `npx skills add` still works — see the root
-> [README](../../../README.md#install) for the npx path and other options.
+> **Prefer a no-clone install?** `npx skills add` still works — see the
+> [setup guide](../../../docs/setup.md#quick-try-npx-skills-add) for the npx path and other options.
 
 Then say *"implement X independently"* (or invoke `/aw`) — the routing rule
 invokes the **`aw` dispatcher**, which detects the tier and routes: Micro/Lite

@@ -3,6 +3,24 @@
 Read this when you add, wire, or debug a skill, agent, plugin, or package in this repo.
 The root [`CLAUDE.md`](../CLAUDE.md) keeps only the one-line rules; this file holds the explanation behind them.
 
+## Repository structure
+
+```
+skills/                   51 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+agents/                   3 agents (pr-reviewer, branch-reviewer, feature-pr-verifier)
+plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance-memory, pr-reviewer-shape-guard)
+packages/                 VS Code extension (vscode-agent-tasks)
+.claude-plugin/           marketplace.json — plugin distribution manifest
+scripts/                  Local symlink sync (scripts/sync-symlinks.sh)
+scripts/eval/             Regression evals in three layers — l1.mjs (deterministic contract
+                          checks, no LLM), l2.mjs (behavioral classification suites, table in
+                          suites.mjs, per-PR subset via select-suites.mjs), and
+                          l2-detection.mjs (does the reviewer actually find the seeded bug —
+                          recall and false-positive rate measured together)
+```
+
+Each skill has a `SKILL.md` manifest with YAML frontmatter (name, description, metadata) and a Markdown body with instructions. Skills with `rules/` subdirectories contain focused guidance documents that load on demand. Agents live in `agents/` because they require their own model and tool configuration.
+
 ## The symlink chain
 
 The author's machine wires this repo into Claude Code through a two-tier symlink chain, so every edit to `skills/<category>/<name>/SKILL.md` is picked up live on the next turn — no `npx skills add` reinstall.
