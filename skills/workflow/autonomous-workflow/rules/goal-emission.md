@@ -31,7 +31,7 @@ Fill one of the two templates on a single line.
 
 | Tier | Template |
 | --- | --- |
-| Full (has `checks.yaml`) | `/goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the branch-reviewer findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
+| Full (has `checks.yaml`) | `/goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
 | Micro / Lite (no `checks.yaml`) | `/goal "<verify command>" exits 0 with "exit=0" printed, the draft PR URL is printed, and the printed git diff --name-only lists only <comma-separated files> — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
 
 - `<M>` is the number of entries in `checks.yaml`.
@@ -44,7 +44,7 @@ Fill one of the two templates on a single line.
 ```text
 ✗ /goal make the auth flow robust and well tested
    (no observable end state, no proof, no guardrail, no cap)
-✓ /goal run-checks prints "CHECKS 4/4 PASS", the Before-PR command prints "exit=0", the branch-reviewer findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after 30 turns or when a line starting "BLOCKED:" is printed.
+✓ /goal run-checks prints "CHECKS 4/4 PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after 30 turns or when a line starting "BLOCKED:" is printed.
 ```
 
 ## Print it

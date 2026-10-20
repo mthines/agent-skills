@@ -191,16 +191,14 @@ The Full tier's one mandatory gate is the deterministic brief validation in
 [`aw/rules/full-tier.md`](./aw/rules/full-tier.md) plus the sealed
 `run-checks.mjs` gate, and neither is a companion — they cannot be uninstalled.
 
-### Skill companions for Phase 6/7 review passes
+### Skill companion for the review pass
 
-Phase 6 and Phase 7 review passes use the `review-loop` skill rather than a
-retired `reviewer` agent.
-The `review-loop` skill is an optional skill companion — invoked via `Skill()`,
-graceful-skip contract the same as all companions.
-It drives `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` up to 5
-iterations, converging until every review thread is resolved (fix or reply).
-`pr-reviewer` detects authorship via `REVIEW_RELATION` in Step 0.5 and sets
-`self` for own PRs.
+Every tier reviews once, locally, before the PR: `review-loop` in local mode
+(`branch-reviewer` → apply → `polish simplify`, zero GitHub calls), run by
+`create-pr` Step 5.5 on Micro/Lite and by `aw`'s Full Step 3.
+Nothing is posted to the PR unless the user passes `--pr-review`, which turns on
+`create-pr` Step 6.5's one posted pass; Phase 7 runs no review.
+The rule lives in [`aw/SKILL.md#review`](./aw/SKILL.md#review).
 Detection is implicit — `Skill()` raises if the skill is missing; catch and log.
 The full registry entry, dispatch contract, and rationale live in
 [`rules/companion-skills.md#agent-companions`](./rules/companion-skills.md#agent-companions)

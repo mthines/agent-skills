@@ -13,8 +13,8 @@ tools:
   - Edit
   - Write
   - Skill
-  # Sub-agent dispatch: research or file-disjoint fan-out (cap 3), the branch-reviewer pass,
-  # aw-tester spec runs, ci-auto-fix (cap 2), and create-pr's review-loop pass.
+  # Sub-agent dispatch: research or file-disjoint fan-out (cap 3), the local review-loop's
+  # branch-reviewer, aw-tester spec runs, and ci-auto-fix (cap 2).
   # Nested dispatch works up to the harness depth limit; past it, do the step yourself and say so.
   - Agent
   # LoreKit lessons loop. Sub-agents do not inherit the parent's MCP tools, so grant them by name.
@@ -97,10 +97,10 @@ echo "FASTLANE=$(grep -cE '^## (TL;DR|Requirements|Decisions|Acceptance Criteria
 | --- | --- | --- |
 | 3 | Implement. Run the brief's After-editing command after each change. File Changes are starting points; name every other file you change in the walkthrough. | [`phase-3-implementation.md`](../rules/phase-3-implementation.md) — when you need the commit or drift procedure |
 | 4 | Tests and the C3 negative proofs, then the sentinel, then the Before-PR command (C4) | [`phase-4-testing.md`](../rules/phase-4-testing.md) — when a check fails twice |
-| 4 (review) | Dispatch `branch-reviewer` on the diff once the checks and Before-PR pass; fix or reject each finding, re-run both; at most 2 rounds | `aw/rules/full-tier.md` *Step 3* (autonomous-workflow) |
+| 4 (review) | Run `Skill("review-loop", "--base <base sha> --cap 2")` (local mode, unposted) once the checks and Before-PR pass; re-run both after it returns | `aw/rules/full-tier.md` *Step 3* (autonomous-workflow) |
 | 4 (UI) | Write `specs.md` from the built UI and run it (C5) | [`phase-4-spec-verification.md`](../rules/phase-4-spec-verification.md) — when the diff touches UI files |
 | 5 | Update the docs the change makes wrong | [`phase-5-documentation.md`](../rules/phase-5-documentation.md) |
-| 6 | Walkthrough, then `Skill("create-pr")` | [`phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) |
+| 6 | Walkthrough, then `Skill("create-pr", "--no-pre-review --no-post-review")` (`--pr-review` drops `--no-post-review`) | [`phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) |
 | 7 | Watch CI; `ci-auto-fix` on failure | [`phase-7-ci-gate.md`](../rules/phase-7-ci-gate.md) |
 
 - **Sub-agents are your call, capped at 3 at a time.** Use them for research that would flood your context, or for file-disjoint slices; never for a task you could finish in a few edits. Every fan-out prompt embeds the resource-discipline line — [`parallel-coordination.md`](../rules/parallel-coordination.md#sub-agent-resource-discipline).

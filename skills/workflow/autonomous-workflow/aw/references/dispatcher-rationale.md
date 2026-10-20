@@ -19,6 +19,14 @@ Review is the one step that needs a different context, so it is the step that is
 
 The single-pass Micro/Lite path stays for short tasks, where any handoff is pure overhead — see the workflow's `references/anthropic-architecture-research.md`.
 
+## One local review before the PR
+
+`branch-reviewer` and `pr-reviewer` share one detection core, so once the local loop converges, a posted pass on the same diff mostly re-finds what was just fixed or declined.
+The posted pass also costs a human reviewer: the agent posts inline findings, fixes them, and resolves its own threads, which buries the real discussion under a bot talking to itself.
+So each tier reviews exactly once, locally, before the PR: Full in its own Step 3 because that pass precedes the walkthrough and verification, Micro and Lite through `create-pr` Step 5.5.
+The posted pass stays available behind `--pr-review` for PRs where a visible review record is worth the noise, and the post-CI pass is gone because CI fixes are covered by CI.
+On Full, `feature-pr-verifier` checks the opened PR against the brief, which covers most of what the posted pass's description gate did.
+
 ## Why a capability test, not a name test
 
 The dispatch tool has been called `Task` and `Agent` in different harnesses and versions.
