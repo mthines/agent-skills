@@ -37,6 +37,7 @@ Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> --url <
 - `--env` picks the login and fixtures from `.agents/aw/environments.yml` via `.agent/{branch}/aw-target.<env>.yml`.
 - Keep the adversarial pass on for the acceptance run: hostile input, double submit, failed requests, keyboard-only, small viewports.
 - Login fails → run `/aw-verify setup` once and retry; never hand-roll a login. `.agents/aw/notes.md` names any repo-specific login step.
+- Wait for a page-specific element, never `networkidle`: RUM beacons and background refetches keep the network busy. An `ERR_ABORTED` on a superseded request is not a defect.
 
 One `probes.jsonl` line per spec, joined to its criterion by the `AC-n` / `EC-n` in the spec title:
 
@@ -61,7 +62,7 @@ Agent(subagent_type="general-purpose",
 - `telemetry.yml` `backend: none` or `telemetry-verify` not installed → one line `telemetry: skipped (<reason>)`; never a pass.
 - `aw-verify` owns the telemetry read, so both runs pass `--no-telemetry`; a window is never read twice.
 
-**`ui-verify` unavailable:** load the `playwright-cli` skill and execute the same spec files step by step, capturing a full-page screenshot per `**Expected:**` item into `.agent/{branch}/verify/captures/`.
+**`ui-verify` or the browser MCP unavailable** (not installed, or it answers 403): load the `playwright-cli` skill, or run the repo's own Playwright from the package that depends on it (the root may resolve another version), and execute the same spec files step by step, capturing a full-page screenshot per `**Expected:**` item into `.agent/{branch}/verify/captures/`.
 
 ## Step 4 — API and worker probes
 

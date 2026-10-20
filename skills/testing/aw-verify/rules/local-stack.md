@@ -56,6 +56,7 @@ An empty `component_map` means "start `environments.local.stack.default`"; an em
 The driver starts the set once, waiting for readiness.
 On a failed start, read the driver's diagnostics, fix the environment cause (disk, Docker, credentials, a missing `.env`), and retry once.
 A start failure caused by the PR's own code is a finding (`kind: crash`), and Phase 4 fixes it.
+Never start a build that acts on the user's real data (a desktop app beside the copy they run, a CLI reading their real config); probe a self-test or a read-only command instead, and mark the rest `skipped (would touch real data)`.
 
 ## Step 3 — Prove it is usable
 

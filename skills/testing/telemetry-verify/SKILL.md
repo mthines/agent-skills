@@ -73,6 +73,7 @@ Query `from = --from − 30 s` and `to = --to + 30 s`, the same on every retry.
 Prove the backend can see the window before reading any absence as good news.
 Every component that served traffic in the window, and the web SDK when browser traffic ran, must have left at least one record.
 A component that served requests and left nothing is `missing-signal`; zero records everywhere after the retries is `pipe: inconclusive (no records in window)`, never clean.
+A signal the environment does not export (for example logs that go only to stdout) is `not-exported (<signal>)`, not `missing-signal`; read it from the process log under the window's `log_offsets`.
 
 ## Step 3 — Expectations
 

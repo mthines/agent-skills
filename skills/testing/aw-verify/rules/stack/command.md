@@ -93,3 +93,7 @@ The window is the byte range between them: `tail -c +$((start+1)) <log> | head -
 - Starting a second server (another bundler, another flag) to isolate a build error on a guessed port. **Fix:** take a port `lsof` shows free and no `.agents/aw` environment names, log it to its own `procs/<name>.log`, and record it in `stack.json` so cleanup stops it.
 - Slicing a log with `tail -n`. **Fix:** slice by the byte offsets recorded around the probe; another writer's lines shift line numbers.
 - Killing only the shell PID. **Fix:** stop the process group; the dev server is a child.
+- Reading a build's success from a wrapper (`next build; echo EXIT`). **Fix:** check the build's own `$?`; a failed build can leave an output dir that still serves pages.
+- Two writers on one build output dir (a dev server beside a build, a task runner restoring its cache). **Fix:** one writer per output dir while a run uses it; a half-written dir serves pages with broken runtime config.
+- Inline JSON with `!` in a double-quoted shell argument (zsh history expansion mangles it). **Fix:** write the body to a file and send `-d @body.json`.
+- A host that kills a background process when its tool call ends. **Fix:** start the server in the same command as the probes that need it.
