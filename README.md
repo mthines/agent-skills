@@ -192,7 +192,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`youtube-transcript`](./skills/analysis/youtube-transcript/SKILL.md) | Fetches a YouTube video's captions as text. |
 | **`authoring/`** | *Skills about Claude Code itself* |
 | [`docs`](./skills/authoring/docs/SKILL.md) | Writes and audits CLAUDE.md, AGENTS.md, READMEs, and docs trees. |
-| [`/create-skill`](./skills/authoring/create-skill/SKILL.md) | Scaffolds, reviews, and diagnoses agent skills. |
+| [`/create-skill`](./skills/authoring/create-skill/SKILL.md) | Writes a skill from what a real run got wrong; also diagnoses and prunes skills. |
 | [`/optimize-claude-md`](./skills/authoring/optimize-claude-md/SKILL.md) | Trims context bloat from CLAUDE.md. |
 | [`/handoff`](./skills/authoring/handoff/SKILL.md) | Packs the session into a brief for a fresh agent. |
 | [`/persistent-memory`](./skills/authoring/persistent-memory/SKILL.md) | Plain-markdown memory that carries across sessions. |

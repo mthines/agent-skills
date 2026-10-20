@@ -161,10 +161,9 @@ consistently:
 A skill that runs a deterministic check or transform of its own gets a
 `scripts/` directory: zero-dependency, `${CLAUDE_SKILL_DIR}`-anchored,
 matching the style of this repo's `scripts/eval/*.mjs` — see
-`scripts-and-assets.md`. A skill's own test prompts and trigger set live
-under `evals/` (`evals/evals.json`, `evals/triggers.jsonl`) — see
-`evaluation.md`. Neither directory is required; add them only when the
-skill actually has a script to run or a trigger set to store.
+`scripts-and-assets.md`. A skill's own eval cases live under `evals/`, in the `claude plugin eval`
+format that `lift-check.md` uses. Neither directory is required; add them
+only when the skill actually has a script to run or cases to store.
 
 ## CI enforcement (L1)
 
@@ -179,7 +178,7 @@ Root `CLAUDE.md` § "Keeping the evals honest" also obligates: a new
 enumerable decision needs a golden-case suite.
 Do not add an L1 check that asserts the skill's prose; L1 admits only
 integrity checks (links, frontmatter, manifests, script self-tests,
-budgets, executed idioms, machine-parsed contracts) — see `evaluation.md`.
+budgets, executed idioms, machine-parsed contracts) — see `scripts/eval/README.md`.
 
 ## Prose rules (also in repo-root `CLAUDE.md`)
 

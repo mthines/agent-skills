@@ -100,7 +100,7 @@ The user can't get back to the full description. Always link.
 
 ### Bad — edits the canonical SKILL.md description
 
-This is forbidden by [`hard-rules.md`](./hard-rules.md). Never modify a skill's own `description:` frontmatter from this skill. If the description itself needs shortening, route the user to `/create-skill review <skill-name>`.
+This is forbidden by [`hard-rules.md`](./hard-rules.md). Never modify a skill's own `description:` frontmatter from this skill. If the description itself needs shortening, hand the user the proposed `description:` to apply in that skill's `SKILL.md`.
 
 ## Common mistakes
 

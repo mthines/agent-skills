@@ -33,8 +33,8 @@ Threshold reminders:
 | ------------------------------ | ---------------- | -------------------------------------------- |
 | Performance warning (Claude Code) | 40,000 chars   | Claude Code session-start warning            |
 | Approx tokens at warning       | ~10,000 tokens   | `40,000 / 4`                                 |
-| Compaction slice per skill     | 5,000 tokens     | `create-skill`'s `token-economics.md`        |
-| Compaction combined budget     | 25,000 tokens    | `create-skill`'s `token-economics.md`        |
+| Compaction slice per skill     | 5,000 tokens     | Claude Code skill compaction (docs)         |
+| Compaction combined budget     | 25,000 tokens    | Claude Code skill compaction (docs)         |
 
 ## Per-section metrics (H2 buckets)
 

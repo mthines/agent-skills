@@ -1,2 +1,0 @@
-{"query": "<a should-trigger query, phrased naturally, without the skill's own name>", "should_trigger": true}
-{"query": "<a near-miss query from an adjacent domain sharing keywords>", "should_trigger": false}

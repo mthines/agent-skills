@@ -79,8 +79,7 @@ node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs "$1"
   "ask Claude to handle this" has pushed the problem to a layer with less
   context than the script itself. Handle the error case in the script.
 - **Justify constants.** Any magic number in a script carries a one-line
-  comment explaining where the value came from (see `token-economics.md`
-  § Habits to keep).
+  comment explaining where the value came from.
 
 ## Plan-validate-execute for batch or destructive work
 
