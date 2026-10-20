@@ -90,7 +90,7 @@ Resolve the following from the invocation prompt:
 |-------|--------|----------|
 | `specs_path` | Argument or `.agent/{branch}/specs.md` | Yes |
 | `aw_target_name` | Argument (e.g. `local`) | Yes |
-| `aw_target_path` | An explicit `Aw-Target file:` path in the prompt if given, else `.claude/aw-targets/{aw_target_name}.yml` | Derived |
+| `aw_target_path` | The `Aw-Target file:` path in the prompt, else `.agent/{branch}/aw-target.{aw_target_name}.yml` — written at run time by the caller from `.agents/aw/environments.yml` | Derived |
 | `mode` | `--bail-on-first-red` (default) or `--all` | No |
 | `headed` | `--headed` flag | No |
 | `auto_capture` | `--auto-capture` flag — off unless passed; see [Auto-capture](../rules/aw-tester-captures.md#auto-capture-always-on-documentation-screenshots) | No |
@@ -98,7 +98,7 @@ Resolve the following from the invocation prompt:
 
 ### 3. Load the aw-target
 
-Read the aw-target file at `aw_target_path` — the explicit `Aw-Target file:` path when the prompt gave one, otherwise the name-derived `.claude/aw-targets/{aw_target_name}.yml`. Parse:
+Read the aw-target file at `aw_target_path`. Missing → stop with `verdict: inconclusive` and `notes: no aw-target at <path> — the caller writes it from .agents/aw/environments.yml (run /verify setup)`. Parse:
 - `base_url`
 - `auth.strategy` and `auth.storage_state` (if strategy is `storage-state`)
 - `fixtures.references` (for placeholder resolution)

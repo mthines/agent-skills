@@ -31,7 +31,7 @@ Without the flag, `run` posts nothing.
 | --- | --- |
 | A spec with `result: fail` | Yes, severity `high` — the happy path the PR promises is broken |
 | An adversarial finding rated `critical` or `high` | Yes, at its own severity |
-| A telemetry finding rated `high` | Yes |
+| A `telemetry-verify` finding rated `critical` or `high` (`crash`, `telemetry-error`, `performance`, `missing-signal`, `unlinked`) | Yes, at its own severity |
 | An adversarial or telemetry finding rated `medium` or `low` | No — summary comment only |
 | `skipped`, `inconclusive`, `NOT RUN`, `unconfirmed`, a probe error | No — none is a defect in the PR |
 
@@ -43,7 +43,7 @@ A file-level thread needs a path from the PR's changed files.
 Pick the first that resolves:
 
 1. The file that defines the spec's `**Changed:**` target — search the PR's changed files for the component, route, or handler it names.
-2. For a telemetry `diff-event-missing` finding, the file whose added line holds the `sendEvent(` call.
+2. For a telemetry `missing-signal` finding, the file whose added line emits the signal (its `file:line` is in the finding's evidence).
 3. The first changed file `scripts/is-ui-diff.mjs` classifies as UI.
 4. The first changed file.
 
@@ -51,14 +51,14 @@ Pick the first that resolves:
 
 ```markdown
 <!-- ui-verify:finding id=<fingerprint> head=<head-sha> -->
-**ui-verify · <spec fail | adversarial <oracle> | telemetry <oracle>> · <severity>**
+**ui-verify · <spec fail | adversarial <oracle> | telemetry <kind>> · <severity>**
 
 <one line: what is wrong, as an observable fact>
 
 **Steps:** <numbered steps from the spec or probe>
 **Expected:** <the Expected item, or the oracle's expectation>
 **Actual:** <what the run observed>
-**Evidence:** <uploaded screenshot / recording lines, and the Dash0 event link>
+**Evidence:** <uploaded screenshot / recording lines, and the trace or event link>
 
 Fix the code and resolve this thread. If this is not a defect, reply with why and resolve it.
 ```
@@ -76,7 +76,7 @@ Every key part is a stable identifier; never hash `Actual` or any other prose th
 | --- | --- |
 | spec fail | `spec\|<spec id>\|<1-based index of the first failing Expected item>` |
 | adversarial | `adversarial\|<the finding's spec>\|<oracle>` — never the `ADV-NN` id, which is numbered per run |
-| telemetry | `telemetry\|<oracle>\|<event name, or the page path for page-view-missing and request-failure>` |
+| telemetry | `telemetry\|<kind>\|<service>\|<operation, signal name, or route>` |
 
 Read the PR's review threads (resolved and open) before posting.
 When several threads carry the fingerprint, judge only the **newest** one: an older fixed thread must not override a later decline.
@@ -110,7 +110,7 @@ Upsert one issue comment whose first line is `<!-- ui-verify:lane -->`: edit the
 
 - verdict: <green | red | inconclusive> (<pass>/<total> specs)
 - adversarial: <the summary line>
-- telemetry: <the summary line>
+- telemetry: <each window's `findings:` line and `[receipt] verdict:`>
 - threads: <N> posted, <D> deduped, <X> declined | failed (<reason>)
 - finished: <UTC ISO-8601>
 ```

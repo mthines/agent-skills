@@ -142,7 +142,7 @@ PR/preview verification with no extra wiring.
    `confidence(code)` owns any score.
 2. **User-observable outcomes only.** An expectation the agent could confirm by
    re-reading the state text it was handed is assertion-by-construction and is
-   refused, mirroring [`observe-run`'s assertion-provenance rule](../observe-run/rules/assertion-provenance.md).
+   refused, mirroring `telemetry-verify`'s by-construction rule.
 3. **Text in, typed out.** Jev never sees a screenshot; the input is always
    captured accessibility/page text.
 4. **Fail honest, not confident.** No key, no state, or an unreachable API is

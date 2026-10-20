@@ -11,19 +11,27 @@ tags:
 # Runner
 
 The `run` operation: get the spec, point the selected runner at the live preview, and report its verdict.
-The runner is an **on-demand orchestrator** — it resolves once, dispatches the spec run, then the [adversarial pass](./adversarial.md), then reads the run's own web events from Dash0 ([telemetry check](./telemetry.md)), and writes lessons. It does not watch, retry the browser, or fix code. It picks between two runners with `--driver`; both emit the same verdict per the [spec-run contract](../../../workflow/autonomous-workflow/rules/spec-run-contract.md).
+The runner is an **on-demand orchestrator** — it resolves once, dispatches the spec run, then the [adversarial pass](./adversarial.md) and the telemetry read in parallel, and writes lessons. It does not watch, retry the browser, or fix code. It picks between two runners with `--driver`; both emit the same verdict per the [spec-run contract](../../../workflow/autonomous-workflow/rules/spec-run-contract.md).
 
 ## Contents
 
+- [Step 0: Resolve the config and the environment](#step-0-resolve-the-config-and-the-environment)
 - [Step 1: Get the spec](#step-1-get-the-spec)
 - [Step 2: Resolve the preview URL](#step-2-resolve-the-preview-url)
 - [Step 3: Materialize the ephemeral files](#step-3-materialize-the-ephemeral-files)
 - [Step 4: Select the driver and run](#step-4-select-the-driver-and-run)
 - [Step 4b: Adversarial pass — try to break it](#step-4b-adversarial-pass--try-to-break-it)
-- [Step 4c: Telemetry check — read the run's Dash0 web events](#step-4c-telemetry-check--read-the-runs-dash0-web-events)
+- [Step 4c: Telemetry — `telemetry-verify` on each window](#step-4c-telemetry--telemetry-verify-on-each-window)
 - [Step 5: Report the verdict](#step-5-report-the-verdict)
 - [Step 5b: Post findings (under `--post-findings`)](#step-5b-post-findings-under---post-findings)
 - [Step 6: Write lessons](#step-6-write-lessons)
+
+## Step 0: Resolve the config and the environment
+
+Resolve the suite config per the `verify` skill's `rules/config.md`: `.agents/aw/environments.yml` and `.agents/aw/ui.yml`, with `~/.agents/aw/config.yml` → `repos.<owner>/<name>` merged over them.
+`ENV` is `--env` (default `preview`); `environments.<ENV>` supplies the URL source, `auth`, and `fixtures`, and `ui.yml` supplies `driver`, `screenshots`, `recording`, `constraints`, and `adversarial`.
+A flag beats `ui.yml`; `ui.yml` beats the defaults.
+No `.agents/aw/environments.yml` → run with `auth.strategy: none` and say `no login configured (run /verify setup)` in the report; never guess a login.
 
 ## Step 1: Get the spec
 
@@ -50,7 +58,8 @@ Strip the `<details>` / `<summary>` wrapper and the markers. What remains is the
 
 Resolve the URL per [`preview-url-resolution.md`](./preview-url-resolution.md).
 Any `inconclusive: …` outcome there is terminal for this run — report it and stop. The spec was not run; do not report a pass or a fail.
-That resolution also consults the committed `.claude/aw-targets/preview.yml`'s optional `preview_url` block (after `--url`, before the deployments API) — so a repo whose CI CLI-deploys previews behind a `github-actions[bot]` comment resolves without a manual `--url`.
+That resolution also consults `environments.preview.url` (`comment`, `template`) after `--url` and before the deployments API — so a repo whose CI CLI-deploys previews behind a `github-actions[bot]` comment resolves without a manual `--url`.
+With `--env local`, the URL is `--url` (the caller started the stack), else `environments.local.url`; skip the deployment lookup.
 
 **`--wait-preview <minutes>` — wait for a build instead of stopping.**
 A caller running in parallel with pushes (the `review-loop --ui` lane) passes it, because the preview for a fresh head is usually still building.
@@ -60,30 +69,28 @@ Without the flag, the first outcome is terminal, as above.
 
 ## Step 3: Materialize the ephemeral files
 
-Write two files under `.agent/{branch}/.ui-verify/` (the branch is the PR's head ref; the directory is git-ignored scratch):
+Write two git-ignored files (the branch is the PR's head ref):
 
-1. **`specs.md`** — the extracted spec body from Step 1, verbatim — plus a `Format: intent` header line when Step 1 found a v2 region without one.
+1. **`.agent/{branch}/.ui-verify/specs.md`** — the extracted spec body from Step 1, verbatim — plus a `Format: intent` header line when Step 1 found a v2 region without one.
    Never touch `.agent/{branch}/.aw-tester/routes/`: it is the runners' route cache for intent specs (spec-run contract § 6.6), and a later run in this worktree replays from it.
-2. **`aw-target.yml`** — the browser context, built as follows:
-   - If `.claude/aw-targets/preview.yml` exists in the repo, start from it (auth, fixtures, constraints) and set `base_url` to the resolved URL. This is how a preview behind Vercel deployment protection or an app login gets authenticated — the committed file carries the auth **strategy**, never the credentials. The full flow (the two walls, the CI env-var path, the Google-SSO caveat) is [`preview-auth.md`](./preview-auth.md).
-   - If it does not exist, first look for an existing repo auth convention the way `aw-setup` does ([aw-setup § Reuse before you scaffold](../../../workflow/autonomous-workflow/aw-setup/SKILL.md#reuse-before-you-scaffold)) — a `.claude/aw-targets/*.yml` with `auth.storage_state`, a captured `.browser/auth-state*.json`, or a `refresh-auth*.mjs` login script — and reuse it: point `storage_state` / `refresh.command` at it, capturing against the resolved `PREVIEW_URL`. Only when no convention exists, scaffold from [`templates/preview-target.yml.template`](../templates/preview-target.yml.template) with `auth.strategy: none` and note in the report that authed specs will be skipped by `aw-tester`.
-   - Always override `base_url` with the resolved URL, no trailing slash.
+2. **`.agent/{branch}/aw-target.<ENV>.yml`** — `aw-tester`'s target: `name: <ENV>`, `base_url:` the resolved URL (no trailing slash), then `environments.<ENV>.auth` and `.fixtures` verbatim, `ui.yml`'s `constraints`, and `ui.yml`'s `adversarial.allowed_origins` (as `adversarial.allowed_origins`).
 
-   **Auth is env-var-driven and runs here, before the spec run:**
-   - Export `PREVIEW_URL` (the resolved URL) for the auth commands to read.
-   - When `auth.refresh` is configured (and `when: always`, or the `storage_state` file is missing/stale), run `refresh.command` — it reads the credentials named in `refresh.env` from the environment (a CI secret, an OS-keychain export, or a local `.env`), logs in non-interactively, and writes the gitignored `storage_state`. It never receives a credential from this runner or from any file. If a required env var is unset, the command fails loudly and the run reports the authed specs `skipped`, never a false pass.
-   - When `auth.bypass_header` is configured, carry the block **verbatim** (name + env-var reference) into the ephemeral `aw-target.yml`. Do **not** resolve the secret here — `aw-tester` reads the env var and applies the header to its own Playwright context at launch (Step 4), so the value never enters this runner's scope or logs.
+**Auth runs here, before the spec run, and is env-var-driven** (full flow: the `verify` skill's `rules/auth.md`):
 
-Never write the resolved URL or any credential into the committed `.claude/aw-targets/preview.yml` — only into the ephemeral `.agent/{branch}/.ui-verify/aw-target.yml`, and even there a credential is a **reference** (the env-var name), never a value.
+- Export `PREVIEW_URL` (the resolved URL) for the auth commands to read.
+- When `auth.refresh` is set and `when: always`, or the `storage_state` file is missing or stale, run `refresh.command`. It reads the credentials named in `refresh.env` from the environment and writes the gitignored `storage_state`. An unset variable fails the command loudly, and the authed specs report `skipped`, never a false pass.
+- Carry `auth.bypass_header` (name plus env-var name) verbatim; `aw-tester` reads the variable and applies the header at launch, so the value never enters this runner's scope or logs.
+
+A credential is only ever a **reference** (an env-var name) in either file, never a value, and the resolved URL is never written to `.agents/aw/`.
 
 ## Step 4: Select the driver and run
 
-Resolve `--driver` (default `auto`), then run the spec through the chosen runner. Both read the target from the `Aw-Target file:` path and the spec from the `Specs file:` path — the ephemeral overlay from Step 3, not the committed `preview.yml` placeholder. Both emit the identical verdict block ([spec-run contract § 4](../../../workflow/autonomous-workflow/rules/spec-run-contract.md#4-verdict-schema-mandatory--do-not-deviate)). `--all` runs every spec (not `--bail-on-first-red`) — an on-demand verification wants the full picture.
+Resolve `--driver` (default `auto`), then run the spec through the chosen runner. Both read the target from the `Aw-Target file:` path and the spec from the `Specs file:` path — the files from Step 3. Both emit the identical verdict block ([spec-run contract § 4](../../../workflow/autonomous-workflow/rules/spec-run-contract.md#4-verdict-schema-mandatory--do-not-deviate)). `--all` runs every spec (not `--bail-on-first-red`) — an on-demand verification wants the full picture.
 
 Both runners detect the format from the `Format: intent` header line themselves, so the dispatch blocks below are the same for both formats.
 For an intent spec each runner replays a cached route when one matches the spec's text, otherwise explores the route, and returns each spec with the intent keys (`route`, `changed`, `expected`, `deviations`).
 
-**Record the window start.** Immediately before the dispatch, record `RUN_STARTED_AT` as UTC ISO-8601 (`date -u +%Y-%m-%dT%H:%M:%SZ`); the [telemetry check](./telemetry.md#step-2-build-the-query-window) reads its events from that moment on.
+**Record the window.** Immediately before the dispatch, record `RUN_STARTED_AT` as UTC ISO-8601 (`date -u +%Y-%m-%dT%H:%M:%SZ`); when the verdict returns, record `SPECS_ENDED_AT`. Step 4c reads telemetry for exactly that window.
 
 **Recordings are on by default on the Playwright driver.** The Playwright dispatch block carries `--record-video`, so `aw-tester` writes one video per spec under `.agent/{branch}/.aw-tester/recordings/` ([`recording.md`](./recording.md)).
 Pass `--no-recording` to drop the flag. The Chrome driver cannot record and its block never carries the flag.
@@ -110,8 +117,8 @@ The Chrome runner is in-session and needs the browser extension; the Playwright 
 
 ```text
 Skill("aw-tester-chrome", "
-  Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target 'preview'.
-  Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+  Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target '<ENV>'.
+  Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
   Specs file: .agent/{branch}/.ui-verify/specs.md
   Mode: --all --auto-capture
 ")
@@ -126,8 +133,8 @@ Task(
   subagent_type: "aw-tester",
   description: "Run ui-verify against PR preview",
   prompt: |
-    Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target "preview".
-    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target "<ENV>".
+    Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Mode: --all --auto-capture --record-video
 )
@@ -143,8 +150,8 @@ It is one line of output, printed before the dispatch, never a question:
 
 ```text
 ✅ RIGHT
-ui-verify: Chrome extension not connected — running with Playwright (aw-tester); logs in via .claude/aw-targets/preview.yml, not your Chrome session. Pass --driver chrome to require Chrome.
-ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester); first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/; no preview login configured (run /ui-verify setup if the preview needs one). Pass --driver chrome to require Chrome.
+ui-verify: Chrome extension not connected — running with Playwright (aw-tester); logs in via .agents/aw/environments.yml (preview), not your Chrome session. Pass --driver chrome to require Chrome.
+ui-verify: Chrome returned inconclusive (login screen) — running with Playwright (aw-tester); first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/; no preview login configured (run /verify setup if the preview needs one). Pass --driver chrome to require Chrome.
 
 ❌ WRONG
 AskUserQuestion("The Chrome extension isn't connected. Run with Playwright instead?")
@@ -157,9 +164,9 @@ Then append each clause whose condition holds, in this order, separated by `; `:
 | Append | When |
 | --- | --- |
 | `first run installs Playwright + Chromium under .agent/<branch>/.aw-tester/` | Neither `node_modules/.bin/playwright` nor `.agent/{branch}/.aw-tester/node_modules/.bin/playwright` exists, so `aw-tester`'s binary resolution will install one |
-| `logs in via .claude/aw-targets/preview.yml, not your Chrome session` | The ephemeral `aw-target.yml` from Step 3 has `auth.strategy` `storage-state` or `env-credentials` |
+| `logs in via .agents/aw/environments.yml (<ENV>), not your Chrome session` | The `aw-target.<ENV>.yml` from Step 3 has `auth.strategy` `storage-state` or `env-credentials` |
 | `authed specs will be skipped (auth.strategy: manual)` | Its `auth.strategy` is `manual` |
-| `no preview login configured (run /ui-verify setup if the preview needs one)` | Its `auth.strategy` is `none` or absent |
+| `no preview login configured (run /verify setup if the preview needs one)` | Its `auth.strategy` is `none` or absent |
 
 Exactly one of the three login clauses always applies, because the Playwright run never inherits the Chrome session.
 Step 5 names the driver that produced the verdict, so the report always says `playwright` after a fallback.
@@ -167,6 +174,7 @@ Step 5 names the driver that produced the verdict, so the report always says `pl
 ## Step 4b: Adversarial pass — try to break it
 
 The spec proved the happy path; this step tries to break the same change and documents every probe with screenshots.
+Start it in the same message as Step 4c's first dispatch, so the two run in parallel.
 Full procedure, catalog, oracles, and guardrails: [`adversarial.md`](./adversarial.md).
 **It never changes the verdict from Step 4** — its findings travel in a separate `adversarial:` block.
 
@@ -176,7 +184,7 @@ Otherwise run it only when **all** of these hold, and when one fails, record its
 | Condition | When it fails, record |
 | --- | --- |
 | `--no-adversarial` was not passed | `adversarial: skipped (--no-adversarial)` |
-| the overlay does not set `adversarial.enabled: false` | `adversarial: skipped (disabled in preview.yml)` |
+| `ui.yml` does not set `adversarial.enabled: false` | `adversarial: skipped (disabled in ui.yml)` |
 | at least one spec has `result: pass` | `adversarial: skipped (no passing spec to probe)` |
 
 Probe only the specs whose `result` is `pass`, and use the driver Step 4 actually ran:
@@ -192,7 +200,7 @@ Task(
   prompt: |
     Try to break the change these specs describe on the live preview, and document every probe with screenshots.
     Your procedure is <absolute path of this skill>/rules/adversarial.md — read it and follow it.
-    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Probe specs: <ids of the specs whose result was pass>
     Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
@@ -208,12 +216,25 @@ A reply with no `adversarial:` block is `adversarial: not run (<first line of th
 
 When this step returns, or when it was skipped, record `RUN_ENDED_AT` (UTC ISO-8601).
 
-## Step 4c: Telemetry check — read the run's Dash0 web events
+## Step 4c: Telemetry — `telemetry-verify` on each window
 
-Confirm the run looked right to the product's telemetry too: read the web events the run's own sessions emitted on the preview from the Dash0 Dev MCP, and judge them against fixed oracles — events arrived at all, no error events, no 5xx requests, a page view per spec start, and every custom event the diff adds.
-Full procedure, server selection, oracles, and configuration: [`telemetry.md`](./telemetry.md).
+The browser proved what the user sees; `telemetry-verify` proves what the services recorded during the same run.
 **It never changes the verdict from Step 4** — its findings travel in a separate `telemetry:` block.
-`--no-telemetry` skips it; so do `telemetry.enabled: false` in `preview.yml`, an app with no Dash0 web SDK, and a session with no Dash0 MCP server, each with its own `telemetry: skipped (…)` line.
+`--no-telemetry` skips it with `telemetry: skipped (--no-telemetry)`; so does a run that already stopped.
+
+1. **Spec window, in parallel with Step 4b.** In the message that starts the adversarial pass, also dispatch:
+
+   ```text
+   Agent(subagent_type="general-purpose",
+         prompt="Run Skill(\"telemetry-verify\", \"--env <ENV> --from <RUN_STARTED_AT> --to <SPECS_ENDED_AT> --host <preview host> --driver <driver Step 4 ran> [--brief .agent/{branch}/plan.md] [--out .agent/{branch}/.ui-verify/telemetry.jsonl]\") and return only its TELEMETRY block")
+   ```
+
+   Pass `--brief` only when that file exists. On Agent0 the sub-agent type is `general`.
+2. **Adversarial window, after Step 4b.** When the adversarial pass returns, dispatch the same call with `--from <SPECS_ENDED_AT> --to <RUN_ENDED_AT>` and no `--brief` (probes are not acceptance criteria). Skip it when Step 4b did not run.
+3. With no sub-agent dispatch tool, run `Skill("telemetry-verify", …)` in this session after Step 4b, once per window.
+
+A reply with no `TELEMETRY` block is `telemetry: not run (<first line of the reply>)`.
+`telemetry-verify` owns the server, the ingest wait, the oracles, and the skip reasons; never query telemetry from this runner.
 
 ## Step 5: Report the verdict
 
@@ -255,14 +276,14 @@ Print its first report line under the **Screenshots** heading. Without the flag,
 
 Keep the happy-path verdict line first and unchanged; a critical finding is stated in the summary line, never by rewriting `verdict`.
 
-**Surface the telemetry check** under a **Telemetry (Dash0)** heading, after the adversarial pass: the summary line from [`telemetry.md § Step 5`](./telemetry.md#step-5-return-the-telemetry-block), then each finding with its oracle, severity, event, page, and link, or the `skipped (…)` / `inconclusive (…)` line.
+**Surface the telemetry** under a **Telemetry** heading, after the adversarial pass: each window's `TELEMETRY` block verbatim — its journey lines, `signals:` and `findings:` lines, and `[receipt] verdict:` line — or the `skipped (…)` / `not run (…)` line.
 Like the adversarial pass, a telemetry finding never rewrites `verdict`.
 
 Optionally, when the caller asked for it, post the verdict as a PR comment. Off by default — the runner reports to the terminal.
 
 ## Step 5b: Post findings (under `--post-findings`)
 
-Only when the caller passed `--post-findings`: write every failing spec, every `critical` or `high` adversarial finding, and every `high` telemetry finding to the PR as a file-level review thread, deduped by fingerprint, and upsert the `<!-- ui-verify:lane -->` summary comment.
+Only when the caller passed `--post-findings`: write every failing spec, every `critical` or `high` adversarial finding, and every `critical` or `high` telemetry finding to the PR as a file-level review thread, deduped by fingerprint, and upsert the `<!-- ui-verify:lane -->` summary comment.
 Full procedure: [`post-findings.md`](./post-findings.md).
 `run` with a local `specs-path` has no PR and ignores the flag with the note `post-findings: skipped (no PR)`.
 

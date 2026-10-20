@@ -1,0 +1,10 @@
+# ~/.agents/aw/config.yml — your settings. Never committed; holds no secrets.
+version: 1
+policies:
+  foreign_stack: ask          # teardown | ask | abort
+  cleanup: leave              # leave | teardown
+  push: own-prs               # always | own-prs | never
+  pr_comment: own-prs         # always | own-prs | never
+repos: {}
+#  <owner>/<name>:
+#    telemetry: { mcp_server: <server key>, environments: { local: { dataset: <yours> } } }

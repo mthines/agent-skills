@@ -294,12 +294,12 @@ Split the report before citing it:
 | `weaver registry check` passing                                                                    | —                   | Only that the schema is well-formed. It does not mean any code emits the signal. |
 
 This is the same rule
-[`observe-run`'s assertion provenance](../../observe-run/rules/assertion-provenance.md) applies to
+`telemetry-verify`'s by-construction rule applies to
 expectations, and it is why Weaver never replaces the prove-it step in `implement` mode:
 
 - **Weaver live-check** grades the telemetry's *shape* against a schema — names, types, requirement
   levels, stability.
-- **[`observe-run`](../../observe-run/SKILL.md)** grades the run's *behaviour* — span count per
+- **`telemetry-verify`** grades the run's *behaviour* — span count per
   invocation, parent/child structure, attribute cardinality.
 
 Neither answers the other's question. A run can be perfectly conformant and emit one span where
@@ -361,5 +361,5 @@ Registry conformance is for a standalone `audit` run, for `implement` mode, and 
   scopes the same filter to exactly those two.
 - Proposing `weaver registry search` for attribute lookup. It is deprecated and not V2-compatible —
   use `weaver registry mcp`, or the generated documentation.
-- Treating a live-check pass as a substitute for `observe-run`'s behavioral expectations, or the
+- Treating a live-check pass as a substitute for `telemetry-verify`'s behavioral expectations, or the
   reverse. They grade different things and neither is evidence for the other.

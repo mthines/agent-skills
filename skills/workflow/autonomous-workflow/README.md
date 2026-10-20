@@ -68,12 +68,10 @@ each is reported `ran` or `skipped (<reason>)`.
 | [`rules/self-improvement-loop.md`](./rules/self-improvement-loop.md) | Fast-tier episodic-lessons loop (`aw-lessons`) + promotion to `diagnose`. |
 | [`rules/phase-4-spec-verification.md`](./rules/phase-4-spec-verification.md) | Spec-driven UI verification sub-rule (before lint/type/test). |
 | [`rules/parallel-coordination.md`](./rules/parallel-coordination.md) | Sub-agent fan-out and multi-agent handoff. |
-| [`templates/`](./templates/)       | Agent templates + auto-trigger routing rule + aw-target/specs templates. |
+| [`templates/`](./templates/)       | Agent templates + auto-trigger routing rule + specs templates. |
 | [`templates/aw-tester.agent.md`](./templates/aw-tester.agent.md) | `aw-tester` spec-driven UI verification agent. |
-| [`templates/aw-target.yml.template`](./templates/aw-target.yml.template) | Aw-Target schema (base URL, auth strategy, fixtures, constraints). |
 | [`templates/specs.md.template`](./templates/specs.md.template)   | Specs file format with example blocks for new features and refactors. |
 | [`templates/intent-spec.md.template`](./templates/intent-spec.md.template) | Markdown intent spec format (`Format: intent`): plain steps guide the runner, `[must-follow]` steps and `**Expected:**` items are checked strictly. Both runners run it and cache the route. |
-| [`aw-setup/SKILL.md`](./aw-setup/SKILL.md) | Interactive one-time aw-target scaffolding skill (`/aw-setup`). |
 | [`references/`](./references/)     | Lazy-loaded examples (full execution trace, error scenarios).   |
 
 `SKILL.md` is intentionally thin — it's the index Claude loads first. The
@@ -153,10 +151,10 @@ All three units, dispatcher included:
 tasks, and runs Micro/Lite single-pass. It is invoked deliberately, not as a
 wrapper on every prompt.
 
-**One-time UI setup:** run `/aw-setup` once per project before the first autonomous
-UI task. This scaffolds `.claude/aw-targets/local.yml` (the aw-target `aw-tester` reads)
-and validates it with a smoke spec. Without one, specs run against localhost defaults.
-See [`aw-setup/SKILL.md`](./aw-setup/SKILL.md).
+**One-time setup:** run `/verify setup` once per project before the first autonomous
+UI task. It writes the committed `.agents/aw/` config (environments, login, telemetry);
+Full-tier `aw` then proves its work with `/verify local`. Without it, specs are written
+but not run.
 
 > **Upgrading from a pre-`aw-` install?** The installer detects legacy
 > `autonomous-planner.md` / `autonomous-executor.md` symlinks pointing at

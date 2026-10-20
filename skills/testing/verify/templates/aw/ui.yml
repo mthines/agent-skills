@@ -1,0 +1,8 @@
+# .agents/aw/ui.yml — the browser witness (ui-verify, aw-tester). Committed.
+# Every key is optional; these are the defaults.
+version: 1
+driver: auto                  # auto | chrome | playwright
+screenshots: true
+recording: true
+constraints: { parallelism: 1, reset_between_specs: false }
+adversarial: { enabled: true, max_probes: 24, time_budget_minutes: 10 }

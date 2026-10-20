@@ -1,6 +1,6 @@
 # Specs: <Feature Title>
 
-Target: preview                    # references .claude/aw-targets/preview.yml (or local.yml)
+Target: preview                    # an environment in .agents/aw/environments.yml (preview or local)
 Format: intent                     # Markdown intent spec — Steps guide the runner, Expected is checked strictly
 
 # ---

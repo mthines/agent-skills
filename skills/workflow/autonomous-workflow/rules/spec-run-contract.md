@@ -42,7 +42,7 @@ Two formats exist, each with one owner, and this file defines neither's syntax:
 | Format | Header line | Owner (single source of truth) | Written by |
 | --- | --- | --- | --- |
 | **Grammar** — `WHEN/THEN/AND`, the `{role/name}` locator mini-grammar, `url:`, `preconditions:`, `continues-from:`, `network:` | none (the default) | [`specs.md.template`](../templates/specs.md.template) | the compiled route of an intent spec (§ 6.6); legacy `specs.md` files, read only |
-| **Intent** — `**Changed:**`, `**Start:**`, `**Steps:**` with `[must-follow]` steps, `**Expected:**` | `Format: intent` | [`intent-spec.md.template`](../templates/intent-spec.md.template) | `aw-executor` (`specs.md`, C5), `ui-verify author`, `/local-verify`, and any human |
+| **Intent** — `**Changed:**`, `**Start:**`, `**Steps:**` with `[must-follow]` steps, `**Expected:**` | `Format: intent` | [`intent-spec.md.template`](../templates/intent-spec.md.template) | `aw-executor` (`specs.md`, C5), `ui-verify author`, `/verify`, and any human |
 
 Both runners parse both formats exactly as their owner defines them.
 Neither runner, nor any caller, invents syntax its owner does not define.

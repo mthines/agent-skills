@@ -87,7 +87,7 @@ Resolve from the invocation prompt:
 | Input | Source | Required |
 |-------|--------|----------|
 | `specs_path` | Argument, or `.agent/{branch}/specs.md` | Yes |
-| `aw_target_path` | An explicit `Aw-Target file:` path, else `.claude/aw-targets/{name}.yml` | Yes |
+| `aw_target_path` | The `Aw-Target file:` path, else `.agent/{branch}/aw-target.{name}.yml` (written by the caller from `.agents/aw/environments.yml`) | Yes |
 | `mode` | `--all` or `--bail-on-first-red` (default) | No |
 
 Parse the aw-target (`base_url`, `auth.*`, `fixtures.references`,

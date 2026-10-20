@@ -66,8 +66,8 @@ which keeps the window lean without a dispatch.
 
 ## Why the repro-fidelity check reads only the local run
 
-`observe-run` reads only the telemetry emitted by the run it just executed, scoped to that run's
-`dev.run.id`, so it can never fetch the production span.
+`telemetry-verify` reads only the telemetry inside the local run's own time window, so it can
+never fetch the production span.
 An expectation phrased as "matches production" would therefore answer `null` every time — which is
 why `/fix-bug` reads the originating span's shape out of its own Evidence Record and passes it in
 as literal expectations.

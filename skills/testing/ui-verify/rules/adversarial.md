@@ -39,7 +39,7 @@ Why it is shaped this way, and the sources behind the catalog: [`references/adve
 
 | Input | Source |
 | --- | --- |
-| `Aw-Target file:` | The ephemeral overlay from `runner.md` Step 3 — `base_url`, `auth.storage_state`, `auth.bypass_header`, and the optional `adversarial:` block ([§ Configuration](#configuration)). |
+| `Aw-Target file:` | `aw-tester`'s target from `runner.md` Step 3 — `base_url`, `auth.storage_state`, `auth.bypass_header`. The `adversarial:` settings come from `.agents/aw/ui.yml` ([§ Configuration](#configuration)). |
 | `Specs file:` | The ephemeral `specs.md` from Step 3. |
 | `Probe specs:` | The spec ids whose happy-path `result` was `pass`. Probe only these. |
 | `Playwright bin:` | `.agent/{branch}/.aw-tester/playwright-bin`, written by `aw-tester`. Playwright driver only. |
@@ -161,7 +161,7 @@ A probe is a **finding** only when one of these oracles fires.
    Unless `ADV_VIDEO=0`, move the `video.webm` of every probe whose outcome is `finding` or `probe-error` to `<output dir>/recordings/<ADV-NN>-<slug>.webm`, add its path to that result's `evidence`, and delete `test-results/` before the next batch — a passing probe's video is not kept ([`recording.md`](./recording.md)).
 6. A non-empty `signals.blocked` means the app sent a mutation to an origin outside the allow-list, and the guard aborted it. Never widen the list yourself.
    When the probe's flow still completed (its success state appeared), the request was incidental — analytics, a beacon: keep the result and name the origin in `notes`.
-   When the flow did not complete, mark the probe `skipped` with reason `blocked <origin> — add it to adversarial.allowed_origins in preview.yml if it is the app's own API`.
+   When the flow did not complete, mark the probe `skipped` with reason `blocked <origin> — add it to adversarial.allowed_origins in .agents/aw/ui.yml if it is the app's own API`.
 
 **Chrome driver.** Run the same plan in-session through the extension: act with `computer` and `form_input`, read console output and requests after each probe, screenshot before the hostile action and after it, and save each image to the same `captures/` path.
 Run only the categories [§ Driver capabilities](#driver-capabilities) marks available to Chrome.
@@ -290,7 +290,7 @@ The Chrome driver runs in the user's own browser profile, so its skipped categor
 
 ## Configuration
 
-An optional `adversarial:` block in the committed `.claude/aw-targets/preview.yml` tunes the pass.
+An optional `adversarial:` block in the committed `.agents/aw/ui.yml` tunes the pass (personal overrides merge per the `verify` skill's `rules/config.md`).
 Every key is optional, and an absent block means the defaults.
 
 ```yaml

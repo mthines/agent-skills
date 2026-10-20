@@ -31,7 +31,7 @@ and stop, exactly as a missing storage-state env var is handled. Log:
 auth: bypass-header {name} applied to context (value from $<env>)
 ```
 Never log the secret's value. This is the outer half of a two-wall preview
-([`preview-auth.md`](../../../testing/ui-verify/rules/preview-auth.md)); the inner
+(the `verify` skill's `rules/auth.md`); the inner
 login is still handled by the strategy below.
 
 ## Strategy: `storage-state`

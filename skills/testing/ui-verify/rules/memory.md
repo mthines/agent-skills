@@ -109,70 +109,25 @@ Every store-backed fact has its own first-class `memory.write` field: the store 
 Schema authority: [`write-pipeline.md#lesson-scope-entries`](../../../authoring/persistent-memory/rules/write-pipeline.md#lesson-scope-entries).
 The **Applies when** line must be a concrete matching signal (a route glob, a component name, the `preview` target), never a subjective condition — a lesson without one cannot be matched mechanically, so do not persist it.
 
-## The UI surface record
+## The UI surface
 
-This is the "learns what counts as UI, per repo" half of the loop. It is a **config record, not a friction lesson** — it carries a JSON body the `is-ui-diff` gate consumes, so it is the one record under this tag that is not markdown-only.
+What counts as UI for the `is-ui-diff` gate is config, not a lesson: `surface` in the committed `.agents/aw/ui.yml`, written by `/verify setup`.
+`author` Step 0 forwards it to the gate as `--surface-json`; its fields are the gate's (`mode`, `extensions`, `dirExtensions`, `dirs`, `globs` or `include`, `exclude`).
 
-| Field | Value |
-| --- | --- |
-| Scope | `repo::{owner}/{repo}` — a UI surface is repo-specific by definition. |
-| Key | `ui-verify-lessons::ui-surface` (exactly one per repo). |
-| Tag | `loop::ui-verify-lessons` (so it is discoverable alongside the friction lessons) plus `kind::config`. |
-| Written by | `/aw-setup` at setup time, and refined when the gate misclassifies (below). |
-| Read by | `author` Step 0 — forwarded to the gate as `--surface-json`. |
-
-The body is the surface JSON the gate accepts (every field optional):
-
-```json
-{
-  "mode": "extend",
-  "extensions": [".ts"],
-  "dirExtensions": [],
-  "dirs": ["src/web", "packages/ui/src"],
-  "globs": [],
-  "exclude": ["packages/api/**"]
-}
+```yaml
+surface:
+  mode: extend            # extend (default) merges with the gate's defaults; replace pins the surface exactly
+  dirs: [src/web, packages/ui/src]
+  exclude: ['packages/api/**']
 ```
 
-`mode: "extend"` (default) merges with the gate's broad defaults; `mode: "replace"` pins the surface exactly (use for a repo whose layout the defaults get wrong). See the gate's own header for each field's meaning.
+The gate is deterministic, so a wrong answer is a surface gap:
 
-**The refine loop — this is how it learns.** The gate is deterministic, so a wrong answer is always a surface gap, never a coin toss:
+- A UI change classified `no` → widen `surface` (add the `dirs` entry, or promote an extension), then re-run `author`.
+- A non-UI change classified `yes` → add the path to `exclude`, or switch to `mode: replace` with the real UI dirs.
 
-- A **UI change classified `no`** (a spec that should have been authored was not) → widen the surface: add the missing `dirs` entry or promote the extension (e.g. a frontend-only repo adds `.ts` to `extensions`). Then re-run `author`.
-- A **non-UI change classified `yes`** (a backend-only PR got a spec) → narrow it: add the path to `exclude`, or switch to `mode: "replace"` with the real UI dirs.
-
-Write the correction back to this record (`memory.write` same scope + key updates it in place). The next PR in the repo — anyone's — decides correctly from the start. Never store a path that reveals a secret; a directory layout is not sensitive, a token embedded in one would be.
-
-## The auth profile record
-
-The second config record under this tag (alongside the UI surface). It captures the **confirmed shape** of the repo's preview auth so the author and runner never rediscover it, and so a run can tell a stale session from a broken app. `/aw-setup` writes it after exercising the login once (see [aw-setup Phase G](../../../workflow/autonomous-workflow/aw-setup/SKILL.md#phase-g--confirm-the-preview-auth-flow-and-record-its-shape-optional-one-lorekit-record)); the runner reads it to know which walls to clear and which selector proves a session.
-
-**Authority: this record is a discovery index, not the source of truth.** The committed `.claude/aw-targets/preview.yml` is what the tools actually execute — `aw-tester` reads it, the runner materializes its ephemeral target from it, `refresh-auth.mjs` runs from it, Playwright loads `storage_state` from its path. None of those can read a LoreKit memory. This record exists so an *agent* — a teammate's first `/ui-verify`, an `aw-setup` re-run — knows the shape (which walls, which `authed_check`, whether it was ever confirmed) without reopening the YAML or rediscovering it, and holds fields the YAML has no concept of (`walls`, `confirmed_at_setup`, `notes`). When the two disagree, `preview.yml` wins and this record is stale — refresh it, never edit `preview.yml` to match it.
-
-| Field | Value |
-| --- | --- |
-| Scope | `repo::{owner}/{repo}` — auth is repo-specific. |
-| Key | `ui-verify-lessons::auth-profile` (exactly one per repo). |
-| Tag | `loop::ui-verify-lessons` plus `kind::config`. |
-| Written by | `/aw-setup` after a confirming login (Phase G), refined when auth drifts. |
-| Read by | `author` (to know auth is needed) and the runner / `aw-tester` (walls, `authed_check`). |
-
-The body is JSON — **names and selectors only, never a secret value** (the privacy pre-flight below forbids it; a credential env-var *name* is not a secret, its value is):
-
-```json
-{
-  "walls": ["bypass-header", "app-login"],
-  "strategy": "storage-state",
-  "authed_check": "{role: \"button\", name: \"Account menu\"}",
-  "storage_state": ".browser/auth-state.preview.json",
-  "refresh_command": "node .claude/aw-targets/refresh-auth.mjs",
-  "env": ["PREVIEW_USER", "PREVIEW_PASSWORD", "VERCEL_AUTOMATION_BYPASS_SECRET"],
-  "confirmed_at_setup": true,
-  "notes": "Clerk email-password test account; Vercel protection bypass on the outer wall"
-}
-```
-
-`authed_check` is a single-braces locator (the spec grammar's, not forked) that is present **only when signed in** — the positive signal that a session is valid, used to confirm the setup login and to detect an expired session before a run (see [`preview-auth.md § Confirming a session`](./preview-auth.md#confirming-a-session)). `confirmed_at_setup` records whether `/aw-setup`'s trial login actually reached that selector; `false` means the shape is scaffolded but never proven, so the first real run must not assume it works. Write the correction back (same scope + key) when auth drifts. Never store a credential value, a token, or a captured `storageState` in this record — only the *path* to the gitignored state and the env-var *names*.
+Edit `ui.yml` in the PR that found the gap, so the next PR in the repo decides correctly.
+Login shape is config too: `.agents/aw/environments.yml` → `<env>.auth`, including `authed_check`.
 
 ## Entrenchment guards
 

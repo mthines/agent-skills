@@ -70,36 +70,26 @@ enough for this input class: the bug report came from a production span, so the 
 checked against the shape of that same span before it is trusted as the `FAIL_TO_PASS` contract.
 
 1. Read the **shape** of the originating span out of the Evidence Record — parent/child structure,
-   status on the error path, and the span count per unit of work. **Never attribute *presence*:**
-   that is an existence claim, the canonical by-construction shape
-   [`assertion-provenance.md`](../../../quality/observe-run/rules/assertion-provenance.md) refuses,
-   and it is not kind 6 — kind 6 is attribute **cardinality**, which is a property of a run and not
-   of a source file. An expectation phrased as presence is refused rather than graded, so phrasing
-   one here would hand `observe-run` a request its own closed list forbids it to answer. This half
-   is fix-bug's own, and it is why the
-   comparison lives here: `observe-run` reads only the telemetry **the run it just executed**
-   emitted, scoped to that run's `dev.run.id` in the dev dataset
-   ([`observe-run/rules/run-identity.md`](../../../quality/observe-run/rules/run-identity.md)), so
-   it can never fetch the production span. Asking it for "matches the production span" would ask it
-   to assert on data its reader is structurally unable to see, and it would answer `null` every
-   time.
-2. Run the repro command locally through `Skill("observe-run")`, expressing the expectation as a
-   claim about the **local** run alone, with the shape from step 1 written out as literal values —
-   e.g. *"the run emits a span whose parent is `checkout.handler` and whose status is `ERROR`"*.
-   `observe-run` returns a receipt (`confirms` / `contradicts` / `ambiguous` / `null`) in the same
-   shape [`verify-behavior/rules/receipt.md`](../../../quality/verify-behavior/rules/receipt.md)
-   already defines, and its own provenance rule keeps the assertion behavioral.
-   Never a byte-for-byte match: resource attributes (host, deploy ID, trace ID) legitimately differ
-   between production and a local run, so only the shape properties from step 1 are asserted.
-3. Record the fidelity result in the Evidence Record: `confirms` means the local repro is a
+   status on the error path, and the span count per unit of work.
+   Never assert mere *presence* ("a span named X exists"): it is by-construction, and
+   `telemetry-verify` refuses it.
+2. Record the window start, run the repro command locally, record the window end, then run
+   `Skill("telemetry-verify", "--env local --from <start> --to <end>")` with the shape from step 1
+   written out as literal claims about the **local** run — e.g. *"the run emits a span whose parent
+   is `checkout.handler` and whose status is `ERROR`"*.
+   It reads only that window, so it can never fetch the production span; "matches the production
+   span" would grade `null` every time.
+   Never a byte-for-byte match: host, deploy ID, and trace ID legitimately differ, so assert only
+   the shape properties from step 1.
+3. Record the receipt's verdict in the Evidence Record: `confirms` means the local repro is a
    faithful stand-in for the production shape; `contradicts` means the repro is reproducing a
    *different* failure than the one telemetry reported, and the bug should be re-scoped before
    Phase 3 rather than fixed against the wrong contract; `ambiguous` or `null` means the fidelity
    check was inconclusive and the repro proceeds on its own merits (layer routing below still
    governs validity).
 
-This step is **advisory to repro validity, not a gate**: it is skipped with one report line when `observe-run` (or
-its Observability Profile dev target) is unavailable, or when the input class is not
+This step is **advisory to repro validity, not a gate**: it is skipped with one report line when `telemetry-verify` (or
+the repo's `.agents/aw/` config) is unavailable, or when the input class is not
 telemetry-sourced, and the four [validity criteria](#what-counts-as-a-valid-repro) below remain
 the only mechanical gate Phase 5 checks. It never touches Phase 8 — Phase 8's post-deploy polling
 of the *production* signal is a separate, later concern from this pre-fix local fidelity check.

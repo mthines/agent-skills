@@ -1,0 +1,10 @@
+# .agents/aw/telemetry.yml — the telemetry witness (telemetry-verify). Committed.
+# Personal values (your own dataset, the MCP server key) go in ~/.agents/aw/config.yml.
+version: 1
+backend: logs                 # dash0-mcp | logs | none
+environments:
+  local: {}
+  preview: {}
+ingest_wait_seconds: 0        # 45 for dash0-mcp
+thresholds: { interactive_span_ms: 1000, repeated_child_spans: 10 }
+loops: 2

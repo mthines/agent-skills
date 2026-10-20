@@ -107,7 +107,7 @@ skills/workflow/autonomous-workflow/
 │   ├── self-improvement-loop.md # Episodic-lessons fast tier (LoreKit loop::aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
 │   └── _template.md            # Boilerplate for new rule files.
 ├── aw/
-│   └── SKILL.md                    # THE DISPATCHER. A nested skill (like aw-setup), not an agent —
+│   └── SKILL.md                    # THE DISPATCHER. A nested skill (like aw-tester-chrome), not an agent —
 │                                   # opt-in entry, tier routing, universal lessons loop. Invoked /aw.
 ├── templates/
 │   ├── aw-executor.agent.md        # aw-executor agent (phases 3-7, executes the brief). Linked by install.sh as aw-executor.md.
@@ -864,7 +864,7 @@ autonomy and going rogue.
 
 The dispatcher is `aw/SKILL.md` — a **nested skill**, discovered by
 `scripts/sync-symlinks.sh`'s recursive walk and linked as `~/.claude/skills/aw`
-(the same treatment `aw-setup` and `aw-tester-chrome` get; `install.sh` also
+(the same treatment `aw-tester-chrome` gets; `install.sh` also
 links it directly in `--development` mode). It is edited like any other skill,
 and it is **not** an agent — do not give it a `tools:` block or a `model:` line,
 and do not restate the tier table in it. See

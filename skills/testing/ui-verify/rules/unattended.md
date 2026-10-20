@@ -21,7 +21,6 @@ Driver selection asks no question in either mode — `auto` falls back from Chro
 | --- | --- | --- |
 | `auto`, Chrome unavailable or `inconclusive` with `fallback: playwright` | Playwright, with the one-line fallback notice | same |
 | `auto`, no Chrome **and** no sub-agent dispatch | `NOT RUN (no Chrome extension and no sub-agent dispatch available)` | `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` — no verdict, never `red` |
-| `setup` | runs the interview | not accepted — `blocked (needs a human: setup is an interview)` |
 
 A forced `--driver` behaves exactly as it does attended.
 
