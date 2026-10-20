@@ -71,7 +71,7 @@ npm test && npm run build && npm run lint
 ## Post-Draft Review
 
 None by default: `create-pr` Step 5.5 already converged the branch with `review-loop` in local mode before the push, so the executor passes `--no-post-review` and the draft gets no posted review.
-With `--pr-review`, invoke `Skill("create-pr")` bare instead: Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")`, which posts a `COMMENT` review via `pr-reviewer` and applies findings via `implement-suggestion`. The `--no-ci` is not optional: Phase 7's CI gate owns the CI budget for this PR.
+With `--pr-review`, drop `--no-post-review` from the call: Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci")`, which posts a `COMMENT` review via `pr-reviewer` and applies findings via `implement-suggestion`. The `--no-ci` is not optional: Phase 7's CI gate owns the CI budget for this PR.
 
 Both loops gracefully skip if `review-loop` is not installed — log one line and continue.
 
@@ -140,13 +140,14 @@ Log to Progress Log:
 
 Invoke `create-pr` to handle the rest of the delivery in one go: narrative description generation, a local `review-loop` before the push, push, open the draft PR, and watch the initial CI run.
 
-**Invoke it with `--no-post-review` and nothing else — never scale it down further by default:**
+**Invoke it with the tier's flags from [`aw` § Review](../aw/SKILL.md#review) — never scale it down further by default:**
 
-```
-Skill("create-pr", "--no-post-review")
+```text
+Skill("create-pr", "--no-post-review")                  # Lite: Step 5.5 is the local review
+Skill("create-pr", "--no-pre-review --no-post-review")  # Full: Step 3 already reviewed the diff
 ```
 
-That runs Step 5.5's local `review-loop` (`branch-reviewer` → apply → `polish simplify`, cap 3) → push → open draft PR → Steps 7–8 watch CI and hand red CI to `ci-auto-fix`. With `--pr-review`, invoke it bare so Step 6.5 also runs one posted `review-loop`. **Do NOT pass `--no-pre-review`, `--no-review`, `--no-simplify`, `--quick`, or `--no-quality`** unless the user explicitly asked to skip a pass.
+On Lite that runs Step 5.5's local `review-loop` (`branch-reviewer` → apply → `polish simplify`, cap 3) → push → open draft PR → Steps 7–8 watch CI and hand red CI to `ci-auto-fix`; on Full it skips Step 5.5. `--pr-review` drops only `--no-post-review`, so Step 6.5 also runs one posted `review-loop`. **Do NOT pass `--no-review`, `--no-simplify`, `--quick`, or `--no-quality`, nor `--no-pre-review` on Lite,** unless the user explicitly asked to skip a pass.
 
 > **Resource note — what the "save RAM" rule actually scopes.** This repo's resource guidance is about *execution cost only*: do not run `eslint` / `tsc` / tests **in parallel**, and do not spawn **parallel sub-agents** or **cascading full-verify rounds** (the 55+ GB OOM incident). It does NOT let you skip the quality passes. `create-pr`'s `review-loop` (`pr-reviewer`, `implement-suggestion`, `polish simplify`) and the Phase 6 quality gate are sequential reasoning passes — the single-sequential-loop variant is explicitly permitted. Skipping them to "save RAM" is a category error and a Phase 6 collapse (taxonomy F5).
 
