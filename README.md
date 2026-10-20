@@ -148,6 +148,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`aw`](./skills/workflow/autonomous-workflow/aw/SKILL.md) | Ships a task end to end: brief, build until green, fresh-eyes review, draft PR. |
 | [`/fix-bug`](./skills/workflow/fix-bug/SKILL.md) | Fixes one bug from a stack trace, span, recording, or ticket, behind a failing test. |
 | [`/implement-suggestion`](./skills/workflow/implement-suggestion/SKILL.md) | Applies PR review comments, one commit each, and resolves the threads. |
+| | |
 | [`/pr-review`](./skills/quality/pr-review/SKILL.md) | One read-only review of a PR: a single report plus inline findings. |
 | [`/review-loop`](./skills/quality/review-loop/SKILL.md) | Reviews, fixes, and resolves a PR's threads until it converges. |
 | [`/review-branch`](./skills/quality/review-branch/SKILL.md) | The same loop on a local branch, before any PR exists. |
@@ -158,17 +159,20 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`test-provenance-guard`](./skills/quality/test-provenance-guard/SKILL.md) | Catches tests that pass by copying the code they test. |
 | [`measurable`](./skills/quality/measurable/SKILL.md) | Ships each change with the telemetry that proves it worked. |
 | [`/ai-engineering`](./skills/quality/ai-engineering/SKILL.md) | Reviews an LLM app: prompts, RAG, agents, evals, safety, cost. |
+| | |
 | [`/create-pr`](./skills/delivery/create-pr/SKILL.md) | Writes a short PR story, opens a draft, and drives review and CI to green. |
 | [`/ci-auto-fix`](./skills/delivery/ci-auto-fix/SKILL.md) | Diagnoses red CI and fixes it — never by weakening a check. |
 | [`/resolve-conflicts`](./skills/delivery/resolve-conflicts/SKILL.md) | Resolves merge and rebase conflicts; asks on the ambiguous ones. |
 | [`/attach-media`](./skills/delivery/attach-media/SKILL.md) | Uploads screenshots and recordings into a PR so they render inline. |
 | [`/github-actions-author`](./skills/delivery/github-actions-author/SKILL.md) | Writes and reviews fast, cheap GitHub Actions workflows. |
+| | |
 | [`/ui-verify`](./skills/testing/ui-verify/SKILL.md) | Puts a plain-language UI spec in the PR, runs it on the preview, then tries to break it. |
 | [`/local-verify`](./skills/testing/local-verify/SKILL.md) | Runs the same specs against your local stack and fixes what fails. |
 | [`/aw-setup`](./skills/workflow/autonomous-workflow/aw-setup/SKILL.md) | One-time setup so `aw` and `ui-verify` can sign in to your app. |
 | [`/e2e-testing`](./skills/testing/e2e-testing/SKILL.md) | Plans, writes, and heals Playwright end-to-end tests. |
 | [`/e2e-testing-mobile`](./skills/testing/e2e-testing-mobile/SKILL.md) | Maestro flows for Expo and React Native. |
 | [`/e2e-pr-stabilizer`](./skills/testing/e2e-pr-stabilizer/SKILL.md) | Makes one PR's flaky Playwright tests stable. |
+| | |
 | [`ux`](./skills/design/ux/SKILL.md) | Walks the user's real path, then accessibility, microcopy, and dark patterns. |
 | [`visual-design`](./skills/design/visual-design/SKILL.md) | Brand-aware visual direction: color, type, and hierarchy. |
 | [`animations`](./skills/design/animations/SKILL.md) | Performant web motion and perceived performance. |
@@ -176,6 +180,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`charting`](./skills/design/charting/SKILL.md) | Picks the right chart and library for your data. |
 | [`storybook`](./skills/design/storybook/SKILL.md) | Stories, playgrounds, and interaction tests per component. |
 | [`behavioral-design`](./skills/design/behavioral-design/SKILL.md) | Helps people adopt a new behavior or tool — ethically. |
+| | |
 | [`ideate`](./skills/analysis/ideate/SKILL.md) | Research-grounded brainstorming with independent judges. |
 | [`interview`](./skills/analysis/interview/SKILL.md) | Aligns on scope before planning; asks only what research can't answer. |
 | [`rum-tracking`](./skills/analysis/rum-tracking/SKILL.md) | Decides which product analytics to track, and what is PII. |
@@ -184,6 +189,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/playwright-trace-analyzer`](./skills/analysis/playwright-trace-analyzer/SKILL.md) | Names the race behind a flaky Playwright test. |
 | [`/profile-optimizer`](./skills/analysis/profile-optimizer/SKILL.md) | Turns a React or Chrome performance trace into fixes. |
 | [`youtube-transcript`](./skills/analysis/youtube-transcript/SKILL.md) | Fetches a YouTube video's captions as text. |
+| | |
 | [`docs`](./skills/authoring/docs/SKILL.md) | Writes and audits CLAUDE.md, AGENTS.md, READMEs, and docs trees. |
 | [`/create-skill`](./skills/authoring/create-skill/SKILL.md) | Scaffolds, reviews, and diagnoses agent skills. |
 | [`/optimize-claude-md`](./skills/authoring/optimize-claude-md/SKILL.md) | Trims context bloat from CLAUDE.md. |
