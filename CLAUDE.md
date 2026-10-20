@@ -54,6 +54,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `polish` (`/`) — re-runnable pre-PR branch quality gate: review, then simplify the diff and prune restating or ticket comments, each change behind a test check
 - `review-loop` (`Skill()`) — bounded convergence loop, cap 5: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` on a PR; with no PR, local mode over `.agent/{branch}/findings.jsonl`, zero GitHub calls; `--ui` adds a `ui-verify` lane. Run at the top level
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule
+- `impact-map` (`auto`) — impact-first PR view: verdict with expandable What/Risk/Ask rows, one badged diagram, ≤ 3 decisions with linked lines, a settled list; `--comment` / `--body` posts it with light and dark PNGs
 - `tdd` (`auto`) — strict RED-GREEN-REFACTOR; `provenance` mode checks a test exercises the production code (static + mutation)
 - `verify-behavior` (`Skill()`) — cheapest-first three-tier verification ladder; emits an evidence receipt, never a score
 - `jev-assert` (`Skill()` + `/`) — semantic UI assertion via TypeSafe Jev; backs the `THEN semantic:` spec form
@@ -97,7 +98,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 ### `authoring/` — skills about Claude Code itself
 
-- `create-skill` (`/`) — scaffold, review, upgrade, diagnose skills
+- `create-skill` (`/`) — scaffold (runs the job once without a skill, then writes only the corrections), review, upgrade, diagnose, and prune (unused or zero-lift vs. a dummy) skills
 - `docs` (`auto`) — author / audit `CLAUDE.md`, `AGENTS.md`, `README.md`, Diátaxis `docs/` trees
 - `optimize-claude-md` (`/`) — audit `CLAUDE.md` for context bloat
 - `persistent-memory` (`/`) — cross-conversation markdown memory store. Self-improvement loops run on LoreKit instead; bucket taxonomy: [`memory-buckets.md`](./agents/shared/rules/memory-buckets.md)

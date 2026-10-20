@@ -13,27 +13,43 @@
 # repairs broken or wrong-target symlinks, refuses to touch real
 # files or directories that would otherwise be overwritten.
 #
+# Prunes stale links left behind by deleted or renamed skills/agents:
+# a dangling ~/.agents link that points into this repo, and a dangling
+# ~/.claude link that points into ~/.agents. Nothing else is removed —
+# real files, live links, and links owned by other tools are untouched.
+#
 # Usage:
-#   scripts/sync-symlinks.sh            # apply changes (verbose per-action log)
-#   scripts/sync-symlinks.sh --aw       # apply, but only autonomous-workflow + its companions
-#   scripts/sync-symlinks.sh --dry-run  # preview only, table view
-#   scripts/sync-symlinks.sh -n         # short form of --dry-run
-#   scripts/sync-symlinks.sh --aw -n    # flags are combinable
+#   scripts/sync-symlinks.sh                  # apply changes (verbose per-action log)
+#   scripts/sync-symlinks.sh tdd pr-reviewer  # only these skills/agents (agent `.md` optional)
+#   scripts/sync-symlinks.sh --aw             # only autonomous-workflow + its companions
+#   scripts/sync-symlinks.sh --aw docs        # names add to the --aw bundle
+#   scripts/sync-symlinks.sh --dry-run        # preview only, table view
+#   scripts/sync-symlinks.sh -n               # short form of --dry-run
+#   scripts/sync-symlinks.sh --no-prune       # keep dangling links from deleted skills
 
 set -euo pipefail
 
+usage() {
+  echo "usage: $0 [--aw] [--dry-run|-n] [--no-prune] [name ...]" >&2
+}
+
 DRY_RUN=0
 AW_ONLY=0
+PRUNE=1
+declare -a NAMES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run|-n) DRY_RUN=1; shift ;;
     --aw)         AW_ONLY=1; shift ;;
-    *)
+    --no-prune)   PRUNE=0; shift ;;
+    -h|--help)    usage; exit 0 ;;
+    -*)
       echo "error: unknown argument: $1" >&2
-      echo "usage: $0 [--aw] [--dry-run|-n]" >&2
+      usage
       exit 1
       ;;
+    *)            NAMES+=("${1%.md}"); shift ;;
   esac
 done
 
@@ -79,7 +95,9 @@ AW_AGENTS=(
 in_aw_set() {
   local kind="$1" name="$2"
   local item
-  if [[ "$kind" == "skill" ]]; then
+  if (( ! AW_ONLY )); then
+    return 1
+  elif [[ "$kind" == "skill" ]]; then
     for item in "${AW_SKILLS[@]}"; do
       [[ "$item" == "$name" ]] && return 0
     done
@@ -91,8 +109,37 @@ in_aw_set() {
   return 1
 }
 
+# in_names <name> — true when <name> (agent `.md` stripped) was passed as an argument.
+in_names() {
+  local name="${1%.md}" item
+  for item in ${NAMES[@]+"${NAMES[@]}"}; do
+    [[ "$item" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+# in_repo <name> — true when the repo still ships a skill or agent of that name.
+in_repo() {
+  local name="${1%.md}" have
+  for have in "${all_names[@]}"; do
+    [[ "$have" == "$name" ]] && return 0
+  done
+  return 1
+}
+
+# selected <kind> <name> — true when the entry is in scope for this run.
+# No --aw and no names means everything is in scope.
+selected() {
+  local kind="$1" name="$2"
+  if (( ! AW_ONLY )) && (( ${#NAMES[@]} == 0 )); then
+    return 0
+  fi
+  in_aw_set "$kind" "$name" || in_names "$name"
+}
+
 created=0
 repaired=0
+pruned=0
 skipped_ok=0
 skipped_unsafe=0
 
@@ -198,6 +245,7 @@ ensure_dir "$CLAUDE_AGENTS_DIR"
 
 # Collect entries first so we can compute max name width for the table.
 declare -a entries=()
+declare -a all_names=()
 max_name=4   # "NAME"
 
 # Walk skills/ recursively: any directory containing a SKILL.md is a skill.
@@ -207,7 +255,8 @@ max_name=4   # "NAME"
 while IFS= read -r -d '' skill_md; do
   skill_path="$(dirname "$skill_md")"
   name="$(basename "$skill_path")"
-  if (( AW_ONLY )) && ! in_aw_set skill "$name"; then
+  all_names+=("$name")
+  if ! selected skill "$name"; then
     continue
   fi
   entries+=("skill	$name	$skill_path")
@@ -217,17 +266,31 @@ done < <(find "$REPO_ROOT/skills" -mindepth 1 -maxdepth 5 -type f -name SKILL.md
 for agent_path in "$REPO_ROOT"/agents/*.md; do
   [[ -f "$agent_path" ]] || continue
   name="$(basename "$agent_path")"
-  if (( AW_ONLY )) && ! in_aw_set agent "$name"; then
+  all_names+=("${name%.md}")
+  if ! selected agent "$name"; then
     continue
   fi
   entries+=("agent	$name	$agent_path")
   (( ${#name} > max_name )) && max_name=${#name}
 done
 
+# Reject unknown names up front so a typo cannot silently install nothing.
+unknown=()
+for want in ${NAMES[@]+"${NAMES[@]}"}; do
+  in_repo "$want" || unknown+=("$want")
+done
+if (( ${#unknown[@]} > 0 )); then
+  echo "error: no skill or agent named: ${unknown[*]}" >&2
+  exit 1
+fi
+
 if (( AW_ONLY )); then
   log "mode: --aw (autonomous-workflow bundle: ${#AW_SKILLS[@]} skills + ${#AW_AGENTS[@]} agents)"
-  log ""
 fi
+if (( ${#NAMES[@]} > 0 )); then
+  log "mode: selected (${NAMES[*]})"
+fi
+(( AW_ONLY || ${#NAMES[@]} > 0 )) && log ""
 
 if (( DRY_RUN )); then
   # Header.
@@ -276,6 +339,42 @@ else
   log "summary: $created created, $repaired repaired, $skipped_ok already ok, $skipped_unsafe skipped (unsafe)"
 fi
 
+# Prune links left dangling by a deleted or renamed skill/agent — a name the
+# repo no longer ships. Each tier only touches links this script owns:
+#   ~/.agents/{skills,agents}/X  dangling, target inside this repo
+#   ~/.claude/{skills,agents}/X  dangling, target inside ~/.agents
+# `-e` follows the whole chain, so a ~/.claude link whose ~/.agents hop is
+# dangling counts as dangling too, in a dry run as well as a real one.
+prune_dir() {
+  local dir="$1" owner="$2" link
+  [[ -d "$dir" ]] || return 0
+  for link in "$dir"/*; do
+    [[ -L "$link" && ! -e "$link" ]] || continue
+    [[ "$(canonicalize_link "$link")" == "$owner"/* ]] || continue
+    # Still in the repo (moved category, or out of scope for a named run):
+    # a full run repairs it, so never delete it here.
+    in_repo "$(basename "$link")" && continue
+    if (( DRY_RUN )); then
+      log "would prune       $link → $(readlink "$link")"
+    else
+      log "pruned            $link → $(readlink "$link")"
+      rm "$link"
+    fi
+    pruned=$((pruned + 1))
+  done
+}
+
+if (( PRUNE )); then
+  repo_canon="$(cd "$REPO_ROOT" && pwd -P)"
+  prune_dir "$AGENTS_SKILLS_DIR" "$repo_canon/skills"
+  prune_dir "$AGENTS_AGENTS_DIR" "$repo_canon/agents"
+  prune_dir "$CLAUDE_SKILLS_DIR" "$(canonicalize_target "$AGENTS_SKILLS_DIR")"
+  prune_dir "$CLAUDE_AGENTS_DIR" "$(canonicalize_target "$AGENTS_AGENTS_DIR")"
+  if (( pruned > 0 )); then
+    if (( DRY_RUN )); then log "would prune: $pruned dangling link(s)"; else log "pruned: $pruned dangling link(s)"; fi
+  fi
+fi
+
 # Per-skill install scripts: some skills need extra wiring beyond the
 # basic skill/agent symlink (e.g. autonomous-workflow installs three
 # agent-template links and a routing rule). Convention: a skill that
@@ -286,7 +385,7 @@ fi
 queued=()
 while IFS= read -r -d '' install_script; do
   skill_name="$(basename "$(dirname "$install_script")")"
-  if (( AW_ONLY )) && ! in_aw_set skill "$skill_name"; then
+  if ! selected skill "$skill_name"; then
     continue
   fi
   queued+=("$skill_name")

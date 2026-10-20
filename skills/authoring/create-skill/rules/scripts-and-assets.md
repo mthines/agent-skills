@@ -21,7 +21,7 @@ different loading model.
 | `references/`  | Worked examples, citations — long-form reading           | Read on demand, whole file           |
 | `templates/`   | Literal text this skill emits or fills in                | Read then copied/adapted into output |
 | `assets/`      | Binary or static non-Markdown files the skill ships      | Read/copied as-is; never parsed as prose |
-| `evals/`       | Test prompts and trigger sets for this skill itself      | Read only during Phase 6 / review testing |
+| `evals/`       | Test prompts and trigger sets for this skill itself      | Read only during Phase 8 / review testing |
 
 This repo's `templates/` plays the role the wider Agent Skills spec calls
 `assets/` for **emitted literal text** (a plan template, a commit-message

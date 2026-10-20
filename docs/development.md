@@ -49,7 +49,8 @@ For an agent, write `agents/<name>.md` and rerun `bash scripts/sync-symlinks.sh`
 - Invoke it with `bash` (or `./scripts/sync-symlinks.sh`), not `sh`: it uses bash arrays and process substitution, which POSIX `sh` does not support.
 - It is idempotent: it skips entries already linked correctly, repairs broken or wrong-target symlinks, and refuses to overwrite real files or directories.
 - `--dry-run` (or `-n`) previews without applying.
-- It does not prune: when a skill is deleted, remove its `~/.claude/skills/<name>` and `~/.agents/skills/<name>` links by hand.
+- Pass skill or agent names (`bash scripts/sync-symlinks.sh tdd pr-reviewer`) to link only those; an unknown name exits 1.
+- Every run prunes dangling links left by deleted skills or agents (only `~/.agents` links into this repo and `~/.claude` links into `~/.agents`); `--no-prune` keeps them.
 
 ### Skill-local installers
 

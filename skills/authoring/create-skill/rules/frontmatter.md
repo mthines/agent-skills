@@ -67,7 +67,7 @@ Claude Code extension and is a **hard error** on that path:
 Unexpected key(s) in SKILL.md frontmatter
 ```
 
-**Rule:** decide the skill's target runtime during Phase 0 —
+**Rule:** decide the skill's target runtime during Phase 2 (Distill) —
 `claude-code` (default) or `portable` — and record the answer.
 For a `portable` target, validate with
 `node ${CLAUDE_SKILL_DIR}/scripts/validate-skill.mjs <dir> --portable`
