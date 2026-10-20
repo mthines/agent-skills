@@ -70,13 +70,15 @@ Revenue in report.md equals gross minus refunds for every row; fail if any reven
 ## Step 3 — Run both arms
 
 ```bash
-claude plugin eval "$W/real"  --model <target-model> --runs 3 --json "$W/real.json"  --no-publish
-claude plugin eval "$W/dummy" --model <target-model> --runs 3 --json "$W/dummy.json" --no-publish
+claude plugin eval "$W/real"  --model <target-model> --runs 3 --threshold 0 --json "$W/real.json"  --no-publish
+claude plugin eval "$W/dummy" --model <target-model> --runs 3 --threshold 0 --json "$W/dummy.json" --no-publish
 ```
 
 - Pin `--model` to the model the skill will run on.
 - Add `--allow-tools Bash,Write,Edit` only when the task needs them.
 - Add `--max-cost-usd <n>` when evaluating more than one skill.
+- `--threshold 0` keeps the exit code about the run, not the score: the default threshold of 1.0 exits `1` whenever any case misses a grader, which every no-skill arm does.
+- Exit code `1` with `--threshold 0` means a load error; report it, never a verdict.
 - Exit code `2` means a partial run (cost ceiling or auth failure): report it as partial, never as a verdict.
 
 Each plugin run executes every case with the plugin and without it, and reports `aggregates.meanDelta` (with minus without) and per-case `cases[].aggregates.delta`.
