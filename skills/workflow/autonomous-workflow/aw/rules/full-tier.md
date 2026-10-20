@@ -45,7 +45,7 @@ The brief says what done looks like and what must not change — never how to bu
 7. **Print the brief and the goal line,** then start working:
 
    ```text
-   /goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.
+   /goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed, rejected, or flagged, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.
    ```
 
    `<M>` is the number of checks. A user constraint that forbids the PR replaces the PR clause with `a line starting "PR: none —" is printed`. Follow it with: `Paste this line to let the session drive itself to done hands-off; the run continues normally if you do not.`
@@ -87,7 +87,7 @@ It dispatches `branch-reviewer` (a context that did not write the code), applies
 
 1. A finding about correctness, data loss, concurrency, or security is fixed unless the code refutes it; a declined finding carries its evidence in the bus.
 2. After the loop returns, re-run the checks and the Before-PR command.
-3. `flagged` or `cap-reached` with open findings → list them under `Needs you:`; never run a third iteration.
+3. `flagged` or `cap-reached` with open findings → print each as `flagged` in the evidence block and list it under `Needs you:`; never run a third iteration.
 4. The loop returns `skipped (sub-agent dispatch unavailable)` → `review: not run (<reason>)` under `Degraded:`; never review your own diff and call it independent.
 
 A follow-up on an open PR runs this step again before pushing; only with `--pr-review` is the reviewer `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` instead.
@@ -107,7 +107,7 @@ A follow-up on an open PR runs this step again before pushing; only with `--pr-r
    ```text
    AW EVIDENCE
    <the run-checks sentinel line> | verify: <Before-PR command> exit=<code>
-   review: <N> findings — <F> fixed, <R> rejected | not run (<reason>)
+   review: <N> findings — <F> fixed, <R> rejected, <G> flagged | not run (<reason>)
    PR: <draft PR URL | none — <the user constraint>>
    Changed files (git diff --name-only <base>...HEAD):
    <one path per line>
