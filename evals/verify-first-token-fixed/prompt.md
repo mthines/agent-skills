@@ -6,7 +6,7 @@ timeout_seconds: 1500
 allowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Agent]
 ---
 
-/mthines-agent-skills:verify run local --no-fix --no-push --no-comment
+/mthines-agent-skills:aw-verify run local --no-fix --no-push --no-comment
 
 Verify the first-token onboarding on this branch end to end on the local app: a brand-new user signs in for the first time and opens /welcome.
 The acceptance criteria are in `.agent/feat-first-token/plan.md`, and the repo facts are in `.agents/aw/notes.md`.

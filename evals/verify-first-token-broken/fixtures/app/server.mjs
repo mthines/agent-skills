@@ -1,18 +1,15 @@
 import http from 'node:http';
-import { appendFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { openStore } from './src/store.mjs';
 import { renderWelcome } from './src/welcome.mjs';
 import { generateToken, tokensFor } from './src/tokens.mjs';
 import { log } from './src/log.mjs';
+import { audit } from './src/audit.mjs';
 
 const PORT = Number(process.env.PORT ?? 4310);
 const ADMIN_KEY = 'dev-admin';
 const store = openStore();
 const hash = (s) => createHash('sha256').update(s).digest('hex');
-
-// Appends one onboarding audit line to data/audit.log.
-const audit = (event, userId) => appendFile(new URL('./data/audit.log', import.meta.url), JSON.stringify({ at: new Date().toISOString(), event, userId }) + '\n');
 
 // Like a framework's page cache: refreshing a page is only legal outside a render.
 function pageContext() {
