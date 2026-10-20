@@ -21,6 +21,7 @@ Classify what you learned and write it only where the table says:
 | A rule the agent must follow | the owning skill's `rules/<topic>.md` (cross-cutting: `agents/shared/rules/<topic>.md`) — the rule only, plus at most a one-line `**Why:**` | this file, `docs/inventory.md` |
 | Why the rule or design exists, the alternative it beat, the failure it prevents | the owning skill's `references/<topic>.md` (cross-cutting: `agents/shared/references/<topic>.md`), stated as current fact, linked from the rule | `rules/`, this file |
 | What changed, in which version or PR, measured run numbers | the commit message and PR description only | any file in the repo |
+| A headline result worth showing users | `README.md` `## Measured, not assumed` only — at most four bullets, each backed by a PR that holds the method and the runs | any other file |
 | An eval result | the PR description; `scripts/eval/README.md` only when it changes a standing decision, recorded as the decision, not the run log | this file, `docs/evals.md` |
 | Narrative about how the repo is wired (symlinks, plugins, packages) | [`docs/development.md`](./docs/development.md) or the package's own `CLAUDE.md` | this file |
 

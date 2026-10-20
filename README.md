@@ -1,204 +1,140 @@
 # Agent Skills
 
-> Skills and agents for AI coding assistants — autonomous workflows, code review, TDD, UX, debugging, and more.
+> Give your coding agent the habits of a senior engineer — and the evals to prove they work.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills spec](https://img.shields.io/badge/spec-Agent%20Skills-7c3aed)](https://agentskills.io/)
-[![Skills](https://img.shields.io/badge/skills-39-0a7)](#skills-at-a-glance)
+[![Skills](https://img.shields.io/badge/skills-51-0a7)](#skills-at-a-glance)
 [![Agents](https://img.shields.io/badge/agents-5-0a7)](#agents-at-a-glance)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
-A curated collection of skills, slash commands, and agents that encode how I actually ship software — distilled from real projects, not theory. They take a holistic approach to building and debugging, with three throughlines:
+A plain coding agent writes code. These skills make it **ship**: scope the task, build against checks it can't bend, get a second pair of eyes on the diff, prove the UI works, and keep CI green — the way a careful engineer would, without you babysitting it.
 
-- 🤖 **Autonomy** — workflows that carry a task from a one-line prompt to a tested, reviewed PR. The flagship is **`aw`** (the [`autonomous-workflow`](#featured-autonomous-workflow) dispatcher); `fix-bug` is the single-bug counterpart.
-
-  ```
-  Implement this ticket end-to-end, all the way to a PR
-  /fix-bug <stack-trace | span-url | file:line>
-  ```
-
-- 🎨 **Product building** — UX, visual design, and analytics treated as first-class, not afterthoughts (`ux`, `visual-design`, `charting`, `rum-tracking`).
-
-  ```
-  Fix the accessibility problems on this screen
-  Which chart fits this data?
-  ```
-
-- ✅ **Quality** — confidence gates, adversarial pre-mortems, and TDD baked into the loop, not bolted on after (`confidence`, `critical`, `tdd`, `polish`).
-
-  ```
-  Add this feature with TDD
-  Red-team this plan before I build it
-  ```
-
-Works with Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
+Every skill is kept only if an eval shows it changes what the agent does. They install into Claude Code, Cursor, Codex, Gemini CLI, Copilot, Windsurf, OpenCode, and any other [Agent Skills](https://agentskills.io)-compatible tool.
 
 ```bash
 git clone https://github.com/mthines/agent-skills.git
 cd agent-skills && bash scripts/sync-symlinks.sh
 ```
 
-Symlinks every skill live into your tool — edits and `git pull` land on the next agent turn, no reinstall. Upgrading, customizing, and the no-clone `npx` path are in [Install](#install).
+## What you get
 
----
+<table>
+<tr>
+<td width="50%" valign="top">
 
-## Table of contents
+### Ship a feature from one sentence
 
-- [Skills at a glance](#skills-at-a-glance)
-  - [`workflow/` — end-to-end orchestrators](#workflow--end-to-end-orchestrators)
-  - [`quality/` — code, tests, plans, AI apps](#quality--code-tests-plans-ai-apps)
-  - [`delivery/` — Git, PR, CI](#delivery--git-pr-ci)
-  - [`testing/` — E2E and fixture tooling](#testing--e2e-and-fixture-tooling)
-  - [`design/` — UI, visual, interaction](#design--ui-visual-interaction)
-  - [`analysis/` — investigate data, diagnose issues](#analysis--investigate-data-diagnose-issues)
-  - [`authoring/` — skills about Claude Code itself](#authoring--skills-about-claude-code-itself)
-- [Agents at a glance](#agents-at-a-glance)
+`aw` scopes the job, writes a short brief with sealed checks, builds until they pass, gets a fresh-eyes review, and opens a draft PR.
+
+```text
+Add dark mode to settings, all the way to a PR
+```
+
+[`aw`](#featured-autonomous-workflow) · [`autonomous-workflow`](./skills/workflow/autonomous-workflow/SKILL.md)
+
+</td>
+<td width="50%" valign="top">
+
+### Fix a bug from whatever you have
+
+A stack trace, a span URL, a screen recording, a ticket, or a hunch: it reproduces the bug, traces the root cause, fixes it behind a failing test, and opens a draft PR.
+
+```text
+/fix-bug <stack trace | span URL | file:line>
+```
+
+[`fix-bug`](./skills/workflow/fix-bug/SKILL.md) · [`video-analyser`](./skills/analysis/video-analyser/SKILL.md)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Reviews that catch real bugs
+
+Independent finders flag, a verifier filters, and only grounded findings reach your PR. `review-loop` then fixes or answers every thread until the PR converges.
+
+```text
+/pr-review 42
+/review-branch
+```
+
+[`pr-reviewer`](./agents/pr-reviewer.md) · [`review-loop`](./skills/quality/review-loop/SKILL.md) · [`review-branch`](./skills/quality/review-branch/SKILL.md)
+
+</td>
+<td valign="top">
+
+### Proof the UI actually works
+
+A plain-language spec lives in the PR, runs against the preview or your local stack, then tries to break the change — with screenshots and recordings attached.
+
+```text
+/ui-verify verify <pr-url>
+```
+
+[`ui-verify`](./skills/testing/ui-verify/SKILL.md) · [`local-verify`](./skills/testing/local-verify/SKILL.md) · [`e2e-testing`](./skills/testing/e2e-testing/SKILL.md)
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+### Product craft, not just code
+
+Audits walk the user's real path before checking contrast; visual direction, motion, charts, and behaviour change get the same rigor. Never a dark pattern.
+
+```text
+Review the UX of the onboarding flow
+```
+
+[`ux`](./skills/design/ux/SKILL.md) · [`visual-design`](./skills/design/visual-design/SKILL.md) · [`animations`](./skills/design/animations/SKILL.md) · [`charting`](./skills/design/charting/SKILL.md)
+
+</td>
+<td valign="top">
+
+### Merge-ready, every time
+
+A narrative PR description, a simplify pass that cuts noise without changing behaviour, CI fixes that never weaken a check, and telemetry that proves the change landed.
+
+```text
+/create-pr
+/ci-auto-fix
+```
+
+[`create-pr`](./skills/delivery/create-pr/SKILL.md) · [`polish`](./skills/quality/polish/SKILL.md) · [`ci-auto-fix`](./skills/delivery/ci-auto-fix/SKILL.md) · [`measurable`](./skills/quality/measurable/SKILL.md)
+
+</td>
+</tr>
+</table>
+
+Most skills trigger from plain language — describe what you want. The rest are slash commands you type when you want them.
+
+## Measured, not assumed
+
+Every skill here has to earn its place in the context window.
+Each one is run with and without itself on hard, real-usage cases; skills that changed nothing were deleted or folded into the skill that calls them.
+
+- **Over 400 KB less prompt.** Seven skills and three agents cut; the reviewer's prompt went from 202 KB to 60 KB; skill descriptions from 44k to 17k characters.
+- **`aw` beats a plain Claude Code run.** On three real tickets, each pair blind-judged by two independent reviewers, `aw` won 10 of 12 judgements — 8 of 8 since its current design. Every win came from a defect its fresh-eyes review caught that the plain run shipped. It costs about 1.5–2× a plain run, so reach for it when a missed bug costs more than that.
+- **`/polish simplify` went from 0.73 to 1.00** on planted-defect evals, and the rewritten `ux` ranked first on 3 of 3 real audits against both the old skill and no skill.
+
+The `aw` runs used Claude Opus 5.5. Method and every run: [PR #241](https://github.com/mthines/agent-skills/pull/241).
+
+## Contents
+
+- [Measured, not assumed](#measured-not-assumed)
 - [Featured: autonomous workflow](#featured-autonomous-workflow)
-- [Usage examples](#usage-examples)
-- [Install](#install)
-  - [Recommended: clone + symlink](#recommended-clone--symlink)
-  - [Upgrading](#upgrading)
-  - [Customize and still track upstream](#customize-and-still-track-upstream)
-  - [Quick try: `npx skills add`](#quick-try-npx-skills-add)
-- [VS Code extension](#vs-code-extension)
-- [Domain navigator (per-project plug-in)](#domain-navigator-per-project-plug-in)
-- [Repository structure](#repository-structure)
-- [Local development](#local-development)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Skills at a glance
-
-Skills are grouped by directory category. Each row shows the invocation type:
-
-- **`auto`** — model-invokable via `Skill()`. Description sits in your available-skills list every session (~50–150 tokens); body loads only on invocation.
-- **`/`** — slash command only. Zero baseline context cost; loads only when you type `/name` or another skill calls it via `Skill()`.
-- **`Skill()`** — internal companion. Not user-invocable; only called by another skill.
-
-### `workflow/` — end-to-end orchestrators
-
-Coordinate other skills to ship complete changes.
-
-| Skill | What it does | Type |
-|-------|--------------|------|
-| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | Phase-based orchestrator (0–7): task → plan → worktree → code → test → docs → draft PR → CI gate. Opt-in `aw` dispatcher routes by tier (Micro/Lite single-pass, Full → planner/executor split). Plan-quality gates (v3.15): missing-information gate, Existing Code Survey (anti-reinvention), requirement→criterion traceability, and an executable `checks.yaml` Phase 4 gates on mechanically. Universal two-tier self-improvement: episodic `aw-lessons` promotes to gated `diagnose` at `seen_count ≥ 3`. Not the entry point — `aw` owns the natural-language triggers and this skill is the machinery behind it, reached by `/autonomous-workflow`. See [featured section](#featured-autonomous-workflow). | `/` |
-| **[fix-bug](./skills/workflow/fix-bug/SKILL.md)** | 10-phase bug pipeline: intake → triage → evidence → repro-lock → analyse → gate → handoff → verify → telemetry. Lane-split: fast for simple, standard for complex. Self-improves via `fix-bug-lessons` (read Phase 0.5 / write Phase 5·7·8) + promotion to `diagnose`. | `/` |
-| **[implement-suggestion](./skills/workflow/implement-suggestion/SKILL.md)** | Apply reviewer suggestions across one or more PRs. Reads humans and AI bots (`claude[bot]`, `coderabbit`, `sourcery`), validates each via `/critical` + `/confidence`, applies in the existing branch. `--watch` loops on one PR until reviewers go quiet (max 5 iterations). **Never fixes CI**: the worker runs a full unscoped fast-check pass before its single push and hard-stops the batch local-only on failure, and `--watch` reads post-push check state only as a stop reason (`ci red — <checks>`) — composing apply-and-get-green is `review-loop`'s job. Learns across runs via the `implement-suggestion-lessons` self-improvement loop (read Phase 3 / write Phase 7 + watch re-flag). | `/` |
-| **[aw-create-plan](./skills/workflow/aw-create-plan/SKILL.md)** | Generates `.agent/{branch}/plan.md` — the lean planner→executor handoff document a new session can resume from — plus `checks.yaml`, the living contract of one executable check per acceptance criterion. Immutable `plan.v{N}.md` snapshots are opt-in (`snapshot` arg). | `Skill()` |
-| **[aw-create-walkthrough](./skills/workflow/aw-create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the PR-delivery summary. | `Skill()` |
-
-### `quality/` — code, tests, plans, AI apps
-
-Decide whether something is good before you commit to it.
-
-| Skill | What it does | Type |
-|-------|--------------|------|
-| **[confidence](./skills/quality/confidence/SKILL.md)** | Rates confidence that work fully solves the requirement. Modes: `plan`, `code`, `analysis`. Multi-signal gate; deterministic rule checks cap LLM score. | `auto` |
-| **[critical](./skills/quality/critical/SKILL.md)** | Adversarial pre-mortem: hostile-persona walk through failure modes, blast radius, rollback, hidden coupling, and a mandatory steelman alternative. Never iterates. `deep` mode runs 3–5 independent persona lenses in parallel (sub-agents when available; personas discovered via `ideate`, fallback catalog otherwise) and merges them into one attributed report — the end-of-feature pre-mortem. | `auto` |
-| **[measurable](./skills/quality/measurable/SKILL.md)** | Ensures every delivery is measurable: RUM/analytics events for user-facing web/mobile changes (delegates to `rum-tracking`), OTel traces/metrics/structured logs for API/backend changes, and a named regression detector for every signal so errors and warnings never go silent. Modes: `guide` (default), `implement`, `audit` (advisory by default; `--strict` blocks on `missing` findings), `setup` (first-time interview recording the project's telemetry stack and, for monorepos, a per-package instrumentation map as a committed Observability Profile via `persistent-memory`). Also reachable as `/measurable`. Wired into `autonomous-workflow` at three points: Phase 3 (author), Phase 4 (advisory audit; `--observability-strict` to block), and a Phase 7 recheck after CI auto-fix and the post-CI review pass settle, since both can mutate code the Phase 4 gate already checked. Also the fourth default-on `pr-reviewer` lens (Step 2.4e, `audit` mode only) — two quiet-exit gates keep it silent on a refactor or a docs diff, and it is strict by default — a `missing` on a new failure mode is an `issue:` that can block and `unlinked` an aggregated `suggestion:`, while a repo opts down with `measurable: advisory`; `--no-measurable` opts out. Knows **OpenTelemetry Weaver** ([`rules/weaver-schema.md`](./skills/quality/measurable/rules/weaver-schema.md)): the registry format, the six commands, a four-rung adoption ladder whose rung 0 needs no registry at all (`--registry` defaults to the upstream semantic conventions, so one `weaver registry live-check` against a real run reports every invented name, wrong type, and deprecated attribute), and `weaver registry diff` as the regression detector for the telemetry contract itself — a renamed metric leaves every dashboard and check rule on the old name **quiet rather than red**. Advisory in every mode (`weaver` is an external CLI, so its absence costs one line, never a finding), findings fold into the existing three audit verdicts and never a fourth, and a green run is split by provenance before it is cited — the upstream registry's findings are evidence, a registry group the same diff authored is the by-construction pass `observe-run` already refuses. | `auto` |
-| **[observe-run](./skills/quality/observe-run/SKILL.md)** | Turns telemetry into dev-loop verification evidence — a fourth telemetry role alongside coverage (`measurable`), yesterday's-prod-exposure (`pr-reviewer`'s telemetry lens), and post-deploy confirmation (`fix-bug` Phase 8): run a command now, read the telemetry that run itself emitted. Two cheapest-first rungs: rung 1 (in-memory/file exporter, offline, the default) and rung 2 (`dash0 -X otlp proxy --agent-mode` + `dash0 spans query`, for cross-process fan-out or a baseline comparison) — vendor-neutral, a missing Dash0 CLI costs rung 1 nothing. Centerpiece rule: only **behavioral** assertions are allowed, and the list of seven is **closed** (span count, parent/child structure, duration, error-path status, fan-out, attribute cardinality, ordering) — an expectation outside it is refused rather than graded, and a claim answerable by reading source alone is refused, the same by-construction failure `test-provenance-guard` catches for tests. Emits the same four `verify-behavior` receipt tokens via a total verdict mapping. Zero `aw` artifact dependency; self-skips genuinely with no Observability Profile dev target. Three integrations: `measurable implement`'s prove-it step, `verify-behavior` Tier 3's third approach, and `fix-bug` Phase 2.5's telemetry-sourced repro-fidelity check. L2-tested (`observe-run-rung-selection`, `observe-run-assertion-provenance`). | `Skill() + /` |
-| **[polish](./skills/quality/polish/SKILL.md)** | Re-runnable pre-PR branch quality gate. Thin orchestrator over `pr-reviewer` (via `review-loop` — read-only, findings surfaced) and its own simplify pass (simplifies the changed code and prunes restating or ticket comments, each change behind a test check). Modes: bare → full, `review`, `simplify`, `quick`. Commits each pass separately. `/create-pr` delegates its post-draft quality loop to `review-loop`. | `/` |
-| **[review-branch](./skills/quality/review-branch/SKILL.md)** | Bounded convergence loop for a branch with **no PR** — `branch-reviewer` → apply → `polish simplify` → re-review, cap 5. Same detection core as `review-loop`, but the bus is a local [`findings.jsonl`](./skills/quality/review-branch/rules/findings-bus.md) instead of GitHub review threads, so a run makes **zero GitHub calls** and converges a branch before a PR exists. Converges on findings-clean **plus** the repo's own fast checks green — no `ci-auto-fix` handoff, because nothing was pushed and a red check is this loop's own regression. The no-green-wash valve is preserved: a finding leaves `open` only via a fix that landed or a written rationale, and a real-but-out-of-scope one becomes `flagged` — terminal, always reported. The review is dispatched for isolation; the **apply is deliberately in-context**, because applying a finding is not judging it and the judgment already happened elsewhere. Hands off to `review-loop` at the PR boundary — a thread stops being overhead the moment someone else reads it. | `/` |
-| **[review-loop](./skills/quality/review-loop/SKILL.md)** | Bounded convergence loop for one PR: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` → CI, up to 5 iterations. Converges when every review thread is resolved (fix **or** honest reply) **and** CI is not red — a live finding it can neither fix nor honestly decline stays open (no green-wash). Sub-step D reads check state statelessly and delegates a red check to `ci-auto-fix` (cap 2 handoffs); `--no-ci` opts out and is passed by `create-pr` and `autonomous-workflow` Phase 7, which own the per-PR CI budget. When the last `pr-reviewer` review still stands (unmoved head, open threads nobody replied to), iteration 1 applies those threads before re-reviewing, and convergence still always follows a review pass. **Must be invoked at the top level** — it is an orchestrator whose first sub-step is a delegation, so dispatching it into a sub-agent (which cannot delegate further) leaves it nothing to dispatch `pr-reviewer` with and it can only skip at iteration 0; a caller limited to one dispatch runs the loop itself. Its dispatch precondition is a **capability** test, never a check for the literal name `Task` (which is `Agent` in the Claude Agent SDK harness), and each exit sets an explicit `STOP_REASON` the report reads instead of inferring one from the iteration count. Step 1.6's ui-verify run is invoked with no `--url` deliberately (resolution is the delegate's concern), so its outcome table maps `no access path for deployment lookup` to `re-run … --url <preview-url>` — never to `preview not deployed`'s "wait for the build", a remedy that cannot work when no lookup ran. That table also now covers `empty spec` and the three distinct `NOT RUN (…)` returns, which fell through it entirely, behind a catch-all that quotes an unrecognised outcome verbatim rather than recording it as a pass or a skip. `--merge` merges the PR (squash) on the first agent approval — Step 2.5 undrafts and merges only when the run reached clean convergence (every non-blocking comment fixed or answered first), the final review is an approval (`pr-reviewer` PASS; when the description refresh changed the body after a non-PASS review, one gates-only re-review supplies that verdict), and CI is actually green (pending is not green; the merge-time CI read runs even under `--no-ci`). It is the one scoped override of *never undraft*, never merges on a non-clean convergence / non-PASS verdict / pending or red CI, and never uses `--admin`; refused with `--no-feedback`. `--ui` runs `ui-verify` in a parallel lane (a sibling session, a background sub-agent, or inline) on each new head; the lane posts failing specs and `critical`/`high` findings as review threads, the loop fixes and resolves them, and clean convergence waits for a settled lane run on the final head. | `Skill()` |
-| **[tdd](./skills/quality/tdd/SKILL.md)** | Strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code, refactors. | `auto` |
-| **[test-provenance-guard](./skills/quality/test-provenance-guard/SKILL.md)** | Detects tests that pass by construction (re-declare the SUT instead of importing it) via static + mutation checks. Self-heals by extracting inline logic and rewriting the test. | `auto` |
-| **[verify-behavior](./skills/quality/verify-behavior/SKILL.md)** | Cheapest-first three-tier verification ladder: Tier 1 syntactic (grep / ast-grep / read), Tier 2 semantic-no-execution (typecheck / build / lint), Tier 3 execution (covering test or a minimal synthesized repro, run in a throwaway worktree). Reports an evidence receipt (`confirms` / `contradicts` / `ambiguous` / `null` — null never counts as confirmation); never scores — `confidence(code)` owns the number. Two consumer shapes: claim-verification (read-only) and change-verification (post-apply gate). Tier 3 is relation-keyed — default-on for a caller's own code, opt-in behind a sandbox for cross/untrusted callers. Delegated into by `verification-receipt.md` (pr-reviewer), `/fix-bug` Phase 7, `feature-pr-verifier`, and `aw-executor` Phase 4 — each keeps its own grading. | `Skill()` |
-| **[jev-assert](./skills/quality/jev-assert/SKILL.md)** | The **semantic** sibling of `verify-behavior`: turns a natural-language, user-observable UI expectation into an executed verdict by asking TypeSafe's **Jev** (a System One model — text state in, a typed answer + probability out via Noul/Choice/Score) whether the outcome holds in a page's captured **text** state, then maps the answer onto the same closed receipt vocabulary (`confirms`/`contradicts`/`ambiguous`/`null`/`unobtainable`) — an unset `TYPESAFE_API_KEY` or unreachable API is `unobtainable`, never a guessed pass. **Driver-agnostic**: consumes the accessibility-tree / page text both the Playwright (`aw-tester`) and claude-in-chrome (`aw-tester-chrome`) runners already emit, so Chrome-vs-Playwright is orthogonal; a screenshot is never valid input. Its load-bearing guard: only **user-observable outcome** expectations are admissible — one that restates the captured state (a literal-string or structural claim) is **refused, not graded** (the assertion-by-construction failure `observe-run` and `test-provenance-guard` catch), and routed back to the deterministic locator/`text:` assertion. Delegates the TypeSafe wire format to the official `typesafe@typesafe-ai` skill; owns only the semantic contract; read-only, never scores. Primary consumer: a new `THEN semantic: <outcome>` assertion form in the shared UI spec grammar, resolved by both runners and folded into the spec verdict, flowing through `ui-verify` to PR/preview verification. | `Skill()` + `/` |
-| **[/ai-engineering](./skills/quality/ai-engineering/SKILL.md)** | Reviews LLM/AI application engineering across 13 concerns: prompts, caching, RAG, agents, resilience, memory, evals, safety, observability. | `/` |
-| **[/pr-review](./skills/quality/pr-review/SKILL.md)** | One-shot **read-only** review of a PR — dispatches the [`pr-reviewer`](#agents-at-a-glance) agent once and reports its verdict, run mode, and blocking findings. Never applies, pushes, resolves a thread, or loops, so your working tree is exactly where you left it; that is the distinction from `review-loop`. Defaults to the current branch's open PR, and forwards its flag tail verbatim rather than validating it. Absent sub-agent dispatch — established by capability, never from the absence of the literal name `Task` — is a clean skip, never an in-context self-review labelled as a reviewer's. `/pr-review remember <fact>` writes a maintainer relevance rule (`active` with no corroboration bar, keyed by a real fingerprint, and never able to suppress a `standards` or blocking finding). | `/` |
-
-### `delivery/` — Git, PR, CI
-
-Plumbing for shipping code.
-
-| Skill | What it does | Type |
-|-------|--------------|------|
-| **[/create-pr](./skills/delivery/create-pr/SKILL.md)** | Narrative PR description, push, open PR, watch CI, auto-fix simple failures. Pre-push quality delegated to `polish`, **full review + simplify by default** (post-draft `review-loop`, invoked with `--no-ci` because Steps 7–8 own the CI watch); scale down with `--no-review`, `--no-simplify`, `--quick`, or `--no-quality`. Red CI is handed to `ci-auto-fix` once. Step 10's report carries a **mandatory** `UI verify` line on every run, non-UI diffs included — Step 6.4 has four skip conditions and one failure mode, and with no slot for them all six outcomes rendered as a clean, successful PR; Step 6.4 now records which of the six applied as it leaves, rather than leaving the slot to be reconstructed from memory. Step 5.5 converges the branch **before the push** via `review-branch`, which needs no PR — **default-on in both modes** (`--no-pre-review` opts out). It shipped opt-in on the claim that default-on would "bill every PR twice", which is **retracted**: Step 6.5's `review-loop` is a convergence loop that exits at iteration 1 on a clean branch, so composed cost is ~`N + 1` reviewer passes, not `2N`. The real levers are **CI cycles** (each post-draft iteration that finds something pushes, and each push spends a CI run) and **PR history** (a PR opening clean is read once), never comment-posting — a zero-GitHub-call `branch-reviewer` run still cost ~198k tokens across 45 tool calls. Split mode depends on it most: nothing reviews the whole branch there otherwise, and that slot previously ran `polish simplify` alone — mechanical refactors and no review — which is now only the fallback for `--no-pre-review` or an absent-dispatch skip. That skip reports as `NOT REVIEWED`, never as a skip, and the report's `Pre-push review` line is mandatory on every run, every named skip included. Step 6.2 attaches the branch's screenshots and recordings via `attach-media`. Flags: `--split`, `--quick`, `--no-pre-review`, `--no-review`, `--no-simplify`, `--no-quality`, `--no-ui-verify`, `--attach <file>`, `--no-media`. | `/` |
-| **[/ci-auto-fix](./skills/delivery/ci-auto-fix/SKILL.md)** | Verdict-gated CI diagnosis and fix (`code-bug\|workflow-bug\|dep-bug\|env-bug\|flaky\|unsure`); confidence gate (≥90 auto, 80–89 ask, <80 escalate); regressing pushes auto-revert. Refuses to disable or weaken checks. Self-improves via `ci-auto-fix-lessons` (read Phase 3 / write Phase 8·9) — conservative: verdict lessons default to `repo::` scope, `seen_count ≥ 5` bar, regression lessons volatile/30-day. | `/` |
-| **[/resolve-conflicts](./skills/delivery/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolutions, asks for ambiguous cases. | `/` |
-| **[/attach-media](./skills/delivery/attach-media/SKILL.md)** | Uploads local screenshots and screen recordings to a PR or issue as GitHub-hosted `user-attachments` assets that render inline (videos as players). Uses `gh --attach` (gh ≥ 2.99), falls back to the same upload endpoint over `curl`, and reports `not attached` rather than writing a placeholder. It owns one `<!-- attach-media:v1 -->` body region that a re-run merges by filename, and every upload is checked by eye for secrets first. Called by `create-pr`, `ui-verify`, `storybook`, `screen-recorder`, and `aw` Phase 7. | `Skill()` + `/` |
-| **[/github-actions-author](./skills/delivery/github-actions-author/SKILL.md)** | Authors and reviews fast, cheap, maintainable GitHub Actions workflows (2026 best practices). Modes: `scaffold`, `review`. | `/` |
-
-### `testing/` — E2E and fixture tooling
-
-| Skill | What it does | Type |
-|-------|--------------|------|
-| **[/e2e-testing](./skills/testing/e2e-testing/SKILL.md)** | Spec-first Playwright Test Agents loop (Planner / Generator / Healer, v1.56). Locator ladder, `data-testid` source diffs, 3-attempt heal cap. | `/` |
-| **[/e2e-testing-mobile](./skills/testing/e2e-testing-mobile/SKILL.md)** | Mobile counterpart on Maestro YAML flows for Expo / React Native. `testID`-first locator ladder; runs on Maestro Cloud via EAS Workflow. | `/` |
-| **[/e2e-pr-stabilizer](./skills/testing/e2e-pr-stabilizer/SKILL.md)** | Local-first stabilizer for Playwright E2E on one PR. Pulls Dash0 MCP spans (`git.pull_request_link`) as historical baseline, then iterates locally with `--trace=on` and the same OTel exporter. Validation is empirical, not predictive: every new locator must resolve against source (static grep) or the live app (`locator.count() ≥ 1`) before commit, and the fixed test must pass 3 consecutive local runs before the single push. CI watch ratifies. Refuses `.skip` / `.fixme` / `waitForTimeout`. Modes: `stabilize` (default) and `optimize` (report-only, ranks slow-action wins by measured ms saved). Self-improves via `e2e-pr-stabilizer-lessons` (read Phase 4 / write Phase 7, `stabilize` only) — writes gated on the telemetry ratification, not the local 3-pass streak. | `/` |
-| **[/ui-verify](./skills/testing/ui-verify/SKILL.md)** | Makes a UI PR autonomously verifiable. **Three operations.** `author` injects a collapsed, machine-findable **Markdown intent spec** into the PR body (`<!-- ui-verify:v2 -->`; delegated to by `create-pr` on a UI diff; `--no-ui-verify` opts out) — the changed target, the steps (plain ones guide the runner, `[must-follow]` ones are performed exactly), and the expected outcomes, each of which must be observed with evidence; the runner caches the route it found, replays it next time, and re-explores only when the replay fails; `run` resolves the PR's live preview deployment URL via the GitHub deployments API and runs the spec against it, reporting a pass/fail verdict; `verify` is the one-shot composite (author-if-needed → run → report) for a PR with no spec yet — a teammate's, or an agent0 / Vercel-preview automation. Whether a diff is UI is decided **mechanically** by the shared [`is-ui-diff`](./skills/testing/ui-verify/scripts/is-ui-diff.mjs) gate (deterministic file classification against the repo's LoreKit-learned UI surface, broad defaults as fallback), not eyeballed — so every caller (`author`, `aw-executor` Phase 4, `create-pr`, `review-loop`) decides identically. The spec grammar gains a `CAPTURE "<label>" [fullPage]` step for documentation screenshots (never an assertion, never fails a spec; both runners emit it into a shared `captures:` verdict array). **Screenshots are on by default** (v1.4.0): `run`/`verify` always yield full-page images for a PR description via a run-level `--auto-capture` option (owned by the spec-run contract, honored by both runners) — each spec's final state plus a shot after each navigating step, deduped by URL and capped at 30/run, into `.agent/{branch}/.aw-tester/captures/`; `--no-screenshots` opts out, and the executor's fast Phase 4 hot loop stays screenshot-free. `--driver auto` (default) uses the fast in-session `aw-tester-chrome` runner when the Chrome extension is connected and falls back to the `aw-tester` Playwright sub-agent otherwise (CI / remote). Access-path-aware: `author` writes the PR body over `gh` **or** the GitHub MCP tools, while `run`'s deployment lookup is `gh`-only and needs an explicit `--url` on the MCP path. **Adversarial pass:** after the spec run, `run`/`verify` try to break every passing spec — hostile input, double submits, failed and slow requests, interrupted navigation, keyboard-only use, small viewports — choosing only the probe categories the spec's surface exposes, judging each against a concrete oracle, and documenting every probe with before/after screenshots and a `report.md`; findings carry a severity and never change the verdict (`--no-adversarial` opts out). **Screen recordings:** on the Playwright driver every spec and every adversarial finding is recorded as a `.webm` (`--no-recording` opts out). **Telemetry check:** the run's own web events are read from the Dash0 Dev MCP and judged against fixed oracles — events arrived, no error events, no 5xx requests, a page view per spec start, every custom event the diff adds — never changing the verdict (`--no-telemetry` opts out). `--post-findings` writes blocking results as PR review threads for `review-loop --ui`. **Out-of-bounds brainstorm:** `author` also finds the pending states the changed component creates (a question card, an unsaved field, an in-flight save) and, from the top-level session, fans out five persona generators and one judge (in-context when no sub-agent dispatch exists) to write `Out of bounds:` intent specs — ignore, dismiss, and reload always for a prompt waiting on the user, plus every other move (leave and return, second tab, a refused next action) the shared [`severity`](./agents/shared/rules/severity.md) rubric rates critical or high — each ending in a keep-going step that expects only recovery outcomes (`--no-brainstorm` opts out, `--brainstorm deep` uses `ideate`). Reuses `aw-tester`'s two spec formats (intent — the format `/aw` and `/local-verify` write to `specs.md` — and the legacy WHEN/THEN grammar) and runner verbatim; owns the PR-embedding, the URL resolution, the out-of-bounds brainstorm, the adversarial pass, and a two-way lessons loop. Web only. | `Skill()` + `/` |
-| **[/local-verify](./skills/testing/local-verify/SKILL.md)** | Verifies a feature end-to-end on a local stack and fixes what it finds, in any repo. Reuses the `/aw` brief's acceptance criteria and its intent `specs.md` (else derives them from the PR, ticket, and diff), starts the PR's checkout through a stack driver (`cli`, `compose`, `command`, or `none`), runs the specs and an edge-case matrix through `ui-verify run --url`, reads each probe window back through telemetry (a Dash0 dataset over MCP, or captured logs), fixes each finding as its own commit, and posts one report with screenshots via `attach-media`. `setup` detects the repo and stores every repo-specific value in config and a notes file, so no rule names a repo. | `/` |
-
-### `design/` — UI, visual, interaction
-
-| Skill | What it does | Type |
-|-------|--------------|------|
-| **[animations](./skills/design/animations/SKILL.md)** | CSS-first web animation. Three modes: Brainstorm, Perceived-Performance, technical workflow (CSS → WAAPI → Motion → R3F). Redirects React Native to `animations-native`. | `auto` |
-| **[animations-native](./skills/design/animations-native/SKILL.md)** | React Native / Expo animation: Reanimated (worklets, shared values, layout animations), react-native-gesture-handler (pan/pinch/drag/swipe), Moti/Lottie/Rive, Reduce Motion + haptics, UI-thread profiling. | `auto` |
-| **[behavioral-design](./skills/design/behavioral-design/SKILL.md)** | Behavior-change design for team adoption and product flows: COM-B / Fogg B=MAP diagnosis, EAST and choice-architecture interventions with evidence grades and metrics, System 1 / System 2 fit, and workshop plans. Hard rule: never a dark pattern or sludge. | `auto` |
-| **[charting](./skills/design/charting/SKILL.md)** | Selects chart type + visualization library for web (React/Next.js) and mobile (Expo/RN). Maps intent → chart → library based on platform and dataset size. | `auto` |
-| **[storybook](./skills/design/storybook/SKILL.md)** | Scaffolds three artefacts per component: visual regression story, Playground, interaction test. Opt-in OS-keychain auth profiles. | `auto` |
-| **[ux](./skills/design/ux/SKILL.md)** | Audits and plans UI by walking the user's real path and verifying what each control does, then WCAG 2.2 accessibility depth, microcopy, and **dark-pattern detection**. Hard rule: never recommends a dark pattern. | `auto` |
-| **[visual-design](./skills/design/visual-design/SKILL.md)** | Generative, brand-aware visual design. Style-direction taxonomy (minimal, swiss, brutalist, glass, …), color systems, typography, signature details. Defers WCAG math to `/ux`. | `auto` |
-
-### `analysis/` — investigate data, diagnose issues
-
-| Skill | What it does | Type |
-|-------|--------------|------|
-| **[ideate](./skills/analysis/ideate/SKILL.md)** | Generates, stress-tests, and iteratively evolves ideas via research-grounded agent loops: parallel persona generators (nominal-group simulation), independent judges on separate novelty/feasibility/impact/fit axes with a protected wildcard, ≤ 3 recombination rounds, `confidence(analysis)` gate on finalists. Auto-triages `quick` vs `deep`. | `auto` |
-| **[interview](./skills/analysis/interview/SKILL.md)** | Requirements-elicitation / scope-alignment interview run before any plan or implementation. Restates and diffs the request, researches the codebase so questions are specific, classifies unknowns `blocking` vs `advisory`, then runs a batched clarifying-question round (≤ 2) only when research can't resolve them — adaptive, stays silent on a crisp request. A consultative completeness pass (non-goals, edge cases, success criteria) supplies the "is it thought-through" half. Emits a re-runnable `brief.md` + readiness verdict that planning consumes; hands divergence to `ideate`, adversarial plan-review to `critical`, scoring to `confidence`. | `auto` |
-| **[rum-tracking](./skills/analysis/rum-tracking/SKILL.md)** | Guides product analytics and RUM event tracking for web (React/Next.js) and mobile (React Native/Expo). Decides what to track, what's noise, what's PII; covers OTel semantic conventions, tracking plans, GDPR/CCPA compliance, and clean implement / audit / remove workflows. | `auto` |
-| **[video-analyser](./skills/analysis/video-analyser/SKILL.md)** | Analyses a screen recording for bugs. Resolves input from a Linear ticket URL, local path, or direct URL. Optional Tesseract OCR and Whisper transcription. | `auto` |
-| **[youtube-transcript](./skills/analysis/youtube-transcript/SKILL.md)** | Fetches a YouTube video's captions as plain text (optional `[mm:ss]` timestamps) with one stdlib-only Python script. Calls YouTube's InnerTube player endpoint as the Android/iOS app with a visitor id, so it works from cloud and datacenter IPs where `youtube-transcript-api` and `yt-dlp` are bot-blocked. | `auto` |
-| **[/profile-optimizer](./skills/analysis/profile-optimizer/SKILL.md)** | Analyses React DevTools Profiler exports or Chrome Performance traces. Maps hotspots to source. Iterates via `confidence(analysis)` until ≥ 90%. | `/` |
-| **[/playwright-trace-analyzer](./skills/analysis/playwright-trace-analyzer/SKILL.md)** | Analyses Playwright `trace.zip` (or downloads from a GitHub Actions run URL). Names the race behind a flake, emits a ranked fix plan. | `/` |
-| **[/screen-recorder](./skills/analysis/screen-recorder/SKILL.md)** | Records short cropped videos of UI sections via Playwright + ffmpeg. Validates multi-frame interactions a screenshot can't prove. | `/` |
-
-### `authoring/` — skills about Claude Code itself
-
-Meta — scaffolding new skills, maintaining docs, persisting memory.
-
-| Skill | What it does | Type |
-|-------|--------------|------|
-| **[docs](./skills/authoring/docs/SKILL.md)** | Authors and audits `CLAUDE.md`, `AGENTS.md`, `README.md`, and Diátaxis `docs/` trees. Modes: `init`, `update`, `readme`, `audit`. | `auto` |
-| **[/create-skill](./skills/authoring/create-skill/SKILL.md)** | Scaffold, review, upgrade, or diagnose agent skills, gated by a mechanical `scripts/validate-skill.mjs` pre-pass and an eval-first Phase 6. `diagnose <target>` is the retrospective self-improvement entry point. | `/` |
-| **[/optimize-claude-md](./skills/authoring/optimize-claude-md/SKILL.md)** | Audits `CLAUDE.md` for context bloat. Modes: `audit`, `trim`, `extract`. Flags rarely-used agent-invokable skills that should become slash-only. | `/` |
-| **[/persistent-memory](./skills/authoring/persistent-memory/SKILL.md)** | Persists context across conversations as plain markdown, scoped per topic. Operations: `write`, `read`, `consolidate`, `forget`. Three storage tiers. Documents the **LoreKit** backend that the fast-tier self-improvement loops migrated to (`rules/scaling-tiers.md`) and owns the shared lesson schema (`rules/write-pipeline.md`). The loops (`aw-lessons`, `aw-tester-lessons`, `ui-verify-lessons`, `fix-bug-lessons`, `reviewer-lessons`, `implement-suggestion-lessons`, `ci-auto-fix-lessons`, `e2e-pr-stabilizer-lessons`, `ideate-lessons`, and the volatile `review-outcomes` bus) now run on LoreKit via the external `lorekit-memory` skill — each bucket is a tag `loop::<x>-lessons` written to `global` (universal) or `repo::{owner}/{repo}` (project-bound). | `/` |
-| **[/handoff](./skills/authoring/handoff/SKILL.md)** | Distills the current session's task, context, and plan into a self-contained, copy-pasteable markdown handoff for a fresh agent/LLM — Goal, Current state, Plan/next steps, and Key files/decisions/gotchas — curated to the important bits (no tool transcripts, no chit-chat, no secrets). Writes to `.agent/{branch}/handoff.md` and copies it to the clipboard. Optional focus phrase scopes it; `--brief` condenses it. | `/` |
-
-## Agents at a glance
-
-Agents are specialized sub-processes with their own model and tool configuration. Dispatched by other skills, not invoked directly.
-
-The flagship `aw-*` agents are **generated from templates** in `skills/workflow/autonomous-workflow/templates/` (each template's filename matches its installed agent name) and symlinked into `~/.claude/agents/` by `install.sh` — they are not stored as `agents/*.md`, so search the templates directory to find them. See [Featured: autonomous workflow](#featured-autonomous-workflow) for the full picture.
-
-**`aw` itself is not in this table — it is a skill**, [`/aw`](./skills/workflow/autonomous-workflow/aw/SKILL.md), so it runs in your context rather than in one of its own. That is what lets the agents it dispatches sit at the top-level rung and keep their own sub-agent dispatch.
-
-| Agent | What it does |
-|-------|--------------|
-| **[aw-executor](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md)** | Full-tier phases 3–7: implement, test, write and run the UI spec, update docs, open the draft PR, watch CI. Executes the `plan.md` brief `aw` writes. Installed as `aw-executor.md`. |
-| **[pr-reviewer](./agents/pr-reviewer.md)** | Unified PR review agent — handles both own-work review (self relation) and cross-review (cross relation) via a `REVIEW_RELATION` flag set at Step 0.5. The pipeline is identical in both relations; only the framing differs (self mode drops the context-asymmetry hedging). Read-only in both — it never auto-fixes, and auto-fix attempts are a guard failure. Inline comments are short, grounded, and confidence-gated (a ≤ 60-char title on a claim plus ≤ 200 chars of prose, ≤ 2 sentences, `Skill("confidence")` ≥ profile threshold, default 80), posted **append-only** on a visible `COMMENT` review — no `--publish` token, no pending/draft workflow. **Both output surfaces are rendered, and they share one vocabulary.** `agents/pr-reviewer/scripts/render-comment.mjs` is the inline counterpart to the report renderer — one JSON payload per finding in, one body out, fail-closed, with committed reference renderings under `scripts/eval/fixtures/inline-comment/` that L1 diffs (G46) — and both renderers import `comment-spine.mjs` for the tier glyphs, the attribution footer, the button markup and the caps, so a change to the vocabulary cannot land on one surface only. A claim opens `issue (high): 🟠 **<noun phrase>** **(blocking)**` (the prefix and tier label keep position 0, so the relevance recorder reads the tier unchanged) and a one-liner stays one line; every posted comment carries the shared footer's identity half, `<sup>`pr-reviewer` · commit `<sha7>`</sup>`, byte-identical to the report's opening — the cue that makes the two surfaces recognisably one reviewer, and the only attribution visible in a notification email. The methodology link is report-only: one review, one `[how these findings are produced]`, on the object that is the review. `footerLine()`'s `docs` flag defaults off, so an inline surface would have to ask for it. One asymmetry, stated as a rule: a `###` heading means the report, a bold title means one finding. The report body is **rendered deterministically**, not hand-written: layout lives in one template (`agents/pr-reviewer/templates/report-body.md`), filled by `agents/pr-reviewer/scripts/render-report.mjs` from a **structured** JSON payload (counts derived from array length, links built by the renderer, footer and run-mode lines derived from a `RUN` object), with committed snapshots under `scripts/eval/fixtures/report-body/` that L1 diffs (G25) — so the markup cannot drift between runs. The headline is derived too: `VERDICT` + `FINDINGS[]` + `SUMMARY` replaced a free-prose `HEADLINE` that was the most-read line in the system and the only slot checked merely for non-emptiness, and they yield a count-forward heading (`### 🟠 4 findings — 1 blocking`), a **visible findings index** above the accordions linking to each inline comment — the worklist the report never had — and the `Severity — 🟠 1 high` tally with every glyph paired with its word. Two contradictions are now unrepresentable: a verdict that disagrees with its own gate table, and a findings index that disagrees with its own `posted inline <N>` count. The **Fix-with-Agent0 buttons render by default everywhere** — a repo opts out with `agent0_fix_links: false` in its review config, or `--no-fix-links` for one run, and `agent0_environment` picks the host only rather than gating whether they render — as does the optional `agent0_org`, which appends `&org=<slug>` so a reader with several Dash0 organizations lands in the intended one, and whose default is to send no `org` parameter at all; one flag governs both placements, so the *flag* can never render *Fix all* above findings with no *Fix this*, from theme-aware 36 px assets via `<picture>`. Each link is **one `/pr-fix` call plus an address** — the PR, whose comments, and for *Fix this* the one `path:line` to scope to — and never the method: retiring the embedded worklist query, the quoted lead line, and the count checksum into Agent0's own skill took *Fix all* from ~1100 encoded chars to ~190 and *Fix this* from ~880 to ~360 — and naming the PR by its short reference `owner/repo#n` instead of its URL took them to ~155 and ~320 — and left the link stable across a prose trim because it no longer quotes the body. That skill's argument grammar is asserted from this repo but not verifiable in it. The report itself lives in a **sticky comment**: one PR issue comment per PR, rewritten in place every run and carrying nothing machine-private, so a converging `review-loop` leaves one up-to-date report instead of five stale duplicates. The agent's own run state — delta baseline, run-mode history, open threads, and the deferred + anchorless findings a re-review carries forward — lives in a per-PR **LoreKit state record** (`ci-state::pr-review-<n>` in `branch::{owner}/{repo}::{head}`, 7-day TTL, written at Step 4c and read at Step 0.7), not in a hidden block at the bottom of the report. That decoupling is the point: the reviewer's memory no longer depends on parsing its own rendered Markdown, and a run that cannot write the comment still keeps its delta. The whole report — gate table, run mode, memories, quality, and the open-threads list — lives inside one **collapsed `Review details` `<details>` accordion** (never `<details open>`, never flattened to the top level), so the visible report is a headline plus at most one notice line. Inside it the run-state is **grouped, not flat**: nine `**Label** — value` lines at identical visual weight became three bold group headings — `**Needs attention**` (the gate table + open threads, rendered only when a gate is actually not ✅, and never by red CI, which warns and never fails), `**Found**` (quality, severity, optimality, standards), and `**Run**` (the run line, an `⚠️` `RUN_ANOMALY` line, coverage, CI, memories) — with plain in-group labels beneath them, so the eye lands on the headings first. A lens with nothing to report is named once in a trailing `<sup>Nothing to report — …</sup>` footnote instead of spending a line on a value that carries no information; emptiness is read from each slot's own documented grammar, a lens renders as a line **xor** a footnote entry (L1-enforced, never both and never neither), and an unrecognised value falls back to rendering its own line — more visible, never silence. Two consequences for the parse grammar, both landed in the same commit per [`reviewer-report-ingest.md`](./agents/shared/rules/reviewer-report-ingest.md)'s own rule: the run line lost its `**Run mode**` label (the `**Run**` heading carries it) so its anchor is now its own renderer-guaranteed `<mode> · <N> lines in delta` shape, and an absent `Standards — ` / `Optimality — ` / `Skipped files — ` line means the lens was quiet, not skipped. `RUN_ANOMALY` is a new payload slot separate from `RUN_NOTE` because they are different claims — routing colour appended to the run line vs. a caveat about what the review *covered*; a compare-range-pollution notice rode at the tail of the longest line in the accordion and went unread, so the renderer now rejects a `RUN_NOTE` carrying a `⚠️`. Gate 3's open threads render across two slots: the accordion's `<summary>` carries the open count (plus the blocking subset on ❌), so the gate stays visible while collapsed on the very control the reader clicks, and the per-thread bullets live inside the accordion below the gate table. The report is written **only** to the sticky: prior-run detection matches it by marker (never by bot login, which is unresolvable on access paths where `/user` 401s), and an access path that cannot patch an issue comment posts a compact pointer carrying just the headline and the reason — never a second copy of the report. A review is posted at Step 4b under **one** condition: the run has new inline findings. A review object exists to carry comments at the code, so there are no notification-only reviews; the cost, stated in Step 4b rather than hidden, is that a verdict worsening with zero inline findings updates the report silently. Thread reconciliation runs at **Step 2.9c, before the verdict and before posting**, so Gate 3's unblock checklist never lists threads the same run just resolved; it renders as plain bullets with resolved entries removed rather than ticked. Gate 3 itself is **tri-state**, on the same blocking bar as the code-review gate, and tracks every open review thread — bot **or** human, each labelled by author type in the report rather than all called "bot threads": an open thread fails the PR only when its ask carries the authoring bot's own blocking decoration **and** nobody has replied to it — a non-blocking suggestion, a thread declined on-thread with a rationale, or one already fixed in a later commit grades ⚠️ and never flips the verdict, while still rendering in full in the in-accordion open-threads list. Two-tier holistic review: a broad whole-PR pass plus default-on **targeted escalation** (Step 2.4b) that fans out parallel single-target holistic traces on context-dependent findings (cap 10, `--no-escalate` to skip). Default-on **standards-conformance lens** (Step 2.4d, `--no-standards`) via `agents/shared/rules/standards-conformance.md` — enforces the repo's own governing docs as real findings. **Detection runs as six phases**, each owning one rule file under [`agents/pr-reviewer/rules/`](./agents/pr-reviewer/rules/): **A** materializes a workspace and binds `DEPTH_CAPABILITY` (`checkout` / `tarball` / `diff-only`), so a review that could not read the code around the diff says so instead of reviewing the diff as if it were the program; **B** builds `impact.json` — changed exports, their consumers, `blast_radius.band`, lockfile-resolved `semver_delta` with `usage_sites[]`; **C** routes depth on **what the change reaches, not how big it is** (a twelve-line signature change with fourteen callers is a bigger change than a four-hundred-line rename), across three tiers `deep` / `standard` / `quick` and behind two pre-table rules — a `quick` override for a push that is answering the review, and a size exclusion so docs-only, test-only, and generated deltas that reach nothing are *excused from size, not from review*; **D** runs six independent finders under one polarity rule — **finders flag, the verifier filters**, inverting a pipeline that asked one careful generator to raise findings and then ran eleven filters over it, where a self-censoring generator is indistinguishable from a clean diff; **E** verifies every candidate on Reproducible / Attributable / Actionable with four verdicts (`confirmed`, `contradicted`, `ambiguous`, `unobtainable` — the last distinct from a `null` receipt and capped below `issue:`); **F** is the comment shape the survivors are written in. **Run mode and depth are two axes**: the mode (`full` / `incremental` / `incremental-quick`) decides *what* is reviewed and stays the parseable grammar field, the tier decides *how hard*, and `DEPTH_CAPABILITY` caps the tier — `diff-only` caps at `standard`, because a `deep` tier whose deep lenses cannot run is a label on a review that did not happen. `--effort high` forces `deep` and raises the diversify-then-vote finder count from 3 to 5. The **dependency finder** does what the retired persona never did: reads the version from the **lockfile** rather than the manifest (a `0.x` minor is `major`), walks a five-rung changelog ladder over the whole range, intersects each documented break with this repo's usage sites, and anchors the finding at the **call that breaks** rather than at a lockfile line — with three outcomes and never a silent fourth, so a major bump and no bump at all can no longer read identically in the report. **Memory is cross-branch and cross-author by construction** ([`memory.md`](./agents/pr-reviewer/rules/memory.md)): records are keyed structurally as `<finder>:<defect-class>:<symbol>@<path>`, built by one executable script the webhook recorder imports rather than re-derives, so what one author's PR taught the reviewer is available on the next author's PR touching the same symbol — a branch-keyed memory dies with the branch, a prose-keyed one re-keys on every re-phrasing. Every read filters on `source.agent` (another bot's declined finding never trains this agent's suppressor), a knowledge fact is **re-verified or dropped, never trusted**, suppression is applied **after** verification rather than at find time, and a `standards` or `(blocking)` finding is never suppressible at all. Dash0 telemetry, where available, is an **exposure input and never a verdict** — it raises priority, never lowers it, and never blocks. Shared rules: `finding-verifier.md` (Phase E), `verification-receipt.md` (2.6b), `outcome-learning.md` (promotion loop; never per-review), `review-outcomes.md` (shared bus), `review-config.md` (review-config profile / filters / `standards:` schema; default `.github/review.yaml`, legacy root `.review.yaml` honoured), `prior-comment-awareness.md` (dedup + anti-flip-flop when PR exists), `standards-conformance.md` (default-on governing-docs enforcement, `--no-standards`). Research basis: [`references/detection-research.md`](./agents/pr-reviewer/references/detection-research.md) — what each borrowed principle came from, the three deliberate departures, and why no published precision figure is a target here. |
-| **[branch-reviewer](./agents/branch-reviewer.md)** | The **PR-less** reviewer behind `/review-branch`. Reviews a local diff (default head: the working tree) and writes findings to `.agent/{branch}/findings.jsonl` — **zero GitHub calls**, no PR needed, works offline. Composes the detection core **by reference** rather than porting it (`finders.md`, `finding-verifier.md`, `impact-graph.md`, `depth-routing.md`, `per-comment-confidence.md`), so the `bug-detection` eval keeps measuring the same bytes both reviewers run. [`local-diff-files.mjs`](./agents/branch-reviewer/scripts/local-diff-files.mjs) derives GitHub's own file-list shape from a git range so the unmodified impact-graph builder consumes it. `DEPTH_CAPABILITY` is `checkout` unconditionally and `WORKDIR_CLEANUP` always `none` — it never stashes or checks out, since the uncommitted work is usually the subject of the review. The intent finder **does not run** when no plan, brief, or commit message states an intent, rather than inventing one. Read-only. |
-| **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Independent fresh-context verifier for feature PRs. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode — and re-runs `checks.yaml` checks itself, verifying check integrity (no drift, no unlogged amendments, no special-casing). |
+- [Try it](#try-it)
+- [Skills at a glance](#skills-at-a-glance) · [Agents at a glance](#agents-at-a-glance)
+- [Install](#install) · [VS Code extension](#vs-code-extension) · [Domain navigator](#domain-navigator-per-project-plug-in)
+- [Repository structure](#repository-structure) · [Local development](#local-development) · [Contributing](#contributing)
 
 ## Featured: autonomous workflow
 
-### In plain English
+![aw: one sentence in, a reviewed pull request out. It sizes the job (Micro, Lite, Full); a Full task runs Brief, Build until green, Fresh-eyes review, and Draft PR in an isolated worktree.](./assets/aw-flow.png)
 
-![How aw works: you say one thing, it sizes the job (Micro / Lite / Full), then runs an isolated pipeline — Understand, Plan, Build, Test, Document, Open PR, Green CI, Self-Review — to a ready-to-merge pull request, learning from every run.](./assets/aw-overview.png)
-
-**You write one sentence. `aw` delivers a finished, tested, reviewed pull request — on its own.**
-
-You describe the change; `aw` does everything a careful engineer would do, in order, without you babysitting it:
-
-1. **Sizes the job** — typo, small tweak, or real feature — so small things stay fast.
-2. **Works in its own Git worktree** — your main branch is never touched.
-3. **Plans, builds, tests, and documents** the change.
-4. **Opens a draft PR** with a real description for you to approve.
-5. **Gets CI green** and **reviews its own work** before you ever look.
-6. **Learns** from each run, so the next one is a little smarter.
-
-It *looks* complex — a dispatcher, three agents, eight phases, a dozen companion skills, confidence gates. That machinery is the part that does the work *for you*: none of it is setup. What you do is type one sentence (or `/aw`), and approve the PR at the end. The complexity is the machine's job, not yours.
+**You write one sentence. `aw` delivers a tested, reviewed pull request.**
 
 ```text
 Implement a dark-mode toggle independently
@@ -206,45 +142,33 @@ Add user authentication end-to-end
 Refactor the API client to use retry logic — handle it in isolation
 ```
 
-The rest of this section is the under-the-hood reference.
+1. **Sizes the job.** Micro (one file) and Lite (a small change) finish in one pass; Full gets the loop below.
+2. **Writes a short brief.** At most 60 lines: what done means, what must not change, and one sealed, runnable check per goal. Outcomes, never a design.
+3. **Builds until green.** In your session, in its own Git worktree, looping on the checks until they print `CHECKS n/n PASS`. New code copies the mechanisms the codebase already has.
+4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed or rejected with evidence. This is the step that wins the [benchmarks](#measured-not-assumed).
+5. **Opens a draft PR** with a walkthrough and evidence, then gets CI green. Stuck after five attempts, it stops with `BLOCKED:` instead of guessing.
+6. **Learns** from every run.
+
+Each run also prints a paste-ready `/goal` line, so you can let the session drive itself to done hands-off.
 
 ### Under the hood
 
-**`aw` is the flagship of this repo** — the one entry point you invoke to carry a task from a one-line prompt to a tested, reviewed draft PR. You say *"implement X autonomously"* (or `/aw`) and it does the rest: detects how big the work is, plans only when planning earns its keep, and routes to the right specialists, all inside an isolated Git worktree.
+`aw` is a skill, so it runs in your session; [`aw/rules/full-tier.md`](./skills/workflow/autonomous-workflow/aw/rules/full-tier.md) is the whole Full procedure.
 
-`aw` is the opt-in entry point to the **`autonomous-workflow`** skill — the phase-based machinery (0–7) and companion-skill orchestration behind it. You drive `aw`; `autonomous-workflow` is how it works under the hood.
+| Step | Unit |
+|------|------|
+| Brief | [`aw-create-plan`](./skills/workflow/aw-create-plan/SKILL.md) writes `plan.md` + `checks.yaml`, sealed by `checks.lock` |
+| Build | [`run-checks.mjs`](./skills/workflow/autonomous-workflow/scripts/run-checks.mjs) prints the one sentinel line the loop gates on |
+| Review | the [`branch-reviewer`](./agents/branch-reviewer.md) agent; once a PR exists, [`review-loop`](./skills/quality/review-loop/SKILL.md) |
+| UI spec | the [`aw-tester`](./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md) agent, when the diff touches UI |
+| PR + CI | [`create-pr`](./skills/delivery/create-pr/SKILL.md), [`feature-pr-verifier`](./agents/feature-pr-verifier.md), [`ci-auto-fix`](./skills/delivery/ci-auto-fix/SKILL.md) |
 
-### The dispatcher and the planner→executor split
-
-`aw` installs as an opt-in **dispatcher skill** plus the worker agent it hands complex work to, connected by `plan.md`:
-
-| Unit | Kind | Role | Exit gate |
-|------|------|------|-----------|
-| `aw`          | skill | Opt-in dispatcher: reads lessons, detects tier (Micro/Lite/Full), runs Micro/Lite single-pass, writes the Full brief, owns the self-improvement loop for every tier | Task routed + exit lesson written |
-| `aw-executor` | agent | Full tier, 3–7 (implement, test, docs, PR, CI) | CI green, walkthrough delivered |
-
-The table above is scoped to what `aw` itself routes to; the installer links a second `aw-` agent, `aw-tester`, which `aw-executor` dispatches for Phase 4 UI verification. Both `aw-` agents share the prefix ("autonomous-workflow"): deliberate namespace so they group together in `~/.claude/agents/` and disambiguate from agents installed by other skills. `aw` carries no prefix and does not live there at all — it is a skill in `~/.claude/skills/`, which is precisely what lets the agents it dispatches sit at the top-level rung and keep their own sub-agent dispatch. `aw` is adaptive — it only hands work to `aw-executor` for **Full** tasks; Micro/Lite run single-pass.
-
-### Phases
-
-| Phase | Name | Companions (optional unless marked) |
-|-------|------|-------------------------------------|
-| 0 | Validation (restate-and-diff + missing-information gate) | — |
-| 1 | Planning (Existing Code Survey + traceable ACs) | **`confidence(plan)` (mandatory)** |
-| 2 | Worktree + plan.md + checks.yaml | `aw-create-plan` (Full Mode) |
-| 3 | Implementation | `tdd`, `ux`, `measurable` |
-| 4 | Testing (+ executable checks loop) | `confidence(analysis)`, execution-path re-trace (auto-replan once at cap) |
-| 5 | Documentation | `docs update` |
-| 6 | PR creation | `review-loop` (`--critical --no-ci`; `pr-reviewer` self mode → `implement-suggestion` → `polish simplify`), `aw-create-walkthrough`, `create-pr` |
-| 7 | CI gate | `ci-auto-fix` |
-
-The mode-aware stuck-loop cap at Phase 4 (3 Lite / 5 Full) is the biggest cost-saver: it prevents agents burning tokens on hallucinated fixes when their root-cause analysis is wrong.
-
-Full-tier plans are **grounded, traceable, and executable** (v3.15): every planned `create` carries a recorded reuse-search verdict (no re-implementing what already exists), every user-stated requirement maps to an `AC-{n}` acceptance criterion, a `blocking` information gap halts even under `--no-confirm`, and `checks.yaml` gives Phase 4 a runnable definition of done (check definitions are immutable to the executor; gaming a check is a hard stop).
+Micro and Lite run the [`autonomous-workflow`](./skills/workflow/autonomous-workflow/SKILL.md) phase machinery in one pass.
+[`aw-executor`](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md) runs a Full brief as a background sub-agent when you ask for background or parallel work.
 
 ### Setup
 
-The [clone + symlink](#recommended-clone--symlink) install already links the `aw` dispatcher skill, the three `aw-` agents, and the routing rule — `sync-symlinks.sh` runs the dispatcher installer for you. If you used `npx skills add` instead, run the dispatcher installer manually (it places the `aw` dispatcher, which a plain skill install cannot reach — it is nested inside the autonomous-workflow skill):
+The [clone + symlink](#recommended-clone--symlink) install already links the `aw` dispatcher skill, the two `aw-` agents, and the routing rule — `sync-symlinks.sh` runs the dispatcher installer for you. If you used `npx skills add` instead, run the dispatcher installer manually (it places the `aw` dispatcher, which a plain skill install cannot reach — it is nested inside the autonomous-workflow skill):
 
 ```bash
 bash ~/.claude/skills/autonomous-workflow/install.sh --global
@@ -257,35 +181,151 @@ Companions (`tdd`, `ux`, `docs`, `ci-auto-fix`, …) never block the workflow; a
 - [`skills/workflow/autonomous-workflow/README.md`](./skills/workflow/autonomous-workflow/README.md) — install, customize, migrate from v2
 - [`skills/workflow/autonomous-workflow/CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md) — design intent
 - [`skills/workflow/autonomous-workflow/rules/companion-skills.md`](./skills/workflow/autonomous-workflow/rules/companion-skills.md) — companion registry
-- [`skills/workflow/autonomous-workflow/references/anthropic-architecture-research.md`](./skills/workflow/autonomous-workflow/references/anthropic-architecture-research.md) — rationale for the two-agent split
+- [`skills/workflow/autonomous-workflow/aw/references/dispatcher-rationale.md`](./skills/workflow/autonomous-workflow/aw/references/dispatcher-rationale.md) — why Full works in your session with a fresh-eyes review
 
-## Usage examples
+## Try it
 
-Agent-invokable skills activate from natural language — just describe what you need.
+Skills that trigger from plain language:
 
-```
-Implement this feature autonomously / end-to-end / in a worktree
-Check the accessibility of this component
+```text
+Implement this feature autonomously, all the way to a PR
+Review the accessibility of this component
 Add this feature using TDD
-Rate your confidence in this implementation
+Red-team this plan before I build it
 Analyse this screen recording for bugs
 ```
 
-Slash commands are typed explicitly.
+Slash commands:
 
-```
-/fix-bug https://app.dash0.com/.../trace?spanId=...
-/profile-optimizer ./trace.json
-/docs init
-/docs update
-/docs readme
-/docs audit
-/resolve-conflicts
+```text
+/fix-bug <stack trace | span URL | file:line | ticket URL>
 /pr-review 42
-/implement-suggestion <pr-url> [<pr-url> ...]
+/review-branch
 /create-pr
-/ci-auto-fix <run-id|pr-url>
+/ci-auto-fix <run-id | pr-url>
+/docs audit
 ```
+
+## Skills at a glance
+
+Each row shows how a skill is invoked:
+**`auto`** triggers from plain language; **`/`** is a slash command with zero baseline context cost; **`Skill()`** is called by another skill.
+
+<details>
+<summary><b><code>workflow/</code></b> — end-to-end orchestrators · 5 skills</summary>
+
+| Skill | What it does | Type |
+|-------|--------------|------|
+| **[autonomous-workflow](./skills/workflow/autonomous-workflow/SKILL.md)** | phase machinery behind `aw`; `plan.md` is a six-heading brief gated on `run-checks.mjs` printing `CHECKS M/M PASS`, ending in a paste-ready `/goal`. `aw` (`auto`) is the sole entry and owns tiers. Design: [`CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md) | `/` |
+| **[fix-bug](./skills/workflow/fix-bug/SKILL.md)** | 10-phase bug pipeline: intake → triage → evidence → repro-lock → analyse → gate → handoff → verify → telemetry. Lane-split: fast for simple, standard for complex. Self-improves via `fix-bug-lessons` (read Phase 0.5 / write Phase 5·7·8) + promotion to `diagnose`. | `/` |
+| **[implement-suggestion](./skills/workflow/implement-suggestion/SKILL.md)** | apply reviewer suggestions across PRs; `--watch` loops one PR, `--resolve-all` closes non-fix threads. Never fixes CI | `/` |
+| **[aw-create-plan](./skills/workflow/aw-create-plan/SKILL.md)** | Writes the Full-tier brief: a `plan.md` of at most 60 lines, plus `checks.yaml` with one sealed, runnable check per acceptance criterion. | `Skill()` |
+| **[aw-create-walkthrough](./skills/workflow/aw-create-walkthrough/SKILL.md)** | Generates `.agent/{branch}/walkthrough.md` — the PR-delivery summary. | `Skill()` |
+
+</details>
+
+<details>
+<summary><b><code>quality/</code></b> — code, tests, plans, AI apps · 13 skills</summary>
+
+| Skill | What it does | Type |
+|-------|--------------|------|
+| **[confidence](./skills/quality/confidence/SKILL.md)** | Rates confidence that work fully solves the requirement. Modes: `plan`, `code`, `analysis`. Multi-signal gate; deterministic rule checks cap LLM score. | `auto` |
+| **[critical](./skills/quality/critical/SKILL.md)** | Adversarial pre-mortem: hostile-persona walk through failure modes, blast radius, rollback, hidden coupling, and a mandatory steelman alternative. Never iterates. `deep` mode runs 3–5 independent persona lenses in parallel (sub-agents when available; personas discovered via `ideate`, fallback catalog otherwise) and merges them into one attributed report — the end-of-feature pre-mortem. | `auto` |
+| **[measurable](./skills/quality/measurable/SKILL.md)** | every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup` | `auto` |
+| **[observe-run](./skills/quality/observe-run/SKILL.md)** | runs a command and grades the telemetry that run emitted against behavioral assertions only | `Skill() + /` |
+| **[polish](./skills/quality/polish/SKILL.md)** | Re-runnable pre-PR branch quality gate. Thin orchestrator over `pr-reviewer` (via `review-loop` — read-only, findings surfaced) and its own simplify pass (simplifies the changed code and prunes restating or ticket comments, each change behind a test check). Modes: bare → full, `review`, `simplify`, `quick`. Commits each pass separately. `/create-pr` delegates its post-draft quality loop to `review-loop`. | `/` |
+| **[review-branch](./skills/quality/review-branch/SKILL.md)** | PR-less sibling of `review-loop`; findings bus `.agent/{branch}/findings.jsonl`, zero GitHub calls | `/` |
+| **[review-loop](./skills/quality/review-loop/SKILL.md)** | bounded PR convergence loop: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify`, cap 5; `--ui` runs `ui-verify` in a parallel lane and resolves its findings. Run at the top level of a session that holds a dispatch tool | `Skill()` |
+| **[tdd](./skills/quality/tdd/SKILL.md)** | Strict RED-GREEN-REFACTOR cycles. Writes one failing test, implements minimal code, refactors. | `auto` |
+| **[test-provenance-guard](./skills/quality/test-provenance-guard/SKILL.md)** | Detects tests that pass by construction (re-declare the SUT instead of importing it) via static + mutation checks. Self-heals by extracting inline logic and rewriting the test. | `auto` |
+| **[verify-behavior](./skills/quality/verify-behavior/SKILL.md)** | cheapest-first three-tier verification ladder; emits an evidence receipt, never a score | `Skill()` |
+| **[jev-assert](./skills/quality/jev-assert/SKILL.md)** | semantic UI assertion via TypeSafe Jev; backs the `THEN semantic:` spec form | `Skill()` + `/` |
+| **[/ai-engineering](./skills/quality/ai-engineering/SKILL.md)** | Reviews LLM/AI application engineering across 13 concerns: prompts, caching, RAG, agents, resilience, memory, evals, safety, observability. | `/` |
+| **[/pr-review](./skills/quality/pr-review/SKILL.md)** | one read-only `pr-reviewer` dispatch at one PR; `/pr-review remember <fact>` writes a maintainer relevance rule | `/` |
+
+</details>
+
+<details>
+<summary><b><code>delivery/</code></b> — Git, PR, CI · 5 skills</summary>
+
+| Skill | What it does | Type |
+|-------|--------------|------|
+| **[/create-pr](./skills/delivery/create-pr/SKILL.md)** | narrative PR description; pre-push `review-branch`, draft PR, post-draft `review-loop`, CI watch | `/` |
+| **[/ci-auto-fix](./skills/delivery/ci-auto-fix/SKILL.md)** | Verdict-gated CI diagnosis and fix (`code-bug\|workflow-bug\|dep-bug\|env-bug\|flaky\|unsure`); confidence gate (≥90 auto, 80–89 ask, <80 escalate); regressing pushes auto-revert. Refuses to disable or weaken checks. Self-improves via `ci-auto-fix-lessons` (read Phase 3 / write Phase 8·9) — conservative: verdict lessons default to `repo::` scope, `seen_count ≥ 5` bar, regression lessons volatile/30-day. | `/` |
+| **[/resolve-conflicts](./skills/delivery/resolve-conflicts/SKILL.md)** | Detects merge/rebase conflicts, shows both sides with context, proposes resolutions, asks for ambiguous cases. | `/` |
+| **[/attach-media](./skills/delivery/attach-media/SKILL.md)** | Uploads local screenshots and screen recordings to a PR or issue as GitHub-hosted `user-attachments` assets that render inline (videos as players). Uses `gh --attach` (gh ≥ 2.99), falls back to the same upload endpoint over `curl`, and reports `not attached` rather than writing a placeholder. It owns one `<!-- attach-media:v1 -->` body region that a re-run merges by filename, and every upload is checked by eye for secrets first. Called by `create-pr`, `ui-verify`, `storybook`, `screen-recorder`, and `aw` Phase 7. | `Skill()` + `/` |
+| **[/github-actions-author](./skills/delivery/github-actions-author/SKILL.md)** | Authors and reviews fast, cheap, maintainable GitHub Actions workflows (2026 best practices). Modes: `scaffold`, `review`. | `/` |
+
+</details>
+
+<details>
+<summary><b><code>testing/</code></b> — E2E and fixture tooling · 5 skills</summary>
+
+| Skill | What it does | Type |
+|-------|--------------|------|
+| **[/e2e-testing](./skills/testing/e2e-testing/SKILL.md)** | Spec-first Playwright Test Agents loop (Planner / Generator / Healer, v1.56). Locator ladder, `data-testid` source diffs, 3-attempt heal cap. | `/` |
+| **[/e2e-testing-mobile](./skills/testing/e2e-testing-mobile/SKILL.md)** | Mobile counterpart on Maestro YAML flows for Expo / React Native. `testID`-first locator ladder; runs on Maestro Cloud via EAS Workflow. | `/` |
+| **[/e2e-pr-stabilizer](./skills/testing/e2e-pr-stabilizer/SKILL.md)** | local-first Playwright E2E stabilizer for one PR; modes `stabilize` / `optimize` | `/` |
+| **[/ui-verify](./skills/testing/ui-verify/SKILL.md)** | Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); `author` adds out-of-bounds specs from a PR-scoped brainstorm; the runner adapts the route but checks every outcome with evidence, then tries to break it, records it, and checks its Dash0 web events | `Skill()` + `/` |
+| **[/local-verify](./skills/testing/local-verify/SKILL.md)** | verifies a PR on a local stack: reuses `/aw`'s brief and intent `specs.md`, runs them plus edge probes via `ui-verify run --url`, reads telemetry, fixes each finding as one commit; `setup` stores all repo values | `/` |
+
+</details>
+
+<details>
+<summary><b><code>design/</code></b> — UI, visual, interaction · 7 skills</summary>
+
+| Skill | What it does | Type |
+|-------|--------------|------|
+| **[animations](./skills/design/animations/SKILL.md)** | CSS-first web animation. Three modes: Brainstorm, Perceived-Performance, technical workflow (CSS → WAAPI → Motion → R3F). Redirects React Native to `animations-native`. | `auto` |
+| **[animations-native](./skills/design/animations-native/SKILL.md)** | React Native / Expo animation: Reanimated (worklets, shared values, layout animations), react-native-gesture-handler (pan/pinch/drag/swipe), Moti/Lottie/Rive, Reduce Motion + haptics, UI-thread profiling. | `auto` |
+| **[behavioral-design](./skills/design/behavioral-design/SKILL.md)** | Behavior-change design for team adoption and product flows: COM-B / Fogg B=MAP diagnosis, EAST and choice-architecture interventions with evidence grades and metrics, System 1 / System 2 fit, and workshop plans. Hard rule: never a dark pattern or sludge. | `auto` |
+| **[charting](./skills/design/charting/SKILL.md)** | Selects chart type + visualization library for web (React/Next.js) and mobile (Expo/RN). Maps intent → chart → library based on platform and dataset size. | `auto` |
+| **[storybook](./skills/design/storybook/SKILL.md)** | Scaffolds three artefacts per component: visual regression story, Playground, interaction test. Opt-in OS-keychain auth profiles. | `auto` |
+| **[ux](./skills/design/ux/SKILL.md)** | Audits and plans UI by walking the user's real path and verifying what each control does, then WCAG 2.2 accessibility depth, microcopy, and **dark-pattern detection**. Hard rule: never recommends a dark pattern. | `auto` |
+| **[visual-design](./skills/design/visual-design/SKILL.md)** | Generative, brand-aware visual design. Style-direction taxonomy (minimal, swiss, brutalist, glass, …), color systems, typography, signature details. Defers WCAG math to `/ux`. | `auto` |
+
+</details>
+
+<details>
+<summary><b><code>analysis/</code></b> — investigate data, diagnose issues · 8 skills</summary>
+
+| Skill | What it does | Type |
+|-------|--------------|------|
+| **[ideate](./skills/analysis/ideate/SKILL.md)** | Generates, stress-tests, and iteratively evolves ideas via research-grounded agent loops: parallel persona generators (nominal-group simulation), independent judges on separate novelty/feasibility/impact/fit axes with a protected wildcard, ≤ 3 recombination rounds, `confidence(analysis)` gate on finalists. Auto-triages `quick` vs `deep`. | `auto` |
+| **[interview](./skills/analysis/interview/SKILL.md)** | pre-plan scope-alignment interview; emits `.agent/{branch}/brief.md` | `auto` |
+| **[rum-tracking](./skills/analysis/rum-tracking/SKILL.md)** | Guides product analytics and RUM event tracking for web (React/Next.js) and mobile (React Native/Expo). Decides what to track, what's noise, what's PII; covers OTel semantic conventions, tracking plans, GDPR/CCPA compliance, and clean implement / audit / remove workflows. | `auto` |
+| **[video-analyser](./skills/analysis/video-analyser/SKILL.md)** | Analyses a screen recording for bugs. Resolves input from a Linear ticket URL, local path, or direct URL. Optional Tesseract OCR and Whisper transcription. | `auto` |
+| **[youtube-transcript](./skills/analysis/youtube-transcript/SKILL.md)** | Fetches a YouTube video's captions as plain text (optional `[mm:ss]` timestamps) with one stdlib-only Python script. Calls YouTube's InnerTube player endpoint as the Android/iOS app with a visitor id, so it works from cloud and datacenter IPs where `youtube-transcript-api` and `yt-dlp` are bot-blocked. | `auto` |
+| **[/profile-optimizer](./skills/analysis/profile-optimizer/SKILL.md)** | Analyses React DevTools Profiler exports or Chrome Performance traces. Maps hotspots to source. Iterates via `confidence(analysis)` until ≥ 90%. | `/` |
+| **[/playwright-trace-analyzer](./skills/analysis/playwright-trace-analyzer/SKILL.md)** | Analyses Playwright `trace.zip` (or downloads from a GitHub Actions run URL). Names the race behind a flake, emits a ranked fix plan. | `/` |
+| **[/screen-recorder](./skills/analysis/screen-recorder/SKILL.md)** | Records short cropped videos of UI sections via Playwright + ffmpeg. Validates multi-frame interactions a screenshot can't prove. | `/` |
+
+</details>
+
+<details>
+<summary><b><code>authoring/</code></b> — skills about Claude Code itself · 5 skills</summary>
+
+| Skill | What it does | Type |
+|-------|--------------|------|
+| **[docs](./skills/authoring/docs/SKILL.md)** | Authors and audits `CLAUDE.md`, `AGENTS.md`, `README.md`, and Diátaxis `docs/` trees. Modes: `init`, `update`, `readme`, `audit`. | `auto` |
+| **[/create-skill](./skills/authoring/create-skill/SKILL.md)** | Scaffold, review, upgrade, or diagnose agent skills, gated by a mechanical `scripts/validate-skill.mjs` pre-pass and an eval-first Phase 6. `diagnose <target>` is the retrospective self-improvement entry point. | `/` |
+| **[/optimize-claude-md](./skills/authoring/optimize-claude-md/SKILL.md)** | Audits `CLAUDE.md` for context bloat. Modes: `audit`, `trim`, `extract`. Flags rarely-used agent-invokable skills that should become slash-only. | `/` |
+| **[/persistent-memory](./skills/authoring/persistent-memory/SKILL.md)** | cross-conversation markdown memory store. Self-improvement loops run on LoreKit instead; bucket taxonomy: [`memory-buckets.md`](./agents/shared/rules/memory-buckets.md) | `/` |
+| **[/handoff](./skills/authoring/handoff/SKILL.md)** | Distills the current session's task, context, and plan into a self-contained, copy-pasteable markdown handoff for a fresh agent/LLM — Goal, Current state, Plan/next steps, and Key files/decisions/gotchas — curated to the important bits (no tool transcripts, no chit-chat, no secrets). Writes to `.agent/{branch}/handoff.md` and copies it to the clipboard. Optional focus phrase scopes it; `--brief` condenses it. | `/` |
+
+</details>
+
+## Agents at a glance
+
+Agents run as sub-agents with their own model and tools; skills dispatch them, you don't.
+`aw` itself is a skill, so it runs in your session.
+
+| Agent | What it does |
+|-------|--------------|
+| **[aw-executor](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md)** | Runs a Full-tier `aw` brief as a background sub-agent — only when you ask for background or parallel work; by default `aw` does the work in your session. Installed as `aw-executor.md`. |
+| **[pr-reviewer](./agents/pr-reviewer.md)** | PR reviewer for self and cross relations; read-only; one sticky report comment plus append-only inline findings |
+| **[branch-reviewer](./agents/branch-reviewer.md)** | PR-less reviewer for `/review-branch`; writes `.agent/{branch}/findings.jsonl`, zero GitHub calls |
+| **[feature-pr-verifier](./agents/feature-pr-verifier.md)** | Independent fresh-context verifier for feature PRs. Verifies acceptance criteria, pass-to-pass, walkthrough integrity for `autonomous-workflow` Full Mode — and re-runs `checks.yaml` checks itself, verifying check integrity (no drift, no unlogged amendments, no special-casing). |
 
 ## Install
 
@@ -313,7 +353,7 @@ The script builds a two-tier symlink chain, so a single clone serves every Agent
 
 Because skills are symlinked, your edits and every `git pull` land on the **next agent turn** — no reinstall. The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory other tools read. Run it with `bash`, not `sh`; pass `--dry-run` to preview.
 
-Any skill that ships its own `install.sh` (currently only [`autonomous-workflow`](./skills/workflow/autonomous-workflow/), which links three `aw-` agents and a routing rule) auto-runs at the end of the sync — no separate step.
+Any skill that ships its own `install.sh` (currently only [`autonomous-workflow`](./skills/workflow/autonomous-workflow/), which links two `aw-` agents and a routing rule) auto-runs at the end of the sync — no separate step.
 
 ### Upgrading
 
@@ -456,7 +496,7 @@ That is the entire integration.
 ## Repository structure
 
 ```
-skills/                   50 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
+skills/                   51 skills, each with SKILL.md (some with rules/, references/, templates/, scripts/)
 agents/                   3 agents (pr-reviewer, branch-reviewer, feature-pr-verifier)
 plugins/                  3 Claude Code plugins (agent-tasks-hooks, pr-relevance-memory, pr-reviewer-shape-guard)
 packages/                 VS Code extension (vscode-agent-tasks)

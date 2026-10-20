@@ -1,0 +1,130 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#09090b; --card:#111114; --line:#232329; --line2:#2e2e36; --text:#f4f4f5; --dim:#a1a1aa; --faint:#63636e;
+  --blue:#60a5fa; --violet:#a78bfa; --green:#4ade80; --amber:#fbbf24; --coral:#fb923c;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1400px;height:720px;background:var(--bg);color:var(--text);overflow:hidden;position:relative;
+  font-family:"Geist",-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+/* dotted grid that fades out */
+body::before{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1.2px);background-size:22px 22px;
+  -webkit-mask-image:radial-gradient(1000px 520px at 50% 62%,#000 20%,transparent 75%)}
+body::after{content:"";position:absolute;left:50%;top:430px;width:900px;height:260px;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,rgba(96,165,250,.10),rgba(167,139,250,.06) 55%,transparent);filter:blur(10px)}
+.wrap{position:relative;z-index:1;padding:56px 72px 0}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+
+.eyebrow{font-size:14px;color:var(--faint);letter-spacing:.02em}
+.eyebrow b{color:var(--dim);font-weight:500}
+h1{font-size:54px;font-weight:600;letter-spacing:-.035em;line-height:1.05;margin-top:14px}
+h1 span{background:linear-gradient(90deg,#93c5fd,#c4b5fd);-webkit-background-clip:text;color:transparent}
+
+.top{display:flex;justify-content:space-between;align-items:flex-end}
+.input{display:flex;align-items:center;gap:12px;margin-top:28px;width:520px;
+  border:1px solid var(--line2);border-radius:12px;padding:14px 18px;background:rgba(17,17,20,.85);font-size:17px;color:#e4e4e7}
+.input .p{color:var(--faint)}
+.caret{width:9px;height:20px;background:var(--blue);border-radius:1px;opacity:.85}
+
+.tiers{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.tiers .label{font-size:13px;color:var(--faint)}
+.seg{display:flex;border:1px solid var(--line2);border-radius:10px;padding:4px;background:rgba(17,17,20,.85);gap:4px}
+.seg div{padding:8px 16px;border-radius:7px;font-size:15px;color:var(--dim);display:flex;align-items:center;gap:8px}
+.seg i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.seg .on{background:#1c1c22;color:var(--text);box-shadow:inset 0 0 0 1px #34343d}
+.seg small{color:var(--faint);font-size:12px}
+
+/* pipeline */
+.pipe{position:relative;margin-top:44px;height:300px}
+.pipe svg.track{position:absolute;inset:0}
+.nodes{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr)}
+.node{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:76px}
+.dot{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:var(--card);
+  border:1px solid var(--line2);position:relative}
+.node h3{font-size:21px;font-weight:600;letter-spacing:-.015em;margin-top:18px}
+.node p{font-size:15px;color:var(--dim);line-height:1.45;margin-top:6px;max-width:270px}
+.n-loop .dot{border-color:rgba(96,165,250,.55);box-shadow:0 0 0 5px rgba(96,165,250,.07)}
+.n-review .dot{border-color:rgba(167,139,250,.6);box-shadow:0 0 0 5px rgba(167,139,250,.08)}
+.n-pr .dot{border-color:rgba(74,222,128,.5)}
+.chip{font-size:12.5px;border-radius:6px;padding:4px 8px;margin-top:12px}
+.chip.pass{color:var(--green);background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25)}
+.chip.rev{color:#c4b5fd;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25)}
+.chip.pr{color:var(--dim);background:#141418;border:1px solid var(--line2)}
+.chip.brief{color:#93c5fd;background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.22)}
+
+.foot{position:absolute;z-index:1;left:72px;right:72px;bottom:34px;display:flex;justify-content:space-between;
+  border-top:1px solid var(--line);padding-top:18px;font-size:14px;color:var(--faint)}
+.foot span b{color:var(--dim);font-weight:500}
+.foot .k{color:var(--coral)}
+</style></head>
+<body><div class="wrap">
+  <div class="top">
+    <div>
+      <div class="eyebrow mono"><b>aw</b> · autonomous workflow</div>
+      <h1>One sentence in.<br><span>A reviewed pull request out.</span></h1>
+      <div class="input mono"><span class="p">›</span>Add dark mode to settings<span class="caret"></span></div>
+    </div>
+    <div class="tiers">
+      <div class="label mono">sized to the job</div>
+      <div class="seg mono">
+        <div><i style="background:var(--green)"></i>Micro</div>
+        <div><i style="background:var(--amber)"></i>Lite</div>
+        <div class="on"><i style="background:var(--blue)"></i>Full</div>
+      </div>
+      <div class="label">Micro and Lite finish in one pass.</div>
+    </div>
+  </div>
+
+  <div class="pipe">
+    <svg class="track" width="1256" height="300" viewBox="0 0 1256 300" overflow="visible">
+      <defs>
+        <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="157" y1="0" x2="1099" y2="0">
+          <stop offset="0" stop-color="#3f3f46"/><stop offset=".35" stop-color="#60a5fa"/>
+          <stop offset=".62" stop-color="#a78bfa"/><stop offset="1" stop-color="#4ade80"/>
+        </linearGradient>
+        <marker id="ah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+          <path d="M1 1L8 5L1 9" fill="none" stroke="#60a5fa" stroke-width="1.6"/></marker>
+      </defs>
+      <!-- main track through node centres (y=124) -->
+      <line x1="185" y1="104" x2="1071" y2="104" stroke="url(#g)" stroke-width="1.5"/>
+      <!-- loop arc over the build node (centre x=471) -->
+      <path d="M500 78 C 504 14, 438 14, 442 76" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-dasharray="3 4" marker-end="url(#ah)"/>
+      <text x="471" y="8" text-anchor="middle" fill="#93c5fd" font-family="Geist Mono, monospace" font-size="13">change · check · fix</text>
+    </svg>
+    <div class="nodes">
+      <div class="node">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e4e4e7" stroke-width="1.6"><rect x="5" y="3" width="14" height="18" rx="2.5"/><path d="M9 8.5h6M9 12h6M9 15.5h3.5"/></svg></div>
+        <h3>Brief</h3>
+        <p>What done means, what must not change. Every goal is a sealed check.</p>
+        <div class="chip brief mono">≤ 60 lines</div>
+      </div>
+      <div class="node n-loop">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.6"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/></svg></div>
+        <h3>Build until green</h3>
+        <p>Right here in your session, reusing the patterns your code already has.</p>
+        <div class="chip pass mono">CHECKS 7/7 PASS</div>
+      </div>
+      <div class="node n-review">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.6"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg></div>
+        <h3>Fresh-eyes review</h3>
+        <p>A reviewer that didn’t write the code. Every finding fixed or refuted.</p>
+        <div class="chip rev mono">where bugs get caught</div>
+      </div>
+      <div class="node n-pr">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="1.6"><circle cx="6" cy="5.5" r="2"/><circle cx="6" cy="18.5" r="2"/><circle cx="18" cy="18.5" r="2"/><path d="M6 7.5v9M18 16.5V10a3 3 0 0 0-3-3h-3.5"/><path d="M13.5 5l-2 2 2 2"/></svg></div>
+        <h3>Draft PR</h3>
+        <p>Walkthrough, evidence, green CI. You review and merge.</p>
+        <div class="chip pr mono">ready for you</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="foot">
+  <span><b>Isolated worktree</b> — your main branch is never touched</span>
+  <span><b>Stuck?</b> it stops with <span class="mono k">BLOCKED:</span> instead of guessing</span>
+  <span><b>Learns</b> from every run</span>
+</div>
+</body></html>
