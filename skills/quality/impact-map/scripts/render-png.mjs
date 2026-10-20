@@ -53,7 +53,13 @@ function findBrowser() {
   const cache = join(homedir(), process.platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright");
   if (existsSync(cache)) {
     for (const dir of readdirSync(cache).filter((d) => d.startsWith("chromium-")).sort().reverse()) {
-      candidates.push(join(cache, dir, "chrome-mac/Chromium.app/Contents/MacOS/Chromium"), join(cache, dir, "chrome-linux/chrome"));
+      candidates.push(
+        join(cache, dir, "chrome-mac/Chromium.app/Contents/MacOS/Chromium"),
+        join(cache, dir, "chrome-linux/chrome"),
+        join(cache, dir, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
+        join(cache, dir, "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
+        join(cache, dir, "chrome-linux64/chrome"),
+      );
     }
   }
   return candidates.find((p) => p && existsSync(p)) ?? null;
