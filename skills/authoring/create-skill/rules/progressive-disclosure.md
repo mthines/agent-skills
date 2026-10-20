@@ -74,7 +74,7 @@ What does **not** belong in `SKILL.md`:
 | `references/`  | Worked examples, citations, archetypes — long-form reading    | When the agent explicitly opts in       |
 | `templates/`   | Literal text the skill emits or fills in                      | When the skill is generating output     |
 | `scripts/`     | Executable helpers (Python, Bash, Node)                       | Executed via `Bash`; not read into ctx  |
-| `evals/`       | This skill's own test prompts and trigger set                 | Read only during Phase 8 / review testing |
+| `evals/`       | This skill's own test prompts and trigger set                 | Read only during a lift check or review testing |
 
 `assets/` (binary or static non-Markdown files a skill ships) is rare —
 most skills need none. See `scripts-and-assets.md` for the full mapping,

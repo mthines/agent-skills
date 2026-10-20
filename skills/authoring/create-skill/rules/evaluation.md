@@ -10,8 +10,8 @@ tags:
 # Evaluation
 
 A skill that has never been run against a realistic prompt is a draft, not
-a finished skill. Evaluation is Phase 8 of the scaffold workflow and the
-`## Testing` section of the review checklist.
+a finished skill. Run this before a skill is shipped to other people, or when
+the user asks; a scaffold's own Phase 5 (Verify) is the single fresh re-run.
 
 ## Eval-first workflow
 
