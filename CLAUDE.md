@@ -246,6 +246,8 @@ Naming files a skill installs by symlink: when a skill's `install.sh` symlinks a
 Invoke the script with `bash` (or `./scripts/sync-symlinks.sh`), **not** `sh` — the script uses bash arrays and process substitution, which POSIX sh doesn't support.
 
 The script is idempotent: it skips entries that are already linked correctly, repairs broken or wrong-target symlinks, and refuses to overwrite real files or directories. Pass `--dry-run` (or `-n`) to preview without applying.
+Pass skill or agent names (`bash scripts/sync-symlinks.sh tdd pr-reviewer`) to link only those; an unknown name exits 1.
+Every run prunes dangling links left by deleted skills or agents — only `~/.agents` links into this repo and `~/.claude` links into `~/.agents`; pass `--no-prune` to keep them.
 
 ### Edit an existing skill
 

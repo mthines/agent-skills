@@ -324,7 +324,7 @@ The script builds a two-tier symlink chain, so a single clone serves every Agent
 ~/.claude/agents/<name>.md  →  ~/.agents/agents/<name>.md  →  <clone>/agents/<name>.md
 ```
 
-Because skills are symlinked, your edits and every `git pull` land on the **next agent turn** — no reinstall. The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory other tools read. Run it with `bash`, not `sh`; pass `--dry-run` to preview.
+Because skills are symlinked, your edits and every `git pull` land on the **next agent turn** — no reinstall. The middle layer (`~/.agents/skills/`) is the cross-tool discovery directory other tools read. Run it with `bash`, not `sh`; pass `--dry-run` to preview. Pass names to link only some skills or agents (`bash scripts/sync-symlinks.sh tdd pr-reviewer`).
 
 Any skill that ships its own `install.sh` (currently only [`autonomous-workflow`](./skills/workflow/autonomous-workflow/), which links three `aw-` agents and a routing rule) auto-runs at the end of the sync — no separate step.
 
@@ -332,10 +332,10 @@ Any skill that ships its own `install.sh` (currently only [`autonomous-workflow`
 
 ```bash
 cd agent-skills && git pull
-bash scripts/sync-symlinks.sh   # only to wire up newly added skills/agents
+bash scripts/sync-symlinks.sh   # link new skills/agents, prune deleted ones
 ```
 
-`git pull` updates every symlinked skill in place. Re-run the sync script only to pick up skills or agents that are **new** since your last pull — it's a no-op for everything already linked.
+`git pull` updates every symlinked skill in place. Re-run the sync script after a pull to link skills or agents that are **new** and to prune the dangling links a deleted or renamed one leaves behind (`--no-prune` to skip); already-correct links are left alone.
 
 > **Coming from `npx skills add`?** That copy never tracks upstream — which is why upgrading felt hard. Delete the copied entries from `~/.claude/skills/` (and `~/.agents/skills/`), then switch to [clone + symlink](#recommended-clone--symlink). After that, `git pull` is the whole upgrade.
 
