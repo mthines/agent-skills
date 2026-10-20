@@ -90,6 +90,7 @@ Every tier converges once, locally, before the PR; nothing is posted to the PR u
 | Full | [`full-tier.md`](rules/full-tier.md#step-3--local-review) Step 3 (`review-loop --cap 2`, local mode) | `Skill("create-pr", "--no-pre-review --no-post-review")` |
 
 - `--pr-review` drops `--no-post-review`, so `create-pr` Step 6.5 runs one posted `review-loop` on the draft; it is the only posted pass, and nothing reviews again after CI.
+- `--critical` implies `--pr-review` and is passed through to `create-pr`: the critical lens exists only in `pr-reviewer`, never in the local `branch-reviewer`.
 - Run `review-loop` in the context doing the work — this session, or a dispatched `aw-executor`'s own context — never in a sub-agent dispatched just to run it: it dispatches `branch-reviewer` itself.
 - A follow-up on an open PR runs the same local pass before pushing, and posts nothing unless `--pr-review`.
 
