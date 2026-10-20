@@ -19,7 +19,7 @@ The brief says what done looks like and what must not change — never how to bu
 - [Step 1 — Brief (minutes)](#step-1--brief-minutes)
 - [Step 2 — Work here until the checks pass](#step-2--work-here-until-the-checks-pass)
 - [Step 3 — Fresh-eyes review](#step-3--fresh-eyes-review)
-- [Step 4 — UI spec, walkthrough, PR, evidence](#step-4--ui-spec-walkthrough-pr-evidence)
+- [Step 4 — Verify, walkthrough, PR, evidence](#step-4--verify-walkthrough-pr-evidence)
 - [Shared machines](#shared-machines)
 - [When sub-agent dispatch is unavailable](#when-sub-agent-dispatch-is-unavailable)
 
@@ -30,6 +30,7 @@ The brief says what done looks like and what must not change — never how to bu
 3. **Read `corrections.md` (autonomous-workflow `rules/`)** in full — C1 shapes the brief; the rest shape the work.
 4. **Read only what the brief needs:** the ticket, the repo's `CLAUDE.md`, and enough code to name the test commands and the likely starting files — at most 10 tool calls, no sub-agents, no design.
 5. **Write the brief and checks:** `Skill("aw-create-plan")`. Requirements come from the user and the ticket; Guardrails come from the user, the ticket, and the repo's docs — never from a design you guessed.
+   When the task adds or changes a span, metric, log, or web event, add one acceptance criterion prefixed `telemetry:` that names the signal and the attributes that prove the behaviour — `AC-4 telemetry: checkout.submit span with order.id; ERROR status on decline`. `aw-create-plan` seals it as a `kind: judge` check, which Step 4 grades.
 6. **Validate deterministically:**
 
    ```bash
@@ -89,9 +90,13 @@ Agent(subagent_type="branch-reviewer", prompt="--base <base sha> --head HEAD --o
 
 Once a PR exists, the reviewer is `Skill("review-loop", "<pr-url> --critical --no-ci --no-preview-run")` instead.
 
-## Step 4 — UI spec, walkthrough, PR, evidence
+## Step 4 — Verify, walkthrough, PR, evidence
 
-1. **UI spec (C5)** when the diff touches UI files: write `specs.md` against the built UI and run it with `Agent(subagent_type="aw-tester", prompt="<specs.md path> --target <aw-target>")` when a target is reachable under [Shared machines](#shared-machines); else `UI spec: written, not run (<reason>)` under `Degraded:`.
+1. **Verify (C5).** When the diff touches UI files, write `specs.md` against the built UI first.
+   - `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`. It starts the stack without touching another checkout's ([Shared machines](#shared-machines)), runs the specs through `ui-verify` and each window through `telemetry-verify`, fixes what it finds as separate commits, and writes `.agent/<branch>/verify/report.md`.
+   - For each `telemetry:` judge check, read its `AC-<n>` line in the TELEMETRY blocks in `.agent/<branch>/verify/telemetry.md`: `confirms` → set its `status: pass` in `checks.yaml`; anything else → leave it and log the line. Re-run run-checks.
+   - A `telemetry:` check that is `contradicts`, or a failed `ui:` criterion, re-enters Step 2 under the same turn cap; then run Step 4.1 again.
+   - No `.agents/aw/environments.yml` → `verify run: not configured — run /aw-verify setup` under `Degraded:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
 2. **Walkthrough:** `Skill("aw-create-walkthrough")` — one page of what changed and what you assumed.
 3. **PR:** `Skill("create-pr")` unless a user constraint forbids the push; then, only once you hold a PR URL, dispatch `feature-pr-verifier` once with the plan, walkthrough, head and base SHAs, and the Before-PR command, and watch CI (`ci-auto-fix` on failure, cap 2). No PR → `Verified: not run (no PR)`; the fresh-eyes review already covered the local diff.
 4. **Lessons:** the exit write in [`lessons.md`](lessons.md), unless a user constraint forbids LoreKit writes.
@@ -104,16 +109,16 @@ Once a PR exists, the reviewer is `Skill("review-loop", "<pr-url> --critical --n
    PR: <draft PR URL | none — <the user constraint>>
    Changed files (git diff --name-only <base>...HEAD):
    <one path per line>
-   UI spec: .agent/<branch>/specs.md — <N> specs, aw-tester <green|red|not run (<reason>)> · preview: /ui-verify run <pr-url> · local: /local-verify <pr-url>
+   verify run: .agent/<branch>/verify/report.md — browser <green|red|not run (<reason>)>, telemetry <confirms|contradicts|ambiguous|null|not run (<reason>)> · preview: /ui-verify run <pr-url>
    ```
 
-   Omit the `UI spec:` line when no `specs.md` exists.
+   Omit the `verify run:` line when the diff touches no UI file and the brief has no `telemetry:` criterion.
 
 ## Shared machines
 
 A local stack, daemon, or dev server bound to another checkout belongs to someone else's work.
 Never stop, kill, restart, or rebind it, and never run a repo skill or command that does — even when the prompt says a stack is "available".
-Use a target that is already serving this worktree, or one you start on free ports without touching the other; otherwise the UI spec is `written, not run (stack bound to <checkout>)`.
+Use a target that is already serving this worktree, or one you start on free ports without touching the other; otherwise the `verify run:` line is `not run (stack bound to <checkout>)`.
 
 ## When sub-agent dispatch is unavailable
 

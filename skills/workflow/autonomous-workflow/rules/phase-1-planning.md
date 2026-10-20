@@ -381,7 +381,7 @@ right commands.
 On Full, do **not** draft `specs.md` here: `aw-executor` writes it after the UI exists and runs it ([correction C5](./corrections.md#c5--a-ui-spec-is-written-against-the-built-ui-and-run)).
 At planning time, run only the gate below and record the result in the brief; the rest of this section is the procedure the executor follows when it writes the specs.
 
-Emit a `specs.md` file when the task touches a UI surface. `aw-tester` runs it in Phase 4, `ui-verify author` lifts it into the PR body, and `/local-verify` re-runs it on a local stack — one file, three runners.
+Emit a `specs.md` file when the task touches a UI surface. `aw-tester` runs it in Phase 4, `ui-verify author` lifts it into the PR body, and `/aw-verify` re-runs it on a local stack — one file, three runners.
 
 ### Gate: does the task touch a UI surface? (mechanical, not eyeballed)
 
@@ -428,7 +428,7 @@ fall back to the inline heuristic — ANY planned file matching `*.tsx`, `*.jsx`
 Check for a committed aw-target:
 
 ```bash
-ls .claude/aw-targets/*.yml 2>/dev/null | head -1
+test -f .agents/aw/environments.yml && echo found
 ```
 
 **If one exists, use it.** If its `auth.storage_state` file is older than 7
@@ -436,11 +436,11 @@ days, warn but continue:
 
 ```markdown
 - [TIMESTAMP] Phase 1: spec-emission — auth state at {path} is {N} days old;
-  consider re-running /aw-setup to refresh before execution.
+  consider re-running /aw-verify setup to refresh before execution.
 ```
 
 **If none exists, do NOT halt.** A missing aw-target is a cold-start, not a
-blocker — waiting for an interactive `/aw-setup` strands every fresh repo. Instead, degrade to an implicit defaults target
+blocker — waiting for an interactive `/aw-verify setup` strands every fresh repo. Instead, degrade to an implicit defaults target
 so specs are still authored and can run against a local dev server:
 
 - Assume `base_url: http://localhost:3000`, `auth.strategy: none`, no fixtures.
@@ -449,21 +449,21 @@ so specs are still authored and can run against a local dev server:
 
 ```markdown
 - [TIMESTAMP] Phase 1: spec-emission — no aw-target found; assuming
-  http://localhost:3000 (auth: none). Run /aw-setup to pin base_url, auth, and
+  http://localhost:3000 (auth: none). Run /aw-verify setup to pin base_url, auth, and
   fixtures for reliable runs.
 ```
 
 The executor's Phase 4 spec verification resolves this same way: a committed
 target wins; otherwise the localhost defaults apply and any spec that needs auth
 or a fixture is reported `skipped` with its reason, never failed. Suggest
-`/aw-setup` once — never block on it, and never try to run it yourself (it is
+`/aw-verify setup` once — never block on it, and never try to run it yourself (it is
 interactive).
 
 ### What to emit
 
 Write `specs.md` in the **intent format**: header `Format: intent`, fields per
 [`templates/intent-spec.md.template`](../templates/intent-spec.md.template).
-Intent is the shared contract with `ui-verify` and `/local-verify`; never write a
+Intent is the shared contract with `ui-verify` and `/aw-verify`; never write a
 new `specs.md` in the WHEN/THEN grammar of
 [`templates/specs.md.template`](../templates/specs.md.template), which stays a
 runner format (compiled routes) and a read-only legacy input.
@@ -494,7 +494,7 @@ Log:
   {critical-path-count} critical-path, {verify-only-count} verify-only)
 - [TIMESTAMP] Phase 1: spec-emission — skipped (is-ui-diff: no UI files in plan)
 - [TIMESTAMP] Phase 1: spec-emission — {N} specs drafted against localhost
-  defaults (no aw-target; /aw-setup suggested, not blocking)
+  defaults (no aw-target; /aw-verify setup suggested, not blocking)
 ```
 
 ---
@@ -579,7 +579,7 @@ The brief writer then prints the handoff message and dispatches the executor —
 - [ ] Technical approach designed with specific file references
 - [ ] Existing Code Survey completed for every planned `create` — searches recorded, verdicts assigned (anchor: `existing-code-survey`)
 - [ ] Acceptance Criteria carry `AC-{n}` IDs + `(covers: R{m})` annotations; every `[user-stated]` requirement covered; EARS shape preferred; a runner sketched per criterion (anchor: `acceptance-criteria-drafting`)
-- [ ] UI surface check: if plan touches UI files, aw-target exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
+- [ ] UI surface check: if plan touches UI files, aw-target exists OR user told to run `/aw-verify setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
 - [ ] Brief validation passed (anchor: `brief-validation`)
 - [ ] Companion invocations logged (will move to `plan.md` Progress Log in Phase 2)
 
@@ -598,5 +598,5 @@ The brief writer then prints the handoff message and dispatches the executor —
 - Related rule: [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — where specs.md is consumed
 - Related rule: [`phase-4-testing.md#executable-checks-loop`](./phase-4-testing.md#executable-checks-loop) — where checks.yaml is consumed
 - Research basis: [`references/planning-quality-research.md`](../references/planning-quality-research.md) — anti-reinvention, spec fidelity, clarify-or-abstain, executable checks
-- Setup skill: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — aw-target scaffolding
+- Setup: `/aw-verify setup` — writes `.agents/aw/`
 - Template: [`templates/specs.md.template`](../templates/specs.md.template) — spec format reference

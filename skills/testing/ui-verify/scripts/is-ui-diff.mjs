@@ -25,8 +25,9 @@
 // SURFACE (optional, this is the "learned per repo" layer):
 //   --surface-file <path>     JSON file with the repo's UI surface
 //   --surface-json '<json>'   the same JSON inline (what an agent passes after
-//                             reading it from LoreKit — the CLI cannot call an
-//                             MCP tool, so the agent fetches and forwards it)
+//                             reading `surface` from .agents/aw/ui.yml — the
+//                             CLI parses no YAML, so the agent forwards JSON)
+//   `include` is accepted as an alias for `globs`.
 //   Surface shape (every field optional):
 //     { "mode": "extend" | "replace",   // default "extend" (merge with defaults)
 //       "extensions": [".ts", ".css"],  // count these extensions ANYWHERE
@@ -120,8 +121,9 @@ const extOf = (path) => {
   return dot < 0 ? "" : base.slice(dot).toLowerCase();
 };
 
-function mergeSurface(defaults, surface) {
-  if (!surface) return { ...defaults, _source: "default" };
+function mergeSurface(defaults, rawSurface) {
+  if (!rawSurface) return { ...defaults, _source: "default" };
+  const surface = { ...rawSurface, globs: [...(rawSurface.globs ?? []), ...(rawSurface.include ?? [])] };
   if (surface.mode === "replace") {
     return {
       extensions: surface.extensions ?? [],
@@ -238,6 +240,8 @@ function selfTest() {
     !classify(["src/components/Button.tsx"], { mode: "replace", extensions: [".foo"] }).isUI);
   t("surface exclude wins over a ui match",
     !classify(["legacy/components/Old.tsx"], { exclude: ["legacy/**"] }).isUI);
+  t("`include` is an alias for globs",
+    classify(["apps/web/page.ts"], { mode: "replace", include: ["apps/web/**"] }).isUI);
   t("source is 'default' with no surface", classify(["a.tsx"]).source === "default");
   t("source names the surface when given",
     classify(["a.tsx"], { dirs: ["x"] }).source.startsWith("surface"));

@@ -150,7 +150,7 @@ Otherwise capture the regression window for step 2c.
 **Step 2a.** Merge the Phase 1 partial records into one Evidence Record (schema: [`templates/bug-notes.md`](./templates/bug-notes.md) § `Evidence Record`).
 
 **Phase 2.5 — Reproduction lock.** Build a deterministic failing repro per [`rules/reproduction.md`](./rules/reproduction.md).
-For a telemetry-sourced input, first run the rule's repro-fidelity check: pass the originating span's shape from the Evidence Record to `Skill("observe-run")` as literal expectations — never as "matches production", since `observe-run` reads only the local run's telemetry (its `dev.run.id`).
+For a telemetry-sourced input, first run the rule's repro-fidelity check: run the repro locally, then `Skill("telemetry-verify", "--env local --from <start> --to <end>")` over that window with the originating span's shape from the Evidence Record as literal expectations — never as "matches production", since `telemetry-verify` reads only the local run's window.
 The check is advisory and never touches Phase 8.
 Then pick the lowest layer that captures the bug and delegate:
 

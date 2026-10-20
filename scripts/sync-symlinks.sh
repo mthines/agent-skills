@@ -71,8 +71,10 @@ CLAUDE_AGENTS_DIR="$HOME/.claude/agents"
 AW_SKILLS=(
   autonomous-workflow
   aw
-  aw-setup
   aw-tester-chrome
+  verify
+  ui-verify
+  telemetry-verify
   aw-create-plan
   aw-create-walkthrough
   confidence

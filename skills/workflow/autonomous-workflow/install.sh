@@ -167,7 +167,7 @@ template_required "routing.rule.md"
 # Skills nested inside this skill directory. They are not templates, so they
 # need their own existence check — without it an incomplete skill directory
 # yields a dangling symlink instead of an error.
-NESTED_SKILLS=(aw aw-setup aw-tester-chrome)
+NESTED_SKILLS=(aw aw-tester-chrome)
 
 for nested in "${NESTED_SKILLS[@]}"; do
   if [[ ! -f "$SKILL_DIR/$nested/SKILL.md" ]]; then
@@ -227,11 +227,6 @@ fi
 #                    the legacy cleanup below removes the pre-v3.23 `aw` AGENT
 #                    unconditionally, so a --global / --project upgrade that
 #                    skipped this link would delete /aw and leave no way back.
-#   aw-setup         scaffolds .claude/aw-targets/ for aw-tester. The summary
-#                    below tells the user to run it, and aw-tester needs an
-#                    aw-target to pin base_url, auth, and fixtures — so an
-#                    unlinked /aw-setup leaves UI specs on localhost defaults
-#                    with no way to pin a target.
 #   aw-tester-chrome the in-session Chrome runner preview-spec selects when the
 #                    extension is connected.
 mkdir -p "$CLAUDE_DIR/skills"
@@ -243,7 +238,7 @@ for nested in "${NESTED_SKILLS[@]}"; do
   ln -sfn "${NESTED_LINK_BASE:-$SKILL_DIR}/$nested" "$CLAUDE_DIR/skills/$nested"
 done
 vlog "✓ Dispatcher:   $CLAUDE_DIR/skills/aw (opt-in entry point; tier routing + self-improvement loop)"
-vlog "✓ Nested skills: $CLAUDE_DIR/skills/{aw-setup,aw-tester-chrome}"
+vlog "✓ Nested skills: $CLAUDE_DIR/skills/{aw,aw-tester-chrome}"
 
 # Clean up legacy agent symlinks from older installs. We only remove them when
 # they're symlinks pointing at our templates — never touch hand-authored files.
@@ -305,8 +300,8 @@ vlog "  Micro/Lite run single-pass via aw; Full: aw writes the brief + sealed ch
 vlog "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
 vlog ""
 vlog "UI verification setup (one-time, per project):"
-vlog "  Run /aw-setup to scaffold .claude/aw-targets/local.yml before the first UI autonomous task."
-vlog "  See: skills/workflow/autonomous-workflow/aw-setup/SKILL.md"
+vlog "  Run /aw-verify setup to write .agents/aw/ (environments, login, telemetry) before the first UI autonomous task."
+vlog "  See: skills/testing/aw-verify/SKILL.md"
 
 if [[ "$MODE" == "development" ]]; then
   vlog ""

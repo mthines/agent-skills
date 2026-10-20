@@ -6,7 +6,7 @@ tags:
   - aw-tester
   - spec-verification
   - ui
-  - aw-targets
+  - aw-target
 ---
 
 # Phase 4: Spec-Driven UI Verification
@@ -37,7 +37,7 @@ Playwright test files.
 
 Specs are written by the executor in `specs.md`, in the intent format, once the UI exists (see
 [`phase-1-planning.md` — Spec Emission](./phase-1-planning.md#spec-emission-ui-tasks) and correction C5).
-The same file is later lifted into the PR body by `ui-verify author` and re-run on a local stack by `/local-verify`.
+The same file is later lifted into the PR body by `ui-verify author` and re-run on a local stack by `/aw-verify`.
 A legacy grammar `specs.md` still runs; its `critical-path` specs are promoted to saved `*.spec.ts` via the `e2e-testing` skill's Generator.
 
 **This sub-rule is separate from the main `phase-4-testing.md` rule.** It runs
@@ -93,11 +93,12 @@ Valid skip reasons:
 
 ### Aw-Target file — use it if present, degrade if not
 
-The `Target:` header in `specs.md` names the aw-target
-(`.claude/aw-targets/{aw_target_name}.yml`).
+The `Target:` header in `specs.md` names an environment in `.agents/aw/environments.yml`;
+the run writes `aw-tester`'s target `.agent/{branch}/aw-target.{aw_target_name}.yml` from it
+(the `aw-verify` skill's `rules/config.md`).
 
 **If the file exists, use it.** If it is missing, do **not** halt — a cold-start
-repo has no committed target, and stranding the run on an interactive `/aw-setup`
+repo has no committed target, and stranding the run on an interactive `/aw-verify setup`
 is exactly the cliff this flow removes. Synthesize an implicit defaults target in
 [Step 1](#step-1-detect-the-aw-target) instead:
 
@@ -109,7 +110,7 @@ fixtures: { references: {} }
 ```
 
 Any spec that needs auth or a fixture the defaults cannot provide is reported
-`skipped` with its reason by `aw-tester`, never failed. Suggest `/aw-setup` once
+`skipped` with its reason by `aw-tester`, never failed. Suggest `/aw-verify setup` once
 to pin a real target; never block on it and never scaffold it yourself (it is the
 user-run setup flow).
 
@@ -133,8 +134,8 @@ If `auth.strategy: storage-state` and the storage state file is missing or its
 ```bash
 # Resolve aw-target name from specs.md header
 AW_TARGET=$(grep "^Target:" .agent/$(git branch --show-current)/specs.md | awk '{print $2}')
-AW_TARGET_FILE=".claude/aw-targets/${AW_TARGET}.yml"
-test -f "$AW_TARGET_FILE" && echo "aw-target found: $AW_TARGET_FILE" || echo "aw-target missing — using localhost defaults"
+AW_TARGET_FILE=".agent/$(git branch --show-current)/aw-target.${AW_TARGET}.yml"
+test -f .agents/aw/environments.yml && echo "environment config found — write $AW_TARGET_FILE from environments.${AW_TARGET}" || echo "no .agents/aw/environments.yml — using localhost defaults"
 ```
 
 When the file is missing, pass `aw-tester` the implicit defaults from
@@ -144,7 +145,7 @@ degradation:
 
 ```markdown
 - [TIMESTAMP] Phase 4: spec-verification — no aw-target ({AW_TARGET}); running
-  against localhost defaults. /aw-setup suggested (non-blocking).
+  against localhost defaults. /aw-verify setup suggested (non-blocking).
 ```
 
 Also detect the `aw-tester` agent:
@@ -175,7 +176,7 @@ prompt: |
   Run the specs at .agent/{branch}/specs.md against aw-target "{aw_target_name}".
   Mode: --bail-on-first-red
   
-  Aw-Target file: .claude/aw-targets/{aw_target_name}.yml
+  Aw-Target file: .agent/{branch}/aw-target.{aw_target_name}.yml
   Specs file: .agent/{branch}/specs.md
   
   Persist the generated spec to .agent/{branch}/.aw-tester/last-run.spec.ts
@@ -345,7 +346,7 @@ is the primary signal. This check is a safety net for a `specs.md` left over fro
 Full Phase 4 spec-verification log example (note the cold/hot split):
 
 ```markdown
-- [2026-06-15T10:00:00Z] Phase 4: spec-verification — aw-target: local (.claude/aw-targets/local.yml)
+- [2026-06-15T10:00:00Z] Phase 4: spec-verification — aw-target: local (.agent/<branch>/aw-target.local.yml)
 - [2026-06-15T10:00:02Z] Phase 4: aw-tester (cold) — dispatched (2 specs, --bail-on-first-red)
 - [2026-06-15T10:00:18Z] Phase 4: aw-tester (cold) — verdict: red
   (Spec-1: pass, Spec-2: fail — locator {role: "button", name: "Add Widget"} not found)
@@ -368,7 +369,7 @@ dispatches (~30 s + sub-agent tokens × 2). Two hot-loop iterations cost
 ## Checklist
 
 - [ ] UI files detected in plan (or sub-rule skipped with `no UI files in plan`)
-- [ ] Aw-Target file located at `.claude/aw-targets/{aw_target_name}.yml`
+- [ ] Aw-Target file written at `.agent/{branch}/aw-target.{aw_target_name}.yml` from `.agents/aw/environments.yml`
 - [ ] `aw-tester` agent detected at `.claude/agents/aw-tester.md` or `~/.claude/agents/aw-tester.md`
 - [ ] Cold pass dispatched once at Phase 4 entry with `--bail-on-first-red`
 - [ ] `hot_loop:` block captured from the cold-pass verdict (`spec_file`, `playwright_bin`, `failing_spec_id`)
@@ -387,6 +388,6 @@ dispatches (~30 s + sub-agent tokens × 2). Two hot-loop iterations cost
 - Parent rule: [`phase-4-testing.md`](./phase-4-testing.md) — stuck-loop detection and mode-aware cap
 - Agent: [`aw-tester.agent.md`](../templates/aw-tester.agent.md) — the spec runner
 - Skill: [`e2e-testing`](../../../testing/e2e-testing/SKILL.md) — Generator for critical-path spec promotion
-- Setup: [`aw-setup/SKILL.md`](../aw-setup/SKILL.md) — aw-target scaffolding (user-run prerequisite)
-- Templates: [`aw-target.yml.template`](../templates/aw-target.yml.template), [`specs.md.template`](../templates/specs.md.template)
+- Setup: `/aw-verify setup` — writes `.agents/aw/` (user-run prerequisite)
+- Templates: [`specs.md.template`](../templates/specs.md.template)
 - Planning: [`phase-1-planning.md`](./phase-1-planning.md) — where specs.md is emitted

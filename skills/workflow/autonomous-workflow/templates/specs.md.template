@@ -1,7 +1,7 @@
 # Specs: <Feature Title>
 
 Plan: ../plan.md                   # relative path to the plan that prompted these specs
-Target: local                      # references .claude/aw-targets/local.yml
+Target: local                      # an environment in .agents/aw/environments.yml
 Refactor: no                       # "yes" hints regression intent: assert behaviour unchanged
 
 # ---
@@ -85,7 +85,7 @@ Refactor: no                       # "yes" hints regression intent: assert behav
 #
 #   IMPORTANT: continues-from is silently broken when the aw-target sets
 #   reset_between_specs: true (each spec starts a fresh context). Do not use
-#   continues-from on aw-targets with reset_between_specs: true.
+#   continues-from on targets with reset_between_specs: true.
 # ---
 
 ## Spec 1: <one-line user goal for a new feature>

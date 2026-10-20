@@ -50,7 +50,6 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps the LLM score at 89%
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates; `deep` runs 3–5 parallel persona lenses (found via `ideate`) and merges them
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
-- `observe-run` (`Skill() + /`) — runs a command and grades the telemetry that run emitted against behavioral assertions only
 - `optimize-approach` (`/`) — is this the best approach for the intent (codebase-fit, simplicity, performance, robustness); at most two material proposals, silent when sound. Report only
 - `polish` (`/`) — re-runnable pre-PR branch quality gate: review, then simplify the diff and prune restating or ticket comments, each change behind a test check
 - `review-loop` (`Skill()`) — bounded convergence loop, cap 5: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` on a PR; with no PR, local mode over `.agent/{branch}/findings.jsonl`, zero GitHub calls; `--ui` adds a `ui-verify` lane. Run at the top level
@@ -72,8 +71,9 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
-- `ui-verify` (`Skill()` + `/`) — Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); `author` adds out-of-bounds specs from a PR-scoped brainstorm; the runner adapts the route but checks every outcome with evidence, then tries to break it, records it, and checks its Dash0 web events
-- `local-verify` (`/`) — verifies a PR on a local stack: reuses `/aw`'s brief and intent `specs.md`, runs them plus edge probes via `ui-verify run --url`, reads telemetry, fixes each finding as one commit; `setup` stores all repo values
+- `aw-verify` (`/`) — proves a feature works on `local` or `preview`: probes the brief's specs, concurrency, and guardrail faults, then reads the run's telemetry once through `telemetry-verify`; fixes locally, reports. `setup` writes the committed `.agents/aw/` config every suite skill reads
+- `ui-verify` (`Skill()` + `/`) — browser witness: Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); checks every outcome with evidence, then tries to break it and records it
+- `telemetry-verify` (`Skill()`) — telemetry witness: reads one traffic window's web events, traces, and logs; follows each criterion from web event to API to database; grades the brief's `telemetry:` criteria
 
 ### `design/` — UI, visual, interaction
 

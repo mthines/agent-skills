@@ -16,7 +16,6 @@
     "./skills/testing/",
     "./skills/workflow/",
     "./skills/workflow/autonomous-workflow/aw/",
-    "./skills/workflow/autonomous-workflow/aw-setup/",
     "./skills/workflow/autonomous-workflow/aw-tester-chrome/"
   ],
   "agents": [

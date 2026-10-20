@@ -174,8 +174,8 @@ The skill ships **one dispatcher skill** and **two agents** (`aw-` = autonomous-
 | [`aw-executor`](./templates/aw-executor.agent.md) | procedure (and agent) | Full, Phases 3–7 from the brief, applying [`corrections.md`](./rules/corrections.md) → review, walkthrough, draft PR; `aw` follows it in-session, and `/fix-bug` or a parallel request dispatches it | `CHECKS M/M PASS`, walkthrough shown, CI gate run |
 | [`aw-tester`](./templates/aw-tester.agent.md) | agent | Phase 4 (UI) spec verification, cold pass only | `green` or `inconclusive` before lint/type/test |
 
-Other files: [`routing.rule.md`](./templates/routing.rule.md) (auto-trigger rule), [`aw-target.yml.template`](./templates/aw-target.yml.template), [`specs.md.template`](./templates/specs.md.template), [`intent-spec.md.template`](./templates/intent-spec.md.template), [`scripts/run-checks.mjs`](./scripts/run-checks.mjs) (the check runner; `--self-test` proves it).
-Related skills: [`aw-setup`](./aw-setup/SKILL.md) (run `/aw-setup` once per project before the first UI task), [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) (in-session Chrome runner), [`aw-create-plan`](../aw-create-plan/SKILL.md), [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md).
+Other files: [`routing.rule.md`](./templates/routing.rule.md) (auto-trigger rule), [`specs.md.template`](./templates/specs.md.template), [`intent-spec.md.template`](./templates/intent-spec.md.template), [`scripts/run-checks.mjs`](./scripts/run-checks.mjs) (the check runner; `--self-test` proves it).
+Related skills: `aw-verify` (run `/aw-verify setup` once per project; it writes `.agents/aw/`, which `aw-tester` targets come from), [`aw-tester-chrome`](./aw-tester-chrome/SKILL.md) (in-session Chrome runner), [`aw-create-plan`](../aw-create-plan/SKILL.md), [`aw-create-walkthrough`](../aw-create-walkthrough/SKILL.md).
 Design rationale: [`CLAUDE.md`](./CLAUDE.md) and [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md).
 
 Install the skill, its companions, and the agents:

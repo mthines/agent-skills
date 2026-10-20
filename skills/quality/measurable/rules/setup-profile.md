@@ -62,26 +62,6 @@ Ask these in **one** message so the user answers once:
    [`weaver-schema.md`](./weaver-schema.md) Step 1 take its advisory branch
    instead of searching the tree on every run. Do not propose adopting Weaver
    during the interview; record the state and move on.
-7. **Dev run target** — does the project have a way to run one command and
-   emit telemetry locally (a dev-server start command, a scriptable
-   integration test, a seeded local environment)? If yes, record the command
-   and the dataset it should target (recommend a dedicated dev dataset —
-   never assume one already exists). If no dev-loop telemetry path exists
-   yet, record that explicitly so `Skill("observe-run")` self-skips instead
-   of guessing at a target. This is the field `observe-run` gates on before
-   doing any work.
-8. **Cross-repo dev-loop conventions** — *only if `observe-run` and LoreKit
-   are both installed; skip otherwise.* Ask for any dev-loop habits that hold
-   **regardless of this repo** and should follow the user everywhere: a
-   preferred rung-1 reader when no Dash0 CLI is around, a default rung for the
-   inner loop, a `dash0 spans query` filter-syntax gotcha, an endpoint or CLI
-   convention. These are **not** written to the committed profile — they seed
-   `observe-run`'s `global`-scope lessons bucket
-   (`loop::observe-run-lessons` — see
-   [`observe-run/rules/lessons.md`](../../observe-run/rules/lessons.md)), so
-   they merge with per-repo lessons at run time. Record `none` and move on if
-   there are no such conventions yet; the loop will accrue them from real runs.
-
 Confirm the answers back to the user verbatim before writing.
 **Do not guess any of these** — a wrong package map silently misroutes
 every future `guide`/`implement`/`audit` call.
@@ -89,21 +69,14 @@ every future `guide`/`implement`/`audit` call.
 ## Writing the profile
 
 Fill [`templates/observability-profile.template.md`](../templates/observability-profile.template.md)
-from the confirmed answers **for Q1–Q7** and pass it as the entry content to the
+from the confirmed answers **for Q1–Q6** and pass it as the entry content to the
 `persistent-memory` write pipeline (Step 2 "Extract candidates" — this
 profile *is* the candidate; there's no further extraction to do). The
 Package Map table is the load-bearing part — keep it as the first table
 in the file so [`scope-detection.md`](./scope-detection.md) Step 1 can read
 it without scanning the whole document.
 
-**Q8 does not go in the template.** Its answers are cross-repo dev-loop
-conventions — write each one to LoreKit `global` scope in the
-`loop::observe-run-lessons` bucket instead, per
-[`observe-run/rules/lessons.md`](../../observe-run/rules/lessons.md)'s write
-step. Skip this entirely when Q8 was `none`, or when `observe-run`/LoreKit
-were absent (Q8 was not asked). This keeps the committed profile purely
-repo config and lets the global conventions merge with per-repo lessons at
-run time — the two-layer split those two files exist to preserve.
+Running the code and reading its telemetry back is configured in `.agents/aw/` by `/aw-verify setup`, not in this profile.
 
 ## Re-running setup
 

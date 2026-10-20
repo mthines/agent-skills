@@ -14,7 +14,7 @@ An agent that writes an expectation and then asks Jev to confirm its own
 paraphrase of the page it just read will always get `confirms`.
 That is **assertion-by-construction** — the same failure
 [the `tdd` provenance check](../../tdd/rules/test-provenance.md) catches for tests
-and [`observe-run`'s assertion-provenance rule](../../observe-run/rules/assertion-provenance.md)
+and `telemetry-verify`'s by-construction rule
 catches for telemetry.
 This rule is Step 0 of every run: an expectation that fails it is **refused**,
 not graded.

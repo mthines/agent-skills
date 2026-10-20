@@ -1,0 +1,15 @@
+# .agents/aw/environments.yml — where the suite runs. Committed; no secrets.
+# Field reference: the verify skill's rules/config.md. Written by /aw-verify setup.
+version: 1
+environments:
+  local:
+    url: ""
+    stack:
+      driver: none            # cli | compose | command | none
+    auth:
+      strategy: none          # none | storage-state | bypass-header | manual
+  preview:
+    url:
+      from: pr-deployment
+    auth:
+      strategy: none

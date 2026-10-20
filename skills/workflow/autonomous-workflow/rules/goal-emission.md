@@ -79,8 +79,8 @@ git diff --name-only "$BASE"...HEAD
 
 Never paraphrase the sentinel line, and never print `PR:` without a URL you received from GitHub.
 
-When the run wrote `specs.md`, print one handoff line right after the block, so the same specs can be re-run by either verifier:
+When the run wrote `specs.md` or the brief has a `telemetry:` criterion, print one handoff line right after the block, so the same proof can be re-run:
 
 ```text
-UI spec: .agent/<branch>/specs.md — <N> specs, aw-tester <green|red|inconclusive|not run (<reason>)> · preview: /ui-verify run <pr-url> · local: /local-verify <pr-url>
+verify run: .agent/<branch>/verify/report.md — browser <green|red|inconclusive|not run (<reason>)>, telemetry <confirms|contradicts|ambiguous|null|not run (<reason>)> · preview: /ui-verify run <pr-url> · local: /aw-verify <pr-url>
 ```

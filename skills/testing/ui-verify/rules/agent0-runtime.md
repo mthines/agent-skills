@@ -27,13 +27,12 @@ Rationale for the on-demand browser install below — the two-stage design, the 
 - [Dispatch the adversarial pass](#dispatch-the-adversarial-pass)
 - [The out-of-bounds brainstorm dispatches from `author`](#the-out-of-bounds-brainstorm-dispatches-from-author)
 - [Preview auth comes from the automation's secrets](#preview-auth-comes-from-the-automations-secrets)
-- [`setup` needs a human](#setup-needs-a-human)
 
 ---
 
 ## Work from a checkout of the PR head
 
-`author` reads the diff, and `run` reads the committed `.claude/aw-targets/preview.yml` and writes `.agent/{branch}/…` scratch — all relative to a checkout.
+`author` reads the diff, and `run` reads the committed `.agents/aw/` config and writes `.agent/{branch}/…` scratch — all relative to a checkout.
 When the working directory is not a checkout of the PR's repository at its head, make one before Step 0:
 
 ```bash
@@ -98,7 +97,7 @@ In place of the `Task(subagent_type: "aw-tester", …)` block in [`runner.md § 
     Your procedure is /tmp/workspace/pr-reviewer/skills/autonomous-workflow/templates/aw-tester.agent.md — read it and follow it.
     Run `. /tmp/workspace/agent-skills/env.sh` at the start of every Bash call.
     Work in <the checkout directory>.
-    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Aw-Target file: .agent/{branch}/aw-target.preview.yml
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Mode: --all --auto-capture --record-video
 )
@@ -123,7 +122,7 @@ In place of the `Task(subagent_type: "general-purpose", …)` block in [`runner.
     Your procedure is /tmp/workspace/pr-reviewer/skills/ui-verify/rules/adversarial.md — read it and follow it.
     Run `. /tmp/workspace/agent-skills/env.sh` at the start of every Bash call.
     Work in <the checkout directory>.
-    Aw-Target file: .agent/{branch}/.ui-verify/aw-target.yml
+    Aw-Target file: .agent/{branch}/aw-target.preview.yml
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Probe specs: <ids of the specs whose result was pass>
     Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
@@ -135,6 +134,7 @@ In place of the `Task(subagent_type: "general-purpose", …)` block in [`runner.
 
 The `.aw-tester/node_modules` link from [§ The browser precondition](#the-browser-precondition) is what the probe file's `@playwright/test` import resolves through, so the pass downloads nothing.
 The Chrome categories never apply here — this host has no extension.
+Dispatch [`runner.md § Step 4c`](./runner.md#step-4c-telemetry--telemetry-verify-on-each-window)'s `telemetry-verify` calls as `general` sub-agents the same way, the spec-window call in the same message as this one.
 
 ## The out-of-bounds brainstorm dispatches from `author`
 
@@ -149,12 +149,8 @@ An automation that runs `author` or `verify` has its own run timeout, which defa
 
 ## Preview auth comes from the automation's secrets
 
-[`preview-auth.md`](./preview-auth.md) already reads every credential from an environment variable named in `preview.yml` (`refresh.env`, `bypass_header`).
-On this host those variables are the automation's `envVars` / secrets — set each one the committed `preview.yml` names.
+Every credential is read from an environment variable named in `.agents/aw/environments.yml` → `preview.auth` (`refresh.env`, `bypass_header.env`).
+On this host those variables are the automation's `envVars` / secrets — set each one that file names.
 One that is unset makes the authed specs `skipped`, exactly as it does in CI, and the report says which variable was missing.
 
-## `setup` needs a human
-
-`ui-verify setup` delegates to `aw-setup --target preview`, an interview.
-On this host it stops with `blocked (needs a human: setup is interactive — run /ui-verify setup locally and commit .claude/aw-targets/preview.yml)`.
-`author`, `run`, and `verify` need only the committed file it produces.
+Setup is interactive: run `/aw-verify setup` locally and commit `.agents/aw/`; this host only reads it.
