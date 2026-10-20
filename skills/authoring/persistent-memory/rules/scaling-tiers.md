@@ -206,7 +206,7 @@ When personal markdown stops fitting the deployment. Examples:
 
 The **self-improvement loops** in this repo (`autonomous-workflow`, `fix-bug`,
 `implement-suggestion`, `ci-auto-fix`,
-`e2e-pr-stabilizer`, `ideate`, and the `pr-reviewer`
+`ideate`, and the `pr-reviewer`
 agent) run their fast tier on **LoreKit**, a Tier-4 managed
 memory layer, rather than on this skill's markdown store. This section is the
 implementation reference those loops point to; the operational read/write skill

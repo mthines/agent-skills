@@ -72,7 +72,6 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
-- `e2e-pr-stabilizer` (`/`) — local-first Playwright E2E stabilizer for one PR; modes `stabilize` / `optimize`
 - `ui-verify` (`Skill()` + `/`) — Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); `author` adds out-of-bounds specs from a PR-scoped brainstorm; the runner adapts the route but checks every outcome with evidence, then tries to break it, records it, and checks its Dash0 web events
 - `local-verify` (`/`) — verifies a PR on a local stack: reuses `/aw`'s brief and intent `specs.md`, runs them plus edge probes via `ui-verify run --url`, reads telemetry, fixes each finding as one commit; `setup` stores all repo values
 

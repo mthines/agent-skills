@@ -91,7 +91,6 @@ hosts and silently halve every usage roll-up.
 | `reviewer-lessons` | `reviewer` (agent: `pr-reviewer`) | Step 0.7 / Step 1.0 → post-merge promotion only | `global` \| `repo::` | Distilled from the `review-outcomes` bus at promotion time. `pr-reviewer` NEVER writes in-run — writes come from `outcome-learning.md` after the PR closes. |
 | `implement-suggestion-lessons` | `implement-suggestion` | Phase 3 → Phase 7 + `--watch` | `global` \| `repo::` | Classification, gate calibration, lane selection. |
 | `ci-auto-fix-lessons` | `ci-auto-fix` | Phase 3 → Phase 8·9 | **`repo::`** | More conservative: `seen_count ≥ 5` promotion; regression lessons `volatile`, 30d. |
-| `e2e-pr-stabilizer-lessons` | `e2e-pr-stabilizer` | Phase 4 → Phase 7 | `global` (race-shapes) \| `repo::` (locators) | Writes gated on telemetry ratification. |
 | `ideate-lessons` | `ideate` | Phase 0 → Phase 7 | `global` \| `repo::` | Mechanics only — divergence runs lessons-blind. |
 
 ### Bus (`loop::review-outcomes`, key `review-outcomes::<fingerprint-slug>`)

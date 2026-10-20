@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Agent Skills spec](https://img.shields.io/badge/spec-Agent%20Skills-7c3aed)](https://agentskills.io/)
-[![Skills](https://img.shields.io/badge/skills-51-0a7)](#skills)
+[![Skills](https://img.shields.io/badge/skills-50-0a7)](#skills)
 [![Agents](https://img.shields.io/badge/agents-5-0a7)](#skills)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-supported-d97706)](https://claude.com/claude-code)
 
@@ -172,7 +172,6 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/aw-setup`](./skills/workflow/autonomous-workflow/aw-setup/SKILL.md) | One-time setup so `aw` and `ui-verify` can sign in to your app. |
 | [`/e2e-testing`](./skills/testing/e2e-testing/SKILL.md) | Plans, writes, and heals Playwright end-to-end tests. |
 | [`/e2e-testing-mobile`](./skills/testing/e2e-testing-mobile/SKILL.md) | Maestro flows for Expo and React Native. |
-| [`/e2e-pr-stabilizer`](./skills/testing/e2e-pr-stabilizer/SKILL.md) | Makes one PR's flaky Playwright tests stable. |
 | **`design/`** | *UI, visual, interaction* |
 | [`ux`](./skills/design/ux/SKILL.md) | Walks the user's real path, then accessibility, microcopy, and dark patterns. |
 | [`visual-design`](./skills/design/visual-design/SKILL.md) | Brand-aware visual direction: color, type, and hierarchy. |
