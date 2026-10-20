@@ -23,7 +23,7 @@
 // --extra-high-stakes regex exits non-zero and prints NOTHING on stdout, so a piping
 // caller can never act on a partial classification.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 // ── Shape detectors ────────────────────────────────────────────────────────────────────
@@ -282,4 +282,4 @@ function main() {
   process.stdout.write(JSON.stringify(classify(files, extras)) + "\n");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

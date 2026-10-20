@@ -61,7 +61,8 @@ Read the existing `version:` from `plan.md` when it exists; the new write uses t
 ### Step 2: Write `plan.md`
 
 1. Write the Core brief per [The brief (Core)](#the-brief-core) — always, in that order.
-2. On a Full-tier plan, or when File Changes has a `create` row, add Extended sections per [`rules/extended-sections.md`](rules/extended-sections.md) — read when the tier is Full or a `create` row exists.
+2. Keep the brief to one screen: at most 60 lines. It states outcomes and limits, never a design — the worker discovers the design while it works, and a guessed design written into a brief becomes a defect the worker follows faithfully.
+   Add an Extended section only when the caller asks for one (`/fix-bug` does) — [`rules/extended-sections.md`](rules/extended-sections.md).
 3. On an iteration, append a Progress Log entry naming the new version: `- [{TIMESTAMP}] Phase 4: plan version 3 written (auto-replan after re-trace)`.
 
 ### Step 3: Derive and seal `checks.yaml`
@@ -105,7 +106,7 @@ approved: true
 
 ## Requirements
 
-1. {requirement} — [user-stated | inferred]
+1. {requirement} — [user-stated | inferred] — {source: "quoted words" from the user or ticket, or the outcome a reviewer would require}
 
 ### Out of Scope
 
@@ -113,10 +114,8 @@ approved: true
 
 ## Guardrails
 
-Every file not listed in File Changes is out of bounds.
-
-- Do not modify: `{path or glob}` — {why}
-- Keep unchanged: {public API, behaviour, output format, or config} — {why}
+- Do not modify: `{path or glob}` — {source: the user, the ticket, or a repo doc}
+- Keep unchanged: {public API, behaviour, output format, or config} — {source}
 - Never: {forbidden move, e.g. weaken or skip a test, add a dependency, edit checks.yaml definitions}
 
 ## Acceptance Criteria (Definition of Done)
@@ -135,10 +134,12 @@ Done when `run-checks.mjs` prints `CHECKS {M}/{M} PASS (<sha>)` and the draft PR
 
 ## File Changes
 
+Starting points, not a fence: the worker changes whatever the task needs and names every extra file in the walkthrough.
+
 | Action | File   | Change                  | Reason |
 | ------ | ------ | ----------------------- | ------ |
 | create | {path} | {purpose / key exports} | {why}  |
-| modify | {path} | {specific change}       | {why}  |
+| modify | {path} | {expected change}       | {why}  |
 ````
 
 Section rules:
@@ -146,11 +147,11 @@ Section rules:
 | Section | Rule |
 | --- | --- |
 | Task | 1–3 sentences a reviewer can agree or disagree with in under a minute |
-| Requirements | Numbered by position (R1, R2, …); every item tagged `[user-stated]` or `[inferred]`; Out of Scope items are not numbered |
-| Guardrails | At least one concrete line besides the default; each names a path, an interface, or a forbidden move — never "be careful" |
-| Acceptance Criteria | Each carries a unique `AC-{n}` and `(covers: R{m})`; every `[user-stated]` requirement is covered; prefer EARS "When …, the system shall …"; the After-editing and Before-PR commands contain no `{` `}` placeholders |
+| Requirements | Numbered by position (R1, R2, …); every item tagged `[user-stated]` or `[inferred]` and cites its source; an `[inferred]` item is an observable outcome, never a design choice; Out of Scope items are not numbered |
+| Guardrails | Each names a path, an interface, or a forbidden move, and its source is the user, the ticket, or a repo doc — never "be careful", and never a function or file you decided to keep unchanged. No Guardrail may forbid something a requirement or AC needs |
+| Acceptance Criteria | Each carries a unique `AC-{n}` and `(covers: R{m})`; every `[user-stated]` requirement is covered; each states an observable outcome (EARS "When …, the system shall …"), never which function or mechanism produces it; the After-editing and Before-PR commands contain no `{` `}` placeholders |
 | Turn Cap | An integer from the table below, or a different integer with a one-clause reason |
-| File Changes | Every file the executor may touch, docs included; nothing else may change |
+| File Changes | The files the work likely starts from; the worker may change others and names them in the walkthrough |
 
 | Tier | Default turn cap |
 | --- | --- |
@@ -164,8 +165,11 @@ The turn cap feeds the paste-ready `/goal` line defined in the `autonomous-workf
 <!-- ✗ Wrong — a guardrail nobody can check -->
 - Be careful not to break anything.
 
-<!-- ✓ Right — names the area and the reason -->
-- Do not modify: `src/api/public/**` — external consumers pin this contract.
+<!-- ✗ Wrong — a design guess written as a limit; the ticket never said it, and it contradicted an edge case -->
+- Keep unchanged: `markSessionExpired` — the reconnect flow owns it.
+
+<!-- ✓ Right — names the area and where the limit came from -->
+- Do not modify: `src/api/public/**` — CLAUDE.md: external consumers pin this contract.
 ```
 
 The two compatibility headings (`## Requirements`, `## Acceptance Criteria (Definition of Done)`) are load-bearing for `confidence(plan)` and `checks.yaml` derivation — do not rename them.
@@ -224,17 +228,17 @@ node "${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}/scripts/run-chec
 - [ ] The six Core headings are present, in order.
 - [ ] Every Core section passes its row in the section-rules table.
 - [ ] `checks.yaml` has one `pending` entry per `AC-{n}`, and `checks.lock` was written by `--seal` after the last edit.
-- [ ] Extended sections are present only where [`rules/extended-sections.md`](rules/extended-sections.md) triggers them, and pass its validation table.
+- [ ] `plan.md` is at most 60 lines, and Extended sections appear only when the caller asked for them.
+- [ ] Every Guardrail and Requirement cites a source; none is a design choice.
 
 ## Common failures
 
 | Failure | Fix |
 | --- | --- |
-| Guardrails only restate "files outside File Changes" | Add the specific areas, interfaces, and moves that must not change |
+| A Guardrail or AC names a function to keep or a mechanism to use | Delete it, or restate it as the outcome the user or ticket asked for |
 | `## TL;DR` / `## Verification` written as Core sections | Use `## Task` and the commands inside Acceptance Criteria — the brief replaced them |
 | Empty Extended heading or `N/A` body | Omit the section |
 | AC without `AC-{n}` or `covers:` | Add both — rule #9 fails on an uncovered `[user-stated]` requirement |
-| `create` row without an Existing Code Survey | Run the reuse searches and add the section — rule #10 |
 | `checks.yaml` edited after sealing | Re-run `--seal`; the runner fails every check whose sealed fields changed |
 | Runner prints `CHECKS 0/0 FAIL: checks.lock missing` | Step 3 skipped `--seal`; re-derive and seal — the runner refuses an unsealed `checks.yaml` (exit 2) |
 | Most checks are `kind: judge` | Rewrite the criteria toward EARS trigger→response so a command decides them |

@@ -17,7 +17,8 @@
  * makes normalized bytes the honest metric, and `--self-test` proves it directly.
  */
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 /**
  * @param {string} text
@@ -177,7 +178,7 @@ function selfTest() {
   return failed.length === 0;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const argv = process.argv.slice(2);
   if (argv.includes("--self-test")) {
     const ok = selfTest();

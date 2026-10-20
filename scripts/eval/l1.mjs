@@ -1631,4 +1631,18 @@ const renderReport = (payload) => {
   s.check("G96a every attach-media region writer and refresher names both markers", missing.length === 0, missing.join(", "));
 }
 
+// ── G97: a script's main guard survives a symlinked install; Node realpaths import.meta.url but not argv[1] ──
+{
+  const tracked = execFileSync("git", ["ls-files", "*.mjs"], { cwd: REPO_ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
+  const bad = tracked.filter((f) => readOr(f).split("\n").some((l) =>
+    /process\.argv\[1\]/.test(l) && /import\.meta\.url/.test(l) && !/realpathSync/.test(l)));
+  s.check("G97a every main guard comparing argv[1] to import.meta.url realpaths argv[1]", bad.length === 0, bad.join(", "));
+  const dir = mkdtempSync(join(tmpdir(), "l1-g97-"));
+  const link = join(dir, "run-checks.mjs");
+  symlinkSync(join(REPO_ROOT, "skills/workflow/autonomous-workflow/scripts/run-checks.mjs"), link);
+  const r = spawnSync(process.execPath, [link, "--self-test"], { encoding: "utf8" });
+  rmSync(dir, { recursive: true, force: true });
+  s.check("G97b run-checks.mjs --self-test run through a symlink prints PASS", /self-test: PASS/.test(r.stdout), (r.stdout + r.stderr).slice(-200) || "no output");
+}
+
 process.exit(s.report() ? 0 : 1);

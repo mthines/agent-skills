@@ -42,7 +42,7 @@ Also [`anthropics/cwc-long-running-agents`](https://github.com/anthropics/cwc-lo
 The ledger is consumed by:
 
 - Phase 3 root-cause analysis — to skip ruled-out hypotheses.
-- `aw-planner` (Phase 6 entry) — to plan around known counterexamples.
+- `/fix-bug` Phase 6 brief — to plan around known counterexamples.
 - `aw-executor` (Phase 6 entry) — to load counterexamples for the CEGIS refinement loop.
 - Phase 7 verification — read-only.
 
@@ -62,7 +62,7 @@ Under the normal flow the first write — and therefore the creation point — i
 | Phase 3 (after root-cause analysis) | **Append** the `Alternatives ruled out` table from the Root-Cause Record |
 | Phase 4 (after confidence gate) | **Append** the confidence score + breakdown |
 | Phase 5 (after branch decision) | **Append** the chosen branch (auto-fix / proposal / stop) |
-| Phase 6 (after planner) | **Append** the planner's `plan.md` summary + plan confidence |
+| Phase 6 (after the brief) | **Append** the brief's `plan.md` summary + sealed check count |
 | Phase 6 (after each executor refinement round) | **Append** counterexamples (failing input/output) |
 | Phase 7 (after verification) | **Append** the verification verdict + evidence |
 | Phase 8 (after telemetry verification) | **Append** the post-deploy rate decay |

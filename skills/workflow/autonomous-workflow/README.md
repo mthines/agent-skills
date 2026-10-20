@@ -53,7 +53,7 @@ each is reported `ran` or `skipped (<reason>)`.
 | Phase | Name                       | Gate                                             |
 | ----- | -------------------------- | ------------------------------------------------ |
 | 0     | Validation                 | User confirmed understanding, mode selected; requirements restated + diffed; no unresolved `blocking` missing-information item |
-| 1     | Planning                   | `confidence(plan)` >= 90% (or user-approved) — incl. requirement→criterion traceability and an Existing Code Survey per planned `create`; `specs.md` drafted for UI tasks |
+| 1     | Planning                   | Brief validation (deterministic) — six Core headings, every `[user-stated]` requirement covered by a sealed check; boundary entry points listed |
 | 2     | Worktree Setup             | Worktree created, `plan.md` + `checks.yaml` (+ `specs.md`) written |
 | 3     | Implementation             | Code complete, fast checks pass                  |
 | 4 (UI)| Spec Verification          | `aw-tester` verdict `green`/`inconclusive` — runs before lint/type/test |
@@ -126,7 +126,7 @@ bash scripts/sync-symlinks.sh --aw
 ```
 
 `--aw` symlinks the autonomous-workflow skill, the `aw` dispatcher skill, and
-its 12 companion skills, plus the `aw-planner` / `aw-executor` / `aw-tester`
+its 12 companion skills, plus the `aw-executor` / `aw-tester`
 agents, into your `~/.claude/` directory. Edits to the cloned repo are picked up live on the next agent
 turn — `git pull` is the whole upgrade story.
 
@@ -147,26 +147,25 @@ in your own context, which is what lets the agents it dispatches sit at the
 top-level rung and keep their own sub-agent dispatch (see
 [`CLAUDE.md`](./CLAUDE.md#the-dispatcher-is-a-skill-not-an-agent--design-intent)).
 
-Plus three agents linked into your `.claude/agents/` directory under the
+Plus two agents linked into your `.claude/agents/` directory under the
 **`aw-` namespace** (short for "autonomous-workflow") so they group together
 and are unmistakable when listed alongside unrelated agents.
 
-All four units, dispatcher included:
+All three units, dispatcher included:
 
 | Unit | Kind | Role | Terminal artifact | Exit gate |
 |---|---|---|---|---|
-| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. | — (delegates) | Task routed + exit lesson written |
-| `aw-planner` | agent | Full tier, phases 0–2 (validation, planning, worktree + plan.md + checks.yaml + specs.md) | `.agent/{branch}/plan.md` + `checks.yaml` + `specs.md` (UI tasks) | `confidence(plan) ≥ 90%` (or user-approved override) |
-| `aw-executor` | agent | Full tier, phases 3–7 (implement, test, docs, PR, CI) | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
+| `aw` | skill | **Opt-in dispatcher.** Reads lessons, detects tier (Micro/Lite/Full), routes, owns the self-improvement loop for every tier. On Full, writes the brief (`plan.md` + sealed `checks.yaml`) and dispatches one `aw-executor`. | `.agent/{branch}/plan.md` + `checks.yaml` (Full) | Task routed + exit lesson written |
+| `aw-executor` | agent | Full tier, phases 3–7 (implement, test, UI spec, docs, PR, CI), executing the brief | `.agent/{branch}/walkthrough.md` + draft PR | Walkthrough shown inline, Phase 7 CI gate run |
 | `aw-tester` | agent | Phase 4 spec-driven UI verification — dispatched by executor before lint/type/test | Verdict block (~200 tokens) | `green` or `inconclusive` |
 
-`aw` is **adaptive and opt-in**: it only pays the planner→executor handoff cost
+`aw` is **adaptive and opt-in**: it only pays the brief→executor handoff cost
 on Full tasks (where context isolation + a resumable `plan.md` earn it), and runs
 Micro/Lite single-pass. It is invoked deliberately, not as a wrapper on every prompt.
 
 **One-time UI setup:** run `/aw-setup` once per project before the first autonomous
 UI task. This scaffolds `.claude/aw-targets/local.yml` (the aw-target `aw-tester` reads)
-and validates it with a smoke spec. The planner halts and prompts if no aw-target exists.
+and validates it with a smoke spec. Without one, specs run against localhost defaults.
 See [`aw-setup/SKILL.md`](./aw-setup/SKILL.md).
 
 > **Upgrading from a pre-`aw-` install?** The installer detects legacy

@@ -20,7 +20,7 @@ The Core brief (Task, Requirements, Guardrails, Acceptance Criteria, Turn Cap, F
 
 ## Rule
 
-1. Write an Extended section only when the tier is Full **and** its trigger below holds.
+1. Write an Extended section only when the tier is Full **and** its trigger below holds; the executor plans as it works, so a section that only restates what it would discover is noise.
 2. Omit an Extended section whose trigger does not hold — never write an empty heading, `N/A`, or `None`.
 3. Exception: `## Existing Code Survey` is required in every tier whenever File Changes has a `create` row (`confidence(plan)` rule #10).
 4. Place Extended sections after `## File Changes`, in the order of the trigger table.
@@ -50,7 +50,7 @@ N/A
 | `## Dependencies` | A dependency is added, removed, or upgraded |
 | `## Risks` | Complexity is HIGH, the change is a migration, or an operation is irreversible |
 | `## Refinement Contract` | The caller attached one (for example `/fix-bug`'s CEGIS contract) — copy it verbatim |
-| `## Progress Log` | Written by the executor on its first entry; the planner adds it only to log a plan iteration |
+| `## Progress Log` | Written by the executor on its first entry; the brief's author adds it only to log a plan iteration |
 
 ## Section templates
 
@@ -73,7 +73,7 @@ N/A
 
 ```mermaid
 flowchart LR
-  A[Planner] -->|plan.md| B[Executor]
+  A[aw brief] -->|plan.md| B[Executor]
   B --> C{run-checks PASS?}
   C -->|yes| D[draft PR]
   C -->|no| B

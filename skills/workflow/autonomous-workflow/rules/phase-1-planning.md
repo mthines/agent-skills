@@ -5,7 +5,7 @@ tags:
   - planning
   - analysis
   - phase-1
-  - confidence-gate
+  - brief-validation
 ---
 
 # Phase 1: Task Intake & Planning
@@ -17,7 +17,10 @@ inside the worktree, never on the main branch.
 > **Order of operations:** research (parallel `Explore` if complex) →
 > optional execution-path trace → technical design (incl. Existing Code Survey
 > for planned `create`s + executable checks drafting) →
-> optional `critical(plan)` → `confidence(plan)` gate → Phase 2.
+> optional `critical(plan)` → brief validation → Phase 2.
+>
+> On Full, `aw` writes the brief per [`aw/rules/full-tier.md`](../aw/rules/full-tier.md) and spends minutes here, not an hour: name the files and entry points, then let the executor discover the rest.
+> Read [`corrections.md`](./corrections.md) first — C1 and C2 shape the brief.
 
 ## Contents
 
@@ -31,8 +34,8 @@ inside the worktree, never on the main branch.
   - [Draft traceable, executable Acceptance Criteria](#2d-draft-traceable-executable-acceptance-criteria)
 - [Spec Emission (UI tasks)](#spec-emission-ui-tasks)
 - [Adversarial Pre-Mortem](#adversarial-pre-mortem)
-- [Confidence Gate](#confidence-gate)
-- [Planner-Executor Handoff](#planner-executor-handoff)
+- [Brief Validation](#brief-validation)
+- [Brief Handoff](#brief-handoff)
 - [Planning Checklist](#planning-checklist)
 - [References](#references)
 
@@ -43,16 +46,15 @@ inside the worktree, never on the main branch.
 Before any Phase 1 work, the [Phase 0](./phase-0-validation.md) MODE SELECTION
 block must already be emitted and the user must have said "proceed".
 
-| Tier      | Criteria                                        | Plan output                  | `confidence(plan)` |
+| Tier      | Criteria                                        | Plan output                  | Brief validation |
 | --------- | ----------------------------------------------- | ---------------------------- | ------------------ |
-| **Full**  | complex / architectural / unfamiliar / 4+ files | `plan.md` required (Phase 2) | **Mandatory — cannot be disabled** |
+| **Full**  | complex / architectural / unfamiliar / 4+ files | `plan.md` required (Phase 2) | **Mandatory** (deterministic) |
 | **Lite**  | 2–3 files AND simple                            | Brief mental plan only       | Skipped            |
 | **Micro** | 1 file, purely mechanical                       | None                         | Skipped            |
 
 The remainder of this rule covers Full Mode.
 Lite and Micro skip to Phase 2 with a short mental plan (Micro: none).
-`confidence(plan)` is mandatory in **Full Mode only** — it is the workflow's one non-removable companion, and its deterministic rule checks require a `plan.md` on disk.
-Lite Mode's plan is inline (no `plan.md`), so the gate's deterministic checks are unsatisfiable and the gate is skipped; Micro skips all quality companions.
+Brief validation runs in **Full Mode only**, because its checks need a `plan.md` on disk; Lite's plan is inline and Micro has none.
 
 ---
 
@@ -61,7 +63,7 @@ Lite Mode's plan is inline (no `plan.md`), so the gate's deterministic checks ar
 - **Understand before changing** — read existing code thoroughly.
 - **Follow existing patterns** — consistency with the codebase wins.
 - **Plan file changes precisely** — know exactly what to modify.
-- **Self-validate** — the `confidence(plan)` gate is mandatory.
+- **Validate deterministically** — the brief passes its [validation](#brief-validation) before dispatch.
 - **Capture everything from Phase 0** — every decision, requirement, rejected
   alternative, edge case, and rationale must end up in `plan.md`.
 - **Write for a future reader** — assume zero context from the original
@@ -130,8 +132,8 @@ Read .agent/{branch}/brief.md
 Seed the plan from it:
 
 - `Restatement` + requirement bullets → `## Requirements` (carry the
-  `[user-stated]` / `[inferred]` tags; `confidence(plan)` rule #9 coverage is
-  checked against them).
+  `[user-stated]` / `[inferred]` tags; brief validation checks coverage
+  against them).
 - `In scope` / `Out of scope (non-goals)` → the plan's scope boundaries.
 - `Success criteria` → seed the Acceptance Criteria (Step 2d²).
 - `Affected areas` → seed the Existing Code Survey.
@@ -249,7 +251,7 @@ Use the trace to refine the technical approach before drafting file-level change
 
 ## Step 2: Draft Technical Design
 
-Be specific. The design feeds `confidence(plan)`.
+Be specific about what done looks like; leave the how to the executor.
 Plan to follow neighbouring files' patterns and reuse existing helpers (the Existing Code Survey records the search).
 
 ### 2a. Capture Phase 0 context
@@ -318,9 +320,7 @@ For each planned new unit:
 | `BUILD NEW` | Nothing suitable exists                            | Valid ONLY with the empty-returning searches recorded |
 
 The survey lands in `plan.md` as the `## Existing Code Survey` Extended section
-(deterministic trigger: any `create` row — `confidence(plan)` rule #10 fails a
-plan that creates without surveying). Search quality is scored by the gate's
-Completeness dimension: "looked around" is not a search record.
+(deterministic trigger: any `create` row). "Looked around" is not a search record.
 
 ### 2d. Define testing strategy with specific cases
 
@@ -342,7 +342,7 @@ Acceptance Criteria follow the format contract in the
 
 - Each criterion carries a unique `AC-{n}` ID and a `(covers: R{m})`
   annotation naming the requirement(s) it verifies. Every `[user-stated]`
-  requirement must be covered — `confidence(plan)` rule #9 fails otherwise.
+  requirement must be covered — brief validation fails otherwise.
 - **Prefer the EARS trigger→response shape**: "When `<trigger>`, the system
   shall `<observable response>`" (`While` / `If…then` / `Where` variants for
   state, unwanted-behavior, and feature-scoped criteria). The fixed shape is
@@ -378,9 +378,10 @@ right commands.
 
 **Anchor:** `spec-emission-anchor`
 
-After the technical approach is drafted but **before** the confidence gate,
-emit a `specs.md` file when the task touches a UI surface. This is the
-planning-time deliverable that `aw-tester` consumes in Phase 4.
+On Full, do **not** draft `specs.md` here: `aw-executor` writes it after the UI exists and runs it ([correction C5](./corrections.md#c5--a-ui-spec-is-written-against-the-built-ui-and-run)).
+At planning time, run only the gate below and record the result in the brief; the rest of this section is the procedure the executor follows when it writes the specs.
+
+Emit a `specs.md` file when the task touches a UI surface. `aw-tester` runs it in Phase 4, `ui-verify author` lifts it into the PR body, and `/local-verify` re-runs it on a local stack — one file, three runners.
 
 ### Gate: does the task touch a UI surface? (mechanical, not eyeballed)
 
@@ -439,8 +440,7 @@ days, warn but continue:
 ```
 
 **If none exists, do NOT halt.** A missing aw-target is a cold-start, not a
-blocker — the planner used to stop here and wait for an interactive `/aw-setup`,
-which stranded every fresh repo. Instead, degrade to an implicit defaults target
+blocker — waiting for an interactive `/aw-setup` strands every fresh repo. Instead, degrade to an implicit defaults target
 so specs are still authored and can run against a local dev server:
 
 - Assume `base_url: http://localhost:3000`, `auth.strategy: none`, no fixtures.
@@ -461,26 +461,29 @@ interactive).
 
 ### What to emit
 
-Write `specs.md` alongside `plan.md`. Follow the format in
-[`templates/specs.md.template`](../templates/specs.md.template).
+Write `specs.md` in the **intent format**: header `Format: intent`, fields per
+[`templates/intent-spec.md.template`](../templates/intent-spec.md.template).
+Intent is the shared contract with `ui-verify` and `/local-verify`; never write a
+new `specs.md` in the WHEN/THEN grammar of
+[`templates/specs.md.template`](../templates/specs.md.template), which stays a
+runner format (compiled routes) and a read-only legacy input.
 
-Guidelines for the planner when writing specs:
+Guidelines for writing specs (with [C5](./corrections.md#c5--a-ui-spec-is-written-against-the-built-ui-and-run)):
 
-- Write one spec per **user goal**, not per implementation step.
-- Prefer `verify-only` for refactors and small UI fixes (most specs).
-- Use `critical-path` only for acceptance criteria that must be permanently
-  regression-tested (major new flows, core user journeys).
-- Locator descriptors: `{role: ..., name: ...}` preferred. Never CSS selectors.
-- Keep spec flow steps to 3–6 steps. Long flows should be broken into
-  `continues-from` chains.
+- Write one spec per **user goal**, not per implementation step, titled with the
+  criterion it proves: `## Spec 2: AC-2 — <user goal>`.
+- `**Changed:**` names the control the diff adds; its step is `[must-follow]`.
+- `**Expected:**` items are exact text, values, or counts on the changed target;
+  a network outcome is `` `METHOD /path` returns NNN ``.
+- Locators go under `**Hints:**` as `{role: ..., name: ...}`, grepped from the
+  code, with the `file:line` beside them. Never CSS selectors.
 - Placeholder syntax: `{dashboardId}` resolves from `aw-target.fixtures.references`.
   Use only references that exist in the aw-target file.
-- Network assertions: include only when the AC explicitly requires a specific
-  HTTP status or response shape.
+- Keep each spec to 3–6 steps.
 
 ### Spec file path
 
-Write to `.agent/{branch}/specs.md` in Phase 2 (alongside `plan.md`), never
+Write to `.agent/{branch}/specs.md` (alongside `plan.md`; on Full, in Phase 4 once the UI exists), never
 on the main branch. The specs file is a planning artifact — it lives in
 `.agent/` and is gitignored alongside `plan.md`.
 
@@ -505,9 +508,9 @@ the workflow. Otherwise report `companion: critical — skipped (trigger not met
 
 Purpose: surface plan defects that pass static rules but would fail under
 adversarial review, and force exploration of at least one alternative design
-before the confidence gate locks the plan in.
+before the brief is validated.
 
-Run after the technical design and before `confidence(plan)`:
+Run after the technical design and before brief validation:
 
 ```
 Skill("critical", "plan")
@@ -516,18 +519,17 @@ Skill("critical", "plan")
 Treat the output as follows:
 
 - **Must-fix** items → plan defects. Update the technical approach (or
-  `plan.md` if it has been drafted) to address them before the confidence
-  gate runs.
+  `plan.md` if it has been drafted) to address them before brief
+  validation runs.
 - **Should-fix / Nice-to-have** items → log as plan notes; address only if
   they meaningfully improve the design.
 - **Steelman alternative** → preserve verbatim under a `## Considered
   alternatives` section of the plan. This is the load-bearing differentiator
-  vs. `confidence` — record it even when the chosen
+  vs. brief validation — record it even when the chosen
   approach wins.
 
-`critical` is **advisory** — it does not gate. `confidence(plan)` remains the
-only mandatory gate. Never bypass confidence on the strength of a clean
-adversarial pass.
+`critical` is **advisory** — it does not gate. Brief validation remains the
+only mandatory gate.
 
 Log:
 
@@ -542,45 +544,28 @@ Disable by removing the invocation here (see
 
 ---
 
-## Confidence Gate
+## Brief Validation
 
-**Anchor:** `confidence-gate`
+**Anchor:** `brief-validation`
 
-**MANDATORY in Full Mode only. Cannot be disabled there.**
-Lite Mode skips this gate — its plan is inline and the gate's deterministic rules require a `plan.md`.
-Micro skips all quality companions, this one included.
+**Full Mode only.** Lite plans inline and Micro has no plan.
+There is no LLM confidence score on the brief: the brief writer validates it deterministically, then hands it to one `aw-executor`.
 
-After design is finalized, run the plan-confidence gate:
+Run the validation in [`aw/rules/full-tier.md`](../aw/rules/full-tier.md#step-1--brief-minutes) step 6 — six Core headings, the `AC-{n}` count equal to the `checks.yaml` count, `checks.lock` present, every `[user-stated]` requirement covered, no placeholder commands.
+A failed validation is fixed in the brief and re-run, never waived.
 
-```
-Skill("confidence", "plan")
-```
-
-| Score   | Action                                                         |
-| ------- | -------------------------------------------------------------- |
-| ≥ 90%   | Proceed to Phase 2                                             |
-| < 90%   | Up to 2 iterations: more research / analysis / evidence, then re-run |
-| < 90% after 2 iterations | Present findings to user; ask whether to proceed or refine further |
-
-Log every confidence run to `plan.md` Progress Log:
+Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: confidence(plan) — 92% (passed gate)
-- [TIMESTAMP] Phase 1: confidence(plan) — 84% (iteration 1, gathering more evidence)
-- [TIMESTAMP] Phase 1: confidence(plan) — 88% (iteration 2, asking user)
+- [TIMESTAMP] Phase 1: brief validation — passed (6 Core headings, M ACs = M checks, sealed)
 ```
-
-**Do NOT proceed to Phase 2 until the confidence gate passes or the user
-explicitly approves a lower score.**
 
 ---
 
-## Planner-Executor Handoff
+## Brief Handoff
 
-This phase ends with the confidence gate. After `plan.md` is gated, the
-planner agent stops at the end of Phase 2 and hands off to the executor — see
-[`planner-executor-handoff.md`](./planner-executor-handoff.md) for the
-contract and message format.
+This phase ends with brief validation.
+The brief writer then prints the handoff message and dispatches the executor — see [`planner-executor-handoff.md`](./planner-executor-handoff.md) for the contract and message format.
 
 ---
 
@@ -595,7 +580,7 @@ contract and message format.
 - [ ] Existing Code Survey completed for every planned `create` — searches recorded, verdicts assigned (anchor: `existing-code-survey`)
 - [ ] Acceptance Criteria carry `AC-{n}` IDs + `(covers: R{m})` annotations; every `[user-stated]` requirement covered; EARS shape preferred; a runner sketched per criterion (anchor: `acceptance-criteria-drafting`)
 - [ ] UI surface check: if plan touches UI files, aw-target exists OR user told to run `/aw-setup`; `specs.md` drafted or skip logged (anchor: `spec-emission-anchor`)
-- [ ] `confidence(plan)` ≥ 90% OR user-approved (anchor: `confidence-gate`)
+- [ ] Brief validation passed (anchor: `brief-validation`)
 - [ ] Companion invocations logged (will move to `plan.md` Progress Log in Phase 2)
 
 **Phase 1 ends in conversation. The `plan.md` artifact is generated in
@@ -608,7 +593,7 @@ contract and message format.
 - Previous phase: [phase-0-validation](./phase-0-validation.md)
 - Next phase: [phase-2-worktree](./phase-2-worktree.md)
 - Companion registry: [companion-skills](./companion-skills.md)
-- Related skill: [`confidence`](../../../quality/confidence/SKILL.md)
+- Corrections: [`corrections.md`](./corrections.md)
 - Related skill: [`aw-create-plan`](../../aw-create-plan/SKILL.md)
 - Related rule: [`phase-4-spec-verification.md`](./phase-4-spec-verification.md) — where specs.md is consumed
 - Related rule: [`phase-4-testing.md#executable-checks-loop`](./phase-4-testing.md#executable-checks-loop) — where checks.yaml is consumed

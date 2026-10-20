@@ -2,7 +2,7 @@
 name: aw
 description: >
   Ships coding work to a tested draft PR from one opt-in entry point: detects the tier, runs
-  Micro/Lite here, hands Full to aw-planner → aw-executor, and prints a paste-ready /goal. Use when
+  Micro/Lite here, and on Full writes a short brief with sealed checks, works to them here, and gets a fresh-eyes review; prints a paste-ready /goal. Use when
   asked to "implement autonomously", "independently", "in isolation", "in a worktree", "end-to-end",
   "all the way to a PR", "ship this", "land this", "take care of this", "handle this without me", or /aw.
 disable-model-invocation: false
@@ -23,11 +23,11 @@ metadata:
 
 You are the single opt-in entry point for autonomous work.
 You do two things: match the process to the task (detect the tier and route), and own the lessons loop for every tier.
-The planning, coding, and testing procedures live in the workflow skill, its companions, and the planner/executor agents.
+The coding and testing procedures live in the workflow skill and the `aw-executor` procedure; on the Full tier you write a short brief and then do the work yourself.
 
 You are a skill, so you run in the caller's context:
 
-- **Dispatch happens at your caller's level.** `aw-planner` / `aw-executor` are dispatched from the invoking session and keep whatever nested dispatch the harness grants. The dispatch tool is a capability, not a name: `Task` in the Claude Code CLI, `Agent` in the Claude Agent SDK harness.
+- **The work happens in the caller's session,** so a `/goal` set there drives it to done. You dispatch only the reviewers, `aw-tester`, and research helpers. The dispatch tool is a capability, not a name (`Agent`, formerly `Task`).
 - **You inherit tools rather than declaring them.** A tool absent from the caller's tool grant (LoreKit `memory.*`, `gh`, GitHub MCP) degrades its step, and the step is named in `Degraded:` — never silently skipped.
 - **Your output is the caller's output.** The terminal contract below is what the user reads.
 
@@ -45,13 +45,15 @@ Why it is built this way: [`references/dispatcher-rationale.md`](references/disp
 
 ## First actions
 
-1. Load the workflow: `Skill("autonomous-workflow")`. If unavailable, ask the user to install the companion set and stop.
-2. Read lessons per [`rules/lessons.md`](rules/lessons.md) — read it now; the matches inform both the tier and the approach.
-3. Detect the tier and emit the MODE SELECTION block.
+1. Read lessons per [`rules/lessons.md`](rules/lessons.md) — read it now; the matches inform both the tier and the approach.
+2. Detect the tier and emit the MODE SELECTION block.
+3. Load only what the tier needs — every loaded line is re-read on every later turn:
+   - Micro / Lite → `Skill("autonomous-workflow")`. If unavailable, ask the user to install the companion set and stop.
+   - Full → [`rules/full-tier.md`](rules/full-tier.md) and the corrections it names; not the `autonomous-workflow` skill.
 
 ## Tier detection
 
-The tier table lives in one place: [`autonomous-workflow/SKILL.md` → *Step 1: Detect Workflow Mode*](../SKILL.md#step-1-detect-workflow-mode-mandatory).
+The tier table lives in one place: [`autonomous-workflow/SKILL.md` → *Step 1: Detect Workflow Mode*](../SKILL.md#step-1-detect-workflow-mode-mandatory) — read that section only (`sed -n '/^### Step 1: Detect Workflow Mode/,/^### Step 2/p' "${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}/SKILL.md"`).
 Walk its four questions in order; the first `yes` wins; when in doubt, go heavier.
 Do not restate the table here; a second copy drifts from the one the L2 `tier-routing` suite reads.
 
@@ -69,12 +71,12 @@ MODE SELECTION:
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
 | **Micro** | You, single-pass: Phase 0 quick confirm → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr` | in-conversation brief | none (docs if needed) |
-| **Lite** | You, single-pass: the Lite path from `SKILL.md`; no `confidence(plan)` (no `plan.md` to gate) | in-conversation brief | per signal; Phase 5 docs and Phase 6 `create-pr` always |
-| **Full** | `aw-planner` → `aw-executor` when sub-agent dispatch is available; otherwise a single-context Full run that keeps `plan.md` and the `confidence(plan)` gate | `plan.md` + `checks.yaml` | all applicable |
+| **Lite** | You, single-pass: the Lite path from `SKILL.md` | in-conversation brief | per signal; Phase 5 docs and Phase 6 `create-pr` always |
+| **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a fresh-context `branch-reviewer` reviews the diff | `plan.md` + `checks.yaml` | `branch-reviewer`, `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
 
-Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the dispatch, the review recovery, the `feature-pr-verifier` dispatch at PR open, and the single-context fallback.
+Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the fresh-eyes review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.
 
-`--interview` / `--no-interview`: Full runs the `interview` companion in Phase 0 by default (the planner owns it, so pass the flags through); `--no-interview` skips it; `--interview` forces it on Micro/Lite, where you run `Skill("interview")` yourself before editing.
+`--interview`: run `Skill("interview")` before writing the brief, on any tier. Without it, the Full brief runs `interview` only when two or more `blocking` questions remain.
 
 ## Brief and goal
 
@@ -84,8 +86,7 @@ The goal format, the per-tier instruction sentence, and the `AW EVIDENCE` block 
 | Tier | Brief source | What to print |
 | --- | --- | --- |
 | Micro / Lite | In-conversation: Task, Guardrails, verify command, Turn Cap (Micro 5, Lite 12), files | The 5-line brief, then the goal line and "paste this to let the session drive itself to done hands-off" |
-| Full (split) | The planner's handoff `- Goal:` line | The goal line and the headless rerun: `cd <worktree> && claude -p "<the /goal line>"` — sub-agents cannot hold a goal, so the split still runs |
-| Full (single-context) | Your own `plan.md` | The goal line, as for Micro / Lite |
+| Full | Your `plan.md` brief | The brief's Task, Guardrails, and AC list, then the goal line and "paste this to let the session drive itself to done hands-off" |
 
 ```text
 Brief — rename the "Save" button to "Save draft"
@@ -106,7 +107,7 @@ When the user returns after the PR opened with an improvement or a small suggest
 
 1. Re-detect the tier for the delta only.
 2. Micro / Lite delta → single-pass on the same branch and worktree, push to the existing PR.
-3. Full delta → `aw-planner` folds it into `plan.md` + `checks.yaml` and re-clears `confidence(plan)`, then `aw-executor`, on the existing branch and PR.
+3. Full delta → fold it into `plan.md` + `checks.yaml` via `Skill("aw-create-plan")` (which re-seals), then work it here, on the existing branch and PR.
 
 Pause only for a genuine blocker or conflict — [`safety-guardrails.md`](../rules/safety-guardrails.md#user-requested-changes-are-never-scope-creep).
 
@@ -117,7 +118,7 @@ Emit this block on every exit — success, degraded, blocked, and refused — af
 ```
 AW RUN COMPLETE
 - Tier: [Micro | Lite | Full]
-- Path: [split | single-context Full | single-pass]
+- Path: [brief + work here + review | brief + aw-executor | single-pass]
 - Delivered: [PR URL | branch | artifact paths | nothing]
 - Verified: [green | red (<check>: <reason>) | not run (<reason>)]   # Full only
 - Degraded: [companions/agents skipped and why, or "none"]
@@ -133,7 +134,7 @@ Micro and Lite may collapse it to one line, keeping `Degraded:`: `AW RUN COMPLET
 ## Hard rules
 
 - **Stay thin.** Route and own the loop; do not restate the tier table or phase procedures.
-- **Your `Edit` / `Write` / `Bash` budget is for Micro/Lite single-pass and the single-context Full fallback.** While the Full split is dispatchable, never edit source yourself.
+- **On Full you are the worker.** Edit source yourself; dispatch `aw-executor` only when the user asks for a background worker or parallel briefs, and then do not edit while it runs.
 - **Every dispatch-availability decision is a capability test, never a name test.** Ask whether any available tool dispatches a sub-agent.
 - **Opt-in, not a wrapper.** Do not engage on simple questions, reviews, or interactive coding the user is steering.
 - **Phase 0 and Phase 2 run in every tier.** `--no-confirm` (or "proceed without confirmation") waives only the confirmation wait; a `blocking` missing-information gap halts and asks in every tier.

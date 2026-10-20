@@ -16,7 +16,6 @@ metadata:
   workflow_type: orchestrator
   architecture: classify/triage/preflight/reproduce/analyse/gate/handoff(fast|standard)/verify/telemetry
   agents:
-    planner: aw-planner
     executor: aw-executor
   composes: [confidence, aw-create-plan, tdd, e2e-testing, e2e-testing-mobile, video-analyser, autonomous-workflow]
   phases: [intake, complexity_triage, evidence_resolution_with_preflight, source_mapping_with_reproduction, root_cause_analysis_or_lightweight, confidence_gate, branch_decision, autonomous_handoff_lane_split, verification, telemetry_verification]
@@ -88,7 +87,7 @@ Infer a `bugClass` tag from the symptom and any stack-trace / error-message text
 | `unknown` | classification not possible from the evidence |
 
 Append to the Evidence Record under `Bug class`. The class is a hint for the
-Phase 3 trace and informs strategy selection in `aw-planner` (Phase 6). Source:
+Phase 3 trace and informs strategy selection in the Phase 6 brief. Source:
 RepairAgent ([ICSE 2025](https://software-lab.org/publications/icse2025_RepairAgent.pdf)),
 [NIST Seven Pernicious Kingdoms](https://samate.nist.gov/SSATTM_Content/papers/Seven%20Pernicious%20Kingdoms%20-%20Taxonomy%20of%20Sw%20Security%20Errors%20-%20Tsipenyuk%20-%20Chess%20-%20McGraw.pdf).
 
@@ -240,8 +239,8 @@ Any other branch continues.
 
 | Lane | Trigger | Plan authored by |
 |------|---------|------------------|
-| **Fast-lane** | triage = `simple` AND confidence ≥ 92 % AND non-best-effort repro | `/fix-bug` → `Skill("aw-create-plan", ...)` (no aw-planner) |
-| **Standard-lane** | `complex` / downgrade / force-proceed | `aw-planner` (canonical) |
+| **Fast-lane** | triage = `simple` AND confidence ≥ 92 % AND non-best-effort repro | `/fix-bug` → `Skill("aw-create-plan", ...)` (fast-lane plan) |
+| **Standard-lane** | `complex` / downgrade / force-proceed | `/fix-bug` → `Skill("aw-create-plan", ...)` (six-Core brief, canonical) |
 
 Follow [`rules/autonomous-handoff.md`](./rules/autonomous-handoff.md) (fast-lane plan.md: [`rules/fast-lane-plan-contract.md`](./rules/fast-lane-plan-contract.md); standard-lane pack: [`templates/bug-fix-pack.md`](./templates/bug-fix-pack.md)).
 Both lanes share the CEGIS 3-round cap; a fast-lane round-3 failure falls back to the standard-lane with the captured counterexamples.

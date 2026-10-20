@@ -24,7 +24,6 @@
     "./agents/feature-pr-verifier.md",
     "./agents/pr-reviewer.md",
     "./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md",
-    "./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md",
     "./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md"
   ],
   "keywords": [

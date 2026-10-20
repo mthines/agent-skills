@@ -25,7 +25,7 @@
  * independently, exactly as in prose — one failing does not block the rest.
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { run as defaultRun, scratchRoot } from "./prepare-review.mjs";
@@ -731,7 +731,7 @@ async function main() {
   console.log(JSON.stringify(result, null, 2));
 }
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   main();
 }

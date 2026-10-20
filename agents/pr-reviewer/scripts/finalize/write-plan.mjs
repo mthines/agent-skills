@@ -23,6 +23,7 @@
  */
 
 import { RESOLVE_CLASSES } from "./gates.mjs";
+import { realpathSync } from "node:fs";
 
 /**
  * @param {any[]} threads - judgments.json's threads[] (finding-verifier.md / thread-resolution.md
@@ -216,7 +217,7 @@ async function selfTest() {
 }
 
 import { pathToFileURL } from "node:url";
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain && process.argv.includes("--self-test")) {
   selfTest();
 }

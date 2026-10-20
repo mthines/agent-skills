@@ -15,13 +15,13 @@ The lesson schema, the universal-vs-project classification, and the entrenchment
 ## Intake read
 
 ```text
-memory.list { scope: "repo::{owner}/{repo}", tags: ["loop::aw-lessons"], limit: 50 }   # no-op if memory.* not connected
-memory.list { scope: "global",               tags: ["loop::aw-lessons"], limit: 50 }
+memory.search { q: "<3–6 keywords from the task: area, component, verb>", scopes: ["repo::{owner}/{repo}", "global"],
+                tags: ["loop::aw-lessons"], limit: 5 }   # no-op if memory.* not connected
 ```
 
-1. Union both results; on a contradiction the `repo::` lesson wins.
+1. Search, never list: everything the intake returns is re-read on every later turn, and a 50-item listing of both scopes costs more context than the whole Full procedure. Read a lesson's full body only when its title matches the task. On a contradiction the `repo::` lesson wins.
 2. Match each lesson's **Applies when** line against the task.
-3. Matches inform the tier decision and the approach; Full passes them to `aw-planner` for `## Lessons applied`.
+3. Matches inform the tier decision and the approach; on Full they shape the brief and go to `aw-executor` in its dispatch prompt.
 
 ## Exit write
 

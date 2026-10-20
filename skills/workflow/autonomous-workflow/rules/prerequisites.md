@@ -61,8 +61,8 @@ is the bug.
 | `mcp` | Use the [verb mapping](../../../../agents/shared/rules/github-access.md#verb-mapping); do **not** attempt `gh` — every call fails. Mind the four documented [Gaps](../../../../agents/shared/rules/github-access.md#gaps), notably `gh pr checks --watch`, which has no MCP equivalent and becomes a bounded poll |
 | `none` | GitHub steps cannot be performed. Do the `git` work you can (commit, push), name the skipped steps in `Degraded:`, and **never report a step you could not perform as done** |
 
-Both `aw-planner` and `aw-executor` already carry `mcp__github__*` in their
-`tools:` frontmatter, so the MCP path is available to them by construction. A
+`aw-executor` already carries `mcp__github__*` in its
+`tools:` frontmatter, so the MCP path is available to it by construction. A
 sub-agent inherits **neither** the parent's `gh` binary **nor** its MCP tools —
 that is why the grant is explicit there.
 

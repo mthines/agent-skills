@@ -16,20 +16,18 @@
 # group together in `.claude/agents/` and stay distinct from unrelated
 # agents:
 #
-#   • aw-planner   — phases 0-2 (validation, planning,
-#                   worktree + plan.md generation).
-#                   Terminal artifact: .agent/{branch}/plan.md,
-#                   gated on confidence(plan) ≥ 90%.
-#   • aw-executor  — phases 3-7 (implement, test, docs, PR, CI).
+#   • aw-executor  — Full tier, phases 3-7 (implement, test, docs, PR, CI),
+#                   executing the plan.md brief `aw` writes.
 #                   Terminal artifact:
 #                   .agent/{branch}/walkthrough.md + draft PR.
+#   • aw-tester    — Phase 4 spec-driven UI verification.
 #
-# The handoff between them is mediated by plan.md. See
+# The handoff from `aw` to the executor is mediated by plan.md. See
 # rules/planner-executor-handoff.md for the contract.
 #
 # The `aw` dispatcher is deliberately NOT in that list — it is a SKILL
 # (aw/SKILL.md), invoked as /aw, so it runs in the caller's context and
-# dispatches the two agents from there. See CLAUDE.md → "The dispatcher is
+# dispatches the agents from there. See CLAUDE.md → "The dispatcher is
 # a skill, not an agent".
 #
 # It is still THIS script's job to link it, in every mode. Skills are
@@ -162,7 +160,6 @@ template_required() {
   fi
 }
 
-template_required "aw-planner.agent.md"
 template_required "aw-executor.agent.md"
 template_required "aw-tester.agent.md"
 template_required "routing.rule.md"
@@ -231,10 +228,10 @@ fi
 #                    unconditionally, so a --global / --project upgrade that
 #                    skipped this link would delete /aw and leave no way back.
 #   aw-setup         scaffolds .claude/aw-targets/ for aw-tester. The summary
-#                    below tells the user to run it, and aw-planner HALTS on a
-#                    UI task until an aw-target exists while being forbidden to
-#                    scaffold one itself — so an unlinked /aw-setup is a dead
-#                    end with no recovery path, not a missing convenience.
+#                    below tells the user to run it, and aw-tester needs an
+#                    aw-target to pin base_url, auth, and fixtures — so an
+#                    unlinked /aw-setup leaves UI specs on localhost defaults
+#                    with no way to pin a target.
 #   aw-tester-chrome the in-session Chrome runner preview-spec selects when the
 #                    extension is connected.
 mkdir -p "$CLAUDE_DIR/skills"
@@ -257,9 +254,13 @@ vlog "✓ Nested skills: $CLAUDE_DIR/skills/{aw-setup,aw-tester-chrome}"
 #                                      Leaving the agent in place would put two
 #                                      `aw` entries with near-identical
 #                                      auto-trigger descriptions in the harness.
+#   aw-planner.md                    — the Full tier's planning agent; `aw` now
+#                                      writes the brief itself, so the link
+#                                      would dangle.
 for legacy in "autonomous-planner.md:planner.template.md" \
               "autonomous-executor.md:executor.template.md" \
-              "aw.md:aw.agent.md"; do
+              "aw.md:aw.agent.md" \
+              "aw-planner.md:aw-planner.agent.md"; do
   legacy_name="${legacy%%:*}"
   legacy_target="${legacy##*:}"
   legacy_path="$CLAUDE_DIR/agents/$legacy_name"
@@ -272,9 +273,6 @@ done
 # Link the agent definitions under the `aw-` namespace
 # (short for "autonomous-workflow"). The dispatcher is NOT here — it is the
 # `aw` skill (see the dev-mode block above and CLAUDE.md).
-ln -sf "$SKILL_DIR/templates/aw-planner.agent.md" "$CLAUDE_DIR/agents/aw-planner.md"
-vlog "✓ Planner agent:  $CLAUDE_DIR/agents/aw-planner.md"
-
 ln -sf "$SKILL_DIR/templates/aw-executor.agent.md" "$CLAUDE_DIR/agents/aw-executor.md"
 vlog "✓ Executor agent: $CLAUDE_DIR/agents/aw-executor.md"
 
@@ -300,11 +298,10 @@ vlog ""
 vlog "dispatcher (a SKILL, not an agent — runs in your context):"
 vlog "  • /aw          — detects tier (Micro/Lite/Full) + owns the lessons loop"
 vlog ""
-vlog "three agents installed (aw- = autonomous-workflow namespace):"
-vlog "  • aw-planner   — phases 0-2, produces .agent/{branch}/plan.md (Full tier)"
-vlog "  • aw-executor  — phases 3-7, produces walkthrough.md + draft PR (Full tier)"
+vlog "two agents installed (aw- = autonomous-workflow namespace):"
+vlog "  • aw-executor  — phases 3-7, executes the brief aw writes; produces walkthrough.md + draft PR (Full tier)"
 vlog "  • aw-tester    — spec-driven UI verification; dispatched by executor in Phase 4 (before lint/type/test)"
-vlog "  Micro/Lite run single-pass via aw; Full hands off planner → executor (gated on confidence(plan) ≥ 90%)."
+vlog "  Micro/Lite run single-pass via aw; Full: aw writes the brief + sealed checks, then one aw-executor."
 vlog "  See: skills/workflow/autonomous-workflow/rules/planner-executor-handoff.md"
 vlog ""
 vlog "UI verification setup (one-time, per project):"

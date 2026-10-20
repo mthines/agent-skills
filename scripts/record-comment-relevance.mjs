@@ -55,7 +55,7 @@
  */
 
 import { execSync, execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { extractFingerprint, isFingerprintV2, parseFingerprint } from "../agents/pr-reviewer/scripts/fingerprint.mjs";
 
@@ -1041,7 +1041,7 @@ function selfTest() {
 // this file too). No behavior change for direct invocation (`node
 // record-comment-relevance.mjs --mode=... | --self-test`), which is still `isMain` here.
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain) {
   const mode = process.argv.find((a) => a.startsWith("--mode="))?.split("=")[1];
 

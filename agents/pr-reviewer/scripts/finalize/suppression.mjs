@@ -14,6 +14,7 @@
  */
 
 import { buildFingerprint } from "../fingerprint.mjs";
+import { realpathSync } from "node:fs";
 
 /**
  * @param {{ evidence?: { pr: string|number, concordant?: boolean }[] }} rule
@@ -130,7 +131,7 @@ async function selfTest() {
 }
 
 import { pathToFileURL } from "node:url";
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain && process.argv.includes("--self-test")) {
   selfTest();
 }

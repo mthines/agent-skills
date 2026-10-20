@@ -31,18 +31,20 @@ Fill one of the two templates on a single line.
 
 | Tier | Template |
 | --- | --- |
-| Full (has `checks.yaml`) | `/goal run-checks prints "CHECKS <M>/<M> PASS", the draft PR URL is printed, and the printed git diff --name-only lists only files in plan.md's File Changes — or stop after <turn_cap> turns.` |
-| Micro / Lite (no `checks.yaml`) | `/goal "<verify command>" exits 0 with "exit=0" printed, the draft PR URL is printed, and the printed git diff --name-only lists only <comma-separated files> — or stop after <turn_cap> turns.` |
+| Full (has `checks.yaml`) | `/goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the branch-reviewer findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
+| Micro / Lite (no `checks.yaml`) | `/goal "<verify command>" exits 0 with "exit=0" printed, the draft PR URL is printed, and the printed git diff --name-only lists only <comma-separated files> — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
 
 - `<M>` is the number of entries in `checks.yaml`.
 - `<turn_cap>` is `plan.md`'s `turn_cap:`; without a `plan.md`, the default for the tier in `aw-create-plan` (Micro 5, Lite 12).
 - `<verify command>` is the exact before-PR command of the brief.
+- A user constraint that forbids the PR replaces "the draft PR URL is printed" with "a line starting `PR: none —` is printed".
+- Print `BLOCKED: <reason>` whenever you stop for the user, so the judge ends the loop instead of spinning.
 - Never add a second end state, a judgment word ("clean", "good", "robust"), or a condition the transcript cannot show.
 
 ```text
 ✗ /goal make the auth flow robust and well tested
    (no observable end state, no proof, no guardrail, no cap)
-✓ /goal run-checks prints "CHECKS 4/4 PASS", the draft PR URL is printed, and the printed git diff --name-only lists only files in plan.md's File Changes — or stop after 30 turns.
+✓ /goal run-checks prints "CHECKS 4/4 PASS", the Before-PR command prints "exit=0", the branch-reviewer findings are printed as fixed or rejected, and the draft PR URL is printed — or stop after 30 turns or when a line starting "BLOCKED:" is printed.
 ```
 
 ## Print it
@@ -52,10 +54,10 @@ Print the line in a fenced `text` block at the end of planning, followed by one 
 | Tier / path | Instruction sentence |
 | --- | --- |
 | Micro / Lite (single-pass in this session) | `Paste this line to let the session drive itself to done hands-off; the run continues normally if you do not.` |
-| Full, split (planner → executor) | `Sub-agents cannot hold a goal, so the split runs as usual; to rerun execution headless: cd <worktree> && claude -p "<the /goal line>"` |
-| Full, single-context | Same as Micro / Lite. |
+| Full (worker in this session) | Same as Micro / Lite. |
+| Full, `aw-executor` dispatched on request | `A sub-agent cannot hold a goal; to rerun execution headless: cd <worktree> && claude -p "<the /goal line>"` |
 
-The Full planner includes the line in its handoff message as `- Goal: <line>`; `aw` re-prints it.
+On Full, `aw` prints the line right after the brief, before it starts the work.
 
 ## Print the evidence
 
@@ -64,7 +66,8 @@ Before the terminal contract of every run that reached Phase 6, print this block
 ```text
 AW EVIDENCE
 <the run-checks sentinel line, verbatim> | verify: <command> exit=<code>
-PR: <draft PR URL>
+review: <N> findings — <F> fixed, <R> rejected | not run (<reason>)
+PR: <draft PR URL | none — <the user constraint>>
 Changed files (git diff --name-only <base>...HEAD):
 <one path per line>
 ```
@@ -75,3 +78,9 @@ git diff --name-only "$BASE"...HEAD
 ```
 
 Never paraphrase the sentinel line, and never print `PR:` without a URL you received from GitHub.
+
+When the run wrote `specs.md`, print one handoff line right after the block, so the same specs can be re-run by either verifier:
+
+```text
+UI spec: .agent/<branch>/specs.md — <N> specs, aw-tester <green|red|inconclusive|not run (<reason>)> · preview: /ui-verify run <pr-url> · local: /local-verify <pr-url>
+```

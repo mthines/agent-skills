@@ -182,8 +182,7 @@ my-orchestrator/
 ├── references/
 │   └── worked-examples.md
 └── templates/
-    ├── aw-planner.agent.md  # agent definition, symlinked verbatim → ~/.claude/agents/aw-planner.md
-    ├── aw-executor.agent.md
+    ├── aw-executor.agent.md # agent definition, symlinked verbatim → ~/.claude/agents/aw-executor.md
     └── routing.rule.md      # rule definition, symlinked → ~/.claude/rules/
 ```
 

@@ -11,7 +11,8 @@
 // Output: the full https://app.dash0.com/goto/agent0?... URL on stdout. Any problem exits non-zero
 //         with a reason on stderr and prints nothing to stdout.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 
 // Environment-selectable host: production → app.dash0.com, development → app.dash0-dev.com.
 // The reviewer resolves the environment from `.github/review.yaml`'s `agent0_environment`
@@ -76,7 +77,7 @@ export function buildLink(prompt, env, source, org = null) {
   return `${host}/goto/agent0?auto_submit=true&initial_prompt=${encodePrompt(prompt)}&utm_source=pr-reviewer-${source}${orgParam}`;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   const args = process.argv.slice(2);
   let env = process.env.AGENT0_ENV;
   const i = args.indexOf("--env");

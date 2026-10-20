@@ -17,7 +17,7 @@
 // line is the machine-read one. Exit 0 when a receipt was produced (any verdict is a
 // successful check), 2 on a usage error. `--self-test` exits 0/1 on its own contract.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const API = "https://api.typesafe.ai/v1/systemone"; // docs.typesafe.ai/api — POST evaluation endpoint
@@ -184,4 +184,4 @@ function selfTest() {
   return fails === 0;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

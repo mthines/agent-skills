@@ -47,7 +47,7 @@ CLAUDE_AGENTS_DIR="$HOME/.claude/agents"
 # skills documented in skills/workflow/autonomous-workflow/README.md, and the
 # agents the workflow dispatches to (reviewer / pr-reviewer).
 #
-# The aw-planner / aw-executor / aw-tester agent symlinks are created by the
+# The aw-executor / aw-tester agent symlinks are created by the
 # autonomous-workflow install.sh, which runs as part of the install.sh
 # discovery pass at the bottom of this script. The `aw` dispatcher is a SKILL
 # (skills/workflow/autonomous-workflow/aw/), not an agent, so it is linked here

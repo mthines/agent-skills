@@ -101,7 +101,8 @@ skills/workflow/autonomous-workflow/
 │   ├── parallel-coordination.md# Sub-agent fan-out and multi-agent handoff.
 │   ├── safety-guardrails.md    # Hard limits, validation checkpoints.
 │   ├── smart-worktree-detection.md # Fuzzy-match task to existing worktree.
-│   ├── planner-executor-handoff.md # Handoff contract between planner and executor.
+│   ├── planner-executor-handoff.md # Handoff contract between the brief (`aw`) and `aw-executor`.
+│   ├── corrections.md          # The corrections a capable model needs on Full runs; read before the brief.
 │   ├── diagnostic-surface.md   # Phase model + failure taxonomy + guards table consumed by `/create-skill diagnose autonomous-workflow`.
 │   ├── self-improvement-loop.md # Episodic-lessons fast tier (LoreKit loop::aw-lessons) + promotion to diagnose. Read Phase 1; write Phase 4/7.
 │   └── _template.md            # Boilerplate for new rule files.
@@ -109,8 +110,7 @@ skills/workflow/autonomous-workflow/
 │   └── SKILL.md                    # THE DISPATCHER. A nested skill (like aw-setup), not an agent —
 │                                   # opt-in entry, tier routing, universal lessons loop. Invoked /aw.
 ├── templates/
-│   ├── aw-planner.agent.md         # aw-planner agent (phases 0-2). Linked by install.sh as aw-planner.md.
-│   ├── aw-executor.agent.md        # aw-executor agent (phases 3-7). Linked by install.sh as aw-executor.md.
+│   ├── aw-executor.agent.md        # aw-executor agent (phases 3-7, executes the brief). Linked by install.sh as aw-executor.md.
 │   ├── _deprecated-single-agent.md # DEPRECATED — kept for backward compat only. Not linked.
 │   └── routing.rule.md             # Auto-routing rule (linked into ~/.claude/rules/).
 └── references/
@@ -186,11 +186,10 @@ Three things matter:
 
 ### Why some companions can't be disabled
 
-`confidence` at Phase 1 is the only non-removable companion. Without it, the
-plan gate is gone and the workflow loses its primary safety mechanism. If a
-user wants to remove this gate, they should fork the skill and adjust
-`phase-1-planning.md` directly — not silently disable the gate by uninstalling
-the companion.
+No companion is non-removable.
+The Full tier's one mandatory gate is the deterministic brief validation in
+[`aw/rules/full-tier.md`](./aw/rules/full-tier.md) plus the sealed
+`run-checks.mjs` gate, and neither is a companion — they cannot be uninstalled.
 
 ### Skill companions for Phase 6/7 review passes
 
@@ -294,8 +293,7 @@ When changing the cap numbers, update **all** of:
 - `rules/overview.md`
 - `SKILL.md` Core Principles + companion table (Phase 4 `confidence` trigger)
 - `README.md` Key Principles + companion table (Phase 4 `confidence` trigger)
-- `templates/aw-planner.agent.md` — Stuck-Loop Reminder section
-- `templates/aw-executor.agent.md` — Stuck-Loop Reminder section
+- `templates/aw-executor.agent.md` — How to work (stuck loop)
 - `templates/_deprecated-single-agent.md` — DEPRECATED but update for consistency
 - `references/iterative-refinement.md` — the worked stuck-loop example
   referenced from phase-4 must reflect the canonical limits (the "Different
@@ -309,7 +307,7 @@ instructions.
 ## Tier detection (Micro / Lite / Full) and the `aw` dispatcher
 
 Every task starts with tier detection. The decision changes which artifacts are
-produced, which companions run, and whether the planner→executor split is used.
+produced, which companions run, and whether `aw` writes a brief and hands it to `aw-executor`.
 
 The criteria live in **[`SKILL.md` Step 1](./SKILL.md#step-1-detect-workflow-mode-mandatory)**
 and nowhere else — see "exactly one home" below. What this section owns is the
@@ -327,8 +325,8 @@ and nowhere else — see "exactly one home" below. What this section owns is the
   patch is exactly what those two questions exist to prevent.
 - **Micro requires one file *and* nothing to reason about.** A one-file change
   carrying non-trivial logic is Lite. The `OR` in question 4 is load-bearing.
-- Who runs it: Full is the planner → executor split (artifacts required), Micro
-  and Lite are single-pass with no artifacts.
+- Who runs it: Full is a brief written by `aw` plus one `aw-executor` (artifacts
+  required), Micro and Lite are single-pass with no artifacts.
 
 When in doubt, choose the heavier tier. Micro/Lite are for genuinely small
 changes — not for "the user said it's small." **Phase 0 and Phase 2 are
@@ -336,7 +334,7 @@ mandatory in every tier**, Micro included.
 
 The **`aw` dispatcher** (`aw/SKILL.md` — a nested *skill*, not an agent) is the
 opt-in, single entry point that owns this decision: it reads `aw-lessons`,
-detects the tier, and routes (single-pass for Micro/Lite, the split for Full).
+detects the tier, and routes (single-pass for Micro/Lite, brief + one executor for Full).
 It replaced the old "routing rule dispatches the planner first" behavior, which
 sent Lite tasks — that have no `plan.md` — to the planner anyway. See the two
 design-intent sections below.
@@ -401,7 +399,7 @@ When editing this skill, do not break these — they're load-bearing:
   Phase 2 detects it at Step 0 and falls back to native `git worktree` with a
   one-time warning. Nor may it block on a missing **`gh`**: that binary is
   absent in Claude Code cloud sessions, where `mcp__github__*` is the path, and
-  both `aw-planner` and `aw-executor` already carry those tools in their
+  `aw-executor` already carries those tools in its
   `tools:` frontmatter. Phases 6–7 resolve `ACCESS_PATH` (`gh` | `mcp` | `none`)
   once via [`agents/shared/rules/github-access.md`](../../../agents/shared/rules/github-access.md)
   — never by `which gh`, never by `gh auth status`. With `none`, GitHub steps
@@ -423,18 +421,17 @@ When editing this skill, do not break these — they're load-bearing:
   reserved for orchestrator-only boundaries (Phase 4 Step 6, Phase 6 pre-PR).
   See [`rules/parallel-coordination.md#sub-agent-resource-discipline`](./rules/parallel-coordination.md#sub-agent-resource-discipline).
 - **`aw` is a thin, opt-in router, and it is a skill.** It detects the tier and
-  routes (single-pass for Micro/Lite, planner→executor for Full) and owns the
+  routes (single-pass for Micro/Lite, brief + one `aw-executor` for Full) and owns the
   universal lessons loop. It must not accrue domain knowledge, must not force
   Full on light tasks, and must not silently wrap casual edits. It must not
   regrow a `tools:` block, a `model:` line, or an inline tier table — see
   [the shape design-intent section](#the-dispatcher-is-a-skill-not-an-agent--design-intent).
-  The planner/executor split is Full-only —
+  On Full, `aw` writes the brief and hands it to one `aw-executor` —
   **except** when no available tool dispatches a sub-agent (`Task`, `Agent`, or
-  another spelling), where `aw`
-  runs the Full phases single-context (planner + executor roles in one window)
-  rather than downgrading to Lite. That fallback preserves the `plan.md` artifact
-  and the `confidence(plan)` gate; it is the one place `aw` uses `Edit`/`Write` on
-  a Full task, and it must never be used to sidestep an *available* split.
+  another spelling), where `aw` plays the executor in its own window rather than
+  downgrading to Lite. That fallback preserves the `plan.md` brief and the sealed
+  checks; it is the one place `aw` edits source on a Full task, and it must never
+  be used to sidestep an *available* dispatch.
 - **Episodic lessons are advisory-only.** An `aw-lessons` lesson biases the plan
   but never silently changes a gate, skips a phase, or alters a cap. The only
   path from a lesson to changed behavior is a confidence-gated, user-approved
@@ -444,7 +441,7 @@ When editing this skill, do not break these — they're load-bearing:
 - **`checks.yaml` definitions are executor-immutable; gaming a check is never
   a fix.** The executor flips `status:` (and amends `run:`/`setup:` only with a
   logged `check-run-amended` entry); `id:`/`requirement:`/`ears:`/`expect:` are
-  planner-owned. The four forbidden strategies (modify checks/tests, overload
+  owned by the brief writer. The four forbidden strategies (modify checks/tests, overload
   comparisons, record/replay state, special-case inputs) and the
   `unsatisfiable` abort affordance are non-relaxable. All-green checks never
   waive the suite, `confidence`, `reviewer`, or Phase 7 verification. See
@@ -542,7 +539,7 @@ v3.23 converted `aw` from an agent (`templates/aw.agent.md`, symlinked to
 `~/.claude/agents/aw.md`) into a nested **skill** (`aw/SKILL.md`, invoked `/aw`).
 The routing decision, the tier table, the Micro/Lite single-pass path, the
 lessons loop, and the single-context Full fallback are unchanged — only the
-*shape* moved. `aw-planner` and `aw-executor` remain agents.
+*shape* moved. `aw-executor` remains an agent.
 
 **Why.** This repo wrote the deciding test before `aw` existed, in
 [`references/anthropic-architecture-research.md`](./references/anthropic-architecture-research.md) §2.2:
@@ -603,9 +600,15 @@ Design rules that keep this from rotting:
 - **Do not re-add a `tools:` block, a `model:` line, or an inline tier table to
   `aw/SKILL.md`.** Each one is a step back toward the agent form; the first two
   are meaningless in a skill and the third can only rot.
-- **Do not convert `aw-planner` / `aw-executor` to skills.** They pass §2.2 on
-  their own merits; collapsing them loses the context isolation that is the
-  entire justification for the split.
+- **Do not convert `aw-executor` to a skill.** It passes §2.2 on its own merits:
+  it is the background worker for an explicit background or parallel request,
+  with the brief as its cold-read input. The default Full path works in the
+  caller's session and dispatches only the fresh-eyes reviewer.
+- **Do not reintroduce a planning agent.** The Full brief is written in the
+  caller's context, which holds the conversation; a separate planner spent ~45
+  minutes on a 333-line plan in a three-way comparison and added nothing the
+  brief and the corrections do not — see
+  [`aw/references/dispatcher-rationale.md`](./aw/references/dispatcher-rationale.md#full-tier-short-brief-work-in-session-review-after).
 - **`aw` still must not accrue domain knowledge.** The ~200-line ceiling and the
   thin-router invariant below apply unchanged — the shape changed, the
   discipline did not.
@@ -621,8 +624,8 @@ harness matches descriptions; nothing arbitrated between them.
 
 The cost of losing that race is not cosmetic. A request landing on the parent
 runs the phase machinery with **tier detection skipped** (so a Micro typo fix
-pays the Full planner→executor handoff, or a Full task runs single-pass with no
-`plan.md` and no `confidence(plan)` gate) and the **universal lessons loop
+pays the Full brief→executor handoff, or a Full task runs single-pass with no
+`plan.md` and no sealed checks) and the **universal lessons loop
 skipped** (the read and write were hoisted to the dispatcher in v3.12 precisely
 so every tier contributes). Those two are the dispatcher's entire job, so
 bypassing it silently un-does the v3.12 design.
@@ -670,16 +673,16 @@ above covers that move. The two tensions below, and the design rules that
 follow, are shape-independent and unchanged.)
 
 1. **One entry point, but not always-heavy.** Developers wanted a single thing
-   to invoke. But "always run the planner/executor" is the wrong answer: the
+   to invoke. But "always write a brief and dispatch an executor" is the wrong answer: the
    research is explicit that *always-planning wastes compute and degrades
    long-horizon performance* (Learning When to Plan, arXiv 2509.03581), and
    single-threaded continuity beats the multi-agent handoff for simple/sequential
    work (Cognition's context-engineering argument; single-agent ≥ multi-agent
    under equal token budgets). So `aw` is **adaptive**: it detects the tier and
-   only pays the planner→executor handoff cost on **Full**, where context
+   only pays the brief→executor handoff cost on **Full**, where context
    isolation + a resumable `plan.md` actually earn it.
 2. **Universal self-improvement without universal planning.** The fast-tier
-   lessons loop only helped tasks that ran the planner/executor phases. Hoisting
+   lessons loop only helped tasks that ran the Full phases. Hoisting
    the loop's intake-read and exit-write to the dispatcher makes **every tier**
    contribute and benefit — even a Micro typo fix — which is the actual goal
    ("more stable agents after more runs"). Planning depth and learning coverage
@@ -688,8 +691,8 @@ follow, are shape-independent and unchanged.)
 Design rules that keep this from rotting:
 
 - **`aw` stays thin.** It routes and owns the loop. It must not accrue
-  planning/coding domain knowledge — that lives in the skill, companions, and
-  the planner/executor. The target is ~200 lines of body (`create-skill`
+  planning/coding domain knowledge — that lives in the skill, companions,
+  `rules/corrections.md`, and the executor. The target is ~200 lines of body (`create-skill`
   anti-pattern S1 is a god-skill). **This target is currently breached and has
   been for several versions** — the dispatcher is ~294 body lines as of v3.23
   (it was ~274 as an agent), because each of v3.19 single-context Full, v3.21
@@ -701,16 +704,14 @@ Design rules that keep this from rotting:
 - **Opt-in, not a wrapper.** `aw` runs because the user phrased autonomous work
   or invoked `/aw`. It must not intercept casual single-file edits, questions,
   or interactive coding. The routing rule's exclusion list enforces this.
-- **The split is Full-only.** Do not collapse planner+executor into `aw` for
-  Full (loses the documented context-isolation win), and do not route Micro/Lite
-  through the split (pure handoff overhead). The two specialist agents remain
-  the Full-tier realization; `aw` is the router + Micro/Lite single-pass runner.
-  **The single-context Full fallback is the sole exception**, and only when the
-  split is *structurally* unavailable (the harness exposes no sub-agent dispatch
-  tool at all): there `aw` plays both roles in one window, keeping the `plan.md`
-  artifact + `confidence(plan)` gate but conceding context isolation (which the
-  harness has already made impossible). It is never a license to skip an
-  available split — the check is "can I dispatch?", not "do I feel like it?".
+- **Full works in the caller's session.** On Full, `aw` writes the brief, works
+  to its sealed checks itself, and dispatches one `branch-reviewer` that did not
+  write the code; `aw-executor` is dispatched only for an explicit background or
+  parallel request. Never route Micro/Lite through the executor (pure handoff
+  overhead). Without a dispatch tool the review is reported `not run`, never
+  replaced by self-review.
+  It is never a license to skip an available dispatch — the check is "can I
+  dispatch?", not "do I feel like it?".
 - **"Can I dispatch?" is a capability question, and the tool's NAME is not the
   answer.** The Claude Code CLI calls it `Task`; the Claude Agent SDK harness
   behind Claude Code on the web and in cloud sessions calls it `Agent`. Every
@@ -738,7 +739,7 @@ failure mode to the earliest phase that can catch it (full evidence base:
 | --------- | ---------------------- | ----- | ----------- |
 | Restate-and-diff | Specification misalignment — the model plans against its *perception* of the spec, not the spec | Phase 0 Step 3b | Procedure + checklist (human-in-loop) |
 | Missing-Information Gate | Hallucinated requirements — guessing where information is absent | Phase 0 Step 3c | `blocking` halts even under `--no-confirm` (hard invariant) |
-| Existing Code Survey | The "implement-box": re-implementing existing functionality as semantic clones review doesn't catch | Phase 1 / plan Extended section | `confidence(plan)` rule #10 (deterministic; create ⇒ survey) |
+| Existing Code Survey | The "implement-box": re-implementing existing functionality as semantic clones review doesn't catch | Phase 1 / plan Extended section | `aw-create-plan` trigger (deterministic; create ⇒ survey) |
 | Traceability + `checks.yaml` | Silently dropped requirements; "criteria met" judged instead of verified; verifier gaming | Phase 1→2 authoring, Phase 4 loop | Rules #9/#11 (deterministic) + check-integrity hard invariants |
 
 Design rules that keep this from rotting:
@@ -761,7 +762,7 @@ Design rules that keep this from rotting:
 - **Backward compatible by absence.** No `checks.yaml` → the executor logs one
   line and gates on ACs by judgment (pre-v3.15 behavior). Plans without
   `AC-{n}` IDs (fix-bug fast-lane, legacy) skip rule #11 with a logged note.
-- **The planner pins contracts, not implementations.** `ears` + `expect` are
+- **The brief pins contracts, not implementations.** `ears` + `expect` are
   exact; `run` is a draft the executor finalizes (logged). Pinning full check
   bodies upfront would re-introduce the cascading-error failure mode (§2.8).
 
@@ -770,10 +771,10 @@ Design rules that keep this from rotting:
 v3.18 rebalanced the Full-Mode artifacts around one distinction: **a written
 plan does two different jobs, and only one is well-evidenced.**
 
-1. **Within-run handoff** (planner → executor). The executor is a fresh agent
-   with no access to the planner's context, so it needs a self-contained
-   `plan.md` to start. This is load-bearing and unchanged — it is *why* the
-   split exists (see §2.3 / §2.12 of `references/anthropic-architecture-research.md`).
+1. **Within-run handoff** (brief → executor). The executor is a fresh agent
+   with no access to the caller's context, so it needs a self-contained
+   `plan.md` to start. This is load-bearing — it is *why* the
+   handoff exists (see §2.3 / §2.12 of `references/anthropic-architecture-research.md`).
 2. **Cross-session resumption** (a later session picks up cold). This is the
    benefit the plan file is usually justified on, and it is the weakest-evidenced
    one — §5.2 concedes the marginal benefit over in-context planning is unproven
@@ -789,10 +790,9 @@ the stale-plan drift literature) points at four moves, all adopted here:
   now leads with checks, and the VS Code extension surfaces `checks.yaml` first,
   expanded, above `plan.md`.
 - **`plan.md` is a lean handoff document, not a knowledge base.** Kept
-  self-contained (the cold-read guarantee `confidence(plan)` enforces), but the
-  planner is told not to pad it against every hypothetical question — a live
-  planner agent (or the user) can be *queried*; the doc need not pre-answer
-  everything.
+  self-contained (the cold-read guarantee the brief validation enforces), but the
+  brief is not padded against every hypothetical question — the executor
+  discovers details while it works, and the user can be *asked*.
 - **The executor consumes and repairs the plan.** The dominant failure of a
   written plan is going write-only and stale, so Phase 3 now mandates a
   drift write-back: when a decision or AC changes mid-run, update the affected
@@ -805,10 +805,9 @@ the stale-plan drift literature) points at four moves, all adopted here:
 
 Design rules that keep this from rotting:
 
-- **Do not collapse the split or drop the cold-read guarantee.** `plan.md` must
-  stay executable-from-cold for the Full-tier handoff and the `confidence(plan)`
-  gate — "query the planner instead" is a *supplement* for a live planner, never
-  a license to write an incomplete plan.
+- **Do not drop the cold-read guarantee.** `plan.md` must stay
+  executable-from-cold for the Full-tier handoff — a lean brief is never a
+  license to write an incomplete one.
 - **`checks.yaml` integrity is unchanged.** Elevating it to "the contract" does
   not relax the executor-immutable / no-gaming / `unsatisfiable`-abort rules.
 - **Snapshot opt-in is additive, backward-compatible.** Snapshot mode reproduces
@@ -877,24 +876,25 @@ breach under
 
 ### Editing the agent templates
 
-`aw-planner.agent.md`, `aw-executor.agent.md`, and `aw-tester.agent.md` are
-what get symlinked into `~/.claude/agents/` as `aw-planner.md`,
-`aw-executor.md`, and `aw-tester.md` by `install.sh` (the `aw-` prefix is the
+`aw-executor.agent.md` and `aw-tester.agent.md` are
+what get symlinked into `~/.claude/agents/` as
+`aw-executor.md` and `aw-tester.md` by `install.sh` (the `aw-` prefix is the
 autonomous-workflow namespace — keeps the agents grouped together and
-unmistakable when listed alongside unrelated agents). Keep all three lean — they
+unmistakable when listed alongside unrelated agents). Keep both lean — they
 should reference `SKILL.md` and `rules/companion-skills.md` rather than
 duplicate their content.
 
 The agent **`name:` frontmatter values** must match the symlinked file
-basenames (`aw-planner`, `aw-executor`) — Claude Code dispatches by the
+basenames (`aw-executor`, `aw-tester`) — Claude Code dispatches by the
 frontmatter name, and the routing rule references it by the same string.
 If you ever rename the namespace, update all four (frontmatter name,
 install.sh symlink target, routing rule dispatch, and every doc reference)
 in the same PR.
 
-**Both agents hold `Task`** (since v3.23) so their documented fan-outs — Phase 1
-`Explore`, Phase 3 file-disjoint slices, Phase 7 `ci-auto-fix`, and `create-pr`'s
-`review-loop` pass — are reachable at all. Do not remove the grant without also
+**`aw-executor` holds `Task`** so its documented fan-outs — research and Phase 3
+file-disjoint slices (cap 3), `aw-tester` spec runs, Phase 7 `ci-auto-fix`, and
+`create-pr`'s `review-loop` pass — are reachable at all.
+It carries no `model:` line, so it runs on the caller's model. Do not remove the grant without also
 removing those behaviours from the phase rules; they were dead letters before.
 
 The deprecated `_deprecated-single-agent.md` (single-agent) is still present for backward
@@ -908,7 +908,7 @@ There's no automated test suite for this skill. The validation pattern is:
 2. Run a small Lite Mode task — verify Phase 0 + Phase 2 + Phase 5 + Phase 6
    companions all fire correctly.
 3. Run a larger Full Mode task — verify `plan.md` and `walkthrough.md` are
-   generated, confidence gates fire, stuck-loop respects the mode-aware cap
+   generated, the brief validates and the checks gate, stuck-loop respects the mode-aware cap
    (5 iterations in Full Mode).
 
 If you change the stuck-loop number, mode-detection criteria, or the
@@ -922,29 +922,27 @@ they must be exercised live (markdown can't prove them). Run this after editing
 
 1. **Install** the dispatcher skill + the agents: `bash install.sh --development`
    and confirm both chains resolve — `readlink ~/.claude/skills/aw` (the
-   dispatcher) and `readlink ~/.claude/agents/aw-planner.md`. Also confirm
-   `~/.claude/agents/aw.md` is **gone** (the pre-v3.23 agent symlink; install.sh
+   dispatcher) and `readlink ~/.claude/agents/aw-executor.md`. Also confirm
+   `~/.claude/agents/aw-planner.md` (the retired planning agent) and
+   `~/.claude/agents/aw.md` are **gone** (the pre-v3.23 agent symlink; install.sh
    removes it). A surviving `aw.md` means two `aw` entries compete for the same
    trigger phrases.
 2. **Micro routing (single-pass, no split):** invoke `/aw` on a 1-file mechanical
    change (e.g. fix a typo in a README). Expect: `MODE SELECTION: Tier: Micro`,
-   no `aw-planner` dispatch, a worktree + draft PR, **no `plan.md`**.
+   no `aw-executor` dispatch, a worktree + draft PR, **no `plan.md`**.
 3. **Full routing (dispatch from the caller's context — the R1 risk):** invoke
-   `/aw` on a 4-file / architectural task. Expect: `Tier: Full`, then
-   **`aw-planner` is dispatched**
-   (a gated `plan.md` appears), then **`aw-executor`**. Also confirm the executor
+   `/aw` on a 4-file / architectural task. Expect: `Tier: Full`, then a short
+   brief (`plan.md` + sealed `checks.yaml`) written in the caller's window, then
+   **one `aw-executor`** dispatched. Also confirm the executor
    did **not** report `review-loop` as skipped — with the dispatcher in-context
    the executor sits one rung higher and holds `Task`, which is the whole point
    of v3.23. If it did report a skip, `aw` must re-run `review-loop` itself
    before handing back. If the harness refuses sub-agent dispatch entirely (no
    available tool dispatches a sub-agent — `Task`, `Agent`, or another spelling),
-   `aw` must run the **single-context Full** fallback: play the planner
-   role in-context to produce a gated `plan.md` + `checks.yaml`, clear
-   `confidence(plan) ≥ 90%`, then play the executor role through Phases 3–7 — all
-   in the one window. Confirm it produces `plan.md` and clears the gate, and that
-   it does **not** silently downgrade to the Lite/Micro single-pass path (no plan,
-   no gate). Only when `Edit`/`Write`/`Bash` are *also* unavailable should it fall
-   back to telling you to run the two agents yourself.
+   `aw` must write the brief and then play the executor in its own window through
+   Phases 3–7. Confirm it produces `plan.md` with sealed checks, and that it does
+   **not** silently downgrade to the Lite/Micro single-pass path (no brief, no
+   checks).
 4. **Universal loop + two-scope writes (the R2 risk):** run two checks against
    LoreKit (`memory.search { q, scopes: ["repo::{owner}/*", "global"], tags: ["loop::aw-lessons"] }` to inspect).
    - **Universal lesson:** after a run where the lesson is generic (e.g. an **Applies when** line like `*.tsx` or `monorepo refactor`), confirm the lesson was written to the **`global`** scope (tag `loop::aw-lessons`) and NOT to `repo::{owner}/{repo}`. If it landed in the repo scope, the classifier mis-routed a universal lesson.

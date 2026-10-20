@@ -35,7 +35,7 @@ Read the rows in order; the first row whose condition holds decides the mode.
 | # | Condition | Mode | Report line |
 | --- | --- | --- | --- |
 | 1 | `--no-brainstorm` was passed | `skipped` | `brainstorm: skipped (--no-brainstorm)` |
-| 2 | The block is a lifted grammar block (`<!-- ui-verify:v1 -->`, from the planner's `specs.md`) | `skipped` | `brainstorm: skipped (lifted grammar block — intent specs only)` |
+| 2 | The block is a lifted legacy grammar block (`<!-- ui-verify:v1 -->`, from a grammar `specs.md`) | `skipped` | `brainstorm: skipped (lifted grammar block — intent specs only)` |
 | 3 | Step 1 finds no pending state in the diff | `skipped` | `brainstorm: skipped (no pending state in the diff)` |
 | 4 | `--brainstorm deep` was passed, the `ideate` skill is installed, and some available tool dispatches a sub-agent | `deep` | `brainstorm: deep (ideate)` |
 | 5 | Some available tool dispatches a sub-agent | `fan-out` | `brainstorm: fan-out (5 generators, 1 judge)` |

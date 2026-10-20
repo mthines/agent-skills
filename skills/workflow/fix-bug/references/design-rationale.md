@@ -17,11 +17,11 @@ The rules live in [`SKILL.md`](../SKILL.md) and `rules/`; this file is read on d
 
 1. **Orchestrate, don't self-grade.** Root-cause analysis follows `rules/root-cause-analysis.md`,
    gating lives in `confidence`, test authoring in `/tdd` / `/e2e-testing` / `/e2e-testing-mobile`,
-   plan authoring in `aw-planner` (standard-lane) or `aw-create-plan` (fast-lane), implementation
+   plan authoring in `aw-create-plan` (six-Core brief on the standard-lane, fast-lane plan otherwise), implementation
    in `aw-executor`, and the final undraft with a human.
 2. **Match the harness to the bug.** A null-check fix in one file does not need an eight-phase
    pipeline. Phase 0.5 triage routes simple bugs to a lightweight in-skill analysis and a fast
-   handoff lane; complex bugs get the full execution-path trace + planner treatment. The conservative
+   handoff lane; complex bugs get the full execution-path trace + a sealed six-Core brief. The conservative
    default is `complex` — when in doubt, run the slower lane.
 3. **Reproduce before fixing.** The repro is the executor's `FAIL_TO_PASS` contract and the
    Phase 7's primary check. Best-effort fallback is allowed but flagged — and blocks the
@@ -29,14 +29,15 @@ The rules live in [`SKILL.md`](../SKILL.md) and `rules/`; this file is read on d
 4. **Cheap localisation first.** Pre-flight (Phase 1.5) often names the cause in seconds —
    running heavy holistic analysis first wastes tokens. Pre-flight short-circuits can also
    upgrade `complex` triage to `simple` and unlock the fast-lane.
-5. **Three independent confidence gates on both lanes.** Standard-lane: `confidence(analysis)`
-   + `confidence(plan)` + Phase 7 checks. Fast-lane: `confidence(analysis) ≥ 92 %` (stricter
-   substitute for the bypassed planner gate) + plan.md validator + Phase 7 checks. A human
+5. **Three independent gates on both lanes.** Standard-lane: `confidence(analysis)`
+   + deterministic brief validation with sealed checks + Phase 7 checks. Fast-lane:
+   `confidence(analysis) ≥ 92 %` (stricter, because the fast-lane plan skips the sealed brief)
+   + plan.md validator + Phase 7 checks. A human
    undrafts after reading the Phase 7 evidence. Self-grading is
    not allowed at any of these.
-6. **Auto-implement at ≥ 92 % is fully autonomous.** The threshold is the substitute for the
-   bypassed planner gate on the fast-lane and applies symmetrically on the standard-lane to keep
-   the user-facing model simple.
+6. **Auto-implement at ≥ 92 % is fully autonomous.** The threshold guards the fast-lane, which
+   skips the sealed brief, and applies symmetrically on the standard-lane to keep the
+   user-facing model simple.
 7. **Counterexample-driven refinement.** When a patch fails the repro, the failing input is the
    evidence — capture it, refine, cap at 3 rounds.
 8. **Durable ledger over re-derived state.** The bug-notes ledger survives compaction;
@@ -50,12 +51,11 @@ The rules live in [`SKILL.md`](../SKILL.md) and `rules/`; this file is read on d
 
 ## Why the auto-implement bar is 92 %
 
-The 92 % threshold is the substitute for aw-planner's `confidence(plan) ≥ 90 %` that the fast-lane
-bypasses.
-It is stricter on purpose: bypassing the planner means one fewer independent gate, and the higher
-bar on the gate that remains restores the three-gate invariant.
-Force-proceed at 70–91 % routes to the standard-lane because the planner's `confidence(plan)` gate
-is the extra safety net when analysis confidence is marginal.
+The fast-lane plan skips the six-Core brief and its sealed checks, so the analysis gate is the
+strongest guard that lane has.
+It is stricter on purpose: a higher bar on the gate that remains keeps the three-gate invariant.
+Force-proceed at 70–91 % routes to the standard-lane because the sealed brief is the extra safety
+net when analysis confidence is marginal.
 
 ## Why Phase 3 runs in context
 
@@ -95,8 +95,8 @@ produces a match on the new release tag.
 | Free-text input triggers low-confidence holistic analysis | Medium | Phase 0 refuses to analyse on free text alone — clarifying questions first. Phase 0.5 triage also picks `complex` for free-text (signal 11). |
 | Dash0 MCP not configured | Medium | Detection step in `evidence-resolution.md` prints the install / paste-evidence fallback; Phase 8 has its own capability gate. |
 | Repro is best-effort only (UI / race / perf) | Medium | Phase 7 skips `FAIL_TO_PASS` and relies on broader test suite + diff sanity. Best-effort repros are also blocked from the fast-lane — they always route via standard-lane. Documented in the bug-notes ledger. |
-| Analysis returns a confident-but-wrong root cause | Low–Medium | Three independent gates on **both lanes**: standard-lane uses `confidence(analysis)` + `confidence(plan)` + Phase 7 checks; fast-lane uses `confidence(analysis) ≥ 92 %` (stricter substitute for `confidence(plan)`) + plan.md validator + Phase 7 checks; a human undrafts. |
-| Triage classified `simple` but the bug was cross-cutting | Low–Medium | Fast-lane round-3 CEGIS failure falls back to standard-lane via aw-planner with the captured counterexamples — single-shot safety net. |
+| Analysis returns a confident-but-wrong root cause | Low–Medium | Three independent gates on **both lanes**: standard-lane uses `confidence(analysis)` + the sealed six-Core brief + Phase 7 checks; fast-lane uses `confidence(analysis) ≥ 92 %` (stricter, because it skips the sealed brief) + plan.md validator + Phase 7 checks; a human undrafts. |
+| Triage classified `simple` but the bug was cross-cutting | Low–Medium | Fast-lane round-3 CEGIS failure falls back to the standard-lane with the captured counterexamples — single-shot safety net. |
 | Triage classified `complex` but the bug was trivial | Medium | Acceptable. Wasted tokens; no correctness loss. Conservative default is intentional. Pre-flight short-circuit can still upgrade `complex` → `simple` later in the run. |
 | Fast-lane plan.md missing a required section | Low | `/fix-bug` validates plan.md after `aw-create-plan` returns and before dispatching `aw-executor`. Fails loudly. |
 | Executor's first patch fails the repro | Medium | CEGIS refinement contract: capture failing input as counterexample, refine, cap at 3 rounds before escalating (standard-lane → `confidence(analysis fix)`; fast-lane → standard-lane fallback). |

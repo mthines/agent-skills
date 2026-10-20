@@ -39,7 +39,7 @@
  * EMPTY stdout, so a caller that forgets to check the status cannot route on `{}`.
  */
 
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { join, dirname, resolve, relative, basename, extname, posix } from "node:path";
 import { tmpdir } from "node:os";
@@ -1839,6 +1839,6 @@ async function main() {
   }
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   main().catch((err) => { process.stderr.write(`${err?.stack || err}\n`); process.exit(2); });
 }

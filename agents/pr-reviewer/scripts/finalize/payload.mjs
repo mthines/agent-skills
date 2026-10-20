@@ -17,6 +17,7 @@
  */
 
 import { buildFingerprint } from "../fingerprint.mjs";
+import { realpathSync } from "node:fs";
 import { CLAIM_PREFIXES } from "./thresholds.mjs";
 import { TERMINAL_PUNCT_RE } from "../comment-spine.mjs";
 import { BLOCKING_DECORATION_RE } from "./gates.mjs";
@@ -506,7 +507,7 @@ async function selfTest() {
 }
 
 import { pathToFileURL } from "node:url";
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain && process.argv.includes("--self-test")) {
   selfTest();
 }

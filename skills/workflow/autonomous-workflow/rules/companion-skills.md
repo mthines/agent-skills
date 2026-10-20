@@ -62,7 +62,7 @@ companion: <name> — skipped (<reason>)
 companion: test-provenance-guard — skipped (trigger not met: no new *.test.* file)
 ```
 
-**Why this is mandatory, not courtesy.** Across 39 `aw-planner` and 48
+**Why this is mandatory, not courtesy.** Across 39 planning-agent and 48
 `aw-executor` runs in the author's local transcripts (`~/.claude/projects`,
 2026-08-20 → 2026-09-25 — local sessions only, not Agent0 or cloud runs), `Skill("interview")`, `Skill("tdd")`, and
 `Skill("test-provenance-guard")` were each invoked **zero** times, and the
@@ -76,7 +76,7 @@ contributors, each now fixed or made visible:
    `phase-4-testing.md`. A run working from the template never met it. The row is
    now in the template.
 2. **`interview`'s question round runs through `AskUserQuestion`, which
-   `aw-planner`'s tool grant does not include.** A planner that decided the
+   a dispatched agent's tool grant does not include.** An agent that decided the
    companion could not do its job there fell back to the inline gate and said
    nothing; that decision now has to be written down as
    `skipped (tool unavailable: AskUserQuestion)` — or the line says `ran`.
@@ -93,9 +93,8 @@ line is what lets the next measurement confirm or refute them.
 
 | Skill                | Phase | Trigger condition                                                       | Args                  | Disable by                                                               |
 | -------------------- | ----- | ----------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
-| `interview`          | 0     | Full Mode default-on (adaptive — silent on a crisp request; skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `brief.md` + readiness verdict | —              | Remove invocation in [`phase-0-validation.md`](./phase-0-validation.md#step-3a-scope-alignment) |
-| `critical`           | 1     | Opt-in only — user passed `--critical` to the workflow. Single adversarial pre-mortem pass before `confidence(plan)`; advisory, does not gate. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#adversarial-pre-mortem) |
-| `confidence`         | 1     | Full Mode (plan gate — MANDATORY there; Lite has no `plan.md` to gate, Micro skips all companions) | `plan`                | **Cannot disable** — required gate (Full Mode)                           |
+| `interview`          | 0     | Full Mode on demand — two or more `blocking` questions remain after Phase 0 (skip on `--no-interview`, force on `--interview`). SSOT for restate-and-diff + Missing-Information Gate; writes `brief.md` + readiness verdict | —              | Remove invocation in [`phase-0-validation.md`](./phase-0-validation.md#step-3a-scope-alignment) |
+| `critical`           | 1     | Opt-in only — user passed `--critical` to the workflow. Single adversarial pre-mortem pass before brief validation; advisory, does not gate. | `plan` | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#adversarial-pre-mortem) |
 | `lorekit-memory`     | 1     | Always — load accumulated workflow lessons before design (fast tier of the self-improvement loop) | `memory.list loop::aw-lessons`     | Remove invocation in [`phase-1-planning.md`](./phase-1-planning.md#lessons-read) |
 | `aw-create-plan`     | 2     | Full Mode only                                                          | —                     | Switch task to Lite Mode                                                 |
 | `lorekit-memory`     | 3     | Executor entry — only when `plan.md` has no `## Lessons applied` (no-planner paths: Lite Mode, `fix-bug` fast-lane, direct dispatch) | `memory.list loop::aw-lessons` | Remove invocation in [`phase-3-implementation.md`](./phase-3-implementation.md#lessons-read) |
@@ -249,11 +248,8 @@ See [`rules/parallel-coordination.md#sub-agent-resource-discipline`](./parallel-
 
 ## Why some skills can't be disabled
 
-`confidence` at Phase 1 is the only non-removable companion. Without it, the
-plan gate is gone and the workflow loses its primary safety mechanism. If you
-want to remove the gate entirely, fork the skill and adjust
-`phase-1-planning.md` directly — but understand the autonomous safety guarantee
-changes meaningfully.
+Every companion can be disabled.
+The Full tier's gates are not companions: the deterministic [brief validation](./phase-1-planning.md#brief-validation) and the sealed `run-checks.mjs` gate ([`phase-4-testing.md`](./phase-4-testing.md#executable-checks-loop)) always run.
 
 ---
 
@@ -264,7 +260,7 @@ When a companion is invoked, append a one-liner to the `plan.md` Progress Log
 
 ```markdown
 - [2026-04-29T15:30:00Z] Phase 1: critical(plan) — applied (2 must-fixes addressed, steelman recorded)
-- [2026-04-29T15:32:00Z] Phase 1: confidence(plan) — 92% (passed gate)
+- [2026-04-29T15:32:00Z] Phase 1: brief validation — passed (6 Core headings, 7 ACs = 7 checks, sealed)
 ```
 
 This makes the companion footprint visible across phases and helps tune which

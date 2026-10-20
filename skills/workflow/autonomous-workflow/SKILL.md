@@ -51,7 +51,7 @@ questions in order — the first `yes` selects Full Mode:
 
 | Tier      | Files / shape                                                        | Artifacts | Planning            | Companions      |
 | --------- | -------------------------------------------------------------------- | --------- | ------------------- | --------------- |
-| **Full**  | complex / 4+ files / unfamiliar / cause or location unknown          | Required  | planner → `plan.md` brief | all applicable  |
+| **Full**  | complex / 4+ files / unfamiliar / cause or location unknown          | Required  | `aw` writes a short `plan.md` brief, works to its checks, then a fresh-eyes review | required ones; the rest at judgment |
 | **Lite**  | 2–3 files, **or 1 file carrying non-trivial logic**                  | None      | in-conversation brief | per signal      |
 | **Micro** | 1 file **and** purely mechanical (typo, copy, bump, string change)   | None      | in-conversation brief, no planning | none (docs if drift) |
 
@@ -82,7 +82,7 @@ MODE SELECTION:
 - Lessons applied: [N matched, or none]
 ```
 
-This block is canonical: the [`aw` dispatcher skill](./aw/SKILL.md), the planner template, and [`rules/phase-0-validation.md`](./rules/phase-0-validation.md) emit it field-for-field.
+This block is canonical: the [`aw` dispatcher skill](./aw/SKILL.md) and [`rules/phase-0-validation.md`](./rules/phase-0-validation.md) emit it field-for-field.
 
 ### Step 2: Verify Prerequisites
 
@@ -99,7 +99,7 @@ Details: [`rules/prerequisites.md`](./rules/prerequisites.md) — read when a pr
 | Phase | Name | Rule file | Gate |
 | ----- | ---- | --------- | ---- |
 | 0 | Validation | [phase-0-validation.md](./rules/phase-0-validation.md) | User confirmed understanding |
-| 1 | Planning | [phase-1-planning.md](./rules/phase-1-planning.md) | `confidence(plan)` ≥ 90% or user-approved |
+| 1 | Planning | [phase-1-planning.md](./rules/phase-1-planning.md) | Six Core headings, one check per `AC-{n}`, `checks.lock` sealed — deterministic, no LLM score |
 | 2 | Worktree Setup | [phase-2-worktree.md](./rules/phase-2-worktree.md) | Worktree created, brief + `checks.yaml` written, `/goal` line printed |
 | 3 | Implementation | [phase-3-implementation.md](./rules/phase-3-implementation.md) | Code complete, fast checks pass, only File Changes touched |
 | 4 | Testing | [phase-4-testing.md](./rules/phase-4-testing.md) | Suite green, then `run-checks.mjs` prints `CHECKS M/M PASS` |
@@ -114,7 +114,7 @@ Details: [`rules/prerequisites.md`](./rules/prerequisites.md) — read when a pr
 
 1. **Detect the tier first** — Micro, Lite, or Full before any other action.
 2. **Phase 0 and Phase 2 are mandatory** — no skipping validation or the worktree.
-3. **Plan as a brief, review after the fact.** The brief is Task, Requirements, Guardrails, Acceptance Criteria (Definition of Done), Turn Cap, and File Changes; the human reviews the walkthrough's one-page summary, not a long plan up front.
+3. **Plan as a brief, review after the fact.** The brief is at most 60 lines of outcomes and sourced limits — Task, Requirements, Guardrails, Acceptance Criteria (Definition of Done), Turn Cap, and starting File Changes — never a design; a fresh-context reviewer and the human's one-page walkthrough check the result.
 4. **Done is a command, not a judgment.** In Full Mode, Phase 4 ends only on the `run-checks.mjs` sentinel `CHECKS M/M PASS (<sha>)`; check definitions are sealed and executor-immutable, and all-green is necessary, never sufficient.
 5. **Print the goal and the evidence.** At the end of planning print a paste-ready `/goal` line; before the terminal contract print the `AW EVIDENCE` block — [`rules/goal-emission.md`](./rules/goal-emission.md).
 6. **Verify after editing** — the brief's After-editing command before continuing.
@@ -160,19 +160,18 @@ Lessons: the fast tier (`loop::aw-lessons` on LoreKit) and the slow tier (`/crea
 
 Fan-out points, each read when it applies:
 
-- Phase 1 — parallel `Explore` sub-agents for complex research: [phase-1-planning.md](./rules/phase-1-planning.md#parallel-research).
+- Phase 1 — at most two `Explore` sub-agents, only for an unfamiliar area: [phase-1-planning.md](./rules/phase-1-planning.md).
 - Phase 3 — up to 3 concurrent sub-agents on file-disjoint slices, each embedding the resource-discipline line: [parallel-coordination.md](./rules/parallel-coordination.md#sub-agent-resource-discipline).
 - Phase 7 — one `ci-auto-fix` sub-agent per independent failure, cap 2 handoffs per PR: [phase-7-ci-gate.md](./rules/phase-7-ci-gate.md#parallel-ci-fixes).
 
 ## Units and install
 
-The skill ships **one dispatcher skill** and **three agents** (`aw-` = autonomous-workflow):
+The skill ships **one dispatcher skill** and **two agents** (`aw-` = autonomous-workflow):
 
 | Unit | Kind | Role | Exit gate |
 | ---- | ---- | ---- | --------- |
-| [`aw`](./aw/SKILL.md) | skill | Opt-in dispatcher: lessons, tier, routing, `/goal` line | Task routed, exit lesson written |
-| [`aw-planner`](./templates/aw-planner.agent.md) | agent | Full, Phases 0–2 → brief + sealed `checks.yaml` (+ `specs.md` for UI) | `confidence(plan) ≥ 90%` or user-approved |
-| [`aw-executor`](./templates/aw-executor.agent.md) | agent | Full, Phases 3–7 → walkthrough + draft PR | `CHECKS M/M PASS`, walkthrough shown, CI gate run |
+| [`aw`](./aw/SKILL.md) | skill | Opt-in dispatcher: lessons, tier, routing, `/goal` line; on Full, the brief + sealed `checks.yaml`, then the work in this session per `aw-executor`, then a `branch-reviewer` pass | Task routed, exit lesson written |
+| [`aw-executor`](./templates/aw-executor.agent.md) | procedure (and agent) | Full, Phases 3–7 from the brief, applying [`corrections.md`](./rules/corrections.md) → review, walkthrough, draft PR; `aw` follows it in-session, and `/fix-bug` or a parallel request dispatches it | `CHECKS M/M PASS`, walkthrough shown, CI gate run |
 | [`aw-tester`](./templates/aw-tester.agent.md) | agent | Phase 4 (UI) spec verification, cold pass only | `green` or `inconclusive` before lint/type/test |
 
 Other files: [`routing.rule.md`](./templates/routing.rule.md) (auto-trigger rule), [`aw-target.yml.template`](./templates/aw-target.yml.template), [`specs.md.template`](./templates/specs.md.template), [`intent-spec.md.template`](./templates/intent-spec.md.template), [`scripts/run-checks.mjs`](./scripts/run-checks.mjs) (the check runner; `--self-test` proves it).

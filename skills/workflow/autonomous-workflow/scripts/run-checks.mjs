@@ -22,7 +22,7 @@
 // aw-create-plan always seals, so an unsealed checks.yaml is never a valid run.
 
 import { spawnSync, execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -410,4 +410,5 @@ function main(argv) {
   return exit;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)));
+// Node resolves import.meta.url through symlinks but leaves argv[1] as typed; the installed path is a symlink.
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)));

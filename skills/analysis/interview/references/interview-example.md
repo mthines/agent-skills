@@ -95,7 +95,7 @@ User picks: open+merged+ci-failing; reuse the 90s cadence.
 - `src/providers/sessions-provider.ts` — render the badge.
 
 ## Handoff
-Next: aw-planner reads this brief.
+Next: aw reads this brief.
 ```
 
 ---

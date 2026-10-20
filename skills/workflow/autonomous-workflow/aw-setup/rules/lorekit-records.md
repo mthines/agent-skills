@@ -21,7 +21,7 @@ Record shapes are owned by [`ui-verify/rules/memory.md`](../../../../testing/ui-
 
 ## Phase F — the UI surface record
 
-The `is-ui-diff` gate (used by `ui-verify author`, `aw-planner`, `create-pr`, and `review-loop`) works on broad defaults; this record refines what this repo counts as UI.
+The `is-ui-diff` gate (used by `ui-verify author`, `aw-executor`, `create-pr`, and `review-loop`) works on broad defaults; this record refines what this repo counts as UI.
 
 1. Without `memory.*`, log `aw-setup: memory.* not connected — UI surface not recorded, gate uses defaults` and stop.
 2. Propose a surface from Phase A's detection and confirm it with the user. Ask only when the defaults would be wrong:

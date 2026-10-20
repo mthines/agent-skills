@@ -35,10 +35,10 @@ gives the executor a deterministic, spec-driven check on UI correctness —
 a middle layer between English acceptance criteria in `plan.md` and saved
 Playwright test files.
 
-Specs are authored by the planner in `specs.md` alongside `plan.md` (see
-[`phase-1-planning.md` — Spec Emission](./phase-1-planning.md#spec-emission-ui-tasks)). Most specs
-are `verify-only` (ephemeral); a small subset are `critical-path` and get
-promoted to saved `*.spec.ts` via the `e2e-testing` skill's Generator.
+Specs are written by the executor in `specs.md`, in the intent format, once the UI exists (see
+[`phase-1-planning.md` — Spec Emission](./phase-1-planning.md#spec-emission-ui-tasks) and correction C5).
+The same file is later lifted into the PR body by `ui-verify author` and re-run on a local stack by `/local-verify`.
+A legacy grammar `specs.md` still runs; its `critical-path` specs are promoted to saved `*.spec.ts` via the `e2e-testing` skill's Generator.
 
 **This sub-rule is separate from the main `phase-4-testing.md` rule.** It runs
 before the unit/integration test loop, not as a replacement for it.
@@ -52,6 +52,8 @@ Verification runs in two passes with very different costs:
 | **Cold pass** | Phase 4 entry, hot-loop escalation, Phase 7 rehearsal | Full `aw-tester` sub-agent dispatch — reads lessons, parses specs, resolves Playwright binary, generates `last-run.spec.ts`, runs all specs, returns structured verdict, writes lessons | 20–40 s + LLM tokens for the verdict block |
 | **Hot loop** | Every executor iteration on the same failing spec | Executor runs `last-run.spec.ts` directly via Bash with `--grep <failing-spec-id>`. Exit code 0 = green, non-zero = red. No sub-agent dispatch, no `npx`, no spec re-generation | 2–6 s, zero sub-agent LLM tokens |
 
+For an intent spec (`Format: intent`), the hot loop is a cold pass that replays the cached route (contract § 6.6): no exploration while the route still holds, so it stays cheap.
+
 The cold pass is for **structured handoff** (verdict, lessons, spec promotion).
 The hot loop is for **the executor asking "did my fix work?"** Use the cold
 pass sparingly — once per Phase 4 entry, plus the explicit escalation triggers
@@ -63,7 +65,7 @@ in [Step 4](#step-4-cold-pass-escalation).
 
 Run this sub-rule when ALL of the following are true:
 
-1. `.agent/{branch}/specs.md` exists (the planner emitted it).
+1. `.agent/{branch}/specs.md` exists (the executor wrote it per C5).
 2. The plan's `## File changes` table includes at least one UI file (`*.tsx`,
    `*.jsx`, `*.css`, `*.vue`, `*.svelte`, a route/page file, or a layout file).
 
@@ -333,9 +335,8 @@ If this returns empty, skip cleanly:
 - [TIMESTAMP] Phase 4: spec-verification — skipped (no UI files in plan; task is non-UI)
 ```
 
-The planner's decision to emit or skip `specs.md` (see `phase-1-planning.md`)
-is the primary signal. This check is a safety net for cases where the planner
-skipped `specs.md` correctly but specs.md was left from a prior run.
+The `is-ui-diff` gate's decision to emit or skip `specs.md` (see `phase-1-planning.md`)
+is the primary signal. This check is a safety net for a `specs.md` left over from a prior run.
 
 ---
 

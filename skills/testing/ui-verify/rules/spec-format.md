@@ -25,12 +25,12 @@ The markers make the block **machine-findable** — the runner and `review-loop`
 ## The marker contract
 
 Three marker versions exist.
-`author` writes v2, or v1 only when lifting a grammar source verbatim; `run` reads all three, in this order:
+`author` writes v2, or v1 only when lifting a legacy grammar source verbatim; `run` reads all three, in this order:
 
 | Marker pair | Body format | Written by `author` | Read by `run` |
 | --- | --- | --- | --- |
-| `<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->` | **Intent** — Markdown, header `Format: intent` | yes — the default | first |
-| `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` | **Grammar** — `WHEN/THEN/AND` | only when lifting `.agent/{branch}/specs.md` verbatim ([`spec-sources.md`](./spec-sources.md)) | second |
+| `<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->` | **Intent** — Markdown, header `Format: intent` | yes — the default, and for a lifted intent `specs.md` | first |
+| `<!-- ui-verify:v1 -->` … `<!-- /ui-verify:v1 -->` | **Grammar** — `WHEN/THEN/AND` | only when lifting a legacy grammar `.agent/{branch}/specs.md` verbatim ([`spec-sources.md`](./spec-sources.md)) | second |
 | `<!-- preview-spec:v1 -->` … `<!-- /preview-spec:v1 -->` | Grammar (the skill's former name) | never | last, read-only |
 
 `author` starts a v2 block from the literal boilerplate in [`templates/embedded-spec.md.template`](../templates/embedded-spec.md.template):
@@ -69,11 +69,12 @@ Rules:
 
 | Spec source ([`spec-sources.md`](./spec-sources.md)) | Marker and format |
 | --- | --- |
-| `.agent/{branch}/specs.md` — the aw planner's grammar spec, already run at Phase 4 | v1, its `## Spec N:` blocks lifted verbatim — no translation |
+| `.agent/{branch}/specs.md` with `Format: intent` — written by `/aw` (already run at its Phase 4) or `/local-verify` | v2, its `## Spec N:` blocks lifted verbatim |
+| `.agent/{branch}/specs.md` without `Format: intent` — a legacy grammar spec | v1, its `## Spec N:` blocks lifted verbatim — no translation |
 | A `/fix-bug` reproduction artifact | v2 intent |
 | The diff | v2 intent |
 
-Never translate a lifted grammar spec into intent form: it already ran green against a local target, and the PR block must be that same contract.
+Never translate a lifted spec into the other format: it already ran against a local target, and the PR block must be that same contract.
 Never mix formats in one block.
 
 ## Writing an intent spec (v2)

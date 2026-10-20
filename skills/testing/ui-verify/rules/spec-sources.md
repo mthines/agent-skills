@@ -22,7 +22,7 @@ Check these sources in priority order. The first that exists wins; fall through 
 
 | Artifact | Lifetime | Who reads it |
 | --- | --- | --- |
-| `.agent/{branch}/specs.md` | Gitignored, local to the worktree. Exists only during the aw run that wrote it. | The aw executor (Phase 4, against a local target) and Phase 7 Spec Rehearsal (against the preview) — both inside that same run. |
+| `.agent/{branch}/specs.md` | Gitignored, local to the worktree. Lives as long as the worktree. | `aw-tester` (aw Phase 4, against a local target; Phase 7 Spec Rehearsal, against the preview) and `/local-verify` (against a local stack). |
 | The ui-verify block in the PR body (`<!-- ui-verify:v2 -->`, or `<!-- ui-verify:v1 -->` for a lifted grammar spec) | Committed to GitHub as part of the PR description. Outlives the run and survives a fresh checkout. | `ui-verify run` and any on-demand agent, in any later session. |
 
 `author` is the **one-way bridge** between them. It runs during the aw flow, while `specs.md` still exists in the worktree, and copies that content into the committed PR body. That is why the gitignore never breaks verification: the durable artifact is the PR block, `run` reads **only** the PR block (never `specs.md`), and `specs.md` itself is never committed — only its lifted content reaches GitHub.
@@ -32,21 +32,24 @@ So both uses are supported, and they are separate:
 - **Local verification during the aw run** reads `specs.md` directly (Phase 4, Phase 7). Fast, in-worktree, no PR needed.
 - **Verification against the PR** reads the committed block (`ui-verify run`). Portable, checkout-independent, repeatable after the run ends.
 
-## Source 1: the autonomous-workflow planner's `specs.md`
+## Source 1: the `specs.md` that `/aw` or `/local-verify` wrote
 
 Path: `.agent/{branch}/specs.md`.
 
-The autonomous-workflow planner emits this for UI tasks (Phase 1), the executor runs it against a local target at Phase 4, and Phase 7 re-runs it against the preview deployment.
-It is written in **`aw-tester`'s WHEN/THEN grammar — the format a `<!-- ui-verify:v1 -->` block carries** — so reuse is a lift into a v1 block, never a translation into the intent format.
+`/aw`'s executor writes it for UI tasks once the UI exists and runs it at Phase 4 (correction C5); `/local-verify` writes it, or reuses `/aw`'s, and runs it on a local stack.
+Both write the **intent format** (`Format: intent`), so reuse is a lift into a `<!-- ui-verify:v2 -->` block.
+A legacy file in the WHEN/THEN grammar (no `Format: intent` line) lifts into a `<!-- ui-verify:v1 -->` block instead.
+Never translate between the two.
 
-The file is gitignored, but this works because `author` runs during the same aw flow (Phase 6), where the worktree still holds `specs.md`. You are reading a local file and writing its content into the committed PR body — see [Two artifacts, two lifetimes](#two-artifacts-two-lifetimes). A standalone `author` on a fresh checkout finds no `specs.md` and falls through to [Source 3](#source-3-generate-from-the-diff).
+The file is gitignored, but this works because `author` runs in the same worktree as the run that wrote it. You are reading a local file and writing its content into the committed PR body — see [Two artifacts, two lifetimes](#two-artifacts-two-lifetimes). A standalone `author` on a fresh checkout finds no `specs.md` and falls through to [Source 3](#source-3-generate-from-the-diff).
 
 How to reuse:
 
-1. Read `.agent/{branch}/specs.md`.
-2. Lift its `## Spec N:` blocks **verbatim** into a `<!-- ui-verify:v1 -->` collapsed block (see [`spec-format.md § Which format to write`](./spec-format.md#which-format-to-write)).
-3. Set the header to `Target: preview` — the planner's file targets `local` (Phase 4 ran it against the dev server); the PR block runs against the preview deployment. This is the one field you change.
-4. Do not re-derive or trim the specs. The planner authored them against the plan and the executor verified them; the PR block is the same contract pointed at a different environment.
+1. Read `.agent/{branch}/specs.md` and pick the marker by its header: `Format: intent` → v2, else v1.
+2. Lift its `## Spec N:` blocks **verbatim** into the collapsed block (see [`spec-format.md § Which format to write`](./spec-format.md#which-format-to-write)).
+3. Set the header to `Target: preview` — the file targets `local`; the PR block runs against the preview deployment. Keep `Format: intent` when present. The target is the one field you change.
+4. Do not re-derive or trim the specs. They were written against the brief and already run; the PR block is the same contract pointed at a different environment.
+5. Run the out-of-bounds brainstorm as usual and append its specs after the lifted ones — an intent `specs.md` and the brainstorm's intent specs share one format, so one v2 block holds both. Skip the brainstorm for a v1 lift: the formats cannot mix.
 
 ## Source 2: a `/fix-bug` reproduction artifact
 

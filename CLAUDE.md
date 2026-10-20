@@ -73,6 +73,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
 - `e2e-pr-stabilizer` (`/`) — local-first Playwright E2E stabilizer for one PR; modes `stabilize` / `optimize`
 - `ui-verify` (`Skill()` + `/`) — Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); `author` adds out-of-bounds specs from a PR-scoped brainstorm; the runner adapts the route but checks every outcome with evidence, then tries to break it, records it, and checks its Dash0 web events
+- `local-verify` (`/`) — verifies a PR on a local stack: reuses `/aw`'s brief and intent `specs.md`, runs them plus edge probes via `ui-verify run --url`, reads telemetry, fixes each finding as one commit; `setup` stores all repo values
 
 ### `design/` — UI, visual, interaction
 
@@ -108,8 +109,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 **`aw` is a skill, not an agent** — [`aw/SKILL.md`](./skills/workflow/autonomous-workflow/aw/SKILL.md), invoked `/aw`.
 The agents it hands off to are **generated from templates** in `skills/workflow/autonomous-workflow/templates/`, not stored in `agents/`:
 
-- `aw-planner` — Full tier, phases 0–2, gated on `confidence(plan) ≥ 90%`. Source: [`aw-planner.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-planner.agent.md)
-- `aw-executor` — Full tier, phases 3–7. Source: [`aw-executor.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md)
+- `aw-executor` — Full tier, executes the brief `aw` writes, phases 3–7. Source: [`aw-executor.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md)
 - `aw-tester` — Phase 4 spec-driven UI verification. Source: [`aw-tester.agent.md`](./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md)
 
 The agents below live as `agents/*.md` files and are dispatched by skills:

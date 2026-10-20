@@ -149,12 +149,12 @@ Log to the ledger:
 The read above is this loop's **own** bucket. There is one cross-bucket read worth
 making: the shared `codebase-knowledge` signal — the cross-branch, cross-author
 record of what prior reviews learned about this repo's symbols and files
-(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). On the
-**standard lane** `aw-executor` runs through `aw`, which reads this bucket itself
-([`autonomous-workflow/rules/self-improvement-loop.md § knowledge-read`](../../autonomous-workflow/rules/self-improvement-loop.md#fast-tier--read-the-repos-codebase-knowledge-cross-bucket-read-only)).
-The **fast lane** dispatches `aw-executor` from an `aw-create-plan` plan **without
-`aw-planner`**, so that read never fires — `/fix-bug` must issue it itself, once the
-fast-lane `plan.md` File Changes table is drafted:
+(`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). `aw` reads this
+bucket itself when it writes a Full brief
+([`autonomous-workflow/rules/self-improvement-loop.md § knowledge-read`](../../autonomous-workflow/rules/self-improvement-loop.md#fast-tier--read-the-repos-codebase-knowledge-cross-bucket-read-only)),
+but `/fix-bug` writes its own brief on both lanes and dispatches `aw-executor`
+without `aw`, so that read never fires — `/fix-bug` must issue it itself, once the
+`plan.md` File Changes table is drafted:
 
 ```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }

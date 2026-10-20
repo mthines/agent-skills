@@ -99,7 +99,7 @@ Input/output pairs that broke a candidate fix during the executor's CEGIS refine
 | 3     | <ts>                     | Holistic analysis: root cause <verbatim> |
 | 4     | <ts>                     | Confidence: <X%> |
 | 5     | <ts>                     | Branch decision: <auto-fix | proposal | stop> |
-| 6     | <ts>                     | Planner: <plan ready | below gate>; Executor: <PR url | failed> |
+| 6     | <ts>                     | Brief: <validated | failed validation>; Executor: <PR url | failed> |
 | 7     | <ts>                     | Verifier: <green | red> |
 | 8     | <ts>                     | Telemetry verification: <decayed | persistent | skipped> |
 

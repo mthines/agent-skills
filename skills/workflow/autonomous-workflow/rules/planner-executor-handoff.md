@@ -1,55 +1,36 @@
 ---
-title: 'Planner ↔ Executor Handoff'
+title: 'Brief ↔ Executor Handoff'
 impact: HIGH
 tags:
-  - planner
+  - brief
   - executor
   - handoff
-  - confidence
   - phase-boundary
 ---
 
-# Planner ↔ Executor Handoff
+# Brief ↔ Executor Handoff
 
 ## Contents
 
 - [Overview](#overview)
-- [Why this boundary](#why-this-boundary)
 - [Handoff contract](#handoff-contract)
 - [Refinement contracts (caller-specified)](#refinement-contracts-caller-specified)
 - [Handoff message format](#handoff-message-format)
 - [Edit-driven iteration loop](#edit-driven-iteration-loop)
 - [Receiving handoff (executor entry point)](#receiving-handoff-executor-entry-point)
-- [What the planner DOES NOT do](#what-the-planner-does-not-do)
+- [What the brief writer DOES NOT do](#what-the-brief-writer-does-not-do)
 - [What the executor DOES NOT do](#what-the-executor-does-not-do)
 - [References](#references)
 
 ## Overview
 
-In the **Full tier**, the autonomous-workflow runs as two agents connected by a
-single artifact (the `aw` dispatcher routes Full tasks here; Micro/Lite run
-single-pass and never reach this handoff):
+In the **Full tier**, two parties are connected by one artifact (Micro/Lite run single-pass and never reach this handoff):
 
-- **Planner agent** ([`templates/aw-planner.agent.md`](../templates/aw-planner.agent.md)) — runs phases 0–2 (validation, planning, worktree + `plan.md` generation).
-- **Executor agent** ([`templates/aw-executor.agent.md`](../templates/aw-executor.agent.md)) — runs phases 3–7 (implementation, testing, docs, PR, CI).
+- **The brief writer** — the `aw` dispatcher in the caller's context ([`aw/rules/full-tier.md`](../aw/rules/full-tier.md)), or an orchestrator such as `/fix-bug`, runs phases 0–2: validation, a short look at the code, the worktree, and `plan.md` + sealed `checks.yaml` via [`aw-create-plan`](../../aw-create-plan/SKILL.md).
+- **The executor** ([`templates/aw-executor.agent.md`](../templates/aw-executor.agent.md)) runs phases 3–7: implementation, review, testing, docs, PR, CI. By default the brief writer plays this role in the same session ([`full-tier.md` Step 2](../aw/rules/full-tier.md#step-2--work-here-until-the-checks-pass)); the `aw-executor` agent runs it only for an explicit background or parallel request.
 
-This split follows Anthropic's "context boundary" principle — separating exploration-heavy work (Phase 0–2) from execution-heavy work (Phase 3–7) keeps each agent's context window focused and avoids polluting implementation decisions with planning dead-ends. See [`references/anthropic-architecture-research.md`](../references/anthropic-architecture-research.md) for the underlying research.
-
-The handoff happens at the **Phase 2 → Phase 3 boundary**, mediated by `plan.md` and gated by `confidence(plan) ≥ 90%`.
-
----
-
-## Why this boundary
-
-At the end of Phase 2, the planner has produced a gated, self-contained artifact (`plan.md`) inside the worktree. Everything the executor needs is in that file. Splitting here yields three concrete benefits:
-
-| Benefit                          | What it buys                                                                                       |
-| -------------------------------- | -------------------------------------------------------------------------------------------------- |
-| **Clean context reset**          | The planner's exploration history (parallel `Explore` reports, rejected designs, dead ends) does not pollute the executor's working context. |
-| **User checkpoint**              | When `confidence(plan) < 90%`, the user is naturally placed in the loop before any code is written. The handoff is the friction point. |
-| **Independent re-runnability**   | Replan without losing implementation context (start a fresh planner session), or rerun the executor against the same plan (e.g. on a different branch / fork). |
-
-Phases 0–2 are also the cheapest to redo — no code has been written, no PR exists. Phase 3+ accumulates cost (commits, CI runs). Putting the boundary here minimizes wasted work when a plan turns out to be wrong.
+The handoff happens at the **Phase 2 → Phase 3 boundary**, mediated by `plan.md` and gated by deterministic validation, not by an LLM confidence score.
+**Why:** [`aw/references/dispatcher-rationale.md`](../aw/references/dispatcher-rationale.md#full-tier-short-brief-work-in-session-review-after).
 
 ---
 
@@ -57,10 +38,8 @@ Phases 0–2 are also the cheapest to redo — no code has been written, no PR e
 
 Two artifacts cross the boundary, with distinct jobs:
 
-- **`checks.yaml` is the living contract** — the executable acceptance criteria the executor's Phase 4 loop gates on mechanically. It self-validates against reality on every loop, so it never goes stale silently. This is the artifact the executor is *held to*.
-- **`plan.md` is the handoff document** — the decisions, requirements, and approach a cold session needs to start. It must stay self-contained (the executor and `confidence(plan)` both cold-read it), but it is a handoff artifact, **not** an exhaustive knowledge base. Keep it lean. If the executor is dispatched while the planner agent is still alive and a plan detail is genuinely unclear, it is better to **query the planner (or the user)** than to expect `plan.md` to have pre-answered every question — the split does not oblige the planner to dump its whole context into the file.
-
-`plan.md` remains the executor's primary written input (plus `checks.yaml` and the worktree). The [`aw-create-plan`](../../aw-create-plan/SKILL.md) template is a **brief** (Core, always present) plus **Extended** sections that appear only when their trigger holds. The executor must not bail because an Extended section is absent — its omission is intentional.
+- **`checks.yaml` is the living contract** — one executable check per `AC-{n}`, immutable fields sealed in `checks.lock`. The executor's Phase 4 [Executable Checks Loop](./phase-4-testing.md#executable-checks-loop) gates on the `run-checks.mjs` sentinel line.
+- **`plan.md` is the brief** — what changes, what must not change, and what done looks like. It is self-contained but lean; the executor discovers the details while it works.
 
 **Core — the brief, always present, in this order:**
 
@@ -71,32 +50,26 @@ Two artifacts cross the boundary, with distinct jobs:
 | Guardrails | What must not change: out-of-bounds paths, preserved interfaces and behaviour, forbidden moves. Every file outside File Changes is out of bounds. |
 | Acceptance Criteria (Definition of Done) | `AC-{n}` items with `(covers: R{m})`, mirrored 1:1 into `checks.yaml`; the After-editing and Before-PR commands; done = `CHECKS M/M PASS` |
 | Turn Cap | The turn budget that bounds the `/goal` line ([`goal-emission.md`](./goal-emission.md)) |
-| File Changes | Action / File / Change / Reason — the only files the executor may touch |
+| File Changes | Action / File / Change / Reason — the only files the executor may touch; for a boundary task, every entry point found by [correction C2](./corrections.md#c2--enumerate-every-entry-point-of-a-boundary) |
 
-The plan travels with **`.agent/{branch}/checks.yaml`** — one executable check per `AC-{n}`, statuses `pending`, immutable fields sealed in `checks.lock`.
-The executor's Phase 4 [Executable Checks Loop](./phase-4-testing.md#executable-checks-loop) gates on the `run-checks.mjs` sentinel line; its absence is logged, not a bail condition.
+**Extended** sections and their triggers live in `aw-create-plan`'s `rules/extended-sections.md`; the executor never bails because an Extended section is absent.
 
-**Extended** sections (Decisions, Implementation Order, Background, Technical Approach, Patterns, Edge Cases, API, Existing Code Survey, Tests, Dependencies, Risks, Progress Log) and their triggers live in `aw-create-plan`'s `rules/extended-sections.md`.
-Existing Code Survey is required in every tier whenever File Changes has a `create` row (rule #10).
+The brief crosses the boundary only when every validation below passes:
 
-All multi-signal `confidence(plan)` rule checks must pass:
+- The six Core headings are present: `grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)' plan.md` prints 6.
+- The `AC-{n}` count in `plan.md` equals the `- id: AC-` count in `checks.yaml`, and `checks.lock` exists.
+- Every `[user-stated]` requirement is covered by a `(covers: R{m})` annotation ([correction C1](./corrections.md#c1--every-stated-requirement-and-default-is-a-check)).
+- File paths in File Changes resolve in the worktree, except `create` rows.
+- The After-editing and Before-PR commands are concrete (no placeholders).
 
-- The six Core headings are present (rule #2 — `grep -cE '^## (Task|Requirements|Guardrails|Acceptance Criteria|Turn Cap|File Changes)' plan.md` prints 6)
-- File paths in the File Changes table resolve in the worktree
-- Requirements are tagged `[user-stated]` or `[inferred]`
-- Acceptance Criteria section is non-empty
-- Every `[user-stated]` requirement is covered by a `(covers: R{m})` annotation (rule #9)
-- Every planned `create` has an Existing Code Survey verdict (rule #10)
-- `checks.yaml` exists with IDs in sync with the plan's `AC-{n}` criteria (rule #11)
-- The After-editing and Before-PR commands are concrete (no placeholders)
-
-If any check fails, the gate fails and the planner enters the iterate-or-escalate flow described in [`phase-1-planning.md#confidence-gate`](./phase-1-planning.md#confidence-gate).
+A failed validation is fixed in the brief and re-run; it is never waived.
 
 ---
 
 ## Refinement contracts (caller-specified)
 
-Orchestrators that invoke `aw-planner` may attach a **refinement contract** to the planner pack. When present, the planner includes the contract verbatim in `plan.md` and the executor honours it during Phase 3 implementation.
+Orchestrators that write the brief may attach a **refinement contract**.
+When present, the brief includes the contract verbatim in `plan.md` and the executor honours it during Phase 3 implementation.
 
 A refinement contract is generic — this skill does not specify what is checked or how the executor refines. The orchestrator owns the semantics; this skill owns delivery. A contract specifies:
 
@@ -111,7 +84,7 @@ The pattern descends from counterexample-guided synthesis (CEGIS) — the failin
 
 ### Canonical example: `/fix-bug` CEGIS contract
 
-`/fix-bug` Phase 6 attaches the following contract to its bug-fix pack:
+`/fix-bug` Phase 6 attaches the following contract to its brief:
 
 - **Check**: run the reproduction test (`<repro_command>`) after each implementation edit.
 - **On-failure action**: capture the failing input/output verbatim, append to the bug-notes ledger under `Counterexamples`, refine the patch using the captured input.
@@ -120,7 +93,7 @@ The pattern descends from counterexample-guided synthesis (CEGIS) — the failin
 
 Full contract at [`/fix-bug rules/autonomous-handoff.md`](../../fix-bug/rules/autonomous-handoff.md#step-6c--cegis-refinement-contract).
 
-This skill does not parse the check or evaluate refinement quality — it only carries the contract from planner to executor through `plan.md`. New orchestrators with their own refinement loops (property-based testing, benchmark-driven optimisation, eval-driven iteration) follow the same shape: declare the four fields in your pack, document the loop in your skill's rules, let `aw-planner` and `aw-executor` deliver it unmodified.
+This skill does not parse the check or evaluate refinement quality — it only carries the contract from the brief to the executor through `plan.md`.
 
 ---
 
@@ -128,57 +101,21 @@ This skill does not parse the check or evaluate refinement quality — it only c
 
 **Anchor:** `handoff-message-format`
 
-At the end of Phase 2, the planner outputs **one** of the two messages below — never both, never something else.
-
-### High-confidence (auto-handoff ready)
+After validation passes, the brief writer prints this block, then dispatches the executor without waiting (the user can interrupt; `--no-confirm` only skips Phase 0's wait):
 
 ```
-✓ Plan ready
+✓ Brief ready
 - Path: .agent/{branch}/plan.md
 - Version: N (frontmatter)
-- Confidence: X% (passed gate)
 - Worktree: <path>
 - Files to change: N
 - Acceptance Criteria: M items
 - Checks: .agent/{branch}/checks.yaml (M checks: K command/grep, J judge; sealed)
-- Specs: .agent/{branch}/specs.md ({N} specs, aw-target: {name}) | none (non-UI task)
+- UI: yes — the executor writes and runs specs.md after the UI exists (C5) | no
 - Goal: <the one-line /goal built per goal-emission.md>
-- Companions: one `companion: <name> — ran | skipped (<reason>)` line per Phase 0–2 registry row
-
-Reply with one of:
-- "execute" / "continue" — dispatch the executor.
-- "review" — inspect the plan first.
-- "iterate" — edit plan.md directly in your editor, then reply
-  "iterate" to have the planner read your edits, re-run the gate, and
-  bump plan.md to version N+1. You can also leave inline notes as HTML
-  comments (<!-- ... -->) anywhere in plan.md — the iterate loop scans
-  for them and treats each one as a hard constraint. See "Edit-driven
-  iteration loop" below.
 ```
 
-The planner then **STOPS**. It does not auto-invoke the executor. The user (or main session) sees the message and decides whether to dispatch.
-
-### Below-gate (user must approve)
-
-```
-⚠️ Plan confidence below 90%
-- Path: .agent/{branch}/plan.md
-- Version: N (frontmatter)
-- Confidence: X% (Y/Z rule checks failed)
-- Concerns:
-  1. <concern from confidence output>
-  2. ...
-
-Choose:
-- refine — planner does up to 2 more research iterations (planner-driven).
-- iterate — edit plan.md yourself, then reply "iterate" (user-edit-driven;
-  inline <!-- ... --> comments are picked up as hard constraints; see
-  "Edit-driven iteration loop" below).
-- proceed — accept and dispatch executor anyway (NOT recommended).
-- stop — abandon.
-```
-
-The planner **STOPS** and waits for the user's choice. `refine` re-enters Phase 1 research for **up to 2 more iterations** (matching the planner template's pre-escalation retry budget); if still below 90% after those, the planner escalates again with the same below-gate message — no infinite refine loop. `proceed` falls through to the high-confidence handoff message (with the lower score logged); `stop` removes the worktree (Phase 7 cleanup) or leaves it for manual inspection.
+When the user replies `iterate` (or edits `plan.md` before or after a run), follow the edit-driven iteration loop below.
 
 ---
 
@@ -186,130 +123,37 @@ The planner **STOPS** and waits for the user's choice. `refine` re-enters Phase 
 
 **Anchor:** `edit-driven-iteration-loop`
 
-`iterate` is the **user-edit-driven** refinement path. It is distinct from:
+`iterate` is the **user-edit-driven** refinement path: the user has edited `plan.md` (or left `<!-- ... -->` notes in it), and the file is the new constraint set.
 
-- The confidence-retry loop inside Phase 1 ([`phase-1-planning.md#confidence-gate`](./phase-1-planning.md#confidence-gate)), which is planner-driven and re-runs research up to twice.
-- The `aw-create-plan` skill's generic "iterate on plan" trigger, which is the artifact-write primitive consumed by this procedure.
+1. **Read `plan.md`** in the worktree end-to-end and parse the `version:` frontmatter field (missing → `0`).
+2. **Collect every user feedback comment.** Walk each `<!-- ... -->` block and treat any directive, conversational, or critical one ("use Y instead", "this is wrong because…") as a **hard constraint**; ignore the template's instructional comments.
+   In snapshot mode ([`aw-create-plan/rules/snapshot-mode.md`](../../aw-create-plan/rules/snapshot-mode.md)), diff against the latest `plan.v*.md` to separate the two kinds.
+3. **Print the detected edits and every comment** with its section and how it will be addressed. State `Detected inline comments: none` explicitly when there are none — silence means the scan was skipped.
+4. **Re-derive downstream sections.** An edited Task, Requirements, or Guardrails section re-derives Acceptance Criteria and File Changes; a downstream edit that contradicts an upstream one is surfaced and asked about.
+5. **Write version N+1** via `aw-create-plan`, which re-derives and re-seals `checks.yaml`; log the edits and the comments addressed in the Progress Log.
+6. **Re-run the validation** from [Handoff contract](#handoff-contract) and re-print the handoff message.
 
-The loop fires whenever the user replies `iterate` to either handoff message. The user has already done the editing — `plan.md` IS the new constraint set. Procedure:
-
-1. **Read `plan.md`** in the worktree end-to-end. Trust the file: the user's edits are the new constraints.
-2. **Parse the `version:` frontmatter field.** If missing, treat as `0` (legacy plan written before this loop existed). The next write will be `version: <current + 1>`.
-3. **Scan for inline user feedback (HTML comments).** Users leave inline notes as `<!-- ... -->` blocks anywhere in `plan.md`. **These are hard constraints — never skip them.** Two kinds of HTML comments coexist in the file:
-
-   | Kind | Origin | Treat as |
-   |------|--------|----------|
-   | Template instructional comments | Carried in from the `aw-create-plan` template (e.g. `<!-- Why is this needed? ... -->`, `<!-- ALL requirements from Phase 0. ... -->`). Already addressed by the section content beneath them. | Ignore. |
-   | User feedback comments | Added by the user inline to direct this iteration (e.g. `<!-- this also needs to handle the timeout case -->`, `<!-- use the existing logger, not a new one -->`). | **Hard constraint** — must be addressed in version N+1. |
-
-   When a previous immutable snapshot exists (**snapshot mode only** — `aw-create-plan` writes `plan.v*.md` only when invoked with the `snapshot` arg, see [`aw-create-plan/rules/snapshot-mode.md`](../../aw-create-plan/rules/snapshot-mode.md)), diff against it to separate the two kinds reliably:
-
-   ```bash
-   DIR=".agent/$(git branch --show-current)"
-   PREV=$(ls "${DIR}"/plan.v*.md 2>/dev/null | sort -V | tail -n 1)
-   if [ -n "${PREV}" ]; then
-     diff -u "${PREV}" "${DIR}/plan.md" | grep -E '^\+.*<!--|^\+.*-->' || echo "(no new comments)"
-   fi
-   ```
-
-   Every added line containing `<!--` or `-->` in that diff is user feedback introduced in this iteration. For each one, record the enclosing section heading, the comment text, and the apparent intent (e.g. "Acceptance Criteria → user comment: 'cover the offline case' → add an acceptance criterion for offline mode").
-
-   **In default mode there is no prior snapshot** (this is the normal case), so walk every `<!-- ... -->` block in `plan.md` directly and flag any whose content is **directive, conversational, or critical** ("change this", "make sure X", "use Y instead", "this is wrong because…"). Treat those as user feedback; ignore template instructional prose.
-
-4. **Summarise what changed at the section level AND list every user comment.** Recap to the user, listing the sections that have moved relative to the planner's last-known mental model and **every** user feedback comment from step 3 with its location and how you plan to address it. Surface this summary before re-planning:
-
-   ```
-   Iterating on plan.md (version N → N+1).
-   Detected edits:
-   - Requirements: added "..."
-   - Acceptance Criteria: removed "..."
-   - Guardrails: added "do not touch src/api/public/**"
-
-   Detected inline comments (HTML <!-- -->):
-   - Acceptance Criteria → "cover the offline case"
-       → will add an acceptance criterion for offline mode
-   - File Changes → "use the existing logger, not a new one"
-       → will reuse src/lib/logger.ts instead of adding a new module
-
-   Re-running planning with your edits AND comments as constraints.
-   Reply "cancel" to abort before the new version is written.
-   ```
-
-   If there are zero detected comments, state "Detected inline comments: none" explicitly — silence on this line is a bug (it means the scan was skipped). The new plan version (v{N+1}) must address every listed comment; the comments themselves are NOT carried forward to the new version (they've been incorporated into the content).
-
-5. **Consistency check inside `plan.md`.** Walk the file and check internal coherence:
-   - If the user edited an upstream section (Task, Requirements, Guardrails, Decisions) but did NOT correspondingly update a downstream section (Acceptance Criteria, File Changes, Implementation Order), **re-derive the downstream sections** rather than blindly preserving them. State the inferred downstream changes back to the user.
-   - If the user edited a downstream section in a way that contradicts an upstream section, **surface the contradiction** and ask whether to update the upstream section, revert the downstream edit, or accept both as-is.
-   - Apply the same coherence check to every user feedback comment from step 3 — a comment in `Acceptance Criteria` that contradicts the `Requirements` section is a contradiction, not just a comment.
-6. **Re-run planning companions** with the user's edits and comments as constraints:
-   - `Skill("confidence", "plan")` — re-score the revised plan against the multi-signal gate.
-7. **Invoke `aw-create-plan`** to write `plan.md` with `version: N+1` in the frontmatter. The Progress Log entry for this write MUST cite the user's edits AND the comments addressed:
-
-   ```markdown
-   - [{TIMESTAMP}] Phase 2: plan.md updated to version {N+1} (user-edit iteration — {short summary of changed sections}; addressed K inline comment(s): {one-line list})
-   ```
-
-8. **Re-emit the handoff message** (high-confidence or below-gate, based on the new `confidence(plan)` score). The user can iterate again, accept, or stop.
-
-### Iteration cap
-
-There is no hard cap on edit-driven iterations — they are user-initiated and each one produces a fresh confidence score and a fresh version. The user is in the loop on every round, so the runaway-iteration failure mode does not apply.
-
-### What this loop does NOT do
-
-- It does not silently accept user edits and skip the confidence gate. Every iteration re-runs `confidence(plan)`.
-- It does not produce additional files by default. `plan.md` is the handoff document and the `version:` frontmatter field is the durable iteration counter; an immutable `plan.v{N}.md` snapshot is written only in `aw-create-plan`'s opt-in snapshot mode.
-- It does not start writing production code. The planner agent's scope still ends at the handoff message.
+The loop has no iteration cap — each round is user-initiated.
 
 ---
 
 ## Receiving handoff (executor entry point)
 
-At the start of Phase 3, the **aw-executor agent**:
+At the start of Phase 3, `aw-executor`:
 
-1. **Confirms it's inside the worktree.**
-
-   ```bash
-   pwd
-   git branch --show-current
-   ```
-
-   The branch name should match the path `.agent/{branch}/plan.md`. If it doesn't, STOP and tell the user.
-
-2. **Reads `plan.md` end-to-end.**
-
-   ```bash
-   cat .agent/$(git branch --show-current)/plan.md
-   ```
-
-   Do not skim. The executor's mental model for the rest of the run comes from this file.
-
-3. **Verifies the Acceptance Criteria section is non-empty.** This is the contract Phase 4 testing gates against. An empty section means the plan is incomplete — bail.
-
-3b. **Loads `checks.yaml` if present.**
-
-   ```bash
-   cat .agent/$(git branch --show-current)/checks.yaml 2>/dev/null
-   ```
-
-   Present → Phase 4 gates on the [Executable Checks Loop](./phase-4-testing.md#executable-checks-loop);
-   note the check count and any `judge`-kind entries. Absent → log
-   `executable-checks — skipped (no checks.yaml)` and gate on the Acceptance
-   Criteria by judgment. **Absence is never a bail condition.**
-
-4. **Logs the takeover** to the `plan.md` Progress Log:
+1. Confirms the worktree: `git branch --show-current` matches the `.agent/{branch}/` path.
+2. Reads `plan.md` and `checks.yaml` end to end, and [`corrections.md`](./corrections.md).
+3. Logs the takeover to the Progress Log with a full ISO 8601 timestamp:
 
    ```markdown
-   - [TIMESTAMP] Phase 3: executor agent took over (plan confidence Y%)
+   - [2026-04-29T15:30:00Z] Phase 3: executor took over (brief version N, M checks sealed)
    ```
-
-   Use a full ISO 8601 timestamp (`2026-04-29T15:30:00Z`).
 
 ### Bail conditions
 
-If any of the following holds, the executor STOPS without writing code and tells the user verbatim:
+If any of the following holds, the executor STOPS without writing code and replies verbatim:
 
-> "no plan to execute, run aw-planner first"
+> "no brief to execute — run aw first"
 
 | Condition                       | Detection                                                  |
 | ------------------------------- | ---------------------------------------------------------- |
@@ -320,43 +164,36 @@ If any of the following holds, the executor STOPS without writing code and tells
 
 ---
 
-## What the planner DOES NOT do
-
-The planner's scope ends at the confidence gate + handoff message. It must not:
+## What the brief writer DOES NOT do
 
 | Forbidden action                         | Why                                                                |
 | ---------------------------------------- | ------------------------------------------------------------------ |
-| Write production code                    | That's Phase 3, executor's job                                     |
-| Run tests                                | That's Phase 4                                                     |
-| Create PRs                               | That's Phase 6                                                     |
-| Fan out parallel implementation work     | Implementation fan-out belongs to the executor — Phase 3 allows controlled fan-out over file-disjoint slices (cap 3 concurrent) under the Sub-Agent Resource Discipline ([`parallel-coordination.md`](./parallel-coordination.md#sub-agent-resource-discipline)); the planner never dispatches implementation sub-agents |
+| Write production code                    | That's Phase 3, the executor's job                                 |
+| Run tests or open PRs                    | Phases 4 and 6                                                     |
+| Write `specs.md`                         | The executor writes it after the UI exists ([C5](./corrections.md#c5--a-ui-spec-is-written-against-the-built-ui-and-run)) |
+| Edit source while the executor runs      | One writer per worktree                                            |
 
-**Allowed:** Phase 1's parallel `Explore` sub-agents — those produce planning context (research summaries), not code, and are bounded to the planner's session.
+**Allowed:** up to two `Explore` sub-agents for an unfamiliar area — they produce context, not code.
 
 ---
 
 ## What the executor DOES NOT do
 
-The executor's scope starts at Phase 3 and ends at Phase 7 CI gate. It must not:
-
 | Forbidden action                                | What to do instead                                                  |
 | ----------------------------------------------- | ------------------------------------------------------------------- |
-| Run Phase 0 (clarifying questions on the prompt) | The plan is the answer. If the plan is unclear, escalate to user — don't re-derive intent. |
-| Revisit Phase 1 design decisions silently        | If the plan is wrong, escalate to the user (or trigger Phase 4 stuck-loop auto-replan). Don't quietly redesign. |
-| Skip Phase 2 verification                        | Even though the planner created the worktree, the executor still verifies it's inside the right one. |
+| Re-run Phase 0 on the prompt                     | The brief is the answer. If it is unclear, escalate to the user.    |
+| Silently change a requirement, guardrail, or AC  | Escalate to the user; record the answer in `plan.md` and re-seal via `aw-create-plan`. |
+| Skip the worktree check                          | Verify it is inside the right worktree even though the brief writer created it. |
 
-If the executor discovers mid-implementation that the plan is fundamentally flawed, it follows the [Phase 4 stuck-loop protocol](./companion-skills.md#stuck-loop-protocol-phase-4) — auto-replan via `confidence(analysis)` + an execution-path re-trace is the recovery, not silent improvisation.
+If the executor discovers mid-implementation that the brief is wrong, it follows the [Phase 4 stuck-loop protocol](./companion-skills.md#stuck-loop-protocol-phase-4), not silent improvisation.
 
 ---
 
 ## References
 
-- Phase rules updated for handoff:
-  - [phase-1-planning.md](./phase-1-planning.md) — Phase 1 ends here for the planner agent
-  - [phase-2-worktree.md](./phase-2-worktree.md) — Phase 2 ends here for the planner agent
-  - [phase-3-implementation.md](./phase-3-implementation.md) — Phase 3 starts here for the executor agent
+- Full-tier procedure: [`aw/rules/full-tier.md`](../aw/rules/full-tier.md)
+- Phase rules: [phase-1-planning.md](./phase-1-planning.md), [phase-2-worktree.md](./phase-2-worktree.md), [phase-3-implementation.md](./phase-3-implementation.md)
+- Corrections: [corrections.md](./corrections.md)
 - Companion registry: [companion-skills.md](./companion-skills.md)
 - Architecture research: [`references/anthropic-architecture-research.md`](../references/anthropic-architecture-research.md)
-- Templates:
-  - [`templates/aw-planner.agent.md`](../templates/aw-planner.agent.md) — planner agent
-  - [`templates/aw-executor.agent.md`](../templates/aw-executor.agent.md) — executor agent
+- Executor: [`templates/aw-executor.agent.md`](../templates/aw-executor.agent.md)

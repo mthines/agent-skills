@@ -25,8 +25,8 @@ This phase is MANDATORY. Never skip directly to implementation. Understand the
 requirement completely, output **MODE SELECTION**, and get explicit user
 confirmation before any other work begins.
 
-> **`confidence` is NOT invoked at Phase 0.** The plan-confidence gate runs at
-> [Phase 1](./phase-1-planning.md#confidence-gate). Phase 0 ends with the user
+> **`confidence` is NOT invoked at Phase 0.** The Full brief is validated
+> deterministically at [Phase 1](./phase-1-planning.md#brief-validation). Phase 0 ends with the user
 > typing "proceed" (or equivalent), not with a confidence score.
 
 ## Core Principles
@@ -265,7 +265,7 @@ that only fires when complexity is low.
 
 | Tier     | Artifacts | Planning             |
 | -------- | --------- | -------------------- |
-| **Full** | Required  | planner → `plan.md`  |
+| **Full** | Required  | brief by `aw` → one `aw-executor` |
 | **Lite** | None      | brief mental plan    |
 | **Micro**| None      | none (1-file mechanical: typo / copy / version-or-config bump) |
 

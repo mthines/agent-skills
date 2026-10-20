@@ -1,6 +1,6 @@
 # Planning-Quality Research
 
-How to raise the quality of `aw-planner` output — grounded in a 2024–2026 web-research pass, mapped to concrete changes against this skill's actual files.
+How to raise the quality of the Full-tier brief — grounded in a 2024–2026 web-research pass, mapped to concrete changes against this skill's actual files.
 
 ## Contents
 
@@ -277,7 +277,7 @@ Clover's dominant failure mode was "information omissions or additions in docstr
 
 **Design guardrails these impose on §4.4:**
 
-1. **The executor must not edit `checks.yaml` to make checks pass.** Treat it like the tool budget invariant: the artifact that defines "done" is written by the planner and is read-only to the executor's implementation loop. Any executor diff that touches `checks.yaml` is a hard stop, mirroring the "reaching for Edit on a source file" boundary in [`aw-planner.agent.md`](../templates/aw-planner.agent.md).
+1. **The executor must not edit `checks.yaml` to make checks pass.** Treat it like the tool budget invariant: the artifact that defines "done" is written with the brief and is read-only to the executor's implementation loop. Any executor diff that touches `checks.yaml` is a hard stop.
 2. **Forbid the four exploitation strategies explicitly** in the executor loop prompt (no hardcoding expected outputs for specific inputs, no operator overloading to fake equality, no special-casing test inputs). Enumerated forbiddance measurably helps.
 3. **Provide an abort affordance** — the executor can declare a check *unsatisfiable-as-specified* and escalate, rather than being cornered into cheating. This is the single most effective anti-cheat lever in the data. Pair it with strict prompting because Claude under-uses it by default.
 4. **`checks.yaml` is necessary, not sufficient.** Keep the human-readable Acceptance Criteria and the `confidence`/review gates. All-green checks means "the runnable contract holds," not "the intent is met." The `feature-pr-verifier` and reviewer gates remain the intent check.

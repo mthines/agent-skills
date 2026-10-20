@@ -17,7 +17,7 @@ Routing a trigger phrase straight to it skips tier detection and the lessons loo
 
 ## Why `aw` is a skill
 
-Because the dispatcher runs in the caller's context, `aw-planner` and `aw-executor` are dispatched from the top-level session — one rung higher than they sat under the retired `aw` agent — so they keep whatever nested dispatch the harness grants.
+Because the dispatcher runs in the caller's context, `aw-executor` is dispatched from the top-level session — one rung higher than it sat under the retired `aw` agent — so it keeps whatever nested dispatch the harness grants.
 There is no dispatch-unavailable branch for the dispatcher itself: a skill needs no dispatch tool to start, and `aw` handles a missing dispatch tool internally with the single-context Full path, which keeps the plan artifact and the `confidence(plan)` gate.
 
 ## Why "prefer triggering"

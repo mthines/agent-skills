@@ -43,7 +43,7 @@ The reference implementation is `skills/workflow/autonomous-workflow/install.sh`
 
 When a skill's `install.sh` symlinks a file verbatim into `~/.claude/agents/` or `~/.claude/rules/`, name the source after what it is:
 
-- `<agent-name>.agent.md` for an agent (e.g. `aw-planner.agent.md` → installed as `aw-planner.md`).
+- `<agent-name>.agent.md` for an agent (e.g. `aw-executor.agent.md` → installed as `aw-executor.md`).
 - `<name>.rule.md` for a rule (e.g. `routing.rule.md`).
 
 These are definitions, not fill-in templates — no substitution happens — and the `<name>.agent.md` form lets a repo search for the agent name land directly on the file.

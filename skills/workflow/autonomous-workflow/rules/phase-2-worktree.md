@@ -20,7 +20,7 @@ tags:
 - [When to Skip (Rare)](#when-to-skip-rare)
 - [Procedure](#procedure)
 - [Plan Generation](#plan-generation)
-- [Planner Handoff](#planner-handoff)
+- [Brief Handoff](#brief-handoff)
 - [Command Reference](#command-reference)
 - [Setup Checklist](#setup-checklist)
 - [Troubleshooting](#troubleshooting)
@@ -284,13 +284,10 @@ The log is the durable trail a fresh Claude session uses to resume mid-flight.
 
 ---
 
-## Planner Handoff
+## Brief Handoff
 
-Phase 2 is the last phase the planner runs. After `plan.md` is written and
-the confidence gate has cleared:
-
-- **Confidence ≥ 90%**: emit the auto-handoff message (see [`planner-executor-handoff.md#handoff-message-format`](./planner-executor-handoff.md#handoff-message-format)) and STOP. Wait for the user (or main session) to dispatch the executor.
-- **Confidence < 90%** (after up to 2 retries): emit the user-approval message and STOP.
+Phase 2 is the last phase the brief writer runs.
+After `plan.md` and the sealed `checks.yaml` are written and the brief's validation passes, print the handoff message ([`planner-executor-handoff.md#handoff-message-format`](./planner-executor-handoff.md#handoff-message-format)) and dispatch one `aw-executor` per [`aw/rules/full-tier.md`](../aw/rules/full-tier.md).
 
 ---
 

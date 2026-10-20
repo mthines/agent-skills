@@ -35,11 +35,11 @@ This is the executor's entry phase. Before starting Step 1 of implementation:
 3. Verify the Acceptance Criteria section is non-empty (these are the
    contract you'll gate Phase 4 testing against).
 4. **Bail if missing:** if `plan.md` doesn't exist, is malformed, or has no
-   Acceptance Criteria, STOP and tell the user "no plan to execute — run
-   aw-planner first."
+   Acceptance Criteria, STOP and tell the user "no brief to execute — run
+   aw first."
 5. Log the takeover:
    ```markdown
-   - [TIMESTAMP] Phase 3: executor took over (plan confidence Y%)
+   - [TIMESTAMP] Phase 3: executor took over (brief version N, M checks sealed)
    ```
 
 See [`planner-executor-handoff.md`](./planner-executor-handoff.md) for the

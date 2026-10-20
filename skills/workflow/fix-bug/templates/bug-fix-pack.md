@@ -46,7 +46,7 @@ This repro is the executor's `FAIL_TO_PASS` contract. **The plan must:**
 
 ## Bug-notes ledger
 - Path: `.agent/<branch>/bug-notes.md`
-- Pre-existing entries from Phases 0–5 are present; the planner and executor must read on entry
+- Pre-existing entries from Phases 0–5 are present; the brief and the executor must read on entry
   and append on exit per the [bug-notes-ledger contract](../rules/bug-notes-ledger.md).
 
 ## Requirements

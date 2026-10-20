@@ -17,7 +17,7 @@
 // the Agent Skills spec, the Claude Code docs, or this repo's own rule files —
 // so none of them is a voodoo number nobody can trace back to a source.
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, realpathSync } from "node:fs";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, relative, resolve } from "node:path";
@@ -908,4 +908,4 @@ function main() {
   process.exit(result.ok ? 0 : 1);
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) main();

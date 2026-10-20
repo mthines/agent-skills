@@ -89,22 +89,21 @@ artifact that **cannot go stale silently**: it passes or fails against reality
 on every executor loop, unlike prose. It is not versioned; check definitions
 are executor-immutable.
 
-`plan.md` is the planner→executor **handoff document** — a new Claude session
+`plan.md` is the brief→executor **handoff document** — a new Claude session
 should be able to execute from it alone. It is a handoff artifact, not an
 exhaustive knowledge base: keep it lean, and when something is unclear prefer
-querying the still-running planner agent (or the user) over bloating the file.
+asking the user over bloating the file.
 Each invocation of `aw-create-plan` overwrites `plan.md`. By **default no
 `plan.v{N}.md` snapshot is written** — the immutable version chain is **opt-in**
 (`Skill("aw-create-plan", "snapshot")`). See **Plan Versioning** below.
 
 ## Caller-supplied context artefacts
 
-Orchestrators that invoke `aw-planner` (e.g., [`/fix-bug`](../../fix-bug/SKILL.md)
+Orchestrators that write a Full brief (e.g., [`/fix-bug`](../../fix-bug/SKILL.md)
 and other future task-shaped orchestrators) may attach **additional artefacts**
-to the planner pack beyond the standard ones above. The pattern: the
+to the brief beyond the standard ones above. The pattern: the
 orchestrator declares a path to a caller-managed artefact under a
-`## Context artefacts` section in the planner pack, the planner reads it on
-entry and references the path verbatim in `plan.md`, and the executor reads
+`## Context artefacts` section of `plan.md`, referencing the path verbatim, and the executor reads
 it on entry and honours any contracts the artefact declares.
 
 Pattern requirements:
@@ -125,8 +124,8 @@ caller's bookkeeping (and any agent the caller later spawns to consume it).
 `/fix-bug` Phase 6 attaches `.agent/<branch>/bug-notes.md` — a structured
 ledger of the bug's evidence, hypotheses, ruled-out causes, counterexamples
 seen during the executor's CEGIS refinement loop, and the confidence
-trajectory across phases. The planner appends a one-line plan summary on
-exit; the executor appends counterexamples on each refinement round; `/fix-bug`
+trajectory across phases. The brief writer appends a one-line plan summary when
+the brief is sealed; the executor appends counterexamples on each refinement round; `/fix-bug`
 reads the ledger as evidence at Phase 7 verification time.
 
 Schema and lifecycle live in
@@ -135,9 +134,9 @@ template at
 [`/fix-bug templates/bug-notes.md`](../../fix-bug/templates/bug-notes.md).
 
 If you write a new orchestrator that needs to carry per-task context across
-the planner / executor boundary or beyond, follow the same shape — declare
-the artefact path in your pack's `## Context artefacts` section, document the
-schema in your skill's rules, and let `aw-planner` and `aw-executor` carry it
+the brief / executor boundary or beyond, follow the same shape — declare
+the artefact path in the brief's `## Context artefacts` section, document the
+schema in your skill's rules, and let the brief and `aw-executor` carry it
 through unmodified.
 
 ## Plan Versioning
@@ -238,8 +237,8 @@ When context is compacted or a new session starts, read
 
 - **Plan in Phase 1**: Analyze codebase and prepare plan content in
   conversation (no files yet).
-- **Validate with confidence gate**: `Skill("confidence", "plan")` must pass
-  before artifact creation.
+- **Validate the brief deterministically**: the six Core headings, AC↔check
+  parity, and the `checks.lock` seal must pass before dispatch.
 - **Create AFTER Phase 2**: Artifact files go inside the worktree at
   `.agent/{branch}/` (never on main branch).
 - **Use dedicated skills**: `Skill("aw-create-plan")` and
