@@ -2,11 +2,10 @@
 
 Read on demand; nothing here is needed to run the skill.
 
-## The format was set by two real runs
+## Each part earns its place
 
-The skill was written from a run without a skill on two PRs: a 103-file feature (new routes, migrations, a secret-serving route) and a 528-file consolidation (deleted skills, a slimmed agent, an unrun eval suite).
-The first draft had nine sections: a risk matrix, line-count bars, contract tables, a stack view, and a nine-file reading tour.
-The reader called it overwhelming, and each cut since then kept only what a reviewer needs before approving.
+The view holds only what a reviewer needs before approving.
+A risk matrix, line-count bars, contract tables, a stack view, and a file-by-file reading tour are left out: together they read as a survey, and reviewers skim a survey.
 
 | Choice | The failure it prevents |
 | --- | --- |
@@ -15,7 +14,7 @@ The reader called it overwhelming, and each cut since then kept only what a revi
 | Badges on diagram boxes | A diagram and a decision list that the reader must map onto each other |
 | Expandable What / Risk / Ask rows | A dense verdict paragraph that hides which item matters |
 | "Already settled" section | Reviewers re-raising behavior that a test or doc already marks as intended |
-| Verify before writing | In the first run, three of the first draft's claims were wrong and two "risks" were tested, intended behavior |
+| Verify before writing | Claims written from the diff alone that the code, its permissions, or its tests contradict |
 | Red only for exposure | A color that meant both "decision" and "dangerous caller" |
 
 ## Research behind it (2025–2026)

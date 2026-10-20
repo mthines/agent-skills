@@ -16,7 +16,7 @@ The output of this file is a list of at most three decisions, at most one "also 
 1. Read the PR metadata in one call:
 
    ```bash
-   gh pr view "$PR" --json title,body,author,additions,deletions,changedFiles,files,baseRefName,headRefName,headRefOid
+   gh pr view "$PR" --json number,title,body,author,additions,deletions,changedFiles,files,baseRefName,headRefName,headRefOid
    ```
 
 2. Get the diff:
@@ -25,7 +25,7 @@ The output of this file is a list of at most three decisions, at most one "also 
      Fetch both refs into a local clone and diff against the merge base:
 
      ```bash
-     git fetch -q origin "${HEAD_REF}" "${BASE_REF}"
+     git fetch -q origin "pull/${PR_NUMBER}/head" "${BASE_REF}"   # PR_NUMBER from .number; pull/<n>/head also works for fork PRs
      BASE=$(git merge-base "origin/${BASE_REF}" "${HEAD_SHA}")
      git diff "${BASE}" "${HEAD_SHA}" > pr.diff
      ```
@@ -66,12 +66,12 @@ Classify every candidate before it reaches the page.
 | **Settled** | A test name, a doc, or the description states it is intended | "Already settled", citing that test/doc/line |
 | **Wrong** | Reading the code, its callers, or the default branch contradicts it | Dropped |
 
-Checks that turned candidates into "settled" or "wrong" in real runs:
+Checks that turn a candidate into "settled" or "wrong":
 
 - **Read the test names** next to the code (`t.Run("…")`, `it("…")`): a test titled with the behavior settles it.
 - **Grep the PR's own docs** (`docs/`, `README`, design notes) for the behavior.
-- **Check the default branch's convention** before flagging an oddity: `CODEOWNERS.bak` was correct because the repo has no active `CODEOWNERS`.
-- **Read the permission code** before writing who can reach a route; "any token holder" was wrong when org objects needed an admin.
+- **Check the default branch's convention** before flagging an oddity: a renamed or disabled file may match what the repo already does.
+- **Read the permission code** before writing who can reach a route; name the role the code requires, never "anyone".
 - **Do not assert database behavior you cannot see.** Whether a migration file runs in one transaction depends on the runner; state the lock, not a uniqueness gap.
 - **Verify the PR's own claims** that the decision rests on (e.g. "commands are byte-identical": compare every fenced block; report the count that differ and how).
 
