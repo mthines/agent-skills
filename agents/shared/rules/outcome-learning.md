@@ -286,10 +286,10 @@ could not tell" is telemetry, and telemetry goes to the run output.
 
 This also corrects the `pr-merged` sweep's skip rule in
 [`comment-relevance-memory.md`](./comment-relevance-memory.md): it skips threads "that had a fix
-commit … (already captured by the first trigger)", but the first trigger is
-`pull_request_review_thread: resolved`, which never fired for a thread that was never resolved. Those
-those threads are uncorroborated, not captured — so the sweep must skip them **as uncorroborated**,
-not as already-recorded.
+commit … (already captured by the first trigger)", but no resolve trigger exists (GitHub Actions has
+no thread-resolved event), and an unresolved thread is never captured by one. Those threads are
+uncorroborated, not captured — so the sweep must skip them **as uncorroborated**, not as
+already-recorded.
 
 ### Step 5 — Human-missed detection candidates
 

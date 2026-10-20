@@ -60,8 +60,9 @@ Without the secret the workflow runs but skips the write (graceful no-op — it 
 
 ### Step 3 — Done
 
-The workflow fires automatically on `pull_request_review_thread: resolved` and
-`pull_request: closed` (merged). No further configuration needed.
+The workflow fires automatically on `pull_request: closed` (merged) and
+`pull_request_review_comment: created`. No further configuration needed.
+GitHub Actions has no event for a resolved review thread, so the merge sweep records resolved threads too.
 
 ## What accumulates in LoreKit
 

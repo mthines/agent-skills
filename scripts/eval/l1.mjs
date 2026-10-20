@@ -1622,6 +1622,12 @@ const renderReport = (payload) => {
   }
 }
 
+// ── G44g: the relevance caller names only events GitHub Actions has ──
+// Actions has no thread-resolved event; naming one invalidates the whole file, so no job runs.
+for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-relevance-memory/templates/pr-relevance-caller.yml"]) {
+  s.check(`G44g ${f} uses no pull_request_review_thread trigger`, !/^\s+pull_request_review_thread:/m.test(readOr(f)));
+}
+
 // ── G96: review-loop's description refresh preserves the attach-media region by its markers; a mismatch erases the media ──
 {
   const OPEN = "<!-- attach-media:v1 -->";
