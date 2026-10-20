@@ -117,6 +117,15 @@ in_names() {
   return 1
 }
 
+# in_repo <name> — true when the repo still ships a skill or agent of that name.
+in_repo() {
+  local name="${1%.md}" have
+  for have in "${all_names[@]}"; do
+    [[ "$have" == "$name" ]] && return 0
+  done
+  return 1
+}
+
 # selected <kind> <name> — true when the entry is in scope for this run.
 # No --aw and no names means everything is in scope.
 selected() {
@@ -267,11 +276,7 @@ done
 # Reject unknown names up front so a typo cannot silently install nothing.
 unknown=()
 for want in ${NAMES[@]+"${NAMES[@]}"}; do
-  found=0
-  for have in "${all_names[@]}"; do
-    [[ "$have" == "$want" ]] && { found=1; break; }
-  done
-  (( found )) || unknown+=("$want")
+  in_repo "$want" || unknown+=("$want")
 done
 if (( ${#unknown[@]} > 0 )); then
   echo "error: no skill or agent named: ${unknown[*]}" >&2
@@ -339,15 +344,6 @@ fi
 #   ~/.claude/{skills,agents}/X  dangling, target inside ~/.agents
 # `-e` follows the whole chain, so a ~/.claude link whose ~/.agents hop is
 # dangling counts as dangling too, in a dry run as well as a real one.
-# in_repo <name> — true when the repo still ships a skill or agent of that name.
-in_repo() {
-  local name="${1%.md}" have
-  for have in "${all_names[@]}"; do
-    [[ "$have" == "$name" ]] && return 0
-  done
-  return 1
-}
-
 prune_dir() {
   local dir="$1" owner="$2" link
   [[ -d "$dir" ]] || return 0
