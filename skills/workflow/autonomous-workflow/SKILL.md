@@ -140,7 +140,7 @@ Artifact details: [`rules/artifacts-overview.md`](./rules/artifacts-overview.md)
 ## Lite and Micro path
 
 Single-pass in the caller's context; no `checks.yaml`, no `confidence(plan)`.
-Lite writes its brief to `.agent/{branch}/plan.md` so `aw-verify` and `telemetry-verify` read stated criteria instead of guessing them from the diff; Micro keeps its brief in the conversation.
+Lite writes its brief to `.agent/{branch}/plan.md` inside the worktree, after Phase 2 creates it, so `aw-verify` and `telemetry-verify` read stated criteria instead of guessing them from the diff; Micro keeps its brief in the conversation.
 
 ```markdown
 ---
@@ -166,8 +166,8 @@ Never write `checks.yaml` or `checks.lock` on Lite: `checks.lock` is what marks 
 | ----- | ---- | ----- |
 | Setup | MODE SELECTION | MODE SELECTION |
 | 0 | Quick clarification | Quick confirm |
-| 1 | Brief in `.agent/{branch}/plan.md` (Task, Guardrails, `AC-{n}`, Before-PR command, Turn Cap 12, files), printed, + `/goal` line | In-conversation brief (Task, Guardrails, verify command, files), Turn Cap 5, no companions |
-| 2 | `gw add <branch>` | `gw add <branch>` |
+| 1 | Brief (Task, Guardrails, `AC-{n}`, Before-PR command, Turn Cap 12, files), printed, + `/goal` line | In-conversation brief (Task, Guardrails, verify command, files), Turn Cap 5, no companions |
+| 2 | `gw add <branch>`, then write the brief to `.agent/{branch}/plan.md` inside the new worktree | `gw add <branch>` |
 | 3 | Code, commit; touch only the brief's files | Edit, fast check |
 | 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>`. Diff touches UI files → [Lite verify](#lite-verify) | Fast check |
 | 5 | `Skill("docs", "update --auto")` | Only on doc drift |
