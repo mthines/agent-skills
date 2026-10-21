@@ -282,6 +282,7 @@ Then move to Phase 7 to watch CI to green.
 - [ ] `Skill("aw-create-walkthrough")` invoked (Full Mode)
 - [ ] `Skill("create-pr", <the tier's flags>)` invoked ([PR Creation](#pr-creation)) OR manual fallback executed
 - [ ] PR opened as draft
+- [ ] `Skill("aw-verify", "report <pr-url>")` run when `aw-verify` ran before the PR (Lite Phase 4, Full Step 4.1)
 - [ ] Local `review-loop` converged the branch before the push (`create-pr` Step 5.5 on Lite, Step 3 on Full); open findings surfaced
 - [ ] Walkthrough content shown inline in conversation (Full Mode)
 - [ ] PR URL delivered to user
