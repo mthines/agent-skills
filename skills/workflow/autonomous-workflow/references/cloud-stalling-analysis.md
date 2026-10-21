@@ -98,7 +98,7 @@ Two facts the rules depended on without stating:
 
 - **A capability probe.** Its premise (no `Task` on the web) was falsified; a probe from depth 1 cannot see a depth-3 refusal; and a probe that gates quality companions fails *open* — a false negative silently skips `pr-reviewer` on every laptop run while everything still appears to work.
 - **A `gh` → MCP degradation matrix.** A second source of truth about what each agent needs, guaranteed to drift from the agent definitions. See [Still open](#still-open) for the better idea.
-- **A compaction re-anchor.** Never observed; covers only Full tier, since Lite and Micro have no `plan.md`.
+- **A compaction re-anchor.** Never observed; covers only Full tier, since Lite's `plan.md` has no sealed checks and Micro has no `plan.md`.
 
 ---
 

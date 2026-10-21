@@ -16,10 +16,10 @@ Skill("aw", "<user's full request>")
 
 `aw` is the only natural-language destination: never route these phrases straight to `autonomous-workflow` (that skips tier detection and the lessons loop).
 `aw` picks the tier — Micro/Lite run single-pass here, Full writes the brief and sealed checks and does the work in this session — and prints a paste-ready `/goal` line with the brief.
-A Full brief is `.agent/{branch}/plan.md` with `.agent/{branch}/checks.lock` beside it; a `plan.md` without `checks.lock` is a Lite brief.
+`.agent/{branch}/checks.lock` beside `.agent/{branch}/plan.md` marks a Full brief; a `tier: Full` brief without it is an unsealed Full brief, and any other `plan.md` is a Lite brief.
 You may dispatch `aw-executor` directly when a Full brief already exists.
 
-Continuation phrases that resume the brief at `.agent/{branch}/plan.md` through `aw`, in this session, on the tier the brief names:
+Continuation phrases that resume the brief at `.agent/{branch}/plan.md` through `aw`, in this session:
 
 - "execute", "execute the plan", "continue", "proceed", "ship it", "go"
 
