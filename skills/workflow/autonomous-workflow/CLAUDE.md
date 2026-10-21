@@ -420,17 +420,15 @@ When editing this skill, do not break these — they're load-bearing:
   reserved for orchestrator-only boundaries (Phase 4 Step 6, Phase 6 pre-PR).
   See [`rules/parallel-coordination.md#sub-agent-resource-discipline`](./rules/parallel-coordination.md#sub-agent-resource-discipline).
 - **`aw` is a thin, opt-in router, and it is a skill.** It detects the tier and
-  routes (single-pass for Micro/Lite, brief + one `aw-executor` for Full) and owns the
+  routes (single-pass for Micro/Lite, a brief plus sealed checks worked in the caller's session for Full) and owns the
   universal lessons loop. It must not accrue domain knowledge, must not force
   Full on light tasks, and must not silently wrap casual edits. It must not
   regrow a `tools:` block, a `model:` line, or an inline tier table — see
   [the shape design-intent section](#the-dispatcher-is-a-skill-not-an-agent--design-intent).
-  On Full, `aw` writes the brief and hands it to one `aw-executor` —
-  **except** when no available tool dispatches a sub-agent (`Task`, `Agent`, or
-  another spelling), where `aw` plays the executor in its own window rather than
-  downgrading to Lite. That fallback preserves the `plan.md` brief and the sealed
-  checks; it is the one place `aw` edits source on a Full task, and it must never
-  be used to sidestep an *available* dispatch.
+  On Full, `aw` writes the brief and works it in the caller's session; it
+  dispatches `aw-executor` only when the user asks for a background worker or
+  parallel briefs. With no dispatch tool, the review and the PR verifier report
+  `not run`, never a self-review — it never downgrades to Lite.
 - **Episodic lessons are advisory-only.** An `aw-lessons` lesson biases the plan
   but never silently changes a gate, skips a phase, or alters a cap. The only
   path from a lesson to changed behavior is a confidence-gated, user-approved
@@ -932,16 +930,12 @@ they must be exercised live (markdown can't prove them). Run this after editing
 3. **Full routing (dispatch from the caller's context — the R1 risk):** invoke
    `/aw` on a 4-file / architectural task. Expect: `Tier: Full`, then a short
    brief (`plan.md` + sealed `checks.yaml`) written in the caller's window, then
-   **one `aw-executor`** dispatched. Also confirm the executor
-   did **not** report `review-loop` as skipped — with the dispatcher in-context
-   the executor sits one rung higher and holds `Task`, which is the whole point
-   of v3.23. If it did report a skip, `aw` must re-run `review-loop` itself
-   before handing back. If the harness refuses sub-agent dispatch entirely (no
-   available tool dispatches a sub-agent — `Task`, `Agent`, or another spelling),
-   `aw` must write the brief and then play the executor in its own window through
-   Phases 3–7. Confirm it produces `plan.md` with sealed checks, and that it does
-   **not** silently downgrade to the Lite/Micro single-pass path (no brief, no
-   checks).
+   the work in that same window — **no** `aw-executor` dispatch — and one local
+   `review-loop` before the PR, which must not report itself skipped while a
+   dispatch tool exists. If the harness refuses sub-agent dispatch entirely,
+   confirm `aw` still writes `plan.md` with sealed checks, reports
+   `review: not run (sub-agent dispatch unavailable)`, and does **not** downgrade
+   to the Lite/Micro single-pass path.
 4. **Universal loop + two-scope writes (the R2 risk):** run two checks against
    LoreKit (`memory.search { q, scopes: ["repo::{owner}/*", "global"], tags: ["loop::aw-lessons"] }` to inspect).
    - **Universal lesson:** after a run where the lesson is generic (e.g. an **Applies when** line like `*.tsx` or `monorepo refactor`), confirm the lesson was written to the **`global`** scope (tag `loop::aw-lessons`) and NOT to `repo::{owner}/{repo}`. If it landed in the repo scope, the classifier mis-routed a universal lesson.
