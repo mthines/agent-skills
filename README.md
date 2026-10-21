@@ -23,12 +23,12 @@ cd agent-skills && bash scripts/sync-symlinks.sh
 <tr>
 <td width="50%" valign="top">
 
-### Ship a feature from one sentence
+### 🚀 Ship a feature from one sentence
 
 `aw` scopes the job, writes a short brief with sealed checks, builds until they pass, gets a fresh-eyes review, and opens a draft PR.
 
 ```text
-Add dark mode to settings, all the way to a PR
+Add dark mode, all the way to a PR
 ```
 
 [`aw`](#featured-autonomous-workflow) · [`autonomous-workflow`](./skills/workflow/autonomous-workflow/SKILL.md)
@@ -36,12 +36,12 @@ Add dark mode to settings, all the way to a PR
 </td>
 <td width="50%" valign="top">
 
-### Fix a bug from whatever you have
+### 🐛 Fix a bug from whatever you have
 
 A stack trace, a span URL, a screen recording, a ticket, or a hunch: it reproduces the bug, traces the root cause, fixes it behind a failing test, and opens a draft PR.
 
 ```text
-/fix-bug <stack trace | span URL | file:line>
+/fix-bug <stack trace>
 ```
 
 [`fix-bug`](./skills/workflow/fix-bug/SKILL.md) · [`video-analyser`](./skills/analysis/video-analyser/SKILL.md)
@@ -51,13 +51,13 @@ A stack trace, a span URL, a screen recording, a ticket, or a hunch: it reproduc
 <tr>
 <td valign="top">
 
-### Reviews that catch real bugs
+### 🔍 Reviews that catch real bugs
 
-Independent finders flag, a verifier filters, and only grounded findings reach your PR. `review-loop` then fixes or answers every thread until the PR converges.
+Independent finders flag, a verifier filters, and only grounded findings reach your PR. `review-loop` then fixes or answers every thread until the PR converges; with no PR yet, it reviews the local branch.
 
 ```text
 /pr-review 42
-/review-loop          # no PR yet? it reviews the local branch
+/review-loop
 ```
 
 [`pr-reviewer`](./agents/pr-reviewer.md) · [`review-loop`](./skills/quality/review-loop/SKILL.md)
@@ -65,12 +65,12 @@ Independent finders flag, a verifier filters, and only grounded findings reach y
 </td>
 <td valign="top">
 
-### Proof the UI actually works
+### ✅ Proof the UI actually works
 
-The brief's spec runs on your local stack or the preview and tries to break the change. Then the telemetry is read back to check that every click reached the API and the database the way it should. Screenshots and recordings are attached.
+The brief's spec runs on your local stack or the preview and tries to break the change. Then the telemetry is read back to check that every click reached the API and the database the way it should. Screenshots and recordings are attached. Run `setup` once per repo; it commits `.agents/aw/`.
 
 ```text
-/aw-verify setup        # once per repo; commits .agents/aw/
+/aw-verify setup
 /aw-verify preview 42
 ```
 
@@ -81,7 +81,7 @@ The brief's spec runs on your local stack or the preview and tries to break the 
 <tr>
 <td valign="top">
 
-### Product craft, not just code
+### 🎨 Product craft, not just code
 
 Audits walk the user's real path before checking contrast; visual direction, motion, charts, and behaviour change get the same rigor. Never a dark pattern.
 
@@ -94,7 +94,7 @@ Review the UX of the onboarding flow
 </td>
 <td valign="top">
 
-### Merge-ready, every time
+### 🚢 Merge-ready, every time
 
 A narrative PR description, a simplify pass that cuts noise without changing behaviour, CI fixes that never weaken a check, and telemetry that proves the change landed.
 
