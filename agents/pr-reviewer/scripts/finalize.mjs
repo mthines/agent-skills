@@ -1571,7 +1571,7 @@ async function selfTest() {
           render: { at: "2026-10-02T06:00:00Z" } }, judgments: { ...j0, summary: "Reworks a private helper." } }).payload;
         const modRendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, withModules, "self-test-auto-modules");
         check("an auto-built module counts a changed file and its importers in the Reach row",
-          modRendered.ok && modRendered.stdout.includes("| Reach | 1 changed file imported by 2 files, not traced |"),
+          modRendered.ok && modRendered.stdout.includes("| Reach | 1 changed file imported by 2 files, not traced<br>`src/h.ts` — imported by 2 files |"),
           modRendered.stderr.trim());
       }
       check("a caller-supplied COVERAGE / IMPACT wins over the auto-built one",
