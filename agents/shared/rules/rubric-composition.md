@@ -161,16 +161,16 @@ The Step 3 terminal report is uncapped in both relations: local output has no po
 
 ### Deferred findings (`pr-reviewer`)
 
-Everything above the inline caps goes into a **Deferred** list, rendered in the review body under an `Additional findings` section, one line each:
+Everything above the inline caps goes into a **Deferred** list, rendered in the review body's `<N> more findings` accordion, one table row each ([`report-rendering.md`](../../pr-reviewer/rules/report-rendering.md)):
 
-```text
-- `src/api/client.ts:214` — issue: retry loop re-sends the request body after a 413. (confidence 92)
+```markdown
+| ⚪&nbsp;**5** | issue: retry loop re-sends the request body after a 413.<br><sub>Confidence 92</sub> | `src/api/client.ts:214` |
 ```
 
 Rules:
 
 - A finding that cleared 2.7 is **never** silently discarded. Deferral is the only overflow behaviour.
-- **A `(blocking)` finding is never in the deferred list** — it is always inline (see the cap-exemption above), so the `Additional findings` section holds only non-blocking overflow.
+- **A `(blocking)` finding is never in the deferred list** — it is always inline (see the cap-exemption above), so the more-findings accordion holds only non-blocking overflow.
 - Each deferred entry carries file, line, prefix, the one-line body, and the confidence score.
 - Deferred entries are excluded from `INLINE_COMMENTS_JSON` — they are body text, so they neither consume inline slots nor enlarge the review payload.
 - Report the count as `Deferred (over inline cap): <N>` in the Quality Gate summary.

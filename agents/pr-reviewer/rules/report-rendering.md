@@ -562,14 +562,18 @@ cleared every quality gate but did not fit the inline caps. Omit the placeholder
 ```markdown
 <details>
 <summary><DEF> more findings — verified, too minor to comment on</summary>
+<br>
 
-- `src/api/client.ts:214` — issue: retry loop re-sends the request body after a 413. (confidence 92)
-- `src/api/client.ts:260` — suggestion: extract the backoff calculation; it is duplicated below. (confidence 84)
+| | Finding | Where |
+|:-:|---|---|
+| ⚪&nbsp;**5** | issue: retry loop re-sends the request body after a 413.<br><sub>Confidence 92</sub> | [`client.ts:214`](https://github.com/o/r/pull/1#discussion_r31 "src/api/client.ts") |
+| ⚪&nbsp;**6** | suggestion: extract the backoff calculation; it is duplicated below.<br><sub>Confidence 84</sub> | `src/api/client.ts:260` |
 
 </details>
 ```
 
-One line per deferred finding: path:line, prefix, the one-line body, and the confidence score.
+One table row per deferred finding, numbered on from the findings table: a ⚪ glyph and the number, `prefix: body` with `<sub>Confidence N</sub>` under it, and the Where cell.
+The Where cell is `` [`<file>:<line>`](<url> "<path>") `` when the finding has a url, and `` `<path>:<line>` `` without one.
 Sort by prefix priority, then descending confidence. This section is the reason a placement cap
 is allowed to exist — never drop a cleared finding instead of listing it here.
 
@@ -582,15 +586,17 @@ findings are advisory`). Omit the placeholder entirely when `CADV == 0`; otherwi
 ```markdown
 <details>
 <summary>Less certain (<CADV>) — advisory, below the confidence bar</summary>
+<br>
 
-- `src/api/client.ts:88` — issue: this early-return may skip the audit log write. (confidence 76)
-- `src/api/client.ts:132` — suggestion: consider hoisting the client construction out of the loop. (confidence 71)
+| | Finding | Where |
+|:-:|---|---|
+| **7** | issue: this early-return may skip the audit log write.<br><sub>Confidence 76</sub> | `src/api/client.ts:88` |
+| **8** | suggestion: consider hoisting the client construction out of the loop.<br><sub>Confidence 71</sub> | `src/api/client.ts:132` |
 
 </details>
 ```
 
-One line per advisory finding: path:line, prefix, the one-line body, and the confidence score, in
-the same shape as `Additional findings`. Sort by prefix priority, then descending confidence. These
+One table row per advisory finding, in the same shape as the more-findings rows but with no glyph before the number. Sort by prefix priority, then descending confidence. These
 findings are distinct from `Additional findings` (which are *cleared* findings merely over the inline
 cap) and must not be mixed into that section — the two carry different confidence guarantees.
 
