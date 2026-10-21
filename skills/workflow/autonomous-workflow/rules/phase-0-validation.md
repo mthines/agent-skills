@@ -265,7 +265,7 @@ that only fires when complexity is low.
 
 | Tier     | Artifacts | Planning             |
 | -------- | --------- | -------------------- |
-| **Full** | Required  | brief by `aw` → one `aw-executor` |
+| **Full** | Required  | brief + sealed checks by `aw`, worked in the caller's session |
 | **Lite** | `plan.md` | short brief, no `checks.yaml` |
 | **Micro**| None      | none (1-file mechanical: typo / copy / version-or-config bump) |
 

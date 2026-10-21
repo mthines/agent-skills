@@ -333,9 +333,9 @@ mandatory in every tier**, Micro included.
 
 The **`aw` dispatcher** (`aw/SKILL.md` — a nested *skill*, not an agent) is the
 opt-in, single entry point that owns this decision: it reads `aw-lessons`,
-detects the tier, and routes (single-pass for Micro/Lite, brief + one executor for Full).
+detects the tier, and routes (single-pass for Micro/Lite, a brief plus sealed checks worked in the caller's session for Full).
 It replaced the old "routing rule dispatches the planner first" behavior, which
-sent Lite tasks — that have no `plan.md` — to the planner anyway. See the two
+sent Lite tasks to the planner anyway. See the two
 design-intent sections below.
 
 **The tier table has exactly one home: `SKILL.md` Step 1.** The dispatcher links
