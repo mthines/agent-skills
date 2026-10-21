@@ -61,7 +61,7 @@ dedicated skills that guarantee consistent, complete output.
 - Long session where context may be compacted
 - Handoff to another agent is possible
 
-**Skip artifacts (Lite Mode) when:**
+**Short brief only (Lite Mode) when** — a `plan.md` brief, no `checks.yaml` or `walkthrough.md`:
 
 - Task involves 2–3 files (or 1 file with non-trivial logic) AND is simple
 - Implementation is straightforward

@@ -266,7 +266,7 @@ that only fires when complexity is low.
 | Tier     | Artifacts | Planning             |
 | -------- | --------- | -------------------- |
 | **Full** | Required  | brief by `aw` → one `aw-executor` |
-| **Lite** | None      | brief mental plan    |
+| **Lite** | `plan.md` | short brief, no `checks.yaml` |
 | **Micro**| None      | none (1-file mechanical: typo / copy / version-or-config bump) |
 
 **Micro** runs the Lite phase path with planning and quality companions skipped.
