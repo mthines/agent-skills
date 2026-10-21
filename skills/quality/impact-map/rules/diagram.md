@@ -61,9 +61,11 @@ With `--findings <report-body.md>`, the diagram is the picture above a `pr-revie
 
 1. Read the rows of the first `| | Finding | Where |` table in the file: each row is `| <glyph>&nbsp;**<n>** | **<title>** … | [`<file>:<line>`](<url> "<path>") |`.
 2. Run phases 0–2 on the PR as usual, then draw the diagram by the rules above.
+   Skip phase 3: the report's table replaces the decisions.
 3. Badge the box each finding's `<path>` belongs to with that row's `<n>`, not ①②③. Several numbers on one box sit side by side along its top edge, 22 apart. A finding with no box gets no badge.
 4. In the page legend, label the badge entry `Numbered row below` instead of `Decision above`.
-5. Render the PNGs with `render-png.mjs`, open both with the Read tool, and print:
+5. Build the page as phase 5 does and write it to `.agent/{branch}/impact-map/pr-<n>.html`; never publish it as an Artifact.
+6. Render the PNGs with `render-png.mjs` from that page file, open both with the Read tool, and print:
 
 ```text
 light: <out-dir>/what-changes-light.png
