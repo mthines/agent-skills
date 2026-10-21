@@ -3,6 +3,8 @@
 
 Makes `retryRequest` throw on exhaustion and moves the backoff policy into one module.
 
+**Warnings:** 1 open review thread
+
 **Progress:** open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews
 
 | | Finding | Where |

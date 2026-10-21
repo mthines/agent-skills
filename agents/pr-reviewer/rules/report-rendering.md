@@ -312,7 +312,7 @@ something to say that no slot covers, it belongs in the Step 5 terminal output.
 #### What a reader sees first — the picture and the worklist
 
 The head region is everything above the first accordion, in this order: the headline, the summary
-sentence, the reasons line (only with no findings), the advisory note, `**Progress:**`, the impact
+sentence, the reasons line (with findings, minus the Code-review phrase), the advisory note, `**Progress:**`, the impact
 image, the numbered findings table, and the Fix-all button.
 Every run fact lives in the Run table inside `Review details`.
 
@@ -401,10 +401,13 @@ report. It is the only part of this region that needs judgment.
 
 `FAIL_REASONS` / `WARN_REASONS` — **arrays** of terse noun phrases (≤ 8 words each), the important
 bit distilled from each ❌ (resp. ⚠️) gate's Details, derived from the gate and never a copy of the
-cell, most-severe first. When `FINDINGS` is empty the renderer joins them and renders
-`**Blocking:** …` on a FAIL or `**Warnings:** …` on a WARN; with findings the line is dropped,
-because the headline and the table already say what blocks. It keeps the first two and appending `; +<k> more` beyond that — the
-~140-char bound expressed as a list bound, so it cannot be exceeded by wording.
+cell, most-severe first. The renderer joins them and renders `**Blocking:** …` on a FAIL or
+`**Warnings:** …` on a WARN.
+With findings, it drops the Code-review gate's phrase (`<K> blocking finding(s) (see …)` /
+`<N> non-blocking finding(s)`), because the headline and the table already state it, and keeps
+every other gate's phrase; the line is omitted when no phrase remains.
+It keeps the first two phrases and appends `; +<k> more` beyond that — the ~140-char bound
+expressed as a list bound, so it cannot be exceeded by wording.
 
 `FAIL_REASONS` carries **one phrase per ❌ gate**, which the renderer enforces, and CI is never
 among them because CI cannot be ❌. Warning gates on a FAIL run are named in the accordion, not

@@ -40,6 +40,9 @@ const TEMPLATE = join(HERE, "..", "templates", "report-body.md");
 /** One-liner prefixes. A posted one of these counts as a NOTE in the headline, never a finding. */
 const NOTE_PREFIXES = CONV_PREFIXES.filter((p) => !CLAIM_PREFIXES.includes(p));
 
+/** The Code-review gate's reason phrase (finalize/gates.mjs `gate6`), which the findings table restates. */
+const CODE_REVIEW_REASON_RE = /^\d+ (?:non-)?blocking findings?\b/u;
+
 const VALID_STATUS = new Set(["✅", "⚠️", "❌", "⏭️"]);
 const VALID_MODES = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
 // Phase C tiers. `mode` stays the parseable grammar field reviewer-report-ingest.md keys on;
@@ -1255,7 +1258,7 @@ function main() {
       + ` ${impliedVerdict}. The gates decide the verdict; fix whichever is wrong before rendering`);
   }
 
-  const reasonList = (k) => {
+  const reasonList = (k, keep = () => true) => {
     const v = arr(k);
     v.forEach((r, i) => {
       if (typeof r !== "string" || r.trim() === "") fail(`${k}[${i}] must be a non-empty string`);
@@ -1265,7 +1268,8 @@ function main() {
     // ~140 chars, expressed as a list bound so it cannot be exceeded by wording.
     // Each entry is a noun phrase, so trailing sentence punctuation is dropped before joining —
     // A/B iteration 2: a reason copied from a gate's Details sentence rendered "…minutes.; …".
-    const phrases = v.map((r) => String(r).trim().replace(/[.;:,]+$/u, ""));
+    const phrases = v.map((r) => String(r).trim().replace(/[.;:,]+$/u, "")).filter(keep);
+    if (phrases.length === 0) return "";
     return phrases.length <= 2 ? phrases.join("; ")
       : `${phrases.slice(0, 2).join("; ")}; +${phrases.length - 2} more`;
   };
@@ -1340,11 +1344,14 @@ function main() {
     fail(`SUMMARY is ${summary.length} chars, over the 240-char cap — it is one sentence about the`
       + " change, not the report");
   }
-  const reasons = verdict === "FAIL" ? reasonList("FAIL_REASONS")
-    : verdict === "WARN" ? reasonList("WARN_REASONS") : "";
-  // With findings, the headline and the table already say what blocks; the reasons line would
-  // repeat them. It renders only when there is no table to read the state from.
-  const reasonsLine = reasons && n === 0
+  // With findings, the headline and the table already state the Code-review gate's phrase
+  // (`<K> blocking finding(s) (see …)` / `<N> non-blocking finding(s)`, gates.mjs `gate6`), so only
+  // that phrase is dropped. Every other gate's phrase — an unanswered blocking thread, a doc gap,
+  // a self-review signal, a description mismatch — is in neither, so it stays on the line.
+  const keep = n > 0 ? (/** @type {string} */ p) => !CODE_REVIEW_REASON_RE.test(p) : undefined;
+  const reasons = verdict === "FAIL" ? reasonList("FAIL_REASONS", keep)
+    : verdict === "WARN" ? reasonList("WARN_REASONS", keep) : "";
+  const reasonsLine = reasons
     ? `**${verdict === "FAIL" ? "Blocking" : "Warnings"}:** ${reasons}`
     : "";
 

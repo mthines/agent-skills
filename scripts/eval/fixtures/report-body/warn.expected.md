@@ -3,6 +3,8 @@
 
 Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
+**Warnings:** 2 open review threads
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **Retry exhaustion now throws where it returned null** | [`client.ts:214`](https://github.com/o/r/pull/1#discussion_r11 "src/api/client.ts") |

@@ -5,6 +5,8 @@
 
 Adds `github.check_run` to the trigger-kind union but leaves four keyed registries unwired.
 
+**Blocking:** 1 unanswered blocking review thread
+
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
 | | Finding | Where |

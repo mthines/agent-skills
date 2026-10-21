@@ -158,8 +158,9 @@ Three consequences for a consumer:
   `ADDITIONAL_FINDINGS[]`, so it cannot disagree with the tables below it or with the `Severity`
   row in the accordion.
 - **It counts findings, not gates.** Gate state is named in a `**Blocking:**` / `**Warnings:**`
-  line, which renders only when there are no findings; with findings, the headline and the table
-  already say what blocks.
+  line under the summary.
+  With findings, that line omits the Code-review gate's phrase, which the headline and the table
+  already state, and keeps every other gate's phrase; it is absent when nothing remains.
 - **`### ` is the report's identity marker.** An inline finding never uses a heading
   (`comment-shape.md § Shape` forbids it and uses a bold title line), so the presence of a `### `
   heading distinguishes the two surfaces without reading the marker.
