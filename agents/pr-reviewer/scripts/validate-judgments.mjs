@@ -236,6 +236,11 @@ export function candidateDomainRules(candidates, errors) {
     if (c.verdict !== "unobtainable" && hasReason) {
       errors.push(`${path}: "unverified_reason" is only valid when verdict is "unobtainable" (got ${JSON.stringify(c.verdict)})`);
     }
+    // A blocker has one fix; a decision has two acceptable options. One finding cannot be both.
+    if (c.blocking === true && c.decide === true) {
+      errors.push(`${path}: "decide": true cannot be combined with "blocking": true — a blocker has one fix,`
+        + " a decision has two acceptable options");
+    }
     // A/B iteration 4: the severity rule's crosswalk (`agents/shared/rules/severity.md § Mapping
     // to a reviewer's blocking flag`) makes the tier the source of `(blocking)` — critical/high
     // block, medium/low never do — and says "do not encode a second, divergent blocking rule".
@@ -243,11 +248,6 @@ export function candidateDomainRules(candidates, errors) {
     // blocking, which is what Gate 6 FAILs on. One direction only: `high` WITHOUT blocking stays
     // legal, because the crosswalk's floor-only exception (a tier raised by the path floor alone)
     // is exactly that shape, and nothing on the candidate records the base tier.
-    // A blocker has one fix; a decision has two acceptable options. One finding cannot be both.
-    if (c.blocking === true && c.decide === true) {
-      errors.push(`${path}: "decide": true cannot be combined with "blocking": true — a blocker has one fix,`
-        + " a decision has two acceptable options");
-    }
     if (c.blocking === true && typeof c.severity === "string" && !BLOCKING_TIERS.includes(c.severity)) {
       errors.push(`${path}: "blocking": true requires severity high or critical (got ${JSON.stringify(c.severity)})`
         + " — the tier decides blocking (severity SKILL.md crosswalk). Raise the tier if the base impact is"
