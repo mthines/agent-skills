@@ -180,7 +180,8 @@ Lite proves a UI change in the browser before the PR, the same way Full Step 4.1
 
 1. `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`.
    It copies the `AC-{n}` criteria from the Lite `plan.md`, writes the specs, runs them through `ui-verify`, fixes what it finds as separate commits, and leaves its screenshots and recordings where `create-pr` Step 6.2 picks them up.
-2. A failed `ui:` criterion or a `BROKEN` verdict re-enters Phase 3 under the same turn cap.
+2. A failed `ui:` criterion, a `BROKEN` verdict, or a `telemetry:` AC whose receipt is `contradicts` re-enters Phase 3 under the same turn cap.
+   Any other `telemetry:` receipt that is not `confirms` goes under `Degraded:`, as Full Step 4.1 leaves it unpassed.
 3. No `.agents/aw/environments.yml` → `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; never block on setup.
 4. Print the `verify run:` line from Full's `AW EVIDENCE` block ([`aw/rules/full-tier.md` § Step 4](./aw/rules/full-tier.md#step-4--verify-walkthrough-pr-evidence)) in Lite's `AW EVIDENCE` block.
 
