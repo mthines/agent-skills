@@ -3,7 +3,8 @@ name: ui-verify
 description: >
   Makes a UI PR autonomously verifiable: `author` writes an intent spec into the
   PR body; `run` checks it on the preview (or a local stack with `--env local`)
-  with evidence, an adversarial pass, and telemetry-verify; `verify` does both;
+  with evidence, an adversarial pass, and telemetry-verify; `verify` (the default)
+  does both;
   `--post-findings` feeds `review-loop --ui`. Config: `.agents/aw/`.
   Web only; triggers on "write a preview spec", "verify this PR's preview", "try
   to break this PR's preview", "/ui-verify".
@@ -59,14 +60,20 @@ Why `SKILL.md` is shaped this way: [`references/skill-design.md`](./references/s
 ## Operations
 
 The first token of `$ARGUMENTS` selects the operation.
-With no operation token, default to `author` when a diff or branch context is in scope, and `run` when only a PR reference is given.
+With no operation token, run `verify`: it authors a spec when the PR body has none, then runs it, passing every flag through.
 Setup is `/aw-verify setup`; this skill has none.
+
+```text
+/ui-verify https://github.com/dash0hq/dash0/pull/23560          # = verify: author if no block, then run
+/ui-verify run https://github.com/dash0hq/dash0/pull/23560      # run only; no block → `no spec`
+/ui-verify author https://github.com/dash0hq/dash0/pull/23560   # author only; never opens a browser
+```
 
 | Operation | Does |
 | --- | --- |
 | `author` | Write the spec block into the PR body (also delegated to by `create-pr`). |
 | `run` | Run the block (or a local `specs.md`) on the preview — or a local stack with `--env local --url <url>` — try to break it, read its telemetry, report; screenshots on by default (`--no-screenshots` opts out). |
-| `verify` | `author` if no block exists, then `run` — the entry point for others' PRs and automation. |
+| `verify` (default) | `author` if no block exists, then `run` — the entry point for others' PRs and automation. |
 
 `run` picks a driver with `--driver`; `author` never touches a browser and takes no `--driver`.
 
@@ -220,9 +227,14 @@ Inject one collapsed, marked UI verification spec into the PR body.
 When `.agents/aw/ui.yml` sets `surface`, forward it to the gate as JSON (the gate's fields: `mode`, `extensions`, `dirExtensions`, `dirs`, `globs` — `include` is accepted as `globs` — and `exclude`):
 
 ```bash
+# No PR reference: the current branch's diff.
 node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --base "$(git merge-base origin/HEAD HEAD)" [--surface-json '<ui.yml surface as JSON>']
+# A PR reference (URL or number): the PR's own files, whatever is checked out locally.
+node ${CLAUDE_SKILL_DIR}/scripts/is-ui-diff.mjs --files "$(gh pr diff <pr> --name-only)" [--surface-json '<ui.yml surface as JSON>']
 ```
 
+On the `mcp` path, build the `--files` list from `mcp__github__pull_request_read` with `method: "get_files"`.
+Never gate a PR reference on the local merge-base: the checkout may be another branch or another repo, and the gate would classify the wrong diff.
 Read the final `UI_DIFF:` line: `no` → stop with `not authored (no UI files in diff)`; `yes` → continue.
 A misclassified diff is a signal to refine `ui.yml`'s `surface` ([`rules/memory.md § The UI surface`](./rules/memory.md#the-ui-surface)).
 
