@@ -46,8 +46,10 @@ Why it is built this way: [`references/dispatcher-rationale.md`](references/disp
 
 ## First actions
 
-0. **Resume an existing brief.** When the request is a continuation phrase ("continue", "execute the plan", "proceed", "go") and `.agent/{branch}/plan.md` exists in the current worktree, do not re-detect the tier and do not rewrite the brief.
-   Read its `tier:`: Full (`checks.lock` beside it) → read [`rules/full-tier.md`](rules/full-tier.md) and continue at Step 2 with the sealed checks; Lite → `Skill("autonomous-workflow")` and continue the Lite path at the first phase whose output is missing.
+0. **Resume an existing brief.** When the request is a continuation phrase (the list in `templates/routing.rule.md`: "execute", "execute the plan", "continue", "proceed", "ship it", "go") and `.agent/{branch}/plan.md` exists in the current worktree, do not re-detect the tier and do not rewrite the brief.
+   `checks.lock` beside it marks Full, whatever `tier:` says; a `tier: Full` brief without it is unsealed, so run `aw-create-plan` to seal it first.
+   Full → read [`rules/full-tier.md`](rules/full-tier.md) and continue at Step 2 with the sealed checks.
+   Lite → `Skill("autonomous-workflow")` and continue the Lite path at the first phase whose output is missing.
 
    ```text
    ✗ Wrong — "continue" re-runs tier detection on the word "continue", then aw-create-plan re-seals the brief
