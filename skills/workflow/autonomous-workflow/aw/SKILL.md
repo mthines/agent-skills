@@ -72,7 +72,7 @@ MODE SELECTION:
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
 | **Micro** | You, single-pass: Phase 0 quick confirm → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) | in-conversation brief | none (docs if needed) |
-| **Lite** | You, single-pass: the Lite path from `SKILL.md` | in-conversation brief | per signal; Phase 5 docs and Phase 6 `create-pr` always |
+| **Lite** | You, single-pass: the Lite path from `SKILL.md` | short `plan.md` brief, no `checks.yaml` | per signal; `aw-verify` on a UI diff; Phase 5 docs and Phase 6 `create-pr` always |
 | **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a local `review-loop` converges the diff | `plan.md` + `checks.yaml` | `review-loop` (local), `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
 
 Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the local review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.
@@ -108,7 +108,8 @@ The goal format, the per-tier instruction sentence, and the `AW EVIDENCE` block 
 
 | Tier | Brief source | What to print |
 | --- | --- | --- |
-| Micro / Lite | In-conversation: Task, Guardrails, verify command, Turn Cap (Micro 5, Lite 12), files | The 5-line brief, then the goal line and "paste this to let the session drive itself to done hands-off" |
+| Micro | In-conversation: Task, Guardrails, verify command, Turn Cap 5, files | The 5-line brief, then the goal line and "paste this to let the session drive itself to done hands-off" |
+| Lite | `.agent/{branch}/plan.md`: Task, Guardrails, `AC-{n}`, Before-PR command, Turn Cap 12, files (shape: the workflow's *Lite and Micro path*) | The brief, then the goal line and the same sentence |
 | Full | Your `plan.md` brief | The brief's Task, Guardrails, and AC list, then the goal line and "paste this to let the session drive itself to done hands-off" |
 
 ```text

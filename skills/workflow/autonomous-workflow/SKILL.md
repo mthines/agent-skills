@@ -139,19 +139,54 @@ Artifact details: [`rules/artifacts-overview.md`](./rules/artifacts-overview.md)
 
 ## Lite and Micro path
 
-Single-pass in the caller's context; no `plan.md`, no `confidence(plan)`.
+Single-pass in the caller's context; no `checks.yaml`, no `confidence(plan)`.
+Lite writes its brief to `.agent/{branch}/plan.md` so `aw-verify` and `telemetry-verify` read stated criteria instead of guessing them from the diff; Micro keeps its brief in the conversation.
+
+```markdown
+---
+tier: Lite
+turn_cap: 12
+---
+## Task
+Debounce the search box so typing does not fire a request per keystroke.
+## Guardrails
+- Keep unchanged: the `?q=` URL contract — docs/search.md
+## Acceptance Criteria
+- [ ] AC-1 — When the user types "otel" quickly, the system shall send one search request.
+- [ ] AC-2 — When the user clears the box, the system shall show the recent-searches list.
+- **Before PR**: `pnpm vitest run src/search`
+## File Changes
+- `src/search/SearchBox.tsx`
+```
+
+Keep it at most 20 lines: `tier: Lite` frontmatter, Task, Guardrails, `AC-{n}` outcome criteria (a `telemetry:` prefix where the change adds a signal), the Before-PR command, and the files.
+Never write `checks.yaml` or `checks.lock` on Lite: `checks.lock` is what marks a Full brief.
 
 | Phase | Lite | Micro |
 | ----- | ---- | ----- |
 | Setup | MODE SELECTION | MODE SELECTION |
 | 0 | Quick clarification | Quick confirm |
-| 1 | In-conversation brief (Task, Guardrails, verify command, Turn Cap 12, files) + `/goal` line | Same brief, Turn Cap 5, no companions |
+| 1 | Brief in `.agent/{branch}/plan.md` (Task, Guardrails, `AC-{n}`, Before-PR command, Turn Cap 12, files), printed, + `/goal` line | In-conversation brief (Task, Guardrails, verify command, files), Turn Cap 5, no companions |
 | 2 | `gw add <branch>` | `gw add <branch>` |
 | 3 | Code, commit; touch only the brief's files | Edit, fast check |
-| 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>` | Fast check |
+| 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>`. Diff touches UI files → [Lite verify](#lite-verify) | Fast check |
 | 5 | `Skill("docs", "update --auto")` | Only on doc drift |
-| 6 | `Skill("create-pr", "--no-post-review")` (its Step 5.5 is the local review; see [`aw` § Review](./aw/SKILL.md#review)), then the `AW EVIDENCE` block | Same |
+| 6 | `Skill("create-pr", "--no-post-review")` (its Step 5.5 is the local review; see [`aw` § Review](./aw/SKILL.md#review)); when Phase 4 ran `aw-verify`, then `Skill("aw-verify", "report <pr-url>")`; then the `AW EVIDENCE` block | `Skill("create-pr", "--no-post-review")`, then the `AW EVIDENCE` block |
 | 7 | Watch CI, `ci-auto-fix` if needed | Watch CI |
+
+### Lite verify
+
+Lite proves a UI change in the browser before the PR, the same way Full Step 4.1 does; Micro never runs it.
+
+1. `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`. It copies the `AC-{n}` criteria from the Lite `plan.md`, writes the specs, runs them through `ui-verify`, fixes what it finds as separate commits, and leaves its screenshots and recordings where `create-pr` Step 6.2 picks them up.
+2. A failed `ui:` criterion or a `BROKEN` verdict re-enters Phase 3 under the same turn cap.
+3. No `.agents/aw/environments.yml` → `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; never block on setup.
+4. Print the `verify run:` line from Full's `AW EVIDENCE` block ([`aw/rules/full-tier.md` § Step 4](./aw/rules/full-tier.md#step-4--verify-walkthrough-pr-evidence)) in Lite's `AW EVIDENCE` block.
+
+```text
+✗ Wrong — Lite UI diff, verify configured, PR opened with no browser evidence
+✓ Right — aw-verify run local → create-pr attaches its captures → aw-verify report <pr-url> posts the report
+```
 
 ## Companions and parallelization
 
