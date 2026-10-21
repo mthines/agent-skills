@@ -6,11 +6,11 @@
 
 ## In plain English
 
-![aw: one sentence in, a reviewed pull request out. It sizes the job (Micro, Lite, Full); a Full task runs Brief, Build until green, Fresh-eyes review, and Draft PR in an isolated worktree.](../../../assets/aw-flow.png)
+![aw: one sentence in, a reviewed pull request out. It sizes the job (Micro, Lite, Full); a Full task runs Brief, Build until green, Fresh-eyes review, and Draft PR in an isolated worktree; Lite and Full test UI changes in a browser and put the screenshots on the PR.](../../../assets/aw-flow.png)
 
 **You write one sentence. `aw` delivers a tested, reviewed pull request.**
 
-1. **Sizes the job.** Micro (one file) and Lite (a small change) finish in one pass; Full gets the loop below.
+1. **Sizes the job.** Micro (one file) finishes in one pass; Lite (a small change) writes a short brief and verifies UI changes too; Full gets the loop below.
 2. **Writes a short brief.** At most 60 lines: what done means, what must not change, and one sealed, runnable check per goal.
 3. **Builds until green.** In your session, in its own Git worktree, looping on the checks until they print `CHECKS n/n PASS`.
 4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed, rejected with evidence, or flagged for you.
@@ -125,7 +125,7 @@ drop the `--aw` flag. To preview without applying, add `--dry-run` (or `-n`).
 
 Then say *"implement X independently"* (or invoke `/aw`) — the routing rule
 invokes the **`aw` dispatcher**, which detects the tier and routes: Micro/Lite
-run single-pass; Full writes a short brief, works to its checks in your session,
+run single-pass (Lite from a short `plan.md` brief); Full writes a short brief, works to its checks in your session,
 and gets a fresh-eyes review before the PR.
 
 #### What gets installed
@@ -264,9 +264,10 @@ Planner → `plan.md` → executor (the split). Generates artifacts under
 
 ### Lite (simple changes, 2-3 files)
 
-Single-pass (no planner/executor split). No artifact files; plan exists only in
-conversation. Phase 0, Phase 2, Phase 5 (`docs update`), and Phase 6
-(`create-pr`) still required.
+Single-pass (no planner/executor split). Writes a short `plan.md` brief (no
+`checks.yaml`) in the worktree, and on a UI diff runs `aw-verify` before the PR
+and `aw-verify report` after it. Phase 0, Phase 2, Phase 5 (`docs update`), and
+Phase 6 (`create-pr`) still required.
 
 ### Micro (1-file mechanical: typo / copy / version-or-config bump)
 
@@ -279,7 +280,7 @@ drift. The "skip planning when it's trivial" tier.
 | Tier   | Files / shape                     | Artifacts | Planner split | Worktree |
 | ------ | --------------------------------- | --------- | ------------- | -------- |
 | Micro  | 1 file, mechanical                | No        | No (single-pass) | Yes   |
-| Lite   | 2-3 files, simple logic           | No        | No (single-pass) | Yes   |
+| Lite   | 2-3 files, simple logic           | Brief only | No (single-pass) | Yes   |
 | Full   | 4+ files OR complex / unfamiliar  | Yes       | Yes           | Yes      |
 
 ---

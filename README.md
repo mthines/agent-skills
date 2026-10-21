@@ -124,7 +124,7 @@ The `aw` runs used Claude Opus 5.5. Method and every run: [PR #241](https://gith
 
 ## Featured: autonomous workflow
 
-![aw: one sentence in, a reviewed pull request out. It sizes the job (Micro, Lite, Full); a Full task runs Brief, Build until green, Fresh-eyes review, and Draft PR in an isolated worktree, then the UI is verified on the preview.](./assets/aw-flow.png)
+![aw: one sentence in, a reviewed pull request out. It sizes the job (Micro, Lite, Full); a Full task runs Brief, Build until green, Fresh-eyes review, and Draft PR in an isolated worktree; Lite and Full test UI changes in a browser and put the screenshots on the PR.](./assets/aw-flow.png)
 
 ```text
 Implement a dark-mode toggle independently
@@ -132,12 +132,12 @@ Add user authentication end-to-end
 Refactor the API client to use retry logic — handle it in isolation
 ```
 
-1. **Sizes the job.** Micro (one file) and Lite (a small change) finish in one pass; Full gets the loop below.
+1. **Sizes the job.** Micro (one file) finishes in one pass; Lite (a small change) writes a short brief and verifies UI changes too; Full gets the loop below.
 2. **Writes a short brief.** At most 60 lines: what done means, what must not change, and one sealed, runnable check per goal.
 3. **Builds until green.** In your session, in its own Git worktree, looping until the checks print `CHECKS n/n PASS`.
 4. **Gets a fresh-eyes review.** A reviewer that did not write the code reads the diff; every finding is fixed or rejected with evidence.
 5. **Opens a draft PR** with a walkthrough and evidence, then gets CI green. Stuck after five attempts, it stops with `BLOCKED:` instead of guessing.
-6. **Proves it works.** With `.agents/aw/` set up, [`/aw-verify`](./skills/testing/aw-verify/SKILL.md) runs the brief's specs on your local stack, tries to break the change, and reads the telemetry back: each criterion is traced from the web event to the API to the database. A `telemetry:` criterion in the brief must be confirmed before the run counts as done.
+6. **Proves it works.** With `.agents/aw/` set up, Lite and Full run [`/aw-verify`](./skills/testing/aw-verify/SKILL.md) on your local stack before the push: it runs the brief's specs, tries to break the change, and traces each criterion from the web event to the API to the database. Its screenshots and report land on the PR, and a `telemetry:` criterion must be confirmed before the run counts as done.
 
 Every run prints a paste-ready `/goal` line to let the session drive itself to done, and records what it learned for the next run.
 How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/rules/full-tier.md) · [design notes](./skills/workflow/autonomous-workflow/CLAUDE.md).

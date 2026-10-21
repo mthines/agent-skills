@@ -323,8 +323,9 @@ and nowhere else — see "exactly one home" below. What this section owns is the
   patch is exactly what those two questions exist to prevent.
 - **Micro requires one file *and* nothing to reason about.** A one-file change
   carrying non-trivial logic is Lite. The `OR` in question 4 is load-bearing.
-- Who runs it: Full is a brief written by `aw` plus one `aw-executor` (artifacts
-  required), Micro and Lite are single-pass with no artifacts.
+- Who runs it: Full is a brief plus sealed checks, worked in the caller's session
+  by `aw`; Lite is single-pass from a short `plan.md` brief; Micro is single-pass
+  with no artifacts.
 
 When in doubt, choose the heavier tier. Micro/Lite are for genuinely small
 changes — not for "the user said it's small." **Phase 0 and Phase 2 are
