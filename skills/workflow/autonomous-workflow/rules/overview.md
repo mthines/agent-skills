@@ -73,7 +73,7 @@ registry, trigger conditions, and disable instructions live in
 [`companion-skills.md`](./companion-skills.md). **No companion blocks the
 workflow, and every one is reported** (`ran` or `skipped (<reason>)`). The only
 non-removable companion is `confidence` at Phase 1 (the Full Mode plan gate —
-Lite Mode has no `plan.md` to gate and Micro skips all quality companions).
+Lite Mode's short brief is not gated and Micro skips all quality companions).
 
 ## Artifact System
 
@@ -111,7 +111,7 @@ for full details.
 ```
 Phase 0: Validation + Mode Detection
     | (user confirms, mode selected)
-Phase 1: Planning (Full: short brief, Lite: mental plan)
+Phase 1: Planning (Full: short brief + sealed checks, Lite: short brief)
     | entry points named (boundary tasks), brief validation
     | (plan validated)
 Phase 2: Worktree Setup - MANDATORY
@@ -179,12 +179,11 @@ Use for complex, multi-file changes:
 - Long session expected
 - Handoff to another agent possible
 
-### Lite Mode (without Artifacts)
+### Lite Mode (short brief only)
 
 Use for simple, focused changes:
 
-- No artifact files created
-- Plan exists only in conversation
+- A short `plan.md` brief, no `checks.yaml` or `walkthrough.md`
 - Faster execution
 - Phase 0, Phase 2, `docs update`, and `create-pr` still required
 
@@ -215,7 +214,7 @@ Is this complex / architectural / unfamiliar OR 4+ files?
 |   |-- Plan in conversation during Phase 1
 |   |-- Create plan.md INSIDE worktree (after Phase 2) at .agent/{branch}/
 |-- No: is it 2-3 files OR any non-trivial logic change?
-    |-- Yes -> Lite Mode (no artifacts, still use worktree)
+    |-- Yes -> Lite Mode (short brief, still use worktree)
     |-- No (1 file, purely mechanical)
         |-- Micro Mode (Lite path with planning + quality companions skipped)
 ```

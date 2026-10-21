@@ -46,6 +46,16 @@ Why it is built this way: [`references/dispatcher-rationale.md`](references/disp
 
 ## First actions
 
+0. **Resume an existing brief.** When the request is a continuation phrase (the list in `templates/routing.rule.md`: "execute", "execute the plan", "continue", "proceed", "ship it", "go") and `.agent/{branch}/plan.md` exists in the current worktree, do not re-detect the tier and do not rewrite the brief.
+   `checks.lock` beside it marks Full, whatever `tier:` says; a `tier: Full` brief without it is unsealed, so run `aw-create-plan` to seal it first.
+   Full → read [`rules/full-tier.md`](rules/full-tier.md) and continue at Step 2 with the sealed checks.
+   Lite → `Skill("autonomous-workflow")` and continue the Lite path at the first phase whose output is missing.
+
+   ```text
+   ✗ Wrong — "continue" re-runs tier detection on the word "continue", then aw-create-plan re-seals the brief
+   ✓ Right — "continue" + plan.md with tier: Full and checks.lock → full-tier Step 2, checks unchanged
+   ```
+
 1. Read lessons per [`rules/lessons.md`](rules/lessons.md) — read it now; the matches inform both the tier and the approach.
 2. Detect the tier and emit the MODE SELECTION block.
 3. Load only what the tier needs — every loaded line is re-read on every later turn:
@@ -72,7 +82,7 @@ MODE SELECTION:
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
 | **Micro** | You, single-pass: Phase 0 quick confirm → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) | in-conversation brief | none (docs if needed) |
-| **Lite** | You, single-pass: the Lite path from `SKILL.md` | in-conversation brief | per signal; Phase 5 docs and Phase 6 `create-pr` always |
+| **Lite** | You, single-pass: the Lite path from `SKILL.md` | short `plan.md` brief, no `checks.yaml` | per signal; `aw-verify` on a UI diff; Phase 5 docs and Phase 6 `create-pr` always |
 | **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a local `review-loop` converges the diff | `plan.md` + `checks.yaml` | `review-loop` (local), `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
 
 Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the local review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.
@@ -108,7 +118,8 @@ The goal format, the per-tier instruction sentence, and the `AW EVIDENCE` block 
 
 | Tier | Brief source | What to print |
 | --- | --- | --- |
-| Micro / Lite | In-conversation: Task, Guardrails, verify command, Turn Cap (Micro 5, Lite 12), files | The 5-line brief, then the goal line and "paste this to let the session drive itself to done hands-off" |
+| Micro | In-conversation: Task, Guardrails, verify command, Turn Cap 5, files | The 5-line brief, then the goal line and "paste this to let the session drive itself to done hands-off" |
+| Lite | `.agent/{branch}/plan.md`: Task, Guardrails, `AC-{n}`, Before-PR command, Turn Cap 12, files (shape: the workflow's *Lite and Micro path*) | The brief, then the goal line and the same sentence |
 | Full | Your `plan.md` brief | The brief's Task, Guardrails, and AC list, then the goal line and "paste this to let the session drive itself to done hands-off" |
 
 ```text

@@ -108,7 +108,7 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | Progress Log inside `plan.md`                 | Workflow itself                   | Per companion invocation            |
 | Draft PR + commit history                     | `create-pr`                       | Phase 6                             |
 
-Lite Mode runs produce no `plan.md` / `walkthrough.md` — diagnoses against Lite runs have a thinner evidence trail and the report should call that out as a contributing factor.
+Lite Mode runs produce a short `plan.md` but no `checks.yaml` or `walkthrough.md`, and Micro runs produce neither — diagnoses against them have a thinner evidence trail and the report should call that out as a contributing factor.
 
 ---
 

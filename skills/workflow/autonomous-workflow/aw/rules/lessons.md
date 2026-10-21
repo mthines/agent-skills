@@ -15,8 +15,13 @@ The lesson schema, the universal-vs-project classification, and the entrenchment
 ## Intake read
 
 ```text
-memory.search { q: "<3–6 keywords from the task: area, component, verb>", scopes: ["repo::{owner}/{repo}", "global"],
+memory.search { q: "<3–6 keywords from the task: area, component, verb, joined with OR>", scopes: ["repo::{owner}/{repo}", "global"],
                 tags: ["loop::aw-lessons"], limit: 5 }   # no-op if memory.* not connected
+```
+
+```text
+✗ q: "verify lite media screenshots"          # terms are ANDed: a lesson must contain all four, so this returns nothing
+✓ q: "verify OR lite OR media OR screenshots"
 ```
 
 1. Search, never list: everything the intake returns is re-read on every later turn, and a 50-item listing of both scopes costs more context than the whole Full procedure. Read a lesson's full body only when its title matches the task. On a contradiction the `repo::` lesson wins.

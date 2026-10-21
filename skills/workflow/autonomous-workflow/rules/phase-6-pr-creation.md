@@ -32,7 +32,8 @@ Hand the work off to the user as a reviewable DRAFT pull request — but only af
 1. Pre-flight checks pass (build, lint, tests).
 2. `Skill("aw-create-walkthrough")` (Full Mode) generates `.agent/{branch}/walkthrough.md`.
 3. `Skill("create-pr", <the tier's flags>)` — see [PR Creation](#pr-creation) — writes the narrative description, converges the branch with a local `review-loop` (Step 5.5, Lite; Full reviewed in its Step 3), pushes, opens the draft PR, and watches CI initialization.
-4. The walkthrough content is shown inline in the conversation. **The PR is not "delivered" until the user has seen the walkthrough.**
+4. When `aw-verify` ran before the PR (Lite Phase 4, Full Step 4.1), `Skill("aw-verify", "report <pr-url>")` attaches its screenshots and upserts the verify report comment.
+5. The walkthrough content is shown inline in the conversation. **The PR is not "delivered" until the user has seen the walkthrough.**
 
 Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 
@@ -51,8 +52,9 @@ Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 | 1    | Pre-flight checks (clean tree, build, lint, test)                             | Full + Lite     |
 | 2    | `Skill("aw-create-walkthrough")` → `.agent/{branch}/walkthrough.md`           | **Full only**   |
 | 3    | `Skill("create-pr", <the tier's flags>)` ([PR Creation](#pr-creation)) → local review-loop (Lite), push, open draft PR, watch initial CI | Full + Lite     |
-| 4    | Show `walkthrough.md` content inline in conversation                          | **Full only**   |
-| 5    | Report PR URL + summary, log Progress                                         | Full + Lite     |
+| 4    | `Skill("aw-verify", "report <pr-url>")` when `aw-verify` ran before the PR   | Full + Lite     |
+| 5    | Show `walkthrough.md` content inline in conversation                          | **Full only**   |
+| 6    | Report PR URL + summary, log Progress                                         | Full + Lite     |
 
 ### Step 1: Pre-Flight Validation
 
@@ -192,9 +194,12 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 - local review-loop (branch-reviewer pass; create-pr Step 5.5 on Lite, Step 3 on Full): <N iterations, M findings, B open | skipped (<reason>)>
 - local review-loop (apply): <N findings applied, D declined | skipped (<reason>)>
 - local review-loop (polish simplify): <recipe IDs applied | none | skipped (<reason>)>
+- aw-verify report: <posted <comment URL> | not posted — <aw-verify's reason> | n/a (aw-verify did not run: <no UI diff | not configured>)>
 ```
 
-If any line above would be blank, or would carry a reason outside the admissible four, the pass was skipped in error: run it, then re-emit the receipt.
+The `aw-verify report` line is conditional, not a required pass, so its own three values are admissible: `posted`, `not posted — <aw-verify's reason>`, and `n/a` only when `aw-verify` did not run before the PR.
+
+If any other line above would be blank, or would carry a reason outside the admissible four, the pass was skipped in error: run it, then re-emit the receipt.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
@@ -277,6 +282,7 @@ Then move to Phase 7 to watch CI to green.
 - [ ] `Skill("aw-create-walkthrough")` invoked (Full Mode)
 - [ ] `Skill("create-pr", <the tier's flags>)` invoked ([PR Creation](#pr-creation)) OR manual fallback executed
 - [ ] PR opened as draft
+- [ ] `Skill("aw-verify", "report <pr-url>")` run when `aw-verify` ran before the PR (Lite Phase 4, Full Step 4.1)
 - [ ] Local `review-loop` converged the branch before the push (`create-pr` Step 5.5 on Lite, Step 3 on Full); open findings surfaced
 - [ ] Walkthrough content shown inline in conversation (Full Mode)
 - [ ] PR URL delivered to user

@@ -39,8 +39,8 @@ clean recovery.
 | Phase | Gate / Checkpoint                                                                                  |
 | ----- | -------------------------------------------------------------------------------------------------- |
 | 0     | Tier selected (Micro / Lite / Full). User confirmed understanding. No unresolved `blocking` missing-information item — even under `--no-confirm`. |
-| 1     | Plan matches requirements. The brief passes its deterministic validation ([`phase-1-planning.md#brief-validation`](./phase-1-planning.md#brief-validation); Full Mode only — Lite and Micro have no `plan.md`). Every `[user-stated]` requirement covered by an Acceptance Criterion; every planned `create` has an Existing Code Survey verdict. |
-| 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` + `checks.yaml` written under `.agent/{branch}/` (Full Mode). |
+| 1     | Plan matches requirements. The brief passes its deterministic validation ([`phase-1-planning.md#brief-validation`](./phase-1-planning.md#brief-validation); Full Mode only — Lite's `plan.md` has no `checks.yaml`, and Micro has no `plan.md`). Every `[user-stated]` requirement covered by an Acceptance Criterion; every planned `create` has an Existing Code Survey verdict. |
+| 2     | Worktree created with `gw add` (or native `git worktree add` fallback). CWD is the worktree. Deps installed. `plan.md` + `checks.yaml` written under `.agent/{branch}/` (Full Mode); `plan.md` alone (Lite Mode). |
 | 3     | Working in isolated worktree. Build/lint passes after each edit. |
 | 4     | All tests pass AND every `checks.yaml` check passes (or `unsatisfiable` user-approved) OR user-approved stop after stuck-loop escalation. |
 | 5     | Docs reflect changes. `Skill("docs", "update --auto")` run.                               |
@@ -115,7 +115,7 @@ is the path. **Never gate a phase on `which gh`.**
 
 | Companion           | Safety-critical? | Behavior if missing                          |
 | ------------------- | ---------------- | -------------------------------------------- |
-| `confidence` (Phase 1) | **Yes** — the Full Mode plan gate (Lite/Micro have no `plan.md` and skip it) | Stop, ask user to install before continuing (Full Mode) |
+| `confidence` (Phase 1) | **Yes** — the Full Mode plan gate (Lite and Micro skip it) | Stop, ask user to install before continuing (Full Mode) |
 | All other companions  | No                       | Log one line, continue without              |
 
 **Companions are NOT safety-critical** — the workflow continues without them.
