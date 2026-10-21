@@ -187,6 +187,9 @@ function consumerList(where, raw, { files, ok, found }) {
   return list;
 }
 
+/** The most per-export (and per-module) entries the Reach cell lists before it counts the rest. */
+const REACH_ENTRY_CAP = 5;
+
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
@@ -882,7 +885,7 @@ function main() {
 
     const CHANGES = ["added", "removed", "signature", "body"];
     const symbols = list("symbols");
-    /** @type {{name: string, path: string, change: string, files: number, ok: number, found: number, consumers: any[]|null}[]} */
+    /** @type {{name: string, files: number, ok: number, found: number, consumers: any[]|null}[]} */
     const symbolFacts = [];
     symbols.forEach((sy, i) => {
       const where = `IMPACT.symbols[${i}]`;
@@ -908,7 +911,7 @@ function main() {
           + ` (${files}) — a consumer cannot be both`);
       }
       const consumers = consumerList(where, sy.consumers, { files, ok, found });
-      symbolFacts.push({ files, ok, found, consumers });
+      symbolFacts.push({ name: String(sy.name).trim(), files, ok, found, consumers });
     });
 
     // A changed file that no listed export covers, and the files that import it. Nobody traced an
@@ -1027,7 +1030,17 @@ function main() {
       const importing = listedImporters.size + moduleFacts.reduce((n, m) => n + m.files - m.importers.length, 0);
       bits.push(`${plural(moduleFacts.length, "changed file")} imported by ${plural(importing, "file")}, not traced`);
     }
-    if (bits.length) impactRows.push(["Reach", bits.join(" · ")]);
+    // After the totals, one entry per changed export and per untraced changed file, so a reader can
+    // see which export carries the reach. Capped at REACH_ENTRY_CAP per list; the rest is a count.
+    // The Run table's own `cellText` keeps the joined cell on one line and escapes `|`.
+    const capped = (entries) => entries.length <= REACH_ENTRY_CAP ? entries
+      : [...entries.slice(0, REACH_ENTRY_CAP), `+${entries.length - REACH_ENTRY_CAP} more`];
+    const symbolEntries = capped(symbolFacts.map((sy) => `\`${sy.name}\` — ${plural(sy.files, "consumer file")}`
+      + ` · ${sy.ok + sy.found} checked${sy.found ? ` · ${sy.found} flagged` : ""}`));
+    const moduleEntries = capped(moduleFacts.map((m) => `\`${m.path}\` — imported by ${plural(m.files, "file")}`));
+    if (bits.length) {
+      impactRows.push(["Reach", [bits.join(" · "), ...symbolEntries, ...moduleEntries].join("<br>")]);
+    }
     if (im.telemetry !== undefined && im.telemetry !== null && String(im.telemetry).trim() !== "") {
       impactRows.push(["Telemetry", cellText(im.telemetry)]);
     }

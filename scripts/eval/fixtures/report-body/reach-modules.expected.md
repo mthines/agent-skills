@@ -19,7 +19,7 @@ Reworks the private jitter helper behind every retrying client and exports `pars
 |---|---|
 | Mode | full · 46 lines in delta · tier deep · depth checkout |
 | Checked | 3 of 3 changed files read · 3 possible issues → 0 confirmed → 0 posted |
-| Reach | 1 changed export · 1 dependent file · 1 checked · 1 changed file imported by 9 files, not traced |
+| Reach | 1 changed export · 1 dependent file · 1 checked · 1 changed file imported by 9 files, not traced<br>`parseRetryAfter` — 1 consumer file · 1 checked<br>`src/api/backoff.ts` — imported by 9 files |
 | Found | produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0 |
 | Memories | 53 indexed · 0 used |
 

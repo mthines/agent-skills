@@ -38,7 +38,7 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 | Mode | full · 12 lines in delta · tier deep · depth checkout · blast_radius=high · semver_delta=major |
 | Anomaly | ⚠️ a base-branch merge polluted the compare range; reviewed the PR's own 44-file diff, not the 130-commit range |
 | Checked | 9 possible issues → 4 confirmed → 4 posted |
-| Reach | 2 changed exports · 18 dependent files · 18 checked · 1 flagged |
+| Reach | 2 changed exports · 18 dependent files · 18 checked · 1 flagged<br>`retryRequest` — 14 consumer files · 14 checked · 1 flagged<br>`parseConfig` — 4 consumer files · 4 checked |
 | Telemetry | production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`) |
 | Dependencies | `stripe` 14.2.0 → 16.0.1 (major) — 6 usage sites checked · [release notes](https://github.com/stripe/stripe-node/releases/tag/v16.0.0) |
 | Overlapping PRs | `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by `alice` — a semantic conflict is likely even if git merges both cleanly |

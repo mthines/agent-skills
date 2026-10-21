@@ -237,7 +237,7 @@ when it has something to say:
 | `Mode` | `RUN`, then `RUN_NOTE` | always — the ingest anchor |
 | `Anomaly` | `RUN_ANOMALY`, prefixed `⚠️` | supplied |
 | `Checked` | `COVERAGE` and the candidate funnel | either part exists |
-| `Reach` | `IMPACT.symbols` and `IMPACT.modules` | the trace found a dependent or importing file |
+| `Reach` | `IMPACT.symbols` and `IMPACT.modules`: the totals, then one `<br>` entry per changed export (`` `name` — N consumer files · K checked · F flagged ``) and per untraced changed file (`` `path` — imported by N files ``), at most 5 per list and `+N more` beyond | the trace found a dependent or importing file |
 | `Telemetry` | `IMPACT.telemetry` | supplied |
 | `Dependencies` | `IMPACT.dependencies`, `dependencies_omitted` | any bump |
 | `Overlapping PRs` | `IMPACT.overlaps` | any overlap |
@@ -322,7 +322,7 @@ Every run fact lives in the Run table inside `Review details`.
 | impact image | a `<picture>` with the light and dark PNGs | `IMPACT_IMAGE` | supplied |
 | findings table | `\| \| Finding \| Where \|`, one numbered row per finding | `FINDINGS` | `FINDINGS` non-empty |
 | `Checked` row | `22 of 22 changed files read (1 skipped) · 11 possible issues → 2 confirmed → 1 posted` | `COVERAGE`; `QUALITY`'s `produced`, then confirmed = `FINDINGS` + `NOTES` + `ADDITIONAL_FINDINGS` and posted = `FINDINGS` + `NOTES` — never `QUALITY`'s `cleared`, which is the posted count by construction | either part exists. With nothing produced, the funnel reads `no possible issues found` — except on a `zero-delta` run, where no finder ran, so that clause is omitted |
-| `Reach` row | `2 changed exports · 15 dependent files · 7 checked · 1 flagged · 8 not checked` | `IMPACT`, one dependent file per file: a file that uses two changed exports counts once, checked when every export it uses was checked there, flagged when any was | the trace found a dependent or importing file |
+| `Reach` row | `` 2 changed exports · 15 dependent files · 7 checked · 1 flagged · 8 not checked<br>`retryRequest` — 14 consumer files · 6 checked · 1 flagged `` | `IMPACT`, one dependent file per file in the totals, then one entry per export (at most 5, then `+N more`): a file that uses two changed exports counts once, checked when every export it uses was checked there, flagged when any was | the trace found a dependent or importing file |
 
 Each findings row reads:
 

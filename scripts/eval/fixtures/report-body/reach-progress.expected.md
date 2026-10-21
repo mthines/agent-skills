@@ -41,7 +41,7 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 |---|---|
 | Mode | full · 164 lines in delta · tier deep · depth checkout · thoroughness 0.95 |
 | Checked | 22 of 22 changed files read (1 skipped) · 11 possible issues → 2 confirmed → 1 posted |
-| Reach | 2 changed exports · 15 dependent files · 7 checked · 1 flagged · 8 not checked |
+| Reach | 2 changed exports · 15 dependent files · 7 checked · 1 flagged · 8 not checked<br>`retryRequest` — 14 consumer files · 6 checked · 1 flagged<br>`backoffDelay` — 2 consumer files · 2 checked |
 | Dependencies | `p-retry` 5.1.2 → 6.2.0 (major) — 3 usage sites, 2 checked |
 | Overlapping PRs | `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by `alice` — a semantic conflict is likely even if git merges both cleanly |
 | Found | produced 11 → posted inline 1 · cleared 2 · carried forward 0 · deferred 1 · below-bar 0 |
