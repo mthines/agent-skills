@@ -7,7 +7,7 @@
 # `sandbox.setupScript`. Change this file and the automation together.
 # Rule: agents/shared/rules/agent0-host.md.
 #
-# cache-key: 2026-10-01
+# cache-key: 2026-10-21
 #   The host caches this script's RESULT while the script TEXT is unchanged. With
 #   the default PIN (latest main) that means the install freezes at the commit
 #   it first resolved. To pick up a newer main, change this line — any edit to
@@ -37,7 +37,9 @@
 #      skill detects this host — and verifies every file, failing closed.
 #
 # Requires: networkLevel >= trusted_only (codeload.github.com, github.com, npm).
-#           The Chromium download may need its CDN allowed; see step 3's output.
+#           Step 3 probes the Playwright CDN and the apt mirror first and falls
+#           back to storage.googleapis.com and archive.ubuntu.com, which
+#           trusted_only allows; see its output.
 # envVars:  PIN, REPO, PR_REVIEWER_LOGIN, SRC_DIR (a local checkout; no download),
 #           WITH_PLAYWRIGHT, REQUIRE_PLAYWRIGHT. Run-telemetry export settings reach a
 #           run only through $DASH0_AGENT_ENV (agents/pr-reviewer/rules/run-telemetry.md).
@@ -104,8 +106,10 @@ ROOT="$WS/pr-reviewer"
 
 # ---------------------------------------------------------------------------
 # 3. Playwright for ui-verify, delegated to scripts/agent0-playwright.sh — the
-#    one writer of the four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines,
-#    shared with ui-verify's own on-demand top-up (SKILL.md), so the two
+#    one writer of the browser export lines (the four UI_VERIFY_*/
+#    PLAYWRIGHT_BROWSERS_PATH lines, plus LD_LIBRARY_PATH/FONTCONFIG_FILE when
+#    it unpacked Chromium's system libraries), which step 5 copies into
+#    env.sh. Shared with ui-verify's own on-demand top-up (SKILL.md), so the two
 #    install paths cannot drift apart. aw-tester's generated spec imports
 #    @playwright/test, and ui-verify links this node_modules into aw-tester's
 #    run directory so both the binary and the import resolve without a

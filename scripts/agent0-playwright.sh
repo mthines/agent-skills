@@ -2,10 +2,12 @@
 #
 # agent0-playwright.sh — installs (or honestly records the absence of) a
 # headless Playwright/Chromium browser for ui-verify's aw-tester, and
-# rewrites the four UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH export lines in
-# ENV_FILE in place, idempotently.
+# rewrites its export lines in ENV_FILE in place, idempotently: the four
+# UI_VERIFY_*/PLAYWRIGHT_BROWSERS_PATH lines on every run, plus
+# LD_LIBRARY_PATH and FONTCONFIG_FILE when rung 5 supplied Chromium's
+# system libraries.
 #
-# This is the ONLY writer of those four lines. Two callers share it:
+# This is the ONLY writer of those lines. Two callers share it:
 #   - scripts/agent0-setup.sh (the prepared-sandbox path), which points
 #     ENV_FILE at a scratch file and cats it into the host env.sh itself.
 #   - ui-verify's own on-demand top-up block (SKILL.md), which runs this
@@ -18,19 +20,36 @@
 # makes a failed install exit non-zero instead — the only case this script
 # exits non-zero.
 #
+# Rungs (WITH_PLAYWRIGHT=1):
+#   1. npm install playwright + @playwright/test into PW.
+#   2. System libraries from the host's own apt mirror
+#      (`playwright install-deps chromium`), only when root, apt-get, and a
+#      short `apt-get update` probe all succeed; then the browser from the
+#      Playwright CDN, only when a short probe reaches it.
+#   3. Chrome-for-Testing fallback for the browser (storage.googleapis.com).
+#   4. Headless smoke test.
+#   5. When the smoke test fails on missing shared libraries: Playwright's
+#      Ubuntu 22.04 Chromium library list, downloaded over HTTPS from
+#      archive.ubuntu.com and unpacked into DEPS (never installed), then the
+#      smoke test again with LD_LIBRARY_PATH/FONTCONFIG_FILE pointing at it.
+#
 # Requires: bash. WITH_PLAYWRIGHT=1 additionally needs node/npm and network
-#           access to the npm registry, and (unless SKIP_CDN=1) the
-#           Playwright CDN or storage.googleapis.com for the Chrome-for-
-#           Testing fallback. The fallback covers Linux x86_64 only.
+#           access to the npm registry, and the Playwright CDN or
+#           storage.googleapis.com (the Chrome-for-Testing fallback, Linux
+#           x86_64 only). Rung 5 needs root, apt-get, dpkg-deb, glibc >= 2.35,
+#           and HTTPS to archive.ubuntu.com and security.ubuntu.com.
 # envVars:  PW (install dir, default /tmp/workspace/playwright), ENV_FILE
 #           (rewritten in place, default /tmp/workspace/agent-skills/env.sh),
 #           WITH_PLAYWRIGHT (default 1), REQUIRE_PLAYWRIGHT (default 0),
 #           BUDGET (seconds, default 900 — each step's own timeout is
-#           capped to whatever of BUDGET remains), SKIP_CDN (test knob:
-#           skip both CDN download rungs and go straight to the
-#           Chrome-for-Testing fallback, default 0).
+#           capped to whatever of BUDGET remains), SKIP_CDN (skip the CDN
+#           download and go straight to the Chrome-for-Testing fallback,
+#           default 0; set automatically when the CDN probe fails),
+#           WITH_UBUNTU_DEPS (rung 5, default 1), DEPS (rung 5's unpacked
+#           libraries, default $PW-deps — outside PW because PW is wiped on
+#           every run, so a later run reuses them).
 #
-# Rationale (two-stage design, the budget, the fallback, the consent):
+# Rationale (two-stage design, the budget, the fallbacks, the consent):
 # skills/testing/ui-verify/references/agent0-browser-install.md
 
 set -uo pipefail
@@ -41,6 +60,10 @@ WITH_PLAYWRIGHT="${WITH_PLAYWRIGHT:-1}"
 REQUIRE_PLAYWRIGHT="${REQUIRE_PLAYWRIGHT:-0}"
 BUDGET="${BUDGET:-900}"
 SKIP_CDN="${SKIP_CDN:-0}"
+WITH_UBUNTU_DEPS="${WITH_UBUNTU_DEPS:-1}"
+DEPS="${DEPS:-$PW-deps}"
+DEPS_LIBS="$DEPS/root/usr/lib/x86_64-linux-gnu:$DEPS/root/lib/x86_64-linux-gnu"
+DEPS_OK=0
 
 T="$(mktemp -d)"
 cleanup() { rm -rf "$T"; }
@@ -58,12 +81,13 @@ left() {
   if [ "$remain" -lt "$cap" ]; then echo "$remain"; else echo "$cap"; fi
 }
 
-# write_env — the single place the four export lines are produced. Strips
-# any prior copy of each (so a second run is idempotent) and keeps every
-# other line untouched. Works whether ENV_FILE already exists or not.
+# write_env — the single place the export lines are produced. Strips any
+# prior copy of each (so a second run is idempotent, and a run that no longer
+# needs rung 5's libraries drops their lines) and keeps every other line
+# untouched. Works whether ENV_FILE already exists or not.
 write_env() {
   if [ -f "$ENV_FILE" ]; then
-    grep -v -E '^export (UI_VERIFY_BROWSER|UI_VERIFY_BROWSER_REASON|UI_VERIFY_PLAYWRIGHT_NODE_MODULES|PLAYWRIGHT_BROWSERS_PATH)=' "$ENV_FILE" > "$T/env.out" || true
+    grep -v -E '^export (UI_VERIFY_BROWSER|UI_VERIFY_BROWSER_REASON|UI_VERIFY_PLAYWRIGHT_NODE_MODULES|PLAYWRIGHT_BROWSERS_PATH|LD_LIBRARY_PATH|FONTCONFIG_FILE)=' "$ENV_FILE" > "$T/env.out" || true
   else
     mkdir -p "$(dirname "$ENV_FILE")" 2>/dev/null || true
     : > "$T/env.out"
@@ -73,8 +97,120 @@ write_env() {
     printf 'export UI_VERIFY_BROWSER_REASON=%q\n' "$REASON"
     echo "export UI_VERIFY_PLAYWRIGHT_NODE_MODULES=$PW/node_modules"
     echo "export PLAYWRIGHT_BROWSERS_PATH=$PW/browsers"
+    if [ "$DEPS_OK" = 1 ]; then
+      echo "export LD_LIBRARY_PATH=$DEPS_LIBS\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+      echo "export FONTCONFIG_FILE=$DEPS/fonts.conf"
+    fi
   } >> "$T/env.out"
   mv "$T/env.out" "$ENV_FILE"
+}
+
+# apt_reachable CAP — true when the host's own apt sources answer. Uses a
+# private lists directory and short timeouts, so a blocked mirror (Agent0
+# trusted-hosts mode blocks deb.debian.org) costs seconds instead of the
+# minutes `install-deps` would spend retrying it. `apt-get update` exits 0
+# when every source fails, so its warnings decide.
+apt_reachable() {
+  mkdir -p "$T/apt-probe/partial"
+  timeout "$1" apt-get update -q -o Dir::State::Lists="$T/apt-probe" \
+    -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 -o Acquire::Retries=0 >"$T/apt-probe.log" 2>&1 \
+    && ! grep -qE '^(W|E): (Failed to fetch|Some index files failed)' "$T/apt-probe.log"
+}
+
+# smoke CAP — launches the headless shell once. On failure echoes the first
+# line naming the cause: Playwright's last output line is only the Node.js
+# version banner.
+smoke() {
+  if ( cd "$PW" && timeout "$1" node -e "require('playwright').chromium.launch().then(b => b.close())" ) >"$T/smoke.log" 2>&1; then
+    return 0
+  fi
+  grep -m1 -E 'error while loading shared libraries|Error:|Timeout' "$T/smoke.log" || tail -n 1 "$T/smoke.log"
+  return 1
+}
+
+# headless_shell — path of the downloaded chrome-headless-shell, or nothing.
+headless_shell() {
+  find "$PLAYWRIGHT_BROWSERS_PATH" -type f -name chrome-headless-shell 2>/dev/null | head -n 1
+}
+
+# missing_libs BIN [LIBPATH] — the shared libraries BIN cannot resolve.
+missing_libs() {
+  LD_LIBRARY_PATH="${2:-${LD_LIBRARY_PATH:-}}" ldd "$1" 2>/dev/null | awk '/not found/ {print $1}' | tr '\n' ' '
+}
+
+# ubuntu_deps CAP — rung 5. Downloads Playwright's ubuntu22.04-x64 Chromium
+# dependency list plus its fonts with a private apt configuration, verified
+# against the Ubuntu archive key (from the ubuntu-keyring package, over
+# HTTPS), and unpacks the packages into DEPS without installing anything.
+# libc, libstdc++, and libgcc are never unpacked, so the system's own stay in
+# charge; that is why it needs glibc >= 2.35 (jammy's). Reuses DEPS when it
+# already resolves every library. Echoes a one-line summary/reason; returns 0
+# on success.
+ubuntu_deps() {
+  bin="$(headless_shell)"
+  [ -n "$bin" ] || { echo "no chrome-headless-shell under $PLAYWRIGHT_BROWSERS_PATH"; return 1; }
+  if [ -f "$DEPS/fonts.conf" ] && [ -z "$(missing_libs "$bin" "$DEPS_LIBS")" ]; then
+    echo "reused ubuntu 22.04 libraries in $DEPS"
+    return 0
+  fi
+  [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1 && command -v dpkg-deb >/dev/null 2>&1 \
+    || { echo "needs root, apt-get, and dpkg-deb"; return 1; }
+  glibc="$(ldd --version 2>/dev/null | head -n 1 | grep -oE '[0-9]+\.[0-9]+$')"
+  [ "$(printf '%s\n2.35\n' "$glibc" | sort -V | head -n 1)" = 2.35 ] || { echo "glibc ${glibc:-unknown} < 2.35"; return 1; }
+
+  ub=https://archive.ubuntu.com/ubuntu
+  sec=https://security.ubuntu.com/ubuntu
+  a="$DEPS/apt"
+  rm -rf "$DEPS"
+  mkdir -p "$a/lists/partial" "$a/archives/partial" "$a/cache" "$a/sources.list.d" "$a/preferences.d" "$a/keyring" "$DEPS/root" "$DEPS/fontcache"
+  cap="$(left 20)"; [ "$cap" != 0 ] || { echo "budget exhausted before the ubuntu-keyring download"; return 1; }
+  kdeb="$(timeout "$cap" curl -fsS --max-time "$cap" "$ub/pool/main/u/ubuntu-keyring/" 2>/dev/null | grep -oE 'ubuntu-keyring_[0-9.]+_all\.deb' | sort -uV | tail -n 1)"
+  kdeb="${kdeb:-ubuntu-keyring_2023.11.28.1_all.deb}"
+  cap="$(left 30)"; [ "$cap" != 0 ] || { echo "budget exhausted before the ubuntu-keyring download"; return 1; }
+  timeout "$cap" curl -fsSL --retry 2 --max-time "$cap" -o "$a/$kdeb" "$ub/pool/main/u/ubuntu-keyring/$kdeb" 2>"$T/deps.log" \
+    || { echo "ubuntu-keyring download failed ($(tail -n 1 "$T/deps.log"))"; return 1; }
+  dpkg-deb -x "$a/$kdeb" "$a/keyring" || { echo "could not unpack $kdeb"; return 1; }
+  key="$a/keyring/usr/share/keyrings/ubuntu-archive-keyring.gpg"
+  printf 'deb [arch=amd64 signed-by=%s] %s %s main universe\n' \
+    "$key" "$ub" jammy "$key" "$ub" jammy-updates "$key" "$sec" jammy-security > "$a/sources.list"
+  apt=(apt-get -q -o Dir::Etc::sourcelist="$a/sources.list" -o Dir::Etc::sourceparts="$a/sources.list.d"
+    -o Dir::Etc::preferencesparts="$a/preferences.d" -o Dir::State::Lists="$a/lists"
+    -o Dir::Cache="$a/cache" -o Dir::Cache::Archives="$a/archives"
+    -o APT::Get::List-Cleanup=0 -o Acquire::Languages=none -o Acquire::Retries=3)
+  # Playwright nativeDeps["ubuntu22.04-x64"].chromium, plus its fonts (no xvfb: headless only).
+  pkgs=(libasound2 libatk-bridge2.0-0 libatk1.0-0 libatspi2.0-0 libcairo2 libcups2 libdbus-1-3 libdrm2
+    libgbm1 libglib2.0-0 libnspr4 libnss3 libpango-1.0-0 libwayland-client0 libx11-6 libxcb1
+    libxcomposite1 libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2
+    libfontconfig1 libfreetype6 fonts-liberation fonts-noto-color-emoji fonts-unifont
+    fonts-ipafont-gothic fonts-wqy-zenhei fonts-tlwg-loma-otf fonts-freefont-ttf)
+  cap="$(left 120)"; [ "$cap" != 0 ] || { echo "budget exhausted before apt-get update"; return 1; }
+  timeout "$cap" "${apt[@]}" update >"$T/deps.log" 2>&1 \
+    || { echo "apt-get update against archive.ubuntu.com failed ($(grep -m1 -E '^(E|W):' "$T/deps.log" || tail -n 1 "$T/deps.log"))"; return 1; }
+  cap="$(left 180)"; [ "$cap" != 0 ] || { echo "budget exhausted before the library download"; return 1; }
+  timeout "$cap" "${apt[@]}" install -y --download-only --no-install-recommends "${pkgs[@]}" >>"$T/deps.log" 2>&1 \
+    || { echo "library download from archive.ubuntu.com failed ($(grep -m1 -E '^(E|W):' "$T/deps.log" || tail -n 1 "$T/deps.log"))"; return 1; }
+  n=0
+  for deb in "$a"/archives/*.deb; do
+    case "$(basename "$deb")" in
+      libc6_*|libc-bin_*|libgcc-s1_*|libstdc++6_*|gcc-12-base_*|libcrypt1_*|libselinux1_*) continue ;;
+    esac
+    dpkg-deb -x "$deb" "$DEPS/root" && n=$((n + 1))
+  done
+  rm -rf "$a/archives" "$a/cache" "$a/lists"
+  cat > "$DEPS/fonts.conf" <<EOF
+<?xml version="1.0"?>
+<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
+<fontconfig>
+  <dir>$DEPS/root/usr/share/fonts</dir>
+  <dir>/usr/share/fonts</dir>
+  <cachedir>$DEPS/fontcache</cachedir>
+  <include ignore_missing="yes">$DEPS/root/etc/fonts/conf.d</include>
+</fontconfig>
+EOF
+  missing="$(missing_libs "$bin" "$DEPS_LIBS")"
+  [ -z "$missing" ] || { echo "still missing after unpacking $n packages: $missing"; return 1; }
+  echo "ubuntu 22.04 libraries ($n packages) in $DEPS"
+  return 0
 }
 
 # cft_fallback CAP — Chrome-for-Testing rung (Linux x86_64 only). Reads the
@@ -143,6 +279,16 @@ if [ "$WITH_PLAYWRIGHT" = 1 ]; then
   rm -rf "$PW" && mkdir -p "$PW/browsers"
   export PLAYWRIGHT_BROWSERS_PATH="$PW/browsers"
 
+  # Measure the host as it is: drop rung-5 paths an earlier run's env.sh put
+  # on LD_LIBRARY_PATH (the on-demand block sources env.sh before calling
+  # this), so a run whose smoke test only passes because of them still
+  # records them. Rung 5 adds them back, reusing DEPS, when they are needed.
+  if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+    LD_LIBRARY_PATH="$(printf '%s' "$LD_LIBRARY_PATH" | tr ':' '\n' | grep -v -F "$DEPS/root/" | paste -sd: -)"
+    if [ -n "$LD_LIBRARY_PATH" ]; then export LD_LIBRARY_PATH; else unset LD_LIBRARY_PATH; fi
+  fi
+  [ "${FONTCONFIG_FILE:-}" = "$DEPS/fonts.conf" ] && unset FONTCONFIG_FILE
+
   # Rung 1: npm install playwright + @playwright/test.
   cap="$(left 300)"
   if [ "$cap" = 0 ]; then
@@ -155,18 +301,31 @@ if [ "$WITH_PLAYWRIGHT" = 1 ]; then
   fi
 
   if [ "$NPM_OK" = 1 ]; then
-    # Rung 2: the CDN, unless SKIP_CDN=1 (a testing knob that forces rung 3).
-    # --with-deps only with root + apt-get — without root it burns budget and
-    # still fails.
+    # Rung 2a: system libraries from the host's own apt mirror — only with
+    # root and apt-get, and only when the probe reaches the mirror; without
+    # either, install-deps burns budget and still fails. Rung 5 covers a
+    # host where this does not run or does not finish.
+    if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; then
+      cap="$(left 60)"
+      if [ "$cap" != 0 ] && apt_reachable "$cap"; then
+        cap="$(left 300)"
+        [ "$cap" != 0 ] && timeout "$cap" "$PW/node_modules/.bin/playwright" install-deps chromium >"$T/deps-apt.log" 2>&1
+      fi
+    fi
+
+    # Rung 2b: the browser from the Playwright CDN, unless SKIP_CDN=1 or the
+    # probe cannot reach it (it is off Agent0's trusted-hosts allowlist, where
+    # a blocked download stalls for minutes before failing).
     if [ "$SKIP_CDN" != 1 ]; then
-      if [ "$(id -u)" = 0 ] && command -v apt-get >/dev/null 2>&1; then
-        cap="$(left 300)"
-        [ "$cap" != 0 ] && timeout "$cap" "$PW/node_modules/.bin/playwright" install --with-deps chromium >"$T/pw.log" 2>&1 && BROWSER_OK=1
+      cap="$(left 8)"
+      if [ "$cap" = 0 ] || [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time "$cap" https://cdn.playwright.dev/ 2>/dev/null)" = 000 ]; then
+        SKIP_CDN=1
+        REASON="Playwright CDN unreachable"
       fi
-      if [ "$BROWSER_OK" = 0 ]; then
-        cap="$(left 300)"
-        [ "$cap" != 0 ] && timeout "$cap" "$PW/node_modules/.bin/playwright" install chromium >"$T/pw.log" 2>&1 && BROWSER_OK=1
-      fi
+    fi
+    if [ "$SKIP_CDN" != 1 ]; then
+      cap="$(left 300)"
+      [ "$cap" != 0 ] && timeout "$cap" "$PW/node_modules/.bin/playwright" install chromium >"$T/pw.log" 2>&1 && BROWSER_OK=1
       if [ "$BROWSER_OK" = 1 ]; then
         HOW="cdn"
       else
@@ -174,7 +333,7 @@ if [ "$WITH_PLAYWRIGHT" = 1 ]; then
       fi
     fi
 
-    # Rung 3: Chrome-for-Testing fallback, when the CDN rungs were skipped or
+    # Rung 3: Chrome-for-Testing fallback, when the CDN rung was skipped or
     # failed.
     if [ "$BROWSER_OK" = 0 ]; then
       cap="$(left 120)"
@@ -197,12 +356,33 @@ if [ "$WITH_PLAYWRIGHT" = 1 ]; then
       cap="$(left 60)"
       if [ "$cap" = 0 ]; then
         REASON="on-demand budget exhausted at smoke test"
-      elif ( cd "$PW" && timeout "$cap" node -e "require('playwright').chromium.launch().then(b => b.close())" ) >"$T/smoke.log" 2>&1; then
+      elif err="$(smoke "$cap")"; then
         STATUS="ok"
-        REASON="$("$PW/node_modules/.bin/playwright" --version 2>/dev/null) ($HOW)"
       else
-        REASON="headless launch failed (missing system libraries?): $(tail -n 1 "$T/smoke.log" 2>/dev/null)"
+        REASON="headless launch failed: $err"
+        # Rung 5: missing shared libraries → Ubuntu 22.04's, unpacked into DEPS.
+        bin="$(headless_shell)"
+        if [ "$WITH_UBUNTU_DEPS" = 1 ] && [ -n "$bin" ] && [ -n "$(missing_libs "$bin")" ]; then
+          deps_out="$(ubuntu_deps 2>&1)"
+          if [ $? = 0 ]; then
+            export LD_LIBRARY_PATH="$DEPS_LIBS${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+            export FONTCONFIG_FILE="$DEPS/fonts.conf"
+            cap="$(left 60)"
+            if [ "$cap" = 0 ]; then
+              REASON="on-demand budget exhausted at smoke test (after $deps_out)"
+            elif err="$(smoke "$cap")"; then
+              STATUS="ok"
+              DEPS_OK=1
+              HOW="$HOW; $deps_out"
+            else
+              REASON="headless launch failed with $deps_out: $err"
+            fi
+          else
+            REASON="headless launch failed: $err; ubuntu libraries: $deps_out"
+          fi
+        fi
       fi
+      [ "$STATUS" = ok ] && REASON="$("$PW/node_modules/.bin/playwright" --version 2>/dev/null) ($HOW)"
     fi
   fi
 
