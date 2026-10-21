@@ -689,6 +689,40 @@ const renderReport = (payload) => {
   s.check("G19c the renderer drops the blocking clause at zero", noBlocking.ok
     && /^### ⚪ 1 non-blocking finding$/m.test(noBlocking.out) && !/0 blocking/.test(noBlocking.out), noBlocking.err);
 
+  // Decide rows, fix lines, and the impact image: the new FINDINGS fields and the picture above them.
+  const q3 = "produced 3 → posted inline 3 · cleared 3 · carried forward 0 · deferred 0 · below-bar 0";
+  const q1 = "produced 3 → posted inline 1 · cleared 1 · carried forward 0 · deferred 0 · below-bar 0";
+  const withDecide = render((c) => {
+    c.QUALITY = q3;
+    c.FINDINGS = [
+      { title: "A quieter one", path: "c.ts", line: 3, tier: "low" },
+      { title: "Pick a cache owner", path: "b.ts", line: 2, tier: "medium", decide: true },
+      { title: "A blocking finding", path: "a.ts", line: 1, tier: "high", blocking: true },
+    ];
+  });
+  const rowOrder = withDecide.ok ? [...withDecide.out.matchAll(/^\| \S+&nbsp;\*\*(\d)\*\* \| \*\*([^*]+)\*\*/gm)].map((m) => `${m[1]}:${m[2]}`) : [];
+  s.check("G19d a decide row renders **Decide: <title>** between blocking and the rest", withDecide.ok
+    && rowOrder.join(" / ") === "1:A blocking finding / 2:Decide: Pick a cache owner / 3:A quieter one",
+    withDecide.err || rowOrder.join(" / "));
+  s.check("G19d the headline counts a decide row as `1 to decide`", withDecide.ok
+    && /^### 🟠 1 blocking · 1 to decide · 1 non-blocking$/m.test(withDecide.out), withDecide.err);
+  const withFix = render((c) => {
+    c.QUALITY = q1;
+    c.FINDINGS = [{ title: "A quieter one", path: "a.ts", line: 1, tier: "low", fix: "guard the `null` return" }];
+  });
+  s.check("G19e a valid fix renders as a <sub> Fix line under the title", withFix.ok
+    && /\*\*A quieter one\*\*<br><sub>Fix: guard the `null` return<\/sub>/.test(withFix.out), withFix.err);
+  const IMG = "https://github.com/user-attachments/assets/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b";
+  const withImage = render((c) => {
+    c.QUALITY = q1;
+    c.FINDINGS = [{ title: "A quieter one", path: "a.ts", line: 1, tier: "low" }];
+    c.IMPACT_IMAGE = { light: IMG, dark: IMG, alt: "What changes on merge. 1: A quieter one." };
+  });
+  const pic = withImage.ok ? withImage.out.indexOf("<picture>") : -1;
+  const table = withImage.ok ? withImage.out.indexOf("| | Finding | Where |") : -1;
+  s.check("G19f a valid IMPACT_IMAGE renders a <picture> above the findings table", withImage.ok
+    && pic >= 0 && table > pic, withImage.err || `picture at ${pic}, table at ${table}`);
+
   // Fail-closed: each of these shipped as a real posted report; reject with nothing on stdout.
   const rejects = [
     ["a missing required slot", mutate((c) => { delete c.SUMMARY; })],
@@ -760,6 +794,24 @@ const renderReport = (payload) => {
       c.FINDINGS = [{ title: "The registry is never wired up.", path: "a.ts", line: 1, tier: "low" }];
     })],
     ["a claim prefix in NOTES", mutate((c) => { c.NOTES = [{ path: "n.ts", line: 3, prefix: "issue", body: "A short note.", confidence: 91 }]; })],
+    ["a finding that is both blocking and decide", mutate((c) => {
+      c.QUALITY = q1;
+      c.FINDINGS = [{ title: "Pick a cache owner", path: "a.ts", line: 1, tier: "high", blocking: true, decide: true }];
+    })],
+    ["a fix over 140 chars", mutate((c) => {
+      c.QUALITY = q1;
+      c.FINDINGS = [{ title: "A quieter one", path: "a.ts", line: 1, tier: "low", fix: "x".repeat(141) }];
+    })],
+    ["an IMPACT_IMAGE url that is not a user-attachments asset", mutate((c) => {
+      c.QUALITY = q1;
+      c.FINDINGS = [{ title: "A quieter one", path: "a.ts", line: 1, tier: "low" }];
+      c.IMPACT_IMAGE = { light: "https://example.com/a.png", dark: IMG, alt: "What changes on merge" };
+    })],
+    ["an IMPACT_IMAGE alt carrying a double quote", mutate((c) => {
+      c.QUALITY = q1;
+      c.FINDINGS = [{ title: "A quieter one", path: "a.ts", line: 1, tier: "low" }];
+      c.IMPACT_IMAGE = { light: IMG, dark: IMG, alt: 'What "changes" on merge' };
+    })],
   ];
   // Only these two may fail on the unknown-key check; any other case failing there has lost its own guard.
   const UNKNOWN_KEY_CASES = new Set(["an unknown key (typo'd slot)", "a v1 payload (FOOTER_LINE / MEMORIES / counts)"]);
