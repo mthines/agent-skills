@@ -388,11 +388,12 @@ const renderReport = (payload) => {
     s.check(`G85e ui-verify's on-demand install fetches ${u}, which exists`, existsSync(join(REPO_ROOT, u)));
   }
 
-  // agent0-playwright.sh rewrites env.sh; a duplicated or dropped export breaks the next run's browser lookup.
+  // agent0-playwright.sh rewrites env.sh; a duplicated or dropped export breaks the next run's browser lookup,
+  // and a library line left from an earlier run points every tool sourcing env.sh at libraries the new run did not check.
   {
     const d = mkdtempSync(join(tmpdir(), "l1-pw-env-"));
     const envFile = join(d, "env.sh");
-    writeFileSync(envFile, "export AGENT_SKILLS_ROOT=/x\nexport UI_VERIFY_BROWSER=ok\nexport PLAYWRIGHT_BROWSERS_PATH=/old\n");
+    writeFileSync(envFile, "export AGENT_SKILLS_ROOT=/x\nexport UI_VERIFY_BROWSER=ok\nexport PLAYWRIGHT_BROWSERS_PATH=/old\nexport LD_LIBRARY_PATH=/stale\nexport FONTCONFIG_FILE=/stale/fonts.conf\n");
     let allOk = true;
     for (let i = 0; i < 2; i++) {
       const r = spawnSync("bash", [join(REPO_ROOT, "scripts/agent0-playwright.sh")], {
@@ -407,10 +408,11 @@ const renderReport = (payload) => {
     const fourOnce = ["UI_VERIFY_BROWSER", "UI_VERIFY_BROWSER_REASON", "UI_VERIFY_PLAYWRIGHT_NODE_MODULES", "PLAYWRIGHT_BROWSERS_PATH"]
       .every((v) => once(new RegExp(`^export ${v}=`, "gm")));
     const skippedValue = once(/^export UI_VERIFY_BROWSER=skipped$/gm);
+    const staleLibsDropped = !/^export (LD_LIBRARY_PATH|FONTCONFIG_FILE)=/m.test(out);
     rmSync(d, { recursive: true, force: true });
-    s.check("G59g agent0-playwright.sh WITH_PLAYWRIGHT=0 rewrites the four export lines idempotently, keeping every other line (executed)",
-      allOk && keepsOtherLines && fourOnce && skippedValue,
-      `exit-ok=${allOk} keeps-other-lines=${keepsOtherLines} four-lines-once=${fourOnce} skipped-value=${skippedValue}`);
+    s.check("G59g agent0-playwright.sh WITH_PLAYWRIGHT=0 rewrites the four export lines idempotently, drops stale library lines, keeping every other line (executed)",
+      allOk && keepsOtherLines && fourOnce && skippedValue && staleLibsDropped,
+      `exit-ok=${allOk} keeps-other-lines=${keepsOtherLines} four-lines-once=${fourOnce} skipped-value=${skippedValue} stale-libs-dropped=${staleLibsDropped}`);
   }
 
   // The reviewer installer's env.sh block, executed: it must write the run's paths and never the OTLP token.
