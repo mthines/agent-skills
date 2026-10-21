@@ -656,15 +656,22 @@ nothing here for a run to remember, get wrong, or be guarded against. `F-report-
 and `F-report-accordion-expanded` are now render-time errors rather than review-time findings.
 
 The visible surface of a report is therefore whatever the template leaves outside the accordion:
-the marker, an optional partial-review banner, the headline, the `**Checked:**` and `**Progress:**`
-lines, and the collapsed `<summary>` lines of the optional `<details>` blocks — `What this change
-reaches` first. A harness-appended attribution footer may also appear; it is not
-authored here and must not be suppressed or reproduced.
+the marker, an optional partial-review banner, the `### <glyph> <K> blocking · <D> to decide · <M>
+non-blocking` headline (a zero part is left out), the summary sentence, the reasons line, the
+advisory note, the `**Progress:**` line, the optional impact `<picture>`, the numbered
+`| | Finding | Where |` findings table, the Fix-all button, and the collapsed `<summary>` lines of
+the optional `<details>` blocks.
+Coverage and reach are rows of the `| Run | Details |` table inside `Review details` (`Checked`,
+`Reach`), never a top-level line.
+A harness-appended attribution footer may also appear; it is not authored here and must not be
+suppressed or reproduced.
 
 Rules for table cells:
 - Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
-- The table is always three columns — `| Gate | Status | Details |` — on the PASS (all-clear),
-  WARN, and FAIL bodies alike.
+- The gate table is always three columns — `| Gate | | Details |`, the status glyph in the
+  unlabelled centre column — on the PASS (all-clear), WARN, and FAIL bodies alike.
+- The Run table is always two columns — `| Run | Details |` — one labelled row per run fact (see
+  *The Run table*).
 - Details column: plain text only, max 120 chars per cell.
 - When a gate PASSES (✅), its Details cell shows the short static description of what the gate
   checks, verbatim from the table below.
@@ -706,11 +713,11 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
 | Self-review signals | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review | The multi-lens review found no blocking issues. |
 
-- Headline finding-count substitution: `N` = total surfaced findings = `F` (posted inline) +
-  `DEF` (deferred); `K` = blocking count = inline findings decorated `(blocking)` per
-  `conventional-comments.md` (Step 2.9) — NOT the `issue:` prefix count, since a non-blocking
-  `issue:` is not blocking (see *Gate states*).
-  These reuse the Quality-line values already computed at Step 2.9b — no separate counter.
+- Headline counts: the renderer derives them from the payload, so never compute them by hand.
+  `K` = `FINDINGS` rows with `blocking: true`; `D` = rows with `decide: true`; `M` = the remaining
+  `FINDINGS` rows plus `ADDITIONAL_FINDINGS`.
+  Blocking means decorated `(blocking)` per `conventional-comments.md` (Step 2.9) — NOT the
+  `issue:` prefix count, since a non-blocking `issue:` is not blocking (see *Gate states*).
 - `WARN_GATE_COUNT` = the number of gates showing ⚠️ in this run — Description vs. code,
   Prior review feedback, and/or Code review, so 0 to 3. CI is deliberately excluded from this set:
   it is informational-in-`Run`, not a graded gate, so a CI-only red or pending check with all other
@@ -719,21 +726,20 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   WARN run, so the Step 3 terminal FAIL verdict's `SEVERITY_TALLY` can report warnings alongside
   errors. (`SEVERITY_TALLY` is a **terminal-only** term now — see
   [`terminal-report.md`](./terminal-report.md); the posted headline counts findings.)
-  The top-level WARN headline leads with `WARN_GATE_COUNT`, not the finding count `N`, so it reads
-  correctly even when there are zero inline findings (a Description-vs-code-only warning).
-  `WARN_GATE_COUNT` does not appear in the accordion gate table, which renders per-gate ✅/⚠️ marks
-  rather than a count; its rendered uses are the Step 3 terminal WARN/FAIL verdict lines and the
-  Step 3 terminal WARN/FAIL verdict lines. It no longer reaches the posted headline, which counts
-  findings and names gate state in its reasons line instead.
-- Never add rows, sections, or prose outside the template above (except the `<details>`
-  blocks — `What this change reaches`, `Review details`, `Optimality review`, `Additional findings`,
-  and `Low-confidence findings` — the three group headings, the `MEMORIES_SECTION` and
-  `OPEN_THREADS_LIST` slots and the `Nothing to report` footnote inside `Review details`, the
-  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`, `COVERAGE_LINE`,
-  `PROGRESS_LINE`, `FINDINGS_INDEX` and `FOOTER_SUP` lines — all of which are slots in the
-  template, not added prose).
+  `WARN_GATE_COUNT` does not appear in the posted body: the gate table renders per-gate ✅/⚠️
+  marks rather than a count, and the headline counts findings and names gate state in its reasons
+  line.
+  Its only rendered use is the Step 3 terminal WARN/FAIL verdict line.
+- Never add rows, sections, or prose outside the template
+  ([`templates/report-body.md`](../templates/report-body.md)).
+  Its `<details>` blocks (`Review details`, the additional findings, `Notes`, `Less certain`, and
+  `Is there a better approach?`), the open-thread list, the withheld list, the Run table, the
+  `Memories used` list, and the `Nothing to report` footnote inside `Review details`, the
+  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`, `PROGRESS_LINE`,
+  `IMPACT_IMAGE`, `FINDINGS_INDEX`, `FIX_ALL_BUTTON`, and `FOOTER_SUP` slots are all template
+  slots, not added prose.
   Besides the headline region (headline, `SUMMARY`, reasons, advisory note), the banner, the
-  `**Checked:**` and `**Progress:**` lines, the findings index, and the footer — all
+  `**Progress:**` line, the impact image, the findings table, and the footer — all
   renderer-derived or renderer-validated, never hand-composed — **no** prose of the agent's own
   is permitted at the top level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
