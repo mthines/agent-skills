@@ -197,9 +197,9 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 - aw-verify report: <posted <comment URL> | not posted — <aw-verify's reason> | n/a (aw-verify did not run: <no UI diff | not configured>)>
 ```
 
-The `aw-verify report` line is conditional, not a required pass: `n/a` is admissible only when `aw-verify` did not run before the PR; when it ran, the report is required.
+The `aw-verify report` line is conditional, not a required pass, so its own three values are admissible: `posted`, `not posted — <aw-verify's reason>`, and `n/a` only when `aw-verify` did not run before the PR.
 
-If any line above would be blank, or would carry a reason outside the admissible four, the pass was skipped in error: run it, then re-emit the receipt.
+If any other line above would be blank, or would carry a reason outside the admissible four, the pass was skipped in error: run it, then re-emit the receipt.
 
 | Property                  | Value                                                                  |
 | ------------------------- | ---------------------------------------------------------------------- |
