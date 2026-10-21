@@ -41,7 +41,7 @@
       "items": { "type": "string", "minLength": 1 }
     },
     "impact_trace": {
-      "description": "The consumer-impact and dependency trace: per changed export (and per dependency, symbol = package name, path = its manifest), the consumer FILES read and found to hold. finalize.mjs builds the report's `What this change reaches` section from it and impact.json; a file not listed renders as not checked.",
+      "description": "The consumer-impact and dependency trace: per changed export (and per dependency, symbol = package name, path = its manifest), the consumer FILES read and found to hold. finalize.mjs builds the report's Reach, Dependencies, and Overlapping PRs rows from it and impact.json; a file not listed counts as not checked.",
       "type": "array",
       "items": { "$ref": "#/$defs/impact_trace_entry" }
     }
@@ -176,6 +176,10 @@
         "prefix": { "$ref": "#/$defs/prefix" },
         "blocking": {
           "description": "Whether this finding is (blocking) per conventional-comments.md / severity's crosswalk.",
+          "type": "boolean"
+        },
+        "decide": {
+          "description": "A trade-off the author must choose between two acceptable options, rendered `Decide: <title>` and counted `to decide` in the report headline. Never true together with blocking.",
           "type": "boolean"
         },
         "title": {

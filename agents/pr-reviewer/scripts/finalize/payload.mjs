@@ -17,9 +17,11 @@
  */
 
 import { buildFingerprint } from "../fingerprint.mjs";
-import { realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { CLAIM_PREFIXES } from "./thresholds.mjs";
-import { TERMINAL_PUNCT_RE } from "../comment-spine.mjs";
+import { TERMINAL_PUNCT_RE, assertPlain } from "../comment-spine.mjs";
 import { BLOCKING_DECORATION_RE } from "./gates.mjs";
 
 const GATE_FIELD = { g1: "GATE_DESCRIPTION", g3: "GATE_PRIOR", g4: "GATE_SELFREVIEW", g5: "GATE_DOCS", g6: "GATE_CODEREVIEW" };
@@ -55,8 +57,11 @@ export function buildQualitySummary(counters) {
   return suppressed > 0 ? `${line} · memory suppressions ${suppressed}` : line;
 }
 
+/** render-report.mjs's FIX_MAX: the longest remedy that renders under a findings row's title. */
+const FIX_LINE_MAX = 140;
+
 /**
- * A candidate → render-report.mjs `FINDINGS[]` row: title/path/line/url/tier/blocking.
+ * A candidate → render-report.mjs `FINDINGS[]` row: title/path/line/url/tier/blocking/decide/fix.
  * @param {any} c
  */
 export function toFindingBullet(c) {
@@ -64,7 +69,28 @@ export function toFindingBullet(c) {
   const out = { title: c.title, path: c.path, line: c.line, tier: c.severity };
   if (c.url) out.url = c.url;
   if (c.blocking === true) out.blocking = true;
+  if (c.decide === true) out.decide = true;
+  // The report shows the remedy as one line under the title; a multi-line, long, or non-plain fix
+  // stays in the inline comment only.
+  if (typeof c.fix === "string" && c.fix.trim() !== "" && c.fix.trim().length <= FIX_LINE_MAX && isPlainFix(c.fix.trim())) {
+    out.fix = c.fix.trim();
+  }
   return out;
+}
+
+/**
+ * Whether a fix passes the exact check render-report.mjs applies to `FINDINGS[].fix`
+ * (`assertPlain(…, { allowCode: true })`), so a code-shaped remedy such as `handlers[kind](payload)`
+ * is dropped here instead of aborting the whole render.
+ * @param {string} fix
+ */
+function isPlainFix(fix) {
+  try {
+    assertPlain("fix", fix, { allowCode: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -231,7 +257,7 @@ export function toInlineCommentPayload(c, { sha }) {
 const RENDER_EXTRAS = [
   "RUN_NOTE", "RUN_ANOMALY", "CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "FIX_ALL_URL",
   "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED", "IMPACT", "WITHHELD", "OPTIMALITY_CARDS",
-  "COVERAGE",
+  "COVERAGE", "IMPACT_IMAGE",
 ];
 
 /**
@@ -369,6 +395,11 @@ async function selfTest() {
     });
     check("SKIPPED_FILES passes through verbatim when the run supplies one", withSkipped.SKIPPED_FILES === "a.ts (binary), b.png (binary)");
   }
+  {
+    const image = { light: "https://github.com/user-attachments/assets/a", dark: "https://github.com/user-attachments/assets/b", alt: "x" };
+    const withImage = buildReportPayload({ gates, run, findings: [], deferred: [], lowConfidence: [], quality, extras: { IMPACT_IMAGE: image } });
+    check("IMPACT_IMAGE passes through from context.render", withImage.IMPACT_IMAGE === image);
+  }
 
   {
     const withSuppressions = buildQualitySummary({ produced: 9, confidenceDeferred: 1, suppressed: 1, cleared: 4, deferredOverCap: 0, posted: 4 });
@@ -380,6 +411,17 @@ async function selfTest() {
     check("toFindingBullet maps severity→tier and keeps blocking/url", finding.tier === "high" && finding.blocking === true && finding.url === "https://x");
     const noUrl = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "low" });
     check("toFindingBullet omits url/blocking when absent", noUrl.url === undefined && noUrl.blocking === undefined);
+    const decided = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "medium", decide: true, fix: "Pick one" });
+    check("toFindingBullet keeps decide and a one-line fix", decided.decide === true && decided.fix === "Pick one");
+    const longFix = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "low", fix: "```ts\nx\n```" });
+    check("toFindingBullet drops a multi-line fix", longFix.fix === undefined);
+    const linkShaped = toFindingBullet({ title: "T", path: "a.ts", line: 1, severity: "low", fix: "call handlers[kind](payload) instead" });
+    check("toFindingBullet drops a fix the renderer's assertPlain rejects as a markdown link", linkShaped.fix === undefined && linkShaped.title === "T");
+    const fixture = JSON.parse(readFileSync(new URL("../../../../scripts/eval/fixtures/report-body/fail.json", import.meta.url), "utf8"));
+    const row = toFindingBullet({ ...fixture.FINDINGS[1], severity: fixture.FINDINGS[1].tier, fix: "call handlers[kind](payload) instead" });
+    fixture.FINDINGS[1] = row;
+    const rendered = spawnSync(process.execPath, [fileURLToPath(new URL("../render-report.mjs", import.meta.url))], { input: JSON.stringify(fixture), encoding: "utf8" });
+    check("a finding whose link-shaped fix was dropped still renders its row", rendered.status === 0 && rendered.stdout.includes(row.title), rendered.stderr.trim());
   }
   {
     const adv = toAdvisoryFinding({ path: "a.ts", line: 1, prefix: "nitpick", body: "b", final: 61.6 });
@@ -506,7 +548,6 @@ async function selfTest() {
   console.log("\n✓ payload self-test: all checks passed");
 }
 
-import { pathToFileURL } from "node:url";
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href;
 if (isMain && process.argv.includes("--self-test")) {
   selfTest();

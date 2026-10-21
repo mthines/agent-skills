@@ -1,7 +1,7 @@
 // @ts-check
 /**
  * finalize/reach.mjs — builds the report's COVERAGE and IMPACT slots from what the run already
- * recorded, so the `**Checked:**` line and the `What this change reaches` section render on every
+ * recorded, so the Checked row and the Reach, Dependencies, and Overlapping PRs rows render on every
  * run without a hand-assembled payload. Pure. No I/O, clock, or env (D18): finalize.mjs's main()
  * loads impact.json; finalizeReview() calls these.
  *
@@ -55,7 +55,7 @@ function skippedSet(raw) {
 }
 
 /**
- * The `**Checked:**` line's file counts. PARTIAL_REVIEW wins when present, because the renderer
+ * The Checked row's file counts. PARTIAL_REVIEW wins when present, because the renderer
  * rejects a COVERAGE that disagrees with the partial-review banner, and the banner is the record of
  * a truncated walk.
  * Files triage skipped on purpose (SKIPPED_FILES) leave the denominator and are counted

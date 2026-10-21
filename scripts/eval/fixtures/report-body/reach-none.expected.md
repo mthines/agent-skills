@@ -3,29 +3,26 @@
 
 Renames the internal event-queue buffer and its comments.
 
-**Checked:** 3 possible issues → 0 confirmed → 0 posted
-
 <details>
 <summary>Review details</summary>
+<br>
 
-| Gate | Status | Details |
-|---|---|---|
+| Gate | | Details |
+|---|:-:|---|
 | Description vs. code | ✅ | The description matches what the diff does. |
 | Prior review feedback | ✅ | Earlier review comments are resolved. |
 | Documentation | ✅ | The change is documented well enough to follow. |
 | Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
 | Code review | ✅ | The multi-lens review found no blocking issues. |
 
-**Found**
+| Run | Details |
+|---|---|
+| Mode | full · 12 lines in delta · tier deep · depth checkout |
+| Checked | 3 possible issues → 0 confirmed → 0 posted |
+| Found | produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0 |
+| Memories | 53 indexed · 0 used |
 
-Quality — produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0
-
-**Run**
-
-full · 12 lines in delta · tier deep · depth checkout
-Memories — 53 indexed · 0 used
-
-<sup>Nothing to report — standards (2 docs), optimality (2 judged), measurability (3 paths classified), integrations (not activated), severity, reach diagram (impact graph found no consumer or importer), 0 files skipped.</sup>
+<sup>Nothing to report — standards (2 docs), optimality (2 judged), measurability (3 paths classified), integrations (not activated), severity, reach (impact graph found no consumer or importer), 0 files skipped.</sup>
 
 </details>
 

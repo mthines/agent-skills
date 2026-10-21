@@ -142,7 +142,7 @@ export function hydrateFilePatches(context) {
 }
 
 /**
- * The report's `What this change reaches` section is built from impact.json (finalize/reach.mjs),
+ * The report's Reach, Dependencies, and Overlapping PRs rows are built from impact.json (finalize/reach.mjs),
  * which prepare-review.mjs parks in a sidecar unless --inline-payloads was passed. Same I/O
  * boundary and the same degrade-don't-throw rule as hydrateFilePatches above.
  * @param {any} context @returns {any}
@@ -311,9 +311,9 @@ function ciNameList(names) {
 }
 
 /**
- * CI_NOTE — Gate 2's substance, rendered as the report's `CI — …` line in `Run`: the red checks and
+ * CI_NOTE — Gate 2's substance, rendered as the report's `CI` row in the Run table: the red checks and
  * the still-pending checks by name, read from the `gh pr checks` table prepare-review.mjs fetched.
- * Pure (D18). Returns null, so no CI line renders, when:
+ * Pure (D18). Returns null, so no CI row renders, when:
  *   - every check passed or was skipped — CI_NOTE says which checks are red or pending;
  *   - the table was unreadable — prepare-review.mjs already names that in `anomalies[]`, which
  *     reaches RUN_ANOMALY;
@@ -868,7 +868,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     ...(judgments?.lenses?.optimality_cards?.length
       ? { OPTIMALITY_CARDS: judgments.lenses.optimality_cards.map((/** @type {any} */ c) => buildOptimalityCard(c)) }
       : {}),
-    // The `**Checked:**` line and the `What this change reaches` section, built from what the run
+    // The Checked row and the Reach, Dependencies, and Overlapping PRs rows, built from what the run
     // recorded (finalize/reach.mjs). A caller-supplied context.render value always wins.
     ...(context?.render?.COVERAGE === undefined && autoCoverage ? { COVERAGE: autoCoverage } : {}),
     // An impact graph that reached nothing still sends `{}`, so the renderer can say why there is no
@@ -1522,7 +1522,7 @@ async function selfTest() {
       check("finalize reports this run's worklist as `round` for the PR-state record",
         JSON.stringify(withHistory.round) === JSON.stringify({ open: 0, blocking: 0 }));
     }
-    // The `**Checked:**` line and the reach section build themselves from the run's own records
+    // The Checked and Reach rows build themselves from the run's own records
     // (finalize/reach.mjs); a caller-supplied context.render value still wins.
     {
       const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
@@ -1551,13 +1551,14 @@ async function selfTest() {
         const e2e = finalizeReview({ context: { ...ctx, impact: wide, budget: { finders: { dependency: true } }, render: { at: "2026-10-02T06:00:00Z" } },
           judgments: { ...j0, summary: "Makes retry throw on exhaustion." } }).payload;
         const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, e2e, "self-test-auto-reach");
-        check("an auto-built COVERAGE + IMPACT renders through render-report.mjs, diagram and all",
-          rendered.ok && rendered.stdout.includes("<summary>What this change reaches — ") && rendered.stdout.includes("```mermaid")
-            && rendered.stdout.includes("**Checked:** 2 of 3 changed files read")
-          && rendered.stdout.includes("1 open-PR overlap</summary>") && !rendered.stdout.includes("docs/x.md"), rendered.stderr.trim());
-        check("an unused transitive bump renders as the omitted-count bullet and in the summary, never as its own row",
-          rendered.ok && rendered.stdout.includes("- 1 more dependency bump — transitive, no usage sites in this repo, not listed")
-            && rendered.stdout.includes("2 dependency bumps (1 transitive, not listed) · 1 open-PR overlap</summary>")
+        check("an auto-built COVERAGE + IMPACT renders through render-report.mjs as Run rows",
+          rendered.ok && /^\| Reach \| 1 changed export · /m.test(rendered.stdout)
+            && rendered.stdout.includes("| Checked | 2 of 3 changed files read")
+            && /^\| Overlapping PRs \| `retry` is also changed on \[#212\]/m.test(rendered.stdout)
+            && !rendered.stdout.includes("docs/x.md"),
+          rendered.stderr.trim() || rendered.stdout.split("\n").filter((l) => /^\| (Reach|Checked|Overlapping PRs) \|/.test(l)).join(" / "));
+        check("an unused transitive bump renders as the omitted count in the Dependencies row, never as its own entry",
+          rendered.ok && rendered.stdout.includes("<br>1 more dependency bump — transitive, no usage sites in this repo, not listed")
             && !rendered.stdout.includes("`qs`"), rendered.stderr.trim());
       }
       {
@@ -1569,9 +1570,9 @@ async function selfTest() {
         const withModules = finalizeReview({ context: { ...ctx, impact: { modules: [{ path: "src/h.ts", importers: 2, importer_paths: ["src/a.ts", "src/b.ts"] }] },
           render: { at: "2026-10-02T06:00:00Z" } }, judgments: { ...j0, summary: "Reworks a private helper." } }).payload;
         const modRendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, withModules, "self-test-auto-modules");
-        check("an auto-built module renders a changed file and its importers in the diagram",
-          modRendered.ok && modRendered.stdout.includes("```mermaid") && modRendered.stdout.includes('m1["src/h.ts<br/>file changed"]')
-            && modRendered.stdout.includes("- `src/h.ts` — changed file · imported by 2 files, not traced"), modRendered.stderr.trim());
+        check("an auto-built module counts a changed file and its importers in the Reach row",
+          modRendered.ok && modRendered.stdout.includes("| Reach | 1 changed file imported by 2 files, not traced<br>`src/h.ts` — imported by 2 files |"),
+          modRendered.stderr.trim());
       }
       check("a caller-supplied COVERAGE / IMPACT wins over the auto-built one",
         JSON.stringify(supplied.COVERAGE) === JSON.stringify({ files_read: 1, files_total: 1 })
@@ -2142,9 +2143,9 @@ async function selfTest() {
       r.payload.CI_NOTE === "red: `typecheck`, `lint` · still pending: `e2e` · 2 passed", String(r.payload.CI_NOTE));
     check("a red CI_NOTE never moves the verdict — CI is informational-in-Run", r.verdict === "PASS");
     const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-auto-ci-note");
-    check("the computed CI_NOTE renders as the Run block's CI line",
-      rendered.ok && rendered.stdout.includes("CI — red: `typecheck`, `lint` · still pending: `e2e` · 2 passed"),
-      rendered.ok ? "no CI line in the rendered body" : rendered.stderr.trim());
+    check("the computed CI_NOTE renders as the Run table's CI row",
+      rendered.ok && rendered.stdout.includes("| CI | red: `typecheck`, `lint` · still pending: `e2e` · 2 passed |"),
+      rendered.ok ? "no CI row in the rendered body" : rendered.stderr.trim());
     const supplied = finalizeReview({ context: { ...ciContext, render: { ...ciContext.render, CI_NOTE: "hand-written" } }, judgments });
     check("a caller-supplied context.render.CI_NOTE wins over the computed one", supplied.payload.CI_NOTE === "hand-written");
     const green = finalizeReview({ context: { ...ciContext, checks: { raw: row("l1", "pass"), readable: true } }, judgments });

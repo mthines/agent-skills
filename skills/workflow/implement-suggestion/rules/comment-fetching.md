@@ -155,8 +155,8 @@ such block at all (`reviewer-report-ingest.md § There is no ledger block`).
 
 | Parsed section | Expands to | `source` | Anchor |
 | ---------------- | ------------ | ---------- | -------- |
-| `Additional findings` bullet | one entry, carrying the bullet's Conventional-Comments prefix, body text and confidence score | `report-finding` | `path` + `line` from the bullet |
-| `Notes` bullet | **nothing** — each is a one-liner that already posted inline and is fetched as an ordinary review comment; expanding it too would process the same note twice | — | — |
+| `Additional findings` row — a row of the `\| \| Finding \| Where \|` table under `<summary><N> more findings — verified, too minor to comment on</summary>` | one entry, carrying the Finding cell's Conventional-Comments prefix, body text, and the `<sub>Confidence N</sub>` score | `report-finding` | `path` + `line` from the Where cell: `` [`<file>:<line>`](<url> "<path>") `` takes the full path from the link title (the link text is only the basename); `` `<path>:<line>` `` without a url carries the full path itself |
+| `Notes` row | **nothing** — each is a one-liner that already posted inline and is fetched as an ordinary review comment; expanding it too would process the same note twice | — | — |
 | Gate row `❌` / `⚠️` | one entry per row, body = the gate's Details cell | `report-gate` | none |
 | Optimality card (legacy reports only) | one entry, body = the card captured verbatim | `report-optimality` | `path` + `line` from the card heading |
 

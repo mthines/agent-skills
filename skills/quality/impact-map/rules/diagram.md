@@ -54,3 +54,28 @@ Columns sit on a 900-wide `viewBox`; rows are 46–56 tall with ≥ 10 between t
 ```
 
 Title baseline is `y + 19`, subtitle `y + 35` for a 46-tall box (`y + 23` / `y + 40` for 56).
+
+## Badges from a pr-reviewer report
+
+With `--findings <report-body.md>`, the diagram is the picture above a `pr-reviewer` report's findings table, and its badges are that table's row numbers.
+
+1. Read the rows of the first `| | Finding | Where |` table in the file: each row is `| <glyph>&nbsp;**<n>** | **<title>** … | [`<file>:<line>`](<url> "<path>") |`.
+2. Run phases 0–2 on the PR as usual, then draw the diagram by the rules above.
+   Skip phase 3: the report's table replaces the decisions.
+3. Badge the box each finding's `<path>` belongs to with that row's `<n>`, not ①②③. Several numbers on one box sit side by side along its top edge, 22 apart. A finding with no box gets no badge.
+4. In the page legend, label the badge entry `Numbered row below` instead of `Decision above`.
+5. Build the page as phase 5 does and write it to `.agent/{branch}/impact-map/pr-<n>.html`; never publish it as an Artifact.
+6. Render the PNGs with `render-png.mjs` from that page file, open both with the Read tool, and print:
+
+```text
+light: <out-dir>/what-changes-light.png
+dark:  <out-dir>/what-changes-dark.png
+alt:   What changes on merge. 1: <title of finding 1>. 2: <title of finding 2>. …
+```
+
+The alt text is one line of plain text with no `"`, `<`, or `>`, and names every badge drawn.
+
+```text
+✅ RIGHT — badge 3 on the "Eval cases" box, because row 3's path is evals/verify-first-token-broken/scaffold.sh
+❌ WRONG — ①②③ badges numbered by impact-map's own decisions; they no longer match the table
+```

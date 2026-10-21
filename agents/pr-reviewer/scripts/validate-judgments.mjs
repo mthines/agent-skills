@@ -236,6 +236,11 @@ export function candidateDomainRules(candidates, errors) {
     if (c.verdict !== "unobtainable" && hasReason) {
       errors.push(`${path}: "unverified_reason" is only valid when verdict is "unobtainable" (got ${JSON.stringify(c.verdict)})`);
     }
+    // A blocker has one fix; a decision has two acceptable options. One finding cannot be both.
+    if (c.blocking === true && c.decide === true) {
+      errors.push(`${path}: "decide": true cannot be combined with "blocking": true — a blocker has one fix,`
+        + " a decision has two acceptable options");
+    }
     // A/B iteration 4: the severity rule's crosswalk (`agents/shared/rules/severity.md § Mapping
     // to a reviewer's blocking flag`) makes the tier the source of `(blocking)` — critical/high
     // block, medium/low never do — and says "do not encode a second, divergent blocking rule".
