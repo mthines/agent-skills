@@ -118,7 +118,7 @@ Follow the **Implementation Order** section verbatim when the plan has one; othe
 4. Integration / glue code
 5. Configuration updates
 
-If `plan.md` is missing (Lite Mode), use the default order and the files named in the in-conversation brief.
+On Lite Mode, and on Micro (no `plan.md`), use the default order and the files the brief names.
 
 ### Step 2: One Change at a Time
 

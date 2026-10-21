@@ -73,7 +73,7 @@ registry, trigger conditions, and disable instructions live in
 [`companion-skills.md`](./companion-skills.md). **No companion blocks the
 workflow, and every one is reported** (`ran` or `skipped (<reason>)`). The only
 non-removable companion is `confidence` at Phase 1 (the Full Mode plan gate —
-Lite Mode has no `plan.md` to gate and Micro skips all quality companions).
+Lite Mode's short brief is not gated and Micro skips all quality companions).
 
 ## Artifact System
 
