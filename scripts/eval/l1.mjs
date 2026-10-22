@@ -1707,16 +1707,18 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
 {
   const { splice } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/aw-verify/scripts/verify-comment.mjs")).href);
   const lane = readOr("skills/quality/review-loop/rules/ui-lane.md");
-  const jqFilter = ((lane.match(/## Reading a lane run's result[\s\S]*?--jq '([\s\S]*?)'\n```/) || ["", ""])[1]);
-  const run = (bodies) => spawnSync("jq", ["-r", jqFilter], { input: JSON.stringify(bodies.map(([login, body]) => ({ body, user: { login } }))),
+  const jqFilter = ((lane.match(/## Reading a lane run's result[\s\S]*?jq -r '([\s\S]*?)'\n```/) || ["", ""])[1]);
+  // Input is `--paginate --slurp` output: an array of pages, each an array of comments.
+  const run = (...pages) => spawnSync("jq", ["-r", jqFilter], { input: JSON.stringify(pages.map((p) => p.map(([login, body]) => ({ body, user: { login } })))),
     encoding: "utf8", env: { ...process.env, SHA: "abc1234def5678" } });
   const ui = "**ui-verify** · head `abc1234`\n\n- verdict: green (2/2 specs)\n- finished: 2026-01-01T00:00:00Z";
   const both = splice(splice("", "aggregate", "AGG"), "ui", ui);
-  const hit = run([["me", "unrelated"], ["bot[bot]", both], ["other", splice("", "ui", "**ui-verify** · head `zzz9999`\n- finished: OTHER")]]);
-  s.check("G131a the ui-lane jq filter extracts the ui region for the polled head, whoever wrote it, past a newer region for another head (executed)",
-    jqFilter !== "" && hit.status === 0 && hit.stdout.includes("finished: 2026-01-01") && !hit.stdout.includes("AGG") && !hit.stdout.includes("OTHER"),
-    jqFilter ? `exit ${hit.status}: ${(hit.stdout + hit.stderr).slice(0, 200)}` : "no --jq block under § Reading a lane run's result");
-  const miss = run([["me", splice("", "aggregate", "AGG")]]);
+  const older = splice("", "ui", "**ui-verify** · head `abc1234`\n- finished: OLDER");
+  const hit = run([["me", "unrelated"], ["x", older]], [["bot[bot]", both], ["other", splice("", "ui", "**ui-verify** · head `zzz9999`\n- finished: OTHER")]]);
+  s.check("G131a the ui-lane jq filter extracts one ui region for the polled head, whoever wrote it, across pages, past a newer region for another head (executed)",
+    jqFilter !== "" && hit.status === 0 && hit.stdout.includes("finished: 2026-01-01") && !/AGG|OTHER|OLDER/.test(hit.stdout),
+    jqFilter ? `exit ${hit.status}: ${(hit.stdout + hit.stderr).slice(0, 200)}` : "no jq -r block under § Reading a lane run's result");
+  const miss = run([["me", splice("", "aggregate", "AGG")]], []);
   s.check("G131b the ui-lane jq filter reads no region when only the aggregate exists (executed)",
     miss.status === 0 && miss.stdout.trim() === "", `exit ${miss.status}: ${miss.stdout.slice(0, 120)}`);
 }

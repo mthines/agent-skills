@@ -136,11 +136,12 @@ A red verdict whose findings were all deduped against still-open threads is sett
 
 Every mechanism ends in the same place: of the PR's verify comments (first line `<!-- verify:report -->`), the `ui` region (`<!-- verify:section=ui -->` … `<!-- /verify:section=ui -->`) for this head.
 A run on head `<sha>` is **finished** when that region shows `head \`<sha>\`` and a `finished:` line.
-Select by head, never by author: each author keeps their own verify comment, and the login is not reliably resolvable under an App token.
+Select by head, never by author: each author keeps their own verify comment.
+`--slurp` joins the pages first; `--jq` would run the filter once per page and print one region per page.
 
 ```bash
-SHA="$HEAD_SHA" gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate \
-  --jq '[.[] | select(.body | startswith("<!-- verify:report -->")) | .body
+gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate --slurp \
+  | SHA="$HEAD_SHA" jq -r '[add[] | select(.body | startswith("<!-- verify:report -->")) | .body
          | capture("<!-- verify:section=ui -->(?<r>[\\s\\S]*?)<!-- /verify:section=ui -->").r // empty
          | select(contains("head `" + env.SHA[0:7]))] | last // empty'
 ```
