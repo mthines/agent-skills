@@ -106,8 +106,11 @@ export function finish(inputs, opts) {
   let offset = 0;
   for (const file of inputs) {
     for (const s of readTimings(file)) steps.push({ ...s, start: s.start + offset, end: s.end + offset });
-    if (opts.trim) for (const [a, b] of frozen(file)) cuts.push([a + offset, b + offset]);
-    offset += duration(file);
+    const length = duration(file);
+    // A segment that ends on a still frame has no freeze_end: clamp it to this segment,
+    // or the cut runs into the segments joined after it.
+    if (opts.trim) for (const [a, b] of frozen(file)) cuts.push([a + offset, Math.min(b, length) + offset]);
+    offset += length;
   }
   const total = offset;
 
@@ -225,6 +228,16 @@ function selfTest() {
   fs.writeFileSync(path.join(dir, 'seg-2.timings.json'), JSON.stringify([{ label: 'again', start: 0, end: 1 }]));
   const joined = finish([raw, seg2], { out: path.join(dir, 'joined.mp4'), trim: false });
   if (joined.steps.length !== 4 || joined.steps[3].start < 8.9) failures.push(`join offset wrong: ${JSON.stringify(joined.steps[3])}`);
+  // A segment that ends frozen must not cut the segment after it.
+  const tail = path.join(dir, 'tail.webm');
+  run('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=25:duration=2',
+    '-f', 'lavfi', '-i', 'color=c=gray:size=640x360:rate=25:duration=4',
+    '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0[v]', '-map', '[v]', '-c:v', 'libvpx', '-b:v', '300k', tail]);
+  const after = path.join(dir, 'after.webm');
+  run('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=25:duration=4', '-c:v', 'libvpx', '-b:v', '300k', after]);
+  fs.writeFileSync(path.join(dir, 'after.timings.json'), JSON.stringify([{ label: 'b', start: 0, end: 4 }]));
+  const kept = finish([tail, after], { out: path.join(dir, 'tail.mp4'), trim: true });
+  if (!(kept.seconds > 6)) failures.push(`trailing freeze cut the next segment: ${kept.seconds} s`);
   if (failures.length) {
     console.error(`self-test FAIL: ${failures.join('; ')}`);
     process.exit(1);
