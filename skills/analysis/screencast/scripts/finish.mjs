@@ -15,7 +15,7 @@
 // --narrate speaks each step's `say` line (macOS `say`, or $SCREENCAST_TTS with {text} and
 // {out} placeholders) and mixes it in at the step's start.
 //
-// Exit codes: 0 ok · 2 bad arguments · 3 ffmpeg/ffprobe missing or the output failed the
+// Exit codes: 0 ok · 2 bad arguments · 3 ffmpeg/ffprobe missing, encoding failed, or the output failed the
 // sanity check · 5 --narrate with no voice available.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';

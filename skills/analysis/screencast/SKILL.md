@@ -44,4 +44,4 @@ Standalone runs write to `.agent/{branch}/recordings/`; a caller such as `aw-tes
 6. **Chrome driver (claude-in-chrome):** no `recordVideo`; record with `gif_creator` and attach the GIF instead of an mp4.
 7. **Narration is opt-in** (`--narrate`): each step's `say` line, spoken with macOS `say` or `SCREENCAST_TTS="<cmd with {text} and {out}>"`. Never by default — reviewers watch muted.
 
-Exit codes: `2` bad arguments, `3` ffmpeg missing or the mp4 failed its sanity check, `4` `playwright` does not resolve, `5` `--narrate` with no voice.
+Exit codes: `2` bad arguments, `3` ffmpeg missing, encoding failed, or the mp4 failed its sanity check, `4` `playwright` does not resolve, `5` `--narrate` with no voice.
