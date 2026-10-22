@@ -4,7 +4,8 @@
 // from assistive tech (aria-hidden), and re-attaches when the app replaces <body>.
 // Screenshots hide it with: page.screenshot({ style: '#__screencast{display:none!important}' }).
 (() => {
-  if (window.__rec) return;
+  // Top frame only: a same-origin iframe would restore a stale caption from the shared sessionStorage.
+  if (window.__rec || window !== window.top) return;
   const KEY = '__screencast_caption';
   const root = document.createElement('div');
   root.id = '__screencast';
