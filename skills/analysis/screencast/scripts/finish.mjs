@@ -180,6 +180,8 @@ export function finish(inputs, opts) {
   const streams = run('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', out], { capture: true });
   if (!(seconds > 0) || !streams.includes('video')) {
     console.error(`screencast: ${out} failed the sanity check (duration ${seconds}, streams "${streams}").`);
+    fs.rmSync(out, { force: true });
+    fs.rmSync(work, { recursive: true, force: true });
     process.exit(3);
   }
 
