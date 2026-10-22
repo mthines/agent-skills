@@ -891,12 +891,12 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     extras,
   });
   payload.OPEN_THREADS = (gates.g3?.open || []).map(toOpenThreadBullet);
-  // The `**Progress:**` line's history: the worklist each earlier run left, read off the PR-state
+  // The `Progress` row's history: the worklist each earlier run left, read off the PR-state
   // record by prepare-review.mjs (empty under --isolated, so a comparability run shows none). Set
   // here, never relayed from context.render: the history is the record's, not the run's to supply.
   if (Array.isArray(context?.priorRun?.rounds) && context.priorRun.rounds.length) payload.ROUNDS = context.priorRun.rounds;
   // What this run leaves open, computed from the same arrays and by the same function the report's
-  // `**Progress:**` line uses — Step 4c stores it as this run's `open`/`blocking` in runs[].
+  // `Progress` row uses — Step 4c stores it as this run's `open`/`blocking` in runs[].
   const round = worklistCounts({ openThreads: payload.OPEN_THREADS, findings: payload.FINDINGS, notes: payload.NOTES || [] });
 
   const findingsBusRecords = toFindingsBusRecords(inline.concat(overCapDeferred), {
@@ -1505,7 +1505,7 @@ async function selfTest() {
       check("a delivered hybrid intent worker suppresses the no-dispatch line; a missing one keeps it",
         lost.includes("the intent finder ran in-context") && !kept.includes("the intent finder ran in-context"), `${lost} | ${kept}`);
     }
-    // The `**Progress:**` line: history comes from context.priorRun.rounds, and finalize reports this
+    // The `Progress` row: history comes from context.priorRun.rounds, and finalize reports this
     // run's own point as `round`, the value Step 4c stores in runs[].
     {
       const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },

@@ -133,7 +133,7 @@ The value is one JSON object with a version stamp:
 | `commit` | provenance | The `HEAD_SHA` the writing run reviewed; same value as `runs[-1].sha`. |
 | `sticky_comment_id` · `sticky_url` | Step 4a | A **cache, never an authority** — Step 4a re-scans by marker when absent or the `PATCH` 404s (a human can delete a comment any time). |
 | `bot_login` | the identity ladder | This agent's own login, read off its own sticky — rung 2 of `prior-comment-awareness.md § fetch existing PR comment state`, keeping dedup and Step 2.9c working when `/user` 401s. |
-| `runs[]` | `PRIOR_SHA`, `LAST_FULL_SHA`, `INCR_RUNS_SINCE_FULL`, Step 5, the report's `**Progress:**` line | Oldest first, **capped at 50** — drop from the front. `open`/`blocking` are finalize's `round` (Step 4c). Nothing branches on `verdict`. |
+| `runs[]` | `PRIOR_SHA`, `LAST_FULL_SHA`, `INCR_RUNS_SINCE_FULL`, Step 5, the report's `Progress` row | Oldest first, **capped at 50** — drop from the front. `open`/`blocking` are finalize's `round` (Step 4c). Nothing branches on `verdict`. |
 | `open_thread_ids` | `RESOLVED_SINCE_PRIOR` | Gate 3's open set after the writing run's Step 2.9c. **Top-level, not per-run** — current state, not history. |
 | `carried_findings[]` | `CARRIED_FINDINGS` | The deferred findings from Step 2.9b, **structured**. Capped at 50. |
 | `diagnostics` | `PRIOR_DIAGNOSTICS` | The anchorless outputs, structured. A legacy `optimality_cards` field is dropped on the next write. |

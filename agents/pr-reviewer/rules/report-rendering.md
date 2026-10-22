@@ -211,7 +211,7 @@ length**, so there is no count to supply and none to get wrong:
 | `LOW_CONFIDENCE_FINDINGS` | `[{…same…}]` | Advisory only (`reviewer-report-ingest.md`). |
 | `PARTIAL_REVIEW` | `{calls, scanned, total}` | Integers; emits the tool-budget banner. |
 | `COVERAGE` | `{files_read, files_total, files_skipped?}` | Integers: the files read and the changed files in scope (every PR file on a `full` run — a promoted re-review included — the delta on an incremental one), less the files triage skipped (`SKIPPED_FILES`), which `files_skipped` counts. Built by `finalize/reach.mjs` from `judgments.scanned_files` against `context.scopePaths`, or from `PARTIAL_REVIEW` when the walk was truncated; a `context.render.COVERAGE` overrides it. Feeds the `Checked` row. Rejected when `files_read > files_total`, or when it disagrees with `PARTIAL_REVIEW`'s `scanned` / `total`. |
-| `ROUNDS` | `[{sha, open, blocking}]` | Earlier runs' worklists, oldest first — built by `finalize.mjs` from the PR-state record's `runs[]`; never hand-supplied — `finalize.mjs` ignores a `context.render.ROUNDS`. Feeds the `**Progress:**` line; the renderer shows the last 4 plus this run. Rejected when a `sha` is not 7 hex chars or `blocking > open`. |
+| `ROUNDS` | `[{sha, open, blocking}]` | Earlier runs' worklists, oldest first — built by `finalize.mjs` from the PR-state record's `runs[]`; never hand-supplied — `finalize.mjs` ignores a `context.render.ROUNDS`. Feeds the `Progress` row; the renderer shows the last 4 plus this run. Rejected when a `sha` is not 7 hex chars or `blocking > open`. |
 | `FINDINGS` | `[{title, path, line?, url?, tier, blocking?, decide?, fix?}]` | The findings this run **posted inline**. Three renderings come from this one array: the headline's counts and glyph (`### 🔴 3 blocking · 1 to decide · 6 non-blocking`), the visible numbered findings table above the accordions, and the `Severity` row's tally (`🔴 1 critical · 🟠 2 high`, glyph paired with its word per WCAG 1.4.1). `title` is the **same string `render-comment.mjs` put on that comment's first line**, which is what makes an index row and the comment it links to recognisably the same finding. `tier` is required and enumerated (`critical` · `high` · `medium` · `low`); a `\|` in `title` is rejected (it would split the row). `decide: true` marks a choice between two acceptable options — rendered `**Decide: <title>**`, counted `to decide`, and rejected together with `blocking: true`. `fix` is the one-line remedy (≤ 140 chars) rendered under the title as `Fix: <fix>`; on a decision row it is the context for the choice, rendered without the `Fix:` label. `finalize/payload.mjs` forwards a candidate's `fix` only when it is one line of ≤ 140 chars. The renderer also rejects a `FINDINGS` length that disagrees with `QUALITY`'s `posted inline <N>` — they are the same number stated twice. |
 | `IMPACT_IMAGE` | `{light, dark, alt}` | The impact-map diagram, rendered as a `<picture>` above the findings table. `light` and `dark` must be `https://github.com/user-attachments/assets/<id>` urls; `alt` is required, single-line, plain text with no `"`, `<`, or `>`, and names every numbered badge. The badges are the findings table's row numbers — see [`posting.md § The impact image`](./posting.md#the-impact-image). |
 
@@ -312,13 +312,13 @@ something to say that no slot covers, it belongs in the Step 5 terminal output.
 #### What a reader sees first — the picture and the worklist
 
 The head region is everything above the first accordion, in this order: the headline, the summary
-sentence, the reasons line (with findings, minus the Code-review phrase), the advisory note, `**Progress:**`, the impact
+sentence, the reasons line (with findings, minus the Code-review phrase), the advisory note, the impact
 image, the numbered findings table, and the Fix-all button.
 Every run fact lives in the Run table inside `Review details`.
 
 | Block | Renders | Derived from | Rendered when |
 | --- | --- | --- | --- |
-| `**Progress:**` line | `open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews` | `ROUNDS`, plus this run's point: `OPEN_THREADS` + `FINDINGS` + `NOTES`, blocking from the first two (`comment-spine.mjs`'s `worklistCounts()`) | `ROUNDS` is non-empty. The `blocking` series is dropped when every point is 0 |
+| `Progress` row (Run table, after `Mode`/`Anomaly`) | `open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews` | `ROUNDS`, plus this run's point: `OPEN_THREADS` + `FINDINGS` + `NOTES`, blocking from the first two (`comment-spine.mjs`'s `worklistCounts()`) | `ROUNDS` is non-empty. The `blocking` series is dropped when every point is 0 |
 | impact image | a `<picture>` with the light and dark PNGs | `IMPACT_IMAGE` | supplied |
 | findings table | `\| \| Finding \| Where \|`, one numbered row per finding | `FINDINGS` | `FINDINGS` non-empty |
 | `Checked` row | `22 of 22 changed files read (1 skipped) · 11 possible issues → 2 confirmed → 1 posted` | `COVERAGE`; `QUALITY`'s `produced`, then confirmed = `FINDINGS` + `NOTES` + `ADDITIONAL_FINDINGS` and posted = `FINDINGS` + `NOTES` — never `QUALITY`'s `cleared`, which is the posted count by construction | either part exists. With nothing produced, the funnel reads `no possible issues found` — except on a `zero-delta` run, where no finder ran, so that clause is omitted |
@@ -664,11 +664,11 @@ and `F-report-accordion-expanded` are now render-time errors rather than review-
 The visible surface of a report is therefore whatever the template leaves outside the accordion:
 the marker, an optional partial-review banner, the `### <glyph> <K> blocking · <D> to decide · <M>
 non-blocking` headline (a zero part is left out), the summary sentence, the reasons line, the
-advisory note, the `**Progress:**` line, the optional impact `<picture>`, the numbered
+advisory note, the optional impact `<picture>`, the numbered
 `| | Finding | Where |` findings table, the Fix-all button, and the collapsed `<summary>` lines of
 the optional `<details>` blocks.
 Coverage and reach are rows of the `| Run | Details |` table inside `Review details` (`Checked`,
-`Reach`), never a top-level line.
+`Reach`), as is the convergence history (`Progress`), never a top-level line.
 A harness-appended attribution footer may also appear; it is not authored here and must not be
 suppressed or reproduced.
 
@@ -741,11 +741,10 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   Its `<details>` blocks (`Review details`, the additional findings, `Notes`, `Less certain`, and
   `Is there a better approach?`), the open-thread list, the withheld list, the Run table, the
   `Memories used` list, and the `Nothing to report` footnote inside `Review details`, the
-  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`, `PROGRESS_LINE`,
+  `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`,
   `IMPACT_IMAGE`, `FINDINGS_INDEX`, `FIX_ALL_BUTTON`, and `FOOTER_SUP` slots are all template
   slots, not added prose.
-  Besides the headline region (headline, `SUMMARY`, reasons, advisory note), the banner, the
-  `**Progress:**` line, the impact image, the findings table, and the footer — all
+  Besides the headline region (headline, `SUMMARY`, reasons, advisory note), the banner, the impact image, the findings table, and the footer — all
   renderer-derived or renderer-validated, never hand-composed — **no** prose of the agent's own
   is permitted at the top level of the body.
 - Praise findings are dropped entirely — do not add them to the table, inline comments, or body prose.
