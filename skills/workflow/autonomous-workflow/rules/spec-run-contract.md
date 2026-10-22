@@ -138,9 +138,9 @@ honor `continues-from` — skip the chained spec and say so.
 
 ### Record video (a Playwright run option)
 
-**Record video** is a run-level option — the mode flag `--record-video`, **off by default** — that only `aw-tester` (Playwright) implements; `ui-verify run` turns it on (its `rules/recording.md`).
-The Chrome runner records each spec as a `.gif` with the extension's `gif_creator` instead (its `SKILL.md`); it has no timings file or contact sheet.
-When enabled:
+**Record video** is a run-level option — the mode flag `--record-video`, **off by default**; `ui-verify run` turns it on (its `rules/recording.md`).
+`aw-tester` (Playwright) records an `.mp4` per the steps below; the Chrome runner records each spec as a `.gif` with the extension's `gif_creator` instead (its `SKILL.md`), with no timings file or contact sheet.
+When enabled on Playwright:
 
 1. Every browser context the runner opens to run a spec sets `recordVideo: { dir, size: { width: 1280, height: 720 } }`, so each spec gets its own context and its own video — the flag overrides one-context-per-batch.
 2. The runner loads the `screencast` skill's `overlay.js` into each recorded context, marks each step with its spec line, and writes the step timings beside the raw video; after the spec, `screencast`'s `finish.mjs` turns it into `.agent/{branch}/.aw-tester/recordings/<spec-id>.mp4`, `<spec-id>.timings.json`, and `<spec-id>.sheet.png` (lowercase id, as captures are named).
