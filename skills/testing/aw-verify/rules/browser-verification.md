@@ -29,8 +29,8 @@ Record `window_start` (UTC ISO-8601) before and `window_end` after each invocati
 Under the `command` stack driver, also record each process log's byte size before and after as `log_offsets` ([`stack/command.md § Logs`](./stack/command.md#logs-for-the-logs-telemetry-backend)); `telemetry-verify`'s `logs` backend reads that byte range.
 
 ```text
-Skill("ui-verify", "run .agent/<branch>/specs.md --env <env> --url <url> --no-telemetry")                         # acceptance specs
-Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> --url <url> --no-adversarial --no-telemetry")   # edge specs, local only
+Skill("ui-verify", "run .agent/<branch>/specs.md --env <env> --url <url> --no-telemetry --no-comment")                         # acceptance specs
+Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> --url <url> --no-adversarial --no-telemetry --no-comment")   # edge specs, local only
 ```
 
 - Always pass `--url`: on `local` it is the stack's `url`, so `ui-verify` never falls through to the deployed preview; on `preview` it is the URL Phase 2 resolved.
@@ -42,10 +42,10 @@ Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> --url <
 One `probes.jsonl` line per spec, joined to its criterion by the `AC-n` / `EC-n` in the spec title:
 
 ```json
-{"id": "EC-9", "title": "Save while the API fails", "result": "fail", "window_start": "2026-10-07T09:12:03Z", "window_end": "2026-10-07T09:12:41Z", "screenshots": [".agent/feat-x/.ui-verify/captures/ec-9.png"]}
+{"id": "EC-9", "title": "Save while the API fails", "result": "fail", "window_start": "2026-10-07T09:12:03Z", "window_end": "2026-10-07T09:12:41Z", "screenshots": [".agent/feat-x/.ui-verify/captures/ec-9.png"], "recordings": [".agent/feat-x/.aw-tester/recordings/spec-3.webm"]}
 ```
 
-`screenshots` lists every image path `ui-verify` reported for that spec, relative to the checkout root; Phase 5 attaches them.
+`screenshots` and `recordings` list every image and video path `ui-verify` reported for that spec, relative to the checkout root; Phase 5 uploads them into the PR comment.
 
 ## Step 3 — Read all windows with `telemetry-verify`, once
 
@@ -53,7 +53,7 @@ After the last batch of Step 2 and Step 4 closes, dispatch the telemetry witness
 
 ```text
 Agent(subagent_type="general-purpose",
-      prompt='Run Skill("telemetry-verify", "--env <env> --windows .agent/<branch>/verify/probes.jsonl --driver <driver> [--host <preview host>] --brief <plan.md or verify/intent.md> --out .agent/<branch>/verify/findings.jsonl") and return only its TELEMETRY block')
+      prompt='Run Skill("telemetry-verify", "--env <env> --windows .agent/<branch>/verify/probes.jsonl --driver <driver> [--host <preview host>] --brief <plan.md or verify/intent.md> --out .agent/<branch>/verify/findings.jsonl --no-comment") and return only its TELEMETRY block')
 ```
 
 - One dispatch per run: a sub-agent's setup costs about as much as its reads, so per-window dispatches multiply cost without adding evidence.
@@ -61,6 +61,7 @@ Agent(subagent_type="general-purpose",
 - Store the block in `.agent/{branch}/verify/telemetry.md`; the report takes the `AC-n` journey lines from it.
 - `telemetry.yml` `backend: none` or `telemetry-verify` not installed → one line `telemetry: skipped (<reason>)`; never a pass.
 - `aw-verify` owns the telemetry read, so both runs pass `--no-telemetry`; a window is never read twice.
+- `aw-verify` owns the PR comment, so every `ui-verify` and `telemetry-verify` call passes `--no-comment` ([`pr-comment.md § When to post`](./pr-comment.md#when-to-post)).
 
 **`ui-verify` or the browser MCP unavailable** (not installed, or it answers 403): load the `playwright-cli` skill, or run the repo's own Playwright from the package that depends on it (the root may resolve another version), and execute the same spec files step by step, capturing a full-page screenshot per `**Expected:**` item into `.agent/{branch}/verify/captures/`.
 

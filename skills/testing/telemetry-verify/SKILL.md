@@ -4,13 +4,13 @@ description: >
   The telemetry witness: reads what the services recorded during one closed window of traffic
   another skill produced (ui-verify, verify, a repro), traces each acceptance criterion from web
   event to backend trace to database, and finds errors behind a green UI, slow paths, and missing
-  signals. Read-only. Triggers on "check the telemetry", "prove it with traces", "/telemetry-verify".
+  signals. Never edits code; run on its own, it posts its receipt to the PR's verify comment. Triggers on "check the telemetry", "prove it with traces", "/telemetry-verify".
 disable-model-invocation: false
-argument-hint: '--env <local|preview> --from <ISO> --to <ISO> [--host <host>] [--driver playwright|chrome] [--brief <plan.md>] [--out <findings.jsonl>]'
+argument-hint: '--env <local|preview> --from <ISO> --to <ISO> [--host <host>] [--driver playwright|chrome] [--brief <plan.md>] [--out <findings.jsonl>] [--pr <url|n>] [--no-comment]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: advisory
   tags: [telemetry, verification, traces, web-events, logs, dash0, opentelemetry, receipt]
 ---
@@ -24,13 +24,13 @@ It never produces traffic, never edits code, and never widens the window to find
 ## Invocation
 
 ```text
-Skill("telemetry-verify", "--env <local|preview> (--windows <probes.jsonl> | --from <ISO-8601 UTC> --to <ISO-8601 UTC>) [--host <preview host>] [--driver playwright|chrome] [--brief <plan.md path>] [--out <findings.jsonl path>]")
+Skill("telemetry-verify", "--env <local|preview> (--windows <probes.jsonl> | --from <ISO-8601 UTC> --to <ISO-8601 UTC>) [--host <preview host>] [--driver playwright|chrome] [--brief <plan.md path>] [--out <findings.jsonl path>] [--pr <url|number>] [--no-comment]")
 ```
 
-Callers run it in a sub-agent, so query results stay out of their context:
+Callers run it in a sub-agent, so query results stay out of their context, and pass `--no-comment`, because they post the receipt in their own region:
 
 ```text
-Agent(subagent_type="general-purpose", prompt="Run Skill(\"telemetry-verify\", \"<args>\") and return only its TELEMETRY block")
+Agent(subagent_type="general-purpose", prompt="Run Skill(\"telemetry-verify\", \"<args> --no-comment\") and return only its TELEMETRY block")
 ```
 
 Use `general` as the sub-agent type on OpenCode and Dash0 Agent0.
@@ -44,6 +44,8 @@ Use `general` as the sub-agent type on OpenCode and Dash0 Agent0.
 | `--driver` | The browser driver; `chrome` is the user's own browser, so sessions cannot be isolated |
 | `--brief` | `plan.md`; its `telemetry:` acceptance criteria become expectations. Default `.agent/{branch}/plan.md` when it exists |
 | `--out` | Append findings to this file in the `aw-verify` skill's findings record shape |
+| `--pr` | The PR whose verify comment gets the `telemetry` region; default the current branch's PR (`gh pr view --json url`) |
+| `--no-comment` | Post nothing; every calling skill passes it |
 
 ## Step 0 — Resolve config and skip honestly
 
@@ -106,9 +108,38 @@ A configured backend that is unreachable is `pipe: skipped (<reason>)`; never sw
 
 Print exactly the block in [`rules/receipt.md § Output`](./rules/receipt.md#output), and append findings to `--out` when given.
 
+## Step 6 — Post the `telemetry` region
+
+Run on its own (no `--no-comment`), post the receipt as the `telemetry` region of the PR's one verify comment, per the `aw-verify` skill's `rules/pr-comment.md` (its § When to post gate, and its script):
+
+```bash
+node "${CLAUDE_SKILL_DIR}/../aw-verify/scripts/verify-comment.mjs" --pr <pr-url> --section telemetry --file .agent/<branch>/telemetry-verify/comment-telemetry.md
+```
+
+Region body, in this order:
+
+```markdown
+**telemetry-verify** · head `<head-sha>` · `<env>` · window <from> → <to> · backend <backend and scope>
+
+- pipe: <the pipe line>
+- verdict: <confirms | contradicts | ambiguous | null>
+
+| AC | What (journey) | Why (the claim it checks) | Verdict | Evidence |
+| --- | --- | --- | --- | --- |
+| AC-2 | click "Save" → POST /api/views 201 (84 ms) → views-service PUT (21 ms) → postgres INSERT (4 ms) | `telemetry:` the save emits a views.save span with view.id | confirms | [trace 4bf92f35](<Dash0 link>) |
+
+#### Findings
+
+| ID | Kind | Severity | What happened | Evidence |
+| --- | --- | --- | --- | --- |
+```
+
+Evidence is a link from the backend's URL tool (`generateDash0Url`) or a trace ID; never a log file path.
+Print `comment: <comment-url> (region telemetry)`, or the `not posted (<reason>)` / `failed (<reason>)` line.
+
 ## Core principles
 
-1. **Read-only, one window.** Judge only records inside the window the caller produced.
+1. **Read-only, one window.** Judge only records inside the window the caller produced; the only write is the PR comment's `telemetry` region.
 2. **Silence is never clean.** No records means the pipe is broken or the read is early, not that nothing went wrong.
 3. **Behavioral, never by-construction.** A claim that reading the source could satisfy is refused, not graded.
 4. **Findings never change the verdict.** The verdict answers the brief's telemetry criteria; findings are reported beside it.
@@ -121,3 +152,4 @@ Print exactly the block in [`rules/receipt.md § Output`](./rules/receipt.md#out
 - [ ] Pipe checked before any absence was judged.
 - [ ] One journey line per acceptance criterion the window exercised.
 - [ ] The `TELEMETRY` block printed exactly; findings appended when `--out` was given.
+- [ ] Run on its own: the `telemetry` region posted, or a `comment: not posted (<reason>)` line.

@@ -16,11 +16,11 @@ Why it is shaped this way: [`references/design-rationale.md` § Step 1.6](../ref
 Dispatch it **once**, regardless of iteration count, **always with `--unattended`**:
 
 ```text
-Skill("ui-verify", "run <PR-URL> --unattended --attach-media")
+Skill("ui-verify", "run <PR-URL> --unattended")
 ```
 
 - `--unattended` is mandatory: it is `ui-verify`'s guarantee that no path calls `AskUserQuestion`. Under it the run uses Chrome or Playwright, or returns `inconclusive: no driver available (…)`.
-- `--attach-media` puts this final run's screenshots and passing-spec recordings into the PR body through `attach-media`. It runs here and never in the `--ui` lane.
+- `ui-verify` posts this final run's proof, with its screenshots and recordings uploaded, as the `ui` region of the PR's one verify comment; nothing here attaches media.
 - No `--url`. Resolving the preview URL is `ui-verify`'s own concern; never resolve it here. A caller that already holds a preview URL runs `/ui-verify run <PR-URL> --url <preview-url>` directly instead.
 
 `ui-verify run` owns the whole procedure: it reads the committed `<!-- ui-verify:v2 -->` (or `v1`) block (the **only** source — never the gitignored `.agent/{branch}/specs.md`), resolves the preview URL, dispatches `aw-tester --all`, and returns a verdict.

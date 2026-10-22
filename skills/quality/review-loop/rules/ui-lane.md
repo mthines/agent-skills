@@ -134,15 +134,17 @@ A red verdict whose findings were all deduped against still-open threads is sett
 
 ## Reading a lane run's result
 
-Every mechanism ends in the same place: the `<!-- ui-verify:lane -->` summary comment on the PR.
-A run on head `<sha>` is **finished** when that comment shows `head \`<sha>\`` and a `finished:` line.
+Every mechanism ends in the same place: the `ui` region (`<!-- verify:section=ui -->` … `<!-- /verify:section=ui -->`) of the PR's one verify comment, whose first line is `<!-- verify:report -->`.
+A run on head `<sha>` is **finished** when that region shows `head \`<sha>\`` and a `finished:` line.
 
 ```bash
 gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments" --paginate \
-  --jq '[.[] | select(.body | startswith("<!-- ui-verify:lane -->"))] | last | .body'
+  --jq '[.[] | select(.body | startswith("<!-- verify:report -->"))] | first | .body // ""
+         | capture("<!-- verify:section=ui -->(?<r>[\\s\\S]*?)<!-- /verify:section=ui -->").r // empty'
 ```
 
-On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`).
+On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the same region.
+No region (none posted yet, or an `aw-verify` aggregate replaced it) means no summary for this head.
 Parse `verdict`, `adversarial`, `telemetry`, and the `threads:` line from it: `<N> posted, <D> deduped, <X> declined` sets `posted = N`, and `failed (<reason>)` sets `post_failed = true`.
 
 Also finished, with no summary to read:

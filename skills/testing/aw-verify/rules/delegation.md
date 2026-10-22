@@ -28,7 +28,7 @@ When `/aw` wrote `plan.md` and `specs.md`, reuse them; never describe the same b
 | Login | [`auth.md`](./auth.md), the environment's `auth` block | Specs run without login; say so |
 | Specs, browser run, adversarial pass, preview URL | `ui-verify`, which dispatches `aw-tester` | Drive the browser with `playwright-cli`, same specs, same evidence |
 | Telemetry | `telemetry-verify` | `telemetry: skipped (telemetry-verify not installed)` |
-| Screenshots on the PR | `attach-media` (`--to urls`) | List local paths; `not attached (<reason>)` |
+| Screenshots and recordings on the PR | `attach-media` (`--to urls`), embedded by [`pr-comment.md`](./pr-comment.md) | List local paths in the terminal; `not attached (<reason>)` in the comment |
 | UX judgment | `ux` | Decide from the repo's existing components and say so |
 | Commit messages | The repo's `commit` skill, `notes.md`, or `CONTRIBUTING.md` | Recent `git log` style, then Conventional Commits |
 | Lessons | LoreKit `memory.*` | Silent no-op |

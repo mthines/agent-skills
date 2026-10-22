@@ -67,7 +67,7 @@ Independent finders flag, a verifier filters, and only grounded findings reach y
 
 ### ✅ Proof the UI actually works
 
-The brief's spec runs on your local stack or the preview and tries to break the change. Then the telemetry is read back to check that every click reached the API and the database the way it should. Screenshots and recordings are attached. Run `setup` once per repo; it commits `.agents/aw/`.
+The brief's spec runs on your local stack or the preview and tries to break the change. Then the telemetry is read back to check that every click reached the API and the database the way it should. Screenshots, recordings, and the reasoning behind each check land in one PR comment. Run `setup` once per repo; it commits `.agents/aw/`.
 
 ```text
 /aw-verify setup
@@ -168,8 +168,8 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/attach-media`](./skills/delivery/attach-media/SKILL.md) | Uploads screenshots and recordings into a PR so they render inline. |
 | [`/github-actions-author`](./skills/delivery/github-actions-author/SKILL.md) | Writes and reviews fast, cheap GitHub Actions workflows. |
 | **`testing/`** | *UI verification and end-to-end tests* |
-| [`/aw-verify`](./skills/testing/aw-verify/SKILL.md) | Proves a feature works on your local stack or the preview — browser and telemetry — and fixes what fails. `setup` writes the shared `.agents/aw/` config. |
-| [`/ui-verify`](./skills/testing/ui-verify/SKILL.md) | Puts a plain-language UI spec in the PR, runs it, then tries to break it. |
+| [`/aw-verify`](./skills/testing/aw-verify/SKILL.md) | Proves a feature works on your local stack or the preview — browser and telemetry — fixes what fails, and posts the proof with screenshots and recordings to one PR comment. `setup` writes the shared `.agents/aw/` config. |
+| [`/ui-verify`](./skills/testing/ui-verify/SKILL.md) | Puts a plain-language UI spec in the PR, runs it, tries to break it, and posts the evidence to the PR. |
 | [`telemetry-verify`](./skills/testing/telemetry-verify/SKILL.md) | Reads back what the services recorded during a run and checks each journey from web event to database. |
 | [`/e2e-testing`](./skills/testing/e2e-testing/SKILL.md) | Plans, writes, and heals Playwright end-to-end tests. |
 | [`/e2e-testing-mobile`](./skills/testing/e2e-testing-mobile/SKILL.md) | Maestro flows for Expo and React Native. |

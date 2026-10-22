@@ -12,7 +12,7 @@ argument-hint: '[run [local|preview]|setup|report] [<pr-url>|<pr-number>|<ticket
 license: MIT
 metadata:
   author: mthines
-  version: '4.0.0'
+  version: '4.1.0'
   workflow_type: orchestrator
   tags: [verify, e2e-verification, ui-verify, telemetry-verify, autonomous-workflow, stack-drivers, fix-loop, setup]
 ---
@@ -22,17 +22,18 @@ metadata:
 Prove a feature works on a real environment, try hard to break it, read what the services recorded while you did, and report it in one shape.
 The checks, the browser, and the telemetry must agree.
 Repo values come from `.agents/aw/` ([`rules/config.md`](./rules/config.md)); repo facts from `.agents/aw/notes.md`.
-Who owns what, the spec contract, and the anti-patterns: [`rules/delegation.md`](./rules/delegation.md).
+Who owns what, the spec contract, and the anti-patterns: [`rules/delegation.md`](./rules/delegation.md); why it is shaped this way: [`references/design.md`](./references/design.md).
 
 ## Modes and flags
 
 `run [local|preview] [<pr>|<ticket>]` is the default (no reference → the branch's PR, else its `plan.md`).
 `setup` writes `.agents/aw/` ([`rules/setup.md`](./rules/setup.md)); `report` re-renders the last report and re-upserts the PR comment, with no stack, browser, or telemetry calls.
+Every run with a PR ends by posting its proof — what was tested, why, the result, and uploaded screenshots and recordings — as the `aggregate` region of the PR's one verify comment ([`rules/pr-comment.md`](./rules/pr-comment.md)); on by default for any PR, off with `--no-comment` or `policies.pr_comment: never`.
 
 | Flag | Effect |
 | --- | --- |
 | `--no-fix` | Report findings, change no code |
-| `--no-push` / `--no-comment` | Commit fixes but do not push / skip the PR comment |
+| `--no-push` / `--no-comment` | Commit fixes but do not push / skip the PR comment (a caller that posts its own report passes it) |
 | `--loops <n>` | Fix-and-reverify loops (default `telemetry.yml` `loops`, `2`; max `4`) |
 | `--keep-stack` | Never tear the local stack down |
 | `--foreign-stack <teardown\|ask\|abort>` | Overrides `policies.foreign_stack`; `aw` passes `abort` |
@@ -47,7 +48,7 @@ Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, w
 0. **Config** ([`rules/config.md § Resolve`](./rules/config.md#resolve-the-config-every-skill-before-any-other-step)). No `.agents/aw/environments.yml`, or no entry for the environment → run `setup` first; never guess a URL, dataset, or start command. Read lessons ([`rules/lessons.md § Read`](./rules/lessons.md#read-step)).
 1. **Intent** ([`rules/intent.md`](./rules/intent.md)). Write `intent.md`: the brief's `AC-n` verbatim, each tagged `ui:` / `api:` / `worker:`, and the edge-case matrix.
    The matrix always has a **Concurrency** row for any AC that creates a record (fire the trigger twice in parallel, count rows) and one **Failure** row per guardrail in the brief (break the dependency the guardrail names: make the file unwritable, block the route, stop the service).
-2. **Stack** ([`rules/local-stack.md`](./rules/local-stack.md) + the driver file). Start it detached, logs to `procs/<name>.log`, poll the ready URL. A sandbox that refuses `listen` → drive the app's own request handler in-process and say `browser: not run (no local port)`.
+2. **Stack** ([`rules/local-stack.md`](./rules/local-stack.md) + the driver file; login per [`rules/auth.md`](./rules/auth.md)). Start it detached, logs to `procs/<name>.log`, poll the ready URL. A sandbox that refuses `listen` → drive the app's own request handler in-process and say `browser: not run (no local port)`.
 3. **Probe in windows** ([`rules/browser-verification.md`](./rules/browser-verification.md)). Per batch, append to `probes.jsonl`: `window_start`, run it, then `window_end` and each log's byte `log_offsets`. Batches: acceptance specs, then edge rows, then fault rows; restore every injected fault before the next batch.
    A defect that blocks the path (a 500, a build error, a crash) → record it, then route around it without changing code (another dev-server mode, a direct request, seeded state) and keep probing; one defect must not hide the next.
 4. **Telemetry, once** ([The two witnesses](#the-two-witnesses)). After the last window closes, dispatch `telemetry-verify` over all of them; save its block to `telemetry.md`.
@@ -59,14 +60,14 @@ The verdict is `BROKEN` when any AC fails or any guardrail does not hold; a defe
 ## The two witnesses
 
 ```text
-Skill("ui-verify", "run .agent/<branch>/specs.md --env <env> --url <url> --no-telemetry")
+Skill("ui-verify", "run .agent/<branch>/specs.md --env <env> --url <url> --no-telemetry --no-comment")
 Agent(subagent_type="general-purpose",
-      prompt='Run Skill("telemetry-verify", "--env <env> --windows .agent/<branch>/verify/probes.jsonl [--host <preview host>] [--driver <driver>] --brief <plan.md or verify/intent.md> --out .agent/<branch>/verify/findings.jsonl") and return only its TELEMETRY block')
+      prompt='Run Skill("telemetry-verify", "--env <env> --windows .agent/<branch>/verify/probes.jsonl [--host <preview host>] [--driver <driver>] --brief <plan.md or verify/intent.md> --out .agent/<branch>/verify/findings.jsonl --no-comment") and return only its TELEMETRY block')
 ```
 
 - Backend `dash0-mcp` → first check that `mcp__<telemetry.yml mcp_server>__getSpans` exists. Absent → `telemetry: skipped (Dash0 MCP server '<name>' not connected)`, no dispatch; never query another Dash0 server, whose empty answer proves nothing.
 - One dispatch per run, after the last window: the sub-agent pays its setup once, and its ingest wait starts from the last window. A fix loop dispatches once more for the windows it re-probed.
-- `ui-verify` always gets `--no-telemetry`, so no window is read twice.
+- `ui-verify` always gets `--no-telemetry`, so no window is read twice; both witnesses always get `--no-comment`, so the PR holds one aggregate ([`rules/pr-comment.md`](./rules/pr-comment.md)).
 - The block has `pipe:`, one `AC-n <verdict>` line per AC, `signals:`, `findings:`, and `[receipt] verdict: confirms|contradicts|ambiguous|null`; its findings join `findings.jsonl` as `T-<n>`.
 - On Dash0 Agent0 the sub-agent type is `general`; with no dispatch tool, run it here and say `telemetry: same-context (reduced independence)`.
 
@@ -83,4 +84,5 @@ Agent(subagent_type="general-purpose",
 - [ ] `intent.md`, `probes.jsonl`, `findings.jsonl`, and `report.md` under `.agent/{branch}/verify/`; `specs.md` for a UI change.
 - [ ] Every AC and guardrail: `pass`, `fixed → pass`, or `fail`, with evidence; every edge row probed or `n/a` with a reason.
 - [ ] A `TELEMETRY` block covering every window, or `telemetry: skipped (<reason>)`.
-- [ ] Each fix its own commit, pushed and commented per policy; stack left per policy.
+- [ ] Each fix its own commit, pushed per policy; stack left per policy.
+- [ ] The PR comment's `aggregate` region posted with every screenshot and recording uploaded, or a `comment: not posted (<reason>)` line.
