@@ -1210,6 +1210,37 @@ function main() {
     if (l.quiet(s)) footnotes[l.key] = l.footnote(s);
   }
 
+  // ── the Progress row — is the PR converging? ────────────────────────────────────────────────────
+  //
+  // From the second review on, the worklist each run left behind (open review threads, blocking
+  // subset), oldest first, ending with this run's. The current point is derived from this payload's
+  // own arrays by the same worklistCounts() finalize.mjs stores in the PR-state record, so the next
+  // run's history and this run's row are one number. It is history, not something to act on, so it
+  // lives in the Run table rather than the head region.
+  const ROUNDS_SHOWN = 4;
+  const rounds = arr("ROUNDS").map((r, i) => {
+    const where = `ROUNDS[${i}]`;
+    if (!SHA7.test(String(r.sha))) {
+      fail(`${where}.sha must be exactly 7 lowercase hex chars, got ${JSON.stringify(r.sha)}`);
+    }
+    for (const f of ["open", "blocking"]) {
+      if (!Number.isInteger(r[f]) || r[f] < 0) {
+        fail(`${where}.${f} must be a non-negative integer, got ${JSON.stringify(r[f])}`);
+      }
+    }
+    if (r.blocking > r.open) fail(`${where}.blocking (${r.blocking}) exceeds open (${r.open})`);
+    return r;
+  }).slice(-ROUNDS_SHOWN);
+  let progressCell = "";
+  if (rounds.length) {
+    const now = worklistCounts({ openThreads, findings, notes: arr("NOTES") });
+    const opens = [...rounds.map((r) => r.open), now.open];
+    const blocks = [...rounds.map((r) => r.blocking), now.blocking];
+    progressCell = `open review threads ${opens.join(" → ")}`
+      + (blocks.some((b) => b > 0) ? ` · blocking ${blocks.join(" → ")}` : "")
+      + ` across the last ${opens.length} reviews`;
+  }
+
   // `Memories` — neutral wording: a run that had no memory store, or no earlier state to read, did
   // nothing wrong, and a bare `not connected` read as a failure.
   const memoriesCell = memoriesLine === "not connected" ? "Not connected for this run" : memoriesLine;
@@ -1219,6 +1250,7 @@ function main() {
   /** @type {[string, string][]} */
   const runRows = [["Mode", runLine]];
   if (anomalyLine) runRows.push(["Anomaly", anomalyLine]);
+  if (progressCell) runRows.push(["Progress", progressCell]);
   if (coverageParts.length) runRows.push(["Checked", coverageParts.join(" · ")]);
   runRows.push(...impactRows);
   runRows.push(["Found", String(data.QUALITY).trim()]);
@@ -1401,36 +1433,6 @@ function main() {
     } catch (e) { fail(`FIX_ALL_URL: ${e.message}`); }
   }
 
-  // ── `**Progress:**` — is the PR converging? ─────────────────────────────────────────────────────
-  //
-  // From the second review on, the worklist each run left behind (open review threads, blocking
-  // subset), oldest first, ending with this run's. The current point is derived from this payload's
-  // own arrays by the same worklistCounts() finalize.mjs stores in the PR-state record, so the next
-  // run's history and this run's line are one number.
-  const ROUNDS_SHOWN = 4;
-  const rounds = arr("ROUNDS").map((r, i) => {
-    const where = `ROUNDS[${i}]`;
-    if (!SHA7.test(String(r.sha))) {
-      fail(`${where}.sha must be exactly 7 lowercase hex chars, got ${JSON.stringify(r.sha)}`);
-    }
-    for (const f of ["open", "blocking"]) {
-      if (!Number.isInteger(r[f]) || r[f] < 0) {
-        fail(`${where}.${f} must be a non-negative integer, got ${JSON.stringify(r[f])}`);
-      }
-    }
-    if (r.blocking > r.open) fail(`${where}.blocking (${r.blocking}) exceeds open (${r.open})`);
-    return r;
-  }).slice(-ROUNDS_SHOWN);
-  let progressLine = "";
-  if (rounds.length) {
-    const now = worklistCounts({ openThreads, findings, notes: arr("NOTES") });
-    const opens = [...rounds.map((r) => r.open), now.open];
-    const blocks = [...rounds.map((r) => r.blocking), now.blocking];
-    progressLine = `**Progress:** open review threads ${opens.join(" → ")}`
-      + (blocks.some((b) => b > 0) ? ` · blocking ${blocks.join(" → ")}` : "")
-      + ` across the last ${opens.length} reviews`;
-  }
-
   // ── IMPACT_IMAGE → the picture above the findings ─────────────────────────────────────────────
   //
   // The impact-map diagram as light and dark PNGs, uploaded as GitHub user-attachments so they
@@ -1470,7 +1472,6 @@ function main() {
     SUMMARY_LINE: summary,
     REASONS_LINE: reasonsLine,
     ADVISORY_LINE: advisoryLine,
-    PROGRESS_LINE: progressLine,
     IMPACT_IMAGE: impactImage,
     FINDINGS_INDEX: findingsIndex,
     FIX_ALL_BUTTON: fixAllButton,

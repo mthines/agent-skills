@@ -5,8 +5,6 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 
 **Warnings:** 1 open review thread
 
-**Progress:** open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews
-
 | | Finding | Where |
 |:-:|---|---|
 | 🟡&nbsp;**1** | **`sync.ts` still branches on the old null contract** | [`sync.ts:88`](https://github.com/o/r/pull/7#discussion_r71 "src/jobs/sync.ts") |
@@ -40,6 +38,7 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 | Run | Details |
 |---|---|
 | Mode | full · 164 lines in delta · tier deep · depth checkout · thoroughness 0.95 |
+| Progress | open review threads 5 → 3 → 2 · blocking 2 → 1 → 0 across the last 3 reviews |
 | Checked | 22 of 22 changed files read (1 skipped) · 11 possible issues → 2 confirmed → 1 posted |
 | Reach | 2 changed exports · 15 dependent files · 7 checked · 1 flagged · 8 not checked<br>`retryRequest` — 14 consumer files · 6 checked · 1 flagged<br>`backoffDelay` — 2 consumer files · 2 checked |
 | Dependencies | `p-retry` 5.1.2 → 6.2.0 (major) — 3 usage sites, 2 checked |

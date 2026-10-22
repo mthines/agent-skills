@@ -118,7 +118,7 @@ export function tierBadge(tier) {
  * `openThreads` are the threads open BEFORE this run posted (Step 1.0, after Step 2.9c resolved
  * what it could); `findings` and `notes` are the threads this run just opened. Blocking counts the
  * blocking subset of the first two — a note is never blocking. One formula, imported by both the
- * report renderer (the `**Progress:**` line's current point) and finalize.mjs (the `round` the
+ * report renderer (the `Progress` row's current point) and finalize.mjs (the `round` the
  * PR-state record stores for the next run's line), so the two cannot drift.
  * @param {{ openThreads?: any[], findings?: any[], notes?: any[] }} lists
  * @returns {{ open: number, blocking: number }}

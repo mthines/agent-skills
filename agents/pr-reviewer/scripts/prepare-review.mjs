@@ -807,7 +807,7 @@ export function checksReadable(r) {
 }
 
 /**
- * The report's `**Progress:**` history for this run: the state record's rounds, or none under
+ * The report's `Progress` row history for this run: the state record's rounds, or none under
  * --isolated — a comparability run is judged as a first run and must not show a trend from runs it
  * is pretending not to know about.
  * @param {{ isolated?: boolean }} runMode @param {{ rounds?: unknown }} state
@@ -852,7 +852,7 @@ export function contextDeltaLines({ mode, deltaLines }) {
  * `{value: "<that JSON>"}`), or the flat `{priorSha, lastFullSha, incrRunsSinceFull}` shape.
  * `rounds` is the worklist each recorded run left (`runs[].open`/`.blocking`, Step 4c), oldest
  * first and capped at the last four; a run recorded before those fields existed is skipped, never
- * guessed. It feeds the report's `**Progress:**` line.
+ * guessed. It feeds the report's `Progress` row.
  * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null, rounds?: {sha: string, open: number, blocking: number}[]}}
  */
 export function readStateFile(path) {
@@ -2222,7 +2222,7 @@ async function prepare(opts) {
       stickyKind: sticky ? sticky.kind : null,
       priorSha,
       zeroDelta,
-      // The report's `**Progress:**` history. Empty under --isolated: a comparability run is judged
+      // The report's `Progress` row history. Empty under --isolated: a comparability run is judged
       // as a first run, so it must not show a trend from runs it is pretending not to know about.
       rounds: priorRunRounds(runMode, state),
       priorDiagnostics: null,
