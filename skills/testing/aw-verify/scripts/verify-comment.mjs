@@ -75,33 +75,34 @@ function gh(args, input) {
   return r.stdout.trim();
 }
 
-// GET /user answers 403 to an Actions GITHUB_TOKEN; its comments are authored by github-actions[bot].
-function viewerLogin() {
-  try { return gh(["api", "user", "--jq", ".login"]); } catch (e) {
-    if (process.env.GITHUB_ACTIONS === "true") return "github-actions[bot]";
-    throw e;
-  }
-}
-
-function upsert({ pr, repo, section, content, replaceAll }) {
+// Try each verify comment, newest first; GitHub refuses (403/404) an edit to another author's, so
+// the first PATCH it accepts is the viewer's own. No identity lookup: `/user` 401s or 403s under an
+// App or Actions token, and an unknown login would post a duplicate. `run` is injectable for --self-test.
+export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
   const prNumber = String(pr).match(/(\d+)\/?$/)?.[1];
   if (!prNumber) throw new Error(`cannot read a PR number from "${pr}"`);
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
-    || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
-  // Only the viewer's own comment is editable; another author's verify comment is left alone.
-  const me = viewerLogin();
-  const found = gh(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
-    `.[] | select((.body | startswith("${MARKER}")) and .user.login == "${me}") | [.id, (.body | @base64)] | @tsv`]).split("\n").filter(Boolean)[0];
-  const [id, b64] = found ? found.split("\t") : [];
-  const body = splice(id ? Buffer.from(b64, "base64").toString("utf8") : "", section, content, { replaceAll });
-  const payload = JSON.stringify({ body });
-  return id
-    ? gh(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], payload)
-    : gh(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], payload);
+    || run(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+  const found = run(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
+    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, (.body | @base64)] | @tsv`])
+    .split("\n").filter(Boolean).map((l) => l.split("\t"))
+    .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
+  for (const [id, , b64] of found) {
+    const body = splice(Buffer.from(b64, "base64").toString("utf8"), section, content, { replaceAll });
+    try {
+      return run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
+    } catch (e) {
+      if (e.code === 2 && /HTTP 40[34]/.test(e.message)) continue;
+      throw Object.assign(e, { code: 2 });
+    }
+  }
+  const body = splice("", section, content, { replaceAll });
+  return run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
 }
 
 function selfTest() {
-  const assert = (ok, msg) => { if (!ok) { console.error(`self-test FAIL: ${msg}`); process.exit(1); } };
+  let n = 0;
+  const assert = (ok, msg) => { n++; if (!ok) { console.error(`self-test FAIL: ${msg}`); process.exit(1); } };
   const one = splice("", "ui", "UI v1");
   assert(one.startsWith(MARKER), "a new body starts with the marker");
   assert(parseRegions(one).get("ui") === "UI v1", "a new region round-trips");
@@ -130,7 +131,28 @@ function selfTest() {
     "PUT /private/settings → 403", "POST /api/views 201 (84 ms)", "/Users/{id}/settings → 200"]) {
     assert(!localPathLine(ok), `a URL or HTTP route is allowed: ${ok}`);
   }
-  console.log("verify-comment self-test: 23 assertions passed");
+  // upsert against a fake gh: comments are [id, created_at, body]; patch(id) returns a URL or throws.
+  const ghErr = (msg) => Object.assign(new Error(msg), { code: 2 });
+  const fakeGh = (comments, patch) => {
+    const calls = [];
+    const run = (a) => {
+      calls.push(a[2]);
+      if (a.includes("--paginate")) return comments.map(([id, at, b]) => `${id}\t${at}\t${Buffer.from(b).toString("base64")}`).join("\n");
+      if (a[2] === "PATCH") return patch(a[3].split("/").pop());
+      return "https://x/new";
+    };
+    return { run, calls };
+  };
+  const req = { pr: 7, repo: "o/r", section: "ui", content: "UI" };
+  const other = fakeGh([["1", "2026-01-01T00:00:00Z", one]], () => { throw ghErr("gh: Resource not accessible by integration (HTTP 403)"); });
+  assert(upsert(req, other.run) === "https://x/new" && other.calls.includes("POST"), "another author's comment (403) → a new comment is posted");
+  const own = fakeGh([["2", "2026-01-02T00:00:00Z", one], ["3", "2026-01-03T00:00:00Z", two]],
+    (id) => { if (id === "3") throw ghErr("gh: Not Found (HTTP 404)"); return `https://x/${id}`; });
+  assert(upsert(req, own.run) === "https://x/2" && !own.calls.includes("POST"), "the own comment, second newest, is PATCHed and nothing is posted");
+  const down = fakeGh([["4", "2026-01-04T00:00:00Z", one]], () => { throw ghErr("gh: Server Error (HTTP 500)"); });
+  let code; try { upsert(req, down.run); } catch (e) { code = e.code; }
+  assert(code === 2 && !down.calls.includes("POST"), "a PATCH that fails with 500 exits 2 and posts nothing");
+  console.log(`verify-comment self-test: ${n} assertions passed`);
 }
 
 const args = process.argv.slice(2);

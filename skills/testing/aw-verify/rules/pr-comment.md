@@ -34,7 +34,7 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 A later standalone run adds its region beside the aggregate; each region names the head SHA it verified, so a reader can tell which is newer.
 A comment written before regions existed is kept as the `aggregate` region.
-Each author has their own verify comment: the script edits only one the viewer wrote, and creates one when the PR has none of theirs, so a run on someone else's PR never tries to edit the author's.
+Each author has their own verify comment: the script edits only a comment GitHub lets the viewer edit (it tries each and posts a new one when none accepts), so no identity lookup is needed and a run on someone else's PR never overwrites the author's.
 
 ## When to post
 
@@ -46,7 +46,8 @@ Take the first row that applies.
 | `--no-comment` was passed | `comment: not posted (--no-comment)` |
 | No PR resolves (a local `specs-path`, no PR for the branch) | `comment: not posted (no PR)` |
 | `policies.pr_comment: never` | `comment: not posted (pr_comment: never)` |
-| `policies.pr_comment: own-prs` and the PR author is not `gh api user --jq .login` | `comment: not posted (pr_comment: own-prs, not your PR)` |
+| `policies.pr_comment: own-prs` and the viewer is unknown (`gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login` fails or is empty) | `comment: not posted (pr_comment: own-prs, identity unknown)` |
+| `policies.pr_comment: own-prs` and the PR author differs from the viewer, both lowercased with one trailing `[bot]` stripped | `comment: not posted (pr_comment: own-prs, not your PR)` |
 | Otherwise, including no policy set (default `always`) | Post |
 
 **A parent never lets a child post.** `aw-verify` passes `--no-comment` to every `ui-verify` and `telemetry-verify` call, `ui-verify` passes it to every `telemetry-verify` call, and so does every other skill or agent that calls `telemetry-verify` for its own receipt (`verify-behavior`, `measurable`, `fix-bug`, `pr-reviewer`); the parent posts the child's proof inside its own region.
@@ -105,7 +106,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
-- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), save the body of the one starting with the marker that you wrote (`mcp__github__get_me` gives your login), run the script with `--dry-run --existing <saved body>`, then write its stdout with `mcp__github__update_issue_comment`, or `mcp__github__add_issue_comment` when none exists.
+- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), and for each comment starting with the marker, newest first, run the script with `--dry-run --existing <its body>` and write its stdout with `mcp__github__update_issue_comment`; stop at the first update that succeeds, and when none does, run `--dry-run` without `--existing` and write it with `mcp__github__add_issue_comment`.
 - **Script not found** (`aw-verify` not installed) → `comment: not posted (aw-verify not installed)`.
 - Write after the fix loop pushed, so the region describes the final head SHA.
 

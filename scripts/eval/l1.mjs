@@ -1709,11 +1709,11 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
   const lane = readOr("skills/quality/review-loop/rules/ui-lane.md");
   const jqFilter = ((lane.match(/## Reading a lane run's result[\s\S]*?--jq '([\s\S]*?)'\n```/) || ["", ""])[1]);
   const run = (bodies) => spawnSync("jq", ["-r", jqFilter], { input: JSON.stringify(bodies.map(([login, body]) => ({ body, user: { login } }))),
-    encoding: "utf8", env: { ...process.env, ME: "me" } });
+    encoding: "utf8", env: { ...process.env, SHA: "abc1234def5678" } });
   const ui = "**ui-verify** · head `abc1234`\n\n- verdict: green (2/2 specs)\n- finished: 2026-01-01T00:00:00Z";
   const both = splice(splice("", "aggregate", "AGG"), "ui", ui);
-  const hit = run([["me", "unrelated"], ["other", splice("", "ui", "**ui-verify** · head `zzz`\n- finished: OTHER")], ["me", both]]);
-  s.check("G131a the ui-lane jq filter extracts the ui region of the viewer's own verify comment (executed)",
+  const hit = run([["me", "unrelated"], ["bot[bot]", both], ["other", splice("", "ui", "**ui-verify** · head `zzz9999`\n- finished: OTHER")]]);
+  s.check("G131a the ui-lane jq filter extracts the ui region for the polled head, whoever wrote it, past a newer region for another head (executed)",
     jqFilter !== "" && hit.status === 0 && hit.stdout.includes("finished: 2026-01-01") && !hit.stdout.includes("AGG") && !hit.stdout.includes("OTHER"),
     jqFilter ? `exit ${hit.status}: ${(hit.stdout + hit.stderr).slice(0, 200)}` : "no --jq block under § Reading a lane run's result");
   const miss = run([["me", splice("", "aggregate", "AGG")]]);
