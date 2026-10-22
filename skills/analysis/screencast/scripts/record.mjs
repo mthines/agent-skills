@@ -126,7 +126,14 @@ export async function record(spec, { narrate = false } = {}) {
     }
     if (spec.crop) {
       const box = await page.locator(spec.crop).first().boundingBox();
-      if (box) crop = [box.x, box.y, box.width, box.height].map((n) => Math.max(0, Math.round(n))).join(',');
+      if (box) {
+        // An element larger than the viewport would ask ffmpeg to crop outside the frame.
+        const x = Math.max(0, Math.round(box.x));
+        const y = Math.max(0, Math.round(box.y));
+        const w = Math.min(Math.round(box.width), viewport.width - x);
+        const h = Math.min(Math.round(box.height), viewport.height - y);
+        if (w > 1 && h > 1) crop = [x, y, w, h].join(',');
+      }
     }
   } finally {
     const video = page.video();
