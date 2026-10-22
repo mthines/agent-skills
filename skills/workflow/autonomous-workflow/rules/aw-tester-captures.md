@@ -114,7 +114,9 @@ Phase 4 hot loop does not.
   segments in order, offsets their timings, and cuts frozen waits:
 
   ```bash
-  node "$SC/scripts/finish.mjs" $(ls "$AW_DIR"/recordings/.raw/spec-1*.webm | sort -V) --out "$AW_DIR/recordings/spec-1.mp4"
+  # spec-1.webm (grammar) or spec-1-<seq>.webm (intent) — never spec-1*.webm, which also matches spec-10
+  R="$AW_DIR/recordings/.raw"
+  node "$SC/scripts/finish.mjs" $(ls "$R"/spec-1.webm "$R"/spec-1-*.webm 2>/dev/null | sort -V) --out "$AW_DIR/recordings/spec-1.mp4"
   # → spec-1.mp4, spec-1.timings.json, spec-1.sheet.png
   ```
 
