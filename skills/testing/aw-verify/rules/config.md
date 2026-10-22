@@ -44,7 +44,7 @@ policies:
   foreign_stack: ask      # teardown | ask | abort — a stack this run did not start
   cleanup: leave          # leave | teardown
   push: own-prs           # always | own-prs | never — fix commits
-  pr_comment: always      # always | own-prs | never — the verify comment (default always)
+  pr_comment: always      # always | own-prs | never — standalone ui-verify / telemetry-verify regions; aw-verify's aggregate always posts
 repos:
   acme/shop:
     telemetry:
@@ -122,7 +122,7 @@ web:
   event_patterns: ["track\\(['\"]([^'\"]+)"]   # capture 1 = a custom event name
 ingest_wait_seconds: 45
 thresholds: { interactive_span_ms: 1000, repeated_child_spans: 10 }
-loops: 2
+loops: 3                             # fix iterations; 3 is also the cap
 ```
 
 ## Rules
