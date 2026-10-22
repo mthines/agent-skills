@@ -26,13 +26,15 @@ const close = (s) => `<!-- /verify:section=${s} -->`;
 const HEADER = `${MARKER}\n## Verify\n\n<sub>One comment per PR: each verify skill updates its own section below.</sub>`;
 
 // A path a reviewer cannot open: a file:// URL, the run's scratch dirs, a file under a home dir,
-// or a temp dir. An HTTP route such as `GET /home/feed` or `PUT /private/settings` is not one.
+// or a temp dir. An HTTP route such as `GET /home/feed` or `PUT /home/settings.json` is not one:
+// a path right after a method token is a route. ROUTE sits after ${B}, because ${B} consumes the space.
 const B = "(?:^|[\\s(`'\"=\\[])";
+const ROUTE = "(?<!\\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\\s+)";
 const LOCAL_PATH = new RegExp([
   "file:\\/\\/",
   `${B}(?:\\.{1,2}\\/)?\\.(?:agent|aw-tester|ui-verify)\\/`,
-  `${B}\\/(?:Users|home)\\/[^\\s)\`'"]+\\.[A-Za-z0-9]{1,5}(?=$|[\\s)\`'",.:;])`,
-  `${B}\\/(?:tmp|private\\/(?:tmp|var)|var\\/folders|root)\\/`,
+  `${B}${ROUTE}\\/(?:Users|home)\\/[^\\s)\`'"]+\\.[A-Za-z0-9]{1,5}(?=$|[\\s)\`'",.:;])`,
+  `${B}${ROUTE}\\/(?:tmp|private\\/(?:tmp|var)|var\\/folders|root)\\/`,
   `${B}~\\/`,
   "[A-Z]:\\\\",
 ].join("|"), "m");
@@ -128,7 +130,8 @@ function selfTest() {
   let threw = false; try { splice("", "bogus", "x"); } catch { threw = true; }
   assert(threw, "an unknown section is refused");
   for (const ok of ["![S-1](https://github.com/user-attachments/assets/abc)", "GET /home/feed 200",
-    "PUT /private/settings → 403", "POST /api/views 201 (84 ms)", "/Users/{id}/settings → 200"]) {
+    "PUT /private/settings → 403", "POST /api/views 201 (84 ms)", "/Users/{id}/settings → 200",
+    "GET /home/hero.png → 200", "PUT /home/settings.json → 200", "DELETE /tmp/cache 204"]) {
     assert(!localPathLine(ok), `a URL or HTTP route is allowed: ${ok}`);
   }
   // upsert against a fake gh: comments are [id, created_at, body]; patch(id) returns a URL or throws.
