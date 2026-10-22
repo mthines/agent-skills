@@ -1703,4 +1703,21 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
   s.check("G97b run-checks.mjs --self-test run through a symlink prints PASS", /self-test: PASS/.test(r.stdout), (r.stdout + r.stderr).slice(-200) || "no output");
 }
 
+// ── G131: review-loop's --ui lane reads the `ui` region that verify-comment.mjs writes; a drifted reader never sees a finished run ──
+{
+  const { splice } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/aw-verify/scripts/verify-comment.mjs")).href);
+  const lane = readOr("skills/quality/review-loop/rules/ui-lane.md");
+  const jqFilter = ((lane.match(/## Reading a lane run's result[\s\S]*?--jq '([\s\S]*?)'\n```/) || ["", ""])[1]);
+  const run = (bodies) => spawnSync("jq", ["-r", jqFilter], { input: JSON.stringify(bodies.map((body) => ({ body }))), encoding: "utf8" });
+  const ui = "**ui-verify** · head `abc1234`\n\n- verdict: green (2/2 specs)\n- finished: 2026-01-01T00:00:00Z";
+  const both = splice(splice("", "aggregate", "AGG"), "ui", ui);
+  const hit = run(["unrelated", both]);
+  s.check("G131a the ui-lane jq filter extracts the ui region verify-comment.mjs writes (executed)",
+    jqFilter !== "" && hit.status === 0 && hit.stdout.includes("finished: 2026-01-01") && !hit.stdout.includes("AGG"),
+    jqFilter ? `exit ${hit.status}: ${(hit.stdout + hit.stderr).slice(0, 200)}` : "no --jq block under § Reading a lane run's result");
+  const miss = run([splice("", "aggregate", "AGG")]);
+  s.check("G131b the ui-lane jq filter reads no region when only the aggregate exists (executed)",
+    miss.status === 0 && miss.stdout.trim() === "", `exit ${miss.status}: ${miss.stdout.slice(0, 120)}`);
+}
+
 process.exit(s.report() ? 0 : 1);
