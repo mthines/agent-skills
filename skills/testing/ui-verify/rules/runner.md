@@ -93,8 +93,8 @@ For an intent spec each runner replays a cached route when one matches the spec'
 
 **Record the window.** Immediately before the dispatch, record `RUN_STARTED_AT` as UTC ISO-8601 (`date -u +%Y-%m-%dT%H:%M:%SZ`); when the verdict returns, record `SPECS_ENDED_AT`. Step 4c reads telemetry for exactly that window.
 
-**Recordings are on by default on the Playwright driver.** The Playwright dispatch block carries `--record-video`, so `aw-tester` writes one video per spec under `.agent/{branch}/.aw-tester/recordings/` ([`recording.md`](./recording.md)).
-Pass `--no-recording` to drop the flag. The Chrome driver cannot record and its block never carries the flag.
+**Recordings are on by default on both drivers.** Both dispatch blocks carry `--record-video`: `aw-tester` writes one video per spec under `.agent/{branch}/.aw-tester/recordings/`, and `aw-tester-chrome` exports one `.gif` per spec with `gif_creator` ([`recording.md`](./recording.md)).
+Pass `--no-recording` to drop the flag from both blocks.
 
 **Screenshots are on by default.** A `ui-verify run` always passes
 `--auto-capture` to the runner, so every run yields full-page screenshots — each
@@ -121,7 +121,7 @@ Skill("aw-tester-chrome", "
   Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target '<ENV>'.
   Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
   Specs file: .agent/{branch}/.ui-verify/specs.md
-  Mode: --all --auto-capture
+  Mode: --all --auto-capture --record-video
 ")
 ```
 
