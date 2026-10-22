@@ -163,7 +163,15 @@ export function finish(inputs, opts) {
   }
   args.push('-filter_complex', graph, ...maps,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-g', '15', '-movflags', '+faststart', out);
-  run('ffmpeg', args);
+  try {
+    run('ffmpeg', args);
+  } catch (e) {
+    // Exit 3 as documented, and leave nothing half-written behind for an upload to pick up.
+    fs.rmSync(out, { force: true });
+    fs.rmSync(work, { recursive: true, force: true });
+    console.error(`screencast: encoding failed — ${e.message}`);
+    process.exit(3);
+  }
 
   // 4. Sanity check: a real duration and a video stream, or it never goes to a PR.
   const seconds = duration(out);
