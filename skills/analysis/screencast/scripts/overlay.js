@@ -10,7 +10,9 @@
   root.id = '__screencast';
   root.setAttribute('aria-hidden', 'true');
   root.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2147483647;';
+  // The caption renders through ::after, so it is never DOM text a getByText locator could match.
   root.innerHTML = `
+    <style>#__screencast [data-r="caption"]::after{content:attr(data-label)}</style>
     <div data-r="cursor" style="position:fixed;left:0;top:0;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;
       background:rgba(255,80,40,.6);box-shadow:0 0 0 2px rgba(255,255,255,.9);transition:transform .05s linear;display:none"></div>
     <div data-r="ring" style="position:fixed;width:44px;height:44px;margin:-22px 0 0 -22px;border-radius:50%;
@@ -23,7 +25,7 @@
   const caption = part('caption');
 
   const show = (label) => {
-    caption.textContent = label || '';
+    caption.setAttribute('data-label', label || '');
     caption.style.display = label ? 'block' : 'none';
   };
   const attach = () => {
