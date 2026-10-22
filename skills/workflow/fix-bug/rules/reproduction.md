@@ -74,7 +74,7 @@ checked against the shape of that same span before it is trusted as the `FAIL_TO
    Never assert mere *presence* ("a span named X exists"): it is by-construction, and
    `telemetry-verify` refuses it.
 2. Record the window start, run the repro command locally, record the window end, then run
-   `Skill("telemetry-verify", "--env local --from <start> --to <end>")` with the shape from step 1
+   `Skill("telemetry-verify", "--env local --from <start> --to <end> --no-comment")` with the shape from step 1
    written out as literal claims about the **local** run — e.g. *"the run emits a span whose parent
    is `checkout.handler` and whose status is `ERROR`"*.
    It reads only that window, so it can never fetch the production span; "matches the production
