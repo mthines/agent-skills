@@ -47,9 +47,9 @@ export function parseRegions(body) {
   const regions = new Map();
   if (!body || !body.startsWith(MARKER)) return regions;
   for (const s of SECTIONS) {
-    const a = body.indexOf(open(s));
-    const b = body.indexOf(close(s));
-    if (a !== -1 && b > a) regions.set(s, body.slice(a + open(s).length, b).trim());
+    const start = body.indexOf(open(s));
+    const end = body.indexOf(close(s));
+    if (start !== -1 && end > start) regions.set(s, body.slice(start + open(s).length, end).trim());
   }
   if (regions.size === 0) {
     const legacy = body.slice(MARKER.length).trim();
@@ -84,20 +84,20 @@ function viewerLogin() {
 }
 
 function upsert({ pr, repo, section, content, replaceAll }) {
-  const n = String(pr).match(/(\d+)\/?$/)?.[1];
-  if (!n) throw new Error(`cannot read a PR number from "${pr}"`);
+  const prNumber = String(pr).match(/(\d+)\/?$/)?.[1];
+  if (!prNumber) throw new Error(`cannot read a PR number from "${pr}"`);
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
     || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
   // Only the viewer's own comment is editable; another author's verify comment is left alone.
   const me = viewerLogin();
-  const found = gh(["api", `repos/${slug}/issues/${n}/comments`, "--paginate", "--jq",
+  const found = gh(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
     `.[] | select((.body | startswith("${MARKER}")) and .user.login == "${me}") | [.id, (.body | @base64)] | @tsv`]).split("\n").filter(Boolean)[0];
   const [id, b64] = found ? found.split("\t") : [];
   const body = splice(id ? Buffer.from(b64, "base64").toString("utf8") : "", section, content, { replaceAll });
   const payload = JSON.stringify({ body });
   return id
     ? gh(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], payload)
-    : gh(["api", "-X", "POST", `repos/${slug}/issues/${n}/comments`, "--input", "-", "--jq", ".html_url"], payload);
+    : gh(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], payload);
 }
 
 function selfTest() {
@@ -147,8 +147,8 @@ else if (isMain) {
     const content = readFileSync(file === "-" ? 0 : file, "utf8");
     const replaceAll = has("--replace-all");
     if (has("--dry-run")) {
-      const ex = opt("--existing");
-      process.stdout.write(splice(ex ? readFileSync(ex === "-" ? 0 : ex, "utf8") : "", section, content, { replaceAll }));
+      const existingPath = opt("--existing");
+      process.stdout.write(splice(existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "", section, content, { replaceAll }));
     } else {
       if (!opt("--pr")) throw new Error("--pr is required unless --dry-run");
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll }));
