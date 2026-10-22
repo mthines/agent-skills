@@ -81,8 +81,10 @@ function remap(t, ranges) {
 function speak(text, out) {
   const tpl = process.env.SCREENCAST_TTS;
   if (tpl) {
-    const cmd = tpl.replaceAll('{text}', JSON.stringify(text)).replaceAll('{out}', JSON.stringify(out));
-    return spawnSync('sh', ['-c', cmd]).status === 0 && fs.existsSync(out);
+    // The values reach sh as variables, never as script text, so a backtick or $ in a caption stays literal.
+    const cmd = tpl.replaceAll('{text}', '"$SCREENCAST_TEXT"').replaceAll('{out}', '"$SCREENCAST_OUT"');
+    const env = { ...process.env, SCREENCAST_TEXT: text, SCREENCAST_OUT: out };
+    return spawnSync('sh', ['-c', cmd], { env }).status === 0 && fs.existsSync(out);
   }
   if (process.platform === 'darwin') {
     return spawnSync('say', ['-o', out, '--data-format=LEI16@22050', text]).status === 0 && fs.existsSync(out);
