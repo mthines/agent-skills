@@ -125,7 +125,8 @@ export async function record(spec, { narrate = false } = {}) {
       if (entry.result !== 'ok') break;
     }
     if (spec.crop) {
-      const box = await page.locator(spec.crop).first().boundingBox();
+      // A scene may have removed the target (a closed modal): record the full frame rather than throw.
+      const box = await page.locator(spec.crop).first().boundingBox({ timeout: 2000 }).catch(() => null);
       if (box) {
         // An element larger than the viewport would ask ffmpeg to crop outside the frame.
         const x = Math.max(0, Math.round(box.x));
