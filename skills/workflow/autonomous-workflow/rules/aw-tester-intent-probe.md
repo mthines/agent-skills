@@ -88,7 +88,16 @@ test('probe', async ({ browser }) => {
     // cfg.video: a .webm path, set only on a launch that grades the spec (--record-video)
     recordVideo: cfg.video ? { dir: join(DIR, 'video-raw'), size: { width: 1280, height: 720 } } : undefined,
   });
+  // cfg.overlay: screencast's overlay.js — cursor, click ring, and the step caption on camera
+  if (cfg.video && cfg.overlay) await context.addInitScript({ path: cfg.overlay }).catch(() => {});
   const page = await context.newPage();
+  const t0 = Date.now();
+  const timings: any[] = []; // { label, start, end, result } per step, seconds from newPage — screencast's contract
+  const mark = async (label: string) => {
+    timings.push({ label, start: (Date.now() - t0) / 1000 });
+    await page.evaluate((l) => (window as any).__rec?.step(l), label).catch(() => {});
+  };
+  const done = (result: string) => Object.assign(timings.at(-1) ?? {}, { end: (Date.now() - t0) / 1000, result });
   const requests: string[] = [];
   page.on('response', (r) =>
     requests.push(`${r.request().method()} ${new URL(r.url()).pathname} → ${r.status()}`));
@@ -113,12 +122,13 @@ test('probe', async ({ browser }) => {
   let fatal: string | null = null;
   try { await page.goto(cfg.start); } catch (e) { fatal = String(e).slice(0, 300); }
   for (const s of fatal ? [] : cfg.steps ?? []) {
+    if (cfg.video) await mark(s.label ?? `${s.action} ${s.locator?.name ?? s.value ?? ''}`.trim());
     try {
-      if (s.action === 'goto') { await page.goto(s.value); steps.push({ ok: true }); continue; }
+      if (s.action === 'goto') { await page.goto(s.value); steps.push({ ok: true }); done('ok'); continue; }
       const t = find(s.locator);
       const n = await t.count();
       if (n !== 1) throw new Error(`locator matched ${n} elements — name the instance`);
-      if (s.dry) { steps.push({ ok: true, dry: true }); continue; } // resolve only — never act
+      if (s.dry) { steps.push({ ok: true, dry: true }); done('ok'); continue; } // resolve only — never act
       const before = mutations.length;
       if (s.action === 'click') await t.click({ timeout: 5000 });
       else if (s.action === 'fill') await t.fill(s.value, { timeout: 5000 });
@@ -132,7 +142,8 @@ test('probe', async ({ browser }) => {
       await page.waitForTimeout(cfg.settleMs ?? 1500);
       // the mutating requests this step issued — the evidence that settles "was it a mutation?"
       steps.push({ ok: true, fired: mutations.slice(before) });
-    } catch (e) { steps.push({ ok: false, error: String(e).slice(0, 300) }); break; }
+      done('ok');
+    } catch (e) { steps.push({ ok: false, error: String(e).slice(0, 300) }); done('fail'); break; }
   }
   await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
   const checks: any[] = [];
@@ -146,12 +157,16 @@ test('probe', async ({ browser }) => {
   }
   const body = page.locator('body');
   const aria = typeof body.ariaSnapshot === 'function' ? await body.ariaSnapshot() : await body.innerText();
-  if (cfg.shot) await page.screenshot({ path: cfg.shot, fullPage: true }).catch(() => {});
+  // the style option keeps the overlay out of evidence screenshots
+  if (cfg.shot) await page.screenshot({ path: cfg.shot, fullPage: true, style: '#__screencast{display:none!important}' }).catch(() => {});
   writeFileSync(join(DIR, 'probe-out.json'), JSON.stringify(
     { url: page.url(), fatal, steps, checks, aria: aria.slice(0, 20000), requests: requests.slice(-100) }, null, 2));
   const video = page.video();
   await context.close();
-  if (cfg.video && video) await video.saveAs(cfg.video).then(() => video.delete()).catch(() => {});
+  if (cfg.video && video) {
+    await video.saveAs(cfg.video).then(() => video.delete()).catch(() => {});
+    writeFileSync(cfg.video.replace(/\.webm$/, '.timings.json'), JSON.stringify(timings));
+  }
 });
 ```
 
@@ -163,8 +178,11 @@ the probe budget. A `fatal` value means `start` itself did not load.
 
 ```bash
 # probe-in.json: { baseURL, storageState, bypassHeader, apiOrigins, settleMs, start,
-#                  steps: [{action, locator, value, dry}], checks: [locator, …], shot, video }
+#                  steps: [{action, locator, value, dry, label}], checks: [locator, …], shot, video, overlay }
 # video: a .webm path — set only on a grading launch under --record-video; absent otherwise.
+#   The launch also writes <stem>.timings.json beside it for screencast's finish.mjs.
+# overlay: "${SCREENCAST_DIR:-$HOME/.claude/skills/screencast}/scripts/overlay.js" when that file exists.
+# label: the spec's own words for the step (the WHEN line), shown as the video caption.
 # apiOrigins: the app's own API origins besides the preview's (it is always included) —
 #   the aw-target's adversarial.allowed_origins when set; never analytics or third-party hosts.
 # settleMs: wait after each action before reading `fired` (default 1500; raise it for a debounced control).

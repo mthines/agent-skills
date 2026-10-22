@@ -64,7 +64,7 @@ Fix the code and resolve this thread. If this is not a defect, reply with why an
 ```
 
 The marker line is load-bearing: `implement-suggestion` includes any comment that carries `<!-- ui-verify:finding`, even when the current user posted it (`implement-suggestion/rules/comment-fetching.md` § Carve-out).
-Upload a finding's before/after images and its recording before writing the thread, so a reviewer can see them: `Skill("attach-media", "<pr-url> <before.png>#Before <after.png>#After <clip.webm> --to urls")`, then paste the lines it prints into **Evidence:**.
+Upload a finding's before/after images and its recording before writing the thread, so a reviewer can see them: `Skill("attach-media", "<pr-url> <before.png>#Before <after.png>#After <clip.mp4> --to urls")`, then paste the lines it prints into **Evidence:**.
 For a file it reports as `not attached`, keep the local path and add `(local to the ui-verify run)` after it.
 
 ## Dedupe by fingerprint

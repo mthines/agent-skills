@@ -28,7 +28,7 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 | Region | Owner | Written when |
 | --- | --- | --- |
-| `aggregate` | `aw-verify` | Every run with a PR; `--replace-all` drops the other regions, because the aggregate already holds the browser, adversarial, and telemetry proof |
+| `aggregate` | `aw-verify` | Every run with a PR, always — `policies.pr_comment` never suppresses it; `--replace-all` drops the other regions, because the aggregate already holds the browser, adversarial, and telemetry proof |
 | `ui` | `ui-verify` | A standalone `run` or `verify` with a PR |
 | `telemetry` | `telemetry-verify` | A standalone run with a PR |
 
@@ -44,6 +44,7 @@ Take the first row that applies.
 | Condition | Result |
 | --- | --- |
 | `ui-verify` with `--post-findings` and a PR | Post, whatever `--no-comment` or the policy says: `review-loop --ui` reads the region's status lines |
+| `aw-verify`'s `aggregate` region and a PR resolves | Post. `pr_comment` does not apply; `--no-comment` only defers it to the caller's `report <pr-url>` (`comment: deferred (--no-comment)`) |
 | `--no-comment` was passed | `comment: not posted (--no-comment)` |
 | No PR resolves (a local `specs-path`, no PR for the branch) | `comment: not posted (no PR)` |
 | `policies.pr_comment: never` | `comment: not posted (pr_comment: never)` |
@@ -91,6 +92,8 @@ Every row a reader must trust carries four things:
    `attach-media` opens every image before upload and skips one that shows a secret or personal data; it re-encodes a `.webm` over 10 MB to `.mp4` and skips what still does not fit.
 3. **Embed** each returned URL twice: as the link in its row's Evidence cell, and in a `<details><summary>Screenshots and recordings (<n>)</summary>` gallery at the end of the region, an image as `![S-n — caption](https://…)` and a recording as its bare URL on its own line, which GitHub renders as a player.
 4. A file `attach-media` skipped or could not upload → its Evidence cell says `not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
+5. **Recordings are never silently missing.** Upload every `.mp4` and `.gif` the run listed (screencast's `.mp4` plays inline; open its `<id>.sheet.png` first and drop a video whose frames do not show the spec).
+   When the region holds no recording, its gallery says why, on its own line: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
 
 ## Write the region
 

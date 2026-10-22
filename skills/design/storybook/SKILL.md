@@ -263,7 +263,7 @@ Minimum verification, in this order:
 
 For visual evidence (a screenshot or short clip of the rendered story),
 delegate to the [`pr-reviewer`](../../../agents/pr-reviewer.md) agent or the
-[`screen-recorder`](../../analysis/screen-recorder/SKILL.md) skill.
+[`screencast`](../../analysis/screencast/SKILL.md) skill.
 Full handoff rules in
 [`rules/visual-verification.md`](./rules/visual-verification.md).
 
@@ -318,7 +318,7 @@ live in
 | Repo has `react-native` or `expo`                         | Set `--platform native`. Load [`rules/react-native.md`](./rules/react-native.md). |
 | Storybook URL is `http://localhost:6006/...` (or similar) | Iterate via Playwright CLI. No auth needed.                              |
 | Storybook URL is gated (login form, SSO, basic auth)      | Resolve `--auth <profile>` first. Load [`rules/auth.md`](./rules/auth.md).|
-| Visual evidence requested in the PR                       | Delegate to [`pr-reviewer`](../../../agents/pr-reviewer.md) or `screen-recorder`. |
+| Visual evidence requested in the PR                       | Delegate to [`pr-reviewer`](../../../agents/pr-reviewer.md) or `screencast`. |
 | Component is a hook or non-visual                         | Stop. Defer to [`tdd`](../../quality/tdd/SKILL.md).                                 |
 | Storybook isn't installed                                 | Halt. Ask the user to install Storybook before re-running.               |
 
@@ -334,7 +334,7 @@ live in
 - [`pr-reviewer`](../../../agents/pr-reviewer.md) — runs the visual check pass
   and posts screenshots on the PR (Critical / High motion findings,
   visual diffs).
-- [`screen-recorder`](../../analysis/screen-recorder/SKILL.md) — captures short
+- [`screencast`](../../analysis/screencast/SKILL.md) — captures short
   videos of multi-frame interactions where a still screenshot cannot
   prove the change (transitions, focus order, hover-revealed UI).
 - [`ux`](../ux/SKILL.md) — call after stories are scaffolded to audit
@@ -372,7 +372,7 @@ live in
   catalog, story-vs-component triage, the confidence-gated fix path, and
   the loop cap.
 - [`rules/visual-verification.md`](./rules/visual-verification.md) —
-  delegation rules for the `pr-reviewer` agent and `screen-recorder`
+  delegation rules for the `pr-reviewer` agent and `screencast`
   skill, when each is the right tool.
 - [`rules/anti-patterns.md`](./rules/anti-patterns.md) — full list of
   patterns to refuse.

@@ -7,4 +7,4 @@ environments:
   preview: {}
 ingest_wait_seconds: 0        # 45 for dash0-mcp
 thresholds: { interactive_span_ms: 1000, repeated_child_spans: 10 }
-loops: 2
+loops: 3

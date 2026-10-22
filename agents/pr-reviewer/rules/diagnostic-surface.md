@@ -262,7 +262,7 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | `/tmp/pr-delta.json` (ephemeral) | `gh api repos/.../compare/...` | Step 1.2b (incremental modes) |
 | `reviewer-comment-relevance` memories | pr-reviewer Step 2.9c | Re-review reconciliation (`trigger: re-review-reconcile`) |
 | Terminal Quality Gate summary | shared/rules pipeline | Every run |
-| `.agent/recordings/*.{webm,mp4,gif}` | `Skill("screen-recorder")` | Motion-relevant diff + stable selector + preview deploy URL |
+| `.agent/{branch}/recordings/*.mp4` | `Skill("screencast")` | Motion-relevant diff + stable selector + preview deploy URL |
 
 The agent rewrites one sticky report per PR and posts at most one review per run. Its durable state is the PR-state record, which a re-run reads back; everything else recomputes from PR state, and the sticky body is a rendering for humans rather than a store.
 Diagnoses lean on the transcript, the GitHub-side sticky and reviews (inspectable via `gh api`), and the record itself (`lorekit show --scope "branch::<owner>/<repo>::<head>" --key "ci-state::pr-review-<n>" --remote --json`, or `lorekit list --kind bus --host reviewer`).

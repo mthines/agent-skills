@@ -172,7 +172,7 @@ Use screenshots only when:
 - The user explicitly asked for a visual diff.
 - The `pr-reviewer` agent or a PR needs evidence.
 - A motion / transition test cannot be captured statically — in which
-  case use [`screen-recorder`](../../../analysis/screen-recorder/SKILL.md), not
+  case use [`screencast`](../../../analysis/screencast/SKILL.md), not
   raw Playwright `screenshot`.
 
 ## Background process hygiene

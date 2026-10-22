@@ -48,7 +48,7 @@ Drop a file from the run, and name it in the report, when any check fails:
 | 1 | The file exists and is non-empty. | `skipped (missing)` |
 | 2 | The extension is `png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `mp4`, `mov`, or `webm`. | Convert other video (`avi`, `mkv`) with `ffmpeg -i in.avi -c:v libx264 -pix_fmt yuv420p -an out.mp4`; else `skipped (unsupported type)` |
 | 3 | An image or GIF is ≤ 10 MB; a video is ≤ 10 MB (100 MB on a paid plan). | Re-encode a video once: `ffmpeg -i in.webm -vf scale=1280:-2 -c:v libx264 -crf 30 -an out.mp4`; else `skipped (too large)` |
-| 4 | **You looked at it.** Open every image with the Read tool; for a video, extract three frames (`ffmpeg -i v.webm -vf fps=1/3 -frames:v 3 /tmp/f%d.png`) and open them. | `skipped (contains <secret/token/PII>)` — never upload it |
+| 4 | **You looked at it.** Open every image with the Read tool; for a video, open the `screencast` contact sheet beside it (`<stem>.sheet.png`, one frame per step) when it exists, else extract three frames (`ffmpeg -i v.webm -vf fps=1/3 -frames:v 3 /tmp/f%d.png`) and open them. | `skipped (contains <secret/token/PII>)` — never upload it |
 
 Check 4 is mandatory because an upload is permanent and visible to everyone who can read the repo.
 Refuse any frame showing an API key, token, password, session cookie, a real customer's name or email, or a production data row.

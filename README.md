@@ -186,7 +186,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`interview`](./skills/analysis/interview/SKILL.md) | Aligns on scope before planning; asks only what research can't answer. |
 | [`rum-tracking`](./skills/analysis/rum-tracking/SKILL.md) | Decides which product analytics to track, and what is PII. |
 | [`video-analyser`](./skills/analysis/video-analyser/SKILL.md) | Pulls bugs and repro steps out of a screen recording. |
-| [`/screen-recorder`](./skills/analysis/screen-recorder/SKILL.md) | Records a short, cropped clip of a UI interaction. |
+| [`screencast`](./skills/analysis/screencast/SKILL.md) | Records browser videos with a cursor and step captions, cuts the waits, and outputs an mp4 with a contact sheet. |
 | [`/playwright-trace-analyzer`](./skills/analysis/playwright-trace-analyzer/SKILL.md) | Names the race behind a flaky Playwright test. |
 | [`/profile-optimizer`](./skills/analysis/profile-optimizer/SKILL.md) | Turns a React or Chrome performance trace into fixes. |
 | [`youtube-transcript`](./skills/analysis/youtube-transcript/SKILL.md) | Fetches a YouTube video's captions as text. |

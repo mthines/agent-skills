@@ -15,7 +15,7 @@ Part of the [`aw-tester`](../templates/aw-tester.agent.md) agent definition. Rea
 
 - [Capture steps (documentation screenshots)](#capture-steps-documentation-screenshots)
 - [Auto-capture (always-on documentation screenshots)](#auto-capture-always-on-documentation-screenshots)
-- [Record video (one `.webm` per spec)](#record-video-one-webm-per-spec)
+- [Record video (one `.mp4` per spec)](#record-video-one-mp4-per-spec)
 
 ## Capture steps (documentation screenshots)
 
@@ -75,15 +75,17 @@ await page.screenshot({
   every distinct visual state; a spec wanting a specific intermediate frame adds
   an explicit `CAPTURE` step.
 
-## Record video (one `.webm` per spec)
+## Record video (one `.mp4` per spec)
 
 When the invocation passed `--record-video`, record each spec per the
-[spec-run contract § Record video](./spec-run-contract.md#record-video-a-playwright-run-option).
+[spec-run contract § Record video](./spec-run-contract.md#record-video-a-playwright-run-option)
+through the `screencast` skill (`SC="${SCREENCAST_DIR:-$HOME/.claude/skills/screencast}"`).
 `ui-verify run`/`verify` pass this flag on the Playwright driver; the executor's
 Phase 4 hot loop does not.
 
 - **Grammar spec.** Give each spec its own context (this overrides the
-  one-context-per-batch rule above) and save its video when the context closes:
+  one-context-per-batch rule above), load the overlay, mark each step, and
+  write the raw video and its timings when the context closes:
 
   ```ts
   // per spec, with --record-video
@@ -91,27 +93,38 @@ Phase 4 hot loop does not.
     ...contextOptions,
     recordVideo: { dir: '.agent/<branch>/.aw-tester/recordings/.raw', size: { width: 1280, height: 720 } },
   });
+  await context.addInitScript({ path: `${SC}/scripts/overlay.js` }).catch(() => {});
   const page = await context.newPage();
-  // … the spec's steps …
+  const t0 = Date.now(), timings = [];
+  // before each step: its WHEN/THEN line becomes the caption
+  timings.push({ label: 'WHEN click "Save"', start: (Date.now() - t0) / 1000 });
+  await page.evaluate((l) => window.__rec?.step(l), 'WHEN click "Save"').catch(() => {});
+  // after it: Object.assign(timings.at(-1), { end: (Date.now() - t0) / 1000, result: 'pass' | 'fail' })
   const video = page.video();
   await context.close();                       // the video is finalized on close
-  await video?.saveAs('.agent/<branch>/.aw-tester/recordings/spec-1.webm').catch(() => {});
-  await video?.delete().catch(() => {});
+  await video?.saveAs('.agent/<branch>/.aw-tester/recordings/.raw/spec-1.webm').catch(() => {});
+  writeFileSync('.agent/<branch>/.aw-tester/recordings/.raw/spec-1.timings.json', JSON.stringify(timings));
   ```
 
-- **Intent spec.** Set `video` in `probe-in.json` (a `.webm` path) only on the
-  launches that grade the spec — the replay launch, each commit launch, and the
-  final probe — naming them `<spec-id>-<seq>.webm`; never on an exploratory
-  probe. After the spec, join the segments when `ffmpeg` is on `PATH`, else keep
-  them:
+- **Intent spec.** Set `video` (a `.raw/<spec-id>-<seq>.webm` path) and `overlay`
+  in `probe-in.json` only on the launches that grade the spec — the replay
+  launch, each commit launch, and the final probe; never on an exploratory
+  probe. Each launch writes its own `.timings.json` beside the video.
+- **Finish** every spec once its launches are done — `finish.mjs` joins the
+  segments in order, offsets their timings, and cuts frozen waits:
 
   ```bash
-  # concat resolves list entries against the list file's directory, so write basenames
-  (cd "$AW_DIR/recordings" && ls spec-1-*.webm | sort -V | sed "s/.*/file '&'/") > "$AW_DIR/recordings/spec-1.txt"
-  ffmpeg -loglevel error -f concat -safe 0 -i "$AW_DIR/recordings/spec-1.txt" -c copy "$AW_DIR/recordings/spec-1.webm" \
-    && rm "$AW_DIR"/recordings/spec-1-*.webm "$AW_DIR/recordings/spec-1.txt"
+  # spec-1.webm (grammar) or spec-1-<seq>.webm (intent) — never spec-1*.webm (matches spec-10); find, not a glob, so zsh does not abort on no match
+  R="$AW_DIR/recordings/.raw"
+  node "$SC/scripts/finish.mjs" $(find "$R" -maxdepth 1 \( -name 'spec-1.webm' -o -name 'spec-1-*.webm' \) | sort -V) --out "$AW_DIR/recordings/spec-1.mp4"
+  # → spec-1.mp4, spec-1.timings.json, spec-1.sheet.png
   ```
 
-- A save that fails is a `notes` line, never a red spec. Delete `recordings/.raw/`
-  when the run ends.
+  Open `spec-1.sheet.png` before listing the recording: it is the only way to
+  see that the video shows the spec.
+- **Screenshots hide the overlay:** pass `style: '#__screencast{display:none!important}'`
+  to every `page.screenshot(...)` in a recorded context.
+- `screencast` not installed or `finish.mjs` exits non-zero → keep the raw
+  `.webm` segments, list them, and add a `notes` line. A save that fails is a
+  `notes` line, never a red spec. Delete `recordings/.raw/` after finishing.
 - List each saved video in the verdict's `recordings:` array.

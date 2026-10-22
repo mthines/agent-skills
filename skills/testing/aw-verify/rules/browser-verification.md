@@ -42,7 +42,7 @@ Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> --url <
 One `probes.jsonl` line per spec, joined to its criterion by the `AC-n` / `EC-n` in the spec title:
 
 ```json
-{"id": "EC-9", "title": "Save while the API fails", "result": "fail", "window_start": "2026-10-07T09:12:03Z", "window_end": "2026-10-07T09:12:41Z", "screenshots": [".agent/feat-x/.ui-verify/captures/ec-9.png"], "recordings": [".agent/feat-x/.aw-tester/recordings/spec-3.webm"]}
+{"id": "EC-9", "title": "Save while the API fails", "result": "fail", "window_start": "2026-10-07T09:12:03Z", "window_end": "2026-10-07T09:12:41Z", "screenshots": [".agent/feat-x/.ui-verify/captures/ec-9.png"], "recordings": [".agent/feat-x/.aw-tester/recordings/spec-3.mp4"]}
 ```
 
 `screenshots` and `recordings` list every image and video path `ui-verify` reported for that spec, relative to the checkout root; Phase 5 uploads them into the PR comment.

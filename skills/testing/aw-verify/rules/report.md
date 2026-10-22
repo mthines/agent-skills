@@ -63,5 +63,5 @@ Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-c
 
 ## `report` mode
 
-Re-render from the existing run directory, re-run the Media steps, upsert the `aggregate` region per policy, and print the terminal block.
+Re-render from the existing run directory, re-run the Media steps, upsert the `aggregate` region (always, on any PR), and print the terminal block.
 Missing run directory → `no verify run found for <branch>`.

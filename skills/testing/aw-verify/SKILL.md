@@ -28,17 +28,18 @@ Who owns what, the spec contract, and the anti-patterns: [`rules/delegation.md`]
 
 `run [local|preview] [<pr>|<ticket>]` is the default (no reference → the branch's PR, else its `plan.md`).
 `setup` writes `.agents/aw/` ([`rules/setup.md`](./rules/setup.md)); `report` re-renders the last report and re-upserts the PR comment, with no stack, browser, or telemetry calls.
-Every run with a PR ends by posting its proof — what was tested, why, the result, and uploaded screenshots and recordings — as the `aggregate` region of the PR's one verify comment ([`rules/pr-comment.md`](./rules/pr-comment.md)); on by default for any PR, off with `--no-comment` or `policies.pr_comment: never`.
+Every run with a PR ends by posting its proof — what was tested, why, the result, and uploaded screenshots and recordings — as the `aggregate` region of the PR's one verify comment ([`rules/pr-comment.md`](./rules/pr-comment.md)); always, whatever `policies.pr_comment` says.
+**Your own PR:** fix, push, and re-verify until the verdict is `✅ verified`, at most 3 iterations — on `local` and `preview` alike — then post ([`rules/fix-loop.md § Own PR`](./rules/fix-loop.md#own-pr-fix-until-verified)). Someone else's PR: report only.
 
 | Flag | Effect |
 | --- | --- |
 | `--no-fix` | Report findings, change no code |
-| `--no-push` / `--no-comment` | Commit fixes but do not push / skip the PR comment (a caller that posts its own report passes it) |
-| `--loops <n>` | Fix-and-reverify loops (default `telemetry.yml` `loops`, `2`; max `4`) |
+| `--no-push` / `--no-comment` | Commit fixes but do not push / defer the PR comment — only for a caller that runs `report <pr-url>` itself afterwards (`aw`) |
+| `--loops <n>` | Fix-and-reverify iterations (default and max `3`; `telemetry.yml` `loops` may lower it) |
 | `--keep-stack` | Never tear the local stack down |
 | `--foreign-stack <teardown\|ask\|abort>` | Overrides `policies.foreign_stack`; `aw` passes `abort` |
 
-`preview` never fixes: its blocking findings go to `review-loop --ui` as review threads.
+Someone else's PR is never fixed, on `local` or `preview`: its blocking findings go to `review-loop --ui` as review threads.
 
 ## Run card
 
@@ -53,7 +54,7 @@ Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, w
    A defect that blocks the path (a 500, a build error, a crash) → record it, then route around it without changing code (another dev-server mode, a direct request, seeded state) and keep probing; one defect must not hide the next.
 4. **Telemetry, once** ([The two witnesses](#the-two-witnesses)). After the last window closes, dispatch `telemetry-verify` over all of them; save its block to `telemetry.md`.
 5. **Findings** ([`rules/findings.md`](./rules/findings.md)): one JSON line per defect in `findings.jsonl`, with its probe and evidence.
-6. **Fix** (`local`, unless `--no-fix`: [`rules/fix-loop.md`](./rules/fix-loop.md)), then **report** ([`rules/report.md`](./rules/report.md)), **lessons and cleanup** ([`rules/lessons.md § Write`](./rules/lessons.md#write-step)). After a fix, re-run the probe that found it; stop when a loop finds nothing new or at `--loops`, and report a finding open at the cap as `open`.
+6. **Fix** (your own PR or no PR yet, `local` or `preview`; never someone else's PR; unless `--no-fix`: [`rules/fix-loop.md`](./rules/fix-loop.md)), then **report** ([`rules/report.md`](./rules/report.md)), **lessons and cleanup** ([`rules/lessons.md § Write`](./rules/lessons.md#write-step)). After a fix, re-run the probe that found it; stop at `✅ verified` or at `--loops`, and report a finding open at the cap as `open`.
 
 The verdict is `BROKEN` when any AC fails or any guardrail does not hold; a defect outside them is reported but does not flip the verdict.
 

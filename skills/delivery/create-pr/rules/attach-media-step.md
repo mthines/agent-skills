@@ -9,9 +9,9 @@ Select files in this order, stopping at **6 images and 2 videos**:
 1. Every path passed with `--attach <file>` in `$ARGUMENTS`, in order.
 2. Explicit `CAPTURE` screenshots from this branch's runs: `.agent/{branch}/.aw-tester/captures/*.png`, excluding `*-auto-*`.
 3. Final-state auto-captures: `.agent/{branch}/.aw-tester/captures/*-auto-final.png`.
-4. Recordings of passing specs: `.agent/{branch}/.aw-tester/recordings/spec-*.webm`.
+4. Recordings of passing specs: `.agent/{branch}/.aw-tester/recordings/spec-*.{mp4,gif}` (`screencast` output); a raw `spec-*.webm` only when no `.mp4` exists for that spec.
 5. Adversarial-pass screenshots from `ui-verify` (and `aw-verify`, which runs it): `.agent/{branch}/.ui-verify/adversarial/captures/*.png`.
-6. Adversarial-pass recordings: `.agent/{branch}/.ui-verify/adversarial/recordings/*.webm`.
+6. Adversarial-pass recordings: `.agent/{branch}/.ui-verify/adversarial/recordings/*.mp4` (a raw `*.webm` only when its `.mp4` is missing).
 
 Rows 2–6 take only files newer than the merge base with the PR's own base branch, so a capture from an older branch with the same name is never shown:
 
@@ -25,7 +25,7 @@ else
   SINCE=$(git log -1 --format=%cI "$BASE")
   find ".agent/$BRANCH/.aw-tester/captures" ".agent/$BRANCH/.aw-tester/recordings" \
        ".agent/$BRANCH/.ui-verify/adversarial/captures" ".agent/$BRANCH/.ui-verify/adversarial/recordings" \
-       \( -name '*.png' -o -name '*.webm' \) -newermt "$SINCE" 2>/dev/null | sort
+       \( -name '*.png' -o -name '*.mp4' -o -name '*.gif' -o -name '*.webm' \) ! -name '*.sheet.png' -newermt "$SINCE" 2>/dev/null | sort
 fi
 ```
 

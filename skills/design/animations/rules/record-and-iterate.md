@@ -4,7 +4,7 @@ impact: HIGH
 tags:
   - feedback-loop
   - validation
-  - screen-recorder
+  - screencast
   - video-analyser
   - iteration
 ---
@@ -49,10 +49,10 @@ analyser pass on a 200 ms fade is wasteful.
 ## The four-step cycle
 
 ```text
-   ┌──────────────┐    Skill("screen-recorder")   ┌────────────────┐
-   │  Build /     │ ─────────────────────────────▶│  .agent/       │
+   ┌──────────────┐    Skill("screencast")        ┌────────────────┐
+   │  Build /     │ ─────────────────────────────▶│  .agent/…/     │
    │  edit anim.  │                               │  recordings/   │
-   └──────┬───────┘                               │  <slug>.webm   │
+   └──────┬───────┘                               │  <slug>.mp4    │
           │                                       └────────┬───────┘
           │                                                │
           │              Skill("video-analyser",           ▼
@@ -69,31 +69,30 @@ analyser pass on a 200 ms fade is wasteful.
 ```
 
 1. **Build / edit** — make the change.
-2. **Record** — `Skill("screen-recorder")` (one default, one
-   `reduced-motion: true`).
+2. **Record** — `Skill("screencast")` (one default, one
+   `"reducedMotion": true`).
 3. **Analyse** — `Skill("video-analyser")` with a contract-shaped goal.
 4. **Iterate** — apply the analyser's top-priority "Recommended next
    step"; loop. Cap at 3 rounds.
 
 ## Recording inputs
 
-The `screen-recorder` defaults are already tuned for the analyser
-(`max-width: 768`, `keyint: 15`, `duration: 5000`). Pass only what is
-animation-specific:
+Write a `recording.json` for `screencast`'s `record.mjs`; `crop` narrows the video to the animated element and `maxWidth: 768` keeps frames analyser-sized:
 
 ```json
 {
   "url": "http://localhost:3000/<page>",
-  "selector": "[data-testid=\"<animation-target>\"]",
-  "interaction": "<recipe matching the trigger — hover | click | tab-to | scroll-into-view | idle | multi>",
-  "output-name": "<animation-name>-default",
-  "caller": "animations",
-  "reduced-motion": false
+  "id": "<animation-name>-default",
+  "crop": "[data-testid=\"<animation-target>\"]",
+  "maxWidth": 768,
+  "reducedMotion": false,
+  "scenes": [{ "caption": "<the trigger>", "steps": [{ "hover": "[data-testid=\"<animation-target>\"]" }], "hold": 1500 }]
 }
 ```
 
-Then record a second clip with `reduced-motion: true` and
-`output-name: "<animation-name>-reduced"`.
+Then record a second clip with `"reducedMotion": true` and
+`"id": "<animation-name>-reduced"`.
+The motion under test happens inside the hold, so it is never trimmed as a frozen wait.
 Two recordings are mandatory for any `prefers-reduced-motion`-aware
 animation — never ship a single-variant claim.
 

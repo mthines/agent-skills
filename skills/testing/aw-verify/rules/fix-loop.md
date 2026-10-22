@@ -10,7 +10,7 @@ tags:
 # Fix loop
 
 Phase 4 fixes findings autonomously, highest severity first, and proves each fix with the exact probe that found it.
-Runs on `local` only; skipped under `--no-fix` and on `preview`: every finding stays `open` and the report says so.
+Runs on your own PR (`local` or `preview`) and on a branch with no PR yet ([Own PR](#own-pr-fix-until-verified)); never on someone else's PR, and not under `--no-fix`: there every finding stays `open` and the report says so.
 
 ## Scope
 
@@ -61,6 +61,26 @@ Runs on `local` only; skipped under `--no-fix` and on `preview`: every finding s
 
 9. Update the finding: `status: fixed`, `fix_commit`, `reverified`.
 
+## Own PR: fix until verified
+
+The PR is yours when `gh pr view <pr> --json author --jq .author.login` matches `gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login`, both lowercased with one trailing `[bot]` stripped; an unknown viewer means it is not.
+
+| PR | Do |
+| --- | --- |
+| Your own PR, `local` or `preview` | Iterate: fix every open in-scope finding (§ Per finding), push, re-verify, re-render the verdict. Stop at `✅ verified`, or after **at most 3 iterations**; then post the report |
+| Someone else's PR | Report only: no fixes, no pushes; `preview` findings go to `review-loop --ui` |
+| No PR yet | § Per finding on `local`, same cap; the caller posts later with `report <pr-url>` |
+
+One iteration on `preview`:
+
+1. Work in a checkout of the PR's head branch (`gw checkout <head-ref>` when this one is not on it); never fix in a detached copy.
+2. Fix and commit each finding per § Per finding, guard tests included, then push (own PR: `policies.push: never` or `--no-push` ends the loop with `fixes committed, not pushed`).
+3. Wait for the preview of the new head SHA (ui-verify's `--wait-preview`), then re-run the specs and probes that failed, plus every AC spec, and re-read their telemetry window.
+4. `✅ verified` → stop. Otherwise the next iteration takes the findings still open.
+
+At the cap, post the report with the open findings as `open` and their attempts as evidence; never loop a 4th time.
+The comment is written once, after the last iteration, so it describes the final head SHA.
+
 ## Delegates that refuse `Skill()`
 
 Some repo skills are slash-only (`disable-model-invocation: true`); `.agents/aw/notes.md` lists known ones.
@@ -74,7 +94,7 @@ After the last fix, once all touched tests pass:
 | `policies.push` (or `--no-push`) | Action |
 | --- | --- |
 | `always` | `git push` |
-| `own-prs` | Push only when `gh pr view --json author` matches `gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login`, both lowercased with one trailing `[bot]` stripped; otherwise, or when the viewer is unknown, leave commits local and say so |
+| `own-prs` | Push when the PR is yours ([Own PR](#own-pr-fix-until-verified) names the check); with no PR yet, leave commits local and say so. Someone else's PR has no fix commits to push |
 | `never` / `--no-push` | Leave commits local |
 
 Never force-push. A rejected push (the branch moved) → `git pull --rebase`, re-run the AC specs, then push.

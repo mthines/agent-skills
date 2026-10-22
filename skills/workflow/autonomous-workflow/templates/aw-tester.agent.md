@@ -94,7 +94,7 @@ Resolve the following from the invocation prompt:
 | `mode` | `--bail-on-first-red` (default) or `--all` | No |
 | `headed` | `--headed` flag | No |
 | `auto_capture` | `--auto-capture` flag — off unless passed; see [Auto-capture](../rules/aw-tester-captures.md#auto-capture-always-on-documentation-screenshots) | No |
-| `record_video` | `--record-video` flag — off unless passed; see [Record video](../rules/aw-tester-captures.md#record-video-one-webm-per-spec) | No |
+| `record_video` | `--record-video` flag — off unless passed; see [Record video](../rules/aw-tester-captures.md#record-video-one-mp4-per-spec) | No |
 
 ### 3. Load the aw-target
 
@@ -376,8 +376,10 @@ captures:                       # omit the key when nothing was written
     auto: true
 recordings:                     # omit when --record-video was off or nothing saved
   - spec: Spec-1
-    path: .agent/<branch>/.aw-tester/recordings/spec-1.webm
-    segments: 1                  # > 1 only when ffmpeg could not join the launches
+    path: .agent/<branch>/.aw-tester/recordings/spec-1.mp4
+    timings: .agent/<branch>/.aw-tester/recordings/spec-1.timings.json
+    sheet: .agent/<branch>/.aw-tester/recordings/spec-1.sheet.png
+    segments: 1                  # > 1 only when screencast could not finish them (raw .webm kept)
 hot_loop:
   spec_file: .agent/<branch>/.aw-tester/last-run.spec.ts
   playwright_bin: <absolute path written to .aw-tester/playwright-bin>

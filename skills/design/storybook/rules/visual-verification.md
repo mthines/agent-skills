@@ -1,10 +1,10 @@
 ---
-title: Visual Verification — Delegate to pr-reviewer / screen-recorder
+title: Visual Verification — Delegate to pr-reviewer / screencast
 impact: MEDIUM
 tags:
   - storybook
   - pr-reviewer
-  - screen-recorder
+  - screencast
   - visual-diff
   - evidence
 ---
@@ -20,7 +20,7 @@ It delegates to one of two existing skills:
 | ----------------------------------------------------- | ------------------------------------------------------ |
 | Still screenshot of a story for PR evidence           | Playwright CLI (see [`playwright-cli.md`](./playwright-cli.md)) — `pr-reviewer` has no browser or screenshot capability. |
 | Visual diff against a baseline (Chromatic, Loki, …)    | The repo's existing tool, not this skill.              |
-| Short video of a multi-frame interaction              | [`screen-recorder`](../../../analysis/screen-recorder/SKILL.md). |
+| Short video of a multi-frame interaction              | [`screencast`](../../../analysis/screencast/SKILL.md). |
 | Sanity check the story compiles and renders           | Playwright CLI (see [`playwright-cli.md`](./playwright-cli.md)). |
 
 ## Capturing a still screenshot for PR evidence
@@ -46,7 +46,7 @@ playwright screenshot \
 If the Storybook target is behind auth, reuse the same `storageState.json` from
 [`rules/auth.md`](./auth.md).
 
-## When `screen-recorder` is the right tool
+## When `screencast` is the right tool
 
 A still screenshot is enough for:
 
@@ -64,15 +64,13 @@ A screen recording is required for:
 Invocation — `Skill()` call:
 
 ```text
-Skill("screen-recorder",
-  url: "http://localhost:6006/?path=/story/components-card--default",
-  selector: '[data-testid="card-grid"]',
-  action: "hover",
-  duration: "3s"
-)
+Skill("screencast", "<recording.json>")   # recording.json:
+{ "url": "http://localhost:6006/iframe.html?id=components-card--default", "id": "card-hover",
+  "crop": "[data-testid=\"card-grid\"]",
+  "scenes": [{ "caption": "Hover a card", "steps": [{ "hover": "[data-testid=\"card-grid\"] >> nth=0" }], "hold": 2000 }] }
 ```
 
-The result lands under `.agent/recordings/`.
+The result lands under `.agent/{branch}/recordings/` as `card-hover.mp4` with its contact sheet.
 Attach the clip with `Skill("attach-media", "<pr-url> <clip> --to comment")`.
 `pr-reviewer` does not capture or attach media.
 
@@ -89,7 +87,7 @@ A common end-to-end pattern for a new story PR:
 
 1. Scaffold the stories (this skill's main path).
 2. Run Playwright CLI screenshot of `Default` and `Playground` — sanity check.
-3. If the story includes motion or transitions, also run `screen-recorder`.
+3. If the story includes motion or transitions, also run `screencast`.
 4. Open the PR via `/create-pr`.
 5. Attach the final screenshots and any recording with `Skill("attach-media", "<pr-url> <files…> --to body")`, then
    dispatch the `pr-reviewer` **agent** via the Task tool (`Task(subagent_type="pr-reviewer",
@@ -100,7 +98,7 @@ A common end-to-end pattern for a new story PR:
 ## Validation checklist
 
 - [ ] Use Playwright CLI for still screenshots — sanity checks and PR evidence alike.
-- [ ] Delegate to `screen-recorder` for any multi-frame interaction.
+- [ ] Delegate to `screencast` for any multi-frame interaction.
 - [ ] If the URL is auth-gated, pass the `storageState.json` path to
       whichever delegate runs.
 - [ ] Never check pixel diffs into the repo — they belong in
