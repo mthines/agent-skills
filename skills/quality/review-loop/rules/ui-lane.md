@@ -138,12 +138,13 @@ Every mechanism ends in the same place: the `ui` region (`<!-- verify:section=ui
 A run on head `<sha>` is **finished** when that region shows `head \`<sha>\`` and a `finished:` line.
 
 ```bash
-gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments" --paginate \
-  --jq '[.[] | select(.body | startswith("<!-- verify:report -->"))] | first | .body // ""
+ME=$(gh api user --jq .login)   # the lane posts under this identity; another author's verify comment is not the lane's
+ME="$ME" gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments" --paginate \
+  --jq '[.[] | select((.body | startswith("<!-- verify:report -->")) and .user.login == env.ME)] | first | .body // ""
          | capture("<!-- verify:section=ui -->(?<r>[\\s\\S]*?)<!-- /verify:section=ui -->").r // empty'
 ```
 
-On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the same region.
+On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the same region from your own verify comment.
 No region (none posted yet, or an `aw-verify` aggregate replaced it) means no summary for this head.
 Parse `verdict`, `adversarial`, `telemetry`, and the `threads:` line from it: `<N> posted, <D> deduped, <X> declined` sets `posted = N`, and `failed (<reason>)` sets `post_failed = true`.
 

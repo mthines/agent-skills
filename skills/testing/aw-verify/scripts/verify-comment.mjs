@@ -25,8 +25,16 @@ const open = (s) => `<!-- verify:section=${s} -->`;
 const close = (s) => `<!-- /verify:section=${s} -->`;
 const HEADER = `${MARKER}\n## Verify\n\n<sub>One comment per PR: each verify skill updates its own section below.</sub>`;
 
-// A path a reviewer cannot open: the run's scratch dirs and absolute home or temp paths.
-const LOCAL_PATH = /(^|[\s(`'"])(\.agent\/|\.aw-tester\/|\.ui-verify\/|\/Users\/|\/home\/|\/tmp\/|\/private\/|\/var\/folders\/|[A-Z]:\\)/m;
+// A path a reviewer cannot open: a file:// URL, the run's scratch dirs, a file under a home dir,
+// or a temp dir. An HTTP route such as `GET /home/feed` or `PUT /private/settings` is not one.
+const B = "(?:^|[\\s(`'\"=\\[])";
+const LOCAL_PATH = new RegExp([
+  "file:\\/\\/",
+  `${B}(?:\\.{1,2}\\/)?\\.(?:agent|aw-tester|ui-verify)\\/`,
+  `${B}\\/(?:Users|home)\\/[^\\s)\`'"]+\\.[A-Za-z0-9]{1,5}(?=$|[\\s)\`'",.:;])`,
+  `${B}\\/(?:tmp|private\\/(?:tmp|var)|var\\/folders)\\/`,
+  "[A-Z]:\\\\",
+].join("|"), "m");
 
 export function localPathLine(text) {
   return text.split("\n").find((l) => LOCAL_PATH.test(l)) ?? null;
@@ -71,8 +79,10 @@ function upsert({ pr, repo, section, content, replaceAll }) {
   if (!n) throw new Error(`cannot read a PR number from "${pr}"`);
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
     || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+  // Only the viewer's own comment is editable; another author's verify comment is left alone.
+  const me = gh(["api", "user", "--jq", ".login"]);
   const found = gh(["api", `repos/${slug}/issues/${n}/comments`, "--paginate", "--jq",
-    `.[] | select(.body | startswith("${MARKER}")) | [.id, (.body | @base64)] | @tsv`]).split("\n").filter(Boolean)[0];
+    `.[] | select((.body | startswith("${MARKER}")) and .user.login == "${me}") | [.id, (.body | @base64)] | @tsv`]).split("\n").filter(Boolean)[0];
   const [id, b64] = found ? found.split("\t") : [];
   const body = splice(id ? Buffer.from(b64, "base64").toString("utf8") : "", section, content, { replaceAll });
   const payload = JSON.stringify({ body });
@@ -97,7 +107,8 @@ function selfTest() {
   assert(parseRegions(after).get("aggregate") === "AGG" && after.indexOf("verify:section=aggregate") < after.indexOf("verify:section=ui"), "a standalone run after an aggregate keeps it first");
   const legacy = splice(`${MARKER}\n## Verify (local) — ✅ verified\n\nold table`, "ui", "UI");
   assert(parseRegions(legacy).get("aggregate")?.includes("old table"), "a legacy report survives as the aggregate region");
-  for (const p of ["see .agent/feat-x/verify/report.md", "![S-1](/Users/me/shot.png)", "`/tmp/run/video.webm`"]) {
+  for (const p of ["see .agent/feat-x/verify/report.md", "![S-1](/Users/me/shot.png)", "`/tmp/run/video.webm`",
+    "./.agent/feat/verify/report.md", "file:///Users/me/a.png", "log at /home/ci/app.log"]) {
     let threw = false; try { splice("", "ui", p); } catch { threw = true; }
     assert(threw, `a local path is refused: ${p}`);
   }
@@ -105,8 +116,11 @@ function selfTest() {
   assert(nested, "a region that carries a marker is refused");
   let threw = false; try { splice("", "bogus", "x"); } catch { threw = true; }
   assert(threw, "an unknown section is refused");
-  assert(!localPathLine("![S-1](https://github.com/user-attachments/assets/abc)"), "an uploaded URL is allowed");
-  console.log("verify-comment self-test: 13 assertions passed");
+  for (const ok of ["![S-1](https://github.com/user-attachments/assets/abc)", "GET /home/feed 200",
+    "PUT /private/settings → 403", "POST /api/views 201 (84 ms)", "/Users/{id}/settings → 200"]) {
+    assert(!localPathLine(ok), `a URL or HTTP route is allowed: ${ok}`);
+  }
+  console.log("verify-comment self-test: 21 assertions passed");
 }
 
 const args = process.argv.slice(2);
