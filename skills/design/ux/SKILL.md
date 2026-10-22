@@ -75,7 +75,7 @@ Every claimed behaviour cites the `file:line` that proves it.
 When the code cannot prove it statically, label the finding **unverified** and say what would confirm it.
 Details and examples: [`rules/verify-before-reporting.md`](./rules/verify-before-reporting.md).
 
-For a Critical or High finding about motion, timing, focus order, or hover-revealed content, `Skill("screen-recorder")` may capture evidence (`caller: "ux"`, `context.finding-id = "<file:line>"`); append its `RECORDING_PATH=` as a `Recording:` line.
+For a Critical or High finding about motion, timing, focus order, or hover-revealed content, `Skill("screencast")` may capture evidence (a `recording.json` whose `id` is the finding's `file-line`); append its `.mp4` path as a `Recording:` line.
 
 ## Report
 

@@ -53,7 +53,7 @@ Steps walk in order; conditional entry phases (A, B) and sub-phases (5.5–5.8, 
 | 5.8   | External engines           | [external-engines.md](./external-engines.md)                                                              | Lottie / dotLottie or Rive runtime is lazy-loaded, paused off-screen, gated on `prefers-reduced-motion` with a static poster fallback                                                        |
 | 6     | Respect motion prefs       | [accessibility.md](./accessibility.md)                                                                    | `@media (prefers-reduced-motion: reduce)` block present and tested; state morphs follow the dedicated accessibility section in [state-choreography.md](./state-choreography.md)              |
 | 7     | Measure                    | [debugging.md](./debugging.md)                                                                            | DevTools Performance shows 60 fps; no purple Layout / green Paint bars during animated frames                                                                                                |
-| 7.5   | Record evidence (optional) | [record-and-iterate.md](./record-and-iterate.md), [screen-recorder skill](../../../analysis/screen-recorder/SKILL.md) | For non-trivial animations or on user request: `Skill("screen-recorder")` invoked twice (default + `prefers-reduced-motion: true`); skipped with one report line if not installed                        |
+| 7.5   | Record evidence (optional) | [record-and-iterate.md](./record-and-iterate.md), [screencast skill](../../../analysis/screencast/SKILL.md) | For non-trivial animations or on user request: `Skill("screencast")` invoked twice (default + `prefers-reduced-motion: true`); skipped with one report line if not installed                        |
 | 7.6   | Analyse and iterate        | [record-and-iterate.md](./record-and-iterate.md), [video-analyser skill](../../../analysis/video-analyser/SKILL.md)   | Recordings fed into `Skill("video-analyser")`; contradicting findings loop back to 7.5 (cap 3 iterations, escalate via `confidence(analysis)` on the 4th); skipped with one report line if not installed |
 
 The decision flow in [`SKILL.md`](../SKILL.md#decision-flow) is a cross-cutting routing gate — it precedes Phase 5 and decides which downstream sub-phase (5.5 / 5.6 / 5.7 / 5.8) fires.
@@ -112,7 +112,7 @@ The diagnoser must not propose to relax any of these without explicit user confi
 - **Layout properties are never animated directly during a state morph.** Phase 5.5 routes through Motion `layout` / `layoutId` or View Transitions; direct animation of `width` / `height` / `top` / `left` is refused.
 - **External-engine runtimes are lazy-loaded and pausable.** Lottie / dotLottie and Rive runtimes never load on first paint and never run off-screen. Diagnoses may not propose eager loading "for simplicity."
 - **Phase 7 measurement is real.** Performance is verified in DevTools (or equivalent), not by inspection. "Felt smooth" is not a pass condition.
-- **`screen-recorder` and `video-analyser` companions never block.** Phases 7.5 and 7.6 skip if the companions are not installed, and say so in one line (`<name> — skipped (not installed)`). The two-recording handshake (default + `prefers-reduced-motion: true`) is mandatory when 7.5 fires.
+- **`screencast` and `video-analyser` companions never block.** Phases 7.5 and 7.6 skip if the companions are not installed, and say so in one line (`<name> — skipped (not installed)`). The two-recording handshake (default + `prefers-reduced-motion: true`) is mandatory when 7.5 fires.
 - **Phase 7.6 iteration cap is load-bearing.** The record → analyse → fix loop is capped at 3 iterations; the 4th must escalate via `Skill("confidence", "analysis")`. Raising the cap requires updating [`record-and-iterate.md`](./record-and-iterate.md) and this surface in the same change.
 
 ---
@@ -123,8 +123,8 @@ The diagnoser must not propose to relax any of these without explicit user confi
 | --------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- |
 | Source diff (CSS / JS / TSX edits in the user's repo)                 | The skill itself            | Phases 0–6                                                                        |
 | DevTools Performance trace (referenced, not stored)                   | The user / Phase 7          | Phase 7 (measurement gate)                                                        |
-| `.agent/recordings/{output-name}.{webm,mp4,gif}` (default branch)     | `screen-recorder` companion | Phase 7.5 (first call: `reduced-motion: false`)                                   |
-| `.agent/recordings/{output-name}--reduced-motion.{webm,mp4,gif}`      | `screen-recorder` companion | Phase 7.5 (second call: `reduced-motion: true`)                                   |
+| `.agent/{branch}/recordings/{id}.mp4` (default motion)                | `screencast` companion      | Phase 7.5 (first call: `reduced-motion: false`)                                   |
+| `.agent/{branch}/recordings/{id}-reduced.mp4`                         | `screencast` companion      | Phase 7.5 (second call: `reduced-motion: true`)                                   |
 | Structured analyser findings (errors, key-frame UI state, next steps) | `video-analyser` companion  | Phase 7.6 (consumed in-loop; persisted only if the analyser writes a report file) |
 | `confidence(analysis)` evaluation                                     | `confidence` skill          | Phase 7.6 4th-iteration escalation only                                           |
 
@@ -139,4 +139,4 @@ A run that skipped Phase 7.5 has a thinner evidence trail and the report should 
 - `claude plugin validate skills/design/animations` — frontmatter + structure check.
 - Re-run the failing scenario in DevTools Performance on the diagnosed branch — confirms the proposed change still hits 60 fps with no purple Layout / green Paint bars.
 - Toggle `prefers-reduced-motion` in DevTools Rendering and re-verify — confirms the reduced branch still exists and still produces visible (but reduced) feedback.
-- If Phase 7.5 was in scope, re-run `Skill("screen-recorder")` with the same `output-name` and diff the recording against the pre-diagnosis artifact — confirms the change did not introduce regressions in adjacent frames.
+- If Phase 7.5 was in scope, re-run `Skill("screencast")` with the same `id` and diff the recording against the pre-diagnosis artifact — confirms the change did not introduce regressions in adjacent frames.

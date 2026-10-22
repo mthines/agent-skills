@@ -52,7 +52,7 @@ Use this exact structure:
 | 2,542 | `persistent-memory`    | cold-path  | Description duplication. Trim + link.                                                 |   ~610 tok |
 | 2,191 | `optimize-mock-data`   | cold-path  | Description duplication. Trim + link.                                                 |   ~520 tok |
 | 2,091 | `implement-suggestion` | cold-path  | Description duplication. Trim + link.                                                 |   ~500 tok |
-| 1,911 | `screen-recorder`      | cold-path  | Description duplication. Trim + link.                                                 |   ~460 tok |
+| 1,911 | `screencast`           | cold-path  | Description duplication. Trim + link.                                                 |   ~460 tok |
 | 1,873 | `storybook`            | cold-path  | Description duplication. Trim + link.                                                 |   ~450 tok |
 
 ## Bloat patterns detected

@@ -139,13 +139,13 @@ honor `continues-from` — skip the chained spec and say so.
 ### Record video (a Playwright run option)
 
 **Record video** is a run-level option — the mode flag `--record-video`, **off by default** — that only `aw-tester` (Playwright) implements; `ui-verify run` turns it on (its `rules/recording.md`).
-The Chrome runner cannot record: it ignores the flag and adds `notes: --record-video ignored — video is Playwright-only`.
+The Chrome runner records each spec as a `.gif` with the extension's `gif_creator` instead (its `SKILL.md`); it has no timings file or contact sheet.
 When enabled:
 
 1. Every browser context the runner opens to run a spec sets `recordVideo: { dir, size: { width: 1280, height: 720 } }`, so each spec gets its own context and its own video — the flag overrides one-context-per-batch.
-2. After the context closes, the runner saves the spec's video as `.agent/{branch}/.aw-tester/recordings/<spec-id>.webm` (lowercase id, as captures are named).
+2. The runner loads the `screencast` skill's `overlay.js` into each recorded context, marks each step with its spec line, and writes the step timings beside the raw video; after the spec, `screencast`'s `finish.mjs` turns it into `.agent/{branch}/.aw-tester/recordings/<spec-id>.mp4`, `<spec-id>.timings.json`, and `<spec-id>.sheet.png` (lowercase id, as captures are named).
 3. An intent spec records only the launches that grade it (contract § 6.2): the replay launch, each commit launch, and the final probe — never an exploratory probe.
-   With several such launches, it joins them in order with `ffmpeg -f concat -c copy` when `ffmpeg` is on `PATH`; otherwise it keeps them as `<spec-id>-<seq>.webm` segments.
+   With several such launches, `finish.mjs` joins them in order and offsets their timings; when `screencast` or `ffmpeg` is missing, the runner keeps them as raw `<spec-id>-<seq>.webm` segments.
 4. A video that fails to save is a `notes` line, never a `fail`, exactly like a capture.
 
 Each saved video is listed in the verdict's optional `recordings:` array (§ 4).
@@ -222,7 +222,7 @@ captures:                       # omit the key entirely when no capture was writ
     auto: true
 recordings:                     # omit when --record-video was off or nothing saved
   - spec: Spec-1
-    path: .agent/<branch>/.aw-tester/recordings/spec-1.webm
+    path: .agent/<branch>/.aw-tester/recordings/spec-1.mp4
     segments: 1                  # > 1 only when the segments could not be joined
 notes: <optional one-paragraph context; omit if nothing notable>
 ```

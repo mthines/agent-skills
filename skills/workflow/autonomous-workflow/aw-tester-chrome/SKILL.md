@@ -186,7 +186,9 @@ verdict's `captures:` array. If the extension cannot persist the file to that
 path, record it in `notes` and omit it from `captures:` — a capture never turns a
 green spec red.
 
-**Record video (`--record-video`).** Not supported in Chrome: ignore the flag and add `notes: --record-video ignored — video is Playwright-only` (contract § Record video).
+**Record video (`--record-video`).** Record each spec as a GIF with `gif_creator`: `start_recording` and a screenshot before the spec's first step, a screenshot and `stop_recording` after its last, then `export` with `download: true`, `filename: "<spec-id>.gif"`, and `options: { showWatermark: false }`.
+Move the file from the browser's download folder (`~/Downloads/<spec-id>.gif`) to `.agent/{branch}/.aw-tester/recordings/<spec-id>.gif` and list it in `recordings:`; `clear` before the next spec.
+An export that does not appear is a `notes` line, never a red spec (contract § Record video).
 
 **Auto-capture (`--auto-capture`).** When the caller passed `--auto-capture`,
 screenshot the current page (full-page) automatically — in addition to any
@@ -206,9 +208,6 @@ memory mid-run.
 **Bail mode.** `--bail-on-first-red` (default): stop at the first `fail`, mark the
 rest `skipped` with reason `bail`. `--all`: run every spec regardless.
 
-> [!TIP]
-> Recording the run as a GIF (`gif_creator`) is optional and off by default. Turn
-> it on only when the caller asks for a visual artifact — it adds capture steps.
 
 ---
 
