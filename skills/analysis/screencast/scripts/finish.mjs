@@ -191,7 +191,7 @@ export function finish(inputs, opts) {
   });
   const sheet = `${stem}.sheet.png`;
   run('ffmpeg', ['-y', '-loglevel', 'error', '-pattern_type', 'glob', '-i', path.join(work, 'frame-*.png'),
-    '-vf', `tile=4x${Math.max(1, Math.ceil(times.length / 4))}`, '-frames:v', '1', sheet]);
+    '-vf', `tile=${Math.min(4, times.length)}x${Math.max(1, Math.ceil(times.length / 4))}`, '-frames:v', '1', sheet]);
 
   const report = {
     out,
