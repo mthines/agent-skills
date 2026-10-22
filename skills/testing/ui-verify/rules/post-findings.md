@@ -121,4 +121,4 @@ Write `threads: failed (<reason>)` whenever any thread write failed, so a caller
 
 ## Report line
 
-Print `posted: <N> threads, <D> deduped, <X> declined, summary <comment-url>` after the Step 5 report, or `posted: failed (<reason>)`; `<comment-url>` is the verify comment holding the `ui` region.
+Print `posted: <N> threads, <D> deduped, <X> declined, summary <comment-url>` once Step 5a has posted the region, or `posted: failed (<reason>)`; `<comment-url>` is the verify comment holding the `ui` region.
