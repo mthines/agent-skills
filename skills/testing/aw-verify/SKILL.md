@@ -39,7 +39,7 @@ Every run with a PR ends by posting its proof — what was tested, why, the resu
 | `--keep-stack` | Never tear the local stack down |
 | `--foreign-stack <teardown\|ask\|abort>` | Overrides `policies.foreign_stack`; `aw` passes `abort` |
 
-On someone else's PR, `preview` never fixes: its blocking findings go to `review-loop --ui` as review threads.
+Someone else's PR is never fixed, on `local` or `preview`: its blocking findings go to `review-loop --ui` as review threads.
 
 ## Run card
 
@@ -54,7 +54,7 @@ Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, w
    A defect that blocks the path (a 500, a build error, a crash) → record it, then route around it without changing code (another dev-server mode, a direct request, seeded state) and keep probing; one defect must not hide the next.
 4. **Telemetry, once** ([The two witnesses](#the-two-witnesses)). After the last window closes, dispatch `telemetry-verify` over all of them; save its block to `telemetry.md`.
 5. **Findings** ([`rules/findings.md`](./rules/findings.md)): one JSON line per defect in `findings.jsonl`, with its probe and evidence.
-6. **Fix** (`local`, or `preview` on your own PR; unless `--no-fix`: [`rules/fix-loop.md`](./rules/fix-loop.md)), then **report** ([`rules/report.md`](./rules/report.md)), **lessons and cleanup** ([`rules/lessons.md § Write`](./rules/lessons.md#write-step)). After a fix, re-run the probe that found it; stop at `✅ verified` or at `--loops`, and report a finding open at the cap as `open`.
+6. **Fix** (your own PR or no PR yet, `local` or `preview`; never someone else's PR; unless `--no-fix`: [`rules/fix-loop.md`](./rules/fix-loop.md)), then **report** ([`rules/report.md`](./rules/report.md)), **lessons and cleanup** ([`rules/lessons.md § Write`](./rules/lessons.md#write-step)). After a fix, re-run the probe that found it; stop at `✅ verified` or at `--loops`, and report a finding open at the cap as `open`.
 
 The verdict is `BROKEN` when any AC fails or any guardrail does not hold; a defect outside them is reported but does not flip the verdict.
 

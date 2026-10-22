@@ -10,7 +10,7 @@ tags:
 # Fix loop
 
 Phase 4 fixes findings autonomously, highest severity first, and proves each fix with the exact probe that found it.
-Runs on `local`, and on `preview` when the PR is your own ([Own PR](#own-pr-fix-until-verified)); skipped under `--no-fix` and on someone else's `preview`: every finding stays `open` and the report says so.
+Runs on your own PR (`local` or `preview`) and on a branch with no PR yet ([Own PR](#own-pr-fix-until-verified)); never on someone else's PR, and not under `--no-fix`: there every finding stays `open` and the report says so.
 
 ## Scope
 
@@ -94,7 +94,7 @@ After the last fix, once all touched tests pass:
 | `policies.push` (or `--no-push`) | Action |
 | --- | --- |
 | `always` | `git push` |
-| `own-prs` | Push only when `gh pr view --json author` matches `gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login`, both lowercased with one trailing `[bot]` stripped; otherwise, or when the viewer is unknown, leave commits local and say so |
+| `own-prs` | Push when the PR is yours ([Own PR](#own-pr-fix-until-verified) names the check); with no PR yet, leave commits local and say so. Someone else's PR has no fix commits to push |
 | `never` / `--no-push` | Leave commits local |
 
 Never force-push. A rejected push (the branch moved) → `git pull --rebase`, re-run the AC specs, then push.
