@@ -77,26 +77,32 @@ function gh(args, input) {
   return r.stdout.trim();
 }
 
-// Try each verify comment, newest first; GitHub refuses (403/404) an edit to another author's, so
-// the first PATCH it accepts is the viewer's own. No identity lookup: `/user` 401s or 403s under an
-// App or Actions token, and an unknown login would post a duplicate. `run` is injectable for --self-test.
+// The viewer's login, normalized: lowercase, one trailing `[bot]` stripped. GraphQL `viewer`, never
+// `/user`, which 401s or 403s under an App or Actions token. Empty when it cannot be read.
+export const normLogin = (l) => String(l || "").toLowerCase().replace(/\[bot\]$/, "");
+function viewerLogin(run) {
+  try { return normLogin(run(["api", "graphql", "-f", "query={ viewer { login } }", "--jq", ".data.viewer.login"])); }
+  catch { return ""; }
+}
+
+// Edit the viewer's own newest verify comment, else post a new one. Select by author, never by
+// "GitHub accepted the edit": a write-access token can edit anyone's comment. An unknown viewer
+// posts a new comment rather than risk overwriting another author's. `run` is injectable for --self-test.
 export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
   const prNumber = String(pr).match(/(\d+)\/?$/)?.[1];
   if (!prNumber) throw new Error(`cannot read a PR number from "${pr}"`);
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
     || run(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
-  const found = run(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
-    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, (.body | @base64)] | @tsv`])
+  const me = viewerLogin(run);
+  const own = me ? run(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
+    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, .user.login, (.body | @base64)] | @tsv`])
     .split("\n").filter(Boolean).map((l) => l.split("\t"))
-    .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
-  for (const [id, , b64] of found) {
+    .filter(([, , login]) => normLogin(login) === me)
+    .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia))) : [];
+  if (own.length) {
+    const [id, , , b64] = own[0];
     const body = splice(Buffer.from(b64, "base64").toString("utf8"), section, content, { replaceAll });
-    try {
-      return run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
-    } catch (e) {
-      if (e.code === 2 && /HTTP 40[34]/.test(e.message)) continue;
-      throw Object.assign(e, { code: 2 });
-    }
+    return run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
   }
   const body = splice("", section, content, { replaceAll });
   return run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
@@ -134,27 +140,28 @@ function selfTest() {
     "GET /home/hero.png → 200", "PUT /home/settings.json → 200", "DELETE /tmp/cache 204"]) {
     assert(!localPathLine(ok), `a URL or HTTP route is allowed: ${ok}`);
   }
-  // upsert against a fake gh: comments are [id, created_at, body]; patch(id) returns a URL or throws.
+  // upsert against a fake gh: comments are [id, created_at, login, body]; every PATCH succeeds, as for a write-access token.
   const ghErr = (msg) => Object.assign(new Error(msg), { code: 2 });
-  const fakeGh = (comments, patch) => {
+  const fakeGh = (comments, viewer) => {
     const calls = [];
     const run = (a) => {
-      calls.push(a[2]);
-      if (a.includes("--paginate")) return comments.map(([id, at, b]) => `${id}\t${at}\t${Buffer.from(b).toString("base64")}`).join("\n");
-      if (a[2] === "PATCH") return patch(a[3].split("/").pop());
+      calls.push(a[2] === "PATCH" ? `PATCH ${a[3].split("/").pop()}` : a[1] === "graphql" ? "viewer" : a[2]);
+      if (a[1] === "graphql") { if (viewer instanceof Error) throw viewer; return viewer; }
+      if (a.includes("--paginate")) return comments.map(([id, at, who, b]) => `${id}\t${at}\t${who}\t${Buffer.from(b).toString("base64")}`).join("\n");
+      if (a[2] === "PATCH") return `https://x/${a[3].split("/").pop()}`;
       return "https://x/new";
     };
     return { run, calls };
   };
   const req = { pr: 7, repo: "o/r", section: "ui", content: "UI" };
-  const other = fakeGh([["1", "2026-01-01T00:00:00Z", one]], () => { throw ghErr("gh: Resource not accessible by integration (HTTP 403)"); });
-  assert(upsert(req, other.run) === "https://x/new" && other.calls.includes("POST"), "another author's comment (403) → a new comment is posted");
-  const own = fakeGh([["2", "2026-01-02T00:00:00Z", one], ["3", "2026-01-03T00:00:00Z", two]],
-    (id) => { if (id === "3") throw ghErr("gh: Not Found (HTTP 404)"); return `https://x/${id}`; });
-  assert(upsert(req, own.run) === "https://x/2" && !own.calls.includes("POST"), "the own comment, second newest, is PATCHed and nothing is posted");
-  const down = fakeGh([["4", "2026-01-04T00:00:00Z", one]], () => { throw ghErr("gh: Server Error (HTTP 500)"); });
-  let code; try { upsert(req, down.run); } catch (e) { code = e.code; }
-  assert(code === 2 && !down.calls.includes("POST"), "a PATCH that fails with 500 exits 2 and posts nothing");
+  const other = fakeGh([["1", "2026-01-01T00:00:00Z", "teammate", one]], "me");
+  assert(upsert(req, other.run) === "https://x/new" && !other.calls.some((c) => c.startsWith("PATCH")), "another author's comment is never edited, even when GitHub would accept the edit");
+  const own = fakeGh([["2", "2026-01-02T00:00:00Z", "Me", one], ["3", "2026-01-03T00:00:00Z", "teammate", two], ["4", "2026-01-01T00:00:00Z", "me", one]], "me");
+  assert(upsert(req, own.run) === "https://x/2" && !own.calls.includes("POST"), "the viewer's newest comment is edited, matched case-insensitively");
+  const bot = fakeGh([["5", "2026-01-05T00:00:00Z", "github-actions[bot]", one]], "github-actions");
+  assert(upsert(req, bot.run) === "https://x/5", "a bot login matches with its [bot] suffix stripped");
+  const unknown = fakeGh([["6", "2026-01-06T00:00:00Z", "me", one]], ghErr("gh: HTTP 403"));
+  assert(upsert(req, unknown.run) === "https://x/new" && !unknown.calls.some((c) => c.startsWith("PATCH")), "an unknown viewer posts a new comment and edits nothing");
   console.log(`verify-comment self-test: ${n} assertions passed`);
 }
 

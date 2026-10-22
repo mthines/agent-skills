@@ -34,7 +34,8 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 A later standalone run adds its region beside the aggregate; each region names the head SHA it verified, so a reader can tell which is newer.
 A comment written before regions existed is kept as the `aggregate` region.
-Each author has their own verify comment: the script edits only a comment GitHub lets the viewer edit (it tries each and posts a new one when none accepts), so no identity lookup is needed and a run on someone else's PR never overwrites the author's.
+Each author has their own verify comment: the script reads the viewer through GraphQL `viewer` (never `/user`), edits only the newest marker comment whose author matches it (both lowercased, one trailing `[bot]` stripped), and posts a new comment otherwise, so a write-access run on someone else's PR never overwrites the author's.
+An unknown viewer posts a new comment rather than guess.
 
 ## When to post
 
@@ -106,7 +107,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
-- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), and for each comment starting with the marker, newest first, run the script with `--dry-run --existing <its body>` and write its stdout with `mcp__github__update_issue_comment`; stop at the first update that succeeds, and when none does, run `--dry-run` without `--existing` and write it with `mcp__github__add_issue_comment`.
+- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), and take the newest comment starting with the marker whose author matches `mcp__github__get_me` (normalized as above), run the script with `--dry-run --existing <its body>`, and write its stdout with `mcp__github__update_issue_comment`; when no comment matches or the viewer is unknown, run `--dry-run` without `--existing` and write it with `mcp__github__add_issue_comment`.
 - **Script not found** (`aw-verify` not installed) → `comment: not posted (aw-verify not installed)`.
 - Write after the fix loop pushed, so the region describes the final head SHA.
 
