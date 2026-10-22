@@ -38,7 +38,7 @@ Both directories are gitignored scratch, like the screenshots.
 List every recording under a **Recordings** heading in [`runner.md § Step 5`](./runner.md#step-5-report-the-verdict), after **Screenshots**: one line per file with the spec or probe id and its result.
 When the verdict carries no `recordings:` key, print the reason instead — `none (--no-recording)`, `none (chrome driver — video is Playwright-only)`, or the runner's `notes` line.
 Never inline video bytes; the paths are the deliverable.
-Under `--attach-media`, the passing-spec recordings go to the PR with the screenshots ([`runner.md § Step 5`](./runner.md#step-5-report-the-verdict)).
+When the PR comment posts, every recording is uploaded and linked from its spec's or probe's row ([`runner.md § Step 5a`](./runner.md#step-5a-post-the-ui-region)); a `.webm` over 10 MB is re-encoded to `.mp4` by `attach-media`.
 To trim or crop a clip first, hand its path to the `screen-recorder` skill's crop pass.
 
 ```text

@@ -44,7 +44,7 @@ policies:
   foreign_stack: ask      # teardown | ask | abort — a stack this run did not start
   cleanup: leave          # leave | teardown
   push: own-prs           # always | own-prs | never — fix commits
-  pr_comment: own-prs     # always | own-prs | never — the verify report
+  pr_comment: always      # always | own-prs | never — the verify comment (default always)
 repos:
   acme/shop:
     telemetry:

@@ -4,17 +4,17 @@ description: >
   Makes a UI PR autonomously verifiable: `author` writes an intent spec into the
   PR body; `run` checks it on the preview (or a local stack with `--env local`)
   with evidence, an adversarial pass, and telemetry-verify; `verify` (the default)
-  does both;
-  `--post-findings` feeds `review-loop --ui`. Config: `.agents/aw/`.
+  does both, then posts the proof with uploaded screenshots and recordings to
+  the PR's one verify comment; `--post-findings` feeds `review-loop --ui`. Config: `.agents/aw/`.
   Web only; triggers on "write a preview spec", "verify this PR's preview", "try
   to break this PR's preview", "/ui-verify".
 disable-model-invocation: false
-argument-hint: '[author|run|verify] [pr-url|pr-number|specs-path] [--env preview|local] [--url <url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--post-findings] [--attach-media] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
+argument-hint: '[author|run|verify] [pr-url|pr-number|specs-path] [--env preview|local] [--url <url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--post-findings] [--no-comment] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
 license: MIT
-allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__github__pull_request_review_write mcp__github__add_comment_to_pending_review mcp__github__add_issue_comment mcp__github__update_issue_comment mcp__Dash0__getWebEvents mcp__Dash0__getAttributeKeys mcp__Dash0__generateDash0Url mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
+allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__github__pull_request_review_write mcp__github__add_comment_to_pending_review mcp__github__issue_read mcp__github__add_issue_comment mcp__github__update_issue_comment mcp__Dash0__getWebEvents mcp__Dash0__getAttributeKeys mcp__Dash0__generateDash0Url mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
   author: mthines
-  version: '2.0.0'
+  version: '2.1.0'
   workflow_type: slash-command
   tags:
     - playwright
@@ -52,10 +52,11 @@ This skill's own rules are linked where they apply below. It reuses these and ne
 | Spec formats: intent (`Format: intent`) and grammar (`WHEN/THEN/AND`, locators, `url:`, `network:`, `semantic:` via [`jev-assert`](../../quality/jev-assert/SKILL.md)) | `aw-tester`'s `templates/intent-spec.md.template` and [`specs.md.template`](../../workflow/autonomous-workflow/templates/specs.md.template) |
 | Spec-run contract (locators, auth, verdict, intent grading — § 6, `--record-video`) | [`spec-run-contract.md`](../../workflow/autonomous-workflow/rules/spec-run-contract.md) |
 | Config: environments, login, fixtures, UI surface, adversarial settings | `.agents/aw/environments.yml` and `.agents/aw/ui.yml` — the `aw-verify` skill's `rules/config.md`; written by `/aw-verify setup` |
-| Telemetry of the run | `telemetry-verify`, dispatched per window ([`rules/runner.md § Step 4c`](./rules/runner.md#step-4c-telemetry--telemetry-verify-on-each-window)) |
+| The PR comment: one per PR, this skill owns its `ui` region | the `aw-verify` skill's `rules/pr-comment.md` and `scripts/verify-comment.mjs` |
+| Telemetry of the run | `telemetry-verify`, dispatched per window with `--no-comment` ([`rules/runner.md § Step 4c`](./rules/runner.md#step-4c-telemetry--telemetry-verify-on-each-window)) |
 | Out-of-bounds severity cap (`critical` or `high`, one per move) | the tier table in [`rules/out-of-bounds.md`](./rules/out-of-bounds.md) |
 
-Why `SKILL.md` is shaped this way: [`references/skill-design.md`](./references/skill-design.md).
+Why `SKILL.md` is shaped this way: [`references/skill-design.md`](./references/skill-design.md); why the adversarial pass and the out-of-bounds brainstorm work as they do: [`references/adversarial-testing.md`](./references/adversarial-testing.md), [`references/out-of-bounds-rationale.md`](./references/out-of-bounds-rationale.md).
 
 ## Operations
 
@@ -211,7 +212,7 @@ The commands in this skill are the `gh`-path form; on the `mcp` path use these e
 | `gh pr view <pr> --json body` | `mcp__github__pull_request_read` with `method: "get"` |
 | `gh pr edit <pr> --body <body>` | `mcp__github__update_pull_request` with `body` |
 | `gh api repos/<owner>/<repo>/pulls/<n>/comments … -f subject_type=file` (`--post-findings` threads) | `mcp__github__pull_request_review_write` (`create`, then `submit_pending`) around `mcp__github__add_comment_to_pending_review` with `subjectType: "FILE"` |
-| `gh api repos/<owner>/<repo>/issues/<n>/comments` (the `--post-findings` summary) | `mcp__github__add_issue_comment`, or `mcp__github__update_issue_comment` when it exists |
+| `node …/verify-comment.mjs --pr <pr> --section ui …` (the PR comment's `ui` region) | `mcp__github__issue_read` (`get_comments`), the script with `--dry-run --existing <body>`, then `mcp__github__update_issue_comment`, or `mcp__github__add_issue_comment` when none exists |
 | `gh api repos/<owner>/<repo>/deployments?sha=…` | **none — see below** |
 
 **`author` works on both paths; `run`'s URL resolution does not.**
@@ -256,14 +257,14 @@ Follow [`rules/runner.md`](./rules/runner.md). In outline:
 2. **Resolve the preview URL** per [`rules/preview-url-resolution.md`](./rules/preview-url-resolution.md); `--url` overrides it and is required with a local `specs-path` or on the `mcp` path. Any `inconclusive: …` from that file is terminal.
 3. **Materialize** `.agent/{branch}/.ui-verify/specs.md` and `aw-tester`'s target `.agent/{branch}/aw-target.<env>.yml` from `.agents/aw/environments.yml` and `ui.yml` ([`runner.md § Step 3`](./rules/runner.md#step-3-materialize-the-ephemeral-files)).
 4. **Run** with the selected driver, mode `--all` ([`runner.md § Step 4`](./rules/runner.md#step-4-select-the-driver-and-run)). Then, in parallel, the adversarial pass against every passing spec ([`rules/adversarial.md`](./rules/adversarial.md); `--no-adversarial` skips) and `telemetry-verify` on the spec window, then `telemetry-verify` on the adversarial window ([`runner.md § Step 4c`](./rules/runner.md#step-4c-telemetry--telemetry-verify-on-each-window); `--no-telemetry` skips). Neither changes the verdict. Playwright runs record every spec and adversarial finding ([`rules/recording.md`](./rules/recording.md); `--no-recording` skips).
-5. **Report** per [`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict): per-spec verdict, intent-spec routes, evidence and deviations, screenshots, recordings, then the adversarial and telemetry lines and findings. `--post-findings` also writes blocking results as review threads ([`rules/post-findings.md`](./rules/post-findings.md)). `--attach-media` puts screenshots and passing-spec recordings into the PR body via `Skill("attach-media", …)`; a local `specs-path` run reports `attach-media: skipped (no PR)`.
+5. **Report** per [`runner.md § Step 5`](./rules/runner.md#step-5-report-the-verdict): per-spec verdict, intent-spec routes, evidence and deviations, screenshots, recordings, then the adversarial and telemetry lines and findings. Then **post** the `ui` region of the PR's verify comment, with every screenshot and recording uploaded ([`runner.md § Step 5a`](./rules/runner.md#step-5a-post-the-ui-region)); `--no-comment` skips it, and a parent that posts its own report always passes it. `--post-findings` also writes blocking results as review threads ([`rules/post-findings.md`](./rules/post-findings.md)). `--attach-media`, from older callers, is accepted and changes nothing.
 6. **Write lessons** per [`rules/memory.md § Write at run time`](./rules/memory.md) for a navigation or precondition failure — never for a locator miss, which is the runner's own lesson.
 
 ## Operation `verify`
 
 1. **Author only when no block exists.** If the PR body carries `<!-- ui-verify:v2 -->`, `<!-- ui-verify:v1 -->`, or the legacy `<!-- preview-spec:v1 -->`, keep it verbatim. Otherwise run Operation `author`, honouring
    `--no-brainstorm` and `--brainstorm deep` exactly as `author` does; a gate `no` ends with `not verified (no UI files in diff)`, and `author`'s `failed (no GitHub access path)` ends `verify` with that reason.
-2. **Run** Operation `run`, honouring `--env`, `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--post-findings`, `--attach-media`, `--wait-preview`, and `--unattended` exactly as `run` does. On the `mcp` path or with a local `specs-path`, no `--url` → `inconclusive: no access path for deployment lookup (pass --url)`.
+2. **Run** Operation `run`, honouring `--env`, `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--post-findings`, `--no-comment`, `--wait-preview`, and `--unattended` exactly as `run` does. On the `mcp` path or with a local `specs-path`, no `--url` → `inconclusive: no access path for deployment lookup (pass --url)`.
 3. **Report one combined verdict**: spec authored fresh or reused, the `run` verdict per spec, then the adversarial and telemetry lines. A red verdict is a finding about the PR.
 
 ## Hard rules

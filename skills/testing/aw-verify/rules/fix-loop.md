@@ -74,7 +74,7 @@ After the last fix, once all touched tests pass:
 | `policies.push` (or `--no-push`) | Action |
 | --- | --- |
 | `always` | `git push` |
-| `own-prs` | Push only when `gh pr view --json author` matches `gh api user --jq .login`; otherwise leave commits local and say so |
+| `own-prs` | Push only when `gh pr view --json author` matches `gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login`, both lowercased with one trailing `[bot]` stripped; otherwise, or when the viewer is unknown, leave commits local and say so |
 | `never` / `--no-push` | Leave commits local |
 
 Never force-push. A rejected push (the branch moved) → `git pull --rebase`, re-run the AC specs, then push.

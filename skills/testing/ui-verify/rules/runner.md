@@ -23,6 +23,7 @@ The runner is an **on-demand orchestrator** — it resolves once, dispatches the
 - [Step 4b: Adversarial pass — try to break it](#step-4b-adversarial-pass--try-to-break-it)
 - [Step 4c: Telemetry — `telemetry-verify` on each window](#step-4c-telemetry--telemetry-verify-on-each-window)
 - [Step 5: Report the verdict](#step-5-report-the-verdict)
+- [Step 5a: Post the `ui` region](#step-5a-post-the-ui-region)
 - [Step 5b: Post findings (under `--post-findings`)](#step-5b-post-findings-under---post-findings)
 - [Step 6: Write lessons](#step-6-write-lessons)
 
@@ -226,12 +227,12 @@ The browser proved what the user sees; `telemetry-verify` proves what the servic
 
    ```text
    Agent(subagent_type="general-purpose",
-         prompt="Run Skill(\"telemetry-verify\", \"--env <ENV> --from <RUN_STARTED_AT> --to <SPECS_ENDED_AT> --host <preview host> --driver <driver Step 4 ran> [--brief .agent/{branch}/plan.md] [--out .agent/{branch}/.ui-verify/telemetry.jsonl]\") and return only its TELEMETRY block")
+         prompt="Run Skill(\"telemetry-verify\", \"--env <ENV> --from <RUN_STARTED_AT> --to <SPECS_ENDED_AT> --host <preview host> --driver <driver Step 4 ran> [--brief .agent/{branch}/plan.md] [--out .agent/{branch}/.ui-verify/telemetry.jsonl] --no-comment\") and return only its TELEMETRY block")
    ```
 
    Pass `--brief` only when that file exists. On Agent0 the sub-agent type is `general`.
 2. **Adversarial window, after Step 4b.** When the adversarial pass returns, dispatch the same call with `--from <SPECS_ENDED_AT> --to <RUN_ENDED_AT>` and no `--brief` (probes are not acceptance criteria). Skip it when Step 4b did not run.
-3. With no sub-agent dispatch tool, run `Skill("telemetry-verify", …)` in this session after Step 4b, once per window.
+3. With no sub-agent dispatch tool, run `Skill("telemetry-verify", "<the same args> --no-comment")` in this session after Step 4b, once per window.
 
 A reply with no `TELEMETRY` block is `telemetry: not run (<first line of the reply>)`.
 `telemetry-verify` owns the server, the ingest wait, the oracles, and the skip reasons; never query telemetry from this runner.
@@ -257,13 +258,7 @@ List the specs whose title starts with `Out of bounds:` after the others, under 
 
 **Surface the screenshots.** When the verdict carries a `captures:` array (it does on every default run, since `--auto-capture` is on — see Step 4), list each `path` in the report under a **Screenshots** heading. State the count and the directory (`.agent/{branch}/.aw-tester/captures/`); if `captures:` is absent, say `no screenshots (--no-screenshots)`. Never inline the image bytes — the paths are the deliverable.
 
-**Attach them under `--attach-media`.** Never tell the user to attach files by hand. Select the explicit `CAPTURE` files first, then each spec's `*-auto-final.png`, up to 6 images, then up to 2 recordings of passing specs, and delegate once:
-
-```text
-Skill("attach-media", "<pr-url> <path>#<label> ... --to body")
-```
-
-Print its first report line under the **Screenshots** heading. Without the flag, print `attach-media: not requested (pass --attach-media)`.
+Never tell the user to attach files by hand: Step 5a uploads them into the PR comment.
 
 **Surface the recordings** under a **Recordings** heading, after the screenshots, per [`recording.md § Report`](./recording.md#report): one line per video with its spec or probe id, result, and path, or the one-line reason there are none.
 
@@ -279,11 +274,48 @@ Keep the happy-path verdict line first and unchanged; a critical finding is stat
 **Surface the telemetry** under a **Telemetry** heading, after the adversarial pass: each window's `TELEMETRY` block verbatim — its journey lines, `signals:` and `findings:` lines, and `[receipt] verdict:` line — or the `skipped (…)` / `not run (…)` line.
 Like the adversarial pass, a telemetry finding never rewrites `verdict`.
 
-Optionally, when the caller asked for it, post the verdict as a PR comment. Off by default — the runner reports to the terminal.
+## Step 5a: Post the `ui` region
+
+Run this step last, after Step 5b when `--post-findings` was passed, so the `threads:` line is final.
+Post this run's proof as the `ui` region of the PR's one verify comment, per the `aw-verify` skill's `rules/pr-comment.md`: its § When to post gate (`--no-comment`, no PR, `policies.pr_comment`), its § Media upload (the explicit `CAPTURE` files, each spec's `*-auto-final.png`, every recording, and the adversarial findings' before/after images and recordings, through `attach-media --to urls`), and its script.
+Under `--post-findings` the region always posts, whatever `--no-comment` or the policy says: `review-loop --ui` reads its status lines.
+
+Region body, in this order:
+
+```markdown
+**ui-verify** · head `<head-sha>` · <preview-url> · driver <driver>
+
+- verdict: <green | red | inconclusive> (<pass>/<total> specs)
+- adversarial: <the summary line>
+- telemetry: <each window's `findings:` line and `[receipt] verdict:` | not run (--no-telemetry)>
+- threads: <N> posted, <D> deduped, <X> declined | failed (<reason>) | not posted (no --post-findings)
+- finished: <UTC ISO-8601>
+
+#### Specs
+
+| Spec | What | Why | Result | Evidence |
+| --- | --- | --- | --- | --- |
+| Spec-1 | <the spec's user goal> | <the `AC-n` in its title, its **Changed:** target, or `Out of bounds: <move>`> | pass | E1 heading "Q3 revenue" visible · E2 PATCH /api/dashboards/d-42 → 200 · [S-1](https://…) · [▶ R-1](https://…) |
+
+#### Adversarial pass
+
+| Probe | What | Why | Result | Evidence |
+| --- | --- | --- | --- | --- |
+| ADV-03 | double-click Save | oracle `duplicate-mutation` | finding (high) | [before](https://…) · [after](https://…) · [▶ R-4](https://…) |
+
+#### Telemetry
+
+<each window's journey lines, or the skipped line>
+
+<details><summary>Screenshots and recordings (<n>)</summary> … </details>
+```
+
+The Evidence cell carries the intent spec's `expected` evidence lines in short form, then the uploaded links; a failing spec also names the first unmet `**Expected:**` item.
+Print `comment: <comment-url> (region ui)`, or the `not posted (<reason>)` / `failed (<reason>)` line.
 
 ## Step 5b: Post findings (under `--post-findings`)
 
-Only when the caller passed `--post-findings`: write every failing spec, every `critical` or `high` adversarial finding, and every `critical` or `high` telemetry finding to the PR as a file-level review thread, deduped by fingerprint, and upsert the `<!-- ui-verify:lane -->` summary comment.
+Only when the caller passed `--post-findings`: write every failing spec, every `critical` or `high` adversarial finding, and every `critical` or `high` telemetry finding to the PR as a file-level review thread, deduped by fingerprint, and fill the `threads:` line of the `ui` region Step 5a posts.
 Full procedure: [`post-findings.md`](./post-findings.md).
 `run` with a local `specs-path` has no PR and ignores the flag with the note `post-findings: skipped (no PR)`.
 

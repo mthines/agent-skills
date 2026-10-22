@@ -10,10 +10,10 @@ tags:
 
 # Post findings
 
-`run --post-findings` writes the run's blocking results to the PR as **file-level review threads**, plus one sticky summary comment.
+`run --post-findings` writes the run's blocking results to the PR as **file-level review threads**, and its summary lines to the `ui` region of the PR's one verify comment.
 A thread is the one shape every fix loop in this repo already consumes: `implement-suggestion` applies it, replies, and resolves it, and `review-loop` counts it toward convergence.
 This is how the `review-loop --ui` lane (`review-loop/rules/ui-lane.md`) hands its findings to the loop from a parallel session.
-Without the flag, `run` posts nothing.
+Without the flag, `run` posts no threads; it still posts its `ui` region per [`runner.md § Step 5a`](./runner.md#step-5a-post-the-ui-region).
 
 ## Contents
 
@@ -22,7 +22,7 @@ Without the flag, `run` posts nothing.
 - [The finding body](#the-finding-body)
 - [Dedupe by fingerprint](#dedupe-by-fingerprint)
 - [Write calls by access path](#write-calls-by-access-path)
-- [The sticky summary comment](#the-sticky-summary-comment)
+- [The summary lines](#the-summary-lines)
 - [Report line](#report-line)
 
 ## What is posted
@@ -32,7 +32,7 @@ Without the flag, `run` posts nothing.
 | A spec with `result: fail` | Yes, severity `high` — the happy path the PR promises is broken |
 | An adversarial finding rated `critical` or `high` | Yes, at its own severity |
 | A `telemetry-verify` finding rated `critical` or `high` (`crash`, `telemetry-error`, `performance`, `missing-signal`, `unlinked`) | Yes, at its own severity |
-| An adversarial or telemetry finding rated `medium` or `low` | No — summary comment only |
+| An adversarial or telemetry finding rated `medium` or `low` | No — the `ui` region only |
 | `skipped`, `inconclusive`, `NOT RUN`, `unconfirmed`, a probe error | No — none is a defect in the PR |
 
 The bar matches the loop's: a thread is a request to change code, so only what a reviewer would block on becomes one.
@@ -100,12 +100,12 @@ Resolve the path per [`SKILL.md` Step 0](../SKILL.md#step-0-resolve-your-github-
 
 A failed write is reported verbatim, never retried in a loop and never dropped silently.
 
-## The sticky summary comment
+## The summary lines
 
-Upsert one issue comment whose first line is `<!-- ui-verify:lane -->`: edit the existing one when present, else create it (`gh api …/issues/<n>/comments`, or `mcp__github__update_issue_comment` / `mcp__github__add_issue_comment`).
+The run's summary lives in the `ui` region of the PR's one verify comment (first line `<!-- verify:report -->`, region `<!-- verify:section=ui -->` … `<!-- /verify:section=ui -->`), written by [`runner.md § Step 5a`](./runner.md#step-5a-post-the-ui-region).
+Under this flag the region always posts, and its status lines are the lane's contract:
 
 ```markdown
-<!-- ui-verify:lane -->
 **ui-verify** · head `<head-sha>` · <preview-url> · driver <driver>
 
 - verdict: <green | red | inconclusive> (<pass>/<total> specs)
@@ -115,10 +115,10 @@ Upsert one issue comment whose first line is `<!-- ui-verify:lane -->`: edit the
 - finished: <UTC ISO-8601>
 ```
 
-Write `threads: failed (<reason>)` whenever any thread write failed, so a caller that only reads this comment can tell a red run that posted nothing from one with nothing to post.
+Write `threads: failed (<reason>)` whenever any thread write failed, so a caller that only reads this region can tell a red run that posted nothing from one with nothing to post.
 
-`head` and `finished` are what a parallel caller polls for: the comment for head `<sha>` with a `finished:` line means the run on that head is done.
+`head` and `finished` are what a parallel caller polls for: the `ui` region for head `<sha>` with a `finished:` line means the run on that head is done.
 
 ## Report line
 
-Print `posted: <N> threads, <D> deduped, <X> declined, summary <comment-url>` after the Step 5 report, or `posted: failed (<reason>)`.
+Print `posted: <N> threads, <D> deduped, <X> declined, summary <comment-url>` once Step 5a has posted the region, or `posted: failed (<reason>)`; `<comment-url>` is the verify comment holding the `ui` region.

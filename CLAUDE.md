@@ -71,9 +71,9 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
-- `aw-verify` (`/`) — proves a feature works on `local` or `preview`: probes the brief's specs, concurrency, and guardrail faults, then reads the run's telemetry once through `telemetry-verify`; fixes locally, reports. `setup` writes the committed `.agents/aw/` config every suite skill reads
-- `ui-verify` (`Skill()` + `/`) — browser witness: Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); checks every outcome with evidence, then tries to break it and records it
-- `telemetry-verify` (`Skill()`) — telemetry witness: reads one traffic window's web events, traces, and logs; follows each criterion from web event to API to database; grades the brief's `telemetry:` criteria
+- `aw-verify` (`/`) — proves a feature works on `local` or `preview`: probes specs, concurrency, and guardrail faults, reads telemetry once via `telemetry-verify`, fixes locally, posts proof and media to the PR's one verify comment. `setup` writes `.agents/aw/`
+- `ui-verify` (`Skill()` + `/`) — browser witness: Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); checks every outcome with evidence, then tries to break it and records it; posts its `ui` region of the PR's verify comment
+- `telemetry-verify` (`Skill()`) — telemetry witness: reads one traffic window's web events, traces, and logs; follows each criterion from web event to API to database; grades the brief's `telemetry:` criteria; run alone, posts its `telemetry` region
 
 ### `design/` — UI, visual, interaction
 

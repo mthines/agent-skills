@@ -134,15 +134,20 @@ A red verdict whose findings were all deduped against still-open threads is sett
 
 ## Reading a lane run's result
 
-Every mechanism ends in the same place: the `<!-- ui-verify:lane -->` summary comment on the PR.
-A run on head `<sha>` is **finished** when that comment shows `head \`<sha>\`` and a `finished:` line.
+Every mechanism ends in the same place: of the PR's verify comments (first line `<!-- verify:report -->`), the `ui` region (`<!-- verify:section=ui -->` … `<!-- /verify:section=ui -->`) for this head.
+A run on head `<sha>` is **finished** when that region shows `head \`<sha>\`` and a `finished:` line.
+Select by head, never by author: each author keeps their own verify comment.
+`--slurp` joins the pages first; `--jq` would run the filter once per page and print one region per page.
 
 ```bash
-gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments" --paginate \
-  --jq '[.[] | select(.body | startswith("<!-- ui-verify:lane -->"))] | last | .body'
+gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate --slurp \
+  | SHA="$HEAD_SHA" jq -r '[add[] | select(.body | startswith("<!-- verify:report -->")) | .body
+         | capture("<!-- verify:section=ui -->(?<r>[\\s\\S]*?)<!-- /verify:section=ui -->").r // empty
+         | select(contains("head `" + env.SHA[0:7]))] | last // empty'
 ```
 
-On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`).
+On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the last `ui` region, across every verify comment, whose text contains ``head `<sha7>``.
+No such region (none posted yet, an `aw-verify` aggregate replaced it, or every region names another head) means no summary for this head.
 Parse `verdict`, `adversarial`, `telemetry`, and the `threads:` line from it: `<N> posted, <D> deduped, <X> declined` sets `posted = N`, and `failed (<reason>)` sets `post_failed = true`.
 
 Also finished, with no summary to read:

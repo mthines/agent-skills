@@ -144,7 +144,7 @@ instrumentation written.
 6. **Prove it.** Step 5's summary is a static `file:line` claim; turn it into an executed one when
    the repo has `.agents/aw/` config: record a window, exercise the new operation (the `verify`
    skill, a repro, or an integration test), then run
-   `Skill("telemetry-verify", "--env local --from <start> --to <end>")`.
+   `Skill("telemetry-verify", "--env local --from <start> --to <end> --no-comment")`.
    Phrase each expectation as behavior only a run can settle — *"one span per invocation of
    <operation>, each a child of <parent span>"*, *"the new attribute's distinct values stay
    bounded"* — never *"a span named X exists"*, which reading the source settles and

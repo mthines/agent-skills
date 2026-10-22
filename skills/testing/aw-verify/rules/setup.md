@@ -92,7 +92,7 @@ Ask only what Phase A did not settle; pre-fill the detected value as the first o
 3. **Test user** — email and role (the smoke spec and `E2E_EMAIL` default).
 4. **Telemetry** — dataset per environment for a `dash0-mcp` candidate, or `logs`.
 5. **Repo facts** — "Anything a new developer must know to run and test this repo (login, seed data, tenant, test commands, commit format)?" → `notes.md`. Skip when it exists.
-6. **Your policies** — foreign stack (`teardown` / `ask` / `abort`), cleanup (`leave` / `teardown`), push and PR comment (`own-prs` / `always` / `never`). Skip when `~/.agents/aw/config.yml` has them.
+6. **Your policies** — foreign stack (`teardown` / `ask` / `abort`), cleanup (`leave` / `teardown`), push (`own-prs` / `always` / `never`), and PR comment (`always` / `own-prs` / `never`; default `always`). Skip when `~/.agents/aw/config.yml` has them.
 
 `manual` login → warn: `Authed specs will be skipped (auth.strategy: manual). Add a test-mode login and re-run /aw-verify setup to enable them.`
 

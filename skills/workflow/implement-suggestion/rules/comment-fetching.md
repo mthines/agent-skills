@@ -281,8 +281,8 @@ any identity may post either, and a genuine self-note carries neither.
 `<!-- ui-verify:finding` is always included, whoever posted it — including `github-actions[bot]`
 and the current user — because the `review-loop --ui` lane posts it under the loop's own identity
 for this skill to fix and resolve. Classify it `actionable`: it reports a failing spec or a
-`critical`/`high` defect observed on the live preview. The lane's status comment, whose body starts
-with `<!-- ui-verify:lane -->`, is the opposite: always **exclude** it — it is a run summary, not feedback.
+`critical`/`high` defect observed on the live preview. The verify comment, whose body starts with
+`<!-- verify:report -->` (or the retired `<!-- ui-verify:lane -->`), is the opposite: always **exclude** it — it is a run summary, not feedback.
 
 ## Author inclusion — humans AND AI reviewers
 
