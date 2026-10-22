@@ -25,14 +25,16 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { finish } from './finish.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
+const resolvePlaywright = () => createRequire(path.join(process.cwd(), 'noop.js'))('playwright');
+
 function loadPlaywright() {
   try {
-    return createRequire(path.join(process.cwd(), 'noop.js'))('playwright');
+    return resolvePlaywright();
   } catch {
     console.error('screencast: `playwright` does not resolve from this directory. Run from a project that has it, or `npm i playwright` in a scratch dir and run from there.');
     process.exit(4);
@@ -139,6 +141,13 @@ export async function record(spec, { narrate = false } = {}) {
 }
 
 async function selfTest() {
+  // CI has no browser; the self-test runs where playwright and its chromium resolve.
+  let executable;
+  try { executable = resolvePlaywright().chromium.executablePath(); } catch {}
+  if (!executable || !fs.existsSync(executable)) {
+    console.log('self-test SKIP (playwright or its chromium does not resolve from this directory)');
+    return;
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'screencast-rec-'));
   const html = path.join(dir, 'page.html');
   fs.writeFileSync(html, `<!doctype html><title>t</title><body style="font:20px system-ui;padding:40px">
@@ -163,7 +172,7 @@ async function selfTest() {
   console.log(`self-test PASS (${r.seconds} s, ${t.steps.length} steps)`);
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   const args = process.argv.slice(2);
   if (args.includes('--self-test')) await selfTest();
   else if (!args[0] || args[0].startsWith('--')) {

@@ -21,7 +21,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const GAP = 2; // seconds of nothing-happening worth cutting
 const KEEP_FROZEN = 0.8;
@@ -196,6 +196,10 @@ export function finish(inputs, opts) {
 }
 
 function selfTest() {
+  if (!has('ffmpeg') || !has('ffprobe')) {
+    console.log('self-test SKIP (ffmpeg not installed)');
+    return;
+  }
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'screencast-test-'));
   const raw = path.join(dir, 'raw.webm');
   // 2 s of motion, a 5 s freeze (the wait), 2 s of motion: the freeze is cut, inside step 2.
@@ -245,7 +249,7 @@ function parseArgs(argv) {
   return { inputs, opts };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   const { inputs, opts } = parseArgs(process.argv.slice(2));
   if (opts.selfTest) selfTest();
   else if (!inputs.length || !opts.out) {
