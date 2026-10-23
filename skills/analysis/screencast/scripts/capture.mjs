@@ -170,9 +170,23 @@ export function concatList(frames, stoppedAt) {
   return `${lines.join('\n')}\n`;
 }
 
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
+
 async function start(out, port, urlPart, waitSeconds) {
   for (const tool of ['ffmpeg', 'ffprobe']) if (spawnSync(tool, ['-version']).status !== 0) fail(3, `${tool} is not installed`);
-  if (fs.existsSync(stateFile(out))) fail(2, `a capture for ${out} is already running; stop it first`);
+  if (fs.existsSync(stateFile(out))) {
+    const { pid } = JSON.parse(fs.readFileSync(stateFile(out), 'utf8'));
+    if (isAlive(pid)) fail(2, `a capture for ${out} is already running; stop it first`);
+    console.error(`screencast capture: replacing a stale capture for ${out} (pid ${pid} is gone)`);
+    fs.rmSync(stateFile(out));
+  }
   const ws = await browserEndpoint(port);
   if (!ws) fail(6, port
     ? `no Chrome DevTools on port ${port}`
