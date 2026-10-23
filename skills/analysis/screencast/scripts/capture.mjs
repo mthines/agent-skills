@@ -239,7 +239,7 @@ async function relay(ws) {
 
 function ask(route, body = {}, timeoutMs = 5000) {
   return new Promise((resolve) => {
-    const req = http.request({ socketPath: RELAY_SOCKET, path: route, method: 'POST', timeout: timeoutMs }, (res) => {
+    const req = http.request({ socketPath: RELAY_SOCKET, path: route, method: 'POST', timeout: timeoutMs, agent: false }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
       res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve({ error: 'unreadable relay reply' }); } });
