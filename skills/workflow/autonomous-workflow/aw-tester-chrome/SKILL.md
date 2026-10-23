@@ -187,6 +187,13 @@ path, record it in `notes` and omit it from `captures:` — a capture never turn
 green spec red.
 
 **Record video (`--record-video`).** Record each spec as a GIF with `gif_creator`: `start_recording` and a screenshot before the spec's first step, a screenshot and `stop_recording` after its last, then `export` with `download: true`, `filename: "<spec-id>.gif"`, and `options: { showWatermark: false }`.
+Captions: `gif_creator` records only the page, so draw the step text on it. Read `screencast`'s `scripts/overlay.js` (installed at `~/.claude/skills/screencast/scripts/overlay.js`) once, run its source with `javascript_tool` after every navigation or reload (a reload drops it; it restores the last caption itself), and run `window.__rec.step("<spec-id> · <step text>")` before each step.
+Hide it for every `CAPTURE` and auto-capture screenshot (`document.getElementById('__screencast').style.display = 'none'`, then `''`). Overlay not found → record without captions and add a `notes` line.
+
+```text
+✗ export a spec GIF with no caption — a reviewer cannot tell which step a frame shows
+✓ javascript_tool(<overlay.js source>); javascript_tool(`__rec.step("Spec 2 · WHEN the user types 0.998 in Target")`); computer(type …)
+```
 Move the file from the browser's download folder (`~/Downloads/<spec-id>.gif`) to `.agent/{branch}/.aw-tester/recordings/<spec-id>.gif` and list it in `recordings:`; `clear` before the next spec.
 An export that does not appear is a `notes` line, never a red spec (contract § Record video).
 
