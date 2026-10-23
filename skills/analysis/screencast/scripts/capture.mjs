@@ -129,9 +129,12 @@ async function relay(ws) {
     socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
   });
   const announce = (value) => writeAtomic(RELAY_FILE, { pid: process.pid, ws, socket: RELAY_SOCKET, ...value });
+  // A newer relay may own the file and socket by the time this one closes; leave those alone.
+  let connected = false;
+  const ownsRelayFile = () => readRelay()?.pid === process.pid || (!connected && readRelay() === undefined);
   const exit = (code) => {
     for (const rec of recordings.values()) fs.closeSync(rec.index);
-    if (process.platform !== 'win32') fs.rmSync(RELAY_SOCKET, { force: true });
+    if (process.platform !== 'win32' && ownsRelayFile()) fs.rmSync(RELAY_SOCKET, { force: true });
     process.exit(code);
   };
   const end = async (sessionId) => {
@@ -219,14 +222,17 @@ async function relay(ws) {
         res.end(JSON.stringify(reply));
       });
     });
-    server.listen(RELAY_SOCKET, () => announce({ state: 'connected' }));
+    server.listen(RELAY_SOCKET, () => {
+      connected = true;
+      announce({ state: 'connected' });
+    });
   });
   socket.addEventListener('close', () => {
-    announce({ state: 'closed', error: 'Chrome closed the DevTools connection (was "Allow" declined, or did Chrome quit?)' });
+    if (ownsRelayFile()) announce({ state: 'closed', error: 'Chrome closed the DevTools connection (was "Allow" declined, or did Chrome quit?)' });
     exit(0);
   });
   socket.addEventListener('error', () => {
-    announce({ state: 'closed', error: `cannot connect to ${ws}` });
+    if (ownsRelayFile()) announce({ state: 'closed', error: `cannot connect to ${ws}` });
     exit(1);
   });
 }
@@ -255,7 +261,10 @@ async function ensureRelay(ws, waitSeconds) {
     const health = await ask('/health');
     if (known.ws === ws && !health.error) return;
     // Only a relay that answered is ours to stop; a dead relay's pid may belong to another process now.
-    if (!health.error) await ask('/disconnect');
+    if (!health.error) {
+      await ask('/disconnect');
+      for (let i = 0; i < 30 && isAlive(known.pid); i += 1) await sleep(100);
+    }
   }
   fs.mkdirSync(RELAY_DIR, { recursive: true });
   fs.rmSync(RELAY_FILE, { force: true });
