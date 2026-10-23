@@ -21,7 +21,7 @@ Driver selection asks no question in either mode — `auto` falls back from Chro
 | --- | --- | --- |
 | `auto`, Chrome unavailable or `inconclusive` with `fallback: playwright` | Playwright, with the one-line fallback notice | same |
 | `auto`, no Chrome **and** no sub-agent dispatch | `NOT RUN (no Chrome extension and no sub-agent dispatch available)` | `inconclusive: no driver available (unattended — no Chrome extension, no sub-agent dispatch)` — no verdict, never `red` |
-| Chrome `--record-video`, the Allow prompt | `capture.mjs start --wait 600`, asks the user to click **Allow** | `--wait 15`, no question; after the first exit `6`, `gif_creator` for the remaining specs |
+| Chrome `--record-video`, the Allow prompt | `capture.mjs start --wait 600`, asks the user to click **Allow** when it prints `connecting to Chrome` (once per Chrome session) | `--wait 15`, no question; after the first exit `6`, `gif_creator` for the remaining specs |
 
 A forced `--driver` behaves exactly as it does attended.
 

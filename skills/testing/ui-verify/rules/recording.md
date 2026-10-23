@@ -20,7 +20,7 @@ A recording is evidence, never an assertion: a failed recording is a `notes` lin
 | Driver | Spec run | Adversarial pass |
 | --- | --- | --- |
 | `playwright` | Yes — `--record-video` in the dispatch `Mode:` line; the runner records through the `screencast` skill (overlay, step timings, `finish.mjs` → `.mp4`) per the spec-run contract's § Record video (`autonomous-workflow/rules/spec-run-contract.md`) | Yes — `ADV_VIDEO=1` (see [`adversarial.md § Step 3`](./adversarial.md#step-3-run-the-probes)); kept for findings and probe errors only, finished to `.mp4` |
-| `chrome` | Yes — the runner records the tab with `screencast`'s `capture.mjs` (DevTools protocol → `.mp4`); the user clicks **Allow** in Chrome once per recording. Remote debugging off → `gif_creator`, converted to `.mp4` | No |
+| `chrome` | Yes — the runner records the tab with `screencast`'s `capture.mjs` (DevTools protocol → `.mp4`); the user clicks **Allow** in Chrome once per Chrome session. Remote debugging off → `gif_creator`, converted to `.mp4` | No |
 
 `--no-recording` drops `--record-video` from both drivers' `Mode:` lines and exports `ADV_VIDEO=0`.
 `screencast` not installed → raw `.webm` files and a `notes` line; recording still never fails a spec.
