@@ -26,28 +26,25 @@ Prose is conclusion-first, with no filler.
 
 ## Placeholders
 
+The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-summary-then-one-section-per-spec): a text-only summary table, then one section per spec with its media inline.
+
 | Placeholder | Content |
 | --- | --- |
 | `{{BLUF}}` | Two sentences max: the verdict in words, what was fixed, what needs a human |
-| `{{AC_ROWS}}` | One row per criterion: ID, the criterion verbatim, Why (the requirement it covers, `R-n` or the PR's stated behavior), then the Checks, Browser, and Telemetry witnesses, then Evidence |
-| `{{EC_ROWS}}` | One row per probed edge row: ID, the probe, Why (its class and what it protects, e.g. `Failure — guardrail: a failed save keeps the input`), Result, Evidence |
-| Result cells | `pass`, `fixed → pass (F-n)`, `fail (F-n)`, or `skipped (reason)` |
-| Evidence cells | Uploaded links per [`pr-comment.md § Rows`](./pr-comment.md#rows-what-why-result-evidence): `[S-n](https://…)`, `[▶ R-n](https://…)`, a trace link, or the HTTP status — never a file path |
-| `{{FINDING_ROWS}}` | Every finding by severity, with its Evidence links; `in_scope: false` rows prefixed `pre-existing:` |
-| `{{FIX_ROWS}}` | Short SHA, finding ID, one-line change, the probe that re-verified it. Empty → "No code changes." |
-| `{{ADVERSARIAL}}` | The `adversarial:` summary line `ui-verify` printed, then one row per probe (`ADV-NN`, the probe, Why: its oracle, Result, Evidence with the before/after images and the recording); or its `skipped (…)` line |
-| `{{TELEMETRY}}` | The backend and its scope from the `TELEMETRY` headers, e.g. `dash0-mcp · dataset alice-local` or `logs`; skipped → `not reviewed: <reason>` |
-| `{{FLOW_LINES}}` | The `AC-n <verdict> — <journey>` lines from `telemetry.md`, latest window per AC, e.g. `AC-2 confirms — click "Save" → POST /api/views 201 → views-service PUT (21 ms) → postgres INSERT (4 ms)` |
-| Witness columns | Checks: the AC's `run-checks` status from `.agent/{branch}/checks.yaml`, or `—` without a brief. Browser: the result. Telemetry: the AC's journey verdict (`confirms`, `contradicts`, `ambiguous`, `null`), or `—` when skipped |
+| `{{CI_STATE}}` / `{{TELEMETRY}}` | `CI green` or the red checks; the telemetry backend and scope (`telemetry from dash0-dev, dataset alice-local`), or `telemetry not reviewed: <reason>` |
 | `{{ENV}}` / `{{URL}}` | `local` or `preview`, and the URL the run used (`localhost` URLs are printed as text, not links) |
-| `{{MEDIA}}` | The gallery per [`pr-comment.md § Media`](./pr-comment.md#media); or `not attached (<reason>)` |
-| `{{OPEN_ITEMS}}` | Each open or escalated finding: what is needed, the options, your recommendation. Empty → "None." |
-| `{{LESSON_LINES}}` | Lessons written this run (key only) and promotion-eligible lessons with the suggested edit. Empty → "None." |
+| `{{SUMMARY_ROWS}}` | One row per AC, then per probed edge row: ID, the criterion or probe in one line, and the result with its witnesses, e.g. `✅ browser · telemetry confirms`, `✅ after fix (F-1)`, `❌ fail (F-2)`, `✅ unit tests`. Text only — no media, no links |
+| `{{SPEC_SECTIONS}}` | One `#### <IDs> · <name> · <result>` section per spec, edge row, or recording with evidence: one or two sentences (what the user did, why, what happened), then each screenshot as an image embed `![caption](https://…)` and the recording as its bare `.mp4` URL on its own line. A file not uploaded → `not attached (<reason>)` |
+| `{{ADVERSARIAL}}` | The `adversarial:` summary line `ui-verify` printed, then one `####` section per finding in the `{{SPEC_SECTIONS}}` shape (before/after images, recording); or its `skipped (…)` line |
+| `{{FLOW_LINES}}` | One bullet per journey from `telemetry.md`, latest window per AC, e.g. `Save: POST /api/views 201 → views-service PUT (21 ms) → postgres INSERT (4 ms)`; then the ERROR-span line. Skipped → `not reviewed: <reason>` |
+| `{{FIX_ROWS}}` | Short SHA and the one-line user-visible change. Empty → "No code changes." |
+| `{{OPEN_ROWS}}` | Every open, escalated, or out-of-scope finding by severity: ID, severity, what (`Outside this PR:` prefix when `in_scope: false`), next step. Empty → "None." |
+| `{{NA_ROWS}}` / `{{LESSON_LINES}}` | Edge rows marked `n/a` with the reason; lessons written this run (key only) and promotion-eligible lessons. Empty → "None." |
 
 ## Media
 
 Collect, upload, and embed every screenshot **and recording** per [`pr-comment.md § Media`](./pr-comment.md#media): image paths from `findings.jsonl` `evidence` and `probes.jsonl` `screenshots`, video paths from `probes.jsonl` `recordings` and the adversarial findings' `evidence`.
-Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-comment.md#when-to-post)); otherwise `{{MEDIA}}` is `not attached (<reason>)` and the terminal lists every file's absolute path.
+Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-comment.md#when-to-post)); otherwise each section says `not attached (<reason>)` and the terminal lists every file's absolute path.
 
 ## Destinations
 

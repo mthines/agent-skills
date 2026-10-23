@@ -3,14 +3,15 @@ name: screencast
 description: >
   Records reviewable browser videos — a cursor, click ring, and step captions drawn on the page,
   dead waits cut, H.264 mp4 out, a per-step timings file and contact sheet beside it — for a scripted
-  scene list or a test runner's raw Playwright video. Triggers on "record this interaction",
+  scene list, a test runner's raw Playwright video, or a Chrome tab driven by another tool (recorded
+  over the DevTools protocol). Triggers on "record this interaction",
   "screen recording", "make a video of", "/screencast".
 disable-model-invocation: false
-argument-hint: '<recording.json> [--narrate] | finish <raw.webm>... --out <id>.mp4'
+argument-hint: '<recording.json> [--narrate] | finish <raw.webm>... --out <id>.mp4 | capture start|step|stop --out <id>.mp4'
 license: MIT
 metadata:
   author: mthines
-  version: '2.0.0'
+  version: '2.1.0'
   workflow_type: applied
   tags: [playwright, video, recording, evidence, ffmpeg]
 ---
@@ -24,6 +25,7 @@ Scripts do the work; this file lists only what differs from a plain Playwright `
 | [`scripts/record.mjs`](./scripts/record.mjs) `<recording.json>` | Scripted scenes (caption + `click`/`hover`/`type`/`press`/`scroll`/`wait` steps); schema in the file header. Run from a directory where `playwright` resolves |
 | [`scripts/overlay.js`](./scripts/overlay.js) | A test runner's own recording: `context.addInitScript({ path })`, then `window.__rec.step(label)` per step |
 | [`scripts/finish.mjs`](./scripts/finish.mjs) `<raw.webm>... --out <id>.mp4` | Any raw video(s) + sibling `<stem>.timings.json` → the outputs below. `--crop x,y,w,h`, `--max-width 768` for `video-analyser`, `--no-trim` |
+| [`scripts/capture.mjs`](./scripts/capture.mjs) `start --url <part> \| step "<label>" \| stop` `--out <id>.mp4` | A Chrome tab another tool drives (claude-in-chrome): streams its frames over the DevTools protocol, then runs `finish.mjs` on stop. Usage and exit codes in the file header |
 
 ```bash
 node "${CLAUDE_SKILL_DIR}/scripts/finish.mjs" spec-1-1.webm spec-1-2.webm --out .agent/feat-x/.aw-tester/recordings/spec-1.mp4
@@ -41,7 +43,10 @@ Standalone runs write to `.agent/{branch}/recordings/`; a caller such as `aw-tes
 3. **Hide the overlay in screenshots:** `page.screenshot({ style: '#__screencast{display:none!important}' })`, so evidence images show only the app.
 4. **A runner writes timings as it goes:** `{ label, start, end, result }` per step, seconds from `newPage()`; several launches → pass every segment to `finish.mjs` in order, and it joins them and offsets their timings.
 5. **A failed recording is a `notes` line, never a failed check.**
-6. **Chrome driver (claude-in-chrome):** no `recordVideo`; record with `gif_creator` and attach the GIF instead of an mp4. Run `overlay.js`'s source with `javascript_tool` after every navigation and call `__rec.step(label)` before each step, or the GIF has no captions.
+6. **Chrome driver (claude-in-chrome):** no `recordVideo`, so record with `capture.mjs`, never `gif_creator`: a GIF gets one frame per tool call and is ~20× larger than the mp4.
+   It needs Chrome's remote debugging on once (chrome://inspect/#remote-debugging), and the user clicks **Allow** on each new recording; `--wait 600` when you start it before asking.
+   Run `overlay.js`'s source with `javascript_tool` after every navigation and call `__rec.step(label)` with each `capture.mjs step`, or the video has no captions.
+   Exit `6` (no debugging, no matching tab, no frames) → fall back to `gif_creator`, convert the GIF (`ffmpeg -i x.gif -movflags +faststart -vf "scale=1280:-2,format=yuv420p" -c:v libx264 -crf 28 -an x.mp4`), and add a `notes` line.
 7. **Narration is opt-in** (`--narrate`): each step's `say` line, spoken with macOS `say` or `SCREENCAST_TTS="<cmd with {text} and {out}>"`. Never by default — reviewers watch muted.
 
-Exit codes: `2` bad arguments, `3` ffmpeg missing, encoding failed, or the mp4 failed its sanity check, `4` `playwright` does not resolve, `5` `--narrate` with no voice.
+Exit codes: `2` bad arguments, `3` ffmpeg missing, encoding failed, or the mp4 failed its sanity check, `4` `playwright` does not resolve, `5` `--narrate` with no voice, `6` `capture.mjs` found no DevTools endpoint, tab, or frames.

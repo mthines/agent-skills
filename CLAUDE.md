@@ -92,7 +92,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `playwright-trace-analyzer` (`/`) — analyze `trace.zip`; names the race behind a flake
 - `profile-optimizer` (`/`) — React DevTools / Chrome Performance trace analysis
 - `rum-tracking` (`auto`) — product analytics and RUM event tracking
-- `screencast` (`auto` + `Skill()`) — browser video engine: overlay (cursor, click ring, step captions), `finish.mjs` → mp4 + per-step `timings.json` + contact sheet with frozen waits cut; shared by `ui-verify` and `aw-tester`
+- `screencast` (`auto` + `Skill()`) — browser video engine: overlay (cursor, click ring, step captions), `finish.mjs` → mp4 + per-step `timings.json` + contact sheet with frozen waits cut, `capture.mjs` for a Chrome tab over DevTools; shared by `ui-verify` and both `aw-tester` runners
 - `video-analyser` (`auto`) — analyze screen recordings for bugs
 - `youtube-transcript` (`auto`) — stdlib-only YouTube transcript fetch that works from cloud IPs where `youtube-transcript-api` and `yt-dlp` are bot-blocked
 

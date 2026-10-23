@@ -186,16 +186,27 @@ verdict's `captures:` array. If the extension cannot persist the file to that
 path, record it in `notes` and omit it from `captures:` — a capture never turns a
 green spec red.
 
-**Record video (`--record-video`).** Record each spec as a GIF with `gif_creator`: `start_recording` and a screenshot before the spec's first step, a screenshot and `stop_recording` after its last, then `export` with `download: true`, `filename: "<spec-id>.gif"`, and `options: { showWatermark: false }`.
-Captions: `gif_creator` records only the page, so draw the step text on it. Read `screencast`'s `scripts/overlay.js` (installed at `~/.claude/skills/screencast/scripts/overlay.js`) once, run its source with `javascript_tool` after every navigation or reload (a reload drops it; it restores the last caption itself), and run `window.__rec.step("<spec-id> · <step text>")` before each step.
+**Record video (`--record-video`).** Record each spec as a real video with `screencast`'s `scripts/capture.mjs` (installed at `~/.claude/skills/screencast/scripts/capture.mjs`), never `gif_creator`: it streams the tab's frames over Chrome's DevTools protocol, and `stop` writes the same `<spec-id>.mp4`, `.timings.json`, and `.sheet.png` as a Playwright run.
+Before the first spec, start the first recording with `--wait 600` in the background and ask the user to click **Allow** in Chrome; each later `start` asks again.
+
+```bash
+CAP=~/.claude/skills/screencast/scripts/capture.mjs
+OUT=.agent/{branch}/.aw-tester/recordings/<spec-id>.mp4
+node $CAP start --url "<part of the tab URL>" --out $OUT          # before the spec's first step
+node $CAP step "<spec-id> · <step text>" --out $OUT               # before each step, with __rec.step below
+node $CAP stop --result <pass|fail> --out $OUT                    # after its last step
+```
+
+Captions: read `screencast`'s `scripts/overlay.js` once, run its source with `javascript_tool` after every navigation or reload (a reload drops it; it restores the last caption itself), and run `window.__rec.step("<spec-id> · <step text>")` with each `capture.mjs step`.
 Hide it for every `CAPTURE` and auto-capture screenshot (`document.getElementById('__screencast').style.display = 'none'`, then `''`). Overlay not found → record without captions and add a `notes` line.
 
 ```text
-✗ export a spec GIF with no caption — a reviewer cannot tell which step a frame shows
-✓ javascript_tool(<overlay.js source>); javascript_tool(`__rec.step("Spec 2 · WHEN the user types 0.998 in Target")`); computer(type …)
+✗ record a spec with gif_creator — one frame per tool call, ~20× the size of the mp4
+✓ capture.mjs step "Spec 2 · WHEN the user types 0.998 in Target"; javascript_tool(`__rec.step("Spec 2 · WHEN the user types 0.998 in Target")`); computer(type …)
 ```
-Move the file from the browser's download folder (`~/Downloads/<spec-id>.gif`) to `.agent/{branch}/.aw-tester/recordings/<spec-id>.gif` and list it in `recordings:`; `clear` before the next spec.
-An export that does not appear is a `notes` line, never a red spec (contract § Record video).
+Open `<spec-id>.sheet.png` before listing the video in `recordings:`.
+`capture.mjs` exit `6` (remote debugging off, Allow not clicked, no matching tab) → record that spec with `gif_creator` (`export` with `download: true`, `filename: "<spec-id>.gif"`, `options: { showWatermark: false }`), convert it per `screencast` deviation 6, and add a `notes` line.
+A recording that does not save is a `notes` line, never a red spec (contract § Record video).
 
 **Auto-capture (`--auto-capture`).** When the caller passed `--auto-capture`,
 screenshot the current page (full-page) automatically — in addition to any
