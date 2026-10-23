@@ -320,10 +320,11 @@ async function start(out, port, urlPart, waitSeconds) {
 
   fs.rmSync(dir, { recursive: true, force: true });
   fs.mkdirSync(dir, { recursive: true });
+  const startedAt = Date.now() / 1000;
   const status = await ask('/start', { urlPart, dir: path.resolve(dir) }, 15000);
   if (status.error) fail(6, status.error);
   if (readFrames(dir).length === 0) console.error('screencast capture: no frames yet — Chrome paints only while its window is visible; the video starts at the first frame');
-  fs.writeFileSync(stateFile(out), JSON.stringify({ dir: path.resolve(dir), startedAt: Date.now() / 1000, steps: [] }, null, 2));
+  fs.writeFileSync(stateFile(out), JSON.stringify({ dir: path.resolve(dir), startedAt, steps: [] }, null, 2));
   console.log(`capture started: "${status.title}" → ${dir}`);
 }
 
