@@ -188,6 +188,7 @@ green spec red.
 
 **Record video (`--record-video`).** Record each spec as a real video with `screencast`'s `scripts/capture.mjs` (installed at `~/.claude/skills/screencast/scripts/capture.mjs`), never `gif_creator`: it streams the tab's frames over Chrome's DevTools protocol, and `stop` writes the same `<spec-id>.mp4`, `.timings.json`, and `.sheet.png` as a Playwright run.
 Before the first spec, start the first recording with `--wait 600` in the background and ask the user to click **Allow** in Chrome; each later `start` asks again.
+Under `--unattended`, or with no user to click (Agent0, CI), start with `--wait 15` and never ask; after the run's first exit `6`, do not call `capture.mjs start` again and record the remaining specs with the `gif_creator` fallback below.
 Wait for its `capture started` line before the spec's first step: a `step` sent earlier exits `2`, and actions before Allow are not recorded.
 
 ```bash
