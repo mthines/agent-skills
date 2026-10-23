@@ -252,9 +252,10 @@ const readRelay = () => {
 async function ensureRelay(ws, waitSeconds) {
   const known = readRelay();
   if (known?.state === 'connected' && isAlive(known.pid)) {
-    if (known.ws === ws && !(await ask('/health')).error) return;
-    // Chrome restarted (a new browser id) or the relay stopped answering.
-    try { process.kill(known.pid, 'SIGTERM'); } catch {}
+    const health = await ask('/health');
+    if (known.ws === ws && !health.error) return;
+    // Only a relay that answered is ours to stop; a dead relay's pid may belong to another process now.
+    if (!health.error) await ask('/disconnect');
   }
   fs.mkdirSync(RELAY_DIR, { recursive: true });
   fs.rmSync(RELAY_FILE, { force: true });
@@ -276,7 +277,7 @@ async function ensureRelay(ws, waitSeconds) {
 async function disconnect() {
   const known = readRelay();
   if (known?.state !== 'connected' || !isAlive(known.pid)) return console.log('no relay is connected');
-  if ((await ask('/disconnect')).error) try { process.kill(known.pid, 'SIGTERM'); } catch {}
+  if ((await ask('/disconnect')).error) return console.log('the relay did not answer; it is already gone');
   console.log('relay disconnected from Chrome');
 }
 
