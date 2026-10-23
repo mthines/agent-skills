@@ -89,6 +89,7 @@ Resolve from the invocation prompt:
 | `specs_path` | Argument, or `.agent/{branch}/specs.md` | Yes |
 | `aw_target_path` | The `Aw-Target file:` path, else `.agent/{branch}/aw-target.{name}.yml` (written by the caller from `.agents/aw/environments.yml`) | Yes |
 | `mode` | `--all` or `--bail-on-first-red` (default) | No |
+| `unattended` | `--unattended` in the `Mode:` line: no user can click Chrome's Allow prompt (see Record video) | No |
 
 Parse the aw-target (`base_url`, `auth.*`, `fixtures.references`,
 `constraints.reset_between_specs`) and the specs per the

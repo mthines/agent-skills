@@ -121,10 +121,11 @@ Skill("aw-tester-chrome", "
   Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target '<ENV>'.
   Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
   Specs file: .agent/{branch}/.ui-verify/specs.md
-  Mode: --all --auto-capture --record-video
+  Mode: --all --auto-capture --record-video [--unattended]
 ")
 ```
 
+Add `--unattended` to the `Mode:` line whenever this run is unattended ([`unattended.md`](./unattended.md)), so the runner never waits on Chrome's Allow prompt.
 If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode print the [fallback notice](#the-auto-mode-fallback-notice) and run the Playwright driver; when no tool dispatches a sub-agent, report the chrome `inconclusive` as-is. This is the one chrome→playwright fallback per run — never fall back a second time. A forced `--driver chrome` never falls back — report its verdict as-is.
 
 **Driver `playwright` — dispatch [`aw-tester`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md) as a sub-agent** ([`§ Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)):
