@@ -161,9 +161,15 @@ async function relay(ws) {
     // params.sessionId numbers the frame for its ack; msg.sessionId is the tab's session.
     const { data, metadata, sessionId: frame } = msg.params;
     if (rec) {
-      const file = `${String(rec.count++).padStart(6, '0')}.jpg`;
-      fs.writeFileSync(path.join(rec.dir, file), Buffer.from(data, 'base64'));
-      fs.writeSync(rec.index, `${JSON.stringify({ file, t: metadata.timestamp ?? Date.now() / 1000 })}\n`);
+      try {
+        const file = `${String(rec.count++).padStart(6, '0')}.jpg`;
+        fs.writeFileSync(path.join(rec.dir, file), Buffer.from(data, 'base64'));
+        fs.writeSync(rec.index, `${JSON.stringify({ file, t: metadata.timestamp ?? Date.now() / 1000 })}\n`);
+      } catch {
+        // Its frames dir is gone; end that recording, never the shared connection.
+        end(msg.sessionId);
+        return;
+      }
     }
     send('Page.screencastFrameAck', { sessionId: frame }, msg.sessionId);
   });
