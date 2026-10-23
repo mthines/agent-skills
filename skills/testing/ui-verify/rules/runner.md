@@ -93,7 +93,7 @@ For an intent spec each runner replays a cached route when one matches the spec'
 
 **Record the window.** Immediately before the dispatch, record `RUN_STARTED_AT` as UTC ISO-8601 (`date -u +%Y-%m-%dT%H:%M:%SZ`); when the verdict returns, record `SPECS_ENDED_AT`. Step 4c reads telemetry for exactly that window.
 
-**Recordings are on by default on both drivers.** Both dispatch blocks carry `--record-video`: `aw-tester` writes one video per spec under `.agent/{branch}/.aw-tester/recordings/`, and `aw-tester-chrome` exports one `.gif` per spec with `gif_creator` ([`recording.md`](./recording.md)).
+**Recordings are on by default on both drivers.** Both dispatch blocks carry `--record-video`: `aw-tester` writes one video per spec under `.agent/{branch}/.aw-tester/recordings/`, and `aw-tester-chrome` records one per spec over the DevTools protocol with `screencast`'s `capture.mjs`; both are `.mp4` ([`recording.md`](./recording.md)).
 Pass `--no-recording` to drop the flag from both blocks.
 
 **Screenshots are on by default.** A `ui-verify run` always passes
@@ -121,10 +121,11 @@ Skill("aw-tester-chrome", "
   Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target '<ENV>'.
   Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
   Specs file: .agent/{branch}/.ui-verify/specs.md
-  Mode: --all --auto-capture --record-video
+  Mode: --all --auto-capture --record-video [--unattended]
 ")
 ```
 
+Add `--unattended` to the `Mode:` line whenever this run is unattended ([`unattended.md`](./unattended.md)), so the runner never waits on Chrome's Allow prompt.
 If it returns `verdict: inconclusive` with `fallback: playwright` (extension gone, or a `storage-state` target sitting on a login screen), in `auto` mode print the [fallback notice](#the-auto-mode-fallback-notice) and run the Playwright driver; when no tool dispatches a sub-agent, report the chrome `inconclusive` as-is. This is the one chrome→playwright fallback per run — never fall back a second time. A forced `--driver chrome` never falls back — report its verdict as-is.
 
 **Driver `playwright` — dispatch [`aw-tester`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md) as a sub-agent** ([`§ Parse inputs`](../../../workflow/autonomous-workflow/templates/aw-tester.agent.md)):
@@ -291,26 +292,36 @@ Region body, in this order:
 - threads: <N> posted, <D> deduped, <X> declined | failed (<reason>) | not posted (no --post-findings)
 - finished: <UTC ISO-8601>
 
-#### Specs
+#### Summary
 
-| Spec | What | Why | Result | Evidence |
-| --- | --- | --- | --- | --- |
-| Spec-1 | <the spec's user goal> | <the `AC-n` in its title, its **Changed:** target, or `Out of bounds: <move>`> | pass | E1 heading "Q3 revenue" visible · E2 PATCH /api/dashboards/d-42 → 200 · [S-1](https://…) · [▶ R-1](https://…) |
+| Spec | What | Result |
+| --- | --- | --- |
+| Spec-1 | <the spec's user goal> | ✅ pass |
+| ADV-03 | double-click Save | ⚠️ finding (high) |
 
-#### Adversarial pass
+#### Spec-1 · <short name> · ✅ pass
+<What the user did, why — the `AC-n` in its title, its **Changed:** target, or `Out of bounds: <move>` — and what happened: the `expected` evidence lines in short form, e.g. heading "Q3 revenue" visible, PATCH /api/dashboards/d-42 → 200.>
 
-| Probe | What | Why | Result | Evidence |
-| --- | --- | --- | --- | --- |
-| ADV-03 | double-click Save | oracle `duplicate-mutation` | finding (high) | [before](https://…) · [after](https://…) · [▶ R-4](https://…) |
+![Spec-1: <caption>](https://github.com/user-attachments/assets/…)
+
+https://github.com/user-attachments/assets/…
+
+#### ADV-03 · double-click Save · ⚠️ finding (high)
+<The probe, its oracle (`duplicate-mutation`), and what broke.>
+
+![ADV-03 before](https://…)
+
+![ADV-03 after](https://…)
+
+https://github.com/user-attachments/assets/…
 
 #### Telemetry
 
 <each window's journey lines, or the skipped line>
-
-<details><summary>Screenshots and recordings (<n>)</summary> … </details>
 ```
 
-The Evidence cell carries the intent spec's `expected` evidence lines in short form, then the uploaded links; a failing spec also names the first unmet `**Expected:**` item.
+Layout rules: the `aw-verify` skill's `rules/pr-comment.md` § Layout. The summary table is text only; media goes only in the sections, never in a cell or a closed `<details>`.
+A failing spec's section names the first unmet `**Expected:**` item.
 Print `comment: <comment-url> (region ui)`, or the `not posted (<reason>)` / `failed (<reason>)` line.
 
 ## Step 5b: Post findings (under `--post-findings`)

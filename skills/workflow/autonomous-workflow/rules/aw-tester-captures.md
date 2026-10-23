@@ -78,7 +78,7 @@ await page.screenshot({
 ## Record video (one `.mp4` per spec)
 
 When the invocation passed `--record-video`, record each spec per the
-[spec-run contract § Record video](./spec-run-contract.md#record-video-a-playwright-run-option)
+[spec-run contract § Record video](./spec-run-contract.md#record-video-a-run-option)
 through the `screencast` skill (`SC="${SCREENCAST_DIR:-$HOME/.claude/skills/screencast}"`).
 `ui-verify run`/`verify` pass this flag on the Playwright driver; the executor's
 Phase 4 hot loop does not.

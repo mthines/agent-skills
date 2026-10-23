@@ -9,7 +9,7 @@ Select files in this order, stopping at **6 images and 2 videos**:
 1. Every path passed with `--attach <file>` in `$ARGUMENTS`, in order.
 2. Explicit `CAPTURE` screenshots from this branch's runs: `.agent/{branch}/.aw-tester/captures/*.png`, excluding `*-auto-*`.
 3. Final-state auto-captures: `.agent/{branch}/.aw-tester/captures/*-auto-final.png`.
-4. Recordings of passing specs: `.agent/{branch}/.aw-tester/recordings/spec-*.{mp4,gif}` (`screencast` output); a raw `spec-*.webm` only when no `.mp4` exists for that spec.
+4. Recordings of passing specs: `.agent/{branch}/.aw-tester/recordings/spec-*.mp4` (`screencast` output, from either runner); a `spec-*.gif` or raw `spec-*.webm` only when no `.mp4` exists for that spec, and `attach-media` converts it to `.mp4` first.
 5. Adversarial-pass screenshots from `ui-verify` (and `aw-verify`, which runs it): `.agent/{branch}/.ui-verify/adversarial/captures/*.png`.
 6. Adversarial-pass recordings: `.agent/{branch}/.ui-verify/adversarial/recordings/*.mp4` (a raw `*.webm` only when its `.mp4` is missing).
 

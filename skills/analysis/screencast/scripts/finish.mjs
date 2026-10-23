@@ -42,7 +42,7 @@ function duration(file) {
 }
 
 function readTimings(file) {
-  const t = file.replace(/\.(webm|mp4|mov)$/i, '.timings.json');
+  const t = file.replace(/\.(webm|mp4|mov|mkv)$/i, '.timings.json');
   if (!fs.existsSync(t)) return [];
   const data = JSON.parse(fs.readFileSync(t, 'utf8'));
   return Array.isArray(data) ? data : data.steps ?? [];

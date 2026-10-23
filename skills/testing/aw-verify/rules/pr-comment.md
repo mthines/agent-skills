@@ -19,7 +19,7 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 - [Regions and owners](#regions-and-owners)
 - [When to post](#when-to-post)
-- [Rows: what, why, result, evidence](#rows-what-why-result-evidence)
+- [Layout: summary, then one section per spec](#layout-summary-then-one-section-per-spec)
 - [Media](#media)
 - [Write the region](#write-the-region)
 - [Report line](#report-line)
@@ -60,40 +60,53 @@ Take the first row that applies.
 ✓ Skill("ui-verify", "run .agent/<branch>/specs.md --env local --url <url> --no-telemetry --no-comment")
 ```
 
-## Rows: what, why, result, evidence
+## Layout: summary, then one section per spec
 
-Every row a reader must trust carries four things:
+Media renders only outside a table: GitHub shows a bare video URL as a player only on its own line, and a table cell holds only links.
+So a region has two parts.
 
-| Column | Holds | Never |
+1. **Summary** — a text-only table, one row per criterion or probe: `ID | Criterion | Result`. No media, no links but commit SHAs.
+2. **What was tested** — one `####` heading per spec, edge case, or probe that has evidence: `#### <ID(s)> · <short name> · <result emoji> <result>`.
+   Under it, one or two sentences: what the user did, why (the `AC-n`, guardrail, or risk class it proves), and what happened.
+   Then its media, each on its own line: screenshots as `![<caption>](<url>)`, then the recording as its bare URL.
+
+| Part | Holds | Never |
 | --- | --- | --- |
-| What | The criterion, spec, probe, or journey, in one line | A file path |
-| Why | What it protects: the `AC-n` or requirement it proves, the guardrail it breaks on purpose, or the risk class (`Concurrency`, `Failure`, `xss-executed`) | Empty, or "edge case" |
 | Result | `pass`, `fixed → pass (F-n)`, `fail (F-n)`, `skipped (<reason>)`, or the telemetry verdict word | A softened word for a `fail` |
-| Evidence | Links to what proves it: `[S-1](<url>)` screenshot, `[▶ R-1](<url>)` recording, a trace or Dash0 link, or the HTTP status | A local path, or an ID with no link |
+| Why | The `AC-n` or requirement it proves, the guardrail it breaks on purpose, or the risk class (`Concurrency`, `Failure`, `xss-executed`) | Empty, or "edge case" |
+| Evidence | The embedded screenshot and recording, plus the HTTP status, trace, or Dash0 link | A local path, a bare ID, or media only inside a table cell or a closed `<details>` |
 
 ```markdown
-<!-- ✗ Evidence the reader cannot open -->
-| EC-9 | PUT /api/views → 500 | fail | S-3 |
+<!-- ✗ Media as links in a table: the reader sees "S-3", not the page -->
+| EC-9 | PUT /api/views → 500 | fixed → pass (F-2) | [S-3](https://github.com/user-attachments/assets/…) · [▶ R-2](https://…) |
 
-<!-- ✓ What, why, result, and evidence a click away -->
-| EC-9 | PUT /api/views answers 500 | Guardrail: a failed save keeps the user's input | fixed → pass (F-2) | [S-3](https://github.com/user-attachments/assets/…) · [▶ R-2](https://github.com/user-attachments/assets/…) |
+<!-- ✓ The summary row stays text; the section shows the evidence -->
+| EC-9 | A failed save keeps the user's input | ✅ fixed → pass (F-2) |
+
+#### EC-9 · failed save · ✅ fixed → pass (F-2)
+I blocked `PUT /api/views` and clicked Save. A toast says the save failed and the typed name stays.
+
+![EC-9: failed save keeps the name](https://github.com/user-attachments/assets/…)
+
+https://github.com/user-attachments/assets/…
 ```
 
 ## Media
 
-1. **Collect** every screenshot and recording the run produced: finding evidence first, by severity, then acceptance specs, then edge and adversarial probes. Number screenshots `S-1…` and recordings `R-1…`.
+1. **Collect** every screenshot and recording the run produced: finding evidence first, by severity, then acceptance specs, then edge and adversarial probes.
    Cap at 12 images and 4 recordings; past the cap, keep the findings' media and say `+<k> more not attached (cap)`.
-2. **Upload in one call**, with a caption per file:
+2. **Recordings are `.mp4`.** Both runners record through `screencast`; a `.gif` (the Chrome runner's fallback) is converted before upload: `ffmpeg -i x.gif -movflags +faststart -vf "scale=1280:-2,format=yuv420p" -c:v libx264 -crf 28 -an x.mp4`.
+   Open each video's `<id>.sheet.png` first and drop a video whose frames do not show the spec.
+3. **Upload in one call**, with a caption per file:
 
    ```text
-   Skill("attach-media", "<pr-url> <path>#S-1 — EC-9: Save while the API fails <path>#R-1 — Spec-1: rename a view --to urls")
+   Skill("attach-media", "<pr-url> <path>#EC-9: failed save keeps the name <path>#Spec-1: rename a view --to urls")
    ```
 
-   `attach-media` opens every image before upload and skips one that shows a secret or personal data; it re-encodes a `.webm` over 10 MB to `.mp4` and skips what still does not fit.
-3. **Embed** each returned URL twice: as the link in its row's Evidence cell, and in a `<details><summary>Screenshots and recordings (<n>)</summary>` gallery at the end of the region, an image as `![S-n — caption](https://…)` and a recording as its bare URL on its own line, which GitHub renders as a player.
-4. A file `attach-media` skipped or could not upload → its Evidence cell says `not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
-5. **Recordings are never silently missing.** Upload every `.mp4` and `.gif` the run listed (screencast's `.mp4` plays inline; open its `<id>.sheet.png` first and drop a video whose frames do not show the spec).
-   When the region holds no recording, its gallery says why, on its own line: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
+   `attach-media` opens every image before upload and skips one that shows a secret or personal data; it re-encodes a video over 10 MB and skips what still does not fit.
+4. **Embed** each returned URL once, in its spec's section (§ Layout). A recording that covers several specs gets its own section naming them.
+5. A file `attach-media` skipped or could not upload → its section says `not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
+6. **Recordings are never silently missing.** When the region holds no recording, say why on its own line under **What was tested**: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
 
 ## Write the region
 

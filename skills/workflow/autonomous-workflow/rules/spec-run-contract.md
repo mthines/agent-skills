@@ -136,10 +136,11 @@ this spec too with reason `continues-from: Spec N — prior spec did not pass`. 
 runner that starts a fresh context per spec (`reset_between_specs: true`) cannot
 honor `continues-from` — skip the chained spec and say so.
 
-### Record video (a Playwright run option)
+### Record video (a run option)
 
 **Record video** is a run-level option — the mode flag `--record-video`, **off by default**; `ui-verify run` turns it on (its `rules/recording.md`).
-`aw-tester` (Playwright) records an `.mp4` per the steps below; the Chrome runner records each spec as a `.gif` with the extension's `gif_creator` instead (its `SKILL.md`), with no timings file or contact sheet.
+Both runners write the same `screencast` outputs per spec: `<spec-id>.mp4`, `<spec-id>.timings.json`, and `<spec-id>.sheet.png`.
+The Chrome runner records the tab over the DevTools protocol with `screencast`'s `capture.mjs` (its `SKILL.md`); `aw-tester` (Playwright) follows the steps below.
 When enabled on Playwright:
 
 1. Every browser context the runner opens to run a spec sets `recordVideo: { dir, size: { width: 1280, height: 720 } }`, so each spec gets its own context and its own video — the flag overrides one-context-per-batch.
