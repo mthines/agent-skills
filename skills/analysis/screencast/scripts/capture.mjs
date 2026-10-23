@@ -308,7 +308,7 @@ async function start(out, port, urlPart, waitSeconds) {
   const dir = framesDir(out);
   if (fs.existsSync(stateFile(out))) {
     const health = isAlive(readRelay()?.pid) ? await ask('/health') : {};
-    if (health.recordings?.includes(dir)) fail(2, `a capture for ${out} is already running; stop it first`);
+    if (health.recordings?.includes(path.resolve(dir))) fail(2, `a capture for ${out} is already running; stop it first`);
     console.error(`screencast capture: replacing a stale capture for ${out}`);
     fs.rmSync(stateFile(out));
   }
