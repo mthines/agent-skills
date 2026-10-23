@@ -188,6 +188,7 @@ green spec red.
 
 **Record video (`--record-video`).** Record each spec as a real video with `screencast`'s `scripts/capture.mjs` (installed at `~/.claude/skills/screencast/scripts/capture.mjs`), never `gif_creator`: it streams the tab's frames over Chrome's DevTools protocol, and `stop` writes the same `<spec-id>.mp4`, `.timings.json`, and `.sheet.png` as a Playwright run.
 Before the first spec, start the first recording with `--wait 600` in the background and ask the user to click **Allow** in Chrome; each later `start` asks again.
+Wait for its `capture started` line before the spec's first step: a `step` sent earlier exits `2`, and actions before Allow are not recorded.
 
 ```bash
 CAP=~/.claude/skills/screencast/scripts/capture.mjs
@@ -205,7 +206,9 @@ Hide it for every `CAPTURE` and auto-capture screenshot (`document.getElementByI
 ✓ capture.mjs step "Spec 2 · WHEN the user types 0.998 in Target"; javascript_tool(`__rec.step("Spec 2 · WHEN the user types 0.998 in Target")`); computer(type …)
 ```
 Open `<spec-id>.sheet.png` before listing the video in `recordings:`.
-`capture.mjs` exit `6` (remote debugging off, Allow not clicked, no matching tab) → record that spec with `gif_creator` (`export` with `download: true`, `filename: "<spec-id>.gif"`, `options: { showWatermark: false }`), convert it per `screencast` deviation 6, and add a `notes` line.
+`capture.mjs` exit `6` (remote debugging off, Allow not clicked, no matching tab) → record that spec with `gif_creator` and add a `notes` line:
+`start_recording` and a screenshot before the first step, a screenshot and `stop_recording` after the last, then `export` with `download: true`, `filename: "<spec-id>.gif"`, and `options: { showWatermark: false }`.
+Move `~/Downloads/<spec-id>.gif` to `.agent/{branch}/.aw-tester/recordings/`, convert it to `<spec-id>.mp4` per `screencast` deviation 6, list the `.mp4` in `recordings:`, and `clear` before the next spec.
 A recording that does not save is a `notes` line, never a red spec (contract § Record video).
 
 **Auto-capture (`--auto-capture`).** When the caller passed `--auto-capture`,

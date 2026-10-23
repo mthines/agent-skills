@@ -11,7 +11,7 @@
 // start finds the browser's DevTools endpoint: the user's own Chrome when remote debugging is on in
 // chrome://inspect/#remote-debugging (read from its DevToolsActivePort file), else --port. It attaches
 // to the tab whose URL contains --url and streams its rendered frames (Page.startScreencast) to disk
-// from a background process; the window may be hidden or covered.
+// from a background process. Keep the window un-minimized: Chrome stops painting a minimized one.
 // step closes the open step and opens the next. stop closes the last step, ends the stream, joins
 // the frames at their real timestamps, writes the timings, and runs finish.mjs, so the outputs are
 // the same <id>.mp4, <id>.timings.json and <id>.sheet.png as a Playwright recording.
@@ -94,7 +94,11 @@ async function launch(port, profile) {
 // or Chrome stops sending. status.json tells start which tab it got, or why it got none.
 async function record(ws, urlPart, dir) {
   const socket = new WebSocket(ws);
-  const status = (value) => fs.writeFileSync(path.join(dir, 'status.json'), JSON.stringify(value));
+  // Written once, through a rename, so start never reads a half-written file.
+  const status = (value) => {
+    fs.writeFileSync(path.join(dir, 'status.json.tmp'), JSON.stringify(value));
+    fs.renameSync(path.join(dir, 'status.json.tmp'), path.join(dir, 'status.json'));
+  };
   const pending = new Map();
   let id = 0;
   let count = 0;
@@ -121,8 +125,10 @@ async function record(ws, urlPart, dir) {
   socket.addEventListener('open', async () => {
     const { result, error } = await send('Target.getTargets', {}, null);
     if (error) return status({ error: error.message });
-    const target = result.targetInfos.find((t) => t.type === 'page' && t.url.includes(urlPart));
-    if (!target) return status({ error: `no tab whose URL contains "${urlPart}"` });
+    const matches = result.targetInfos.filter((t) => t.type === 'page' && t.url.includes(urlPart));
+    if (matches.length === 0) return status({ error: `no tab whose URL contains "${urlPart}"` });
+    if (matches.length > 1) return status({ error: `${matches.length} tabs match "${urlPart}" (${matches.map((t) => t.url).join(', ')}); pass a longer --url` });
+    const [target] = matches;
     const attached = await send('Target.attachToTarget', { targetId: target.targetId, flatten: true }, null);
     if (attached.error) return status({ error: attached.error.message });
     session = attached.result.sessionId;
@@ -165,7 +171,7 @@ export function concatList(frames, stoppedAt) {
 }
 
 async function start(out, port, urlPart, waitSeconds) {
-  if (spawnSync('ffmpeg', ['-version']).status !== 0) fail(3, 'ffmpeg is not installed');
+  for (const tool of ['ffmpeg', 'ffprobe']) if (spawnSync(tool, ['-version']).status !== 0) fail(3, `${tool} is not installed`);
   if (fs.existsSync(stateFile(out))) fail(2, `a capture for ${out} is already running; stop it first`);
   const ws = await browserEndpoint(port);
   if (!ws) fail(6, port
@@ -181,11 +187,12 @@ async function start(out, port, urlPart, waitSeconds) {
 
   // The first connection to the user's own Chrome waits for them to click Allow.
   const statusPath = path.join(dir, 'status.json');
-  for (let i = 0; i < waitSeconds * 10 && !(fs.existsSync(statusPath) && readFrames(dir).length); i += 1) {
-    if (fs.existsSync(statusPath) && JSON.parse(fs.readFileSync(statusPath, 'utf8')).error) break;
+  const readStatus = () => (fs.existsSync(statusPath) ? JSON.parse(fs.readFileSync(statusPath, 'utf8')) : undefined);
+  for (let i = 0; i < waitSeconds * 10 && !(readStatus() && readFrames(dir).length); i += 1) {
+    if (readStatus()?.error) break;
     await sleep(100);
   }
-  const status = fs.existsSync(statusPath) ? JSON.parse(fs.readFileSync(statusPath, 'utf8')) : { error: `no answer from Chrome in ${waitSeconds}s (Allow not clicked?)` };
+  const status = readStatus() ?? { error: `no answer from Chrome in ${waitSeconds}s (Allow not clicked?)` };
   const frames = readFrames(dir);
   if (status.error || frames.length === 0) {
     try { process.kill(child.pid, 'SIGTERM'); } catch {}
@@ -218,13 +225,15 @@ function step(out, label) {
 async function stop(out, result, finishArgs) {
   const state = readState(out);
   closeOpenStep(state, result);
-  const stoppedAt = Date.now() / 1000;
+  const stoppedAt = state.stoppedAt ?? Date.now() / 1000;
   try { process.kill(state.pid, 'SIGTERM'); } catch {}
   for (let i = 0; i < 50; i += 1) {
     try { process.kill(state.pid, 0); } catch { break; }
     await sleep(100);
   }
-  fs.rmSync(stateFile(out));
+  // The state file stays until the encode succeeds, so a failed stop can be re-run on the same frames.
+  state.steps.forEach((s) => { s.end ??= +(stoppedAt - state.startedAt).toFixed(2); });
+  fs.writeFileSync(stateFile(out), JSON.stringify({ ...state, stoppedAt }, null, 2));
 
   const frames = readFrames(state.dir);
   if (frames.length === 0) fail(6, 'no frames were recorded');
@@ -243,7 +252,7 @@ async function stop(out, result, finishArgs) {
 
   const res = spawnSync(process.execPath, [path.join(HERE, 'finish.mjs'), raw, '--out', out, ...finishArgs], { stdio: 'inherit' });
   if (res.status !== 0) process.exit(res.status ?? 3);
-  for (const f of [raw, timings]) fs.rmSync(f, { force: true });
+  for (const f of [raw, timings, stateFile(out)]) fs.rmSync(f, { force: true });
   fs.rmSync(state.dir, { recursive: true, force: true });
 }
 
@@ -265,14 +274,20 @@ if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process
     const finishArgs = split === -1 ? [] : argv.slice(split + 1);
     const [command, ...rest] = own;
     const at = (flag) => (rest.includes(flag) ? rest[rest.indexOf(flag) + 1] : undefined);
-    const port = at('--port') ? Number(at('--port')) : undefined;
+    const number = (flag) => {
+      if (!at(flag)) return undefined;
+      const n = Number(at(flag));
+      if (!Number.isInteger(n) || n <= 0) fail(2, `${flag} must be a positive whole number, got "${at(flag)}"`);
+      return n;
+    };
+    const port = number('--port');
     if (command === 'launch') await launch(port ?? DEFAULT_PORT, at('--profile') ?? DEFAULT_PROFILE);
     else {
       const out = at('--out');
       if (!out || !/\.mp4$/i.test(out)) fail(2, 'usage: capture.mjs launch | start --url <part> | step "<label>" | stop — each with --out <dir>/<id>.mp4');
       if (command === 'start') {
         if (!at('--url')) fail(2, 'start needs --url <part of the tab URL>');
-        await start(out, port, at('--url'), Number(at('--wait') ?? 60));
+        await start(out, port, at('--url'), number('--wait') ?? 60);
       } else if (command === 'step') step(out, rest.find((a, i) => !a.startsWith('--') && !rest[i - 1]?.startsWith('--')) ?? '');
       else if (command === 'stop') await stop(out, at('--result'), finishArgs);
       else fail(2, `unknown command "${command}"`);
