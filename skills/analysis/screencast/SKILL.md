@@ -41,7 +41,7 @@ Standalone runs write to `.agent/{branch}/recordings/`; a caller such as `aw-tes
 3. **Hide the overlay in screenshots:** `page.screenshot({ style: '#__screencast{display:none!important}' })`, so evidence images show only the app.
 4. **A runner writes timings as it goes:** `{ label, start, end, result }` per step, seconds from `newPage()`; several launches → pass every segment to `finish.mjs` in order, and it joins them and offsets their timings.
 5. **A failed recording is a `notes` line, never a failed check.**
-6. **Chrome driver (claude-in-chrome):** no `recordVideo`; record with `gif_creator` and attach the GIF instead of an mp4.
+6. **Chrome driver (claude-in-chrome):** no `recordVideo`; record with `gif_creator` and attach the GIF instead of an mp4. Run `overlay.js`'s source with `javascript_tool` after every navigation and call `__rec.step(label)` before each step, or the GIF has no captions.
 7. **Narration is opt-in** (`--narrate`): each step's `say` line, spoken with macOS `say` or `SCREENCAST_TTS="<cmd with {text} and {out}>"`. Never by default — reviewers watch muted.
 
 Exit codes: `2` bad arguments, `3` ffmpeg missing, encoding failed, or the mp4 failed its sanity check, `4` `playwright` does not resolve, `5` `--narrate` with no voice.
