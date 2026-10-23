@@ -25,7 +25,7 @@ Scripts do the work; this file lists only what differs from a plain Playwright `
 | [`scripts/record.mjs`](./scripts/record.mjs) `<recording.json>` | Scripted scenes (caption + `click`/`hover`/`type`/`press`/`scroll`/`wait` steps); schema in the file header. Run from a directory where `playwright` resolves |
 | [`scripts/overlay.js`](./scripts/overlay.js) | A test runner's own recording: `context.addInitScript({ path })`, then `window.__rec.step(label)` per step |
 | [`scripts/finish.mjs`](./scripts/finish.mjs) `<raw.webm>... --out <id>.mp4` | Any raw video(s) + sibling `<stem>.timings.json` → the outputs below. `--crop x,y,w,h`, `--max-width 768` for `video-analyser`, `--no-trim` |
-| [`scripts/capture.mjs`](./scripts/capture.mjs) `launch [--port 9222] \| start --url <part> \| step "<label>" \| stop` `--out <id>.mp4` | A Chrome tab another tool drives (claude-in-chrome): streams its frames over the DevTools protocol, then runs `finish.mjs` on stop. `launch` opens a separate Chrome with a DevTools port, for when remote debugging at chrome://inspect is off. Usage and exit codes in the file header |
+| [`scripts/capture.mjs`](./scripts/capture.mjs) `launch [--port 9222] \| disconnect \| start --url <part> \| step "<label>" \| stop` `--out <id>.mp4` | A Chrome tab another tool drives (claude-in-chrome): streams its frames over the DevTools protocol through a relay that keeps one connection to Chrome, then runs `finish.mjs` on stop. `disconnect` closes that connection. `launch` opens a separate Chrome with a DevTools port, for when remote debugging at chrome://inspect is off. Usage and exit codes in the file header |
 
 ```bash
 node "${CLAUDE_SKILL_DIR}/scripts/finish.mjs" spec-1-1.webm spec-1-2.webm --out .agent/feat-x/.aw-tester/recordings/spec-1.mp4
@@ -44,7 +44,7 @@ Standalone runs write to `.agent/{branch}/recordings/`; a caller such as `aw-tes
 4. **A runner writes timings as it goes:** `{ label, start, end, result }` per step, seconds from `newPage()`; several launches → pass every segment to `finish.mjs` in order, and it joins them and offsets their timings.
 5. **A failed recording is a `notes` line, never a failed check.**
 6. **Chrome driver (claude-in-chrome):** no `recordVideo`, so record with `capture.mjs`, never `gif_creator`: a GIF gets one frame per tool call and is ~20× larger than the mp4.
-   It needs Chrome's remote debugging on once (chrome://inspect/#remote-debugging), and the user clicks **Allow** on each new recording; `--wait 600` when you start it before asking.
+   It needs Chrome's remote debugging on once (chrome://inspect/#remote-debugging), and the user clicks **Allow** once per Chrome session: the first `start` prints `connecting to Chrome` and waits, and later ones reuse the relay's connection. `--wait 600` when you start it before asking. Chrome paints only while the page changes and its window is visible, so the video starts at the first frame after `start`, and `stop` exits `6` if none came.
    Run `overlay.js`'s source with `javascript_tool` after every navigation and call `__rec.step(label)` with each `capture.mjs step`, or the video has no captions.
    Exit `6` (no debugging, no matching tab, no frames) → fall back to `gif_creator`, convert the GIF (`ffmpeg -i x.gif -movflags +faststart -vf "scale=1280:-2,format=yuv420p" -c:v libx264 -crf 28 -an x.mp4`), and add a `notes` line.
 7. **Narration is opt-in** (`--narrate`): each step's `say` line, spoken with macOS `say` or `SCREENCAST_TTS="<cmd with {text} and {out}>"`. Never by default — reviewers watch muted.
