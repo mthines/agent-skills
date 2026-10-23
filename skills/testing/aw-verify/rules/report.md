@@ -37,7 +37,7 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-summary-then-on
 | `{{SPEC_SECTIONS}}` | One `#### <IDs> · <name> · <result>` section per spec, edge row, or recording with evidence: one or two sentences (what the user did, why, what happened), then each screenshot as an image embed `![caption](https://…)` and the recording as its bare `.mp4` URL on its own line. A file not uploaded → `not attached (<reason>)` |
 | `{{ADVERSARIAL}}` | The `adversarial:` summary line `ui-verify` printed, then one `####` section per finding in the `{{SPEC_SECTIONS}}` shape (before/after images, recording); or its `skipped (…)` line |
 | `{{FLOW_LINES}}` | One bullet per journey from `telemetry.md`, latest window per AC, e.g. `Save: POST /api/views 201 → views-service PUT (21 ms) → postgres INSERT (4 ms)`; then the ERROR-span line. Skipped → `not reviewed: <reason>` |
-| `{{FIX_ROWS}}` | Short SHA and the one-line user-visible change. Empty → "No code changes." |
+| `{{FIX_ROWS}}` | Short SHA, the finding ID it fixes (`F-n`), and the one-line user-visible change. Empty → "No code changes." |
 | `{{OPEN_ROWS}}` | Every open, escalated, or out-of-scope finding by severity: ID, severity, what (`Outside this PR:` prefix when `in_scope: false`), next step. Empty → "None." |
 | `{{NA_ROWS}}` / `{{LESSON_LINES}}` | Edge rows marked `n/a` with the reason; lessons written this run (key only) and promotion-eligible lessons. Empty → "None." |
 
@@ -56,7 +56,7 @@ Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-c
    ```
 
    Gate, `mcp` path, and exit codes: [`pr-comment.md`](./pr-comment.md). The script refuses a region that holds a local path, a token is never rendered, and a request body is summarized, never pasted.
-3. **Terminal** — printed last: the verdict line, the BLUF, the findings table, the report path, the `comment:` line, and the absolute path of every screenshot and recording that was not attached.
+3. **Terminal** — printed last: the verdict line, the BLUF, the Open table, the report path, the `comment:` line, and the absolute path of every screenshot and recording that was not attached.
 
 ## `report` mode
 

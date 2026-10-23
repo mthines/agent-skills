@@ -24,8 +24,8 @@ Verified on `{{HEAD_SHA}}` · {{CI_STATE}} · {{TELEMETRY}} · {{ENV}} {{URL}} �
 
 ### Fixes
 
-| Commit | What changed |
-| --- | --- |
+| Commit | Finding | What changed |
+| --- | --- | --- |
 {{FIX_ROWS}}
 
 ### Open
