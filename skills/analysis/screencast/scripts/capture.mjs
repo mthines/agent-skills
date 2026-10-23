@@ -189,7 +189,7 @@ async function relay(ws) {
       // Chrome sends a frame only when the page repaints, so a still page would send none until someone acts.
       const rec = recordings.get(session);
       for (let i = 0; i < 20 && rec.count === 0; i += 1) {
-        await send('Runtime.evaluate', { expression: REPAINT }, session);
+        await Promise.race([send('Runtime.evaluate', { expression: REPAINT }, session), sleep(250)]);
         await sleep(250);
       }
       return { title: target.title, url: target.url };
@@ -328,7 +328,10 @@ async function start(out, port, urlPart, waitSeconds) {
   fs.mkdirSync(dir, { recursive: true });
   const startedAt = Date.now() / 1000;
   const status = await ask('/start', { urlPart, dir: path.resolve(dir) }, 15000);
-  if (status.error) fail(6, status.error);
+  if (status.error) {
+    await ask('/stop', { dir: path.resolve(dir) });
+    fail(6, status.error);
+  }
   if (readFrames(dir).length === 0) console.error('screencast capture: no frames yet — Chrome paints only while its window is visible; the video starts at the first frame');
   fs.writeFileSync(stateFile(out), JSON.stringify({ dir: path.resolve(dir), startedAt, steps: [] }, null, 2));
   console.log(`capture started: "${status.title}" → ${dir}`);
