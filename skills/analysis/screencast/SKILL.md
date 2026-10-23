@@ -25,7 +25,7 @@ Scripts do the work; this file lists only what differs from a plain Playwright `
 | [`scripts/record.mjs`](./scripts/record.mjs) `<recording.json>` | Scripted scenes (caption + `click`/`hover`/`type`/`press`/`scroll`/`wait` steps); schema in the file header. Run from a directory where `playwright` resolves |
 | [`scripts/overlay.js`](./scripts/overlay.js) | A test runner's own recording: `context.addInitScript({ path })`, then `window.__rec.step(label)` per step |
 | [`scripts/finish.mjs`](./scripts/finish.mjs) `<raw.webm>... --out <id>.mp4` | Any raw video(s) + sibling `<stem>.timings.json` → the outputs below. `--crop x,y,w,h`, `--max-width 768` for `video-analyser`, `--no-trim` |
-| [`scripts/capture.mjs`](./scripts/capture.mjs) `start --url <part> \| step "<label>" \| stop` `--out <id>.mp4` | A Chrome tab another tool drives (claude-in-chrome): streams its frames over the DevTools protocol, then runs `finish.mjs` on stop. Usage and exit codes in the file header |
+| [`scripts/capture.mjs`](./scripts/capture.mjs) `launch [--port 9222] \| start --url <part> \| step "<label>" \| stop` `--out <id>.mp4` | A Chrome tab another tool drives (claude-in-chrome): streams its frames over the DevTools protocol, then runs `finish.mjs` on stop. `launch` opens a separate Chrome with a DevTools port, for when remote debugging at chrome://inspect is off. Usage and exit codes in the file header |
 
 ```bash
 node "${CLAUDE_SKILL_DIR}/scripts/finish.mjs" spec-1-1.webm spec-1-2.webm --out .agent/feat-x/.aw-tester/recordings/spec-1.mp4
