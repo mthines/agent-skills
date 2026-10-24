@@ -281,9 +281,44 @@ Run this step last, after Step 5b when `--post-findings` was passed, so the `thr
 Post this run's proof as the `ui` region of the PR's one verify comment, per the `aw-verify` skill's `rules/pr-comment.md`: its § When to post gate (`--no-comment`, no PR, `policies.pr_comment`), its § Media upload (the explicit `CAPTURE` files, each spec's `*-auto-final.png`, every recording, and the adversarial findings' before/after images and recordings, through `attach-media --to urls`), and its script.
 Under `--post-findings` the region always posts, whatever `--no-comment` or the policy says: `review-loop --ui` reads its status lines.
 
-Region body, in this order:
+Region body, in the `aw-verify` skill's `rules/pr-comment.md` § Layout shape, a `###` headline because it may sit under an aggregate region:
 
-```markdown
+````markdown
+### <✅ Verified | ❌ Not verified | ⚠️ Inconclusive> in the browser — <what the specs cover, in the user's words>
+
+<One sentence: what works for the user.> <**Nothing needs your attention.** | **Needs you:** at most three bullets — failing specs, then critical/high adversarial findings>
+
+<sub>`<head-sha7>` · <env> · <pass>/<total> specs · updated {{UPDATED}}</sub>
+
+#### What I checked
+
+| ❌ Rename → old name | ✅ Dashboard → panels |
+| :---: | :---: |
+| <img src="https://github.com/user-attachments/assets/…" width="200" alt="Spec-2: the old name after saving"> | <img src="https://github.com/user-attachments/assets/…" width="200" alt="Spec-1: the dashboard's panels"> |
+
+<details open><summary>❌ <b>Rename a view and save</b> → the old name comes back</summary>
+
+The list still shows the old name after Save. First unmet expectation: heading "Q3 revenue" visible. <sub>Proves Spec-2</sub>
+
+https://github.com/user-attachments/assets/…
+
+</details>
+<details><summary>✅ <b>Open a dashboard</b> → its panels load</summary>
+
+…
+
+</details>
+
+<details><summary>Details</summary>
+
+**Tried to break it** · <n> probes, <nothing broke | k broke>
+- <what I tried → what happened>
+
+**Telemetry** · <verdict | not run (--no-telemetry)>
+- <each window's journey lines>
+
+**Run details**
+
 **ui-verify** · head `<head-sha>` · <preview-url> · driver <driver>
 
 - verdict: <green | red | inconclusive> (<pass>/<total> specs)
@@ -292,36 +327,17 @@ Region body, in this order:
 - threads: <N> posted, <D> deduped, <X> declined | failed (<reason>) | not posted (no --post-findings)
 - finished: <UTC ISO-8601>
 
-#### Summary
-
 | Spec | What | Result |
 | --- | --- | --- |
 | Spec-1 | <the spec's user goal> | ✅ pass |
 | ADV-03 | double-click Save | ⚠️ finding (high) |
 
-#### Spec-1 · <short name> · ✅ pass
-<What the user did, why — the `AC-n` in its title, its **Changed:** target, or `Out of bounds: <move>` — and what happened: the `expected` evidence lines in short form, e.g. heading "Q3 revenue" visible, PATCH /api/dashboards/d-42 → 200.>
+</details>
+````
 
-![Spec-1: <caption>](https://github.com/user-attachments/assets/…)
-
-https://github.com/user-attachments/assets/…
-
-#### ADV-03 · double-click Save · ⚠️ finding (high)
-<The probe, its oracle (`duplicate-mutation`), and what broke.>
-
-![ADV-03 before](https://…)
-
-![ADV-03 after](https://…)
-
-https://github.com/user-attachments/assets/…
-
-#### Telemetry
-
-<each window's journey lines, or the skipped line>
-```
-
-Layout rules: the `aw-verify` skill's `rules/pr-comment.md` § Layout. The summary table is text only; media goes only in the sections, never in a cell or a closed `<details>`.
-A failing spec's section names the first unmet `**Expected:**` item.
+Layout rules: the `aw-verify` skill's `rules/pr-comment.md` § Layout — one visible row of up to four `<img width="200">` thumbnails, failing first, the rest under `+<n> more screenshots`; then one `<details>` row per spec and per adversarial finding, `<what I did> → <what happened>`, failing rows first and open, the rest closed, a recording inside its row, never a screenshot.
+Keep the five status lines and the `head` line verbatim under **Run details**: `review-loop --ui` parses them from the raw region.
+A failing spec's row names the first unmet `**Expected:**` item.
 Print `comment: <comment-url> (region ui)`, or the `not posted (<reason>)` / `failed (<reason>)` line.
 
 ## Step 5b: Post findings (under `--post-findings`)

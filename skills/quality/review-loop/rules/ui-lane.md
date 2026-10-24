@@ -136,7 +136,8 @@ A red verdict whose findings were all deduped against still-open threads is sett
 
 Every mechanism ends in the same place: of the PR's verify comments (first line `<!-- verify:report -->`), the `ui` region (`<!-- verify:section=ui -->` … `<!-- /verify:section=ui -->`) for this head.
 A run on head `<sha>` is **finished** when that region shows `head \`<sha>\`` and a `finished:` line.
-Select by head, never by author: each author keeps their own verify comment.
+Select by head, never by author: a PR has one verify comment, but one posted before that rule may sit beside it.
+The region keeps its status lines inside its collapsed **Details** block; the filter reads the raw Markdown, so the block changes nothing.
 `--slurp` joins the pages first; `--jq` would run the filter once per page and print one region per page.
 
 ```bash

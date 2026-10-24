@@ -116,24 +116,42 @@ Run on its own (no `--no-comment`), post the receipt as the `telemetry` region o
 node "${CLAUDE_SKILL_DIR}/../aw-verify/scripts/verify-comment.mjs" --pr <pr-url> --section telemetry --file .agent/<branch>/telemetry-verify/comment-telemetry.md
 ```
 
-Region body, in this order:
+Region body, in the `aw-verify` skill's `rules/pr-comment.md` § Layout shape, a `###` headline because it may sit under an aggregate region:
 
-```markdown
+````markdown
+### <✅ Telemetry confirms | ❌ Telemetry contradicts | ⚠️ Telemetry is ambiguous | ⏭️ Telemetry not graded> — <what the services recorded, in the user's words>
+
+<One sentence: which journeys were recorded end to end.> <**Nothing needs your attention.** | **Needs you:** at most three bullets — `contradicts` journeys, then critical/high findings>
+
+<sub>`<head-sha7>` · <env> · window <from> → <to> · updated {{UPDATED}}</sub>
+
+#### What I checked
+
+<details><summary>✅ <b>Save a view</b> → traced from the click to the database</summary>
+
+click "Save" → POST /api/views 201 (84 ms) → views-service PUT (21 ms) → postgres INSERT (4 ms). [trace 4bf92f35](<Dash0 link>)
+
+<sub>Proves AC-2</sub>
+
+</details>
+
+<details><summary>Details</summary>
+
+**Run details**
+
 **telemetry-verify** · head `<head-sha>` · `<env>` · window <from> → <to> · backend <backend and scope>
 
 - pipe: <the pipe line>
 - verdict: <confirms | contradicts | ambiguous | null>
 
-| AC | What (journey) | Why (the claim it checks) | Verdict | Evidence |
-| --- | --- | --- | --- | --- |
-| AC-2 | click "Save" → POST /api/views 201 (84 ms) → views-service PUT (21 ms) → postgres INSERT (4 ms) | `telemetry:` the save emits a views.save span with view.id | confirms | [trace 4bf92f35](<Dash0 link>) |
-
-#### Findings
-
 | ID | Kind | Severity | What happened | Evidence |
 | --- | --- | --- | --- | --- |
-```
 
+</details>
+````
+
+Row glyphs: `confirms` ✅, `contradicts` ❌, `ambiguous` ⚠️, `null` ⏭️.
+One row per journey, `<what the user did> → <what the services recorded>`; a `contradicts` row comes first and is `<details open>`, every other row is closed.
 Evidence is a link from the backend's URL tool (`generateDash0Url`) or a trace ID; never a log file path.
 Print `comment: <comment-url> (region telemetry)`, or the `not posted (<reason>)` / `failed (<reason>)` line.
 
