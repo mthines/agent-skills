@@ -36,7 +36,11 @@ const VERDICTS = ["✅", "⚠️", "❌", "⛔"];
 const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
 // A login, normalized: lowercase, one trailing `[bot]` stripped.
 export const normLogin = (l) => String(l || "").toLowerCase().replace(/\[bot\]$/, "");
-const shaOf = (region) => region.match(/`([0-9a-f]{7,40})`/)?.[1]?.slice(0, 7) ?? null;
+const HEX = /`([0-9a-f]{7,40})`/;
+// A region's commit: the hex on its `<sub>` metadata line, else a `head \`<hex>\`` line, else the
+// first backticked hex (a legacy headline), so a backticked number in the summary is never read as one.
+const shaOf = (region) => (region.split("\n").find((l) => l.includes("<sub>") && HEX.test(l))?.match(HEX)
+  ?? region.match(/\bhead `([0-9a-f]{7,40})`/) ?? region.match(HEX))?.[1]?.slice(0, 7) ?? null;
 const headlineOf = (region) => (region.split("\n").find((l) => l.trim() && !l.includes(STALE)) || "");
 // The verdict glyph of a region's headline, or null when it carries none.
 export const verdictOf = (region) => VERDICTS.find((v) => headlineOf(region).includes(v)) ?? null;
@@ -257,6 +261,9 @@ function selfTest() {
   const late = splice(splice("", "aggregate", "## ✅ new `bbbbbbb`", { now: t }), "ui", "### ❌ old `aaaaaaa`", { now: t, head: "bbbbbbb0000" });
   assert(late.includes("Older run on <code>aaaaaaa</code>") && !late.includes("Older run on <code>bbbbbbb</code>"), "a late run on an older commit is folded itself; the head region stays open");
   assert(flipNotice(splice("", "aggregate", "## ✅ new `bbbbbbb`"), "ui", late, "u", "bbbbbbb0000") === null, "a late run on an older commit posts no notice");
+  const numBefore = splice("", "ui", "### ✅ ok\n\n<sub>`bbbbbbb`</sub>", { now: t });
+  const numAfter = splice(numBefore, "ui", "### ❌ Not verified\n\nProcessed `1000000` events.\n\n<sub>`bbbbbbb`</sub>", { now: t, head: "bbbbbbb0000" });
+  assert(!numAfter.includes("Older run") && flipNotice(numBefore, "ui", numAfter, "u", "bbbbbbb0000")?.includes("✅ → ❌"), "a backticked number in the summary is not read as the region's commit");
   let stale = false; try { splice("", "ui", "<!-- verify:stale -->x"); } catch { stale = true; }
   assert(stale, "a region that carries a stale or notice marker is refused");
   // upsert against a fake gh: comments are [id, created_at, login, body].
