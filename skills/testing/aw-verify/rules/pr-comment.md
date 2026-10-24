@@ -173,7 +173,7 @@ One closed `<details><summary>Details</summary>` holds the rest, each part a `**
 | --- | --- |
 | **How I tested it** | One paragraph: the environment, how state was set up, and which ways the feature can go right and wrong. Then the PR's impact map, when one exists (§ Impact map) |
 | **Tried to break it** · `<n> probes, nothing broke` / `<k> broke` | One line per probe: what I tried → what happened; or `skipped (<reason>)` |
-| **Fixed during the run** | One line per pushed fix: short SHA, what changed for the user |
+| **Fixed during the run** | One line per pushed fix: short SHA, the finding ID it fixed (`F-n`), what changed for the user |
 | **Telemetry** · `<verdict>` | One line per journey, e.g. `Save: POST /api/views 201 → views-service PUT (21 ms) → postgres INSERT (4 ms)`; or `not reviewed (<reason>)` |
 | **Notes** | Not-defects, `medium`/`low` and out-of-scope findings (`Outside this PR:`), one line each |
 | **Run details** | The traceability table `ID \| Criterion \| Result \| Witness` (text only); the region's status lines (`ui-verify`: its `rules/runner.md` § Step 5a); URL, driver, `recordings: not attached (<reason>)` when the region holds none, and the re-run command |
