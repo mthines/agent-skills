@@ -6,8 +6,8 @@
 //   <!-- verify:section=<name> --> … <!-- /verify:section=<name> -->
 // Sections: aggregate (aw-verify), ui (ui-verify), telemetry (telemetry-verify).
 // The script owns a last region, <!-- verify:history -->: a collapsed "Previous runs" list it
-// appends to whenever a region is replaced. It also stamps `{{UPDATED}}`, marks a region that is
-// older than the one just written, adds the blank lines GitHub needs inside <details>, and posts a
+// appends to whenever a region is replaced. It also stamps `{{UPDATED}}`, folds a region on an
+// older commit than the PR head, adds the blank lines GitHub needs inside <details>, and posts a
 // one-line notice comment when a re-run changes a verdict (an edit alone notifies nobody).
 //
 // Usage:
@@ -118,7 +118,7 @@ export function splice(existing, section, content, { replaceAll = false, now = n
     const r = regions.get(s);
     const stale = newest && shaOf(r) && shaOf(r) !== newest && (head || s !== section);
     if (!stale) return `${open(s)}\n${r}\n${close(s)}`;
-    // Fold it to one closed line; the wrapper lines carry STALE, so parseRegions drops them.
+    // The wrapper lines carry STALE, so parseRegions drops them on the next read.
     const headline = headlineOf(r).replace(/^#+\s*/, "").replace(/<[^>]+>/g, "").replace(/`([^`]*)`/g, "<code>$1</code>");
     return `${open(s)}\n${STALE}<details><summary>Older run on <code>${shaOf(r)}</code>: ${headline}</summary>\n\n${r}\n\n</details>${STALE}\n${close(s)}`;
   });
@@ -129,11 +129,11 @@ export function splice(existing, section, content, { replaceAll = false, now = n
 // The one-line comment a run posts when it changes the verdict a reader saw last: the section's
 // own previous verdict, else the comment's first region (a first `ui` run under a ✅ aggregate). Or null.
 export function flipNotice(existing, section, written, url, head = null) {
+  const now = parseRegions(written).get(section);
+  if (head && shaOf(now ?? "") !== head.slice(0, 7)) return null;
   const prior = parseRegions(existing);
-  if (head && shaOf(parseRegions(written).get(section) ?? "") !== head.slice(0, 7)) return null;
   const before = prior.get(section) ?? [...prior.values()][0];
   const was = before && verdictOf(before);
-  const now = parseRegions(written).get(section);
   const is = now && verdictOf(now);
   if (!was || !is || was === is) return null;
   return `${NOTICE}\nVerify re-ran on \`${shaOf(now) ?? "?"}\`: ${was} → ${is}. [See the report](${url})`;
