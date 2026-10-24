@@ -218,7 +218,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
 - **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the newest comment starting with the marker whose author is an app, has `author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`, or is `mcp__github__get_me`. Run the script with `--dry-run --existing <its body> --head <the PR's head SHA>` and write its stdout with `mcp__github__update_issue_comment`; when that update is refused as forbidden, post the same stdout with `mcp__github__add_issue_comment`, so the other regions and the history carry over. When no comment qualifies, run `--dry-run --head <sha>` without `--existing` and post it with `mcp__github__add_issue_comment`.
-  With `--existing`, also pass `--notice-out <run dir>/notice.md --comment-url <that comment's html_url>`; after the update, when `notice.md` exists, post its contents with `mcp__github__add_issue_comment`, because an edit notifies nobody.
+  With `--existing`, also pass `--notice-out <run dir>/notice.md --comment-url <that comment's html_url>`; after a successful update, when `notice.md` exists, post its contents with `mcp__github__add_issue_comment`, because an edit notifies nobody; after a refused update, post no notice, as the script's own fallback does, because the new comment already notifies.
   The `gh` path needs neither flag: the script posts the notice itself.
 - **Script not found** (`aw-verify` not installed) → `comment: not posted (aw-verify not installed)`.
 - Write after the fix loop pushed, so the region describes the final head SHA.
