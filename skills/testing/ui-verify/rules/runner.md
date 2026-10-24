@@ -286,7 +286,7 @@ Region body, in the `aw-verify` skill's `rules/pr-comment.md` § Layout shape, a
 ````markdown
 ### <✅ Verified | ❌ Not verified | ⚠️ Inconclusive> in the browser — <what the specs cover, in the user's words>
 
-<One sentence: what works for the user.> <the attention line for the headline, per the `aw-verify` skill's `rules/pr-comment.md` § Attention line: ✅ **Nothing needs your attention.** · ⚠️ **Why not ✅:** why the run was inconclusive (the runner's `notes:` line) and the next step · ❌ **Needs you:** failing specs, then critical/high adversarial findings>
+<One sentence: what works for the user.> <the attention line for the headline, per the `aw-verify` skill's `rules/pr-comment.md` § Attention line: ✅ **Nothing needs your attention.**, or **Needs you:** and each open critical/high adversarial finding · ⚠️ **Why not ✅:** why the run was inconclusive (the runner's `notes:` line) and the next step · ❌ **Needs you:** failing specs, then critical/high adversarial findings>
 
 <sub>`<head-sha7>` · <env> · <pass>/<total> specs · updated {{UPDATED}}</sub>
 
