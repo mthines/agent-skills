@@ -138,6 +138,12 @@ export function flipNotice(existing, section, written, url) {
   return `${NOTICE}\nVerify re-ran on \`${shaOf(now) ?? "?"}\`: ${was} → ${is}. [See the report](${url})`;
 }
 
+function gh(args, input) {
+  const r = spawnSync("gh", args, { encoding: "utf8", input });
+  if (r.status !== 0) throw Object.assign(new Error((r.stderr || r.stdout || "gh failed").trim()), { code: 2 });
+  return r.stdout.trim();
+}
+
 // Edit the PR's newest verify comment, whoever wrote it, else post a new one: one PR, one
 // comment, even when the same person runs verify from Agent0 (a bot account) and from a local
 // session (their own). The replaced run stays in the comment's history region. A comment the
@@ -256,6 +262,7 @@ function selfTest() {
   assert(upsert(req, none.run) === "https://x/new", "no verify comment yet posts one");
   const denied = fakeGh([["4", "2026-01-04T00:00:00Z", "someone", one]], ghErr("gh: HTTP 403"));
   assert(upsert(req, denied.run) === "https://x/new" && denied.calls.includes("POST"), "a comment the token may not edit gets a new comment");
+  assert(typeof gh === "function", "the real gh runner upsert defaults to exists");
   const flip = fakeGh([["7", "2026-01-07T00:00:00Z", "me", agg1]]);
   assert(upsert({ pr: 7, repo: "o/r", section: "aggregate", content: "## ❌ Not verified `ccccccc`", replaceAll: true }, flip.run) === "https://x/7" && flip.calls.join() .endsWith("PATCH 7,POST"), `a verdict change edits, then posts one notice: ${flip.calls}`);
   const down = fakeGh([["5", "2026-01-05T00:00:00Z", "me", one]], ghErr("gh: HTTP 502"));
