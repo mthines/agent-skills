@@ -35,7 +35,7 @@ const HISTORY = "verify:history";
 const HISTORY_CAP = 10;
 const STALE = "<!-- verify:stale -->";
 export const NOTICE = "<!-- verify:notice -->";
-const VERDICTS = ["✅", "⚠️", "❌", "⛔"];
+const VERDICTS = ["✅", "⚠️", "❌", "⛔", "⏭️"];
 const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
 // A login, normalized: lowercase, one trailing `[bot]` stripped.
 export const normLogin = (l) => String(l || "").toLowerCase().replace(/\[bot\]$/, "");
@@ -267,6 +267,8 @@ function selfTest() {
   const numBefore = splice("", "ui", "### ✅ ok\n\n<sub>`bbbbbbb`</sub>", { now: t });
   const numAfter = splice(numBefore, "ui", "### ❌ Not verified\n\nProcessed `1000000` events.\n\n<sub>`bbbbbbb`</sub>", { now: t, head: "bbbbbbb0000" });
   assert(!numAfter.includes("Older run") && flipNotice(numBefore, "ui", numAfter, "u", "bbbbbbb0000")?.includes("✅ → ❌"), "a backticked number in the summary is not read as the region's commit");
+  const skipped = splice("", "ui", "### ⏭️ Skipped — no preview\n\n<sub>`bbbbbbb`</sub>", { now: t });
+  assert(flipNotice(skipped, "ui", splice(skipped, "ui", "### ❌ Not verified\n\n<sub>`bbbbbbb`</sub>", { now: t, head: "bbbbbbb" }), "u", "bbbbbbb")?.includes("⏭️ → ❌"), "a skipped run that turns red posts a notice");
   let stale = false; try { splice("", "ui", "<!-- verify:stale -->x"); } catch { stale = true; }
   assert(stale, "a region that carries a stale or notice marker is refused");
   // upsert against a fake gh: comments are [id, created_at, login, body].
