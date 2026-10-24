@@ -17,7 +17,7 @@ Prose is conclusion-first, with no filler.
 
 ## Verdict
 
-Every condition counts only findings with `in_scope: true`; an `in_scope: false` finding is a **Notes** line (`Outside this PR:`) and never moves the verdict.
+Every condition counts only findings with `in_scope: true`; an `in_scope: false` finding is a **Notes** line (`Outside this PR:`) and never moves the verdict. An open `critical`/`high` one still reaches the attention line ([`pr-comment.md § Attention line`](./pr-comment.md#attention-line)).
 
 | Verdict | Condition |
 | --- | --- |

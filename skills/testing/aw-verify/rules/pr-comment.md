@@ -124,7 +124,7 @@ The headline's emoji picks the line, so a reviewer who sees anything but ✅ lea
 
 | Headline | Attention line |
 | --- | --- |
-| ✅ | `**Nothing needs your attention.**`; in a `ui` or `telemetry` region, whose findings never move its verdict, `**Needs you:**` and each open `critical`/`high` finding instead |
+| ✅ | `**Nothing needs your attention.**`, unless an open `critical`/`high` finding does not move the verdict (any `in_scope: false` finding, and every finding in a `ui` or `telemetry` region): then `**Needs you:**` and one bullet per such finding, an `in_scope: false` one as `Outside this PR: <what the user would notice> (<severity>) — <suggested follow-up>` |
 | ⚠️ | `**Why not ✅:**` then one bullet per escalated finding, `<what the user would notice> (<severity>) — needs you: <the decision>`, then one per open `medium`/`low` finding, `<what the user would notice> (<severity>) — <next step, or "fine to merge as is">`. In a `ui` region, where ⚠️ means inconclusive, one bullet: the reason (the runner's `notes:` line) and the next step. In a `telemetry` region, where ⚠️ means ambiguous, one bullet per ambiguous journey and what would settle it |
 | ❌ | `**Needs you:**` then one bullet per failed check, then per `critical`/`high` finding, each with its next step |
 | ⛔ / ⏭️ | `**Needs you:**` then the phase that could not run and the fix |
