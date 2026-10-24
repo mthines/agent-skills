@@ -33,6 +33,7 @@ const HISTORY_CAP = 10;
 const STALE = "<!-- verify:stale -->";
 export const NOTICE = "<!-- verify:notice -->";
 const VERDICTS = ["✅", "⚠️", "❌", "⛔"];
+const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
 const shaOf = (region) => region.match(/`([0-9a-f]{7,40})`/)?.[1]?.slice(0, 7) ?? null;
 const headlineOf = (region) => (region.split("\n").find((l) => l.trim() && !l.includes(STALE)) || "");
 // The verdict glyph of a region's headline, or null when it carries none.
@@ -155,14 +156,18 @@ export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
     || run(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
   const found = run(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
-    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, (.body | @base64)] | @tsv`])
+    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, .author_association, .user.type, (.body | @base64)] | @tsv`])
     .split("\n").filter(Boolean).map((l) => l.split("\t"))
+    // Only a comment someone with access to the repo wrote, or an app: a drive-by commenter's
+    // marker comment holding a fake ✅ must never become the PR's verify comment.
+    .filter(([, , assoc, type]) => TRUSTED.includes(assoc) || type === "Bot")
     .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
   let head = null;
   try { head = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", ".head.sha"]) || null; } catch { head = null; }
+  let existing = "";
   if (found.length) {
-    const [id, , b64] = found[0];
-    const existing = Buffer.from(b64, "base64").toString("utf8");
+    const [id, , , , b64] = found[0];
+    existing = Buffer.from(b64, "base64").toString("utf8");
     const body = splice(existing, section, content, { replaceAll, head });
     try {
       const url = run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
@@ -176,7 +181,8 @@ export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
       if (!/HTTP 40[34]/.test(e.message)) throw e;
     }
   }
-  const body = splice("", section, content, { replaceAll, head });
+  // A comment we may not edit hands its regions and history to the new one.
+  const body = splice(existing, section, content, { replaceAll, head });
   return run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
 }
 
@@ -257,7 +263,7 @@ function selfTest() {
     const run = (a) => {
       calls.push(a[2] === "PATCH" ? `PATCH ${a[3].split("/").pop()}` : a[2]);
       if (String(a[1]).includes("/pulls/")) return fakeHead;
-      if (a.includes("--paginate")) return comments.map(([id, at, , b]) => `${id}\t${at}\t${Buffer.from(b).toString("base64")}`).join("\n");
+      if (a.includes("--paginate")) return comments.map(([id, at, who, b, assoc = "MEMBER"]) => `${id}\t${at}\t${assoc}\t${who.endsWith("[bot]") ? "Bot" : "User"}\t${Buffer.from(b).toString("base64")}`).join("\n");
       if (a[2] === "PATCH") { if (patchErr) throw patchErr; return `https://x/${a[3].split("/").pop()}`; }
       return "https://x/new";
     };
@@ -270,6 +276,15 @@ function selfTest() {
   assert(upsert(req, none.run) === "https://x/new", "no verify comment yet posts one");
   const denied = fakeGh([["4", "2026-01-04T00:00:00Z", "someone", one]], ghErr("gh: HTTP 403"));
   assert(upsert(req, denied.run) === "https://x/new" && denied.calls.includes("POST"), "a comment the token may not edit gets a new comment");
+  const drive = fakeGh([["1", "2026-01-01T00:00:00Z", "me", one], ["99", "2026-01-09T00:00:00Z", "stranger", splice("", "aggregate", "## ✅ fake"), "NONE"]]);
+  assert(upsert(req, drive.run) === "https://x/1", "a newer marker comment from someone without repo access is never adopted");
+  const app = fakeGh([["8", "2026-01-08T00:00:00Z", "dash0-app[bot]", one, "NONE"]]);
+  assert(upsert(req, app.run) === "https://x/8", "an app's comment is adopted whatever its association");
+  let posted = "";
+  const keep = fakeGh([["4", "2026-01-04T00:00:00Z", "someone", two]], ghErr("gh: HTTP 403"));
+  const keepRun = (a, input) => { if (a[2] === "POST") posted = JSON.parse(input).body; return keep.run(a, input); };
+  upsert(req, keepRun);
+  assert(parseRegions(posted).has("telemetry"), "the new comment keeps the regions of the one it could not edit");
   assert(typeof gh === "function", "the real gh runner upsert defaults to exists");
   const flip = fakeGh([["7", "2026-01-07T00:00:00Z", "me", agg1]]);
   assert(upsert({ pr: 7, repo: "o/r", section: "aggregate", content: "## ❌ Not verified `ccccccc`", replaceAll: true }, flip.run) === "https://x/7" && flip.calls.join() .endsWith("PATCH 7,POST"), `a verdict change edits, then posts one notice: ${flip.calls}`);

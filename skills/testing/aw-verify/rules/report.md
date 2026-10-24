@@ -63,7 +63,7 @@ Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-c
    ```
 
    Gate, `mcp` path, and exit codes: [`pr-comment.md`](./pr-comment.md). The script refuses a region that holds a local path, a token is never rendered, and a request body is summarized, never pasted.
-3. **Terminal** — printed last: the verdict line, the BLUF, the attention line with every open finding, the report path, the `comment:` line, and the absolute path of every screenshot and recording that was not attached.
+3. **Terminal** — printed last: the verdict line, the summary sentence, the attention line with every open finding, the report path, the `comment:` line, and the absolute path of every screenshot and recording that was not attached.
 
 ## `report` mode
 
