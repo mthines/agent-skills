@@ -28,7 +28,7 @@ Who owns what, the spec contract, and the anti-patterns: [`rules/delegation.md`]
 
 `run [local|preview] [<pr>|<ticket>]` is the default (no reference → the branch's PR, else its `plan.md`).
 `setup` writes `.agents/aw/` ([`rules/setup.md`](./rules/setup.md)); `report` re-renders the last report and re-upserts the PR comment, with no stack, browser, or telemetry calls.
-Every run with a PR ends by posting its proof — what was tested, why, the result, and uploaded screenshots and recordings — as the `aggregate` region of the PR's one verify comment, which a re-run from any account updates in place ([`rules/pr-comment.md`](./rules/pr-comment.md)): the verdict, what needs a human, a strip of screenshot thumbnails, and one collapsible row per check, everything else collapsed; always, whatever `policies.pr_comment` says.
+Every run with a PR ends by posting its proof — what was tested, why, the result, and uploaded screenshots and recordings — as the `aggregate` region of the PR's one verify comment, which a re-run from any account updates in place ([`rules/pr-comment.md`](./rules/pr-comment.md)): the verdict, what needs a human, a media strip (one recording, then up to two screenshot thumbnails), and one collapsible row per check, everything else collapsed; always, whatever `policies.pr_comment` says.
 **Your own PR:** fix, push, and re-verify until the verdict is `✅ verified`, at most 3 iterations — on `local` and `preview` alike — then post ([`rules/fix-loop.md § Own PR`](./rules/fix-loop.md#own-pr-fix-until-verified)). Someone else's PR: report only.
 
 | Flag | Effect |

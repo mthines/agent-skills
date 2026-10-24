@@ -17,16 +17,18 @@ Prose is conclusion-first, with no filler.
 
 ## Verdict
 
+Every condition counts only findings with `in_scope: true`; an `in_scope: false` finding is a **Notes** line (`Outside this PR:`) and never moves the verdict.
+
 | Verdict | Condition |
 | --- | --- |
 | `✅ verified` | Every AC passes in the browser, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `high` or `critical` |
-| `⚠️ verified with open items` | Every AC passes; some `medium`/`low` findings in this PR open, or any finding escalated. A finding outside this PR never sets it |
+| `⚠️ verified with open items` | Every AC passes; some `medium`/`low` findings open, or any finding escalated |
 | `❌ not verified` | An AC fails after the fix loop, a brief `telemetry:` AC `contradicts`, or a `critical`/`high` finding is still open |
 | `⛔ blocked` | A phase could not run (stack, auth, checkout); name the phase and the fix |
 
 ## Placeholders
 
-The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-then-collapsed-detail): a green run shows the verdict, one sentence, the metadata line, a screenshot strip, and closed check rows; everything else sits in one closed **Details** block.
+The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-then-collapsed-detail): a green run shows the verdict, one sentence, the metadata line, a media strip (one recording, then up to two screenshots), and closed check rows; everything else sits in one closed **Details** block.
 
 | Placeholder | Content |
 | --- | --- |

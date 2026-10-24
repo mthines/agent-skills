@@ -71,7 +71,7 @@ Take the first row that applies.
 
 ## Layout: verdict, checks, then collapsed detail
 
-A reviewer reads top-down and stops once they trust the result, so a green run shows five things and nothing else: the verdict, one sentence, the metadata line, a strip of screenshot thumbnails, and one closed row per check.
+A reviewer reads top-down and stops once they trust the result, so a green run shows five things and nothing else: the verdict, one sentence, the metadata line, a media strip (one recording, then up to two screenshot thumbnails), and one closed row per check.
 Everything else is one click away.
 
 ```markdown
@@ -125,12 +125,12 @@ The headline's emoji picks the line, so a reviewer who sees anything but ✅ lea
 | Headline | Attention line |
 | --- | --- |
 | ✅ | `**Nothing needs your attention.**` |
-| ⚠️ | `**Why not ✅:**` then one bullet per open item: `<what the user would notice> (<severity>) — <next step, or "fine to merge as is">` |
+| ⚠️ | `**Why not ✅:**` then one bullet per escalated finding, `<what the user would notice> (<severity>) — needs you: <the decision>`, then one per open `medium`/`low` finding, `<what the user would notice> (<severity>) — <next step, or "fine to merge as is">`. In a `ui` or `telemetry` region, where ⚠️ means inconclusive or ambiguous, one bullet: the reason (the runner's `notes:` line) and the next step |
 | ❌ | `**Needs you:**` then one bullet per failed check, then per `critical`/`high` finding, each with its next step |
 | ⛔ / ⏭️ | `**Needs you:**` then the phase that could not run and the fix |
 
 - At most three bullets; past three, `+<n> more in Details`.
-- A finding outside this PR (the same behaviour on the base branch) is a **Notes** line, never an open item, and never turns ✅ into ⚠️.
+- A finding with `in_scope: false` (code this PR does not touch) is a **Notes** line, never an open item, and never moves the verdict ([`report.md § Verdict`](./report.md#verdict)).
 - Never a separate "Open items" block: the attention line is the only place open items appear above **Details**.
 
 ```markdown

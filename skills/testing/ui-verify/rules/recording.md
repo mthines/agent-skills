@@ -45,7 +45,7 @@ Both directories are gitignored scratch, like the screenshots.
 1. **Open each `<id>.sheet.png` before you list or upload its video.** A recording whose frames do not show the spec's steps is a `notes` line, not evidence.
 2. List every recording under a **Recordings** heading in [`runner.md § Step 5`](./runner.md#step-5-report-the-verdict), after **Screenshots**: one line per file with the spec or probe id and its result.
 3. When the verdict carries no `recordings:` key, print the reason instead — `none (--no-recording)` or the runner's `notes` line.
-4. When the PR comment posts, every recording is uploaded as an `.mp4` and embedded under its spec's or probe's section as a bare URL on its own line, which GitHub renders as a player ([`runner.md § Step 5a`](./runner.md#step-5a-post-the-ui-region)). Never upload a GIF when an `.mp4` exists.
+4. When the PR comment posts, every recording is uploaded as an `.mp4` and embedded in the comment's media strip as a bare URL on its own line, which GitHub renders as a player, never inside a check row (the `aw-verify` skill's `rules/pr-comment.md` § Media strip). Never upload a GIF when an `.mp4` exists.
 
 ```text
 ✅ RIGHT
