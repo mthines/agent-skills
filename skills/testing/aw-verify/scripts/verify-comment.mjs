@@ -13,13 +13,16 @@
 // Usage:
 //   node verify-comment.mjs --pr <n|url> --section <name> --file <region.md> [--repo <owner/name>] [--replace-all]
 //   node verify-comment.mjs --section <name> --file <region.md> --existing <body.md|-> --dry-run [--replace-all] [--head <sha>]
+//     [--notice-out <file> --comment-url <url>]
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
 // --dry-run prints the merged body instead of writing it (the MCP access path writes it itself).
+// --notice-out writes the verdict-change notice (linking --comment-url) to <file> when there is
+// one, and removes a stale <file> when there is none; the MCP access path posts it itself.
 // Exit codes: 0 written or printed; 1 refused (local path or bad input); 2 GitHub call failed.
 
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -323,7 +326,16 @@ else if (isMain) {
     const replaceAll = has("--replace-all");
     if (has("--dry-run")) {
       const existingPath = opt("--existing");
-      process.stdout.write(splice(existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "", section, content, { replaceAll, head: opt("--head") ?? null }));
+      const existing = existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "";
+      const head = opt("--head") ?? null;
+      const body = splice(existing, section, content, { replaceAll, head });
+      const noticeOut = opt("--notice-out");
+      if (noticeOut) {
+        if (!opt("--comment-url")) throw new Error("--notice-out needs --comment-url");
+        const notice = existingPath ? flipNotice(existing, section, body, opt("--comment-url"), head) : null;
+        if (notice) writeFileSync(noticeOut, notice); else rmSync(noticeOut, { force: true });
+      }
+      process.stdout.write(body);
     } else {
       if (!opt("--pr")) throw new Error("--pr is required unless --dry-run");
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll }));
