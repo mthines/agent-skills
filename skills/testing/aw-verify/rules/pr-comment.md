@@ -43,7 +43,7 @@ The script also does what a region author must not do by hand:
 | --- | --- |
 | Replaces `{{UPDATED}}` with the write time (`YYYY-MM-DD HH:MM UTC`) | The time a reviewer sees matches **Previous runs** |
 | Adds the blank lines GitHub needs after `</summary>` and before `</details>` | Without them the reviewer sees raw Markdown |
-| Folds a region on an older commit than the one just written into one closed `Older run on <sha7>: <headline>` row | A stale ✅ never reads as the current verdict, and never takes space |
+| Folds a region on an older commit than the PR head (read from the PR; the region just written when it cannot be read) into one closed `Older run on <sha7>: <headline>` row, including a late run on an older commit | A stale ✅ never reads as the current verdict, and never takes space |
 | Posts one notice comment, `Verify re-ran on <sha7>: ✅ → ❌. See the report`, first line `<!-- verify:notice -->`, when a run changes the verdict glyph a reader last saw (the section's own, else the comment's first region) | Editing a comment notifies nobody; a changed verdict must |
 
 ## When to post
@@ -217,7 +217,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
-- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), take the newest comment starting with the marker, whoever wrote it, run the script with `--dry-run --existing <its body>`, and write its stdout with `mcp__github__update_issue_comment`; when no comment starts with the marker, or the update is refused as forbidden, run `--dry-run` without `--existing` and write it with `mcp__github__add_issue_comment`.
+- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), take the newest comment starting with the marker, whoever wrote it, run the script with `--dry-run --existing <its body> --head <the PR's head SHA>`, and write its stdout with `mcp__github__update_issue_comment`; when no comment starts with the marker, or the update is refused as forbidden, run `--dry-run` without `--existing` and write it with `mcp__github__add_issue_comment`.
 - **Script not found** (`aw-verify` not installed) → `comment: not posted (aw-verify not installed)`.
 - Write after the fix loop pushed, so the region describes the final head SHA.
 

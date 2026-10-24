@@ -12,7 +12,7 @@
 //
 // Usage:
 //   node verify-comment.mjs --pr <n|url> --section <name> --file <region.md> [--repo <owner/name>] [--replace-all]
-//   node verify-comment.mjs --section <name> --file <region.md> --existing <body.md|-> --dry-run [--replace-all]
+//   node verify-comment.mjs --section <name> --file <region.md> --existing <body.md|-> --dry-run [--replace-all] [--head <sha>]
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
@@ -43,8 +43,7 @@ export const verdictOf = (region) => VERDICTS.find((v) => headlineOf(region).inc
 export function normalize(content) {
   return content
     .replace(/<\/summary>[ \t]*\n?(?!\n)/g, "</summary>\n\n")
-    .replace(/([^\n])\n?<\/details>/g, "$1\n\n</details>")
-    .replace(/\n{3,}/g, "\n\n");
+    .replace(/([^\n])\n?<\/details>/g, "$1\n\n</details>");
 }
 
 // A path a reviewer cannot open: a file:// URL, the run's scratch dirs, a file under a home dir,
@@ -99,7 +98,7 @@ export function historyEntry(section, region, date) {
   return [sha ? `\`${sha}\`` : null, section, headline, `replaced ${date}`].filter(Boolean).join(" · ");
 }
 
-export function splice(existing, section, content, { replaceAll = false, now = new Date() } = {}) {
+export function splice(existing, section, content, { replaceAll = false, now = new Date(), head = null } = {}) {
   if (!SECTIONS.includes(section)) throw new Error(`unknown section "${section}" (expected ${SECTIONS.join(", ")})`);
   if (/verify:(report|section=|history|stale|notice)/.test(content)) throw new Error("refused: the region holds a verify marker of its own");
   const bad = localPathLine(content);
@@ -111,12 +110,13 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   regions.set(section, fresh);
   const replaced = [...old].filter(([s, r]) => regions.get(s) !== r).map(([s, r]) => historyEntry(s, r, date));
   const history = [...replaced, ...parseHistory(existing)].slice(0, HISTORY_CAP);
-  // A region on another commit than the one just written is older: say so above its headline,
-  // so a stale ✅ never reads as the current verdict.
-  const newest = shaOf(fresh);
+  // A region on another commit than the PR head is older: fold it to one closed row, so a stale
+  // ✅ never reads as the current verdict. Without a known head, the region just written is newest
+  // (a late run on an older commit can then mislabel, which is why upsert passes the real head).
+  const newest = head ? head.slice(0, 7) : shaOf(fresh);
   const parts = SECTIONS.filter((s) => regions.has(s)).map((s) => {
     const r = regions.get(s);
-    const stale = s !== section && newest && shaOf(r) && shaOf(r) !== newest;
+    const stale = newest && shaOf(r) && shaOf(r) !== newest && (head || s !== section);
     if (!stale) return `${open(s)}\n${r}\n${close(s)}`;
     // Fold it to one closed line; the wrapper lines carry STALE, so parseRegions drops them.
     const headline = headlineOf(r).replace(/^#+\s*/, "").replace(/<[^>]+>/g, "").replace(/`([^`]*)`/g, "<code>$1</code>");
@@ -128,8 +128,9 @@ export function splice(existing, section, content, { replaceAll = false, now = n
 
 // The one-line comment a run posts when it changes the verdict a reader saw last: the section's
 // own previous verdict, else the comment's first region (a first `ui` run under a ✅ aggregate). Or null.
-export function flipNotice(existing, section, written, url) {
+export function flipNotice(existing, section, written, url, head = null) {
   const prior = parseRegions(existing);
+  if (head && shaOf(parseRegions(written).get(section) ?? "") !== head.slice(0, 7)) return null;
   const before = prior.get(section) ?? [...prior.values()][0];
   const was = before && verdictOf(before);
   const now = parseRegions(written).get(section);
@@ -157,13 +158,15 @@ export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
     `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, (.body | @base64)] | @tsv`])
     .split("\n").filter(Boolean).map((l) => l.split("\t"))
     .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
+  let head = null;
+  try { head = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", ".head.sha"]) || null; } catch { head = null; }
   if (found.length) {
     const [id, , b64] = found[0];
     const existing = Buffer.from(b64, "base64").toString("utf8");
-    const body = splice(existing, section, content, { replaceAll });
+    const body = splice(existing, section, content, { replaceAll, head });
     try {
       const url = run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
-      const notice = flipNotice(existing, section, body, url);
+      const notice = flipNotice(existing, section, body, url, head);
       if (notice) {
         try { run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: notice })); }
         catch (e) { console.error(`verify-comment: verdict-change notice not posted: ${e.message}`); }
@@ -173,7 +176,7 @@ export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
       if (!/HTTP 40[34]/.test(e.message)) throw e;
     }
   }
-  const body = splice("", section, content, { replaceAll });
+  const body = splice("", section, content, { replaceAll, head });
   return run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
 }
 
@@ -241,14 +244,19 @@ function selfTest() {
   assert(flipNotice(agg1, "aggregate", splice(agg1, "aggregate", "## ❌ Not verified `ccccccc`"), "https://x/9") === `${NOTICE}\nVerify re-ran on \`ccccccc\`: ✅ → ❌. [See the report](https://x/9)`, "a verdict change yields a one-line notice");
   assert(flipNotice(agg1, "aggregate", splice(agg1, "aggregate", "## ✅ Verified `ccccccc`"), "u") === null && flipNotice("", "aggregate", agg1, "u") === null, "no notice without a change, or on a first run");
   assert(flipNotice(agg1, "ui", withUi, "u")?.includes("✅ → ❌"), "a first ui run that turns a ✅ comment red posts a notice");
+  const late = splice(splice("", "aggregate", "## ✅ new `bbbbbbb`", { now: t }), "ui", "### ❌ old `aaaaaaa`", { now: t, head: "bbbbbbb0000" });
+  assert(late.includes("Older run on <code>aaaaaaa</code>") && !late.includes("Older run on <code>bbbbbbb</code>"), "a late run on an older commit is folded itself; the head region stays open");
+  assert(flipNotice(splice("", "aggregate", "## ✅ new `bbbbbbb`"), "ui", late, "u", "bbbbbbb0000") === null, "a late run on an older commit posts no notice");
   let stale = false; try { splice("", "ui", "<!-- verify:stale -->x"); } catch { stale = true; }
   assert(stale, "a region that carries a stale or notice marker is refused");
   // upsert against a fake gh: comments are [id, created_at, login, body].
   const ghErr = (msg) => Object.assign(new Error(msg), { code: 2 });
+  let fakeHead = "";
   const fakeGh = (comments, patchErr) => {
     const calls = [];
     const run = (a) => {
       calls.push(a[2] === "PATCH" ? `PATCH ${a[3].split("/").pop()}` : a[2]);
+      if (String(a[1]).includes("/pulls/")) return fakeHead;
       if (a.includes("--paginate")) return comments.map(([id, at, , b]) => `${id}\t${at}\t${Buffer.from(b).toString("base64")}`).join("\n");
       if (a[2] === "PATCH") { if (patchErr) throw patchErr; return `https://x/${a[3].split("/").pop()}`; }
       return "https://x/new";
@@ -286,7 +294,7 @@ else if (isMain) {
     const replaceAll = has("--replace-all");
     if (has("--dry-run")) {
       const existingPath = opt("--existing");
-      process.stdout.write(splice(existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "", section, content, { replaceAll }));
+      process.stdout.write(splice(existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "", section, content, { replaceAll, head: opt("--head") ?? null }));
     } else {
       if (!opt("--pr")) throw new Error("--pr is required unless --dry-run");
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll }));
