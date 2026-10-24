@@ -130,7 +130,7 @@ The headline's emoji picks the line, so a reviewer who sees anything but ✅ lea
 | ⛔ / ⏭️ | `**Needs you:**` then the phase that could not run and the fix |
 
 - At most three bullets; past three, `+<n> more in Details`.
-- A finding with `in_scope: false` (code this PR does not touch) is a **Notes** line, never an open item, and never moves the verdict ([`report.md § Verdict`](./report.md#verdict)).
+- A finding with `in_scope: false` ([`findings.md § in_scope`](./findings.md)) is a **Notes** line and never moves the verdict ([`report.md § Verdict`](./report.md#verdict)); an open `critical`/`high` one is also an attention-line bullet (✅ row).
 - Never a separate "Open items" block: the attention line is the only place open items appear above **Details**.
 
 ```markdown
