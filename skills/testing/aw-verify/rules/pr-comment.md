@@ -124,13 +124,15 @@ The headline's emoji picks the line, so a reviewer who sees anything but ✅ lea
 
 | Headline | Attention line |
 | --- | --- |
-| ✅ | `**Nothing needs your attention.**`, unless an open `critical`/`high` finding does not move the verdict (any `in_scope: false` finding, and every finding in a `ui` or `telemetry` region): then `**Needs you:**` and one bullet per such finding, an `in_scope: false` one as `Outside this PR: <what the user would notice> (<severity>) — <suggested follow-up>` |
-| ⚠️ | `**Why not ✅:**` then one bullet per escalated finding, `<what the user would notice> (<severity>) — needs you: <the decision>`, then one per open `medium`/`low` finding, `<what the user would notice> (<severity>) — <next step, or "fine to merge as is">`. In a `ui` region, where ⚠️ means inconclusive, one bullet: the reason (the runner's `notes:` line) and the next step. In a `telemetry` region, where ⚠️ means ambiguous, one bullet per ambiguous journey and what would settle it |
-| ❌ | `**Needs you:**` then one bullet per failed check, then per `critical`/`high` finding, each with its next step |
+| ✅ | `**Nothing needs your attention.**` |
+| ⚠️ | `**Why not ✅:**` then one bullet per escalated finding, `<what the user would notice> (<severity>) — needs you: <the decision>`, then one per open `in_scope: true` `medium`/`low` finding, `<what the user would notice> (<severity>) — <next step, or "fine to merge as is">`. In a `ui` region, where ⚠️ means inconclusive, one bullet: the reason (the runner's `notes:` line) and the next step. In a `telemetry` region, where ⚠️ means ambiguous, one bullet per ambiguous journey and what would settle it |
+| ❌ | `**Needs you:**` then one bullet per failed check, then per open `in_scope: true` `critical`/`high` finding, each with its next step |
 | ⛔ / ⏭️ | `**Needs you:**` then the phase that could not run and the fix |
 
 - At most three bullets; past three, `+<n> more in Details`.
-- A finding with `in_scope: false` ([`findings.md § in_scope`](./findings.md)) is a **Notes** line and never moves the verdict ([`report.md § Verdict`](./report.md#verdict)); an open `critical`/`high` one is also an attention-line bullet (✅ row).
+- An open `critical`/`high` finding that does not move the verdict, one with `in_scope: false` ([`findings.md` § in_scope](./findings.md)) or any finding in a `ui` or `telemetry` region, is a bullet in a `**Needs you:**` list under every headline, after the headline's own items.
+- Under ✅ that list replaces `**Nothing needs your attention.**`; under ⚠️ it follows the `**Why not ✅:**` list; an `in_scope: false` one reads `Outside this PR: <what the user would notice> (<severity>) — <suggested follow-up>`.
+- Every other `in_scope: false` finding is a **Notes** line and never moves the verdict ([`report.md § Verdict`](./report.md#verdict)).
 - Never a separate "Open items" block: the attention line is the only place open items appear above **Details**.
 
 ```markdown
