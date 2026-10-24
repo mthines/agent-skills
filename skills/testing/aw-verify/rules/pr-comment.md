@@ -85,7 +85,7 @@ Agent0 shows an attached image inline wherever its answer places it. **Nothing n
 
 | ✅ Placed → inline | ✅ Made-up id → not shown |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/…" width="200" alt="The chart renders inline in the answer"> | <img src="https://github.com/user-attachments/assets/…" width="200" alt="An unknown id shows an error"> |
+| <img src="https://github.com/user-attachments/assets/…" width="420" alt="The chart renders inline in the answer"> | <img src="https://github.com/user-attachments/assets/…" width="420" alt="An unknown id shows an error"> |
 
 <details><summary>✅ <b>Place an image in the answer</b> → it renders inline</summary>
 
@@ -112,11 +112,41 @@ I gave Agent0 an attachment id; it wrote the tag and the chart renders between i
 | # | Part | Holds | Never |
 | --- | --- | --- | --- |
 | 1 | Headline | `## <emoji> <Verdict> — <what the change does, in the user's words>`, at most 70 characters; verdict words from [`report.md § Verdict`](./report.md#verdict). A standalone `ui` or `telemetry` region uses `###` | An agent name, a SHA, or an environment |
-| 2 | Summary | One sentence on what works for the user, then on the same line `**Nothing needs your attention.**` or `**Needs you:**` with at most three bullets: failed checks, then `critical`/`high` findings, each with its next step; the rest as `+<n> more in Details` | The run's reasoning about its environment; `medium`/`low` findings |
+| 2 | Summary | One sentence on what works for the user, then on the same line the attention line for the headline's emoji (§ Attention line) | The run's reasoning about its environment; an attention line that disagrees with the headline |
 | 3 | Metadata | One `<sub>` line: seven-character head SHA in backticks, environment, CI state, finding count, `updated {{UPDATED}}` (the script stamps it) | A URL, or a time the agent typed |
-| 4 | Screenshot strip | Directly under **What I checked**: one row of up to four thumbnails, the rest one click away (§ Screenshot strip) | A full-width screenshot, or a screenshot inside a check row |
+| 4 | Media strip | Directly under **What I checked**: one recording, then one row of up to two thumbnails, the rest one click away (§ Media strip) | A full-width screenshot, or a recording or screenshot inside a check row |
 | 5 | Check rows | One `<details>` per check (§ Check rows) | A results table, or a `####` heading per check |
 | 6 | Skipped line | `⏭️ *Not checked <where>: <what>; <what covers it instead>.*`; omitted when nothing was skipped | A skipped item as a check row |
+
+### Attention line
+
+The headline's emoji picks the line, so a reviewer who sees anything but ✅ learns why in the next sentence.
+
+| Headline | Attention line |
+| --- | --- |
+| ✅ | `**Nothing needs your attention.**` |
+| ⚠️ | `**Why not ✅:**` then one bullet per open item: `<what the user would notice> (<severity>) — <next step, or "fine to merge as is">` |
+| ❌ | `**Needs you:**` then one bullet per failed check, then per `critical`/`high` finding, each with its next step |
+| ⛔ / ⏭️ | `**Needs you:**` then the phase that could not run and the fix |
+
+- At most three bullets; past three, `+<n> more in Details`.
+- A finding outside this PR (the same behaviour on the base branch) is a **Notes** line, never an open item, and never turns ✅ into ⚠️.
+- Never a separate "Open items" block: the attention line is the only place open items appear above **Details**.
+
+```markdown
+<!-- ✓ -->
+## ⚠️ Verified with open items — typed messages steer the running turn
+
+A message typed while Agent0 works is read inside the same turn. **Why not ✅:**
+- A double-clicked × sends two withdraw requests (low) — fine to merge as is.
+
+<!-- ✗ the headline says open items, the next sentence says there are none -->
+## ⚠️ Verified with open items — typed messages steer the running turn
+
+A message typed while Agent0 works is read inside the same turn. **Nothing needs your attention.**
+
+**Open items** (none blocks a merge):
+```
 
 ### Check rows
 
@@ -131,35 +161,52 @@ Its `<summary>` is `<emoji> <b><what I did></b> → <what happened>`, under 80 c
 
 - **Order:** failed, then fixed (`🔧`), then passed, each group in the brief's order.
 - **Open state:** a failed row is `<details open>`; every other row is closed.
-- **Body:** one or two sentences (what I did, what happened, with the HTTP status or event name when that is the proof), ending on the same line with `<sub>Proves <AC-n></sub>` so the row traces to its criterion. Then the check's recording, if any, as the bare `.mp4` URL on its own line.
-- **No screenshots in a row:** they live in the strip; a row whose check is shown there names it (`see the made-up-id screenshot`).
+- **Body:** one or two sentences (what I did, what happened, with the HTTP status or event name when that is the proof), ending on the same line with `<sub>Proves <AC-n></sub>` so the row traces to its criterion.
+- **No media in a row:** recordings and screenshots live in the strip; a row whose check is shown there names it (`see the made-up-id recording`).
 
-### Screenshot strip
+### Media strip
 
-Thumbnails make the change scannable without a click; GitHub links each to the full-size image.
+A recording shows the change working in a few seconds, so it leads; thumbnails make the rest scannable without a click.
 
-1. One screenshot per check that has one: failed checks first, then the brief's acceptance criteria in order, then probes.
-2. **Visible:** one table of at most four columns, the first four screenshots. Header cell: `<emoji> <short action → outcome>`, under 25 characters so it does not wrap. Body cell: `<img src="<url>" width="200" alt="<caption>">`. Align columns `:---:`.
-3. **The rest,** directly under it: one closed `<details><summary>+<n> more screenshots</summary>` holding tables of four in the same shape. Never more than the 12 images § Media allows.
+1. **Order:** failed checks first, then the brief's acceptance criteria in order, then probes; within that order, recordings before screenshots.
+2. **Visible recording:** the first recording in that order, as one caption line `▶️ <emoji> <b><what I did></b> → <what happened>` and, on the next line, its bare `.mp4` URL. GitHub renders a bare URL on its own line as a player and a URL in a table cell as a plain link, so a recording never goes in a table.
+3. **Visible screenshots:** one table of at most two columns, the first two screenshots. Never more than two columns: a narrower thumbnail is too small to read without opening it. Header cell: `<emoji> <short action → outcome>`, under 40 characters so it does not wrap. Body cell: `<img src="<url>" width="420" alt="<caption>">`. Align columns `:---:`.
+4. **The rest,** directly under it: one closed `<details><summary>+<r> more recordings · +<n> more screenshots</summary>`, holding the other recordings first (caption line, then URL), then tables of two columns in the same shape. Drop the half of the summary that is zero.
 
-| Screenshots | Shown |
+| Media | Shown |
 | --- | --- |
-| 1–4 | One visible row |
-| 5–12 | One visible row of four, then `+<n> more screenshots` with rows of four |
+| 1 recording, ≤ 2 screenshots | All visible |
+| More | One recording and one row of two visible; the rest under `+<r> more recordings · +<n> more screenshots` |
 
 ```markdown
 <!-- ✓ -->
+▶️ ❌ <b>Use a made-up image id</b> → it is fetched (404)
+
+https://github.com/user-attachments/assets/…
+
 | ❌ Made-up id → fetched | ✅ Placed → inline |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/…" width="200" alt="A request for an unknown id"> | <img src="https://github.com/user-attachments/assets/…" width="200" alt="The chart renders inline"> |
+| <img src="https://github.com/user-attachments/assets/…" width="420" alt="A request for an unknown id"> | <img src="https://github.com/user-attachments/assets/…" width="420" alt="The chart renders inline"> |
 
-<details><summary>+6 more screenshots</summary>
+<details><summary>+1 more recording · +6 more screenshots</summary>
+
+▶️ ✅ <b>Reload the chat</b> → the image stays in place
+
+https://github.com/user-attachments/assets/…
 
 | ✅ Turn ends → collapse | … |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/…" width="200" alt="Tool rows collapsed"> | … |
+| <img src="https://github.com/user-attachments/assets/…" width="420" alt="Tool rows collapsed"> | … |
 
 </details>
+
+<!-- ✗ the recording inside a check row: closed by default, so nobody sees it -->
+<details><summary>✅ <b>Reload the chat</b> → …</summary>
+
+https://github.com/user-attachments/assets/…
+
+<!-- ✗ four columns: each thumbnail is too small to read without opening it -->
+| ❌ Made-up id | ✅ Placed | ✅ Never placed | ✅ Own message |
 
 <!-- ✗ full width: each screenshot is 1,000 px tall -->
 ![AC-1](https://github.com/user-attachments/assets/…)
@@ -198,8 +245,8 @@ None → the line `No impact map on this PR (/impact-map <pr> --body draws one).
    ```
 
    `attach-media` opens every image before upload and skips one that shows a secret or personal data; it re-encodes a video over 10 MB and skips what still does not fit.
-4. **Embed** each returned URL once: a screenshot in the strip (§ Screenshot strip), a recording in its check row; a recording that covers several checks goes in the first of them, and the others name it.
-5. A file `attach-media` skipped or could not upload → its check row says `screenshot not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
+4. **Embed** each returned URL once, in the strip (§ Media strip); a recording that covers several checks is captioned with the first, and the others name it.
+5. A file `attach-media` skipped or could not upload → its check row says `<screenshot | recording> not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
 6. **Recordings are never silently missing.** When the region holds no recording, **Run details** says why: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
 
 ## Write the region

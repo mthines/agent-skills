@@ -20,7 +20,7 @@ Prose is conclusion-first, with no filler.
 | Verdict | Condition |
 | --- | --- |
 | `✅ verified` | Every AC passes in the browser, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `high` or `critical` |
-| `⚠️ verified with open items` | Every AC passes; some `medium`/`low` findings open, or any finding escalated |
+| `⚠️ verified with open items` | Every AC passes; some `medium`/`low` findings in this PR open, or any finding escalated. A finding outside this PR never sets it |
 | `❌ not verified` | An AC fails after the fix loop, a brief `telemetry:` AC `contradicts`, or a `critical`/`high` finding is still open |
 | `⛔ blocked` | A phase could not run (stack, auth, checkout); name the phase and the fix |
 
@@ -33,11 +33,11 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{VERDICT_EMOJI}}` / `{{VERDICT_WORDS}}` | `✅` `Verified`, `⚠️` `Verified with open items`, `❌` `Not verified`, or `⛔` `Blocked` (§ Verdict) |
 | `{{HEADLINE}}` | What the change does, in the user's words; the whole `##` line under 70 characters |
 | `{{SUMMARY}}` | One sentence: what works for the user |
-| `{{ATTENTION}}` | `**Nothing needs your attention.**`, or `**Needs you:**` then at most three bullets — failed checks, then `critical`/`high` findings, each with its next step — and `+<n> more in Details` past three; `⛔ blocked` names the phase and the fix |
+| `{{ATTENTION}}` | The line [`pr-comment.md § Attention line`](./pr-comment.md#attention-line) picks for the verdict: ✅ `**Nothing needs your attention.**`; ⚠️ `**Why not ✅:**` and the open items; ❌ `**Needs you:**` and the failed checks, then `critical`/`high` findings; ⛔ `**Needs you:**`, the phase, and the fix. At most three bullets, then `+<n> more in Details` |
 | `{{HEAD_SHA7}}` / `{{ENV}}` / `{{CI_STATE}}` / `{{FINDING_COUNT}}` | Seven-character head SHA; `local` or `preview`; `CI green` or the red checks; `<n> findings` |
 | `{{UPDATED}}` | Left as is: `verify-comment.mjs` stamps the write time |
-| `{{SCREENSHOT_STRIP}}` | Per [`pr-comment.md § Screenshot strip`](./pr-comment.md#screenshot-strip): one visible row of up to four `<img width="200">` thumbnails, failed checks first, headers under 25 characters; the rest in a closed `+<n> more screenshots` block of rows of four; nothing when the run has no screenshot |
-| `{{CHECK_ROWS}}` | One `<details>` per AC, spec, and probe that broke something, per [`pr-comment.md § Check rows`](./pr-comment.md#check-rows): `<emoji> <b><what I did></b> → <what happened>`; failed rows first and open, the rest closed; one or two sentences ending in `<sub>Proves AC-n</sub>`, then the recording URL; no screenshots |
+| `{{MEDIA_STRIP}}` | Per [`pr-comment.md § Media strip`](./pr-comment.md#media-strip): one visible recording (caption line, then the bare `.mp4` URL), then one visible row of up to two `<img width="420">` thumbnails, failed checks first, headers under 40 characters; the rest in a closed `+<r> more recordings · +<n> more screenshots` block, recordings first, never more than two columns; nothing when the run has no media |
+| `{{CHECK_ROWS}}` | One `<details>` per AC, spec, and probe that broke something, per [`pr-comment.md § Check rows`](./pr-comment.md#check-rows): `<emoji> <b><what I did></b> → <what happened>`; failed rows first and open, the rest closed; one or two sentences ending in `<sub>Proves AC-n</sub>`; no recordings or screenshots |
 | `{{SKIPPED_LINE}}` | `⏭️ *Not checked <where>: <what>; <what covers it instead>.*`, or nothing |
 | `{{APPROACH}}` / `{{IMPACT_MAP}}` | One paragraph on how the run tested the feature; the PR's impact map per [`pr-comment.md § Impact map`](./pr-comment.md#impact-map) |
 | `{{PROBE_RESULT}}` / `{{PROBE_LINES}}` | `<n> probes, nothing broke`, `<n> probes, <k> broke`, or `skipped (<reason>)`; one `- what I tried → what happened` line per probe |
