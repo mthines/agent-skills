@@ -121,7 +121,7 @@ Region body, in the `aw-verify` skill's `rules/pr-comment.md` § Layout shape, a
 ````markdown
 ### <✅ Telemetry confirms | ❌ Telemetry contradicts | ⚠️ Telemetry is ambiguous | ⏭️ Telemetry not graded> — <what the services recorded, in the user's words>
 
-<One sentence: which journeys were recorded end to end.> <**Nothing needs your attention.** | **Needs you:** at most three bullets — `contradicts` journeys, then critical/high findings>
+<One sentence: which journeys were recorded end to end.> <the attention line for the headline, per the `aw-verify` skill's `rules/pr-comment.md` § Attention line: ✅ **Nothing needs your attention.**, or **Needs you:** and each open critical/high finding · ⚠️ **Why not ✅:** each ambiguous journey and what would settle it, then **Needs you:** and each open critical/high finding · ❌ **Needs you:** `contradicts` journeys, then each open critical/high finding · ⏭️ **Needs you:** why it was not graded and the fix, then each open critical/high finding>
 
 <sub>`<head-sha7>` · <env> · window <from> → <to> · updated {{UPDATED}}</sub>
 

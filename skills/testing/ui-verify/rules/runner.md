@@ -286,21 +286,23 @@ Region body, in the `aw-verify` skill's `rules/pr-comment.md` § Layout shape, a
 ````markdown
 ### <✅ Verified | ❌ Not verified | ⚠️ Inconclusive> in the browser — <what the specs cover, in the user's words>
 
-<One sentence: what works for the user.> <**Nothing needs your attention.** | **Needs you:** at most three bullets — failing specs, then critical/high adversarial findings>
+<One sentence: what works for the user.> <the attention line for the headline, per the `aw-verify` skill's `rules/pr-comment.md` § Attention line: ✅ **Nothing needs your attention.**, or **Needs you:** and each open critical/high adversarial finding · ⚠️ **Why not ✅:** why the run was inconclusive (the runner's `notes:` line) and the next step, then **Needs you:** and each open critical/high adversarial finding · ❌ **Needs you:** failing specs, then each open critical/high adversarial finding>
 
 <sub>`<head-sha7>` · <env> · <pass>/<total> specs · updated {{UPDATED}}</sub>
 
 #### What I checked
 
+▶️ ❌ <b>Rename a view and save</b> → the old name comes back
+
+https://github.com/user-attachments/assets/…
+
 | ❌ Rename → old name | ✅ Dashboard → panels |
 | :---: | :---: |
-| <img src="https://github.com/user-attachments/assets/…" width="200" alt="Spec-2: the old name after saving"> | <img src="https://github.com/user-attachments/assets/…" width="200" alt="Spec-1: the dashboard's panels"> |
+| <img src="https://github.com/user-attachments/assets/…" width="420" alt="Spec-2: the old name after saving"> | <img src="https://github.com/user-attachments/assets/…" width="420" alt="Spec-1: the dashboard's panels"> |
 
 <details open><summary>❌ <b>Rename a view and save</b> → the old name comes back</summary>
 
 The list still shows the old name after Save. First unmet expectation: heading "Q3 revenue" visible. <sub>Proves Spec-2</sub>
-
-https://github.com/user-attachments/assets/…
 
 </details>
 <details><summary>✅ <b>Open a dashboard</b> → its panels load</summary>
@@ -335,7 +337,7 @@ https://github.com/user-attachments/assets/…
 </details>
 ````
 
-Layout rules: the `aw-verify` skill's `rules/pr-comment.md` § Layout — one visible row of up to four `<img width="200">` thumbnails, failing first, the rest under `+<n> more screenshots`; then one `<details>` row per spec and per adversarial finding, `<what I did> → <what happened>`, failing rows first and open, the rest closed, a recording inside its row, never a screenshot.
+Layout rules: the `aw-verify` skill's `rules/pr-comment.md` § Layout — one visible recording first (caption line, then the bare `.mp4` URL), then one visible row of up to two `<img width="420">` thumbnails, never more than two columns, failing first, the rest under `+<r> more recordings · +<n> more screenshots`; then one `<details>` row per spec and per adversarial finding, `<what I did> → <what happened>`, failing rows first and open, the rest closed, never a recording or a screenshot.
 Keep the five status lines and the `head` line verbatim under **Run details**: `review-loop --ui` parses them from the raw region.
 A failing spec's row names the first unmet `**Expected:**` item.
 Print `comment: <comment-url> (region ui)`, or the `not posted (<reason>)` / `failed (<reason>)` line.
