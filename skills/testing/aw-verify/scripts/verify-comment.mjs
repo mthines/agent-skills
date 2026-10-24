@@ -34,6 +34,8 @@ const STALE = "<!-- verify:stale -->";
 export const NOTICE = "<!-- verify:notice -->";
 const VERDICTS = ["✅", "⚠️", "❌", "⛔"];
 const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
+// A login, normalized: lowercase, one trailing `[bot]` stripped.
+export const normLogin = (l) => String(l || "").toLowerCase().replace(/\[bot\]$/, "");
 const shaOf = (region) => region.match(/`([0-9a-f]{7,40})`/)?.[1]?.slice(0, 7) ?? null;
 const headlineOf = (region) => (region.split("\n").find((l) => l.trim() && !l.includes(STALE)) || "");
 // The verdict glyph of a region's headline, or null when it carries none.
@@ -155,18 +157,20 @@ export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
   if (!prNumber) throw new Error(`cannot read a PR number from "${pr}"`);
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
     || run(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+  let me = "";
+  try { me = normLogin(run(["api", "graphql", "-f", "query={ viewer { login } }", "--jq", ".data.viewer.login"])); } catch { me = ""; }
   const found = run(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
-    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, .author_association, .user.type, (.body | @base64)] | @tsv`])
+    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, .author_association, .user.type, .user.login, (.body | @base64)] | @tsv`])
     .split("\n").filter(Boolean).map((l) => l.split("\t"))
-    // Only a comment someone with access to the repo wrote, or an app: a drive-by commenter's
-    // marker comment holding a fake ✅ must never become the PR's verify comment.
-    .filter(([, , assoc, type]) => TRUSTED.includes(assoc) || type === "Bot")
+    // Only a comment someone with access to the repo wrote, an app, or the viewer (a fork author
+    // re-running on their own PR): a drive-by commenter's fake ✅ must never become the verify comment.
+    .filter(([, , assoc, type, login]) => TRUSTED.includes(assoc) || type === "Bot" || (me && normLogin(login) === me))
     .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
   let head = null;
   try { head = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", ".head.sha"]) || null; } catch { head = null; }
   let existing = "";
   if (found.length) {
-    const [id, , , , b64] = found[0];
+    const [id, , , , , b64] = found[0];
     existing = Buffer.from(b64, "base64").toString("utf8");
     const body = splice(existing, section, content, { replaceAll, head });
     try {
@@ -263,7 +267,8 @@ function selfTest() {
     const run = (a) => {
       calls.push(a[2] === "PATCH" ? `PATCH ${a[3].split("/").pop()}` : a[2]);
       if (String(a[1]).includes("/pulls/")) return fakeHead;
-      if (a.includes("--paginate")) return comments.map(([id, at, who, b, assoc = "MEMBER"]) => `${id}\t${at}\t${assoc}\t${who.endsWith("[bot]") ? "Bot" : "User"}\t${Buffer.from(b).toString("base64")}`).join("\n");
+      if (a[1] === "graphql") return "me";
+      if (a.includes("--paginate")) return comments.map(([id, at, who, b, assoc = "MEMBER"]) => `${id}\t${at}\t${assoc}\t${who.endsWith("[bot]") ? "Bot" : "User"}\t${who}\t${Buffer.from(b).toString("base64")}`).join("\n");
       if (a[2] === "PATCH") { if (patchErr) throw patchErr; return `https://x/${a[3].split("/").pop()}`; }
       return "https://x/new";
     };
@@ -278,6 +283,8 @@ function selfTest() {
   assert(upsert(req, denied.run) === "https://x/new" && denied.calls.includes("POST"), "a comment the token may not edit gets a new comment");
   const drive = fakeGh([["1", "2026-01-01T00:00:00Z", "me", one], ["99", "2026-01-09T00:00:00Z", "stranger", splice("", "aggregate", "## ✅ fake"), "NONE"]]);
   assert(upsert(req, drive.run) === "https://x/1", "a newer marker comment from someone without repo access is never adopted");
+  const fork = fakeGh([["11", "2026-01-11T00:00:00Z", "Me", one, "CONTRIBUTOR"]]);
+  assert(upsert(req, fork.run) === "https://x/11", "a fork author's own verify comment is reused");
   const app = fakeGh([["8", "2026-01-08T00:00:00Z", "dash0-app[bot]", one, "NONE"]]);
   assert(upsert(req, app.run) === "https://x/8", "an app's comment is adopted whatever its association");
   let posted = "";

@@ -34,7 +34,7 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 A later standalone run adds its region beside the aggregate; each region names the head SHA it verified, so a reader can tell which is newer.
 A comment written before regions existed is kept as the `aggregate` region.
-A PR has one verify comment, whoever's account the run posts from: the script edits the PR's newest marker comment written by an app or by someone with access to the repo (`author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`), so a run from Agent0 (a bot account) and a run from a local session (your own) update the same comment, and a drive-by commenter's fake report is never adopted.
+A PR has one verify comment, whoever's account the run posts from: the script edits the PR's newest marker comment written by an app, by someone with access to the repo (`author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`), or by the account running it (GraphQL `viewer`, so a fork author re-uses their own), so a run from Agent0 (a bot account) and a run from a local session (your own) update the same comment, and a drive-by commenter's fake report is never adopted.
 Before it replaces a region, the script adds one line for the old run (`<sha7> · <section> · <headline> · replaced <date>`) to its own last region, `<!-- verify:history -->`, rendered as a collapsed **Previous runs** list of at most 10 entries; a region author never writes it.
 A comment the token may not edit (HTTP 403 or 404) gets a new comment that carries its regions and history forward; any other GitHub failure exits `2` and posts nothing.
 The script also does what a region author must not do by hand:
@@ -217,7 +217,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
-- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), take the newest comment starting with the marker whose author is an app or has `author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`, run the script with `--dry-run --existing <its body> --head <the PR's head SHA>`, and write its stdout with `mcp__github__update_issue_comment`; when no comment starts with the marker, or the update is refused as forbidden, run `--dry-run` without `--existing` and write it with `mcp__github__add_issue_comment`.
+- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the newest comment starting with the marker whose author is an app, has `author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`, or is `mcp__github__get_me`. Run the script with `--dry-run --existing <its body> --head <the PR's head SHA>` and write its stdout with `mcp__github__update_issue_comment`; when that update is refused as forbidden, post the same stdout with `mcp__github__add_issue_comment`, so the other regions and the history carry over. When no comment qualifies, run `--dry-run --head <sha>` without `--existing` and post it with `mcp__github__add_issue_comment`.
 - **Script not found** (`aw-verify` not installed) → `comment: not posted (aw-verify not installed)`.
 - Write after the fix loop pushed, so the region describes the final head SHA.
 
