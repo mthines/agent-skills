@@ -282,7 +282,7 @@ any identity may post either, and a genuine self-note carries neither.
 and the current user — because the `review-loop --ui` lane posts it under the loop's own identity
 for this skill to fix and resolve. Classify it `actionable`: it reports a failing spec or a
 `critical`/`high` defect observed on the live preview. The verify comment, whose body starts with
-`<!-- verify:report -->` (or the retired `<!-- ui-verify:lane -->`), is the opposite: always **exclude** it — it is a run summary, not feedback.
+`<!-- verify:report -->` (or the retired `<!-- ui-verify:lane -->`), is the opposite: always **exclude** it — it is a run summary, not feedback. So is a comment starting with `<!-- verify:notice -->`, the one-line verdict-change notice.
 
 ## Author inclusion — humans AND AI reviewers
 

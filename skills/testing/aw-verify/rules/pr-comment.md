@@ -1,5 +1,5 @@
 ---
-title: PR comment — one sticky verify comment per PR, one region per witness
+title: PR comment — one verify comment per PR, one region per witness, progressive disclosure
 impact: HIGH
 tags:
   - pr-comment
@@ -11,15 +11,15 @@ tags:
 
 # PR comment
 
-`aw-verify`, `ui-verify`, and `telemetry-verify` post their proof to **one** comment per PR.
+`aw-verify`, `ui-verify`, and `telemetry-verify` post their proof to **one** comment per PR, whichever account the run posts from.
 Its first line is `<!-- verify:report -->`; each witness owns one region of it.
-[`scripts/verify-comment.mjs`](../scripts/verify-comment.mjs) is the only writer: it splices a region, keeps the others, and refuses a local path.
+[`scripts/verify-comment.mjs`](../scripts/verify-comment.mjs) is the only writer: it splices a region, keeps the others, records the run it replaced under **Previous runs**, and refuses a local path.
 
 ## Contents
 
 - [Regions and owners](#regions-and-owners)
 - [When to post](#when-to-post)
-- [Layout: summary, then one section per spec](#layout-summary-then-one-section-per-spec)
+- [Layout: verdict, checks, then collapsed detail](#layout-verdict-checks-then-collapsed-detail)
 - [Media](#media)
 - [Write the region](#write-the-region)
 - [Report line](#report-line)
@@ -34,8 +34,17 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 A later standalone run adds its region beside the aggregate; each region names the head SHA it verified, so a reader can tell which is newer.
 A comment written before regions existed is kept as the `aggregate` region.
-Each author has their own verify comment: the script reads the viewer through GraphQL `viewer` (never `/user`), edits only the newest marker comment whose author matches it (both lowercased, one trailing `[bot]` stripped), and posts a new comment otherwise, so a write-access run on someone else's PR never overwrites the author's.
-An unknown viewer posts a new comment rather than guess.
+A PR has one verify comment, whoever's account the run posts from: the script edits the PR's newest marker comment written by an app, by someone with access to the repo (`author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`), or by the account running it (GraphQL `viewer`, so a fork author re-uses their own), so a run from Agent0 (a bot account) and a run from a local session (your own) update the same comment, and a drive-by commenter's fake report is never adopted.
+Before it replaces a region, the script adds one line for the old run (`<sha7> · <section> · <headline> · replaced <date>`) to its own last region, `<!-- verify:history -->`, rendered as a collapsed **Previous runs** list of at most 10 entries; a region author never writes it.
+A comment the token may not edit (HTTP 403 or 404) gets a new comment that carries its regions and history forward; any other GitHub failure exits `2` and posts nothing.
+The script also does what a region author must not do by hand:
+
+| It | Because |
+| --- | --- |
+| Replaces `{{UPDATED}}` with the write time (`YYYY-MM-DD HH:MM UTC`) | The time a reviewer sees matches **Previous runs** |
+| Adds the blank lines GitHub needs after `</summary>` and before `</details>` | Without them the reviewer sees raw Markdown |
+| Folds a region on an older commit than the PR head (read from the PR; the region just written when it cannot be read) into one closed `Older run on <sha7>: <headline>` row, including a late run on an older commit | A stale ✅ never reads as the current verdict, and never takes space |
+| Posts one notice comment, `Verify re-ran on <sha7>: ✅ → ❌. See the report`, first line `<!-- verify:notice -->`, when a run changes the verdict glyph a reader last saw (the section's own, else the comment's first region) | Editing a comment notifies nobody; a changed verdict must |
 
 ## When to post
 
@@ -60,36 +69,121 @@ Take the first row that applies.
 ✓ Skill("ui-verify", "run .agent/<branch>/specs.md --env local --url <url> --no-telemetry --no-comment")
 ```
 
-## Layout: summary, then one section per spec
+## Layout: verdict, checks, then collapsed detail
 
-Media renders only outside a table: GitHub shows a bare video URL as a player only on its own line, and a table cell holds only links.
-So a region has two parts.
-
-1. **Summary** — a text-only table, one row per criterion or probe: `ID | Criterion | Result`. No media, no links but commit SHAs.
-2. **What was tested** — one `####` heading per spec, edge case, or probe that has evidence: `#### <ID(s)> · <short name> · <result emoji> <result>`.
-   Under it, one or two sentences: what the user did, why (the `AC-n`, guardrail, or risk class it proves), and what happened.
-   Then its media, each on its own line: screenshots as `![<caption>](<url>)`, then the recording as its bare URL.
-
-| Part | Holds | Never |
-| --- | --- | --- |
-| Result | `pass`, `fixed → pass (F-n)`, `fail (F-n)`, `skipped (<reason>)`, or the telemetry verdict word | A softened word for a `fail` |
-| Why | The `AC-n` or requirement it proves, the guardrail it breaks on purpose, or the risk class (`Concurrency`, `Failure`, `xss-executed`) | Empty, or "edge case" |
-| Evidence | The embedded screenshot and recording, plus the HTTP status, trace, or Dash0 link | A local path, a bare ID, or media only inside a table cell or a closed `<details>` |
+A reviewer reads top-down and stops once they trust the result, so a green run shows five things and nothing else: the verdict, one sentence, the metadata line, a strip of screenshot thumbnails, and one closed row per check.
+Everything else is one click away.
 
 ```markdown
-<!-- ✗ Media as links in a table: the reader sees "S-3", not the page -->
-| EC-9 | PUT /api/views → 500 | fixed → pass (F-2) | [S-3](https://github.com/user-attachments/assets/…) · [▶ R-2](https://…) |
+## ✅ Verified — images render where Agent0 places them
 
-<!-- ✓ The summary row stays text; the section shows the evidence -->
-| EC-9 | A failed save keeps the user's input | ✅ fixed → pass (F-2) |
+Agent0 shows an attached image inline wherever its answer places it. **Nothing needs your attention.**
 
-#### EC-9 · failed save · ✅ fixed → pass (F-2)
-I blocked `PUT /api/views` and clicked Save. A toast says the save failed and the typed name stays.
+<sub>`076fafc` · preview · CI green · 0 findings · updated {{UPDATED}}</sub>
 
-![EC-9: failed save keeps the name](https://github.com/user-attachments/assets/…)
+#### What I checked
 
-https://github.com/user-attachments/assets/…
+| ✅ Placed → inline | ✅ Made-up id → not shown |
+| :---: | :---: |
+| <img src="https://github.com/user-attachments/assets/…" width="200" alt="The chart renders inline in the answer"> | <img src="https://github.com/user-attachments/assets/…" width="200" alt="An unknown id shows an error"> |
+
+<details><summary>✅ <b>Place an image in the answer</b> → it renders inline</summary>
+
+I gave Agent0 an attachment id; it wrote the tag and the chart renders between its sentences. <sub>Proves AC-1</sub>
+
+</details>
+<details><summary>✅ <b>Use a made-up image id</b> → "not available", nothing fetched</summary>
+
+…
+
+</details>
+
+⏭️ *Not checked on the preview: backend tag text and link expansion; unit tests and CI cover them.*
+
+<details><summary>Details</summary>
+
+…
+
+</details>
 ```
+
+### Visible parts, in this order
+
+| # | Part | Holds | Never |
+| --- | --- | --- | --- |
+| 1 | Headline | `## <emoji> <Verdict> — <what the change does, in the user's words>`, at most 70 characters; verdict words from [`report.md § Verdict`](./report.md#verdict). A standalone `ui` or `telemetry` region uses `###` | An agent name, a SHA, or an environment |
+| 2 | Summary | One sentence on what works for the user, then on the same line `**Nothing needs your attention.**` or `**Needs you:**` with at most three bullets: failed checks, then `critical`/`high` findings, each with its next step; the rest as `+<n> more in Details` | The run's reasoning about its environment; `medium`/`low` findings |
+| 3 | Metadata | One `<sub>` line: seven-character head SHA in backticks, environment, CI state, finding count, `updated {{UPDATED}}` (the script stamps it) | A URL, or a time the agent typed |
+| 4 | Screenshot strip | Directly under **What I checked**: one row of up to four thumbnails, the rest one click away (§ Screenshot strip) | A full-width screenshot, or a screenshot inside a check row |
+| 5 | Check rows | One `<details>` per check (§ Check rows) | A results table, or a `####` heading per check |
+| 6 | Skipped line | `⏭️ *Not checked <where>: <what>; <what covers it instead>.*`; omitted when nothing was skipped | A skipped item as a check row |
+
+### Check rows
+
+One row is one thing the reviewer would try by hand: an acceptance criterion, a spec, or a probe that broke something.
+Its `<summary>` is `<emoji> <b><what I did></b> → <what happened>`, under 80 characters, with no ID.
+
+| Rule | Correct | Incorrect |
+| --- | --- | --- |
+| Action → outcome | `✅ <b>Type a tag in my own message</b> → it stays plain text` | `✅ AC-3 · rejected tags · pass` |
+| One behaviour per row | Separate rows for "made-up id" and "my own message" | `AC-2 · AC-3 · rejected tags` |
+| A failed row names the break | `❌ <b>Rename a view and save</b> → the old name comes back` | `❌ fail (F-2)` |
+
+- **Order:** failed, then fixed (`🔧`), then passed, each group in the brief's order.
+- **Open state:** a failed row is `<details open>`; every other row is closed.
+- **Body:** one or two sentences (what I did, what happened, with the HTTP status or event name when that is the proof), ending on the same line with `<sub>Proves <AC-n></sub>` so the row traces to its criterion. Then the check's recording, if any, as the bare `.mp4` URL on its own line.
+- **No screenshots in a row:** they live in the strip; a row whose check is shown there names it (`see the made-up-id screenshot`).
+
+### Screenshot strip
+
+Thumbnails make the change scannable without a click; GitHub links each to the full-size image.
+
+1. One screenshot per check that has one: failed checks first, then the brief's acceptance criteria in order, then probes.
+2. **Visible:** one table of at most four columns, the first four screenshots. Header cell: `<emoji> <short action → outcome>`, under 25 characters so it does not wrap. Body cell: `<img src="<url>" width="200" alt="<caption>">`. Align columns `:---:`.
+3. **The rest,** directly under it: one closed `<details><summary>+<n> more screenshots</summary>` holding tables of four in the same shape. Never more than the 12 images § Media allows.
+
+| Screenshots | Shown |
+| --- | --- |
+| 1–4 | One visible row |
+| 5–12 | One visible row of four, then `+<n> more screenshots` with rows of four |
+
+```markdown
+<!-- ✓ -->
+| ❌ Made-up id → fetched | ✅ Placed → inline |
+| :---: | :---: |
+| <img src="https://github.com/user-attachments/assets/…" width="200" alt="A request for an unknown id"> | <img src="https://github.com/user-attachments/assets/…" width="200" alt="The chart renders inline"> |
+
+<details><summary>+6 more screenshots</summary>
+
+| ✅ Turn ends → collapse | … |
+| :---: | :---: |
+| <img src="https://github.com/user-attachments/assets/…" width="200" alt="Tool rows collapsed"> | … |
+
+</details>
+
+<!-- ✗ full width: each screenshot is 1,000 px tall -->
+![AC-1](https://github.com/user-attachments/assets/…)
+```
+
+### Details
+
+One closed `<details><summary>Details</summary>` holds the rest, each part a `**bold**` lead-in and omitted when it has nothing to say:
+
+| Part | Holds |
+| --- | --- |
+| **How I tested it** | One paragraph: the environment, how state was set up, and which ways the feature can go right and wrong. Then the PR's impact map, when one exists (§ Impact map) |
+| **Tried to break it** · `<n> probes, nothing broke` / `<k> broke` | One line per probe: what I tried → what happened; or `skipped (<reason>)` |
+| **Fixed during the run** | One line per pushed fix: short SHA, the finding ID it fixed (`F-n`), what changed for the user |
+| **Telemetry** · `<verdict>` | One line per journey, e.g. `Save: POST /api/views 201 → views-service PUT (21 ms) → postgres INSERT (4 ms)`; or `not reviewed (<reason>)` |
+| **Notes** | Not-defects, `medium`/`low` and out-of-scope findings (`Outside this PR:`), one line each |
+| **Run details** | The traceability table `ID \| Criterion \| Result \| Witness` (text only); the region's status lines (`ui-verify`: its `rules/runner.md` § Step 5a); URL, driver, `recordings: not attached (<reason>)` when the region holds none, and the re-run command |
+
+### Impact map
+
+Reuse the PR's impact map; never draw one per run.
+Look for the `<!-- impact-map:v1 -->` region in the PR body, then a comment starting with it.
+Found → copy its `<picture>` block and add `[Impact map](<link to the body or comment>)` under it.
+None → the line `No impact map on this PR (/impact-map <pr> --body draws one).`
 
 ## Media
 
@@ -100,13 +194,13 @@ https://github.com/user-attachments/assets/…
 3. **Upload in one call**, with a caption per file:
 
    ```text
-   Skill("attach-media", "<pr-url> <path>#EC-9: failed save keeps the name <path>#Spec-1: rename a view --to urls")
+   Skill("attach-media", "<pr-url> <path>#A failed save keeps the name <path>#Rename a view --to urls")
    ```
 
    `attach-media` opens every image before upload and skips one that shows a secret or personal data; it re-encodes a video over 10 MB and skips what still does not fit.
-4. **Embed** each returned URL once, in its spec's section (§ Layout). A recording that covers several specs gets its own section naming them.
-5. A file `attach-media` skipped or could not upload → its section says `not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
-6. **Recordings are never silently missing.** When the region holds no recording, say why on its own line under **What was tested**: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
+4. **Embed** each returned URL once: a screenshot in the strip (§ Screenshot strip), a recording in its check row; a recording that covers several checks goes in the first of them, and the others name it.
+5. A file `attach-media` skipped or could not upload → its check row says `screenshot not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
+6. **Recordings are never silently missing.** When the region holds no recording, **Run details** says why: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
 
 ## Write the region
 
@@ -123,7 +217,9 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
-- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`), and take the newest comment starting with the marker whose author matches `mcp__github__get_me` (normalized as above), run the script with `--dry-run --existing <its body>`, and write its stdout with `mcp__github__update_issue_comment`; when no comment matches or the viewer is unknown, run `--dry-run` without `--existing` and write it with `mcp__github__add_issue_comment`.
+- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the newest comment starting with the marker whose author is an app, has `author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`, or is `mcp__github__get_me`. Run the script with `--dry-run --existing <its body> --head <the PR's head SHA>` and write its stdout with `mcp__github__update_issue_comment`; when that update is refused as forbidden, post the same stdout with `mcp__github__add_issue_comment`, so the other regions and the history carry over. When no comment qualifies, run `--dry-run --head <sha>` without `--existing` and post it with `mcp__github__add_issue_comment`.
+  With `--existing`, also pass `--notice-out <run dir>/notice.md --comment-url <that comment's html_url>`; after a successful update, when `notice.md` exists, post its contents with `mcp__github__add_issue_comment`, because an edit notifies nobody; after a refused update, post no notice, as the script's own fallback does, because the new comment already notifies.
+  The `gh` path needs neither flag: the script posts the notice itself.
 - **Script not found** (`aw-verify` not installed) → `comment: not posted (aw-verify not installed)`.
 - Write after the fix loop pushed, so the region describes the final head SHA.
 

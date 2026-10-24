@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 // verify-comment.mjs — upsert one region of the PR's single verify comment.
 //
-// The comment's first line is `<!-- verify:report -->`. Each witness owns one region:
+// One comment per PR, whoever's account posts it. Its first line is `<!-- verify:report -->`.
+// Each witness owns one region:
 //   <!-- verify:section=<name> --> … <!-- /verify:section=<name> -->
 // Sections: aggregate (aw-verify), ui (ui-verify), telemetry (telemetry-verify).
+// The script owns a last region, <!-- verify:history -->: a collapsed "Previous runs" list it
+// appends to whenever a region is replaced. It also stamps `{{UPDATED}}`, folds a region on an
+// older commit than the PR head, adds the blank lines GitHub needs inside <details>, and posts a
+// one-line notice comment when a re-run changes a verdict (an edit alone notifies nobody).
 //
 // Usage:
 //   node verify-comment.mjs --pr <n|url> --section <name> --file <region.md> [--repo <owner/name>] [--replace-all]
-//   node verify-comment.mjs --section <name> --file <region.md> --existing <body.md|-> --dry-run [--replace-all]
+//   node verify-comment.mjs --section <name> --file <region.md> --existing <body.md|-> --dry-run [--replace-all] [--head <sha>]
+//     [--notice-out <file> --comment-url <url>]
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
 // --dry-run prints the merged body instead of writing it (the MCP access path writes it itself).
+// --notice-out writes the verdict-change notice (linking --comment-url) to <file> when there is
+// one, and removes a stale <file> when there is none; the MCP access path posts it itself.
 // Exit codes: 0 written or printed; 1 refused (local path or bad input); 2 GitHub call failed.
 
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
@@ -23,7 +31,30 @@ export const MARKER = "<!-- verify:report -->";
 export const SECTIONS = ["aggregate", "ui", "telemetry"];
 const open = (s) => `<!-- verify:section=${s} -->`;
 const close = (s) => `<!-- /verify:section=${s} -->`;
-const HEADER = `${MARKER}\n## Verify\n\n<sub>One comment per PR: each verify skill updates its own section below.</sub>`;
+const HISTORY = "verify:history";
+const HISTORY_CAP = 10;
+const STALE = "<!-- verify:stale -->";
+export const NOTICE = "<!-- verify:notice -->";
+const VERDICTS = ["✅", "⚠️", "❌", "⛔", "⏭️"];
+const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
+// A login, normalized: lowercase, one trailing `[bot]` stripped.
+export const normLogin = (l) => String(l || "").toLowerCase().replace(/\[bot\]$/, "");
+const HEX = /`([0-9a-f]{7,40})`/;
+// A region's commit: the hex on its `<sub>` metadata line, else a `head \`<hex>\`` line, else the
+// first backticked hex (a legacy headline), so a backticked number in the summary is never read as one.
+const shaOf = (region) => (region.split("\n").find((l) => l.includes("<sub>") && HEX.test(l))?.match(HEX)
+  ?? region.match(/\bhead `([0-9a-f]{7,40})`/) ?? region.match(HEX))?.[1]?.slice(0, 7) ?? null;
+const headlineOf = (region) => (region.split("\n").find((l) => l.trim() && !l.includes(STALE)) || "");
+// The verdict glyph of a region's headline, or null when it carries none.
+export const verdictOf = (region) => VERDICTS.find((v) => headlineOf(region).includes(v)) ?? null;
+
+// GitHub renders Markdown inside <details> only with a blank line after </summary> and before
+// </details>; an agent that forgets them shows the reviewer raw Markdown. Add them here.
+export function normalize(content) {
+  return content
+    .replace(/<\/summary>[ \t]*\n?(?!\n)/g, "</summary>\n\n")
+    .replace(/([^\n])\n?<\/details>/g, "$1\n\n</details>");
+}
 
 // A path a reviewer cannot open: a file:// URL, the run's scratch dirs, a file under a home dir,
 // or a temp dir. An HTTP route such as `GET /home/feed` or `PUT /home/settings.json` is not one:
@@ -51,24 +82,71 @@ export function parseRegions(body) {
   for (const s of SECTIONS) {
     const start = body.indexOf(open(s));
     const end = body.indexOf(close(s));
-    if (start !== -1 && end > start) regions.set(s, body.slice(start + open(s).length, end).trim());
+    if (start !== -1 && end > start) regions.set(s, body.slice(start + open(s).length, end).split("\n").filter((l) => !l.includes(STALE)).join("\n").trim());
   }
   if (regions.size === 0) {
-    const legacy = body.slice(MARKER.length).trim();
+    const legacy = body.slice(MARKER.length).split(`<!-- ${HISTORY} -->`)[0].trim();
     if (legacy) regions.set("aggregate", legacy);
   }
   return regions;
 }
 
-export function splice(existing, section, content, { replaceAll = false } = {}) {
+// The "Previous runs" entries in an existing body, newest first.
+export function parseHistory(body) {
+  const start = (body || "").indexOf(`<!-- ${HISTORY} -->`);
+  const end = (body || "").indexOf(`<!-- /${HISTORY} -->`);
+  if (start === -1 || end < start) return [];
+  return body.slice(start, end).split("\n").filter((l) => l.startsWith("- ")).map((l) => l.slice(2));
+}
+
+// One history line for a region being replaced: its head SHA (the first backticked hex), the
+// section, and its headline (the first non-empty line, Markdown heading and emphasis stripped).
+export function historyEntry(section, region, date) {
+  const sha = shaOf(region);
+  const headline = headlineOf(region).replace(/^#+\s*/, "").replace(/\*\*/g, "").replace(/<[^>]+>/g, "")
+    .replace(/`[0-9a-f]{7,40}`/g, "").replace(/(\s*·\s*)+/g, " · ").replace(/^ · | · $/g, "").trim();
+  return [sha ? `\`${sha}\`` : null, section, headline, `replaced ${date}`].filter(Boolean).join(" · ");
+}
+
+export function splice(existing, section, content, { replaceAll = false, now = new Date(), head = null } = {}) {
   if (!SECTIONS.includes(section)) throw new Error(`unknown section "${section}" (expected ${SECTIONS.join(", ")})`);
-  if (content.includes(MARKER) || content.includes("verify:section=")) throw new Error("refused: the region holds a verify marker of its own");
+  if (/verify:(report|section=|history|stale|notice)/.test(content)) throw new Error("refused: the region holds a verify marker of its own");
   const bad = localPathLine(content);
   if (bad) throw new Error(`refused: the region holds a local path a reviewer cannot open: ${bad.trim()}`);
-  const regions = replaceAll ? new Map() : parseRegions(existing);
-  regions.set(section, content.trim());
-  const parts = SECTIONS.filter((s) => regions.has(s)).map((s) => `${open(s)}\n${regions.get(s)}\n${close(s)}`);
-  return `${HEADER}\n\n${parts.join("\n\n")}\n`;
+  const date = now.toISOString().slice(0, 16).replace("T", " ") + " UTC";
+  const fresh = normalize(content.replaceAll("{{UPDATED}}", date)).trim();
+  const old = parseRegions(existing);
+  const regions = replaceAll ? new Map() : new Map(old);
+  regions.set(section, fresh);
+  const replaced = [...old].filter(([s, r]) => regions.get(s) !== r).map(([s, r]) => historyEntry(s, r, date));
+  const history = [...replaced, ...parseHistory(existing)].slice(0, HISTORY_CAP);
+  // A region on another commit than the PR head is older: fold it to one closed row, so a stale
+  // ✅ never reads as the current verdict. Without a known head, the region just written is newest
+  // (a late run on an older commit can then mislabel, which is why upsert passes the real head).
+  const newest = head ? head.slice(0, 7) : shaOf(fresh);
+  const parts = SECTIONS.filter((s) => regions.has(s)).map((s) => {
+    const r = regions.get(s);
+    const stale = newest && shaOf(r) && shaOf(r) !== newest && (head || s !== section);
+    if (!stale) return `${open(s)}\n${r}\n${close(s)}`;
+    // The wrapper lines carry STALE, so parseRegions drops them on the next read.
+    const headline = headlineOf(r).replace(/^#+\s*/, "").replace(/<[^>]+>/g, "").replace(/`([^`]*)`/g, "<code>$1</code>");
+    return `${open(s)}\n${STALE}<details><summary>Older run on <code>${shaOf(r)}</code>: ${headline}</summary>\n\n${r}\n\n</details>${STALE}\n${close(s)}`;
+  });
+  if (history.length) parts.push(`<!-- ${HISTORY} -->\n<details><summary>Previous runs (${history.length})</summary>\n\nEarlier full reports are in this comment's edit history.\n\n${history.map((h) => `- ${h}`).join("\n")}\n\n</details>\n<!-- /${HISTORY} -->`);
+  return `${MARKER}\n\n${parts.join("\n\n")}\n`;
+}
+
+// The one-line comment a run posts when it changes the verdict a reader saw last: the section's
+// own previous verdict, else the comment's first region (a first `ui` run under a ✅ aggregate). Or null.
+export function flipNotice(existing, section, written, url, head = null) {
+  const now = parseRegions(written).get(section);
+  if (head && shaOf(now ?? "") !== head.slice(0, 7)) return null;
+  const prior = parseRegions(existing);
+  const before = prior.get(section) ?? [...prior.values()][0];
+  const was = before && verdictOf(before);
+  const is = now && verdictOf(now);
+  if (!was || !is || was === is) return null;
+  return `${NOTICE}\nVerify re-ran on \`${shaOf(now) ?? "?"}\`: ${was} → ${is}. [See the report](${url})`;
 }
 
 function gh(args, input) {
@@ -77,34 +155,45 @@ function gh(args, input) {
   return r.stdout.trim();
 }
 
-// The viewer's login, normalized: lowercase, one trailing `[bot]` stripped. GraphQL `viewer`, never
-// `/user`, which 401s or 403s under an App or Actions token. Empty when it cannot be read.
-export const normLogin = (l) => String(l || "").toLowerCase().replace(/\[bot\]$/, "");
-function viewerLogin(run) {
-  try { return normLogin(run(["api", "graphql", "-f", "query={ viewer { login } }", "--jq", ".data.viewer.login"])); }
-  catch { return ""; }
-}
-
-// Edit the viewer's own newest verify comment, else post a new one. Select by author, never by
-// "GitHub accepted the edit": a write-access token can edit anyone's comment. An unknown viewer
-// posts a new comment rather than risk overwriting another author's. `run` is injectable for --self-test.
+// Edit the PR's newest verify comment, whoever wrote it, else post a new one: one PR, one
+// comment, even when the same person runs verify from Agent0 (a bot account) and from a local
+// session (their own). The replaced run stays in the comment's history region. A comment the
+// token may not edit (HTTP 403 / 404) gets a new comment instead. `run` is injectable for --self-test.
 export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
   const prNumber = String(pr).match(/(\d+)\/?$/)?.[1];
   if (!prNumber) throw new Error(`cannot read a PR number from "${pr}"`);
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
     || run(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
-  const me = viewerLogin(run);
-  const own = me ? run(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
-    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, .user.login, (.body | @base64)] | @tsv`])
+  let me = "";
+  try { me = normLogin(run(["api", "graphql", "-f", "query={ viewer { login } }", "--jq", ".data.viewer.login"])); } catch { me = ""; }
+  const found = run(["api", `repos/${slug}/issues/${prNumber}/comments`, "--paginate", "--jq",
+    `.[] | select(.body | startswith("${MARKER}")) | [.id, .created_at, .author_association, .user.type, .user.login, (.body | @base64)] | @tsv`])
     .split("\n").filter(Boolean).map((l) => l.split("\t"))
-    .filter(([, , login]) => normLogin(login) === me)
-    .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia))) : [];
-  if (own.length) {
-    const [id, , , b64] = own[0];
-    const body = splice(Buffer.from(b64, "base64").toString("utf8"), section, content, { replaceAll });
-    return run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
+    // Only a comment someone with access to the repo wrote, an app, or the viewer (a fork author
+    // re-running on their own PR): a drive-by commenter's fake ✅ must never become the verify comment.
+    .filter(([, , assoc, type, login]) => TRUSTED.includes(assoc) || type === "Bot" || (me && normLogin(login) === me))
+    .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
+  let head = null;
+  try { head = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", ".head.sha"]) || null; } catch { head = null; }
+  let existing = "";
+  if (found.length) {
+    const [id, , , , , b64] = found[0];
+    existing = Buffer.from(b64, "base64").toString("utf8");
+    const body = splice(existing, section, content, { replaceAll, head });
+    try {
+      const url = run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
+      const notice = flipNotice(existing, section, body, url, head);
+      if (notice) {
+        try { run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: notice })); }
+        catch (e) { console.error(`verify-comment: verdict-change notice not posted: ${e.message}`); }
+      }
+      return url;
+    } catch (e) {
+      if (!/HTTP 40[34]/.test(e.message)) throw e;
+    }
   }
-  const body = splice("", section, content, { replaceAll });
+  // A comment we may not edit hands its regions and history to the new one.
+  const body = splice(existing, section, content, { replaceAll, head });
   return run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
 }
 
@@ -140,28 +229,87 @@ function selfTest() {
     "GET /home/hero.png → 200", "PUT /home/settings.json → 200", "DELETE /tmp/cache 204"]) {
     assert(!localPathLine(ok), `a URL or HTTP route is allowed: ${ok}`);
   }
-  // upsert against a fake gh: comments are [id, created_at, login, body]; every PATCH succeeds, as for a write-access token.
+  // History: a replaced region leaves one line (sha · section · headline), newest first, capped.
+  const t = new Date("2026-03-01T10:00:00Z");
+  const r1 = splice("", "aggregate", "## ✅ Verified — saves work\n\n<sub>`abc1234` · preview</sub>", { now: t });
+  assert(parseHistory(r1).length === 0 && !r1.includes("Previous runs"), "a first run has no history");
+  const r2 = splice(r1, "aggregate", "## ❌ Not verified — save fails\n\n<sub>`def5678` · preview</sub>", { replaceAll: true, now: t });
+  assert(parseHistory(r2)[0] === "`abc1234` · aggregate · ✅ Verified — saves work · replaced 2026-03-01 10:00 UTC", `a replaced run is recorded: ${parseHistory(r2)[0]}`);
+  assert(parseRegions(r2).get("aggregate").includes("def5678") && !parseRegions(r2).get("aggregate").includes("abc1234"), "the history never leaks into a region");
+  const r3 = splice(splice(r2, "ui", "**ui-verify** · head `1111111`", { now: t }), "aggregate", "## ✅ again `2222222`", { replaceAll: true, now: t });
+  const h3 = parseHistory(r3);
+  assert(h3.length === 3 && h3[0].includes("aggregate") && h3.some((h) => h.includes("ui ·")) && h3[2].includes("abc1234"), "a replace-all records every dropped region, newest first");
+  const legacyHead = splice(`${MARKER}\n\n${open("aggregate")}\n### aw-verify · preview · \`076fafc348\` · ✅ verified\n${close("aggregate")}`, "aggregate", "x", { now: t });
+  assert(parseHistory(legacyHead)[0] === "`076fafc` · aggregate · aw-verify · preview · ✅ verified · replaced 2026-03-01 10:00 UTC", `a SHA in the old headline is not repeated: ${parseHistory(legacyHead)[0]}`);
+  assert(splice(r3, "aggregate", "## ✅ again `2222222`", { replaceAll: true }) .includes("Previous runs (3)"), "an unchanged region adds no history line");
+  let body = r1;
+  for (let i = 0; i < 14; i++) body = splice(body, "aggregate", `## run ${i} \`${String(i).padStart(7, "0")}\``, { now: t });
+  assert(parseHistory(body).length === 10, "history is capped at 10");
+  let hist = false; try { splice("", "ui", "<!-- verify:history -->"); } catch { hist = true; }
+  assert(hist, "a region that carries the history marker is refused");
+  assert(r2.startsWith(`${MARKER}\n\n<!-- verify:section=aggregate -->`), "the comment opens straight into the first region: no generic header");
+  // Blank lines inside <details>, the {{UPDATED}} stamp, stale marks, and the verdict-change notice.
+  const tight = parseRegions(splice("", "ui", "<details><summary>✅ x</summary>\nbody\n</details>\n<details><summary>y</summary>\n\nok\n\n</details>")).get("ui");
+  assert(tight === "<details><summary>✅ x</summary>\n\nbody\n\n</details>\n<details><summary>y</summary>\n\nok\n\n</details>", `blank lines are added inside <details>, and only where missing: ${JSON.stringify(tight)}`);
+  assert(parseRegions(splice("", "ui", "updated {{UPDATED}}", { now: t })).get("ui") === "updated 2026-03-01 10:00 UTC", "the script stamps {{UPDATED}}");
+  const agg1 = splice("", "aggregate", "## ✅ Verified — x\n\n<sub>`aaaaaaa`</sub>", { now: t });
+  const withUi = splice(agg1, "ui", "### ❌ Not verified — y\n\n<sub>`bbbbbbb`</sub>", { now: t });
+  assert(withUi.includes("<details><summary>Older run on <code>aaaaaaa</code>: ✅ Verified — x</summary>") && parseRegions(withUi).get("aggregate") === "## ✅ Verified — x\n\n<sub>`aaaaaaa`</sub>", "a region on an older commit folds to one closed line, and the fold never becomes part of the region");
+  const same = splice(agg1, "ui", "### ✅ y\n\n<sub>`aaaaaaa`</sub>", { now: t });
+  assert(!same.includes("Older run"), "regions on the same commit are not marked");
+  assert(!splice(withUi, "aggregate", "## ✅ again `bbbbbbb`", { replaceAll: true }).includes("Older run"), "an aggregate rewrite clears the mark");
+  assert(flipNotice(agg1, "aggregate", splice(agg1, "aggregate", "## ❌ Not verified `ccccccc`"), "https://x/9") === `${NOTICE}\nVerify re-ran on \`ccccccc\`: ✅ → ❌. [See the report](https://x/9)`, "a verdict change yields a one-line notice");
+  assert(flipNotice(agg1, "aggregate", splice(agg1, "aggregate", "## ✅ Verified `ccccccc`"), "u") === null && flipNotice("", "aggregate", agg1, "u") === null, "no notice without a change, or on a first run");
+  assert(flipNotice(agg1, "ui", withUi, "u")?.includes("✅ → ❌"), "a first ui run that turns a ✅ comment red posts a notice");
+  const late = splice(splice("", "aggregate", "## ✅ new `bbbbbbb`", { now: t }), "ui", "### ❌ old `aaaaaaa`", { now: t, head: "bbbbbbb0000" });
+  assert(late.includes("Older run on <code>aaaaaaa</code>") && !late.includes("Older run on <code>bbbbbbb</code>"), "a late run on an older commit is folded itself; the head region stays open");
+  assert(flipNotice(splice("", "aggregate", "## ✅ new `bbbbbbb`"), "ui", late, "u", "bbbbbbb0000") === null, "a late run on an older commit posts no notice");
+  const numBefore = splice("", "ui", "### ✅ ok\n\n<sub>`bbbbbbb`</sub>", { now: t });
+  const numAfter = splice(numBefore, "ui", "### ❌ Not verified\n\nProcessed `1000000` events.\n\n<sub>`bbbbbbb`</sub>", { now: t, head: "bbbbbbb0000" });
+  assert(!numAfter.includes("Older run") && flipNotice(numBefore, "ui", numAfter, "u", "bbbbbbb0000")?.includes("✅ → ❌"), "a backticked number in the summary is not read as the region's commit");
+  const skipped = splice("", "ui", "### ⏭️ Skipped — no preview\n\n<sub>`bbbbbbb`</sub>", { now: t });
+  assert(flipNotice(skipped, "ui", splice(skipped, "ui", "### ❌ Not verified\n\n<sub>`bbbbbbb`</sub>", { now: t, head: "bbbbbbb" }), "u", "bbbbbbb")?.includes("⏭️ → ❌"), "a skipped run that turns red posts a notice");
+  let stale = false; try { splice("", "ui", "<!-- verify:stale -->x"); } catch { stale = true; }
+  assert(stale, "a region that carries a stale or notice marker is refused");
+  // upsert against a fake gh: comments are [id, created_at, login, body].
   const ghErr = (msg) => Object.assign(new Error(msg), { code: 2 });
-  const fakeGh = (comments, viewer) => {
+  let fakeHead = "";
+  const fakeGh = (comments, patchErr) => {
     const calls = [];
     const run = (a) => {
-      calls.push(a[2] === "PATCH" ? `PATCH ${a[3].split("/").pop()}` : a[1] === "graphql" ? "viewer" : a[2]);
-      if (a[1] === "graphql") { if (viewer instanceof Error) throw viewer; return viewer; }
-      if (a.includes("--paginate")) return comments.map(([id, at, who, b]) => `${id}\t${at}\t${who}\t${Buffer.from(b).toString("base64")}`).join("\n");
-      if (a[2] === "PATCH") return `https://x/${a[3].split("/").pop()}`;
+      calls.push(a[2] === "PATCH" ? `PATCH ${a[3].split("/").pop()}` : a[2]);
+      if (String(a[1]).includes("/pulls/")) return fakeHead;
+      if (a[1] === "graphql") return "me";
+      if (a.includes("--paginate")) return comments.map(([id, at, who, b, assoc = "MEMBER"]) => `${id}\t${at}\t${assoc}\t${who.endsWith("[bot]") ? "Bot" : "User"}\t${who}\t${Buffer.from(b).toString("base64")}`).join("\n");
+      if (a[2] === "PATCH") { if (patchErr) throw patchErr; return `https://x/${a[3].split("/").pop()}`; }
       return "https://x/new";
     };
     return { run, calls };
   };
   const req = { pr: 7, repo: "o/r", section: "ui", content: "UI" };
-  const other = fakeGh([["1", "2026-01-01T00:00:00Z", "teammate", one]], "me");
-  assert(upsert(req, other.run) === "https://x/new" && !other.calls.some((c) => c.startsWith("PATCH")), "another author's comment is never edited, even when GitHub would accept the edit");
-  const own = fakeGh([["2", "2026-01-02T00:00:00Z", "Me", one], ["3", "2026-01-03T00:00:00Z", "teammate", two], ["4", "2026-01-01T00:00:00Z", "me", one]], "me");
-  assert(upsert(req, own.run) === "https://x/2" && !own.calls.includes("POST"), "the viewer's newest comment is edited, matched case-insensitively");
-  const bot = fakeGh([["5", "2026-01-05T00:00:00Z", "github-actions[bot]", one]], "github-actions");
-  assert(upsert(req, bot.run) === "https://x/5", "a bot login matches with its [bot] suffix stripped");
-  const unknown = fakeGh([["6", "2026-01-06T00:00:00Z", "me", one]], ghErr("gh: HTTP 403"));
-  assert(upsert(req, unknown.run) === "https://x/new" && !unknown.calls.some((c) => c.startsWith("PATCH")), "an unknown viewer posts a new comment and edits nothing");
+  const cross = fakeGh([["2", "2026-01-02T00:00:00Z", "dash0-app[bot]", one], ["3", "2026-01-03T00:00:00Z", "mthines", two], ["1", "2026-01-01T00:00:00Z", "me", one]]);
+  assert(upsert(req, cross.run) === "https://x/3" && !cross.calls.includes("POST"), "the PR's newest verify comment is edited, whoever wrote it");
+  const none = fakeGh([]);
+  assert(upsert(req, none.run) === "https://x/new", "no verify comment yet posts one");
+  const denied = fakeGh([["4", "2026-01-04T00:00:00Z", "someone", one]], ghErr("gh: HTTP 403"));
+  assert(upsert(req, denied.run) === "https://x/new" && denied.calls.includes("POST"), "a comment the token may not edit gets a new comment");
+  const drive = fakeGh([["1", "2026-01-01T00:00:00Z", "me", one], ["99", "2026-01-09T00:00:00Z", "stranger", splice("", "aggregate", "## ✅ fake"), "NONE"]]);
+  assert(upsert(req, drive.run) === "https://x/1", "a newer marker comment from someone without repo access is never adopted");
+  const fork = fakeGh([["11", "2026-01-11T00:00:00Z", "Me", one, "CONTRIBUTOR"]]);
+  assert(upsert(req, fork.run) === "https://x/11", "a fork author's own verify comment is reused");
+  const app = fakeGh([["8", "2026-01-08T00:00:00Z", "dash0-app[bot]", one, "NONE"]]);
+  assert(upsert(req, app.run) === "https://x/8", "an app's comment is adopted whatever its association");
+  let posted = "";
+  const keep = fakeGh([["4", "2026-01-04T00:00:00Z", "someone", two]], ghErr("gh: HTTP 403"));
+  const keepRun = (a, input) => { if (a[2] === "POST") posted = JSON.parse(input).body; return keep.run(a, input); };
+  upsert(req, keepRun);
+  assert(parseRegions(posted).has("telemetry"), "the new comment keeps the regions of the one it could not edit");
+  assert(typeof gh === "function", "the real gh runner upsert defaults to exists");
+  const flip = fakeGh([["7", "2026-01-07T00:00:00Z", "me", agg1]]);
+  assert(upsert({ pr: 7, repo: "o/r", section: "aggregate", content: "## ❌ Not verified `ccccccc`", replaceAll: true }, flip.run) === "https://x/7" && flip.calls.join() .endsWith("PATCH 7,POST"), `a verdict change edits, then posts one notice: ${flip.calls}`);
+  const down = fakeGh([["5", "2026-01-05T00:00:00Z", "me", one]], ghErr("gh: HTTP 502"));
+  let rethrown = false; try { upsert(req, down.run); } catch { rethrown = true; }
+  assert(rethrown && !down.calls.includes("POST"), "a GitHub outage fails the write instead of posting a duplicate");
   console.log(`verify-comment self-test: ${n} assertions passed`);
 }
 
@@ -180,7 +328,16 @@ else if (isMain) {
     const replaceAll = has("--replace-all");
     if (has("--dry-run")) {
       const existingPath = opt("--existing");
-      process.stdout.write(splice(existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "", section, content, { replaceAll }));
+      const existing = existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "";
+      const head = opt("--head") ?? null;
+      const body = splice(existing, section, content, { replaceAll, head });
+      const noticeOut = opt("--notice-out");
+      if (noticeOut) {
+        if (!opt("--comment-url")) throw new Error("--notice-out needs --comment-url");
+        const notice = existingPath ? flipNotice(existing, section, body, opt("--comment-url"), head) : null;
+        if (notice) writeFileSync(noticeOut, notice); else rmSync(noticeOut, { force: true });
+      }
+      process.stdout.write(body);
     } else {
       if (!opt("--pr")) throw new Error("--pr is required unless --dry-run");
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll }));
