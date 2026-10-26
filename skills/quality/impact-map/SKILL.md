@@ -116,6 +116,7 @@ impact-map: <pr-url> · <n> decisions · <n> settled
   page:    <artifact-url | local path>
   comment: <comment-url | not posted>
   body:    <updated | not written>
+  pngs:    <rendered | not rendered (no Chrome)>
 ```
 
 Several PRs: one block per PR, bottom of the stack first, then `shared: <risk> — #a, #b` for each risk named in more than one map.
