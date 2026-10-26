@@ -16,6 +16,10 @@ A risk matrix, line-count bars, contract tables, a stack view, and a file-by-fil
 | "Already settled" section | Reviewers re-raising behavior that a test or doc already marks as intended |
 | Verify before writing | Claims written from the diff alone that the code, its permissions, or its tests contradict |
 | Red only for exposure | A color that meant both "decision" and "dangerous caller" |
+| One map per PR in a stack, with `Same gap in #<n>` on shared risks | A stack-wide view that becomes a survey, or per-PR maps that each show half of one contract bug |
+| Workers build with `--dry-run`; the requesting session posts | A worker started before the user consented reads a relayed "post it" as unverified, so posting splits into refusals, blocked posts, and flagged posts |
+| Consent check before the image upload | GitHub user-attachment uploads cannot be deleted, so a post blocked after the upload leaves images on GitHub that nothing links to |
+| PNG render checked when the page is built | Labels spilling out of a box show only in the render; checking only when posting republishes the page late |
 
 ## Research behind it (2025–2026)
 

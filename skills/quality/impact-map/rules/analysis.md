@@ -33,6 +33,7 @@ The output of this file is a list of at most three decisions, at most one "also 
      Never `cd` into another worktree or switch its branch to do this.
 3. Brace every shell variable that touches a path or a `rev:path` spec (`"${SHA}:path"`, never `$SHA:path`): zsh reads `$X:a…` as a history modifier.
 4. Record `HEAD_SHA`, the merge base, and the file count; line links and the footer need all three.
+5. **Check for a stack.** When the base branch is another open PR's head, or `gh pr list --base <headRefName>` returns a PR, name the stack in the Why and diff against the PR's own base, never `main`.
 
 ## Candidates
 
@@ -89,6 +90,8 @@ Checks that turn a candidate into "settled" or "wrong":
 4. Give each decision **≤ 3 linked lines**, each with one question to answer at that line.
    Build the links with `scripts/line-link.mjs` ([`outputs.md § Line links`](./outputs.md#line-links)).
 5. Tag description drift on the decision it belongs to.
+6. **In a stack, link a risk that crosses PRs.** When a decision's risk also exists in another PR of the stack, end its Risk with `Same gap in #<n>.`
+   Two halves of one contract (a server that sends `done` early, a client that waits on `done`) are the same risk.
 
 ## Writing What / Risk / Ask
 
