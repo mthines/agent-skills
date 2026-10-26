@@ -55,6 +55,7 @@ Without either flag in the user's own request, write nothing to GitHub.
 ## Several PRs or a stack
 
 1. **Resolve the PRs.** Under `--stack`, walk down while a PR's base branch is another open PR's head, and up through `gh pr list --base <head>`; order them bottom to top.
+   When a PR has more than one child, map every branch, order by depth and then PR number, and name the fork in each child's Why.
 2. **Map each PR against its own base** (`gh pr diff <n>`), treating the PRs below it as existing code.
    Say the position in the Why: `Second of three stacked PRs (#a → **#b** → #c).`
 3. **Run one worker per PR when you split the work, always with `--dry-run`.**
