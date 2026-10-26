@@ -58,7 +58,8 @@ Without either flag in the user's own request, write nothing to GitHub.
 2. **Map each PR against its own base** (`gh pr diff <n>`), treating the PRs below it as existing code.
    Say the position in the Why: `Second of three stacked PRs (#a → **#b** → #c).`
 3. **Run one worker per PR when you split the work, always with `--dry-run`.**
-   Post from the session that holds the user's request: a worker never sees a consent message the user types after it started, and a relayed "the user asked" is not consent.
+   Each worker returns its `comment.md`, still holding the `{{LIGHT_PNG_URL}}` and `{{DARK_PNG_URL}}` tokens, and its two PNG paths.
+   Post from the session that holds the user's request, running [`outputs.md § Comment and body`](./rules/outputs.md#comment-and-body) steps 0–3 on each worker's files: a worker never sees a consent message the user types after it started, and a relayed "the user asked" is not consent.
 4. **Cross-check after every map is built.** When one risk shows up in more than one PR, keep it a decision in each and end each Risk with `Same gap in #<n>.`
    Then report the shared risks once, under the per-PR report blocks.
 
