@@ -11,6 +11,33 @@ The diagram shows where the change lands; the decisions say what to worry about;
 | Consolidates or removes units | Entry point → now does the work → removed (folded in), plus a "safety net" band for tests/evals | Deleting skills and folding them into callers |
 | Mixed | Use the running-system shape; show removals as dashed struck-through boxes in their column | — |
 
+## Group by service
+
+When the boxes belong to two or more services, stack one full-width band per service, top to bottom in call order, and let the diagram grow taller, never wider.
+
+1. **A service** is a deployable unit: the nearest Nx project, `package.json`, `go.mod`, or `Dockerfile` root above the box's file.
+   Browser and server code in one package are two bands, because the network sits between them.
+2. **Inside a band, flow top to bottom:** one row per layer (callers → composer → logic → API client), each row headed by a `hdr` label, boxes on a 4-column grid (`x` = 20, 235, 450, 665; width 200).
+3. **Label each band** `<SERVICE> · <path>`, plus `· #<n> (context)` when it comes from another PR in the stack.
+   A band with no new or changed box is `band ctx` (dashed, no fill).
+4. **Edges that cross a band edge are network calls.** Keep their lanes clear of other boxes, and label the protocol once (`HTTP`, `gRPC`, `queue`).
+5. **Tests and checks** go in a last `SAFETY NET` band, not inside a service band.
+6. One service: no bands; use the column shapes above.
+
+```text
+✅ RIGHT — bands "UI · components/ui" and "AGENTS · #24159 (context)"; the one HTTP arrow crosses the boundary
+❌ WRONG — columns CALLERS · COMPOSER · THREAD · UI API · AGENTS: layers and services interleaved, the network hop looks like any other arrow
+```
+
+```html
+<g class="band"><rect x="8" y="8" width="884" height="416" rx="6"/></g>
+<text class="band-l" x="20" y="30">UI · components/ui</text>
+<g class="band ctx"><rect x="8" y="440" width="884" height="98" rx="6"/></g>
+<text class="band-l" x="20" y="462">AGENTS · #24159 (context)</text>
+```
+
+Draw bands first, before edges and boxes.
+
 ## Grammar
 
 | Mark | Meaning | CSS class |
