@@ -116,12 +116,9 @@ There is no second, hand-assembled JSON file: every slot the old manual payload 
 
 #### The impact image
 
-Add the impact-map diagram above the findings table when **both** hold:
-
-1. `FINDINGS` is non-empty.
-2. The diff changes how parts connect: it adds, removes, or rewires a component another part calls, or a finding's consequence lands outside the file it anchors in.
-
-Skip it on a docs-only, test-only, or single-file diff, and on a run with no findings. A skipped image costs nothing; the Run table still carries every count.
+Add the impact-map diagram when `context.impactImage.eligible` is `true` — `prepare-review.mjs` decides from the PR's structure, never from findings, so do not re-judge it.
+With findings, its badges are the findings table's row numbers; with none, `impact-map` draws it unbadged and the image sits under the headline.
+Every run states the outcome in Step 5: `impact image added`, `skipped (<context.impactImage.reason>)`, or `failed (<step>: <error>)`.
 
 ```bash
 # 1. Number the findings: a dry run writes the body without posting it.
@@ -140,7 +137,7 @@ jq --arg l "$LIGHT_URL" --arg d "$DARK_URL" --arg a "$ALT" \
   && mv /tmp/ctx.json /tmp/review-context.json
 ```
 
-The row numbers are a pure function of `judgments.json` (blocking, then decisions, then by tier), so the dry run and the real run number the findings identically. Change no judgment between the two runs, or the badges point at the wrong rows. When any step fails, post the report without `IMPACT_IMAGE` and say so in the Step 5 output.
+The row numbers are a pure function of `judgments.json` (blocking, then decisions, then by tier), so the dry run and the real run number the findings identically. Change no judgment between the two runs, or the badges point at the wrong rows. When any step fails, post the report without `IMPACT_IMAGE` and report `failed (<step>: <error>)`.
 
 **Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
 The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is

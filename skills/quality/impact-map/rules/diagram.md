@@ -60,6 +60,7 @@ Title baseline is `y + 19`, subtitle `y + 35` for a 46-tall box (`y + 23` / `y +
 With `--findings <report-body.md>`, the diagram is the picture above a `pr-reviewer` report's findings table, and its badges are that table's row numbers.
 
 1. Read the rows of the first `| | Finding | Where |` table in the file: each row is `| <glyph>&nbsp;**<n>** | **<title>** … | [`<file>:<line>`](<url> "<path>") |`.
+   No table means no findings: draw no badges, drop the badge legend entry, and use the alt `What changes on merge.`.
 2. Run phases 0–2 on the PR as usual, then draw the diagram by the rules above.
    Skip phase 3: the report's table replaces the decisions.
 3. Badge the box each finding's `<path>` belongs to with that row's `<n>`, not ①②③. Several numbers on one box sit side by side along its top edge, 22 apart. A finding with no box gets no badge.

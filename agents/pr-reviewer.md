@@ -768,7 +768,8 @@ API calls. Casualties are logged in the terminal Quality Gate summary for manual
 
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) before writing anything in this
 step.** It owns, in order: **4a** the sticky report (`finalize.mjs` + `render-report.mjs`, the
-pre-write assertions, the sticky-cannot-be-written table); **4b** the review, posted only when
+impact image whenever `context.impactImage.eligible`, the pre-write assertions, the
+sticky-cannot-be-written table); **4b** the review, posted only when
 `INLINE_COMMENTS_JSON` is non-empty; **4c** the unconditional state-record write; **4d** the
 `knowledge` + `hotspot` writes. Payload shapes: [`rules/report-rendering.md`](./pr-reviewer/rules/report-rendering.md).
 The writes fail independently and none cascades.
@@ -780,7 +781,7 @@ The writes fail independently and none cascades.
 After posting:
 
 ```text
-Updated report on PR #<n> — <created | updated | NOT updated (<reason>)> sticky · <posted review with <N> inline comments | no review posted (nothing new inline)> · state record <written | NOT written (<error>)>.
+Updated report on PR #<n> — <created | updated | NOT updated (<reason>)> sticky · <posted review with <N> inline comments | no review posted (nothing new inline)> · impact image <added | skipped (<reason>) | failed (<step>: <error>)> · state record <written | NOT written (<error>)>.
 ```
 
 Name the reason when no review was posted;

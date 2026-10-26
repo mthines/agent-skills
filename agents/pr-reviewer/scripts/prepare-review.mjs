@@ -830,6 +830,21 @@ export function scopePathsFor({ mode, deltaFiles, prFiles }) {
 }
 
 /**
+ * Whether the report carries the impact-map diagram (posting.md § The impact image). Keyed on the
+ * PR's structure, never on findings: the diagram orients the reader, so a wide clean PR earns one
+ * and a one-file PR with findings does not.
+ * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null }} args
+ * @returns {{ eligible: boolean, reason: string }}
+ */
+export function impactImageGate({ fileCount, shapes, band }) {
+  if (fileCount < 2) return { eligible: false, reason: "single-file diff" };
+  if ((shapes || []).includes("test-only")) return { eligible: false, reason: "test-only diff" };
+  if (band === "medium" || band === "high") return { eligible: true, reason: `blast radius ${band}` };
+  if (fileCount >= 8) return { eligible: true, reason: `${fileCount} files changed` };
+  return { eligible: false, reason: `blast radius ${band || "unknown"}, ${fileCount} files` };
+}
+
+/**
  * The context's `deltaLines` — RUN.delta_lines once finalize.mjs builds the report: 0 on zero-delta,
  * and the counted lines otherwise. A zero-delta run skips delta triage, so the count it is handed is
  * still the full-PR total the counter was initialised to, and render-report.mjs rejects a non-zero
@@ -2268,6 +2283,7 @@ async function prepare(opts) {
           blastWhy: (impact.blast_radius?.why || []).slice(0, 5),
         }
       : null,
+    impactImage: impactImageGate({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band }),
     impact: opts.inlinePayloads ? impact : null,
 
     routing,
@@ -2325,6 +2341,15 @@ async function prepare(opts) {
 async function selfTest() {
   const cases = [];
   const t = (name, fn) => cases.push([name, fn]);
+
+  t("impactImageGate keys on structure: wide or high-reach diffs qualify, one-file and test-only never do", () => {
+    const g = impactImageGate;
+    return g({ fileCount: 3, band: "medium" }).eligible
+      && g({ fileCount: 12, band: "none", shapes: ["docs-only"] }).eligible
+      && !g({ fileCount: 1, band: "high" }).eligible
+      && !g({ fileCount: 9, band: "high", shapes: ["test-only"] }).eligible
+      && !g({ fileCount: 3, band: "low" }).eligible;
+  });
 
   // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no
   // dependency-injection seam here, so the offline-feasible test is (1) the
