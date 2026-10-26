@@ -19,6 +19,7 @@ Phases 5–6 of `impact-map`.
    The "also live on merge" item uses `class="decision also"` and no badge.
 4. Render the PNGs ([§ PNGs](#pngs)) and open both, even when nothing will be posted: a label spilling out of its box shows only in the render.
    Fix the page and re-render until both are clean.
+   When `render-png.mjs` exits 2 (no Chrome or Chromium), still publish the page and add `pngs: not rendered (no Chrome)` to the report; `--comment` and `--body` then stop before step 0, because they have no images to post.
 5. Publish with the Artifact tool (title `<Subject> Impact Map`, icon `map`) when the host has it.
    Otherwise write `.agent/{branch}/impact-map/pr-<n>.html` and report the path.
 
