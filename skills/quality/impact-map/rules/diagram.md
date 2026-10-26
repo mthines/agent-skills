@@ -29,14 +29,19 @@ When the boxes belong to two or more services, stack one full-width band per ser
 ❌ WRONG — columns CALLERS · COMPOSER · THREAD · UI API · AGENTS: layers and services interleaved, the network hop looks like any other arrow
 ```
 
+Paint in this order: band rects, edges, band labels and row headers, boxes, badges.
+Labels after edges matter: their halo cuts any edge running behind them, so a lane may pass a label.
+A `band ctx` label also takes `ctx`, so its halo matches the unfilled sheet.
+
 ```html
 <g class="band"><rect x="8" y="8" width="884" height="416" rx="6"/></g>
-<text class="band-l" x="20" y="30">UI · components/ui</text>
 <g class="band ctx"><rect x="8" y="440" width="884" height="98" rx="6"/></g>
-<text class="band-l" x="20" y="462">AGENTS · #24159 (context)</text>
+<!-- edges -->
+<text class="band-l" x="20" y="30">UI · components/ui</text>
+<text class="band-l ctx" x="20" y="462">AGENTS · #24159 (context)</text>
+<text class="hdr" x="20" y="56">CALLERS</text>
+<!-- boxes, then badges -->
 ```
-
-Draw bands first, before edges and boxes.
 
 ## Grammar
 
