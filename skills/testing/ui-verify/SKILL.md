@@ -265,7 +265,7 @@ Follow [`rules/runner.md`](./rules/runner.md). In outline:
 1. **Author only when no block exists.** If the PR body carries `<!-- ui-verify:v2 -->`, `<!-- ui-verify:v1 -->`, or the legacy `<!-- preview-spec:v1 -->`, keep it verbatim. Otherwise run Operation `author`, honouring
    `--no-brainstorm` and `--brainstorm deep` exactly as `author` does; a gate `no` ends with `not verified (no UI files in diff)`, and `author`'s `failed (no GitHub access path)` ends `verify` with that reason.
 2. **Run** Operation `run`, honouring `--env`, `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--no-motion`, `--post-findings`, `--no-comment`, `--wait-preview`, and `--unattended` exactly as `run` does. On the `mcp` path or with a local `specs-path`, no `--url` → `inconclusive: no access path for deployment lookup (pass --url)`.
-3. **Report one combined verdict**: spec authored fresh or reused, the `run` verdict per spec, then the adversarial and telemetry lines. A red verdict is a finding about the PR.
+3. **Report one combined verdict**: spec authored fresh or reused, the `run` verdict per spec, then the adversarial, telemetry, and motion lines. A red verdict is a finding about the PR.
 
 ## Hard rules
 
