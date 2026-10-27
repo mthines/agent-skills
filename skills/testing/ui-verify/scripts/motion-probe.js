@@ -38,7 +38,7 @@
   // Properties the compositor animates without layout or paint.
   const COMPOSITED = new Set(['transform', 'opacity', 'filter', 'translate', 'rotate', 'scale', 'offset', 'offsetDistance', 'offsetPath', 'offsetRotate']);
   const TIMING_KEYS = new Set(['offset', 'computedOffset', 'easing', 'composite']);
-  const MOVEMENT = /^(transform|translate|rotate|scale|top|left|right|bottom|width|height|margin|inset)/;
+  const MOVEMENT = /^(transform|translate|rotate|scale|top|left|right|bottom|inset|margin|((max|min)-?)?(width|height))/i;
 
   const describe = (el) => {
     if (!el || !el.tagName) return String(el);

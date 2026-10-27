@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 // frame": a 600 ms animation at 60 Hz is 36 frames, so 20 events at ≥ 0.3 per
 // frame over the settle window cannot be a one-off state change.
 export const T = { LONG_FRAME_MS: 100, P95_OVER_MEDIAN: 2, CLS_POOR: 0.1, PER_FRAME: 0.3, MIN_EVENTS: 20, MOVING_MIN: 5 };
-const LAYOUT_PROP = /^(width|height|top|left|right|bottom|inset|margin|padding|border-width|font-size|line-height)/i;
+const LAYOUT_PROP = /^((max|min)-?)?(width|height)$|^(top|left|right|bottom|inset|margin|padding|border-?width|font-?size|line-?height)/i;
 
 export function grade(rows) {
   const byId = new Map();
@@ -118,7 +118,13 @@ function selfTest() {
   if (idle.targets[0].status !== "not-exercised") { failed++; console.error("FAIL idle trigger must be not-exercised"); }
   const janky = grade([{ id: "MP-jank", spec: "S", pass: "no-preference", cpu_throttle: 4, frames: 40, skipped_frames: 12, frame_ms: { median: 8.3, p95: 33.2 }, long_animation_frames: [{ duration_ms: 140, scripts: [{ invoker: "FrameRequestCallback" }] }], cls: 0, animations: [{}], moving_animations: [], non_composited: [], style_writes: { moving: 0 }, react: { commits: 0 } }]);
   if (janky.findings.map((f) => f.kind).join() !== "jank") { failed++; console.error("FAIL p95 over 2x median must be jank"); }
-  console.log(failed ? `SELF-TEST ${failed} FAILED` : `SELF-TEST ${checks.length + 2}/${checks.length + 2} PASS`);
+  // getKeyframes() yields camelCase keys (maxHeight); a CSSTransition's transitionProperty is hyphenated (max-height).
+  const anim = { target: "div.acc", kind: "CSSAnimation", name: "open", properties: ["maxHeight"], duration_ms: 300, iterations: 1 };
+  const base = { id: "MP-max", spec: "S", cpu_throttle: 4, frames: 60, skipped_frames: 0, frame_ms: { median: 8.3, p95: 9.2 }, long_animation_frames: [], cls: 0, animations: [anim], non_composited: [anim], moving_animations: [anim], style_writes: { moving: 0, top_targets: [] }, react: { commits: 1 } };
+  const maxH = grade([{ ...base, pass: "no-preference" }, { ...base, pass: "reduce" }]);
+  const maxKinds = maxH.findings.map((f) => f.kind).sort().join(",");
+  if (maxKinds !== "layout-property,reduced-motion-ignored") { failed++; console.error(`FAIL camelCase maxHeight: want "layout-property,reduced-motion-ignored", got "${maxKinds}"`); }
+  console.log(failed ? `SELF-TEST ${failed} FAILED` : `SELF-TEST ${checks.length + 3}/${checks.length + 3} PASS`);
   process.exit(failed ? 1 : 0);
 }
 
