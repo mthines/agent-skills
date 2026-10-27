@@ -1,0 +1,6 @@
+{
+  "PREFIX": "nitpick",
+  "TIER": "low",
+  "BODY": "`userIds` reads clearer than `ids` in this scope.",
+  "SHA": "7389036"
+}

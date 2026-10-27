@@ -1,0 +1,19 @@
+{
+  "PREFIX": "suggestion",
+  "TIER": "medium",
+  "BODY": "Every worker shares one seed, so retries across the pool collide instead of spreading.",
+  "SHA": "7389036",
+  "TITLE": "Backoff jitter is seeded once per process",
+  "PSEUDO": true,
+  "FP": "quality:maintainability:jitter@src/api/backoff.ts",
+  "EVIDENCE": [
+    {
+      "path": "src/api/backoff.ts",
+      "line": 41
+    }
+  ],
+  "FENCE": {
+    "lang": "ts",
+    "code": "const jitter = () => Math.random() * base;"
+  }
+}

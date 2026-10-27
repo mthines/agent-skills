@@ -1,0 +1,1 @@
+[{"finder":"correctness","defect_class":"nil-deref","path":"a.ts","line":10,"claim":"x may be null here","bad_outcome":"crash","evidence":["a.ts:10"],"verify_by":"read"},{"finder":"quality","defect_class":"nil-deref","path":"a.ts","line":10,"claim":"x may be null here","bad_outcome":"crash","evidence":["a.ts:10"],"verify_by":"read"}]

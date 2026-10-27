@@ -1,0 +1,10 @@
+{
+  "PREFIX": "issue",
+  "TIER": "high",
+  "BODY": "This early-return may skip the audit log write.",
+  "SHA": "906a747",
+  "TITLE": "Early return may skip the audit log write",
+  "BLOCKING": true,
+  "FP": "correctness:logic:earlyReturn@src/api/client.ts",
+  "FIX_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20o%2Fr%23205%20rev-bot%20%E2%80%94%20apply%20only%20the%20comment%20at%20src%2Fapi%2Fclient.ts%3A88.&utm_source=pr-reviewer-fix-this"
+}

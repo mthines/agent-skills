@@ -1,0 +1,2 @@
+{"filename":"a.ts","additions":1,"deletions":0,"patch":"@@ -1,1 +1,2 @@\n+x\n y"}
+{"filename":"b.ts","additions":1,"deletions":0,"patch":"@@ -1,1 +1,2 @@\n+y\n z"}

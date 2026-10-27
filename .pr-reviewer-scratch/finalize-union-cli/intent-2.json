@@ -1,0 +1,1 @@
+[{"finder":"intent","defect_class":"intent-mismatch","path":"s.swift","line":40,"symbol":"profileErrors","claim":"the abort line replaces the stored EPERM","bad_outcome":"the banner never fires","evidence":["s.swift:10"],"verify_by":"read"}]

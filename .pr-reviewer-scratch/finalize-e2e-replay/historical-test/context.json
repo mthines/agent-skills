@@ -1,0 +1,61 @@
+{
+  "mode": "full",
+  "headSha": "906a74781990f75607f0234de963fdbbc3953f2c",
+  "deltaLines": 42,
+  "routing": {
+    "tier": "deep"
+  },
+  "workspace": {
+    "depthCapability": "checkout"
+  },
+  "target": {
+    "repo": "o/r",
+    "owner": "o",
+    "name": "r",
+    "number": 205,
+    "url": "https://github.com/o/r/pull/205"
+  },
+  "priorRun": {
+    "stickyCommentId": 555,
+    "stickyUrl": "https://github.com/o/r/pull/205#issuecomment-555",
+    "stickyKind": "sticky"
+  },
+  "files": [
+    {
+      "filename": "src/api/client.ts",
+      "patch": "@@ -85,3 +85,6 @@\n unchanged\n unchanged\n unchanged\n+added one\n+added two\n+added three"
+    }
+  ],
+  "threads": [
+    {
+      "thread_id": "t1",
+      "path": "supabase/functions/memories/handlers/list.ts",
+      "line": 235,
+      "url": "https://github.com/o/r/pull/205#discussion_r1",
+      "root_body": "issue: applyScalarFilter still puts the whole dimension into a PostgREST URL operand, which means a caller passing an array value for a scalar column produces a malformed query string instead of a 400.\n\nSee [the linked doc](https://example.com/doc) for the full write-up.\n\n(blocking)",
+      "author": "cursor",
+      "is_bot": true,
+      "replies": []
+    },
+    {
+      "thread_id": "t2",
+      "path": "src/api/client.ts",
+      "line": 88,
+      "url": "https://github.com/o/r/pull/205#discussion_r2",
+      "root_body": "This early-return path never flushes pending writes before returning, silently dropping buffered log entries whenever the fast-exit branch fires\n\nSee [the retry doc](https://example.com/retry) for more context.",
+      "author": "human-reviewer",
+      "is_bot": false,
+      "replies": []
+    }
+  ],
+  "render": {
+    "at": "2026-09-25T12:00:00Z"
+  },
+  "historical": {
+    "review_sha": "906a74781990f75607f0234de963fdbbc3953f2",
+    "thread_state_as_of": "now",
+    "description_as_of": "now",
+    "ci": "not-read",
+    "live_head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+}

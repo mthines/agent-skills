@@ -1,0 +1,9 @@
+{
+  "PREFIX": "issue",
+  "TIER": "high",
+  "BODY": "This early-return may skip the audit log write.",
+  "SHA": "906a747",
+  "TITLE": "Early return may skip the audit log write",
+  "BLOCKING": true,
+  "FP": "correctness:logic:earlyReturn@src/api/client.ts"
+}

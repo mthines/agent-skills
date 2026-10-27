@@ -1,0 +1,1 @@
+{"head_sha":"abc1234def","candidates":[{"finder":"correctness","defect_class":"nil-deref","path":"a.ts","line":12,"symbol":"foo","claim":"x","bad_outcome":"y","evidence":["e"],"verify_by":"z","verdict":"confirmed","R":90,"A":90,"Ac":90,"final":90,"severity":"medium","prefix":"issue","blocking":false,"title":"Handle the null case","body":"B","materiality":true,"category":"c"}]}

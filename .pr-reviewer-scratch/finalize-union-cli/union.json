@@ -1,0 +1,134 @@
+{
+  "kept": [
+    {
+      "finder": "intent",
+      "defect_class": "intent-mismatch",
+      "path": "s.swift",
+      "line": 40,
+      "symbol": "profileErrors",
+      "claim": "the abort line replaces the stored EPERM",
+      "bad_outcome": "the banner never fires",
+      "evidence": [
+        "s.swift:10"
+      ],
+      "verify_by": "read",
+      "_pass": 1,
+      "_found_in_passes": [
+        1,
+        2
+      ],
+      "_needs_verification": true
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "logic",
+      "path": "s.swift",
+      "line": 2935,
+      "symbol": "storeError",
+      "claim": "the bisync abort line overwrites the stored EPERM error so the macOS banner never fires",
+      "bad_outcome": "the macOS block banner and telemetry never fire on Two-Way profiles",
+      "evidence": [
+        "s.swift:10"
+      ],
+      "verify_by": "read",
+      "_pass": 1,
+      "_semantic_merged": [
+        {
+          "finder": "quality",
+          "defect_class": "edge-case",
+          "line": 2937,
+          "claim": "bisync abort line replaces the stored EPERM error and the macOS banner never fires"
+        }
+      ],
+      "_found_in_passes": [
+        1,
+        2
+      ],
+      "_needs_verification": true
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "logic",
+      "path": "s.swift",
+      "line": 100,
+      "symbol": "a",
+      "claim": "pass one only finding about retries",
+      "bad_outcome": "retries forever",
+      "evidence": [
+        "s.swift:10"
+      ],
+      "verify_by": "read",
+      "_pass": 1,
+      "_found_in_passes": [
+        1
+      ],
+      "_needs_verification": true
+    },
+    {
+      "finder": "correctness",
+      "defect_class": "logic",
+      "path": "s.swift",
+      "line": 200,
+      "symbol": "b",
+      "claim": "pass two only finding about the privacy button",
+      "bad_outcome": "settings never open",
+      "evidence": [
+        "s.swift:10"
+      ],
+      "verify_by": "read",
+      "_pass": 2,
+      "_found_in_passes": [
+        2
+      ],
+      "_needs_verification": true
+    }
+  ],
+  "dropped": [
+    {
+      "finder": "intent",
+      "defect_class": "intent-mismatch",
+      "path": "s.swift",
+      "line": 40,
+      "symbol": "profileErrors",
+      "claim": "the abort line replaces the stored EPERM",
+      "bad_outcome": "the banner never fires",
+      "evidence": [
+        "s.swift:10"
+      ],
+      "verify_by": "read",
+      "_pass": 2,
+      "_dedupe_dropped_for": "intent",
+      "_dedupe_reason": "exact"
+    },
+    {
+      "finder": "quality",
+      "defect_class": "edge-case",
+      "path": "s.swift",
+      "line": 2937,
+      "symbol": "storeError",
+      "claim": "bisync abort line replaces the stored EPERM error and the macOS banner never fires",
+      "bad_outcome": "the macOS block banner never fires on Two-Way profiles",
+      "evidence": [
+        "s.swift:10"
+      ],
+      "verify_by": "read",
+      "_pass": 2,
+      "_dedupe_dropped_for": "correctness",
+      "_dedupe_reason": "semantic"
+    }
+  ],
+  "stats": {
+    "passes": 2,
+    "raised": [
+      3,
+      3
+    ],
+    "kept": 4,
+    "inEveryPass": 2,
+    "onlyIn": [
+      1,
+      1
+    ],
+    "toVerify": 4
+  }
+}

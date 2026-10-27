@@ -1,0 +1,80 @@
+{
+  "VERDICT": "PASS",
+  "SUMMARY": "Makes retry throw on exhaustion.",
+  "MEMORIES_SUMMARY": "no relevance rules or lessons consulted",
+  "QUALITY": "produced 0 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0",
+  "INTEGRATIONS": "none",
+  "STANDARDS_LOG": "skipped",
+  "MEASURABILITY_LOG": "skipped",
+  "SKIPPED_FILES": "none",
+  "RUN": {
+    "mode": "full",
+    "sha": "abc1234",
+    "delta_lines": 0,
+    "at": "2026-10-02T06:00:00Z",
+    "tier": "deep"
+  },
+  "FINDINGS": [],
+  "FAIL_REASONS": [],
+  "WARN_REASONS": [],
+  "OPEN_THREADS": [],
+  "ADDITIONAL_FINDINGS": [],
+  "LOW_CONFIDENCE_FINDINGS": [],
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "x",
+  "GATE_PRIOR_STATUS": "✅",
+  "GATE_PRIOR_DETAILS": "Earlier review comments are resolved.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "x",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "MEMORIES_USED": [],
+  "IMPACT": {
+    "symbols": [
+      {
+        "name": "retry",
+        "path": "src/r.ts",
+        "change": "signature",
+        "consumer_files": 3,
+        "verified_unaffected": 1,
+        "findings": 0,
+        "consumers": [
+          {
+            "path": "src/a.ts",
+            "status": "verified"
+          },
+          {
+            "path": "src/b.ts",
+            "status": "untraced"
+          }
+        ]
+      }
+    ],
+    "dependencies": [
+      {
+        "name": "stripe",
+        "from": "14.2.0",
+        "to": "16.0.1",
+        "delta": "major",
+        "usage_sites": 2,
+        "checked_sites": 0
+      }
+    ],
+    "dependencies_omitted": 1,
+    "overlaps": [
+      {
+        "pr": 212,
+        "author": "alice",
+        "path": "src/r.ts",
+        "symbol": "retry",
+        "url": "https://github.com/o/r/pull/212"
+      }
+    ]
+  },
+  "COVERAGE": {
+    "files_read": 2,
+    "files_total": 3
+  }
+}
