@@ -50,11 +50,11 @@ Strict order so dedup is deterministic:
 
 Run the deterministic detector against the full PR's patches in every run mode, never the incremental delta; never decide from file names or by reading the diff yourself.
 Motion anywhere in the PR loads the lens, so an incremental run never loses it.
-Read the patches from `context.paths.files` (the `prepare-review.mjs` sidecar, one JSON object per line), else `/tmp/pr-files.json` when this run did its own Step 1.2 fetch.
+Read the patches from that context's `paths.files` (the `prepare-review.mjs` sidecar, one JSON object per line); `/tmp/pr-files.json` is the fallback only for a run with no context file at all.
 `<animations>` is the installed skill directory: `$HOME/.claude/skills/animations`, or `$AGENT_SKILLS_ROOT/skills/animations` on Agent0 ([`agent0-host.md`](./agent0-host.md)).
 
 ```bash
-CONTEXT="<the --context path this run received, or empty>"   # review-context.json from prepare-review.mjs
+CONTEXT="<the context.json this run reads: the --context path, or the ctx.json Step 1.1 prepared>"   # review-context.json from prepare-review.mjs
 PR_FILES=$(jq -r '.paths.files // empty' "$CONTEXT" 2>/dev/null); PR_FILES=${PR_FILES:-/tmp/pr-files.json}
 if OUT=$(node "<animations>/scripts/is-motion-diff.mjs" --patches-json "$PR_FILES"); then
   MOTION_FILES=$(head -1 <<< "$OUT")   # JSON: the files the lens walks
