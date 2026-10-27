@@ -54,7 +54,7 @@ Read the patches from `context.paths.files` (the `prepare-review.mjs` sidecar, o
 `<animations>` is the installed skill directory: `$HOME/.claude/skills/animations`, or `$AGENT_SKILLS_ROOT/skills/animations` on Agent0 ([`agent0-host.md`](./agent0-host.md)).
 
 ```bash
-# $CONTEXT is review-context.json from prepare-review.mjs
+CONTEXT="<the --context path this run received, or empty>"   # review-context.json from prepare-review.mjs
 PR_FILES=$(jq -r '.paths.files // empty' "$CONTEXT" 2>/dev/null); PR_FILES=${PR_FILES:-/tmp/pr-files.json}
 if OUT=$(node "<animations>/scripts/is-motion-diff.mjs" --patches-json "$PR_FILES"); then
   MOTION_FILES=$(head -1 <<< "$OUT")   # JSON: the files the lens walks
