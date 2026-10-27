@@ -289,8 +289,10 @@ Load on demand — do not preload.
 - **`/screencast`** — multi-frame interactions cannot be proven from
   a still. Invoke for any Critical / High finding that depends on timing.
 - **`pr-reviewer` and `ui-verify`** — both run
-  `node ${CLAUDE_SKILL_DIR}/scripts/is-motion-diff.mjs --base <ref>` and,
-  on `MOTION_DIFF: yes`, load only [`lens.md`](./lens.md) (review) or
+  `node ${CLAUDE_SKILL_DIR}/scripts/is-motion-diff.mjs`:
+  `pr-reviewer` passes `--patches-json <PR files>`, and `ui-verify` pipes
+  `gh pr diff` into it (`--base <ref>` only for a local run).
+  On `MOTION_DIFF: yes` they load only [`lens.md`](./lens.md) (review) or
   `ui-verify`'s motion profile (browser measurement), never this file.
 
 ## Definition of Done
