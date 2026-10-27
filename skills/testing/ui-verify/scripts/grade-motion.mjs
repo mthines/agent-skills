@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 // frame": a 600 ms animation at 60 Hz is 36 frames, so 20 events at ≥ 0.3 per
 // frame over the settle window cannot be a one-off state change.
 export const T = { LONG_FRAME_MS: 100, P95_OVER_MEDIAN: 2, CLS_POOR: 0.1, PER_FRAME: 0.3, MIN_EVENTS: 20, MOVING_MIN: 5 };
-const LAYOUT_PROP = /^((max|min)-?)?(width|height)$|^(top|left|right|bottom|inset|margin|padding|border-?width|font-?size|line-?height)/i;
+const LAYOUT_PROP = /^((max|min)-?)?(width|height|block-?size|inline-?size)$|^(top|left|right|bottom|inset|margin|padding|border-?width|font-?size|line-?height)/i;
 
 export function grade(rows) {
   const byId = new Map();
