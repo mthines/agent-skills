@@ -9,7 +9,7 @@ tags:
 
 # Rubric composition
 
-`pr-reviewer` loads multiple review rubrics: `quality` (always for substantive diffs — the inline checklist under [Load order](#load-order)), `ux` (UI files), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
+`pr-reviewer` loads multiple review rubrics: `quality` (always for substantive diffs — the inline checklist under [Load order](#load-order)), `ux` (UI files), the `animations` lens (diffs that add motion), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 
@@ -41,9 +41,33 @@ Strict order so dedup is deterministic:
    - **Approach:** is there a materially simpler approach or an existing utility that does this?
      Flag it as a `suggestion:` naming the simpler approach or the utility's `path:line`; never flag a matter of taste.
 2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
-3. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
+3. `animations` lens — only when the motion gate below prints `MOTION_DIFF: yes`.
+4. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
    `--no-critical` suppresses the config and the heuristic.
-4. `--with` lenses (max 3, in the order given on the command line).
+5. `--with` lenses (max 3, in the order given on the command line); `--with animations` is a no-op when step 3 loaded it.
+
+### The motion gate (step 3)
+
+Run the deterministic detector against `REVIEW_DIFF`'s patches; never decide from file names or by reading the diff yourself.
+`<animations>` is the installed skill directory: `$HOME/.claude/skills/animations`, or `$AGENT_SKILLS_ROOT/skills/animations` on Agent0 ([`agent0-host.md`](./agent0-host.md)).
+
+```bash
+# full mode: /tmp/pr-files.json; incremental: /tmp/pr-delta.json
+node "<animations>/scripts/is-motion-diff.mjs" --patches-json /tmp/pr-files.json | tail -1
+```
+
+| Output | Do |
+| --- | --- |
+| `MOTION_DIFF: yes` | Read `<animations>/lens.md` — that file only, never the skill's `SKILL.md` or `rules/` — and walk its checklist against the files the detector's JSON lists. Announce `Auto-loading animations lens: <n> files with motion.` |
+| `MOTION_DIFF: no` | Load nothing; announce nothing. |
+| script or `lens.md` absent, or exit 2 | Skip the lens and announce `animations lens: skipped (<reason>)`. A motion diff reviewed without it is a smaller review, not a wrong one. |
+
+```text
+✅ RIGHT — the detector prints MOTION_DIFF: yes for `+ transition: width 300ms` → read lens.md, flag the layout-property animation.
+❌ WRONG — reading animations/SKILL.md "for context", or loading the lens because a file is named Modal.tsx.
+```
+
+The lens's findings are tagged `[lens:animations]` and follow the `any lens` severity mapping below.
 
 ## Auto-engage heuristics for `critical`
 

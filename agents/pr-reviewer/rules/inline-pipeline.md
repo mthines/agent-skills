@@ -62,9 +62,10 @@ Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
 1. Load the `quality` checklist (always, unless `REVIEW_DIFF` is trivial).
 2. Load `ux` (UI globs — against `REVIEW_DIFF`).
-3. Load `critical` (`--critical`, `context.reviewConfig.critical: always`, or auto-engage heuristic).
-4. Load `--with` lenses (max 3).
-5. Walk each rubric against `REVIEW_DIFF`. Each rubric emits raw findings.
+3. Load the `animations` lens only when `is-motion-diff.mjs` prints `MOTION_DIFF: yes` ([`rubric-composition.md` § The motion gate](../../shared/rules/rubric-composition.md#the-motion-gate-step-3)).
+4. Load `critical` (`--critical`, `context.reviewConfig.critical: always`, or auto-engage heuristic).
+5. Load `--with` lenses (max 3).
+6. Walk each rubric against `REVIEW_DIFF`. Each rubric emits raw findings.
 
 **Independent finders (Phase D)** — run these alongside the rubrics.
 See [`agents/pr-reviewer/rules/finders.md`](./finders.md) for the polarity rule,

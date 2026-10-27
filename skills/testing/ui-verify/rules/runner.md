@@ -22,6 +22,7 @@ The runner is an **on-demand orchestrator** — it resolves once, dispatches the
 - [Step 4: Select the driver and run](#step-4-select-the-driver-and-run)
 - [Step 4b: Adversarial pass — try to break it](#step-4b-adversarial-pass--try-to-break-it)
 - [Step 4c: Telemetry — `telemetry-verify` on each window](#step-4c-telemetry--telemetry-verify-on-each-window)
+- [Step 4d: Motion profile — only when the diff adds motion](#step-4d-motion-profile--only-when-the-diff-adds-motion)
 - [Step 5: Report the verdict](#step-5-report-the-verdict)
 - [Step 5a: Post the `ui` region](#step-5a-post-the-ui-region)
 - [Step 5b: Post findings (under `--post-findings`)](#step-5b-post-findings-under---post-findings)
@@ -238,6 +239,40 @@ The browser proved what the user sees; `telemetry-verify` proves what the servic
 A reply with no `TELEMETRY` block is `telemetry: not run (<first line of the reply>)`.
 `telemetry-verify` owns the server, the ingest wait, the oracles, and the skip reasons; never query telemetry from this runner.
 
+## Step 4d: Motion profile — only when the diff adds motion
+
+Run the `animations` skill's detector on the change (`<animations>` is `$HOME/.claude/skills/animations`, or `$AGENT_SKILLS_ROOT/skills/animations` on Agent0):
+
+```bash
+gh pr diff <pr> | node "<animations>/scripts/is-motion-diff.mjs"          # a PR
+node "<animations>/scripts/is-motion-diff.mjs" --base "$(git merge-base origin/HEAD HEAD)"   # a local specs-path run
+```
+
+On `MOTION_DIFF: no`, record `motion: skipped (no motion in the diff)` and go to Step 5 **without reading [`motion-profile.md`](./motion-profile.md)** — the rule costs nothing on a diff without motion.
+Also skip with its line when `--no-motion` was passed (`motion: skipped (--no-motion)`), no spec passed (`motion: skipped (no passing spec to profile)`), the run already stopped, or the detector is absent (`motion: skipped (animations skill not installed)`).
+
+On `MOTION_DIFF: yes`, start it **after Step 4b returns**, never alongside it — a parallel browser skews the frame times it measures.
+**Driver `chrome`** — follow [`motion-profile.md`](./motion-profile.md) in this session.
+**Driver `playwright`** — dispatch a general-purpose sub-agent (`general` on Agent0):
+
+```text
+Task(
+  subagent_type: "general-purpose",
+  description: "ui-verify motion profile against PR preview",
+  prompt: |
+    Profile the animations this change adds on the live preview.
+    Your procedure is <absolute path of this skill>/rules/motion-profile.md — read it and follow it.
+    Motion files: <the detector's files array, JSON>
+    Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
+    Specs file: .agent/{branch}/.ui-verify/specs.md
+    Profile specs: <ids of the specs whose result was pass>
+    Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
+    Output dir: .agent/{branch}/.ui-verify/motion/
+)
+```
+
+A reply with no `motion:` block is `motion: not run (<first line of the reply>)`.
+
 ## Step 5: Report the verdict
 
 The runner returns a compact YAML verdict (`verdict: green | red | inconclusive`, one entry per spec with `result` and, on failure, `diagnostics` capped at 30 lines) — identical shape from either driver.
@@ -274,6 +309,9 @@ Keep the happy-path verdict line first and unchanged; a critical finding is stat
 
 **Surface the telemetry** under a **Telemetry** heading, after the adversarial pass: each window's `TELEMETRY` block verbatim — its journey lines, `signals:` and `findings:` lines, and `[receipt] verdict:` line — or the `skipped (…)` / `not run (…)` line.
 Like the adversarial pass, a telemetry finding never rewrites `verdict`.
+
+**Surface the motion profile** under a **Motion** heading, after the telemetry: the `motion:` block's `summary` line, then each finding most severe first, then each target's status line — or the `skipped (…)` / `not run (…)` line.
+A motion finding never rewrites `verdict`.
 
 ## Step 5a: Post the `ui` region
 
@@ -318,6 +356,9 @@ The list still shows the old name after Save. First unmet expectation: heading "
 
 **Telemetry** · <verdict | not run (--no-telemetry)>
 - <each window's journey lines>
+
+**Motion** · <the motion summary | skipped (no motion in the diff)>
+- <each finding: target → kind, detail>
 
 **Run details**
 
