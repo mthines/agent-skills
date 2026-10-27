@@ -48,17 +48,23 @@ Strict order so dedup is deterministic:
 
 ### The motion gate (step 3)
 
-Run the deterministic detector against `REVIEW_DIFF`'s patches; never decide from file names or by reading the diff yourself.
+Run the deterministic detector against the full PR's patches in every run mode, never the incremental delta; never decide from file names or by reading the diff yourself.
+Motion anywhere in the PR loads the lens, so an incremental run never loses it.
+Read the patches from `context.paths.files` (the `prepare-review.mjs` sidecar, one JSON object per line), else `/tmp/pr-files.json` when this run did its own Step 1.2 fetch.
 `<animations>` is the installed skill directory: `$HOME/.claude/skills/animations`, or `$AGENT_SKILLS_ROOT/skills/animations` on Agent0 ([`agent0-host.md`](./agent0-host.md)).
 
 ```bash
-# full mode: /tmp/pr-files.json; incremental: /tmp/pr-delta.json
-node "<animations>/scripts/is-motion-diff.mjs" --patches-json /tmp/pr-files.json | tail -1
+# $CONTEXT is review-context.json from prepare-review.mjs
+PR_FILES=$(jq -r '.paths.files // empty' "$CONTEXT" 2>/dev/null); PR_FILES=${PR_FILES:-/tmp/pr-files.json}
+if OUT=$(node "<animations>/scripts/is-motion-diff.mjs" --patches-json "$PR_FILES"); then
+  MOTION_FILES=$(head -1 <<< "$OUT")   # JSON: the files the lens walks
+  MOTION=$(tail -1 <<< "$OUT")         # MOTION_DIFF: yes|no
+fi                                     # exit 2 → the skip row below
 ```
 
 | Output | Do |
 | --- | --- |
-| `MOTION_DIFF: yes` | Read `<animations>/lens.md` — that file only, never the skill's `SKILL.md` or `rules/` — and walk its checklist against the files the detector's JSON lists. Announce `Auto-loading animations lens: <n> files with motion.` |
+| `MOTION_DIFF: yes` | Read `<animations>/lens.md` — that file only, never the skill's `SKILL.md` or `rules/` — and walk its checklist against the files in `MOTION_FILES`. Announce `Auto-loading animations lens: <n> files with motion.` |
 | `MOTION_DIFF: no` | Load nothing; announce nothing. |
 | script or `lens.md` absent, or exit 2 | Skip the lens and announce `animations lens: skipped (<reason>)`. A motion diff reviewed without it is a smaller review, not a wrong one. |
 
