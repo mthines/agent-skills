@@ -89,8 +89,8 @@
     const mo = new MutationObserver((records) => {
       for (const r of records) {
         state.styleWrites++;
-        const s = r.target.style;
-        if (s && (s.transform || s.translate || s.rotate || s.scale || s.top || s.left || s.width || s.height)) state.movingStyleWrites++;
+        const style = r.target.style;
+        if (style && (style.transform || style.translate || style.rotate || style.scale || style.top || style.left || style.width || style.height)) state.movingStyleWrites++;
         const key = describe(r.target);
         state.styleTargets.set(key, (state.styleTargets.get(key) || 0) + 1);
       }
@@ -107,9 +107,9 @@
     cancelAnimationFrame(state.raf);
     state.mo.disconnect();
     state.observers.forEach((o) => o.disconnect());
-    const iv = [];
-    for (let i = 1; i < state.frames.length; i++) iv.push(state.frames[i] - state.frames[i - 1]);
-    const sorted = [...iv].sort((a, b) => a - b);
+    const intervals = [];
+    for (let i = 1; i < state.frames.length; i++) intervals.push(state.frames[i] - state.frames[i - 1]);
+    const sorted = [...intervals].sort((a, b) => a - b);
     const pct = (p) => (sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0);
     const median = pct(0.5);
     const frames = state.frames.length;
@@ -118,7 +118,7 @@
       window_ms: Math.round(performance.now() - state.t0),
       frames,
       frame_ms: { median: +median.toFixed(1), p95: +pct(0.95).toFixed(1), max: +(sorted[sorted.length - 1] || 0).toFixed(1) },
-      skipped_frames: median ? iv.reduce((n, d) => n + Math.max(0, Math.round(d / median) - 1), 0) : 0,
+      skipped_frames: median ? intervals.reduce((n, d) => n + Math.max(0, Math.round(d / median) - 1), 0) : 0,
       long_animation_frames: state.loaf,
       cls: +state.cls.toFixed(4),
       animations,

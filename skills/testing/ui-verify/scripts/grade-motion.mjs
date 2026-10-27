@@ -30,57 +30,57 @@ const LAYOUT_PROP = /^((max|min)-?)?(width|height)$|^(top|left|right|bottom|inse
 
 export function grade(rows) {
   const byId = new Map();
-  for (const r of rows) {
-    const t = byId.get(r.id) ?? { id: r.id, spec: r.spec };
-    t[r.pass === "reduce" ? "reduce" : "normal"] = r;
-    byId.set(r.id, t);
+  for (const row of rows) {
+    const t = byId.get(row.id) ?? { id: row.id, spec: row.spec };
+    t[row.pass === "reduce" ? "reduce" : "normal"] = row;
+    byId.set(row.id, t);
   }
   const targets = [];
   const findings = [];
   for (const t of byId.values()) {
-    const n = t.normal;
-    if (!n) { targets.push({ id: t.id, status: "error", reason: "no no-preference pass" }); continue; }
+    const allowedPass = t.normal;
+    if (!allowedPass) { targets.push({ id: t.id, status: "error", reason: "no no-preference pass" }); continue; }
     const add = (severity, kind, detail) => findings.push({ id: t.id, spec: t.spec, severity, kind, detail });
-    const perFrame = (count) => n.frames && count >= T.MIN_EVENTS && count / n.frames >= T.PER_FRAME;
+    const perFrame = (count) => allowedPass.frames && count >= T.MIN_EVENTS && count / allowedPass.frames >= T.PER_FRAME;
 
-    const moved = n.moving_animations.length > 0 || n.style_writes.moving >= T.MOVING_MIN || n.animations.length > 0;
-    if (!moved && n.react.commits < T.MOVING_MIN) {
+    const moved = allowedPass.moving_animations.length > 0 || allowedPass.style_writes.moving >= T.MOVING_MIN || allowedPass.animations.length > 0;
+    if (!moved && allowedPass.react.commits < T.MOVING_MIN) {
       targets.push({ id: t.id, status: "not-exercised", reason: "no animation observed after the trigger" });
       continue;
     }
 
-    if (n.react.available && perFrame(n.react.commits))
-      add("high", "render-per-frame", `${n.react.commits} React commits over ${n.frames} frames (${n.react.per_frame}/frame) — the animation is driven through React state; move the per-frame value to CSS, a Motion value, or a ref`);
+    if (allowedPass.react.available && perFrame(allowedPass.react.commits))
+      add("high", "render-per-frame", `${allowedPass.react.commits} React commits over ${allowedPass.frames} frames (${allowedPass.react.per_frame}/frame) — the animation is driven through React state; move the per-frame value to CSS, a Motion value, or a ref`);
 
-    if (n.frame_ms.median && n.frame_ms.p95 > T.P95_OVER_MEDIAN * n.frame_ms.median)
-      add("high", "jank", `p95 frame ${n.frame_ms.p95} ms vs median ${n.frame_ms.median} ms at ${n.cpu_throttle}x CPU — ${n.skipped_frames} of ${n.frames} frames skipped`);
-    else if (n.long_animation_frames.some((f) => f.duration_ms > T.LONG_FRAME_MS)) {
-      const long = n.long_animation_frames.filter((f) => f.duration_ms > T.LONG_FRAME_MS);
+    if (allowedPass.frame_ms.median && allowedPass.frame_ms.p95 > T.P95_OVER_MEDIAN * allowedPass.frame_ms.median)
+      add("high", "jank", `p95 frame ${allowedPass.frame_ms.p95} ms vs median ${allowedPass.frame_ms.median} ms at ${allowedPass.cpu_throttle}x CPU — ${allowedPass.skipped_frames} of ${allowedPass.frames} frames skipped`);
+    else if (allowedPass.long_animation_frames.some((f) => f.duration_ms > T.LONG_FRAME_MS)) {
+      const long = allowedPass.long_animation_frames.filter((f) => f.duration_ms > T.LONG_FRAME_MS);
       const worst = long.reduce((a, b) => (b.duration_ms > a.duration_ms ? b : a));
       const s = worst.scripts?.[0];
       add("medium", "long-frame", `${long.length} animation frame(s) over ${T.LONG_FRAME_MS} ms, worst ${worst.duration_ms} ms${s ? ` in ${s.invoker || s.source}` : ""}`);
     }
 
-    for (const a of n.non_composited) {
+    for (const a of allowedPass.non_composited) {
       const layout = a.properties.filter((p) => LAYOUT_PROP.test(p));
       const paint = a.properties.filter((p) => !LAYOUT_PROP.test(p));
       if (layout.length) add("medium", "layout-property", `${a.target} animates ${layout.join(", ")} — triggers layout every frame; animate transform instead`);
       else if (paint.length) add("low", "paint-property", `${a.target} animates ${paint.join(", ")} — repaints every frame; prefer opacity or a pseudo-element`);
     }
 
-    if (n.cls > T.CLS_POOR) add("medium", "layout-shift", `CLS ${n.cls} during the animation (good ≤ ${T.CLS_POOR})`);
+    if (allowedPass.cls > T.CLS_POOR) add("medium", "layout-shift", `CLS ${allowedPass.cls} during the animation (good ≤ ${T.CLS_POOR})`);
 
-    const r = t.reduce;
+    const reducePass = t.reduce;
     let reduced = "not checked";
-    if (r) {
-      const stillMoving = r.moving_animations.filter((a) => a.duration_ms > 0);
-      if (stillMoving.length || r.style_writes.moving >= T.MIN_EVENTS) {
+    if (reducePass) {
+      const stillMoving = reducePass.moving_animations.filter((a) => a.duration_ms > 0);
+      if (stillMoving.length || reducePass.style_writes.moving >= T.MIN_EVENTS) {
         reduced = "ignored";
-        const what = stillMoving.length ? stillMoving.map((a) => `${a.target} (${a.properties.join(", ")}, ${a.duration_ms} ms)`).join("; ") : `${r.style_writes.moving} per-frame style writes on ${r.style_writes.top_targets.map((x) => x[0]).join(", ")}`;
+        const what = stillMoving.length ? stillMoving.map((a) => `${a.target} (${a.properties.join(", ")}, ${a.duration_ms} ms)`).join("; ") : `${reducePass.style_writes.moving} per-frame style writes on ${reducePass.style_writes.top_targets.map((x) => x[0]).join(", ")}`;
         add("high", "reduced-motion-ignored", `still moves with prefers-reduced-motion: reduce — ${what}`);
       } else reduced = "honoured";
     }
-    targets.push({ id: t.id, status: "profiled", frames: n.frames, cpu: n.cpu_throttle, reduced_motion: reduced });
+    targets.push({ id: t.id, status: "profiled", frames: allowedPass.frames, cpu: allowedPass.cpu_throttle, reduced_motion: reduced });
   }
   const order = { critical: 0, high: 1, medium: 2, low: 3 };
   findings.sort((a, b) => order[a.severity] - order[b.severity]);
