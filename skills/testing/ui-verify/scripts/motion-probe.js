@@ -40,6 +40,9 @@
   const TIMING_KEYS = new Set(['offset', 'computedOffset', 'easing', 'composite']);
   const MOVEMENT = /^(transform|translate|rotate|scale|top|left|right|bottom|inset|margin|((max|min)-?)?(width|height))/i;
 
+  // Detached element that parses a mutation's old inline style for comparison.
+  const scratch = document.createElement('div');
+
   const describe = (el) => {
     if (!el || !el.tagName) return String(el);
     const cls = typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/).slice(0, 2).join('.') : '';
@@ -89,13 +92,18 @@
     const mo = new MutationObserver((records) => {
       for (const r of records) {
         state.styleWrites++;
+        // Moving only when a movement property's value changed; static inline sizes do not count.
         const style = r.target.style;
-        if (style && (style.transform || style.translate || style.rotate || style.scale || style.top || style.left || style.width || style.height)) state.movingStyleWrites++;
+        if (style) {
+          scratch.style.cssText = r.oldValue || '';
+          const props = new Set([...Array.from(style), ...Array.from(scratch.style)]);
+          if ([...props].some((p) => MOVEMENT.test(p) && style.getPropertyValue(p) !== scratch.style.getPropertyValue(p))) state.movingStyleWrites++;
+        }
         const key = describe(r.target);
         state.styleTargets.set(key, (state.styleTargets.get(key) || 0) + 1);
       }
     });
-    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style'], subtree: true });
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['style'], attributeOldValue: true, subtree: true });
     state.mo = mo;
     sampleAnimations();
     state.raf = requestAnimationFrame(tick);
