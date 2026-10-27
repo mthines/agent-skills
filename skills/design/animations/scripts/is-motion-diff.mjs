@@ -15,7 +15,7 @@
 //   --base <ref> [--head <ref>]  compute via `git diff <base>...<head>`
 //   --patches-json <file>        GitHub PR files: an array, or a jq stream of
 //                                objects, each with `filename` and `patch`
-//                                (pr-reviewer's /tmp/pr-files.json or /tmp/pr-delta.json)
+//                                (pr-reviewer's context.paths.files or /tmp/pr-files.json)
 //   --diff-file <file>           a unified diff
 //   (stdin)                      a unified diff, when piped
 //   --self-test                  run the built-in cases and exit
