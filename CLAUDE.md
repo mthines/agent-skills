@@ -72,12 +72,12 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `e2e-testing` (`/`) — spec-first Playwright Test Agents loop
 - `e2e-testing-mobile` (`/`) — Maestro YAML flows for Expo / React Native
 - `aw-verify` (`/`) — proves a feature works on `local` or `preview`: probes specs, concurrency, and guardrail faults, reads telemetry once via `telemetry-verify`, fixes locally, posts proof and media to the PR's one verify comment. `setup` writes `.agents/aw/`
-- `ui-verify` (`Skill()` + `/`) — browser witness: Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); checks every outcome with evidence, then tries to break it and records it; posts its `ui` region of the PR's verify comment
+- `ui-verify` (`Skill()` + `/`) — browser witness: Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); checks every outcome with evidence, then tries to break it and records it; profiles a motion diff's frames and reduced motion; posts its `ui` region of the PR's verify comment
 - `telemetry-verify` (`Skill()`) — telemetry witness: reads one traffic window's web events, traces, and logs; follows each criterion from web event to API to database; grades the brief's `telemetry:` criteria; run alone, posts its `telemetry` region
 
 ### `design/` — UI, visual, interaction
 
-- `animations` (`auto`) — CSS-first web animations and perceived performance
+- `animations` (`auto`) — CSS-first web animations and perceived performance; `is-motion-diff.mjs` gates its `lens.md` into `pr-reviewer` and a motion profile into `ui-verify`
 - `animations-native` (`auto`) — React Native / Expo animations (Reanimated, gesture-handler)
 - `behavioral-design` (`auto`) — behavior-change diagnosis (COM-B, B=MAP), ethical interventions (EAST, defaults, System 1 / System 2), and team-adoption workshops. Never recommends a dark pattern or sludge
 - `charting` (`auto`) — chart type + library for web and mobile

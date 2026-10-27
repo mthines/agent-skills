@@ -686,9 +686,10 @@ them, so Step 2.9c must not treat a thread on one of them as re-scanned.
 A finding on a context line (` `-prefix) is pre-existing — tag `[pre-existing]`; emit if
 otherwise valid; do not count toward verdict.
 
-### 1.6 Load lenses (only if `--with` was passed)
+### 1.6 Load lenses (`--with`, plus the motion-gated `animations` lens)
 
 See `agents/shared/rules/rubric-composition.md`. Cap 3; dedupe against auto-loaded rubrics.
+The `animations` lens loads only when `is-motion-diff.mjs` prints `MOTION_DIFF: yes` (§ The motion gate).
 
 ### 1.7 Load review config
 

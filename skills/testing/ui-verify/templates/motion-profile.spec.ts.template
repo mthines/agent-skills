@@ -1,0 +1,71 @@
+// ui-verify motion profile harness.
+//
+// The motion profile (rules/motion-profile.md) copies this file to
+// <output dir>/motion.spec.ts, keeps everything above the TARGETS marker as-is,
+// and writes one test() per motion target below it. Ephemeral scratch under
+// .agent/{branch}/ — never committed, never moved into the project's own tests.
+//
+// Run (from the repo checkout):
+//   "$PW" test --config "<output dir>/playwright.config.ts"
+// Every value comes from an MP_* environment variable. A credential is read from
+// the env var the overlay NAMES — this file never holds a secret.
+
+import { test, type Page } from '@playwright/test';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+const OUT = process.env.MP_OUT!;                            // <output dir>, absolute
+const BASE = process.env.MP_BASE_URL!;                      // overlay base_url, no trailing slash
+const PROBE = process.env.MP_PROBE!;                        // absolute path to scripts/motion-probe.js
+const STORAGE = process.env.MP_STORAGE_STATE || '';         // overlay auth.storage_state, or ''
+const BYPASS_NAME = process.env.MP_BYPASS_NAME || '';       // overlay auth.bypass_header.name
+const BYPASS_ENV = process.env.MP_BYPASS_ENV || '';         // overlay auth.bypass_header.env (a NAME)
+const CPU = Number(process.env.MP_CPU_THROTTLE || 4);       // Lighthouse's mobile CPU slowdown
+const RESULTS = join(OUT, 'results.jsonl');
+mkdirSync(OUT, { recursive: true });
+
+test.use({
+  baseURL: BASE,
+  storageState: STORAGE || undefined,
+  extraHTTPHeaders:
+    BYPASS_NAME && process.env[BYPASS_ENV] ? { [BYPASS_NAME]: process.env[BYPASS_ENV]! } : {},
+  serviceWorkers: 'block',
+  viewport: { width: 1280, height: 800 },
+});
+
+type Target = {
+  id: string;                               // MP-NN
+  spec: string;                             // Spec-N whose route reaches the animation
+  reach: (page: Page) => Promise<void>;     // navigate from a fresh page to just before the trigger
+  trigger: (page: Page) => Promise<void>;   // the one action that starts the animation
+  settleMs: number;                         // animation duration + 300 ms
+};
+
+// Two passes per target: motion allowed, then prefers-reduced-motion: reduce.
+async function profile(page: Page, t: Target) {
+  await page.addInitScript({ path: PROBE });
+  const cdp = await page.context().newCDPSession(page);
+  for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+    await page.emulateMedia({ reducedMotion });
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    await t.reach(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: CPU });
+    await page.evaluate(() => (window as any).__motionProbe.start());
+    await t.trigger(page);
+    await page.waitForTimeout(t.settleMs);
+    const r = await page.evaluate(() => (window as any).__motionProbe.stop());
+    appendFileSync(RESULTS, JSON.stringify({ id: t.id, spec: t.spec, pass: reducedMotion, cpu_throttle: CPU, ...r }) + '\n');
+  }
+}
+
+// ───────────────────────────── TARGETS ─────────────────────────────
+// Replace the worked example with one test() per target in plan.md.
+
+test('MP-01 Spec-1: open the filter drawer', async ({ page }) =>
+  profile(page, {
+    id: 'MP-01',
+    spec: 'Spec-1',
+    reach: async (p) => { await p.goto('/dashboards'); await p.getByRole('heading', { name: 'Dashboards' }).waitFor(); },
+    trigger: async (p) => { await p.getByRole('button', { name: 'Filters' }).click(); },
+    settleMs: 600,
+  }));
