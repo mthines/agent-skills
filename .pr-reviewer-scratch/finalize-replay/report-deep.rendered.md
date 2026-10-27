@@ -1,0 +1,76 @@
+<!-- PR_REVIEWER_REPORT -->
+### 🟠 1 blocking · 3 non-blocking
+
+Replaces the in-process memory index with a `LocalStore` backed search path.
+
+<sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
+
+| | Finding | Where |
+|:-:|---|---|
+| 🟠&nbsp;**1** | **`LocalStore.search` drops the tenant filter**<br><sub>Blocking</sub> | [`local.ts:96`](https://github.com/o/r/pull/2#discussion_r31 "src/store/local.ts") |
+| 🟡&nbsp;**2** | **Index rebuild runs on every cold start** | [`index.ts:18`](https://github.com/o/r/pull/2#discussion_r32 "src/store/index.ts") |
+| 🟡&nbsp;**3** | **Scalar filter is interpolated into a PostgREST operand** | [`filter.ts:235`](https://github.com/o/r/pull/2#discussion_r33 "src/store/filter.ts") |
+| 🟡&nbsp;**4** | **Cold-start rebuild has no covering test** | [`index.test.ts:12`](https://github.com/o/r/pull/2#discussion_r34 "src/store/index.test.ts") |
+
+<details>
+<summary>Less certain (1) — advisory, below the confidence bar</summary>
+<br>
+
+| | Finding | Where |
+|:-:|---|---|
+| **5** | issue: b<br><sub>Confidence 70</sub> | `src/misc/thing.ts:5` |
+
+</details>
+
+<details>
+<summary>Review details — 1 open review thread (1 blocking)</summary>
+<br>
+
+| Gate | | Details |
+|---|:-:|---|
+| Description vs. code | ✅ | The description matches what the diff does. |
+| Prior review feedback | ⚠️ | 1 unresolved review thread(s) — see the thread list below |
+| Documentation | ✅ | The change is documented well enough to follow. |
+| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
+| Code review | ❌ | 1 blocking finding — see inline comments. |
+
+**Open review threads (1)**
+
+- [`src/jobs/sync.ts:88`](https://github.com/o/r/pull/1#discussion_r9) — `retryRequest` now throws where it returned `null` (bot · `cursor`)
+
+<details>
+<summary>Withheld (1) — could not be verified from this runner</summary>
+
+- `src/auth/session.ts:22` — suggestion: `internal-sdk` 3.1.0 → 4.0.0 is a major bump; the 4 usage sites are worth confirming against the upgrade notes before merge. <sup>(unverified: upstream release notes unreachable from this runner)</sup>
+
+</details>
+
+| Run | Details |
+|---|---|
+| Mode | full · 12 lines in delta · tier deep · depth checkout · blast_radius=high · semver_delta=major |
+| Anomaly | ⚠️ a base-branch merge polluted the compare range; reviewed the PR's own 44-file diff, not the 130-commit range |
+| Checked | 9 possible issues → 4 confirmed → 4 posted |
+| Reach | 2 changed exports · 18 dependent files · 18 checked · 1 flagged<br>`retryRequest` — 14 consumer files · 14 checked · 1 flagged<br>`parseConfig` — 4 consumer files · 4 checked |
+| Telemetry | production (`api`, `ui-web`; sampled 09:12 UTC; no preview spans for `a1b2c3d`) |
+| Dependencies | `stripe` 14.2.0 → 16.0.1 (major) — 6 usage sites checked · [release notes](https://github.com/stripe/stripe-node/releases/tag/v16.0.0) |
+| Overlapping PRs | `retryRequest` is also changed on [#212](https://github.com/o/r/pull/212) by `alice` — a semantic conflict is likely even if git merges both cleanly |
+| Found | produced 9 → posted inline 4 · cleared 4 · carried forward 0 · deferred 0 · below-bar 1 · memory suppressions 1 |
+| Dropped | relevance 1 · dedupe 2 · grounding 0 · verifier contradicted 2 · shape 0 |
+| Severity | 🟠 1 high · 🟡 3 medium |
+| Optimality | ran · 3 judged · 2 optimal · 1 proposal(s) · 0 inline pointer(s) · 0 withheld |
+| Standards | ran · 2 docs · 3 finding(s) |
+| Measurability | ran · 5 paths classified · 2 missing · 1 unlinked · no profile |
+| CI | 3 checks pending on `a1b2c3d`. |
+| Memories | 48 indexed · 3 used (1 knowledge · 1 hotspot · 1 rule) |
+
+**Memories used**
+
+- **knowledge** [`knowledge::retryRequest@src/api/client.ts`](https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22) — 4 facts, verified at 9f8e7d6 (re-verified this run: 4/4)
+- **hotspot** `hotspot::src/api/client.ts` — hot — 5 confirmed, 1 missed, 90 d
+- **rule** `rule::correctness:nil-deref:-@src/legacy` — suppress, active <sup>evidence #88 #91 #97</sup>
+
+<sup>Nothing to report — integrations (not activated), 0 files skipped.</sup>
+
+</details>
+
+<sup>`pr-reviewer` · commit `a1b2c3d` · full review · [how these findings are produced](https://github.com/mthines/agent-skills/blob/main/agents/pr-reviewer.md) · updated <relative-time datetime="2026-09-03T09:12:00.000Z">Sep 3, 2026 9:12am UTC</relative-time></sup>

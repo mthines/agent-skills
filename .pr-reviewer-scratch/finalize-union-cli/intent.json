@@ -1,0 +1,1 @@
+{"candidates":[{"finder":"correctness","defect_class":"logic","path":"s.swift","line":100,"symbol":"a","claim":"pass one only finding about retries","bad_outcome":"retries forever","evidence":["s.swift:10"],"verify_by":"read"}]}

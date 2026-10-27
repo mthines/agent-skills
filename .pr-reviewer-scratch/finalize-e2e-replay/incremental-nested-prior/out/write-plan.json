@@ -1,0 +1,34 @@
+{
+  "repo": "o/r",
+  "pr_number": 205,
+  "dry_run": true,
+  "historical": null,
+  "thread_reply": [
+    {
+      "thread_id": "t1",
+      "body": "Fixed in 906a747 — applyScalarFilter now rejects array values with a 400."
+    }
+  ],
+  "thread_resolve": [
+    {
+      "thread_id": "t1"
+    }
+  ],
+  "sticky_upsert": {
+    "comment_id": 555,
+    "body_path": "/Users/mthines/Workspace/mthines/agent-skills.git/main/.pr-reviewer-scratch/finalize-e2e-replay/incremental-nested-prior/out/report-body.md",
+    "pointer_body_path": "/Users/mthines/Workspace/mthines/agent-skills.git/main/.pr-reviewer-scratch/finalize-e2e-replay/incremental-nested-prior/out/pointer-body.md"
+  },
+  "review_create": {
+    "commit_id": "906a74781990f75607f0234de963fdbbc3953f2c",
+    "comments": [
+      {
+        "path": "src/api/client.ts",
+        "line": 88,
+        "side": "RIGHT",
+        "body": "issue (high): 🟠 **Early return may skip the audit log write** **(blocking)**\n\nThis early-return may skip the audit log write.\n\n<sup>`pr-reviewer` · commit `906a747`</sup>\n\n<!-- fp:v2:correctness:logic:earlyReturn@src/api/client.ts -->\n"
+      }
+    ]
+  },
+  "lorekit_write": []
+}

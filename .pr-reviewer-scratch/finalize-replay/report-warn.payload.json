@@ -1,0 +1,110 @@
+{
+  "VERDICT": "WARN",
+  "SUMMARY": "Reworks the retry path so `retryRequest` throws instead of returning `null`.",
+  "MEMORIES_SUMMARY": "62 indexed",
+  "QUALITY": "produced 7 → posted inline 3 · notes 2 · cleared 3 · carried forward 0 · deferred 0 · below-bar 0",
+  "INTEGRATIONS": "not activated",
+  "OPTIMALITY_LOG": "ran · 3 judged · 3 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
+  "STANDARDS_LOG": "ran · 1 doc · 0 finding(s)",
+  "MEASURABILITY_LOG": "ran · 2 paths classified · 1 missing · 0 unlinked",
+  "SKIPPED_FILES": "none",
+  "RUN": {
+    "mode": "incremental",
+    "sha": "2c2bd19",
+    "prior_sha": "70cf147",
+    "delta_lines": 256,
+    "at": "2026-08-20T14:33:00Z"
+  },
+  "FINDINGS": [
+    {
+      "title": "Retry exhaustion now throws where it returned null",
+      "path": "src/api/client.ts",
+      "line": 214,
+      "tier": "high",
+      "url": "https://github.com/o/r/pull/1#discussion_r11"
+    },
+    {
+      "title": "Backoff jitter is seeded once per process",
+      "path": "src/api/backoff.ts",
+      "line": 41,
+      "tier": "medium",
+      "url": "https://github.com/o/r/pull/1#discussion_r12"
+    },
+    {
+      "title": "`sync.ts` still branches on the old null contract",
+      "path": "src/jobs/sync.ts",
+      "line": 88,
+      "tier": "medium",
+      "url": "https://github.com/o/r/pull/1#discussion_r13"
+    }
+  ],
+  "FAIL_REASONS": [],
+  "WARN_REASONS": [
+    "2 open review threads",
+    "3 non-blocking findings"
+  ],
+  "OPEN_THREADS": [
+    {
+      "path": "packages/web/src/lib/filters.ts",
+      "line": 23,
+      "ask": "the docblock still names filtersToQueryParams",
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/1#discussion_r1",
+      "author": "umanwizard",
+      "is_bot": false
+    },
+    {
+      "path": "packages/schemas/src/memory.ts",
+      "line": 735,
+      "ask": "the advertised bound is 5x what the hop survives",
+      "blocking": false,
+      "url": "https://github.com/o/r/pull/1#discussion_r2",
+      "author": "cursor",
+      "is_bot": true
+    }
+  ],
+  "ADDITIONAL_FINDINGS": [],
+  "LOW_CONFIDENCE_FINDINGS": [],
+  "NOTES": [
+    {
+      "path": "packages/web/src/lib/queries/explorer-stats.ts",
+      "line": 16,
+      "prefix": "nitpick",
+      "body": "the header table still says GET /memories/activity",
+      "confidence": 84
+    },
+    {
+      "path": "packages/web/src/lib/filters.ts",
+      "line": 713,
+      "prefix": "question",
+      "body": "no production call site remains for filtersToFacetParams",
+      "confidence": 78
+    }
+  ],
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "⚠️",
+  "GATE_PRIOR_DETAILS": "2 unresolved review thread(s) — see the thread list below",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_CODEREVIEW_STATUS": "⚠️",
+  "GATE_CODEREVIEW_DETAILS": "3 non-blocking findings — see inline comments.",
+  "RUN_NOTE": "27 files touched",
+  "CI_NOTE": "`Integration smoke (local Supabase)` is red on one case — `POST /memories/list` expected 200, got 500.",
+  "VERIFIED_NOTE": "`node scripts/sync-edge-schemas.mjs --check` in sync (15 files).",
+  "QUALITY_DROPPED": "relevance 0 · dedupe 1 · grounding 0 · confidence 2 · shape 0",
+  "FIX_ALL_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=%2Fpr-fix%20owner%2Frepo%23123%20pr-review-bot&utm_source=pr-reviewer-fix-all",
+  "RESOLVED_SINCE": {
+    "count": 4,
+    "sha": "70cf147"
+  },
+  "MEMORIES_USED": [
+    {
+      "key": "pre-flight-logic:token-membership-tests-mis-ordered",
+      "url": "https://lorekit.io/lore?scope=%22repo%3A%3Ao%2Fr%22",
+      "note": "promoted, seen 2x"
+    }
+  ]
+}

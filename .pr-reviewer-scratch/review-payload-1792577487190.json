@@ -1,0 +1,1 @@
+{"commit_id":"abc1234","body":"<!-- PR_REVIEWER_POINTER -->","event":"COMMENT","comments":[{"path":"a.ts","line":1,"side":"RIGHT","body":"nitpick: minor. <sup>`pr-reviewer` · commit `abc1234`</sup>"}]}

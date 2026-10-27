@@ -1,0 +1,46 @@
+{
+  "VERDICT": "WARN",
+  "SUMMARY": "Keyboard model is sound and well tested.",
+  "MEMORIES_SUMMARY": "no relevance rules or lessons consulted",
+  "QUALITY": "produced 1 → posted inline 0 · notes 1 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0",
+  "INTEGRATIONS": "none",
+  "STANDARDS_LOG": "skipped",
+  "MEASURABILITY_LOG": "skipped",
+  "SKIPPED_FILES": "none",
+  "RUN": {
+    "mode": "full",
+    "sha": "a1b2c3d",
+    "delta_lines": 8,
+    "at": "2026-09-25T12:00:00Z",
+    "tier": "deep",
+    "depth": "checkout"
+  },
+  "FINDINGS": [],
+  "FAIL_REASONS": [],
+  "WARN_REASONS": [
+    "Omits the new keyboard model from the description."
+  ],
+  "OPEN_THREADS": [],
+  "ADDITIONAL_FINDINGS": [],
+  "LOW_CONFIDENCE_FINDINGS": [],
+  "NOTES": [
+    {
+      "path": "a.ts",
+      "line": 12,
+      "prefix": "nitpick",
+      "body": "B",
+      "confidence": 97
+    }
+  ],
+  "GATE_DESCRIPTION_STATUS": "⚠️",
+  "GATE_DESCRIPTION_DETAILS": "Omits the new keyboard model from the description.",
+  "GATE_PRIOR_STATUS": "✅",
+  "GATE_PRIOR_DETAILS": "Earlier review comments are resolved.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "MEMORIES_USED": []
+}

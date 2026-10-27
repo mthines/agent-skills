@@ -78,14 +78,15 @@ const POINTER_MARKER = "<!-- PR_REVIEWER_POINTER -->";
  * conformance pass over files it never opened.
  *
  * So the checkout goes under the workspace, where every agent in the run can read
- * it. `os.tmpdir()` stays as the last rung for a host with no workspace at all.
+ * it, inside `.agent/` so it never lands as a stray top-level directory in the
+ * project. `os.tmpdir()` stays as the last rung for a host with no workspace at all.
  */
 export function scratchRoot() {
   for (const candidate of [process.env.PR_REVIEWER_SCRATCH, "/tmp/workspace", process.cwd()]) {
     if (!candidate) continue;
     try {
       if (!existsSync(candidate)) continue;
-      const dir = join(candidate, ".pr-reviewer-scratch");
+      const dir = join(candidate, ".agent", ".pr-reviewer-scratch");
       mkdirSync(dir, { recursive: true });
       return dir;
     } catch {
@@ -3131,7 +3132,7 @@ async function selfTest() {
     const picked = scratchRoot();
     delete process.env.PR_REVIEWER_SCRATCH;
     const def = scratchRoot();
-    return picked === join(forced, ".pr-reviewer-scratch")
+    return picked === join(forced, ".agent", ".pr-reviewer-scratch")
       && existsSync(picked)
       && (!existsSync("/tmp/workspace") || def.startsWith("/tmp/workspace/"));
   });
