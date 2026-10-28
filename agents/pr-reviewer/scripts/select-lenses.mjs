@@ -46,7 +46,8 @@ const MAX_LENS_LINES = 1000; // review-lens-contract.md: a defensive guard again
 const unquote = (v) => {
   const t = v.trim();
   if (/^'.*'$/.test(t)) return t.slice(1, -1).replace(/''/g, "'");
-  return t.replace(/^"(.*)"$/, "$1");
+  if (/^".*"$/.test(t)) return t.slice(1, -1).replace(/\\(["\\])/g, "$1");
+  return t;
 };
 
 /**
@@ -107,7 +108,7 @@ export function parseLens(text) {
   }
   const auto = get("auto");
   return {
-    appliesTo: appliesRaw.length === 1 && appliesRaw[0] === "always" ? "always" : appliesRaw,
+    appliesTo: /** @type {"always" | string[]} */ (appliesRaw.length === 1 && appliesRaw[0] === "always" ? "always" : appliesRaw),
     diffMatches,
     minTier: /** @type {keyof typeof TIER_RANK | undefined} */ (minTier),
     auto: auto === undefined ? undefined : auto === "true",
@@ -173,10 +174,11 @@ export function changedWithAdded(files) {
  */
 export function triggerMatches(lens, { changed, tier, named = false, scope }) {
   const inScope = scope ? changed.filter((c) => scope.includes(c.path)) : changed;
-  const globs = lens.appliesTo === "always" ? null : lens.appliesTo.map(globToRegExp);
+  const appliesTo = lens.appliesTo === "always" ? null : lens.appliesTo;
+  const globs = appliesTo ? appliesTo.map((g) => globToRegExp(g)) : null;
   const byPath = globs ? inScope.filter((c) => globs.some((g) => g.test(c.path))) : inScope;
   if (!byPath.length) return { match: false, files: [], reason: globs ? "no changed file matches applies-to" : "no changed file in scope" };
-  if (named) return { match: true, files: byPath.map((c) => c.path), reason: globs ? `applies-to ${lens.appliesTo.join(", ")}` : "applies-to always" };
+  if (named) return { match: true, files: byPath.map((c) => c.path), reason: appliesTo ? `applies-to ${appliesTo.join(", ")}` : "applies-to always" };
   if (lens.minTier && tier && TIER_RANK[/** @type {keyof typeof TIER_RANK} */ (tier)] < TIER_RANK[lens.minTier]) {
     return { match: false, files: [], reason: `tier ${tier} is below min-tier ${lens.minTier}` };
   }
@@ -184,7 +186,7 @@ export function triggerMatches(lens, { changed, tier, named = false, scope }) {
     ? byPath.filter((c) => c.added.some((l) => lens.diffMatches.some((r) => r.test(l))))
     : byPath;
   if (!hits.length) return { match: false, files: [], reason: "no added line matches diff-matches" };
-  const why = [globs ? `applies-to ${lens.appliesTo.join(", ")}` : null, lens.diffMatches.length ? "diff-matches" : null,
+  const why = [appliesTo ? `applies-to ${appliesTo.join(", ")}` : null, lens.diffMatches.length ? "diff-matches" : null,
     lens.minTier ? `min-tier ${lens.minTier}` : null].filter(Boolean);
   return { match: true, files: hits.map((c) => c.path), reason: why.join(" + ") || "applies-to always" };
 }
@@ -426,6 +428,8 @@ function selfTest() {
 
   const quoted = parseLens(lens("diff-matches:\n  - 'from [\"'']openai'"));
   check("a single-quoted YAML regex unescapes '' to one quote", quoted.diffMatches[0]?.source === `from ["']openai`, String(quoted.diffMatches[0]));
+  const dq = parseLens(lens('diff-matches: "a\\\\(b"'));
+  check("a double-quoted YAML regex unescapes a doubled backslash", dq.diffMatches[0]?.source === "a\\(b", String(dq.diffMatches[0]));
   check("changedWithAdded keeps only added lines from a patch",
     JSON.stringify(changedWithAdded([{ filename: "a.ts", patch: "@@ -1 +1 @@\n-old\n+new\n context" }])) === '[{"path":"a.ts","added":["new"]}]');
 

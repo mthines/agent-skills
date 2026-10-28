@@ -17,6 +17,7 @@
     "route-depth.mjs",
     "review-packet.mjs",
     "review-context.mjs",
+    "select-lenses.mjs",
     "discover-standards.mjs",
     "delta-triage.mjs",
     "gate4-scan.mjs",

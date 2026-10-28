@@ -2,6 +2,10 @@
 for: pr-reviewer
 lens-version: 1
 applies-to: <glob list (e.g. **/*.tsx, app/**/*.ts) OR the literal "always">
+# Optional (review-lens-contract.md § Frontmatter fields):
+# auto: true                     # load whenever the trigger matches, without --with
+# diff-matches: 'useFlag\('       # an added line must match one of these regexes
+# min-tier: deep                 # load only on reviews routed at least this deep
 ---
 
 # <Skill Name> — Review Lens

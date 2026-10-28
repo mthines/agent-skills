@@ -105,7 +105,7 @@ The `reviewer` agent that once owned own-work Fix / Report / Self-Review sub-mod
 | 1.2c | Diff-keyed `memory.search` merged into the Step 1.0 pool; the count covers the three memory families (relevance, knowledge, hotspot) and never `reviewer-lessons` | Search widens `MEMORIES_READ_COUNT` with lesson hits; a relevance-only count paired with a `used` half that includes knowledge/hotspot, which fails the renderer closed; `reviewer-lessons` hit not applied as a consideration |
 | 1.3 | Sources: PR title, body, commit messages, branch name | Branch named `fix/stuff`; intent guessed and findings calibrated against the guess |
 | 1.5 | Context-line tagging via diff prefix inspection | Finding on a moved line counted as new when the same logic existed on a deleted line |
-| 1.6 | Max 3, lens-version validation, dedupe, applies-to glob | Lens > 80 lines warned but loaded; missing `lens.md` silently skipped |
+| 1.6 | `select-lenses.mjs`: base-commit read, lens-version validation, trigger (`applies-to`, `diff-matches`, `min-tier`), dedupe by name; budget grows `LENS_CALLS` per lens past three | Lens > 80 lines warned but loaded; a lens the PR adds is reported, not loaded |
 | 1.7 | Review-config hierarchy walk (default `.github/review.yaml`, legacy root `.review.yaml`, subtree `.review.yaml`); absent config → `profile: balanced` | Nested subtree overrides the default-base profile silently if the path walk is incorrect |
 | 1.8 | Gates 1–5 evaluated on the full PR state; Gate 1 (description) is soft and can only warn, Gate 2 (CI) is informational-in-`Run` and never grades, Gates 3 (prior bot feedback) and 6 (code review) are tri-state and fail only on a blocking item; token-economy holistic-skip on ≥ 3 failing gates | A hard gate misclassified as soft, or a graded gate as hard; Gate 3 ❌ with no unanswered blocking thread; Gate 4 self-review scan misses a debug artifact on a `+` line; prose-vs-code carve-out over- or under-fires |
 | 2 | Skill loading order; auto-engage heuristics for `critical`; persona availability by run mode | Auto-engage regex misses `prisma/migrations`; UX heuristic misses Svelte 5 `.svelte.ts`; Persona 4 activated when no integration changed |
@@ -242,7 +242,7 @@ The diagnoser must not propose to relax any of these without explicit user confi
 - **Narrative and aspirational prose is never a finding.** `standards-conformance.md` must only flag clearly violated normative statements (must / always / never / prefer / do not / forbidden). A finding on descriptive or aspirational prose is a guard failure (`F-standards-prose-flagged`).
 - **Over-cap drops in standards discovery are always logged, never silent.** When the 30,000-char cap is reached, every dropped document is logged by path. Silent truncation is a guard failure (`F-standards-cap-silent-truncation`).
 - **A lens cannot upgrade a finding to a blocking verdict.** Strict blocking rules (broken behaviour, security, data loss, misimplemented intent) apply regardless of lens severity hints.
-- **Maximum 3 lenses per `--with` invocation.**
+- **Lenses come from `select-lenses.mjs`, never picked by hand; a lens read from the PR head never reviews that PR.**
 - **Pre-existing issues do not count toward the verdict.**
 - **Every backticked symbol in a comment body MUST grep-resolve against the changed file.** `finding-grounding.md` is the load-bearing false-positive control.
 - **Holistic review is default ON in `full` mode.** Skipping requires `--no-holistic` (announced in the run line), a trivial-skip condition, the token-economy skip, or an incremental run. Silent skip on a non-trivial `full`-mode diff is a guard failure.
@@ -284,7 +284,7 @@ Diagnoses lean on the transcript, the GitHub-side sticky and reviews (inspectabl
 - Manual end-to-end: invoke against a known PR with a deliberately out-of-hunk proposed comment line; confirm `line-validity.md` retargets or drops it.
 - Manual end-to-end: invoke against your own PR; confirm `REVIEW_RELATION` is set to `self`, the agent does not refuse, and the review posts as a visible `COMMENT`.
 - Manual end-to-end: invoke against someone else's PR; confirm `REVIEW_RELATION` is `cross`, and `system-fit` findings are framed as `question:`.
-- Manual end-to-end: invoke with `--with tdd,ux,critical,extra` (4 lenses); confirm the agent aborts with `--with: max 3 lenses (got 4)`.
+- Manual end-to-end: add `.agents/review/lenses/<name>.md` on a branch and review it; confirm the run announces `this PR adds .agents/review/lenses/<name>.md; it exists only at head` and does not load it.
 - Manual end-to-end: invoke with one comment naming a backticked symbol absent from the diff; confirm `finding-grounding.md` drops it and logs the drop.
 - Manual end-to-end: invoke with one deliberately overlong comment; confirm `comment-shape.md` drops it before posting.
 - Manual end-to-end: re-invoke on a PR with a prior `<!-- PR_REVIEWER_REPORT -->` review; confirm `CARRIED_FINDINGS` are re-admitted and Step 2.9c resolves only this agent's own fixed / declined threads.

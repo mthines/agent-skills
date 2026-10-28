@@ -109,7 +109,7 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    scope `branch::<owner>/<repo>::<headRefName>`, key `ci-state::pr-review-<n>` — and save a hit to
    `<dir>/state.json`. Skip it under `--isolated`; on a miss, or with no LoreKit tool, pass no `--state`.
 3. Run prepare once, forwarding only the pass-through flags it takes (`--full`, `--effort`,
-   `--thoroughness`, `--finder-passes`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
+   `--thoroughness`, `--finder-passes`, `--with`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
    when the pass-through flags carry `--review-sha`), and read the topology on the same command:
 
    ```bash

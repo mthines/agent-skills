@@ -9,13 +9,14 @@ tags:
 
 # Rubric composition
 
-`pr-reviewer` loads multiple review rubrics: `quality` (always for substantive diffs — the inline checklist under [Load order](#load-order)), `ux` (UI files), the `animations` lens (diffs that add motion), `critical` (high-stakes diffs or `--critical`), and up to 3 user-supplied lenses via `--with`.
+`pr-reviewer` loads multiple review rubrics: `quality` (always for substantive diffs — the inline checklist under [Load order](#load-order)), `ux` (UI files), the `animations` lens (diffs that add motion), `critical` (high-stakes diffs or `--critical`), and every review lens the diff triggers or the caller names ([Review lenses](#review-lenses)).
 
 Without a consolidation step, each rubric emits findings independently and the agent has to inline-dedupe while also writing comments. Research grounding: Qodo's 2026 "Rule System" and Greptile's multi-agent architecture both add an explicit coordinator pass — the consolidation step is what turns multi-rubric findings from noise into signal.
 
 ## Contents
 
 - [Load order](#load-order)
+- [Review lenses](#review-lenses)
 - [Auto-engage heuristics for `critical`](#auto-engage-heuristics-for-critical)
 - [Dedupe](#dedupe)
 - [Cross-rubric agreement](#cross-rubric-agreement)
@@ -40,11 +41,11 @@ Strict order so dedup is deterministic:
    - **Neighbour patterns:** the change matches the structure and conventions of neighbouring files.
    - **Approach:** is there a materially simpler approach or an existing utility that does this?
      Flag it as a `suggestion:` naming the simpler approach or the utility's `path:line`; never flag a matter of taste.
-2. `ux` (UI globs: `*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `app/**/*.{ts,tsx}` for App-Router screens).
+2. Review lenses `select-lenses.mjs` loaded, in its order: `--with`, then `.review.yaml` `lenses:`, then repo lenses, then built-in `auto: true` lenses (`ux` on UI files, `ai-engineering` on LLM SDK lines, `charting` on chart files) — [Review lenses](#review-lenses).
 3. `animations` lens — only when the motion gate below prints `MOTION_DIFF: yes`.
 4. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
    `--no-critical` suppresses the config and the heuristic.
-5. `--with` lenses (max 3, in the order given on the command line); `--with animations` is a no-op when step 3 loaded it.
+5. `--with animations` is a no-op when step 3 loaded it; every other `--with` name is resolved in step 2.
 
 ### The motion gate (step 3)
 
@@ -74,6 +75,42 @@ fi                                     # exit 2 → the skip row below
 ```
 
 The lens's findings are tagged `[lens:animations]` and follow the `any lens` severity mapping below.
+
+## Review lenses
+
+A review lens is one short checklist file (`lens.md`, contract: [`review-lens-contract.md`](../../../skills/authoring/create-skill/rules/review-lens-contract.md)).
+[`select-lenses.mjs`](../../pr-reviewer/scripts/select-lenses.mjs) decides which load; `prepare-review.mjs` writes its answer to `context.json` `lenses`, and `branch-reviewer` runs the same script on local git.
+Never pick lenses by hand: walk exactly `lenses.loaded[]`, each against its `files`, using its `text`.
+
+| Source | Loads when | Owner |
+| --- | --- | --- |
+| `.agents/review/lenses/<name>.md` in the reviewed repo | its trigger matches (auto by default; `auto: false` makes it name-only) | the team that owns the file (`CODEOWNERS`) |
+| `lenses: [<name>]` in a `.review.yaml` | a changed file under that config's directory matches the lens's `applies-to` | the team that owns the directory |
+| `--with <name>` | a changed file matches its `applies-to` | the caller, for one run |
+| a built-in lens with `auto: true` | its trigger matches | this repo |
+
+- **Trigger.** `applies-to` globs (or `always`), then `diff-matches` regexes over added lines, then `min-tier` (`quick` < `standard` < `deep`). A named lens checks only `applies-to`.
+- **Resolution, first match wins:** `.agents/review/lenses/<name>.md` → `.agents/skills/<name>/lens.md` (repo) → a lens bundled with this agent → `$HOME/.claude/skills/<name>/lens.md`. A repo lens of a built-in's name replaces the built-in.
+- **Read at the base commit.** A lens or `.review.yaml` the PR adds or edits does not review that PR; `lenses.notes` says so and the base version, if any, is used.
+- **No count cap.** `route-depth.mjs` adds `LENS_CALLS` to the tool-call budget for each loaded lens past the first three.
+- **Announce** every line of `lenses.announce` once, before Step 2.
+- A lens finding is tagged `[lens:<name>]`, maps through [Severity mapping](#severity-mapping), and [cannot block on its own](#a-lens-cannot-block-on-its-own).
+
+```markdown
+<!-- ✓ Right — .agents/review/lenses/payments-idempotency.md: a team rule the code cannot show -->
+---
+applies-to: "services/billing/**"
+diff-matches: 'charge\(|refund\('
+---
+## Checklist
+- [ ] Every charge or refund call passes an idempotency key derived from the order, never a random UUID.
+
+<!-- ✗ Wrong — restates the built-in quality checklist: duplicate findings that read as cross-rubric agreement -->
+---
+applies-to: always
+---
+- [ ] Names state intent.
+```
 
 ## Auto-engage heuristics for `critical`
 

@@ -658,7 +658,7 @@ function selfTest() {
     const three = resolveBudget({ routedTier: "standard", changedFiles: 22, lensCount: 3 });
     const five = resolveBudget({ routedTier: "standard", changedFiles: 22, lensCount: 5 });
     const unknown = resolveBudget({ routedTier: "standard", lensCount: 5 });
-    if (three.toolCalls === base.toolCalls && five.toolCalls === base.toolCalls + 2 * LENS_CALLS && unknown.toolCalls === null) passed++;
+    if (three.toolCalls === base.toolCalls && five.toolCalls === (base.toolCalls ?? 0) + 2 * LENS_CALLS && unknown.toolCalls === null) passed++;
     else fails.push(`lens budget drifted: ${JSON.stringify({ base: base.toolCalls, three: three.toolCalls, five: five.toolCalls, unknown: unknown.toolCalls })}`);
   }
 
