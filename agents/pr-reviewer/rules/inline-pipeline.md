@@ -61,11 +61,10 @@ partial/triaged run for files nobody read, reopening the hole the predicate exis
 Run the pipeline as defined in `agents/shared/rules/rubric-composition.md`:
 
 1. Load the `quality` checklist (always, unless `REVIEW_DIFF` is trivial).
-2. Load `ux` (UI globs — against `REVIEW_DIFF`).
-3. Load the `animations` lens only when `is-motion-diff.mjs` prints `MOTION_DIFF: yes` ([`rubric-composition.md` § The motion gate](../../shared/rules/rubric-composition.md#the-motion-gate-step-3)).
-4. Load `critical` (`--critical`, `context.reviewConfig.critical: always`, or auto-engage heuristic).
-5. Load every lens in `context.lenses.loaded[]` ([`rubric-composition.md` § Review lenses](../../shared/rules/rubric-composition.md#review-lenses)); there is no count cap.
-6. Walk each rubric against `REVIEW_DIFF`. Each rubric emits raw findings.
+2. Load the `animations` lens only when `is-motion-diff.mjs` prints `MOTION_DIFF: yes` ([`rubric-composition.md` § The motion gate](../../shared/rules/rubric-composition.md#the-motion-gate-step-3)).
+3. Load `critical` (`--critical`, `context.reviewConfig.critical: always`, or auto-engage heuristic).
+4. Load every lens in `context.lenses.loaded[]` ([`rubric-composition.md` § Review lenses](../../shared/rules/rubric-composition.md#review-lenses)), `ux` on UI files included; there is no count cap, and never load a lens a second time by hand.
+5. Walk each rubric against `REVIEW_DIFF`. Each rubric emits raw findings.
 
 **Independent finders (Phase D)** — run these alongside the rubrics.
 See [`agents/pr-reviewer/rules/finders.md`](./finders.md) for the polarity rule,
