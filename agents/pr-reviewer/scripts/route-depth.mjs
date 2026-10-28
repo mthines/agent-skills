@@ -220,11 +220,12 @@ const T_HOLISTIC_BROAD = 0.4;
  *  lenses out of the same 60 calls. Arms at t=0.8 skipped whole files to stay inside it — one
  *  declared a partial review after reading 13 of 22 files, and the file it only grepped held the
  *  highest-severity corroborated defect, which that arm missed in all three rounds. The budget is
- *  a ceiling, not a target, so raising it costs nothing on a run that does not need it. */
+ *  a ceiling, not a target, so raising it costs nothing on a run that does not need it. The bands
+ *  were doubled after a 127-file deep review declared a partial review at 32 files. */
 export const TOOL_CALL_BANDS = Object.freeze([
-  { maxFiles: 10, calls: 30 },
-  { maxFiles: 30, calls: 60 },
-  { maxFiles: Infinity, calls: 100 },
+  { maxFiles: 10, calls: 60 },
+  { maxFiles: 30, calls: 120 },
+  { maxFiles: Infinity, calls: 200 },
 ]);
 const T_TOOLCALLS_1_5 = 0.8;
 const T_TOOLCALLS_2 = 0.95;
@@ -599,8 +600,8 @@ function selfTest() {
     const d5 = resolveBudget({ routedTier: "deep", changedFiles: 5 });
     const d40 = resolveBudget({ routedTier: "deep", changedFiles: 40 });
     const unknown = resolveBudget({ routedTier: "deep" });
-    if (q22.toolCalls === 60 && s22.toolCalls === 60 && m22.toolCalls === 90 && d22.toolCalls === 120 && c22.toolCalls === 120
-      && d5.toolCalls === 60 && d40.toolCalls === 200 && unknown.toolCalls === null
+    if (q22.toolCalls === 120 && s22.toolCalls === 120 && m22.toolCalls === 180 && d22.toolCalls === 240 && c22.toolCalls === 240
+      && d5.toolCalls === 120 && d40.toolCalls === 400 && unknown.toolCalls === null
       && q22.toolCallMultiplier === 1 && s22.toolCallMultiplier === 1 && m22.toolCallMultiplier === 1.5
       && d22.toolCallMultiplier === 2 && c22.toolCallMultiplier === 2) passed++;
     else fails.push(`tool-call budget drifted: ${JSON.stringify({ q: q22.toolCalls, s: s22.toolCalls, m: m22.toolCalls, d: d22.toolCalls, c: c22.toolCalls, d5: d5.toolCalls, d40: d40.toolCalls, u: unknown.toolCalls })}`);
@@ -659,17 +660,17 @@ function selfTest() {
       && two.finderPasses === 2 && two.finderPassesRequested === 2 && two.finderPassesReason === "requested"
       && JSON.stringify(two.secondPassUnits) === '["intent-2","other-finders-2"]'
       // the call budget grows by half; nothing else on the budget moves
-      && one.toolCalls === 120 && two.toolCalls === 180 && twoLow.toolCalls === 45
+      && one.toolCalls === 240 && two.toolCalls === 360 && twoLow.toolCalls === 90
       && JSON.stringify({ ...two, toolCalls: 0, finderPasses: 0, finderPassesRequested: 0, finderPassesReason: "", secondPassUnits: [] })
         === JSON.stringify({ ...one, toolCalls: 0, finderPasses: 0, finderPassesRequested: 0, finderPassesReason: "", secondPassUnits: [] })
       // pass 1's topology stays as routed; pass 2 still runs on a small incremental re-review
       && twoSmallInc.topology === "in-context" && twoSmallInc.finderPasses === 2
       && twoNoDispatch.finderPasses === 1 && twoNoDispatch.finderPassesRequested === 2
       && twoNoDispatch.finderPassesReason === "no-dispatch" && twoNoDispatch.secondPassUnits.length === 0
-      && twoNoDispatch.toolCalls === 120
+      && twoNoDispatch.toolCalls === 240
       && twoZero.finderPasses === 1 && twoZero.finderPassesReason === "zero-delta"
       && twoZeroFallback.finderPasses === 2 && twoZeroFallback.finderPassesReason === "requested"
-      && JSON.stringify(twoZeroFallback.secondPassUnits) === '["intent-2","other-finders-2"]' && twoZeroFallback.toolCalls === 180
+      && JSON.stringify(twoZeroFallback.secondPassUnits) === '["intent-2","other-finders-2"]' && twoZeroFallback.toolCalls === 360
       && three.finderPasses === 1 && three.finderPassesReason === "single";
     if (ok) passed++;
     else fails.push(`finder_passes drifted: ${JSON.stringify({ one: [one.finderPasses, one.toolCalls], two: [two.finderPasses, two.finderPassesReason, two.secondPassUnits, two.toolCalls], twoLow: twoLow.toolCalls, smallInc: [twoSmallInc.topology, twoSmallInc.finderPasses], noDispatch: [twoNoDispatch.finderPasses, twoNoDispatch.finderPassesReason], zero: [twoZero.finderPasses, twoZero.finderPassesReason], zeroFallback: [twoZeroFallback.finderPasses, twoZeroFallback.finderPassesReason], three: three.finderPasses })}`);
