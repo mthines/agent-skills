@@ -231,6 +231,18 @@ One input changes, for one finder:
   set. `intent: not run (no stated intent found)` is a true statement; a clean intent pass over an
   imagined intent is not.
 
+Every finder and the verifier also get the maintainers' `REVIEW.md` notes, read at `$BASE`, never
+the working tree ([`review-context.md`](./shared/rules/review-context.md)). Pass this command's stdout
+to each of them above the diff. Exit 0 with empty stdout means no `REVIEW.md` applies, and its stderr
+line is the announcement. A non-zero exit is a failed read, not an absence: report
+`review context not loaded: <stderr>` in the verdict and run the finders without it.
+
+```bash
+node "$AGENT_SUPPORT/pr-reviewer/scripts/review-context.mjs" \
+  --base "$BASE" --files-json "$TMP/local-files.json" > "$TMP/review-context.md" \
+  || echo "review context not loaded (exit $?)" >&2
+```
+
 Everything else — correctness, consumer-impact, dependency, standards, quality — is unchanged,
 including diversify-then-vote at N = 3 (N = 5 under `--effort high`) when you hold a dispatch tool,
 and the two independence-breakers to avoid: never pass one finder's candidates to another, and never

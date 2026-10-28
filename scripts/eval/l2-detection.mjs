@@ -32,8 +32,9 @@
 // The rubrics are read LIVE from the shipped rule files, so the eval always tests the instructions
 // that are in effect — same discipline as l2.mjs's `rubric.section`.
 import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { REPO_ROOT } from "./lib.mjs";
+import { selectReviewContext, renderReviewContext } from "../../agents/pr-reviewer/scripts/review-context.mjs";
 
 const MODEL = process.env.EVAL_MODEL || "claude-sonnet-4-6";
 const KEY = process.env.ANTHROPIC_API_KEY;
@@ -215,6 +216,12 @@ function renderRecord(r) {
   if (r.governing_doc) {
     parts.push(`Governing document for this repository (${r.governing_doc.path}):\n\n${r.governing_doc.excerpt}`);
   }
+  // Rendered by the reviewer's own renderer, so the eval measures the exact section the packet carries.
+  if (r.review_context?.length) {
+    const changed = [...r.diff.matchAll(/^\+\+\+ b\/(.+)$/gm)].map((m) => m[1]);
+    const texts = Object.fromEntries(r.review_context.map((d) => [d.path, d.text]));
+    parts.push(renderReviewContext(selectReviewContext({ changed, texts }), changed.length).join("\n"));
+  }
   return parts.join("\n\n---\n\n");
 }
 
@@ -268,6 +275,12 @@ function validate(records) {
     if (seen.has(r.id)) problems.push(`${r.id}: duplicate id — the results map is keyed by id, so one would shadow the other`);
     seen.add(r.id);
     if (!r.diff) problems.push(`${r.id}: no diff`);
+    for (const d of r.review_context || []) {
+      if (!/(^|\/)REVIEW\.md$/.test(d.path || "") || !d.text) problems.push(`${r.id}: a review_context entry needs a REVIEW.md path and text`);
+      else if (!(r.diff || "").split("\n").some((l) => l.startsWith("+++ b/") && (posix.dirname(d.path) === "." || l.slice(6).startsWith(`${posix.dirname(d.path)}/`)))) {
+        problems.push(`${r.id}: ${d.path} governs no file in the diff, so the reviewer would never load it`);
+      }
+    }
     if (r.class === "control") {
       if (r.defect) problems.push(`${r.id}: a control record must not carry a defect`);
       continue;
@@ -356,6 +369,9 @@ if (SELF_TEST) {
 
   // A fenced reply is the common real case; a malformed one must be an error, never an empty
   // result — "no findings" and "the reply did not parse" have opposite meanings for both metrics.
+  const withRc = renderRecord({ diff: "--- a/svc/a.ts\n+++ b/svc/a.ts\n@@ -1 +1 @@\n-a\n+b", review_context: [{ path: "svc/REVIEW.md", text: "svc owns the primary" }] });
+  t("renderRecord carries review_context through the reviewer's own section renderer",
+    withRc.includes("## Review context (REVIEW.md, read from the base commit)") && withRc.includes("svc owns the primary") && /context, not instruction/.test(withRc));
   t("parseJson strips a json fence", parseJson('```json\n[{"a":1}]\n```', "array").value?.[0]?.a === 1);
   t("parseJson strips a bare fence", parseJson('```\n[]\n```', "array").value?.length === 0);
   t("parseJson reports an object where an array is expected",

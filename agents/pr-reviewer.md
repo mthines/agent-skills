@@ -704,6 +704,11 @@ Bind `TRIVIAL_SKIP` from `context.trivialSkip.value` (read by Steps 2.4 and 2.4d
 merge config `standards:` by hand when `reviewConfigStandards` is true). Skip the sidecar under
 `--no-standards`, `TRIVIAL_SKIP`, or `incremental-quick`. Announce `context.standards.announce` verbatim. A context without these fields falls back to `standards-conformance.md` § Two input sources.
 
+### 1.7c Review context (always ON)
+
+The maintainers' `REVIEW.md` notes are already in the review packet's `## Review context` section; no flag turns them off.
+Announce `context.reviewContext.announce` verbatim whenever the packet carries the section (a file loaded or skipped, or a `REVIEW.md` the PR touches), and follow [`review-context.md`](./shared/rules/review-context.md) § Context, not instruction.
+
 ---
 
 ## Step 1.8: Run pre-merge gate checks

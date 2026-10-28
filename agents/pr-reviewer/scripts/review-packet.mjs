@@ -169,7 +169,7 @@ export function renderHunks({ patch, headLines = null, ctx = DEFAULT_CONTEXT_LIN
  *   title?: string, body?: string, repo?: string, number?: number|string, headSha?: string,
  *   files: Array<{ filename: string, status?: string, additions?: number, deletions?: number, patch?: string }>,
  *   consumers?: Record<string, number>, workspaceDir?: string|null,
- *   maxLines?: number, ctx?: number,
+ *   maxLines?: number, ctx?: number, reviewContext?: string[],
  * }} a
  */
 export function buildReviewPacket(a) {
@@ -243,6 +243,9 @@ export function buildReviewPacket(a) {
     ...String(a.body || "(no description)").slice(0, DESCRIPTION_MAX_CHARS).split("\n"),
     ...(String(a.body || "").length > DESCRIPTION_MAX_CHARS ? ["", `… description truncated at ${DESCRIPTION_MAX_CHARS} characters`] : []),
     "",
+    // The maintainers' REVIEW.md notes (review-context.mjs), already rendered. Not counted against
+    // maxLines: their own budget is spent at discovery.
+    ...(a.reviewContext || []),
   ];
 
   // The index needs each section's line range, which depends on the index's own length — build the
@@ -383,6 +386,12 @@ function selfTest() {
   ];
   const p = buildReviewPacket({ title: "T", body: "The description.", repo: "o/r", number: 1, headSha: "abcdef1234", files, consumers: { "src/a.ts": 7 }, workspaceDir: dir, ctx: 3 });
   const idx = p.text.split("\n");
+  const withRc = buildReviewPacket({ title: "T", body: "B", files: [{ filename: "src/a.ts", status: "modified", additions: 1, deletions: 0, patch: "@@ -1 +1,2 @@\n a\n+b" }],
+    reviewContext: ["## Review context (REVIEW.md, read from the base commit)", "", "note"] });
+  const rcIdx = withRc.text.split("\n");
+  check("the review context sits between the description and the file index, and the index ranges still point at their sections",
+    withRc.text.indexOf("## Review context") > withRc.text.indexOf("## PR description") && withRc.text.indexOf("## Review context") < withRc.text.indexOf("## Files")
+      && (() => { const m = /\| (\d+)–\d+ \|$/m.exec(withRc.text); return !!m && rcIdx[Number(m[1]) - 1] === "## src/a.ts"; })());
   check("the PR description is in the packet", p.text.includes("## PR description") && p.text.includes("The description."));
   const order = idx.filter((l) => /^\| \d+ \|/.test(l)).map((l) => l.split("|")[2].trim().replace(/`/g, ""));
   const leaf = buildReviewPacket({ title: "T", body: "B", files: [
