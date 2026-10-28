@@ -223,15 +223,17 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
     return null;
   };
   /** @param {string} name @param {{ text: string, source: string }} hit @param {{ named: boolean, scope?: string[], why: string }} how */
-  // A lens reached by several sources (a scoped `lenses:` entry, then its own auto trigger) loads
-  // once, over the union of the files each source matched.
+  // A lens file reached by several sources (a scoped `lenses:` entry, then its own auto trigger)
+  // loads once, over the union of the files each source matched. A different file of the same
+  // name never merges in: the first source's text keeps its own files.
   const consider = (name, hit, how) => {
     if (seen.has(name)) return;
+    const prior = loaded.find((l) => l.name === name);
+    if (prior && prior.source !== hit.source) return;
     const lens = parseLens(hit.text);
     if (lens.error) { seen.add(name); skipped.push({ name, reason: `${hit.source}: ${lens.error}` }); return; }
     const t = triggerMatches(lens, { changed, tier, named: how.named, scope: how.scope });
     if (!t.match) { if (how.named && !misses.has(name)) misses.set(name, `${how.why}, but ${t.reason}`); return; }
-    const prior = loaded.find((l) => l.name === name);
     if (prior) {
       prior.files = [...new Set([...prior.files, ...t.files])].sort();
       prior.reason += `; ${how.why}`;
@@ -444,6 +446,10 @@ function selfTest() {
   const s12 = selectLenses({ changed: [ch("svc/C.tsx"), ch("web/B.tsx")], configs: svcUx, bundledLenses: { ux } });
   check("a lens reached by a scoped entry and its own trigger loads once over the union of files",
     s12.loaded.length === 1 && JSON.stringify(s12.loaded[0].files) === '["svc/C.tsx","web/B.tsx"]', JSON.stringify(s12.loaded));
+  const teamUx = lens('applies-to: "svc/**"', "## Checklist\n\n- [ ] the svc rule\n");
+  const s13 = selectLenses({ changed: [ch("svc/C.tsx"), ch("web/B.tsx")], configs: svcUx, repoSkillLenses: { ux: teamUx }, bundledLenses: { ux } });
+  check("a different file of the same name never merges its trigger files into the first source's text",
+    s13.loaded.length === 1 && s13.loaded[0].source === ".agents/skills/ux/lens.md" && JSON.stringify(s13.loaded[0].files) === '["svc/C.tsx"]', JSON.stringify(s13.loaded));
   const crlf = parseLens('---\r\napplies-to: "services/billing/**"\r\nauto: false\r\n---\r\n\r\n## Checklist\r\n');
   check("a lens with CRLF line endings keeps its frontmatter",
     JSON.stringify(crlf.appliesTo) === '["services/billing/**"]' && crlf.auto === false, JSON.stringify(crlf));
