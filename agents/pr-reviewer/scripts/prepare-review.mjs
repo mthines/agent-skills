@@ -1554,6 +1554,9 @@ export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, t
   return { text: "", source: "none" };
 }
 
+/** At most this many contents-API reads in flight at once, so a wide PR does not burst the API. */
+const REVIEW_CONTEXT_API_CONCURRENCY = 8;
+
 /**
  * The `REVIEW.md` candidates for the changed files (review-context.mjs § candidatePaths), read at
  * the PR's BASE commit for the same reason as the review config: a PR must not rewrite the notes
@@ -1586,8 +1589,15 @@ export async function readBaseReviewContext({ dir, baseSha, repo, changed, timeo
     return { texts, unreadable, unknown, source: "workspace" };
   }
   if (!repo) return { texts, unreadable, unknown, source: "none (no local base commit, no repo)" };
-  const results = await Promise.all(paths.map((rel) =>
-    runner("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${rel}?ref=${baseSha}`], { timeoutMs }).then((r) => ({ rel, r }))));
+  // Encode each segment so a `#`, `?`, or space in a directory name reaches the API as part of the path.
+  const fetchOne = (/** @type {string} */ rel) => {
+    const encoded = rel.split("/").map(encodeURIComponent).join("/");
+    return runner("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${encoded}?ref=${baseSha}`], { timeoutMs }).then((r) => ({ rel, r }));
+  };
+  const results = [];
+  for (let i = 0; i < paths.length; i += REVIEW_CONTEXT_API_CONCURRENCY) {
+    results.push(...await Promise.all(paths.slice(i, i + REVIEW_CONTEXT_API_CONCURRENCY).map(fetchOne)));
+  }
   for (const { rel, r } of results) {
     if (r.ok) texts[rel] = r.stdout;
     else if (!/\bHTTP 404\b/.test(r.stderr)) unknown.push(rel);
@@ -2759,16 +2769,20 @@ async function selfTest() {
     }
   });
   t("readBaseReviewContext over the contents API: a 404 is absent, any other failure is unknown (never unreadable), and no base SHA reads nothing", async () => {
+    /** @type {string[]} */
+    const urls = [];
     const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
       const url = args.find((a) => a.includes("contents/")) || "";
+      urls.push(url);
       if (url.includes("contents/REVIEW.md")) return { ok: true, code: 0, stdout: "root notes\n", stderr: "", timedOut: false };
       if (url.includes("contents/svc/ingest/REVIEW.md")) return { ok: false, code: 1, stdout: "", stderr: "gh: Server Error (HTTP 502)", timedOut: false };
       return { ok: false, code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)", timedOut: false };
     };
-    const r = await readBaseReviewContext({ baseSha: "abc1234def", repo: "o/r", changed: ["svc/ingest/a.ts"], runner });
+    const r = await readBaseReviewContext({ baseSha: "abc1234def", repo: "o/r", changed: ["svc/ingest/a.ts", "a#b/c.ts"], runner });
     const none = await readBaseReviewContext({ baseSha: "", repo: "o/r", changed: ["a.ts"], runner });
     return r.source === "contents API" && JSON.stringify(Object.keys(r.texts)) === JSON.stringify(["REVIEW.md"])
       && r.unreadable.length === 0 && JSON.stringify(r.unknown) === JSON.stringify(["svc/ingest/REVIEW.md"])
+      && urls.includes("repos/o/r/contents/a%23b/REVIEW.md?ref=abc1234def") && !urls.some((u) => u.includes("a#b"))
       && Object.keys(none.texts).length === 0 && none.source === "none (no base SHA)";
   });
   t("extraHighStakes returns empty when the key is absent", () => {
