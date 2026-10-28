@@ -1559,37 +1559,40 @@ export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, t
  * the PR's BASE commit for the same reason as the review config: a PR must not rewrite the notes
  * that review it. Same order as `readBaseReviewConfig`: one `ls-tree` over every candidate in the
  * workspace, then `git show` per present file; with no local base commit, the contents API at
- * `baseSha`, where only a 404 means "absent". A file that exists but cannot be read is listed in
- * `unreadable`, never replaced by the head's copy.
+ * `baseSha`, where only a 404 means "absent". A file `ls-tree` listed but `git show` cannot read
+ * is listed in `unreadable`; a contents-API failure other than a 404 (403, 502) says nothing about
+ * whether the file exists, so it is listed in `unknown`. Neither is ever replaced by the head's copy.
  * @param {{ dir?: string|null, baseSha?: string, repo?: string, changed: string[], timeoutMs?: number, runner?: typeof run }} input
- * @returns {Promise<{ texts: Record<string, string>, unreadable: string[], source: string, error?: string }>}
+ * @returns {Promise<{ texts: Record<string, string>, unreadable: string[], unknown: string[], source: string, error?: string }>}
  */
 export async function readBaseReviewContext({ dir, baseSha, repo, changed, timeoutMs = 30000, runner = run }) {
   /** @type {Record<string, string>} */
   const texts = {};
   /** @type {string[]} */
   const unreadable = [];
-  if (!baseSha) return { texts, unreadable, source: "none (no base SHA)" };
+  /** @type {string[]} */
+  const unknown = [];
+  if (!baseSha) return { texts, unreadable, unknown, source: "none (no base SHA)" };
   const paths = candidatePaths(changed);
   if (dir && (await runner("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok) {
     // -z: without it git quotes a non-ASCII path, which then matches neither `git show` nor the changed paths.
     const ls = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "ls-tree", "-z", "--full-tree", "--name-only", baseSha, "--", ...paths], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
     // Which candidates exist is unknown here, so none is claimed unreadable; the caller raises the anomaly.
-    if (!ls.ok) return { texts, unreadable, source: "workspace", error: `git ls-tree at the base failed: ${describeFailure(ls).slice(0, 160)}` };
+    if (!ls.ok) return { texts, unreadable, unknown, source: "workspace", error: `git ls-tree at the base failed: ${describeFailure(ls).slice(0, 160)}` };
     for (const rel of ls.stdout.split("\0").filter(Boolean)) {
       const r = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
       if (r.ok) texts[rel] = r.stdout; else unreadable.push(rel);
     }
-    return { texts, unreadable, source: "workspace" };
+    return { texts, unreadable, unknown, source: "workspace" };
   }
-  if (!repo) return { texts, unreadable, source: "none (no local base commit, no repo)" };
+  if (!repo) return { texts, unreadable, unknown, source: "none (no local base commit, no repo)" };
   const results = await Promise.all(paths.map((rel) =>
     runner("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${rel}?ref=${baseSha}`], { timeoutMs }).then((r) => ({ rel, r }))));
   for (const { rel, r } of results) {
     if (r.ok) texts[rel] = r.stdout;
-    else if (!/\bHTTP 404\b/.test(r.stderr)) unreadable.push(rel);
+    else if (!/\bHTTP 404\b/.test(r.stderr)) unknown.push(rel);
   }
-  return { texts, unreadable, source: "contents API" };
+  return { texts, unreadable, unknown, source: "contents API" };
 }
 
 /* --------------------------------- main --------------------------------- */
@@ -1888,7 +1891,7 @@ async function prepare(opts) {
     const changedPaths = files.map((f) => f.filename);
     const base = await readBaseReviewContext({ dir: workspace.dir, baseSha, repo, changed: changedPaths, timeoutMs });
     const baseKnown = !base.error && !base.source.startsWith("none");
-    const rc = selectReviewContext({ changed: changedPaths, texts: base.texts, unreadable: base.unreadable, baseKnown });
+    const rc = selectReviewContext({ changed: changedPaths, texts: base.texts, unreadable: base.unreadable, unknown: base.unknown, baseKnown });
     reviewContextLines = renderReviewContext(rc, changedPaths.length);
     reviewContext = {
       docs: rc.docs.map((d) => ({ path: d.path, chars: d.chars, governs: d.governs.length })),
@@ -1897,6 +1900,7 @@ async function prepare(opts) {
     };
     if (base.error) anomalies.push(`review context not loaded: ${base.error} — finders run without the REVIEW.md notes`);
     if (base.unreadable.length) anomalies.push(`review context: ${base.unreadable.join(", ")} exist at the base but could not be read — reviewed without them`);
+    if (base.unknown.length) anomalies.push(`review context: ${base.unknown.join(", ")} could not be read at the base, so whether they exist there is unknown — reviewed without them`);
   } catch (e) {
     anomalies.push(`review context not loaded: ${String(e && e.message || e).slice(0, 200)} — finders run without the REVIEW.md notes`);
   }
@@ -2754,7 +2758,7 @@ async function selfTest() {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-  t("readBaseReviewContext over the contents API: a 404 is absent, any other failure is unreadable, and no base SHA reads nothing", async () => {
+  t("readBaseReviewContext over the contents API: a 404 is absent, any other failure is unknown (never unreadable), and no base SHA reads nothing", async () => {
     const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
       const url = args.find((a) => a.includes("contents/")) || "";
       if (url.includes("contents/REVIEW.md")) return { ok: true, code: 0, stdout: "root notes\n", stderr: "", timedOut: false };
@@ -2764,7 +2768,7 @@ async function selfTest() {
     const r = await readBaseReviewContext({ baseSha: "abc1234def", repo: "o/r", changed: ["svc/ingest/a.ts"], runner });
     const none = await readBaseReviewContext({ baseSha: "", repo: "o/r", changed: ["a.ts"], runner });
     return r.source === "contents API" && JSON.stringify(Object.keys(r.texts)) === JSON.stringify(["REVIEW.md"])
-      && JSON.stringify(r.unreadable) === JSON.stringify(["svc/ingest/REVIEW.md"])
+      && r.unreadable.length === 0 && JSON.stringify(r.unknown) === JSON.stringify(["svc/ingest/REVIEW.md"])
       && Object.keys(none.texts).length === 0 && none.source === "none (no base SHA)";
   });
   t("extraHighStakes returns empty when the key is absent", () => {

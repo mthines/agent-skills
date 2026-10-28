@@ -57,12 +57,14 @@ function depth(p) { return p.split("/").length; }
 
 /**
  * Which loaded `REVIEW.md` files govern which changed files, under a character budget. Pure.
- * @param {{ changed: string[], texts: Record<string, string>, unreadable?: string[], baseKnown?: boolean, capChars?: number }} a
+ * @param {{ changed: string[], texts: Record<string, string>, unreadable?: string[], unknown?: string[], baseKnown?: boolean, capChars?: number }} a
  *   `texts` maps each candidate path that EXISTS at the base to its content; `unreadable` lists
- *   paths that exist at the base but could not be read; `baseKnown: false` means the base read
- *   failed, so an absent path proves nothing about whether the PR added it.
+ *   paths that exist at the base but could not be read; `unknown` lists paths whose read failed
+ *   in a way that does not say whether they exist at the base, so a touched one is `unknownInPr`,
+ *   never edited or added; `baseKnown: false` means the base read failed, so an absent path
+ *   proves nothing about whether the PR added it.
  */
-export function selectReviewContext({ changed, texts, unreadable = [], baseKnown = true, capChars = REVIEW_CONTEXT_CAP_CHARS }) {
+export function selectReviewContext({ changed, texts, unreadable = [], unknown = [], baseKnown = true, capChars = REVIEW_CONTEXT_CAP_CHARS }) {
   const present = Object.keys(texts).filter((p) => posix.basename(p) === REVIEW_CONTEXT_FILE);
   /** @type {Record<string, string[]>} */
   const governs = {};
@@ -77,6 +79,7 @@ export function selectReviewContext({ changed, texts, unreadable = [], baseKnown
   const kept = new Set();
   /** @type {Array<{ path: string, reason: string }>} */
   const skipped = unreadable.map((p) => ({ path: p, reason: "exists at the base but could not be read" }));
+  for (const p of unknown) skipped.push({ path: p, reason: "could not be read at the base, so whether it exists there is unknown" });
   for (const p of byPriority) {
     const chars = texts[p].length;
     if (!texts[p].trim()) { skipped.push({ path: p, reason: "empty" }); continue; }
@@ -94,9 +97,11 @@ export function selectReviewContext({ changed, texts, unreadable = [], baseKnown
   // A REVIEW.md the PR touches: `edited` has a base version in force; `added` has none yet.
   const touched = changed.filter((f) => posix.basename(f) === REVIEW_CONTEXT_FILE);
   const atBase = new Set([...present, ...unreadable]);
-  const editedInPr = baseKnown ? touched.filter((p) => atBase.has(p)) : [];
-  const addedInPr = baseKnown ? touched.filter((p) => !atBase.has(p)) : [];
-  const unknownInPr = baseKnown ? [] : touched;
+  const unknownAtBase = new Set(unknown);
+  const known = touched.filter((p) => !unknownAtBase.has(p));
+  const editedInPr = baseKnown ? known.filter((p) => atBase.has(p)) : [];
+  const addedInPr = baseKnown ? known.filter((p) => !atBase.has(p)) : [];
+  const unknownInPr = baseKnown ? touched.filter((p) => unknownAtBase.has(p)) : touched;
   return {
     docs, skipped, editedInPr, addedInPr, unknownInPr, chars: used, capChars,
     announce: `Review context: ${docs.length} REVIEW.md file(s) loaded from the base (${used} chars)`
@@ -238,6 +243,12 @@ function selfTest() {
   const unread = selectReviewContext({ changed: ["svc/a.ts"], texts: {}, unreadable: ["svc/REVIEW.md"] });
   check("an unreadable base file is in skipped and in the announce",
     unread.skipped.length === 1 && /could not be read/.test(unread.skipped[0].reason) && /1 skipped — svc\/REVIEW\.md/.test(unread.announce));
+  const unk = selectReviewContext({ changed: ["svc/REVIEW.md", "svc/a.ts"], texts: {}, unknown: ["svc/REVIEW.md"] });
+  const unkText = renderReviewContext(unk, 2).join("\n") + unk.announce;
+  check("a base read that cannot say whether a touched REVIEW.md exists calls it unknown, never edited or added",
+    JSON.stringify(unk.unknownInPr) === JSON.stringify(["svc/REVIEW.md"]) && unk.editedInPr.length === 0 && unk.addedInPr.length === 0
+      && unk.skipped.some((s) => s.path === "svc/REVIEW.md" && s.reason === "could not be read at the base, so whether it exists there is unknown")
+      && !/base version/.test(unkText), unkText);
   const repo = mkdtempSync(join(tmpdir(), "review-context-"));
   try {
     const g = (/** @type {string[]} */ a) => spawnSync("git", ["-C", repo, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
