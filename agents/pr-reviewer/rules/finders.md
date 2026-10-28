@@ -114,6 +114,8 @@ An unknown value exits non-zero rather than producing a key nothing else will ev
 | `ux`, `critical`, `--with …` | as today | as today | unchanged |
 
 
+**Every finder reads the packet's `## Review context` section** — the maintainers' `REVIEW.md` notes for the changed paths, read from the base commit. A change that contradicts a note is a candidate under the finder's own class, citing the code line and naming the note as the reason; the notes never suppress a candidate. See [`review-context.md`](../../shared/rules/review-context.md).
+
 **Persona 4 is retired, not renamed.** It was gated on the diff touching a manifest, which meant a transitive major bump through a lockfile — the common case — never triggered it, and it never resolved a version even when it did fire. The dependency finder runs off resolved lockfile deltas instead.
 
 ## Diversify then vote

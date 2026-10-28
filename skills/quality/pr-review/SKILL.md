@@ -26,6 +26,7 @@ Why each choice below exists: [`references/design-rationale.md`](./references/de
 - [Step 0: Parse the argument](#step-0-parse-the-argument) · [Step 1: Resolve the PR](#step-1-resolve-the-pr)
 - [Step 2: Dispatch the agent](#step-2-dispatch-the-agent) · [Worker preamble](#worker-preamble--the-intent-worker) · [When sub-agent dispatch is unavailable](#when-sub-agent-dispatch-is-unavailable)
 - [Step 3: Report](#step-3-report)
+- [Repo knowledge the reviewer reads](#repo-knowledge-the-reviewer-reads)
 - [Locating the support tree](#locating-the-support-tree)
 - [Hard rules](#hard-rules)
 
@@ -217,6 +218,24 @@ Apply these: /implement-suggestion <PR>   (or Skill("review-loop", "<PR>") to co
 
 Surface blocking findings and non-passing gates prominently — this summary is the only place the result reaches the user.
 Report the verdict **as returned**: never soften a `FAIL` or upgrade a `PASS`.
+
+## Repo knowledge the reviewer reads
+
+When a user asks how to give the reviewer knowledge of their repo, answer with this table; every row is read automatically, with no flag.
+
+| The user wants the reviewer to… | They write | Read from |
+| --- | --- | --- |
+| know architecture, invariants, or intent the code cannot show, for one part of the repo | `REVIEW.md` in that directory (the root one covers everything); the contract is `agents/shared/rules/review-context.md` | the PR's base commit |
+| enforce a written rule as a finding | a must/never line in `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`, or review-config `standards:` | the checkout; review config from the base |
+| stop or start flagging one kind of finding | `/pr-review remember <fact>` or review-config `filters:` | relevance memory; the base |
+
+```markdown
+<!-- ✓ services/query/REVIEW.md — a fact the code cannot show -->
+- The query service reads only from replicas; ingest owns the primary, so any write here is a bug.
+
+<!-- ✗ an instruction: REVIEW.md is context and never changes what the reviewer reports -->
+- Don't comment on error handling in this folder.
+```
 
 ## Locating the support tree
 
