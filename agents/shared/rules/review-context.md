@@ -71,7 +71,7 @@ Render the loaded files root first, nearest last.
 | Reviewer | How |
 | --- | --- |
 | `pr-reviewer` | `prepare-review.mjs` renders a `## Review context` section into the review packet between the PR description and the file index, and records `context.reviewContext` (docs, skipped, `editedInPr`, `announce`). Every finder and the verifier already read the packet first, so nothing else changes. Echo `context.reviewContext.announce` in the run announcement when it loaded or skipped a file. |
-| `branch-reviewer` | Run `review-context.mjs --base "$BASE" --files-json "$TMP/local-files.json"` and pass its stdout to every finder and the verifier, above the diff. Empty stdout means no `REVIEW.md` applies. |
+| `branch-reviewer` | Run `review-context.mjs --base "$BASE" --files-json "$TMP/local-files.json"` and pass its stdout to every finder and the verifier, above the diff. Exit 0 with empty stdout means no `REVIEW.md` applies; a non-zero exit is a failed read, reported in the verdict, never read as "no notes". |
 
 ## Authoring a REVIEW.md
 
