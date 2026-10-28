@@ -1887,11 +1887,12 @@ async function prepare(opts) {
   try {
     const changedPaths = files.map((f) => f.filename);
     const base = await readBaseReviewContext({ dir: workspace.dir, baseSha, repo, changed: changedPaths, timeoutMs });
-    const rc = selectReviewContext({ changed: changedPaths, texts: base.texts, unreadable: base.unreadable });
+    const baseKnown = !base.error && !base.source.startsWith("none");
+    const rc = selectReviewContext({ changed: changedPaths, texts: base.texts, unreadable: base.unreadable, baseKnown });
     reviewContextLines = renderReviewContext(rc, changedPaths.length);
     reviewContext = {
       docs: rc.docs.map((d) => ({ path: d.path, chars: d.chars, governs: d.governs.length })),
-      skipped: rc.skipped, editedInPr: rc.editedInPr, addedInPr: rc.addedInPr, chars: rc.chars, capChars: rc.capChars, source: base.source,
+      skipped: rc.skipped, editedInPr: rc.editedInPr, addedInPr: rc.addedInPr, unknownInPr: rc.unknownInPr, chars: rc.chars, capChars: rc.capChars, source: base.source,
       announce: rc.announce,
     };
     if (base.error) anomalies.push(`review context not loaded: ${base.error} — finders run without the REVIEW.md notes`);

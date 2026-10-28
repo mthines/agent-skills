@@ -57,11 +57,12 @@ function depth(p) { return p.split("/").length; }
 
 /**
  * Which loaded `REVIEW.md` files govern which changed files, under a character budget. Pure.
- * @param {{ changed: string[], texts: Record<string, string>, unreadable?: string[], capChars?: number }} a
+ * @param {{ changed: string[], texts: Record<string, string>, unreadable?: string[], baseKnown?: boolean, capChars?: number }} a
  *   `texts` maps each candidate path that EXISTS at the base to its content; `unreadable` lists
- *   paths that exist at the base but could not be read.
+ *   paths that exist at the base but could not be read; `baseKnown: false` means the base read
+ *   failed, so an absent path proves nothing about whether the PR added it.
  */
-export function selectReviewContext({ changed, texts, unreadable = [], capChars = REVIEW_CONTEXT_CAP_CHARS }) {
+export function selectReviewContext({ changed, texts, unreadable = [], baseKnown = true, capChars = REVIEW_CONTEXT_CAP_CHARS }) {
   const present = Object.keys(texts).filter((p) => posix.basename(p) === REVIEW_CONTEXT_FILE);
   /** @type {Record<string, string[]>} */
   const governs = {};
@@ -93,14 +94,16 @@ export function selectReviewContext({ changed, texts, unreadable = [], capChars 
   // A REVIEW.md the PR touches: `edited` has a base version in force; `added` has none yet.
   const touched = changed.filter((f) => posix.basename(f) === REVIEW_CONTEXT_FILE);
   const atBase = new Set([...present, ...unreadable]);
-  const editedInPr = touched.filter((p) => atBase.has(p));
-  const addedInPr = touched.filter((p) => !atBase.has(p));
+  const editedInPr = baseKnown ? touched.filter((p) => atBase.has(p)) : [];
+  const addedInPr = baseKnown ? touched.filter((p) => !atBase.has(p)) : [];
+  const unknownInPr = baseKnown ? [] : touched;
   return {
-    docs, skipped, editedInPr, addedInPr, chars: used, capChars,
+    docs, skipped, editedInPr, addedInPr, unknownInPr, chars: used, capChars,
     announce: `Review context: ${docs.length} REVIEW.md file(s) loaded from the base (${used} chars)`
       + (skipped.length ? `, ${skipped.length} skipped — ${skipped.map((s) => s.path).join(", ")}` : "")
       + (editedInPr.length ? `; this PR edits ${editedInPr.join(", ")} — the base version is used` : "")
       + (addedInPr.length ? `; this PR adds ${addedInPr.join(", ")} — not loaded until it merges` : "")
+      + (unknownInPr.length ? `; this PR touches ${unknownInPr.join(", ")} — base state unknown, not loaded` : "")
       + ".",
   };
 }
@@ -113,7 +116,8 @@ export function selectReviewContext({ changed, texts, unreadable = [], capChars 
  * @returns {string[]}
  */
 export function renderReviewContext(rc, totalChanged) {
-  if (!rc || (!rc.docs.length && !rc.skipped.length && !rc.editedInPr.length && !rc.addedInPr.length)) return [];
+  const notes = [...rc?.skipped || [], ...rc?.editedInPr || [], ...rc?.addedInPr || [], ...rc?.unknownInPr || []];
+  if (!rc || (!rc.docs.length && !notes.length)) return [];
   const out = [
     "## Review context (REVIEW.md, read from the base commit)",
     "",
@@ -137,7 +141,8 @@ export function renderReviewContext(rc, totalChanged) {
   for (const s of rc.skipped) out.push(`- Not loaded: \`${s.path}\` — ${s.reason}.`);
   for (const p of rc.editedInPr) out.push(`- This PR edits \`${p}\`; the base version is the one in force until it merges.`);
   for (const p of rc.addedInPr) out.push(`- This PR adds \`${p}\`; it is not loaded until it merges.`);
-  if (rc.skipped.length || rc.editedInPr.length || rc.addedInPr.length) out.push("");
+  for (const p of rc.unknownInPr) out.push(`- This PR touches \`${p}\`; the base could not be read, so no version of it is loaded.`);
+  if (notes.length) out.push("");
   return out;
 }
 
@@ -226,6 +231,10 @@ function selfTest() {
     added.editedInPr.length === 0 && JSON.stringify(added.addedInPr) === JSON.stringify(["svc/REVIEW.md"])
       && /adds `svc\/REVIEW\.md`; it is not loaded until it merges/.test(addedText) && !/base version/.test(addedText + added.announce),
     addedText);
+  const unknown = selectReviewContext({ changed: ["svc/REVIEW.md", "svc/a.ts"], texts: {}, baseKnown: false });
+  const unknownText = renderReviewContext(unknown, 2).join("\n");
+  check("a failed base read never calls a touched REVIEW.md added or edited",
+    unknown.addedInPr.length === 0 && unknown.editedInPr.length === 0 && /base could not be read/.test(unknownText) && !/ adds /.test(unknownText), unknownText);
   const unread = selectReviewContext({ changed: ["svc/a.ts"], texts: {}, unreadable: ["svc/REVIEW.md"] });
   check("an unreadable base file is in skipped and in the announce",
     unread.skipped.length === 1 && /could not be read/.test(unread.skipped[0].reason) && /1 skipped — svc\/REVIEW\.md/.test(unread.announce));
