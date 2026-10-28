@@ -707,7 +707,7 @@ merge config `standards:` by hand when `reviewConfigStandards` is true). Skip th
 ### 1.7c Review context (always ON)
 
 The maintainers' `REVIEW.md` notes are already in the review packet's `## Review context` section; no flag turns them off.
-Announce `context.reviewContext.announce` verbatim when it loaded or skipped a file, and follow [`review-context.md`](./shared/rules/review-context.md) § Context, not instruction.
+Announce `context.reviewContext.announce` verbatim whenever the packet carries the section (a file loaded or skipped, or a `REVIEW.md` the PR touches), and follow [`review-context.md`](./shared/rules/review-context.md) § Context, not instruction.
 
 ---
 
