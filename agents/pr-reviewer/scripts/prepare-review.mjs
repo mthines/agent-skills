@@ -2171,7 +2171,9 @@ async function prepare(opts) {
     // came from the sticky (the fallback rung) is reviewed in full, so it keeps finder pass 2.
     priorShaFromState: !!state.priorSha,
     finderPasses: finderPassesSetting.passes,
-    changedFiles: files.length,
+    // A failed or short paginated file list must not shrink the budget to the smallest band, so
+    // GitHub's own count from `gh pr view` wins when it is larger.
+    changedFiles: Math.max(files.length, Number(meta.changedFiles) || 0),
   });
 
   // Item 3: a capability-deactivated finder is exactly the class of "something changed what this
@@ -2640,7 +2642,7 @@ async function selfTest() {
   });
   t("prepare() feeds the resolved finder passes, and whether the state record supplied priorSha, into resolveBudget, records the passes in context.reviewConfig, and reports an ignored CLI value", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
-    return /priorShaFromState: !!state\.priorSha,\n\s+finderPasses: finderPassesSetting\.passes,\n\s+changedFiles: files\.length,\n\s+\}\);/.test(src)
+    return /priorShaFromState: !!state\.priorSha,\n\s+finderPasses: finderPassesSetting\.passes,\n(?:\s+\/\/.*\n)*\s+changedFiles: Math\.max\(files\.length, Number\(meta\.changedFiles\) \|\| 0\),\n\s+\}\);/.test(src)
       && /finderPasses: finderPassesSetting\.passes,\n\s+finderPassesSource: finderPassesSetting\.source,/.test(src)
       && /anomalies\.push\(\.\.\.finderPassesAnomalies\(finderPassesSetting\)\);/.test(src);
   });

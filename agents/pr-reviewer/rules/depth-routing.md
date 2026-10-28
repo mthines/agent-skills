@@ -264,7 +264,7 @@ At deep's 0.95 default every lever already sits at its ceiling, so on a `deep`-r
 `--effort high` (`t = 1`) changes nothing; it still raises a `standard` or `quick` routing to `deep`.
 
 **Tool-call budget (A/B iterations 1–3).** `pr-reviewer.md § Stop conditions` sizes the run's
-tool-call budget by changed-file count — 30 for ≤ 10 files, 60 for 11–30, 100 for > 30 — and
+tool-call budget by changed-file count — 60 for ≤ 10 files, 120 for 11–30, 200 for > 30 — and
 `resolveBudget({ …, changedFiles })` multiplies that band by `budget.toolCallMultiplier` and returns
 the result as `budget.toolCalls`, which `prepare-review.mjs` writes into `context.json`.
 Before this lever, every thoroughness paid for its extra finders, votes, and lenses out of the same
@@ -272,8 +272,8 @@ calls.
 On sync-tray#72 (22 files), arms at `t = 0.8` skipped whole files to stay inside 60: one declared a
 partial review after reading 13 of 22 files, and the file it only grepped held the
 highest-severity corroborated defect, which the `t = 0.8` arm missed in all three rounds.
-At `deep`'s default (`t = 0.95`) an 11–30-file diff gets 120 calls.
-`finder_passes: 2` multiplies the result by a further 1.5 for the second pass's verification ([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes)), so the same diff gets 180.
+At `deep`'s default (`t = 0.95`) an 11–30-file diff gets 240 calls.
+`finder_passes: 2` multiplies the result by a further 1.5 for the second pass's verification ([`dispatch-topology.md` § Two finder passes](./dispatch-topology.md#two-finder-passes)), so the same diff gets 360.
 The budget is a ceiling, never a target, so a run that finishes early spends nothing extra.
 
 **Holistic broad pass (item 3).** Step 2.4 used to run unconditionally — gated only by
