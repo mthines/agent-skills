@@ -230,6 +230,11 @@ export const TOOL_CALL_BANDS = Object.freeze([
 const T_TOOLCALLS_1_5 = 0.8;
 const T_TOOLCALLS_2 = 0.95;
 
+/** Lenses (select-lenses.mjs) have no count cap, so each one past the first three, which the bands
+ *  already absorb, adds a fixed number of calls to walk its checklist and verify what it raises. */
+export const LENS_CALLS = 10;
+const LENSES_IN_BAND = 3;
+
 /** A/B rounds 7–8: the default review runs in ONE context, plus the intent finder as its own
  *  sub-agent. Isolated, the intent finder flagged the highest-severity agreed defect on sync-tray#72
  *  in 3 of 3 runs (5–6 minutes each); run in one context with the other finders, the default
@@ -274,6 +279,7 @@ function highStakesReason(shape, band) {
  *   shape?: string[], band?: string, depthCapability?: string,
  *   dispatchAvailable?: boolean, effortHigh?: boolean, changedFiles?: number,
  *   runMode?: string, finderPasses?: number, priorShaFromState?: boolean,
+ *   lensCount?: number,
  * }} ResolveBudgetInput
  * @typedef {{
  *   effectiveThoroughness: number, requestedThoroughness: number,
@@ -411,7 +417,8 @@ export function resolveBudget(i = {}) {
     holisticBroadPass: t >= T_HOLISTIC_BROAD || i.routedTier === "deep",
     toolCallMultiplier,
     toolCalls: typeof i.changedFiles === "number" && Number.isFinite(i.changedFiles) && i.changedFiles >= 0
-      ? Math.round(toolCallBand(i.changedFiles) * toolCallMultiplier * passCallMultiplier) : null,
+      ? Math.round(toolCallBand(i.changedFiles) * toolCallMultiplier * passCallMultiplier)
+        + LENS_CALLS * Math.max(0, (i.lensCount ?? 0) - LENSES_IN_BAND) : null,
     finderPasses,
     finderPassesRequested,
     finderPassesReason,
@@ -642,6 +649,17 @@ function selfTest() {
       && JSON.stringify(incStd.finders) === JSON.stringify(noMode.finders);
     if (ok) passed++;
     else fails.push(`small-incremental topology drifted: ${JSON.stringify({ incStd: [incStd.topology, incStd.topologyReason], incQuick: incQuick.topology, zero: zero.topology, fullStd: fullStd.topology, incDeep: incDeep.topology, asked: incStdAsked.topology, effort: incStdEffort.topology, noMode: noMode.topology })}`);
+  }
+
+  // ---- resolveBudget: each lens past the first three adds LENS_CALLS (select-lenses.mjs has no cap) ----
+  total++;
+  {
+    const base = resolveBudget({ routedTier: "standard", changedFiles: 22 });
+    const three = resolveBudget({ routedTier: "standard", changedFiles: 22, lensCount: 3 });
+    const five = resolveBudget({ routedTier: "standard", changedFiles: 22, lensCount: 5 });
+    const unknown = resolveBudget({ routedTier: "standard", lensCount: 5 });
+    if (three.toolCalls === base.toolCalls && five.toolCalls === base.toolCalls + 2 * LENS_CALLS && unknown.toolCalls === null) passed++;
+    else fails.push(`lens budget drifted: ${JSON.stringify({ base: base.toolCalls, three: three.toolCalls, five: five.toolCalls, unknown: unknown.toolCalls })}`);
   }
 
   // ---- resolveBudget: finder_passes — one pass by default; two with a dispatch, except on Step 0.8's gates-only path ----
