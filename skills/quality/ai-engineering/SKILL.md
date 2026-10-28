@@ -51,7 +51,7 @@ Parse `$ARGUMENTS` (first token) and detect the mode:
 
 State the detected mode and the area(s) in scope before continuing:
 
-```
+```text
 Mode: review
 Areas: prompt-writing, system-prompt-design
 Targets: src/agents/triage.ts (system prompt at L24-78)

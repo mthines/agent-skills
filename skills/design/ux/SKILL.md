@@ -39,7 +39,7 @@ Read every target file completely before reporting on it.
 ## Pass 1 — The user's path (first, always)
 
 Outcome-changing findings (a broken flow, a control that does the wrong thing, a dead end) come from this pass, not from the checklist.
-Follow [`rules/user-path.md`](./rules/user-path.md):
+Follow [`rules/user-path.md`](./rules/user-path.md) (why the path comes first: [`references/path-first.md`](./references/path-first.md)):
 
 1. Name the page's job and the primary user task in one sentence each.
 2. Walk the task end to end in the code, from entry to the next step after success.

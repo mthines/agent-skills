@@ -42,8 +42,12 @@ const MAX_LENS_LINES = 1000; // review-lens-contract.md: a defensive guard again
 
 /* ------------------------------- parsing ------------------------------- */
 
-/** @param {string} v */
-const unquote = (v) => v.trim().replace(/^(["'])(.*)\1$/, "$2");
+/** A YAML scalar without its quotes; inside single quotes YAML writes a quote as `''`. @param {string} v */
+const unquote = (v) => {
+  const t = v.trim();
+  if (/^'.*'$/.test(t)) return t.slice(1, -1).replace(/''/g, "'");
+  return t.replace(/^"(.*)"$/, "$1");
+};
 
 /**
  * A YAML value that is a list: `[a, b]`, `"a, b"`, or block `- a` lines (passed as `block`).
@@ -420,6 +424,8 @@ function selfTest() {
   check("an unknown lens-version or a broken regex is skipped with a reason, never loaded",
     bad.loaded.length === 0 && bad.skipped.length === 2 && bad.skipped.every((s) => /lens-version|regex/.test(s.reason)), JSON.stringify(bad.skipped));
 
+  const quoted = parseLens(lens("diff-matches:\n  - 'from [\"'']openai'"));
+  check("a single-quoted YAML regex unescapes '' to one quote", quoted.diffMatches[0]?.source === `from ["']openai`, String(quoted.diffMatches[0]));
   check("changedWithAdded keeps only added lines from a patch",
     JSON.stringify(changedWithAdded([{ filename: "a.ts", patch: "@@ -1 +1 @@\n-old\n+new\n context" }])) === '[{"path":"a.ts","added":["new"]}]');
 

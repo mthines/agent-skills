@@ -1,14 +1,25 @@
 ---
 for: pr-reviewer
 lens-version: 1
-applies-to: "**/*-prompt.ts, **/*-prompt.tsx, **/prompts/**, **/agents/**/*.ts, **/llm/**, **/anthropic*.ts, **/openai*.ts, **/ai-sdk*.ts, **/tools/**/*.ts"
+applies-to: always
+auto: true
+diff-matches:
+  - '@anthropic-ai/'
+  - 'from ["'']openai["'']'
+  - 'require\(["'']openai'
+  - 'from ["'']ai["'']'
+  - '@ai-sdk/'
+  - 'langchain'
+  - '\bclaude-(opus|sonnet|haiku|fable)'
+  - '\bgpt-[0-9]'
+  - 'system_?[pP]rompt|cache_control|tool_use'
 ---
 
 # AI Engineering — Review Lens
 
 ## Trigger
 
-Fires when the diff touches LLM call sites, prompt files, tool definitions, agent loops, or `Anthropic` / `OpenAI` / `ai` SDK imports. The glob list above is a coarse filter; if the file imports `@anthropic-ai/sdk`, `openai`, or `ai` and is not caught by the globs, apply the lens anyway.
+Auto-loads when an added line imports an LLM SDK (`@anthropic-ai/*`, `openai`, `ai`, `@ai-sdk/*`, LangChain), names a model, or touches a system prompt, `cache_control`, or `tool_use` — the `diff-matches` list above.
 
 ## Checklist
 

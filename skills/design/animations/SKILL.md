@@ -272,6 +272,8 @@ Load on demand — do not preload.
 
 ---
 
+`/create-skill diagnose animations` reads [`rules/diagnostic-surface.md`](./rules/diagnostic-surface.md) for the phase model and failure taxonomy.
+
 ## Composes with
 
 - **`/visual-design`** — motion personality is a brand signal (a Brutalist
