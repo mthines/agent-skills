@@ -88,6 +88,7 @@ function flatYaml(text) {
  * @param {string} text
  */
 export function parseLens(text) {
+  text = text.replace(/\r\n?/g, "\n");
   const m = /^---\n([\s\S]*?)\n---\n?/.exec(text);
   const fm = m ? flatYaml(m[1]) : {};
   const get = (/** @type {string} */ k) => (fm[k] ? unquote(fm[k].raw) : undefined);
@@ -210,6 +211,8 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
   /** @type {Array<{ name: string, reason: string }>} */
   const skipped = [];
   const seen = new Set();
+  /** @type {Map<string, string>} named lenses whose trigger missed — reported only if nothing else loads them */
+  const misses = new Map();
   const paths = changed.map((c) => c.path);
 
   /** @param {string} name @returns {{ text: string, source: string } | null} */
@@ -220,14 +223,22 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
     return null;
   };
   /** @param {string} name @param {{ text: string, source: string }} hit @param {{ named: boolean, scope?: string[], why: string }} how */
+  // A lens reached by several sources (a scoped `lenses:` entry, then its own auto trigger) loads
+  // once, over the union of the files each source matched.
   const consider = (name, hit, how) => {
     if (seen.has(name)) return;
     const lens = parseLens(hit.text);
     if (lens.error) { seen.add(name); skipped.push({ name, reason: `${hit.source}: ${lens.error}` }); return; }
     const t = triggerMatches(lens, { changed, tier, named: how.named, scope: how.scope });
-    if (!t.match) { if (how.named) { seen.add(name); skipped.push({ name, reason: `${how.why}, but ${t.reason}` }); } return; }
-    seen.add(name);
-    loaded.push({ name, source: hit.source, reason: `${how.why}; ${t.reason}`, files: t.files, text: lens.body });
+    if (!t.match) { if (how.named && !misses.has(name)) misses.set(name, `${how.why}, but ${t.reason}`); return; }
+    const prior = loaded.find((l) => l.name === name);
+    if (prior) {
+      prior.files = [...new Set([...prior.files, ...t.files])].sort();
+      prior.reason += `; ${how.why}`;
+    } else {
+      loaded.push({ name, source: hit.source, reason: `${how.why}; ${t.reason}`, files: t.files, text: lens.body });
+    }
+    if (!how.scope) seen.add(name);
   };
 
   // 1. Explicit --with: asked for by name, so only applies-to filters it.
@@ -253,6 +264,8 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
     if (parseLens(bundledLenses[name].text).auto !== true) continue;
     consider(name, { text: bundledLenses[name].text, source: bundledLenses[name].path }, { named: false, why: "auto" });
   }
+
+  for (const [name, reason] of misses) if (!loaded.some((l) => l.name === name)) skipped.push({ name, reason });
 
   // A lens file the PR itself touches: the base version (if any) is the one in force.
   const lensFile = (/** @type {string} */ p) => p.startsWith(`${LENS_DIR}/`) && p.endsWith(".md");
@@ -307,7 +320,9 @@ function safeIsDir(p) { try { return readdirSync(p) !== null; } catch { return f
 /** This agent's own skills tree (checkout or plugin), then the user's installed skills. */
 export function defaultSkillDirs() {
   const here = dirname(fileURLToPath(import.meta.url));
-  return [join(here, "..", "..", "..", "skills"), join(homedir(), ".claude", "skills")];
+  // Checkout or plugin (`agents/pr-reviewer/scripts` → `skills/`), then the Agent0 install
+  // (`$AGENT_SUPPORT/skills`, see agent0-setup.sh), then the user's installed skills.
+  return [join(here, "..", "..", "..", "skills"), join(here, "..", "..", "skills"), join(homedir(), ".claude", "skills")];
 }
 
 /**
@@ -421,6 +436,17 @@ function selfTest() {
   check("subtreeLenses: inline lists and the repo-level config govern every file",
     JSON.stringify(subtreeLenses({ changed: ["x/a.ts", "y/b.ts"], configs: { ".github/review.yaml": "lenses: [ux, tdd]\n" } }))
       === '{"ux":["x/a.ts","y/b.ts"],"tdd":["x/a.ts","y/b.ts"]}');
+
+  const svcUx = { "svc/.review.yaml": "lenses: [ux]\n" };
+  const s11 = selectLenses({ changed: [ch("svc/a.ts"), ch("web/B.tsx")], configs: svcUx, bundledLenses: { ux } });
+  check("a scoped lenses: entry that misses its subtree still lets the lens auto-load elsewhere",
+    names(s11)[0] === "ux" && JSON.stringify(s11.loaded[0].files) === '["web/B.tsx"]' && s11.skipped.length === 0, JSON.stringify(s11));
+  const s12 = selectLenses({ changed: [ch("svc/C.tsx"), ch("web/B.tsx")], configs: svcUx, bundledLenses: { ux } });
+  check("a lens reached by a scoped entry and its own trigger loads once over the union of files",
+    s12.loaded.length === 1 && JSON.stringify(s12.loaded[0].files) === '["svc/C.tsx","web/B.tsx"]', JSON.stringify(s12.loaded));
+  const crlf = parseLens('---\r\napplies-to: "services/billing/**"\r\nauto: false\r\n---\r\n\r\n## Checklist\r\n');
+  check("a lens with CRLF line endings keeps its frontmatter",
+    JSON.stringify(crlf.appliesTo) === '["services/billing/**"]' && crlf.auto === false, JSON.stringify(crlf));
 
   const bad = selectLenses({ changed: [ch("a.ts")], repoLenses: { v2: lens("lens-version: 2"), re: lens('diff-matches: "("') } });
   check("an unknown lens-version or a broken regex is skipped with a reason, never loaded",
