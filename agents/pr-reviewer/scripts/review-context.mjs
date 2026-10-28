@@ -29,10 +29,9 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { posix } from "node:path";
+import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, realpathSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
 
 export const REVIEW_CONTEXT_FILE = "REVIEW.md";
