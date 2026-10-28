@@ -1562,7 +1562,7 @@ export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, t
  * `baseSha`, where only a 404 means "absent". A file that exists but cannot be read is listed in
  * `unreadable`, never replaced by the head's copy.
  * @param {{ dir?: string|null, baseSha?: string, repo?: string, changed: string[], timeoutMs?: number, runner?: typeof run }} input
- * @returns {Promise<{ texts: Record<string, string>, unreadable: string[], source: string }>}
+ * @returns {Promise<{ texts: Record<string, string>, unreadable: string[], source: string, error?: string }>}
  */
 export async function readBaseReviewContext({ dir, baseSha, repo, changed, timeoutMs = 30000, runner = run }) {
   /** @type {Record<string, string>} */
@@ -1573,7 +1573,8 @@ export async function readBaseReviewContext({ dir, baseSha, repo, changed, timeo
   const paths = candidatePaths(changed);
   if (dir && (await runner("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok) {
     const ls = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "ls-tree", "--full-tree", "--name-only", baseSha, "--", ...paths], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
-    if (!ls.ok) return { texts, unreadable: paths, source: "workspace (ls-tree failed)" };
+    // Which candidates exist is unknown here, so none is claimed unreadable; the caller raises the anomaly.
+    if (!ls.ok) return { texts, unreadable, source: "workspace", error: `git ls-tree at the base failed: ${describeFailure(ls).slice(0, 160)}` };
     for (const rel of ls.stdout.split("\n").filter(Boolean)) {
       const r = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", dir, "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
       if (r.ok) texts[rel] = r.stdout; else unreadable.push(rel);
@@ -1890,14 +1891,14 @@ async function prepare(opts) {
   try {
     const changedPaths = files.map((f) => f.filename);
     const base = await readBaseReviewContext({ dir: workspace.dir, baseSha, repo, changed: changedPaths, timeoutMs });
-    const rc = selectReviewContext({ changed: changedPaths, texts: base.texts });
-    for (const p of base.unreadable) rc.skipped.push({ path: p, reason: "exists at the base but could not be read" });
+    const rc = selectReviewContext({ changed: changedPaths, texts: base.texts, unreadable: base.unreadable });
     reviewContextLines = renderReviewContext(rc, changedPaths.length);
     reviewContext = {
       docs: rc.docs.map((d) => ({ path: d.path, chars: d.chars, governs: d.governs.length })),
-      skipped: rc.skipped, editedInPr: rc.editedInPr, chars: rc.chars, capChars: rc.capChars, source: base.source,
+      skipped: rc.skipped, editedInPr: rc.editedInPr, addedInPr: rc.addedInPr, chars: rc.chars, capChars: rc.capChars, source: base.source,
       announce: rc.announce,
     };
+    if (base.error) anomalies.push(`review context not loaded: ${base.error} — finders run without the REVIEW.md notes`);
     if (base.unreadable.length) anomalies.push(`review context: ${base.unreadable.join(", ")} exist at the base but could not be read — reviewed without them`);
   } catch (e) {
     anomalies.push(`review context not loaded: ${String(e && e.message || e).slice(0, 200)} — finders run without the REVIEW.md notes`);
