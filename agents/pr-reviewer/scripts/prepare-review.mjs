@@ -1880,11 +1880,6 @@ async function prepare(opts) {
   timing.end(); // impact-graph
   timing.start("packet");
 
-  // A/B iteration 4 (speed): the review packet — the PR description, a priority-ordered file
-  // index, and every hunk widened against the head file with head line numbers — so a finder or
-  // verifier reads one file instead of the raw diff plus a dozen workspace reads
-  // (review-packet.mjs). Deterministic and never a gate: a failure is an anomaly, and the diff
-  // sidecar is still there.
   // The maintainers' REVIEW.md notes, from the base commit (review-context.mjs) — rendered into the
   // packet so every finder and verifier reads them with no flag. A failure is an anomaly, never a gate.
   let reviewContext = null;
@@ -1905,6 +1900,11 @@ async function prepare(opts) {
     anomalies.push(`review context not loaded: ${String(e && e.message || e).slice(0, 200)} — finders run without the REVIEW.md notes`);
   }
 
+  // A/B iteration 4 (speed): the review packet — the PR description, a priority-ordered file
+  // index, and every hunk widened against the head file with head line numbers — so a finder or
+  // verifier reads one file instead of the raw diff plus a dozen workspace reads
+  // (review-packet.mjs). Deterministic and never a gate: a failure is an anomaly, and the diff
+  // sidecar is still there.
   const packetPath = join(sidecarDir, "review-packet.md");
   let packet = null;
   try {
