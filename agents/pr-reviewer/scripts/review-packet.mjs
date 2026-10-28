@@ -243,8 +243,8 @@ export function buildReviewPacket(a) {
     ...String(a.body || "(no description)").slice(0, DESCRIPTION_MAX_CHARS).split("\n"),
     ...(String(a.body || "").length > DESCRIPTION_MAX_CHARS ? ["", `… description truncated at ${DESCRIPTION_MAX_CHARS} characters`] : []),
     "",
-    // The maintainers' REVIEW.md notes (review-context.mjs), already rendered; never capped here —
-    // their budget is spent at discovery, and the file sections below degrade around them.
+    // The maintainers' REVIEW.md notes (review-context.mjs), already rendered. Not counted against
+    // maxLines: their own budget is spent at discovery.
     ...(a.reviewContext || []),
   ];
 
