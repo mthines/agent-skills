@@ -1,6 +1,6 @@
 ---
 description: branch-reviewer must load a team lens from .agents/review/lenses/ when its applies-to matches, and raise the house rule only that lens states.
-tags: [ablation, review-lens]
+tags: [review-lens]
 max_turns: 10
 timeout_seconds: 1500
 allowed_tools: [Agent, Read, Glob, Grep, Bash, Write, Skill]

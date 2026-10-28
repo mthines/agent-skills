@@ -61,6 +61,7 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 
 - One directory per case: `prompt.md` (frontmatter + prompt), `graders/*.md`, and, when it needs files, `case.yaml` + `scaffold.sh` + `fixtures/`.
 - Tag it `ablation` (outcome graders, both arms) or `trigger` (one `tool_used: Skill` grader).
+- Tag it neither when the plugin arm alone is the test, as for `review-lens` cases, whose scaffold installs the reviewer and so equips both arms: run them with `--tag review-lens --ablation none`.
 - Give it at least one deterministic grader (`regex`, `tool_used`, `tool_order`, `file_exists`) and at most one `llm` grader; L1 `G110` enforces both and the frontmatter keys.
 - Ask for the outcome in a neutral format both arms can produce (for example `Severity: <tier>`), so `Δ` measures the decision, not the skill's house style.
 - Keep `max_turns ≤ 15` and prefer read-only tools.

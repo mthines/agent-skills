@@ -1,6 +1,6 @@
 ---
 description: control — a team lens whose applies-to does not match the change must not load, so its house rule is never raised.
-tags: [ablation, review-lens]
+tags: [review-lens]
 max_turns: 10
 timeout_seconds: 1500
 allowed_tools: [Agent, Read, Glob, Grep, Bash, Write, Skill]
