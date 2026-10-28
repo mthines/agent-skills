@@ -16,6 +16,7 @@
     "review-telemetry.mjs",
     "route-depth.mjs",
     "review-packet.mjs",
+    "review-context.mjs",
     "discover-standards.mjs",
     "delta-triage.mjs",
     "gate4-scan.mjs",
