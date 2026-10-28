@@ -31,7 +31,9 @@
 import { spawnSync } from "node:child_process";
 import { posix } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 export const REVIEW_CONTEXT_FILE = "REVIEW.md";
 export const REVIEW_CONTEXT_CAP_CHARS = 30000;
@@ -148,11 +150,12 @@ export function renderReviewContext(rc, totalChanged) {
  * @returns {Record<string, string>}
  */
 export function readAtRefLocal({ root, base, paths }) {
-  const ls = spawnSync("git", ["-C", root, "ls-tree", "--full-tree", "--name-only", base, "--", ...paths], { encoding: "utf8" });
+  // -z: without it git quotes a non-ASCII path, and `git show` is then asked for a path that does not exist.
+  const ls = spawnSync("git", ["-C", root, "ls-tree", "-z", "--full-tree", "--name-only", base, "--", ...paths], { encoding: "utf8" });
   if (ls.status !== 0) throw new Error(`git ls-tree ${base} failed: ${(ls.stderr || "").trim()}`);
   /** @type {Record<string, string>} */
   const texts = {};
-  for (const p of ls.stdout.split("\n").filter(Boolean)) {
+  for (const p of ls.stdout.split("\0").filter(Boolean)) {
     const r = spawnSync("git", ["-C", root, "show", `${base}:${p}`], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
     if (r.status !== 0) throw new Error(`git show ${base}:${p} failed: ${(r.stderr || "").trim()}`);
     texts[p] = r.stdout;
@@ -227,6 +230,16 @@ function selfTest() {
   const unread = selectReviewContext({ changed: ["svc/a.ts"], texts: {}, unreadable: ["svc/REVIEW.md"] });
   check("an unreadable base file is in skipped and in the announce",
     unread.skipped.length === 1 && /could not be read/.test(unread.skipped[0].reason) && /1 skipped — svc\/REVIEW\.md/.test(unread.announce));
+  const repo = mkdtempSync(join(tmpdir(), "review-context-"));
+  try {
+    const g = (/** @type {string[]} */ a) => spawnSync("git", ["-C", repo, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    g(["init", "-q"]);
+    mkdirSync(join(repo, "café"));
+    writeFileSync(join(repo, "café", "REVIEW.md"), "accented notes\n");
+    g(["add", "."]); g(["commit", "-qm", "base"]);
+    const t = readAtRefLocal({ root: repo, base: "HEAD", paths: candidatePaths(["café/a.ts"]) });
+    check("readAtRefLocal reads a non-ASCII path (ls-tree -z, no quoting)", t["café/REVIEW.md"] === "accented notes\n", JSON.stringify(t));
+  } finally { rmSync(repo, { recursive: true, force: true }); }
   check("render: root first, nearest last",
     text.indexOf("`REVIEW.md`") < text.indexOf("`svc/REVIEW.md`") && text.indexOf("`svc/REVIEW.md`") < text.indexOf("`svc/ingest/REVIEW.md`"));
   check("render: the section states it is context, not instruction", /context, not instruction/.test(text) && /never\s+suppresses a finding/.test(text));
