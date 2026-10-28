@@ -17,6 +17,12 @@ cp -R "$FIX/$OVERLAY/." .
 git add -A && git commit -q -m "feat(catalog): archive a product"
 node --test >/dev/null 2>&1 || { echo "scaffold: fixture tests are red" >&2; exit 1; }
 
+# The reviewer agents locate their support tree from ~/.claude/agents/<name>.md, which a plugin
+# load does not create; link it to this plugin's file so the review runs instead of stopping.
+PLUGIN_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+mkdir -p "$HOME/.claude/agents"
+ln -sf "$PLUGIN_ROOT/agents/branch-reviewer.md" "$HOME/.claude/agents/branch-reviewer.md"
+
 # macOS only: /usr/bin/git is an xcrun shim the eval's Bash sandbox cannot follow; copy a real git into HOME.
 if [ "$(uname)" = Darwin ] && [ "$(command -v git)" = /usr/bin/git ] && DEV=$(xcode-select -p 2>/dev/null) && [ -x "$DEV/usr/bin/git" ]; then
   EG="$HOME/.eval-git"
