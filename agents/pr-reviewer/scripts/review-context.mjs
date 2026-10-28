@@ -56,10 +56,11 @@ function depth(p) { return p.split("/").length; }
 
 /**
  * Which loaded `REVIEW.md` files govern which changed files, under a character budget. Pure.
- * @param {{ changed: string[], texts: Record<string, string>, capChars?: number }} a
- *   `texts` maps each candidate path that EXISTS at the base to its content.
+ * @param {{ changed: string[], texts: Record<string, string>, unreadable?: string[], capChars?: number }} a
+ *   `texts` maps each candidate path that EXISTS at the base to its content; `unreadable` lists
+ *   paths that exist at the base but could not be read.
  */
-export function selectReviewContext({ changed, texts, capChars = REVIEW_CONTEXT_CAP_CHARS }) {
+export function selectReviewContext({ changed, texts, unreadable = [], capChars = REVIEW_CONTEXT_CAP_CHARS }) {
   const present = Object.keys(texts).filter((p) => posix.basename(p) === REVIEW_CONTEXT_FILE);
   /** @type {Record<string, string[]>} */
   const governs = {};
@@ -73,7 +74,7 @@ export function selectReviewContext({ changed, texts, capChars = REVIEW_CONTEXT_
   let used = 0;
   const kept = new Set();
   /** @type {Array<{ path: string, reason: string }>} */
-  const skipped = [];
+  const skipped = unreadable.map((p) => ({ path: p, reason: "exists at the base but could not be read" }));
   for (const p of byPriority) {
     const chars = texts[p].length;
     if (!texts[p].trim()) { skipped.push({ path: p, reason: "empty" }); continue; }
@@ -88,12 +89,17 @@ export function selectReviewContext({ changed, texts, capChars = REVIEW_CONTEXT_
     .filter((p) => kept.has(p))
     .sort((x, y) => depth(x) - depth(y) || x.localeCompare(y))
     .map((p) => ({ path: p, chars: texts[p].length, governs: governs[p], text: texts[p] }));
-  const editedInPr = changed.filter((f) => posix.basename(f) === REVIEW_CONTEXT_FILE);
+  // A REVIEW.md the PR touches: `edited` has a base version in force; `added` has none yet.
+  const touched = changed.filter((f) => posix.basename(f) === REVIEW_CONTEXT_FILE);
+  const atBase = new Set([...present, ...unreadable]);
+  const editedInPr = touched.filter((p) => atBase.has(p));
+  const addedInPr = touched.filter((p) => !atBase.has(p));
   return {
-    docs, skipped, editedInPr, chars: used, capChars,
+    docs, skipped, editedInPr, addedInPr, chars: used, capChars,
     announce: `Review context: ${docs.length} REVIEW.md file(s) loaded from the base (${used} chars)`
       + (skipped.length ? `, ${skipped.length} skipped — ${skipped.map((s) => s.path).join(", ")}` : "")
       + (editedInPr.length ? `; this PR edits ${editedInPr.join(", ")} — the base version is used` : "")
+      + (addedInPr.length ? `; this PR adds ${addedInPr.join(", ")} — not loaded until it merges` : "")
       + ".",
   };
 }
@@ -106,7 +112,7 @@ export function selectReviewContext({ changed, texts, capChars = REVIEW_CONTEXT_
  * @returns {string[]}
  */
 export function renderReviewContext(rc, totalChanged) {
-  if (!rc || (!rc.docs.length && !rc.skipped.length && !rc.editedInPr.length)) return [];
+  if (!rc || (!rc.docs.length && !rc.skipped.length && !rc.editedInPr.length && !rc.addedInPr.length)) return [];
   const out = [
     "## Review context (REVIEW.md, read from the base commit)",
     "",
@@ -128,8 +134,9 @@ export function renderReviewContext(rc, totalChanged) {
     out.push(`### \`${d.path}\` — governs ${scope}`, "", `${fence}markdown`, ...d.text.replace(/\n+$/, "").split("\n"), fence, "");
   }
   for (const s of rc.skipped) out.push(`- Not loaded: \`${s.path}\` — ${s.reason}.`);
-  for (const p of rc.editedInPr) out.push(`- This PR edits \`${p}\`; the base version above is the one in force until it merges.`);
-  if (rc.skipped.length || rc.editedInPr.length) out.push("");
+  for (const p of rc.editedInPr) out.push(`- This PR edits \`${p}\`; the base version is the one in force until it merges.`);
+  for (const p of rc.addedInPr) out.push(`- This PR adds \`${p}\`; it is not loaded until it merges.`);
+  if (rc.skipped.length || rc.editedInPr.length || rc.addedInPr.length) out.push("");
   return out;
 }
 
@@ -211,6 +218,15 @@ function selfTest() {
 
   const lines = renderReviewContext(rc, changed.length);
   const text = lines.join("\n");
+  const added = selectReviewContext({ changed: ["svc/REVIEW.md", "svc/a.ts"], texts: {} });
+  const addedText = renderReviewContext(added, 2).join("\n");
+  check("a PR that adds a REVIEW.md is reported as added and not loaded, never as a base version",
+    added.editedInPr.length === 0 && JSON.stringify(added.addedInPr) === JSON.stringify(["svc/REVIEW.md"])
+      && /adds `svc\/REVIEW\.md`; it is not loaded until it merges/.test(addedText) && !/base version/.test(addedText + added.announce),
+    addedText);
+  const unread = selectReviewContext({ changed: ["svc/a.ts"], texts: {}, unreadable: ["svc/REVIEW.md"] });
+  check("an unreadable base file is in skipped and in the announce",
+    unread.skipped.length === 1 && /could not be read/.test(unread.skipped[0].reason) && /1 skipped — svc\/REVIEW\.md/.test(unread.announce));
   check("render: root first, nearest last",
     text.indexOf("`REVIEW.md`") < text.indexOf("`svc/REVIEW.md`") && text.indexOf("`svc/REVIEW.md`") < text.indexOf("`svc/ingest/REVIEW.md`"));
   check("render: the section states it is context, not instruction", /context, not instruction/.test(text) && /never\s+suppresses a finding/.test(text));

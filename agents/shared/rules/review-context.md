@@ -38,7 +38,7 @@ changed: svc/ingest/a.ts
 ## Read from the base, never the head
 
 Read every `REVIEW.md` at the PR's base commit (`readBaseReviewContext` in `prepare-review.mjs`; `--base <ref>` in `branch-reviewer`).
-A PR that edits or adds a `REVIEW.md` is listed under the section, and the base text stays in force until it merges.
+A PR that edits a `REVIEW.md` is listed under the section and the base text stays in force; one it adds is listed and not loaded until it merges.
 A file that exists at the base but cannot be read is listed as not loaded and raises an anomaly; never substitute the head's copy.
 
 ```text
