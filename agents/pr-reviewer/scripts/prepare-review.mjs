@@ -356,7 +356,7 @@ export function resolveReviewerIdentity({ suppliedLogin, fromFlag, stateBotLogin
 /**
  * A caller-supplied `--workdir` is used as-is, so one that does not exist would leave standards
  * discovery, REVIEW.md, and the impact graph reading nothing, with no anomaly to say why. Returns
- * the dir when it exists, else "" (materialize the workspace instead) with an anomaly.
+ * the dir when it exists, else "" with an anomaly, leaving the choice to the workspace ladder.
  * @param {string} dir @param {string[]} anomalies @returns {string}
  */
 export function usableWorkdir(dir, anomalies) {
@@ -1908,7 +1908,8 @@ async function prepare(opts) {
       "--pr",
       String(number),
     ];
-    const built = await run("node", graphArgs, { timeoutMs: Math.max(timeoutMs, 180000), cwd: workspace.dir });
+    const graphTimeout = Math.max(timeoutMs, 180000);
+    const built = await run("node", graphArgs, { timeoutMs: graphTimeout, cwd: workspace.dir });
     if (built.ok) {
       try {
         impact = JSON.parse(built.stdout);
@@ -1917,7 +1918,6 @@ async function prepare(opts) {
         anomalies.push("impact graph returned unparseable output — Phase C loses blast_radius as an input");
       }
     } else {
-      const graphTimeout = Math.max(timeoutMs, 180000);
       const why = built.timedOut || (built.stderr || "").trim() ? describeFailure(built, graphTimeout)
         : (built.stdout || "").trim().slice(0, 200) || describeFailure(built, graphTimeout);
       anomalies.push(`impact graph failed: ${why}`);
