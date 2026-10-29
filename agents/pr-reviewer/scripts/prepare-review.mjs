@@ -1664,12 +1664,12 @@ export async function readBaseLensInputs({ dir, baseSha, repo, changed, withName
   let lensPaths = [];
   if (local) {
     const ls = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", /** @type {string} */ (dir), "ls-tree", "-r", "-z", "--full-tree", "--name-only", baseSha, "--", `${LENS_DIR}/`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
-    if (!ls.ok) return { repoLenses, repoSkillLenses, configs, source: "workspace", error: `git ls-tree ${LENS_DIR} at the base failed: ${describeFailure(ls).slice(0, 160)}` };
-    lensPaths = ls.stdout.split("\0").filter(Boolean);
+    if (ls.ok) lensPaths = ls.stdout.split("\0").filter(Boolean);
+    else unreadable.push(`git ls-tree ${LENS_DIR} at the base failed: ${describeFailure(ls).slice(0, 160)}`);
   } else {
     const ls = await runner("gh", ["api", `repos/${repo}/contents/${LENS_DIR}?ref=${baseSha}`, "--jq", ".[].path"], { timeoutMs });
     if (ls.ok) lensPaths = ls.stdout.split("\n").filter(Boolean);
-    else if (!/\bHTTP 404\b/.test(ls.stderr)) return { repoLenses, repoSkillLenses, configs, source: "contents API", error: `listing ${LENS_DIR} at the base failed: ${describeFailure(ls).slice(0, 160)}` };
+    else if (!/\bHTTP 404\b/.test(ls.stderr)) unreadable.push(`listing ${LENS_DIR} at the base failed: ${describeFailure(ls).slice(0, 160)}`);
   }
   for (const p of lensPaths.filter((p) => posix.dirname(p) === LENS_DIR && p.endsWith(".md"))) {
     const t = await readOne(p);
@@ -2935,7 +2935,7 @@ async function selfTest() {
     const absent = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["a.ts"], runner: mk("gh: Not Found (HTTP 404)") });
     const broken = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["a.ts"], runner: mk("gh: Server Error (HTTP 502)") });
     return absent.source === "contents API" && !absent.error && Object.keys(absent.repoLenses).length === 0 && /lenses: \[ux\]/.test(absent.configs[".github/review.yaml"] || "")
-      && /failed/.test(broken.error || "");
+      && /failed/.test(broken.error || "") && /lenses: \[ux\]/.test(broken.configs[".github/review.yaml"] || "");
   });
   t("readBaseLensInputs: one unreadable config is an error naming it, and the readable files still load", async () => {
     const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
