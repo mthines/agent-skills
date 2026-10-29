@@ -10,7 +10,7 @@ This rule gives every run a per-step breakdown, and exports it as a trace in the
 | Step | Recorded by | When |
 | --- | --- | --- |
 | `prepare` | `prepare-review.mjs` | Starts the run; backdated to the script's own start. Each internal phase (`fetch`, `resolve`, `workspace`, `classify-shape`, `impact-graph`, `packet`, `standards`, `triage-routing`) is a child span with its own start and end. |
-| `finalize` | `finalize.mjs` | Adds the outcome (verdict, candidates, confirmed, posted inline) to the run; **finishes and exports the run under `--dry-run`** when it renders. A finalize that fails to render is an ERROR step and leaves the run open, so the re-run that succeeds is the one exported. |
+| `finalize` | `finalize.mjs` | Adds the outcome (verdict, candidates, confirmed, posted inline) to the run; **finishes and exports the run under `--dry-run`** when it renders; `--no-telemetry` records nothing, for a preview render that a real finalize follows. A finalize that fails to render is an ERROR step and leaves the run open, so the re-run that succeeds is the one exported. |
 | `post` | `execute-write-plan.mjs` | A real run's last step; finishes and exports the run. |
 | `load` | `worker intent import`, or the caller's `dispatch` | The gap in which the agent reads its definition and rules. A dispatch stamp before `prepare` starts the run there; when the caller ran `prepare` itself (`/pr-review`, `review-loop`), `review-telemetry.mjs dispatch` records the dispatch after it, and the gap holding that record is `load`. |
 

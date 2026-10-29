@@ -1,0 +1,10 @@
+#!/bin/sh
+# Prints the root of the agent-skills plugin this script ships in. Claude Code puts a plugin's
+# bin/ on PATH, so an agent loaded from the plugin finds its support tree with
+# `agent-skills-root` when ~/.claude/agents holds no copy of it.
+p=$0
+while [ -L "$p" ]; do
+  t=$(readlink "$p")
+  case $t in /*) p=$t ;; *) p=$(dirname "$p")/$t ;; esac
+done
+cd "$(dirname "$p")/.." && pwd -P

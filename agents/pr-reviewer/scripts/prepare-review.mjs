@@ -340,15 +340,42 @@ export function identityInputs({ opts, state, sticky, isolated, env = process.en
  * report is the reviewer, so a re-review with no `--state` still knows itself and still builds
  * Fix-this buttons), else unknown. A supplied login always outranks the record, and the record
  * outranks the sticky's author. The caller passes `null` for the sticky author under `--isolated`,
- * where the sticky is never read as prior-run state.
- * @param {{ suppliedLogin: string, fromFlag: boolean, stateBotLogin: string|null, stickyAuthorLogin?: string|null }} input
+ * where the sticky is never read as prior-run state. The last rung is GraphQL `viewer { login }`:
+ * it answers under credentials where `/user` 401s (agent0-runtime.md row 4), so a first review
+ * with no flag still knows a self review and still builds Fix-this buttons.
+ * @param {{ suppliedLogin: string, fromFlag: boolean, stateBotLogin: string|null, stickyAuthorLogin?: string|null, viewerLogin?: string|null }} input
  * @returns {{ me: string, identitySource: string }}
  */
-export function resolveReviewerIdentity({ suppliedLogin, fromFlag, stateBotLogin, stickyAuthorLogin = null }) {
+export function resolveReviewerIdentity({ suppliedLogin, fromFlag, stateBotLogin, stickyAuthorLogin = null, viewerLogin = null }) {
   if (isGithubLogin(suppliedLogin)) return { me: suppliedLogin, identitySource: fromFlag ? "--reviewer-login" : "PR_REVIEWER_LOGIN" };
   if (isGithubLogin(stateBotLogin)) return { me: /** @type {string} */ (stateBotLogin), identitySource: "state-record" };
   if (isGithubLogin(stickyAuthorLogin)) return { me: /** @type {string} */ (stickyAuthorLogin), identitySource: "prior-report-author" };
+  if (isGithubLogin(viewerLogin)) return { me: /** @type {string} */ (viewerLogin), identitySource: "graphql-viewer" };
   return { me: "", identitySource: "unknown" };
+}
+
+/**
+ * A caller-supplied `--workdir` is used as-is, so one that does not exist would leave standards
+ * discovery, REVIEW.md, and the impact graph reading nothing, with no anomaly to say why. Returns
+ * the dir when it exists, else "" with an anomaly, leaving the choice to the workspace ladder.
+ * @param {string} dir @param {string[]} anomalies @returns {string}
+ */
+export function usableWorkdir(dir, anomalies) {
+  if (!dir || existsSync(dir)) return dir || "";
+  anomalies.push(`--workdir ${dir} does not exist — ignored; the workspace ladder decides instead`);
+  return "";
+}
+
+/**
+ * GraphQL `viewer { login }`, or null when the read fails. Never `/user`: it 401s under a
+ * repo-scoped credential.
+ * @param {number} timeoutMs
+ * @returns {Promise<string|null>}
+ */
+export async function fetchViewerLogin(timeoutMs) {
+  const r = await ghJson(["api", "graphql", "-f", "query={ viewer { login } }"], { timeoutMs });
+  const login = r.ok ? r.value?.data?.viewer?.login : null;
+  return isGithubLogin(login) ? login : null;
 }
 
 /**
@@ -1708,7 +1735,10 @@ async function prepare(opts) {
       : run("gh", ["pr", "diff", String(number), "--repo", repo], { timeoutMs }),
     wantHistorical
       ? Promise.resolve({ ok: false, code: 0, stdout: "", stderr: "not-read (historical — gh pr checks reports the current head, not review_sha)" })
-      : run("gh", ["pr", "checks", String(number), "--repo", repo], { timeoutMs }),
+      // --json: the non-TTY table prints a cancelled check as `fail`; the JSON keeps its real
+      // bucket. The jq keeps the table's tab layout (name, bucket, elapsed, link) parseChecksTable reads.
+      : run("gh", ["pr", "checks", String(number), "--repo", repo, "--json", "name,bucket,link",
+        "--jq", '.[] | [.name, .bucket, "", .link] | @tsv'], { timeoutMs }),
     ghNdjson(
       [
         "api",
@@ -1830,16 +1860,19 @@ async function prepare(opts) {
   // Anything that is not a GitHub login shape is treated as unknown, and says so.
   const identityInput = identityInputs({ opts, state, sticky, isolated: runMode.isolated });
   const { suppliedLogin } = identityInput;
-  const { me, identitySource } = resolveReviewerIdentity(identityInput);
+  let { me, identitySource } = resolveReviewerIdentity(identityInput);
+  if (!me) {
+    ({ me, identitySource } = resolveReviewerIdentity({ ...identityInput, viewerLogin: await fetchViewerLogin(20000) }));
+  }
   const authorLogin = meta.author?.login || "";
   const reviewRelation = me ? (normalizeLogin(me) === normalizeLogin(authorLogin) ? "self" : "cross") : "cross";
   if (suppliedLogin && !isGithubLogin(suppliedLogin)) {
     anomalies.push(
-      `reviewer login rejected — ${JSON.stringify(String(suppliedLogin).slice(0, 40))} is not a GitHub login; ${me ? `identity taken from ${identitySource === "state-record" ? "the state record's bot_login" : "the prior report's author"}` : "relation defaulted to cross"}`,
+      `reviewer login rejected — ${JSON.stringify(String(suppliedLogin).slice(0, 40))} is not a GitHub login; ${me ? `identity taken from ${{ "state-record": "the state record's bot_login", "prior-report-author": "the prior report's author", "graphql-viewer": "GraphQL viewer" }[identitySource]}` : "relation defaulted to cross"}`,
     );
   } else if (!me) {
     anomalies.push(
-      "reviewer identity unknown (no --reviewer-login / PR_REVIEWER_LOGIN; /user 401s here) — relation defaulted to cross",
+      "reviewer identity unknown (no --reviewer-login / PR_REVIEWER_LOGIN, and GraphQL viewer did not answer) — relation defaulted to cross",
     );
   }
 
@@ -1850,6 +1883,7 @@ async function prepare(opts) {
   // of `--review-sha` at all.
   timing.start("workspace");
   let workspace = { dir: null, worktreeParent: null, depthCapability: "diff-only", rung: "skipped", cleanup: "none" };
+  opts.workdir = usableWorkdir(opts.workdir, anomalies);
   if (opts.workspace && checkoutSha) {
     workspace = opts.workdir
       ? { dir: opts.workdir, worktreeParent: null, depthCapability: "checkout", rung: "caller-supplied", cleanup: "none" }
@@ -1928,7 +1962,8 @@ async function prepare(opts) {
       "--pr",
       String(number),
     ];
-    const built = await run("node", graphArgs, { timeoutMs: Math.max(timeoutMs, 180000), cwd: workspace.dir });
+    const graphTimeout = Math.max(timeoutMs, 180000);
+    const built = await run("node", graphArgs, { timeoutMs: graphTimeout, cwd: workspace.dir });
     if (built.ok) {
       try {
         impact = JSON.parse(built.stdout);
@@ -1937,7 +1972,9 @@ async function prepare(opts) {
         anomalies.push("impact graph returned unparseable output — Phase C loses blast_radius as an input");
       }
     } else {
-      anomalies.push(`impact graph failed: ${(built.stderr || "").trim().slice(0, 300)}`);
+      const why = built.timedOut || (built.stderr || "").trim() ? describeFailure(built, graphTimeout)
+        : (built.stdout || "").trim().slice(0, 200) || describeFailure(built, graphTimeout);
+      anomalies.push(`impact graph failed: ${why}`);
     }
   } else if (opts.impact) {
     anomalies.push(
@@ -2027,9 +2064,11 @@ async function prepare(opts) {
   // unconditionally (`resolveRunMode`'s `stateIgnored`) — a caller-supplied state
   // file is itself carried state from a prior run, exactly the class of input an
   // isolated comparability run must not depend on.
-  if (!opts.state && !runMode.isolated) {
+  // Only when a prior report exists: on a first review there is no state record to read, so its
+  // absence is the expected input, not an anomaly worth a line in every first report.
+  if (!opts.state && !runMode.isolated && sticky) {
     anomalies.push(
-      "no --state file supplied — routing computed with lastFullSha=none, incrRunsSinceFull=0 " +
+      "no --state file supplied although a prior report exists — routing computed with lastFullSha=none, incrRunsSinceFull=0 " +
         "(forces the D6 'no prior deep pass on record' trigger every run); pass --state after " +
         "reading the LoreKit state record for an accurate routing decision",
     );
@@ -3129,6 +3168,13 @@ async function selfTest() {
     const r = historicalThreads({ threads: HT_THREADS, commits: [{ oid: HT_SHA }], reviewSha: HT_SHA });
     return r.threads.length === 0 && r.asOf === null && /committedDate/.test(r.anomaly || "");
   });
+  t("prepare() reads checks as --json buckets, asks the GraphQL viewer only with no login, and gates the state warning on a sticky", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+    return /run\("gh", \["pr", "checks", String\(number\), "--repo", repo, "--json", "name,bucket,link",/.test(body)
+      && /if \(!me\) \{\s*\(\{ me, identitySource \} = resolveReviewerIdentity\(\{ \.\.\.identityInput, viewerLogin: await fetchViewerLogin\(/.test(body)
+      && /if \(!opts\.state && !runMode\.isolated && sticky\) \{/.test(body);
+  });
   t("prepare() wires historicalThreads into the --review-sha path (not merely exported)", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
@@ -3533,6 +3579,19 @@ async function selfTest() {
       && f.me === "state-bot[bot]" && f.identitySource === "state-record"
       && g.me === "mthines" && g.identitySource === "--reviewer-login"
       && h.me === "" && h.identitySource === "unknown";
+  });
+  t("usableWorkdir: a missing --workdir falls back to materializing, with an anomaly; an existing one is kept", () => {
+    const an = [];
+    return usableWorkdir("/definitely/not/here", an) === "" && an.length === 1 && an[0].includes("does not exist")
+      && usableWorkdir(tmpdir(), an) === tmpdir() && usableWorkdir("", an) === "" && an.length === 1;
+  });
+  t("resolveReviewerIdentity: GraphQL viewer is the last rung, validated, below every other source", () => {
+    const i = resolveReviewerIdentity({ suppliedLogin: "", fromFlag: false, stateBotLogin: null, viewerLogin: "mthines" });
+    const j = resolveReviewerIdentity({ suppliedLogin: "", fromFlag: false, stateBotLogin: "state-bot[bot]", viewerLogin: "mthines" });
+    const k = resolveReviewerIdentity({ suppliedLogin: "", fromFlag: false, stateBotLogin: null, viewerLogin: "{\"message\":\"Bad credentials\"}" });
+    return i.me === "mthines" && i.identitySource === "graphql-viewer"
+      && j.identitySource === "state-record"
+      && k.me === "" && k.identitySource === "unknown";
   });
   t("identity wiring: a sticky shaped by the real issue-comments projection yields prior-report-author", () => {
     // Mirror ISSUE_COMMENTS_JQ exactly — the fetch flattens the author to a string.

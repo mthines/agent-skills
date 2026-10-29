@@ -75,9 +75,11 @@ resolve() {  # portable readlink -f
     while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
     printf '%s/%s\n' "$(pwd -P)" "$t" )
 }
-AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md}" || echo "")
+# Loaded as a plugin, ~/.claude/agents holds no copy: the plugin's bin/agent-skills-root names its root.
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md}" \
+  || resolve "$(agent-skills-root 2>/dev/null)/agents/branch-reviewer.md" || echo "")
 AGENT_SUPPORT="${AGENT_MD%/branch-reviewer.md}"
-[ -n "$AGENT_MD" ] || { echo "branch-reviewer: support tree unresolved (tried ${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md})" >&2; exit 1; }
+[ -n "$AGENT_MD" ] || { echo "branch-reviewer: support tree unresolved (tried ${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/branch-reviewer.md} and agent-skills-root)" >&2; exit 1; }
 echo "AGENT_SUPPORT=$AGENT_SUPPORT"   # print it: later tool calls need the literal string
 ```
 

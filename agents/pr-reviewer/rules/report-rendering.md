@@ -216,7 +216,7 @@ length**, so there is no count to supply and none to get wrong:
 | `IMPACT_IMAGE` | `{light, dark, alt}` | The impact-map diagram, rendered as a `<picture>` above the findings table. `light` and `dark` must be `https://github.com/user-attachments/assets/<id>` urls; `alt` is required, single-line, plain text with no `"`, `<`, or `>`, and names every numbered badge. The badges are the findings table's row numbers — see [`posting.md § The impact image`](./posting.md#the-impact-image). |
 
 **Optional — scalars:** `CI_NOTE` (Gate 2's substance — which checks are red and on what; built by
-`finalize.mjs` from `context.checks` as `` red: `a`, `b` · still pending: `c` · <N> passed ``, and
+`finalize.mjs` from `context.checks` as `` red: `a` · cancelled: `b` · still pending: `c` · <N> passed `` (a cancelled check is listed apart, never as red), and
 omitted when every check passed or was skipped, the checks table was unreadable, or the run is
 historical; a `context.render.CI_NOTE` overrides it),
 `VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`, `RUN_ANOMALY`

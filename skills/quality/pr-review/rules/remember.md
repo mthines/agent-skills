@@ -35,7 +35,7 @@ Resolve `$AGENT_SUPPORT` per [`SKILL.md` § Locating the support tree](../SKILL.
 
 ```bash
 [ -f "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" ] || {
-  echo "pr-review remember: support tree unresolved (tried env.sh, ${CLAUDE_AGENT_FILE:-\$HOME/.claude/agents/pr-reviewer.md})" >&2; exit 1; }
+  echo "pr-review remember: support tree unresolved (tried env.sh, ${CLAUDE_AGENT_FILE:-\$HOME/.claude/agents/pr-reviewer.md}, agent-skills-root)" >&2; exit 1; }
 node "$AGENT_SUPPORT/pr-reviewer/scripts/fingerprint.mjs" build \
   --finder <finder> --defect-class <class> --symbol <symbol|-> --path <repo-relative path>
 ```
