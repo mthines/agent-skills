@@ -134,7 +134,7 @@ agent0_org: dash0-development   # optional — omit and no `org=` param is sent 
 ```
 
 - set → `&org=<slug>` is appended to the deep link
-- omitted, empty, or unset → **no `org` parameter at all**, not `org=` and not a default slug
+- omitted, empty, or unset → the host's `PR_REVIEWER_AGENT0_ORG` when an Agent0 setup script exported one (`context.agent0.orgSource` names which won), else **no `org` parameter at all**, not `org=` and not a default slug
 
 `pr-reviewer` resolves it alongside `agent0_environment` (`review-config.md § Run-level fields`,
 base config only) and passes it to `build-agent0-link.mjs` as `--org <slug>` at **both** button

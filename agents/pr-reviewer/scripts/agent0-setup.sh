@@ -38,8 +38,10 @@
 # files instead; this script only has to make the files exist.
 #
 # Requires: networkLevel >= trusted_only (codeload.github.com, github.com).
-# Optional envVars: PIN, REPO, PR_REVIEWER_LOGIN. Run-telemetry export settings
-# are never persisted here — see § 6 and rules/run-telemetry.md.
+# Optional envVars: PIN, REPO, PR_REVIEWER_LOGIN, PR_REVIEWER_AGENT0_ORG (the Dash0
+# org a Fix-with-Agent0 button opens when the reviewed repo sets no `agent0_org`).
+# Run-telemetry export settings are never persisted here — see § 6 and
+# rules/run-telemetry.md.
 
 set -uo pipefail
 
@@ -99,6 +101,14 @@ fi
 #    finds its rules/, scripts/, templates/ and the shared/ tree side by side.
 # ---------------------------------------------------------------------------
 cp -R "$SRC/agents/." "$ROOT/"
+
+# The gh pagination shim (pr-reviewer/scripts/agent0-gh-shim.sh): this sandbox's
+# repo-scoped credential 401s on the Link-header pages `gh api --paginate`
+# follows, so prepare-review.mjs would read only the first 100 PR files.
+# § 6 puts $ROOT/bin first on PATH for every Bash call that sources env.sh.
+mkdir -p "$ROOT/bin"
+cp "$ROOT/pr-reviewer/scripts/agent0-gh-shim.sh" "$ROOT/bin/gh"
+chmod +x "$ROOT/bin/gh"
 
 # ---------------------------------------------------------------------------
 # 3. Install the lenses as files at the path lens-invocation.md resolves against.
@@ -211,6 +221,7 @@ ENV_FILE="$ROOT/env.sh"
   echo "export AGENT_SUPPORT=$ROOT"
   echo "export PR_REVIEWER_PIN=$PIN"
   echo "export PR_REVIEWER_LOGIN=${PR_REVIEWER_LOGIN:-}"
+  echo "export PR_REVIEWER_AGENT0_ORG=${PR_REVIEWER_AGENT0_ORG:-}"
 } > "$ENV_FILE"
 if [ -n "${PR_REVIEWER_OTLP_ENDPOINT:-}${PR_REVIEWER_OTLP_HEADERS:-}${PR_REVIEWER_TELEMETRY:-}" ]; then
   echo "telemetry: export settings seen here are not written to env.sh — a run exports only when a setup script appended them to \$DASH0_AGENT_ENV (rules/run-telemetry.md)"
@@ -223,6 +234,9 @@ if [ -n "${DASH0_AGENT_ENV:-}" ]; then
 else
   echo "env: $ENV_FILE (no \$DASH0_AGENT_ENV in this sandbox — the file is the channel)"
 fi
+# After the \$DASH0_AGENT_ENV copy, never in it: that channel is not guaranteed to
+# expand \$PATH, and env.sh is sourced at the start of every Bash call anyway.
+echo "export PATH=$ROOT/bin:\$PATH  # agent0-gh-paginate-shim" >> "$ENV_FILE"
 
 # ---------------------------------------------------------------------------
 # 7. Verify. Assert, never assume — and fail loudly, because a review against a
@@ -243,6 +257,7 @@ check "finalize script"  "$ROOT/pr-reviewer/scripts/finalize.mjs"
 check "write-plan executor" "$ROOT/pr-reviewer/scripts/execute-write-plan.mjs"
 check "run telemetry"    "$ROOT/pr-reviewer/scripts/review-telemetry.mjs"
 check "constraints"      "$ROOT/RUN-CONSTRAINTS.md"
+check "gh pagination shim" "$ROOT/bin/gh"
 
 LENSES=0
 for l in measurable confidence verify-behavior; do

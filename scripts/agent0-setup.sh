@@ -40,7 +40,7 @@
 #           Step 3 probes the Playwright CDN and the apt mirror first and falls
 #           back to storage.googleapis.com and archive.ubuntu.com, which
 #           trusted_only allows; see its output.
-# envVars:  PIN, REPO, PR_REVIEWER_LOGIN, SRC_DIR (a local checkout; no download),
+# envVars:  PIN, REPO, PR_REVIEWER_LOGIN, PR_REVIEWER_AGENT0_ORG, SRC_DIR (a local checkout; no download),
 #           WITH_PLAYWRIGHT, REQUIRE_PLAYWRIGHT. Run-telemetry export settings reach a
 #           run only through $DASH0_AGENT_ENV (agents/pr-reviewer/rules/run-telemetry.md).
 
@@ -99,6 +99,7 @@ echo "repo=$REPO pin=$PIN commit=$COMMIT"
 # 2. The reviewer install, delegated — one install procedure, never two.
 # ---------------------------------------------------------------------------
 SRC_DIR="$SRC" PIN="$COMMIT" REPO="$REPO" PR_REVIEWER_LOGIN="${PR_REVIEWER_LOGIN:-}" \
+  PR_REVIEWER_AGENT0_ORG="${PR_REVIEWER_AGENT0_ORG:-}" \
   bash "$SRC/agents/pr-reviewer/scripts/agent0-setup.sh" \
   || fail "the pr-reviewer install failed; see its output above."
 
@@ -204,6 +205,7 @@ echo "verify (agent-skills):"
 check "host marker"           "$HOST/env.sh"
 check "host rule"             "$ROOT/shared/rules/agent0-host.md"
 check "reviewer env"          "$ROOT/env.sh"
+check "gh pagination shim"    "$ROOT/bin/gh"
 check "reviewer bundle"       "$ROOT/pr-reviewer.agent0.md"
 check "review-loop"           "$S/review-loop/SKILL.md"
 check "review-loop agent0"    "$S/review-loop/rules/agent0-runtime.md"
