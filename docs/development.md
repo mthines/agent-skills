@@ -89,6 +89,9 @@ All applicable hops must resolve; if one is missing, the harness does not see th
 Plugins (Claude Code hook scripts plus a manifest) live in `plugins/<name>/` and need no build step.
 They are distributed through `.claude-plugin/marketplace.json`; the marketplace name is `agent-skills-plugins`, installed with `claude plugin marketplace add mthines/agent-skills`.
 
+The repo root is itself a plugin (`.claude-plugin/plugin.json`), and Claude Code puts its `bin/` on `PATH`.
+`bin/agent-skills-root` prints that root, so `pr-reviewer` and `branch-reviewer` loaded from the plugin find their support tree when `~/.claude/agents` holds no copy.
+
 ### `agent-tasks-hooks`
 
 Claude Code lifecycle hook plugin for the Agent Tasks VS Code extension; details in [`plugins/agent-tasks-hooks/README.md`](../plugins/agent-tasks-hooks/README.md).

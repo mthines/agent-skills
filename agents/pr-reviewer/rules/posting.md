@@ -70,10 +70,11 @@ resolve() {  # portable readlink -f
     printf '%s/%s\n' "$(pwd -P)" "$t" )
 }
 
-AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" \
+  || resolve "$(agent-skills-root 2>/dev/null)/agents/pr-reviewer.md" || echo "")   # plugin: bin/agent-skills-root
 if [ -z "$AGENT_MD" ]; then
-  abort "cannot locate this agent definition — CLAUDE_AGENT_FILE is unset and no
-$HOME/.claude/agents/pr-reviewer.md install exists. If you were dispatched by a caller that handed
+  abort "cannot locate this agent definition — CLAUDE_AGENT_FILE is unset, no
+$HOME/.claude/agents/pr-reviewer.md install exists, and agent-skills-root is not on PATH. If you were dispatched by a caller that handed
 you this file's path directly (see 'Locating this agent's own files' above), that caller was
 required to export CLAUDE_AGENT_FILE before this step and did not. THIS IS
 A HARD STOP, not a cue to compose the report body yourself: an abort here is recoverable next run,
@@ -110,6 +111,7 @@ REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 | `impact_trace` | Per changed export the consumer-impact finder traced, and per dependency the dependency finder read (`symbol` = package, `path` = manifest), `{symbol, path, verified: [<files read that still hold>]}` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)). `finalize.mjs` builds the report's `Reach`, `Dependencies`, and `Overlapping PRs` rows from it, `impact.json`, and the posted consumer-impact claims. |
 | `candidates[].decide` | `true` on a claim that is the author's choice between two acceptable options — rendered `Decide: <title>` and counted `to decide`. Never together with `blocking`. |
 | `candidates[].fix` | The remedy. When it is one line of ≤ 140 chars, the findings table shows it under the title; on a `decide` candidate, write the context for the choice instead. |
+| `memory.indexed` | `MEMORIES_READ_COUNT` from Step 1.0: every LoreKit entry listed, all three families. The report's `<N> indexed` half; finalize renders the largest of it, `read[]`'s length, and the used count. |
 | `memory.relevance_rules[]`, `memory.lessons_used[]`, `memory.read[]` | Copy `id`, `scope`, and `key` onto every entry. Take `id` from the `memory_list` / `memory_search` entry that surfaced the key — `memory_read` returns none. Take `scope` from the entry, or from the scope the call was made with when the entry omits it — a `scope="global"` `memory_list` does, and a ref without a scope is never cited. `read[]` lists `{ id, scope, key }` for every body this run fetched with `memory_read` (Steps 1.2a, 1.2d, 2.7b). The run trace opens each memory by these ([`run-telemetry.md § The memory`](./run-telemetry.md#the-memory)). |
 
 There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `IMPACT_IMAGE` — § The impact image, below — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`, and — only to override what `finalize/reach.mjs` builds from `scanned_files` / `impact_trace` — `COVERAGE` and `IMPACT`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
@@ -121,9 +123,11 @@ With findings, its badges are the findings table's row numbers; with none, `impa
 Every run states the outcome in Step 5: `impact image added`, `skipped (<context.impactImage.reason>)`, or `failed (<step>: <error>)`.
 
 ```bash
-# 1. Number the findings: a dry run writes the body without posting it.
+# 1. Number the findings: a dry run writes the body without posting it. --no-telemetry keeps
+#    this preview out of the run trace; without it the dry run finishes the trace and the real
+#    finalize below is missing from it.
 node "$FINALIZE" --context /tmp/review-context.json --judgments /tmp/judgments.json \
-  --out-dir /tmp/finalize-dry --dry-run
+  --out-dir /tmp/finalize-dry --dry-run --no-telemetry
 # 2. Draw the diagram with those numbers as badges (impact-map § Badges from a pr-reviewer report).
 #    Skill("impact-map", "<pr-url> --findings /tmp/finalize-dry/report-body.md") → light, dark, alt
 # 3. Upload both PNGs and get their urls; open each with the Read tool first.

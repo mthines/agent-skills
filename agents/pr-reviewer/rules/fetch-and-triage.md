@@ -140,7 +140,8 @@ resolve() {  # portable readlink -f
     while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
     printf '%s/%s\n' "$(pwd -P)" "$t" )
 }
-AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" \
+  || resolve "$(agent-skills-root 2>/dev/null)/agents/pr-reviewer.md" || echo "")   # plugin: bin/agent-skills-root
 CLASSIFY="$AGENT_SUPPORT/pr-reviewer/scripts/classify-shape.mjs"
 [ -n "$AGENT_MD" ] && PR_SHAPE_JSON=$(node "$CLASSIFY" /tmp/pr-files.json $EXTRA_HS)
 ```
