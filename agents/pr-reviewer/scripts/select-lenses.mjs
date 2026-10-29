@@ -195,8 +195,11 @@ export function triggerMatches(lens, { changed, tier, named = false, scope }) {
   const byPath = globs ? inScope.filter((c) => globs.some((g) => g.test(c.path))) : inScope;
   if (!byPath.length) return { match: false, files: [], reason: globs ? "no changed file matches applies-to" : "no changed file in scope" };
   if (named) return { match: true, files: byPath.map((c) => c.path), reason: appliesTo ? `applies-to ${appliesTo.join(", ")}` : "applies-to always" };
-  if (lens.minTier && tier && TIER_RANK[/** @type {keyof typeof TIER_RANK} */ (tier)] < TIER_RANK[lens.minTier]) {
-    return { match: false, files: [], reason: `tier ${tier} is below min-tier ${lens.minTier}` };
+  if (lens.minTier) {
+    // An empty or unknown tier never satisfies min-tier: a deep-only lens must not load on a misspelled tier.
+    const rank = TIER_RANK[/** @type {keyof typeof TIER_RANK} */ (String(tier || "").toLowerCase())];
+    if (rank === undefined) return { match: false, files: [], reason: `tier ${JSON.stringify(tier ?? "")} is unknown; min-tier ${lens.minTier} needs one` };
+    if (rank < TIER_RANK[lens.minTier]) return { match: false, files: [], reason: `tier ${tier} is below min-tier ${lens.minTier}` };
   }
   const hits = lens.diffMatches.length
     ? byPath.filter((c) => c.added.some((l) => lens.diffMatches.some((r) => r.test(l))))
@@ -421,6 +424,9 @@ function selfTest() {
   check("min-tier: below the tier it does not load, at the tier it does",
     selectLenses({ changed: [ch("a.ts")], tier: "standard", repoLenses: deep }).loaded.length === 0
       && names(selectLenses({ changed: [ch("a.ts")], tier: "deep", repoLenses: deep }))[0] === "approach");
+  check("min-tier: an empty, missing, or unknown tier never loads a min-tier lens; case is ignored",
+    [undefined, "", "Standard", "deeep"].every((t) => selectLenses({ changed: [ch("a.ts")], tier: t, repoLenses: deep }).loaded.length === 0)
+      && names(selectLenses({ changed: [ch("a.ts")], tier: "DEEP", repoLenses: deep }))[0] === "approach");
 
   const ux = { text: lens('applies-to: "**/*.tsx"\nauto: true'), path: "ux/lens.md" };
   const charting = { text: lens('applies-to: "**/*chart*.tsx"'), path: "charting/lens.md" };
