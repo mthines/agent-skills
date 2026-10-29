@@ -555,16 +555,6 @@ export function memoriesSummaryFor(memoryUsed) {
 }
 
 /**
- * The pure orchestration core: everything finalize.mjs does to turn
- * (context, judgments) into a disposition for every candidate. No I/O.
- *
- * @param {{
- *   context: any, judgments: any,
- *   profile?: string, flatOverride?: number, severityThresholds?: Record<string, number>,
- *   skipGates?: boolean, sha?: string, iteration?: number,
- * }} args
- */
-/**
  * A lens candidate's body names the lens that raised it (rubric-composition.md § Review lenses).
  * @param {any} c
  */
@@ -585,6 +575,16 @@ export function lensesLine(lenses) {
   return loaded.map((/** @type {any} */ l) => `${l.name} (${String(l.reason || "").split(";")[0].trim()})`).join(" · ");
 }
 
+/**
+ * The pure orchestration core: everything finalize.mjs does to turn
+ * (context, judgments) into a disposition for every candidate. No I/O.
+ *
+ * @param {{
+ *   context: any, judgments: any,
+ *   profile?: string, flatOverride?: number, severityThresholds?: Record<string, number>,
+ *   skipGates?: boolean, sha?: string, iteration?: number,
+ * }} args
+ */
 export function finalizeReview({ context, judgments, profile = "balanced", flatOverride, severityThresholds, skipGates = false, sha, iteration = 1 }) {
   /** @type {Record<string, string>} */
   const patches = {};
