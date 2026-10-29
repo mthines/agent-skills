@@ -92,8 +92,8 @@ agent0_environment: production           # which Agent0 host the fix buttons lin
 
 agent0_org: dash0-development            # OPTIONAL — which Dash0 organization the fix buttons open
                                          # Agent0 in, appended as &org=<slug>. Omit it (the default)
-                                         # and no org param is sent at all, which is correct for
-                                         # readers who have exactly one org. Like agent0_environment
+                                         # and the host's PR_REVIEWER_AGENT0_ORG is used, else no org
+                                         # param at all, which is correct for readers with one org. Like agent0_environment
                                          # it picks a destination and gates nothing. Must match
                                          # ^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$ — anything else is
                                          # ignored here and rejected by build-agent0-link.mjs
@@ -448,7 +448,7 @@ fi
 **The buttons are on by default and the three keys are independent.** `AGENT0_FIX_LINKS` starts
 `true` and only `agent0_fix_links: false` turns it off; `agent0_environment` picks the host and
 defaults to `production` (`app.dash0.com`) when absent or unrecognised, and `agent0_org` picks the
-organization and is simply absent when unset — neither has any bearing on whether anything renders. So a repo with no review config at all, or one that has never heard of Agent0,
+organization, falling back to the host's `PR_REVIEWER_AGENT0_ORG` and else absent when unset — neither has any bearing on whether anything renders. So a repo with no review config at all, or one that has never heard of Agent0,
 gets buttons deep-linking to `app.dash0.com` — the cost of the default, stated in
 `agent0-fix-links.md § Opt-in` rather than left to be discovered, and one line to decline.
 
