@@ -63,6 +63,21 @@ function listValue(raw, block = []) {
 }
 
 /**
+ * Drop a trailing ` # comment`, but never a `#` inside quotes (`'color: #fff'`).
+ * @param {string} s @returns {string}
+ */
+function stripComment(s) {
+  let quote = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) { if (ch === quote) quote = ""; }
+    else if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === "#" && i > 0 && /\s/.test(s[i - 1])) return s.slice(0, i).trimEnd();
+  }
+  return s;
+}
+
+/**
  * The top-level `key: value` pairs of a frontmatter or a small YAML file, with block lists
  * collected under their key. Not a YAML parser: it reads exactly the flat shape the lens contract
  * and `.review.yaml`'s `lenses:` key use.
@@ -75,9 +90,9 @@ function flatYaml(text) {
   let key = null;
   for (const line of text.split("\n")) {
     const kv = /^([A-Za-z][\w-]*):(.*)$/.exec(line);
-    if (kv) { key = kv[1]; out[key] = { raw: kv[2].replace(/\s+#.*$/, ""), block: [] }; continue; }
+    if (kv) { key = kv[1]; out[key] = { raw: stripComment(kv[2]), block: [] }; continue; }
     const item = /^\s+-\s+(.*)$/.exec(line);
-    if (item && key) out[key].block.push(item[1].replace(/\s+#.*$/, ""));
+    if (item && key) out[key].block.push(stripComment(item[1]));
     else if (line.trim() && !/^\s/.test(line)) key = null;
   }
   return out;
@@ -460,6 +475,8 @@ function selfTest() {
 
   const quoted = parseLens(lens("diff-matches:\n  - 'from [\"'']openai'"));
   check("a single-quoted YAML regex unescapes '' to one quote", quoted.diffMatches[0]?.source === `from ["']openai`, String(quoted.diffMatches[0]));
+  const hash = parseLens(lens("diff-matches:\n  - 'color: #fff'  # a trailing comment"));
+  check("a # inside quotes is part of the value; a trailing # comment is not", hash.diffMatches[0]?.source === "color: #fff", String(hash.diffMatches[0]));
   const dq = parseLens(lens('diff-matches: "a\\\\(b"'));
   check("a double-quoted YAML regex unescapes a doubled backslash", dq.diffMatches[0]?.source === "a\\(b", String(dq.diffMatches[0]));
   check("changedWithAdded keeps only added lines from a patch",
