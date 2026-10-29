@@ -149,10 +149,25 @@ Use this exact structure:
 
 ### Skipped rows (with reason)
 - Row N (Concern): <reason — e.g. "not applicable, no concurrency in changed paths">
+```
 
+The report ends at `Skipped rows`; what to do with the findings is the reader's call.
+Append a `### Next step` section only when a caller asked for a handoff:
+
+| Invoked by | `Next step` |
+| --- | --- |
+| A user, standalone (`/critical …`, "challenge this") | Omit it. |
+| A skill or workflow that gates on `/confidence` next (`aw`, `/implement-suggestion`, `/fix-bug`) | `Run /confidence <mode> once the must-fix items are addressed.` |
+
+```markdown
+<!-- incorrect: standalone run -->
 ### Next step
-Run `/confidence <mode>` once the must-fix items are addressed.
-Do not re-run `/critical` — single-pass by design.
+Run `/confidence plan` once the must-fix items are addressed.
+Don't run `/critical` again on this version; it is one pass by design.
+
+<!-- correct: standalone run -->
+### Skipped rows (with reason)
+- Row 4 (Rollback): not applicable, additive config only.
 ```
 
 Classification:
@@ -165,7 +180,7 @@ If `Must-fix` and `Should-fix` are both empty, output `No blocking concerns foun
 
 ## Composition with other skills
 
-- `/confidence` — suggest `/confidence <mode>` in `Next step`; never score here.
+- `/confidence` — name it in `Next step` only when the caller gates on it; never score here.
 - Root-cause re-trace — when an `analysis` finding suggests the root cause is wrong, recommend re-tracing the execution path from entry to exit (ruling out at least 2 alternative causes with evidence) before the `/confidence` gate; inside `/fix-bug` that is its Phase 3.
 - `/ideate` — `deep` lens discovery ([`rules/deep-mode.md`](./rules/deep-mode.md#d1--lens-selection)).
 
