@@ -1221,7 +1221,8 @@ export function checkShape(judgments) {
   const violations = [];
   candidates.forEach((/** @type {any} */ c, /** @type {number} */ index) => {
     try {
-      const payload = toInlineCommentPayload(c, { sha });
+      // finalizeReview tags a lens body ([lens:<name>]) before rendering, so the shape check measures the tagged body.
+      const payload = toInlineCommentPayload(lensTagged(c), { sha });
       renderComment(payload);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -2571,6 +2572,12 @@ async function selfTest() {
     check("checkShape catches a 61-char title, naming the index and field TITLE",
       badResult.ok === false && badResult.violations.length === 1
         && badResult.violations[0].index === 0 && badResult.violations[0].field === "TITLE");
+
+    // finalizeReview prefixes `[lens:<name>]`, so a lens body that fits untagged can overflow once tagged.
+    const lensBody = (/** @type {number} */ n) => ({ candidates: [{ ...mkCandidate({ final: 90 }), finder: "lens", lens: "billing-audit", body: "b".repeat(n) }] });
+    const fits = checkShape(lensBody(150)), overflows = checkShape(lensBody(190));
+    check("checkShape measures a lens body with its [lens:<name>] tag",
+      fits.ok === true && overflows.ok === false && overflows.violations[0]?.field === "BODY", JSON.stringify(overflows.violations));
   }
 
   // A verified candidate that STILL fails --check-shape after its one repair
