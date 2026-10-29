@@ -41,7 +41,7 @@ Strict order so dedup is deterministic:
    - **Neighbour patterns:** the change matches the structure and conventions of neighbouring files.
    - **Approach:** is there a materially simpler approach or an existing utility that does this?
      Flag it as a `suggestion:` naming the simpler approach or the utility's `path:line`; never flag a matter of taste.
-2. Review lenses `select-lenses.mjs` loaded, in its order: `--with`, then `.review.yaml` `lenses:`, then repo lenses, then built-in `auto: true` lenses (`ux` on UI files, `ai-engineering` on LLM SDK lines, `charting` on chart files) — [Review lenses](#review-lenses).
+2. Review lenses `select-lenses.mjs` loaded, in its order: `--with`, then `.review.yaml` `lenses:`, then repo lenses, then built-in `auto: true` lenses (`ux` on UI files, `ai-engineering` on LLM SDK lines, `charting` on chart files, `tdd` on test files, `optimize-approach` on `deep` reviews) — [Review lenses](#review-lenses).
 3. `animations` lens — only when the motion gate below prints `MOTION_DIFF: yes`.
 4. `critical` (`--critical` flag, OR `context.reviewConfig.critical == "always"`, OR auto-engage heuristic — see below).
    `--no-critical` suppresses the config and the heuristic.

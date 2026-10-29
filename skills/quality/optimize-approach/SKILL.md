@@ -21,6 +21,8 @@ Answer one question: is this the best **approach** for what the change is trying
 Judge the shape of the solution, not its lines.
 Report only; never edit files.
 
+Lens-eligible for the `pr-reviewer` agent: [`lens.md`](./lens.md) auto-loads on `deep` reviews.
+
 ## Step 0 — Scope
 
 1. Target: the named files or `plan.md`; else the branch diff (`git diff <base>...HEAD`, base default `origin/main`).

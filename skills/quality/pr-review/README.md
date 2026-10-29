@@ -169,7 +169,12 @@ These ship with the reviewer and turn themselves on when your diff calls for the
 | `ux` | touches UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `components/`, `screens/`) |
 | `ai-engineering` | adds LLM SDK code (`@anthropic-ai/`, `openai`, `ai`, `langchain`, model ids, prompts) |
 | `charting` | touches chart, graph, or dashboard components |
+| `tdd` | adds or changes tests: do they test behaviour, not implementation? |
+| `optimize-approach` | is reviewed at `deep` (large or risky PRs): architecture fit, one way to do it, complexity, and race-free shape |
 | `animations` | adds motion (its own motion check decides) |
+
+Measurement needs no lens: every review already checks that a change ships the telemetry that proves it works (turn it off with `--no-measurable`).
+The always-on quality pass already flags duplicated helpers, code that breaks its neighbours' patterns, and a simpler approach.
 
 Commit `.agents/review/lenses/ux.md` and **your** `ux` replaces the built-in for your repo.
 
