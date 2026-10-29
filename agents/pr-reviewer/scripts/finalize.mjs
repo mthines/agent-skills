@@ -472,9 +472,9 @@ function suppressedCounts(suppressed = []) {
 }
 
 /** The `action` values comment-relevance-memory.md records only when a memory fired against a real
- *  finding (`drop | downgrade | promote`), plus the `suppress` / `amplify` directions. Anything else
- *  (`"none (seen_count < 2, no promotion)"`, a note) is a rule that changed nothing. */
-const APPLIED_ACTIONS = new Set(["drop", "downgrade", "promote", "suppress", "amplify"]);
+ *  finding. Anything else (`"none (seen_count < 2, no promotion)"`, a rule's `amplify` direction) is
+ *  a rule that changed nothing; a suppression is credited through `counts` instead. */
+const APPLIED_ACTIONS = new Set(["drop", "downgrade", "promote"]);
 
 /** A relevance rule shaped the review iff it carries an applied `action` or suppressed a finding
  *  this run. The one predicate the trace's `used`, Step 4c's `cited`, and MEMORIES_USED share, so
@@ -1798,8 +1798,8 @@ async function selfTest() {
         && !refs.some((r) => r.endsWith("::idle")), JSON.stringify(refs));
     // The shape a live run wrote (dash0hq/dash0#24070): no fingerprint, and an action that says none.
     const idleNote = { scope: "repo::o/r", key: "reviewer-comment-relevance::correctness:x", action: "none (seen_count < 2, no promotion)" };
-    check("citedRefs: an action that is not drop/downgrade/promote/suppress/amplify is not an applied action",
-      citedRefs({ relevance_rules: [idleNote] }).length === 0
+    check("citedRefs: an action that is not drop/downgrade/promote is not an applied action, a bare amplify direction included",
+      citedRefs({ relevance_rules: [idleNote] }).length === 0 && citedRefs({ relevance_rules: [{ ...idleNote, action: "amplify" }] }).length === 0
         && citedRefs({ relevance_rules: [{ ...idleNote, action: "Promote" }] }).length === 1);
     check("buildMemoriesUsed with a run outcome lists only the rules that acted; without one, every rule",
       buildMemoriesUsed({ ...memory, relevance_rules: [...memory.relevance_rules, idleNote] }, { suppressed: [{ _suppressed_by_fp: FP }] }).filter((m) => m.kind === "rule").length === 2
