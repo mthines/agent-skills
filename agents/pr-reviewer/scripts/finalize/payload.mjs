@@ -324,6 +324,7 @@ export function buildReportPayload({ gates, run, findings, notes = [], deferred,
     ...(run.optimalityLog ? { OPTIMALITY_LOG: run.optimalityLog } : {}),
     STANDARDS_LOG: run.standardsLog || "skipped",
     MEASURABILITY_LOG: run.measurabilityLog || "skipped",
+    ...(run.lenses ? { LENSES: run.lenses } : {}),
     // REQUIRED_SCALARS (render-report.mjs) checks this slot for non-emptiness only — an empty
     // string fails closed with "missing required slot(s)". report-rendering.md's own vocabulary
     // for "nothing was skipped" is the literal word `none`, never "".

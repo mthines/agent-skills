@@ -166,7 +166,7 @@ These ship with the reviewer and turn themselves on when your diff calls for the
 
 | Lens | Loads when the diff… |
 | --- | --- |
-| `ux` | touches UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`, `components/`, `screens/`) |
+| `ux` | touches UI files (`*.tsx`, `*.jsx`, `*.vue`, `*.svelte`) |
 | `ai-engineering` | adds LLM SDK code (`@anthropic-ai/`, `openai`, `ai`, `langchain`, model ids, prompts) |
 | `charting` | touches chart, graph, or dashboard components |
 | `tdd` | adds or changes tests: do they test behaviour, not implementation? |

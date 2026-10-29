@@ -564,6 +564,27 @@ export function memoriesSummaryFor(memoryUsed) {
  *   skipGates?: boolean, sha?: string, iteration?: number,
  * }} args
  */
+/**
+ * A lens candidate's body names the lens that raised it (rubric-composition.md § Review lenses).
+ * @param {any} c
+ */
+export function lensTagged(c) {
+  if (c?.finder !== "lens" || !c.lens || typeof c.body !== "string") return c;
+  const tag = `[lens:${c.lens}]`;
+  return c.body.startsWith(tag) ? c : { ...c, body: `${tag} ${c.body}` };
+}
+
+/**
+ * The report's `Lenses` row: every lens select-lenses.mjs loaded, with the first clause of its reason.
+ * @param {any} lenses context.lenses
+ * @returns {string | undefined}
+ */
+export function lensesLine(lenses) {
+  const loaded = Array.isArray(lenses?.loaded) ? lenses.loaded : [];
+  if (!loaded.length) return undefined;
+  return loaded.map((/** @type {any} */ l) => `${l.name} (${String(l.reason || "").split(";")[0].trim()})`).join(" · ");
+}
+
 export function finalizeReview({ context, judgments, profile = "balanced", flatOverride, severityThresholds, skipGates = false, sha, iteration = 1 }) {
   /** @type {Record<string, string>} */
   const patches = {};
@@ -576,7 +597,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // rest of this pipeline already uses — checked, not assumed, by
   // assertEveryCandidateDisposed()'s own self-test below.
   const rawCandidates = (judgments?.candidates || [])
-    .map((/** @type {any} */ c, /** @type {number} */ i) => ({ ...c, _orig_index: i }));
+    .map((/** @type {any} */ c, /** @type {number} */ i) => ({ ...lensTagged(c), _orig_index: i }));
 
   // A candidate the verifier CONTRADICTED never enters scoring at all — it is disposed as
   // "contradicted" before dedupe, rather than left to clear or defer on its score alone (which is
@@ -831,6 +852,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     optimalityLog: judgments?.lenses?.optimality_log,
     standardsLog: judgments?.lenses?.standards_log,
     measurabilityLog: judgments?.lenses?.measurability_log,
+    lenses: lensesLine(context?.lenses),
     skippedFiles: context?.render?.SKIPPED_FILES,
   };
 
@@ -2749,6 +2771,30 @@ async function selfTest() {
       check("agent0_fix_links: false in the review config builds neither placement",
         cfgOff.status === 0 && !cfgOff.report.includes("goto/agent0"));
     }
+
+    {
+      // Lens bookkeeping reaches the report: the Run table lists every lens select-lenses.mjs loaded.
+      const lnDir = join(e2eDir, "lenses");
+      rmSync(lnDir, { recursive: true, force: true });
+      mkdirSync(lnDir, { recursive: true });
+      const lnContextPath = join(lnDir, "context.json");
+      writeFileSync(lnContextPath, JSON.stringify({ ...e2eContext, lenses: { loaded: [
+        { name: "tdd", source: "builtin", reason: "auto; applies-to **/*.test.*", files: ["a.test.ts"] },
+        { name: "billing-audit", source: "repo", reason: "repo lens; applies-to services/billing/**", files: [] },
+      ], skipped: [], notes: [] } }, null, 2));
+      const ln = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", lnContextPath,
+        "--judgments", judgmentsPath, "--out-dir", join(lnDir, "out"), "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      const lnReport = existsSync(join(lnDir, "out", "report-body.md")) ? readFileSync(join(lnDir, "out", "report-body.md"), "utf8") : "";
+      check("context.lenses.loaded renders a Lenses row naming each lens and its trigger",
+        ln.status === 0 && /Lenses[^\n]*tdd \(auto\)[^\n]*billing-audit \(repo lens\)/.test(lnReport), (ln.stderr || "").slice(0, 300));
+      check("no loaded lenses → no Lenses row", !readFileSync(join(outDir, "report-body.md"), "utf8").includes("| Lenses"));
+    }
+    check("lensTagged prefixes a lens candidate's body once",
+      lensTagged({ finder: "lens", lens: "tdd", body: "x" }).body === "[lens:tdd] x"
+      && lensTagged({ finder: "lens", lens: "tdd", body: "[lens:tdd] x" }).body === "[lens:tdd] x");
+    check("lensTagged leaves a core finder's candidate untouched",
+      lensTagged({ finder: "correctness", lens: "tdd", body: "x" }).body === "x");
+    check("lensesLine is undefined with nothing loaded", lensesLine({ loaded: [] }) === undefined && lensesLine(undefined) === undefined);
 
     // An incremental re-review with a prepare-review-SHAPED context: the prior SHA lives only at
     // `priorRun.priorSha` (full 40-char), never at a top-level `priorSha`. Before the fix the

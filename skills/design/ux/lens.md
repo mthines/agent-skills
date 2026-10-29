@@ -1,7 +1,7 @@
 ---
 for: pr-reviewer
 lens-version: 1
-applies-to: "**/*.tsx, **/*.jsx, **/*.vue, **/*.svelte, app/**/*.ts, app/**/*.tsx, **/screens/**, **/components/**"
+applies-to: "**/*.tsx, **/*.jsx, **/*.vue, **/*.svelte"
 auto: true
 ---
 

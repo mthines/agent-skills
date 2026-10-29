@@ -72,7 +72,8 @@
         "quality",
         "ux",
         "critical",
-        "optimality"
+        "optimality",
+        "lens"
       ]
     },
     "defect_class": {
@@ -126,6 +127,11 @@
         "path": { "type": "string", "minLength": 1 },
         "line": { "type": "integer", "minimum": 1 },
         "symbol": { "type": "string", "minLength": 1 },
+        "lens": {
+          "description": "With finder \"lens\": the name of the review lens (context.lenses.loaded[].name) whose checklist item raised this candidate. finalize.mjs prefixes the body with [lens:<name>].",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
         "claim": {
           "description": "finders.md's candidate claim — what the finder asserts is wrong.",
           "type": "string",

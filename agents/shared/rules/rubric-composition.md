@@ -94,7 +94,7 @@ Never pick lenses by hand: walk exactly `lenses.loaded[]`, each against its `fil
 - **Read at the base commit.** A lens or `.review.yaml` the PR adds or edits does not review that PR; `lenses.notes` says so and the base version, if any, is used.
 - **No count cap.** `route-depth.mjs` adds `LENS_CALLS` to the tool-call budget for each loaded lens past the first three.
 - **Announce** every line of `lenses.announce` once, before Step 2.
-- A lens finding is tagged `[lens:<name>]`, maps through [Severity mapping](#severity-mapping), and [cannot block on its own](#a-lens-cannot-block-on-its-own).
+- A lens finding is tagged `[lens:<name>]` (in `judgments.json`: `"finder": "lens", "lens": "<name>"`; `finalize.mjs` adds the body tag), maps through [Severity mapping](#severity-mapping), and [cannot block on its own](#a-lens-cannot-block-on-its-own).
 
 ```markdown
 <!-- ✓ Right — .agents/review/lenses/payments-idempotency.md: a team rule the code cannot show -->
