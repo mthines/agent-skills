@@ -1,7 +1,7 @@
 ---
 type: regex
-pattern: '## Findings file[\s\S]*\[lens:tdd\][\s\S]{0,400}(import|re-?declar|cop(y|ies)|by construction|own (copy|version)|duplicat)'
+pattern: '## Findings file[\s\S]*discount\.test\.mjs[\s\S]{0,600}(mock|stub|call ?count|callCount|implementation|internal|own helper)'
 flags: i
 ---
 
-A finding tagged `[lens:tdd]` says `test/price.test.mjs` tests its own copy of `applyDiscount` instead of importing `lib/price.mjs`, so it passes whatever production does.
+A finding on `test/discount.test.mjs` says the test mocks the module's own helpers and asserts their call count and arguments, so it checks the implementation and never runs the real discount: a rule the built-in `tdd` lens states ("mocks only at the boundary", "survives a refactor").

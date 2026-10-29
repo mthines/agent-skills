@@ -1,5 +1,5 @@
 ---
-description: branch-reviewer must auto-load the built-in tdd lens on a changed test file and flag a test that re-declares the code it claims to test.
+description: branch-reviewer must auto-load the built-in tdd lens on a changed test file and flag a test that mocks the module's own helpers and asserts their call count.
 tags: [review-lens]
 max_turns: 10
 timeout_seconds: 1500
