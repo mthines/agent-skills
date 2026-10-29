@@ -70,7 +70,8 @@ resolve() {  # portable readlink -f
     printf '%s/%s\n' "$(pwd -P)" "$t" )
 }
 
-AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" \
+  || resolve "$(agent-skills-root 2>/dev/null)/agents/pr-reviewer.md" || echo "")   # plugin: bin/agent-skills-root
 if [ -z "$AGENT_MD" ]; then
   abort "cannot locate this agent definition — CLAUDE_AGENT_FILE is unset and no
 $HOME/.claude/agents/pr-reviewer.md install exists. If you were dispatched by a caller that handed
