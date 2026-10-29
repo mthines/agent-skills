@@ -1378,6 +1378,18 @@ export function agent0Config(yamlText) {
   return out;
 }
 
+/**
+ * The org a Fix-with-Agent0 button opens: the review config's `agent0_org`, else the host's
+ * `PR_REVIEWER_AGENT0_ORG` (an Agent0 setup script exports it), else none. `orgSource` says which.
+ * @param {{ fixLinks: boolean|null, environment: string|null, org: string|null }} cfg
+ * @param {string|undefined} hostOrg
+ */
+export function withHostOrg(cfg, hostOrg) {
+  if (cfg.org) return { ...cfg, orgSource: "review config" };
+  const host = String(hostOrg || "").trim();
+  return host ? { ...cfg, org: host, orgSource: "PR_REVIEWER_AGENT0_ORG" } : { ...cfg, orgSource: null };
+}
+
 const CONFIG_PROFILES = Object.keys(PROFILES);
 const CONFIG_CRITICAL = ["auto", "always"];
 
@@ -2354,7 +2366,7 @@ async function prepare(opts) {
     reviewerLogin: me || null,
     identitySource,
     // Read by finalize.mjs, which builds the Fix-with-Agent0 links (finalize/fix-links.mjs).
-    agent0: agent0Config(reviewConfigText),
+    agent0: withHostOrg(agent0Config(reviewConfigText), process.env.PR_REVIEWER_AGENT0_ORG),
     // The run-level knobs from the BASE commit's review config (review-config.md § Run-level
     // knobs). finalize.mjs reads profile / severityThresholds / flatThreshold; the agent reads
     // `critical` when Step 2 loads its rubrics; `depthSource` says whether the routing above used CLI or config.
@@ -2665,6 +2677,26 @@ async function selfTest() {
   t("agent0Config reads the three top-level keys and strips comments and quotes", () => {
     const r = agent0Config(["agent0_fix_links: false  # off", 'agent0_environment: "development"', "agent0_org: acme", "  agent0_org: nested"].join("\n"));
     return r.fixLinks === false && r.environment === "development" && r.org === "acme";
+  });
+  t("pathWithHostGh puts $PR_REVIEWER_ROOT/bin first once, and only when the shim is installed", () => {
+    const has = () => true, none = () => false;
+    return pathWithHostGh({ PR_REVIEWER_ROOT: "/ws/r", PATH: "/usr/bin:/ws/r/bin" }, has) === "/ws/r/bin:/usr/bin"
+      && pathWithHostGh({ PR_REVIEWER_ROOT: "/ws/r", PATH: "/ws/r/bin:/usr/bin" }, has) === undefined
+      && pathWithHostGh({ PR_REVIEWER_ROOT: "/ws/r", PATH: "/usr/bin" }, none) === undefined
+      && pathWithHostGh({ PATH: "/usr/bin" }, has) === undefined;
+  });
+  t("withHostOrg: the review config's agent0_org wins, the host org fills an unset one, blank means none", () => {
+    const set = withHostOrg(agent0Config("agent0_org: acme\n"), "dash0-production");
+    const unset = withHostOrg(agent0Config(""), " dash0-production ");
+    const none = withHostOrg(agent0Config(""), "  ");
+    return set.org === "acme" && set.orgSource === "review config"
+      && unset.org === "dash0-production" && unset.orgSource === "PR_REVIEWER_AGENT0_ORG"
+      && none.org === null && none.orgSource === null && withHostOrg(agent0Config(""), undefined).org === null;
+  });
+  t("prepare() fills context.agent0 through withHostOrg from PR_REVIEWER_AGENT0_ORG", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+    return /agent0: withHostOrg\(agent0Config\(reviewConfigText\), process\.env\.PR_REVIEWER_AGENT0_ORG\)/.test(body);
   });
   t("agent0Config leaves fixLinks null when the key is absent", () => {
     const r = agent0Config("profile: strict\n");
@@ -3770,8 +3802,26 @@ async function selfTest() {
 
 /* --------------------------------- CLI --------------------------------- */
 
+/**
+ * The PATH that puts an Agent0 host's gh pagination shim (agent0-setup.sh installs it as
+ * `$PR_REVIEWER_ROOT/bin/gh`) first, so this script and the scripts it spawns page through
+ * every PR file even when the caller never sourced `env.sh`. Undefined when nothing changes.
+ * @param {NodeJS.ProcessEnv} env @param {(p: string) => boolean} [exists]
+ * @returns {string | undefined}
+ */
+export function pathWithHostGh(env, exists = existsSync) {
+  if (!env.PR_REVIEWER_ROOT) return undefined;
+  const bin = join(env.PR_REVIEWER_ROOT, "bin");
+  if (!exists(join(bin, "gh"))) return undefined;
+  const parts = String(env.PATH || "").split(":").filter(Boolean);
+  if (parts[0] === bin) return undefined;
+  return [bin, ...parts.filter((p) => p !== bin)].join(":");
+}
+
 async function main(argv) {
   if (argv[0] === "--self-test") return selfTest();
+  const hostPath = pathWithHostGh(process.env);
+  if (hostPath) process.env.PATH = hostPath;
   if (argv[0] === "--cleanup") {
     // The caller that ran prepare releases the workspace once every agent it handed the context to
     // has returned (pr-review SKILL.md § Step 2). Exit 1 on a refusal or a failed removal.

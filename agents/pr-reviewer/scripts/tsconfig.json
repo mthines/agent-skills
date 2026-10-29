@@ -18,6 +18,7 @@
     "review-packet.mjs",
     "review-context.mjs",
     "select-lenses.mjs",
+    "check-gh-shim.mjs",
     "discover-standards.mjs",
     "delta-triage.mjs",
     "gate4-scan.mjs",

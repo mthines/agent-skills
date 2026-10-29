@@ -91,10 +91,15 @@ agent is worse than no review — it reports phases it never had the procedure
 for.
 
 It exports `PR_REVIEWER_ROOT`, `PR_REVIEWER_BUNDLE`, `PR_REVIEWER_CONSTRAINTS`,
-`PR_REVIEWER_PREPARE`, `AGENT_SUPPORT`, `PR_REVIEWER_PIN` and
-`PR_REVIEWER_LOGIN`. Read the paths from those variables rather than
+`PR_REVIEWER_PREPARE`, `AGENT_SUPPORT`, `PR_REVIEWER_PIN`, `PR_REVIEWER_LOGIN` and
+`PR_REVIEWER_AGENT0_ORG`, and puts `$PR_REVIEWER_ROOT/bin` first on `PATH`. Read the paths from those variables rather than
 re-deriving them: `resolve()`'s three call sites in the agent body exist because
 shell state does not persist between tool calls, and an exported variable does.
+
+Two host facts arrive this way, so no prompt step has to patch them in:
+
+- `PR_REVIEWER_AGENT0_ORG` is the Dash0 org the Fix-with-Agent0 buttons open when the reviewed repo sets no `agent0_org`; `prepare-review.mjs` writes it to `context.agent0.org` with `orgSource: "PR_REVIEWER_AGENT0_ORG"`. Never edit `context.agent0` by hand.
+- `$PR_REVIEWER_ROOT/bin/gh` is the pagination shim (`scripts/agent0-gh-shim.sh`): the sandbox's repo-scoped credential 401s on the Link-header pages `gh api --paginate` follows, so it pages by explicit `?page=N`. `prepare-review.mjs` puts it first on its own `PATH` whenever `PR_REVIEWER_ROOT` is set, so a reviewer-only run that never sources `env.sh` still gets it.
 
 ## Enter at Step 1.2c, from a prepared context
 
