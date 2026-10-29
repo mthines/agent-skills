@@ -3,19 +3,26 @@
 > Every team has rules a generic reviewer will never guess.
 > Write them down once, in one file, and the AI reviewer checks them on every PR that touches your code.
 
-```mermaid
-flowchart LR
-    PR["PR touches<br/>services/billing/"] --> SEL{"Which lenses<br/>match this diff?"}
-    L1[".agents/review/lenses/<br/>billing-audit.md"] -.-> SEL
-    L2[".agents/review/lenses/<br/>feature-flags.md"] -.-> SEL
-    SEL -->|"billing-audit ✓<br/>feature-flags ✗ (other paths)"| REV["pr-reviewer"]
-    REV --> OUT["[lens:billing-audit]<br/>refundInvoice never calls audit.record"]
-```
+![Team review lenses: commit a Markdown checklist to .agents/review/lenses/, or switch a lens on from any folder's .review.yaml, with --with, or through the built-ins. The reviewer matches it to the diff, reads it from the base commit, and posts an inline finding tagged with the lens.](./assets/lenses-flow.png)
 
 **No registration.
 No config.
 No CI change.**
-Commit a Markdown checklist to `.agents/review/lenses/`, and from the next PR on, the reviewer applies it wherever your paths change, and nowhere else.
+
+### Four ways to switch a lens on
+
+You don't have to put anything at the repo root.
+Pick whichever fits how your team works; they all combine.
+
+| Way in | Where it lives | Reach | Best for |
+| --- | --- | --- | --- |
+| **A team lens** | `.agents/review/lenses/<name>.md` | the paths its `applies-to` names, anywhere in the repo | a team's own rules, owned through `CODEOWNERS` |
+| **A folder switch** | `lenses: [<name>]` in **any folder's** `.review.yaml` | that folder and everything below it | turning a lens on for one app, package, or service |
+| **A one-off** | `/pr-review 42 --with a,b,c` | this one review | a risky PR that deserves an extra pair of eyes |
+| **Built-ins** | ship with the reviewer | the diffs they recognise (UI, LLM code, charts, motion) | nothing to do; they turn on by themselves |
+
+New here?
+Start with a team lens: it is one file and takes a minute.
 
 ---
 
@@ -51,6 +58,8 @@ The next PR that touches `services/billing/` gets reviewed against your checklis
 ---
 
 ## What you'll see
+
+![The reviewer announces each lens before it starts, then posts an inline finding on the exact line, tagged with the lens and backed by evidence; a PR outside the lens's paths gets no billing finding.](./assets/lenses-finding.png)
 
 The reviewer announces every lens it loads, and why, before it starts:
 
@@ -122,16 +131,10 @@ diff-matches: 'charge\(|refund\('
 ## Pick the right lever
 
 Lenses are one of four ways to teach the reviewer about your repo.
-Each one is a file you commit, read automatically, with no flag.
+Three are files you commit, in whichever folder they concern; the fourth is one command.
+None needs a flag.
 
-```mermaid
-flowchart TD
-    Q{"What do you want<br/>the reviewer to do?"}
-    Q -->|"Check a team rule<br/>on our code"| LENS[".agents/review/lenses/*.md"]
-    Q -->|"Understand something<br/>the code can't show"| RM["REVIEW.md<br/>in that directory"]
-    Q -->|"Turn on an existing lens<br/>for one folder"| CFG[".review.yaml<br/>lenses: [ux]"]
-    Q -->|"Stop flagging<br/>one kind of finding"| MEM["/pr-review remember"]
-```
+![Four levers: a review lens checks a team rule, REVIEW.md gives context for one folder, .review.yaml switches a lens on for a folder, and /pr-review remember stops one kind of finding.](./assets/review-levers.png)
 
 | You want the reviewer to… | Write | Example |
 | --- | --- | --- |

@@ -1,0 +1,138 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#09090b; --card:#111114; --line:#232329; --line2:#2e2e36; --text:#f4f4f5; --dim:#a1a1aa; --faint:#63636e;
+  --blue:#60a5fa; --violet:#a78bfa; --green:#4ade80; --amber:#fbbf24; --coral:#fb923c;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1400px;height:850px;background:var(--bg);color:var(--text);overflow:hidden;position:relative;
+  font-family:"Geist",-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1.2px);background-size:22px 22px;
+  -webkit-mask-image:radial-gradient(1000px 520px at 50% 66%,#000 20%,transparent 75%)}
+body::after{content:"";position:absolute;left:50%;top:600px;width:900px;height:260px;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,rgba(96,165,250,.10),rgba(167,139,250,.06) 55%,transparent);filter:blur(10px)}
+.wrap{position:relative;z-index:1;padding:56px 72px 0}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+.eyebrow{font-size:14px;color:var(--faint);letter-spacing:.02em}
+.eyebrow b{color:var(--dim);font-weight:500}
+h1{font-size:54px;font-weight:600;letter-spacing:-.035em;line-height:1.05;margin-top:14px}
+h1 span{background:linear-gradient(90deg,#93c5fd,#c4b5fd);-webkit-background-clip:text;color:transparent}
+.top{display:flex;justify-content:space-between;align-items:flex-end}
+
+/* the lens file, as an editor card */
+.file{margin-top:28px;width:600px;border:1px solid var(--line2);border-radius:12px;background:rgba(17,17,20,.88);overflow:hidden}
+.file .tab{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--dim)}
+.file .tab i{width:8px;height:8px;border-radius:50%;background:var(--blue)}
+.file .tab .new{margin-left:auto;color:var(--green);font-size:12px}
+.file pre{padding:14px 18px 16px;font-size:14.5px;line-height:1.6;color:#e4e4e7;white-space:pre}
+.file .k{color:#93c5fd}.file .s{color:#86efac}.file .c{color:var(--faint)}.file .h{color:#c4b5fd}
+
+.aim{display:flex;flex-direction:column;align-items:flex-end;gap:10px}
+.aim .label{font-size:13px;color:var(--faint)}
+.seg{display:flex;border:1px solid var(--line2);border-radius:10px;padding:4px;background:rgba(17,17,20,.85);gap:4px}
+.seg div{padding:8px 16px;border-radius:7px;font-size:15px;color:var(--dim);display:flex;align-items:center;gap:8px}
+.seg i{width:7px;height:7px;border-radius:50%;display:inline-block}
+.seg .on{background:#1c1c22;color:var(--text);box-shadow:inset 0 0 0 1px #34343d}
+.aim .none{font-size:14px;color:var(--dim);text-align:right;line-height:1.5}
+.aim .none b{color:var(--text);font-weight:500}
+.ways{display:flex;flex-direction:column;gap:8px;width:470px}
+.way{display:grid;grid-template-columns:22px 1fr auto;align-items:center;gap:12px;border:1px solid var(--line2);border-radius:10px;padding:10px 14px;background:rgba(17,17,20,.85)}
+.way i{width:8px;height:8px;border-radius:50%;justify-self:center}
+.way .w{font-size:14px;color:#e4e4e7}
+.way .d{font-size:12.5px;color:var(--faint);text-align:right}
+.way.on{background:#16161c;box-shadow:inset 0 0 0 1px #3a3a46}
+
+.pipe{position:relative;margin-top:40px;height:300px}
+.pipe svg.track{position:absolute;inset:0}
+.nodes{position:absolute;inset:0;display:grid;grid-template-columns:repeat(4,1fr)}
+.node{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:76px}
+.dot{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;background:var(--card);border:1px solid var(--line2)}
+.node h3{font-size:20px;font-weight:600;letter-spacing:-.015em;margin-top:18px}
+.node p{font-size:14.5px;color:var(--dim);line-height:1.45;margin-top:6px;max-width:250px;min-height:63px}
+.n-match .dot{border-color:rgba(96,165,250,.55);box-shadow:0 0 0 5px rgba(96,165,250,.07)}
+.n-base .dot{border-color:rgba(167,139,250,.6);box-shadow:0 0 0 5px rgba(167,139,250,.08)}
+.n-find .dot{border-color:rgba(74,222,128,.5);box-shadow:0 0 0 5px rgba(74,222,128,.06)}
+.chip{font-size:12.5px;border-radius:6px;padding:4px 8px;margin-top:12px}
+.chip.file-c{color:var(--dim);background:#141418;border:1px solid var(--line2)}
+.chip.match{color:#93c5fd;background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.22)}
+.chip.base{color:#c4b5fd;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25)}
+.chip.find{color:var(--green);background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25)}
+
+.foot{position:absolute;z-index:1;left:72px;right:72px;bottom:34px;display:flex;justify-content:space-between;
+  border-top:1px solid var(--line);padding-top:18px;font-size:14px;color:var(--faint)}
+.foot span b{color:var(--dim);font-weight:500}
+.foot .k{color:var(--coral)}
+</style></head>
+<body><div class="wrap">
+  <div class="top">
+    <div>
+      <div class="eyebrow mono"><b>pr-review</b> · team review lenses</div>
+      <h1>Your team’s rules.<br><span>Checked on every PR.</span></h1>
+      <div class="file mono">
+        <div class="tab"><i></i>.agents/review/lenses/billing-audit.md<span class="new">+ one file</span></div>
+<pre><span class="c">---</span>
+<span class="k">applies-to</span>: <span class="s">"services/billing/**"</span>
+<span class="c">---</span>
+<span class="h">## Checklist</span>
+- [ ] Every refund calls <span class="s">audit.record("billing.&lt;fn&gt;", { id })</span></pre>
+      </div>
+    </div>
+    <div class="aim">
+      <div class="label mono">four ways in — pick any</div>
+      <div class="ways mono">
+        <div class="way on"><i style="background:var(--blue)"></i><span class="w">.agents/review/lenses/*.md</span><span class="d">team lens · any paths</span></div>
+        <div class="way"><i style="background:var(--green)"></i><span class="w">&lt;any folder&gt;/.review.yaml</span><span class="d">lenses: [ux]</span></div>
+        <div class="way"><i style="background:var(--violet)"></i><span class="w">/pr-review 42 --with a,b,c</span><span class="d">one review</span></div>
+        <div class="way"><i style="background:var(--amber)"></i><span class="w">built-in lenses</span><span class="d">turn on by themselves</span></div>
+      </div>
+      <div class="none"><b>No registration. No config. No CI change.</b></div>
+    </div>
+  </div>
+
+  <div class="pipe">
+    <svg class="track" width="1256" height="300" viewBox="0 0 1256 300" overflow="visible">
+      <defs>
+        <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="157" y1="0" x2="1099" y2="0">
+          <stop offset="0" stop-color="#3f3f46"/><stop offset=".35" stop-color="#60a5fa"/>
+          <stop offset=".68" stop-color="#a78bfa"/><stop offset="1" stop-color="#4ade80"/>
+        </linearGradient>
+      </defs>
+      <line x1="185" y1="104" x2="1071" y2="104" stroke="url(#g)" stroke-width="1.5"/>
+    </svg>
+    <div class="nodes">
+      <div class="node">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e4e4e7" stroke-width="1.6"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6M9 14h6"/></svg></div>
+        <h3>Drop in a checklist</h3>
+        <p>One Markdown file per rule set, owned by the team that knows the code.</p>
+        <div class="chip file-c mono">3–15 items</div>
+      </div>
+      <div class="node n-match">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".9" fill="#93c5fd"/></svg></div>
+        <h3>Matched to the diff</h3>
+        <p>Loads only when the PR touches your paths or adds the calls you care about.</p>
+        <div class="chip match mono">services/billing/**</div>
+      </div>
+      <div class="node n-base">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.6"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></svg></div>
+        <h3>Read from main</h3>
+        <p>From the base commit, so a PR can never weaken the lens that reviews it.</p>
+        <div class="chip base mono">base commit</div>
+      </div>
+      <div class="node n-find">
+        <div class="dot"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="1.6"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/></svg></div>
+        <h3>A finding on the PR</h3>
+        <p>Inline, on the exact line, tagged with the lens that caught it.</p>
+        <div class="chip find mono">[lens:billing-audit]</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="foot">
+  <span><b>Announced</b> — every lens says why it loaded</span>
+  <span><b>Scoped</b> — billing rules never comment on your UI</span>
+  <span><b>Advisory</b> — a lens alone <span class="mono k">can’t block</span> a merge</span>
+</div>
+</body></html>
