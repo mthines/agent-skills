@@ -81,5 +81,7 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 | `behavioral-design-hard-review-sla` | `behavioral-design` | baseline measured, llm: ≥ 2 barriers, friction-removing default first, no individual ranking, GitHub-data metric |
 | `review-lens-team-path` | `branch-reviewer` + `.agents/review/lenses/` | reviewer dispatched; findings name the lens-only rule (`audit.record`) for a change under the lens's `applies-to` |
 | `review-lens-team-control` | `branch-reviewer` + `.agents/review/lenses/` | reviewer dispatched; findings never name it for a change outside `applies-to` |
+| `review-lens-builtin-tdd` | `branch-reviewer` + built-in `tdd` lens | reviewer dispatched; a `[lens:tdd]` finding on a test that re-declares the code it tests |
+| `review-lens-builtin-approach` | `branch-reviewer --effort high` + built-in `optimize-approach` lens | reviewer dispatched; a `[lens:optimize-approach]` finding naming the batch `getUsers` over a per-item loop |
 | `trigger-critical`, `trigger-confidence`, `trigger-behavioral-design-1on1s` | each named skill | `Skill` fired |
 | `trigger-neg-aw-question`, `trigger-neg-aw-here` | `aw` | `aw` / `autonomous-workflow` not fired |
