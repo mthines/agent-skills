@@ -2678,6 +2678,13 @@ async function selfTest() {
     const r = agent0Config(["agent0_fix_links: false  # off", 'agent0_environment: "development"', "agent0_org: acme", "  agent0_org: nested"].join("\n"));
     return r.fixLinks === false && r.environment === "development" && r.org === "acme";
   });
+  t("pathWithHostGh puts $PR_REVIEWER_ROOT/bin first once, and only when the shim is installed", () => {
+    const has = () => true, none = () => false;
+    return pathWithHostGh({ PR_REVIEWER_ROOT: "/ws/r", PATH: "/usr/bin:/ws/r/bin" }, has) === "/ws/r/bin:/usr/bin"
+      && pathWithHostGh({ PR_REVIEWER_ROOT: "/ws/r", PATH: "/ws/r/bin:/usr/bin" }, has) === undefined
+      && pathWithHostGh({ PR_REVIEWER_ROOT: "/ws/r", PATH: "/usr/bin" }, none) === undefined
+      && pathWithHostGh({ PATH: "/usr/bin" }, has) === undefined;
+  });
   t("withHostOrg: the review config's agent0_org wins, the host org fills an unset one, blank means none", () => {
     const set = withHostOrg(agent0Config("agent0_org: acme\n"), "dash0-production");
     const unset = withHostOrg(agent0Config(""), " dash0-production ");
@@ -3795,8 +3802,26 @@ async function selfTest() {
 
 /* --------------------------------- CLI --------------------------------- */
 
+/**
+ * The PATH that puts an Agent0 host's gh pagination shim (agent0-setup.sh installs it as
+ * `$PR_REVIEWER_ROOT/bin/gh`) first, so this script and the scripts it spawns page through
+ * every PR file even when the caller never sourced `env.sh`. Undefined when nothing changes.
+ * @param {NodeJS.ProcessEnv} env @param {(p: string) => boolean} [exists]
+ * @returns {string | undefined}
+ */
+export function pathWithHostGh(env, exists = existsSync) {
+  if (!env.PR_REVIEWER_ROOT) return undefined;
+  const bin = join(env.PR_REVIEWER_ROOT, "bin");
+  if (!exists(join(bin, "gh"))) return undefined;
+  const parts = String(env.PATH || "").split(":").filter(Boolean);
+  if (parts[0] === bin) return undefined;
+  return [bin, ...parts.filter((p) => p !== bin)].join(":");
+}
+
 async function main(argv) {
   if (argv[0] === "--self-test") return selfTest();
+  const hostPath = pathWithHostGh(process.env);
+  if (hostPath) process.env.PATH = hostPath;
   if (argv[0] === "--cleanup") {
     // The caller that ran prepare releases the workspace once every agent it handed the context to
     // has returned (pr-review SKILL.md § Step 2). Exit 1 on a refusal or a failed removal.

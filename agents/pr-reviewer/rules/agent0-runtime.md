@@ -99,7 +99,7 @@ shell state does not persist between tool calls, and an exported variable does.
 Two host facts arrive this way, so no prompt step has to patch them in:
 
 - `PR_REVIEWER_AGENT0_ORG` is the Dash0 org the Fix-with-Agent0 buttons open when the reviewed repo sets no `agent0_org`; `prepare-review.mjs` writes it to `context.agent0.org` with `orgSource: "PR_REVIEWER_AGENT0_ORG"`. Never edit `context.agent0` by hand.
-- `$PR_REVIEWER_ROOT/bin/gh` is the pagination shim (`scripts/agent0-gh-shim.sh`): the sandbox's repo-scoped credential 401s on the Link-header pages `gh api --paginate` follows, so it pages by explicit `?page=N`.
+- `$PR_REVIEWER_ROOT/bin/gh` is the pagination shim (`scripts/agent0-gh-shim.sh`): the sandbox's repo-scoped credential 401s on the Link-header pages `gh api --paginate` follows, so it pages by explicit `?page=N`. `prepare-review.mjs` puts it first on its own `PATH` whenever `PR_REVIEWER_ROOT` is set, so a reviewer-only run that never sources `env.sh` still gets it.
 
 ## Enter at Step 1.2c, from a prepared context
 
