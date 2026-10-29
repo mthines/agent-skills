@@ -1917,8 +1917,10 @@ async function prepare(opts) {
         anomalies.push("impact graph returned unparseable output — Phase C loses blast_radius as an input");
       }
     } else {
-      const why = built.timedOut ? "timed out" : (built.stderr || built.stdout || "").trim() || `exit ${built.code}, no output`;
-      anomalies.push(`impact graph failed: ${why.slice(0, 300)}`);
+      const graphTimeout = Math.max(timeoutMs, 180000);
+      const why = built.timedOut || (built.stderr || "").trim() ? describeFailure(built, graphTimeout)
+        : (built.stdout || "").trim().slice(0, 200) || describeFailure(built, graphTimeout);
+      anomalies.push(`impact graph failed: ${why}`);
     }
   } else if (opts.impact) {
     anomalies.push(
