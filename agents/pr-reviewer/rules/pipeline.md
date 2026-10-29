@@ -188,7 +188,7 @@ this agent reads before Step 2.5 and pools with its own finders' candidates
 diagram above.
 
 `finalize.mjs --dedupe-candidates <file> [--out <file>]` and
-`finalize.mjs --context … --judgments … --out-dir … --writer github|findings-bus [--bus-path <file>] [--dry-run] [--no-dispatch]`
+`finalize.mjs --context … --judgments … --out-dir … --writer github|findings-bus [--bus-path <file>] [--dry-run] [--no-telemetry] [--no-dispatch]`
 are both documented in `finalize.mjs`'s own `usage()` string; the latter is also
 `branch-reviewer`'s entire output path (D16) — `--writer findings-bus` writes
 `findings.jsonl` **instead of** `write-plan.json`, never both.

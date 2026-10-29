@@ -820,8 +820,10 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // hand-typed a MEMORIES_SUMMARY that used the wrong vocabulary (render-report.mjs requires the
   // literal `<N> indexed` shape and rejects any string carrying "used", which is derived).
   const memoryUsed = buildMemoriesUsed(judgments?.memory, { suppressed });
-  // Indexed is at least every body the run read, even when the caller did not count the listing.
-  const readCount = Array.isArray(judgments?.memory?.read) ? judgments.memory.read.length : 0;
+  // Indexed is at least every rule, knowledge, and hotspot body the run read, even when the caller
+  // did not count the listing; reviewer-lessons are never part of MEMORIES_READ_COUNT.
+  const readCount = (Array.isArray(judgments?.memory?.read) ? judgments.memory.read : [])
+    .filter((/** @type {any} */ r) => /^(reviewer-comment-relevance|knowledge|hotspot)::/.test(String(r?.key || ""))).length;
   const memoriesSummary = memoriesSummaryFor(memoryUsed, Math.max(readCount, Number.isInteger(judgments?.memory?.indexed) ? judgments.memory.indexed : 0));
 
   const tier = context?.routing?.tier;

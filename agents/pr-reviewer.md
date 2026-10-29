@@ -547,7 +547,7 @@ The `<D> suppressions, <P> promotions` figures are NOT announced here: they come
 ### 1.1 Fetch PR data in parallel
 
 `node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <ref> --out ctx.json` (never
-under `--context`; with no `--reviewer-login` it asks GraphQL `viewer` itself, so the relation and the Fix-this buttons survive) performs Step 1.1 and every mechanical step through *Bind `DEPTH_TIER`* — 1.1b,
+under `--context`; with no `--reviewer-login`, `PR_REVIEWER_LOGIN`, state record, or prior report author, it asks GraphQL `viewer` itself, so the relation and the Fix-this buttons survive) performs Step 1.1 and every mechanical step through *Bind `DEPTH_TIER`* — 1.1b,
 1.2, shape classification, 1.2a's graph, 1.2b — and binds them on `context.json`. **When it cannot
 run, or its context lacks a field, read `agents/pr-reviewer/rules/fetch-and-triage.md`** and run that
 step's manual fallback.

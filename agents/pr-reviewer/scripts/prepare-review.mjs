@@ -361,7 +361,7 @@ export function resolveReviewerIdentity({ suppliedLogin, fromFlag, stateBotLogin
  */
 export function usableWorkdir(dir, anomalies) {
   if (!dir || existsSync(dir)) return dir || "";
-  anomalies.push(`--workdir ${dir} does not exist — materializing the workspace instead`);
+  anomalies.push(`--workdir ${dir} does not exist — ignored; the workspace ladder decides instead`);
   return "";
 }
 
