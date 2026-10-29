@@ -51,6 +51,8 @@ fi
 per=100
 if [[ "$endpoint" =~ [?\&]per_page=([0-9]+) ]]; then per="${BASH_REMATCH[1]}"; base="$endpoint"
 else case "$endpoint" in *\?*) base="$endpoint&per_page=$per" ;; *) base="$endpoint?per_page=$per" ;; esac; fi
+# GitHub serves at most 100 per page; a full page of 100 under per_page=200 is not the last one.
+[ "$per" -gt 100 ] && per=100
 page=1
 while :; do
   out=$("$REAL" api "${pass[@]}" "$base&page=$page") || exit $?

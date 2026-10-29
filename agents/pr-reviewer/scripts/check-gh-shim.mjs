@@ -26,6 +26,8 @@ case "$*" in
   *items*"&page=1") echo '[1,2]' ;;
   *items*"&page=2") echo '[3,4]' ;;
   *items*"&page=3") echo '[5]' ;;
+  *big*"&page=1"|*big*"&page=2") jq -nc '[range(100)]' ;;
+  *big*"&page=3") jq -nc '[range(50)]' ;;
   *search*) echo '{"total_count":1,"items":[9]}' ;;
   *fails*) echo "gh: Server Error (HTTP 502)" >&2; exit 1 ;;
   *) echo "PASSTHROUGH $*" ;;
@@ -70,6 +72,9 @@ function selfTest() {
 
   const raw = gh(["api", "repos/o/r/items?per_page=2", "--paginate"]);
   check("--paginate without --jq prints each page", raw.out === "[1,2][3,4][5]", raw);
+
+  const big = gh(["api", "repos/o/r/big?per_page=200", "--paginate", "--jq", ".[]"]);
+  check("per_page above GitHub's 100 cap still walks every page", big.out.split("\n").length === 250 && big.calls.length === 3, { n: big.out.split("\n").length, calls: big.calls });
 
   const graphql = gh(["api", "graphql", "--paginate", "-f", "query=q"]);
   check("graphql --paginate is handed back to gh unchanged", graphql.out.startsWith("FALLBACK api graphql --paginate"), graphql);
