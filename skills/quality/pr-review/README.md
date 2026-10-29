@@ -204,7 +204,7 @@ The reviewer's tool budget grows with each lens past the third, so a long list s
 - 🧯 **Advisory, not a gate.**
   A lens finding can't block a merge on its own; blocking still takes the reviewer's core checks.
 - 🧪 **Tested.**
-  The resolver has 25 self-tests, and two end-to-end evals run a real review: one proves a lens fires on its paths, the other proves it stays quiet outside them.
+  The resolver has its own self-tests, and two end-to-end evals run a real review: one proves a lens fires on its paths, the other proves it stays quiet outside them.
 
 ---
 
