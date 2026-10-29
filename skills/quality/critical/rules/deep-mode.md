@@ -176,7 +176,6 @@ Do these in order:
    Write it in the [steelman structure](../SKILL.md#mandatory-steelman-alternative).
    List every other distinct alternative in one line each under `Other alternatives raised`.
 6. **Add nothing.** A concern that no lens raised does not enter the report, even if synthesis notices it.
-   Name it under `Next step` as a reason to re-run on the revised target instead.
 
 ## Output format
 
@@ -222,14 +221,11 @@ Do these in order:
 
 ### Dropped (ungrounded)
 - <lens>: <claim> — `<cite>` did not resolve.
-
-### Next step
-Run `/confidence <mode>` once the must-fix items are addressed.
-Do not re-run `/critical deep` on the unchanged target.
 ```
 
 Omit `Conflicts`, `Other alternatives raised`, `Lost lenses`, and `Dropped (ungrounded)` when empty.
 When `Must-fix` and `Should-fix` are both empty, print `No blocking concerns found across <n> lenses.` plus the steelman.
+The report ends at the last non-empty section; never append a next-step, exactly as the [single pass](../SKILL.md#output-format).
 
 ## Hard rules
 
@@ -245,6 +241,6 @@ When `Must-fix` and `Should-fix` are both empty, print `No blocking concerns fou
 - Giving every lens the same generic "find bugs" brief. **Fix:** each lens gets its own persona and 2–3 focus probes; the distinctness check drops duplicates.
 - Passing lens A's findings to lens B "for context". **Fix:** that turns parallel lenses into a self-refine chain — the bias-amplifying loop the single pass forbids.
 - Requiring two lenses to agree before keeping a must-fix. **Fix:** single-lens findings stay; consensus filtering throws away the reason to run deep.
-- Letting synthesis "notice" an extra issue and add it. **Fix:** synthesis has no persona and walked no taxonomy; its addition is unattributed and ungrounded — name it as a re-run reason instead.
+- Letting synthesis "notice" an extra issue and add it. **Fix:** synthesis has no persona and walked no taxonomy; its addition is unattributed and ungrounded — drop it; the caller re-runs on the revised target if it wants a second pass.
 - Breaking the steelman tie by counting lenses that agree. **Fix:** use the `reuses` / blast-radius / wildcard tie-breakers — the lone dissent is the reason to run deep.
 - Relaying ideate's full report or verdict question. **Fix:** only the lens records cross into the critical run.

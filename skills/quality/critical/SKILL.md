@@ -149,11 +149,9 @@ Use this exact structure:
 
 ### Skipped rows (with reason)
 - Row N (Concern): <reason — e.g. "not applicable, no concurrency in changed paths">
-
-### Next step
-Run `/confidence <mode>` once the must-fix items are addressed.
-Do not re-run `/critical` — single-pass by design.
 ```
+
+The report ends at `Skipped rows`; never append a next-step, a `/confidence` suggestion, or a re-run warning — the caller decides what to do with the findings.
 
 Classification:
 
@@ -165,7 +163,7 @@ If `Must-fix` and `Should-fix` are both empty, output `No blocking concerns foun
 
 ## Composition with other skills
 
-- `/confidence` — suggest `/confidence <mode>` in `Next step`; never score here.
+- `/confidence` — scoring belongs there; a caller that gates on a score invokes it itself (`/implement-suggestion` Phase 4). Never score here.
 - Root-cause re-trace — when an `analysis` finding suggests the root cause is wrong, recommend re-tracing the execution path from entry to exit (ruling out at least 2 alternative causes with evidence) before the `/confidence` gate; inside `/fix-bug` that is its Phase 3.
 - `/ideate` — `deep` lens discovery ([`rules/deep-mode.md`](./rules/deep-mode.md#d1--lens-selection)).
 
