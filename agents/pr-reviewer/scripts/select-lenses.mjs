@@ -38,6 +38,8 @@ import { readAtRefLocal } from "./review-context.mjs";
 export const LENS_DIR = ".agents/review/lenses";
 export const LENS_VERSION = 1;
 const TIER_RANK = { quick: 0, standard: 1, deep: 2 };
+/** The lens names a finding can carry (judgments.schema.json `lens`). */
+const LENS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_LENS_LINES = 1000; // review-lens-contract.md: a defensive guard against pointing at the wrong file
 
 /* ------------------------------- parsing ------------------------------- */
@@ -115,6 +117,7 @@ export function parseLens(text) {
   if (text.split("\n").length > MAX_LENS_LINES) error = `over ${MAX_LENS_LINES} lines`;
   else if (version !== undefined && Number(version) !== LENS_VERSION) error = `unknown lens-version ${version}`;
   else if (minTier !== undefined && !(minTier in TIER_RANK)) error = `unknown min-tier ${minTier}`;
+  else if (get("auto") !== undefined && get("auto") !== "true" && get("auto") !== "false") error = `auto must be true or false, got ${get("auto")}`;
   /** @type {RegExp[]} */
   const diffMatches = [];
   if (!error && fm["diff-matches"]) {
@@ -127,7 +130,8 @@ export function parseLens(text) {
     appliesTo: /** @type {"always" | string[]} */ (appliesRaw.length === 1 && appliesRaw[0] === "always" ? "always" : appliesRaw),
     diffMatches,
     minTier: /** @type {keyof typeof TIER_RANK | undefined} */ (minTier),
-    auto: auto === undefined ? undefined : auto === "true",
+    // Only a literal true/false sets it; anything else is `error`, so a repo lens still reaches `skipped`.
+    auto: auto === "true" ? true : auto === "false" ? false : undefined,
     body: m ? text.slice(m[0].length) : text,
     error,
   };
@@ -246,6 +250,8 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
   // name never merges in: the first source's text keeps its own files.
   const consider = (name, hit, how) => {
     if (seen.has(name)) return;
+    // judgments.schema.json's `lens` pattern: a name a finding cannot carry must not load.
+    if (!LENS_NAME.test(name)) { seen.add(name); skipped.push({ name, reason: `${hit.source}: lens name must match ${LENS_NAME}` }); return; }
     const prior = loaded.find((l) => l.name === name);
     if (prior && prior.source !== hit.source) return;
     const lens = parseLens(hit.text);
@@ -424,6 +430,12 @@ function selfTest() {
   check("min-tier: below the tier it does not load, at the tier it does",
     selectLenses({ changed: [ch("a.ts")], tier: "standard", repoLenses: deep }).loaded.length === 0
       && names(selectLenses({ changed: [ch("a.ts")], tier: "deep", repoLenses: deep }))[0] === "approach");
+  const autoBad = selectLenses({ changed: [ch("a.ts")], repoLenses: { y: lens("auto: yes") } });
+  check("auto other than true/false is skipped with a reason, never silently off",
+    autoBad.loaded.length === 0 && /auto must be true or false/.test(autoBad.skipped[0]?.reason || ""), JSON.stringify(autoBad.skipped));
+  const spaced = selectLenses({ changed: [ch("a.ts")], repoLenses: { "billing audit": lens(""), SOC2: lens("") } });
+  check("a lens name a finding cannot carry is skipped; capitals load",
+    names(spaced).join() === "SOC2" && /lens name must match/.test(spaced.skipped.find((s) => s.name === "billing audit")?.reason || ""), JSON.stringify(spaced));
   check("min-tier: an empty, missing, or unknown tier never loads a min-tier lens; case is ignored",
     [undefined, "", "Standard", "deeep"].every((t) => selectLenses({ changed: [ch("a.ts")], tier: t, repoLenses: deep }).loaded.length === 0)
       && names(selectLenses({ changed: [ch("a.ts")], tier: "DEEP", repoLenses: deep }))[0] === "approach");
