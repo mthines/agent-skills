@@ -176,7 +176,6 @@ Do these in order:
    Write it in the [steelman structure](../SKILL.md#mandatory-steelman-alternative).
    List every other distinct alternative in one line each under `Other alternatives raised`.
 6. **Add nothing.** A concern that no lens raised does not enter the report, even if synthesis notices it.
-   Name it under `### Next step` as a reason to re-run on the revised target instead; this is the only standalone case that prints the section.
 
 ## Output format
 
@@ -226,7 +225,7 @@ Do these in order:
 
 Omit `Conflicts`, `Other alternatives raised`, `Lost lenses`, and `Dropped (ungrounded)` when empty.
 When `Must-fix` and `Should-fix` are both empty, print `No blocking concerns found across <n> lenses.` plus the steelman.
-Append `### Next step` under the same rule as the single pass ([output format](../SKILL.md#output-format)), plus the synthesis case in [D3 step 6](#d3--synthesis).
+The report ends at the last non-empty section; never append a next-step, exactly as the [single pass](../SKILL.md#output-format).
 
 ## Hard rules
 
