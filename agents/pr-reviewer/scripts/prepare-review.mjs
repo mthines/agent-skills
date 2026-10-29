@@ -1647,7 +1647,8 @@ export async function readBaseLensInputs({ dir, baseSha, repo, changed, withName
   if (!baseSha) return { repoLenses, repoSkillLenses, configs, source: "none (no base SHA)" };
   const local = !!dir && (await runner("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok;
   if (!local && !repo) return { repoLenses, repoSkillLenses, configs, source: "none (no local base commit, no repo)" };
-  /** @param {string} rel @returns {Promise<string|null>} null when absent at the base */
+  /** @type {string[]} */ const unreadable = [];
+  /** @param {string} rel @returns {Promise<string|null>} null when absent at the base, or unreadable (recorded) */
   const readOne = async (rel) => {
     if (local) {
       const r = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", /** @type {string} */ (dir), "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
@@ -1656,8 +1657,8 @@ export async function readBaseLensInputs({ dir, baseSha, repo, changed, withName
     const encoded = rel.split("/").map(encodeURIComponent).join("/");
     const r = await runner("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${encoded}?ref=${baseSha}`], { timeoutMs });
     if (r.ok) return r.stdout;
-    if (/\bHTTP 404\b/.test(r.stderr)) return null;
-    throw new Error(`${rel}@${baseSha.slice(0, 7)}: ${describeFailure(r).slice(0, 160)}`);
+    if (!/\bHTTP 404\b/.test(r.stderr)) unreadable.push(`${rel}@${baseSha.slice(0, 7)}: ${describeFailure(r).slice(0, 160)}`);
+    return null;
   };
   /** @type {string[]} */
   let lensPaths = [];
@@ -1683,7 +1684,9 @@ export async function readBaseLensInputs({ dir, baseSha, repo, changed, withName
     const t = await readOne(`.agents/skills/${n}/lens.md`);
     if (t !== null) repoSkillLenses[n] = t;
   }
-  return { repoLenses, repoSkillLenses, configs, source: local ? "workspace" : "contents API" };
+  const source = local ? "workspace" : "contents API";
+  if (unreadable.length) return { repoLenses, repoSkillLenses, configs, source, error: `unreadable at the base: ${unreadable.join("; ")}` };
+  return { repoLenses, repoSkillLenses, configs, source };
 }
 
 /* --------------------------------- main --------------------------------- */
@@ -2257,7 +2260,7 @@ async function prepare(opts) {
     const changedPaths = files.map((f) => f.filename);
     const withNames = String(opts.with || "").split(",").map((x) => x.trim()).filter(Boolean);
     const repoInputs = await readBaseLensInputs({ dir: workspace.dir, baseSha, repo, changed: changedPaths, withNames, timeoutMs });
-    if (repoInputs.error) anomalies.push(`review lenses: ${repoInputs.error} — repo lenses not loaded`);
+    if (repoInputs.error) anomalies.push(`review lenses: ${repoInputs.error} — those files are not loaded; the rest are`);
     const sel = selectLenses({ changed: changedWithAdded(files), tier: routing.tier, withNames, ...repoInputs, bundledLenses: readBundledLenses() });
     lenses = { ...sel, source: repoInputs.source };
   } catch (e) {
@@ -2933,6 +2936,17 @@ async function selfTest() {
     const broken = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["a.ts"], runner: mk("gh: Server Error (HTTP 502)") });
     return absent.source === "contents API" && !absent.error && Object.keys(absent.repoLenses).length === 0 && /lenses: \[ux\]/.test(absent.configs[".github/review.yaml"] || "")
       && /failed/.test(broken.error || "");
+  });
+  t("readBaseLensInputs: one unreadable config is an error naming it, and the readable files still load", async () => {
+    const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
+      const url = args.find((a) => a.includes("contents/")) || "";
+      if (url.includes(`contents/${LENS_DIR}?`)) return { ok: true, code: 0, stdout: `${LENS_DIR}/billing.md\n`, stderr: "", timedOut: false };
+      if (url.includes(`contents/${LENS_DIR}/billing.md`)) return { ok: true, code: 0, stdout: "---\nlens-version: 1\n---\n", stderr: "", timedOut: false };
+      if (url.includes("contents/svc/.review.yaml")) return { ok: false, code: 1, stdout: "", stderr: "gh: Forbidden (HTTP 403)", timedOut: false };
+      return { ok: false, code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)", timedOut: false };
+    };
+    const r = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["svc/a.ts"], runner });
+    return /svc\/\.review\.yaml@abc1234/.test(r.error || "") && typeof r.repoLenses.billing === "string";
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;
