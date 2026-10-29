@@ -1675,9 +1675,13 @@ export async function readBaseLensInputs({ dir, baseSha, repo, changed, withName
     const t = await readOne(p);
     if (t !== null) repoLenses[posix.basename(p, ".md")] = t;
   }
-  for (const p of configCandidatePaths(changed)) {
-    const t = await readOne(p);
-    if (t !== null) configs[p] = t;
+  // One read per ancestor config path; over the contents API that is one round trip each, so
+  // read them REVIEW_CONTEXT_API_CONCURRENCY at a time, as readBaseReviewContext does.
+  const configPaths = configCandidatePaths(changed);
+  for (let i = 0; i < configPaths.length; i += REVIEW_CONTEXT_API_CONCURRENCY) {
+    const batch = configPaths.slice(i, i + REVIEW_CONTEXT_API_CONCURRENCY);
+    const texts = await Promise.all(batch.map(readOne));
+    batch.forEach((p, j) => { if (texts[j] !== null) configs[p] = /** @type {string} */ (texts[j]); });
   }
   const named = [...new Set([...withNames, ...Object.keys(subtreeLenses({ changed, configs }))])].filter((n) => repoLenses[n] === undefined);
   for (const n of named) {
