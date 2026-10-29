@@ -241,6 +241,6 @@ The report ends at the last non-empty section; never append a next-step, exactly
 - Giving every lens the same generic "find bugs" brief. **Fix:** each lens gets its own persona and 2–3 focus probes; the distinctness check drops duplicates.
 - Passing lens A's findings to lens B "for context". **Fix:** that turns parallel lenses into a self-refine chain — the bias-amplifying loop the single pass forbids.
 - Requiring two lenses to agree before keeping a must-fix. **Fix:** single-lens findings stay; consensus filtering throws away the reason to run deep.
-- Letting synthesis "notice" an extra issue and add it. **Fix:** synthesis has no persona and walked no taxonomy; its addition is unattributed and ungrounded — name it as a re-run reason instead.
+- Letting synthesis "notice" an extra issue and add it. **Fix:** synthesis has no persona and walked no taxonomy; its addition is unattributed and ungrounded — drop it; the caller re-runs on the revised target if it wants a second pass.
 - Breaking the steelman tie by counting lenses that agree. **Fix:** use the `reuses` / blast-radius / wildcard tie-breakers — the lone dissent is the reason to run deep.
 - Relaying ideate's full report or verdict question. **Fix:** only the lens records cross into the critical run.
