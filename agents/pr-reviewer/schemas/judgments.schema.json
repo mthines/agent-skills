@@ -130,7 +130,7 @@
         "lens": {
           "description": "With finder \"lens\": the name of the review lens (context.lenses.loaded[].name) whose checklist item raised this candidate. finalize.mjs prefixes the body with [lens:<name>].",
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
         },
         "claim": {
           "description": "finders.md's candidate claim — what the finder asserts is wrong.",
