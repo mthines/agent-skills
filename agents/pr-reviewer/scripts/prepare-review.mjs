@@ -49,7 +49,7 @@
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, openSync, closeSync, statSync, rmSync, rmdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, resolve as pathResolve } from "node:path";
+import { join, dirname, posix, resolve as pathResolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
@@ -57,6 +57,7 @@ import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
 import { discoverStandards, trivialSkip } from "./discover-standards.mjs";
 import { candidatePaths, selectReviewContext, renderReviewContext } from "./review-context.mjs";
+import { LENS_DIR, selectLenses, changedWithAdded, configCandidatePaths, subtreeLenses, readBundledLenses } from "./select-lenses.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
 import { PROFILES } from "./finalize/thresholds.mjs";
 import { TIERS as SEVERITY_TIERS } from "./comment-spine.mjs";
@@ -1632,6 +1633,66 @@ export async function readBaseReviewContext({ dir, baseSha, repo, changed, timeo
   return { texts, unreadable, unknown, source: "contents API" };
 }
 
+/**
+ * The repo side of lens selection (select-lenses.mjs), read at the base commit exactly like
+ * `readBaseReviewContext`: the workspace's git when it holds the base, else the contents API.
+ * Lists `.agents/review/lenses/` at the base, so a lens the PR adds is never read.
+ * @param {{ dir?: string|null, baseSha?: string|null, repo?: string|null, changed: string[], withNames?: string[], timeoutMs?: number, runner?: typeof run }} a
+ * @returns {Promise<{ repoLenses: Record<string, string>, repoSkillLenses: Record<string, string>, configs: Record<string, string>, source: string, error?: string }>}
+ */
+export async function readBaseLensInputs({ dir, baseSha, repo, changed, withNames = [], timeoutMs = 30000, runner = run }) {
+  /** @type {Record<string, string>} */ const repoLenses = {};
+  /** @type {Record<string, string>} */ const repoSkillLenses = {};
+  /** @type {Record<string, string>} */ const configs = {};
+  if (!baseSha) return { repoLenses, repoSkillLenses, configs, source: "none (no base SHA)" };
+  const local = !!dir && (await runner("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok;
+  if (!local && !repo) return { repoLenses, repoSkillLenses, configs, source: "none (no local base commit, no repo)" };
+  /** @type {string[]} */ const unreadable = [];
+  /** @param {string} rel @returns {Promise<string|null>} null when absent at the base, or unreadable (recorded) */
+  const readOne = async (rel) => {
+    if (local) {
+      const r = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", /** @type {string} */ (dir), "show", `${baseSha}:${rel}`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
+      return r.ok ? r.stdout : null;
+    }
+    const encoded = rel.split("/").map(encodeURIComponent).join("/");
+    const r = await runner("gh", ["api", "-H", "Accept: application/vnd.github.raw", `repos/${repo}/contents/${encoded}?ref=${baseSha}`], { timeoutMs });
+    if (r.ok) return r.stdout;
+    if (!/\bHTTP 404\b/.test(r.stderr)) unreadable.push(`${rel}@${baseSha.slice(0, 7)}: ${describeFailure(r).slice(0, 160)}`);
+    return null;
+  };
+  /** @type {string[]} */
+  let lensPaths = [];
+  if (local) {
+    const ls = await runner("git", [...GIT_CREDENTIAL_ARGS, "-C", /** @type {string} */ (dir), "ls-tree", "-r", "-z", "--full-tree", "--name-only", baseSha, "--", `${LENS_DIR}/`], { timeoutMs, env: GIT_NONINTERACTIVE_ENV });
+    if (ls.ok) lensPaths = ls.stdout.split("\0").filter(Boolean);
+    else unreadable.push(`git ls-tree ${LENS_DIR} at the base failed: ${describeFailure(ls).slice(0, 160)}`);
+  } else {
+    const ls = await runner("gh", ["api", `repos/${repo}/contents/${LENS_DIR}?ref=${baseSha}`, "--jq", ".[].path"], { timeoutMs });
+    if (ls.ok) lensPaths = ls.stdout.split("\n").filter(Boolean);
+    else if (!/\bHTTP 404\b/.test(ls.stderr)) unreadable.push(`listing ${LENS_DIR} at the base failed: ${describeFailure(ls).slice(0, 160)}`);
+  }
+  for (const p of lensPaths.filter((p) => posix.dirname(p) === LENS_DIR && p.endsWith(".md"))) {
+    const t = await readOne(p);
+    if (t !== null) repoLenses[posix.basename(p, ".md")] = t;
+  }
+  // One read per ancestor config path; over the contents API that is one round trip each, so
+  // read them REVIEW_CONTEXT_API_CONCURRENCY at a time, as readBaseReviewContext does.
+  const configPaths = configCandidatePaths(changed);
+  for (let i = 0; i < configPaths.length; i += REVIEW_CONTEXT_API_CONCURRENCY) {
+    const batch = configPaths.slice(i, i + REVIEW_CONTEXT_API_CONCURRENCY);
+    const texts = await Promise.all(batch.map(readOne));
+    batch.forEach((p, j) => { if (texts[j] !== null) configs[p] = /** @type {string} */ (texts[j]); });
+  }
+  const named = [...new Set([...withNames, ...Object.keys(subtreeLenses({ changed, configs }))])].filter((n) => repoLenses[n] === undefined);
+  for (const n of named) {
+    const t = await readOne(`.agents/skills/${n}/lens.md`);
+    if (t !== null) repoSkillLenses[n] = t;
+  }
+  const source = local ? "workspace" : "contents API";
+  if (unreadable.length) return { repoLenses, repoSkillLenses, configs, source, error: `unreadable at the base: ${unreadable.join("; ")}` };
+  return { repoLenses, repoSkillLenses, configs, source };
+}
+
 /* --------------------------------- main --------------------------------- */
 
 async function prepare(opts) {
@@ -2196,6 +2257,20 @@ async function prepare(opts) {
   // available — the agent re-derives it as `dispatchAvailable ? budget.topology :
   // "in-context"` and logs RUN_ANOMALY when that downgrades it
   // (dispatch-topology.md § Reading a budget into dispatch).
+  // Review lenses (select-lenses.mjs): repo lenses and `.review.yaml` `lenses:` read at the base,
+  // plus `--with` and the bundled auto lenses. A failed read is an anomaly; the built-ins still load.
+  let lenses = { loaded: [], skipped: [], notes: [], announce: [], source: "none" };
+  try {
+    const changedPaths = files.map((f) => f.filename);
+    const withNames = String(opts.with || "").split(",").map((x) => x.trim()).filter(Boolean);
+    const repoInputs = await readBaseLensInputs({ dir: workspace.dir, baseSha, repo, changed: changedPaths, withNames, timeoutMs });
+    if (repoInputs.error) anomalies.push(`review lenses: ${repoInputs.error} — those files are not loaded; the rest are`);
+    const sel = selectLenses({ changed: changedWithAdded(files), tier: routing.tier, withNames, ...repoInputs, bundledLenses: readBundledLenses() });
+    lenses = { ...sel, source: repoInputs.source };
+  } catch (e) {
+    anomalies.push(`review lenses not resolved: ${String(e && e.message || e).slice(0, 200)} — no lens loads this run`);
+  }
+
   const thoroughnessOverride = depthOverrides.thoroughness;
   const contextMode = resolveContextMode({ runMode, zeroDelta, routing });
   const budget = resolveBudget({
@@ -2213,6 +2288,7 @@ async function prepare(opts) {
     // A failed or short paginated file list must not shrink the budget to the smallest band, so
     // GitHub's own count from `gh pr view` wins when it is larger.
     changedFiles: Math.max(files.length, Number(meta.changedFiles) || 0),
+    lensCount: lenses.loaded.length,
   });
 
   // Item 3: a capability-deactivated finder is exactly the class of "something changed what this
@@ -2311,6 +2387,7 @@ async function prepare(opts) {
     trivialSkip: trivial,
     standards,
     reviewContext,
+    lenses,
     diff: {
       path: diffR.ok ? diffPath : null,
       bytes: diffR.ok ? Buffer.byteLength(diffR.stdout) : 0,
@@ -2681,7 +2758,7 @@ async function selfTest() {
   });
   t("prepare() feeds the resolved finder passes, and whether the state record supplied priorSha, into resolveBudget, records the passes in context.reviewConfig, and reports an ignored CLI value", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
-    return /priorShaFromState: !!state\.priorSha,\n\s+finderPasses: finderPassesSetting\.passes,\n(?:\s+\/\/.*\n)*\s+changedFiles: Math\.max\(files\.length, Number\(meta\.changedFiles\) \|\| 0\),\n\s+\}\);/.test(src)
+    return /priorShaFromState: !!state\.priorSha,\n\s+finderPasses: finderPassesSetting\.passes,\n(?:\s+\/\/.*\n)*\s+changedFiles: Math\.max\(files\.length, Number\(meta\.changedFiles\) \|\| 0\),\n\s+lensCount: lenses\.loaded\.length,\n\s+\}\);/.test(src)
       && /finderPasses: finderPassesSetting\.passes,\n\s+finderPassesSource: finderPassesSetting\.source,/.test(src)
       && /anomalies\.push\(\.\.\.finderPassesAnomalies\(finderPassesSetting\)\);/.test(src);
   });
@@ -2825,6 +2902,55 @@ async function selfTest() {
       && r.unreadable.length === 0 && JSON.stringify(r.unknown) === JSON.stringify(["svc/ingest/REVIEW.md"])
       && urls.includes("repos/o/r/contents/a%23b/REVIEW.md?ref=abc1234def") && !urls.some((u) => u.includes("a#b"))
       && Object.keys(none.texts).length === 0 && none.source === "none (no base SHA)";
+  });
+  t("readBaseLensInputs reads lenses, subtree .review.yaml, and repo skill lenses at the BASE; a head-only lens is never read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-baselens-"));
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    try {
+      g(["init", "-q"]);
+      mkdirSync(join(dir, LENS_DIR), { recursive: true });
+      mkdirSync(join(dir, ".agents", "skills", "ledger"), { recursive: true });
+      mkdirSync(join(dir, "svc"), { recursive: true });
+      writeFileSync(join(dir, LENS_DIR, "money.md"), "---\napplies-to: \"svc/**\"\n---\nbase rule\n");
+      writeFileSync(join(dir, ".agents", "skills", "ledger", "lens.md"), "---\nfor: pr-reviewer\n---\nledger\n");
+      writeFileSync(join(dir, "svc", ".review.yaml"), "lenses: [ledger]\n");
+      writeFileSync(join(dir, "svc", "a.ts"), "1\n");
+      g(["add", "-A"]); g(["commit", "-qm", "base"]);
+      const base = g(["rev-parse", "HEAD"]).trim();
+      writeFileSync(join(dir, LENS_DIR, "money.md"), "---\napplies-to: \"nowhere/**\"\n---\n");
+      writeFileSync(join(dir, LENS_DIR, "sneaky.md"), "---\napplies-to: always\n---\n");
+      g(["add", "-A"]); g(["commit", "-qm", "head"]);
+      const r = await readBaseLensInputs({ dir, baseSha: base, changed: ["svc/a.ts", `${LENS_DIR}/sneaky.md`] });
+      const sel = selectLenses({ changed: [{ path: "svc/a.ts", added: [] }], ...r });
+      return r.source === "workspace" && JSON.stringify(Object.keys(r.repoLenses)) === '["money"]' && /base rule/.test(r.repoLenses.money)
+        && /ledger/.test(r.repoSkillLenses.ledger || "") && /lenses: \[ledger\]/.test(r.configs["svc/.review.yaml"] || "")
+        && JSON.stringify(sel.loaded.map((l) => l.name).sort()) === '["ledger","money"]';
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+  t("readBaseLensInputs over the contents API: a 404 lens directory is no lenses, any other listing failure is an error", async () => {
+    const mk = (/** @type {string} */ listErr) => async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
+      const url = args.find((a) => a.includes("contents/")) || "";
+      if (url.includes(`contents/${LENS_DIR}?`)) return { ok: false, code: 1, stdout: "", stderr: listErr, timedOut: false };
+      if (url.includes("contents/.github/review.yaml")) return { ok: true, code: 0, stdout: "lenses: [ux]\n", stderr: "", timedOut: false };
+      return { ok: false, code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)", timedOut: false };
+    };
+    const absent = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["a.ts"], runner: mk("gh: Not Found (HTTP 404)") });
+    const broken = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["a.ts"], runner: mk("gh: Server Error (HTTP 502)") });
+    return absent.source === "contents API" && !absent.error && Object.keys(absent.repoLenses).length === 0 && /lenses: \[ux\]/.test(absent.configs[".github/review.yaml"] || "")
+      && /failed/.test(broken.error || "") && /lenses: \[ux\]/.test(broken.configs[".github/review.yaml"] || "");
+  });
+  t("readBaseLensInputs: one unreadable config is an error naming it, and the readable files still load", async () => {
+    const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
+      const url = args.find((a) => a.includes("contents/")) || "";
+      if (url.includes(`contents/${LENS_DIR}?`)) return { ok: true, code: 0, stdout: `${LENS_DIR}/billing.md\n`, stderr: "", timedOut: false };
+      if (url.includes(`contents/${LENS_DIR}/billing.md`)) return { ok: true, code: 0, stdout: "---\nlens-version: 1\n---\n", stderr: "", timedOut: false };
+      if (url.includes("contents/svc/.review.yaml")) return { ok: false, code: 1, stdout: "", stderr: "gh: Forbidden (HTTP 403)", timedOut: false };
+      return { ok: false, code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)", timedOut: false };
+    };
+    const r = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["svc/a.ts"], runner });
+    return /svc\/\.review\.yaml@abc1234/.test(r.error || "") && typeof r.repoLenses.billing === "string";
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;
@@ -3703,6 +3829,7 @@ async function main(argv) {
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
     else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
     else if (a === "--finder-passes") opts.finderPasses = argv[++i]; // 1|2, beats the config's finder_passes
+    else if (a === "--with") opts.with = argv[++i]; // review lenses by name, added to the auto set (select-lenses.mjs)
     else if (a === "--config") opts.config = argv[++i]; // review config file to use instead of the base commit's
     else if (a === "--no-threads") opts.threads = false;
     else if (a === "--review-sha") opts.reviewSha = argv[++i]; // D8/D9: historical read-only review target
@@ -3770,6 +3897,8 @@ async function main(argv) {
           `  impact    ${context.impactSummary ? `band=${context.impactSummary.band} · ${context.impactSummary.changedSymbols} symbols (${context.impactSummary.changedExports} exported) · ${context.impactSummary.dependencies} deps` : "unavailable"}`,
           `  routing   tier=${context.routing.tier}${context.routing.capApplied ? " (capped)" : ""} · triggers=[${context.routing.triggers.join(",")}] · threads=${context.threads.length} · gate4=${context.gate4_precandidates.length} pre-candidate(s)`,
           `  budget    thoroughness=${context.budget.effectiveThoroughness}${context.budget.riskFloorApplied ? ` (floored: ${context.budget.riskFloorReason})` : ""} · topology=${context.budget.topology} · votes=${context.budget.correctnessVotes} · tool calls=${context.budget.toolCalls ?? "?"}`,
+          `  lenses    ${context.lenses.loaded.length ? context.lenses.loaded.map((l) => l.name).join(", ") : "none"}`,
+          ...context.lenses.announce.map((l) => `    ${l}`),
           `  context   ${(Buffer.byteLength(JSON.stringify(context)) / 1024).toFixed(0)} KB index + sidecars in ${dirname(outPath)}`,
           ...(context.telemetry?.markers ? [
             `  markers   put this in front of each step's first command (fill <step>, <N> = your tool calls so far):`,

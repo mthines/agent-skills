@@ -463,9 +463,14 @@ function checkPortabilityDocs(f, ctx) {
     const { map: lensMap, present: lensPresent } = parseFrontmatter(lensText);
     const forVal = lensPresent ? getText(lensMap, "for") : undefined;
     const lensVersion = lensPresent ? getText(lensMap, "lens-version") : undefined;
-    f.check("PD04", "WARN", lc <= LENS_MAX && forVal === "pr-reviewer" && String(lensVersion) === "1",
+    // Optional trigger fields (review-lens-contract.md § Frontmatter fields): a bad value makes the reviewer skip the lens.
+    const auto = lensPresent ? getText(lensMap, "auto") : undefined;
+    const minTier = lensPresent ? getText(lensMap, "min-tier") : undefined;
+    const triggersOk = (auto === undefined || auto === "true" || auto === "false")
+      && (minTier === undefined || ["quick", "standard", "deep"].includes(String(minTier)));
+    f.check("PD04", "WARN", lc <= LENS_MAX && forVal === "pr-reviewer" && String(lensVersion) === "1" && triggersOk,
       "lens.md", null,
-      `lens.md must be <= ${LENS_MAX} lines and declare for: pr-reviewer + lens-version: 1 (lines=${lc}, for=${JSON.stringify(forVal)}, lens-version=${JSON.stringify(lensVersion)})`);
+      `lens.md must be <= ${LENS_MAX} lines, declare for: pr-reviewer + lens-version: 1, and use auto: true|false and min-tier: quick|standard|deep (lines=${lc}, for=${JSON.stringify(forVal)}, lens-version=${JSON.stringify(lensVersion)}, auto=${JSON.stringify(auto)}, min-tier=${JSON.stringify(minTier)})`);
   } else {
     f.check("PD04", "WARN", true, "SKILL.md", null, "");
   }

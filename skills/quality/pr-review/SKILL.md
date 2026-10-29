@@ -109,7 +109,7 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    scope `branch::<owner>/<repo>::<headRefName>`, key `ci-state::pr-review-<n>` — and save a hit to
    `<dir>/state.json`. Skip it under `--isolated`; on a miss, or with no LoreKit tool, pass no `--state`.
 3. Run prepare once, forwarding only the pass-through flags it takes (`--full`, `--effort`,
-   `--thoroughness`, `--finder-passes`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
+   `--thoroughness`, `--finder-passes`, `--with`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
    when the pass-through flags carry `--review-sha`), and read the topology on the same command:
 
    ```bash
@@ -226,6 +226,7 @@ When a user asks how to give the reviewer knowledge of their repo, answer with t
 | The user wants the reviewer to… | They write | Read from |
 | --- | --- | --- |
 | know architecture, invariants, or intent the code cannot show, for one part of the repo | `REVIEW.md` in that directory (the root one covers everything); the contract is `agents/shared/rules/review-context.md` | the PR's base commit |
+| check a team's own checklist on its paths, from the next PR on | `.agents/review/lenses/<name>.md` (no registration; human guide: [`README.md`](./README.md)) | the PR's base commit |
 | enforce a written rule as a finding | a must/never line in `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`, or review-config `standards:` | the checkout; review config from the base |
 | stop or start flagging one kind of finding | `/pr-review remember <fact>` or review-config `filters:` | relevance memory; the base |
 

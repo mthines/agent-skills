@@ -129,6 +129,10 @@ path_instructions:                       # path-scoped guidance
     instruction: "Flag any irreversible schema change without a rollback path."
   - path: "src/billing/**"
     instruction: "Always engage critical lens for money-touching code."
+
+lenses:                                  # review lenses to load for files under this config's directory
+  - ai-engineering                       # a built-in lens, or a repo lens in .agents/review/lenses/<name>.md
+  - payments-idempotency                 # (rubric-composition.md § Review lenses)
 ```
 
 ---
@@ -227,7 +231,7 @@ When a finding targets a file matching a glob, the instruction is prepended to t
 Path instructions do NOT:
 - Change confidence thresholds.
 - Override filter suppressions (a filtered finding stays filtered regardless of path instructions).
-- Enable new rubrics (use `--with` for that).
+- Enable new rubrics (use `lenses:` or `--with` for that — [`rubric-composition.md` § Review lenses](./rubric-composition.md#review-lenses)).
 
 ```yaml
 path_instructions:
@@ -263,6 +267,7 @@ Merge rules by field:
 | `profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `thoroughness`, `critical` | **Base only, never subtree-merged** — run-level knobs, read once from the repo-level config at the PR's base commit ([§ Run-level knobs](#run-level-knobs)); a subtree `.review.yaml` that sets one is ignored. |
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
+| `lenses` | **Union** — every lens named by any file in the hierarchy loads for that config's files; a closer file cannot remove a lens the base names. Read at the base commit with the lens files themselves (`.agents/review/lenses/`), by [`select-lenses.mjs`](../../pr-reviewer/scripts/select-lenses.mjs) |
 | `agent0_fix_links`, `agent0_environment`, `agent0_org` | **Base only, never subtree-merged** — these govern the whole run (buttons on or off, which Agent0 host, which organization), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out, nor point one directory's buttons at a different org. Read from the repo-level base config alone; see § Run-level fields below. |
 | `effort` | **Base only, never subtree-merged** — the depth tier is one decision per run, made at Step 1.2b before any file is read, so there is no point in the run at which a subtree's value could apply. Read from the repo-level base config alone. |
 

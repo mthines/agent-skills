@@ -1,0 +1,100 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#09090b; --card:#111114; --line:#232329; --line2:#2e2e36; --text:#f4f4f5; --dim:#a1a1aa; --faint:#63636e;
+  --blue:#60a5fa; --violet:#a78bfa; --green:#4ade80; --amber:#fbbf24; --coral:#fb923c;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1400px;height:640px;background:var(--bg);color:var(--text);overflow:hidden;position:relative;
+  font-family:"Geist",-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1.2px);background-size:22px 22px;
+  -webkit-mask-image:radial-gradient(1000px 460px at 50% 64%,#000 20%,transparent 75%)}
+body::after{content:"";position:absolute;left:50%;top:400px;width:1000px;height:260px;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,rgba(96,165,250,.09),rgba(167,139,250,.05) 55%,transparent);filter:blur(10px)}
+.wrap{position:relative;z-index:1;padding:56px 72px 0}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+.eyebrow{font-size:14px;color:var(--faint);letter-spacing:.02em}
+.eyebrow b{color:var(--dim);font-weight:500}
+.top{display:flex;justify-content:space-between;align-items:flex-end}
+h1{font-size:48px;font-weight:600;letter-spacing:-.035em;line-height:1.05;margin-top:14px}
+h1 span{background:linear-gradient(90deg,#93c5fd,#c4b5fd);-webkit-background-clip:text;color:transparent}
+.sub{font-size:15px;color:var(--dim);text-align:right;line-height:1.5;max-width:420px}
+.sub b{color:var(--text);font-weight:500}
+
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:40px}
+.card{border:1px solid var(--line2);border-radius:14px;background:rgba(17,17,20,.9);padding:22px 20px 20px;display:flex;flex-direction:column;min-height:300px}
+.card .ic{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;background:var(--card);border:1px solid var(--line2)}
+.card .want{font-size:12.5px;color:var(--faint);margin-top:20px}
+.card h3{font-size:21px;font-weight:600;letter-spacing:-.015em;margin-top:6px;line-height:1.25}
+.card .file{font-size:13px;margin-top:14px;padding:7px 10px;border-radius:8px;background:#0d0d10;border:1px solid var(--line);color:#e4e4e7;word-break:break-all}
+.card .ex{font-size:14px;color:var(--dim);line-height:1.5;margin-top:auto;padding-top:18px}
+.card .ex q{color:#d4d4d8}
+.card .tag{font-size:11.5px;border-radius:6px;padding:3px 8px;align-self:flex-start;margin-top:12px}
+
+.lens{border-color:rgba(96,165,250,.45);box-shadow:0 0 0 5px rgba(96,165,250,.05),0 30px 80px -40px rgba(96,165,250,.35)}
+.lens .ic{border-color:rgba(96,165,250,.55)}
+.lens .tag{color:#93c5fd;background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.25)}
+.ctx .ic{border-color:rgba(167,139,250,.5)}
+.ctx .tag{color:#c4b5fd;background:rgba(167,139,250,.08);border:1px solid rgba(167,139,250,.25)}
+.cfg .ic{border-color:rgba(74,222,128,.45)}
+.cfg .tag{color:var(--green);background:rgba(74,222,128,.08);border:1px solid rgba(74,222,128,.25)}
+.mem .ic{border-color:rgba(251,191,36,.45)}
+.mem .tag{color:#fcd34d;background:rgba(251,191,36,.07);border:1px solid rgba(251,191,36,.25)}
+
+.foot{position:absolute;z-index:1;left:72px;right:72px;bottom:30px;display:flex;justify-content:space-between;
+  border-top:1px solid var(--line);padding-top:16px;font-size:14px;color:var(--faint)}
+.foot span b{color:var(--dim);font-weight:500}
+</style></head>
+<body><div class="wrap">
+  <div class="top">
+    <div>
+      <div class="eyebrow mono"><b>pr-review</b> · teach it your repo</div>
+      <h1>Four levers.<br><span>Zero flags.</span></h1>
+    </div>
+    <div class="sub"><b>Commit a file, or run one command.</b><br>Pick by what you want the reviewer to do.</div>
+  </div>
+
+  <div class="grid">
+    <div class="card lens">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#93c5fd" stroke-width="1.6"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/></svg></div>
+      <div class="want mono">check a team rule on our code</div>
+      <h3>A review lens</h3>
+      <div class="file mono">.agents/review/lenses/*.md</div>
+      <div class="ex"><q>Every refund calls audit.record.</q></div>
+      <div class="tag mono">produces findings</div>
+    </div>
+    <div class="card ctx">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="1.6"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H11v16H5.5A1.5 1.5 0 0 1 4 18.5zM20 5.5A1.5 1.5 0 0 0 18.5 4H13v16h5.5a1.5 1.5 0 0 0 1.5-1.5z"/></svg></div>
+      <div class="want mono">know what the code can’t show</div>
+      <h3>Context for one folder</h3>
+      <div class="file mono">REVIEW.md</div>
+      <div class="ex"><q>This service reads only from replicas.</q></div>
+      <div class="tag mono">context, never a finding</div>
+    </div>
+    <div class="card cfg">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#86efac" stroke-width="1.6"><path d="M3 7h5l2 2h11v10H3z"/><path d="M9 14.5l2 2 4-4"/></svg></div>
+      <div class="want mono">run a lens on one folder</div>
+      <h3>Switch a lens on</h3>
+      <div class="file mono">.review.yaml → lenses: [ux]</div>
+      <div class="ex"><q>Our web app always gets the UX lens.</q></div>
+      <div class="tag mono">merges down the tree</div>
+    </div>
+    <div class="card mem">
+      <div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fcd34d" stroke-width="1.6"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></div>
+      <div class="want mono">stop flagging one kind of thing</div>
+      <h3>Teach it what to skip</h3>
+      <div class="file mono">/pr-review remember &lt;fact&gt;</div>
+      <div class="ex"><q>Files under gen/ are generated.</q></div>
+      <div class="tag mono">one command</div>
+    </div>
+  </div>
+</div>
+<div class="foot">
+  <span><b>Read from main</b> — a PR can’t rewrite its own rules</span>
+  <span><b>Any folder</b> — REVIEW.md and .review.yaml live where the code does</span>
+  <span><b>Combine freely</b> — they stack, they don’t conflict</span>
+</div>
+</body></html>

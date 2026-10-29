@@ -55,6 +55,7 @@ export const FINDERS = [
   "ux",
   "critical",
   "optimality",
+  "lens",
 ];
 
 /**

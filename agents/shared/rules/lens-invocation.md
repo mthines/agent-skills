@@ -176,3 +176,5 @@ It is a `bug-detection` L2 rubric source (`suites.mjs` `DETECTION.rubrics`), and
 - It does not add a new report section. `RUN_ANOMALY` is an existing payload slot; this rule only says when to fill it. `RUN.tier` is a sibling existing slot this rule never fills — it is left to whatever Phase C routed, on every run, spine skip or not.
 - It does not apply to `Task` / `Agent` sub-agent dispatch, ever. See [In-context load vs. sub-agent dispatch](#in-context-load-vs-sub-agent-dispatch--why-this-fallback-is-safe-here).
 - It does not retry a failed host resolution. The file-presence check runs once, before the call; there is no second attempt to make.
+- It does not resolve review-checklist lenses (`lens.md` files: `ux`, `ai-engineering`, a team's `.agents/review/lenses/<name>.md`).
+  Those are never invoked through `Skill()`; [`select-lenses.mjs`](../../pr-reviewer/scripts/select-lenses.mjs) picks them and hands back their text, under the contract in [`rubric-composition.md` § Review lenses](./rubric-composition.md#review-lenses).

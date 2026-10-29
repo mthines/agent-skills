@@ -98,7 +98,7 @@ Charting overlaps with several other skills. Route concerns rather than re-imple
 
 ## Output format
 
-```
+```markdown
 ## Charting recommendation: <chart type> on <platform>
 
 **Intent**: <comparison | composition | distribution | relationship | evolution | flow | geographic | hierarchical>

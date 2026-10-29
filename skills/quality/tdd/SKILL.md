@@ -31,6 +31,8 @@ Enforce strict RED-GREEN-REFACTOR discipline. One test at a time. Tests describe
 
 ---
 
+Lens-eligible for the `pr-reviewer` agent: [`lens.md`](./lens.md) auto-loads when a diff changes tests.
+
 ## Input
 
 Check `$ARGUMENTS` for the feature or behavior description.

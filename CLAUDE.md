@@ -53,7 +53,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `optimize-approach` (`/`) — is this the best approach for the intent (codebase-fit, simplicity, performance, robustness); at most two material proposals, silent when sound. Report only
 - `polish` (`/`) — re-runnable pre-PR branch quality gate: review, then simplify the diff and prune restating or ticket comments, each change behind a test check
 - `review-loop` (`Skill()`) — bounded convergence loop, cap 5: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` on a PR; with no PR, local mode over `.agent/{branch}/findings.jsonl`, zero GitHub calls; `--ui` adds a `ui-verify` lane. Run at the top level
-- `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; nested `REVIEW.md` files, read from the base, brief every finder automatically; `/pr-review remember <fact>` writes a maintainer relevance rule
+- `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; nested `REVIEW.md` files, read from the base, brief every finder automatically; `.agents/review/lenses/*.md` team lenses load by path; `/pr-review remember <fact>` writes a maintainer relevance rule
 - `impact-map` (`auto`) — impact-first PR view: verdict with expandable What/Risk/Ask rows, one badged diagram, ≤ 3 decisions with linked lines, a settled list; several refs or `--stack` map each PR and name shared risks; `--comment` / `--body` post it with PNGs
 - `tdd` (`auto`) — strict RED-GREEN-REFACTOR; `provenance` mode checks a test exercises the production code (static + mutation)
 - `verify-behavior` (`Skill()`) — cheapest-first three-tier verification ladder; emits an evidence receipt, never a score

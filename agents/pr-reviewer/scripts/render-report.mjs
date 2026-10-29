@@ -81,7 +81,7 @@ const REQUIRED_SCALARS = [
 // OPTIMALITY_LOG is legacy: the optimality lens was removed, so it is optional and rendered only
 // when a caller still supplies it.
 const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE", "RUN_ANOMALY",
-  "FIX_ALL_URL", "OPTIMALITY_LOG"];
+  "FIX_ALL_URL", "OPTIMALITY_LOG", "LENSES"];
 
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
@@ -1256,6 +1256,7 @@ function main() {
   runRows.push(["Found", String(data.QUALITY).trim()]);
   if (data.QUALITY_DROPPED) runRows.push(["Dropped", String(data.QUALITY_DROPPED).trim()]);
   if (tierBreakdown) runRows.push(["Severity", tierBreakdown]);
+  if (data.LENSES) runRows.push(["Lenses", String(data.LENSES).trim()]);
   for (const k of ["OPTIMALITY_LOG", "STANDARDS_LOG", "MEASURABILITY_LOG"]) {
     if (lens[k]) runRows.push(lens[k]);
   }

@@ -136,6 +136,7 @@ branch that reaches nothing.
 | `--effort high` | off | Forces `deep`, raises diversify-then-vote N from 3 to 5 |
 | `--include-untracked` | off | Treat untracked, non-ignored files as added |
 | `--no-standards` | on | Skip the standards lens |
+| `--with a,b` | none | Review lenses by name, added to the ones the diff triggers; no count cap |
 | `--no-optimize` | — | Accepted and ignored — the optimality lens was removed |
 
 Resolve `--base` when it is absent, in this order, and **announce which rung answered**:
@@ -244,6 +245,20 @@ node "$AGENT_SUPPORT/pr-reviewer/scripts/review-context.mjs" \
   --base "$BASE" --files-json "$TMP/local-files.json" > "$TMP/review-context.md" \
   || echo "review context not loaded (exit $?)" >&2
 ```
+
+**Review lenses.** Select them with the same script `pr-reviewer` runs ([`rubric-composition.md` § Review lenses](./shared/rules/rubric-composition.md#review-lenses)):
+repo lenses in `.agents/review/lenses/` and `.review.yaml` `lenses:`, read at `$BASE`, plus `--with` and the built-in
+`auto: true` lenses. Use the tier Phase C′ routed.
+
+```bash
+node "$AGENT_SUPPORT/pr-reviewer/scripts/select-lenses.mjs" \
+  --base "$BASE" --files-json "$TMP/local-files.json" --tier "$DEPTH_TIER" ${WITH:+--with "$WITH"} \
+  > "$TMP/lenses.json" || echo "review lenses not resolved (exit $?)" >&2
+```
+
+Print each stderr line as the announcement. Walk every `loaded[]` entry's `text` against its `files`, tagging each
+finding `[lens:<name>]`; never add or drop a lens by hand. A non-zero exit is a failed read: report
+`review lenses not resolved: <stderr>` in the verdict and continue without lenses.
 
 Everything else — correctness, consumer-impact, dependency, standards, quality — is unchanged,
 including diversify-then-vote at N = 3 (N = 5 under `--effort high`) when you hold a dispatch tool,

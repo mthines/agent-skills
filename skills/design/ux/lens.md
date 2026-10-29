@@ -1,14 +1,15 @@
 ---
 for: pr-reviewer
 lens-version: 1
-applies-to: "**/*.tsx, **/*.jsx, **/*.vue, **/*.svelte, app/**/*.ts, app/**/*.tsx, **/screens/**, **/components/**"
+applies-to: "**/*.tsx, **/*.jsx, **/*.vue, **/*.svelte"
+auto: true
 ---
 
 # UX & Accessibility — Review Lens
 
 ## Trigger
 
-Fires when the diff touches UI files. `pr-reviewer` already auto-loads `ux` on UI files, so `--with ux` is deduped; this lens is the canonical checklist for external tooling.
+Auto-loads when the diff touches a file matching `applies-to` (`auto: true`); `--with ux` is deduped by name.
 
 ## Checklist
 

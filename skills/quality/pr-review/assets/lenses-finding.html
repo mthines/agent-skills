@@ -1,0 +1,120 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#09090b; --card:#111114; --line:#232329; --line2:#2e2e36; --text:#f4f4f5; --dim:#a1a1aa; --faint:#63636e;
+  --blue:#60a5fa; --violet:#a78bfa; --green:#4ade80; --amber:#fbbf24; --coral:#fb923c; --red:#f87171;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{width:1400px;height:600px;background:var(--bg);color:var(--text);overflow:hidden;position:relative;
+  font-family:"Geist",-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+body::before{content:"";position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1.2px);background-size:22px 22px;
+  -webkit-mask-image:radial-gradient(900px 500px at 70% 60%,#000 20%,transparent 75%)}
+body::after{content:"";position:absolute;left:68%;top:330px;width:820px;height:360px;transform:translate(-50%,-50%);
+  background:radial-gradient(closest-side,rgba(74,222,128,.07),rgba(96,165,250,.06) 55%,transparent);filter:blur(10px)}
+.wrap{position:relative;z-index:1;padding:56px 72px 0;display:grid;grid-template-columns:470px 1fr;gap:56px}
+.mono{font-family:"Geist Mono",ui-monospace,monospace}
+.eyebrow{font-size:14px;color:var(--faint);letter-spacing:.02em}
+.eyebrow b{color:var(--dim);font-weight:500}
+h1{font-size:44px;font-weight:600;letter-spacing:-.035em;line-height:1.08;margin-top:14px}
+h1 span{background:linear-gradient(90deg,#93c5fd,#86efac);-webkit-background-clip:text;color:transparent}
+.lede{font-size:16px;color:var(--dim);line-height:1.55;margin-top:18px}
+
+.step{margin-top:26px}
+.step .lbl{font-size:12.5px;color:var(--faint);margin-bottom:8px;display:flex;gap:8px;align-items:center}
+.step .lbl i{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-style:normal;font-size:11px;border:1px solid var(--line2);color:var(--dim)}
+.term{border:1px solid var(--line2);border-radius:10px;background:rgba(17,17,20,.9);padding:12px 14px;font-size:13px;line-height:1.55;color:#e4e4e7}
+.term .p{color:var(--faint)}.term .n{color:#93c5fd}.term .s{color:#86efac}
+.quiet{display:flex;align-items:center;gap:10px;border:1px dashed var(--line2);border-radius:10px;padding:11px 14px;font-size:13.5px;color:var(--dim)}
+.quiet .mono{color:var(--text)}
+.quiet .z{margin-left:auto;font-size:12px;color:var(--faint)}
+
+/* the PR inline comment */
+.pr{margin-top:6px;border:1px solid var(--line2);border-radius:14px;background:rgba(17,17,20,.92);overflow:hidden;
+  box-shadow:0 30px 80px -30px rgba(0,0,0,.7)}
+.pr .head{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);font-size:13.5px;color:var(--dim)}
+.pr .head svg{flex:none}
+.pr .head .path{color:var(--text)}
+.pr .head .stat{margin-left:auto;font-size:12px}.stat .a{color:var(--green)}
+.diff{font-size:13.5px;line-height:1.75}
+.diff div{display:grid;grid-template-columns:46px 18px 1fr;padding:0 18px 0 0;white-space:pre}
+.diff .ln{color:#45454d;text-align:right;padding-right:12px}
+.diff .ctx{color:var(--dim)}
+.diff .add{background:rgba(74,222,128,.07)}
+.diff .add .ln{color:#3f6b4f}.diff .add .sg{color:var(--green)}
+.diff .hit{background:rgba(74,222,128,.12);box-shadow:inset 3px 0 0 var(--green)}
+.diff .kw{color:#c4b5fd}.diff .fn{color:#93c5fd}.diff .st{color:#86efac}
+
+.comment{margin:12px 18px 18px;border:1px solid var(--line2);border-radius:12px;background:#0d0d10}
+.comment .who{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);font-size:13.5px}
+.av{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,rgba(96,165,250,.25),rgba(167,139,250,.25));border:1px solid rgba(167,139,250,.35)}
+.comment .who b{font-weight:600}
+.comment .who .t{color:var(--faint)}
+.badge{font-size:11.5px;border-radius:6px;padding:3px 8px}
+.badge.issue{color:#fdba74;background:rgba(251,146,60,.08);border:1px solid rgba(251,146,60,.28)}
+.badge.lens{color:#93c5fd;background:rgba(96,165,250,.07);border:1px solid rgba(96,165,250,.25)}
+.comment .body{padding:14px 16px 6px;font-size:15px;line-height:1.55;color:#e4e4e7}
+.comment .body code{font-family:"Geist Mono",monospace;font-size:13.5px;color:#93c5fd;background:#16161b;border:1px solid var(--line);padding:1px 5px;border-radius:5px}
+.ev{padding:6px 16px 14px;display:flex;flex-direction:column;gap:6px}
+.ev div{display:flex;gap:9px;align-items:flex-start;font-size:13px;color:var(--dim);line-height:1.45}
+.ev svg{flex:none;margin-top:1px}
+.ev .mono{color:#e4e4e7}
+
+.foot{position:absolute;z-index:1;left:72px;right:72px;bottom:30px;display:flex;justify-content:space-between;
+  border-top:1px solid var(--line);padding-top:16px;font-size:14px;color:var(--faint)}
+.foot span b{color:var(--dim);font-weight:500}
+</style></head>
+<body><div class="wrap">
+  <div>
+    <div class="eyebrow mono"><b>pr-review</b> · what you’ll see</div>
+    <h1>It names your rule.<br><span>Then it proves it.</span></h1>
+    <div class="lede">Every loaded lens is announced up front. Every finding points at the exact line and carries the evidence.</div>
+
+    <div class="step">
+      <div class="lbl mono"><i>1</i>before the review starts</div>
+      <div class="term mono"><span class="p">›</span> <span class="n">lens billing-audit</span>: repo lens;<br>&nbsp;&nbsp;applies-to <span class="s">services/billing/**</span></div>
+    </div>
+    <div class="step">
+      <div class="lbl mono"><i>2</i>a PR that only touches the catalog</div>
+      <div class="quiet"><span class="mono">services/catalog/list.mjs</span><span class="z mono">no lens · no billing finding</span></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="pr">
+      <div class="head mono">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.7"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg>
+        <span class="path">services/billing/invoice.mjs</span>
+        <span class="stat"><span class="a">+5</span></span>
+      </div>
+      <div class="diff mono">
+        <div class="ctx"><span class="ln">7</span><span></span><span>  <span class="kw">return</span> { ...invoice, status: <span class="st">"paid"</span> };</span></div>
+        <div class="ctx"><span class="ln">8</span><span></span><span>}</span></div>
+        <div class="add"><span class="ln">10</span><span class="sg">+</span><span><span class="kw">export function</span> <span class="fn">refundInvoice</span>(invoice) {</span></div>
+        <div class="add"><span class="ln">11</span><span class="sg">+</span><span>  <span class="kw">if</span> (invoice.status !== <span class="st">"paid"</span>) <span class="kw">throw new</span> Error(<span class="st">"not paid"</span>);</span></div>
+        <div class="add hit"><span class="ln">12</span><span class="sg">+</span><span>  <span class="kw">return</span> { ...invoice, status: <span class="st">"refunded"</span> };</span></div>
+        <div class="add"><span class="ln">13</span><span class="sg">+</span><span>}</span></div>
+      </div>
+      <div class="comment">
+        <div class="who">
+          <span class="av"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" stroke-width="2"><path d="M2.5 12S6 5.8 12 5.8 21.5 12 21.5 12 18 18.2 12 18.2 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></svg></span>
+          <b>pr-reviewer</b><span class="t">· on line 12</span>
+          <span style="margin-left:auto;display:flex;gap:6px"><span class="badge lens mono">lens:billing-audit</span><span class="badge issue mono">issue · medium</span></span>
+        </div>
+        <div class="body">Refund is missing its billing audit record. <code>refundInvoice</code> never calls <code>audit.record("billing.refundInvoice", { id })</code>, so compliance never sees the refund.</div>
+        <div class="ev">
+          <div><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.2"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Ran it: <span class="mono">refundInvoice(paid)</span> → status <span class="mono">refunded</span>, <span class="mono">audit.all() == []</span></span></div>
+          <div><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.2"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg><span>Rule: <span class="mono">.agents/review/lenses/billing-audit.md</span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="foot">
+  <span><b>Real output</b> — from this repo’s end-to-end eval</span>
+  <span><b>Inline</b> — on the line, with a fix you can apply</span>
+  <span><b>Quiet</b> elsewhere — outside your paths, nothing</span>
+</div>
+</body></html>

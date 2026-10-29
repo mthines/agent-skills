@@ -61,6 +61,7 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 
 - One directory per case: `prompt.md` (frontmatter + prompt), `graders/*.md`, and, when it needs files, `case.yaml` + `scaffold.sh` + `fixtures/`.
 - Tag it `ablation` (outcome graders, both arms) or `trigger` (one `tool_used: Skill` grader).
+- Tag it neither when the plugin arm alone is the test, as for `review-lens` cases, whose scaffold installs the reviewer and so equips both arms: run them with `--tag review-lens --ablation none`.
 - Give it at least one deterministic grader (`regex`, `tool_used`, `tool_order`, `file_exists`) and at most one `llm` grader; L1 `G110` enforces both and the frontmatter keys.
 - Ask for the outcome in a neutral format both arms can produce (for example `Severity: <tier>`), so `Δ` measures the decision, not the skill's house style.
 - Keep `max_turns ≤ 15` and prefer read-only tools.
@@ -78,5 +79,9 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 | `behavioral-design-local-tests` | `behavioral-design` | names a barrier, no shaming, llm: diagnosis → intervention → metric |
 | `behavioral-design-hard-postmortems` | `behavioral-design` | comparison or re-measure design, llm: diagnosis, steers off the performance-review link, ease lever first, system-of-record metric |
 | `behavioral-design-hard-review-sla` | `behavioral-design` | baseline measured, llm: ≥ 2 barriers, friction-removing default first, no individual ranking, GitHub-data metric |
+| `review-lens-team-path` | `branch-reviewer` + `.agents/review/lenses/` | reviewer dispatched; findings name the lens-only rule (`audit.record`) for a change under the lens's `applies-to` |
+| `review-lens-team-control` | `branch-reviewer` + `.agents/review/lenses/` | reviewer dispatched; findings never name it for a change outside `applies-to` |
+| `review-lens-builtin-tdd` | `branch-reviewer` + built-in `tdd` lens | reviewer dispatched; flags a test that mocks its own module and asserts call counts |
+| `review-lens-builtin-approach` | `branch-reviewer --effort high` + built-in `optimize-approach` lens | reviewer dispatched; flags a shared package importing from an app |
 | `trigger-critical`, `trigger-confidence`, `trigger-behavioral-design-1on1s` | each named skill | `Skill` fired |
 | `trigger-neg-aw-question`, `trigger-neg-aw-here` | `aw` | `aw` / `autonomous-workflow` not fired |

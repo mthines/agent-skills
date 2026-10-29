@@ -219,7 +219,7 @@ length**, so there is no count to supply and none to get wrong:
 `finalize.mjs` from `context.checks` as `` red: `a` · cancelled: `b` · still pending: `c` · <N> passed `` (a cancelled check is listed apart, never as red), and
 omitted when every check passed or was skipped, the checks table was unreadable, or the run is
 historical; a `context.render.CI_NOTE` overrides it),
-`VERIFIED_NOTE` (what this run checked itself), `QUALITY_DROPPED`, `RUN_NOTE`, `RUN_ANOMALY`
+`VERIFIED_NOTE` (what this run checked itself), `LENSES` (the loaded review lenses, one line), `QUALITY_DROPPED`, `RUN_NOTE`, `RUN_ANOMALY`
 (the two are not interchangeable — see *`RUN.tier` and `RUN.depth`* above), `FIX_ALL_URL`
 (opt-in — the Agent0 "Fix all" deep link, validated `http(s)` and bare of `)`; the renderer turns
 it into a linked button above the accordion, rendered only when supplied, i.e. when the
@@ -244,6 +244,7 @@ when it has something to say:
 | `Found` | `QUALITY` | always |
 | `Dropped` | `QUALITY_DROPPED` | supplied |
 | `Severity` | `FINDINGS[].tier` | `FINDINGS` non-empty |
+| `Lenses` | `LENSES` | supplied — `finalize.mjs` builds it from `context.lenses.loaded` as `<name> (<trigger>)` joined by ` · ` |
 | `Optimality` · `Standards` · `Measurability` | the three logs | not quiet (below) |
 | `Verified` | `VERIFIED_NOTE` | supplied |
 | `Skipped files` · `Integrations` | the two slots | not quiet (below) |

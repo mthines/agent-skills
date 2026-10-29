@@ -576,6 +576,27 @@ export function memoriesSummaryFor(memoryUsed, indexed = 0) {
 }
 
 /**
+ * A lens candidate's body names the lens that raised it (rubric-composition.md § Review lenses).
+ * @param {any} c
+ */
+export function lensTagged(c) {
+  if (c?.finder !== "lens" || !c.lens || typeof c.body !== "string") return c;
+  const tag = `[lens:${c.lens}]`;
+  return c.body.startsWith(tag) ? c : { ...c, body: `${tag} ${c.body}` };
+}
+
+/**
+ * The report's `Lenses` row: every lens select-lenses.mjs loaded, with the first clause of its reason.
+ * @param {any} lenses context.lenses
+ * @returns {string | undefined}
+ */
+export function lensesLine(lenses) {
+  const loaded = Array.isArray(lenses?.loaded) ? lenses.loaded : [];
+  if (!loaded.length) return undefined;
+  return loaded.map((/** @type {any} */ l) => `${l.name} (${String(l.reason || "").split(";")[0].trim()})`).join(" · ");
+}
+
+/**
  * The pure orchestration core: everything finalize.mjs does to turn
  * (context, judgments) into a disposition for every candidate. No I/O.
  *
@@ -597,7 +618,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // rest of this pipeline already uses — checked, not assumed, by
   // assertEveryCandidateDisposed()'s own self-test below.
   const rawCandidates = (judgments?.candidates || [])
-    .map((/** @type {any} */ c, /** @type {number} */ i) => ({ ...c, _orig_index: i }));
+    .map((/** @type {any} */ c, /** @type {number} */ i) => ({ ...lensTagged(c), _orig_index: i }));
 
   // A candidate the verifier CONTRADICTED never enters scoring at all — it is disposed as
   // "contradicted" before dedupe, rather than left to clear or defer on its score alone (which is
@@ -856,6 +877,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     optimalityLog: judgments?.lenses?.optimality_log,
     standardsLog: judgments?.lenses?.standards_log,
     measurabilityLog: judgments?.lenses?.measurability_log,
+    lenses: lensesLine(context?.lenses),
     skippedFiles: context?.render?.SKIPPED_FILES,
   };
 
@@ -1199,7 +1221,8 @@ export function checkShape(judgments) {
   const violations = [];
   candidates.forEach((/** @type {any} */ c, /** @type {number} */ index) => {
     try {
-      const payload = toInlineCommentPayload(c, { sha });
+      // finalizeReview tags a lens body ([lens:<name>]) before rendering, so the shape check measures the tagged body.
+      const payload = toInlineCommentPayload(lensTagged(c), { sha });
       renderComment(payload);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -2549,6 +2572,12 @@ async function selfTest() {
     check("checkShape catches a 61-char title, naming the index and field TITLE",
       badResult.ok === false && badResult.violations.length === 1
         && badResult.violations[0].index === 0 && badResult.violations[0].field === "TITLE");
+
+    // finalizeReview prefixes `[lens:<name>]`, so a lens body that fits untagged can overflow once tagged.
+    const lensBody = (/** @type {number} */ n) => ({ candidates: [{ ...mkCandidate({ final: 90 }), finder: "lens", lens: "billing-audit", body: "b".repeat(n) }] });
+    const fits = checkShape(lensBody(150)), overflows = checkShape(lensBody(190));
+    check("checkShape measures a lens body with its [lens:<name>] tag",
+      fits.ok === true && overflows.ok === false && overflows.violations[0]?.field === "BODY", JSON.stringify(overflows.violations));
   }
 
   // A verified candidate that STILL fails --check-shape after its one repair
@@ -2785,6 +2814,30 @@ async function selfTest() {
       check("agent0_fix_links: false in the review config builds neither placement",
         cfgOff.status === 0 && !cfgOff.report.includes("goto/agent0"));
     }
+
+    {
+      // Lens bookkeeping reaches the report: the Run table lists every lens select-lenses.mjs loaded.
+      const lnDir = join(e2eDir, "lenses");
+      rmSync(lnDir, { recursive: true, force: true });
+      mkdirSync(lnDir, { recursive: true });
+      const lnContextPath = join(lnDir, "context.json");
+      writeFileSync(lnContextPath, JSON.stringify({ ...e2eContext, lenses: { loaded: [
+        { name: "tdd", source: "builtin", reason: "auto; applies-to **/*.test.*", files: ["a.test.ts"] },
+        { name: "billing-audit", source: "repo", reason: "repo lens; applies-to services/billing/**", files: [] },
+      ], skipped: [], notes: [] } }, null, 2));
+      const ln = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", lnContextPath,
+        "--judgments", judgmentsPath, "--out-dir", join(lnDir, "out"), "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+      const lnReport = existsSync(join(lnDir, "out", "report-body.md")) ? readFileSync(join(lnDir, "out", "report-body.md"), "utf8") : "";
+      check("context.lenses.loaded renders a Lenses row naming each lens and its trigger",
+        ln.status === 0 && /Lenses[^\n]*tdd \(auto\)[^\n]*billing-audit \(repo lens\)/.test(lnReport), (ln.stderr || "").slice(0, 300));
+      check("no loaded lenses → no Lenses row", !readFileSync(join(outDir, "report-body.md"), "utf8").includes("| Lenses"));
+    }
+    check("lensTagged prefixes a lens candidate's body once",
+      lensTagged({ finder: "lens", lens: "tdd", body: "x" }).body === "[lens:tdd] x"
+      && lensTagged({ finder: "lens", lens: "tdd", body: "[lens:tdd] x" }).body === "[lens:tdd] x");
+    check("lensTagged leaves a core finder's candidate untouched",
+      lensTagged({ finder: "correctness", lens: "tdd", body: "x" }).body === "x");
+    check("lensesLine is undefined with nothing loaded", lensesLine({ loaded: [] }) === undefined && lensesLine(undefined) === undefined);
 
     {
       // The impact-image preview (posting.md) runs a dry run before the real finalize; with

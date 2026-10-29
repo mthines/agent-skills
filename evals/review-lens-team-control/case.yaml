@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: review-lens-team-control
+context:
+  scaffold_script: scaffold.sh
