@@ -3060,6 +3060,13 @@ async function selfTest() {
     const r = historicalThreads({ threads: HT_THREADS, commits: [{ oid: HT_SHA }], reviewSha: HT_SHA });
     return r.threads.length === 0 && r.asOf === null && /committedDate/.test(r.anomaly || "");
   });
+  t("prepare() reads checks as --json buckets, asks the GraphQL viewer only with no login, and gates the state warning on a sticky", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+    return /run\("gh", \["pr", "checks", String\(number\), "--repo", repo, "--json", "name,bucket,link",/.test(body)
+      && /if \(!me\) \{\s*\(\{ me, identitySource \} = resolveReviewerIdentity\(\{ \.\.\.identityInput, viewerLogin: await fetchViewerLogin\(/.test(body)
+      && /if \(!opts\.state && !runMode\.isolated && sticky\) \{/.test(body);
+  });
   t("prepare() wires historicalThreads into the --review-sha path (not merely exported)", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
