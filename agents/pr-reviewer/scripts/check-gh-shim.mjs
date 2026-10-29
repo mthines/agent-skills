@@ -76,6 +76,12 @@ function selfTest() {
   const big = gh(["api", "repos/o/r/big?per_page=200", "--paginate", "--jq", ".[]"]);
   check("per_page above GitHub's 100 cap still walks every page", big.out.split("\n").length === 250 && big.calls.length === 3, { n: big.out.split("\n").length, calls: big.calls });
 
+  const tmpl = gh(["api", "--paginate", "-t", "{{.}}", "repos/o/r/items"]);
+  check("a value-taking flag before the endpoint keeps its value, and the call is handed back to gh",
+    tmpl.out.startsWith("FALLBACK api repos/o/r/items --paginate -t {{.}}"), tmpl);
+  const input = gh(["api", "--paginate", "--input", "body.json", "repos/o/r/items"]);
+  check("--input <file> before the endpoint is not read as the endpoint", input.out.startsWith("FALLBACK api repos/o/r/items --paginate --input body.json"), input);
+
   const graphql = gh(["api", "graphql", "--paginate", "-f", "query=q"]);
   check("graphql --paginate is handed back to gh unchanged", graphql.out.startsWith("FALLBACK api graphql --paginate"), graphql);
 

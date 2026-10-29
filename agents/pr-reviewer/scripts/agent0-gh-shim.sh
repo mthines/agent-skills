@@ -32,7 +32,8 @@ pass=(); endpoint=""; jqexpr=""; fallback=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --paginate) ;;
-    --slurp|-t|--template|--template=*|--input|--input=*) fallback=1; pass+=("$1") ;;
+    --slurp|--template=*|--input=*) fallback=1; pass+=("$1") ;;
+    -t|--template|--input) fallback=1; pass+=("$1" "$2"); shift ;;
     -q|--jq) jqexpr="$2"; shift ;;
     --jq=*) jqexpr="${1#--jq=}" ;;
     -H|--header|-X|--method|-f|--raw-field|-F|--field|--hostname|--cache|-p|--preview) pass+=("$1" "$2"); shift ;;
