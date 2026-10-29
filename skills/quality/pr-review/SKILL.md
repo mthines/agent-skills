@@ -226,6 +226,7 @@ When a user asks how to give the reviewer knowledge of their repo, answer with t
 | The user wants the reviewer to… | They write | Read from |
 | --- | --- | --- |
 | know architecture, invariants, or intent the code cannot show, for one part of the repo | `REVIEW.md` in that directory (the root one covers everything); the contract is `agents/shared/rules/review-context.md` | the PR's base commit |
+| check a team's own checklist on its paths, from the next PR on | `.agents/review/lenses/<name>.md` (no registration; human guide: [`README.md`](./README.md)) | the PR's base commit |
 | enforce a written rule as a finding | a must/never line in `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`, or review-config `standards:` | the checkout; review config from the base |
 | stop or start flagging one kind of finding | `/pr-review remember <fact>` or review-config `filters:` | relevance memory; the base |
 
