@@ -379,6 +379,11 @@
           "description": "Optional. One { id, scope, key } per memory whose body this run fetched with memory_read (Steps 1.2a, 1.2d, 2.7b), with id taken from the memory_list / memory_search entry that surfaced it (memory_read returns none). Only the run trace reads it; omit it and the trace omits the read count rather than reporting 0.",
           "type": "array",
           "items": { "type": "object", "additionalProperties": true }
+        },
+        "indexed": {
+          "description": "Optional. MEMORIES_READ_COUNT: how many LoreKit entries this run listed (relevance rules, knowledge, and hotspot records). finalize.mjs renders `<max(indexed, read count, used)> indexed`.",
+          "type": "integer",
+          "minimum": 0
         }
       }
     }

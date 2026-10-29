@@ -31,7 +31,9 @@ resolve() {  # portable readlink -f
     while [ -L "$t" ]; do d=$(readlink "$t"); cd "$(dirname "$d")" || return 1; t=$(basename "$d"); done
     printf '%s/%s\n' "$(pwd -P)" "$t" )
 }
-AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" || echo "")
+# Loaded as a plugin, ~/.claude/agents holds no copy: the plugin's bin/agent-skills-root names its root.
+AGENT_MD=$(resolve "${CLAUDE_AGENT_FILE:-$HOME/.claude/agents/pr-reviewer.md}" \
+  || resolve "$(agent-skills-root 2>/dev/null)/agents/pr-reviewer.md" || echo "")
 AGENT_SUPPORT="${AGENT_MD%/pr-reviewer.md}"
 echo "AGENT_SUPPORT=$AGENT_SUPPORT"   # print it: later tool calls need the literal string
 ```
@@ -545,7 +547,7 @@ The `<D> suppressions, <P> promotions` figures are NOT announced here: they come
 ### 1.1 Fetch PR data in parallel
 
 `node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <ref> --out ctx.json` (never
-under `--context`) performs Step 1.1 and every mechanical step through *Bind `DEPTH_TIER`* — 1.1b,
+under `--context`; with no `--reviewer-login` it asks GraphQL `viewer` itself, so the relation and the Fix-this buttons survive) performs Step 1.1 and every mechanical step through *Bind `DEPTH_TIER`* — 1.1b,
 1.2, shape classification, 1.2a's graph, 1.2b — and binds them on `context.json`. **When it cannot
 run, or its context lacks a field, read `agents/pr-reviewer/rules/fetch-and-triage.md`** and run that
 step's manual fallback.

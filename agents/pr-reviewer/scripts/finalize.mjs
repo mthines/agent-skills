@@ -270,8 +270,9 @@ export function buildAutoQualityDropped({ confidenceDropped, anchorless }) {
   return parts.length ? parts.join(", ") : null;
 }
 
-/** The `gh pr checks` buckets that mean a check failed. A non-TTY table prints `cancel` as `fail`; both are read. */
-const CI_RED_BUCKETS = new Set(["fail", "cancel"]);
+/** The `gh pr checks` bucket that means a check failed. `cancel` is listed apart: a cancelled run is
+ *  usually one a newer push superseded, not a failure of this commit. */
+const CI_RED_BUCKETS = new Set(["fail"]);
 /** How many check names one CI_NOTE list spells out before folding the rest into `+N more`. */
 export const CI_NOTE_NAMES_MAX = 5;
 
@@ -281,11 +282,13 @@ export const CI_NOTE_NAMES_MAX = 5;
  * `pending`, `skipping`, or `cancel`. A line with no tab, no name, or another bucket is skipped. A
  * name listed more than once in a bucket (the same job in two workflows) is kept once.
  * @param {string|null|undefined} raw
- * @returns {{ red: string[], pending: string[], passed: number }}
+ * @returns {{ red: string[], cancelled: string[], pending: string[], passed: number }}
  */
 export function parseChecksTable(raw) {
   /** @type {string[]} */
   const red = [];
+  /** @type {string[]} */
+  const cancelled = [];
   /** @type {string[]} */
   const pending = [];
   let passed = 0;
@@ -297,10 +300,11 @@ export function parseChecksTable(raw) {
     const bucket = cols[1].trim().toLowerCase();
     if (!name) continue;
     if (CI_RED_BUCKETS.has(bucket)) { if (!red.includes(name)) red.push(name); }
+    else if (bucket === "cancel") { if (!cancelled.includes(name)) cancelled.push(name); }
     else if (bucket === "pending") { if (!pending.includes(name)) pending.push(name); }
     else if (bucket === "pass") passed += 1;
   }
-  return { red, pending, passed };
+  return { red, cancelled, pending, passed };
 }
 
 /** @param {string[]} names @returns {string} */
@@ -311,10 +315,10 @@ function ciNameList(names) {
 }
 
 /**
- * CI_NOTE — Gate 2's substance, rendered as the report's `CI` row in the Run table: the red checks and
- * the still-pending checks by name, read from the `gh pr checks` table prepare-review.mjs fetched.
+ * CI_NOTE — Gate 2's substance, rendered as the report's `CI` row in the Run table: the red, cancelled,
+ * and still-pending checks by name (a cancelled-only run still gets a row, never as red), read from the `gh pr checks` table prepare-review.mjs fetched.
  * Pure (D18). Returns null, so no CI row renders, when:
- *   - every check passed or was skipped — CI_NOTE says which checks are red or pending;
+ *   - every check passed or was skipped — CI_NOTE says which checks are red, cancelled, or pending;
  *   - the table was unreadable — prepare-review.mjs already names that in `anomalies[]`, which
  *     reaches RUN_ANOMALY;
  *   - the context is historical (`--review-sha`) — CI was never read, because the current check run
@@ -325,10 +329,11 @@ function ciNameList(names) {
  */
 export function buildAutoCiNote({ checks, historical }) {
   if (historical || checks?.readable !== true) return null;
-  const { red, pending, passed } = parseChecksTable(checks.raw);
-  if (red.length === 0 && pending.length === 0) return null;
+  const { red, cancelled, pending, passed } = parseChecksTable(checks.raw);
+  if (red.length === 0 && cancelled.length === 0 && pending.length === 0) return null;
   const parts = [];
   if (red.length > 0) parts.push(`red: ${ciNameList(red)}`);
+  if (cancelled.length > 0) parts.push(`cancelled: ${ciNameList(cancelled)}`);
   if (pending.length > 0) parts.push(`still pending: ${ciNameList(pending)}`);
   if (passed > 0) parts.push(`${passed} passed`);
   return parts.join(" · ");
@@ -438,10 +443,18 @@ function toMemoryUsedItem(record, kindOverride) {
   return out;
 }
 
-/** @param {any} memory @returns {Record<string, any>[]} */
-export function buildMemoriesUsed(memory) {
+/**
+ * With `outcome` (finalizeReview's run), a relevance rule is listed only when it acted (ruleActed);
+ * without it, every rule is listed.
+ * @param {any} memory @param {{ suppressed: any[] }} [outcome]
+ * @returns {Record<string, any>[]}
+ */
+export function buildMemoriesUsed(memory, outcome) {
+  const counts = outcome ? suppressedCounts(outcome.suppressed) : null;
   return [
-    ...(memory?.relevance_rules || []).map((/** @type {any} */ r) => toMemoryUsedItem(r, "rule")),
+    ...(memory?.relevance_rules || [])
+      .filter((/** @type {any} */ r) => !outcome || ruleActed(r, /** @type {Map<string, number>} */ (counts)))
+      .map((/** @type {any} */ r) => toMemoryUsedItem(r, "rule")),
     ...(memory?.lessons_used || []).map((/** @type {any} */ r) => toMemoryUsedItem(r, null)),
   ];
 }
@@ -457,12 +470,18 @@ function suppressedCounts(suppressed = []) {
   return counts;
 }
 
+/** The `action` values comment-relevance-memory.md records only when a memory fired against a real
+ *  finding (`drop | downgrade | promote`), plus the `suppress` / `amplify` directions. Anything else
+ *  (`"none (seen_count < 2, no promotion)"`, a note) is a rule that changed nothing. */
+const APPLIED_ACTIONS = new Set(["drop", "downgrade", "promote", "suppress", "amplify"]);
+
 /** A relevance rule shaped the review iff it carries an applied `action` or suppressed a finding
- *  this run. The one predicate the trace's `used` and Step 4c's `cited` share, so the two sets
- *  of rules cannot drift apart. @param {any} r @param {Map<string, number>} counts @returns {boolean} */
+ *  this run. The one predicate the trace's `used`, Step 4c's `cited`, and MEMORIES_USED share, so
+ *  the three cannot drift apart. @param {any} r @param {Map<string, number>} counts @returns {boolean} */
 function ruleActed(r, counts) {
   const fp = typeof r?.fp === "string" && r.fp ? r.fp : typeof r?.fingerprint === "string" ? r.fingerprint : "";
-  return (typeof r?.action === "string" && r.action !== "") || (fp !== "" && (counts.get(fp) || 0) > 0);
+  const action = typeof r?.action === "string" ? r.action.trim().toLowerCase() : "";
+  return APPLIED_ACTIONS.has(action) || (fp !== "" && (counts.get(fp) || 0) > 0);
 }
 
 /**
@@ -550,8 +569,9 @@ export function citedRefs(memory, suppressed = []) {
  * MEMORIES_USED renders, so the two can never disagree.
  * @param {Record<string, any>[]} memoryUsed @returns {string}
  */
-export function memoriesSummaryFor(memoryUsed) {
-  return memoryUsed.length > 0 ? `${memoryUsed.length} indexed` : "no relevance rules or lessons consulted";
+export function memoriesSummaryFor(memoryUsed, indexed = 0) {
+  const n = Math.max(memoryUsed.length, Number.isInteger(indexed) ? indexed : 0);
+  return n > 0 ? `${n} indexed` : "no relevance rules or lessons consulted";
 }
 
 /**
@@ -799,8 +819,10 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
   // the SAME array MEMORIES_USED renders, so the two can never disagree — arm B's first live run
   // hand-typed a MEMORIES_SUMMARY that used the wrong vocabulary (render-report.mjs requires the
   // literal `<N> indexed` shape and rejects any string carrying "used", which is derived).
-  const memoryUsed = buildMemoriesUsed(judgments?.memory);
-  const memoriesSummary = memoriesSummaryFor(memoryUsed);
+  const memoryUsed = buildMemoriesUsed(judgments?.memory, { suppressed });
+  // Indexed is at least every body the run read, even when the caller did not count the listing.
+  const readCount = Array.isArray(judgments?.memory?.read) ? judgments.memory.read.length : 0;
+  const memoriesSummary = memoriesSummaryFor(memoryUsed, Math.max(readCount, Number.isInteger(judgments?.memory?.indexed) ? judgments.memory.indexed : 0));
 
   const tier = context?.routing?.tier;
   const depth = context?.workspace?.depthCapability || context?.depthCapability;
@@ -1199,14 +1221,14 @@ function parseArgs(argv) {
     else if (a === "--second-pass") opts.secondPass = argv[++i];
     else if (a === "--out") opts.out = argv[++i];
     else if (a === "--run-dir") opts.runDir = argv[++i];
-    else if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") opts[a.slice(2)] = true;
+    else if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--no-telemetry" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") opts[a.slice(2)] = true;
     else if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; }
   }
   return opts;
 }
 
 function usage() {
-  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-dispatch] [--skip-gates] [--no-fix-links] [--fix-links] [--self-test] [--replay-fixtures]\n"
+  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-telemetry] [--no-dispatch] [--skip-gates] [--no-fix-links] [--fix-links] [--self-test] [--replay-fixtures]\n"
     + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
     + "   or: finalize.mjs --first-pass <a.json,b.json> --second-pass <c.json,d.json> [--out <file>] [--run-dir <dir>]\n"
     + "   or: finalize.mjs --check-shape <judgments.json>");
@@ -1667,6 +1689,8 @@ async function selfTest() {
     check("memoriesSummaryFor never contains the word 'used' — render-report.mjs derives that half from MEMORIES_USED.length",
       !/\bused\b/.test(memoriesSummaryFor(used)));
     check("memoriesSummaryFor defaults sensibly with no records", memoriesSummaryFor([]) === "no relevance rules or lessons consulted");
+    check("memoriesSummaryFor counts memory.indexed when it exceeds the used count, never fewer than used",
+      memoriesSummaryFor(used, 150) === "150 indexed" && memoriesSummaryFor(used, 2) === "4 indexed" && memoriesSummaryFor([], 7) === "7 indexed");
 
     // End-to-end: a live-shaped context whose judgments carry real memory reads — proving the
     // exact run-1 shape (relevance_rules empty, lessons_used populated) renders with zero manual
@@ -1769,6 +1793,15 @@ async function selfTest() {
     check("citedRefs: a rule that suppressed a finding or carries an applied action is cited; a rule that changed nothing is not",
       refs.includes(`repo::o/r::reviewer-comment-relevance::rule::${FP}`) && refs.includes("global::reviewer-comment-relevance::nitpick:map-vs-record")
         && !refs.some((r) => r.endsWith("::idle")), JSON.stringify(refs));
+    // The shape a live run wrote (dash0hq/dash0#24070): no fingerprint, and an action that says none.
+    const idleNote = { scope: "repo::o/r", key: "reviewer-comment-relevance::correctness:x", action: "none (seen_count < 2, no promotion)" };
+    check("citedRefs: an action that is not drop/downgrade/promote/suppress/amplify is not an applied action",
+      citedRefs({ relevance_rules: [idleNote] }).length === 0
+        && citedRefs({ relevance_rules: [{ ...idleNote, action: "Promote" }] }).length === 1);
+    check("buildMemoriesUsed with a run outcome lists only the rules that acted; without one, every rule",
+      buildMemoriesUsed({ ...memory, relevance_rules: [...memory.relevance_rules, idleNote] }, { suppressed: [{ _suppressed_by_fp: FP }] }).filter((m) => m.kind === "rule").length === 2
+        && buildMemoriesUsed(memory, { suppressed: [] }).filter((m) => m.kind === "rule").length === 1
+        && buildMemoriesUsed(memory).filter((m) => m.kind === "rule").length === memory.relevance_rules.length);
     check("citedRefs: every used lesson is cited once, as scope::key; one with no scope and a read-only memory are not",
       refs.filter((r) => r === "repo::o/r::hotspot::src/a.ts").length === 1 && !refs.some((r) => r.includes("orphan-lesson"))
         && !refs.some((r) => r.includes("knowledge::retry")) && refs.length === 3, JSON.stringify(refs));
@@ -2112,12 +2145,12 @@ async function selfTest() {
       row("suite", "skipping"), row("build", "pass"), row("typecheck", "fail"),
     ].join("\n");
     const parsed = parseChecksTable(table);
-    check("parseChecksTable reads red (fail + cancel), pending, and passed from the non-TTY table, one name per bucket",
-      JSON.stringify(parsed) === JSON.stringify({ red: ["typecheck", "lint"], pending: ["e2e"], passed: 2 }), JSON.stringify(parsed));
+    check("parseChecksTable reads red, cancelled, pending, and passed from the non-TTY table, one name per bucket",
+      JSON.stringify(parsed) === JSON.stringify({ red: ["typecheck"], cancelled: ["lint"], pending: ["e2e"], passed: 2 }), JSON.stringify(parsed));
     check("parseChecksTable skips a line with no tab or an unknown bucket",
-      JSON.stringify(parseChecksTable("no checks reported\nx\tneutral\t0\t\t")) === JSON.stringify({ red: [], pending: [], passed: 0 }));
-    check("buildAutoCiNote names red and still-pending checks, then the passed count",
-      buildAutoCiNote({ checks: { raw: table, readable: true } }) === "red: `typecheck`, `lint` · still pending: `e2e` · 2 passed");
+      JSON.stringify(parseChecksTable("no checks reported\nx\tneutral\t0\t\t")) === JSON.stringify({ red: [], cancelled: [], pending: [], passed: 0 }));
+    check("buildAutoCiNote names red, cancelled, and still-pending checks apart, then the passed count",
+      buildAutoCiNote({ checks: { raw: table, readable: true } }) === "red: `typecheck` · cancelled: `lint` · still pending: `e2e` · 2 passed");
     check("buildAutoCiNote names pending-only CI without a red part",
       buildAutoCiNote({ checks: { raw: [row("e2e", "pending"), row("l1", "pass")].join("\n"), readable: true } }) === "still pending: `e2e` · 1 passed");
     check("buildAutoCiNote returns null when every check passed or was skipped (no CI line)",
@@ -2140,11 +2173,11 @@ async function selfTest() {
     }, "2026-09-25T12:00:00Z");
     const r = finalizeReview({ context: ciContext, judgments });
     check("finalizeReview fills CI_NOTE from context.checks with no caller-supplied value",
-      r.payload.CI_NOTE === "red: `typecheck`, `lint` · still pending: `e2e` · 2 passed", String(r.payload.CI_NOTE));
+      r.payload.CI_NOTE === "red: `typecheck` · cancelled: `lint` · still pending: `e2e` · 2 passed", String(r.payload.CI_NOTE));
     check("a red CI_NOTE never moves the verdict — CI is informational-in-Run", r.verdict === "PASS");
     const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-auto-ci-note");
     check("the computed CI_NOTE renders as the Run table's CI row",
-      rendered.ok && rendered.stdout.includes("| CI | red: `typecheck`, `lint` · still pending: `e2e` · 2 passed |"),
+      rendered.ok && rendered.stdout.includes("| CI | red: `typecheck` · cancelled: `lint` · still pending: `e2e` · 2 passed |"),
       rendered.ok ? "no CI row in the rendered body" : rendered.stderr.trim());
     const supplied = finalizeReview({ context: { ...ciContext, render: { ...ciContext.render, CI_NOTE: "hand-written" } }, judgments });
     check("a caller-supplied context.render.CI_NOTE wins over the computed one", supplied.payload.CI_NOTE === "hand-written");
@@ -2750,6 +2783,24 @@ async function selfTest() {
         cfgOff.status === 0 && !cfgOff.report.includes("goto/agent0"));
     }
 
+    {
+      // The impact-image preview (posting.md) runs a dry run before the real finalize; with
+      // --no-telemetry it must leave the run ledger untouched, so the real finalize is the one traced.
+      const ntDir = join(e2eDir, "no-telemetry");
+      rmSync(ntDir, { recursive: true, force: true });
+      mkdirSync(ntDir, { recursive: true });
+      spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), "begin", "--run-dir", ntDir],
+        { encoding: "utf8", env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+      writeFileSync(join(ntDir, "context.json"), JSON.stringify(e2eContext, null, 2));
+      const before = readLedger(ntDir).length;
+      const nt = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(ntDir, "context.json"),
+        "--judgments", judgmentsPath, "--out-dir", join(ntDir, "out"), "--dry-run", "--no-telemetry"],
+        { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+      check("--dry-run --no-telemetry renders the report but leaves the run ledger untouched",
+        nt.status === 0 && before > 0 && readLedger(ntDir).length === before
+          && existsSync(join(ntDir, "out", "report-body.md")), (nt.stderr || "").slice(0, 300));
+    }
+
     // An incremental re-review with a prepare-review-SHAPED context: the prior SHA lives only at
     // `priorRun.priorSha` (full 40-char), never at a top-level `priorSha`. Before the fix the
     // renderer failed closed on a missing RUN.prior_sha and no report rendered (#213).
@@ -3265,7 +3316,9 @@ async function main() {
     historical: context?.historical || null,
     isolated: Boolean(context?.isolated),
   });
-  const telemetryRunDir = await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context) });
+  // --no-telemetry: a preview render (posting.md § The impact image) must not record the finalize
+  // step or finish the run — the real finalize after it does both.
+  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context) });
   // execute-write-plan.mjs records the `post` step and exports the trace; this is how it finds
   // the ledger. Absent when no ledger exists.
   if (telemetryRunDir && !isDryRun) writePlan.telemetry_run_dir = telemetryRunDir;
