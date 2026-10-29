@@ -271,7 +271,8 @@ export function buildAutoQualityDropped({ confidenceDropped, anchorless }) {
 }
 
 /** The `gh pr checks` bucket that means a check failed. `cancel` is listed apart: a cancelled run is
- *  usually one a newer push superseded, not a failure of this commit. */
+ *  usually one a newer push superseded, not a failure of this commit. prepare-review.mjs reads the
+ *  buckets through `--json`, because the plain non-TTY table prints `cancel` as `fail`. */
 const CI_RED_BUCKETS = new Set(["fail"]);
 /** How many check names one CI_NOTE list spells out before folding the rest into `+N more`. */
 export const CI_NOTE_NAMES_MAX = 5;

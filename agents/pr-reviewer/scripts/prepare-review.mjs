@@ -1681,7 +1681,10 @@ async function prepare(opts) {
       : run("gh", ["pr", "diff", String(number), "--repo", repo], { timeoutMs }),
     wantHistorical
       ? Promise.resolve({ ok: false, code: 0, stdout: "", stderr: "not-read (historical — gh pr checks reports the current head, not review_sha)" })
-      : run("gh", ["pr", "checks", String(number), "--repo", repo], { timeoutMs }),
+      // --json: the non-TTY table prints a cancelled check as `fail`; the JSON keeps its real
+      // bucket. The jq keeps the table's tab layout (name, bucket, elapsed, link) parseChecksTable reads.
+      : run("gh", ["pr", "checks", String(number), "--repo", repo, "--json", "name,bucket,link",
+        "--jq", '.[] | [.name, .bucket, "", .link] | @tsv'], { timeoutMs }),
     ghNdjson(
       [
         "api",
