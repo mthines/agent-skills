@@ -131,7 +131,8 @@ node "$FINALIZE" --context /tmp/review-context.json --judgments /tmp/judgments.j
   --out-dir /tmp/finalize-dry --dry-run --no-telemetry
 # 2. Draw the diagram with those numbers as badges (impact-map § Badges from a pr-reviewer report).
 #    Skill("impact-map", "<pr-url> --findings /tmp/finalize-dry/report-body.md") → light, dark, alt
-# 3. Upload both PNGs and get their urls; open each with the Read tool first.
+# 3. Upload both PNGs and get their urls. Do not open them again: step 2 already viewed the light
+#    one, which satisfies attach-media's check 4 for the pair.
 #    Skill("attach-media", "<pr-url> <light.png>#<alt> <dark.png>#<alt> --to urls")
 # 4. Bind what steps 2 and 3 printed, hand it to the renderer, then run the real finalize (above).
 LIGHT_URL="<attach-media url for the light PNG>"
