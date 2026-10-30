@@ -891,19 +891,36 @@ function runQuiet(cmd, args) {
   } catch { return null; }
 }
 
+/** @param {string} cmd @param {string[]} args @returns {boolean} true when the command exits 0 */
+function exitsZero(cmd, args) {
+  try { execFileSync(cmd, args, { stdio: "ignore", timeout: 5000 }); return true; } catch { return false; }
+}
+
+/** @param {string} url @param {string} token @returns {Promise<number>} the HTTP status, 0 on any failure */
+async function fetchStatus(url, token) {
+  try {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(5000) });
+    return r.status;
+  } catch { return 0; }
+}
+
 /**
  * What this host can do for the impact image: the browser impact-map's render-png.mjs would use
- * (its own findBrowser(), so the two cannot disagree), and whether attach-media's upload ladder has a
- * credential to start from ($GH_TOKEN, $GITHUB_TOKEN, or `gh auth token`; no network call). `null`
- * when render-png.mjs is in none of the known install layouts — the host is then unknown, and
- * impactImageGate keeps its structural decision.
- * @param {{ here?: string, env?: Record<string, string|undefined>, exists?: (p: string) => boolean,
- *   importer?: (p: string) => Promise<any>, run?: (cmd: string, args: string[]) => string|null }} [deps]
+ * (its own findBrowser(), so the two cannot disagree), and the attach-media upload rung that would
+ * work (skills/delivery/attach-media/rules/upload-ladder.md). Rung 1 is `gh auth status` passing
+ * on a `gh` with `--attach`; rung 2 is a token ($GH_TOKEN, $GITHUB_TOKEN, `gh auth token`) that
+ * passes rung 2's own first request, `GET /repos/<repo>`. A token that merely exists is not an
+ * upload path: an Agent0 sandbox exports a placeholder that the API answers with 401.
+ * `null` when render-png.mjs is in none of the known install layouts — the host is then unknown,
+ * and impactImageGate keeps its structural decision.
+ * @param {{ repo?: string, here?: string, env?: Record<string, string|undefined>, exists?: (p: string) => boolean,
+ *   importer?: (p: string) => Promise<any>, run?: (cmd: string, args: string[]) => string|null,
+ *   ok?: (cmd: string, args: string[]) => boolean, status?: (url: string, token: string) => Promise<number> }} [deps]
  * @returns {Promise<{ browser: string|null, upload: string|null } | null>}
  */
 export async function probeImpactImageHost({
-  here = HERE, env = process.env, exists = existsSync,
-  importer = (p) => import(pathToFileURL(p).href), run = runQuiet,
+  repo, here = HERE, env = process.env, exists = existsSync,
+  importer = (p) => import(pathToFileURL(p).href), run = runQuiet, ok = exitsZero, status = fetchStatus,
 } = {}) {
   // The copy beside this script first: it is from the same commit.
   const renderPng = [
@@ -918,7 +935,11 @@ export async function probeImpactImageHost({
     if (typeof mod.findBrowser !== "function") return null;
     browser = mod.findBrowser({ env }) || null;
   } catch { return null; }
-  const upload = env.GH_TOKEN || env.GITHUB_TOKEN ? "token in env" : run("gh", ["auth", "token"]) ? "gh auth token" : null;
+  if (ok("gh", ["auth", "status"]) && (run("gh", ["pr", "edit", "--help"]) || "").includes("--attach")) {
+    return { browser, upload: "gh --attach" };
+  }
+  const token = env.GH_TOKEN || env.GITHUB_TOKEN || run("gh", ["auth", "token"]);
+  const upload = token && repo && (await status(`https://api.github.com/repos/${repo}`, token)) === 200 ? "token" : null;
   return { browser, upload };
 }
 
@@ -2363,7 +2384,7 @@ async function prepare(opts) {
   // Probed only when the PR's structure already earns the image: the probe is the costly half.
   const impactImageArgs = { fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band };
   const impactImage = impactImageGate(impactImageArgs).eligible
-    ? impactImageGate({ ...impactImageArgs, host: await probeImpactImageHost() })
+    ? impactImageGate({ ...impactImageArgs, host: await probeImpactImageHost({ repo }) })
     : impactImageGate(impactImageArgs);
 
   const context = {
@@ -2621,19 +2642,32 @@ async function selfTest() {
       // A structurally ineligible PR keeps its own reason; the host never overrides it.
       && g({ fileCount: 1, band: "high", host: { browser: null, upload: null } }).reason === "single-file diff";
   });
-  t("probeImpactImageHost reads render-png's findBrowser and the upload credential; unknown when render-png is absent", async () => {
+  t("probeImpactImageHost reads render-png's findBrowser and takes the first upload rung that works; unknown without render-png", async () => {
     const here = "/r/agents/pr-reviewer/scripts";
     const repoPng = "/r/skills/quality/impact-map/scripts/render-png.mjs";
+    const exists = (/** @type {string} */ p) => p === repoPng;
     const mod = (/** @type {string|null} */ b) => async () => ({ findBrowser: () => b });
-    const a = await probeImpactImageHost({ here, env: {}, exists: (p) => p === repoPng, importer: mod("/c"), run: () => "tok" });
-    const b = await probeImpactImageHost({ here, env: { GH_TOKEN: "x" }, exists: (p) => p === repoPng, importer: mod(null), run: () => null });
-    const c = await probeImpactImageHost({ here, env: {}, exists: (p) => p === repoPng, importer: mod("/c"), run: () => null });
-    const d = await probeImpactImageHost({ here, env: {}, exists: () => false, importer: mod("/c"), run: () => "tok" });
+    const no = () => false;
+    const help = (/** @type {string} */ cmd, /** @type {string[]} */ a) => (a[0] === "pr" ? "  --attach file#alt" : "tok");
+    const s200 = async () => 200;
+    const s401 = async () => 401;
+    // Rung 1: gh is logged in and has --attach.
+    const r1 = await probeImpactImageHost({ repo: "o/r", here, env: {}, exists, importer: mod("/c"), run: help, ok: () => true, status: s401 });
+    // Rung 2: a token the API accepts.
+    const r2 = await probeImpactImageHost({ repo: "o/r", here, env: { GH_TOKEN: "real" }, exists, importer: mod(null), run: () => null, ok: no, status: s200 });
+    // An Agent0 placeholder: a token exists, the API answers 401 — no upload path.
+    const r3 = await probeImpactImageHost({ repo: "o/r", here, env: { GH_TOKEN: "placeholder" }, exists, importer: mod("/c"), run: () => null, ok: no, status: s401 });
+    // No token anywhere, or no repo to check it against.
+    const r4 = await probeImpactImageHost({ repo: "o/r", here, env: {}, exists, importer: mod("/c"), run: () => null, ok: no, status: s200 });
+    const r5 = await probeImpactImageHost({ here, env: { GH_TOKEN: "real" }, exists, importer: mod("/c"), run: () => null, ok: no, status: s200 });
+    const unknown = await probeImpactImageHost({ repo: "o/r", here, env: {}, exists: () => false, importer: mod("/c"), run: help, ok: () => true, status: s200 });
     const agent0 = "/ws/pr-reviewer/skills/impact-map/scripts/render-png.mjs";
-    const e = await probeImpactImageHost({ here: "/elsewhere", env: { AGENT_SKILLS_ROOT: "/ws/pr-reviewer" }, exists: (p) => p === agent0, importer: mod("/c"), run: () => "tok" });
-    return a?.browser === "/c" && a.upload === "gh auth token"
-      && b?.browser === null && b.upload === "token in env"
-      && c?.upload === null && d === null && e?.browser === "/c";
+    const viaRoot = await probeImpactImageHost({ repo: "o/r", here: "/elsewhere", env: { AGENT_SKILLS_ROOT: "/ws/pr-reviewer", GH_TOKEN: "x" },
+      exists: (p) => p === agent0, importer: mod("/c"), run: () => null, ok: no, status: s200 });
+    return r1?.upload === "gh --attach" && r1.browser === "/c"
+      && r2?.upload === "token" && r2.browser === null
+      && r3?.upload === null && r4?.upload === null && r5?.upload === null
+      && unknown === null && viaRoot?.browser === "/c";
   });
 
   // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no
