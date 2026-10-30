@@ -36,6 +36,7 @@
     "finalize/fix-links.mjs",
     "finalize/reach.mjs",
     "execute-write-plan.mjs",
+    "merge-memory-record.mjs",
     "../../../scripts/eval/thread-outcomes.mjs",
     "../../../scripts/eval/ab-review.mjs",
     "../../../scripts/eval/prompt-size.mjs",

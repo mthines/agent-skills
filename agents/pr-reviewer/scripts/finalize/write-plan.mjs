@@ -23,7 +23,30 @@
  */
 
 import { RESOLVE_CLASSES } from "./gates.mjs";
+import { MERGED_FROM, recordKind } from "../merge-memory-record.mjs";
 import { realpathSync } from "node:fs";
+
+/**
+ * The pre-write assertion for queued LoreKit ops (rules/memory.md § Write, rule 3): a
+ * `knowledge::` / `hotspot::` op is executable only when merge-memory-record.mjs built it from a
+ * batch memory_read, which stamps `merged_from: "read" | "absent"`. Any other such op would replace
+ * the stored record blind, so it is rejected — the op fails, the plan does not. Other ops pass.
+ * @param {any[]} ops
+ * @returns {{ accepted: any[], rejected: any[] }}
+ */
+export function partitionLorekitOps(ops) {
+  /** @type {any[]} */
+  const accepted = [];
+  /** @type {any[]} */
+  const rejected = [];
+  for (const op of ops || []) {
+    const key = typeof op?.key === "string" ? op.key : "";
+    if (recordKind(key) && !MERGED_FROM.includes(op?.merged_from)) {
+      rejected.push({ ...op, reason: "no merged_from: build knowledge/hotspot writes with merge-memory-record.mjs" });
+    } else accepted.push(op);
+  }
+  return { accepted, rejected };
+}
 
 /**
  * @param {any[]} threads - judgments.json's threads[] (finding-verifier.md / thread-resolution.md
@@ -68,6 +91,7 @@ export function buildWritePlan({
   dryRun = false, historical = null, isolated = false,
 }) {
   const { thread_reply, thread_resolve } = buildThreadOps(threads || []);
+  const lorekit = partitionLorekitOps(lorekitWrite || []);
   return {
     repo,
     pr_number: prNumber,
@@ -103,7 +127,9 @@ export function buildWritePlan({
     // build PR-state / knowledge / relevance-rule records (Step 4c and memory.md's writes are a
     // separate, not-yet-implemented deliverable — see plan.md's Progress Log), so this is `[]`
     // unless a caller supplies its own queued ops.
-    lorekit_write: lorekitWrite || [],
+    lorekit_write: lorekit.accepted,
+    // Present only when an op was rejected, so every plan without one keeps its exact shape.
+    ...(lorekit.rejected.length > 0 ? { lorekit_write_rejected: lorekit.rejected } : {}),
   };
 }
 
@@ -207,6 +233,29 @@ async function selfTest() {
     });
     check("a caller-supplied lorekit_write array passes through verbatim, never mutated",
       JSON.stringify(plan.lorekit_write) === JSON.stringify(ops));
+    check("a plan with no rejected op carries no lorekit_write_rejected key", !("lorekit_write_rejected" in plan));
+  }
+  {
+    // rules/memory.md § Write, rule 3: a knowledge/hotspot op that merge-memory-record.mjs did not
+    // build (no merged_from) would replace the stored record blind — it is rejected, the rest pass.
+    const ops = [
+      { op: "knowledge", scope: "repo::o/r", key: "knowledge::f@a.ts", value: "{}", merged_from: "read" },
+      { op: "hotspot", scope: "repo::o/r", key: "hotspot::a.ts", value: "{}", merged_from: "absent" },
+      { op: "hotspot", scope: "repo::o/r", key: "hotspot::b.ts", value: "{\"confirmed\":1}" },
+      { op: "knowledge", scope: "repo::o/r", key: "knowledge::g@b.ts", value: "{}", merged_from: "summary" },
+      { op: "state", scope: "branch::o/r::main", key: "ci-state::pr-review-1", value: "{}" },
+    ];
+    const plan = buildWritePlan({
+      repo: "o/r", prNumber: 1, commitSha: "abc1234",
+      reportBodyPath: "/tmp/report-body.md", pointerBodyPath: "/tmp/pointer-body.md",
+      lorekitWrite: ops,
+    });
+    check("merged knowledge/hotspot ops and non-memory ops are accepted",
+      JSON.stringify(plan.lorekit_write.map((/** @type {any} */ o) => o.key))
+        === JSON.stringify(["knowledge::f@a.ts", "hotspot::a.ts", "ci-state::pr-review-1"]));
+    check("a knowledge/hotspot op without a valid merged_from is rejected with a reason",
+      plan.lorekit_write_rejected?.length === 2
+        && plan.lorekit_write_rejected.every((/** @type {any} */ o) => /merge-memory-record/.test(o.reason)));
   }
 
   if (failed > 0) {

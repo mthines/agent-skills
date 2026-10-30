@@ -96,9 +96,15 @@ wire the write:
 - **Only what THIS run actually verified**, grounded in the code — never a guess,
   and never a value about a person or a telemetry reading. A fact about code, keyed
   to code.
-- **Merge, never clobber.** Read the existing record first; append to `history[]`
-  or increment counters (each capped) and carry the rest through unchanged. A
-  clobbered counter is indistinguishable from a first write.
+- **Merge, never clobber, onto a full read by key.** Before each write, read that
+  exact key with `memory_read` (one batch `refs` call for all of them); a
+  `memory_list` / `memory_search` summary or preview is never the record. Merge
+  onto what the read returned — append to `history[]` or increment counters (each
+  capped) and carry the rest through unchanged — and write fresh only when the read
+  listed the key as missing. A host that cannot read first does not write. Use
+  [`merge-memory-record.mjs`](../../pr-reviewer/scripts/merge-memory-record.mjs)
+  for the merge rather than re-deriving it. A clobbered counter is
+  indistinguishable from a first write.
 - **Raise care, never suppress.** These records only raise priority/coverage on a
   file or symbol. They never lower a bar or silence a finding, and an absent record
   is never evidence of safety. Suppression, where a host needs it, lives in a

@@ -598,13 +598,15 @@ leaves both NULL and Step 1.0's read then cannot see what was written.
 | `deep` | knowledge + hotspot |
 | `standard` · `quick` | **hotspot only** — a knowledge fact needs a traced symbol and a receipt, and neither tier produces one; writing an unverified fact is exactly the failure mode rule 1 of that section prevents. |
 
-**Both writes merge onto the record read at Step 1.2a — never write the rule file's literals.** Same
-scope + key replaces the whole value, so a hotspot written as the template's `confirmed: 1` resets a
-counter four PRs of history built. Rule 3 is the arithmetic: increment the counter this run earned,
-union `classes[]`, append to the capped example lists, carry every untouched counter through.
+**Both writes take their `value` from `merge-memory-record.mjs`, run on one batch `memory_read` of
+every key this step writes — never from the rule file's literals, and never from Step 1.2a's
+summaries.** Same scope + key replaces the whole value, so a hotspot written as the template's
+`confirmed: 1` resets a counter four PRs of history built. Rule 3 of that section is the procedure:
+read every key in one `refs` call, run the script, write each `writes[]` value verbatim, and write
+nothing for a key in `skipped[]`. A failed read means no 4d write this run.
 
 Non-blocking, like 4c — a failed write is logged and the run continues. Report the counts in Step 5
-(`Memory written: <K> knowledge, <H> hotspot`), **including the zeroes**: a deep-tier run that wrote
+(`Memory written: <K> knowledge, <H> hotspot, <S> skipped`), **including the zeroes**: a deep-tier run that wrote
 0 knowledge records means either nothing was traced or the write is broken, and the count is the
 only place those two separate.
 
