@@ -649,16 +649,14 @@ API calls. Casualties are logged in the terminal Quality Gate summary for manual
 ## Step 4: Post the review
 
 **Every run reaching Step 3 reaches Step 4** — under `--dry-run` (which `--review-sha` requires)
-4a/4b render to scratch and 4c/4d are not written. The intent worker never reaches Step 4.
+4a–4c go to scratch and nothing is written to LoreKit. The intent worker never reaches Step 4.
 
-Write `judgments.json` per [`rules/judgments.md`](./pr-reviewer/rules/judgments.md) (copy the example, run
-`validate-judgments.mjs`); never read the schema or [`report-rendering.md`](./pr-reviewer/rules/report-rendering.md)
-whole — `finalize.mjs` builds the report, the inline comments, the gates, and the verdict, and a
-rejection names the slot to look up. On the `gh` path the scripts below carry 4a and 4b: `finalize.mjs`
-renders, and `execute-write-plan.mjs` runs the pre-write checks and the GitHub writes (sticky,
-review, thread replies). Then make the two LoreKit writes in
-[`rules/run-writes.md`](./pr-reviewer/rules/run-writes.md) (4c state record, always; 4d knowledge +
-hotspot; `--dry-run` writes them to scratch). The writes fail independently and none cascades.
+Write `judgments.json` per [`rules/judgments.md`](./pr-reviewer/rules/judgments.md); never read the
+schema or [`report-rendering.md`](./pr-reviewer/rules/report-rendering.md) whole — `finalize.mjs`
+builds the report, inline comments, gates, and verdict, and a rejection names the slot to look up.
+On the `gh` path the scripts below carry 4a and 4b, pre-write checks and GitHub writes included.
+Then make the LoreKit writes in [`rules/run-writes.md`](./pr-reviewer/rules/run-writes.md) (4c state
+record, always; 4d knowledge + hotspot). The writes fail independently and none cascades.
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
 (MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
 `context.impactImage.eligible` is true (§ The impact image only). The script lines, exactly — never probe them with `--help`:
