@@ -160,7 +160,7 @@ Then pick the lowest layer that captures the bug and delegate:
 - Expo / React Native user flow → `Skill("e2e-testing-mobile", ...)`
 - Visual-only / pixel-perfect → best-effort markdown checklist
 
-The repro is the executor's `FAIL_TO_PASS` contract (Phase 6) and Phase 7's `FAIL_TO_PASS` check.
+The repro is Phase 6's `FAIL_TO_PASS` contract and Phase 7's `FAIL_TO_PASS` check.
 Path convention: `repro/<short-bug-id>.<ext>`.
 
 **Step 2c — Bisect fast-path (regression class only).** If pre-flight produced a `last_green_sha` AND a non-best-effort repro exists, run `git bisect run <repro-command>`.

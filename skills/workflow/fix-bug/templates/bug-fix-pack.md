@@ -19,7 +19,7 @@ result>
 - Command: <pnpm test repro/<id>.test.ts | pytest repro/test_<id>.py | manual>
 - Status: <failing on HEAD as expected | best-effort>
 
-This repro is the executor's `FAIL_TO_PASS` contract. **The plan must:**
+This repro is Phase 6's `FAIL_TO_PASS` contract. **The plan must:**
 1. Run the repro before any code edit and confirm it fails for the expected reason.
 2. Run the repro after each implementation edit; on failure, capture the failing input/output
    verbatim and append to `.agent/<branch>/bug-notes.md` under `Counterexamples`, then refine.
@@ -46,12 +46,12 @@ This repro is the executor's `FAIL_TO_PASS` contract. **The plan must:**
 
 ## Bug-notes ledger
 - Path: `.agent/<branch>/bug-notes.md`
-- Pre-existing entries from Phases 0–5 are present; the brief and the executor must read on entry
+- Pre-existing entries from Phases 0–5 are present; the brief and Phase 6 must read on entry
   and append on exit per the [bug-notes-ledger contract](../rules/bug-notes-ledger.md).
 
 ## Requirements
 - Branch: fix/<short-slug>
-- The PR description (created later by the executor) must reference the Dash0 span / Linear
+- The PR description (opened later in Phase 6) must reference the Dash0 span / Linear
   ticket / source URL where applicable.
 - Open the PR as a draft and leave it draft. `/fix-bug` never undrafts; a human does after Phase 7 verification.
 - Do **not** modify the repro file under `repro/` to make tests pass — Phase 7 checks for

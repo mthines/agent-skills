@@ -106,11 +106,11 @@ Real-world failure classes (e.g. "false-green repro", "verification accepted wea
 The diagnoser must not propose to relax any of these without explicit user confirmation:
 
 - **`/fix-bug` never undrafts the PR.** Phase 7 writes the verdict and evidence into the PR body; a human reads it and runs `gh pr ready`. Source: Anthropic's "agents reliably skew positive when grading their own work."
-- **Phase 7 grades against artefacts only.** It reads the Evidence Record, repro path/command, bug-notes ledger (read-only), and the PR diff — never `plan.md` or the executor's summary.
+- **Phase 7 grades against artefacts only.** It reads the Evidence Record, repro path/command, bug-notes ledger (read-only), and the PR diff — never `plan.md` or the Phase 6 summary.
 - **The bug-notes ledger is append-only.** Phases never rewrite prior entries. The ledger is the durability mechanism that survives compaction; rewriting breaks the recovery handle for `--verify-deploy`.
 - **Three independent gates on both lanes.** On the standard-lane: `confidence(analysis)` at Phase 4, the six-Core brief validation with sealed checks, Phase 7 checks plus a human undraft. On the fast-lane: `confidence(analysis) ≥ 92 %` (stricter, because the fast-lane plan skips the sealed six-Core brief), the fast-lane plan.md validator inside `/fix-bug`, and Phase 7 checks plus a human undraft. None of these may be merged or replaced — they are independent on purpose.
 - **Fast-lane requires `confidence(analysis) ≥ 92 %`.** The fast-lane plan skips the sealed six-Core brief, so the stricter threshold keeps marginal diagnoses off the lane with the fewest guards. Lowering it is forbidden.
-- **Fast-lane requires a non-best-effort repro.** The repro IS the executor's contract; without it, there's nothing to gate CEGIS on. Best-effort repros automatically downgrade to standard-lane.
+- **Fast-lane requires a non-best-effort repro.** The repro IS the implementation's contract; without it, there's nothing to gate CEGIS on. Best-effort repros automatically downgrade to standard-lane.
 - **Fast-lane round-3 CEGIS failure falls back to the standard-lane — single-shot.** No fast-lane round 4, no second fallback. The fallback IS the safety net for "triage classified simple but the bug wasn't."
 - **No force-proceed under 70 %.** Below 70 % the skill stops and hands back to the user. There is no escape hatch.
 - **Force-proceed on 70–91 % always routes to standard-lane.** The six-Core brief with sealed checks is the extra safety net when analysis confidence is marginal.

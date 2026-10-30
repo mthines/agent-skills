@@ -63,7 +63,7 @@ Under the normal flow the first write — and therefore the creation point — i
 | Phase 4 (after confidence gate) | **Append** the confidence score + breakdown |
 | Phase 5 (after branch decision) | **Append** the chosen branch (auto-fix / proposal / stop) |
 | Phase 6 (after the brief) | **Append** the brief's `plan.md` summary + sealed check count |
-| Phase 6 (after each executor refinement round) | **Append** counterexamples (failing input/output) |
+| Phase 6 (after each CEGIS refinement round) | **Append** counterexamples (failing input/output) |
 | Phase 7 (after verification) | **Append** the verification verdict + evidence |
 | Phase 8 (after telemetry verification) | **Append** the post-deploy rate decay |
 

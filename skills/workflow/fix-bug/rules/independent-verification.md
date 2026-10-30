@@ -45,7 +45,7 @@ When the repro is best-effort only, skip Checks 1 and 4, run Checks 2 and 3, and
 Grade against the artefacts, not against what you remember intending:
 
 - Inputs: the Evidence Record, the repro path and command, the bug-notes ledger, the PR head and base SHAs, the PR diff (`gh pr diff`), and the project test command.
-- Do not consult `plan.md` or the executor's summary while grading — they describe what was meant, and the checks measure what landed.
+- Do not consult `plan.md` or Phase 6's own summary while grading — they describe what was meant, and the checks measure what landed.
 - Run Checks 1–4 in order and stop at the first red.
 
 The run mechanic for Checks 1 and 2 delegates to `Skill("verify-behavior", "change")`; you keep the grading:

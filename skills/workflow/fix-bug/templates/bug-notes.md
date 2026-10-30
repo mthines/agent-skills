@@ -73,7 +73,7 @@ States: `open` | `confirmed` | `ruled-out`.
 
 ## Counterexamples
 
-Input/output pairs that broke a candidate fix during the executor's CEGIS refinement loop.
+Input/output pairs that broke a candidate fix during Phase 6's CEGIS refinement loop.
 
 | Round | Input | Expected | Actual | Notes |
 |-------|-------|----------|--------|-------|

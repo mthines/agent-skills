@@ -24,7 +24,7 @@ The rules live in [`SKILL.md`](../SKILL.md) and `rules/`; this file is read on d
    pipeline. Phase 0.5 triage routes simple bugs to a lightweight in-skill analysis and a fast
    handoff lane; complex bugs get the full execution-path trace + a sealed six-Core brief. The conservative
    default is `complex` — when in doubt, run the slower lane.
-3. **Reproduce before fixing.** The repro is the executor's `FAIL_TO_PASS` contract and the
+3. **Reproduce before fixing.** The repro is Phase 6's `FAIL_TO_PASS` contract and the
    Phase 7's primary check. Best-effort fallback is allowed but flagged — and blocks the
    fast-lane.
 4. **Cheap localisation first.** Pre-flight (Phase 1.5) often names the cause in seconds —
