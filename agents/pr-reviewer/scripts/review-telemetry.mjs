@@ -34,6 +34,11 @@
 // per memory carrying its id, scope, key, LoreKit deep link, and what it did (memoryEvents).
 // finalize.mjs records them from judgments.memory as one `memory` ledger record; the last one wins.
 //
+// THE LENSES. Which review lenses loaded rides the root span too: counts plus the sorted names as
+// attributes (the names also on the `lenses` step span), and one `pr_review.lens.loaded` /
+// `pr_review.lens.skipped` event per lens carrying how it loaded and the candidates it raised
+// (lensEvents). finalize.mjs records them from context.lenses as one `lenses` record; the last wins.
+//
 // THE RUN COUNTER. `pr_review.runs` is what a dashboard counts runs with: a CUMULATIVE sum, one
 // series per verdict per run (the resource's service.instance.id is the run's trace id). `finish`
 // writes its 0 points backdated across the run and the final 1 in the same export as the trace
@@ -397,6 +402,103 @@ export function memoryEvents(run, base) {
   }));
 }
 
+/** At most this many lens events on one run; loaded lenses are recorded before skipped ones. */
+export const LENS_EVENTS_MAX = 50;
+/** How a lens loaded (finalize.mjs LENS_TRIGGERS, plus `unlisted` for a lens only a candidate names). */
+export const LENS_TRIGGERS = Object.freeze(["auto", "repo", "review-yaml", "with", "unlisted", "other"]);
+/** Where a loaded lens's file came from (finalize.mjs lensOrigin). */
+export const LENS_ORIGINS = Object.freeze(["repo", "repo-skill", "bundled"]);
+/** The lens names a finding can carry (select-lenses.mjs LENS_NAME); the gauge on what an event may name. */
+const LENS_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
+
+/**
+ * @typedef {{ status: "loaded"|"skipped", name: string, origin?: string, source?: string, trigger?: string,
+ *   reason?: string, files?: number, findings?: number, confirmed?: number }} LensItem
+ * @typedef {{ items: LensItem[], ns: bigint }} RunLenses
+ */
+
+/**
+ * A `lenses` ledger record's items, sanitized: a malformed entry or a name a finding could not carry
+ * is dropped, a repeated name keeps its first entry, strings are trimmed and bounded, and at most
+ * LENS_EVENTS_MAX survive, loaded lenses first.
+ * @param {unknown} list @returns {LensItem[]}
+ */
+export function lensItems(list) {
+  if (!Array.isArray(list)) return [];
+  const str = (/** @type {unknown} */ v, /** @type {number} */ max) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : undefined);
+  const count = (/** @type {unknown} */ v) => (typeof v === "number" && Number.isInteger(v) && v >= 0 ? v : undefined);
+  /** @type {LensItem[]} */
+  const out = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const l = /** @type {Record<string, any>} */ (raw);
+    const name = str(l.name, 100);
+    if (!name || !LENS_NAME_RE.test(name) || out.some((x) => x.name === name)) continue;
+    if (l.status === "skipped") { out.push({ status: "skipped", name, reason: str(l.reason, 300) }); continue; }
+    if (l.status !== "loaded") continue;
+    out.push({
+      status: "loaded", name,
+      origin: LENS_ORIGINS.includes(l.origin) ? l.origin : undefined,
+      source: str(l.source, 300),
+      trigger: LENS_TRIGGERS.includes(l.trigger) ? l.trigger : "other",
+      reason: str(l.reason, 300),
+      files: count(l.files), findings: count(l.findings) ?? 0, confirmed: count(l.confirmed) ?? 0,
+    });
+  }
+  const ordered = [...out.filter((x) => x.status === "loaded"), ...out.filter((x) => x.status === "skipped")];
+  return ordered.slice(0, LENS_EVENTS_MAX);
+}
+
+/** The lens attributes the root span and the `lenses` step span share: how many loaded, and which.
+ *  None at all when finalize recorded no lenses (rule 3).
+ *  @param {RunLenses|null} lenses @returns {Record<string, any>} */
+export function lensStepAttributes(lenses) {
+  if (!lenses) return {};
+  const loaded = lenses.items.filter((l) => l.status === "loaded");
+  return {
+    "pr_review.lenses.loaded": loaded.length,
+    "pr_review.lenses.names": loaded.map((l) => l.name).sort().join(",") || null,
+  };
+}
+
+/** The root span's lens attributes: the shared pair plus what the lenses raised and what was skipped.
+ *  @param {RunLenses|null} lenses @returns {Record<string, any>} */
+export function lensRootAttributes(lenses) {
+  if (!lenses) return {};
+  const loaded = lenses.items.filter((l) => l.status === "loaded");
+  return {
+    ...lensStepAttributes(lenses),
+    "pr_review.lenses.findings": loaded.reduce((n, l) => n + (l.findings || 0), 0),
+    "pr_review.lenses.confirmed": loaded.reduce((n, l) => n + (l.confirmed || 0), 0),
+    "pr_review.lenses.skipped": lenses.items.length - loaded.length,
+  };
+}
+
+/**
+ * One span event per lens: `pr_review.lens.loaded` for a lens the review walked, with how it loaded
+ * and the candidates it raised; `pr_review.lens.skipped` for one that was asked for or found but did
+ * not load, with the reason. Stamped when finalize recorded them, inside the run.
+ * @param {BuiltRun} run @returns {import("./otlp.mjs").SpanEvent[]}
+ */
+export function lensEvents(run) {
+  if (!run.lenses) return [];
+  const at = run.lenses.ns < run.startNs ? run.startNs : run.lenses.ns > run.endNs ? run.endNs : run.lenses.ns;
+  return run.lenses.items.map((l) => ({
+    timeUnixNano: String(at),
+    name: `pr_review.lens.${l.status}`,
+    attributes: attrs({
+      "pr_review.lens.name": l.name,
+      "pr_review.lens.origin": l.origin,
+      "pr_review.lens.source": l.source,
+      "pr_review.lens.trigger": l.trigger,
+      "pr_review.lens.reason": l.reason,
+      "pr_review.lens.files": l.files,
+      "pr_review.lens.findings": l.findings,
+      "pr_review.lens.confirmed": l.confirmed,
+    }),
+  }));
+}
+
 /** The run counter (rules/run-telemetry.md § The run counter): what a dashboard counts runs with. */
 export const RUN_COUNTER = "pr_review.runs";
 /** Every verdict a run can end with; `none` is a run that finished without one. Each gets a 0
@@ -609,7 +711,7 @@ export function beginRun(runDir, facts, opts = {}) {
  * @typedef {{ unit: string, startNs: bigint, endNs: bigint, attrs: Record<string, any> }} WorkerSpan
  * @typedef {{ runId: string, facts: RunFacts, startNs: bigint, endNs: bigint, steps: StepSpan[],
  *   workers: WorkerSpan[], runAttrs: Record<string, any>, status: 0|2, message?: string,
- *   finished: boolean, memory: RunMemory|null }} BuiltRun
+ *   finished: boolean, memory: RunMemory|null, lenses: RunLenses|null }} BuiltRun
  */
 
 /** Pure: a ledger → the run's spans. `now` closes whatever is still open when there is no finish.
@@ -648,6 +750,8 @@ export function buildRun(records, now = nowNs()) {
   const workers = [];
   /** @type {RunMemory|null} */
   let memory = null;
+  /** @type {RunLenses|null} */
+  let lenses = null;
   const close = (/** @type {bigint} */ at) => {
     if (open) { open.endNs = at < open.startNs ? open.startNs : at; steps.push(open); open = null; }
   };
@@ -670,6 +774,9 @@ export function buildRun(records, now = nowNs()) {
     } else if (r.t === "memory") {
       // A finalize re-run records the memory again from its own judgments: the last one wins.
       memory = { items: memoryItems(r.items), readReported: r.read_reported === true, ns };
+    } else if (r.t === "lenses") {
+      // A finalize re-run records the lenses again from the same context: the last one wins.
+      lenses = { items: lensItems(r.items), ns };
     } else if (r.t === "worker") {
       const unit = String(r.unit);
       if (r.phase === "start") {
@@ -724,6 +831,7 @@ export function buildRun(records, now = nowNs()) {
     ...(failed && finish?.r.message ? { message: String(finish.r.message).slice(0, 300) } : {}),
     finished: Boolean(finish),
     memory,
+    lenses,
   };
 }
 
@@ -815,6 +923,7 @@ export function toExporter(run, env) {
   });
   ex.traceId = traceId;
   const rootId = spanIdFor(run.runId, "root");
+  const rootEvents = [...memoryEvents(run, env.LOREKIT_APP_URL), ...lensEvents(run)];
   ex.spans.push({
     traceId: ex.traceId,
     spanId: rootId,
@@ -837,10 +946,11 @@ export function toExporter(run, env) {
         ...run.runAttrs,
       }),
       ...memoryRootAttributes(run.memory),
+      ...lensRootAttributes(run.lenses),
       ...(run.status === 2 ? { "error.type": "review_failed" } : {}),
     }),
     status: run.status === 2 ? { code: 2, message: run.message || "review failed" } : { code: 0 },
-    ...(run.memory && run.memory.items.length ? { events: memoryEvents(run, env.LOREKIT_APP_URL) } : {}),
+    ...(rootEvents.length ? { events: rootEvents } : {}),
   });
   run.steps.forEach((s, i) => {
     const stepId = spanIdFor(run.runId, `step:${i}:${s.name}`);
@@ -854,7 +964,8 @@ export function toExporter(run, env) {
       endTimeUnixNano: String(s.endNs),
       attributes: attrs({
         ...identity, "pr_review.step.name": s.name, "pr_review.step.kind": s.kind, "pr_review.step.marked": s.marked,
-        ...ns(s.attrs), ...(s.status === 2 ? { "error.type": "step_failed" } : {}),
+        ...ns(s.attrs), ...(s.name === "lenses" ? lensStepAttributes(run.lenses) : {}),
+        ...(s.status === 2 ? { "error.type": "step_failed" } : {}),
       }),
       status: s.status === 2 ? { code: 2, message: s.message || `${s.name} failed` } : { code: 0 },
     });
@@ -903,8 +1014,8 @@ export function toExporter(run, env) {
 }
 
 /**
- * The per-step breakdown — written to SUMMARY_FILE on every finish, endpoint or not. `memory` is
- * present only when finalize recorded the run's memory.
+ * The per-step breakdown — written to SUMMARY_FILE on every finish, endpoint or not. `memory` and
+ * `lenses` are present only when finalize recorded them.
  * @param {BuiltRun} run @param {NodeJS.ProcessEnv} [env]
  */
 export function summarize(run, env = {}) {
@@ -944,6 +1055,13 @@ export function summarize(run, env = {}) {
         })),
       },
     } : {}),
+    ...(run.lenses ? {
+      lenses: {
+        loaded: run.lenses.items.filter((l) => l.status === "loaded")
+          .map((l) => ({ name: l.name, trigger: l.trigger || "other", findings: l.findings ?? 0, confirmed: l.confirmed ?? 0, ...(l.origin ? { origin: l.origin } : {}) })),
+        skipped: run.lenses.items.filter((l) => l.status === "skipped").map((l) => ({ name: l.name, ...(l.reason ? { reason: l.reason } : {}) })),
+      },
+    } : {}),
   };
 }
 
@@ -959,7 +1077,13 @@ export function renderSummary(s) {
     `  memory ${m.used} used${"read" in m ? ` · ${m.read} read` : ""}`,
     ...m.items.filter((x) => x.use === "used").map((x) => `    · ${x.kind.padEnd(13)} ${x.url || [x.scope, x.key].filter(Boolean).join(" · ")}`),
   ] : [];
-  return [`review ${s.run_id} · ${s.total_s}s · trace ${s.trace_id}`, ...rows, ...wrows, ...mrows].join("\n");
+  const l = s.lenses;
+  const lrows = l ? [
+    `  lenses ${l.loaded.length} loaded${l.skipped.length ? ` · ${l.skipped.length} skipped` : ""}`,
+    ...l.loaded.map((x) => `    · ${x.name.padEnd(13)} ${x.trigger.padEnd(11)} ${x.findings} findings, ${x.confirmed} confirmed`),
+    ...l.skipped.map((x) => `    · ${x.name.padEnd(13)} skipped${x.reason ? ` — ${x.reason}` : ""}`),
+  ] : [];
+  return [`review ${s.run_id} · ${s.total_s}s · trace ${s.trace_id}`, ...rows, ...wrows, ...mrows, ...lrows].join("\n");
 }
 
 /**
@@ -1476,6 +1600,77 @@ async function selfTest() {
       sumMem.memory?.used === 3 && sumMem.memory?.read === 2 && sumMem.memory?.items[0].url === `https://lorekit.io/lore?memoryId=${UUID_A}`
         && /memory 3 used · 2 read/.test(renderSummary(sumMem)) && renderSummary(sumMem).includes(`lore?memoryId=${UUID_A}`)
         && summarize(run).memory === undefined);
+  }
+
+  // The lenses: which review lenses loaded, how each loaded, and what each raised.
+  {
+    ok("rule 3 — a run with no lenses record carries no lens attribute and no lens event",
+      run.lenses === null && spans.every((/** @type {any} */ s) => s.attributes.every((/** @type {any} */ a) => !a.key.startsWith("pr_review.lens"))));
+    const lensLedger = [
+      ...ledger,
+      at(90, { t: "step", phase: "start", name: "lenses" }),
+      at(104, { t: "lenses", items: [{ status: "loaded", name: "stale", trigger: "auto" }] }),
+      at(106, { t: "lenses", items: [
+        { status: "loaded", name: "tdd", origin: "bundled", source: "tdd/lens.md", trigger: "auto", reason: "auto; applies-to **/*.test.*", files: 2, findings: 2, confirmed: 1 },
+        { status: "loaded", name: "billing-audit", origin: "repo", source: ".agents/review/lenses/billing-audit.md", trigger: "repo", reason: "repo lens; applies-to services/billing/**", files: 1, findings: 0, confirmed: 0 },
+        { status: "skipped", name: "soc2", reason: "--with names a lens that was not found" },
+        { status: "loaded", name: "animations", trigger: "unlisted", findings: 1, confirmed: 1 },
+        { status: "loaded", name: "tdd", trigger: "with" },
+        { status: "loaded", name: "bad name", trigger: "auto" },
+        { status: "maybe", name: "odd" },
+        { status: "loaded", name: "weird", origin: "elsewhere", trigger: "magic", findings: -1 },
+        "not an object",
+      ] }),
+    ];
+    const lensRun = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ (lensLedger)));
+    ok("the last lenses record wins; a repeated name, a name a finding cannot carry, or an unknown status is dropped; loaded lenses come first",
+      lensRun.lenses !== null && JSON.stringify(lensRun.lenses.items.map((l) => l.name)) === '["tdd","billing-audit","animations","weird","soc2"]',
+      JSON.stringify(lensRun.lenses?.items.map((l) => l.name)));
+    const lSpans = /** @type {any} */ (toExporter(lensRun, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans;
+    const lRoot = lSpans[0];
+    ok("the root counts loaded and skipped lenses, lists the loaded names sorted, and sums what they raised",
+      get(lRoot, "pr_review.lenses.loaded") === "4" && get(lRoot, "pr_review.lenses.names") === "animations,billing-audit,tdd,weird"
+        && get(lRoot, "pr_review.lenses.findings") === "3" && get(lRoot, "pr_review.lenses.confirmed") === "2" && get(lRoot, "pr_review.lenses.skipped") === "1");
+    const lEvents = (lRoot.events || []).filter((/** @type {any} */ e) => e.name.startsWith("pr_review.lens."));
+    const lev = (/** @type {string} */ name) => lEvents.find((/** @type {any} */ e) => get(e, "pr_review.lens.name") === name);
+    ok("one event per lens on the root: pr_review.lens.loaded for a walked lens, pr_review.lens.skipped for one that did not load",
+      lEvents.length === 5 && lEvents.filter((/** @type {any} */ e) => e.name === "pr_review.lens.loaded").length === 4 && lev("soc2")?.name === "pr_review.lens.skipped");
+    const tdd = lev("tdd");
+    ok("a loaded lens event carries where it came from, how it loaded, the files it matched, and what it raised",
+      get(tdd, "pr_review.lens.origin") === "bundled" && get(tdd, "pr_review.lens.source") === "tdd/lens.md" && get(tdd, "pr_review.lens.trigger") === "auto"
+        && get(tdd, "pr_review.lens.reason") === "auto; applies-to **/*.test.*" && get(tdd, "pr_review.lens.files") === "2"
+        && get(tdd, "pr_review.lens.findings") === "2" && get(tdd, "pr_review.lens.confirmed") === "1"
+        && get(lev("animations"), "pr_review.lens.trigger") === "unlisted" && get(lev("animations"), "pr_review.lens.origin") === undefined);
+    ok("an unknown origin is omitted, an unknown trigger is `other`, and a negative count is 0",
+      get(lev("weird"), "pr_review.lens.origin") === undefined && get(lev("weird"), "pr_review.lens.trigger") === "other" && get(lev("weird"), "pr_review.lens.findings") === "0");
+    ok("a skipped lens event carries its reason and nothing it never had",
+      get(lev("soc2"), "pr_review.lens.reason") === "--with names a lens that was not found"
+        && get(lev("soc2"), "pr_review.lens.trigger") === undefined && get(lev("soc2"), "pr_review.lens.findings") === undefined);
+    ok("every lens event sits inside the run and every event attribute key is in the declared contract",
+      lEvents.every((/** @type {any} */ e) => BigInt(e.timeUnixNano) >= lensRun.startNs && BigInt(e.timeUnixNano) <= lensRun.endNs
+        && e.attributes.every((/** @type {any} */ a) => ALLOWED_SPAN_KEY(a.key))));
+    const lensStep = lSpans.find((/** @type {any} */ s) => s.name === "pr_review.step lenses");
+    ok("the lenses step span carries the loaded count and names; no other step span carries a lens attribute",
+      get(lensStep, "pr_review.lenses.loaded") === "4" && get(lensStep, "pr_review.lenses.names") === "animations,billing-audit,tdd,weird"
+        && get(lensStep, "pr_review.lenses.findings") === undefined
+        && lSpans.slice(1).filter((/** @type {any} */ s) => s !== lensStep).every((/** @type {any} */ s) => s.attributes.every((/** @type {any} */ a) => !a.key.startsWith("pr_review.lens")) && s.events === undefined));
+    const both = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...lensLedger, at(107, { t: "memory", items: [{ used: true, kind: "lesson", key: "k" }] })])));
+    const bEvents = /** @type {any} */ (toExporter(both, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans[0].events || [];
+    ok("memory and lens events share the root",
+      bEvents.length === 6 && bEvents.filter((/** @type {any} */ e) => e.name === "pr_review.memory.used").length === 1);
+    const none = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...ledger.slice(0, -1), at(108, { t: "lenses", items: [] }), ledger[ledger.length - 1]])));
+    const nRoot = /** @type {any} */ (toExporter(none, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans[0];
+    ok("a recorded selection with nothing loaded is a real 0, with no names and no event",
+      get(nRoot, "pr_review.lenses.loaded") === "0" && get(nRoot, "pr_review.lenses.skipped") === "0"
+        && get(nRoot, "pr_review.lenses.names") === undefined && nRoot.events === undefined);
+    const manyLenses = lensItems([...Array.from({ length: 60 }, (_, i) => ({ status: "skipped", name: `s${i}` })), ...Array.from({ length: 30 }, (_, i) => ({ status: "loaded", name: `l${i}` }))]);
+    ok("at most LENS_EVENTS_MAX lenses are kept, loaded ones first",
+      manyLenses.length === LENS_EVENTS_MAX && LENS_EVENTS_MAX === 50 && manyLenses.filter((l) => l.status === "loaded").length === 30 && manyLenses[0].name === "l0");
+    const sumLens = summarize(lensRun, {});
+    ok("the summary lists the lenses: each loaded one with its trigger and findings, each skipped one with its reason",
+      sumLens.lenses?.loaded.length === 4 && sumLens.lenses?.skipped[0].name === "soc2"
+        && /lenses 4 loaded · 1 skipped/.test(renderSummary(sumLens)) && /tdd\s+auto\s+2 findings, 1 confirmed/.test(renderSummary(sumLens))
+        && summarize(run).lenses === undefined);
   }
   const verifySpan = spans.find((/** @type {any} */ s) => s.name === "pr_review.step verify");
   ok("rule 2 — a step that found nothing stays UNSET", verifySpan?.status.code === 0 && get(verifySpan, "pr_review.candidates") === "0");
