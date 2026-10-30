@@ -189,7 +189,7 @@ Two pairings are rejected:
 
 | Rejected | Why |
 | --- | --- |
-| `tier` that disagrees with `mode` (`full`↔`deep`, `incremental`↔`standard`, `incremental-quick`↔`quick`) | A report cannot claim a deep review while rendering an incremental mode; one of the two is wrong and the run must not pick which. |
+| `tier` that disagrees with `mode` (`full`↔`deep`, `incremental`↔`standard`, `incremental-quick`↔`quick`), except `full` with `standard` or `quick` under `RUN.scaled: true` ([size scaling](./depth-routing.md#size-scaling)) | A report cannot claim a deep review while rendering an incremental mode; one of the two is wrong and the run must not pick which. |
 | `depth: diff-only` with `tier: deep` | A deep review is not *obtainable* without a checkout — the consumer, type, and test rungs all need one. `depth-routing.md` caps a `diff-only` run at `standard`; this is that cap enforced mechanically. |
 
 Both are optional, so a run that has not routed (or a caller on an older payload) renders the line
