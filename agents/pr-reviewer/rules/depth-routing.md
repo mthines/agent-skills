@@ -251,7 +251,7 @@ Config keys come from the PR's base commit, already resolved in `context.reviewC
 
    | Tier | Default `t` | What the default turns on, over the band below it |
    | --- | --- | --- |
-   | `quick` | 0.4 | measurability lens; holistic escalation cap 2 → 4. A defaulted quick budget is **lean** on every run mode (`topologyReason: "lean"`, `holisticBroadPass: false`, `impactImage: false`): it dispatches no worker, skips the holistic broad pass, and draws no impact image. An explicit `--thoroughness` on a quick routing is a deliberate ask and keeps the breakpoint's levers |
+   | `quick` | 0.4 | measurability lens; holistic escalation cap 2 → 4. A defaulted quick budget is **lean** on every run mode (`lean: true`, `holisticBroadPass: false`, `impactImage: false`): it dispatches no worker, skips the holistic broad pass, and draws no impact image. An explicit `--thoroughness` on a quick routing is a deliberate ask and keeps the breakpoint's levers |
    | `standard` | 0.7 | holistic escalation cap 5 → 7 |
    | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2; holistic escalation cap 8 → 10 |
 

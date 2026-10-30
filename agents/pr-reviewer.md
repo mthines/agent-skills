@@ -327,7 +327,7 @@ before setting `LOREKIT_CONNECTED`: one transient throw is never `false`, and a 
 re-probed by every later memory step.
 As a sub-agent you get no SessionStart memory priming: run this read yourself.
 
-**On a lean budget (`context.budget.topologyReason == "lean"`) skip these three lists** and rely on
+**On a lean budget (`context.budget.lean == true`) skip these three lists** and rely on
 Step 1.2c's searches alone; when `context.json` is not bound yet, run Step 1.1 first and decide then.
 
 ```text

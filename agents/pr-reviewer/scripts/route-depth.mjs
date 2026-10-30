@@ -315,7 +315,7 @@ function highStakesReason(shape, band) {
  *   correctnessVotes: 1, topology: "in-context"|"hybrid", isolatedFinders: string[],
  *   topologyReason: "below-breakpoint"|"no-dispatch"|"small-incremental"|"lean"|"hybrid",
  *   maxVerificationTier: 1|2|3, holisticEscalationCap: number,
- *   optimalityLens: boolean, measurabilityLens: boolean, holisticBroadPass: boolean, impactImage: boolean,
+ *   optimalityLens: boolean, measurabilityLens: boolean, holisticBroadPass: boolean, impactImage: boolean, lean: boolean,
  *   toolCallMultiplier: 1|1.5|2, toolCalls: number|null,
  *   finderPasses: 1|2, finderPassesRequested: 1|2,
  *   finderPassesReason: "single"|"requested"|"no-dispatch"|"zero-delta", secondPassUnits: string[],
@@ -442,6 +442,7 @@ export function resolveBudget(i = {}) {
     measurabilityLens: t >= T_MEASURABILITY,
     holisticBroadPass: (t >= T_HOLISTIC_BROAD && !lean) || i.routedTier === "deep",
     impactImage: !lean,
+    lean,
     toolCallMultiplier,
     toolCalls: typeof i.changedFiles === "number" && Number.isFinite(i.changedFiles) && i.changedFiles >= 0
       ? Math.round(toolCallBand(i.changedFiles) * toolCallMultiplier * passCallMultiplier)
@@ -503,7 +504,7 @@ function selfTest() {
     && q.maxVerificationTier === 1 && q.optimalityLens === false && q.measurabilityLens === true
     && q.finders["consumer-impact"] === false && q.finders.dependency === false && q.finders.standards === false
     && q.holisticEscalationCap === 4 && q.holisticBroadPass === false && q.impactImage === false
-    && q.toolCallMultiplier === 1) passed++;
+    && q.lean === true && q.toolCallMultiplier === 1) passed++;
   else fails.push(`resolveBudget(quick) drifted from the stated quick default budget: ${JSON.stringify(q)}`);
 
   total++;
@@ -532,8 +533,8 @@ function selfTest() {
   {
     const qInc = resolveBudget({ routedTier: "quick", runMode: "incremental-quick" });
     const sInc = resolveBudget({ routedTier: "standard", runMode: "incremental" });
-    if (qInc.topology === "in-context" && qInc.topologyReason === "small-incremental"
-      && sInc.topology === "in-context" && sInc.topologyReason === "small-incremental") passed++;
+    if (qInc.topology === "in-context" && qInc.topologyReason === "small-incremental" && qInc.lean === true
+      && sInc.lean === false && sInc.topology === "in-context" && sInc.topologyReason === "small-incremental") passed++;
     else fails.push(`a defaulted re-review dispatched the isolated worker: ${JSON.stringify({ q: [qInc.topology, qInc.topologyReason], s: [sInc.topology, sInc.topologyReason] })}`);
   }
 
@@ -541,7 +542,7 @@ function selfTest() {
   total++;
   {
     const qAsk = resolveBudget({ routedTier: "quick", thoroughness: 0.7 });
-    if (qAsk.topology === "hybrid" && qAsk.holisticBroadPass === true && qAsk.impactImage === true) passed++;
+    if (qAsk.topology === "hybrid" && qAsk.holisticBroadPass === true && qAsk.impactImage === true && qAsk.lean === false) passed++;
     else fails.push(`an explicit thoroughness on a quick routing was treated as lean: ${JSON.stringify([qAsk.topology, qAsk.holisticBroadPass, qAsk.impactImage])}`);
   }
 
