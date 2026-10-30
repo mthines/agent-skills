@@ -121,7 +121,8 @@ Keep the prompt short and pointing at files.
 Four of 34 measured runs refused a dense constraint-laden prompt as a suspected injection ([`pr-reviewer/rules/agent0-runtime.md § The dispatch prompt is short on purpose`](../../pr-reviewer/rules/agent0-runtime.md#the-dispatch-prompt-is-short-on-purpose)).
 A reply that opens with a refusal or a `BLOCKED` line is a distinct outcome, reported as such — never read as a pass.
 
-A dispatched sub-agent that runs work in its own context because it cannot dispatch another level — `pr-reviewer` running the finders its caller did not dispatch — is following this host's shape, and never reports it as a `RUN_ANOMALY`.
+A dispatched sub-agent that runs work in its own context because it cannot dispatch another level — `pr-reviewer` running the non-intent finders its caller did not dispatch — is following this host's shape, and does not report it as a `RUN_ANOMALY`.
+An intent finder that had to run in-context is still the degrade [`dispatch-topology.md`](../../pr-reviewer/rules/dispatch-topology.md) names, and `finalize.mjs --no-dispatch` reports it.
 
 An agent with **no** definition file on this host (`aw-executor`) has no `general` substitute: the step is reported by name as `not run (<agent> not dispatchable on this host)`.
 Never perform a custom agent's role in the dispatching context — that removes the isolation it exists for.

@@ -181,10 +181,12 @@ optional — each one is a measured failure of a real run, not a precaution.
    \`nohup\`, or \`setsid\` keeps the call's output open, so the call runs to its
    timeout and the host kills the process before it writes its output file.
 
-5. **Dispatched as a sub-agent, you run your own finders in this context.** You
-   cannot dispatch another level, so every finder the caller did not dispatch runs
-   here. That is this host's shape, never a \`RUN_ANOMALY\`: it changes nothing
-   this run reviewed.
+5. **Dispatched as a sub-agent, you run the finders your caller did not dispatch.**
+   You cannot dispatch another level, so running the non-intent finders in this
+   context is this host's shape, never a \`RUN_ANOMALY\`. The intent finder is the
+   exception: when no caller-dispatched intent worker delivered and you ran it here,
+   pass \`--no-dispatch\` to \`finalize.mjs\`, which names that recall loss
+   (\`dispatch-topology.md\`, "No-dispatch fallback is a degrade").
 
 ## Start from the prepared context, not from Step 0
 
