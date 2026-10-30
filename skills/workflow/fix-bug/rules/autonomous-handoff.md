@@ -170,7 +170,7 @@ the `aw` dispatcher writes on a Full task — then works it here.
    Once File Changes is drafted, issue the `codebase-knowledge` read per
    [`self-improvement-loop.md`](./self-improvement-loop.md#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam)
    for exactly those paths.
-4. **Validate the brief deterministically** before dispatch:
+4. **Validate the brief deterministically** before Step 6b:
 
    ```bash
    D=".agent/$(git branch --show-current)"
@@ -190,22 +190,32 @@ the `aw` dispatcher writes on a Full task — then works it here.
 Both lanes, after their Step 6a validation passed.
 `cd` into the worktree from Step 6a and stay there; you are the worker.
 Phases 1–3 read files at the original checkout's paths, so re-resolve every
-path against the worktree root before editing, and run this guard before
-Step 3 and again before Step 4:
+path against the worktree root before editing.
+This guard replaces the `isolation: "worktree"` the executor dispatch carried.
+Snapshot the original checkout once, before your first edit:
 
 ```bash
 WT="<absolute worktree path from Step 6a>"; ORIG="<absolute path of the checkout Phase 0 started in>"
-test "$(git -C "$WT" rev-parse --abbrev-ref HEAD)" = "fix/<slug>" || echo "GUARD: worktree not on fix/<slug>"
-test -z "$(git -C "$ORIG" status --porcelain --untracked-files=no)" || echo "GUARD: edits landed in $ORIG"
+S="$WT/.agent/fix/<slug>/orig-snapshot"
+git -C "$ORIG" rev-parse HEAD > "$S.head"; git -C "$ORIG" status --porcelain > "$S.status"
 ```
 
-Any `GUARD:` line stops Phase 6: copy the stray edits into the worktree with
-`git -C "$ORIG" diff -- <files you edited> | git -C "$WT" apply`, then restore
-exactly those files with `git -C "$ORIG" restore -- <files you edited>` (never
-`restore .` or `checkout -- .`), and re-run the guard. This replaces the
-`isolation: "worktree"` the executor dispatch carried. Skip the second check
-when `ORIG` already had uncommitted changes at Phase 0; record them in the
-ledger then and compare against that list instead.
+Then run the check before Step 3 and again before Step 4:
+
+```bash
+test "$(git -C "$WT" rev-parse --abbrev-ref HEAD)" = "fix/<slug>" || echo "GUARD: worktree not on fix/<slug>"
+test "$(git -C "$ORIG" rev-parse HEAD)" = "$(cat "$S.head")" || echo "GUARD: a commit landed in $ORIG"
+git -C "$ORIG" status --porcelain | diff -q - "$S.status" >/dev/null || echo "GUARD: files changed in $ORIG"
+```
+
+The snapshot holds the user's own uncommitted work, so only a change since
+the snapshot fires. Any `GUARD:` line stops Phase 6:
+
+| Line | Do |
+| --- | --- |
+| `files changed in $ORIG` | Copy only the files you edited into the worktree (`git -C "$ORIG" diff -- <files> \| git -C "$WT" apply`; copy new files with `cp`), restore exactly those in `ORIG` (`git -C "$ORIG" restore -- <files>`, `rm` for new ones; never `restore .` or `checkout -- .`), and re-run the check. |
+| `a commit landed in $ORIG` | Print `BLOCKED: commit <sha> landed in <ORIG>, not fix/<slug>` and stop; moving or undoing a commit on the user's branch needs the user. |
+| `worktree not on fix/<slug>` | `git -C "$WT" checkout fix/<slug>` and re-run the check. |
 Follow `aw`'s Full tier Steps 2–4 (`$HOME/.claude/skills/aw/rules/full-tier.md`)
 with the lane's done condition and the [CEGIS contract](#step-6c--cegis-refinement-contract):
 
