@@ -324,7 +324,9 @@ Region body, in the `aw-verify` skill's `rules/pr-comment.md` § Layout shape, a
 ````markdown
 ### <✅ Verified | ❌ Not verified | ⚠️ Inconclusive> in the browser — <what the specs cover, in the user's words>
 
-<One sentence: what works for the user.> <the attention line for the headline, per the `aw-verify` skill's `rules/pr-comment.md` § Attention line: ✅ **Nothing needs your attention.**, or **Needs you:** and each open critical/high adversarial finding · ⚠️ **Why not ✅:** why the run was inconclusive (the runner's `notes:` line) and the next step, then **Needs you:** and each open critical/high adversarial finding · ❌ **Needs you:** failing specs, then each open critical/high adversarial finding>
+<One sentence: what works for the user.> <under a ✅ with nothing open: **Nothing needs your attention.**>
+
+<the attention section, per the `aw-verify` skill's `rules/pr-comment.md` § Attention line: `#### Why not ✅` under ⚠️ and ❌ (`#### Needs you` under a ✅ with an open critical/high adversarial finding), then one `- **<what the user would notice>** (<tag>) → <next step>` bullet per failing spec (`failed check`), the inconclusive reason from the runner's `notes:` line (`inconclusive`), then each open critical/high adversarial finding; omitted under a ✅ with nothing open>
 
 <sub>`<head-sha7>` · <env> · <pass>/<total> specs · updated {{UPDATED}}</sub>
 

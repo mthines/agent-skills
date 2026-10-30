@@ -2,6 +2,8 @@
 
 {{SUMMARY}} {{ATTENTION}}
 
+{{ATTENTION_PART}}
+
 <sub>`{{HEAD_SHA7}}` · {{ENV}} · {{CI_STATE}} · {{FINDING_COUNT}} · updated {{UPDATED}}</sub>
 
 #### What I checked
