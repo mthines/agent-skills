@@ -98,7 +98,7 @@ With `--findings <report-body.md>`, the diagram is the picture above a `pr-revie
 3. Badge the box each finding's `<path>` belongs to with that row's `<n>`, not ①②③. Several numbers on one box sit side by side along its top edge, 22 apart. A finding with no box gets no badge.
 4. In the page legend, label the badge entry `Numbered row below` instead of `Decision above`.
 5. Build the page as phase 5 does and write it to `.agent/{branch}/impact-map/pr-<n>.html`; never publish it as an Artifact.
-6. Render the PNGs with `render-png.mjs` from that page file, open both with the Read tool, and print:
+6. Render the PNGs with `render-png.mjs` from that page file, open the light one with the Read tool (the dark one is the same page in other colours, so it shows the same layout and text), and print:
 
 ```text
 light: <out-dir>/what-changes-light.png

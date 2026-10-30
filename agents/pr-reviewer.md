@@ -38,8 +38,8 @@ AGENT_SUPPORT="${AGENT_MD%/pr-reviewer.md}"
 echo "AGENT_SUPPORT=$AGENT_SUPPORT"   # print it: later tool calls need the literal string
 ```
 
-Shell state does not survive between tool calls: reuse the printed string in every later `Read`,
-and re-run the block verbatim in any later *Bash* call that needs it.
+Shell state does not survive between tool calls: reuse the printed string in later `Read`s and
+re-run the block in any later *Bash* call that needs it.
 
 **Never probe the un-resolved install path** (`$HOME/.claude/agents/pr-reviewer/…`); an ENOENT there
 is not evidence of anything. `resolve()` is the only admissible test. **When `AGENT_SUPPORT` does not
@@ -60,7 +60,7 @@ Why these rules exist: `agents/pr-reviewer/references/agent-body-rationale.md` (
 
 - Do not approve or request-changes in the GitHub review event — always use COMMENT.
 - Do not measure PR size (line counts, file counts) as a quality signal.
-- Do not claim the PR is ready to merge — only signal it is ready for human review.
+- Do not claim the PR is ready to merge — only ready for human review.
 - Do not replace the human reviewer.
 - Do not put machine state in a comment body (no run ledger, no hidden JSON — the PR-state record owns it).
 
@@ -70,7 +70,7 @@ Why these rules exist: `agents/pr-reviewer/references/agent-body-rationale.md` (
 
 - Stop and report if no PR reference is found; report BLOCKED if the inline sub-pipeline fails twice.
 - Tool-call budget: **60** calls for ≤ 10 changed files, **120** for 11–30, **200** for > 30 (the larger of the fetched file list and GitHub's `changedFiles` count), times the thoroughness multiplier — read `budget.toolCalls` off `context.json` ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#thoroughness-budget)). `--full` on a large PR always uses the top band.
-- Memory calls sit **inside** that total: the PR-state `memory_read` (0.7) and `memory_write` (4c) — fixed cost, never traded against the pool — plus **4** `memory_list` (1.0), **2** knowledge calls (1.2a), **1** `memory_search` (1.2c), and a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` records (batched via `refs`). That pool spans three sites — 1.2a (≤ 5, first), 1.2d (at most **half**, rounded down), 2.7b (the remainder); stop at zero at any site. Step 4d's writes, and the one batch `memory_read` before them, sit outside it (`memory.md § Write budget`).
+- Memory calls sit **inside** that total: the PR-state `memory_read` (0.7) and `memory_write` (4c) — fixed cost, never traded against the pool — plus **3** `memory_list` (1.0, none on a lean budget), **2** knowledge calls (1.2a), **2** `memory_search` (1.2c), and a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` records (batched via `refs`). That pool spans three sites — 1.2a (≤ 5, first), 1.2d (at most **half**, rounded down), 2.7b (the remainder); stop at zero at any site. Step 4d's writes, and the one batch `memory_read` before them, sit outside it (`memory.md § Write budget`).
 - If the budget is exhausted, stop and report partial results: the terminal report and the review body (its `PARTIAL_BANNER` slot, never free prose) both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.`
 - Never post a GitHub review that was not produced from fully consolidated results.
 
@@ -105,9 +105,8 @@ verdict) → [`depth-routing.md`](./pr-reviewer/rules/depth-routing.md) (**Phase
 [`finders.md`](./pr-reviewer/rules/finders.md) (**Phase D**, Step 2 — *Finders flag, the verifier
 filters*) → [`agents/shared/rules/finding-verifier.md`](./shared/rules/finding-verifier.md)
 (**Phase E**, Steps 2.6b–2.7). Cross-cutting: [`memory.md`](./pr-reviewer/rules/memory.md) and
-[`telemetry.md`](./pr-reviewer/rules/telemetry.md) (Step 1.0 — telemetry is a priority input only,
-never lowers, never blocks), and [`run-telemetry.md`](./pr-reviewer/rules/run-telemetry.md) (step
-markers — read before Step 1). Every other rule is named at the step that reads it.
+[`telemetry.md`](./pr-reviewer/rules/telemetry.md) (Step 1.0), and [`run-telemetry.md`](./pr-reviewer/rules/run-telemetry.md) (step
+markers — read before Step 1). Other rules are named at the step that reads them.
 
 Read [`agents/pr-reviewer/rules/agent0-runtime.md`](./pr-reviewer/rules/agent0-runtime.md) **only
 inside a Dash0 Agent0 Automation**.
@@ -247,11 +246,30 @@ Announce: `Reviewing PR #<n> in <repo> by @<author> (relation: $REVIEW_RELATION)
 `IS_RE_REVIEW=false`, and `RUN_MODE=full` unconditionally, with no sticky-footer fallback either
 ([`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated)).
 
-Otherwise read `agents/pr-reviewer/rules/prior-run.md` now, every run: one `memory_read` of the
-PR-state record, a one-call GitHub fallback rung on a miss (sticky matched by marker, never login),
-and the bindings every later step reads (`STATE_STATUS`, `PRIOR_SHA`, `CARRIED_FINDINGS`,
-`PRIOR_DIAGNOSTICS`, `IS_RE_REVIEW`, `RUN_MODE`, …). Save `$PR_STATE` to a file and pass it as
-`prepare-review.mjs --state <file>`, or it routes a re-review as a first run.
+Otherwise read the PR-state record first (retry a thrown error twice; a hard "tool unavailable" is
+`unavailable` at once):
+
+```text
+STATE_SCOPE="branch::${RESOLVED_REPO}::${HEAD_REF}"    STATE_KEY="ci-state::pr-review-${PR_NUMBER}"
+mcp__lorekit__memory_read: scope="<STATE_SCOPE>" key="<STATE_KEY>"
+```
+
+- **A `v: 1` record came back, or the read threw / `v` is unrecognised:** read
+  `agents/pr-reviewer/rules/prior-run.md` now for the bindings (`STATE_STATUS`, `PRIOR_SHA`,
+  `CARRIED_FINDINGS`, `PRIOR_DIAGNOSTICS`, `IS_RE_REVIEW`, `RUN_MODE`, …). Save `$PR_STATE` to a file
+  and pass it as `prepare-review.mjs --state <file>`, or it routes a re-review as a first run.
+- **No record, or one past its expiry (`STATE_STATUS="miss"`):** bind the first-run values below and
+  skip `prior-run.md`. `prepare-review.mjs` runs the GitHub fallback rung itself; when its
+  `context.priorRun.source` is not `"none"`, a sticky exists, so read `prior-run.md § The GitHub
+  fallback rung` then and rebind from it.
+
+```bash
+STATE_STATUS="miss"; RUN_MODE="full"; PRIOR_SHA=""; PRIOR_VERDICT=""
+PRIOR_OPEN_THREAD_IDS="[]"; LAST_FULL_SHA=""; INCR_RUNS_SINCE_FULL=0
+CARRIED_FINDINGS="[]"; PRIOR_DIAGNOSTICS="{}"
+STICKY_COMMENT_ID=""; STICKY_URL=""; PRIOR_REPORT_AUTHOR=""
+IS_RE_REVIEW=false; RESOLVED_SINCE_PRIOR=0
+```
 
 ## Step 0.8: Fast zero-delta pre-check
 
@@ -266,283 +284,134 @@ Phase A/B, and Step 2 never run; Step 1.8, then Step 2.9c, then Step 3. When fal
 
 ### 1.0 Prior-comment awareness + relevance memory load (default ON)
 
-See `agents/shared/rules/prior-comment-awareness.md`. Fetch existing review comments on
-the PR **and the PR's review-thread state**, then build the dedup set and the
-resolved-suggestion set before any finding is produced.
+Fetch existing review comments on the PR **and the PR's review-thread state**, then build the
+dedup set and the resolved-suggestion set before any finding is produced.
+**Read `agents/shared/rules/prior-comment-awareness.md` (it holds the fetch) only when**
+`context.threads` is non-empty — every inline review comment belongs to a thread; run Step 1.1 first
+when `context.json` is not bound yet.
+With no threads, bind `OPEN_BOT_COMMENTS=[]` and empty dedup and resolved-suggestion sets: Gate 3 passes.
 
-**Read the memory contract first**:
-[`agents/pr-reviewer/rules/memory.md`](./pr-reviewer/rules/memory.md). It governs every read this
-step and Step 1.2c issue, and three of its rules are easy to violate by accident:
+The memory contract is [`agents/pr-reviewer/rules/memory.md`](./pr-reviewer/rules/memory.md).
+**Read it only when** a memory call in this step, Step 1.2a, or Step 1.2c returns at least one record;
+an empty store needs only the three rules below, which are easy to violate by accident:
 
 1. **Filter by `source.agent` on every read.** A record this agent wrote is memory; a record
-   another tool wrote about the same repository is not, and merging the two silently imports
-   another product's calibration. The filter is not optional and not a performance hint.
-   It has exactly one carve-out, and it is a **field**, not a judgement call: a rule carrying
-   `source.explicit: true` is a maintainer's `/pr-review remember` instruction and is usable, so the
-   predicate is `source.agent == "pr-reviewer" ∨ source.explicit == true`. Implementing the filter
-   without that disjunct drops every rule a maintainer ever wrote.
+   another tool wrote about the same repository is not. One carve-out, a **field**: a rule carrying
+   `source.explicit: true` is a maintainer's `/pr-review remember` instruction, so the predicate is
+   `source.agent == "pr-reviewer" ∨ source.explicit == true`.
 2. **Records are keyed structurally** — `finder:defect-class:symbol@path`, `fp_v 2` — never by
-   branch, author, or PR number. That is what makes what one author's PR taught the reviewer
-   available on the next author's PR touching the same symbol, which is the whole point of the
-   bucket. A key that carries a branch name is a key nothing else will ever match.
+   branch, author, or PR number.
 3. **A knowledge fact is re-verified against the current code or dropped**, at read time, before
-   any finder sees it. A fact recorded three months ago describes a symbol that may since have
-   changed; feeding it forward unverified is how a stale memory becomes a confident wrong finding.
+   any finder sees it.
 
 Suppression rules loaded here are **not applied here** — they apply at Step 2.7b, after
 verification. Loading and applying are deliberately separate steps.
 
 **Telemetry, when available**: [`agents/pr-reviewer/rules/telemetry.md`](./pr-reviewer/rules/telemetry.md).
 Bind `TELEMETRY_CAPABILITY` (`none` / `production` / `production+preview`) and, when it is not
-`none`, the exposure block that Step 1.2a merges into the impact graph via `--production`. Its
-three invariants hold everywhere downstream: it **raises** priority and never lowers it, it never
-blocks, and it carries aggregates and signatures only — never a payload, a user identifier, or a
-sampled body. No telemetry exists for the change before it merges, so exposure is a fact about
-the code being changed, never a verdict about the change.
+`none`, the exposure block that Step 1.2a merges into the impact graph via `--production`. It
+**raises** priority and never lowers it, never blocks, and carries aggregates and signatures only.
 
 The thread-state query (`reviewThreads { id isResolved }`, paged past 100) is the same one
 Step 2.9c runs — fetching it here moves the call earlier rather than adding one, and Step 2.9c
 reuses `/tmp/review-threads.json`. `RESOLVED_THREAD_IDS` and `COMMENT_TO_THREAD` come from it.
 
 While fetching, **also identify every open unresolved review thread** — from a bot **or** a human
-reviewer — for Gate 3. Both count: an unresolved reviewer conversation is prior feedback whether a
-GitHub App or a teammate opened it. What differs is only how the report labels each one (see the
-`is_bot` field below and `OPEN_THREADS_LIST`), never whether it is tracked.
-- Capture the author's **type** with each comment: `is_bot` is true when `user.type == "Bot"` (a
-  GitHub App — e.g. `cursor`, `claude[bot]`, `copilot`) and false for a human reviewer. Read it off
-  `user.type` from `/tmp/prior-comments.json`, never from a login-pattern guess: a login match once
-  reported a human's thread as a bot's (the exact mislabel Gate 3 no longer makes), and a service
-  account posting as a `User` is a human as far as this label is concerned.
-- A comment is **resolved** when its thread's `isResolved` is true. Read the flag; never
-  infer resolution from the wording of a reply. An automated fixer replies in its own
-  words and resolves the thread — it neither matches a keyword list nor replies as the PR
-  author, so a prose test reports it unresolved forever
-  (`prior-comment-awareness.md § Thread state`).
-  (Fix-commit detection is left to the post-merge outcome loop — do not run it here.)
-- Only when thread state is unavailable, fall back to the reply-text heuristic in
-  `prior-comment-awareness.md § Fallback resolution heuristic`, and record that the
-  fallback was used. The fallback result feeds **dedup and anti-flip-flop only**. It
-  never admits a comment to `OPEN_BOT_COMMENTS[]`, because Gate 3 must not fail on a
-  thread whose real state could not be read (see *Gate 3*) — a lossy prose test is not
-  evidence that a finding is still open.
+reviewer — for Gate 3; both count, and only the report's label differs.
+- `is_bot` is true when `user.type == "Bot"` in `/tmp/prior-comments.json`, never a login-pattern guess.
+- A comment is **resolved** when its thread's `isResolved` is true. Read the flag; never infer
+  resolution from a reply's wording (`prior-comment-awareness.md § Thread state`). Fix-commit
+  detection belongs to the post-merge outcome loop, not here.
+- Only when thread state is unavailable, use `prior-comment-awareness.md § Fallback resolution
+  heuristic` and record that you did; its result feeds **dedup and anti-flip-flop only**, never
+  `OPEN_BOT_COMMENTS[]`.
 - Store as `OPEN_BOT_COMMENTS[]` only the comments whose thread state **was** read and is
   `isResolved == false`. Every comment whose state was unavailable or unpaged is counted
   separately and reported as `thread state unavailable — <N> comment(s) unverified` in
   Gate 3's Details cell.
-- For each stored entry, capture seven fields — three so Gate 3 can render an actionable, linkable
-  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can label the thread's author, and two
-  so it can grade the gate. The label fields are `author` (the thread root's `user_login`) and
-  `is_bot` (from `user_type == "Bot"`, per the fetch above), passed straight into each
-  `OPEN_THREADS[]` payload item so the renderer tags the bullet `(bot · \`login\`)` or
-  `(human · \`login\`)`. The three checklist fields are:
-  `path:line` (the anchor), `url`
-  (the comment's `html_url` permalink from `/tmp/prior-comments.json`), and `ask` — the comment's
-  own lead line, **truncated, not paraphrased**: take its first sentence (or its `suggestion:` /
-  `issue:` conventional-comment line), strip noise like `(non-blocking)`, and cut to ~12 words with
-  a trailing `…` if longer. Using the thread's own words — never the reviewer's summary of another
-  bot — means the author reads here exactly what they'll meet when they click through, and the
-  reviewer never puts words in another bot's mouth. Only the root comment of each thread needs an
-  entry; skip reply comments (`in_reply_to_id` set) — but see `answered` below, which is read
-  from their existence.
-- Also capture the two grading fields Gate 3's tri-state consumes (*Gate states*):
-  - `blocking` — true only when the comment carries an explicit blocking decoration of its own: a
-    `(blocking)` marker, an `issue:` conventional-comment prefix, or an equivalent severity label
-    the authoring bot supplied. **Read this off the raw comment body before the `ask` truncation
-    runs** — that truncation strips conventional-comment severity decorations as cosmetic noise
-    (`(non-blocking)` and `(blocking)` alike, since both are metadata rather than the ask), so
-    reading it afterwards would grade on a string the renderer has already emptied of the signal.
-    Anything undecorated or unparseable is `false`; never infer severity by
-    reading the code the comment points at (*Gate states*).
-  - `answered` — true when the thread has at least one comment with `in_reply_to_id` pointing at
-    the root **whose author is not the root comment's own author**, or when Step 2.9c classified
-    the thread `declined` / `acknowledged` and its resolve mutation failed (that classification's
-    evidence is the PR author's words, so it is someone else's engagement too). The reply's
-    *wording* is never parsed: a reply is engagement
-    whatever it says, and the prose test this gate already rejects for resolution
-    (`prior-comment-awareness.md § Thread state`) is no better at judging engagement.
-    **Self-replies do not count.** The rationale for downgrading an answered thread is that
-    someone engaged with the ask and only the Resolve click is missing; a bot replying to its own
-    thread to restate that the finding still stands satisfies a naive "any author" test while
-    falsifying that rationale, and would downgrade a live blocking ask to ⚠️. The one case this
-    might seem to lose — a bot superseding or withdrawing its own finding — is already handled
-    upstream and better: a bot that withdraws also **resolves** the thread, which removes it from
-    `OPEN_BOT_COMMENTS[]` entirely, so it never reaches this test. A self-reply that leaves the
-    thread open is, by the authoring bot's own action, still open.
+- For each stored root comment (skip replies, `in_reply_to_id` set), capture `author`, `is_bot`,
+  `path:line`, `url`, `ask`, `blocking`, and `answered` exactly as
+  [`gates.md` § Gate 3 thread fields](./pr-reviewer/rules/gates.md#gate-3-thread-fields) defines them;
+  `finalize.mjs` grades Gate 3 from them.
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes (✅). A non-empty set is graded ⚠️ or ❌ from
   `blocking` and `answered` at Step 1.8.
 
-Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-to-broad fan-out.
+Also load **comment-relevance memories** and **reviewer-lessons**: three ranked lists here, and the
+diff-keyed searches at Step 1.2c, which carry most of the recall.
 **This read is a mandatory attempt.**
 Step 0.7 already touched this backend to read the PR-state record, so **carry that outcome
 forward rather than re-deriving it**: a hard "tool unavailable" there settles `LOREKIT_CONNECTED`
-to `false` here without four more doomed calls, and a successful state read settles it to `true`.
-Only a `STATE_STATUS` of `miss` leaves the question open — a miss is a normal first-run answer from
-a working backend, so the fan-out below still runs and still decides.
-Issue each line below as a real `mcp__lorekit__memory_list` tool call — these are not documentation shorthand.
-Only a real tool error (thrown exception, or tool not in the agent's `tools:` grant) may cause you to set `LOREKIT_CONNECTED=false`; never infer "not connected" without attempting the call.
-**Retry a transient failure before declaring `false`.** A thrown MCP error on the *first* `memory_list` call is far more often a momentary timeout/transport hiccup than a real outage, and treating that single blip as terminal is what makes the `Memories — not connected` line flap between otherwise-identical runs. So when the first call throws, retry it up to **2 more times** (3 attempts total) with a short backoff before setting `LOREKIT_CONNECTED=false`. A hard "tool unavailable" error (`No such tool available: mcp__lorekit__memory_list`) has **two causes that must not be treated alike** — conflating them is what makes a whole multi-round run capture nothing:
+to `false` here without more doomed calls, and a successful state read settles it to `true`.
+Only a `STATE_STATUS` of `miss` leaves the question open, and the lists below still run and decide.
+Issue each line below as a real `mcp__lorekit__memory_list` tool call. On a thrown error, a tool missing from the registry, or a server still connecting, follow
+[`memory-load.md` § When a LoreKit call fails](./pr-reviewer/rules/memory-load.md#when-a-lorekit-call-fails)
+before setting `LOREKIT_CONNECTED`: one transient throw is never `false`, and a `false` is
+re-probed by every later memory step.
+As a sub-agent you get no SessionStart memory priming: run this read yourself.
 
-- **The tool is not in this agent's `tools:` grant.** Static for the run: no wait or retry can change it. Set `LOREKIT_CONNECTED=false` immediately and move on.
-- **The MCP server has not connected *yet*.** An MCP server connects asynchronously and a harness may report it as "still connecting" while its tools are unregistered — so the same tool that is missing at Step 1.0 can be callable minutes later, in the same session. Do **not** settle `false` on this: first try to load the tool through whatever registry affordance the harness offers (in Claude Code, `ToolSearch` with `select:mcp__lorekit__memory_list`, which waits for a connecting server), and only if that also comes back empty treat the read as unavailable **for this step** — never for the run.
-
-Distinguish them by whether the tool exists in the session's registry at all: absent from the tool list ⇒ grant problem; present-but-unregistered or reported as connecting ⇒ not connected yet.
-
-**A `false` from the second cause is provisional, and every later memory step re-probes.** The write sites (Step 2.9c's relevance outcome, and Step 4c's state record) attempt their call regardless of what Step 1.0 concluded, because the earlier verdict is a fact about an earlier moment. This is the difference between a run that captures nothing and one that captures everything after the first few minutes. Any attempt returning without a tool error (even an empty list) is a success: stop retrying and set `LOREKIT_CONNECTED=true`.
-When this agent runs as a sub-agent, it does NOT receive the SessionStart memory-load priming that the main session gets, so it MUST perform this Step 1.0 read itself — never assume memories were pre-loaded.
+**On a lean budget (`context.budget.lean == true`) skip these three lists** and rely on
+Step 1.2c's searches alone; when `context.json` is not bound yet, run Step 1.1 first and decide then.
 
 ```text
-# Issue each as a real mcp__lorekit__memory_list tool call (narrow-to-broad).
-# repo:: wins on key collision. Skip expired entries.
-# view="summary" returns key + tags + updated_at + value_bytes + a 200-char preview,
-# NOT the body — this is the index; Step 1.2d resolves the bodies that matter.
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=50 view="summary"
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=50 order="rank" view="summary"
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50 order="rank" view="summary"
+# repo:: wins on key collision. Skip expired entries. view="summary" returns key + tags +
+# value_bytes + a 200-char preview, never the body; Step 1.2d resolves the bodies that matter.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=8  order="rank" view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=10 order="rank" view="summary"
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=15 order="rank" view="summary"
 ```
 
-**The two `global` reads use `order="rank"`, the `repo::` reads recency.** The global buckets have
-outgrown 50 entries, and a recency-ordered `limit: 50` silently loses the tail — which is exactly
-where the oldest, most mature structural lessons sit (observed: the 51st global entry was a
-`seen_count=3` structural lesson a single page never returned). Ranked mode returns a bounded
-salience+recency top-N with no cursor to forget, so the window holds the *most useful* 50 rather
-than the newest 50. The `repo::` buckets are small enough that recency still covers them; switch a
-repo read to `rank` only if it, too, reports `hasMore: true`.
+These lists keep the generic lessons and concept-keyed rules a path search cannot reach; global
+relevance rules are reached by the Step 1.2c search, not a list ([why these limits](./pr-reviewer/references/agent-body-rationale.md#memory-model-step-10)).
 
-**This read is keyed by TAG and SCOPE, and by nothing else.** Two filters a reader
-reasonably expects here do not exist, and both absences are deliberate:
+**These lists filter on tag, scope, and expiry, then on source attribution — nothing else.**
 
-- **It is not filtered by the diff.** Whether a lesson's gist has anything to do with
-  *these* changed files does not affect whether these four calls return it — the
-  changed-file list is not even known yet (Step 1.1 computes it). Diff relevance
-  governs only the *additional* Step 1.2c enriched search, which is an **OR** on top
-  of this read, never a filter that can remove something list-reachable. A lesson
-  carrying one of the two tags above surfaces on a PR that shares no symbol with it.
-- **It is not gated on `seen_count`.** `seen_count ≥ 3` is the *promotion* bar — what
-  makes a lesson a should-fire rather than a candidate (see the promotion rules below
-  and `memory.md § Lifecycle`). It is not a surfacing threshold. A `seen_count: 1`
-  lesson is read here and weighed as weak evidence; it is not withheld.
+- **They are not filtered by the diff.** A lesson inside a list's ranked window surfaces on a PR that
+  shares no path or symbol with it; the diff decides only what Step 1.2c's searches add.
+- **They are not gated on `seen_count`.** `seen_count ≥ 3` is the *promotion* bar
+  (`memory.md § Lifecycle`), not a surfacing threshold: a `seen_count: 1` lesson is read and weighed
+  as weak evidence.
 
-What *does* exclude a record is being outside this read's scope: a different loop's
-namespace (`loop::fix-bug-lessons` is not one of the two tags), a scope neither
-`repo::{owner}/{repo}` nor `global`, or falling outside the `limit: 50` window — which
-is the gap Step 1.2c exists to close.
+What excludes a record: a different loop's tag (`loop::fix-bug-lessons`), a scope other than
+`repo::{owner}/{repo}` or `global`, expiry, a source failing
+`source.agent == "pr-reviewer" ∨ source.explicit == true` (Rule 1), or falling outside every list's
+window **and** missing every Step 1.2c search — and, on a lean budget, not matching a search.
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
-Merge both lists per tag (`repo::` wins on key collision).
-Skip expired entries.
+Merge the lists per tag (`repo::` wins on key collision).
 
 **The `scope` parameter matches exactly — it is not a prefix or a hierarchy.**
-`lorekit_memory_list`'s predicate is `m.scope = p_scope`, so `scope="repo::{owner}/{repo}"` returns
-records written at *that* scope and no other: not a `branch::{owner}/{repo}::…` record beneath it,
-and not another repository's `repo::` record. This is load-bearing in both directions — it is why
-[`memory.md`](./pr-reviewer/rules/memory.md) can put per-PR state in a `branch::` scope and rely on
-it staying out of the lesson read, and it is why these two scopes must be listed explicitly rather
-than assumed to be reachable from one broader query.
+`scope="repo::{owner}/{repo}"` returns records written at *that* scope and no other: not a
+`branch::{owner}/{repo}::…` record beneath it, and not another repository's `repo::` record.
 
-**These four calls filter on three things and nothing else — tag, scope, and expiry.**
-They carry no diff parameter and no `seen_count` parameter, so neither narrows what this read returns.
-**A fourth filter then applies to what they returned: source attribution.**
-Rule 1 above binds every read this step issues, so a record failing `source.agent == "pr-reviewer" ∨ source.explicit == true` is dropped here rather than never fetched.
-The distinction is where the filter runs, not whether it applies: such a record does not reach the finders, exactly as a wrong-tag or expired one does not.
-Read together, tag, scope, expiry, and source attribution are the four — and the only four — things that decide whether this step surfaces a record.
-Diff-keying enters later and *additively*: Step 1.2c runs a diff-built `memory_search` on top of these lists, and Step 1.2d shortlists the merged index by changed path and symbol before spending body reads — so a lesson unrelated to these changed files is still in the pool this step loads, and stops being a candidate only downstream, where the diff is actually in hand.
-`seen_count` is not available here at all: it lives in record bodies, and this step loads the index only.
-It governs *promotion* (guard 2 below) and the Step 2.7b suppress / downgrade / promote decision — never whether an entry is returned.
-Narrowing this read by your own sense of what looks relevant to the diff is a defect, not an optimisation.
-The 50-per-tag window exists precisely so relevance is decided after the diff is read, by the steps that have it.
+`seen_count` lives in record bodies, which this step does not load; it governs promotion and the
+Step 2.7b suppress / downgrade / promote decision, never whether an entry is returned.
 
-**Why `view: "summary"`.** These four calls return up to **200** entries (50 per tag per scope). At
-the observed ~1.9 KB median body a saturated fan-out is ~380 KB of context — and even the ~61
-entries a typical run actually returns is ~110 KB — spent before the diff has been read, to answer
-a question (*which* memories apply to this change) that the key, tags, and preview already answer.
-The summary form costs ~250 bytes per entry: ~50 KB saturated, ~15 KB typical. Bodies are fetched
-at Step 1.2d, once the changed files and `INTENT_PHRASE` exist to shortlist against.
+Bind `SUMMARY_VIEW` once, before the first call: `true` when the live `mcp__lorekit__memory_list`
+schema lists `view` — send `view="summary"` on all three calls (keys, tags, and a preview; Step 1.2d
+fetches the bodies that matter). When the schema lacks `view` or a call rejects it, follow
+[`memory-load.md` § Without `view`](./pr-reviewer/rules/memory-load.md#without-view); a schema
+rejection never flips `LOREKIT_CONNECTED`.
 
-**`view` is a capability, not a guarantee — probe once, then commit.** It requires LoreKit
-**≥ the release carrying lorekit#464**; older servers do not have it.
-
-Bind `SUMMARY_VIEW` before the first call and never re-evaluate it mid-fan-out, so all four calls
-and every later step agree on one answer:
-
-- **`true`** — the live `mcp__lorekit__memory_list` schema lists `view`. Send `view="summary"` on
-  all four calls. This is the default outcome on a current server.
-- **`false`** — either failure shape below fired. The calls return full bodies.
-
-The two failure shapes are handled differently, and neither may cost you `LOREKIT_CONNECTED`:
-
-- **The tool's input schema does not list `view`.** Check the live `mcp__lorekit__memory_list`
-  schema before the first call. If `view` is absent, set `SUMMARY_VIEW = false` and issue all four
-  calls WITHOUT it. Do not send an unknown key to a strict-schema tool.
-- **The call throws specifically because of `view`** (an unknown/unexpected-argument error naming
-  it). Set `SUMMARY_VIEW = false`, retry that same call once without `view`, and carry on. This
-  retry is **not** one of the three transport retries and a schema rejection is **never** evidence
-  the backend is down — flipping `LOREKIT_CONNECTED` here would turn a missing optimisation into a
-  total memory outage.
-
-When `SUMMARY_VIEW` is `false` the four calls return full bodies, exactly as they did before this
-pipeline existed. That is a cost regression, not a correctness one: skip Step 1.2d entirely (the
-bodies are already in hand), and match at Step 1.2e against them directly.
-
-**Memory model — entrenchment guards and the no-in-run-write choice.**
-The lessons read here are advisory input only, protected by five entrenchment guards (`lorekit-setup § Entrenchment guards`):
-(1) a lesson biases a run but can never auto-change behavior — the only path to a rule, gate, or threshold change is a human-reviewed source edit;
-(2) promotion is gated on recurrence (`seen_count ≥ 3`) or an explicit `status=structural`, never a single run;
-(3) every lesson carries an `expires` and expired entries are skipped above, so stale beliefs decay instead of entrenching;
-(4) a contradiction (a pattern that flips relevance direction) is surfaced, never silently overwritten;
-(5) the privacy pre-flight is never bypassed — a candidate carrying a secret or PII is dropped, not written.
-`pr-reviewer` **never writes lessons during a review**, and this is deliberate rather than an omission: it is a fresh-eyes adversarial reviewer, and biasing it with its own single-run conclusions is exactly the self-reinforcing error the guards exist to prevent (`lorekit-setup § When to add a loop`).
-Its write signal is *resolution rate measured at merge time* — captured asynchronously by `outcome-learning.md`, the `reviewer-comment-relevance.yml` GitHub Action, and `implement-suggestion` — never by this agent in-run.
-
-**The PR-state record is not a lesson, and Step 4c is not an exception to the rule above.** The
-rule exists because a *lesson* written from one run's conclusions biases the next run's judgment —
-that is the entrenchment the guards prevent. A state record carries no judgment: it is this run's
-own facts (which sha it reviewed, in which mode, which threads were open, which findings it
-deferred), parsed and branched on rather than weighed as advice, in a separate bucket
-(`ci::pr-review-state`, never `loop::…`) that the lesson read never touches. Distinguishing them
-matters practically: a reader who collapses "never writes lessons in-run" into "never writes
-in-run" will delete Step 4c and silently take the delta logic with it. The three writes this agent
-makes in-run — the state record (Step 4c), the `reviewer-comment-relevance` outcome at Step 2.9c,
-and the knowledge + hotspot records at Step 4d — are all records of what happened, never of what it
-concluded about how to review.
-
-**Step 4d is the same distinction, one step further out.** A knowledge record says "`retryRequest`
-throws `RetryExhausted` after 3 attempts, verified at `26b4c28`" — a fact about the code, carrying
-its receipt, which the next run [re-verifies or drops](./pr-reviewer/rules/memory.md#a-knowledge-fact-is-re-verified-or-dropped-never-trusted)
-rather than trusting. It cannot entrench a judgment because it contains none, and it is the one
-record that answers the question memory exists for: what does this repository already know about the
-code this diff touches. Without it the read side has a match table pointed at rows nothing writes.
+Lessons read here are advisory: this agent **never writes a lesson during a review**.
+Its three in-run writes — the state record (Step 4c), the `reviewer-comment-relevance` outcome
+(Step 2.9c), and the knowledge + hotspot records (Step 4d) — record what happened, never how to
+review, so none of them is a lesson write; never drop one as if it were.
+Why, and the five entrenchment guards: [`agent-body-rationale.md` § Memory model](./pr-reviewer/references/agent-body-rationale.md#memory-model-step-10).
 
 Retain each loaded memory's LoreKit `scope` and `key` alongside its
 `fingerprint`, `relevance`, and `seen_count` — Step 2.7b builds a deep link from
 `scope` + `key` for every memory that influences the review
 (`agents/shared/rules/comment-relevance-memory.md § Linking applied memories in the report`).
-Set `LOREKIT_CONNECTED` = `true` when the `mcp__lorekit__memory_list` call returned without a tool error (i.e., the attempt was made and succeeded); set `false` only when the tool call still threw an error after the retries above are exhausted, or the tool is not in the agent's `tools:` grant — never infer `false` without attempting the call, and never off a single transient throw before retrying.
+Set `LOREKIT_CONNECTED` = `true` when a call returned without a tool error, `false` only per `memory-load.md`.
 Set `MEMORIES_READ_COUNT` = the number of `reviewer-comment-relevance` memories retained after
 this merge/dedup (0 when connected but none matched), **plus the knowledge and hotspot records the
 Step 1.2a read returns** — the three record families [`memory.md`](./pr-reviewer/rules/memory.md)
 defines, counted as one population.
 `MEMORIES_READ_COUNT` never counts `reviewer-lessons`, which have their own announce line.
-The population is fixed by its partner, not chosen here: `MEMORIES_USED_COUNT` is `|MEMORIES_USED|`,
-whose entries carry `kind` ∈ `rule` / `knowledge` / `hotspot`, and the two render as a single
-`indexed · used` pair that the renderer **fails closed** on when `used > indexed`. Counting only
-relevance rows here is therefore not a conservative choice but a report that cannot be produced: a
-run that applies a hotspot and a knowledge fact on a repo with no armed relevance rules yields
-`0 indexed · 2 used`, `render-report.mjs` exits non-zero with nothing on stdout, and Step 4a's
-contract is then to post no report at all. That is the normal adoption shape for a new bucket, so it
-would have been the common case.
-It is `indexed`, not `read`, because under `SUMMARY_VIEW` these entries were listed but
-their bodies were not fetched — calling that "read" would overstate what the reviewer actually
-consulted. When `SUMMARY_VIEW` is false the entries genuinely were read in full, but the label
-stays `indexed` so the figure means the same thing in every run.
-Loaded `reviewer-lessons` are reported separately by the `<L> reviewer-lessons matched`
-announce line, which is emitted at Step 1.2e — matching has not happened yet at this step, so the
-count does not exist here.
-Both counters feed the Step 4 `Review details`
-`Memories` line (`MEMORIES_USED_COUNT` is computed at Step 2.7b) — see *REPORT_BODY format (the sticky comment)*.
-Neither reaches the collapsed `<summary>`, which carries the open-threads count and nothing else.
-Announce the concrete resolved scope so the read is visible at a glance, e.g.: `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count is announced at Step 1.2e, once matching has run.
-The `<D> suppressions, <P> promotions` figures are NOT announced here: they come from `relevance` and `seen_count` in record BODIES, which are not fetched until Step 2.7b. Step 2.7b announces them once they exist.
+Counting relevance rows only would let `used > indexed`, which `render-report.mjs` fails closed on ([why](./pr-reviewer/references/agent-body-rationale.md#memory-model-step-10)).
+The label is `indexed`, never `read`, in every run.
+Both counters feed the Step 4 `Memories` line, never the collapsed `<summary>`.
+Announce `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` The matched-lesson count waits for Step 1.2e, and `<D> suppressions, <P> promotions` for Step 2.7b.
 
 ### 1.1 Fetch PR data in parallel
 
@@ -576,16 +445,17 @@ Binds `IMPACT_SYMBOLS`, `IMPACT_DEPS`, `IMPACT_OVERLAPS`, `BLAST_RADIUS`, and `T
 **Then read what this repository already knows about the symbols the graph just named** — the whole
 read side of
 [`memory.md § Read — two calls, keyed by the impact graph`](./pr-reviewer/rules/memory.md#read--two-calls-keyed-by-the-impact-graph).
-Issue each as a real tool call:
+Issue each as a real tool call, once; **on a lean budget (`context.budget.lean == true`) skip call 1**
+and rely on the search:
 
 ```text
-# 1. Knowledge + hotspot records for this repo — the tag makes the page selective; relevance
-#    rules share the kind/host, so a kind/host filter alone mixes the two buckets.
+# 1. Knowledge + hotspot records for this repo (the tag keeps relevance rules out).
 mcp__lorekit__memory_list:   scope="repo::{owner}/{repo}" tags=["codebase-knowledge"] kind="signal" host="reviewer" limit=50 view="summary"
 
-# 2. A targeted search on the top 10 changed symbols by blast radius, from impact.json.
+# 2. A targeted search on the top 10 changed symbols by blast radius, from impact.json, plus the
+#    changed paths — every term joined with " OR " (memory_search ANDs space-separated words).
 #    memory_search takes `q` + `scopes` (array), NOT `query` + `scope`.
-mcp__lorekit__memory_search: q="<symbol> <symbol> <symbol>" scopes=["repo::{owner}/{repo}"] limit=25
+mcp__lorekit__memory_search: q="<symbol> OR <symbol> OR <path>" scopes=["repo::{owner}/{repo}"] limit=25
 ```
 
 Match the returned records against the graph per `memory.md`'s match table, and hand the finders the
@@ -599,55 +469,61 @@ Delta triage runs in incremental modes only; depth routing runs in every mode. B
 (`context.routing`, `context.deltaLines`); the manual contract and the exact announce lines are
 `fetch-and-triage.md § 1.2b`. What the run acts on:
 
-- **Upgrade to `full`** on: `DELTA_LINES > 100`, `NEW_FILES > 0`, a high-stakes file, a propagation
-  shape, an empty `LAST_FULL_SHA`, `CUM_DELTA_LINES > FULL_REFRESH_DELTA`, or
-  `INCR_RUNS_SINCE_FULL >= FULL_REFRESH_RUNS` — name the trigger. A risky content shape without an
-  upgrade sets `ESCALATE_IN_INCREMENTAL = true` (Step 2.4b).
+- **Upgrade to `full`** when `context.routing.triggers` is non-empty — name the trigger. A risky
+  content shape without an upgrade sets `ESCALATE_IN_INCREMENTAL = true` (Step 2.4b).
 - **Zero-delta short-circuit** (`DELTA_LINES == 0 AND NEW_FILES == 0`): `RUN_MODE = "incremental-quick"`,
   `REVIEW_DIFF = ""`, skip Step 2, run Step 1.8, then **Step 2.9c**, then Step 3.
 - **`REVIEW_DIFF`** is the full PR diff in `full` mode, else `/tmp/pr-delta.json`'s patches;
   `/tmp/pr-files.json` is never replaced. Gate 4 scans `REVIEW_DIFF`.
 - **`DEPTH_TIER`** comes from `routeDepth()` and is never re-derived; `diff-only` caps it at
-  `standard`, `--effort high` raises it to `deep`.
+  `standard`, `--effort high` raises it to `deep`. A small first run with no risk trigger is
+  `context.routing.sizeScaled` ([§ Size scaling](./pr-reviewer/rules/depth-routing.md#size-scaling)):
+  review the whole PR at the routed tier and follow `context.budget` — a lean `quick` budget
+  dispatches no worker, skips Step 2.4, and draws no impact image.
 
-**Never write "expect no new findings" into any dispatch** — passes are non-deterministic.
+**Never write "expect no new findings" into a dispatch** — passes are non-deterministic.
 
 ### 1.2c Diff-keyed lesson search (all modes)
 
-The two broad `mcp__lorekit__memory_list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
-Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `mcp__lorekit__memory_search` to pull those in.
+Step 1.0's lists are small and ranked; these searches pull in the lessons and rules keyed to the
+paths and symbols this diff changes.
 
 **Build the five field groups and bind `INTENT_PHRASE` FIRST — unconditionally, before any
-connection check below can skip anything.** Step 1.3 expands `INTENT_PHRASE` rather than
-re-deriving it, and it is a property of the PR, not of LoreKit: a core review variable must not
-inherit a memory backend's availability. Build the groups, bind the phrase, and only then decide
-whether to issue the search. When the search is skipped or errors, `INTENT_PHRASE` is already set
-and Step 1.3 proceeds normally.
+connection check below can skip anything**: Step 1.3 expands `INTENT_PHRASE`, and a skipped or
+failed search must not leave it unset.
 
-Build the query from the diff's own vocabulary, concatenating these five field groups (space-separated) into one query string:
+Collect these five field groups. Only groups 2 and 4 build the search query; groups 3 and 5 bind
+`INTENT_PHRASE` and the integration names Step 1.3 and Step 5 use.
 
 1. **Changed top-level directories** — the first path segment of each changed file.
-2. **Changed file basenames** — each changed file's basename without its extension.
+2. **Changed file paths** — each changed file's full repo-relative path, most-changed first, top 20.
 3. **Dependency-manifest filenames** present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
-4. **Changed symbol names** — the function, type, class, and export identifiers that the diff added or modified. Extract them from the `+`-side of the hunks (e.g. a `+function fooBar(`, `+export const baz`, `+type Qux =`, `+class Widget`, `+def handler(` line yields `fooBar`, `baz`, `Qux`, `Widget`, `handler`). Dedupe, then rank deterministically and keep the top 20 so the query stays focused: order by the number of `+`-side lines in the diff that contain the identifier (descending), break ties by first appearance in diff order (file path ascending, then line number ascending), and break any remaining tie by the identifier's byte order. This is the field that lets a lesson keyed to a renamed or newly-introduced symbol surface even when its directory and basename tokens do not match.
-5. **Synthesized intent + integrations** — the one-line intent phrase produced from the PR title, body, commit messages, and branch name (Step 1.3's synthesis, hoisted here because the search needs it first), plus any external-integration names detected in the diff (SDK, service, or API identifiers — e.g. `stripe`, `s3`, `oauth`, `graphql`). Bind the phrase to `INTENT_PHRASE`: this step is its **single derivation point**, and Step 1.3 expands `INTENT_PHRASE` rather than re-deriving it, so the two can neither diverge nor pay the cost twice. Detect the integration names here, from the diff alone, by two concrete sources: (a) the package names on `+`-side dependency-manifest lines (group 3's files), and (b) the module specifiers on `+`-side `import` / `require` / `from` / `use` statements, stripped of any leading `@scope/` prefix first, then reduced to the first remaining path segment (`@acme/stripe-sdk` → `stripe-sdk`; `stripe/lib/webhooks` → `stripe`). Keep only third-party specifiers — drop relative (`./`, `../`) and standard-library ones. Do not source these from the dependency finder: it runs at Step 2, after this step, and it is skipped entirely at the `quick` tier, so it can never be this field's source. This is the field that lets an intent-keyed lesson (e.g. "how to review auth changes") and paraphrased lessons match even when no changed symbol or path token overlaps.
+4. **Changed symbol names** — the function, type, class, and export identifiers that the diff added or modified. Extract them from the `+`-side of the hunks (e.g. a `+function fooBar(`, `+export const baz`, `+type Qux =`, `+class Widget`, `+def handler(` line yields `fooBar`, `baz`, `Qux`, `Widget`, `handler`). Dedupe, then rank deterministically and keep the top 20 so the query stays focused: order by the number of `+`-side lines in the diff that contain the identifier (descending), break ties by first appearance in diff order (file path ascending, then line number ascending), and break any remaining tie by the identifier's byte order.
+5. **Synthesized intent + integrations** — the one-line intent phrase produced from the PR title, body, commit messages, and branch name (Step 1.3's synthesis, hoisted here because the search needs it first), plus any external-integration names detected in the diff (SDK, service, or API identifiers — e.g. `stripe`, `s3`, `oauth`, `graphql`). Bind the phrase to `INTENT_PHRASE`: this step is its **single derivation point**. Detect the integration names here, from the diff alone, by two concrete sources: (a) the package names on `+`-side dependency-manifest lines (group 3's files), and (b) the module specifiers on `+`-side `import` / `require` / `from` / `use` statements, stripped of any leading `@scope/` prefix first, then reduced to the first remaining path segment (`@acme/stripe-sdk` → `stripe-sdk`; `stripe/lib/webhooks` → `stripe`). Keep only third-party specifiers — drop relative (`./`, `../`) and standard-library ones. Never source them from the dependency finder: it runs later, and not at all at `quick`.
 
-In `incremental` and `incremental-quick` modes, key groups 1, 2, and 4 on `REVIEW_DIFF`'s paths and hunks, not the full PR; groups 3 and 5 stay whole-PR.
-This deliberately narrows the previous rule, which keyed **every** field on `REVIEW_DIFF`: groups 3 and 5 describe PR-level facts, not delta-level ones — a PR that bumped a dependency manifest is still a dependency-bump PR while the reviewer looks at a delta that touches no manifest, and its intent does not change per push.
-Scoping them to the delta would drop the manifest and intent tokens on every incremental pass after the first, which is exactly when the diff-keyed search is the reviewer's only chance to surface a lesson Step 1.0's top-50 window missed.
+In `incremental` and `incremental-quick` modes, key groups 1, 2, and 4 on `REVIEW_DIFF`'s paths and hunks; groups 3 and 5 stay whole-PR.
 
-With `INTENT_PHRASE` bound, now issue the search — skip it when `LOREKIT_CONNECTED` is already
-`false` (the Step 1.0 attempt failed, so there is no backend to search), and otherwise treat an
-error here as a non-blocking addend miss that does NOT flip `LOREKIT_CONNECTED`.
+With `INTENT_PHRASE` bound, issue the searches — skip them when `LOREKIT_CONNECTED` is already
+`false`, and treat an error here as a non-blocking miss that does NOT flip `LOREKIT_CONNECTED`.
+
+**Join the query terms with ` OR `.** `memory_search` ANDs space-separated words, so a
+space-joined query matches nothing; the index treats a path as one token, so use full paths, never
+basenames or directory names.
 
 ```text
-# Issue as a real mcp__lorekit__memory_search tool call.
-mcp__lorekit__memory_search: q="<changed dirs + basenames + manifest names + changed symbol names + synthesized intent + integrations>" scopes=["repo::{owner}/{repo}", "global"] limit=15
+# Issue each as a real mcp__lorekit__memory_search tool call — one per loop tag (tags filter is AND).
+Q = "<group 2 paths> OR <group 4 symbols>", each term joined with " OR "
+mcp__lorekit__memory_search: q=Q scopes=["repo::{owner}/{repo}", "global"] tags=["loop::reviewer-lessons"]           limit=6
+mcp__lorekit__memory_search: q=Q scopes=["repo::{owner}/{repo}", "global"] tags=["loop::reviewer-comment-relevance"] limit=15
 ```
 
-The `limit` is `15` (raised from `10`): search results are already relevance-ranked, so the marginal entries stay on-topic, and the five-field enriched query widens what *can* match — a modest `+5` captures the paraphrase-only and intent-only lessons the new symbol/intent fields surface without materially growing the merged pool the reviewer must weigh. This is independent of Step 1.0's `list` cap of `50`, which is deliberately left unchanged.
+```text
+✗ q="agents pr-reviewer route-depth finalize"   → 0 hits (four ANDed words)
+✓ q="agents/pr-reviewer/scripts/route-depth.mjs OR agents/pr-reviewer/scripts/finalize.mjs OR routeDepth"
+```
 
-Keep only returned hits carrying the tag `loop::reviewer-lessons` or `loop::reviewer-comment-relevance`, then merge them into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
+Search returns full bodies: a hit needs no Step 1.2d read.
+Merge the hits into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
 A hit surfaced here is applied exactly as one loaded at Step 1.0 — a `reviewer-lessons` consideration, or a `reviewer-comment-relevance` suppress / downgrade / promote at Step 2.7b.
 Add the number of newly-surfaced, non-duplicate **`reviewer-comment-relevance`** entries to
 `MEMORIES_READ_COUNT` — Step 1.0 owns that counter's definition and it stays relevance-only.
@@ -757,7 +633,7 @@ whether or not Step 2 ran, before the verdict and posting. Skip it on a first-pa
 
 Use the one template in [`agents/pr-reviewer/rules/terminal-report.md`](./pr-reviewer/rules/terminal-report.md).
 
-Pick the presentation by verdict (see *Gate states*): **PASS** (all clear) when every gate is ✅; **WARN** when no hard gate fails (Gates 4/5 all ✅) and neither tri-state gate — Prior review feedback, Code review — is ❌, but at least one graded gate — Description vs. code, Prior review feedback, or Code review — is ⚠️ (still a PASS verdict); **FAIL** when Gate 4 or Gate 5 fails or the Prior review feedback or Code review gate is ❌ (CI is informational-in-`Run` and never affects the verdict).
+Pick the presentation by verdict ([*Gate criteria*](#gate-criteria)): **FAIL** as defined there; **WARN** — a PASS with a ⚠️ on Gate 1, 3, or 6; else **PASS**. CI never moves the verdict.
 
 ## Step 3.5: Line validity pre-flight
 
@@ -773,15 +649,24 @@ API calls. Casualties are logged in the terminal Quality Gate summary for manual
 ## Step 4: Post the review
 
 **Every run reaching Step 3 reaches Step 4** — under `--dry-run` (which `--review-sha` requires)
-4a/4b render to scratch and 4c/4d are not written. The intent worker never reaches Step 4.
+4a–4c go to scratch and nothing is written to LoreKit. The intent worker never reaches Step 4.
 
-**Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) before writing anything in this
-step.** It owns, in order: **4a** the sticky report (`finalize.mjs` + `render-report.mjs`, the
-impact image whenever `context.impactImage.eligible`, the pre-write assertions, the
-sticky-cannot-be-written table); **4b** the review, posted only when
-`INLINE_COMMENTS_JSON` is non-empty; **4c** the unconditional state-record write; **4d** the
-`knowledge` + `hotspot` writes. Payload shapes: [`rules/report-rendering.md`](./pr-reviewer/rules/report-rendering.md).
-The writes fail independently and none cascades.
+Write `judgments.json` per [`rules/judgments.md`](./pr-reviewer/rules/judgments.md); never read the
+schema or [`report-rendering.md`](./pr-reviewer/rules/report-rendering.md) whole — `finalize.mjs`
+builds the report, inline comments, gates, and verdict, and a rejection names the slot to look up.
+On the `gh` path the scripts below carry 4a and 4b, pre-write checks and GitHub writes included.
+Then make the LoreKit writes in [`rules/run-writes.md`](./pr-reviewer/rules/run-writes.md) (4c state
+record, always; 4d knowledge + hotspot). The writes fail independently and none cascades.
+**Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
+(MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
+`context.impactImage.eligible` is true (§ The impact image only). The script lines, exactly — never probe them with `--help`:
+
+```text
+node "$AGENT_SUPPORT/pr-reviewer/scripts/validate-judgments.mjs" <judgments.json>
+node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> [--dry-run --no-telemetry]
+node "$AGENT_SUPPORT/pr-reviewer/scripts/execute-write-plan.mjs" --plan <dir>/write-plan.json [--dry-run]
+node "$AGENT_SUPPORT/pr-reviewer/scripts/execute-write-plan.mjs" --check-report <dir>/report-body.md
+```
 
 ---
 

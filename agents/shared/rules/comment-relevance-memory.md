@@ -328,6 +328,9 @@ Add these two calls to the existing narrow-to-broad lesson read.
 Only a real tool error (thrown exception, or tool not listed in the agent's `tools:` grant) may suppress the call; never infer "not connected" without attempting it.
 When this rule is applied inside a sub-agent, the sub-agent does NOT receive the SessionStart memory-load priming that the main session gets, so it MUST perform this read itself — never assume memories were pre-loaded.
 
+`pr-reviewer` does not use the two calls below: its
+[Step 1.0](../../pr-reviewer.md#10-prior-comment-awareness--relevance-memory-load-default-on) owns the call shape (one ranked repo list at `limit=15`, none on a lean budget, plus Step 1.2c's diff-keyed search).
+
 ```text
 # Narrow-to-broad fan-out — repo-specific wins over global on conflict.
 # Issue each line as a real mcp__lorekit__memory_list tool call.

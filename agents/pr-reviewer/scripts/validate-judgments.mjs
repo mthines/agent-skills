@@ -583,6 +583,12 @@ async function selfTest() {
         badOut.status === 1 && badOut.stderr.includes("200-char cap"), `status=${badOut.status} stderr=${badOut.stderr}`);
       rmSync(candidatesPath, { force: true });
     }
+    {
+      // The example the agent copies instead of reading the schema (rules/judgments.md) must stay valid.
+      const example = JSON.parse(readFileSync(join(HERE, "..", "schemas", "judgments.example.json"), "utf8"));
+      const exampleErrors = validateJudgments(schema, example);
+      check("schemas/judgments.example.json validates with zero errors", exampleErrors.length === 0, exampleErrors.join(" | "));
+    }
   }
 
   if (failed > 0) {

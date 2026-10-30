@@ -35,7 +35,7 @@ Two axes, bound at different steps and reported separately:
 | **Depth tier** | `deep` · `standard` · `quick` | Step 1.2b ([`depth-routing.md`](./depth-routing.md)) | **How hard it is looked at** — which lenses run, which finders run, how many escalation traces, whether a Tier-2 receipt is mandatory. |
 
 They correspond one-to-one on the happy path (`full`↔`deep`, `incremental`↔`standard`,
-`incremental-quick`↔`quick`) and the renderer rejects a report where they disagree — two axes, not
+`incremental-quick`↔`quick`) and the renderer rejects a report where they disagree, except a size-scaled first run ([`depth-routing.md` § Size scaling](./depth-routing.md#size-scaling)) — two axes, not
 one, because **scope and depth are independently wrong**: a 15-line mutex change is a small scope
 that needs deep looking, and a 400-line generated-file refresh is a large scope that needs almost
 none. Phase C routes on what the change *is*, not only on how big it is — see

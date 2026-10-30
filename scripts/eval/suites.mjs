@@ -190,7 +190,7 @@ export const SUITES = [
     // because supplying that answer here is what would turn the instruction into an answer key.
     //
     // The verb is SURFACES, not "returns", and the difference is load-bearing for one whole
-    // dimension. Step 1.0's source-attribution filter runs on what the four calls returned, so a
+    // dimension. Step 1.0's source-attribution filter runs on what its calls returned, so a
     // record another tool wrote IS returned by the call and then dropped — under "returns" the
     // two source-attribution cases are answerable both ways and grade nothing. "Surfaces" is
     // also the label vocabulary the suite already uses, so the question and the answers now

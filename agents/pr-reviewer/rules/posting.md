@@ -96,25 +96,9 @@ REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 
 `--out-dir` receives `finalize-result.json`, `report-body.md`, and `inline/*.md` (one file per posted finding). A non-zero exit is `render-report.mjs` rejecting the payload — an unknown key, a missing required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a template that lost its marker or accordion — report the error and post nothing. **If `finalize.mjs` cannot be resolved or fails, do not fall back to composing the body by hand** — that is the exact failure this replaces: report the error verbatim in Step 5 alongside the payload it was given, post the inline findings (Step 4b still applies), and leave the sticky untouched. A missing report is recoverable; a malformed one that consumers then parse is not.
 
-**What the model still supplies**, via `judgments.json` (schema:
-[`schemas/judgments.schema.json`](../schemas/judgments.schema.json), enforced by
-`validate-judgments.mjs`):
+**What the model still supplies** is `judgments.json`: write it per [`judgments.md`](./judgments.md) (example, validator, and the field table).
 
-| Field | Content |
-| --- | --- |
-| `summary` | The report's top-level `SUMMARY` scalar (≤ 240 chars) — the one line of prose `finalize.mjs` cannot derive from the candidates. |
-| `gates.gate1` | Description-vs-code judgment (Gate 1). |
-| `gates.gate4` | Self-review-signals judgment (Gate 4). |
-| `gates.gate5` | Docs judgment (Gate 5). |
-| `candidates[]`, `threads[]`, `lenses[]`, `memory` | Everything Steps 2/2.4–2.9c produced. `finalize.mjs` computes thresholds, the defer band, suppression, placement, caps, and the gates/verdict from these — it invents none of it. |
-| `scanned_files` | `SCANNED_FILES` (Step 2), as repo-relative paths. `finalize.mjs` counts it against `context.scopePaths` for the report's `Checked` row. Omitted, the row drops its files-read part. |
-| `impact_trace` | Per changed export the consumer-impact finder traced, and per dependency the dependency finder read (`symbol` = package, `path` = manifest), `{symbol, path, verified: [<files read that still hold>]}` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)). `finalize.mjs` builds the report's `Reach`, `Dependencies`, and `Overlapping PRs` rows from it, `impact.json`, and the posted consumer-impact claims. |
-| `candidates[].decide` | `true` on a claim that is the author's choice between two acceptable options — rendered `Decide: <title>` and counted `to decide`. Never together with `blocking`. |
-| `candidates[].fix` | The remedy. When it is one line of ≤ 140 chars, the findings table shows it under the title; on a `decide` candidate, write the context for the choice instead. |
-| `memory.indexed` | `MEMORIES_READ_COUNT` from Step 1.0: every LoreKit entry listed, all three families. The report's `<N> indexed` half; finalize renders the largest of it, `read[]`'s length, and the used count. |
-| `memory.relevance_rules[]`, `memory.lessons_used[]`, `memory.read[]` | Copy `id`, `scope`, and `key` onto every entry. Take `id` from the `memory_list` / `memory_search` entry that surfaced the key — `memory_read` returns none. Take `scope` from the entry, or from the scope the call was made with when the entry omits it — a `scope="global"` `memory_list` does, and a ref without a scope is never cited. `read[]` lists `{ id, scope, key }` for every body this run fetched with `memory_read` (Steps 1.2a, 1.2d, 2.7b). The run trace opens each memory by these ([`run-telemetry.md § The memory`](./run-telemetry.md#the-memory)). |
-
-There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `IMPACT_IMAGE` — § The impact image, below — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`, and — only to override what `finalize/reach.mjs` builds from `scanned_files` / `impact_trace` — `COVERAGE` and `IMPACT`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
+Facts `finalize.mjs` cannot compute go in `context.render.*` before it runs ([`judgments.md` § `context.render`](./judgments.md#contextrender)); never post-patch the rendered body.
 
 #### The impact image
 
@@ -131,7 +115,8 @@ node "$FINALIZE" --context /tmp/review-context.json --judgments /tmp/judgments.j
   --out-dir /tmp/finalize-dry --dry-run --no-telemetry
 # 2. Draw the diagram with those numbers as badges (impact-map § Badges from a pr-reviewer report).
 #    Skill("impact-map", "<pr-url> --findings /tmp/finalize-dry/report-body.md") → light, dark, alt
-# 3. Upload both PNGs and get their urls; open each with the Read tool first.
+# 3. Upload both PNGs and get their urls. Do not open them again: step 2 already viewed the light
+#    one, which satisfies attach-media's check 4 for the pair.
 #    Skill("attach-media", "<pr-url> <light.png>#<alt> <dark.png>#<alt> --to urls")
 # 4. Bind what steps 2 and 3 printed, hand it to the renderer, then run the real finalize (above).
 LIGHT_URL="<attach-media url for the light PNG>"
@@ -144,39 +129,18 @@ jq --arg l "$LIGHT_URL" --arg d "$DARK_URL" --arg a "$ALT" \
 
 The row numbers are a pure function of `judgments.json` (blocking, then decisions, then by tier), so the dry run and the real run number the findings identically. Change no judgment between the two runs, or the badges point at the wrong rows. When any step fails, post the report without `IMPACT_IMAGE` and report `failed (<step>: <error>)`.
 
-**Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
-The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
-the only check that survives the renderer being **bypassed**, which is the failure this whole
-section exists to prevent. A check that runs only inside the thing it is guarding guards nothing.
+**Seven assertions guard `REPORT_BODY` immediately before the write, whatever produced it**: the
+report marker, the `Review details` accordion (not pre-expanded), no terminal-only `**Verdict**`
+line, a `### ` headline, the attribution footer, and `comment-spine.mjs`'s re-encoding check.
+The renderer guarantees them, so on the normal path this is redundant — and that is the point: it
+is the only check that survives the renderer being **bypassed**. `execute-write-plan.mjs` runs them
+on the exact file `sticky.upsert` posts and records a failure as `{"kind":"sticky.upsert","ok":false,"aborted":"<reason>"}`
+(and as `reportCheck` under `--dry-run`). On the MCP path, where you post the body yourself, run
+them first:
 
 ```bash
-grep -q '<!-- PR_REVIEWER_REPORT -->' <<< "$REPORT_BODY" || abort "report body lost the marker"
-# The accordion check needs LINE ADJACENCY, which grep cannot express portably. Two traps:
-#   grep -qz '<details>\n<summary>…'   → \n is the letter n in a BRE; matches "<details>n<summary>…"
-#   grep -qz $'<details>\n<summary>…'  → a newline in a pattern is a pattern SEPARATOR, so this is
-#                                        an OR of {<details>, <summary>…} and passes on either alone
-# Both read as correct and neither is. `grep -Pqz` works but is GNU-only. Use awk.
-printf '%s\n' "$REPORT_BODY" | awk '
-  /^<details>$/ { getline nxt; if (nxt ~ /^<summary>Review details/) ok = 1 }
-  END { exit ok ? 0 : 1 }
-' || abort "no Review details accordion"
-grep -q '<details open>' <<< "$REPORT_BODY" && abort "accordion is pre-expanded"
-grep -q '\*\*Verdict\*\*' <<< "$REPORT_BODY" && abort "advisory verdict is terminal-only"
-# The `### ` headline is what makes a report identifiable as a report at a glance — and it is the
-# one shape an inline finding never uses (a finding opens with its Conventional-Comments prefix and
-# a bold title). A report that lost it reads as a long comment.
-grep -q '^### ' <<< "$REPORT_BODY" || abort "no ### headline — the report has no report shape"
-# The shared attribution footer, built by comment-spine.mjs's footerLine() and identical on both
-# surfaces. It carries the reviewed sha, which a sticky has no commit_id for, plus the freshness
-# stamp that used to sit in its own <sub>Updated …</sub> line.
-grep -q '^<sup>`pr-reviewer` · commit `' <<< "$REPORT_BODY" \
-  || abort "no attribution footer — provenance and the freshness cue are both missing"
-# The last gate: is this still renderer output, or has the markup been re-encoded in transit?
-# Run the shared checker rather than re-deriving its signatures as greps — it is the same function
-# both renderers call, so this cannot drift away from them.
-printf '%s\n' "$REPORT_BODY" > /tmp/report-body.md
-node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/report-body.md \
-  || abort "body is no longer renderer output (see stderr) — post the rendered bytes verbatim"
+node "$AGENT_SUPPORT/pr-reviewer/scripts/execute-write-plan.mjs" --check-report /tmp/finalize/report-body.md \
+  || abort "report body failed its pre-write check (see stderr)"
 ```
 
 On any `abort`: post no report object, name the failing assertion in the Step 5 output, and stop.
@@ -466,7 +430,7 @@ The six non-negotiables:
    describe the current run in every case, including a run that posts no review. There are exactly
    two exceptions, and neither relocates the report: an access path that cannot write it
    (§ *When the sticky cannot be written*), which posts the degraded pointer instead, and a body
-   that fails the pre-write assertion below (§ *Build the payload, then run the renderer*), which
+   that fails the pre-write check (§ *Build the payload, then run the renderer*), which
    posts **no** report copy anywhere and reports the failing reason to the user.
 6. Never skip the state write (Step 4c). It has **no** exceptions — not a failed sticky, not a
    skipped review, not a caller policy refusal. Each of those is a reason the *next* run needs the
@@ -476,140 +440,11 @@ Confirm the 4b response contains `state: "COMMENTED"` when a review was posted.
 
 ### 4c. Record the run state
 
-The last write of the run, and **unconditional**: it runs whatever 4a and 4b did, including on a
-run that posted no review, could not write the sticky, or was refused the write by caller policy.
-Skipping it costs the *next* run its delta.
-
-**The one exception is `--dry-run`**, which writes 4a/4b/4c to scratch
-(`$(scratchRoot())/<run-id>/state.json`, mirroring the shape below) and issues no
-`mcp__lorekit__memory_write` call at all — the A/B harness and the shadow run depend on nothing
-accumulating between repeat runs of the same PR.
-
-Build the record from the values this run already holds and write it to the scope and key bound in
-Step 0.7:
-
-```text
-# Issue as a real mcp__lorekit__memory_write tool call.
-mcp__lorekit__memory_write:
-  scope    = "<STATE_SCOPE>"                       # branch::{owner}/{repo}::{head}
-  key      = "<STATE_KEY>"                         # ci-state::pr-review-<n>
-  value    = "<the JSON object below, serialised>"
-  tags     = ["ci::pr-review-state"]
-  kind     = "bus"
-  host     = "reviewer"
-  ttl_days = 7
-  origin_repo = "<RESOLVED_REPO>"
-  origin_pr   = <PR_NUMBER>
-  origin_commit = "<HEAD_SHA>"
-  origin_branch = "<HEAD_REF>"
-  cited    = <finalize-result.json's citedRefs, verbatim>   # jq -c '.citedRefs' <out-dir>/finalize-result.json
-```
-
-**`cited` credits the memories that shaped this review.**
-LoreKit records each ref as a citation of that memory by this PR's state record, and the memory's detail sheet shows it as `Cited · credited N×`.
-Pass `finalize.mjs`'s `citedRefs` exactly as written — it holds `scope::key` for every `memory.lessons_used[]` entry and every relevance rule that acted this run, and nothing else.
-Never build the list by hand, never add a memory you only read, and pass `[]` when it is empty.
-A ref LoreKit cannot resolve is dropped silently and never fails the write.
-
-```text
-# correct: the refs finalize computed from judgments.memory
-cited = ["repo::acme/widget::hotspot::src/api/client.ts", "repo::acme/widget::reviewer-comment-relevance::rule::correctness:nil-deref:-@src/jobs/sync.ts"]
-
-# incorrect: every memory the run loaded — a citation means "this shaped the review", not "this was in context"
-cited = ["repo::acme/widget::hotspot::src/api/client.ts", "global::reviewer-lessons::prefer-guard-clauses", "repo::acme/widget::knowledge::retryRequest@src/api/client.ts"]
-```
-
-```bash
-# Same scope+key is an UPDATE, so this is one row per PR forever — never one per run.
-NEW_STATE=$(jq -c \
-  --arg sha "$HEAD_SHA" --arg mode "$RUN_MODE" --arg verdict "$VERDICT" \
-  --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  --arg sticky_url "$STICKY_URL" --arg login "${PRIOR_REPORT_AUTHOR:-$ME}" \
-  --argjson pr "$PR_NUMBER" \
-  --argjson sticky_id "${STICKY_COMMENT_ID:-null}" \
-  --argjson ids "$OPEN_BOT_COMMENT_IDS_JSON" \
-  --argjson carried "$CARRIED_FINDINGS_JSON" \
-  --argjson diag "$DIAGNOSTICS_JSON" \
-  --argjson round "$(jq -c --arg sha "${HEAD_SHA:0:7}" \
-                       'if .payload.RUN.sha == $sha then (.round // {open: null, blocking: null}) else {open: null, blocking: null} end' \
-                       /tmp/finalize/finalize-result.json 2>/dev/null || echo '{"open": null, "blocking": null}')" '
-  {v: 1, commit: $sha, data: {
-     pr: $pr,
-     sticky_comment_id: $sticky_id,
-     sticky_url: $sticky_url,
-     bot_login: $login,
-     runs: (((.data.runs // []) + [{sha: $sha, mode: $mode, verdict: $verdict, at: $at,
-                                     open: $round.open, blocking: $round.blocking}]) | .[-50:]),
-     open_thread_ids: $ids,
-     carried_findings: ($carried | .[:50]),
-     diagnostics: ($diag | del(.optimality_cards))
-  }}' <<< "${PR_STATE:-{\}}")
-```
-
-The two caps (`runs` 50, `carried_findings` 50) apply **on every write**,
-even when the input is already short — a cap that only fires when someone remembers it is not a cap.
-
-`CARRIED_FINDINGS_JSON` / `DIAGNOSTICS_JSON` are **this run's** outputs, not Step 0.7's:
-
-| Field | Source | Note |
-| --- | --- | --- |
-| `runs[-1].open` · `runs[-1].blocking` | `finalize-result.json`'s `round` | The review threads this run leaves open, and the blocking subset — the next run's `Progress` row. Copied, never recounted: finalize computes it with the report's own formula. `null` when finalize did not run, or when the file's `payload.RUN.sha` is not this run's head (a result left by an earlier run); the next run then skips this point. |
-| `carried_findings` | Step 2.9b's `Additional findings`, plus any surviving Step 0.7 entry | Posted-inline or resolved findings are dropped — they'd come back as duplicates. |
-| `diagnostics.gate_rows` | Step 1.8's ⚠️/❌ rows | `✅` rows are not recorded. |
-| `diagnostics.standards` | Step 2.4d's run-state | `{ran, docs_scanned, finding_count}`. |
-| `diagnostics.measurability` | Step 2.4e's run-state | `{ran, paths_classified, missing, unlinked}` — a `missing` finding itself carries via `carried_findings`, not here. |
-| `diagnostics.skipped_files` · `diagnostics.partial` | Step 1.4 / the budget stop | Context-only for the next run, never re-rendered. |
-
-Four rules: (1) **never on the critical path** — a failed write is logged with its error and the run
-continues; Step 5 reports `PR-state record NOT written (<error>) — the next run will re-review in
-full.` (2) **no secrets** — every field is built from an explicit allow-list (PR number, sha, mode,
-verdict, login, comment ids, findings this run already published); never serialise an environment,
-error body, or raw tool response. (3) **`ttl_days` on every write** — see below; omitting it
-inherits whatever default the repo config sets for lessons, a number nobody chose for this record.
-(4) **last write wins, no compare-and-swap** — two concurrent runs clobber each other's record; the
-loser's state is one run stale, which widens the next delta (the safe direction), so this is
-accepted rather than locked.
-
-**The TTL is the cleanup mechanism, and needs nothing wired up.** `ttl_days: 7` on every write
-recomputes `expires_at = now + 7d` each time, so the expiry measures how long this PR has been
-quiet, not how old the record is; a merged, closed, or abandoned PR self-cleans in a week with no
-integration, workflow, webhook, or cleanup pass — which matters, since most repositories have none
-of those. A LoreKit-side GitHub-integration event on `pull_request: closed (merged)` could purge the
-record at merge and would be a genuine improvement, but it is an **accelerant** on a mechanism that
-already works, not the mechanism — it is not shipped, and every surface treats it as optional.
-
-This agent does **not** purge, on either path: `mcp__lorekit__memory_delete` is deliberately absent
-from its `tools:` grant, so a reviewer can never delete a memory as a side effect of reviewing.
+Owned by [`run-writes.md` § 4c](./run-writes.md#4c-record-the-run-state): the unconditional PR-state record write.
 
 ### 4d. Record what this run learned about the code
 
-The state record is about *this PR*. This step is about *this repository* — the half that outlives
-the branch and reaches the next author who touches the same symbol.
-
-Run the two writes in [`memory.md § Write — the two calls this agent makes
-itself`](./memory.md#write--the-two-calls-this-agent-makes-itself): **knowledge**
-for each symbol this run traced (deep tier only, cap 10) and **hotspot** for each file that carried
-a confirmed finding, plus each file where Step 1.0's in-run signals recorded a `missed` (a human
-caught something on a changed line this agent did not flag). Both are `mcp__lorekit__memory_write`
-calls with `kind: "signal"`, `host: "reviewer"`, `ttl_days: 90` passed explicitly — a `ci::` tag
-leaves both NULL and Step 1.0's read then cannot see what was written.
-
-| Tier | What 4d writes |
-| --- | --- |
-| `deep` | knowledge + hotspot |
-| `standard` · `quick` | **hotspot only** — a knowledge fact needs a traced symbol and a receipt, and neither tier produces one; writing an unverified fact is exactly the failure mode rule 1 of that section prevents. |
-
-**Both writes take their `value` from `merge-memory-record.mjs`, run on one batch `memory_read` of
-every key this step writes — never from the rule file's literals, and never from Step 1.2a's
-summaries.** Same scope + key replaces the whole value, so a hotspot written as the template's
-`confirmed: 1` resets a counter four PRs of history built. Rule 3 of that section is the procedure:
-read every key in one `refs` call, run the script, write each `writes[]` value verbatim, and write
-nothing for a key in `skipped[]`. A failed read means no 4d write this run.
-
-Non-blocking, like 4c — a failed write is logged and the run continues. Report the counts in Step 5
-(`Memory written: <K> knowledge, <H> hotspot, <S> skipped`), **including the zeroes**: a deep-tier run that wrote
-0 knowledge records means either nothing was traced or the write is broken, and the count is the
-only place those two separate.
+Owned by [`run-writes.md` § 4d](./run-writes.md#4d-record-what-this-run-learned-about-the-code): the `knowledge` + `hotspot` writes.
 
 ### The shapes: report body, headlines, sections, inline comments
 

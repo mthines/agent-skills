@@ -17,8 +17,8 @@ Phases 5–6 of `impact-map`.
 2. Verdict rows are `<details>` with a `<summary>`; each holds a `<dl>` of What / Risk / Ask and a `Lines to check →` link to `#d<n>`.
 3. Each decision is an `<article class="decision" id="d<n>">` holding its `<ul class="spots">` of line links.
    The "also live on merge" item uses `class="decision also"` and no badge.
-4. Render the PNGs ([§ PNGs](#pngs)) and open both, even when nothing will be posted: a label spilling out of its box shows only in the render.
-   Fix the page and re-render until both are clean.
+4. Render the PNGs ([§ PNGs](#pngs)) and open the light one, even when nothing will be posted: a label spilling out of its box shows only in the render.
+   Fix the page and re-render until the light one is clean; the dark one shares its layout.
    When `render-png.mjs` exits 2 (no Chrome or Chromium), still publish the page and add `pngs: not rendered (no Chrome)` to the report; `--comment` and `--body` then stop before step 0, because they have no images to post.
 5. Publish with the Artifact tool (title `<Subject> Impact Map`, icon `map`) when the host has it.
    Otherwise write `.agent/{branch}/impact-map/pr-<n>.html` and report the path.
@@ -57,7 +57,8 @@ node "${CLAUDE_SKILL_DIR}/scripts/render-png.mjs" <page.html> <out-dir>
 It needs Chrome or Chromium: `$CHROME`, the macOS app, `google-chrome`, `chromium`, or a Playwright `chromium-*` or `chromium_headless_shell-*` install under `$PLAYWRIGHT_BROWSERS_PATH` or the default cache.
 `node render-png.mjs --find-browser` prints the one it would use, and exits 2 when there is none.
 Run as root, it adds `--no-sandbox`, without which Chromium refuses to start.
-Open both PNGs with the Read tool before uploading: badges on box corners, no clipped text, nothing sensitive.
+Open the light PNG with the Read tool before uploading: badges on box corners, no clipped text, nothing sensitive.
+The dark PNG renders the same page in other colours, so one view covers both; an image costs far more context than its page's text.
 
 ## Comment and body
 

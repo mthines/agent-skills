@@ -413,13 +413,15 @@ const MODE_FOR_TIER = { deep: "full", standard: "incremental", quick: "increment
  * (D4–D6) carried `mode: null`, finalize rendered `"unknown"`, and the render failed closed.
  * A capability cap (`deep` → `standard` under `diff-only`) keeps `full`: render-report.mjs's
  * carve-out expects exactly that pair, alongside the RUN_ANOMALY naming the cap.
- * @param {{ runMode: { mode: string|null }, zeroDelta: boolean, routing: { tier: string, capApplied?: boolean } }} args
+ * @param {{ runMode: { mode: string|null }, zeroDelta: boolean, routing: { tier: string, capApplied?: boolean, sizeScaled?: boolean } }} args
  * @returns {string}
  */
 export function resolveContextMode({ runMode, zeroDelta, routing }) {
   if (runMode.mode) return runMode.mode;
   if (zeroDelta) return "zero-delta";
   if (routing.capApplied) return "full";
+  // A size-scaled first run reviews the whole PR at a lighter tier: it is still a full review.
+  if (routing.sizeScaled) return "full";
   const mode = MODE_FOR_TIER[routing.tier];
   if (!mode) throw new Error(`resolveContextMode: routed tier ${JSON.stringify(routing.tier)} maps to no mode`);
   return mode;
@@ -2384,7 +2386,10 @@ async function prepare(opts) {
 
   timing.end(); // triage-routing
 
-  const impactImage = await decideImpactImage({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band, repo });
+  // A lean budget (a defaulted quick routing) never draws the image: the host probe is skipped too.
+  const impactImage = budget.impactImage
+    ? await decideImpactImage({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band, repo })
+    : { eligible: false, reason: "lean budget (quick tier)" };
 
   const context = {
     v: 1,
@@ -2677,10 +2682,10 @@ async function selfTest() {
     return small.reason === "single-file diff" && calls === 2
       && noBrowser.reason === "no browser on host" && unknown.eligible === true;
   });
-  t("prepare() takes the context's impactImage from decideImpactImage, the probed path", () => {
+  t("prepare() takes the context's impactImage from decideImpactImage, the probed path, unless the budget is lean", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     const body = src.slice(src.indexOf("async function prepare(opts)"));
-    return /const impactImage = await decideImpactImage\(\{[^}]*\brepo\b[^}]*\}\)/.test(body) && /^\s+impactImage,$/m.test(body);
+    return /const impactImage = budget\.impactImage\s+\? await decideImpactImage\(\{[^}]*\brepo\b[^}]*\}\)/.test(body) && /^\s+impactImage,$/m.test(body);
   });
 
   // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no
@@ -3215,6 +3220,9 @@ async function selfTest() {
     resolveContextMode({ runMode: undecided, zeroDelta: false, routing: { tier: "standard", capApplied: true } }) === "full");
   t("--full wins over the routed tier", () =>
     resolveContextMode({ runMode: resolveRunMode({ full: true }), zeroDelta: false, routing: { tier: "standard" } }) === "full");
+  t("resolveContextMode: a size-scaled first run stays a full review at its lighter tier", () =>
+    resolveContextMode({ runMode: undecided, zeroDelta: false, routing: { tier: "quick", sizeScaled: true } }) === "full"
+    && resolveContextMode({ runMode: undecided, zeroDelta: false, routing: { tier: "standard", sizeScaled: true } }) === "full");
   t("every mode resolveContextMode emits is one render-report.mjs accepts", () => {
     const valid = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
     return ["deep", "standard", "quick"].every((tier) => valid.has(resolveContextMode({ runMode: undecided, zeroDelta: false, routing: { tier } })));

@@ -25,11 +25,12 @@
  * independently, exactly as in prose — one failing does not block the rest.
  */
 
-import { readFileSync, writeFileSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { run as defaultRun, scratchRoot } from "./prepare-review.mjs";
 import { appendRecord, finishRun } from "./review-telemetry.mjs";
+import { assertPostable } from "./comment-spine.mjs";
 
 /** When this process started — the `post` step span's start. */
 const PROCESS_START_NS = BigInt(Date.now()) * 1_000_000n;
@@ -205,6 +206,43 @@ export function planExecutionSteps(writePlan) {
 }
 
 /**
+ * The sticky report's pre-write assertions (posting.md § Build the payload), run on the exact file
+ * the write posts. The renderer guarantees all seven; checking again here is the one check that
+ * survives the renderer being bypassed, and it means the agent never re-runs them by hand.
+ * @param {string} body
+ * @returns {{ok: boolean, reason: string}}
+ */
+export function reportBodyIsSafe(body) {
+  const text = String(body ?? "");
+  const lines = text.split("\n");
+  if (!text.includes("<!-- PR_REVIEWER_REPORT -->")) return { ok: false, reason: "report body lost the marker" };
+  if (!lines.some((l, i) => l === "<details>" && /^<summary>Review details/.test(lines[i + 1] ?? ""))) {
+    return { ok: false, reason: "no Review details accordion" };
+  }
+  if (text.includes("<details open>")) return { ok: false, reason: "accordion is pre-expanded" };
+  if (text.includes("**Verdict**")) return { ok: false, reason: "advisory verdict is terminal-only" };
+  if (!lines.some((l) => l.startsWith("### "))) return { ok: false, reason: "no ### headline — the report has no report shape" };
+  if (!lines.some((l) => l.startsWith("<sup>`pr-reviewer` · commit `"))) {
+    return { ok: false, reason: "no attribution footer — provenance and the freshness cue are both missing" };
+  }
+  try {
+    assertPostable("report body", text);
+  } catch (e) {
+    return { ok: false, reason: `body is no longer renderer output: ${/** @type {Error} */ (e).message}` };
+  }
+  return { ok: true, reason: "" };
+}
+
+/** @param {string|undefined} bodyPath @returns {{ok: boolean, reason: string}} */
+function checkStickyBody(bodyPath) {
+  try {
+    return reportBodyIsSafe(readFileSync(String(bodyPath), "utf8"));
+  } catch (e) {
+    return { ok: false, reason: `cannot read the report body: ${/** @type {Error} */ (e).message}` };
+  }
+}
+
+/**
  * @param {any} writePlan
  * @param {{ runner?: Function, dryRun?: boolean, repo?: string, resolveFailedHandler?: Function }} [opts]
  */
@@ -219,9 +257,11 @@ export async function executeWritePlan(writePlan, opts = {}) {
   // `finalize.mjs --dry-run` emits and what pipeline.md promises can be previewed. The reason a
   // live run would refuse it is carried as `wouldRefuse`, never silently dropped.
   const refusal = refusalReason(writePlan);
+  const reportCheck = writePlan.sticky_upsert ? checkStickyBody(writePlan.sticky_upsert.body_path) : null;
   if (dryRun) {
     return {
       executed: [], dryRun: true, plannedSteps: planExecutionSteps(writePlan), lorekitOps, ghAccess: null,
+      ...(reportCheck ? { reportCheck } : {}),
       ...(refusal ? { wouldRefuse: refusal } : {}),
     };
   }
@@ -276,7 +316,10 @@ export async function executeWritePlan(writePlan, opts = {}) {
     await opts.resolveFailedHandler(resolveFailed);
   }
 
-  if (writePlan.sticky_upsert) {
+  if (writePlan.sticky_upsert && reportCheck && !reportCheck.ok) {
+    // Post no report object; the review and the state record still go out (writes never cascade).
+    executed.push({ kind: "sticky.upsert", ok: false, aborted: reportCheck.reason });
+  } else if (writePlan.sticky_upsert) {
     const su = writePlan.sticky_upsert;
     // `-F` (`--field`), never `-f`: only `--field` reads `@<path>` as a file. `-f`/`--raw-field` sends
     // the literal string `@/…/report-body.md`, so every sticky write would replace the report with its
@@ -351,7 +394,8 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--self-test" || a === "--dry-run") { opts[a.slice(2)] = true; continue; }
-    if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; continue; }
+    if (a === "--check-report") opts.checkReport = argv[++i];
+    else if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; }
   }
   return opts;
 }
@@ -362,6 +406,43 @@ async function selfTest() {
     if (!cond) { failed++; console.error(`  ✗ ${label}${detail ? ` — ${detail}` : ""}`); }
     else console.log(`  ✓ ${label}`);
   };
+
+  // A rendered-shape report body on disk: sticky.upsert now checks the file it posts before the write.
+  const BODY = join(scratchRoot(), `ewp-selftest-body-${process.pid}.md`);
+  const GOOD_BODY = "<!-- PR_REVIEWER_REPORT -->\n### ✅ No issues found\n\n<details>\n<summary>Review details</summary>\n<br>\n</details>\n\n<sup>`pr-reviewer` · commit `abc1234`</sup>\n";
+  writeFileSync(BODY, GOOD_BODY, "utf8");
+
+  // reportBodyIsSafe — posting.md's seven pre-write assertions, run by the script on the posted file.
+  {
+    check("a renderer-shaped report body is safe", reportBodyIsSafe(GOOD_BODY).ok === true, reportBodyIsSafe(GOOD_BODY).reason);
+    const cases = [
+      ["marker", GOOD_BODY.replace("<!-- PR_REVIEWER_REPORT -->\n", "")],
+      ["accordion", GOOD_BODY.replace("<details>\n<summary>Review details", "<details>\n\n<summary>Review details")],
+      ["pre-expanded", GOOD_BODY.replace("<details>\n", "<details open>\n<details>\n")],
+      ["terminal-only", GOOD_BODY + "**Verdict**: PASS\n"],
+      ["headline", GOOD_BODY.replace("### ", "")],
+      ["footer", GOOD_BODY.replace("<sup>`pr-reviewer`", "<sup>reviewer")],
+      ["re-encoded", GOOD_BODY + "&lt;a href=\"x\"&gt;&lt;/a&gt;\n"],
+    ];
+    for (const [why, body] of cases) {
+      const r = reportBodyIsSafe(body);
+      check(`a report body failing the ${why} assertion is rejected`, r.ok === false, r.reason);
+    }
+  }
+  {
+    const badPath = join(scratchRoot(), `ewp-selftest-bad-${process.pid}.md`);
+    writeFileSync(badPath, GOOD_BODY.replace("### ", ""), "utf8");
+    /** @type {string[][]} */
+    const calls = [];
+    const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => { calls.push(args); return { ok: true, stdout: "mthines/x", stderr: "" }; };
+    const r = await executeWritePlan({ repo: "mthines/x", pr_number: 1, thread_reply: [], thread_resolve: [],
+      sticky_upsert: { comment_id: null, body_path: badPath } }, { runner });
+    const sticky = r.executed.find((/** @type {any} */ e) => e.kind === "sticky.upsert");
+    check("a sticky body failing an assertion is not posted, and the step names why",
+      sticky?.ok === false && /headline/.test(sticky?.aborted || "") && !calls.some((a) => a.join(" ").includes("/comments")),
+      JSON.stringify(sticky));
+    rmSync(badPath, { force: true });
+  }
 
   // payloadIsSafe — the Step 4b pre-flight ported from agents/pr-reviewer.md (Phase 5).
   {
@@ -425,7 +506,7 @@ async function selfTest() {
     const writePlan = {
       repo: "owner/repo", pr_number: 1,
       thread_reply: [{ thread_id: "t1", body: "fixed" }],
-      sticky_upsert: { comment_id: null, body_path: "/tmp/body.md" },
+      sticky_upsert: { comment_id: null, body_path: BODY },
       review_create: { commit_id: "abc", comments: [{ path: "a.ts", line: 1, body: "x" }] },
       lorekit_write: [{ op: "state" }],
     };
@@ -459,7 +540,7 @@ async function selfTest() {
     const { fileURLToPath } = await import("node:url");
     const planPath = join(scratchRoot(), `ewp-repo-default-${process.pid}.json`);
     writeFileSync(planPath, JSON.stringify({ repo: "owner/repo", pr_number: 1, dry_run: true,
-      thread_reply: [], thread_resolve: [], sticky_upsert: { comment_id: null, body_path: "x", pointer_body_path: "y" },
+      thread_reply: [], thread_resolve: [], sticky_upsert: { comment_id: null, body_path: BODY, pointer_body_path: "y" },
       review_create: { commit_id: "abc1234", comments: [] }, lorekit_write: [] }));
     const self = fileURLToPath(import.meta.url);
     const r = spawnSync(process.execPath, [self, "--plan", planPath, "--dry-run"], { encoding: "utf8" });
@@ -500,7 +581,7 @@ async function selfTest() {
       repo: "owner/repo", pr_number: 1, dry_run: true,
       historical: { review_sha: "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
       thread_reply: [{ thread_id: "t1", body: "fixed" }],
-      sticky_upsert: { comment_id: null, body_path: "/tmp/body.md" },
+      sticky_upsert: { comment_id: null, body_path: BODY },
       review_create: { commit_id: "abc", comments: [{ path: "a.ts", line: 1, body: "x" }] },
       lorekit_write: [],
     };
@@ -524,7 +605,7 @@ async function selfTest() {
     const { spy, calls } = mkSpy();
     const writePlan = {
       repo: "owner/repo", pr_number: 1,
-      sticky_upsert: { comment_id: null, body_path: "/tmp/body.md" },
+      sticky_upsert: { comment_id: null, body_path: BODY },
       review_create: { commit_id: "abc", comments: [] },
       lorekit_write: [],
     };
@@ -532,9 +613,9 @@ async function selfTest() {
     check("empty inline comments -> no review.create in executed[]", !result.executed.some((/** @type {any} */ e) => e.kind === "review.create"));
     check("empty inline comments -> no review POST call was made", !calls.some((c) => c.args.some((/** @type {string} */ a) => a.includes("/reviews"))));
     // `gh api -f body=@<path>` posts the literal path; only `-F` reads the file.
-    const sticky = calls.find((c) => c.args.includes("body=@/tmp/body.md"));
+    const sticky = calls.find((c) => c.args.includes(`body=@${BODY}`));
     check("sticky.upsert reads its body file with -F, never sends the path as text with -f",
-      sticky?.args[sticky.args.indexOf("body=@/tmp/body.md") - 1] === "-F");
+      sticky?.args[sticky.args.indexOf(`body=@${BODY}`) - 1] === "-F");
   }
 
   // The degraded pointer post reads its file the same way.
@@ -544,10 +625,10 @@ async function selfTest() {
     // Only the sticky PATCH fails (403), so the executor falls back to the pointer post.
     const runner = async (/** @type {string} */ cmd, /** @type {string[]} */ args) => {
       calls.push({ cmd, args });
-      return args.includes("body=@/tmp/body.md") ? { ok: false, stdout: "", stderr: "HTTP 403" } : { ok: true, stdout: "{}", stderr: "" };
+      return args.includes(`body=@${BODY}`) ? { ok: false, stdout: "", stderr: "HTTP 403" } : { ok: true, stdout: "{}", stderr: "" };
     };
     await executeWritePlan({ repo: "owner/repo", pr_number: 1,
-      sticky_upsert: { comment_id: 7, body_path: "/tmp/body.md", pointer_body_path: "/tmp/pointer.md" } }, { runner });
+      sticky_upsert: { comment_id: 7, body_path: BODY, pointer_body_path: "/tmp/pointer.md" } }, { runner });
     const pointer = calls.find((c) => c.args.includes("body=@/tmp/pointer.md"));
     check("the degraded pointer post reads its body file with -F",
       pointer?.args[pointer.args.indexOf("body=@/tmp/pointer.md") - 1] === "-F");
@@ -566,7 +647,7 @@ async function selfTest() {
       return args.includes("PATCH") ? { ok: false, stdout: "", stderr } : { ok: true, stdout: "{}", stderr: "" };
     };
     const res = await executeWritePlan({ repo: "owner/repo", pr_number: 1,
-      sticky_upsert: { comment_id: 7, body_path: "/tmp/body.md", pointer_body_path: "/tmp/pointer.md" } }, { runner });
+      sticky_upsert: { comment_id: 7, body_path: BODY, pointer_body_path: "/tmp/pointer.md" } }, { runner });
     const stickyCalls = calls.filter((c) => c.args.some((a) => a.includes("issues/")));
     const second = stickyCalls[1];
     const pointerPosted = calls.some((c) => c.args.includes("body=@/tmp/pointer.md"));
@@ -574,7 +655,7 @@ async function selfTest() {
     if (expectRecreate) {
       check(`${label} recreates the report with a POST of the FULL body`,
         Boolean(second) && !second.args.includes("PATCH")
-          && second.args[1] === "repos/owner/repo/issues/1/comments" && second.args.includes("body=@/tmp/body.md"));
+          && second.args[1] === "repos/owner/repo/issues/1/comments" && second.args.includes(`body=@${BODY}`));
       check(`${label} posts no pointer`, !pointerPosted);
       check(`${label} records the step as recreated`, step?.recreated === true && step?.ok === true);
     } else {
@@ -626,7 +707,7 @@ async function selfTest() {
     const writePlan = {
       repo: "o/r", pr_number: 1,
       thread_resolve: [{ thread_id: "t1" }],
-      sticky_upsert: { comment_id: null, body_path: "/tmp/body.md" },
+      sticky_upsert: { comment_id: null, body_path: BODY },
       // A payloadIsSafe-legal comment — this case tests op ORDERING, not payload safety, and a
       // synthetic "x" body would now (correctly) abort review.create before it ever posts.
       review_create: {
@@ -685,6 +766,8 @@ async function selfTest() {
     check("no gh access -> lorekit ops are still returned", JSON.stringify(result.lorekitOps) === JSON.stringify([{ op: "state" }]));
   }
 
+  rmSync(BODY, { force: true });
+
   if (failed > 0) {
     console.error(`\nexecute-write-plan self-test: ${failed} check(s) failed`);
     process.exit(1);
@@ -696,8 +779,15 @@ async function main() {
   const argv = process.argv.slice(2);
   const opts = parseArgs(argv);
   if (opts["self-test"]) { await selfTest(); return; }
+  if (opts.checkReport) {
+    // The MCP path posts the sticky itself, so it runs the same pre-write assertions here first.
+    const r = checkStickyBody(/** @type {string} */ (opts.checkReport));
+    if (!r.ok) { console.error(`report body check failed: ${r.reason} — post no report object`); process.exit(1); }
+    console.log("OK");
+    return;
+  }
 
-  const USAGE = "usage: execute-write-plan.mjs --plan <write-plan.json> [--repo <owner/name>] [--dry-run] [--self-test]"
+  const USAGE = "usage: execute-write-plan.mjs --plan <write-plan.json> [--repo <owner/name>] [--dry-run] [--self-test] | --check-report <report-body.md>"
     + "\n  --repo defaults to the plan's own `repo` field.";
   if (!opts.plan) {
     console.error(USAGE);

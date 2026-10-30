@@ -48,7 +48,7 @@ import { readFileSync } from "node:fs";
  * }} RouteDepthInput
  * @typedef {{tier: "deep"|"standard"|"quick", triggers: string[],
  *   override: "quick"|null, sizeExcluded: boolean, capApplied: boolean,
- *   why: string[]}} RouteDepthResult
+ *   sizeScaled: boolean, why: string[]}} RouteDepthResult
  */
 
 export const FULL_REFRESH_DELTA = 150;
@@ -62,6 +62,14 @@ export const TRIGGERS = [
 ];
 
 const SIZE_EXCLUDED_SHAPES = new Set(["docs-only", "test-only", "generated"]);
+
+/** Size scaling (depth-routing.md § Size scaling): on a first run, a PR at or under SMALL_PR_LINES
+ *  changed lines that fires no risk trigger is excused from the history and size triggers (D1, D6,
+ *  D12, D13), and routes `quick` at or under TINY_PR_LINES and `standard` above. */
+export const SMALL_PR_LINES = 400;
+export const TINY_PR_LINES = 30;
+/** The triggers that measure risk; a small PR firing any of them still routes deep. */
+const RISK_TRIGGERS = new Set(["D2", "D3", "D4", "D5", "D7", "D8", "D9", "D10", "D11"]);
 
 /**
  * The size exclusion: shapes are a non-empty subset drawn EXCLUSIVELY from
@@ -94,7 +102,7 @@ export function routeDepth(i) {
   // 1. The quick override — before the table, "whatever the table would say".
   if (threadOverlap >= 0.8 && band === "none") {
     why.push(`quick override: THREAD_OVERLAP=${threadOverlap} >= 0.8 and band=none`);
-    return { tier: "quick", triggers: [], override: "quick", sizeExcluded: false, capApplied: false, why };
+    return { tier: "quick", triggers: [], override: "quick", sizeExcluded: false, capApplied: false, sizeScaled: false, why };
   }
 
   // 2. The size exclusion — computed before the deep checklist so D12/D13
@@ -119,6 +127,15 @@ export function routeDepth(i) {
   if (!sizeExcluded && deltaLines > 100) triggers.push("D12");
   if (!sizeExcluded && newFiles > 0) triggers.push("D13");
 
+  // Size scaling: a small PR with no risk trigger is excused from D1/D6/D12/D13. First runs only — there
+  // DELTA_LINES is the whole PR; on a re-run it is one push, which says nothing about the PR's size.
+  const sizeScaled = !!i.firstRun && deltaLines <= SMALL_PR_LINES
+    && !triggers.some((t) => RISK_TRIGGERS.has(t));
+  if (sizeScaled) {
+    why.push(`size scaling: DELTA_LINES(${deltaLines}) <= ${SMALL_PR_LINES} and no risk trigger — waived ${triggers.join(", ")}`);
+    triggers.length = 0;
+  }
+
   if (triggers.length > 0) {
     why.push(`deep triggers: ${triggers.join(", ")}`);
     let tier = /** @type {"deep"|"standard"} */ ("deep");
@@ -128,25 +145,29 @@ export function routeDepth(i) {
       capApplied = true;
       why.push("capability cap: DEPTH_CAPABILITY=diff-only caps deep -> standard");
     }
-    return { tier, triggers, override: null, sizeExcluded, capApplied, why };
+    return { tier, triggers, override: null, sizeExcluded, capApplied, sizeScaled: false, why };
   }
 
   // 4. The standard row — five OR-conditions, any one fires.
   const usedSemverDelta = semverDeltas.find((d) => d.usageSites >= 1);
-  const inSizeBand = !sizeExcluded && deltaLines >= 11 && deltaLines <= 100;
+  // A size-scaled run reviews the whole PR, so its standard band starts above TINY_PR_LINES.
+  const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : 11;
+  const bandCeiling = sizeScaled ? SMALL_PR_LINES : 100;
+  // On a scaled run the size band replaces deep, so a size-excluded shape keeps it (and its standards finder).
+  const inSizeBand = (sizeScaled || !sizeExcluded) && deltaLines >= bandFloor && deltaLines <= bandCeiling;
   if (deltaRiskyShapes.length > 0) why.push(`standard: DELTA_RISKY_SHAPES=[${deltaRiskyShapes.join(",")}]`);
   if (band === "low") why.push("standard: blast_radius.band=low");
   if (usedSemverDelta) why.push(`standard: semver_delta=${usedSemverDelta.delta} with ${usedSemverDelta.usageSites} usage site(s)`);
   if (i.sameSymbolOverlap) why.push("standard: overlaps[].kind=same-symbol");
-  if (inSizeBand) why.push(`standard: 11 <= DELTA_LINES(${deltaLines}) <= 100`);
+  if (inSizeBand) why.push(`standard: ${bandFloor} <= DELTA_LINES(${deltaLines}) <= ${bandCeiling}`);
 
   if (deltaRiskyShapes.length > 0 || band === "low" || usedSemverDelta || i.sameSymbolOverlap || inSizeBand) {
-    return { tier: "standard", triggers: [], override: null, sizeExcluded, capApplied: false, why };
+    return { tier: "standard", triggers: [], override: null, sizeExcluded, capApplied: false, sizeScaled, why };
   }
 
   // 5. Otherwise -> quick.
   why.push("otherwise: no row above matched");
-  return { tier: "quick", triggers: [], override: null, sizeExcluded, capApplied: false, why };
+  return { tier: "quick", triggers: [], override: null, sizeExcluded, capApplied: false, sizeScaled, why };
 }
 
 /* ------------------------------ resolveBudget ------------------------------ */
@@ -252,6 +273,11 @@ export const HYBRID_ISOLATED_FINDERS = Object.freeze(["intent"]);
 export const SMALL_INCREMENTAL_MODES = Object.freeze(["incremental", "incremental-quick", "zero-delta"]);
 const SMALL_INCREMENTAL_TIERS = new Set(["standard", "quick"]);
 
+/** A defaulted `quick` budget is lean on every run mode (depth-routing.md § Thoroughness budget):
+ *  one context, no holistic broad pass, no impact image. A `quick` routing means size scaling or the
+ *  quick override found nothing that needs more, so the fixed overhead those levers carry buys nothing. */
+const LEAN_TIERS = new Set(["quick"]);
+
 /** `finder_passes` (review-config.md § Run-level knobs). `1` is the single finder pass every run has
  *  always made. `2` adds a second pass: the same active finders, run again by two dispatched workers
  *  that never see pass 1's output, unioned with pass 1 before verification
@@ -288,9 +314,9 @@ function highStakesReason(shape, band) {
  *     "consumer-impact": boolean, dependency: boolean, standards: boolean},
  *   finderScope: {"consumer-impact": "none"|"delta"|"all", standards: "none"|"delta"|"all"},
  *   correctnessVotes: 1, topology: "in-context"|"hybrid", isolatedFinders: string[],
- *   topologyReason: "below-breakpoint"|"no-dispatch"|"small-incremental"|"hybrid",
+ *   topologyReason: "below-breakpoint"|"no-dispatch"|"small-incremental"|"lean"|"hybrid",
  *   maxVerificationTier: 1|2|3, holisticEscalationCap: number,
- *   optimalityLens: boolean, measurabilityLens: boolean, holisticBroadPass: boolean,
+ *   optimalityLens: boolean, measurabilityLens: boolean, holisticBroadPass: boolean, impactImage: boolean, lean: boolean,
  *   toolCallMultiplier: 1|1.5|2, toolCalls: number|null,
  *   finderPasses: 1|2, finderPassesRequested: 1|2,
  *   finderPassesReason: "single"|"requested"|"no-dispatch"|"zero-delta", secondPassUnits: string[],
@@ -365,9 +391,10 @@ export function resolveBudget(i = {}) {
   const defaulted = !i.effortHigh && (i.thoroughness === undefined || i.thoroughness === null);
   const smallIncremental = defaulted && SMALL_INCREMENTAL_MODES.includes(String(i.runMode))
     && SMALL_INCREMENTAL_TIERS.has(String(i.routedTier));
-  /** @type {"below-breakpoint"|"no-dispatch"|"small-incremental"|"hybrid"} */
+  const lean = defaulted && LEAN_TIERS.has(String(i.routedTier));
+  /** @type {"below-breakpoint"|"no-dispatch"|"small-incremental"|"lean"|"hybrid"} */
   const topologyReason = !dispatchAvailable ? "no-dispatch" : t < T_TOPOLOGY ? "below-breakpoint"
-    : smallIncremental ? "small-incremental" : "hybrid";
+    : smallIncremental ? "small-incremental" : lean ? "lean" : "hybrid";
   /** @type {"in-context"|"hybrid"} */
   const topology = topologyReason === "hybrid" ? "hybrid" : "in-context";
   const isolatedFinders = topology === "hybrid" ? [...HYBRID_ISOLATED_FINDERS] : [];
@@ -414,7 +441,9 @@ export function resolveBudget(i = {}) {
     holisticEscalationCap: Math.round(10 * t),
     optimalityLens: t >= T_OPTIMALITY,
     measurabilityLens: t >= T_MEASURABILITY,
-    holisticBroadPass: t >= T_HOLISTIC_BROAD || i.routedTier === "deep",
+    holisticBroadPass: (t >= T_HOLISTIC_BROAD && !lean) || i.routedTier === "deep",
+    impactImage: !lean,
+    lean,
     toolCallMultiplier,
     toolCalls: typeof i.changedFiles === "number" && Number.isFinite(i.changedFiles) && i.changedFiles >= 0
       ? Math.round(toolCallBand(i.changedFiles) * toolCallMultiplier * passCallMultiplier)
@@ -465,16 +494,18 @@ function selfTest() {
   const constOk = FULL_REFRESH_DELTA === 150 && FULL_REFRESH_RUNS === 3 && TRIGGERS.length === 13;
   if (!constOk) fails.push("FULL_REFRESH_DELTA/FULL_REFRESH_RUNS/TRIGGERS drifted from depth-routing.md's stated values");
 
-  const capped = routeDepth({ firstRun: true, depthCapability: "diff-only" });
+  const capped = routeDepth({ firstRun: true, deltaLines: 500, depthCapability: "diff-only" });
   if (!(capped.tier === "standard" && capped.capApplied === true)) fails.push("capability cap did not downgrade a deep-triggering diff-only run to standard");
 
   // ---- resolveBudget: each tier default resolves to the budget depth-routing.md states ----
   total++;
   const q = resolveBudget({ routedTier: "quick" });
-  if (q.effectiveThoroughness === 0.4 && q.correctnessVotes === 1 && q.topology === "hybrid"
+  if (q.effectiveThoroughness === 0.4 && q.correctnessVotes === 1 && q.topology === "in-context"
+    && q.topologyReason === "lean" && q.isolatedFinders.length === 0 && q.finders.intent === true
     && q.maxVerificationTier === 1 && q.optimalityLens === false && q.measurabilityLens === true
     && q.finders["consumer-impact"] === false && q.finders.dependency === false && q.finders.standards === false
-    && q.holisticEscalationCap === 4 && q.holisticBroadPass === true && q.toolCallMultiplier === 1) passed++;
+    && q.holisticEscalationCap === 4 && q.holisticBroadPass === false && q.impactImage === false
+    && q.lean === true && q.toolCallMultiplier === 1) passed++;
   else fails.push(`resolveBudget(quick) drifted from the stated quick default budget: ${JSON.stringify(q)}`);
 
   total++;
@@ -484,7 +515,8 @@ function selfTest() {
     && st.maxVerificationTier === 2 && st.optimalityLens === true && st.measurabilityLens === true
     && st.finders["consumer-impact"] === true && st.finderScope["consumer-impact"] === "delta"
     && st.finders.standards === true && st.finderScope.standards === "delta"
-    && st.holisticEscalationCap === 7 && st.holisticBroadPass === true && st.toolCallMultiplier === 1) passed++;
+    && st.holisticEscalationCap === 7 && st.holisticBroadPass === true && st.impactImage === true
+    && st.toolCallMultiplier === 1) passed++;
   else fails.push(`resolveBudget(standard) drifted from the stated standard default budget: ${JSON.stringify(st)}`);
 
   total++;
@@ -502,9 +534,17 @@ function selfTest() {
   {
     const qInc = resolveBudget({ routedTier: "quick", runMode: "incremental-quick" });
     const sInc = resolveBudget({ routedTier: "standard", runMode: "incremental" });
-    if (qInc.topology === "in-context" && qInc.topologyReason === "small-incremental"
-      && sInc.topology === "in-context" && sInc.topologyReason === "small-incremental") passed++;
+    if (qInc.topology === "in-context" && qInc.topologyReason === "small-incremental" && qInc.lean === true
+      && sInc.lean === false && sInc.topology === "in-context" && sInc.topologyReason === "small-incremental") passed++;
     else fails.push(`a defaulted re-review dispatched the isolated worker: ${JSON.stringify({ q: [qInc.topology, qInc.topologyReason], s: [sInc.topology, sInc.topologyReason] })}`);
+  }
+
+  // ---- resolveBudget: an explicit thoroughness on a quick routing is a deliberate ask, so not lean ----
+  total++;
+  {
+    const qAsk = resolveBudget({ routedTier: "quick", thoroughness: 0.7 });
+    if (qAsk.topology === "hybrid" && qAsk.holisticBroadPass === true && qAsk.impactImage === true && qAsk.lean === false) passed++;
+    else fails.push(`an explicit thoroughness on a quick routing was treated as lean: ${JSON.stringify([qAsk.topology, qAsk.holisticBroadPass, qAsk.impactImage])}`);
   }
 
   // ---- resolveBudget: holisticBroadPass "always on when routed deep" holds even

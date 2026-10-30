@@ -139,3 +139,86 @@ reached, and the reason must be named, never left to read like a run that succee
 ## What this agent does not do
 
 - **Edit an inline comment** — inline comments are append-only. Their thread state is the signal `thread-resolution.md` and `comment-relevance-memory.md` learn from; rewriting one destroys that history. Only the sticky report is rewritten.
+
+## Memory model (Step 1.0)
+
+**The two `global` reads use `order="rank"`, the `repo::` reads recency.** The global buckets have
+outgrown 50 entries, and a recency-ordered `limit: 50` silently loses the tail — which is exactly
+where the oldest, most mature structural lessons sit (observed: the 51st global entry was a
+`seen_count=3` structural lesson a single page never returned). Ranked mode returns a bounded
+salience+recency top-N with no cursor to forget, so the window holds the *most useful* 50 rather
+than the newest 50. The `repo::` buckets are small enough that recency still covers them; switch a
+repo read to `rank` only if it, too, reports `hasMore: true`.
+
+**Why `view: "summary"`.** These four calls return up to **200** entries (50 per tag per scope). At
+the observed ~1.9 KB median body a saturated fan-out is ~380 KB of context — and even the ~61
+entries a typical run actually returns is ~110 KB — spent before the diff has been read, to answer
+a question (*which* memories apply to this change) that the key, tags, and preview already answer.
+The summary form costs ~250 bytes per entry: ~50 KB saturated, ~15 KB typical. Bodies are fetched
+at Step 1.2d, once the changed files and `INTENT_PHRASE` exist to shortlist against.
+
+**Memory model — entrenchment guards and the no-in-run-write choice.**
+The lessons read here are advisory input only, protected by five entrenchment guards (`lorekit-setup § Entrenchment guards`):
+(1) a lesson biases a run but can never auto-change behavior — the only path to a rule, gate, or threshold change is a human-reviewed source edit;
+(2) promotion is gated on recurrence (`seen_count ≥ 3`) or an explicit `status=structural`, never a single run;
+(3) every lesson carries an `expires` and expired entries are skipped above, so stale beliefs decay instead of entrenching;
+(4) a contradiction (a pattern that flips relevance direction) is surfaced, never silently overwritten;
+(5) the privacy pre-flight is never bypassed — a candidate carrying a secret or PII is dropped, not written.
+`pr-reviewer` **never writes lessons during a review**, and this is deliberate rather than an omission: it is a fresh-eyes adversarial reviewer, and biasing it with its own single-run conclusions is exactly the self-reinforcing error the guards exist to prevent (`lorekit-setup § When to add a loop`).
+Its write signal is *resolution rate measured at merge time* — captured asynchronously by `outcome-learning.md`, the `reviewer-comment-relevance.yml` GitHub Action, and `implement-suggestion` — never by this agent in-run.
+
+**The PR-state record is not a lesson, and Step 4c is not an exception to the rule above.** The
+rule exists because a *lesson* written from one run's conclusions biases the next run's judgment —
+that is the entrenchment the guards prevent. A state record carries no judgment: it is this run's
+own facts (which sha it reviewed, in which mode, which threads were open, which findings it
+deferred), parsed and branched on rather than weighed as advice, in a separate bucket
+(`ci::pr-review-state`, never `loop::…`) that the lesson read never touches. Distinguishing them
+matters practically: a reader who collapses "never writes lessons in-run" into "never writes
+in-run" will delete Step 4c and silently take the delta logic with it. The three writes this agent
+makes in-run — the state record (Step 4c), the `reviewer-comment-relevance` outcome at Step 2.9c,
+and the knowledge + hotspot records at Step 4d — are all records of what happened, never of what it
+concluded about how to review.
+
+**Step 4d is the same distinction, one step further out.** A knowledge record says "`retryRequest`
+throws `RetryExhausted` after 3 attempts, verified at `26b4c28`" — a fact about the code, carrying
+its receipt, which the next run [re-verifies or drops](../rules/memory.md#a-knowledge-fact-is-re-verified-or-dropped-never-trusted)
+rather than trusting. It cannot entrench a judgment because it contains none, and it is the one
+record that answers the question memory exists for: what does this repository already know about the
+code this diff touches. Without it the read side has a match table pointed at rows nothing writes.
+
+The population is fixed by its partner, not chosen here: `MEMORIES_USED_COUNT` is `|MEMORIES_USED|`,
+whose entries carry `kind` ∈ `rule` / `knowledge` / `hotspot`, and the two render as a single
+`indexed · used` pair that the renderer **fails closed** on when `used > indexed`. Counting only
+relevance rows here is therefore not a conservative choice but a report that cannot be produced: a
+run that applies a hotspot and a knowledge fact on a repo with no armed relevance rules yields
+`0 indexed · 2 used`, `render-report.mjs` exits non-zero with nothing on stdout, and Step 4a's
+contract is then to post no report at all. That is the normal adoption shape for a new bucket, so it
+would have been the common case.
+
+It is `indexed`, not `read`, because under `SUMMARY_VIEW` these entries were listed but
+their bodies were not fetched — calling that "read" would overstate what the reviewer actually
+consulted. When `SUMMARY_VIEW` is false the entries genuinely were read in full, but the label
+stays `indexed` so the figure means the same thing in every run.
+
+Read it off
+  `user.type` from `/tmp/prior-comments.json`, never from a login-pattern guess: a login match once
+  reported a human's thread as a bot's (the exact mislabel Gate 3 no longer makes), and a service
+  account posting as a `User` is a human as far as this label is concerned.
+
+Using the thread's own words — never the reviewer's summary of another
+  bot — means the author reads here exactly what they'll meet when they click through, and the
+  reviewer never puts words in another bot's mouth.
+
+**Self-replies do not count.** The rationale for downgrading an answered thread is that
+    someone engaged with the ask and only the Resolve click is missing; a bot replying to its own
+    thread to restate that the finding still stands satisfies a naive "any author" test while
+    falsifying that rationale, and would downgrade a live blocking ask to ⚠️. The one case this
+    might seem to lose — a bot superseding or withdrawing its own finding — is already handled
+    upstream and better: a bot that withdraws also **resolves** the thread, which removes it from
+    `OPEN_BOT_COMMENTS[]` entirely, so it never reaches this test. A self-reply that leaves the
+    thread open is, by the authoring bot's own action, still open.
+
+This deliberately narrows the previous rule, which keyed **every** field on `REVIEW_DIFF`: groups 3 and 5 describe PR-level facts, not delta-level ones — a PR that bumped a dependency manifest is still a dependency-bump PR while the reviewer looks at a delta that touches no manifest, and its intent does not change per push.
+Scoping them to the delta would drop the manifest and intent tokens on every incremental pass after the first, which is exactly when the diff-keyed search is the reviewer's only chance to surface a lesson Step 1.0's top-50 window missed.
+
+The `limit` is `15` (raised from `10`): search results are already relevance-ranked, so the marginal entries stay on-topic, and the five-field enriched query widens what *can* match — a modest `+5` captures the paraphrase-only and intent-only lessons the new symbol/intent fields surface without materially growing the merged pool the reviewer must weigh. This is independent of Step 1.0's `list` cap of `50`, which is deliberately left unchanged.
