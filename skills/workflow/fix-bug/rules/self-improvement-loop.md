@@ -35,14 +35,15 @@ and the entrenchment guards are canonical in
 
 ## What this loop owns vs. what aw-lessons owns
 
-`/fix-bug` dispatches `aw-executor` for implementation (Phase 6), and the
-executor **already** reads / writes the `aw-lessons` scope for the
-implementation phases (code, tests, CI). **Do not duplicate that here.**
+`/fix-bug` works the implementation in its own session (Phase 6 Step 6b), and
+that step **already** reads / writes the `aw-lessons` scope for the
+implementation phases (code, tests, CI) through `aw`'s lessons rule. **Do not
+duplicate that here.**
 
 This loop owns lessons about fix-bug's **own diagnostic phases** — the ones
-`aw-executor` never sees:
+Phase 6 Step 6b never covers:
 
-| Owned by `fix-bug-lessons` | Owned by `aw-lessons` (via aw-executor) |
+| Owned by `fix-bug-lessons` | Owned by `aw-lessons` (via Phase 6 Step 6b) |
 | -------------------------- | --------------------------------------- |
 | Intake / `bugClass` misclassification (Phase 0) | Implementation patterns (Phase 3) |
 | Complexity triage `simple`/`complex` misfires (Phase 0.5) | Test authoring / flakiness (Phase 4) |
@@ -152,7 +153,7 @@ record of what prior reviews learned about this repo's symbols and files
 (`knowledge::<symbol>@<path>` facts, `hotspot::<path>` counters). `aw` reads this
 bucket itself when it writes a Full brief
 ([`autonomous-workflow/rules/self-improvement-loop.md § knowledge-read`](../../autonomous-workflow/rules/self-improvement-loop.md#fast-tier--read-the-repos-codebase-knowledge-cross-bucket-read-only)),
-but `/fix-bug` writes its own brief on both lanes and dispatches `aw-executor`
+but `/fix-bug` writes its own brief on both lanes and works it
 without `aw`, so that read never fires — `/fix-bug` must issue it itself, once the
 `plan.md` File Changes table is drafted:
 

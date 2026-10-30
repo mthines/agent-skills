@@ -43,7 +43,7 @@ The ledger is consumed by:
 
 - Phase 3 root-cause analysis — to skip ruled-out hypotheses.
 - `/fix-bug` Phase 6 brief — to plan around known counterexamples.
-- `aw-executor` (Phase 6 entry) — to load counterexamples for the CEGIS refinement loop.
+- Phase 6 Step 6b — to load counterexamples for the CEGIS refinement loop.
 - Phase 7 verification — read-only.
 
 ---

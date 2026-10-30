@@ -28,7 +28,7 @@ Never guess or fabricate a root cause.
 - When the evidence points two ways, record both hypotheses and what would disambiguate them, and set `Status: Tentative`.
 - When you cannot follow the causal chain in the code you read, record an Information Gap instead of filling it in.
 - Cite only `file:line` locations you opened and read, not paths you only grepped.
-- Describe the direction of the fix, never the patch: patch authoring belongs to `aw-executor` in Phase 6.
+- Describe the direction of the fix, never the patch: patch authoring belongs to Phase 6, after the brief is written and validated.
 
 ## Inputs
 

@@ -3,7 +3,7 @@ name: aw-executor
 description: >
   The worker of the autonomous-workflow's Full tier (`aw-` namespace): executes the plan.md brief
   that `aw` wrote, applies the workflow's corrections, gates on the run-checks.mjs sentinel line,
-  runs the UI spec, opens a draft PR, and watches CI. Dispatched by `aw` (and `/fix-bug`) with a
+  runs the UI spec, opens a draft PR, and watches CI. Dispatched by `aw` or `/fix-bug` on a background request, with a
   sealed brief; never plans from a bare prompt.
 tools:
   - Read
