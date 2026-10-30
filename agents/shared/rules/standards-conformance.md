@@ -56,7 +56,7 @@ Mention it in the run announcement only when set.
 For each changed file, the rule reuses **`review-config.md`'s upward walk** (§ Hierarchical
 discovery / § Loading algorithm) to discover governing documents.
 The walk is not restated here: it is the same traversal that collects subtree `.review.yaml` files
-and the repo-level base (`.agents/review/config.yaml`; the deprecated `.agents/review/config.yaml` and root `.review.yaml` still honoured), re-run on the same
+and the repo-level base (`.agents/review/config.yaml`; the deprecated `.github/review.yaml` and root `.review.yaml` still honoured), re-run on the same
 directory tree to collect the governing docs below.
 
 Load, in nearest-ancestor-first order, these document types:
