@@ -34,7 +34,7 @@ const STATUS_GLYPH = { PASS: "✅", WARN: "⚠️", FAIL: "❌", SKIPPED: "⏭�
 // module's own input) is a richer internal bag (summary, memoriesSummary, the lens logs) that also
 // feeds the scalar slots below; embedding it under RUN verbatim would trip render-report.mjs's
 // stray-field check on every one of those extra keys.
-const RUN_FIELDS = ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth"];
+const RUN_FIELDS = ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth", "scaled"];
 
 /**
  * The one-line Quality Gate summary render-report.mjs's own cross-check reads

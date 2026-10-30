@@ -100,7 +100,7 @@ const isPlainObject = (v) => v !== null && typeof v === "object" && !Array.isArr
 // an item is silent: it changes nothing and reports nothing, so a misremembered field name reads
 // as accepted. Caught exactly that with a `delta_note` typo inside RUN.
 const SHAPES = {
-  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth", "thoroughness"],
+  RUN: ["mode", "sha", "prior_sha", "delta_lines", "at", "tier", "depth", "thoroughness", "scaled"],
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note", "kind", "evidence"],
@@ -577,7 +577,12 @@ function main() {
     // one.
     const expected = TIER_FOR_MODE[run.mode];
     const cappedFromDeep = expected === "deep" && String(run.tier) === "standard" && String(run.depth) === "diff-only";
-    if (expected && String(run.tier) !== expected && !cappedFromDeep) {
+    // Size scaling (depth-routing.md § Size scaling): a small first run reviews the whole PR at a
+    // lighter tier. It must say so with RUN.scaled, so an unscaled mismatch still fails here.
+    const sizeScaled = run.scaled === true && run.mode === "full" && ["standard", "quick"].includes(String(run.tier));
+    if (run.scaled !== undefined && run.scaled !== true) fail(`RUN.scaled must be true when present — got ${JSON.stringify(run.scaled)}`);
+    if (run.scaled === true && !sizeScaled) fail(`RUN.scaled requires RUN.mode full with RUN.tier standard or quick — got ${run.mode}/${run.tier}`);
+    if (expected && String(run.tier) !== expected && !cappedFromDeep && !sizeScaled) {
       fail(`RUN.tier ${JSON.stringify(run.tier)} contradicts RUN.mode ${JSON.stringify(run.mode)}`
         + ` — mode ${run.mode} is tier ${expected}`);
     }
@@ -585,7 +590,7 @@ function main() {
       fail("RUN.tier=standard capped from the mode's usual deep under RUN.depth=diff-only requires"
         + " RUN_ANOMALY naming the capability cap — a capped depth is not a silent one");
     }
-    runLine += ` · tier ${run.tier}`;
+    runLine += ` · tier ${run.tier}${sizeScaled ? " (small PR)" : ""}`;
   }
   if (run.depth !== undefined && run.depth !== null) {
     if (!VALID_DEPTHS.has(String(run.depth))) {

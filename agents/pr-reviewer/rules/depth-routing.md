@@ -20,6 +20,7 @@ This phase routes on **what the change reaches**, not how much of it there is.
 
 - [Five inputs](#five-inputs)
 - [The three tiers](#the-three-tiers)
+- [Size scaling](#size-scaling)
 - [Announce the decision with its inputs](#announce-the-decision-with-its-inputs)
 - [The deep-lens refresh](#the-deep-lens-refresh)
 - [`--effort`](#--effort)
@@ -119,7 +120,7 @@ neither `D4` nor `D5`, and its *absence* is `D6` firing on its own.
 | --- | --- | --- |
 | **deep** | **ANY** of `D1`–`D13` above | every finder over the **whole PR**; consumer-impact over **every** changed export with ≥ 1 consumer; dependency finder over every delta; verifier Tier 2 where available |
 | **standard** | `DELTA_RISKY_SHAPES` non-empty · `blast_radius.band == low` · any `semver_delta` **with ≥ 1 usage site** · an `overlaps[].kind == same-symbol` · `11 ≤ DELTA_LINES ≤ 100` | correctness + quality on the delta **with enclosing-function context**; consumer-impact over changed exports in the delta; dependency finder over this push's deltas; intent over the PR; standards on delta files; verifier Tier 1–2 |
-| **quick** | otherwise (the `quick` override above reaches here directly) | correctness on delta hunks with enclosing-function context; thread reconciliation; gates; nothing else |
+| **quick** | otherwise (the `quick` override above reaches here directly) | correctness on delta hunks with enclosing-function context; thread reconciliation; gates; nothing else. A defaulted `quick` budget is lean: one context, no holistic broad pass, no impact image |
 
 Re-running every lens over a review-answering push produces no new information and costs a full review's budget. It gets one finder.
 
@@ -164,6 +165,26 @@ DELTA_LINES = 340 · shapes = [docs-only] · band = none · no counter fired · 
 The third and the last examples are the pair worth reading together: the same
 `docs-only`/`band: none` inputs route `deep` or `quick` depending only on a counter,
 which is why the last example states `no counter fired` rather than leaving it implied.
+
+## Size scaling
+
+A first review of a small PR that fires no risk trigger skips `deep`.
+[`route-depth.mjs`](../scripts/route-depth.mjs) applies it after the `D1`–`D13` checklist and before the `standard` row:
+
+1. It applies only when `D1` fired (first run) and `DELTA_LINES ≤ 100` (`SMALL_PR_LINES`); on a first run the delta is the whole PR.
+2. It applies only when none of `D2`–`D5` or `D7`–`D12` fired; those measure risk, so a small PR firing one still routes `deep`.
+3. It waives `D1`, `D6`, and `D13`, then routes on the rows below: `standard` at `31 ≤ DELTA_LINES ≤ 100`, or on any other `standard` condition, else `quick` (`TINY_PR_LINES` is 30).
+4. The run keeps `RUN.mode` `full` and carries `RUN.scaled: true`; `render-report.mjs` accepts `full` with `standard` or `quick` only with that flag.
+5. A scaled run is recorded as `full`, so it sets `lastFullSha` and `D6` does not fire on the next run.
+   Later pushes route as before: `D4`, `D5`, and `D12` still send a growing PR to `deep`.
+
+```text
+✗ 3 files, 40 lines, first run, band none → deep (D1, D6, D13): a full deep review of a one-function change
+✓ 3 files, 40 lines, first run, band none → standard, RUN.scaled true
+✓ 1 file, 20 lines, first run, touches db/migrations/ → deep (D7 is a risk trigger)
+```
+
+**Why:** reviews on 2–8 file PRs routed `deep` on `D1` alone spent 4–13M tokens over 40–75 turns; size is a poor proxy for risk, so scaling never waives a trigger that measures what the change reaches.
 
 ## Announce the decision with its inputs
 
@@ -229,7 +250,7 @@ Config keys come from the PR's base commit, already resolved in `context.reviewC
 
    | Tier | Default `t` | What the default turns on, over the band below it |
    | --- | --- | --- |
-   | `quick` | 0.4 | measurability lens; holistic broad pass lever (Step 2.4 still skips every incremental mode); holistic escalation cap 2 → 4; `hybrid` topology lever — a defaulted quick run still dispatches nothing, because `prepare-review.mjs` gives a quick routing the `incremental-quick` mode (unless `--full`/`--isolated` forces `full`) and [`dispatch-topology.md`](./dispatch-topology.md#the-two-topologies)'s small-incremental row keeps that mode `in-context` |
+   | `quick` | 0.4 | measurability lens; holistic escalation cap 2 → 4. A defaulted quick budget is **lean** on every run mode (`topologyReason: "lean"`, `holisticBroadPass: false`, `impactImage: false`): it dispatches no worker, skips the holistic broad pass, and draws no impact image. An explicit `--thoroughness` on a quick routing is a deliberate ask and keeps the breakpoint's levers |
    | `standard` | 0.7 | holistic escalation cap 5 → 7 |
    | `deep` | 0.95 | tier-3 (execution) verification; tool-call budget ×2; holistic escalation cap 8 → 10 |
 

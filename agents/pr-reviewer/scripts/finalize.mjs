@@ -927,6 +927,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     // with no routed tier (e.g. gates-only / zero-delta) must OMIT them, never fall back to a
     // literal "unknown", which is not a member of VALID_TIERS/VALID_DEPTHS and would fail render.
     ...(tier ? { tier } : {}),
+    ...(tier && context?.routing?.sizeScaled === true ? { scaled: true } : {}),
     ...(depth ? { depth } : {}),
     summary: judgments?.summary || "",
     memoriesSummary: context?.render?.MEMORIES_SUMMARY ?? memoriesSummary,

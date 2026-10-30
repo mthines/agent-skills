@@ -130,5 +130,47 @@
     "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 28, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 18, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0.9, "depthCapability": "checkout", "zeroDelta": false },
     "expected": "quick",
     "notes": "The quick override: a push answering the review, reaching nothing. It beats the 11-100 standard band because the override is stated as always."
+  },
+  {
+    "id": "size-scaled-small-first-run",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 40, "newFiles": 1 },
+    "expected": "standard",
+    "notes": "Size scaling: a first run of a 40-line PR with no risk trigger waives D1/D6/D13 and lands in the 31-100 band."
+  },
+  {
+    "id": "size-scaled-tiny-first-run",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 20, "newFiles": 0 },
+    "expected": "quick",
+    "notes": "Size scaling: a first run at or under TINY_PR_LINES (30) with no risk trigger routes quick."
+  },
+  {
+    "id": "size-scaled-high-stakes-still-deep",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 20, "highStakesFiles": ["db/migrations/0001.sql"] },
+    "expected": "deep",
+    "notes": "D7 is a risk trigger: size scaling never waives it."
+  },
+  {
+    "id": "size-scaled-band-medium-still-deep",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "medium", "deltaShapes": ["code"], "deltaLines": 20 },
+    "expected": "deep",
+    "notes": "D9 is a risk trigger: size scaling never waives it."
+  },
+  {
+    "id": "size-scaled-full-flag-still-deep",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 20, "full": true },
+    "expected": "deep",
+    "notes": "--full (D2) always routes deep."
+  },
+  {
+    "id": "size-scaled-large-first-run-deep",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 400, "newFiles": 3 },
+    "expected": "deep",
+    "notes": "Over SMALL_PR_LINES (100): D12 fires and D1 stands."
+  },
+  {
+    "id": "size-scaling-not-on-rerun",
+    "inputs": { "priorDeepRecorded": false, "deltaLines": 20, "band": "none", "deltaShapes": ["code"] },
+    "expected": "deep",
+    "notes": "A re-run measures one push, not the PR, so D6 is not waived."
   }
 ]
