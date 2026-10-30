@@ -203,18 +203,20 @@ query, and no method. The skill owns everything the prompt used to spell out: ga
 comments, applying the actionable ones, committing, and pushing. The prompt's whole job is to say
 *which* PR (and, for **Fix this**, whose comment at which line).
 
-That is what took **Fix all** from ~1100 encoded chars to **~155** (flat) and **Fix this** from ~880
-to **~320** at its worst case — a 96-char path; a typical path lands nearer 230. Both are flat in the
-finding count: neither carries per-finding data beyond the one `{path}:{line}` **Fix this** exists to
-name. Keep both under a **500**-char bound when you edit a template: measure the filled live
-template, so a re-added clause shows up as a length regression rather than vanishing into 2000+
-chars of headroom under the 2500 design target (the
-`&utm_source=...` tag from § Click attribution is a small, fixed addition on top of each).
+That is what took **Fix this** from ~880 encoded chars to **~320** at its worst case — a 96-char
+path; a typical path lands nearer 230. **Fix all**, **Re-review**, and **Loop** carry the full PR URL
+and measure **174–194** (§ Relay length limit). All four are flat in the finding count: none carries
+per-finding data beyond the one `{path}:{line}` **Fix this** exists to name. Keep each under a
+**500**-char bound when you edit a template: measure the filled live template, so a re-added clause
+shows up as a length regression rather than vanishing into 2000+ chars of headroom under the 2500
+design target (the `&utm_source=...` tag from § Click attribution is a small, fixed addition on top
+of each).
 
-The last ~35 of those chars came from addressing the PR by its **short reference**,
-`{owner}/{repo}#{n}`, instead of its full URL (§ Prompt templates). The URL spent them on escapes:
-`https://github.com/` encodes to `https%3A%2F%2Fgithub.com%2F` and `/pull/` to `%2Fpull%2F`, while
-the short form costs one `%2F` and one `%23`.
+Only **Fix this** addresses the PR by its **short reference**, `{owner}/{repo}#{n}` (§ Prompt
+templates), which saves ~35 chars of escapes: `https://github.com/` encodes to
+`https%3A%2F%2Fgithub.com%2F` and `/pull/` to `%2Fpull%2F`, while the short form costs one `%2F` and
+one `%23`. Never move the report buttons to the short form: `/implement-suggestion` and
+`/review-loop` parse only a PR URL or `#<n>`.
 
 ## Click attribution
 
