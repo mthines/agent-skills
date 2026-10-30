@@ -81,7 +81,7 @@ const REQUIRED_SCALARS = [
 // OPTIMALITY_LOG is legacy: the optimality lens was removed, so it is optional and rendered only
 // when a caller still supplies it.
 const OPTIONAL_SCALARS = ["CI_NOTE", "VERIFIED_NOTE", "QUALITY_DROPPED", "RUN_NOTE", "RUN_ANOMALY",
-  "FIX_ALL_URL", "OPTIMALITY_LOG", "LENSES"];
+  "FIX_ALL_URL", "REVIEW_URL", "LOOP_URL", "OPTIMALITY_LOG", "LENSES"];
 
 // Structured slots. Each is an object or an array; the renderer turns it into markdown.
 const STRUCTURED = ["RUN", "PARTIAL_REVIEW", "RESOLVED_SINCE", "MEMORIES_USED",
@@ -1413,31 +1413,37 @@ function main() {
       + " *Less certain* below.</sub>"
     : "";
 
-  // Fix-all Agent0 button (opt-in). Rendered only when FIX_ALL_URL is supplied — the agent builds
-  // the deep link via scripts/build-agent0-link.mjs. The button image URL (ASSET) is a constant
-  // here; Dash0 can repoint it at a hosted PNG for production (agent0-fix-links.md § Button markup).
-  // The label must match the words rendered in the asset. It reaches only the `<img alt>`, and the
-  // asset's own `<text>` is the fixed string `Fix all with Agent0` with a pinned `textLength` — so
-  // a label carrying the finding count ("Fix all 5 with Agent0") was invisible to every sighted
-  // reader and left the accessible name disagreeing with the visible one, which is what WCAG 2.2
-  // SC 2.5.3 (Label in Name) is about. Nothing is lost by dropping it: the count is in the heading
-  // and the findings index directly above the button.
+  // The report's Agent0 buttons, one row: Fix all | Re-review | Loop. Each renders only when its URL
+  // slot is supplied; finalize/fix-links.mjs builds all three (agent0-fix-links.md § Report buttons).
+  // Labels are the assets' own rendered text and nothing else — a count in the alt that no sighted
+  // reader can see fails WCAG 2.2 SC 2.5.3 (Label in Name); the count is in the heading above.
   // Markup, host validation, and the light/dark variant pair all come from the spine, so the
-  // report's button and the inline one cannot drift into two different chips.
-  let fixAllButton = "";
-  if (data.FIX_ALL_URL !== undefined && data.FIX_ALL_URL !== null && String(data.FIX_ALL_URL).trim() !== "") {
-    // Zero findings and no CI note means there is nothing for Agent0 to do, and a button that
-    // hands it an empty worklist is worse than no button: it invites a click that spends a run
-    // discovering it has no work. The one legitimate zero-finding case is the CI-only template
-    // (`agent0-fix-links.md § Fix all — CI-only`), which requires a CI note to exist.
-    if (n === 0 && !data.CI_NOTE) {
-      fail("FIX_ALL_URL with 0 findings and no CI_NOTE — there is nothing to fix; omit the button"
+  // report's buttons and the inline one cannot drift into different chips.
+  const buttonSlot = (/** @type {string} */ key) => {
+    const v = data[key];
+    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : null;
+  };
+  const buttons = [];
+  for (const [key, kind, needsWork] of /** @type {const} */ ([
+    ["FIX_ALL_URL", "all", true], ["REVIEW_URL", "review", false], ["LOOP_URL", "loop", true],
+  ])) {
+    const url = buttonSlot(key);
+    if (!url) continue;
+    // Zero findings and no CI note means there is nothing to fix or converge, and a button that
+    // hands Agent0 an empty worklist invites a click that spends a run discovering it has no work.
+    // The one legitimate zero-finding case is the CI-only template (`agent0-fix-links.md § Fix all
+    // — CI-only`), which requires a CI note to exist. Re-review is the exception: it is the answer
+    // to "is it clean now?", so it stays on a clean report.
+    if (needsWork && n === 0 && !data.CI_NOTE) {
+      fail(`${key} with 0 findings and no CI_NOTE — there is nothing to fix; omit the button`
         + " (agent0-fix-links.md § Fix all — CI-only)");
     }
     try {
-      fixAllButton = fixButton({ kind: "all", url: String(data.FIX_ALL_URL) });
-    } catch (e) { fail(`FIX_ALL_URL: ${e.message}`); }
+      buttons.push(fixButton({ kind, url }));
+    } catch (e) { fail(`${key}: ${e.message}`); }
   }
+  // One line, space-separated: a blank line between inline HTML blocks would stack them.
+  const actionButtons = buttons.join(" ");
 
   // ── IMPACT_IMAGE → the picture above the findings ─────────────────────────────────────────────
   //
@@ -1480,7 +1486,7 @@ function main() {
     ADVISORY_LINE: advisoryLine,
     IMPACT_IMAGE: impactImage,
     FINDINGS_INDEX: findingsIndex,
-    FIX_ALL_BUTTON: fixAllButton,
+    ACTION_BUTTONS: actionButtons,
     // One footer, both surfaces, and outside the accordion so a reader of the collapsed report can
     // still see who reviewed what. `run` and `at` are the report's own additions; an inline comment
     // passes neither, so the two footers differ only by what only the report knows.

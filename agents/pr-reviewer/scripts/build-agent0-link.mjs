@@ -6,7 +6,7 @@
 // literal, and a literal ')' would terminate a `](url)` markdown link, so they must be escaped for
 // the URL to survive inside a linked-image button.
 //
-// Usage:  node build-agent0-link.mjs --source <fix-all|fix-this> [--org <slug>] "<prompt>"
+// Usage:  node build-agent0-link.mjs --source <fix-all|fix-this|re-review|loop> [--org <slug>] "<prompt>"
 //         (or: … < prompt.txt)
 // Output: the full https://app.dash0.com/goto/agent0?... URL on stdout. Any problem exits non-zero
 //         with a reason on stderr and prints nothing to stdout.
@@ -33,7 +33,7 @@ const MAX_URL = 4000;
 // § Click attribution). Required, not defaulted: an omitted or misspelled --source silently drops
 // the URL into the wrong (or no) attribution bucket with no visible symptom on the rendered button
 // — the same failure shape --env had before it was made mandatory-by-convention. Fail closed instead.
-const SOURCES = ["fix-all", "fix-this"];
+const SOURCES = ["fix-all", "fix-this", "re-review", "loop"];
 
 // The optional Dash0 organization slug (agent0-fix-links.md § Organization). Absent by default: a
 // link with no `org=` lands the reader in whichever org Agent0 resolves for them, which is the right

@@ -739,6 +739,7 @@ const renderReport = (payload) => {
       c.FINDINGS = [{ title: "A | B", path: "a.ts", line: 1, tier: "high" }];
     })],
     ["a Fix-all button with nothing to fix", mutate((c) => { c.FIX_ALL_URL = "https://app.dash0.com/goto/agent0?auto_submit=true"; })],
+    ["a Loop button with nothing to fix", mutate((c) => { c.LOOP_URL = "https://app.dash0.com/goto/agent0?auto_submit=true"; })],
     ["an unknown key (typo'd slot)", mutate((c) => { c.HEADLIN = "x"; })],
     ["an invalid gate glyph", mutate((c) => { c.GATE_PRIOR_STATUS = "FAIL"; })],
     ["a smuggled **Verdict** line", mutate((c) => { c.RUN_NOTE = "**Verdict**: PASS"; })],

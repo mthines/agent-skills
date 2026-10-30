@@ -223,7 +223,9 @@ historical; a `context.render.CI_NOTE` overrides it),
 (the two are not interchangeable — see *`RUN.tier` and `RUN.depth`* above), `FIX_ALL_URL`
 (opt-in — the Agent0 "Fix all" deep link, validated `http(s)` and bare of `)`; the renderer turns
 it into a linked button above the accordion, rendered only when supplied, i.e. when the
-`--fix-links` mode is on — see `agents/shared/rules/agent0-fix-links.md`).
+`--fix-links` mode is on — see `agents/shared/rules/agent0-fix-links.md`), `REVIEW_URL` and
+`LOOP_URL` (the Re-review and Loop deep links, rendered on the same row after Fix all —
+`agent0-fix-links.md § Report buttons`).
 
 
 #### The Run table
@@ -743,7 +745,7 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   `Is there a better approach?`), the open-thread list, the withheld list, the Run table, the
   `Memories used` list, and the `Nothing to report` footnote inside `Review details`, the
   `OPEN_THREADS_SUFFIX` tag on its `<summary>`, and the `PARTIAL_BANNER`,
-  `IMPACT_IMAGE`, `FINDINGS_INDEX`, `FIX_ALL_BUTTON`, and `FOOTER_SUP` slots are all template
+  `IMPACT_IMAGE`, `FINDINGS_INDEX`, `ACTION_BUTTONS`, and `FOOTER_SUP` slots are all template
   slots, not added prose.
   Besides the headline region (headline, `SUMMARY`, reasons, advisory note), the banner, the impact image, the findings table, and the footer — all
   renderer-derived or renderer-validated, never hand-composed — **no** prose of the agent's own

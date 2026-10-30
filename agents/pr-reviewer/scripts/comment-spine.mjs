@@ -76,7 +76,16 @@ export const ASSET_BASE =
  * Change one of these and you must change the matching SVG's `<text>` (and re-measure `textLength`
  * — `agent0-fix-links.md § Button markup`).
  */
-export const ASSET_TEXT = { all: "Fix all with Agent0", this: "Fix with Agent0" };
+export const ASSET_TEXT = { all: "Fix all", this: "Fix with Agent0", review: "Re-review", loop: "Loop" };
+
+/**
+ * The asset stem each button kind renders. The report's three chips (`all`, `review`, `loop`) sit
+ * side by side, so they carry short labels and the Agent0 mark says where they run. The pre-row
+ * `fix-all-agent0*.svg` stays on disk, unreferenced, because already-posted reports embed its URLs.
+ */
+export const ASSET_STEM = {
+  this: "fix-this-agent0", all: "agent0-fix-all", review: "agent0-re-review", loop: "agent0-loop",
+};
 
 /** The two Agent0 hosts (`agent0-fix-links.md § Environment`). Anything else is rejected. */
 export const AGENT0_HOST_RE = /^https:\/\/app\.dash0(-dev)?\.com\//;
@@ -215,12 +224,14 @@ export function footerLine({ sha, run = null, at = null, docs = false }) {
  * button rather than to a broken image.
  */
 export function fixButton({ kind, url, label }) {
-  if (!["this", "all"].includes(kind)) throw new Error(`fixButton kind must be this|all`);
+  if (!Object.hasOwn(ASSET_STEM, kind)) {
+    throw new Error(`fixButton kind must be ${Object.keys(ASSET_STEM).join("|")}`);
+  }
   assertBareUrl(url);
   if (!AGENT0_HOST_RE.test(url)) {
     throw new Error("fix-button host must be app.dash0.com or app.dash0-dev.com (agent0_environment)");
   }
-  const stem = kind === "all" ? "fix-all-agent0" : "fix-this-agent0";
+  const stem = ASSET_STEM[kind];
   // The accessible name must be the words the asset actually renders. `alt` is the only part of
   // this button a caller could vary, and the asset's `<text>` is a fixed string with a pinned
   // `textLength` — so a caller-supplied label was a name no sighted reader could see, and one that
@@ -255,7 +266,7 @@ export function fixButton({ kind, url, label }) {
 }
 
 /** Every asset file `fixButton` can reference, as bare filenames under `agents/pr-reviewer/assets`. */
-export const ASSET_FILES = ["fix-this-agent0", "fix-all-agent0"]
+export const ASSET_FILES = Object.values(ASSET_STEM)
   .flatMap((stem) => [`${stem}.svg`, `${stem}-dark.svg`, `${stem}-light.svg`]);
 
 /**

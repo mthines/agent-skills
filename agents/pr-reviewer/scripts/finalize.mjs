@@ -2838,10 +2838,10 @@ async function selfTest() {
     // Before this, only a caller that hand-built every link got buttons, and nothing noticed when
     // one did not (mthines/agent-skills#213).
     if (existsSync(join(outDir, "report-body.md"))) {
-      check("default run, no login: Fix all falls back to the prior sticky's permalink",
+      check("default run, no login: Fix all is still built, calling /implement-suggestion",
         readFileSync(join(outDir, "report-body.md"), "utf8").includes(
           "utm_source=pr-reviewer-fix-all")
-        && readFileSync(join(outDir, "report-body.md"), "utf8").includes(encodeURIComponent("pull/205#issuecomment-555")));
+        && readFileSync(join(outDir, "report-body.md"), "utf8").includes(encodeURIComponent("/implement-suggestion https://github.com/o/r/pull/205")));
     }
     {
       const fxDir = join(e2eDir, "fix-links");
@@ -2861,8 +2861,9 @@ async function selfTest() {
       check("default run with a login: the inline claim carries a Fix this button scoped to its path:line",
         on.status === 0 && Boolean(on.plan?.review_create?.comments?.[0]?.body.includes("utm_source=pr-reviewer-fix-this"))
         && Boolean(on.plan?.review_create?.comments?.[0]?.body.includes(encodeURIComponent("src/api/client.ts:88"))));
-      check("default run with a login: Fix all names the PR by its short reference and the reviewer's login",
-        on.report.includes(encodeURIComponent("/pr-fix o/r#205 rev-bot")));
+      check("default run with a login: Fix all calls /implement-suggestion and Loop /review-loop --merge",
+        on.report.includes(encodeURIComponent("/implement-suggestion https://github.com/o/r/pull/205"))
+        && on.report.includes(encodeURIComponent("/review-loop https://github.com/o/r/pull/205 --merge")));
       const off = spawnFx("off", ["--no-fix-links"]);
       check("--no-fix-links builds neither placement",
         off.status === 0 && !off.report.includes("goto/agent0")
@@ -3425,12 +3426,17 @@ async function main() {
   try {
     const fx = applyFixLinks({
       settings: fixSettings, prUrl: context?.target?.url ?? null, login: context?.reviewerLogin ?? null,
-      inline: result.inline, threads: context?.threads ?? [], stickyCommentId: context?.priorRun?.stickyCommentId ?? null,
+      inline: result.inline, threads: context?.threads ?? [],
       existingFixAll: result.payload?.FIX_ALL_URL ?? null,
     });
-    if (fx.fixAllUrl && result.payload) result.payload.FIX_ALL_URL = fx.fixAllUrl;
+    if (result.payload) {
+      if (fx.fixAllUrl) result.payload.FIX_ALL_URL = fx.fixAllUrl;
+      if (fx.reviewUrl && !result.payload.REVIEW_URL) result.payload.REVIEW_URL = fx.reviewUrl;
+      if (fx.loopUrl && !result.payload.LOOP_URL) result.payload.LOOP_URL = fx.loopUrl;
+    }
     console.log(`finalize: fix links ${fixSettings.on ? `on (${fixSettings.reason}, ${fixSettings.env})` : `off (${fixSettings.reason})`}`
-      + ` — fix-all ${fx.fixAllUrl ? "built" : "omitted"}, fix-this ${fx.fixThis}${fx.skipped && fixSettings.on ? ` · ${fx.skipped}` : ""}`);
+      + ` — fix-all ${fx.fixAllUrl ? "built" : "omitted"}, re-review ${fx.reviewUrl ? "built" : "omitted"}`
+      + `, loop ${fx.loopUrl ? "built" : "omitted"}, fix-this ${fx.fixThis}${fx.skipped && fixSettings.on ? ` · ${fx.skipped}` : ""}`);
   } catch (e) {
     // A malformed agent0_org throws in buildLink: report it, never render a link to the wrong org.
     console.error(`finalize: fix links not built — ${/** @type {Error} */ (e).message}`);
