@@ -150,7 +150,7 @@ function preamble({ pin, inlined }) {
 
 This is the pr-reviewer agent compiled for a host that has **no filesystem skill
 discovery and no custom-agent dispatch**. The pipeline below is the agent's own,
-verbatim. Three things differ about how you *run* it here, and they are not
+verbatim. Five things differ about how you *run* it here, and they are not
 optional — each one is a measured failure of a real run, not a precaution.
 
 ## Host rules — read these before Step 0
@@ -174,6 +174,17 @@ optional — each one is a measured failure of a real run, not a precaution.
    request. Step 0.5 must take its \`ME\` from \`--reviewer-login\` /
    \`PR_REVIEWER_LOGIN\` and treat an unset value as *identity unknown*, never as
    an empty login and never as a reason to retry the call.
+
+4. **Run every script in the foreground, with the Bash timeout at 600000 ms.**
+   \`finalize.mjs\`, \`merge-memory-record.mjs\`, and every other script a step names
+   run as one plain command in one Bash call. A process started with \`&\`,
+   \`nohup\`, or \`setsid\` keeps the call's output open, so the call runs to its
+   timeout and the host kills the process before it writes its output file.
+
+5. **Dispatched as a sub-agent, you run your own finders in this context.** You
+   cannot dispatch another level, so every finder the caller did not dispatch runs
+   here. That is this host's shape, never a \`RUN_ANOMALY\`: it changes nothing
+   this run reviewed.
 
 ## Start from the prepared context, not from Step 0
 
