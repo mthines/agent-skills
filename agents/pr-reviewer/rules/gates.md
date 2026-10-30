@@ -14,6 +14,7 @@ tags:
 
 - [Gate criteria](#gate-criteria)
   - [Gate states](#gate-states)
+- [Gate 3 thread fields](#gate-3-thread-fields)
 - [Step 1.8: Run pre-merge gate checks](#step-18-run-pre-merge-gate-checks)
 
 ---
@@ -93,6 +94,42 @@ The overall verdict is **FAIL** when Gate 4 or Gate 5 fails **or** the Prior rev
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
 Those gates then render `⏭️` in every gate table, with the Details cell holding the carried prior text plus its `(carried from …)` suffix when Step 2.5c dispositioned the row `CARRY`, and `not evaluated this run` otherwise.
 `⏭️` is a fourth cell value alongside ✅ / ⚠️ / ❌: it is never counted in `FAILING_GATE_COUNT`, never selects the FAIL presentation, and never changes the verdict.
+
+
+## Gate 3 thread fields
+
+Captured at Step 1.0 for each open root comment in `OPEN_BOT_COMMENTS[]`; `finalize/gates.mjs` grades Gate 3 from them.
+
+- For each stored entry, capture seven fields — three so Gate 3 can render an actionable, linkable
+  checklist (see *Gate 3* and `OPEN_THREADS_LIST`), two so it can label the thread's author, and two
+  so it can grade the gate. The label fields are `author` (the thread root's `user_login`) and
+  `is_bot` (from `user_type == "Bot"`, per the fetch above), passed straight into each
+  `OPEN_THREADS[]` payload item so the renderer tags the bullet `(bot · \`login\`)` or
+  `(human · \`login\`)`. The three checklist fields are:
+  `path:line` (the anchor), `url`
+  (the comment's `html_url` permalink from `/tmp/prior-comments.json`), and `ask` — the comment's
+  own lead line, **truncated, not paraphrased**: take its first sentence (or its `suggestion:` /
+  `issue:` conventional-comment line), strip noise like `(non-blocking)`, and cut to ~12 words with
+  a trailing `…` if longer. Only the root comment of each thread needs an
+  entry; skip reply comments (`in_reply_to_id` set) — but see `answered` below, which is read
+  from their existence.
+- Also capture the two grading fields Gate 3's tri-state consumes (*Gate states*):
+  - `blocking` — true only when the comment carries an explicit blocking decoration of its own: a
+    `(blocking)` marker, an `issue:` conventional-comment prefix, or an equivalent severity label
+    the authoring bot supplied. **Read this off the raw comment body before the `ask` truncation
+    runs** — that truncation strips conventional-comment severity decorations as cosmetic noise
+    (`(non-blocking)` and `(blocking)` alike, since both are metadata rather than the ask), so
+    reading it afterwards would grade on a string the renderer has already emptied of the signal.
+    Anything undecorated or unparseable is `false`; never infer severity by
+    reading the code the comment points at (*Gate states*).
+  - `answered` — true when the thread has at least one comment with `in_reply_to_id` pointing at
+    the root **whose author is not the root comment's own author**, or when Step 2.9c classified
+    the thread `declined` / `acknowledged` and its resolve mutation failed (that classification's
+    evidence is the PR author's words, so it is someone else's engagement too). The reply's
+    *wording* is never parsed: a reply is engagement
+    whatever it says, and the prose test this gate already rejects for resolution
+    (`prior-comment-awareness.md § Thread state`) is no better at judging engagement.
+    **Self-replies do not count**: a bot restating its own open finding is not engagement.
 
 ## Step 1.8: Run pre-merge gate checks
 
