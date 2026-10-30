@@ -50,7 +50,11 @@ export function gate4(g4) {
 }
 
 export const RESOLVE_CLASSES = new Set(["fixed", "declined", "acknowledged", "obsolete"]);
-export const BLOCKING_DECORATION_RE = /\(blocking\)|(?:^|\n)\s*issue:|severity:\s*(?:critical|high)/i;
+// The closed list in rules/gates.md § Gate 3. The last alternative is Cursor Bugbot's label line
+// (`**High Severity**`, also inside `<!-- … -->`), matched only as a line of its own so prose saying
+// "high severity" is not a decoration; `Medium` / `Low Severity` stay non-blocking.
+export const BLOCKING_DECORATION_RE =
+  /\(blocking\)|(?:^|\n)\s*issue:|severity:\s*(?:critical|high)|(?:^|\n)[ \t]*(?:<!--[ \t]*)?(?:\*\*|__)?[ \t]*(?:critical|high)[ \t]+severity[ \t]*(?:\*\*|__)?[ \t]*(?:-->)?[ \t]*(?=\r?\n|$)/i;
 
 /**
  * @param {any[]} contextThreads - review-context.json's threads[] (from prepare-review.mjs)
@@ -232,6 +236,25 @@ async function selfTest() {
     const contextThreads = [{ thread_id: "t1", root_body: "issue: x (blocking)", author: "bot", replies: [], is_resolved: false }];
     const g = gate3(contextThreads, []);
     check("is_resolved: false does not suppress an otherwise-open blocking thread", g.status === "FAIL" && g.open.length === 1);
+  }
+
+  // Cursor Bugbot labels its own severity on a line of its own. High/Critical are blocking,
+  // Medium/Low are not, and the same words in prose are not a label.
+  {
+    const bugbot = (/** @type {string} */ label) =>
+      `### Stale cache entry survives a config reload\n\n${label}\n\n<!-- DESCRIPTION START -->\nThe reload path keeps the old entry.\n<!-- DESCRIPTION END -->`;
+    const grade = (/** @type {string} */ body, /** @type {any[]} */ replies = []) =>
+      gate3([{ thread_id: "t1", root_body: body, author: "cursor[bot]", replies }], []).status;
+    check("Gate 3 FAIL — an unanswered Bugbot `**High Severity**` thread", grade(bugbot("**High Severity**")) === "FAIL");
+    check("Gate 3 FAIL — an unanswered Bugbot `**Critical Severity**` thread", grade(bugbot("**Critical Severity**")) === "FAIL");
+    check("Gate 3 FAIL — the label wrapped in an HTML comment still counts", grade(bugbot("<!-- **High Severity** -->")) === "FAIL");
+    check("Gate 3 WARN — a Bugbot `**Medium Severity**` thread is non-blocking", grade(bugbot("**Medium Severity**")) === "WARN");
+    check("Gate 3 WARN — a Bugbot `**Low Severity**` thread is non-blocking", grade(bugbot("**Low Severity**")) === "WARN");
+    check("Gate 3 WARN — a High Severity thread answered by someone else", grade(bugbot("**High Severity**"), [{ author: "pr-author" }]) === "WARN");
+    check("Gate 3 WARN — 'high severity' inside a sentence is prose, not a label",
+      grade("This looks like a high severity regression to me, but I am not sure.") === "WARN");
+    check("the payload's per-thread `blocking` flag uses the same match", BLOCKING_DECORATION_RE.test(bugbot("**High Severity**"))
+      && !BLOCKING_DECORATION_RE.test(bugbot("**Medium Severity**")));
   }
 
   // AC-10: Gate 2 red CI -> PASS (i.e. CI never participates in gates/verdict at all).

@@ -50,7 +50,7 @@ import { execFile, execFileSync, spawn } from "node:child_process";
 import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, openSync, closeSync, statSync, rmSync, rmdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, posix, resolve as pathResolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
@@ -860,18 +860,90 @@ export function scopePathsFor({ mode, deltaFiles, prFiles }) {
 }
 
 /**
- * Whether the report carries the impact-map diagram (posting.md § The impact image). Keyed on the
- * PR's structure, never on findings: the diagram orients the reader, so a wide clean PR earns one
- * and a one-file PR with findings does not.
- * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null }} args
+ * Whether the report carries the impact-map diagram: keyed on the PR's structure, then ruled out on a host that cannot draw or upload it.
+ * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null,
+ *   host?: { browser: string | null, upload: string | null } | null }} args
  * @returns {{ eligible: boolean, reason: string }}
  */
-export function impactImageGate({ fileCount, shapes, band }) {
-  if (fileCount < 2) return { eligible: false, reason: "single-file diff" };
-  if ((shapes || []).includes("test-only")) return { eligible: false, reason: "test-only diff" };
-  if (band === "medium" || band === "high") return { eligible: true, reason: `blast radius ${band}` };
-  if (fileCount >= 8) return { eligible: true, reason: `${fileCount} files changed` };
-  return { eligible: false, reason: `blast radius ${band || "unknown"}, ${fileCount} files` };
+export function impactImageGate({ fileCount, shapes, band, host }) {
+  const structural = (() => {
+    if (fileCount < 2) return { eligible: false, reason: "single-file diff" };
+    if ((shapes || []).includes("test-only")) return { eligible: false, reason: "test-only diff" };
+    if (band === "medium" || band === "high") return { eligible: true, reason: `blast radius ${band}` };
+    if (fileCount >= 8) return { eligible: true, reason: `${fileCount} files changed` };
+    return { eligible: false, reason: `blast radius ${band || "unknown"}, ${fileCount} files` };
+  })();
+  if (!structural.eligible || !host) return structural;
+  if (!host.browser) return { eligible: false, reason: "no browser on host" };
+  if (!host.upload) return { eligible: false, reason: "no upload credential on host" };
+  return structural;
+}
+
+/** @param {string} cmd @param {string[]} args @returns {string|null} trimmed stdout, or null on any failure */
+function runQuiet(cmd, args) {
+  try {
+    const out = execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim();
+    return out || null;
+  } catch { return null; }
+}
+
+/** @param {string} cmd @param {string[]} args @returns {boolean} true when the command exits 0 */
+function exitsZero(cmd, args) {
+  try { execFileSync(cmd, args, { stdio: "ignore", timeout: 5000 }); return true; } catch { return false; }
+}
+
+/** @param {string} url @param {string} token @returns {Promise<number>} the HTTP status, 0 on any failure */
+async function fetchStatus(url, token) {
+  try {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(5000) });
+    return r.status;
+  } catch { return 0; }
+}
+
+/**
+ * The browser render-png.mjs would use and the first attach-media upload rung that works; `null` when render-png.mjs is not found.
+ * @param {{ repo?: string, here?: string, env?: Record<string, string|undefined>, exists?: (p: string) => boolean,
+ *   importer?: (p: string) => Promise<any>, run?: (cmd: string, args: string[]) => string|null,
+ *   ok?: (cmd: string, args: string[]) => boolean, status?: (url: string, token: string) => Promise<number> }} [deps]
+ * @returns {Promise<{ browser: string|null, upload: string|null } | null>}
+ */
+export async function probeImpactImageHost({
+  repo, here = HERE, env = process.env, exists = existsSync,
+  importer = (p) => import(pathToFileURL(p).href), run = runQuiet, ok = exitsZero, status = fetchStatus,
+} = {}) {
+  // The copy beside this script first: it is from the same commit.
+  const renderPng = [
+    join(here, "../../skills/impact-map/scripts/render-png.mjs"),                                         // installed tree
+    join(here, "../../../skills/quality/impact-map/scripts/render-png.mjs"),                              // this repo
+    env.AGENT_SKILLS_ROOT ? join(env.AGENT_SKILLS_ROOT, "skills/impact-map/scripts/render-png.mjs") : null, // Agent0 install
+  ].find((p) => p && exists(p));
+  if (!renderPng) return null;
+  let browser;
+  try {
+    const mod = await importer(renderPng);
+    if (typeof mod.findBrowser !== "function") return null;
+    browser = mod.findBrowser({ env }) || null;
+  } catch { return null; }
+  // A token that merely exists is no upload path: Agent0 exports a placeholder the API answers with
+  // 401. Rung 2 counts only when its own first request, GET /repos/<repo>, succeeds.
+  if (ok("gh", ["auth", "status"]) && (run("gh", ["pr", "edit", "--help"]) || "").includes("--attach")) {
+    return { browser, upload: "gh --attach" };
+  }
+  const token = env.GH_TOKEN || env.GITHUB_TOKEN || run("gh", ["auth", "token"]);
+  const upload = token && repo && (await status(`https://api.github.com/repos/${repo}`, token)) === 200 ? "token" : null;
+  return { browser, upload };
+}
+
+/**
+ * The context's `impactImage`: the structural gate, then the host probe only when the structure earns the image.
+ * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null, repo?: string }} args
+ * @param {(deps: { repo?: string }) => Promise<{ browser: string|null, upload: string|null } | null>} [probe]
+ * @returns {Promise<{ eligible: boolean, reason: string }>}
+ */
+export async function decideImpactImage(args, probe = probeImpactImageHost) {
+  const structural = impactImageGate(args);
+  if (!structural.eligible) return structural;
+  return impactImageGate({ ...args, host: await probe({ repo: args.repo }) });
 }
 
 /**
@@ -2312,6 +2384,8 @@ async function prepare(opts) {
 
   timing.end(); // triage-routing
 
+  const impactImage = await decideImpactImage({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band, repo });
+
   const context = {
     v: 1,
     generatedAt: new Date().toISOString(),
@@ -2489,7 +2563,7 @@ async function prepare(opts) {
           blastWhy: (impact.blast_radius?.why || []).slice(0, 5),
         }
       : null,
-    impactImage: impactImageGate({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band }),
+    impactImage,
     impact: opts.inlinePayloads ? impact : null,
 
     routing,
@@ -2555,6 +2629,58 @@ async function selfTest() {
       && !g({ fileCount: 1, band: "high" }).eligible
       && !g({ fileCount: 9, band: "high", shapes: ["test-only"] }).eligible
       && !g({ fileCount: 3, band: "low" }).eligible;
+  });
+  t("impactImageGate: a host with no browser or no upload credential is an expected skip, an unknown host is not", () => {
+    const g = impactImageGate;
+    const wide = { fileCount: 12, band: "high" };
+    return g({ ...wide, host: { browser: null, upload: "gh auth token" } }).reason === "no browser on host"
+      && !g({ ...wide, host: { browser: null, upload: "x" } }).eligible
+      && g({ ...wide, host: { browser: "/c", upload: null } }).reason === "no upload credential on host"
+      && g({ ...wide, host: { browser: "/c", upload: "x" } }).eligible
+      && g({ ...wide, host: null }).eligible
+      // A structurally ineligible PR keeps its own reason; the host never overrides it.
+      && g({ fileCount: 1, band: "high", host: { browser: null, upload: null } }).reason === "single-file diff";
+  });
+  t("probeImpactImageHost reads render-png's findBrowser and takes the first upload rung that works; unknown without render-png", async () => {
+    const here = "/r/agents/pr-reviewer/scripts";
+    const repoPng = "/r/skills/quality/impact-map/scripts/render-png.mjs";
+    const exists = (/** @type {string} */ p) => p === repoPng;
+    const mod = (/** @type {string|null} */ b) => async () => ({ findBrowser: () => b });
+    const no = () => false;
+    const help = (/** @type {string} */ cmd, /** @type {string[]} */ a) => (a[0] === "pr" ? "  --attach file#alt" : "tok");
+    const s200 = async () => 200;
+    const s401 = async () => 401;
+    // Rung 1: gh is logged in and has --attach.
+    const r1 = await probeImpactImageHost({ repo: "o/r", here, env: {}, exists, importer: mod("/c"), run: help, ok: () => true, status: s401 });
+    // Rung 2: a token the API accepts.
+    const r2 = await probeImpactImageHost({ repo: "o/r", here, env: { GH_TOKEN: "real" }, exists, importer: mod(null), run: () => null, ok: no, status: s200 });
+    // An Agent0 placeholder: a token exists, the API answers 401 — no upload path.
+    const r3 = await probeImpactImageHost({ repo: "o/r", here, env: { GH_TOKEN: "placeholder" }, exists, importer: mod("/c"), run: () => null, ok: no, status: s401 });
+    // No token anywhere, or no repo to check it against.
+    const r4 = await probeImpactImageHost({ repo: "o/r", here, env: {}, exists, importer: mod("/c"), run: () => null, ok: no, status: s200 });
+    const r5 = await probeImpactImageHost({ here, env: { GH_TOKEN: "real" }, exists, importer: mod("/c"), run: () => null, ok: no, status: s200 });
+    const unknown = await probeImpactImageHost({ repo: "o/r", here, env: {}, exists: () => false, importer: mod("/c"), run: help, ok: () => true, status: s200 });
+    const agent0 = "/ws/pr-reviewer/skills/impact-map/scripts/render-png.mjs";
+    const viaRoot = await probeImpactImageHost({ repo: "o/r", here: "/elsewhere", env: { AGENT_SKILLS_ROOT: "/ws/pr-reviewer", GH_TOKEN: "x" },
+      exists: (p) => p === agent0, importer: mod("/c"), run: () => null, ok: no, status: s200 });
+    return r1?.upload === "gh --attach" && r1.browser === "/c"
+      && r2?.upload === "token" && r2.browser === null
+      && r3?.upload === null && r4?.upload === null && r5?.upload === null
+      && unknown === null && viaRoot?.browser === "/c";
+  });
+  t("decideImpactImage probes only a structurally eligible PR, and the probe's answer decides", async () => {
+    let calls = 0;
+    const probe = (/** @type {any} */ h) => async () => { calls += 1; return h; };
+    const small = await decideImpactImage({ fileCount: 1, band: "high", repo: "o/r" }, probe({ browser: null, upload: null }));
+    const noBrowser = await decideImpactImage({ fileCount: 12, band: "high", repo: "o/r" }, probe({ browser: null, upload: "token" }));
+    const unknown = await decideImpactImage({ fileCount: 12, band: "high", repo: "o/r" }, probe(null));
+    return small.reason === "single-file diff" && calls === 2
+      && noBrowser.reason === "no browser on host" && unknown.eligible === true;
+  });
+  t("prepare() takes the context's impactImage from decideImpactImage, the probed path", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare(opts)"));
+    return /const impactImage = await decideImpactImage\(\{[^}]*\brepo\b[^}]*\}\)/.test(body) && /^\s+impactImage,$/m.test(body);
   });
 
   // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no

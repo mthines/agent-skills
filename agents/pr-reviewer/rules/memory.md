@@ -163,6 +163,7 @@ When a symbol the impact graph named is not in either page, it has **no memory t
 Widening the read to chase it trades a bounded cost for an unbounded one to acquire a hint the pipeline is required to re-derive regardless.
 
 The one permitted extra read is the **per-PR state record** (Step 0.7), which is a different scope (`branch::`), a different question, and already exactly one call.
+Step 4d's pre-write read is not part of this bound or of `MEMORY_READ_BUDGET`: it is one batch `memory_read` of the keys the run is about to write, and nothing else ([rule 3](#write--the-two-calls-this-agent-makes-itself)).
 
 Then match:
 
@@ -172,7 +173,7 @@ Then match:
 | `src/api/client.ts` is in the delta | `hotspot::src/api/client.ts` | a checklist line: "history: 6 defects here in 90 d, classes: nil-deref, contract-break" |
 | a candidate's `fp` matches an `active suppress` rule | `rule::<fp>` | nothing at find time — suppression is applied later, see below |
 | a candidate's `fp` matches an `active amplify` rule | `rule::<fp>` | a focus line, and the verifier's threshold for that `fp` drops one notch |
-| a human previously caught something on this file | `hotspot::<path>` `missed[]` | the human's comment text as a checklist line: "a reviewer previously caught: …" |
+| a human previously caught something on this file | `hotspot::<path>` `missed_examples[]` | the human's comment text as a checklist line: "a reviewer previously caught: …" |
 
 ## Every read filters on `source.agent`
 
@@ -279,7 +280,7 @@ At Step 1.0, for every inline comment on **this** PR carrying this agent's marke
 | First non-author reply reading as `disagree` / `not-a-bug` | wrong here | rule evidence toward `suppress`, **with the reply text stored as `reason`** so the next run can show *why* |
 | First non-author reply reading as `agree` / `will-fix`, or a later commit touching `(path, line ± 5)` that resolves the thread | right | rule evidence toward `amplify`; knowledge `history[].outcome = fixed` |
 | Thread resolved with no reply and no touching commit | **ambiguous** | no directional write — a counter only |
-| A human comment on a changed line this agent did not flag | missed | hotspot `missed[]`, plus a `detection::` lesson candidate |
+| A human comment on a changed line this agent did not flag | missed | hotspot `missed_examples[]` (and `missed`), plus a `detection::` lesson candidate |
 
 The ambiguous row is the one to hold onto.
 A thread resolved with nothing to corroborate it is not evidence of acceptance and not evidence of dismissal, and the earlier `ignored-at-merge` sweep that read it as dismissal was writing a directional signal on no evidence.
@@ -318,13 +319,21 @@ That is what happened here: knowledge and hotspot had a documented read, a docum
 So a repo could accumulate hundreds of relevance rows and still answer *nothing* to "what does this repository know about `retryRequest`", because no run had ever been told to say.
 
 Both writes happen at **Step 4d**, after the state write, and both are subject to the [budget](#write-budget) below.
+Every `value` comes out of [`merge-memory-record.mjs`](../scripts/merge-memory-record.mjs), never out of this file's templates ([rule 3](#write--the-two-calls-this-agent-makes-itself)):
 
 ```text
+# 0. Write this run's contribution per key to /tmp/memory-updates.json (shapes below), then read
+#    EVERY key in it, in one batch call (≤ 32 refs per call; a second call past that).
+mcp__lorekit__memory_read  refs=["repo::{owner}/{repo}::hotspot::<path>", "repo::{owner}/{repo}::knowledge::<symbol>@<path>", …]
+#    Save that result verbatim to /tmp/memory-read.json, then merge:
+node "$AGENT_SUPPORT/pr-reviewer/scripts/merge-memory-record.mjs" \
+  --read /tmp/memory-read.json --updates /tmp/memory-updates.json --out /tmp/memory-writes.json
+
 # A. Symbol knowledge — deep tier only, one call per traced symbol, cap 10.
 mcp__lorekit__memory_write:
   scope    = "repo::{owner}/{repo}"
   key      = "knowledge::<symbol>@<path>"        # from impact.json — never hand-composed
-  value    = "<the JSON record below, serialised>"
+  value    = "<writes[].value for this key, verbatim>"
   tags     = ["codebase-knowledge"]
   kind     = "signal"
   host     = "reviewer"
@@ -336,11 +345,27 @@ mcp__lorekit__memory_write:
 mcp__lorekit__memory_write:
   scope    = "repo::{owner}/{repo}"
   key      = "hotspot::<path>"
-  value    = "<the JSON record below, serialised — MERGED onto the record read at Step 1.2a>"
+  value    = "<writes[].value for this key, verbatim>"
   tags     = ["codebase-knowledge", "signal::confirmed"]
   kind     = "signal"
   host     = "reviewer"
   ttl_days = 90
+```
+
+One `/tmp/memory-updates.json` entry per write, `{ "scope", "key", "update" }`.
+A hotspot `update` carries **no counters**: the script raises each counter by the number of new examples the update brings for it.
+
+```jsonc
+[
+  { "scope": "repo::acme/widget", "key": "hotspot::src/api/client.ts", "update": {
+      "path": "src/api/client.ts", "classes": ["contract-break"],
+      "confirmed_examples": [{ "pr": 164, "sha": "47b969a", "fp": "consumer-impact:contract-break:retryRequest@src/api/client.ts" }],
+      "last_touched_by": ["#164"] } },
+  { "scope": "repo::acme/widget", "key": "knowledge::retryRequest@src/api/client.ts", "update": {
+      "symbol": "retryRequest", "path": "src/api/client.ts", "kind": "function", "verified_at_sha": "47b969a",
+      "facts": [{ "claim": "throws RetryExhausted after 3 attempts", "tier": 2 }],
+      "history": [{ "pr": 164, "sha": "47b969a", "fp": "consumer-impact:contract-break:retryRequest@src/api/client.ts", "verdict": "confirmed", "outcome": "posted" }] } }
+]
 ```
 
 The hotspot record's value carries **every counter the read side branches on**, not just the one
@@ -359,6 +384,9 @@ this run incremented:
     { "pr": 164, "sha": "47b969a",
       "fp": "consumer-impact:contract-break:retryRequest@src/api/client.ts" }
   ],
+  // Optional, present once a counter has an example: the recorder writes these for `missed`.
+  "missed_examples": [{ "pr": 170, "line": 88 }],
+  "regressed_examples": [],
   "last_touched_by": ["#164"],
   // Not a restatement of `ttl_days` — see the first-class-property rule below.
   "expires": "<ISO 8601, this write's time + 90 days>"
@@ -374,9 +402,8 @@ Two failure modes make this worth stating rather than leaving to taste, and both
 **Never restate what LoreKit already stores as a first-class property.** `scope`, `tags`, `kind`, `host`, `source_agent`, `trigger`, `ttl_days`, the created/updated timestamps, and the usage count are columns on the row, shown in its metadata panel and queryable — so a `window_days: 90` in the value is a second copy of `ttl_days` with no owner, and the two disagree the moment either changes.
 
 The one deliberate exception is the in-value **`expires`**, and it is an exception for a mechanical reason rather than a stylistic one: LoreKit drops an expired row server-side, but only when the write set one — `lorekit_memory_list` and the search handler both filter `expires_at is null or expires_at > now()`, so a row written *without* `ttl_days` has no `expires_at` and never expires on any read.
-[`record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs) is exactly that case: the GitHub Actions write path emits `expires` in the value and passes no `ttl_days`, so the in-value field is the only expiry these rows have and the reader has to skip on it ([`comment-relevance-memory.md`](../../shared/rules/comment-relevance-memory.md) — "Skip any entry whose `expires` is in the past").
-That is a **divergence worth closing**, not a design: the agent's own writes below pass `ttl_days = 90` and are dropped for free, so the two write paths to the same records expire by different mechanisms.
-Until the recorder passes `ttl_days`, both must keep emitting `expires` and every reader must keep skipping on it — dropping the field first would leave the workflow's records immortal. That applies to the hotspot as much as to the relevance rule: a 91-day-old counter that still answers a read is a stale defect history presented as a current one, and `writeHotspot` in [`record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs) has always emitted it. `window_days` is not that field — it names the window in the abstract instead of dating this row, so nothing can compare it to `now`.
+[`record-comment-relevance.mjs`](../../../scripts/record-comment-relevance.mjs) now passes `--ttl-days` on every write (60 for a relevance rule, 90 for a hotspot), as the agent's own writes pass `ttl_days = 90`, so new rows from both paths are dropped server-side.
+Rows written before that carry no `expires_at`, so both writers keep emitting `expires` and every reader keeps skipping on it ([`comment-relevance-memory.md`](../../shared/rules/comment-relevance-memory.md) — "Skip any entry whose `expires` is in the past") until those rows have aged out. That applies to the hotspot as much as to the relevance rule: a 91-day-old counter that still answers a read is a stale defect history presented as a current one. The recorder's `writeHotspot` merges through the same `merge-memory-record.mjs` as Step 4d, which sets `expires` on every write, and skips the write when that script is not checked out beside it. `window_days` is not that field — it names the window in the abstract instead of dating this row, so nothing can compare it to `now`.
 
 `kind` and `host` are passed **explicitly on every write**. LoreKit infers them from a `loop::` tag only, and these records carry `ci::` tags, so omitting them leaves both NULL — at which point [read call 1](#read--two-calls-keyed-by-the-impact-graph), which filters `kind=signal host=reviewer`, cannot see the record the run just wrote. A write nothing can read is worse than no write: it reports success.
 
@@ -389,6 +416,7 @@ The knowledge record's value:
   "path": "src/api/client.ts",
   "kind": "function",
   "verified_at_sha": "26b4c28",
+  "contract": "async retryRequest(req, {attempts = 3}) → Response; throws RetryExhausted",
   "facts": [
     { "claim": "throws RetryExhausted after 3 attempts", "tier": 2 },
     { "claim": "callers rely on the thrown error, not a null return", "tier": 1 }
@@ -409,16 +437,47 @@ turns write B into a counter that resets to 1 on every run:
 
 1. **Only what this run verified.** A `facts[]` entry carries the receipt tier that produced it ([`verification-receipt.md`](../../shared/rules/verification-receipt.md)). A claim the run inferred but did not check is not a fact and is not written — the next run would consume it as one, and [re-verification](#a-knowledge-fact-is-re-verified-or-dropped-never-trusted) only compares it against the code, it does not re-derive whether it was ever true.
 2. **`verified_at_sha` is this run's `HEAD_SHA`, always.** It is the whole mechanism by which the next run decides between "the fact stands" and "re-verify" — a stale or absent sha makes every fact permanently unverifiable, and rule 3 of that section then drops it on every future run.
-3. **Merge, never clobber — on both writes.** Same scope + key is an UPDATE that replaces the whole
-   value, so read the existing record first (it is already in hand from the Step 1.2a call) and merge
-   onto it. For **knowledge**, append to `history[]` — capped at 20, oldest dropped. For **hotspot**,
-   *increment* the counter this run earned (`confirmed`, `missed`, or `regressed`), union `classes[]`,
-   append to `confirmed_examples[]` and `last_touched_by[]` — each capped at 20, oldest dropped — and
-   **carry the counters this run did not touch through unchanged**. Writing the template's literals
-   instead is the specific failure: a file with `confirmed: 6` after four PRs of history goes back to
-   `confirmed: 1`, the `hot` classification the finders branch on never arms, and the `missed[]` a
-   human's catch recorded is gone. Nothing reports it, because a clobbered counter and a first write
-   are byte-identical in the store.
+3. **Merge, never clobber — on both writes, by the script, onto a full read.** Same scope + key is an
+   UPDATE that replaces the whole value. So before Step 4d writes anything, issue **one batch
+   `mcp__lorekit__memory_read refs=[…]` naming every key it will write**, save the result verbatim,
+   and run `merge-memory-record.mjs` on it ([the procedure above](#write--the-two-calls-this-agent-makes-itself)).
+   Write each `writes[]` entry's `value` verbatim; never write a key listed in `skipped[]`.
+   - **Step 1.2a is never the record.** Its `memory_list` returns 200-character previews from one
+     50-row page, so a key it showed is not in hand and a key outside the page was never seen. Both
+     get the batch read. Only an earlier `memory_read` of that exact key would hold its full value,
+     and the batch read re-fetches it anyway, because the script accepts nothing else.
+   - **The read sits outside every read budget.** It is one call (two past 32 keys), it is not drawn
+     from `MEMORY_READ_BUDGET`, and the 5-expansion cap of Step 1.2a does not apply to it. When the
+     call fails, write nothing this step and report it; never write blind.
+   - **What the script does.** Knowledge: `history[]` is appended, capped at 20, oldest dropped;
+     `facts[]` and `verified_at_sha` are replaced together, and only when the update carries
+     `facts` — so a verification write lists every fact that still stands, and an update without
+     `facts` keeps the old ones at the sha they were verified at. Hotspot: each counter rises by the
+     new examples the update carries for it, `classes[]` is unioned, the example lists and
+     `last_touched_by[]` are capped at 20, and `flaky` plus every untouched counter carry through.
+     An example already recorded is not counted again, so a re-run adds nothing.
+   - **What it refuses.** A key the read did not name, an entry with no full `value` (a summary), a
+     value that is not a JSON object, and a key that does not match its update's `symbol`/`path` are
+     `skipped[]` with a reason; fields outside the closed set are dropped and listed in
+     `dropped_fields[]`. Report the skipped count in Step 5.
+
+   ```text
+   ✅ RIGHT — the merged value, built from a full read
+   memory_read refs=["repo::acme/widget::hotspot::src/api/client.ts"]   → saved to /tmp/memory-read.json
+   merge-memory-record.mjs …   → writes[0] = {"value":"{\"confirmed\":7,…}", "merged_from":"read"}
+   memory_write key="hotspot::src/api/client.ts" value=<writes[0].value>
+
+   ❌ WRONG — the template's literals, or a value rebuilt from the Step 1.2a preview
+   memory_write key="hotspot::src/api/client.ts" value="{\"v\":1,\"confirmed\":1,…}"
+   ```
+
+   The wrong form is the specific failure: a file with `confirmed: 6` after four PRs of history goes
+   back to `confirmed: 1`, the `hot` classification the finders branch on never arms, and the
+   `missed_examples[]` a human's catch recorded is gone. Nothing reports it, because a clobbered
+   counter and a first write are byte-identical in the store.
+   `finalize/write-plan.mjs` applies the same check to any knowledge or hotspot op queued in
+   `write-plan.json`: one without `merged_from: "read" | "absent"` is moved to
+   `lorekit_write_rejected[]` and never executed.
 4. **Facts about code, never about people or telemetry values.** No login, no comment text, no raw span attribute (`telemetry.md § Three rules that hold everywhere`, rule 3). A `traffic_band` and a `sampled_at` are aggregates and may be cached here; a request body may not.
 
 **Neither write is on the critical path.** A failure is logged and the run continues, exactly as the state write's rule 1 has it. Report the count in Step 5 — a run that wrote 0 knowledge records on a deep tier is a fact worth seeing, because it means either nothing was traced or the write is broken, and those look identical from the store.
@@ -436,9 +495,9 @@ The [in-run signals](#in-run-signals) at Step 1.0 are the *evidence* that write 
 | relevance rule | Step 2.9c, per thread resolved this run | one per thread |
 | PR state | Step 4c | one per run |
 
-Reads: the two Phase B calls, plus at most `MEMORY_READ_BUDGET` body reads, prioritised **knowledge → rules → hotspots → lessons**.
+Reads: the two Phase B calls, plus at most `MEMORY_READ_BUDGET` body reads, prioritised **knowledge → rules → hotspots → lessons**, plus Step 4d's one batch pre-write `memory_read` of exactly the keys it writes, outside that pool.
 
-Every write is idempotent by key and carries `origin_pr` / `origin_commit`, so a re-run does not double-count.
+Every write carries `origin_pr` / `origin_commit`, and `merge-memory-record.mjs` counts only examples not already recorded, so a re-run does not double-count.
 Report the read count and the unread remainder in the `Memory` block — a budget that silently truncates is indistinguishable from a memory that is empty.
 
 ## What this rule does not do

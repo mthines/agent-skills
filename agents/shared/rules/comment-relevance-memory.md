@@ -680,17 +680,23 @@ regress back into a durable signal unnoticed.
 **What the reusable workflow does:**
 - Checks out `mthines/agent-skills` to get `scripts/record-comment-relevance.mjs` **and**
   `agents/pr-reviewer/scripts/fingerprint.mjs`, which the recorder imports rather than carrying a
-  second copy of the fingerprint grammar.
+  second copy of the fingerprint grammar. The recorder also loads
+  `agents/pr-reviewer/scripts/merge-memory-record.mjs` for the hotspot merge; the sparse checkout must
+  list it, and while it does not, hotspot writes are skipped and logged, never written unmerged.
 - Runs it with the event-specific inputs passed by the caller.
-- Writes to LoreKit via `npx @lorekit/cli memory write`:
+- Talks to LoreKit through the pinned CLI (`LOREKIT_CLI`, `@lorekit/cli@1.76.0`), always as an argv
+  array and never through a shell, with `LOREKIT_API_KEY` passed as the CLI's `LOREKIT_TOKEN` and the
+  hosted endpoint unless `LOREKIT_MCP_URL` names another:
   ```bash
-  npx @lorekit/cli memory write \
+  # A hotspot is read first and merged; "absent" is the only state that licenses a first write.
+  npx --yes @lorekit/cli@1.76.0 show --scope "repo::{owner}/{repo}" --key "hotspot::{path}" --json
+  npx --yes @lorekit/cli@1.76.0 write \
     --scope "repo::{owner}/{repo}" \
     --key "reviewer-comment-relevance::rule::{finder}:{defect-class}:{symbol}@{path}" \
-    --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"active","expires":"..."}' \
+    --value '{"fingerprint":"...","relevance":"...","resolution_method":"...","reason":"...","seen_count":1,"status":"candidate","expires":"..."}' \
     --tags "loop::reviewer-comment-relevance,source::{resolution_method}" \
-    --kind signal --host reviewer \
-    --source-agent "github-actions/reviewer-comment-relevance"
+    --kind signal --host reviewer --ttl-days 60 \
+    --source-agent "github-actions/reviewer-comment-relevance" --remote --json
   ```
 - LoreKit's server-side deduplication increments `seen_count` on re-write of the same key.
 

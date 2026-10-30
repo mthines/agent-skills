@@ -25,6 +25,7 @@ Two of them, plus one property of every automation, decide everything below:
 
 - [Detect the host by the install, never by a failed call](#detect-the-host-by-the-install-never-by-a-failed-call)
 - [The substitutions](#the-substitutions)
+- [Run every script in the foreground](#run-every-script-in-the-foreground)
 - [A custom agent becomes a `general` sub-agent that reads its definition](#a-custom-agent-becomes-a-general-sub-agent-that-reads-its-definition)
 - [No user to ask](#no-user-to-ask)
 - [Constraint files: one per role](#constraint-files-one-per-role)
@@ -75,6 +76,24 @@ Read every linked file from there, never relative to the folder a `SKILL.md` was
 When the installed `SKILL.md` differs from the imported one, follow the installed copy; it is at `$AGENT_SKILLS_COMMIT`, the same commit as the files it links.
 A skill whose file is absent is reported as `not installed (<name>)`, never skipped silently.
 
+## Run every script in the foreground
+
+Run `prepare-review.mjs`, `finalize.mjs`, `merge-memory-record.mjs`, and every other script a procedure names as one plain command in one Bash call, with that call's timeout set to `600000` ms.
+Never start one with `&`, `nohup`, `setsid`, or `( … ) &`, and never poll for it from a later call.
+A backgrounded process keeps the call's output open, so the call runs to its timeout and the host then kills the process before it writes its output.
+A deep-tier `prepare-review.mjs` on a large PR runs about two minutes in the foreground, well inside that timeout.
+
+```text
+✅ RIGHT — foreground, one call, Bash timeout 600000
+. /tmp/workspace/agent-skills/env.sh; node "$PR_REVIEWER_PREPARE" --pr <url> --out /tmp/review-context.json
+
+❌ WRONG — backgrounded; the call times out, the process is killed, and no context.json is written
+( node "$PR_REVIEWER_PREPARE" --pr <url> --out /tmp/review-context.json ) &
+nohup setsid node "$PR_REVIEWER_PREPARE" --pr <url> --out /tmp/review-context.json &
+```
+
+**Why:** two backgrounded starts of `prepare-review.mjs` each ended at the Bash timeout with no output, and the foreground run that followed exited 0.
+
 ## A custom agent becomes a `general` sub-agent that reads its definition
 
 A custom agent keeps its isolation: it still runs in a **separate context**, dispatched once.
@@ -92,6 +111,7 @@ What changes is how its procedure reaches that context — by path, in a short p
     <one line: the task>.
     Your procedure is <definition file> — read it and follow it.
     Run `. /tmp/workspace/agent-skills/env.sh` at the start of every Bash call.
+    Run every script in the foreground, with a 600000 ms Bash timeout.
     You cannot dispatch sub-agents; do every step in this context.
     <the agent's own input lines, unchanged>
 )
@@ -100,6 +120,9 @@ What changes is how its procedure reaches that context — by path, in a short p
 Keep the prompt short and pointing at files.
 Four of 34 measured runs refused a dense constraint-laden prompt as a suspected injection ([`pr-reviewer/rules/agent0-runtime.md § The dispatch prompt is short on purpose`](../../pr-reviewer/rules/agent0-runtime.md#the-dispatch-prompt-is-short-on-purpose)).
 A reply that opens with a refusal or a `BLOCKED` line is a distinct outcome, reported as such — never read as a pass.
+
+A dispatched sub-agent that runs work in its own context because it cannot dispatch another level — `pr-reviewer` running the non-intent finders its caller did not dispatch — is following this host's shape, and does not report it as a `RUN_ANOMALY`.
+An intent finder that had to run in-context is still the degrade [`dispatch-topology.md`](../../pr-reviewer/rules/dispatch-topology.md) names, and `finalize.mjs --no-dispatch` reports it.
 
 An agent with **no** definition file on this host (`aw-executor`) has no `general` substitute: the step is reported by name as `not run (<agent> not dispatchable on this host)`.
 Never perform a custom agent's role in the dispatching context — that removes the isolation it exists for.

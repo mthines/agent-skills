@@ -75,7 +75,18 @@ on ❌, so no open thread disappears from the report — only the verdict change
 
 A finding is **blocking** only if it is broken behaviour, security (auth bypass / injection / secret leak / CSRF), data loss/corruption, or misimplemented intent — the same bar as the Step 3 verdict table, applied to the findings decorated `(blocking)` at Step 2.9 (`conventional-comments.md`). Everything else — `suggestion`, `question`, `nitpick`, and any non-blocking `issue` — is non-blocking and yields ⚠️ at most.
 
-**Gate 3 applies that same bar to the other bot's own decoration** — its `(blocking)` marker, its `issue:` conventional-comment prefix, or an equivalent explicit severity label it supplied — and never to a fresh adjudication of the finding by this reviewer. Reading another bot's comment and deciding for it how serious it *really* is puts words in its mouth, which Step 1.0 already forbids for the `ask` text. An undecorated or unparseable ask is read as **non-blocking**, the same way an unreadable thread state is read as not-open: the reviewer never manufactures a severity it cannot evidence. If that ask is in fact serious, this run's own review pass finds it and files it under Gate 6, where it blocks on this reviewer's own evidence.
+**Gate 3 applies that same bar to the other bot's own decoration** — and only to a decoration on this closed list, matched on the raw root comment by `BLOCKING_DECORATION_RE` in [`finalize/gates.mjs`](../scripts/finalize/gates.mjs) — never to a fresh adjudication of the finding by this reviewer:
+
+| Decoration on the thread's root comment | Example | Blocking |
+|---|---|---|
+| a `(blocking)` marker | `issue (blocking): token is never refreshed` | yes |
+| a bare `issue:` conventional-comment prefix at a line start | `issue: token is never refreshed` | yes |
+| `Severity: Critical` or `Severity: High` | `Severity: high` | yes |
+| Cursor Bugbot's label line `Critical Severity` or `High Severity`, alone on its line, bold or not, also inside `<!-- … -->` | `**High Severity**` | yes |
+| Cursor Bugbot's `Medium Severity` / `Low Severity`, or `Severity: Medium` / `Low` | `**Medium Severity**` | no |
+| anything else, including "high severity" inside a sentence | `this looks high severity to me` | no |
+
+**Why:** Bugbot's `High Severity` makes the same claim as `Severity: High`, so the two grade the same; a reply from anyone but the bot answers the thread and drops ❌ to ⚠️. Reading another bot's comment and deciding for it how serious it *really* is puts words in its mouth, which Step 1.0 already forbids for the `ask` text. An undecorated or unparseable ask is read as **non-blocking**, the same way an unreadable thread state is read as not-open: the reviewer never manufactures a severity it cannot evidence. If that ask is in fact serious, this run's own review pass finds it and files it under Gate 6, where it blocks on this reviewer's own evidence.
 
 The overall verdict is **FAIL** when Gate 4 or Gate 5 fails **or** the Prior review feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior review feedback, and Code review rows each showing ✅ or ⚠️, and CI's state in `CI_NOTE`). Gate 2 (CI) does **not** feed the verdict: it is surfaced in GitHub's checks section and in `CI_NOTE`, never as a table row and never in `FAILING_GATE_COUNT`. The PASS/WARN/FAIL presentation in Steps 3–4 is chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
 
