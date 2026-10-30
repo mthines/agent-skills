@@ -192,9 +192,9 @@ That copy is a real failure site, not a theoretical one: on `mthines/agent-skill
      # second --relay-check on an unchanged body can never reach 3 and this branch would be dead
      # code that reads as coverage. The inline block at Step 2.8 already does it this way.
      if [ -n "$RERENDER_WITH_NO_FIX_LINKS" ]; then
-       jq '.payload | del(.FIX_ALL_URL)' /tmp/finalize/finalize-result.json > /tmp/report-payload.nofix.json
+       jq '.payload | del(.FIX_ALL_URL, .REVIEW_URL, .LOOP_URL)' /tmp/finalize/finalize-result.json > /tmp/report-payload.nofix.json
        node "$RENDER" /tmp/report-payload.nofix.json > /tmp/report-body.md \
-         || abort "re-render without the fix link failed — nothing on stdout, nothing to post"
+         || abort "re-render without the Agent0 links failed — nothing on stdout, nothing to post"
        node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --relay-check /tmp/report-body.md
        rc=$?
        [ "$rc" -eq 3 ] && NOTE_MANGLED_LINK=1

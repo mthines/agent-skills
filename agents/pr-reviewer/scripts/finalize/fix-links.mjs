@@ -61,18 +61,30 @@ export function fixThisPrompt(prUrl, login, path, line) {
 
 /**
  * The Fix-all prompt, or null when the button must be omitted (§ Prompt templates):
- * - a non-zero count and a login → `/pr-fix <owner>/<repo>#<n> <login>`;
- * - a non-zero count, no login, a prior sticky id → `/pr-fix <report comment permalink>` — the
- *   one prompt that keeps a full URL, because the short reference has no way to name a comment;
- * - otherwise null. A zero count is never a `/pr-fix` call (the CI-only variant is caller-supplied).
+ * `/implement-suggestion <PR URL>` for a non-zero count, else null (the CI-only variant is
+ * caller-supplied). The full URL, because `/implement-suggestion` parses only a github.com PR URL
+ * or `#<n>`. It needs no login: the skill gathers every open review comment and gates each one.
  *
- * @param {{ prUrl: string, login: string|null, openCount: number, stickyCommentId: number|string|null }} input
+ * @param {{ prUrl: string, openCount: number }} input
  */
-export function fixAllPrompt({ prUrl, login, openCount, stickyCommentId }) {
-  if (!(openCount > 0)) return null;
-  if (login) return `/pr-fix ${prRef(prUrl)} ${login}`;
-  if (stickyCommentId) return `/pr-fix ${prUrl}#issuecomment-${stickyCommentId}`;
-  return null;
+export function fixAllPrompt({ prUrl, openCount }) {
+  return openCount > 0 ? `/implement-suggestion ${prUrl}` : null;
+}
+
+/**
+ * The Re-review and Loop prompts; Loop squash-merges on a clean convergence. Both carry the full PR URL, not `prRef()`'s short form:
+ * `/review-loop` parses only a github.com PR URL or `#<n>`, and any other first argument drops it
+ * into local mode, which has no branch to converge inside an Agent0 session.
+ *
+ * @param {string} prUrl
+ */
+export function reReviewPrompt(prUrl) {
+  return `/pr-review ${prUrl}`;
+}
+
+/** @param {string} prUrl */
+export function loopPrompt(prUrl) {
+  return `/review-loop ${prUrl} --merge`;
 }
 
 /**
@@ -104,30 +116,41 @@ export function openFindingCount(inline, threads, login) {
 }
 
 /**
- * Sets `fix_url` on each claim finding in `inline` and returns the Fix-all URL (or null).
+ * Sets `fix_url` on each claim finding in `inline` and returns the report's three button URLs.
  * Mutates `inline` in place; a finding that already carries `fix_url` keeps it.
  *
- * @param {{ settings: ReturnType<typeof resolveFixLinks>, prUrl: string|null, login: string|null, inline: Array<any>, threads?: Array<any>, stickyCommentId?: number|string|null, existingFixAll?: string|null }} input
- * @returns {{ fixAllUrl: string|null, fixThis: number, skipped: string|null }}
+ * Re-review renders whenever the buttons are on. Loop renders only beside Fix all: a loop with
+ * nothing to fix spends a review to learn it has converged, which Re-review already answers.
+ *
+ * @param {{ settings: ReturnType<typeof resolveFixLinks>, prUrl: string|null, login: string|null, inline: Array<any>, threads?: Array<any>, existingFixAll?: string|null }} input
+ * @returns {{ fixAllUrl: string|null, reviewUrl: string|null, loopUrl: string|null, fixThis: number, skipped: string|null }}
  */
-export function applyFixLinks({ settings, prUrl, login, inline, threads = [], stickyCommentId = null, existingFixAll = null }) {
-  if (!settings.on) return { fixAllUrl: null, fixThis: 0, skipped: settings.reason };
-  if (!prUrl) return { fixAllUrl: null, fixThis: 0, skipped: "no PR URL on the context" };
+export function applyFixLinks({ settings, prUrl, login, inline, threads = [], existingFixAll = null }) {
+  const none = { fixAllUrl: null, reviewUrl: null, loopUrl: null, fixThis: 0 };
+  if (!settings.on) return { ...none, skipped: settings.reason };
+  if (!prUrl) return { ...none, skipped: "no PR URL on the context" };
+  const link = (/** @type {string} */ prompt, /** @type {string} */ source) =>
+    buildLink(prompt, settings.env, source, /** @type {any} */ (settings.org));
+  const reviewUrl = link(reReviewPrompt(prUrl), "re-review");
   let fixThis = 0;
   // Fix-this needs a login: an inline comment has no permalink to itself to fall back on.
   if (login) {
     for (const f of inline || []) {
       if (!CLAIM_PREFIXES.has(f.prefix) || f.fix_url || !f.path || !(f.line > 0)) continue;
-      f.fix_url = buildLink(fixThisPrompt(prUrl, login, f.path, f.line), settings.env, "fix-this", /** @type {any} */ (settings.org));
+      f.fix_url = link(fixThisPrompt(prUrl, login, f.path, f.line), "fix-this");
       fixThis++;
     }
   }
-  if (existingFixAll) return { fixAllUrl: existingFixAll, fixThis, skipped: null };
-  const prompt = fixAllPrompt({ prUrl, login, openCount: openFindingCount(inline, threads, login), stickyCommentId });
+  const prompt = existingFixAll
+    ? null
+    : fixAllPrompt({ prUrl, openCount: openFindingCount(inline, threads, login) });
+  const fixAllUrl = existingFixAll || (prompt ? link(prompt, "fix-all") : null);
   return {
-    fixAllUrl: prompt ? buildLink(prompt, settings.env, "fix-all", /** @type {any} */ (settings.org)) : null,
+    fixAllUrl,
+    reviewUrl,
+    loopUrl: fixAllUrl ? link(loopPrompt(prUrl), "loop") : null,
     fixThis,
-    skipped: login ? null : "reviewer login unresolved (Fix this needs it)",
+    skipped: existingFixAll || login ? null : "reviewer login unresolved (Fix this needs it)",
   };
 }
 
@@ -156,10 +179,9 @@ async function selfTest() {
     && String(inline[1].fix_url).includes(encodeURIComponent("b.ts:9")));
   check("Fix this is never built for a nitpick", inline[2].fix_url === undefined);
   check("a caller-supplied fix_url is kept", inline[3].fix_url === "https://app.dash0.com/goto/agent0?keep" && r.fixThis === 2);
-  check("Fix all names the PR by its short reference and the login", r.fixAllUrl !== null && r.fixAllUrl.includes("utm_source=pr-reviewer-fix-all")
-    && r.fixAllUrl.includes(encodeURIComponent("/pr-fix o/r#7 bot")) && r.fixAllUrl.startsWith("https://app.dash0.com/"));
-  check("neither prompt carries the full PR URL", !String(r.fixAllUrl).includes(encodeURIComponent("https://github.com"))
-    && !String(inline[0].fix_url).includes(encodeURIComponent("https://github.com")));
+  check("Fix all calls /implement-suggestion with the full PR URL", r.fixAllUrl !== null && r.fixAllUrl.includes("utm_source=pr-reviewer-fix-all")
+    && r.fixAllUrl.includes(encodeURIComponent(`/implement-suggestion ${PR}`)) && r.fixAllUrl.startsWith("https://app.dash0.com/"));
+  check("Fix this does not carry the full PR URL", !String(inline[0].fix_url).includes(encodeURIComponent("https://github.com")));
   check("Fix this names the PR by its short reference", String(inline[0].fix_url).includes(encodeURIComponent("/pr-fix o/r#7 bot — apply only the comment at a.ts:3.")));
 
   check("prRef shortens a github.com PR URL to owner/repo#n", prRef("https://github.com/mthines/agent-skills/pull/215") === "mthines/agent-skills#215");
@@ -177,10 +199,9 @@ async function selfTest() {
   check("off builds neither placement", offR.fixAllUrl === null && off[0].fix_url === undefined);
 
   const noLogin = /** @type {any[]} */ ([{ prefix: "issue", path: "a.ts", line: 1 }]);
-  const nl = applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: null, inline: noLogin, stickyCommentId: 55 });
-  check("no login: no Fix this, Fix all falls back to the sticky permalink", noLogin[0].fix_url === undefined
-    && String(nl.fixAllUrl).includes(encodeURIComponent(`${PR}#issuecomment-55`)));
-  check("no login and no sticky: Fix all omitted", applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: null, inline: [{ prefix: "issue", path: "a.ts", line: 1 }] }).fixAllUrl === null);
+  const nl = applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: null, inline: noLogin });
+  check("no login: no Fix this, Fix all still built (it needs no login)", noLogin[0].fix_url === undefined
+    && String(nl.fixAllUrl).includes(encodeURIComponent(`/implement-suggestion ${PR}`)));
 
   check("zero open findings: Fix all omitted", applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: "bot", inline: [{ prefix: "nitpick", path: "a.ts", line: 1 }] }).fixAllUrl === null);
   check("an open thread by this reviewer counts toward Fix all", applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: "bot", inline: [],
@@ -194,6 +215,13 @@ async function selfTest() {
   const { normalizeLogin: canonical } = await import("../prepare-review.mjs");
   check("normalizeLogin matches prepare-review.mjs's", ["app/dash0-dev", "dash0-dev[bot]", " Dash0-Dev ", "mthines", "", null]
     .every((v) => normalizeLogin(v) === canonical(v)));
+  check("Re-review and Loop carry the full PR URL (review-loop has no short form)",
+    String(r.reviewUrl).includes(encodeURIComponent(`/pr-review ${PR}`)) && String(r.reviewUrl).includes("utm_source=pr-reviewer-re-review")
+    && String(r.loopUrl).includes(encodeURIComponent(`/review-loop ${PR} --merge`)) && String(r.loopUrl).includes("utm_source=pr-reviewer-loop"));
+  const clean = applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: "bot", inline: [] });
+  check("nothing to fix: Re-review stays, Loop goes with Fix all", clean.reviewUrl !== null && clean.fixAllUrl === null && clean.loopUrl === null);
+  check("off builds no Re-review or Loop", offR.reviewUrl === null && offR.loopUrl === null);
+  check("a caller-supplied FIX_ALL_URL brings Loop with it", applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: "bot", inline: [], existingFixAll: "https://app.dash0.com/x" }).loopUrl !== null);
   check("a caller-supplied FIX_ALL_URL is kept", applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: "bot", inline: [], existingFixAll: "https://app.dash0.com/x" }).fixAllUrl === "https://app.dash0.com/x");
 
   if (failed > 0) {

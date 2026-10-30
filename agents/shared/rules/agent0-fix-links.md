@@ -11,13 +11,14 @@ tags:
 # Agent0 fix links
 
 Opt-in "Fix with Agent0" buttons on the reviewer's output — the Agent0 equivalent of Cursor's
-"Fix in Cursor" button. Two placements: one **Fix all** button in the report, and one **Fix this**
-button per inline finding. Each links to an Agent0 deep link that auto-submits a prompt which fixes
-the finding and commits to the same PR.
+"Fix in Cursor" button. Two placements: one row of report buttons — **Fix all**, **Re-review**, and
+**Loop** (§ Report buttons) — and one **Fix this** button per inline finding. Each links to an Agent0 deep link that auto-submits a prompt which fixes
+the finding and commits to the same PR — except **Loop**, which can also merge it (§ Safety).
 
-The prompt is a call to Agent0's **`/pr-fix`** skill plus an address — the PR, whose comments, and
-(for **Fix this**) which one. The skill owns the method; the URL owns the target. See
-§ Prompt templates.
+Each prompt is one Agent0 skill call plus an address: **Fix this** calls `/pr-fix` with the PR, the
+reviewer's login, and one location; **Fix all** calls `/implement-suggestion`, **Re-review**
+`/pr-review`, and **Loop** `/review-loop --merge`, each with the PR URL. The skill owns the method;
+the URL owns the target. See § Prompt templates and § Report buttons.
 
 **On by default; off only when a repo says so.** There is no configuration to add: a repo with no
 review config at all, or one that never mentions Agent0, gets the buttons pointed at `production`
@@ -27,7 +28,7 @@ in `.agents/review/config.yaml` — and `--no-fix-links` turns them off for one 
 **`finalize.mjs` builds them** (`agents/pr-reviewer/scripts/finalize/fix-links.mjs`), so the default
 needs nobody to remember a step. It resolves the table in § Opt-in from its own `--no-fix-links` /
 `--fix-links` and from the `agent0_*` keys `prepare-review.mjs` reads into `context.agent0`, and fills
-the **Fix this** and **Fix all** templates below from `reviewerLogin` and the prior sticky id. A caller
+the **Fix this** template from `reviewerLogin` and the **Fix all** template from the PR URL. A caller
 supplies a link only for the CI-only variant, and a supplied link is never overwritten. The links used
 to be built by hand at two steps. A run that skipped that posted no buttons, and nothing reported it
 (`mthines/agent-skills#213`).
@@ -54,6 +55,7 @@ nothing from the diff (§ Safety). Repos in that position set `agent0_fix_links:
 - [Deep-link format](#deep-link-format)
 - [Click attribution](#click-attribution)
 - [Prompt templates](#prompt-templates)
+- [Report buttons](#report-buttons)
 - [Button markup](#button-markup)
 - [Asset availability](#asset-availability)
 - [Relay length limit](#relay-length-limit)
@@ -92,14 +94,11 @@ can never produce a report offering *Fix all* above findings with no *Fix this*,
 inconsistencies this replaces.
 
 **The flag is the invariant's whole scope. One identity state diverges the placements anyway:** an
-unresolved `{bot_login}` with a matched prior sticky renders *Fix all* through the
-[login fallback](#prompt-templates) and skips *Fix this*, because the fallback names the reviewer's
-own report comment and an inline comment has no permalink to itself — GitHub assigns a review
-comment's id only on POST, and inline comments are append-only, so there is nothing to fill a
-*Fix this* fallback with. That is the fallback's **entire** population, not a rare corner: every run
-reaching it has one button. Said here rather than left to the reader, because an unqualified "both
-buttons or neither" invites reading the absent *Fix this* as a defect and "fixing" it by inventing a
-self-link that cannot exist.
+unresolved `{bot_login}` renders *Fix all*, which needs no login, and skips *Fix this*, whose
+`/pr-fix` prompt must name the author — an inline comment has no permalink to itself to name instead,
+because GitHub assigns a review comment's id only on POST and inline comments are append-only. Said
+here rather than left to the reader, because an unqualified "both buttons or neither" invites reading
+the absent *Fix this* as a defect and "fixing" it by inventing a self-link that cannot exist.
 
 ## Environment
 
@@ -199,34 +198,36 @@ proxy is: nginx's default `large_client_header_buffers 4 8k` requires the whole 
 guard therefore sat exactly on that cliff — a 7999-char link passed and then 414'd. The often-quoted
 "2048 everywhere" is IE's 2083 in disguise and no longer binds a known modern host.
 
-Both fix prompts are **one `/pr-fix` invocation plus an address** — no finding body, no worklist,
-no embedded query, and no method. Agent0's `/pr-fix` skill owns everything the prompt used to
-spell out: gathering the PR's comments, filtering them to one author, applying the actionable ones,
-committing, and pushing. The prompt's whole job is to say *which* PR and *whose* comments.
+Every prompt is **one skill invocation plus an address** — no finding body, no worklist, no embedded
+query, and no method. The skill owns everything the prompt used to spell out: gathering the PR's
+comments, applying the actionable ones, committing, and pushing. The prompt's whole job is to say
+*which* PR (and, for **Fix this**, whose comment at which line).
 
-That is what took **Fix all** from ~1100 encoded chars to **~155** (flat) and **Fix this** from ~880
-to **~320** at its worst case — a 96-char path; a typical path lands nearer 230. Both are flat in the
-finding count: neither carries per-finding data beyond the one `{path}:{line}` **Fix this** exists to
-name. Keep both under a **500**-char bound when you edit a template: measure the filled live
-template, so a re-added clause shows up as a length regression rather than vanishing into 2000+
-chars of headroom under the 2500 design target (the
-`&utm_source=...` tag from § Click attribution is a small, fixed addition on top of each).
+That is what took **Fix this** from ~880 encoded chars to **~320** at its worst case — a 96-char
+path; a typical path lands nearer 230. **Fix all**, **Re-review**, and **Loop** carry the full PR URL
+and measure **174–194** (§ Relay length limit). All four are flat in the finding count: none carries
+per-finding data beyond the one `{path}:{line}` **Fix this** exists to name. Keep each under a
+**500**-char bound when you edit a template: measure the filled live template, so a re-added clause
+shows up as a length regression rather than vanishing into 2000+ chars of headroom under the 2500
+design target (the `&utm_source=...` tag from § Click attribution is a small, fixed addition on top
+of each).
 
-The last ~35 of those chars came from addressing the PR by its **short reference**,
-`{owner}/{repo}#{n}`, instead of its full URL (§ Prompt templates). The URL spent them on escapes:
-`https://github.com/` encodes to `https%3A%2F%2Fgithub.com%2F` and `/pull/` to `%2Fpull%2F`, while
-the short form costs one `%2F` and one `%23`.
+Only **Fix this** addresses the PR by its **short reference**, `{owner}/{repo}#{n}` (§ Prompt
+templates), which saves ~35 chars of escapes: `https://github.com/` encodes to
+`https%3A%2F%2Fgithub.com%2F` and `/pull/` to `%2Fpull%2F`, while the short form costs one `%2F` and
+one `%23`. Never move the report buttons to the short form: `/implement-suggestion` and
+`/review-loop` parse only a PR URL or `#<n>`.
 
 ## Click attribution
 
-Every deep link carries `&utm_source=pr-reviewer-<SOURCE>`, where `<SOURCE>` is `fix-all` or
-`fix-this` — a static tag with no per-PR or per-finding data, existing solely so a click on either
+Every deep link carries `&utm_source=pr-reviewer-<SOURCE>`, where `<SOURCE>` is `fix-all`,
+`fix-this`, `re-review`, or `loop` — one per button, a static tag with no per-PR or per-finding data, existing solely so a click on either
 button is distinguishable from the other in Dash0's own analytics (which button gets used tells the
 product something the report's structure alone can't). It is **not** an environment or a repo
 identifier — `app.dash0.com` vs. `app.dash0-dev.com` (§ Environment) already carries that.
 
 `build-agent0-link.mjs`'s `buildLink()` takes `source` as a required third argument and **throws** if
-it is missing or not one of the two known values — the CLI's `--source <fix-all|fix-this>` flag is
+it is missing or not one of the four known values — the CLI's `--source <fix-all|fix-this|re-review|loop>` flag is
 correspondingly mandatory, not optional-with-a-default. This mirrors `--env`'s own history: an
 optional, silently-defaulted flag is exactly how the environment kept resolving to `production` long
 after the config-reading side was fixed, because nothing forced every call site to actually pass it.
@@ -242,7 +243,8 @@ to be resolved — a marker to scan for, an unnamed "the reviewer", a location t
 round trip before the first edit. A prompt carries only what Agent0 cannot infer, but it carries
 *that* in fetchable form.
 
-**Both fix prompts invoke Agent0's `/pr-fix` skill and pass it an address.** `/pr-fix` is the
+**The Fix-this prompt invokes Agent0's `/pr-fix` skill and passes it an address** (Fix all's
+`/implement-suggestion` template is below). `/pr-fix` is the
 skill that gathers a PR's comments, filters them to one author, applies the actionable ones, commits,
 and pushes — so the prompt no longer describes that method, it names the target. Its argument grammar
 is `/pr-fix [<pr>] [<author>|all]`, both optional and in any order, where `<pr>` is a PR number, a
@@ -255,13 +257,11 @@ uses — and it drops the `https://github.com/…/pull/` scaffolding whose `:` a
 most of the percent-escapes in the encoded link (§ Deep-link format). `finalize/fix-links.mjs`'s
 `prRef()` derives it from the PR URL. Like the rest of `/pr-fix`'s grammar, its acceptance of the
 short form is asserted here and not verifiable from this repo — the skill's own **Arguments** section
-must list `{owner}/{repo}#{n}` as a `<pr>` form. Two cases keep a full URL:
+must list `{owner}/{repo}#{n}` as a `<pr>` form. A PR that is not on `github.com` keeps its full URL:
 
 - **A PR that is not on `github.com`** (a GitHub Enterprise host). The short reference implies
   `github.com`, so `prRef()` returns such a URL unchanged — a longer link that resolves beats a
   shorter one that points `/pr-fix` at the wrong host.
-- **The login fallback below**, which must name one comment, and a short reference has no way to
-  carry a comment id.
 
 Three consequences of delegating to the skill, all of them the point of this design:
 
@@ -273,7 +273,7 @@ Three consequences of delegating to the skill, all of them the point of this des
   `/pr-fix` gathers, so a finding edited after the button was built is never stale and no
   third-party text rides into the URL.
 - **No verification clause.** The "verify with the repo's own scripts, never a raw `tsc`/`eslint`
-  call" guardrail below applies only to the CI-only template now — the two `/pr-fix` templates
+  call" guardrail below applies only to the CI-only template now — the Fix-this and Fix-all templates
   delegate it with the rest of the method. That guardrail exists because a raw whole-graph `tsc`
   crashed the Agent0 runner live (§ Verify with the repo's own scripts); **if `/pr-fix` ever loses
   it, that crash regresses through these buttons**, and the fix is in the skill, not here.
@@ -290,77 +290,50 @@ code-review finding…", the `<finding>` wrapper, an embedded `{body}`). `{branc
 
 The trailing clause is the one thing outside `/pr-fix`'s two-argument grammar, and it is there
 because the grammar has no per-comment scope: `/pr-fix <pr> <author>` means *every* comment by
-that author, which is precisely what the **Fix all** button is for. Without the clause the two
-buttons would do the same thing. Keep it to one short sentence after an em dash so the two positional
+that author. Without the clause the button would apply every finding, which is the **Fix all**
+button's job. Keep it to one short sentence after an em dash so the two positional
 arguments still parse as the grammar's own.
 
-Why `{path}:{line}` and not the inline comment's own `#discussion_r<id>` permalink — the shape **Fix
-all** gets to use: GitHub assigns `r<id>` only on POST, so it is not known when the button's own body
+Why `{path}:{line}` and not the inline comment's own `#discussion_r<id>` permalink: GitHub assigns `r<id>` only on POST, so it is not known when the button's own body
 is built, and `pr-reviewer` never edits an inline comment after posting to inject it (that invariant
 is load-bearing elsewhere — inline comments are append-only). A comment cannot carry a link to
 itself. `{path}:{line}` is known at build time and addresses the same comment.
 
-**Fix all** (report) — the PR and the reviewer's login, and nothing else:
+**Fix all** (report) — the PR URL, and nothing else:
 
 ```text
-/pr-fix {owner}/{repo}#{n} {bot_login}
+✅ /implement-suggestion https://github.com/{owner}/{repo}/pull/{n}
+❌ /implement-suggestion {owner}/{repo}#{n}   — parses only a github.com PR URL or #<n>
+❌ /pr-fix {owner}/{repo}#{n} {bot_login}      — the retired Fix-all prompt
 ```
 
-- `{bot_login}` — this agent's own login, already resolved earlier in the run by the same identity
-  ladder `prior-comment-awareness.md` uses (`ME` from Step 0.5, falling back to the PR-state record's
-  `bot_login` from Step 0.7) — never a fresh API call to fill this slot, and never the PR author or
-  any other third party. Naming it is not decoration: `/pr-fix` defaults to a **single** author it
-  resolves itself and **excludes bot authors unless one is named explicitly**, so a reviewer posting
-  as `dash0-dev[bot]` would have every one of its findings skipped by a prompt that omitted the
-  argument. It is also what keeps the run off every other author's comments.
-- **No `{count}`.** The old template carried one as a checksum for the hand-rolled query walk;
-  `/pr-fix` reports what it applied and what it did not, so a count in the URL would be a second,
-  staler answer to the same question.
+- **Fill the full PR URL, never `prRef()`'s short form.** `/implement-suggestion` reads a
+  `github.com/<owner>/<repo>/pull/<n>` URL or `#<n>`, and a bare `#<n>` has no repo inside an Agent0
+  session.
+- **No login, no count.** `/implement-suggestion` gathers every open review comment itself, so the
+  prompt needs neither the reviewer's login nor a sticky permalink, and the button renders whether or
+  not the login resolved.
+- **Scope is every open review comment, not only this reviewer's.** `/implement-suggestion` applies
+  human and bot comments alike, each behind its own `/critical` + `/confidence` gate, and leaves a
+  comment it cannot honestly apply open (§ Safety).
 
-**Fix all — login fallback** (report, `{bot_login}` unresolved but the sticky's comment id is known):
-
-```text
-/pr-fix {report_comment_url}
-```
-
-`{report_comment_url}` is the report comment's own permalink —
-`https://github.com/{owner}/{repo}/pull/{n}#issuecomment-{sticky_id}` — built from the id the run
-already holds, since prior-run detection matched the sticky by marker in order to PATCH it (Step
-0.7 / 4a). A comment permalink is a PR URL with a fragment, so it satisfies `/pr-fix`'s `<pr>`
-slot, and the comment it names is the reviewer's own — which is how the author gets resolved, and
-named explicitly, without a login on hand.
-
-This form is a **fallback, not the default**: it is unavailable on a first run, where the sticky is
-created by POST and its id does not exist until after the body that would have to contain it. Prefer
-the explicit `{bot_login}` above whenever the identity ladder resolves.
-
-**Identity and count are independent conditions, and both templates above need both.** This form
-answers *how the author gets named*, not *whether there is anything to apply* — so it is reached only
-when the open reviewer-finding count is **non-zero**, exactly like the `{bot_login}` form. At a count
-of 0 the choice is between the CI-only variant below and omitting the button, and having a sticky id
-on hand says nothing about which. Stated because the identity ladder is the newer condition and it is
-the natural place to stop reading: a fallback that fired on identity alone would answer a question it
-was never asked, and it would answer it with a `/pr-fix` call in the one state the next section
-forbids one.
-
-So the Fix-all button is omitted when the count is 0 **and** CI has no red/failed check — green **or**
-merely pending-only, since a pending check has produced no failure and no logs to view — and, at a
-non-zero count, when *both* identity paths are unavailable (no login and no prior sticky). That second
-half is strictly narrower than the old rule, where an unresolved login omitted the button outright.
+So the Fix-all button is omitted when the open reviewer-finding count is 0 **and** CI has no
+red/failed check — green **or** merely pending-only, since a pending check has produced no failure
+and no logs to view.
 
 **Fix all — CI-only** (report, zero open findings) — the report can render a clean PASS with **zero**
 findings while CI is still red: Gate 2 (CI) is informational-in-`Run` (`pr-reviewer.md § Gate
 states`), never part of the verdict, so a PR with a clean Gate 6 (code review) and a red CI check has
-no comments for `/pr-fix` to apply even though the report itself reads PASS. Omitting the button in
+no comments for `/implement-suggestion` to apply even though the report itself reads PASS. Omitting the button in
 that case leaves the one state a human is most likely to click "fix" on with no button to click. Use
-this template instead of the `/pr-fix` one when the open reviewer-finding count is 0 but CI has at
+this template instead of the `/implement-suggestion` one when the open reviewer-finding count is 0 but CI has at
 least one red/failed check — keyed on the `CI red:` subset `CI_NOTE` already computes
 (`report-rendering.md`), never on a merely pending-only state with nothing to fix.
 
-**This one is not a `/pr-fix` invocation, and must not become one.** `/pr-fix` applies a PR's
-review comments; a red check with no findings has none to apply, so the task is a different task and
-keeps its own method inline — including the verification clause the two `/pr-fix` templates
-delegate to the skill:
+**This one is not an `/implement-suggestion` invocation, and must not become one.** That skill
+applies a PR's review comments and never fixes CI; a red check with no findings has none to apply, so
+the task is a different task and keeps its own method inline — including the verification clause the
+Fix-this and Fix-all templates delegate to their skills:
 
 ```text
 Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the failing job's logs for the cause. Verify using the repo's own lint/typecheck/test scripts, scoped to what the failing check touches — never a raw tsc/eslint/test-runner call or a whole-repo pass — skip verification if none exist. Then commit a fix scoped to the files this PR changed (no new PR).
@@ -371,21 +344,10 @@ Fix the failing CI checks on {owner}/{repo}#{n} — {failing_checks}. View the f
 
 This template is never used when the open-finding count is non-zero, even if CI is also red: a CI
 failure the diff demonstrably causes is filed as a Gate 6 finding on the reviewer's own evidence
-(`pr-reviewer.md § Gate states`), which is a review comment and therefore belongs to `/pr-fix`, not
-here. It is also never used for a Gate-1-only warning (description vs. code) with clean CI and no
+(`pr-reviewer.md § Gate states`), which is a review comment and therefore belongs to `/implement-suggestion`,
+not here. It is also never used for a Gate-1-only warning (description vs. code) with clean CI and no
 findings — that gate is about the human-authored PR description, not something an autonomous code-fix
 run can act on, so no Fix-all button renders for a Gate-1-only WARN.
-
-**Why an exact login, and not a natural-language "that same reviewer".** An earlier revision handed
-Agent0 a list of locations and told it to resolve authorship from the comments at those locations — a
-`{login}` placeholder was ruled out at the time because the reviewer's own login was not reliably
-known at build time (`/user` 401s on some access paths). That gap has since closed: `{bot_login}`
-reuses the identity ladder `prior-comment-awareness.md` already resolves earlier in the run (`ME`,
-falling back to the PR-state record's `bot_login`), so the exact login is normally on hand with no new
-call. When it genuinely is not, the report-comment permalink above resolves the author *by naming the
-comment* instead — and only when there is no prior sticky either is the button omitted, rather than
-sent with a placeholder value. An empty or wrong login does not fail loudly here: `/pr-fix` would
-either match nothing or, worse, apply another author's comments.
 
 **Do not send Agent0 to the report comment first.** An earlier template opened with *"open the
 pr-reviewer report comment (marker `PR_REVIEWER_REPORT`)"*, which cost a list-and-scan over every
@@ -394,20 +356,12 @@ at exactly the moment the button mattered: Gate 3 counts *prior* open threads, a
 findings post at Step 4b **after** the report renders at Step 4a — so a run whose findings are all new
 rendered a report saying "No open review threads" directly above a Fix-all button for N of them.
 Observed on `mthines/lorekit#594`: four discovery calls before the first edit, one of which told
-Agent0 there was nothing to fix. `/pr-fix` is the replacement for that hop — it gathers the PR's
-comments as its own first step, so there is nothing left for the prompt to send Agent0 looking for.
-The one permitted mention of the report comment is the **login fallback** above, which passes its
-permalink as an *address* rather than a place to go read: `/pr-fix` uses it to identify the PR and
-the author, and never as a worklist to parse.
-
-Scoping **Fix all** to the reviewer's own findings, by exact login rather than inference, is both
-product and safety: it never asks Agent0 to act on another author's comment, so no untrusted text
-drives the auto-submitted run. That is now `/pr-fix`'s `<author>` argument doing the work the
-embedded query's client-side filter used to do — which is why the argument is always filled, never
-left to `/pr-fix`'s own default author resolution.
+Agent0 there was nothing to fix. `/implement-suggestion` is the replacement for that hop — it gathers
+the PR's comments as its own first step, so there is nothing left for the prompt to send Agent0
+looking for.
 
 **Verify with the repo's own scripts, never a raw tool call.** This clause now lives in the
-**CI-only** template alone — the two `/pr-fix` templates delegate verification to the skill along
+**CI-only** template alone — the Fix-all and Fix-this templates delegate verification to the skill along
 with the rest of the method (§ Prompt templates). Where it does apply it must send Agent0 to the
 repo's *own* lint/typecheck/test scripts (whatever its
 `package.json`/CLI already documents), never a raw `tsc`/`eslint`/test-runner invocation, and never a
@@ -426,9 +380,32 @@ local check would have. Keep this clause in any future rewording of the CI-only 
 the "repo's own … scripts" / "never a raw … call" pair is what reopens the crash (the whole-repo half
 was already fixed once, in review of `mthines/agent-skills#151`, where the first draft of the CI-only
 template said "run the repo's checks locally first" — this second incident shows scoping by file
-count was not sufficient on its own). And because the two `/pr-fix` templates no longer carry it,
-**the same crash is now reachable through them if `/pr-fix` does not verify this way** — that is a
+count was not sufficient on its own). And because the Fix-all and Fix-this templates do not carry it,
+**the same crash is reachable through them if `/implement-suggestion` or `/pr-fix` does not verify this way** — that is a
 dependency on the skill, stated here so it is auditable rather than forgotten.
+
+## Report buttons
+
+The report renders its Agent0 buttons as one row, in this order, each only when its URL slot is set:
+
+| Button | Payload slot | Prompt | Renders when |
+| --- | --- | --- | --- |
+| **Fix all** | `FIX_ALL_URL` | `/implement-suggestion {pr_url}` (§ Prompt templates) | the Fix-all rules above build a prompt |
+| **Re-review** | `REVIEW_URL` | `/pr-review {pr_url}` | the buttons are on |
+| **Loop** | `LOOP_URL` | `/review-loop {pr_url} --merge` | Fix all renders |
+
+```text
+✅ /review-loop https://github.com/o/r/pull/7 --merge
+❌ /review-loop o/r#7 --merge        — review-loop parses only a PR URL or #<n>; this drops it into local mode
+```
+
+- **Fill `{pr_url}` with the full PR URL, never `prRef()`'s short form.** `/review-loop` parses only a github.com PR URL or `#<n>`, and any other first argument switches it to local mode, which has no branch to converge inside an Agent0 session.
+  `/pr-review` uses the same form so the two prompts read alike.
+- **Re-review stays on a clean report.** It answers "is it clean now?" after a push, so a PASS with zero findings still offers it.
+- **Loop squash-merges.** `--merge` merges only on a clean convergence, a `PASS` verdict, and green CI (`review-loop`'s `rules/merge.md`); any other outcome leaves the PR open.
+- **Loop renders only beside Fix all.** A loop with nothing to fix spends a review to learn it has converged, which Re-review already answers; the renderer rejects `LOOP_URL` with zero findings and no `CI_NOTE`, as it does `FIX_ALL_URL`.
+- **`/implement-suggestion`, `/pr-review`, and `/review-loop` must exist as Agent0 skills.** Agent0's skill tool resolves a fixed set of built-ins (`agent0-host.md`), so the report row depends on Agent0 shipping all three, as **Fix this** depends on `/pr-fix`.
+- `finalize/fix-links.mjs` builds all three from the same settings, so `--no-fix-links` and `agent0_fix_links: false` withhold the whole row; a caller-supplied `REVIEW_URL` / `LOOP_URL` is never overwritten.
 
 ## Button markup
 
@@ -466,7 +443,8 @@ cosmetic.
 
 **Width is derived, and the text width is pinned so it cannot depend on the reader's fonts.** The
 geometry is `12` left pad + `12` mark + `8` gap + `TEXT_W` + `12` right pad, giving 140 for
-`Fix with Agent0` (`TEXT_W` 96) and 158 for `Fix all with Agent0` (`TEXT_W` 114). Each `<text>`
+`Fix with Agent0` (`TEXT_W` 96), 81 for `Fix all` (`TEXT_W` 37), 106 for `Re-review` (`TEXT_W` 62),
+and 76 for `Loop` (`TEXT_W` 32). Each `<text>`
 carries `textLength="{TEXT_W}" lengthAdjust="spacingAndGlyphs"`, which is what makes the box the
 same size in every renderer.
 
@@ -491,9 +469,10 @@ in.
 https://raw.githubusercontent.com/mthines/agent-skills/main/agents/pr-reviewer/assets
 ```
 
-The pre-theme `fix-this-agent0.svg` / `fix-all-agent0.svg` are **kept in place and unreferenced**.
-Comments posted before this change embed those exact raw URLs, and deleting the files would 404 the
-button image in every already-posted finding.
+The report row's stems are `agent0-fix-all`, `agent0-re-review`, and `agent0-loop`; `fix-this-agent0`
+is the inline one (`comment-spine.mjs`'s `ASSET_STEM`). The `fix-all-agent0*.svg` files are **kept in
+place and unreferenced**: reports posted before the short labels embed those exact raw URLs, and
+deleting the files would 404 the button image in every one of them.
 
 For production, Dash0 should host PNG equivalents on `app.dash0.com` (like Cursor's own CDN button)
 — a brand-controlled PNG renders more reliably through GitHub's image proxy than a repo-hosted SVG,
@@ -504,7 +483,7 @@ and it does not 404 on branches before merge. Repointing production is a code ch
   `issue:` / `suggestion:` finding (`comment-shape.md § The payload`). The renderer **rejects** it on
   `nitpick` / `question` / `praise` — there is nothing for Agent0 to fix.
 - **Fix all** — rendered in the report from the `FIX_ALL_URL` payload slot
-  (`report-rendering.md`). Its `alt` is the asset's own rendered text, `Fix all with Agent0`, and the
+  (`report-rendering.md`). Its `alt` is the asset's own rendered text, `Fix all`, and the
   renderer rejects any other label: a count in the accessible name that no sighted reader can see
   fails WCAG 2.5.3 Label in Name. The renderer **rejects** it when there are zero
   findings and no `CI_NOTE`: a button that hands Agent0 an empty worklist is worse than no button,
@@ -613,39 +592,29 @@ design the link around. A `fix-this` link spends ~110 body chars before the prom
 ~30 — enough for `Fix <basename>:<line>` and not the repo, the PR, or the finding. A button that
 opens a session with no idea what to fix is worse than no button.
 
-**On a relayed write the buttons are unreachable for every realistic PR — the floor sits at or above
-the ceiling.** The deep-link scaffold alone (`https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=`
+**On a relayed write the buttons are unreachable for every PR — the floor sits above the ceiling.**
+The deep-link scaffold alone (`https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=`
 plus `&utm_source=pr-reviewer-fix-all`) is **105 body chars** empty, leaving 35 for the encoded
-prompt. A filled Fix-all measures **126 plus the owner, repo, PR number, and encoded login** — the
-21 fixed chars are `%2Fpr-fix%20`, the `%2F` and `%23` of the short reference, and the `%20` before
-the login, and a `[` or `]` in a bot login encodes to three chars. It fits under 140 only when those
-four total 14 or fewer: the degenerate fill — a one-character owner, repo and login, PR #1 — measures
-**130**, and every realistic fill lands in **155–192**. Fix this never fits: its scaffold is one char
-longer and its scope clause alone is ~50 encoded chars, so even the degenerate fill measures **188**.
-Re-derive rather than trust those:
+prompt. Every report button carries the full PR URL, whose encoded `https%3A%2F%2Fgithub.com%2F…%2Fpull%2F`
+scaffolding alone exceeds that: the degenerate Fix all (`o/r`, PR #1) measures **174**, and
+`mthines/agent-skills#168` measures **193** for Fix all, **182** for Re-review, and **194** for Loop.
+Fix this never fits either: its scope clause alone is ~50 encoded chars, so its degenerate fill
+measures **188**. Re-derive rather than trust those:
 
 ```bash
 node agents/pr-reviewer/scripts/build-agent0-link.mjs --env production --source fix-all \
-  "/pr-fix mthines/agent-skills#168 <login>" \
+  "/implement-suggestion https://github.com/mthines/agent-skills/pull/168" \
   | perl -pe 's/&/&amp;/g' | tr -d '\n' | wc -c
 ```
 
-The login moves the figure by its own encoded length: `mthines` gives 155, `claude[bot]` 163,
-`dash0-dev[bot]` 166, each **+4** on `development` (a longer host). A configured `agent0_org`
-(§ Organization) adds `&org=<slug>` as `&amp;org=<slug>` in the body — **+9 plus the slug**, so
-`dash0-development` costs 26 and takes the `mthines` fill to 181. Add `--org <slug>` to the command
-above when re-deriving for a repo that sets one. Quote the fill, never just the PR — the login alone
-moves the figure by 11 chars across those three.
+Each figure is **+4** on `development` (a longer host). A configured `agent0_org` (§ Organization)
+adds `&org=<slug>` as `&amp;org=<slug>` in the body — **+9 plus the slug**. Add `--org <slug>` to the
+command above when re-deriving for a repo that sets one.
 
-Every realistic fill is over 140 before any prompt content is chosen. That is why *"do not shorten
-the prompt to fit"* is an absolute rather than a preference: no prompt that still names the PR, the
-author, and — for Fix this — the location fits, so shortening trades the affordance's usefulness for
-nothing. A tiny repo whose Fix all happens to measure 140 or less passes `--relay-check` with exit 0
-and posts its button as rendered; that is the check answering correctly, not an exception to this
-rule, because nothing was shortened to get there. It also bounds what the `/pr-fix` rewrite and the
-short reference bought. Taking Fix-all from ~1100 to ~155 is a large win against the **2500 design
-target** and `MAX_URL`, and **no** win against the relay budget on any realistic PR, which it still
-exceeds by ~15–50. **The remedy is the write path, not the link:** post
+Every fill is over 140 before any prompt content is chosen. That is why *"do not shorten the prompt
+to fit"* is an absolute rather than a preference: no prompt that still names the PR — and, for Fix
+this, the author and location — fits, so shortening trades the affordance's usefulness for nothing.
+**The remedy is the write path, not the link:** post
 the body from a **file** (`gh api … --field body=@file`, `gh pr review --body-file`) and no rewrite
 happens, so the buttons render intact. A caller that can only pass the body as a tool-call argument
 gets a correctly-withheld button on every realistic run, permanently — worth knowing before reading a
@@ -694,11 +663,16 @@ bytes* remains the backstop for whatever this check does not predict.
 
 - The buttons only *prepare* a prompt; a human clicks, and Agent0 runs under its own guardrails and
   commits to the PR the human is already looking at. The reviewer never triggers a fix itself.
-- **Neither `/pr-fix` prompt embeds any comment text.** They carry a PR reference, the reviewer's own
-  login, and — for **Fix this** — one `{path}:{line}` this agent authored. Bodies are read live by
-  `/pr-fix` from GitHub, so a hostile comment from a third party cannot ride into the URL.
-- Both name the author explicitly, so `/pr-fix` acts on **this reviewer's** comments and no one
-  else's — the safety property the retired embedded query's client-side login filter provided. The
-  login fallback (`#issuecomment-{sticky_id}`) preserves it by naming a comment the reviewer wrote.
+- **Loop can merge the PR.** Its prompt is `/review-loop {pr_url} --merge`, which undrafts and
+  squash-merges when the loop converges with zero open threads, a `PASS` verdict, and green CI
+  (`review-loop`'s `rules/merge.md`); any other outcome leaves the PR open. It never merges with
+  `--admin` or past branch protection. **Fix all**, **Fix this**, and **Re-review** never merge.
+- **No prompt embeds any comment text.** They carry a PR reference and — for **Fix this** — the
+  reviewer's login and one `{path}:{line}` this agent authored. Bodies are read live from GitHub, so
+  a hostile comment from a third party cannot ride into the URL.
+- **Fix this** names the author, so `/pr-fix` acts on **this reviewer's** comment and no one else's.
+- **Fix all** does not: `/implement-suggestion` reads every open review comment, a third party's
+  included, and the per-comment `/critical` + `/confidence` gate is what stands between such a
+  comment and a commit. A comment that fails the gate stays open and is reported, never applied.
 - The deep link is a plain `https://app.dash0.com` URL; the renderer validates it as `http(s)` like
   every other URL slot.

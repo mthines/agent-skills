@@ -99,5 +99,14 @@ No stable element → omit it; the run falls back to "URL is not the login page"
 | Outer wall | bypass secret from an untracked `.env` | bypass secret from a CI secret |
 | Inner wall | `refresh.command`, or log in once with `login-headful` | `refresh.command` from CI-secret env vars, or a pre-captured state stored as a base64 secret |
 
+## Sign in inside Chrome (chrome driver)
+
+When the run drives the user's own Chrome and the tab lands on the login page, sign in there yourself with the environment's test identity. Do not hand the step back to the user.
+The user has authorized this for every `aw-verify` run, but only on the host named in the environment's `auth.sign_in_host`, which usually comes from the personal overlay in `~/.agents/aw/config.yml`.
+
+- Credentials: the test user that `refresh.command` reads (for example `.browser/credentials.json`). Never use a real person's password, and never use SSO.
+- Never repeat a credential value in chat, a report, or a log.
+- No `sign_in_host`, or the login page is on a different host: ask once and name the host. Write the confirmed host back to the overlay.
+
 **Google SSO:** scripted Google logins are blocked. Use a password-capable test account against the app's own form, or a pre-captured state a human refreshes on a schedule; with neither, authed specs are `skipped` with the reason — never a faked pass.
 Never put a real person's credentials in CI.

@@ -12,9 +12,9 @@
 {{IMPACT_IMAGE}}
 {{/IMPACT_IMAGE}}{{#FINDINGS_INDEX}}
 {{FINDINGS_INDEX}}
-{{/FINDINGS_INDEX}}{{#FIX_ALL_BUTTON}}
-{{FIX_ALL_BUTTON}}
-{{/FIX_ALL_BUTTON}}{{#ADDITIONAL_FINDINGS}}
+{{/FINDINGS_INDEX}}{{#ACTION_BUTTONS}}
+{{ACTION_BUTTONS}}
+{{/ACTION_BUTTONS}}{{#ADDITIONAL_FINDINGS}}
 <details>
 <summary>{{ADDITIONAL_COUNT}} more findings — verified, too minor to comment on</summary>
 <br>
