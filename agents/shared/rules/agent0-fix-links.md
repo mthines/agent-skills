@@ -13,7 +13,7 @@ tags:
 Opt-in "Fix with Agent0" buttons on the reviewer's output — the Agent0 equivalent of Cursor's
 "Fix in Cursor" button. Two placements: one row of report buttons — **Fix all**, **Re-review**, and
 **Loop** (§ Report buttons) — and one **Fix this** button per inline finding. Each links to an Agent0 deep link that auto-submits a prompt which fixes
-the finding and commits to the same PR.
+the finding and commits to the same PR — except **Loop**, which can also merge it (§ Safety).
 
 Each prompt is one Agent0 skill call plus an address: **Fix this** calls `/pr-fix` with the PR, the
 reviewer's login, and one location; **Fix all** calls `/implement-suggestion`, **Re-review**
@@ -663,6 +663,10 @@ bytes* remains the backstop for whatever this check does not predict.
 
 - The buttons only *prepare* a prompt; a human clicks, and Agent0 runs under its own guardrails and
   commits to the PR the human is already looking at. The reviewer never triggers a fix itself.
+- **Loop can merge the PR.** Its prompt is `/review-loop {pr_url} --merge`, which undrafts and
+  squash-merges when the loop converges with zero open threads, a `PASS` verdict, and green CI
+  (`review-loop`'s `rules/merge.md`); any other outcome leaves the PR open. It never merges with
+  `--admin` or past branch protection. **Fix all**, **Fix this**, and **Re-review** never merge.
 - **No prompt embeds any comment text.** They carry a PR reference and — for **Fix this** — the
   reviewer's login and one `{path}:{line}` this agent authored. Bodies are read live from GitHub, so
   a hostile comment from a third party cannot ride into the URL.
