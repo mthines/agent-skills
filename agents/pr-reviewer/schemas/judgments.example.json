@@ -1,0 +1,137 @@
+{
+  "v": 1,
+  "head_sha": "0123456789abcdef0123456789abcdef01234567",
+  "summary": "Adds a stroke halo to impact-map band labels and row headers so edges can run behind them, and documents the new paint order in diagram.md.",
+  "scanned_files": [
+    "skills/quality/impact-map/templates/page.html",
+    "skills/quality/impact-map/rules/diagram.md"
+  ],
+  "candidates": [
+    {
+      "finder": "correctness",
+      "defect_class": "edge-case",
+      "path": "skills/quality/impact-map/templates/page.html",
+      "line": 103,
+      "claim": "`.band ~ .hdr` halos every row header in `--bg`, but only `.band-l.ctx` is overridden to `--sheet`; a row header inside a `band ctx` (no fill, so the sheet shows) keeps the `--bg` halo.",
+      "bad_outcome": "Row headers inside a context band render on a visible --bg pill against the --sheet background (#F3F4F7 on #FFFFFF light, #0E1014 on #161920 dark).",
+      "evidence": [
+        "skills/quality/impact-map/templates/page.html:100 (band.ctx rect fill:none)",
+        "skills/quality/impact-map/templates/page.html:102 (.band ~ .hdr stroke:var(--bg))",
+        "skills/quality/impact-map/templates/page.html:103 (only .band-l.ctx overridden)",
+        "skills/quality/impact-map/rules/diagram.md:20 (every band's rows headed by an hdr label)",
+        "skills/quality/impact-map/rules/diagram.md:34 (only the band label takes ctx)"
+      ],
+      "severity_hint": "low",
+      "fix": "Extend the ctx override to `.hdr.ctx`, and say in diagram.md that a ctx band's row headers take `ctx` too.",
+      "verify_by": "Read page.html:90-103 for the ctx background and the halo selectors; read diagram.md:20 and :34 for whether ctx-band rows carry hdr labels.",
+      "verdict": "confirmed",
+      "R": 80,
+      "A": 100,
+      "Ac": 95,
+      "final": 90.5,
+      "severity": "low",
+      "prefix": "suggestion",
+      "blocking": false,
+      "title": "Row headers in a context band get the wrong halo",
+      "body": "`.band ~ .hdr` gives every row header a `--bg` halo, but a `band ctx` has no fill, so its headers sit on `--sheet` and show a visible pill. Only `.band-l.ctx` is overridden.",
+      "fence": {
+        "lang": "css",
+        "code": "svg .band ~ .band-l.ctx,svg .band ~ .hdr.ctx{stroke:var(--sheet)}"
+      },
+      "materiality": true,
+      "category": "rendering",
+      "evidence_anchors": [
+        {
+          "path": "skills/quality/impact-map/rules/diagram.md",
+          "line": 34,
+          "note": "only band label takes ctx"
+        }
+      ]
+    },
+    {
+      "finder": "quality",
+      "defect_class": "missing-update",
+      "path": "skills/quality/impact-map/rules/diagram.md",
+      "line": 32,
+      "claim": "The new paint order puts row headers after edges, but the Skeleton (diagram.md:77-78) still paints the `hdr` label before the edges.",
+      "bad_outcome": "A banded diagram copied from the Skeleton paints edges over row headers, the case the halo exists to fix.",
+      "evidence": [
+        "skills/quality/impact-map/rules/diagram.md:32 (new paint order)",
+        "skills/quality/impact-map/rules/diagram.md:77 (Skeleton hdr before edges)"
+      ],
+      "severity_hint": "low",
+      "fix": "Move the Skeleton's `hdr` line below the edges comment so both blocks show one paint order.",
+      "verify_by": "Read diagram.md:32 and diagram.md:70-90 and compare the two orders.",
+      "verdict": "confirmed",
+      "R": 70,
+      "A": 75,
+      "Ac": 90,
+      "final": 77.5,
+      "severity": "low",
+      "prefix": "suggestion",
+      "blocking": false,
+      "title": "Skeleton still paints row headers before edges",
+      "body": "The new paint order puts row headers after edges, but the Skeleton still paints `hdr` first. A banded diagram copied from it draws edges over its headers.",
+      "materiality": true,
+      "category": "docs"
+    }
+  ],
+  "gates": {
+    "gate1": {
+      "status": "PASS",
+      "details": "The description matches what the diff does."
+    },
+    "gate5": {
+      "status": "PASS",
+      "details": "The change is documented well enough to follow."
+    },
+    "gate4": {
+      "precandidate_dispositions": [],
+      "ai_stub_findings": []
+    }
+  },
+  "threads": [
+    {
+      "thread_id": "PRRT_kwDOexample1",
+      "classification": "fixed",
+      "reply": "Fixed in 1a2b3c4: the ctx override now covers `.hdr.ctx`."
+    },
+    {
+      "thread_id": "PRRT_kwDOexample2",
+      "classification": "persisting"
+    }
+  ],
+  "lenses": {
+    "standards_log": "skipped (t=0.4)",
+    "measurability_log": "ran · 0 paths classified · 0 missing · 0 unlinked",
+    "holistic_log": "skipped (lean budget, tier quick)"
+  },
+  "memory": {
+    "relevance_rules": [],
+    "lessons_used": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "scope": "global",
+        "key": "pr-reviewer-run::example::lesson-slug",
+        "note": "why the lesson applied"
+      }
+    ],
+    "read": [
+      {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "scope": "global",
+        "key": "pr-reviewer-run::example::lesson-slug"
+      }
+    ],
+    "indexed": 50
+  },
+  "impact_trace": [
+    {
+      "symbol": "renderBand",
+      "path": "skills/quality/impact-map/templates/page.html",
+      "verified": [
+        "skills/quality/impact-map/rules/diagram.md"
+      ]
+    }
+  ]
+}

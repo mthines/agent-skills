@@ -15,7 +15,7 @@
 import { execFileSync, execSync, spawn, spawnSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync, writeFileSync, rmSync, mkdtempSync, mkdirSync, symlinkSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { join, relative, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { REPO_ROOT, walk, headingSlugs, frontmatter, rel, sliceBetween, extractSection, Suite } from "./lib.mjs";
 import { SUITES, DETECTION } from "./suites.mjs";
@@ -1535,14 +1535,16 @@ const renderReport = (payload) => {
 // ── G25e: posting.md's pre-write assertion block, extracted and run — a net that cannot fire posts a broken report ──
 {
   const postingMd = read("agents/pr-reviewer/rules/posting.md");
-  const preWrite = sliceBetween(postingMd, "things on `REPORT_BODY` immediately before the write", "On any `abort`: post no report object");
+  const preWrite = sliceBetween(postingMd, "Seven assertions guard `REPORT_BODY` immediately before the write", "On any `abort`: post no report object");
   const fence = preWrite.match(/```bash\n([\s\S]*?)```/);
   s.check("G25e the pre-write assertion block is extractable", !!fence);
   if (fence) {
-    const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1]}\nexit 0\n`;
+    // The block runs execute-write-plan.mjs --check-report on the rendered file; feed it each body through that file.
+    const bodyFile = join(mkdtempSync(join(tmpdir(), "l1-g25e-")), "report-body.md");
+    const script = `abort() { printf 'ABORT: %s\\n' "$*"; exit 3; }\n${fence[1].replaceAll("/tmp/finalize/report-body.md", bodyFile)}\nexit 0\n`;
     const good = renderReport(readFileSync(join(REPORT_FIX, "warn.json"), "utf8")).out;
-    const runAssert = (body) => spawnSync("bash", ["-c", script],
-      { env: { ...process.env, REPORT_BODY: body, AGENT_SUPPORT: join(REPO_ROOT, "agents") }, encoding: "utf8" });
+    const runAssert = (body) => (writeFileSync(bodyFile, body), spawnSync("bash", ["-c", script],
+      { env: { ...process.env, AGENT_SUPPORT: join(REPO_ROOT, "agents") }, encoding: "utf8" }));
     const ok = runAssert(good);
     s.check("G25e the pre-write assertions accept a valid rendered body", ok.status === 0, `exit ${ok.status}: ${(ok.stdout || "").trim()}`);
     for (const [why, body] of [
@@ -1555,6 +1557,8 @@ const renderReport = (payload) => {
     ]) {
       s.check(`G25e the pre-write assertions reject ${why}`, runAssert(body).status === 3);
     }
+    s.check("G25e the pre-write block reads the file finalize writes", fence[1].includes("/tmp/finalize/report-body.md"));
+    rmSync(dirname(bodyFile), { recursive: true, force: true });
   }
 }
 

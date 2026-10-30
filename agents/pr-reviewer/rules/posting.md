@@ -96,25 +96,9 @@ REPORT_BODY=$(cat /tmp/finalize/report-body.md)
 
 `--out-dir` receives `finalize-result.json`, `report-body.md`, and `inline/*.md` (one file per posted finding). A non-zero exit is `render-report.mjs` rejecting the payload — an unknown key, a missing required slot, an invalid gate glyph, a smuggled `**Verdict**` line, or a template that lost its marker or accordion — report the error and post nothing. **If `finalize.mjs` cannot be resolved or fails, do not fall back to composing the body by hand** — that is the exact failure this replaces: report the error verbatim in Step 5 alongside the payload it was given, post the inline findings (Step 4b still applies), and leave the sticky untouched. A missing report is recoverable; a malformed one that consumers then parse is not.
 
-**What the model still supplies**, via `judgments.json` (schema:
-[`schemas/judgments.schema.json`](../schemas/judgments.schema.json), enforced by
-`validate-judgments.mjs`):
+**What the model still supplies** is `judgments.json`: write it per [`judgments.md`](./judgments.md) (example, validator, and the field table).
 
-| Field | Content |
-| --- | --- |
-| `summary` | The report's top-level `SUMMARY` scalar (≤ 240 chars) — the one line of prose `finalize.mjs` cannot derive from the candidates. |
-| `gates.gate1` | Description-vs-code judgment (Gate 1). |
-| `gates.gate4` | Self-review-signals judgment (Gate 4). |
-| `gates.gate5` | Docs judgment (Gate 5). |
-| `candidates[]`, `threads[]`, `lenses[]`, `memory` | Everything Steps 2/2.4–2.9c produced. `finalize.mjs` computes thresholds, the defer band, suppression, placement, caps, and the gates/verdict from these — it invents none of it. |
-| `scanned_files` | `SCANNED_FILES` (Step 2), as repo-relative paths. `finalize.mjs` counts it against `context.scopePaths` for the report's `Checked` row. Omitted, the row drops its files-read part. |
-| `impact_trace` | Per changed export the consumer-impact finder traced, and per dependency the dependency finder read (`symbol` = package, `path` = manifest), `{symbol, path, verified: [<files read that still hold>]}` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)). `finalize.mjs` builds the report's `Reach`, `Dependencies`, and `Overlapping PRs` rows from it, `impact.json`, and the posted consumer-impact claims. |
-| `candidates[].decide` | `true` on a claim that is the author's choice between two acceptable options — rendered `Decide: <title>` and counted `to decide`. Never together with `blocking`. |
-| `candidates[].fix` | The remedy. When it is one line of ≤ 140 chars, the findings table shows it under the title; on a `decide` candidate, write the context for the choice instead. |
-| `memory.indexed` | `MEMORIES_READ_COUNT` from Step 1.0: every LoreKit entry listed, all three families. The report's `<N> indexed` half; finalize renders the largest of it, `read[]`'s length, and the used count. |
-| `memory.relevance_rules[]`, `memory.lessons_used[]`, `memory.read[]` | Copy `id`, `scope`, and `key` onto every entry. Take `id` from the `memory_list` / `memory_search` entry that surfaced the key — `memory_read` returns none. Take `scope` from the entry, or from the scope the call was made with when the entry omits it — a `scope="global"` `memory_list` does, and a ref without a scope is never cited. `read[]` lists `{ id, scope, key }` for every body this run fetched with `memory_read` (Steps 1.2a, 1.2d, 2.7b). The run trace opens each memory by these ([`run-telemetry.md § The memory`](./run-telemetry.md#the-memory)). |
-
-There is no second, hand-assembled JSON file: every slot the old manual payload table listed (`RUN.tier`, `RUN.depth`, `IMPACT`, `WITHHELD`, `MEMORIES_USED[]`, `FINDINGS[]`, … — full list at `report-rendering.md` § REPORT_BODY payload) is read straight off `context.json` and `judgments.json` by `finalize.mjs`. `context.render.*` is the one passthrough bag for facts `finalize.mjs` was never scoped to compute (`FIX_ALL_URL` — § Fix-with-Agent0 buttons, above — `IMPACT_IMAGE` — § The impact image, below — `MEMORIES_SUMMARY`, `INTEGRATIONS`, `SKIPPED_FILES`, `RUN_ANOMALY`, `carriedForward`, and — only to override what `finalize/reach.mjs` builds from `scanned_files` / `impact_trace` — `COVERAGE` and `IMPACT`): set these on `context.json` before invoking `finalize.mjs`, never post-patch the rendered body.
+Facts `finalize.mjs` cannot compute go in `context.render.*` before it runs ([`judgments.md` § `context.render`](./judgments.md#contextrender)); never post-patch the rendered body.
 
 #### The impact image
 
@@ -145,39 +129,18 @@ jq --arg l "$LIGHT_URL" --arg d "$DARK_URL" --arg a "$ALT" \
 
 The row numbers are a pure function of `judgments.json` (blocking, then decisions, then by tier), so the dry run and the real run number the findings identically. Change no judgment between the two runs, or the badges point at the wrong rows. When any step fails, post the report without `IMPACT_IMAGE` and report `failed (<step>: <error>)`.
 
-**Assert these seven things on `REPORT_BODY` immediately before the write, whatever produced it.**
-The renderer guarantees them, so on the normal path this is redundant — and that is the point: it is
-the only check that survives the renderer being **bypassed**, which is the failure this whole
-section exists to prevent. A check that runs only inside the thing it is guarding guards nothing.
+**Seven assertions guard `REPORT_BODY` immediately before the write, whatever produced it**: the
+report marker, the `Review details` accordion (not pre-expanded), no terminal-only `**Verdict**`
+line, a `### ` headline, the attribution footer, and `comment-spine.mjs`'s re-encoding check.
+The renderer guarantees them, so on the normal path this is redundant — and that is the point: it
+is the only check that survives the renderer being **bypassed**. `execute-write-plan.mjs` runs them
+on the exact file `sticky.upsert` posts and records a failure as `{"kind":"sticky.upsert","ok":false,"aborted":"<reason>"}`
+(and as `reportCheck` under `--dry-run`). On the MCP path, where you post the body yourself, run
+them first:
 
 ```bash
-grep -q '<!-- PR_REVIEWER_REPORT -->' <<< "$REPORT_BODY" || abort "report body lost the marker"
-# The accordion check needs LINE ADJACENCY, which grep cannot express portably. Two traps:
-#   grep -qz '<details>\n<summary>…'   → \n is the letter n in a BRE; matches "<details>n<summary>…"
-#   grep -qz $'<details>\n<summary>…'  → a newline in a pattern is a pattern SEPARATOR, so this is
-#                                        an OR of {<details>, <summary>…} and passes on either alone
-# Both read as correct and neither is. `grep -Pqz` works but is GNU-only. Use awk.
-printf '%s\n' "$REPORT_BODY" | awk '
-  /^<details>$/ { getline nxt; if (nxt ~ /^<summary>Review details/) ok = 1 }
-  END { exit ok ? 0 : 1 }
-' || abort "no Review details accordion"
-grep -q '<details open>' <<< "$REPORT_BODY" && abort "accordion is pre-expanded"
-grep -q '\*\*Verdict\*\*' <<< "$REPORT_BODY" && abort "advisory verdict is terminal-only"
-# The `### ` headline is what makes a report identifiable as a report at a glance — and it is the
-# one shape an inline finding never uses (a finding opens with its Conventional-Comments prefix and
-# a bold title). A report that lost it reads as a long comment.
-grep -q '^### ' <<< "$REPORT_BODY" || abort "no ### headline — the report has no report shape"
-# The shared attribution footer, built by comment-spine.mjs's footerLine() and identical on both
-# surfaces. It carries the reviewed sha, which a sticky has no commit_id for, plus the freshness
-# stamp that used to sit in its own <sub>Updated …</sub> line.
-grep -q '^<sup>`pr-reviewer` · commit `' <<< "$REPORT_BODY" \
-  || abort "no attribution footer — provenance and the freshness cue are both missing"
-# The last gate: is this still renderer output, or has the markup been re-encoded in transit?
-# Run the shared checker rather than re-deriving its signatures as greps — it is the same function
-# both renderers call, so this cannot drift away from them.
-printf '%s\n' "$REPORT_BODY" > /tmp/report-body.md
-node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/report-body.md \
-  || abort "body is no longer renderer output (see stderr) — post the rendered bytes verbatim"
+node "$AGENT_SUPPORT/pr-reviewer/scripts/execute-write-plan.mjs" --check-report /tmp/finalize/report-body.md \
+  || abort "report body failed its pre-write check (see stderr)"
 ```
 
 On any `abort`: post no report object, name the failing assertion in the Step 5 output, and stop.
@@ -467,7 +430,7 @@ The six non-negotiables:
    describe the current run in every case, including a run that posts no review. There are exactly
    two exceptions, and neither relocates the report: an access path that cannot write it
    (§ *When the sticky cannot be written*), which posts the degraded pointer instead, and a body
-   that fails the pre-write assertion below (§ *Build the payload, then run the renderer*), which
+   that fails the pre-write check (§ *Build the payload, then run the renderer*), which
    posts **no** report copy anywhere and reports the failing reason to the user.
 6. Never skip the state write (Step 4c). It has **no** exceptions — not a failed sticky, not a
    skipped review, not a caller policy refusal. Each of those is a reason the *next* run needs the
