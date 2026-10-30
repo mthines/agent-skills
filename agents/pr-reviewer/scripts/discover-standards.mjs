@@ -201,7 +201,8 @@ export function discoverStandards({ root, changed, capChars = STANDARDS_CAP_CHAR
     kept.push(d);
   }
   const bulletCount = kept.reduce((n, d) => n + d.bullets.length, 0);
-  const reviewConfigStandards = REPO_CONFIG_PATHS.some((p) => /^standards:/m.test(read(p) || ""));
+  const repoConfig = REPO_CONFIG_PATHS.map(read).find((t) => t !== null);
+  const reviewConfigStandards = /^standards:/m.test(repoConfig || "");
   return {
     docs: kept, byFile, dropped, bulletCount, chars: used, capChars, reviewConfigStandards,
     announce: `Standards discovery: ${kept.length} governing doc(s) loaded, ${bulletCount} normative bullet(s) extracted.`

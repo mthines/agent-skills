@@ -139,14 +139,17 @@ export function parseLens(text) {
 
 /**
  * The `lenses:` entries of every `.review.yaml` that governs each changed file, unioned.
- * The repo-level configs (`REPO_CONFIG_PATHS`) govern every file.
+ * The first repo-level config that exists (`REPO_CONFIG_PATHS` order) governs every file.
  * @param {{ changed: string[], configs: Record<string, string> }} a
  * @returns {Record<string, string[]>} lens name → the changed files it is enabled for
  */
 export function subtreeLenses({ changed, configs }) {
   /** @type {Record<string, Set<string>>} */
   const byName = {};
+  // Only the first repo-level config that exists governs; a deprecated one beside it is ignored.
+  const repoConfig = REPO_CONFIG_PATHS.find((p) => configs[p] !== undefined);
   for (const [path, text] of Object.entries(configs)) {
+    if (REPO_CONFIG_PATHS.includes(path) && path !== repoConfig) continue;
     const entry = flatYaml(text).lenses;
     if (!entry) continue;
     const dir = REPO_CONFIG_PATHS.includes(path) ? "." : posix.dirname(path);
@@ -474,6 +477,8 @@ function selfTest() {
 
   check("a .agents/review/config.yaml lenses: list governs every file",
     JSON.stringify(subtreeLenses({ changed: ["x/a.ts"], configs: { ".agents/review/config.yaml": "lenses: [ux]\n" } })) === JSON.stringify({ ux: ["x/a.ts"] }));
+  check("subtreeLenses: a deprecated repo-level config beside .agents/review/config.yaml is ignored",
+    JSON.stringify(subtreeLenses({ changed: ["x/a.ts"], configs: { ".agents/review/config.yaml": "lenses: [ux]\n", ".github/review.yaml": "lenses: [tdd]\n" } })) === JSON.stringify({ ux: ["x/a.ts"] }));
   const svcUx = { "svc/.review.yaml": "lenses: [ux]\n" };
   const s11 = selectLenses({ changed: [ch("svc/a.ts"), ch("web/B.tsx")], configs: svcUx, bundledLenses: { ux } });
   check("a scoped lenses: entry that misses its subtree still lets the lens auto-load elsewhere",
