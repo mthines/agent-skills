@@ -23,7 +23,7 @@ this context for one PR, a dispatched sub-agent per PR for two or more.
 - Count PRs after Phase 0 parsing; `--watch` and a `review-loop` sub-step B always have one.
 - Applying here never widens the pack: touch only the files an `apply` entry lists, and never
   re-run `/critical` or `/confidence` on an entry Phase 4 already passed.
-- Return the same per-comment report rows the [*Output you return*](#output-you-return) block
+- Return the same per-comment report rows the template's *Output you return* block ([worker prompt template](#worker-prompt-template))
   names, so Phase 7 reads both paths alike.
 
 ```text
