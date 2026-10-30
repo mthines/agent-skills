@@ -153,7 +153,8 @@ export function routeDepth(i) {
   // A size-scaled run reviews the whole PR, so its standard band starts above TINY_PR_LINES.
   const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : 11;
   const bandCeiling = sizeScaled ? SMALL_PR_LINES : 100;
-  const inSizeBand = !sizeExcluded && deltaLines >= bandFloor && deltaLines <= bandCeiling;
+  // On a scaled run the size band replaces deep, so a size-excluded shape keeps it (and its standards finder).
+  const inSizeBand = (sizeScaled || !sizeExcluded) && deltaLines >= bandFloor && deltaLines <= bandCeiling;
   if (deltaRiskyShapes.length > 0) why.push(`standard: DELTA_RISKY_SHAPES=[${deltaRiskyShapes.join(",")}]`);
   if (band === "low") why.push("standard: blast_radius.band=low");
   if (usedSemverDelta) why.push(`standard: semver_delta=${usedSemverDelta.delta} with ${usedSemverDelta.usageSites} usage site(s)`);

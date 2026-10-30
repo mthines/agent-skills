@@ -173,7 +173,7 @@ A first review of a small PR that fires no risk trigger skips `deep`.
 
 1. It applies only when `D1` fired (first run) and `DELTA_LINES ≤ 400` (`SMALL_PR_LINES`); on a first run the delta is the whole PR.
 2. It applies only when none of `D2`–`D5` or `D7`–`D11` fired; those measure risk (a sensitive path, propagation, reach, a major bump, a hot signature), so a PR firing one still routes `deep`.
-3. It waives `D1`, `D6`, `D12`, and `D13`, then routes on the rows below: `standard` at `31 ≤ DELTA_LINES ≤ 400`, or on any other `standard` condition, else `quick` (`TINY_PR_LINES` is 30).
+3. It waives `D1`, `D6`, `D12`, and `D13`, then routes on the rows below: `standard` at `31 ≤ DELTA_LINES ≤ 400` (a `docs-only`, `test-only`, or `generated` PR included), or on any other `standard` condition, else `quick` (`TINY_PR_LINES` is 30).
 4. The run keeps `RUN.mode` `full` and carries `RUN.scaled: true`; `render-report.mjs` accepts `full` with `standard` or `quick` only with that flag.
 5. A scaled run is recorded as `full`, so it sets `lastFullSha` and `D6` does not fire on the next run.
    Later pushes route as before: `D4`, `D5`, and `D12` still send a growing PR to `deep`.

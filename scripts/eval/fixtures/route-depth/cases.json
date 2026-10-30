@@ -184,5 +184,11 @@
     "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 250, "highStakesFiles": ["src/auth/session.ts"] },
     "expected": "deep",
     "notes": "A sensitive path (D7) keeps a medium first run deep."
+  },
+  {
+    "id": "size-scaled-docs-only-standard",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["docs-only"], "deltaLines": 350, "newFiles": 2 },
+    "expected": "standard",
+    "notes": "A size-excluded shape (docs-only, test-only, generated) keeps the scaled standard band: scaling replaced deep, so it must not fall to quick and lose the standards finder."
   }
 ]
