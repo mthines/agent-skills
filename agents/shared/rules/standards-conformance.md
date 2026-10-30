@@ -16,7 +16,7 @@ has already written down?**
 
 This rule produces findings when a changed file violates the repository's own governing
 documents — `CLAUDE.md`, `AGENTS.md`, path-scoped `.claude/rules/*.md` files, and explicit
-`standards:` entries in the review config (`.github/review.yaml`, or a subtree `.review.yaml`).
+`standards:` entries in the review config (`.agents/review/config.yaml`, or a subtree `.review.yaml`).
 The governing-doc line `path:line` is the grounding evidence; findings that cannot cite one
 are dropped at Step 2.6.
 
@@ -56,7 +56,7 @@ Mention it in the run announcement only when set.
 For each changed file, the rule reuses **`review-config.md`'s upward walk** (§ Hierarchical
 discovery / § Loading algorithm) to discover governing documents.
 The walk is not restated here: it is the same traversal that collects subtree `.review.yaml` files
-and the `.github/review.yaml` base (legacy root `.review.yaml` still honoured), re-run on the same
+and the repo-level base (`.agents/review/config.yaml`; the deprecated `.agents/review/config.yaml` and root `.review.yaml` still honoured), re-run on the same
 directory tree to collect the governing docs below.
 
 Load, in nearest-ancestor-first order, these document types:
@@ -87,7 +87,7 @@ Discovery runs **once per changed file at Step 1** (cached as `STANDARDS_DOCS`),
 
 ### Source 2 — Opt-in via the review config's `standards:` block
 
-When the review config (`.github/review.yaml`, or a subtree `.review.yaml`) defines a `standards:`
+When the review config (`.agents/review/config.yaml`, or a subtree `.review.yaml`) defines a `standards:`
 block, each matching entry's `docs:` files are
 loaded as standards for the globs that cover the changed file, and `must:` entries are treated as
 inline normative rules.
@@ -151,7 +151,7 @@ for f in $CHANGED_FILES; do
   # Reuse review-config upward walk logic for governing docs:
   discover_governing_docs "$f"   # → nearest CLAUDE.md, .claude/rules/*.md, AGENTS.md, root slice
   # Load review-config standards: entries matching the file's path
-  # (.github/review.yaml base + subtree .review.yaml files)
+  # (.agents/review/config.yaml base + subtree .review.yaml files)
   load_review_config_standards "$f"
   # Apply 30,000-char cap nearest-first; log drops
 done
@@ -223,7 +223,7 @@ finding in the pipeline.
 ## Precedence and conflict
 
 When a standards finding conflicts with the PR author's stated intent or an explicit review-config
-`path_instructions` / `standards` entry (`.github/review.yaml` or a subtree `.review.yaml`), the
+`path_instructions` / `standards` entry (`.agents/review/config.yaml` or a subtree `.review.yaml`), the
 author's intent and the explicit config **win**.
 
 The conflict is **surfaced, not silently enforced**: emit a note in the diagnostics block —

@@ -15,7 +15,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 // Environment-selectable host: production → app.dash0.com, development → app.dash0-dev.com.
-// The reviewer resolves the environment from `.github/review.yaml`'s `agent0_environment`
+// The reviewer resolves the environment from `.agents/review/config.yaml`'s `agent0_environment`
 // (agent0-fix-links.md § Environment) and passes it via --env / AGENT0_ENV; default production.
 const HOSTS = { production: "https://app.dash0.com", development: "https://app.dash0-dev.com" };
 // Fail-closed bound. Browsers are not the constraint (Chrome processes ~2MB, Firefox 64k+, Safari
@@ -41,7 +41,7 @@ const SOURCES = ["fix-all", "fix-this"];
 // every button then opens the intended one.
 //
 // Validated rather than escaped, and rejected rather than dropped. The value comes from a repo's own
-// `.github/review.yaml`, so it is config, not user input — but it lands unencoded in a query string,
+// `.agents/review/config.yaml`, so it is config, not user input — but it lands unencoded in a query string,
 // and a slug carrying `&`, `#`, or a space would append a parameter, truncate the URL, or break the
 // `href` the button is made of. A slug that does not match this is a typo in the config, and a
 // silently-dropped `org` is exactly the shape of failure `--source` and `--env` were both hardened

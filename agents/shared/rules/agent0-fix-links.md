@@ -22,7 +22,7 @@ The prompt is a call to Agent0's **`/pr-fix`** skill plus an address — the PR,
 **On by default; off only when a repo says so.** There is no configuration to add: a repo with no
 review config at all, or one that never mentions Agent0, gets the buttons pointed at `production`
 (§ Environment). The single way to turn them off repo-wide is to say so — `agent0_fix_links: false`
-in `.github/review.yaml` — and `--no-fix-links` turns them off for one run.
+in `.agents/review/config.yaml` — and `--no-fix-links` turns them off for one run.
 
 **`finalize.mjs` builds them** (`agents/pr-reviewer/scripts/finalize/fix-links.mjs`), so the default
 needs nobody to remember a step. It resolves the table in § Opt-in from its own `--no-fix-links` /
@@ -77,7 +77,7 @@ key made "which Agent0" and "buttons or not" impossible to set independently —
 buttons on the default host had to write a line whose value it did not care about.
 
 ```yaml
-# .github/review.yaml
+# .agents/review/config.yaml
 agent0_fix_links: false             # the only way to turn the buttons off repo-wide
 agent0_environment: development     # host only — has no bearing on whether they render
 agent0_org: dash0-development       # optional org slug — omitted means no `org=` param at all
@@ -108,7 +108,7 @@ Which Agent0 the buttons link to is set by `agent0_environment` in the review co
 buttons on `production` rather than no buttons:
 
 ```yaml
-# .github/review.yaml
+# .agents/review/config.yaml
 agent0_environment: production | development   # default: production
 ```
 
@@ -129,7 +129,7 @@ A repo whose readers belong to several sets it once, and every button on every r
 intended one instead of whichever the reader last used:
 
 ```yaml
-# .github/review.yaml
+# .agents/review/config.yaml
 agent0_org: dash0-development   # optional — omit and no `org=` param is sent at all
 ```
 

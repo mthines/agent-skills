@@ -814,7 +814,7 @@ Surface a one-line suggestion — never act silently:
 
 ```text
 Relevance memory "<fingerprint>" has been suppressed 3+ times in <repo>.
-Promote to a permanent repo filter?  Consider adding to .github/review.yaml:
+Promote to a permanent repo filter?  Consider adding to .agents/review/config.yaml:
   filters:
     - category: <category>
       claim: "<claim-gist pattern>"
@@ -855,5 +855,5 @@ until 6).
   aggregated counts.
 - Bypass the two-gate validation in `implement-suggestion` — relevance memories
   are advisory inputs to Phase 3 classification only.
-- Auto-edit the review config (`.github/review.yaml`) — promotion is always surfaced as a suggestion, never
+- Auto-edit the review config (`.agents/review/config.yaml`) — promotion is always surfaced as a suggestion, never
   applied without the user confirming.

@@ -248,6 +248,110 @@ Rules of thumb:
 
 ---
 
+## How deep each review goes
+
+The reviewer picks a depth for every run before it reads a file, so a small PR is cheap and a risky one gets the full treatment.
+Cost is turns × context: every turn re-reads everything loaded so far, so each extra check costs more than its own tool calls.
+
+| Tier | Routed when | What runs | What it skips |
+| --- | --- | --- | --- |
+| `quick` | A first review of ≤ 30 changed lines with no risk trigger, or a tiny follow-up push | The core finders and verifier, in one context | Consumer-impact, dependency, and standards finders, the holistic pass, the impact image, and the ranked memory lists |
+| `standard` | A first review of 31–400 lines with no risk trigger, or a medium follow-up push | Adds consumer-impact (callers of what the delta changed), dependency, and standards finders, and a separate intent worker | Repo-wide caller tracing |
+| `deep` | Any risk trigger, more than 400 lines, or `--full` | Whole-repo consumer impact and standards, more escalation traces, and 1.5× the tool budget | Execution-level verification (running the code to prove a finding) and the 2× budget; `--effort high` turns both on |
+
+A **risk trigger** keeps even a one-line PR at `deep`: a high-stakes path (auth, payments, migrations, infra, secrets, plus your `high_stakes_paths`), propagation to other packages, wide blast radius, a major dependency bump, or a changed signature on a hot symbol.
+
+A follow-up push reviews only the delta since the last reviewed commit, and a re-run with no new commits re-checks gates and threads only.
+
+What you trade going lighter:
+
+- **`--effort high` → `deep`:** a finding is proven by reasoning and type checks rather than by running the code, so a subtle runtime defect can land in "Less certain" instead of inline.
+- **`deep` → `standard`:** a caller you broke three files away, outside the delta's direct callers, can be missed.
+- **`standard` → `quick`:** no check of callers, dependency bumps, or your written standards, and findings carry weaker proof, so a borderline one lands in "Less certain" instead of inline.
+
+Nudge the depth per run with `--effort high` or `--full`, or for the whole repo with `effort:` / `thoroughness:` in `.agents/review/config.yaml` (below).
+
+---
+
+## Configure the reviewer
+
+Everything is optional: with no files the reviewer runs at the `balanced` profile with routed depth.
+
+| File | Scope | Holds |
+| --- | --- | --- |
+| `.agents/review/config.yaml` | The whole repo | Run-level knobs (profile, depth, critical, finder passes, high-stakes paths, telemetry bar, Fix buttons) plus every per-folder field |
+| `<any folder>/.review.yaml` | That folder and everything below it | Per-folder fields only: `lenses`, `filters`, `path_instructions`, `standards` |
+| `.agents/review/lenses/<name>.md` | The paths its `applies-to` names | One team checklist ([Your first lens](#your-first-lens-in-60-seconds)) |
+| `<any folder>/REVIEW.md` | That folder | Plain-language context; never produces findings on its own |
+
+Everything the reviewer reads from your repo lives under `.agents/review/` plus the folder files.
+`.github/review.yaml` and a root `.review.yaml` are deprecated: still read, in that order, when `.agents/review/config.yaml` is absent, but don't start a new repo with them.
+Move an existing one with `mkdir -p .agents/review && git mv .github/review.yaml .agents/review/config.yaml`.
+
+### Repo-wide: `.agents/review/config.yaml`
+
+```yaml
+# How much to surface.
+profile: balanced          # chill | balanced (default) | assertive
+severity_thresholds:       # optional: override one tier's confidence bar (0–100)
+  medium: 80
+
+# How deep to look.
+effort: high               # optional: force deep on every PR (costliest)
+thoroughness: 0.8          # optional: 0–1; omit for the routed default (quick 0.4, standard 0.7, deep 0.85)
+critical: auto             # auto (default) | always: run the adversarial pre-mortem on every PR
+finder_passes: 1           # 1 (default) | 2: a second independent finder pass (two more sub-agents, 1.5× tool budget)
+
+# What counts as risky.
+high_stakes_paths:         # regexes added to the built-in list; a match always routes deep
+  - "(^|/)ledger(/|$)"
+
+# How hard the telemetry check presses.
+measurable: strict         # strict (default) | advisory: a missing signal is surfaced but never fails the PR
+
+# The "Fix with Agent0" button on each finding.
+agent0_fix_links: true     # on by default; false turns the buttons off
+```
+
+| Profile | Surfaces | Per-file inline cap |
+| --- | --- | --- |
+| `chill` | Only high-confidence, high-severity findings | 3 |
+| `balanced` | The defaults | 5 |
+| `assertive` | Lower-confidence and lower-severity findings too | 7 |
+
+`effort`, `thoroughness`, `critical`, and `finder_passes` cost tokens on every PR, so set them only when your repo's risk needs it; the CLI flags (`--effort`, `--thoroughness`, `--no-critical`) beat them for one run.
+A high-stakes path always reviews at thoroughness ≥ 0.5, whatever you set.
+
+### Per folder: `.review.yaml`
+
+```yaml
+# services/billing/.review.yaml
+lenses: [payments-idempotency]          # turn on a repo or built-in lens here
+filters: [naming-nits]                  # drop a whole category of findings here
+path_instructions:                      # weigh context when scoring a finding (makes no findings itself)
+  - path: "services/billing/**"
+    instruction: "Treat a missing audit record as a blocker."
+standards:                              # enforce written rules (makes real findings, citing the doc)
+  - path: "services/billing/**"
+    docs: ["services/billing/CLAUDE.md"]
+    must: ["Every charge passes an idempotency key."]
+```
+
+Built-in `filters`: `naming-nits`, `defensive-null-checks-in-safe-contexts`, `import-ordering`, `trailing-commas`, `prefer-const-over-let`.
+
+How folders combine, from the repo root down to the changed file:
+
+| Field | Rule |
+| --- | --- |
+| `lenses`, `filters` | Union: a folder adds to its parents and can't remove what they set |
+| `path_instructions`, `standards` | Concatenated, closest folder first |
+| `profile`, `effort`, `thoroughness`, `critical`, `finder_passes`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
+
+Config and lenses are read from the PR's **base** commit, so a PR can't loosen its own review; a PR may add a high-stakes path but never remove one.
+The full schema, every key's validation, and the loading order are in [`review-config.md`](https://github.com/mthines/agent-skills/blob/main/agents/shared/rules/review-config.md).
+
+---
+
 ## Running a review
 
 ```text

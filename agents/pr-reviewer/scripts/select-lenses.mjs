@@ -32,7 +32,7 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, realpath
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
-import { globToRegExp } from "./discover-standards.mjs";
+import { globToRegExp, REPO_CONFIG_PATHS } from "./discover-standards.mjs";
 import { readAtRefLocal } from "./review-context.mjs";
 
 export const LENS_DIR = ".agents/review/lenses";
@@ -139,7 +139,7 @@ export function parseLens(text) {
 
 /**
  * The `lenses:` entries of every `.review.yaml` that governs each changed file, unioned.
- * `.github/review.yaml` and a root `.review.yaml` govern every file.
+ * The repo-level configs (`REPO_CONFIG_PATHS`) govern every file.
  * @param {{ changed: string[], configs: Record<string, string> }} a
  * @returns {Record<string, string[]>} lens name → the changed files it is enabled for
  */
@@ -149,7 +149,7 @@ export function subtreeLenses({ changed, configs }) {
   for (const [path, text] of Object.entries(configs)) {
     const entry = flatYaml(text).lenses;
     if (!entry) continue;
-    const dir = path === ".github/review.yaml" ? "." : posix.dirname(path);
+    const dir = REPO_CONFIG_PATHS.includes(path) ? "." : posix.dirname(path);
     const files = changed.filter((f) => dir === "." || f.startsWith(`${dir}/`));
     for (const name of listValue(entry.raw, entry.block)) {
       byName[name] ??= new Set();
@@ -160,12 +160,12 @@ export function subtreeLenses({ changed, configs }) {
 }
 
 /**
- * Every config path that could govern the changed files: the repo-level two plus one
+ * Every config path that could govern the changed files: the repo-level ones plus one
  * `<dir>/.review.yaml` per ancestor directory. Pure.
  * @param {string[]} changed
  */
 export function configCandidatePaths(changed) {
-  const set = new Set([".github/review.yaml", ".review.yaml"]);
+  const set = new Set(REPO_CONFIG_PATHS);
   for (const file of changed) {
     for (let d = posix.dirname(file); d !== "." && d !== "/" && d !== ""; d = posix.dirname(d)) set.add(posix.join(d, ".review.yaml"));
   }
@@ -472,6 +472,8 @@ function selfTest() {
     JSON.stringify(subtreeLenses({ changed: ["x/a.ts", "y/b.ts"], configs: { ".github/review.yaml": "lenses: [ux, tdd]\n" } }))
       === '{"ux":["x/a.ts","y/b.ts"],"tdd":["x/a.ts","y/b.ts"]}');
 
+  check("a .agents/review/config.yaml lenses: list governs every file",
+    JSON.stringify(subtreeLenses({ changed: ["x/a.ts"], configs: { ".agents/review/config.yaml": "lenses: [ux]\n" } })) === JSON.stringify({ ux: ["x/a.ts"] }));
   const svcUx = { "svc/.review.yaml": "lenses: [ux]\n" };
   const s11 = selectLenses({ changed: [ch("svc/a.ts"), ch("web/B.tsx")], configs: svcUx, bundledLenses: { ux } });
   check("a scoped lenses: entry that misses its subtree still lets the lens auto-load elsewhere",
