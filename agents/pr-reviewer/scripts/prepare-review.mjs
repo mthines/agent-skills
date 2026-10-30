@@ -944,6 +944,19 @@ export async function probeImpactImageHost({
 }
 
 /**
+ * The context's `impactImage`: the structural gate, then — only when the structure earns the
+ * image, because the probe is the costly half — the host probe.
+ * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null, repo?: string }} args
+ * @param {(deps: { repo?: string }) => Promise<{ browser: string|null, upload: string|null } | null>} [probe]
+ * @returns {Promise<{ eligible: boolean, reason: string }>}
+ */
+export async function decideImpactImage(args, probe = probeImpactImageHost) {
+  const structural = impactImageGate(args);
+  if (!structural.eligible) return structural;
+  return impactImageGate({ ...args, host: await probe({ repo: args.repo }) });
+}
+
+/**
  * The context's `deltaLines` — RUN.delta_lines once finalize.mjs builds the report: 0 on zero-delta,
  * and the counted lines otherwise. A zero-delta run skips delta triage, so the count it is handed is
  * still the full-PR total the counter was initialised to, and render-report.mjs rejects a non-zero
@@ -2381,11 +2394,7 @@ async function prepare(opts) {
 
   timing.end(); // triage-routing
 
-  // Probed only when the PR's structure already earns the image: the probe is the costly half.
-  const impactImageArgs = { fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band };
-  const impactImage = impactImageGate(impactImageArgs).eligible
-    ? impactImageGate({ ...impactImageArgs, host: await probeImpactImageHost({ repo }) })
-    : impactImageGate(impactImageArgs);
+  const impactImage = await decideImpactImage({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band, repo });
 
   const context = {
     v: 1,
@@ -2668,6 +2677,20 @@ async function selfTest() {
       && r2?.upload === "token" && r2.browser === null
       && r3?.upload === null && r4?.upload === null && r5?.upload === null
       && unknown === null && viaRoot?.browser === "/c";
+  });
+  t("decideImpactImage probes only a structurally eligible PR, and the probe's answer decides", async () => {
+    let calls = 0;
+    const probe = (/** @type {any} */ h) => async () => { calls += 1; return h; };
+    const small = await decideImpactImage({ fileCount: 1, band: "high", repo: "o/r" }, probe({ browser: null, upload: null }));
+    const noBrowser = await decideImpactImage({ fileCount: 12, band: "high", repo: "o/r" }, probe({ browser: null, upload: "token" }));
+    const unknown = await decideImpactImage({ fileCount: 12, band: "high", repo: "o/r" }, probe(null));
+    return small.reason === "single-file diff" && calls === 2
+      && noBrowser.reason === "no browser on host" && unknown.eligible === true;
+  });
+  t("prepare() takes the context's impactImage from decideImpactImage, the probed path", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare(opts)"));
+    return /const impactImage = await decideImpactImage\(\{[^}]*\brepo\b[^}]*\}\)/.test(body) && /^\s+impactImage,$/m.test(body);
   });
 
   // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no
