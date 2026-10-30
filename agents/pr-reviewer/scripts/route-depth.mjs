@@ -127,7 +127,7 @@ export function routeDepth(i) {
   if (!sizeExcluded && deltaLines > 100) triggers.push("D12");
   if (!sizeExcluded && newFiles > 0) triggers.push("D13");
 
-  // Size scaling: a small PR with no risk trigger is excused from D1/D6/D13. First runs only — there
+  // Size scaling: a small PR with no risk trigger is excused from D1/D6/D12/D13. First runs only — there
   // DELTA_LINES is the whole PR; on a re-run it is one push, which says nothing about the PR's size.
   const sizeScaled = !!i.firstRun && deltaLines <= SMALL_PR_LINES
     && !triggers.some((t) => RISK_TRIGGERS.has(t));
