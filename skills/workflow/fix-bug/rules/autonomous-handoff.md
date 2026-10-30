@@ -197,7 +197,9 @@ Snapshot the original checkout once, before your first edit:
 ```bash
 WT="<absolute worktree path from Step 6a>"; ORIG="<absolute path of the checkout Phase 0 started in>"
 S="$WT/.agent/fix/<slug>/orig-snapshot"
-git -C "$ORIG" rev-parse HEAD > "$S.head"; git -C "$ORIG" status --porcelain > "$S.status"
+orig_state() { git -C "$ORIG" status --porcelain; git -C "$ORIG" diff HEAD | shasum
+  git -C "$ORIG" ls-files -o --exclude-standard -z | (cd "$ORIG" && xargs -0 shasum 2>/dev/null); }
+git -C "$ORIG" rev-parse HEAD > "$S.head"; orig_state > "$S.status"
 ```
 
 Then run the check before Step 3 and again before Step 4:
@@ -205,17 +207,20 @@ Then run the check before Step 3 and again before Step 4:
 ```bash
 test "$(git -C "$WT" rev-parse --abbrev-ref HEAD)" = "fix/<slug>" || echo "GUARD: worktree not on fix/<slug>"
 test "$(git -C "$ORIG" rev-parse HEAD)" = "$(cat "$S.head")" || echo "GUARD: a commit landed in $ORIG"
-git -C "$ORIG" status --porcelain | diff -q - "$S.status" >/dev/null || echo "GUARD: files changed in $ORIG"
+orig_state | diff -q - "$S.status" >/dev/null || echo "GUARD: files changed in $ORIG"
 ```
 
-The snapshot holds the user's own uncommitted work, so only a change since
-the snapshot fires. Any `GUARD:` line stops Phase 6:
+The snapshot holds the user's own uncommitted work (status, a hash of the
+tracked diff, and a hash of each untracked file), so only a change since the
+snapshot fires, including a second edit to a file that was already dirty. Any `GUARD:` line stops Phase 6:
 
 | Line | Do |
 | --- | --- |
-| `files changed in $ORIG` | Copy only the files you edited into the worktree (`git -C "$ORIG" diff -- <files> \| git -C "$WT" apply`; copy new files with `cp`), restore exactly those in `ORIG` (`git -C "$ORIG" restore -- <files>`, `rm` for new ones; never `restore .` or `checkout -- .`), and re-run the check. |
+| `files changed in $ORIG`, and a file you touched appears in `$S.status` | Print `BLOCKED: <file> was already dirty in <ORIG>; your edit is mixed with the user's` and stop; never copy or restore it. |
+| `files changed in $ORIG`, every file you touched was clean at the snapshot | Copy only the files you edited into the worktree (`git -C "$ORIG" diff -- <files> \| git -C "$WT" apply`; copy new files with `cp`), restore exactly those in `ORIG` (`git -C "$ORIG" restore -- <files>`, `rm` for new ones; never `restore .` or `checkout -- .`), and re-run the check. |
 | `a commit landed in $ORIG` | Print `BLOCKED: commit <sha> landed in <ORIG>, not fix/<slug>` and stop; moving or undoing a commit on the user's branch needs the user. |
 | `worktree not on fix/<slug>` | `git -C "$WT" checkout fix/<slug>` and re-run the check. |
+
 Follow `aw`'s Full tier Steps 2–4 (`$HOME/.claude/skills/aw/rules/full-tier.md`)
 with the lane's done condition and the [CEGIS contract](#step-6c--cegis-refinement-contract):
 
