@@ -320,7 +320,7 @@ agent0_fix_links: true     # on by default; false turns the buttons off
 | `assertive` | Lower-confidence and lower-severity findings too | 7 |
 
 `effort`, `thoroughness`, `critical`, and `finder_passes` cost tokens on every PR, so set them only when your repo's risk needs it; the CLI flags (`--effort`, `--thoroughness`, `--no-critical`) beat them for one run.
-A high-stakes path always reviews at thoroughness ≥ 0.5, whatever you set.
+A built-in high-stakes area (auth, payments, schema migrations, secrets, infra) always reviews at thoroughness ≥ 0.5, whatever you set; a path you add under `high_stakes_paths` routes the review `deep` but takes your `thoroughness` as set.
 
 ### Per folder: `.review.yaml`
 
@@ -347,7 +347,8 @@ How folders combine, from the repo root down to the changed file:
 | `path_instructions`, `standards` | Concatenated, closest folder first |
 | `profile`, `effort`, `thoroughness`, `critical`, `finder_passes`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
 
-Config and lenses are read from the PR's **base** commit, so a PR can't loosen its own review; a PR may add a high-stakes path but never remove one.
+Lenses and the run-level knobs (the last row above) are read from the PR's **base** commit, so a PR can't loosen its own review; a PR may add a high-stakes path but never remove one.
+`filters`, `path_instructions`, `standards`, `measurable`, and the `agent0_*` keys are read from the PR's head.
 The full schema, every key's validation, and the loading order are in [`review-config.md`](https://github.com/mthines/agent-skills/blob/main/agents/shared/rules/review-config.md).
 
 ---
