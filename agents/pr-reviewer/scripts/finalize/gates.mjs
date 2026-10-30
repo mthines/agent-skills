@@ -50,10 +50,9 @@ export function gate4(g4) {
 }
 
 export const RESOLVE_CLASSES = new Set(["fixed", "declined", "acknowledged", "obsolete"]);
-// The closed list rules/gates.md § Gate 3 documents. The last alternative is Cursor Bugbot's label
-// line (`**High Severity**`, also seen wrapped in `<!-- … -->`): matched only as a line of its own,
-// so prose that happens to say "high severity" is not a decoration. `Medium` / `Low Severity` are
-// non-blocking, as `Severity: medium` already is.
+// The closed list in rules/gates.md § Gate 3. The last alternative is Cursor Bugbot's label line
+// (`**High Severity**`, also inside `<!-- … -->`), matched only as a line of its own so prose saying
+// "high severity" is not a decoration; `Medium` / `Low Severity` stay non-blocking.
 export const BLOCKING_DECORATION_RE =
   /\(blocking\)|(?:^|\n)\s*issue:|severity:\s*(?:critical|high)|(?:^|\n)[ \t]*(?:<!--[ \t]*)?(?:\*\*|__)?[ \t]*(?:critical|high)[ \t]+severity[ \t]*(?:\*\*|__)?[ \t]*(?:-->)?[ \t]*(?=\r?\n|$)/i;
 
@@ -239,9 +238,8 @@ async function selfTest() {
     check("is_resolved: false does not suppress an otherwise-open blocking thread", g.status === "FAIL" && g.open.length === 1);
   }
 
-  // Cursor Bugbot labels its own severity on a line of its own (dash0hq/dash0#24685 graded an
-  // unanswered `High Severity` thread ⚠️ because no alternative matched it). High/Critical are
-  // blocking, Medium/Low are not, and the same words in prose are not a label.
+  // Cursor Bugbot labels its own severity on a line of its own. High/Critical are blocking,
+  // Medium/Low are not, and the same words in prose are not a label.
   {
     const bugbot = (/** @type {string} */ label) =>
       `### Stale cache entry survives a config reload\n\n${label}\n\n<!-- DESCRIPTION START -->\nThe reload path keeps the old entry.\n<!-- DESCRIPTION END -->`;

@@ -27,10 +27,7 @@ import { MERGED_FROM, recordKind } from "../merge-memory-record.mjs";
 import { realpathSync } from "node:fs";
 
 /**
- * The pre-write assertion for queued LoreKit ops (rules/memory.md § Write, rule 3): a
- * `knowledge::` / `hotspot::` op is executable only when merge-memory-record.mjs built it from a
- * batch memory_read, which stamps `merged_from: "read" | "absent"`. Any other such op would replace
- * the stored record blind, so it is rejected — the op fails, the plan does not. Other ops pass.
+ * Rejects a queued `knowledge::` / `hotspot::` op that merge-memory-record.mjs did not build (no `merged_from`).
  * @param {any[]} ops
  * @returns {{ accepted: any[], rejected: any[] }}
  */

@@ -74,7 +74,7 @@ const arr = (v) => (Array.isArray(v) ? v : []);
 const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
 
 /**
- * Identity of an example / history entry, so a replayed run does not append (or count) it twice.
+ * The identity of an example or history entry, so a replayed run adds nothing.
  * @param {any} e @returns {string}
  */
 export function entryId(e) {
@@ -117,9 +117,7 @@ function closeFields(rec, allowed) {
 }
 
 /**
- * Merge a hotspot update onto the existing record (or onto nothing, for a first write).
- * A counter rises by the number of NEW examples the update carries for it — never by a literal —
- * so an untouched counter carries through and a replayed run adds nothing.
+ * Merges a hotspot update onto the existing record; each counter rises by the update's new examples only.
  * @param {Record<string, any>|null} existing @param {Record<string, any>} update @param {string} now
  * @returns {{ value: Record<string, any>, dropped: string[] }}
  */
@@ -143,9 +141,7 @@ export function mergeHotspot(existing, update, now) {
 }
 
 /**
- * Merge a knowledge update onto the existing record. `history[]` accumulates (capped); `facts[]`
- * and `verified_at_sha` move together and only when the update carries `facts` — an update that
- * verified nothing keeps the existing facts at the sha they were verified at.
+ * Merges a knowledge update onto the existing record; `facts[]` and `verified_at_sha` change only together.
  * @param {Record<string, any>|null} existing @param {Record<string, any>} update
  * @returns {{ value: Record<string, any>, dropped: string[] }}
  */

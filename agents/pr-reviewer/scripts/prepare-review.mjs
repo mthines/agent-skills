@@ -860,11 +860,7 @@ export function scopePathsFor({ mode, deltaFiles, prFiles }) {
 }
 
 /**
- * Whether the report carries the impact-map diagram (posting.md § The impact image). Keyed on the
- * PR's structure, never on findings: the diagram orients the reader, so a wide clean PR earns one
- * and a one-file PR with findings does not. `host` (probeImpactImageHost's result) then rules out a
- * host that cannot draw or upload it, so that skip is an expected outcome rather than a failed step;
- * an absent or `null` host leaves the structural decision standing.
+ * Whether the report carries the impact-map diagram: keyed on the PR's structure, then ruled out on a host that cannot draw or upload it.
  * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null,
  *   host?: { browser: string | null, upload: string | null } | null }} args
  * @returns {{ eligible: boolean, reason: string }}
@@ -905,14 +901,7 @@ async function fetchStatus(url, token) {
 }
 
 /**
- * What this host can do for the impact image: the browser impact-map's render-png.mjs would use
- * (its own findBrowser(), so the two cannot disagree), and the attach-media upload rung that would
- * work (skills/delivery/attach-media/rules/upload-ladder.md). Rung 1 is `gh auth status` passing
- * on a `gh` with `--attach`; rung 2 is a token ($GH_TOKEN, $GITHUB_TOKEN, `gh auth token`) that
- * passes rung 2's own first request, `GET /repos/<repo>`. A token that merely exists is not an
- * upload path: an Agent0 sandbox exports a placeholder that the API answers with 401.
- * `null` when render-png.mjs is in none of the known install layouts — the host is then unknown,
- * and impactImageGate keeps its structural decision.
+ * The browser render-png.mjs would use and the first attach-media upload rung that works; `null` when render-png.mjs is not found.
  * @param {{ repo?: string, here?: string, env?: Record<string, string|undefined>, exists?: (p: string) => boolean,
  *   importer?: (p: string) => Promise<any>, run?: (cmd: string, args: string[]) => string|null,
  *   ok?: (cmd: string, args: string[]) => boolean, status?: (url: string, token: string) => Promise<number> }} [deps]
@@ -935,6 +924,8 @@ export async function probeImpactImageHost({
     if (typeof mod.findBrowser !== "function") return null;
     browser = mod.findBrowser({ env }) || null;
   } catch { return null; }
+  // A token that merely exists is no upload path: Agent0 exports a placeholder the API answers with
+  // 401. Rung 2 counts only when its own first request, GET /repos/<repo>, succeeds.
   if (ok("gh", ["auth", "status"]) && (run("gh", ["pr", "edit", "--help"]) || "").includes("--attach")) {
     return { browser, upload: "gh --attach" };
   }
@@ -944,8 +935,7 @@ export async function probeImpactImageHost({
 }
 
 /**
- * The context's `impactImage`: the structural gate, then — only when the structure earns the
- * image, because the probe is the costly half — the host probe.
+ * The context's `impactImage`: the structural gate, then the host probe only when the structure earns the image.
  * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null, repo?: string }} args
  * @param {(deps: { repo?: string }) => Promise<{ browser: string|null, upload: string|null } | null>} [probe]
  * @returns {Promise<{ eligible: boolean, reason: string }>}

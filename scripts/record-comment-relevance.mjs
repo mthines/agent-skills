@@ -437,8 +437,7 @@ export const LOREKIT_CLI = "@lorekit/cli@1.76.0";
 export const LOREKIT_DEFAULT_ENDPOINT = "https://pqokxlhvnosogizsjztg.supabase.co/functions/v1/mcp";
 
 /**
- * The CLI's environment: the token under the name the CLI reads (`LOREKIT_TOKEN`), the endpoint,
- * and telemetry off. `null` without a token — the recorder is then unconfigured and skips.
+ * The CLI's environment (token as `LOREKIT_TOKEN`, endpoint, telemetry off); `null` without a token.
  * @param {Record<string, string|undefined>} env
  */
 export function lorekitEnv(env = process.env) {
@@ -468,8 +467,7 @@ export function lorekitWriteArgs({ scope, key, value, tags, kind, host, ttlDays 
 }
 
 /**
- * Reads `lorekit show --json` output: the remote record's value, a confirmed absence, or an
- * unreadable store. Only "absent" licenses a first write; "unavailable" licenses none.
+ * Reads `lorekit show --json` as found, absent, or unavailable; only "absent" licenses a first write.
  * @param {string} stdout
  * @returns {{ status: "found", value: string } | { status: "absent" } | { status: "unavailable", reason: string }}
  */
@@ -563,10 +561,7 @@ function writeRelevance({ repo, fpInfo, relevance, resolutionMethod, reason, com
 }
 
 /**
- * The hotspot value to write, merged onto the record the read returned — the same
- * merge-memory-record.mjs the reviewer's Step 4d uses, so the two writers compose instead of one
- * resetting the other's counters. `existing` is lorekitRead's result; an unreadable store, or a
- * merge that refuses the record, writes nothing.
+ * The hotspot value to write, merged by Step 4d's merge-memory-record.mjs onto the record the read returned.
  * @returns {{ value: string } | { skip: string }}
  */
 export function buildHotspotWrite({ scope, path, prNumber, kind, detail, existing, now, plan = planMemoryWrites }) {
