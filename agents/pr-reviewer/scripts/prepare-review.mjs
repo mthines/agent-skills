@@ -55,7 +55,7 @@ import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, m
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
-import { discoverStandards, trivialSkip } from "./discover-standards.mjs";
+import { discoverStandards, trivialSkip, REPO_CONFIG_PATHS } from "./discover-standards.mjs";
 import { candidatePaths, selectReviewContext, renderReviewContext } from "./review-context.mjs";
 import { LENS_DIR, selectLenses, changedWithAdded, configCandidatePaths, subtreeLenses, readBundledLenses } from "./select-lenses.mjs";
 import { scanGate4 } from "./gate4-scan.mjs";
@@ -1609,7 +1609,7 @@ export function reviewConfigAnomalies(baseConfig, settings) {
 
 function readReviewConfig(dir) {
   if (!dir) return "";
-  for (const p of [join(dir, ".github", "review.yaml"), join(dir, ".review.yaml")]) {
+  for (const p of REPO_CONFIG_PATHS.map((rel) => join(dir, rel))) {
     if (existsSync(p)) {
       try {
         return readFileSync(p, "utf8");
@@ -1623,10 +1623,10 @@ function readReviewConfig(dir) {
 
 /**
  * The review config that governs the run-level knobs, read from the PR's BASE commit, never the
- * head: a PR must not be able to lower its own review bar by editing `.github/review.yaml`.
+ * head: a PR must not be able to lower its own review bar by editing its review config.
  * `explicitPath` (`--config <file>`) replaces the base read entirely, for trying a config before
  * merging it. Order: explicit file → `git show <baseSha>:<path>` in the workspace → the contents
- * API at `baseSha`. Each path tries `.github/review.yaml`, then the legacy root `.review.yaml`.
+ * API at `baseSha`. Each path tries `REPO_CONFIG_PATHS` in order (`.agents/review/config.yaml`, then the deprecated `.github/review.yaml` and root `.review.yaml`).
  * Only a path absent at the base moves on to the next one: a path that exists but cannot be read
  * returns `unreadable: true`, never the next path's file and never the head's.
  * @param {{ explicitPath?: string, dir?: string|null, baseSha?: string, repo?: string, timeoutMs?: number, runner?: typeof run }} input
@@ -1641,7 +1641,7 @@ export async function readBaseReviewConfig({ explicitPath, dir, baseSha, repo, t
     }
   }
   if (!baseSha) return { text: "", source: "none (no base SHA)" };
-  const rels = [".github/review.yaml", ".review.yaml"];
+  const rels = REPO_CONFIG_PATHS;
   const unreadable = (/** @type {string} */ rel) => ({ text: "", source: `${rel}@${baseSha.slice(0, 7)} (unreadable)`, unreadable: true });
   if (dir && (await runner("git", ["-C", dir, "cat-file", "-e", `${baseSha}^{commit}`], { timeoutMs })).ok) {
     // The base commit is local, so a missing path means "no config" — asking the API again
@@ -2981,6 +2981,23 @@ async function selfTest() {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+  t("readBaseReviewConfig prefers .agents/review/config.yaml over the deprecated .github/review.yaml", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-agents-"));
+    const g = (/** @type {string[]} */ a) => execFileSync("git", ["-C", dir, "-c", "commit.gpgsign=false", ...a], { encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } });
+    try {
+      g(["init", "-q"]);
+      mkdirSync(join(dir, ".github"));
+      mkdirSync(join(dir, ".agents", "review"), { recursive: true });
+      writeFileSync(join(dir, ".github", "review.yaml"), "profile: chill\n");
+      writeFileSync(join(dir, ".agents", "review", "config.yaml"), "profile: assertive\n");
+      g(["add", "."]); g(["commit", "-qm", "base"]);
+      const base = g(["rev-parse", "HEAD"]).trim();
+      const r = await readBaseReviewConfig({ dir, baseSha: base });
+      return r.text === "profile: assertive\n" && r.source === `.agents/review/config.yaml@${base.slice(0, 7)}`;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
   t("reviewConfigAnomalies reports an unreadable --config file as well as each ignored invalid value", async () => {
     const missing = await readBaseReviewConfig({ explicitPath: join(tmpdir(), `prr-no-such-review-${process.pid}.yaml`) });
     const lines = reviewConfigAnomalies(missing, reviewSettings(missing.text));
@@ -3015,9 +3032,11 @@ async function selfTest() {
   });
   t("readBaseReviewConfig over the contents API: only a 404 moves to the next path, any other failure is unreadable", async () => {
     const api = (/** @type {string} */ firstErr) => async (/** @type {string} */ _cmd, /** @type {string[]} */ args) =>
-      args.some((a) => a.includes("contents/.github/review.yaml"))
-        ? { ok: false, code: 1, stdout: "", stderr: firstErr, timedOut: false }
-        : { ok: true, code: 0, stdout: "profile: chill\n", stderr: "", timedOut: false };
+      args.some((a) => a.includes("contents/.agents/review/config.yaml"))
+        ? { ok: false, code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)", timedOut: false }
+        : args.some((a) => a.includes("contents/.github/review.yaml"))
+          ? { ok: false, code: 1, stdout: "", stderr: firstErr, timedOut: false }
+          : { ok: true, code: 0, stdout: "profile: chill\n", stderr: "", timedOut: false };
     const legacy = await readBaseReviewConfig({ baseSha: "abc1234def", repo: "o/r", runner: api("gh: Not Found (HTTP 404)") });
     const failed = await readBaseReviewConfig({ baseSha: "abc1234def", repo: "o/r", runner: api("gh: Server Error (HTTP 502)") });
     const lines = reviewConfigAnomalies(failed, reviewSettings(failed.text));

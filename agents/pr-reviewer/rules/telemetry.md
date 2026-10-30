@@ -70,7 +70,7 @@ The path → service mapping comes from, in order:
 
 1. The Observability Profile's Package Map, when `measurable setup` has run (`apps/web/** → ui-web`, `services/api/** → api`).
 2. OTel code attributes on the spans themselves — `code.file.path`, `code.function.name`.
-3. A `telemetry.services:` glob map in `.github/review.yaml`.
+3. A `telemetry.services:` glob map in `.agents/review/config.yaml`.
 
 **No mapping means `none`.** The reviewer never guesses a service name from a directory name: reviewing `apps/web` against a service called `web` that is actually the marketing site produces confident nonsense.
 

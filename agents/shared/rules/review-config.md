@@ -1,5 +1,5 @@
 ---
-title: Review config — .github/review.yaml profile, filters, and path instructions
+title: Review config — .agents/review/config.yaml profile, filters, and path instructions
 impact: MEDIUM
 tags:
   - pr-reviewer
@@ -12,11 +12,11 @@ tags:
 `pr-reviewer` supports per-repo (and per-subtree) configuration via a review config file.
 The config surface is deliberately small — one profile knob, one noise-suppressor list, one path-scoped guidance list — so that the most common customizations require minimal YAML authorship.
 
-**Default config location:** the repo-level default config lives at `.github/review.yaml`, keeping the repo root uncluttered.
-For back-compat, if `.github/review.yaml` is absent but a legacy root `.review.yaml` exists, the root file is honoured (the root location is **DEPRECATED** but still read — not removed).
+**Default config location:** the repo-level default config lives at `.agents/review/config.yaml`, beside the team lenses in `.agents/review/lenses/`.
+For back-compat, when it is absent the deprecated `.github/review.yaml` is read, then the deprecated root `.review.yaml`; both are still read, never recommended.
 Per-subtree overrides are still named `<subtree>/.review.yaml` (the root was the pollution concern, not deep directories).
 
-**Back-compat & defaults:** with no `.github/review.yaml` and no legacy root `.review.yaml` (subtree files may still exist), configuration resolves to `profile: balanced`. The `medium`-tier confidence bar stays **80** (today's default for a typical finding) and the inline placement cap stays 5 per file, no filters, no path instructions. Severity-aware bars are on by default and fan out around the 80 anchor (high/critical lower, low higher); a flat `per_comment_confidence_threshold` override restores the uniform 80 with no fan-out.
+**Back-compat & defaults:** with no repo-level config at any of the three paths (subtree files may still exist), configuration resolves to `profile: balanced`. The `medium`-tier confidence bar stays **80** (today's default for a typical finding) and the inline placement cap stays 5 per file, no filters, no path instructions. Severity-aware bars are on by default and fan out around the 80 anchor (high/critical lower, low higher); a flat `per_comment_confidence_threshold` override restores the uniform 80 with no fan-out.
 The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
 
 **One deliberate exception, introduced with placement (Step 2.9b):** the Step 3 terminal report has no per-file cap (local output, no posting cost) in either relation, so an absent config now reports *more* findings on a large branch than it used to.
@@ -44,9 +44,9 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 ## Config schema
 
 ```yaml
-# .github/review.yaml  (default location; legacy root .review.yaml still honoured)
-# All fields are optional. With no .github/review.yaml AND no legacy root .review.yaml,
-# configuration defaults to profile: balanced.
+# .agents/review/config.yaml  (recommended; the deprecated .github/review.yaml and root
+# .review.yaml are still read, in that order, when it is absent)
+# All fields are optional. With none of the three, configuration defaults to profile: balanced.
 
 profile: chill | balanced | assertive   # default: balanced
 
@@ -63,7 +63,7 @@ effort: high                             # repo-wide default for the depth lever
 thoroughness: 0.8                        # repo-wide default for the continuous 0..1 dispatch/scope
                                          # knob resolveBudget() reads — equivalent to always passing
                                          # --thoroughness <n>. Omit for the routed-tier default
-                                         # (quick=0.4, standard=0.7, deep=0.95). A high-stakes shape
+                                         # (quick=0.4, standard=0.7, deep=0.85). A high-stakes shape
                                          # (auth, payments, schema-migration, secrets, infra) floors
                                          # the EFFECTIVE value at 0.5 regardless of this setting, so
                                          # a repo cannot configure its way under-reviewing those.
@@ -246,7 +246,7 @@ path_instructions:
 ## Hierarchical discovery
 
 Subtree config files are discovered by traversing **upward** from the changed file toward the repo root, collecting all `<dir>/.review.yaml` files found along the path.
-The repo-level default (`.github/review.yaml`, or the legacy root `.review.yaml`) is then prepended as the lowest-precedence base.
+The repo-level default (`.agents/review/config.yaml`, else the deprecated `.github/review.yaml` or root `.review.yaml`) is then prepended as the lowest-precedence base.
 This is Bugbot's model: a subtree can add filters and path instructions for its own files without affecting the whole repo, but it never changes a run-level knob ([§ Run-level knobs](#run-level-knobs)).
 
 ### Merge precedence
@@ -254,8 +254,8 @@ This is Bugbot's model: a subtree can add filters and path instructions for its 
 The agent resolves each changed file's per-file fields by merging all discovered files, **closer-to-the-changed-file first**; the run-level knobs are never merged (table below):
 
 ```
-.github/review.yaml               ← lowest precedence (repo-level default base)
-                                     (or legacy ./.review.yaml if .github/review.yaml is absent — DEPRECATED)
+.agents/review/config.yaml        ← lowest precedence (repo-level default base)
+                                     (else the deprecated .github/review.yaml, else ./.review.yaml)
 <subdir>/.review.yaml             ← adds per-file fields for files under <subdir>/
 <subdir>/<nested>/.review.yaml    ← adds to both for files under <nested>/
 ```
@@ -271,7 +271,7 @@ Merge rules by field:
 | `agent0_fix_links`, `agent0_environment`, `agent0_org` | **Base only, never subtree-merged** — these govern the whole run (buttons on or off, which Agent0 host, which organization), not one file's findings, so a subtree `.review.yaml` cannot opt a directory in or out, nor point one directory's buttons at a different org. Read from the repo-level base config alone; see § Run-level fields below. |
 | `effort` | **Base only, never subtree-merged** — the depth tier is one decision per run, made at Step 1.2b before any file is read, so there is no point in the run at which a subtree's value could apply. Read from the repo-level base config alone. |
 
-Example: `.github/review.yaml` sets `profile: chill`, and `src/payments/.review.yaml` sets `profile: assertive` and adds `naming-nits` to `filters:`.
+Example: `.agents/review/config.yaml` sets `profile: chill`, and `src/payments/.review.yaml` sets `profile: assertive` and adds `naming-nits` to `filters:`.
 Every file, including those under `src/payments/`, is reviewed at `chill`, because a subtree `profile` is ignored.
 Only files under `src/payments/` drop `naming-nits` findings, because `filters` is a per-file union.
 
@@ -282,7 +282,7 @@ For each changed file path `P`:
 1. Split `P` into its directory components.
 2. Walk upward from the file's directory toward the repo root, collecting each `<dir>/.review.yaml` found.
 3. Stop at the repo root (do not cross the `.git` directory boundary).
-4. Prepend the repo-level default as the lowest-precedence base: prefer `.github/review.yaml`, else fall back to a legacy root `.review.yaml` (DEPRECATED).
+4. Prepend the repo-level default as the lowest-precedence base: `.agents/review/config.yaml`, else the deprecated `.github/review.yaml`, else the deprecated root `.review.yaml`.
 5. Merge the collected configs in precedence order (default base last).
 6. Apply the merged per-file fields to this file's findings.
    Never take a run-level knob from this merge; read it from `context.reviewConfig` ([§ Run-level knobs](#run-level-knobs)).
@@ -311,12 +311,10 @@ for f in $CHANGED_FILES; do
     [[ -f "$dir/.review.yaml" ]] && configs=("$dir/.review.yaml" "${configs[@]}")
     dir=$(dirname "$dir")
   done
-  # Root/default base: prefer .github/review.yaml, else legacy ./.review.yaml (deprecated)
-  if [[ -f ".github/review.yaml" ]]; then
-    configs=(".github/review.yaml" "${configs[@]}")
-  elif [[ -f ".review.yaml" ]]; then
-    configs=(".review.yaml" "${configs[@]}")   # deprecated legacy location
-  fi
+  # Root/default base: .agents/review/config.yaml, else the deprecated .github/review.yaml, else ./.review.yaml
+  for base in ".agents/review/config.yaml" ".github/review.yaml" ".review.yaml"; do
+    if [[ -f "$base" ]]; then configs=("$base" "${configs[@]}"); break; fi
+  done
   # configs is now base-first (lowest precedence first) — merge filters / path_instructions later
   FILE_CONFIGS["$f"]="${configs[*]}"
 done
@@ -340,7 +338,7 @@ walk above: they decide whether "Fix with Agent0" buttons render at all, which A
 point at, and which organization they open — a property of the *run*, not of any one file's findings.
 Resolve them once, from the repo-level base config only, before Step 0.5.
 
-**Read the file via the GitHub API, never a local path check.** A local `[[ -f ".github/review.yaml" ]]`
+**Read the file via the GitHub API, never a local path check.** A local `[[ -f ".agents/review/config.yaml" ]]`
 assumes the shell's cwd is the reviewed repo's checked-out root. Nothing in this agent's definition
 ever establishes that, and dispatch harnesses that clone this repo (for the agent's own definition)
 without also cloning the *reviewed* repo — which is the normal case, since Step 1.2 already reads PR
@@ -367,7 +365,7 @@ is a repo-wide setting, not something that varies with one PR's diff, so there i
 # emitted on a SUCCESSFUL call inside the JSON, `--jq` then fails, the content comes back empty,
 # and an existing config carrying `agent0_fix_links: false` reads as "no config" — the fail-open
 # outcome, arriving through the redirect rather than through the missing branch.
-fetch_base_config() {  # $1 = path, e.g. ".github/review.yaml"
+fetch_base_config() {  # $1 = path, e.g. ".agents/review/config.yaml"
   local body status err
   err=$(mktemp)
   body=$(gh api "repos/$RESOLVED_REPO/contents/$1" --jq '.content' 2>"$err")
@@ -383,11 +381,12 @@ fetch_base_config() {  # $1 = path, e.g. ".github/review.yaml"
 }
 
 CONFIG_READ_FAILED=0
-BASE_CONFIG_CONTENT=$(fetch_base_config ".github/review.yaml") || CONFIG_READ_FAILED=1
-if [ -z "$BASE_CONFIG_CONTENT" ] && [ "$CONFIG_READ_FAILED" -eq 0 ]; then
-  # deprecated legacy location
-  BASE_CONFIG_CONTENT=$(fetch_base_config ".review.yaml") || CONFIG_READ_FAILED=1
-fi
+BASE_CONFIG_CONTENT=$(fetch_base_config ".agents/review/config.yaml") || CONFIG_READ_FAILED=1
+for legacy in ".github/review.yaml" ".review.yaml"; do   # deprecated locations, still read
+  if [ -z "$BASE_CONFIG_CONTENT" ] && [ "$CONFIG_READ_FAILED" -eq 0 ]; then
+    BASE_CONFIG_CONTENT=$(fetch_base_config "$legacy") || CONFIG_READ_FAILED=1
+  fi
+done
 
 AGENT0_FIX_LINKS="true"           # ON by default — `agent0_fix_links: false` is the only way off
 AGENT0_ENVIRONMENT="production"
@@ -473,7 +472,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 ## Run-level knobs
 
 `profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, `critical`, and `finder_passes` govern the whole run, not one file's findings.
-`prepare-review.mjs` resolves them once, from the repo-level config (`.github/review.yaml`, else the legacy root `.review.yaml`) **at the PR's base commit**, and writes them to `context.reviewConfig`.
+`prepare-review.mjs` resolves them once, from the repo-level config (`.agents/review/config.yaml`, else the deprecated `.github/review.yaml` or root `.review.yaml`) **at the PR's base commit**, and writes them to `context.reviewConfig`.
 **Why:** read from the head, a PR could lower its own review bar by editing the file it is reviewed under.
 
 | Key | Values | Applied by | Beaten by |
@@ -487,11 +486,11 @@ with an empty variable would swallow the next argument, so build the flag condit
 | `finder_passes` | `1` (default) / `2` | `prepare-review.mjs` — `budget.finderPasses`; the caller dispatches pass 2 ([`dispatch-topology.md` § Two finder passes](../../pr-reviewer/rules/dispatch-topology.md#two-finder-passes)) | CLI `--finder-passes` on `prepare-review.mjs` |
 
 1. Take these values from `context.reviewConfig`.
-   Never re-read the head's `.github/review.yaml` for them, and never apply a head value the context does not carry.
+   Never re-read the head's repo-level config for them, and never apply a head value the context does not carry.
 2. A value outside its domain is ignored, never coerced.
    `prepare-review.mjs` adds `review config <source>: ignored invalid <key>: <value>` to `anomalies[]`, which reaches `RUN_ANOMALY`.
 3. A config change applies to PRs whose base contains it.
-   The PR that adds or edits `.github/review.yaml` is still reviewed under the base's settings.
+   The PR that adds or edits the repo-level config is still reviewed under the base's settings.
    A base file that exists but cannot be read (a failed blob fetch, or a contents-API error other than 404) leaves every knob at its default and adds `review config <path>@<sha> (unreadable): using defaults` to `anomalies[]`.
    Neither the legacy `.review.yaml` nor the head's file stands in for it.
 4. To try a config before merging it, pass `--config <file>` to `prepare-review.mjs`; that file replaces the base read for the run, and `context.reviewConfig.source` names it.

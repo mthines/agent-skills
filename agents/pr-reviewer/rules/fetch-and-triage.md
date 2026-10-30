@@ -126,8 +126,8 @@ A candidate finding about an undiffable path is still worth producing (Step 3.5)
 
 ```bash
 # Optional per-repo extension: high_stakes_paths in the review config (review-config.md
-# § High-stakes paths) — .github/review.yaml, else the legacy root .review.yaml.
-HS_CFG=".github/review.yaml"; [ -f "$HS_CFG" ] || HS_CFG=".review.yaml"
+# § High-stakes paths) — .agents/review/config.yaml, else the deprecated .github/review.yaml or root .review.yaml.
+HS_CFG=".review.yaml"; for c in ".agents/review/config.yaml" ".github/review.yaml"; do [ -f "$c" ] && { HS_CFG="$c"; break; }; done
 EXTRA_HS=$(test -f "$HS_CFG" && \
   awk '/^high_stakes_paths:/{f=1;next} /^[^ ]/{f=0} f && /^ *- /{sub(/^ *- */,""); sub(/ *#.*$/,""); gsub(/"/,""); sub(/ +$/,""); if (length($0)) printf " --extra-high-stakes %s", $0}' "$HS_CFG" || true)
 

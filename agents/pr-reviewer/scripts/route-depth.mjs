@@ -183,7 +183,7 @@ export function routeDepth(i) {
 
 /** Tier -> default thoroughness when no explicit override is given. What each default turns on is
  *  depth-routing.md § Thoroughness budget's per-tier table, the one place that lists it. */
-export const TIER_DEFAULT_THOROUGHNESS = { quick: 0.4, standard: 0.7, deep: 0.95 };
+export const TIER_DEFAULT_THOROUGHNESS = { quick: 0.4, standard: 0.7, deep: 0.85 };
 
 /** `--effort high` / `effort: high` is an alias for the ceiling. */
 export const EFFORT_HIGH_THOROUGHNESS = 1;
@@ -191,7 +191,7 @@ export const EFFORT_HIGH_THOROUGHNESS = 1;
 /** A diff carrying any of these shapes floors the EFFECTIVE thoroughness — an
  *  explicit low override never under-reviews a high-stakes diff. This is a
  *  safety net for an override, not a duplicate of D7/D9: those already force
- *  `routedTier = "deep"` (so the default thoroughness is already 0.95) for the
+ *  `routedTier = "deep"` (so the default thoroughness is already 0.85) for the
  *  same shapes; the floor only ever matters when something (a user, a config
  *  default) asks for less than 0.5 anyway. */
 const HIGH_STAKES_SHAPES = new Set(["auth", "payments", "schema-migration", "secrets", "infra"]);
@@ -208,10 +208,10 @@ export const RISK_FLOOR = 0.5;
  *  anyway. */
 
 /** Breakpoints. Each is a `t >=` threshold. The tier defaults above
- *  (0.4 / 0.7 / 0.95) each land one band past a breakpoint, so every default
+ *  (0.4 / 0.7 / 0.85) each land one band past a breakpoint, so every default
  *  budget is the one depth-routing.md's breakpoint table states for that
  *  column. The holistic-escalation cap is `round(10 * t)` by design — what
- *  "escalation SCALES with thoroughness" means: 4 / 7 / 10 at the defaults. */
+ *  "escalation SCALES with thoroughness" means: 4 / 7 / 9 at the defaults. */
 const T_TOPOLOGY = 0.4;
 const T_FINDERS_MID = 0.5; // consumer-impact(delta) + dependency + standards(delta) join
 const T_FINDERS_HIGH = 0.8; // consumer-impact/standards widen delta -> all
@@ -521,10 +521,10 @@ function selfTest() {
 
   total++;
   const dp = resolveBudget({ routedTier: "deep" });
-  if (dp.effectiveThoroughness === 0.95 && dp.correctnessVotes === 1 && dp.topology === "hybrid"
-    && dp.maxVerificationTier === 3 && dp.optimalityLens === true && dp.measurabilityLens === true
+  if (dp.effectiveThoroughness === 0.85 && dp.correctnessVotes === 1 && dp.topology === "hybrid"
+    && dp.maxVerificationTier === 2 && dp.optimalityLens === true && dp.measurabilityLens === true
     && dp.finderScope["consumer-impact"] === "all" && dp.finderScope.standards === "all"
-    && dp.holisticEscalationCap === 10 && dp.holisticBroadPass === true && dp.toolCallMultiplier === 2) passed++;
+    && dp.holisticEscalationCap === 9 && dp.holisticBroadPass === true && dp.toolCallMultiplier === 1.5) passed++;
   else fails.push(`resolveBudget(deep) drifted from the stated deep default budget: ${JSON.stringify(dp)}`);
 
   // ---- resolveBudget: the small-incremental carve-out keeps defaulted re-reviews in one context ----
@@ -647,10 +647,10 @@ function selfTest() {
     const d5 = resolveBudget({ routedTier: "deep", changedFiles: 5 });
     const d40 = resolveBudget({ routedTier: "deep", changedFiles: 40 });
     const unknown = resolveBudget({ routedTier: "deep" });
-    if (q22.toolCalls === 120 && s22.toolCalls === 120 && m22.toolCalls === 180 && d22.toolCalls === 240 && c22.toolCalls === 240
-      && d5.toolCalls === 120 && d40.toolCalls === 400 && unknown.toolCalls === null
+    if (q22.toolCalls === 120 && s22.toolCalls === 120 && m22.toolCalls === 180 && d22.toolCalls === 180 && c22.toolCalls === 240
+      && d5.toolCalls === 90 && d40.toolCalls === 300 && unknown.toolCalls === null
       && q22.toolCallMultiplier === 1 && s22.toolCallMultiplier === 1 && m22.toolCallMultiplier === 1.5
-      && d22.toolCallMultiplier === 2 && c22.toolCallMultiplier === 2) passed++;
+      && d22.toolCallMultiplier === 1.5 && c22.toolCallMultiplier === 2) passed++;
     else fails.push(`tool-call budget drifted: ${JSON.stringify({ q: q22.toolCalls, s: s22.toolCalls, m: m22.toolCalls, d: d22.toolCalls, c: c22.toolCalls, d5: d5.toolCalls, d40: d40.toolCalls, u: unknown.toolCalls })}`);
   }
 
@@ -718,17 +718,17 @@ function selfTest() {
       && two.finderPasses === 2 && two.finderPassesRequested === 2 && two.finderPassesReason === "requested"
       && JSON.stringify(two.secondPassUnits) === '["intent-2","other-finders-2"]'
       // the call budget grows by half; nothing else on the budget moves
-      && one.toolCalls === 240 && two.toolCalls === 360 && twoLow.toolCalls === 90
+      && one.toolCalls === 180 && two.toolCalls === 270 && twoLow.toolCalls === 90
       && JSON.stringify({ ...two, toolCalls: 0, finderPasses: 0, finderPassesRequested: 0, finderPassesReason: "", secondPassUnits: [] })
         === JSON.stringify({ ...one, toolCalls: 0, finderPasses: 0, finderPassesRequested: 0, finderPassesReason: "", secondPassUnits: [] })
       // pass 1's topology stays as routed; pass 2 still runs on a small incremental re-review
       && twoSmallInc.topology === "in-context" && twoSmallInc.finderPasses === 2
       && twoNoDispatch.finderPasses === 1 && twoNoDispatch.finderPassesRequested === 2
       && twoNoDispatch.finderPassesReason === "no-dispatch" && twoNoDispatch.secondPassUnits.length === 0
-      && twoNoDispatch.toolCalls === 240
+      && twoNoDispatch.toolCalls === 180
       && twoZero.finderPasses === 1 && twoZero.finderPassesReason === "zero-delta"
       && twoZeroFallback.finderPasses === 2 && twoZeroFallback.finderPassesReason === "requested"
-      && JSON.stringify(twoZeroFallback.secondPassUnits) === '["intent-2","other-finders-2"]' && twoZeroFallback.toolCalls === 360
+      && JSON.stringify(twoZeroFallback.secondPassUnits) === '["intent-2","other-finders-2"]' && twoZeroFallback.toolCalls === 270
       && three.finderPasses === 1 && three.finderPassesReason === "single";
     if (ok) passed++;
     else fails.push(`finder_passes drifted: ${JSON.stringify({ one: [one.finderPasses, one.toolCalls], two: [two.finderPasses, two.finderPassesReason, two.secondPassUnits, two.toolCalls], twoLow: twoLow.toolCalls, smallInc: [twoSmallInc.topology, twoSmallInc.finderPasses], noDispatch: [twoNoDispatch.finderPasses, twoNoDispatch.finderPassesReason], zero: [twoZero.finderPasses, twoZero.finderPassesReason], zeroFallback: [twoZeroFallback.finderPasses, twoZeroFallback.finderPassesReason], three: three.finderPasses })}`);

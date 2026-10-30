@@ -76,7 +76,7 @@ Render the loaded files root first, nearest last.
 ## Authoring a REVIEW.md
 
 Write facts a reviewer cannot recover from the code: invariants across services, ownership, deliberate trade-offs, and known traps.
-Never restate what the code or `CLAUDE.md` already says, and never write review instructions; those belong in `.github/review.yaml`.
+Never restate what the code or `CLAUDE.md` already says, and never write review instructions; those belong in `.agents/review/config.yaml`.
 
 ```markdown
 <!-- ✓ svc/ingest/REVIEW.md -->

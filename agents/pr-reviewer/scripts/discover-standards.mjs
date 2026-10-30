@@ -37,6 +37,13 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { classifyRole } from "./review-packet.mjs";
 
+/**
+ * The repo-level review config, first hit wins. `.agents/review/config.yaml` is the recommended home,
+ * beside `.agents/review/lenses/`; `.github/review.yaml` and the root `.review.yaml` are deprecated
+ * but still read.
+ */
+export const REPO_CONFIG_PATHS = [".agents/review/config.yaml", ".github/review.yaml", ".review.yaml"];
+
 export const STANDARDS_CAP_CHARS = 30000;
 const NORMATIVE_RE = /\b(must|always|never|do not|don't|forbidden)\b|\bprefer\b.*\bover\b/i;
 const HIGH_STAKES_RE = /(^|\/)(auth|billing|payments|migrations|infra)(\/|$)/;
@@ -194,7 +201,8 @@ export function discoverStandards({ root, changed, capChars = STANDARDS_CAP_CHAR
     kept.push(d);
   }
   const bulletCount = kept.reduce((n, d) => n + d.bullets.length, 0);
-  const reviewConfigStandards = [".github/review.yaml", ".review.yaml"].some((p) => /^standards:/m.test(read(p) || ""));
+  const repoConfig = REPO_CONFIG_PATHS.map(read).find((t) => t !== null);
+  const reviewConfigStandards = /^standards:/m.test(repoConfig || "");
   return {
     docs: kept, byFile, dropped, bulletCount, chars: used, capChars, reviewConfigStandards,
     announce: `Standards discovery: ${kept.length} governing doc(s) loaded, ${bulletCount} normative bullet(s) extracted.`

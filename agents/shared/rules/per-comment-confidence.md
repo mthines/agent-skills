@@ -156,7 +156,7 @@ This keeps the `Findings cleared` / `Deferred (over inline cap)` / `Final findin
 | 90 | Bito / Qodo enterprise tier defaults | Drops too many true positives at typical SOTA model output quality; reserve for high-stakes-only repos |
 
 80 is the recommended setting, established by `profile: balanced` in `review-config.md`.
-Repos tune the threshold by setting `profile: chill` (90) or `profile: assertive` (70) in `.github/review.yaml`.
+Repos tune the threshold by setting `profile: chill` (90) or `profile: assertive` (70) in `.agents/review/config.yaml`.
 A flat `per_comment_confidence_threshold: N` overrides every tier's bar, with or without a `profile:` field (`review-config.md` § Run-level knobs).
 See `agents/shared/rules/review-config.md` for the full profile table and hierarchical discovery rules.
 

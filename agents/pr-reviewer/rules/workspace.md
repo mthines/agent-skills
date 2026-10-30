@@ -318,7 +318,7 @@ Installing dependencies is the expensive step, and on an untrusted PR it execute
 It is therefore **off by default** and enabled per repo:
 
 ```yaml
-# .github/review.yaml
+# .agents/review/config.yaml
 workspace:
   install: true          # default false
 ```
