@@ -189,6 +189,23 @@ the `aw` dispatcher writes on a Full task — then works it here.
 
 Both lanes, after their Step 6a validation passed.
 `cd` into the worktree from Step 6a and stay there; you are the worker.
+Phases 1–3 read files at the original checkout's paths, so re-resolve every
+path against the worktree root before editing, and run this guard before
+Step 3 and again before Step 4:
+
+```bash
+WT="<absolute worktree path from Step 6a>"; ORIG="<absolute path of the checkout Phase 0 started in>"
+test "$(git -C "$WT" rev-parse --abbrev-ref HEAD)" = "fix/<slug>" || echo "GUARD: worktree not on fix/<slug>"
+test -z "$(git -C "$ORIG" status --porcelain --untracked-files=no)" || echo "GUARD: edits landed in $ORIG"
+```
+
+Any `GUARD:` line stops Phase 6: copy the stray edits into the worktree with
+`git -C "$ORIG" diff -- <files you edited> | git -C "$WT" apply`, then restore
+exactly those files with `git -C "$ORIG" restore -- <files you edited>` (never
+`restore .` or `checkout -- .`), and re-run the guard. This replaces the
+`isolation: "worktree"` the executor dispatch carried. Skip the second check
+when `ORIG` already had uncommitted changes at Phase 0; record them in the
+ledger then and compare against that list instead.
 Follow `aw`'s Full tier Steps 2–4 (`$HOME/.claude/skills/aw/rules/full-tier.md`)
 with the lane's done condition and the [CEGIS contract](#step-6c--cegis-refinement-contract):
 
