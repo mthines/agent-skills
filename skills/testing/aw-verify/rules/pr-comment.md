@@ -112,7 +112,8 @@ I gave Agent0 an attachment id; it wrote the tag and the chart renders between i
 | # | Part | Holds | Never |
 | --- | --- | --- | --- |
 | 1 | Headline | `## <emoji> <Verdict> — <what the change does, in the user's words>`, at most 70 characters; verdict words from [`report.md § Verdict`](./report.md#verdict). A standalone `ui` or `telemetry` region uses `###` | An agent name, a SHA, or an environment |
-| 2 | Summary | One sentence on what works for the user, then on the same line the attention line for the headline's emoji (§ Attention line) | The run's reasoning about its environment; an attention line that disagrees with the headline |
+| 2 | Summary | One sentence on what works for the user; under a clean ✅, `**Nothing needs your attention.**` on the same line (§ Attention line) | The run's reasoning about its environment; an open item, a reason, or a next step |
+| 2b | Attention section | Under every headline but a clean ✅: `#### Why not ✅` (or `#### Needs you` under ✅) and one bullet per item (§ Attention line) | Prose, or a bullet longer than one sentence |
 | 3 | Metadata | One `<sub>` line: seven-character head SHA in backticks, environment, CI state, finding count, `updated {{UPDATED}}` (the script stamps it) | A URL, or a time the agent typed |
 | 4 | Media strip | Directly under **What I checked**: one recording, then one row of up to two thumbnails, the rest one click away (§ Media strip) | A full-width screenshot, or a recording or screenshot inside a check row |
 | 5 | Check rows | One `<details>` per check (§ Check rows) | A results table, or a `####` heading per check |
@@ -120,34 +121,60 @@ I gave Agent0 an attachment id; it wrote the tag and the chart renders between i
 
 ### Attention line
 
-The headline's emoji picks the line, so a reviewer who sees anything but ✅ learns why in the next sentence.
+A reviewer who sees anything but ✅ finds the reasons in the same place, in the same shape, every run: a section directly under the summary sentence, one bullet per reason.
 
-| Headline | Attention line |
+| Headline | Renders |
 | --- | --- |
-| ✅ | `**Nothing needs your attention.**` |
-| ⚠️ | `**Why not ✅:**` then one bullet per escalated finding, `<what the user would notice> (<severity>) — needs you: <the decision>`, then one per open `in_scope: true` `medium`/`low` finding, `<what the user would notice> (<severity>) — <next step, or "fine to merge as is">`. In a `ui` region, where ⚠️ means inconclusive, one bullet: the reason (the runner's `notes:` line) and the next step. In a `telemetry` region, where ⚠️ means ambiguous, one bullet per ambiguous journey and what would settle it |
-| ❌ | `**Needs you:**` then one bullet per failed check, then per open `in_scope: true` `critical`/`high` finding, each with its next step |
-| ⛔ / ⏭️ | `**Needs you:**` then the phase that could not run and the fix |
+| ✅, no bullets | `**Nothing needs your attention.**` on the summary's line; no section |
+| ✅ with bullets | A `#### Needs you` section |
+| ⚠️, ❌, ⛔, ⏭️ | A `#### Why not ✅` section, always with at least one bullet |
 
-- At most three bullets; past three, `+<n> more in Details`.
-- An open `critical`/`high` finding that does not move the verdict, one with `in_scope: false` ([`findings.md` § in_scope](./findings.md)) or any finding in a `ui` or `telemetry` region, is a bullet in a `**Needs you:**` list under every headline, after the headline's own items.
-- Under ✅ that list replaces `**Nothing needs your attention.**`; under ⚠️ it follows the `**Why not ✅:**` list; an `in_scope: false` one reads `Outside this PR: <what the user would notice> (<severity>) — <suggested follow-up>`.
+**Bullet shape**, every verdict and region:
+
+```text
+- **<what the user would notice>** (<tag>) → <next step>
+```
+
+| Field | Holds |
+| --- | --- |
+| `<what the user would notice>` | At most 15 words, in the user's words; one finding, check, or phase per bullet |
+| `<tag>` | `failed check`, `blocked`, `not graded`, `inconclusive`, `ambiguous`, or the finding's severity (`critical`, `high`, `medium`, `low`) |
+| `<next step>` | Exactly one of: `needs you: <the decision>`, `fix: <the change>`, `fine to merge as is`, or `follow-up: <what>` (an `in_scope: false` finding) |
+
+**Bullets, in this order:**
+
+1. Each failed check (❌), or the phase that could not run and its fix (⛔, ⏭️ `not graded`).
+2. Each open `in_scope: true` `critical`/`high` finding.
+3. Each escalated finding, `needs you: <the decision>`.
+4. Each open `in_scope: true` `medium`/`low` finding.
+5. In a `ui` region at ⚠️ (inconclusive): one bullet, the runner's `notes:` line, `(inconclusive)`, and the next step. In a `telemetry` region at ⚠️: one bullet per ambiguous journey, `(ambiguous)`, and what would settle it.
+6. Last, every open `critical`/`high` finding that does not move the verdict — `in_scope: false` ([`findings.md` § in_scope](./findings.md)), or any finding in a `ui` or `telemetry` region — the `in_scope: false` ones starting `Outside this PR:`.
+
+- At most five bullets; past five, a last bullet `+<n> more in Details`.
+- One sentence per bullet: the evidence, the log line, and the reasoning go in the item's check row or **Notes**, never in the bullet.
 - Every other `in_scope: false` finding is a **Notes** line and never moves the verdict ([`report.md § Verdict`](./report.md#verdict)).
-- Never a separate "Open items" block: the attention line is the only place open items appear above **Details**.
+- Never a separate "Open items" block, and never a reason inline in the summary sentence: this section is the only place open items appear above **Details**.
 
 ```markdown
 <!-- ✓ -->
-## ⚠️ Verified with open items — typed messages steer the running turn
+## ⚠️ Verified with open items — Agent0 can start a test run after approval
 
-A message typed while Agent0 works is read inside the same turn. **Why not ✅:**
-- A double-clicked × sends two withdraw requests (low) — fine to merge as is.
+Agent0 only gets `testAutomation` when write approval is on, and the card states the 5-runs/30-minutes limit.
+
+#### Why not ✅
+
+- **Testing a disabled automation fails with a 500 and "contact Dash0 support"** (medium) → fix: let a manual trigger start it, or drop the "runs whether or not enabled" promise and return a 4xx.
+- **An invalid `source` returns raw Go validator text** (low) → fine to merge as is.
+- **The PR body still lists the Agent0 marker as a follow-up** (low) → fix: drop that line.
+
+<!-- ✗ reasons inline after the summary, several findings and the evidence packed into one bullet -->
+Agent0 only gets `testAutomation` when write approval is on. **Why not ✅:**
+- Testing a disabled automation returns a 500, and Agent0 tells the user to "contact Dash0 support". The tool description promises it "runs whether or not the automation is enabled", and the failed call still uses up one of the approved runs (medium). Next step: …
 
 <!-- ✗ the headline says open items, the next sentence says there are none -->
 ## ⚠️ Verified with open items — typed messages steer the running turn
 
 A message typed while Agent0 works is read inside the same turn. **Nothing needs your attention.**
-
-**Open items** (none blocks a merge):
 ```
 
 ### Check rows

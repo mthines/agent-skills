@@ -12,7 +12,7 @@ tags:
 # Report
 
 Phase 5 renders [`templates/report.md.template`](../templates/report.md.template) from `intent.md`, `findings.jsonl`, `probes.jsonl`, `telemetry.md`, and the git log.
-Same blocks in the same order every run, so two reports compare line by line; a part with nothing to say is omitted only where the template marks it optional (`{{FIXES_PART}}`, `{{NOTES_PART}}`, `{{SKIPPED_LINE}}`).
+Same blocks in the same order every run, so two reports compare line by line; a part with nothing to say is omitted only where the template marks it optional (`{{ATTENTION_PART}}`, `{{FIXES_PART}}`, `{{NOTES_PART}}`, `{{SKIPPED_LINE}}`).
 Prose is conclusion-first, with no filler.
 
 ## Verdict
@@ -36,7 +36,8 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{VERDICT_EMOJI}}` / `{{VERDICT_WORDS}}` | `✅` `Verified`, `⚠️` `Verified with open items`, `❌` `Not verified`, or `⛔` `Blocked` (§ Verdict) |
 | `{{HEADLINE}}` | What the change does, in the user's words; the whole `##` line under 70 characters |
 | `{{SUMMARY}}` | One sentence: what works for the user |
-| `{{ATTENTION}}` | The line [`pr-comment.md § Attention line`](./pr-comment.md#attention-line) picks for the verdict: ✅ `**Nothing needs your attention.**`, or `**Needs you:**` and each open `critical`/`high` finding that does not move the verdict; ⚠️ `**Why not ✅:**` and the open items, then `**Needs you:**` and those findings; ❌ `**Needs you:**` and the failed checks, then in-scope `critical`/`high` findings, then those findings; ⛔ `**Needs you:**`, the phase, and the fix. At most three bullets, then `+<n> more in Details` |
+| `{{ATTENTION}}` | `**Nothing needs your attention.**` under a ✅ with no bullets; otherwise nothing |
+| `{{ATTENTION_PART}}` | Per [`pr-comment.md § Attention line`](./pr-comment.md#attention-line): `#### Why not ✅` under ⚠️, ❌, and ⛔ (`#### Needs you` under a ✅ with bullets), then one `- **<what the user would notice>** (<tag>) → <next step>` bullet per item, at most five; otherwise nothing |
 | `{{HEAD_SHA7}}` / `{{ENV}}` / `{{CI_STATE}}` / `{{FINDING_COUNT}}` | Seven-character head SHA; `local` or `preview`; `CI green` or the red checks; `<n> findings` |
 | `{{UPDATED}}` | Left as is: `verify-comment.mjs` stamps the write time |
 | `{{MEDIA_STRIP}}` | Per [`pr-comment.md § Media strip`](./pr-comment.md#media-strip): one visible recording (caption line, then the bare `.mp4` URL), then one visible row of up to two `<img width="420">` thumbnails, failed checks first, headers under 40 characters; the rest in a closed `+<r> more recordings · +<n> more screenshots` block, recordings first, never more than two columns; nothing when the run has no media |
@@ -66,7 +67,7 @@ Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-c
    ```
 
    Gate, `mcp` path, and exit codes: [`pr-comment.md`](./pr-comment.md). The script refuses a region that holds a local path, a token is never rendered, and a request body is summarized, never pasted.
-3. **Terminal** — printed last: the verdict line, the summary sentence, the attention line with every open finding, the report path, the `comment:` line, and the absolute path of every screenshot and recording that was not attached.
+3. **Terminal** — printed last: the verdict line, the summary sentence, the attention bullets with every open finding, the report path, the `comment:` line, and the absolute path of every screenshot and recording that was not attached.
 
 ## `report` mode
 
