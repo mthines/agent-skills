@@ -236,9 +236,11 @@ with the lane's done condition and the [CEGIS contract](#step-6c--cegis-refineme
 | Standard | `run-checks.mjs` prints `CHECKS M/M PASS (<sha>)` and the Before-PR command passes | change → After-editing (the repro) → run-checks |
 | Fast | the plan's After-editing command (the repro) and Before-PR command both pass | change → repro → Before-PR |
 
-0. **Lessons.** Run the `aw-lessons` intake read in `$HOME/.claude/skills/aw/rules/lessons.md`
+0. **Lessons and corrections.** Run the `aw-lessons` intake read in `$HOME/.claude/skills/aw/rules/lessons.md`
    with keywords from the root cause; apply matches as constraints. Step 4's
-   lessons exit write runs unchanged.
+   lessons exit write runs unchanged. Then read
+   `$HOME/.claude/skills/autonomous-workflow/rules/corrections.md` in full and
+   apply every correction the fix triggers (C2–C6; the brief already covers C1).
 1. **Step 2 — work.** Every failing repro run is a CEGIS round: capture it in
    the ledger before refining. Round 3 failing ends Step 2 for that lane — the
    [fast-lane fallback](#fast-lane-round-3-fallback) or, on the standard-lane,

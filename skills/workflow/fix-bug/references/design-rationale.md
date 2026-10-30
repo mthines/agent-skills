@@ -76,7 +76,7 @@ work loop.
 
 Independence moved to the two steps that need it: `branch-reviewer` reviews the diff before the
 PR, and `feature-pr-verifier` checks it at PR open, each from a context that did not write it.
-The executor path had neither by default.
+The executor path ran `branch-reviewer` through its local `review-loop`, but never `feature-pr-verifier`.
 The branch and draft-PR assertions (Steps 6.pre and 7.pre) guard against inline edits on a
 protected branch, so the F2 bypass stays closed without the dispatch.
 `aw-executor` remains for an explicit background request.
