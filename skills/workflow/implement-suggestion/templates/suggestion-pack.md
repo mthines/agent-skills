@@ -7,7 +7,7 @@ headSha: <head-sha>
 worktree: <absolute-path-to-worktree>
 resolve-all: <true | false>   # true only when --resolve-all was passed; enables the worker's step-6 reply-only pass
 generatedAt: <ISO-8601-timestamp>
-generatedBy: implement-suggestion v3.0.0
+generatedBy: implement-suggestion v3.1.0
 ---
 
 # Suggestion Pack — <owner>/<repo>#<n>
