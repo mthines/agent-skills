@@ -171,9 +171,9 @@ which is why the last example states `no counter fired` rather than leaving it i
 A first review of a small PR that fires no risk trigger skips `deep`.
 [`route-depth.mjs`](../scripts/route-depth.mjs) applies it after the `D1`–`D13` checklist and before the `standard` row:
 
-1. It applies only when `D1` fired (first run) and `DELTA_LINES ≤ 100` (`SMALL_PR_LINES`); on a first run the delta is the whole PR.
-2. It applies only when none of `D2`–`D5` or `D7`–`D12` fired; those measure risk, so a small PR firing one still routes `deep`.
-3. It waives `D1`, `D6`, and `D13`, then routes on the rows below: `standard` at `31 ≤ DELTA_LINES ≤ 100`, or on any other `standard` condition, else `quick` (`TINY_PR_LINES` is 30).
+1. It applies only when `D1` fired (first run) and `DELTA_LINES ≤ 300` (`SMALL_PR_LINES`); on a first run the delta is the whole PR.
+2. It applies only when none of `D2`–`D5` or `D7`–`D11` fired; those measure risk (a sensitive path, propagation, reach, a major bump, a hot signature), so a PR firing one still routes `deep`.
+3. It waives `D1`, `D6`, `D12`, and `D13`, then routes on the rows below: `standard` at `31 ≤ DELTA_LINES ≤ 300`, or on any other `standard` condition, else `quick` (`TINY_PR_LINES` is 30).
 4. The run keeps `RUN.mode` `full` and carries `RUN.scaled: true`; `render-report.mjs` accepts `full` with `standard` or `quick` only with that flag.
 5. A scaled run is recorded as `full`, so it sets `lastFullSha` and `D6` does not fire on the next run.
    Later pushes route as before: `D4`, `D5`, and `D12` still send a growing PR to `deep`.
@@ -181,6 +181,7 @@ A first review of a small PR that fires no risk trigger skips `deep`.
 ```text
 ✗ 3 files, 40 lines, first run, band none → deep (D1, D6, D13): a full deep review of a one-function change
 ✓ 3 files, 40 lines, first run, band none → standard, RUN.scaled true
+✓ 14 files, 250 lines, first run, band none → standard (D12 waived)
 ✓ 1 file, 20 lines, first run, touches db/migrations/ → deep (D7 is a risk trigger)
 ```
 

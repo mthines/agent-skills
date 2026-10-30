@@ -135,7 +135,7 @@
     "id": "size-scaled-small-first-run",
     "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 40, "newFiles": 1 },
     "expected": "standard",
-    "notes": "Size scaling: a first run of a 40-line PR with no risk trigger waives D1/D6/D13 and lands in the 31-100 band."
+    "notes": "Size scaling: a first run of a 40-line PR with no risk trigger waives D1/D6/D13 and lands in the 31-300 band."
   },
   {
     "id": "size-scaled-tiny-first-run",
@@ -165,12 +165,24 @@
     "id": "size-scaled-large-first-run-deep",
     "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 400, "newFiles": 3 },
     "expected": "deep",
-    "notes": "Over SMALL_PR_LINES (100): D12 fires and D1 stands."
+    "notes": "Over SMALL_PR_LINES (300): size scaling does not apply, so D1 and D12 stand."
   },
   {
     "id": "size-scaling-not-on-rerun",
     "inputs": { "priorDeepRecorded": false, "deltaLines": 20, "band": "none", "deltaShapes": ["code"] },
     "expected": "deep",
     "notes": "A re-run measures one push, not the PR, so D6 is not waived."
+  },
+  {
+    "id": "size-scaled-medium-first-run",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 250, "newFiles": 2 },
+    "expected": "standard",
+    "notes": "Size scaling: a 250-line first run with no risk trigger waives D12 too and routes standard."
+  },
+  {
+    "id": "size-scaled-medium-sensitive-deep",
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 250, "highStakesFiles": ["src/auth/session.ts"] },
+    "expected": "deep",
+    "notes": "A sensitive path (D7) keeps a medium first run deep."
   }
 ]

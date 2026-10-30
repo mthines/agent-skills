@@ -64,12 +64,12 @@ export const TRIGGERS = [
 const SIZE_EXCLUDED_SHAPES = new Set(["docs-only", "test-only", "generated"]);
 
 /** Size scaling (depth-routing.md § Size scaling): on a first run, a PR at or under SMALL_PR_LINES
- *  changed lines that fires no risk trigger is excused from D1, D6, and D13, and routes `quick` at or
- *  under TINY_PR_LINES and `standard` above. */
-export const SMALL_PR_LINES = 100;
+ *  changed lines that fires no risk trigger is excused from the history and size triggers (D1, D6,
+ *  D12, D13), and routes `quick` at or under TINY_PR_LINES and `standard` above. */
+export const SMALL_PR_LINES = 300;
 export const TINY_PR_LINES = 30;
 /** The triggers that measure risk; a small PR firing any of them still routes deep. */
-const RISK_TRIGGERS = new Set(["D2", "D3", "D4", "D5", "D7", "D8", "D9", "D10", "D11", "D12"]);
+const RISK_TRIGGERS = new Set(["D2", "D3", "D4", "D5", "D7", "D8", "D9", "D10", "D11"]);
 
 /**
  * The size exclusion: shapes are a non-empty subset drawn EXCLUSIVELY from
@@ -152,12 +152,13 @@ export function routeDepth(i) {
   const usedSemverDelta = semverDeltas.find((d) => d.usageSites >= 1);
   // A size-scaled run reviews the whole PR, so its standard band starts above TINY_PR_LINES.
   const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : 11;
-  const inSizeBand = !sizeExcluded && deltaLines >= bandFloor && deltaLines <= 100;
+  const bandCeiling = sizeScaled ? SMALL_PR_LINES : 100;
+  const inSizeBand = !sizeExcluded && deltaLines >= bandFloor && deltaLines <= bandCeiling;
   if (deltaRiskyShapes.length > 0) why.push(`standard: DELTA_RISKY_SHAPES=[${deltaRiskyShapes.join(",")}]`);
   if (band === "low") why.push("standard: blast_radius.band=low");
   if (usedSemverDelta) why.push(`standard: semver_delta=${usedSemverDelta.delta} with ${usedSemverDelta.usageSites} usage site(s)`);
   if (i.sameSymbolOverlap) why.push("standard: overlaps[].kind=same-symbol");
-  if (inSizeBand) why.push(`standard: ${bandFloor} <= DELTA_LINES(${deltaLines}) <= 100`);
+  if (inSizeBand) why.push(`standard: ${bandFloor} <= DELTA_LINES(${deltaLines}) <= ${bandCeiling}`);
 
   if (deltaRiskyShapes.length > 0 || band === "low" || usedSemverDelta || i.sameSymbolOverlap || inSizeBand) {
     return { tier: "standard", triggers: [], override: null, sizeExcluded, capApplied: false, sizeScaled, why };
