@@ -346,8 +346,9 @@ GitHub App or a teammate opened it. What differs is only how the report labels e
   from their existence.
 - Also capture the two grading fields Gate 3's tri-state consumes (*Gate states*):
   - `blocking` — true only when the comment carries an explicit blocking decoration of its own: a
-    `(blocking)` marker, an `issue:` conventional-comment prefix, or an equivalent severity label
-    the authoring bot supplied. **Read this off the raw comment body before the `ask` truncation
+    `(blocking)` marker, an `issue:` conventional-comment prefix, or a severity label on the closed
+    list in `gates.md` § Gate states (Bugbot's `**High Severity**` counts; `Medium` / `Low` do
+    not). `finalize/gates.mjs` grades it from that list. **Read this off the raw comment body before the `ask` truncation
     runs** — that truncation strips conventional-comment severity decorations as cosmetic noise
     (`(non-blocking)` and `(blocking)` alike, since both are metadata rather than the ask), so
     reading it afterwards would grade on a string the renderer has already emptied of the signal.
