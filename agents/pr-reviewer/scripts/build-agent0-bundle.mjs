@@ -57,7 +57,9 @@ const CORE_RULES = [
   "pr-reviewer/rules/depth-routing.md",
   "pr-reviewer/rules/finders.md",
   "shared/rules/finding-verifier.md",
-  "pr-reviewer/rules/report-rendering.md",
+  // The agent writes judgments.json, and finalize.mjs renders the report from it, so the
+  // run needs the judgments contract, not the renderer's rules.
+  "pr-reviewer/rules/judgments.md",
   // Not one of the six the skill names, but load-bearing on THIS host specifically:
   // it is the rule that stops every composed lens from silently degrading.
   // Deferring it would mean the one host that needs it reads it last.

@@ -119,9 +119,14 @@ zero calls against it. If you change where the read happens, change both files i
 # 1. The knowledge + hotspot records for this repo. Tag-filtered, not just kind/host.
 mcp__lorekit__memory_list    scope="repo::{owner}/{repo}"  tags=["codebase-knowledge"]  kind=signal  host=reviewer  limit=50  view="summary"
 
-# 2. A targeted search on the symbols the impact graph says changed.
-mcp__lorekit__memory_search  q="<symbol> <symbol> <symbol>"  scopes=["repo::{owner}/{repo}"]  limit=25
+# 2. A targeted search on the symbols the impact graph says changed, plus the changed paths.
+mcp__lorekit__memory_search  q="<symbol> OR <symbol> OR <path>"  scopes=["repo::{owner}/{repo}"]  limit=25
 ```
+
+**Join every search term with ` OR `.** `memory_search` ANDs space-separated words, so
+`q="retryRequest parseBody"` returns only a record naming both; `q="retryRequest OR parseBody OR src/api/client.ts"`
+returns each record that names any of them.
+On a lean budget (`context.budget.lean == true`) call 1 is skipped and the search alone runs.
 
 **The parameter names above are the tool's own, and the two tools disagree on purpose.** `memory_list` takes one `scope` (a string); `memory_search` takes `scopes` (an array) and puts the query in `q`. A call written as `memory_search scope=… query=…` — the shape a reader naturally generalises from call 1 — matches nothing in the schema and comes back a validation error, which this pipeline has no rung for: memory is a best-effort read, so the run continues and reports 0 memories applied. That is indistinguishable from an empty store, which is why the names are pinned here and guarded by L1 rather than left to be re-derived per run.
 
@@ -152,10 +157,10 @@ On a repo whose `repo::` scope exceeds the `memory_list` page, the search is wha
 
 | Rule | Value |
 | --- | --- |
-| calls per run | exactly **2** — the `memory_list` above and the `memory_search` above — plus at most **5** `memory_read` expansions from the shared `MEMORY_READ_BUDGET` pool |
+| calls per run | exactly **2** (1 on a lean budget: the search) — the `memory_list` above and the `memory_search` above — plus at most **5** `memory_read` expansions from the shared `MEMORY_READ_BUDGET` pool |
 | `memory_list` page | `limit=50`, **one page** |
 | `memory_search` page | `limit=25`, **one page** |
-| symbols in the search query | the **top 10** changed symbols by `blast_radius`, from `impact.json` |
+| terms in the search query | the **top 10** changed symbols by `blast_radius`, from `impact.json`, plus the changed paths, `OR`-joined |
 | pagination | **never.** No cursor is followed, on either call |
 
 A third call, a followed cursor, or an unbounded query is the failure this section exists to prevent, and it fails in a way nothing downstream notices: the review still runs, having spent its context on records for code the diff does not touch.

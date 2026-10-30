@@ -246,11 +246,30 @@ Announce: `Reviewing PR #<n> in <repo> by @<author> (relation: $REVIEW_RELATION)
 `IS_RE_REVIEW=false`, and `RUN_MODE=full` unconditionally, with no sticky-footer fallback either
 ([`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated)).
 
-Otherwise read `agents/pr-reviewer/rules/prior-run.md` now, every run: one `memory_read` of the
-PR-state record, a one-call GitHub fallback rung on a miss (sticky matched by marker, never login),
-and the bindings every later step reads (`STATE_STATUS`, `PRIOR_SHA`, `CARRIED_FINDINGS`,
-`PRIOR_DIAGNOSTICS`, `IS_RE_REVIEW`, `RUN_MODE`, …). Save `$PR_STATE` to a file and pass it as
-`prepare-review.mjs --state <file>`, or it routes a re-review as a first run.
+Otherwise read the PR-state record first (retry a thrown error twice; a hard "tool unavailable" is
+`unavailable` at once):
+
+```text
+STATE_SCOPE="branch::${RESOLVED_REPO}::${HEAD_REF}"    STATE_KEY="ci-state::pr-review-${PR_NUMBER}"
+mcp__lorekit__memory_read: scope="<STATE_SCOPE>" key="<STATE_KEY>"
+```
+
+- **A `v: 1` record came back, or the read threw / `v` is unrecognised:** read
+  `agents/pr-reviewer/rules/prior-run.md` now for the bindings (`STATE_STATUS`, `PRIOR_SHA`,
+  `CARRIED_FINDINGS`, `PRIOR_DIAGNOSTICS`, `IS_RE_REVIEW`, `RUN_MODE`, …). Save `$PR_STATE` to a file
+  and pass it as `prepare-review.mjs --state <file>`, or it routes a re-review as a first run.
+- **No record, or one past its expiry (`STATE_STATUS="miss"`):** bind the first-run values below and
+  skip `prior-run.md`. `prepare-review.mjs` runs the GitHub fallback rung itself; when its
+  `context.priorRun.source` is not `"none"`, a sticky exists, so read `prior-run.md § The GitHub
+  fallback rung` then and rebind from it.
+
+```bash
+STATE_STATUS="miss"; RUN_MODE="full"; PRIOR_SHA=""; PRIOR_VERDICT=""
+PRIOR_OPEN_THREAD_IDS="[]"; LAST_FULL_SHA=""; INCR_RUNS_SINCE_FULL=0
+CARRIED_FINDINGS="[]"; PRIOR_DIAGNOSTICS="{}"
+STICKY_COMMENT_ID=""; STICKY_URL=""; PRIOR_REPORT_AUTHOR=""
+IS_RE_REVIEW=false; RESOLVED_SINCE_PRIOR=0
+```
 
 ## Step 0.8: Fast zero-delta pre-check
 
@@ -265,13 +284,16 @@ Phase A/B, and Step 2 never run; Step 1.8, then Step 2.9c, then Step 3. When fal
 
 ### 1.0 Prior-comment awareness + relevance memory load (default ON)
 
-See `agents/shared/rules/prior-comment-awareness.md`. Fetch existing review comments on
-the PR **and the PR's review-thread state**, then build the dedup set and the
-resolved-suggestion set before any finding is produced.
+Fetch existing review comments on the PR **and the PR's review-thread state**, then build the
+dedup set and the resolved-suggestion set before any finding is produced.
+**Read `agents/shared/rules/prior-comment-awareness.md` (it holds the fetch) only when**
+`context.threads` is non-empty — every inline review comment belongs to a thread; run Step 1.1 first
+when `context.json` is not bound yet.
+With no threads, bind `OPEN_BOT_COMMENTS=[]` and empty dedup and resolved-suggestion sets: Gate 3 passes.
 
-**Read the memory contract first**:
-[`agents/pr-reviewer/rules/memory.md`](./pr-reviewer/rules/memory.md). It governs every read this
-step and Step 1.2c issue, and three of its rules are easy to violate by accident:
+The memory contract is [`agents/pr-reviewer/rules/memory.md`](./pr-reviewer/rules/memory.md).
+**Read it only when** a memory call in this step, Step 1.2a, or Step 1.2c returns at least one record;
+an empty store needs only the three rules below, which are easy to violate by accident:
 
 1. **Filter by `source.agent` on every read.** A record this agent wrote is memory; a record
    another tool wrote about the same repository is not. One carve-out, a **field**: a rule carrying
@@ -423,15 +445,17 @@ Binds `IMPACT_SYMBOLS`, `IMPACT_DEPS`, `IMPACT_OVERLAPS`, `BLAST_RADIUS`, and `T
 **Then read what this repository already knows about the symbols the graph just named** — the whole
 read side of
 [`memory.md § Read — two calls, keyed by the impact graph`](./pr-reviewer/rules/memory.md#read--two-calls-keyed-by-the-impact-graph).
-Issue each as a real tool call:
+Issue each as a real tool call, once; **on a lean budget (`context.budget.lean == true`) skip call 1**
+and rely on the search:
 
 ```text
 # 1. Knowledge + hotspot records for this repo (the tag keeps relevance rules out).
 mcp__lorekit__memory_list:   scope="repo::{owner}/{repo}" tags=["codebase-knowledge"] kind="signal" host="reviewer" limit=50 view="summary"
 
-# 2. A targeted search on the top 10 changed symbols by blast radius, from impact.json.
+# 2. A targeted search on the top 10 changed symbols by blast radius, from impact.json, plus the
+#    changed paths — every term joined with " OR " (memory_search ANDs space-separated words).
 #    memory_search takes `q` + `scopes` (array), NOT `query` + `scope`.
-mcp__lorekit__memory_search: q="<symbol> <symbol> <symbol>" scopes=["repo::{owner}/{repo}"] limit=25
+mcp__lorekit__memory_search: q="<symbol> OR <symbol> OR <path>" scopes=["repo::{owner}/{repo}"] limit=25
 ```
 
 Match the returned records against the graph per `memory.md`'s match table, and hand the finders the
@@ -627,17 +651,23 @@ API calls. Casualties are logged in the terminal Quality Gate summary for manual
 **Every run reaching Step 3 reaches Step 4** — under `--dry-run` (which `--review-sha` requires)
 4a/4b render to scratch and 4c/4d are not written. The intent worker never reaches Step 4.
 
-**Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) before writing anything in this
-step.** It owns, in order: **4a** the sticky report (`finalize.mjs` + `render-report.mjs`, the
-impact image whenever `context.impactImage.eligible`, the pre-write assertions, the
-sticky-cannot-be-written table); **4b** the review, posted only when
-`INLINE_COMMENTS_JSON` is non-empty; **4c** the unconditional state-record write; **4d** the
-`knowledge` + `hotspot` writes. Payload shapes: [`rules/report-rendering.md`](./pr-reviewer/rules/report-rendering.md).
-The writes fail independently and none cascades. The script lines, exactly — never probe them with `--help`:
+Write `judgments.json` per [`rules/judgments.md`](./pr-reviewer/rules/judgments.md) (copy the example, run
+`validate-judgments.mjs`); never read the schema or [`report-rendering.md`](./pr-reviewer/rules/report-rendering.md)
+whole — `finalize.mjs` builds the report, the inline comments, the gates, and the verdict, and a
+rejection names the slot to look up. On the `gh` path the scripts below carry 4a and 4b: `finalize.mjs`
+renders, and `execute-write-plan.mjs` runs the pre-write checks and the GitHub writes (sticky,
+review, thread replies). Then make the two LoreKit writes in
+[`rules/run-writes.md`](./pr-reviewer/rules/run-writes.md) (4c state record, always; 4d knowledge +
+hotspot; `--dry-run` writes them to scratch). The writes fail independently and none cascades.
+**Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
+(MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
+`context.impactImage.eligible` is true (§ The impact image only). The script lines, exactly — never probe them with `--help`:
 
 ```text
+node "$AGENT_SUPPORT/pr-reviewer/scripts/validate-judgments.mjs" <judgments.json>
 node "$AGENT_SUPPORT/pr-reviewer/scripts/finalize.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> [--dry-run --no-telemetry]
 node "$AGENT_SUPPORT/pr-reviewer/scripts/execute-write-plan.mjs" --plan <dir>/write-plan.json [--dry-run]
+node "$AGENT_SUPPORT/pr-reviewer/scripts/execute-write-plan.mjs" --check-report <dir>/report-body.md
 ```
 
 ---
