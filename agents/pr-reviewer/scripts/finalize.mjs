@@ -53,6 +53,7 @@ import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
 import { MARKER_RE } from "./fingerprint.mjs";
 import { appendRecord, finishRun, readLedger } from "./review-telemetry.mjs";
+import { LENS_DIR } from "./select-lenses.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FINALIZE_SELF_TESTS = [
@@ -594,6 +595,62 @@ export function lensesLine(lenses) {
   const loaded = Array.isArray(lenses?.loaded) ? lenses.loaded : [];
   if (!loaded.length) return undefined;
   return loaded.map((/** @type {any} */ l) => `${l.name} (${String(l.reason || "").split(";")[0].trim()})`).join(" · ");
+}
+
+/** How select-lenses.mjs loaded a lens — the first clause of its reason — as a value a dashboard can group by. */
+const LENS_TRIGGERS = /** @type {Record<string, string>} */ ({ "auto": "auto", "repo lens": "repo", ".review.yaml lenses:": "review-yaml", "--with": "with" });
+
+/**
+ * Where a loaded lens's file came from: the reviewed repo's lens directory, a repo skill's
+ * `lens.md`, or a lens bundled with or installed for the agent (select-lenses.mjs § resolve).
+ * @param {unknown} source @returns {"repo"|"repo-skill"|"bundled"|undefined}
+ */
+export function lensOrigin(source) {
+  if (typeof source !== "string" || !source) return undefined;
+  if (source.startsWith(`${LENS_DIR}/`)) return "repo";
+  if (source.startsWith(".agents/skills/")) return "repo-skill";
+  return "bundled";
+}
+
+/**
+ * The run trace's lenses (review-telemetry.mjs § THE LENSES): one item per lens select-lenses.mjs
+ * loaded, with how it loaded and the candidates it raised; one per lens a candidate names that the
+ * selection never listed (the gated animations lens loads in the model, not in select-lenses.mjs);
+ * and one per skipped lens with its reason. Null when the context carries no lens selection (a
+ * context from before lenses): unknown, never "none loaded".
+ * @param {any} lenses context.lenses @param {any[]} [candidates] judgments.candidates
+ * @returns {Array<Record<string, any>> | null}
+ */
+export function lensTelemetryItems(lenses, candidates = []) {
+  if (!lenses || typeof lenses !== "object" || !Array.isArray(lenses.loaded)) return null;
+  /** @type {Map<string, { findings: number, confirmed: number }>} */
+  const raised = new Map();
+  for (const c of Array.isArray(candidates) ? candidates : []) {
+    if (c?.finder !== "lens" || typeof c.lens !== "string" || !c.lens) continue;
+    const n = raised.get(c.lens) || { findings: 0, confirmed: 0 };
+    n.findings += 1;
+    if (c.verdict === "confirmed") n.confirmed += 1;
+    raised.set(c.lens, n);
+  }
+  /** @type {Array<Record<string, any>>} */
+  const items = [];
+  const has = (/** @type {string} */ name) => items.some((i) => i.name === name);
+  for (const l of lenses.loaded) {
+    if (typeof l?.name !== "string" || !l.name || has(l.name)) continue;
+    const reason = typeof l.reason === "string" ? l.reason : "";
+    items.push({
+      status: "loaded", name: l.name, origin: lensOrigin(l.source), source: l.source,
+      trigger: LENS_TRIGGERS[reason.split(";")[0].trim()] || "other", reason: reason || undefined,
+      files: Array.isArray(l.files) ? l.files.length : undefined,
+      ...(raised.get(l.name) || { findings: 0, confirmed: 0 }),
+    });
+  }
+  for (const [name, n] of raised) if (!has(name)) items.push({ status: "loaded", name, trigger: "unlisted", ...n });
+  for (const s of Array.isArray(lenses.skipped) ? lenses.skipped : []) {
+    if (typeof s?.name !== "string" || !s.name || has(s.name)) continue;
+    items.push({ status: "skipped", name: s.name, reason: s.reason });
+  }
+  return items;
 }
 
 /**
@@ -2839,6 +2896,85 @@ async function selfTest() {
       lensTagged({ finder: "correctness", lens: "tdd", body: "x" }).body === "x");
     check("lensesLine is undefined with nothing loaded", lensesLine({ loaded: [] }) === undefined && lensesLine(undefined) === undefined);
 
+    // lensTelemetryItems — the run trace's lens events: every lens selected, how, and what it raised.
+    {
+      const selection = {
+        loaded: [
+          { name: "tdd", source: "tdd/lens.md", reason: "auto; applies-to **/*.test.*", files: ["a.test.ts", "b.test.ts"] },
+          { name: "billing-audit", source: `${LENS_DIR}/billing-audit.md`, reason: "repo lens; applies-to services/billing/**; .review.yaml lenses:", files: ["services/billing/a.ts"] },
+          { name: "ledger", source: ".agents/skills/ledger/lens.md", reason: ".review.yaml lenses:; applies-to always", files: [] },
+          { name: "ux", source: "ux/lens.md", reason: "--with; applies-to always", files: [] },
+          { name: "tdd", source: "elsewhere/lens.md", reason: "auto" },
+        ],
+        skipped: [{ name: "soc2", reason: "--with names a lens that was not found" }, { name: "ux", reason: "a duplicate" }],
+      };
+      const lensCands = [
+        { finder: "lens", lens: "tdd", verdict: "confirmed" },
+        { finder: "lens", lens: "tdd", verdict: "contradicted" },
+        { finder: "lens", lens: "animations", verdict: "confirmed" },
+        { finder: "correctness", lens: "tdd", verdict: "confirmed" },
+      ];
+      const items = /** @type {Array<Record<string, any>>} */ (lensTelemetryItems(selection, lensCands));
+      const item = (/** @type {string} */ n) => items.find((i) => i.name === n);
+      check("lensTelemetryItems: null when the context has no lens selection, [] when nothing was selected",
+        lensTelemetryItems(undefined) === null && lensTelemetryItems({}) === null && JSON.stringify(lensTelemetryItems({ loaded: [], skipped: [] })) === "[]");
+      check("lensTelemetryItems: one item per lens, loaded then unlisted then skipped, a repeated name once",
+        JSON.stringify(items.map((i) => `${i.status}:${i.name}`)) === '["loaded:tdd","loaded:billing-audit","loaded:ledger","loaded:ux","loaded:animations","skipped:soc2"]',
+        JSON.stringify(items.map((i) => `${i.status}:${i.name}`)));
+      check("lensTelemetryItems: origin from the source path, trigger from the first reason clause, files as a count",
+        item("tdd")?.origin === "bundled" && item("billing-audit")?.origin === "repo" && item("ledger")?.origin === "repo-skill"
+          && item("tdd")?.trigger === "auto" && item("billing-audit")?.trigger === "repo" && item("ledger")?.trigger === "review-yaml" && item("ux")?.trigger === "with"
+          && item("tdd")?.files === 2 && item("ledger")?.files === 0);
+      check("lensTelemetryItems: a lens's findings are the lens candidates naming it, confirmed counted apart; a core finder's candidate is not a lens finding",
+        item("tdd")?.findings === 2 && item("tdd")?.confirmed === 1 && item("ux")?.findings === 0 && item("ux")?.confirmed === 0);
+      check("lensTelemetryItems: a lens only a candidate names is loaded and `unlisted`, with no origin",
+        item("animations")?.trigger === "unlisted" && item("animations")?.findings === 1 && item("animations")?.origin === undefined);
+      check("lensOrigin: nothing for no source", lensOrigin(undefined) === undefined && lensOrigin("") === undefined);
+    }
+
+    {
+      // The lenses reach the run trace: finalize writes one `lenses` ledger record from context.lenses
+      // and the candidates, and the dry run's summary lists them. A context with no lenses writes none.
+      const ltDir = join(e2eDir, "lens-telemetry");
+      rmSync(ltDir, { recursive: true, force: true });
+      mkdirSync(ltDir, { recursive: true });
+      const off = { ...process.env, PR_REVIEWER_TELEMETRY: "off" };
+      spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), "begin", "--run-dir", ltDir], { encoding: "utf8", env: off });
+      writeFileSync(join(ltDir, "context.json"), JSON.stringify({ ...e2eContext, lenses: { loaded: [
+        { name: "tdd", source: "tdd/lens.md", reason: "auto; applies-to **/*.test.*", files: ["a.test.ts"] },
+        { name: "billing-audit", source: `${LENS_DIR}/billing-audit.md`, reason: "repo lens; applies-to services/billing/**", files: [] },
+      ], skipped: [{ name: "soc2", reason: "--with names a lens that was not found" }], notes: [] } }, null, 2));
+      const ltJudgmentsPath = join(ltDir, "judgments.json");
+      writeFileSync(ltJudgmentsPath, JSON.stringify({ ...e2eJudgments, candidates: [...e2eJudgments.candidates, {
+        ...e2eJudgments.candidates[0], finder: "lens", lens: "tdd", line: 120, symbol: "retryLoop", severity: "medium", blocking: false,
+        claim: "the retry loop has no test", bad_outcome: "a backoff regression ships unnoticed", evidence: ["src/api/client.ts:120"],
+        title: "The retry loop has no test", body: "The retry loop at this line has no test covering its backoff.",
+      }] }, null, 2));
+      const lt = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(ltDir, "context.json"),
+        "--judgments", ltJudgmentsPath, "--out-dir", join(ltDir, "out"), "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: off });
+      const lensRec = readLedger(ltDir).filter((r) => r.t === "lenses").pop();
+      const ltSummary = existsSync(join(ltDir, "telemetry-summary.json")) ? JSON.parse(readFileSync(join(ltDir, "telemetry-summary.json"), "utf8")) : {};
+      check("finalize records context.lenses as one `lenses` ledger record, the lens candidate counted against its lens",
+        lt.status === 0 && Array.isArray(lensRec?.items)
+          && JSON.stringify(lensRec.items.map((/** @type {any} */ i) => `${i.status}:${i.name}:${i.trigger ?? ""}`)) === '["loaded:tdd:auto","loaded:billing-audit:repo","skipped:soc2:"]'
+          && lensRec.items[0].findings === 1 && lensRec.items[0].confirmed === 1 && lensRec.items[1].findings === 0,
+        (lt.stderr || "").slice(0, 300) || JSON.stringify(lensRec));
+      check("the dry run's telemetry summary lists the lenses",
+        JSON.stringify(ltSummary.lenses?.loaded?.map((/** @type {any} */ l) => l.name)) === '["tdd","billing-audit"]' && ltSummary.lenses?.skipped?.[0]?.name === "soc2",
+        JSON.stringify(ltSummary.lenses));
+
+      const noLensDir = join(e2eDir, "lens-telemetry-absent");
+      rmSync(noLensDir, { recursive: true, force: true });
+      mkdirSync(noLensDir, { recursive: true });
+      spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), "begin", "--run-dir", noLensDir], { encoding: "utf8", env: off });
+      const { lenses: _dropped, ...noLensContext } = e2eContext;
+      writeFileSync(join(noLensDir, "context.json"), JSON.stringify(noLensContext, null, 2));
+      const nl = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(noLensDir, "context.json"),
+        "--judgments", judgmentsPath, "--out-dir", join(noLensDir, "out"), "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: off });
+      check("a context with no lens selection records no `lenses` ledger record — unknown, not zero",
+        nl.status === 0 && readLedger(noLensDir).length > 0 && !readLedger(noLensDir).some((r) => r.t === "lenses"), (nl.stderr || "").slice(0, 300));
+    }
+
     {
       // The impact-image preview (posting.md) runs a dry run before the real finalize; with
       // --no-telemetry it must leave the run ledger untouched, so the real finalize is the one traced.
@@ -3060,7 +3196,7 @@ const PROCESS_START_NS = BigInt(Date.now()) * 1_000_000n;
  * trace. A context with no ledger (built by an older prepare-review.mjs, or `--no-telemetry`)
  * records nothing. Never throws: telemetry never fails a review.
  * @param {string} contextPath @param {any} result @param {any} judgments
- * @param {{ dryRun: boolean, failed: boolean, topology?: string }} how
+ * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any }} how `lenses` is context.lenses
  * @returns {Promise<string|null>} the run dir, when a ledger exists
  */
 async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
@@ -3093,6 +3229,10 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         read_reported: Array.isArray(judgments.memory.read),
       });
     }
+    // Which review lenses loaded, how, and what each raised — the root span's lens attributes and
+    // events (review-telemetry.mjs § THE LENSES). A context with no lens selection records none.
+    const lensItems = lensTelemetryItems(how.lenses, candidates);
+    if (lensItems) appendRecord(runDir, { t: "lenses", items: lensItems });
     // A failed render is a failed STEP, not a finished run: every A/B arm that hit one fixed its
     // judgments and re-ran finalize, and finishing here exported a trace that ended on the failure
     // and then skipped the successful re-run as "already exported". The run finishes on the
@@ -3374,7 +3514,7 @@ async function main() {
   });
   // --no-telemetry: a preview render (posting.md § The impact image) must not record the finalize
   // step or finish the run — the real finalize after it does both.
-  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context) });
+  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses });
   // execute-write-plan.mjs records the `post` step and exports the trace; this is how it finds
   // the ledger. Absent when no ledger exists.
   if (telemetryRunDir && !isDryRun) writePlan.telemetry_run_dir = telemetryRunDir;

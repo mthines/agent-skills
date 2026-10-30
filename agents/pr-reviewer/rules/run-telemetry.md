@@ -163,8 +163,8 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 | Span | Attributes |
 | --- | --- |
-| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*`, and the memory the review used and read ([§ The memory](#the-memory)) |
-| `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`; ERROR with `error.type=step_failed` when the step failed |
+| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*`, the memory the review used and read ([§ The memory](#the-memory)), and the lenses it loaded ([§ The lenses](#the-lenses)) |
+| `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`; ERROR with `error.type=step_failed` when the step failed; the `lenses` step also carries `pr_review.lenses.loaded` and `pr_review.lenses.names` |
 | `pr_review.phase <name>` | child of a script step: `pr_review.step.name`, `pr_review.phase.name` |
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
 | every span | `gen_ai.agent.name`, `gen_ai.conversation.id`, `dash0.gen_ai.vcs.*` (repository, owner, PR URL, head ref and revision), `user.name` |
@@ -198,6 +198,34 @@ A run whose finalize never ran carries none of these, so "no memory attributes" 
 
 # incorrect: the id dropped — the trace falls back to the scope + key link, and a key alone gets none
 { "key": "hotspot::src/api/client.ts", "used_as": "finder pointer (re-verified)" }
+```
+
+### The lenses
+
+The root span says which review lenses loaded, how each one loaded, and what each one raised.
+`finalize.mjs` records them from `context.lenses` and `judgments.candidates` as one `lenses` ledger record; a finalize re-run replaces it.
+You supply the inputs only: give every lens candidate `"finder": "lens"` and the `lens` name from `context.lenses.loaded[].name` ([`rubric-composition.md`](../../shared/rules/rubric-composition.md)).
+
+| Where | Attribute | Value |
+| --- | --- | --- |
+| root, `lenses` step | `pr_review.lenses.loaded` | lenses the review walked |
+| root, `lenses` step | `pr_review.lenses.names` | their names, sorted and comma-separated — group runs by it, or filter by one lens with `contains`; omitted when none loaded |
+| root | `pr_review.lenses.findings`, `pr_review.lenses.confirmed` | lens candidates raised, and how many verification confirmed |
+| root | `pr_review.lenses.skipped` | lenses named or found that did not load |
+| event `pr_review.lens.loaded` · `pr_review.lens.skipped` | `pr_review.lens.name` | one event per lens; `skipped` carries only the name and `pr_review.lens.reason` |
+| event `pr_review.lens.loaded` | `pr_review.lens.trigger` | `auto` (built-in auto lens) · `repo` (`.agents/review/lenses/`) · `review-yaml` (a `.review.yaml` `lenses:` list) · `with` (`--with`) · `unlisted` (named only by a candidate, such as the gated `animations` lens) · `other` |
+| event `pr_review.lens.loaded` | `pr_review.lens.origin`, `.source` | `repo` · `repo-skill` (`.agents/skills/<name>/lens.md`) · `bundled`, and the lens file's path; omitted for `unlisted` |
+| event `pr_review.lens.loaded` | `pr_review.lens.reason`, `.files`, `.findings`, `.confirmed` | the full selection reason, the changed files its trigger matched, and the candidates it raised |
+
+At most 50 events are kept, loaded lenses first.
+A run whose finalize never ran, or whose context predates lens selection, carries none of these, so "no lens attributes" means unknown and `pr_review.lenses.loaded=0` means none loaded.
+
+```text
+# correct: the lens candidate names its lens — the trace counts it against tdd
+{ "finder": "lens", "lens": "tdd", "path": "src/retry.ts", "line": 120, "claim": "the retry loop has no test" }
+
+# incorrect: the lens is missing — the candidate counts against no lens
+{ "finder": "lens", "path": "src/retry.ts", "line": 120, "claim": "the retry loop has no test" }
 ```
 
 ### The scope
