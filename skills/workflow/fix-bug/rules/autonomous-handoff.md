@@ -212,12 +212,19 @@ orig_state | diff -q - "$S.status" >/dev/null || echo "GUARD: files changed in $
 
 The snapshot holds the user's own uncommitted work (status, a hash of the
 tracked diff, and a hash of each untracked file), so only a change since the
-snapshot fires, including a second edit to a file that was already dirty. Any `GUARD:` line stops Phase 6:
+snapshot fires, including a second edit to a file that was already dirty.
+Handle each `GUARD:` line by its row: a `BLOCKED` row stops Phase 6, and a
+repair row re-runs the check.
+For `files changed in $ORIG`, list the changed paths
+(`git -C "$ORIG" status --porcelain` against `$S.status`) and attribute each
+one to the `Edit` / `Write` calls you issued this phase, read from your own
+tool calls, never from the plan's File Changes list:
 
 | Line | Do |
 | --- | --- |
-| `files changed in $ORIG`, and a file you touched appears in `$S.status` | Print `BLOCKED: <file> was already dirty in <ORIG>; your edit is mixed with the user's` and stop; never copy or restore it. |
-| `files changed in $ORIG`, every file you touched was clean at the snapshot | Copy only the files you edited into the worktree (`git -C "$ORIG" diff -- <files> \| git -C "$WT" apply`; copy new files with `cp`), restore exactly those in `ORIG` (`git -C "$ORIG" restore -- <files>`, `rm` for new ones; never `restore .` or `checkout -- .`), and re-run the check. |
+| `files changed in $ORIG`, and a changed path is not one you issued an `Edit` / `Write` to | Print `BLOCKED: <path> changed in <ORIG> outside this session` and stop; the user is working there. |
+| `files changed in $ORIG`, and a path you edited appears in `$S.status` | Print `BLOCKED: <file> was already dirty in <ORIG>; your edit is mixed with the user's` and stop; never copy or restore it. |
+| `files changed in $ORIG`, and every changed path is one you edited and was clean at the snapshot | Copy only the files you edited into the worktree (`git -C "$ORIG" diff -- <files> \| git -C "$WT" apply`; copy new files with `cp`), restore exactly those in `ORIG` (`git -C "$ORIG" restore -- <files>`, `rm` for new ones; never `restore .` or `checkout -- .`), and re-run the check. |
 | `a commit landed in $ORIG` | Print `BLOCKED: commit <sha> landed in <ORIG>, not fix/<slug>` and stop; moving or undoing a commit on the user's branch needs the user. |
 | `worktree not on fix/<slug>` | `git -C "$WT" checkout fix/<slug>` and re-run the check. |
 
