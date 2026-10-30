@@ -11,9 +11,9 @@ license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(gw *) Read Edit Write Glob Grep Skill
 metadata:
   author: mthines
-  version: '3.0.0'
+  version: '3.1.0'
   workflow_type: orchestrator
-  architecture: parse/resolve/fetch/classify/validate/pack/handoff(worker)/commit-per-comment+resolve-thread/report
+  architecture: parse/resolve/fetch/classify/validate/pack/apply(here for 1 PR, worker per PR for ≥ 2)/commit-per-comment+resolve-thread/report
   composes:
     - critical
     - confidence
@@ -30,7 +30,8 @@ metadata:
 
 # Implement Suggestion
 
-Validate reviewer suggestions on one or more PRs through `/critical` and `/confidence`, then hand a **suggestion-pack** to one worker sub-agent per PR that applies, commits, pushes to the existing branch, and resolves threads.
+Validate reviewer suggestions on one or more PRs through `/critical` and `/confidence`, then apply each PR's **suggestion-pack**: commit, push to the existing branch, and resolve threads.
+One PR is applied in this context; two or more get one worker sub-agent per PR, in parallel.
 Never open a new PR.
 Detailed procedure lives in `rules/*.md`; load each file at the phase that names it.
 
@@ -58,7 +59,7 @@ Modifiers (orthogonal to mode):
 
 State the detected mode and inputs in one line before continuing:
 
-```
+```text
 Mode: multi-pr  PRs: dash0/console#1234, dash0/console#1278
 ```
 
@@ -71,7 +72,7 @@ Phase 2:  Comment fetch          → per-PR ledger (parallel across PRs)
 Phase 3:  Classify               → actionable / nit / discussion / praise
 Phase 4:  Two-gate validation    → /critical → /confidence per actionable comment
 Phase 5:  Build suggestion-pack  → .agent/<branch>/suggestion-pack.md per PR
-Phase 6:  Handoff                → one worker per PR: commit-per-comment, full check, push, resolve thread
+Phase 6:  Apply                  → 1 PR: here; ≥ 2 PRs: one worker per PR — commit-per-comment, full check, push, resolve thread
 Phase 7:  Report                 → per-PR table: applied / surfaced / skipped / resolved
 ```
 
@@ -146,11 +147,28 @@ The pack is plan.md-shaped — one Acceptance Criterion per applied change, and 
 Once the pack names its files, read the `codebase-knowledge` signal for exactly those paths and fold matches into the pack as apply-time constraints, per [`rules/self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./rules/self-improvement-loop.md#cross-bucket-read--codebase-knowledge-phase-5-apply-seam).
 The worker reads no other memory.
 
-### Phase 6 — Handoff (one worker per PR)
+### Phase 6 — Apply (here for one PR, one worker per PR for two or more)
 
-Order the pack first (B builds on A ⇒ A first; two contradicting `apply` comments both move to `surface`), then dispatch one worker per PR in one message:
+Order the pack first (B builds on A ⇒ A first; two contradicting `apply` comments both move to `surface`), then pick the applier by PR count:
 
+| PRs in this run | Applier |
+| --- | --- |
+| 1 (always under `--watch` and inside `review-loop`) | **This context.** Run the worker prompt template's *What to do* steps and *Hard rules* yourself, against the pack. |
+| ≥ 2 | **One worker sub-agent per PR, all in one message**, each with the filled template. |
+
+**Why:** this context already read every comment and ran both gates on it; a single worker re-reads all of that from the pack and buys no parallelism ([`rules/handoff.md § Who applies`](./rules/handoff.md#who-applies)).
+
+```text
+# correct — one PR: apply here, from the pack
+Phase 5 writes the pack → Phase 6 runs steps 1–6 of the template in this context → Phase 7 reports
+
+# incorrect — one PR: a worker that re-reads what this context already holds
+Agent(subagent_type="general-purpose", prompt=<template for PR #123>)
 ```
+
+With two or more PRs, dispatch:
+
+```text
 Agent(
   description: "Apply suggestion-pack to PR #<n>",
   subagent_type: "general-purpose",   # "general" on OpenCode / Agent0 — rules/handoff.md#generic-sub-agent-type
@@ -159,9 +177,10 @@ Agent(
 ```
 
 Contract and prompt: [`rules/handoff.md#worker-prompt-template`](./rules/handoff.md#worker-prompt-template).
-The worker makes one commit per applied comment (message cites `@author` + URL), pushes once after all commits, then replies `Addressed in <sha>` and calls `resolveReviewThread` on each addressed thread.
+Whoever applies makes one commit per applied comment (message cites `@author` + URL), pushes once after all commits, then replies `Addressed in <sha>` and calls `resolveReviewThread` on each addressed thread.
 `surface` / `skip` comments stay open; `issues` / `review`-summary comments have no resolvable thread and are reported as such.
-The main agent does not edit, commit, push, or resolve in Phase 6.
+With two or more PRs, the main agent does not edit, commit, push, or resolve in Phase 6.
+Applying in this context changes nothing in the pack: edit only the files an `apply` entry lists, and never re-judge an entry the gates already passed.
 
 ### Phase 7 — Report
 
@@ -208,7 +227,7 @@ LoreKit is optional; without `memory.*` tools every loop is a silent no-op.
 - **One commit per applied comment.** Each message cites its comment, so `git log` maps one-to-one to resolved threads.
 - **Resolve every addressed thread; leave the rest open.** Never resolve a thread whose fix is not on the remote.
 - **Worktree isolation.** Each PR gets its own `gw` worktree.
-- **Main agent does not apply / commit / push in multi-PR mode.** Workers do.
+- **One PR is applied here; two or more PRs are applied by workers.** With ≥ 2 PRs the main agent does not apply, commit, or push.
 - **No new PRs.** Push to existing branches only — never invoke `gh pr create`.
 - **Never fix CI.** Red CI belongs to `ci-auto-fix`; "apply the comments and get CI green" is `review-loop`. Under `--watch`, check state is only a stop reason.
 
@@ -230,7 +249,7 @@ LoreKit is optional; without `memory.*` tools every loop is a silent no-op.
 | [`comment-fetching`](./rules/comment-fetching.md) | Phase 2 |
 | [`comment-classification`](./rules/comment-classification.md) | Phase 3 |
 | [`validation-gates`](./rules/validation-gates.md) | Phase 4 |
-| [`handoff`](./rules/handoff.md) | Phase 6 — worker dispatch + prompt |
+| [`handoff`](./rules/handoff.md) | Phase 6 — who applies, worker dispatch + prompt; rationale: [`apply-context`](./references/apply-context.md) |
 | [`outcome-emit`](./rules/outcome-emit.md) | Phase 7, and per `--watch` iteration, when LoreKit is connected |
 | [`watch-mode`](./rules/watch-mode.md) | When `--watch` is set |
 | [`resolve-all`](./rules/resolve-all.md) | When `--resolve-all` is set |

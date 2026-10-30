@@ -10,8 +10,9 @@ tags:
 
 # Verification
 
-Read this at Phase 7, after `aw-executor` has opened a draft PR.
+Read this at Phase 7, after Phase 6 has opened a draft PR.
 Run the four checks below yourself, in your own context, then write the evidence into the PR body.
+The context that did not write the code has already looked: `branch-reviewer` in Phase 6 Step 3 and `feature-pr-verifier` at PR open; these four checks are mechanical and graded against artefacts, so they do not need a fresh context.
 **`/fix-bug` never undrafts.**
 The PR stays draft; a human reads the evidence and runs `gh pr ready`.
 
@@ -32,7 +33,7 @@ See [`../references/design-rationale.md`](../references/design-rationale.md#phas
 
 Runs only when **all** hold:
 
-- Phase 6 dispatched `aw-executor` via either lane and the executor opened a draft PR (Step 7.pre passed).
+- Phase 6 opened a draft PR via either lane (Step 7.pre passed).
   Verification is identical for both lanes.
 - Phase 5 was not `--analyse-only`.
 - A non-best-effort repro exists from Phase 2.5.
@@ -44,7 +45,7 @@ When the repro is best-effort only, skip Checks 1 and 4, run Checks 2 and 3, and
 Grade against the artefacts, not against what you remember intending:
 
 - Inputs: the Evidence Record, the repro path and command, the bug-notes ledger, the PR head and base SHAs, the PR diff (`gh pr diff`), and the project test command.
-- Do not consult `plan.md` or the executor's summary while grading — they describe what was meant, and the checks measure what landed.
+- Do not consult `plan.md` or Phase 6's own summary while grading — they describe what was meant, and the checks measure what landed.
 - Run Checks 1–4 in order and stop at the first red.
 
 The run mechanic for Checks 1 and 2 delegates to `Skill("verify-behavior", "change")`; you keep the grading:
@@ -147,7 +148,7 @@ Inspect the diff for changes to the repro path:
 1. Leave the PR draft and write the failing check and its evidence into the PR body's `## Verification` section.
 2. Append the evidence to the bug-notes ledger as `counterexamples`.
 3. Surface the failing check, the evidence, and three options:
-   - **refine** — re-dispatch `aw-executor` with the findings appended to `plan.md`, capped at 3 rounds per the CEGIS contract in [`autonomous-handoff.md`](./autonomous-handoff.md).
+   - **refine** — append the findings to `plan.md` and re-enter [Phase 6 Step 6b](./autonomous-handoff.md#step-6b--work-the-plan-here) in the same worktree, capped at 3 rounds per the CEGIS contract.
    - **escalate** — re-run `Skill("confidence", "analysis fix")` on the failed verification to surface root-cause concerns.
    - **abandon** — close the draft PR and return the bug-notes ledger as the artefact.
 

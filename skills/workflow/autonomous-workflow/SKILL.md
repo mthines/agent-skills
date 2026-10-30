@@ -208,7 +208,7 @@ The skill ships **one dispatcher skill** and **two agents** (`aw-` = autonomous-
 | Unit | Kind | Role | Exit gate |
 | ---- | ---- | ---- | --------- |
 | [`aw`](./aw/SKILL.md) | skill | Opt-in dispatcher: lessons, tier, routing, `/goal` line; on Full, the brief + sealed `checks.yaml`, then the work in this session per `aw-executor`, then a local `review-loop` pass | Task routed, exit lesson written |
-| [`aw-executor`](./templates/aw-executor.agent.md) | procedure (and agent) | Full, Phases 3–7 from the brief, applying [`corrections.md`](./rules/corrections.md) → review, walkthrough, draft PR; `aw` follows it in-session, and `/fix-bug` or a parallel request dispatches it | `CHECKS M/M PASS`, walkthrough shown, CI gate run |
+| [`aw-executor`](./templates/aw-executor.agent.md) | procedure (and agent) | Full, Phases 3–7 from the brief, applying [`corrections.md`](./rules/corrections.md) → review, walkthrough, draft PR; `aw` follows it in-session, `/fix-bug` through `aw`'s Full tier, and a background or parallel request dispatches it | `CHECKS M/M PASS`, walkthrough shown, CI gate run |
 | [`aw-tester`](./templates/aw-tester.agent.md) | agent | Phase 4 (UI) spec verification, cold pass only | `green` or `inconclusive` before lint/type/test |
 
 Other files: [`routing.rule.md`](./templates/routing.rule.md) (auto-trigger rule), [`specs.md.template`](./templates/specs.md.template), [`intent-spec.md.template`](./templates/intent-spec.md.template), [`scripts/run-checks.mjs`](./scripts/run-checks.mjs) (the check runner; `--self-test` proves it).

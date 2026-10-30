@@ -1,10 +1,10 @@
 ---
-title: Autonomous Handoff — Brief + aw-executor Dispatch
+title: Autonomous Handoff — Brief + In-Session Work
 impact: HIGH
 tags:
   - handoff
   - autonomous-workflow
-  - aw-executor
+  - in-session
   - draft-pr
   - fast-lane
   - standard-lane
@@ -13,16 +13,17 @@ tags:
 # Autonomous Handoff
 
 Loads when Phase 5 of `/fix-bug` cleared at >= 92 % (or the user
-force-proceeded after 70–91 %). Writes the brief and dispatches one
-`aw-executor` to ship the fix as a draft PR.
+force-proceeded after 70–91 %). Writes the brief, then works it to a draft PR
+**in this session**, the way `aw`'s Full tier does: the context that holds the
+repro, the Evidence Record, and the Root-Cause Record writes the fix.
 
 There are **two lanes**, picked by the Phase 0.5 complexity triage and
 confirmed at Phase 5:
 
 | Lane | Trigger | Path |
 |------|---------|------|
-| [Fast-lane](#fast-lane) | triage = `simple` AND confidence ≥ 92 % AND non-best-effort repro | `/fix-bug` → `aw-create-plan` (fast-lane plan) → `aw-executor` |
-| [Standard-lane](#standard-lane) | triage = `complex` (default) OR fast-lane preconditions not met OR force-proceed used | `/fix-bug` → `aw-create-plan` (six-Core brief) → `aw-executor` (canonical path) |
+| [Fast-lane](#fast-lane) | triage = `simple` AND confidence ≥ 92 % AND non-best-effort repro | `/fix-bug` → `aw-create-plan` (fast-lane plan) → [work it here](#step-6b--work-the-plan-here) |
+| [Standard-lane](#standard-lane) | triage = `complex` (default) OR fast-lane preconditions not met OR force-proceed used | `/fix-bug` → `aw-create-plan` (six-Core brief) → [work it here](#step-6b--work-the-plan-here) (canonical path) |
 
 Both lanes share Phase 7 (independent verification) and Phase 8 (telemetry
 verification) unchanged.
@@ -32,11 +33,10 @@ verification) unchanged.
 - [Lane selection](#lane-selection)
 - [Fast-lane](#fast-lane)
   - [Step 6a (fast) — Create worktree + plan.md](#step-6a-fast--create-worktree--planmd)
-  - [Step 6b (fast) — Dispatch `aw-executor`](#step-6b-fast--dispatch-aw-executor)
   - [Fast-lane round-3 fallback](#fast-lane-round-3-fallback)
 - [Standard-lane](#standard-lane)
   - [Step 6a (std) — Write the brief](#step-6a-std--write-the-brief)
-  - [Step 6b (std) — Dispatch `aw-executor`](#step-6b-std--dispatch-aw-executor)
+- [Step 6b — Work the plan here](#step-6b--work-the-plan-here)
 - [Step 6c — CEGIS refinement contract](#step-6c--cegis-refinement-contract)
 - [Step 6c — Report back](#step-6c--report-back)
 - [Failure modes](#failure-modes)
@@ -95,28 +95,8 @@ all hold. `/fix-bug` authors the fast-lane plan, which keeps the pre-brief secti
    sections (the 8 `aw-create-plan` Core sections plus the bug-specific ones,
    per [`fast-lane-plan-contract.md`](./fast-lane-plan-contract.md#required-sections))
    are present. On any missing section, fail loudly, log to the ledger, and
-   stop. Do NOT dispatch the executor against an under-specified plan.
-
-### Step 6b (fast) — Dispatch `aw-executor`
-
-Use the Agent tool with `subagent_type: "aw-executor"` and
-`isolation: "worktree"` pointing at `.agent/fix/<slug>/`. Minimal prompt:
-
-```text
-Execute the plan at .agent/fix/<slug>/plan.md in the current worktree.
-
-This plan was authored directly by /fix-bug (fast-lane). The CEGIS refinement contract in the plan is binding. On round-3
-failure, the orchestrator (/fix-bug) handles the fallback — do not retry
-beyond 3 rounds.
-```
-
-If the harness's Agent tool does not support the `isolation` parameter, omit
-it — the worktree already exists from Step 6a (fast); the prompt's worktree
-path is the isolation contract.
-
-The executor runs autonomous-workflow Phases 3–7 (implement, test, document,
-draft PR, watch CI). Do not wait for CI to finish before reporting back —
-the executor owns CI watching.
+   stop. Do NOT start work against an under-specified plan.
+6. Continue at [Step 6b — Work the plan here](#step-6b--work-the-plan-here).
 
 ### Fast-lane round-3 fallback
 
@@ -127,7 +107,7 @@ failure additionally **re-enters the standard-lane with the captured
 counterexamples**, because round-3 failure is the strongest signal the bug
 was not actually simple.
 
-Procedure when `aw-executor` reports `CEGIS round 3 failed`:
+Procedure when your third CEGIS round fails on the fast-lane:
 
 1. **Read the bug-notes ledger** — every counterexample captured during the
    3 fast-lane rounds is already there under `Counterexamples`.
@@ -164,7 +144,7 @@ second fallback. After fallback, the flow is identical to standard-lane.
 
 The canonical path. Used for `complex` bugs, downgrades from fast-lane, and
 all force-proceed cases. `/fix-bug` writes the brief itself — the same brief
-the `aw` dispatcher writes on a Full task — then dispatches one `aw-executor`.
+the `aw` dispatcher writes on a Full task — then works it here.
 
 ### Step 6a (std) — Write the brief
 
@@ -190,7 +170,7 @@ the `aw` dispatcher writes on a Full task — then dispatches one `aw-executor`.
    Once File Changes is drafted, issue the `codebase-knowledge` read per
    [`self-improvement-loop.md`](./self-improvement-loop.md#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam)
    for exactly those paths.
-4. **Validate the brief deterministically** before dispatch:
+4. **Validate the brief deterministically** before Step 6b:
 
    ```bash
    D=".agent/$(git branch --show-current)"
@@ -199,34 +179,96 @@ the `aw` dispatcher writes on a Full task — then dispatches one `aw-executor`.
    test -f "$D/checks.lock" && echo sealed
    ```
 
-   On any failure, fix the brief and re-run; do NOT dispatch the executor
-   against a brief that fails validation.
+   On any failure, fix the brief and re-run; do NOT start work against a
+   brief that fails validation.
+5. Continue at [Step 6b — Work the plan here](#step-6b--work-the-plan-here).
 
-### Step 6b (std) — Dispatch `aw-executor`
+---
 
-Only after Step 6a (std) validation passes.
+## Step 6b — Work the plan here
 
-Use the Agent tool with `subagent_type: "aw-executor"` and name the worktree
-path explicitly:
+Both lanes, after their Step 6a validation passed.
+`cd` into the worktree from Step 6a and stay there; you are the worker.
+Phases 1–3 read files at the original checkout's paths, so re-resolve every
+path against the worktree root before editing.
+This guard replaces the `isolation: "worktree"` the executor dispatch carried.
+Snapshot the original checkout once, before your first edit:
 
-```text
-Worktree: <absolute worktree path>
-Brief: <worktree>/.agent/<branch>/plan.md (checks sealed in checks.yaml + checks.lock)
-Constraints from the user: <verbatim, or none>
-The CEGIS refinement contract and the bug-notes ledger under Context artefacts
-are binding. Execute the brief to its Definition of Done.
+```bash
+WT="<absolute worktree path from Step 6a>"; ORIG="<absolute path of the checkout Phase 0 started in>"
+S="$WT/.agent/fix/<slug>/orig-snapshot"
+orig_state() { git -C "$ORIG" status --porcelain; git -C "$ORIG" diff HEAD | shasum
+  git -C "$ORIG" ls-files -o --exclude-standard -z | (cd "$ORIG" && xargs -0 shasum 2>/dev/null); }
+git -C "$ORIG" rev-parse HEAD > "$S.head"; orig_state > "$S.status"
 ```
 
-The executor runs autonomous-workflow Phases 3–7 (implement, test, document,
-draft PR, watch CI). Do not wait for CI to finish before reporting back —
-the executor owns CI watching.
+Then run the check before Step 3 and again before Step 4:
+
+```bash
+test "$(git -C "$WT" rev-parse --abbrev-ref HEAD)" = "fix/<slug>" || echo "GUARD: worktree not on fix/<slug>"
+test "$(git -C "$ORIG" rev-parse HEAD)" = "$(cat "$S.head")" || echo "GUARD: a commit landed in $ORIG"
+orig_state | diff -q - "$S.status" >/dev/null || echo "GUARD: files changed in $ORIG"
+```
+
+The snapshot holds the user's own uncommitted work (status, a hash of the
+tracked diff, and a hash of each untracked file), so only a change since the
+snapshot fires, including a second edit to a file that was already dirty.
+Handle each `GUARD:` line by its row: a `BLOCKED` row stops Phase 6, and a
+repair row re-runs the check.
+For `files changed in $ORIG`, list the changed paths
+(`git -C "$ORIG" status --porcelain` against `$S.status`) and attribute each
+one to the `Edit` / `Write` calls you issued this phase, read from your own
+tool calls, never from the plan's File Changes list:
+
+| Line | Do |
+| --- | --- |
+| `files changed in $ORIG`, and a changed path is not one you issued an `Edit` / `Write` to | Print `BLOCKED: <path> changed in <ORIG> outside this session` and stop; the user is working there. |
+| `files changed in $ORIG`, and a path you edited appears in `$S.status` | Print `BLOCKED: <file> was already dirty in <ORIG>; your edit is mixed with the user's` and stop; never copy or restore it. |
+| `files changed in $ORIG`, and every changed path is one you edited and was clean at the snapshot | Copy only the files you edited into the worktree (`git -C "$ORIG" diff -- <files> \| git -C "$WT" apply`; copy new files with `cp`), restore exactly those in `ORIG` (`git -C "$ORIG" restore -- <files>`, `rm` for new ones; never `restore .` or `checkout -- .`), and re-run the check. |
+| `a commit landed in $ORIG` | Print `BLOCKED: commit <sha> landed in <ORIG>, not fix/<slug>` and stop; moving or undoing a commit on the user's branch needs the user. |
+| `worktree not on fix/<slug>` | `git -C "$WT" checkout fix/<slug>` and re-run the check. |
+
+Follow `aw`'s Full tier Steps 2–4 (`$HOME/.claude/skills/aw/rules/full-tier.md`)
+with the lane's done condition and the [CEGIS contract](#step-6c--cegis-refinement-contract):
+
+| Lane | Step 2 is done when, on the same head | Step 2's inner loop |
+| --- | --- | --- |
+| Standard | `run-checks.mjs` prints `CHECKS M/M PASS (<sha>)` and the Before-PR command passes | change → After-editing (the repro) → run-checks |
+| Fast | the plan's After-editing command (the repro) and Before-PR command both pass | change → repro → Before-PR |
+
+0. **Lessons and corrections.** Run the `aw-lessons` intake read in `$HOME/.claude/skills/aw/rules/lessons.md`
+   with keywords from the root cause; apply matches as constraints. Step 4's
+   lessons exit write runs unchanged. Then read
+   `$HOME/.claude/skills/autonomous-workflow/rules/corrections.md` in full and
+   apply every correction the fix triggers (C2–C6; the brief already covers C1).
+1. **Step 2 — work.** Every failing repro run is a CEGIS round: capture it in
+   the ledger before refining. Round 3 failing ends Step 2 for that lane — the
+   [fast-lane fallback](#fast-lane-round-3-fallback) or, on the standard-lane,
+   `confidence(analysis fix)`.
+2. **Step 3 — local review.** `Skill("review-loop", "--base <base sha> --cap 2")`:
+   `branch-reviewer` reviews the diff from a context that did not write it.
+3. **Step 4 — PR.** Walkthrough, `Skill("create-pr", "--no-pre-review --no-post-review")`
+   as a draft, then `feature-pr-verifier` once with the PR URL, and the CI watch
+   (`ci-auto-fix` on failure, cap 2). Then Phase 7 runs.
+
+```text
+# correct — the context that found the root cause writes the fix
+6a validated → cd <worktree> → edit → repro (CEGIS round on red) → checks → review-loop (local) → create-pr --draft → feature-pr-verifier → Phase 7
+
+# incorrect — a dispatched executor re-reads the ledger, the repro, and the root cause from files
+Agent(subagent_type="aw-executor", prompt="Execute the plan at .agent/fix/<slug>/plan.md …")
+```
+
+Dispatch `aw-executor` only when the user asks for a background worker; then
+do not edit while it runs, and Phase 7 waits for its draft PR.
+**Why:** [`../references/design-rationale.md` § In-session implementation](../references/design-rationale.md#in-session-implementation).
 
 ---
 
 ## Step 6c — CEGIS refinement contract
 
 Identical for both lanes. Every plan.md (the six-Core brief on the
-standard-lane or the fast-lane plan) includes the contract verbatim. After each executor edit:
+standard-lane or the fast-lane plan) includes the contract verbatim. After each edit:
 
 1. Run the repro. If it passes, continue to other test runs.
 2. If it fails: capture the failing input/output verbatim, append to
@@ -258,11 +300,13 @@ distinguishes them.
 | Lane | fast-lane | standard-lane (downgrade <reason>) | standard-lane (force-proceed) |
 | Root cause | <one line> |
 | Confidence (analysis) | <X%> |
-| Checks | <M> sealed (`CHECKS M/M PASS` once the executor finishes) |
+| Checks | <`CHECKS M/M PASS (<sha>)` (standard) \| repro + Before-PR pass (fast)> |
 | PR | <url> (draft — Phase 7 verification pending) |
 | Branch | fix/<slug> |
 | Worktree | .agent/fix/<slug>/ |
-| CI | watching (aw-executor still running) |
+| CI | <green \| red: <checks> \| pending> |
+| Review | <branch-reviewer: N findings — F fixed, R rejected, G flagged \| not run (<reason>)> |
+| Verified | <feature-pr-verifier green \| red \| not run (<reason>)> |
 ```
 
 Do **not** undraft the PR here or anywhere else — `/fix-bug` never undrafts.
@@ -276,9 +320,9 @@ Phase 7 writes the verification evidence into the PR body and a human undrafts.
 |---------|------|--------|
 | Standard-lane brief fails validation | standard | Fix the brief and re-run validation. If a requirement cannot be turned into a check, stop and ask the user. |
 | Worktree creation or `aw-create-plan` fails | standard | Surface the error. Do not retry silently — worktree state may be inconsistent. |
-| `aw-executor` fails before opening a PR | both | Report the worktree path and the failure. The user can resume from the worktree manually or re-spawn the executor. |
-| `aw-executor` opens a PR but CI fails immediately | both | The executor handles its own CI gate (Phase 7). Do not intervene from this skill. |
-| Fast-lane plan.md validation fails (missing section) | fast | Stop. Log to the ledger. Do NOT dispatch the executor. Offer: re-author the plan, or downgrade to standard-lane. |
+| Work stops before a PR opens (`BLOCKED`, stuck loop, turn cap) | both | Report the worktree path, the ledger, and the evidence. The user resumes in the worktree or re-runs Phase 6. |
+| CI fails on the draft PR | both | `ci-auto-fix`, cap 2, per `aw` Full tier Step 4; then Phase 7. |
+| Fast-lane plan.md validation fails (missing section) | fast | Stop. Log to the ledger. Do NOT start work. Offer: re-author the plan, or downgrade to standard-lane. |
 | Fast-lane CEGIS round 3 failure | fast | [Fast-lane round-3 fallback](#fast-lane-round-3-fallback). Single-shot — no further loops. |
 | Fast-lane preconditions fail at Phase 6 entry (e.g. repro turned best-effort late) | fast | Downgrade to standard-lane silently; log the downgrade reason. The user does not need to intervene. |
 | `aw-create-plan` returns an error (worktree missing, branch detection failed) | fast | Surface the error. Worktree state may be inconsistent — do NOT retry blindly. |

@@ -7,12 +7,13 @@ headSha: <head-sha>
 worktree: <absolute-path-to-worktree>
 resolve-all: <true | false>   # true only when --resolve-all was passed; enables the worker's step-6 reply-only pass
 generatedAt: <ISO-8601-timestamp>
-generatedBy: implement-suggestion v3.0.0
+generatedBy: implement-suggestion v3.1.0
 ---
 
 # Suggestion Pack — <owner>/<repo>#<n>
 
-This pack is the contract handed to the worker subagent. Its `apply` entries
+This pack is the contract for the worker — this context for one PR, a sub-agent
+per PR for two or more. Its `apply` entries
 are in the order the worker applies them (dependencies first). The worker
 commits and pushes to the existing PR branch — it does **not** open a new PR.
 

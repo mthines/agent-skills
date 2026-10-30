@@ -1,11 +1,11 @@
 ---
-title: Fast-Lane Plan Contract — plan.md Shape for Direct aw-executor Dispatch
+title: Fast-Lane Plan Contract — plan.md Shape for In-Session Work
 impact: HIGH
 tags:
   - fast-lane
   - plan-md
   - aw-create-plan
-  - aw-executor
+  - in-session
   - fast-lane-plan
 ---
 
@@ -13,16 +13,15 @@ tags:
 
 Loaded by Phase 6 of `/fix-bug` when triage picked `simple` AND
 `confidence(analysis) ≥ 92 %`. Defines the minimum `plan.md` shape that
-`/fix-bug` must produce — via `Skill("aw-create-plan", ...)` — for
-`aw-executor` to consume.
+`/fix-bug` must produce — via `Skill("aw-create-plan", ...)` — before it works
+the fix in this session ([`autonomous-handoff.md` Step 6b](./autonomous-handoff.md#step-6b--work-the-plan-here)).
 
-The contract exists because `aw-executor` expects a plan.md written to the
-autonomous-workflow shape, and `/fix-bug` is the author. The fast-lane plan
-keeps the pre-brief section set, which `aw-executor` accepts alongside the
-six-Core brief the standard-lane writes.
+The contract exists because the plan is the done condition for that work and
+the record a reviewer reads afterwards. The fast-lane plan keeps the pre-brief
+section set, alongside the six-Core brief the standard-lane writes.
 
 Source: [autonomous-workflow Phase 2 plan-artifact spec](../../autonomous-workflow/SKILL.md)
-— the plan.md shape aw-executor reads from.
+— the plan.md shape this contract extends.
 
 ## Contents
 
@@ -58,7 +57,7 @@ If any precondition fails, route to standard-lane and log the reason.
 ## Required sections
 
 The fast-lane `plan.md` is a **superset of the [`aw-create-plan`](../../aw-create-plan/SKILL.md) Core schema**: every Core section — TL;DR, Requirements, Decisions, Acceptance Criteria, Implementation Order, File Changes, Verification, Progress Log — appears verbatim, plus the bug-specific sections below.
-Because every Core section is present by name, the plan satisfies the `aw-create-plan` Core schema, so `aw-executor`'s bail-out check and the `confidence(plan)` deterministic rule checks pass unchanged.
+Because every Core section is present by name, the plan satisfies the `aw-create-plan` Core schema, so the `confidence(plan)` deterministic rule checks pass unchanged.
 
 `plan.md` MUST have these sections, in this order (Core sections marked):
 
@@ -73,7 +72,7 @@ Because every Core section is present by name, the plan satisfies the `aw-create
 9. **Decisions** *(Core)* — chosen fix + alternatives rejected + rationale
 10. **Proposed change** — file + line + before/after sketch
 11. **Acceptance Criteria** *(Core)* — testable done conditions; replaces the former "Done criteria" section name to match the Core schema
-12. **Implementation Order** *(Core)* — numbered, atomic executor steps
+12. **Implementation Order** *(Core)* — numbered, atomic implementation steps
 13. **File Changes** *(Core)* — Action / File / Change / Reason table
 14. **Verification** *(Core)* — after-edit and before-PR commands
 15. **CEGIS refinement contract** — verbatim (see [Section spec](#section-by-section-spec))
@@ -134,7 +133,7 @@ This is the human-review surface the Core schema requires — direction must be 
 
 ### Out of Scope
 
-The executor must NOT:
+The implementation must NOT:
 
 - Modify any file outside the affected-files table in the Evidence Record
   without re-running confidence(analysis).
@@ -280,7 +279,7 @@ Keep steps atomic and bug-specific — add one step per `File` block when the pr
 
 Every file listed here must also appear in the Evidence Record's affected-files table — the Out of Scope rule and the verifier's diff-sanity check both key off that table.
 
-Once this table is drafted, issue the fast-lane `codebase-knowledge` read for exactly these paths, per [`self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./self-improvement-loop.md#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam). `/fix-bug` dispatches the executor without `aw`, so this is the only point the shared bucket is read before the fix is written; fold a matched hotspot or invariant into the plan and note it under `## Lessons applied`.
+Once this table is drafted, issue the fast-lane `codebase-knowledge` read for exactly these paths, per [`self-improvement-loop.md § Cross-bucket read — codebase-knowledge`](./self-improvement-loop.md#cross-bucket-read--codebase-knowledge-fast-lane-plan-seam). `/fix-bug` writes this plan without `aw`, so this is the only point the shared bucket is read before the fix is written; fold a matched hotspot or invariant into the plan and note it under `## Lessons applied`.
 
 ### 14. Verification
 
@@ -294,7 +293,7 @@ Once this table is drafted, issue the fast-lane `codebase-knowledge` read for ex
 ### 15. CEGIS refinement contract
 
 Verbatim from [`bug-fix-pack.md`](../templates/bug-fix-pack.md) — same
-3-round cap, same counterexample-append discipline. The aw-executor's
+3-round cap, same counterexample-append discipline. The
 contract does not change between lanes.
 
 ```markdown
@@ -339,7 +338,7 @@ The following test files must continue to pass after the fix:
 The list is derived from the **affected files** in the Evidence Record:
 every test that imports a changed file is a PASS_TO_PASS candidate. If the
 test count exceeds 10, list the *suites* that must pass rather than
-individual files — the executor expands suites at run time.
+individual files — suites are expanded at run time.
 
 ### 18. Bug-notes ledger pointer
 
@@ -373,7 +372,7 @@ individual files — the executor expands suites at run time.
 - [<TIMESTAMP>] Phase 6 (fast-lane): plan.v1.md created by /fix-bug via aw-create-plan
 ```
 
-`aw-create-plan` seeds this section; every later milestone (executor takeover, CEGIS rounds, phase transitions) appends per the Core schema's append-only contract.
+`aw-create-plan` seeds this section; every later milestone (work start, CEGIS rounds, phase transitions) appends per the Core schema's append-only contract.
 Timestamps use full ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`).
 
 ---
@@ -408,22 +407,12 @@ references.
 4. **Validate the plan.md** — re-read the file and confirm all 20 required
    sections (the 8 Core sections plus the bug-specific ones) are present per
    the [Required sections](#required-sections) list. If any are missing, fail
-   with a clear error and do NOT dispatch the executor. The bug-notes ledger
+   with a clear error and do NOT start work. The bug-notes ledger
    captures the failure.
 
-5. **Dispatch `aw-executor`.** Use the Agent tool with
-   `subagent_type: "aw-executor"` and `isolation: "worktree"` pointing at
-   `.agent/fix/<slug>/`. Minimal prompt:
-
-   ```text
-   Execute the plan at .agent/fix/<slug>/plan.md in the current worktree.
-   This plan was authored directly by /fix-bug (fast-lane). The CEGIS
-   refinement contract in the plan is binding.
-   ```
-
-   If the harness's Agent tool does not support the `isolation` parameter,
-   omit it — the worktree already exists from step 1; the prompt's worktree
-   path is the isolation contract.
+5. **Work the plan here** — [`autonomous-handoff.md` Step 6b](./autonomous-handoff.md#step-6b--work-the-plan-here),
+   in the worktree from step 1, with the fast-lane done condition: the repro
+   and the Before-PR command pass on the same head.
 
 6. **Return to** [`autonomous-handoff.md` step 6c](./autonomous-handoff.md#step-6c--report-back)
    for the status report.
@@ -440,7 +429,7 @@ on the fast-lane:
 | Architectural analysis | A simple bug by definition does not have one — the suspect site is the architecture. |
 | Cross-module dependency map | Same reason; the affected-files table covers the scope. |
 | Migration / backwards-compat plan | A null check or off-by-one doesn't migrate anything. |
-| Rollout staging | The executor's draft-PR + verifier flow is the rollout. |
+| Rollout staging | Step 6b's draft-PR + verifier flow is the rollout. |
 | Documentation update plan | If docs need updating, that is `complex` by definition — triage should have caught it. |
 
 If the lightweight analysis surfaces any of these as needed, **escalate to
@@ -458,8 +447,8 @@ must not propose to relax any of these without explicit user confirmation:
   what keeps a marginal diagnosis off it. Lowering it would admit marginal
   diagnoses to the lane with the fewest guards.
 - **Fast-lane requires a non-best-effort repro.** The repro IS the
-  executor's contract; without it, there's nothing to gate CEGIS on.
-- **`/fix-bug` validates plan.md before dispatching the executor.** The
+  implementation's contract; without it, there's nothing to gate CEGIS on.
+- **`/fix-bug` validates plan.md before it starts work.** The
   contract is unenforced if the validator step is skipped.
 - **Round-3 CEGIS failure on fast-lane falls back to standard-lane.** The
   fallback is the safety net for "triage classified simple but the bug

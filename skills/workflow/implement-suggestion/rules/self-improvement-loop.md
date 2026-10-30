@@ -39,8 +39,9 @@ tier is a silent no-op (log one line, continue).
 
 ## What this loop owns vs. what aw-lessons owns
 
-Nothing this skill dispatches reads or writes `aw-lessons` any more: the Phase 6
-worker is a generic sub-agent that inherits no lesson scope, and the `aw-planner`
+Nothing this skill runs reads or writes `aw-lessons` any more: the Phase 6
+worker (this context for one PR, a generic sub-agent per PR for two or more)
+reads no lesson scope, and the `aw-planner`
 lane that used to contribute to `aw-lessons` was removed in v3.0.0. So
 `implement-suggestion-lessons` is this skill's **only** learning surface, and it
 owns every decision the skill makes:

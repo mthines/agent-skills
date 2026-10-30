@@ -50,8 +50,8 @@ Refuse to proceed after emitting:
 ```text
 Phase 6 gate failed: working on protected branch `<branch>`.
 
-Phase 6 implementation work happens inside an isolated worktree on a fix/* branch,
-dispatched via `aw-executor` (which opens a draft PR). Editing files inline on a
+Phase 6 implementation work happens in an isolated worktree on a fix/* branch and
+ends in a draft PR (rules/autonomous-handoff.md Step 6b). Editing files on a
 protected trunk branch bypasses:
   - worktree isolation
   - draft PR creation
@@ -74,18 +74,18 @@ Phase 7 gate failed: no draft PR exists for branch `<branch>`.
 
 `gh pr view` returned: <verbatim output or "MISSING">
 
-Phase 6 dispatch must produce a draft PR via `Task(subagent_type="aw-executor", ...)`.
+Phase 6 must produce a draft PR from the fix/<slug> worktree (rules/autonomous-handoff.md Step 6b).
 If you find that:
   - You are still on a protected branch (main / master / develop / trunk)
-  - Implementation files were edited inline by the main agent
+  - Implementation files were edited outside the fix/<slug> worktree
   - `git log` shows implementation commits already on a protected branch
 …then Phase 6 was bypassed. Phase 7 verification cannot run in this state.
 
 Recovery:
   1. Revert / cherry-pick the implementation off the protected branch (manual — destructive).
   2. Run `gw checkout fix/<slug>` to create the worktree.
-  3. Re-enter Phase 6 via the documented dispatch path (Step 6.main).
-  4. Phase 7 will re-run once aw-executor produces the draft PR.
+  3. Re-enter Phase 6 via Step 6.main, working in that worktree.
+  4. Phase 7 will re-run once Step 6b opens the draft PR.
 
 Skipping Phase 7 verification on the grounds of "diff is small", "pattern matches existing code",
 or "verification is for diff-sanity grading only" is forbidden — see

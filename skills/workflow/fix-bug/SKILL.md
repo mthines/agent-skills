@@ -12,12 +12,13 @@ user-invocable: true
 disable-model-invocation: false
 metadata:
   author: mthines
-  version: '2.3.0'
+  version: '2.4.0'
   workflow_type: orchestrator
   architecture: classify/triage/preflight/reproduce/analyse/gate/handoff(fast|standard)/verify/telemetry
   agents:
-    executor: aw-executor
-  composes: [confidence, aw-create-plan, tdd, e2e-testing, e2e-testing-mobile, video-analyser, autonomous-workflow]
+    reviewer: branch-reviewer
+    verifier: feature-pr-verifier
+  composes: [confidence, aw-create-plan, aw, review-loop, create-pr, tdd, e2e-testing, e2e-testing-mobile, video-analyser, autonomous-workflow]
   phases: [intake, complexity_triage, evidence_resolution_with_preflight, source_mapping_with_reproduction, root_cause_analysis_or_lightweight, confidence_gate, branch_decision, autonomous_handoff_lane_split, verification, telemetry_verification]
   tags: [bug-fix, debugging, telemetry, dash0, confidence-gated, reproduction-first, cegis, autonomous-workflow, root-cause, orchestrator, complexity-triage, fast-lane]
 ---
@@ -159,7 +160,7 @@ Then pick the lowest layer that captures the bug and delegate:
 - Expo / React Native user flow → `Skill("e2e-testing-mobile", ...)`
 - Visual-only / pixel-perfect → best-effort markdown checklist
 
-The repro is the executor's `FAIL_TO_PASS` contract (Phase 6) and Phase 7's `FAIL_TO_PASS` check.
+The repro is Phase 6's `FAIL_TO_PASS` contract and Phase 7's `FAIL_TO_PASS` check.
 Path convention: `repro/<short-bug-id>.<ext>`.
 
 **Step 2c — Bisect fast-path (regression class only).** If pre-flight produced a `last_green_sha` AND a non-best-effort repro exists, run `git bisect run <repro-command>`.
@@ -245,7 +246,9 @@ Any other branch continues.
 Follow [`rules/autonomous-handoff.md`](./rules/autonomous-handoff.md) (fast-lane plan.md: [`rules/fast-lane-plan-contract.md`](./rules/fast-lane-plan-contract.md); standard-lane pack: [`templates/bug-fix-pack.md`](./templates/bug-fix-pack.md)).
 Both lanes share the CEGIS 3-round cap; a fast-lane round-3 failure falls back to the standard-lane with the captured counterexamples.
 
-**The main agent does not edit files in Phase 6.** All implementation runs inside `Task(subagent_type="aw-executor", ...)`; Step 7.pre fails closed when no draft PR exists.
+**Implementation runs in this session, in the `fix/<slug>` worktree, never on a protected branch** ([Step 6b](./rules/autonomous-handoff.md#step-6b--work-the-plan-here)): you hold the repro and the root cause, so you write the fix, `branch-reviewer` reviews it, and `feature-pr-verifier` checks the draft PR.
+Dispatch `aw-executor` only when the user asks for a background worker.
+Step 7.pre fails closed when no draft PR exists.
 
 ## Phase 7 — Verification
 

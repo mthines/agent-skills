@@ -14,7 +14,7 @@ tags:
 # Reproduction Lock
 
 Phase 2.5. **Before** holistic analysis (Phase 3). Constructs a deterministic artefact that
-reproduces the bug — the executor's `FAIL_TO_PASS` contract.
+reproduces the bug — Phase 6's `FAIL_TO_PASS` contract.
 
 This rule **does not write tests itself** — it picks the right test layer, then delegates to the
 appropriate existing skill. The actual RED-GREEN-REFACTOR cycle, framework discovery, and
@@ -115,7 +115,7 @@ The `/tdd` skill handles:
 - The REFACTOR quality checklist.
 
 `/fix-bug` consumes only the **RED phase output**: the test path and the failing-on-HEAD command.
-GREEN/REFACTOR happen later inside the executor (Phase 6) under `/tdd`'s discipline.
+GREEN/REFACTOR happen later in Phase 6 under `/tdd`'s discipline.
 
 ### React / React Native rendering bugs (row 2 nuance)
 
@@ -247,7 +247,7 @@ reproduction steps. Mark it explicitly:
 - Reason: race condition needs production scheduler state
 ```
 
-Do **not** block on this — Phase 3 proceeds. The executor (Phase 6) cannot use it as a
+Do **not** block on this — Phase 3 proceeds. Phase 6 cannot use it as a
 `FAIL_TO_PASS` contract; the [Phase 7 verification](./independent-verification.md) will skip its
 `FAIL_TO_PASS` check and rely on the broader test suite plus diff-sanity instead.
 

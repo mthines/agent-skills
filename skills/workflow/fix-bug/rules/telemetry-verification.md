@@ -263,7 +263,7 @@ If any mode returns `fail`, the bug is reopened with the verification artefact (
 deploy ID, comparison rates if applicable). The user decides whether to:
 
 - Roll back the deploy.
-- Iterate with `aw-executor` on the same branch (treat the persistent matches as counterexamples).
+- Re-enter Phase 6 Step 6b on the same branch (treat the persistent matches as counterexamples).
 - Investigate whether the bug class was misdiagnosed (e.g., a config bug shipped as a code bug).
 
 ### One-shot bugs are honestly handled
