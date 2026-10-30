@@ -185,7 +185,7 @@ A first review of a small PR that fires no risk trigger skips `deep`.
 ✓ 1 file, 20 lines, first run, touches db/migrations/ → deep (D7 is a risk trigger)
 ```
 
-**Why:** reviews on 2–8 file PRs routed `deep` on `D1` alone spent 4–13M tokens over 40–75 turns; size is a poor proxy for risk, so scaling never waives a trigger that measures what the change reaches.
+**Why:** `D1` alone sent every small first review to `deep`, whose fixed overhead dwarfs a small diff; size is a poor proxy for risk, so scaling never waives a trigger that measures what the change reaches.
 
 ## Announce the decision with its inputs
 
