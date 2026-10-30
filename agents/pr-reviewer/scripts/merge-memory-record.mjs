@@ -75,7 +75,7 @@ const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
 
 // Structured fields only: prose (`gist`, `reason`) and people (`by`) are left out, so a re-review
 // that rewords the same finding still counts once.
-const ID_FIELDS = Object.freeze(["pr", "sha", "fp", "line", "event", "verdict", "outcome", "exception_type", "source"]);
+export const ID_FIELDS = Object.freeze(["pr", "sha", "fp", "symbol", "line", "event", "verdict", "outcome", "exception_type", "source"]);
 
 /**
  * The identity of an example or history entry, so a replayed run adds nothing.
@@ -299,10 +299,18 @@ function selfTest() {
       confirmed_examples: [{ pr: 1, sha: "aaa", fp: "x", gist: "the same finding, worded differently" }] } }]);
     return val(r, "hotspot::src/new.ts").missed === 2 && val(replay, "hotspot::src/a.ts").confirmed === 6;
   });
-  t("a history entry that differs only by event is kept", () => {
+  t("a history entry that differs only by outcome is kept", () => {
     const v = val(run([{ scope: S, key: "knowledge::f@src/b.ts", update: {
       symbol: "f", path: "src/b.ts", history: [{ pr: 1, sha: "aaa", fp: "x", verdict: "confirmed", outcome: "fixed" }] } }]), "knowledge::f@src/b.ts");
     return v.history.length === 2;
+  });
+  t("every identity field on its own separates two entries; prose and people never do", () => {
+    const base = { pr: 1, sha: "a", fp: "f", symbol: "s", line: 1, event: "e", verdict: "v", outcome: "o", exception_type: "x", source: "src" };
+    // Listed here rather than read from ID_FIELDS, so dropping a field from it fails this case.
+    const fields = ["pr", "sha", "fp", "symbol", "line", "event", "verdict", "outcome", "exception_type", "source"];
+    const apart = fields.every((k) => appendCapped([base], [{ ...base, [k]: `${base[/** @type {keyof typeof base} */ (k)]}-2` }], entryId).added === 1);
+    const same = ["gist", "reason", "by"].every((k) => appendCapped([base], [{ ...base, [k]: "different" }], entryId).added === 0);
+    return apart && same;
   });
   t("a legacy `examples` list is carried into confirmed_examples, never lost", () => {
     const legacyRead = { entries: [{ scope: S, key: "hotspot::src/l.ts", value: JSON.stringify({ v: 1, path: "src/l.ts", confirmed: 3, examples: [{ pr: 7, fp: "z" }] }) }], missing: [] };

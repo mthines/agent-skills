@@ -891,7 +891,7 @@ async function modeDeployRegression() {
       log(`Regression on unflagged ${path} → hotspot missed`);
       writeHotspot({
         repo, path, prNumber, kind: "missed",
-        detail: { pr: Number(prNumber), exception_type: reg.exception_type ?? null, source: "post-deploy" },
+        detail: { pr: Number(prNumber), symbol: reg.symbol ?? null, exception_type: reg.exception_type ?? null, source: "post-deploy" },
       });
       continue;
     }
