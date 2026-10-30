@@ -50,7 +50,7 @@ import { execFile, execFileSync, spawn } from "node:child_process";
 import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, openSync, closeSync, statSync, rmSync, rmdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, posix, resolve as pathResolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
@@ -862,16 +862,64 @@ export function scopePathsFor({ mode, deltaFiles, prFiles }) {
 /**
  * Whether the report carries the impact-map diagram (posting.md § The impact image). Keyed on the
  * PR's structure, never on findings: the diagram orients the reader, so a wide clean PR earns one
- * and a one-file PR with findings does not.
- * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null }} args
+ * and a one-file PR with findings does not. `host` (probeImpactImageHost's result) then rules out a
+ * host that cannot draw or upload it, so that skip is an expected outcome rather than a failed step;
+ * an absent or `null` host leaves the structural decision standing.
+ * @param {{ fileCount: number, shapes?: string[] | null, band?: string | null,
+ *   host?: { browser: string | null, upload: string | null } | null }} args
  * @returns {{ eligible: boolean, reason: string }}
  */
-export function impactImageGate({ fileCount, shapes, band }) {
-  if (fileCount < 2) return { eligible: false, reason: "single-file diff" };
-  if ((shapes || []).includes("test-only")) return { eligible: false, reason: "test-only diff" };
-  if (band === "medium" || band === "high") return { eligible: true, reason: `blast radius ${band}` };
-  if (fileCount >= 8) return { eligible: true, reason: `${fileCount} files changed` };
-  return { eligible: false, reason: `blast radius ${band || "unknown"}, ${fileCount} files` };
+export function impactImageGate({ fileCount, shapes, band, host }) {
+  const structural = (() => {
+    if (fileCount < 2) return { eligible: false, reason: "single-file diff" };
+    if ((shapes || []).includes("test-only")) return { eligible: false, reason: "test-only diff" };
+    if (band === "medium" || band === "high") return { eligible: true, reason: `blast radius ${band}` };
+    if (fileCount >= 8) return { eligible: true, reason: `${fileCount} files changed` };
+    return { eligible: false, reason: `blast radius ${band || "unknown"}, ${fileCount} files` };
+  })();
+  if (!structural.eligible || !host) return structural;
+  if (!host.browser) return { eligible: false, reason: "no browser on host" };
+  if (!host.upload) return { eligible: false, reason: "no upload credential on host" };
+  return structural;
+}
+
+/** @param {string} cmd @param {string[]} args @returns {string|null} trimmed stdout, or null on any failure */
+function runQuiet(cmd, args) {
+  try {
+    const out = execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim();
+    return out || null;
+  } catch { return null; }
+}
+
+/**
+ * What this host can do for the impact image: the browser impact-map's render-png.mjs would use
+ * (its own findBrowser(), so the two cannot disagree), and whether attach-media's upload ladder has a
+ * credential to start from ($GH_TOKEN, $GITHUB_TOKEN, or `gh auth token`; no network call). `null`
+ * when render-png.mjs is in none of the known install layouts — the host is then unknown, and
+ * impactImageGate keeps its structural decision.
+ * @param {{ here?: string, env?: Record<string, string|undefined>, exists?: (p: string) => boolean,
+ *   importer?: (p: string) => Promise<any>, run?: (cmd: string, args: string[]) => string|null }} [deps]
+ * @returns {Promise<{ browser: string|null, upload: string|null } | null>}
+ */
+export async function probeImpactImageHost({
+  here = HERE, env = process.env, exists = existsSync,
+  importer = (p) => import(pathToFileURL(p).href), run = runQuiet,
+} = {}) {
+  // The copy beside this script first: it is from the same commit.
+  const renderPng = [
+    join(here, "../../skills/impact-map/scripts/render-png.mjs"),                                         // installed tree
+    join(here, "../../../skills/quality/impact-map/scripts/render-png.mjs"),                              // this repo
+    env.AGENT_SKILLS_ROOT ? join(env.AGENT_SKILLS_ROOT, "skills/impact-map/scripts/render-png.mjs") : null, // Agent0 install
+  ].find((p) => p && exists(p));
+  if (!renderPng) return null;
+  let browser;
+  try {
+    const mod = await importer(renderPng);
+    if (typeof mod.findBrowser !== "function") return null;
+    browser = mod.findBrowser({ env }) || null;
+  } catch { return null; }
+  const upload = env.GH_TOKEN || env.GITHUB_TOKEN ? "token in env" : run("gh", ["auth", "token"]) ? "gh auth token" : null;
+  return { browser, upload };
 }
 
 /**
@@ -2312,6 +2360,12 @@ async function prepare(opts) {
 
   timing.end(); // triage-routing
 
+  // Probed only when the PR's structure already earns the image: the probe is the costly half.
+  const impactImageArgs = { fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band };
+  const impactImage = impactImageGate(impactImageArgs).eligible
+    ? impactImageGate({ ...impactImageArgs, host: await probeImpactImageHost() })
+    : impactImageGate(impactImageArgs);
+
   const context = {
     v: 1,
     generatedAt: new Date().toISOString(),
@@ -2489,7 +2543,7 @@ async function prepare(opts) {
           blastWhy: (impact.blast_radius?.why || []).slice(0, 5),
         }
       : null,
-    impactImage: impactImageGate({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band }),
+    impactImage,
     impact: opts.inlinePayloads ? impact : null,
 
     routing,
@@ -2555,6 +2609,31 @@ async function selfTest() {
       && !g({ fileCount: 1, band: "high" }).eligible
       && !g({ fileCount: 9, band: "high", shapes: ["test-only"] }).eligible
       && !g({ fileCount: 3, band: "low" }).eligible;
+  });
+  t("impactImageGate: a host with no browser or no upload credential is an expected skip, an unknown host is not", () => {
+    const g = impactImageGate;
+    const wide = { fileCount: 12, band: "high" };
+    return g({ ...wide, host: { browser: null, upload: "gh auth token" } }).reason === "no browser on host"
+      && !g({ ...wide, host: { browser: null, upload: "x" } }).eligible
+      && g({ ...wide, host: { browser: "/c", upload: null } }).reason === "no upload credential on host"
+      && g({ ...wide, host: { browser: "/c", upload: "x" } }).eligible
+      && g({ ...wide, host: null }).eligible
+      // A structurally ineligible PR keeps its own reason; the host never overrides it.
+      && g({ fileCount: 1, band: "high", host: { browser: null, upload: null } }).reason === "single-file diff";
+  });
+  t("probeImpactImageHost reads render-png's findBrowser and the upload credential; unknown when render-png is absent", async () => {
+    const here = "/r/agents/pr-reviewer/scripts";
+    const repoPng = "/r/skills/quality/impact-map/scripts/render-png.mjs";
+    const mod = (/** @type {string|null} */ b) => async () => ({ findBrowser: () => b });
+    const a = await probeImpactImageHost({ here, env: {}, exists: (p) => p === repoPng, importer: mod("/c"), run: () => "tok" });
+    const b = await probeImpactImageHost({ here, env: { GH_TOKEN: "x" }, exists: (p) => p === repoPng, importer: mod(null), run: () => null });
+    const c = await probeImpactImageHost({ here, env: {}, exists: (p) => p === repoPng, importer: mod("/c"), run: () => null });
+    const d = await probeImpactImageHost({ here, env: {}, exists: () => false, importer: mod("/c"), run: () => "tok" });
+    const agent0 = "/ws/pr-reviewer/skills/impact-map/scripts/render-png.mjs";
+    const e = await probeImpactImageHost({ here: "/elsewhere", env: { AGENT_SKILLS_ROOT: "/ws/pr-reviewer" }, exists: (p) => p === agent0, importer: mod("/c"), run: () => "tok" });
+    return a?.browser === "/c" && a.upload === "gh auth token"
+      && b?.browser === null && b.upload === "token in env"
+      && c?.upload === null && d === null && e?.browser === "/c";
   });
 
   // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no

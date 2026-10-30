@@ -118,9 +118,10 @@ There is no second, hand-assembled JSON file: every slot the old manual payload 
 
 #### The impact image
 
-Add the impact-map diagram when `context.impactImage.eligible` is `true` — `prepare-review.mjs` decides from the PR's structure, never from findings, so do not re-judge it.
+Add the impact-map diagram when `context.impactImage.eligible` is `true` — `prepare-review.mjs` decides from the PR's structure, never from findings, then rules out a host that has no browser for `render-png.mjs` or no credential for `attach-media` (`reason: no browser on host` / `no upload credential on host`), so do not re-judge it.
 With findings, its badges are the findings table's row numbers; with none, `impact-map` draws it unbadged and the image sits under the headline.
 Every run states the outcome in Step 5: `impact image added`, `skipped (<context.impactImage.reason>)`, or `failed (<step>: <error>)`.
+The outcome goes in Step 5 only, never in `RUN_ANOMALY`: the image changes nothing this run reviewed, and `skipped (no browser on host)` is the expected outcome on a host installed without a browser.
 
 ```bash
 # 1. Number the findings: a dry run writes the body without posting it. --no-telemetry keeps

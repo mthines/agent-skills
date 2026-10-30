@@ -54,7 +54,9 @@ node "${CLAUDE_SKILL_DIR}/scripts/render-png.mjs" <page.html> <out-dir>
 # → <out-dir>/what-changes-light.png, <out-dir>/what-changes-dark.png
 ```
 
-It needs Chrome or Chromium (`$CHROME`, the macOS app, `google-chrome`, `chromium`, or a Playwright cache).
+It needs Chrome or Chromium: `$CHROME`, the macOS app, `google-chrome`, `chromium`, or a Playwright `chromium-*` or `chromium_headless_shell-*` install under `$PLAYWRIGHT_BROWSERS_PATH` or the default cache.
+`node render-png.mjs --find-browser` prints the one it would use, and exits 2 when there is none.
+Run as root, it adds `--no-sandbox`, without which Chromium refuses to start.
 Open both PNGs with the Read tool before uploading: badges on box corners, no clipped text, nothing sensitive.
 
 ## Comment and body

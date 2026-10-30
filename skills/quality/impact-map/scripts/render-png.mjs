@@ -3,6 +3,7 @@
 //
 // Usage:
 //   node render-png.mjs <page.html> <out-dir>
+//   node render-png.mjs --find-browser     # print the browser it would use; exit 2 when none
 //   node render-png.mjs --self-test
 //
 // Writes <out-dir>/what-changes-light.png and <out-dir>/what-changes-dark.png at 2x scale.
@@ -41,35 +42,68 @@ html,body{margin:0} body{padding:20px 24px;width:${PAGE_WIDTH}px}
 <body><div class="wrap">${parts.legend}<div class="box">${parts.svg}</div></div></body></html>`;
 }
 
-function findBrowser() {
+// Browser layouts inside one Playwright revision directory, by directory prefix. A full Chromium is
+// preferred; the headless shell renders the same screenshot and is all some hosts install.
+const PLAYWRIGHT_LAYOUTS = [
+  ["chromium-", [
+    "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
+    "chrome-linux/chrome",
+    "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    "chrome-linux64/chrome",
+  ]],
+  ["chromium_headless_shell-", [
+    "chrome-headless-shell-linux64/chrome-headless-shell",
+    "chrome-linux/headless_shell",
+    "chrome-headless-shell-mac-arm64/chrome-headless-shell",
+    "chrome-headless-shell-mac-x64/chrome-headless-shell",
+    "chrome-mac/headless_shell",
+  ]],
+];
+
+/** Newest Playwright revision first: `chromium-1248` before `chromium-999`. */
+const byRevisionDesc = (a, b) => Number(b.replace(/\D+/g, "")) - Number(a.replace(/\D+/g, ""));
+
+// The first existing browser: $CHROME, the system installs, then every Playwright cache root —
+// $PLAYWRIGHT_BROWSERS_PATH (where the Agent0 installer puts it) before the default cache.
+export function findBrowser({ env = process.env, home = homedir(), platform = process.platform,
+  exists = existsSync, list = readdirSync } = {}) {
   const candidates = [
-    process.env.CHROME,
+    env.CHROME,
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
     "/usr/bin/google-chrome",
     "/usr/bin/chromium",
     "/usr/bin/chromium-browser",
   ];
-  const cache = join(homedir(), process.platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright");
-  if (existsSync(cache)) {
-    for (const dir of readdirSync(cache).filter((d) => d.startsWith("chromium-")).sort().reverse()) {
-      candidates.push(
-        join(cache, dir, "chrome-mac/Chromium.app/Contents/MacOS/Chromium"),
-        join(cache, dir, "chrome-linux/chrome"),
-        join(cache, dir, "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
-        join(cache, dir, "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"),
-        join(cache, dir, "chrome-linux64/chrome"),
-      );
+  const roots = [
+    env.PLAYWRIGHT_BROWSERS_PATH && env.PLAYWRIGHT_BROWSERS_PATH !== "0" ? env.PLAYWRIGHT_BROWSERS_PATH : null,
+    join(home, platform === "darwin" ? "Library/Caches/ms-playwright" : ".cache/ms-playwright"),
+  ].filter((r) => r && exists(r));
+  for (const [prefix, layouts] of PLAYWRIGHT_LAYOUTS) {
+    for (const root of roots) {
+      for (const dir of list(root).filter((d) => d.startsWith(prefix)).sort(byRevisionDesc)) {
+        candidates.push(...layouts.map((l) => join(root, dir, l)));
+      }
     }
   }
-  return candidates.find((p) => p && existsSync(p)) ?? null;
+  return candidates.find((p) => p && exists(p)) ?? null;
+}
+
+// Chromium refuses to start as root without --no-sandbox, which is how an Agent0 sandbox runs.
+export function browserArgs({ width, height, png, url, root = process.getuid?.() === 0 }) {
+  return [
+    "--headless=new", ...(root ? ["--no-sandbox"] : []), "--disable-gpu", "--hide-scrollbars",
+    "--force-device-scale-factor=2", "--virtual-time-budget=4000", `--window-size=${width},${height}`,
+    `--screenshot=${png}`, url,
+  ];
 }
 
 function render(pagePath, outDir) {
   const parts = extract(readFileSync(pagePath, "utf8"));
   if (!parts) { console.error("no <style>, .fig-scroll <svg>, or viewBox found — was the page built from templates/page.html?"); return 1; }
   const browser = findBrowser();
-  if (!browser) { console.error("no Chrome or Chromium found; set CHROME=/path/to/chrome"); return 2; }
+  if (!browser) { console.error("no Chrome or Chromium found; set CHROME=/path/to/chrome or PLAYWRIGHT_BROWSERS_PATH"); return 2; }
   mkdirSync(outDir, { recursive: true });
   const work = join(tmpdir(), `impact-map-${process.pid}`);
   mkdirSync(work, { recursive: true });
@@ -77,11 +111,14 @@ function render(pagePath, outDir) {
     const html = join(work, `diagram-${theme}.html`);
     const png = resolve(outDir, `what-changes-${theme}.png`);
     writeFileSync(html, themedPage(parts, theme));
-    execFileSync(browser, [
-      "--headless=new", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=2",
-      "--virtual-time-budget=4000", `--window-size=${PAGE_WIDTH},${parts.height}`,
-      `--screenshot=${png}`, pathToFileURL(html).href,
-    ], { stdio: "ignore" });
+    try {
+      execFileSync(browser, browserArgs({ width: PAGE_WIDTH, height: parts.height, png, url: pathToFileURL(html).href }),
+        { stdio: ["ignore", "ignore", "pipe"], timeout: 60000 });
+    } catch (err) {
+      const why = String(err.stderr || err.message).trim().split("\n").filter(Boolean).pop() || "unknown error";
+      console.error(`render failed (${theme}, ${browser}): ${why}`);
+      return 1;
+    }
     if (!existsSync(png)) { console.error(`render failed: ${png}`); return 1; }
     console.log(png);
   }
@@ -100,6 +137,30 @@ function selfTest() {
     ["dark page carries data-theme", themedPage(p, "dark").includes('data-theme="dark"'), true],
     ["a page without a diagram is rejected", extract("<style></style>"), null],
   ];
+  // findBrowser over a fake filesystem: an Agent0 install has only Playwright's browsers, under
+  // $PLAYWRIGHT_BROWSERS_PATH, sometimes only the headless shell.
+  const PW = "/ws/playwright/browsers";
+  const fakeFs = (paths) => {
+    const set = new Set(paths);
+    const exists = (p) => set.has(p) || [...set].some((q) => q.startsWith(`${p}/`));
+    const list = (dir) => [...new Set([...set].filter((q) => q.startsWith(`${dir}/`)).map((q) => q.slice(dir.length + 1).split("/")[0]))];
+    return { exists, list, home: "/home/u", platform: "linux" };
+  };
+  const shell = `${PW}/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell`;
+  const full = `${PW}/chromium-1248/chrome-linux64/chrome`;
+  const env = { PLAYWRIGHT_BROWSERS_PATH: PW };
+  checks.push(
+    ["finds the headless shell under $PLAYWRIGHT_BROWSERS_PATH", findBrowser({ env, ...fakeFs([shell]) }), shell],
+    ["prefers a full Chromium over the headless shell", findBrowser({ env, ...fakeFs([shell, full]) }), full],
+    ["picks the newest revision, compared as numbers", findBrowser({ env, ...fakeFs([`${PW}/chromium-999/chrome-linux64/chrome`, full]) }), full],
+    ["still finds the default ~/.cache/ms-playwright", findBrowser({ env: {}, ...fakeFs(["/home/u/.cache/ms-playwright/chromium-1/chrome-linux/chrome"]) }),
+      "/home/u/.cache/ms-playwright/chromium-1/chrome-linux/chrome"],
+    ["$CHROME wins over every cache", findBrowser({ env: { ...env, CHROME: "/opt/c" }, ...fakeFs([full, "/opt/c"]) }), "/opt/c"],
+    ["no browser anywhere is null", findBrowser({ env, ...fakeFs([]) }), null],
+    ["PLAYWRIGHT_BROWSERS_PATH=0 is not a directory to search", findBrowser({ env: { PLAYWRIGHT_BROWSERS_PATH: "0" }, ...fakeFs(["0/chromium-1/chrome-linux/chrome"]) }), null],
+    ["root adds --no-sandbox", browserArgs({ width: 1, height: 1, png: "p", url: "u", root: true }).includes("--no-sandbox"), true],
+    ["a non-root user gets no --no-sandbox", browserArgs({ width: 1, height: 1, png: "p", url: "u", root: false }).includes("--no-sandbox"), false],
+  );
   let failed = 0;
   for (const [name, got, want] of checks) {
     const ok = got === want;
@@ -111,7 +172,12 @@ function selfTest() {
 
 function main(argv) {
   if (argv[0] === "--self-test") return selfTest();
-  if (argv.length !== 2) { console.error("usage: render-png.mjs <page.html> <out-dir> | --self-test"); return 2; }
+  if (argv[0] === "--find-browser") {
+    const b = findBrowser();
+    if (b) console.log(b); else console.error("no Chrome or Chromium found");
+    return b ? 0 : 2;
+  }
+  if (argv.length !== 2) { console.error("usage: render-png.mjs <page.html> <out-dir> | --find-browser | --self-test"); return 2; }
   return render(argv[0], argv[1]);
 }
 
