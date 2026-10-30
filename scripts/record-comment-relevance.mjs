@@ -60,6 +60,15 @@ import { readFileSync, realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { extractFingerprint, isFingerprintV2, parseFingerprint } from "../agents/pr-reviewer/scripts/fingerprint.mjs";
 
+// The hotspot merge is shared with the reviewer's Step 4d. It is loaded lazily because the reusable
+// workflow sparse-checks out the recorder file by file: a checkout without this script skips the
+// hotspot write (logged), never fails the job, and never writes an unmerged record.
+/** @type {null | ((args: any) => any)} */
+let planMemoryWrites = null;
+try {
+  ({ planMemoryWrites } = await import("../agents/pr-reviewer/scripts/merge-memory-record.mjs"));
+} catch { /* left null: writeHotspot reports and skips */ }
+
 /** Relevance-signal TTL. Mirrored in CLAUDE.md, comment-relevance-memory.md, the plugin
  *  README and implement-suggestion's SKILL.md; change every copy in the same commit. */
 const RELEVANCE_TTL_MS = 60 * 24 * 60 * 60 * 1000;
@@ -417,34 +426,92 @@ export function decideDeployRegression({ flagged, dismissed, fixedBeforeMerge })
 }
 
 // ── LoreKit writes ───────────────────────────────────────────────────────────────
+//
+// Every call goes through the LoreKit CLI with an argv array and NO shell: keys and values carry
+// PR text (a file path, a fingerprint), and a `$(…)` in a double-quoted shell string runs. The CLI
+// is pinned because its command surface is this file's contract: an unpinned `npx` once resolved
+// to a CLI with no `memory` subcommand, and every write failed as a logged no-op.
+
+export const LOREKIT_CLI = "@lorekit/cli@1.76.0";
+/** The hosted LoreKit MCP endpoint (lorekit docs/mcp-tools.md); a self-hosted caller overrides it. */
+export const LOREKIT_DEFAULT_ENDPOINT = "https://pqokxlhvnosogizsjztg.supabase.co/functions/v1/mcp";
+
+/**
+ * The CLI's environment: the token under the name the CLI reads (`LOREKIT_TOKEN`), the endpoint,
+ * and telemetry off. `null` without a token — the recorder is then unconfigured and skips.
+ * @param {Record<string, string|undefined>} env
+ */
+export function lorekitEnv(env = process.env) {
+  const token = env.LOREKIT_API_KEY || env.LOREKIT_TOKEN;
+  if (!token) return null;
+  return {
+    ...env,
+    LOREKIT_TOKEN: token,
+    LOREKIT_MCP_URL: env.LOREKIT_MCP_URL || env.LOREKIT_ENDPOINT || LOREKIT_DEFAULT_ENDPOINT,
+    LOREKIT_TELEMETRY: "0",
+  };
+}
+
+/** The argv of one remote write. `--remote` so a CLI that cannot reach the store fails instead of
+ *  writing to the runner's disk, where nothing will ever read it. */
+export function lorekitWriteArgs({ scope, key, value, tags, kind, host, ttlDays }) {
+  return [
+    "write", "--scope", scope, "--key", key,
+    "--value", typeof value === "string" ? value : JSON.stringify(value),
+    "--tags", tags.join(","),
+    ...(kind ? ["--kind", kind] : []),
+    ...(host ? ["--host", host] : []),
+    ...(ttlDays ? ["--ttl-days", String(ttlDays)] : []),
+    "--source-agent", "github-actions/reviewer-comment-relevance",
+    "--remote", "--json",
+  ];
+}
+
+/**
+ * Reads `lorekit show --json` output: the remote record's value, a confirmed absence, or an
+ * unreadable store. Only "absent" licenses a first write; "unavailable" licenses none.
+ * @param {string} stdout
+ * @returns {{ status: "found", value: string } | { status: "absent" } | { status: "unavailable", reason: string }}
+ */
+export function parseShow(stdout) {
+  let j;
+  try { j = JSON.parse(stdout); } catch { return { status: "unavailable", reason: "unparseable show output" }; }
+  const remote = j && j.remote;
+  if (!remote || remote.available !== true) return { status: "unavailable", reason: remote?.reason || "remote store unavailable" };
+  if (remote.found === true && typeof remote.record?.value === "string") return { status: "found", value: remote.record.value };
+  if (remote.found === false) return { status: "absent" };
+  return { status: "unavailable", reason: "remote record had no value" };
+}
+
+/** @param {string[]} args @param {Record<string, string|undefined>} env @returns {string} stdout; throws on a non-zero exit */
+function runLorekit(args, env) {
+  return execFileSync("npx", ["--yes", LOREKIT_CLI, ...args], {
+    env, encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+/** One record's current remote state. `show` exits 1 when the key is in neither store, so the
+ *  JSON is read from the failed call's stdout too. */
+function lorekitRead({ scope, key }, env, run = runLorekit) {
+  let out = "";
+  try { out = run(["show", "--scope", scope, "--key", key, "--json"], env); }
+  catch (err) { out = String(err.stdout || ""); }
+  return parseShow(out);
+}
 
 function lorekitWrite({ scope, key, value, tags, kind, host, ttlMs }) {
-  const apiKey = process.env.LOREKIT_API_KEY;
-  if (!apiKey) {
+  const env = lorekitEnv();
+  if (!env) {
     log("LOREKIT_API_KEY not set — skipping write (configure the secret to enable memory recording).");
     return false;
   }
   try {
-    execSync(
-      `npx --yes @lorekit/cli memory write` +
-      ` --scope ${JSON.stringify(scope)}` +
-      ` --key ${JSON.stringify(key)}` +
-      ` --value ${JSON.stringify(JSON.stringify(value))}` +
-      ` --tags ${JSON.stringify(tags.join(","))}` +
-      (kind ? ` --kind ${JSON.stringify(kind)}` : "") +
-      (host ? ` --host ${JSON.stringify(host)}` : "") +
-      ` --source-agent "github-actions/reviewer-comment-relevance"`,
-      {
-        env: { ...process.env, LOREKIT_API_KEY: apiKey },
-        encoding: "utf8",
-        timeout: 30_000,
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+    const ttlDays = ttlMs ? Math.round(ttlMs / (24 * 60 * 60 * 1000)) : undefined;
+    runLorekit(lorekitWriteArgs({ scope, key, value, tags, kind, host, ttlDays }), env);
     log(`Wrote ${key} (scope: ${scope})`);
     return true;
   } catch (err) {
-    log("LoreKit write failed (non-blocking):", err.message);
+    log("LoreKit write failed (non-blocking):", String(err.stderr || err.message).trim().split("\n").pop());
     return false;
   }
 }
@@ -495,20 +562,50 @@ function writeRelevance({ repo, fpInfo, relevance, resolutionMethod, reason, com
   });
 }
 
+/**
+ * The hotspot value to write, merged onto the record the read returned — the same
+ * merge-memory-record.mjs the reviewer's Step 4d uses, so the two writers compose instead of one
+ * resetting the other's counters. `existing` is lorekitRead's result; an unreadable store, or a
+ * merge that refuses the record, writes nothing.
+ * @returns {{ value: string } | { skip: string }}
+ */
+export function buildHotspotWrite({ scope, path, prNumber, kind, detail, existing, now, plan = planMemoryWrites }) {
+  const key = `hotspot::${path}`;
+  if (!plan) return { skip: "merge-memory-record.mjs is not checked out beside the recorder; add it to the workflow's sparse-checkout" };
+  if (existing.status === "unavailable") return { skip: `could not read ${key} (${existing.reason}); not writing blind` };
+  const read = existing.status === "found"
+    ? { entries: [{ scope, key, value: existing.value }], missing: [] }
+    : { entries: [], missing: [`${scope}::${key}`] };
+  const update = {
+    path,
+    [`${kind}_examples`]: [detail || { pr: Number(prNumber) }],
+    last_touched_by: [`#${prNumber}`],
+  };
+  const result = plan({ read, updates: [{ scope, key, update }], now });
+  if (result.writes.length === 0) return { skip: result.skipped[0]?.reason || "merge produced no write" };
+  return { value: result.writes[0].value };
+}
+
 /** Per-file defect counters that outlive the branch (proposal § 4.7.2). */
 function writeHotspot({ repo, path, prNumber, kind, detail }) {
-  const record = {
-    v: 1,
-    path,
-    [kind]: 1,
-    ...(detail ? { [`${kind}_examples`]: [detail] } : {}),
-    last_touched_by: [{ pr: Number(prNumber), at: new Date().toISOString() }],
-    expires: new Date(Date.now() + KNOWLEDGE_TTL_MS).toISOString(),
-  };
+  const env = lorekitEnv();
+  if (!env) {
+    log("LOREKIT_API_KEY not set — skipping write (configure the secret to enable memory recording).");
+    return false;
+  }
+  const scope = `repo::${repo.toLowerCase()}`;
+  const key = `hotspot::${path}`;
+  const built = buildHotspotWrite({
+    scope, path, prNumber, kind, detail, existing: lorekitRead({ scope, key }, env), now: new Date().toISOString(),
+  });
+  if ("skip" in built) {
+    log(`No hotspot write for ${path}: ${built.skip}`);
+    return false;
+  }
   return lorekitWrite({
-    scope: `repo::${repo.toLowerCase()}`,
-    key: `hotspot::${path}`,
-    value: record,
+    scope,
+    key,
+    value: built.value,
     tags: ["codebase-knowledge", `signal::${kind}`],
     // `signal`, not `bus`: a hotspot is a durable per-repo priority input read at the
     // start of every run, not raw material awaiting distillation. `kind`/`host` are set
@@ -1025,6 +1122,66 @@ function selfTest() {
 
   t("severity is read from the visible tier label", () =>
     severityFromBody("issue (high): x") === "high" && severityFromBody("issue: x") === null);
+
+  // ── LoreKit I/O: argv-only CLI calls, and the hotspot merged onto what the read returned ──
+  t("lorekit: a key carrying $(…) stays one literal argv element — no shell ever sees it", () => {
+    const a = lorekitWriteArgs({ scope: "repo::o/r", key: "hotspot::$(id).ts", value: { v: 1 }, tags: ["codebase-knowledge"], kind: "signal", host: "reviewer", ttlDays: 90 });
+    return a[a.indexOf("--key") + 1] === "hotspot::$(id).ts" && a.includes("--remote")
+      && a[a.indexOf("--kind") + 1] === "signal" && a[a.indexOf("--host") + 1] === "reviewer"
+      && a[a.indexOf("--ttl-days") + 1] === "90" && a[a.indexOf("--value") + 1] === '{"v":1}' && a[0] === "write";
+  });
+  t("lorekit: the CLI is pinned, and the source never routes a LoreKit call through a shell", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    // Patterns built from parts, so this test's own source cannot match them.
+    const shellNpx = new RegExp(["execSync\\(\\s*", "`npx"].join(""));
+    const oldCommand = new RegExp(["cli", "memory", "write"].join(" "));
+    return /^@lorekit\/cli@\d+\.\d+\.\d+$/.test(LOREKIT_CLI) && !shellNpx.test(src) && !oldCommand.test(src);
+  });
+  t("lorekit: the token is passed as LOREKIT_TOKEN, with the hosted endpoint by default; no token, no env", () => {
+    const e = lorekitEnv({ LOREKIT_API_KEY: "lk_rw_x" });
+    const self = lorekitEnv({ LOREKIT_API_KEY: "lk_rw_x", LOREKIT_MCP_URL: "https://self/functions/v1/mcp" });
+    return e.LOREKIT_TOKEN === "lk_rw_x" && e.LOREKIT_MCP_URL === LOREKIT_DEFAULT_ENDPOINT && e.LOREKIT_TELEMETRY === "0"
+      && self.LOREKIT_MCP_URL === "https://self/functions/v1/mcp" && lorekitEnv({}) === null;
+  });
+  t("lorekit: show --json is read as found / absent / unavailable, never guessed", () => {
+    const show = (remote) => JSON.stringify({ scope: "s", key: "k", offline: { available: true, found: false, record: null }, remote });
+    const found = parseShow(show({ available: true, found: true, record: { value: '{"v":1}' } }));
+    const absent = parseShow(show({ available: true, found: false, record: null }));
+    const down = parseShow(show({ available: false, reason: "no endpoint configured", found: false, record: null }));
+    return found.status === "found" && found.value === '{"v":1}' && absent.status === "absent"
+      && down.status === "unavailable" && /no endpoint/.test(down.reason) && parseShow("Unknown command").status === "unavailable";
+  });
+  t("lorekit: a read that exits 1 (key in neither store) is still parsed as absent", () => {
+    const run = () => { const e = new Error("exit 1"); e.stdout = JSON.stringify({ remote: { available: true, found: false, record: null } }); throw e; };
+    return lorekitRead({ scope: "s", key: "k" }, {}, run).status === "absent";
+  });
+  {
+    const NOW = "2026-10-30T00:00:00.000Z";
+    const base = { scope: "repo::o/r", path: "src/a.ts", prNumber: 9, kind: "missed", now: NOW };
+    const existing = { status: "found", value: JSON.stringify({ v: 1, path: "src/a.ts", confirmed: 6, missed: 1, regressed: 0, flaky: 0,
+      classes: ["logic"], confirmed_examples: [{ pr: 1, sha: "a", fp: "x" }], missed_examples: [{ pr: 2, line: 4, by: "h" }], last_touched_by: ["#1"] }) };
+    t("hotspot: a missed signal is merged onto the stored record — confirmed carries through, missed rises by one", () => {
+      const v = JSON.parse(buildHotspotWrite({ ...base, detail: { pr: 9, line: 12, by: "h" }, existing }).value);
+      return v.confirmed === 6 && v.missed === 2 && v.missed_examples.length === 2 && v.classes[0] === "logic"
+        && JSON.stringify(v.last_touched_by) === JSON.stringify(["#1", "#9"]);
+    });
+    t("hotspot: a replayed signal adds nothing", () => {
+      const v = JSON.parse(buildHotspotWrite({ ...base, detail: { pr: 2, line: 4, by: "h" }, existing }).value);
+      return v.missed === 1 && v.missed_examples.length === 1;
+    });
+    t("hotspot: an absent record is written fresh with its one example", () => {
+      const v = JSON.parse(buildHotspotWrite({ ...base, detail: { pr: 9, line: 12 }, existing: { status: "absent" } }).value);
+      return v.missed === 1 && v.confirmed === 0 && v.missed_examples.length === 1;
+    });
+    t("hotspot: an unreadable store writes nothing", () =>
+      "skip" in buildHotspotWrite({ ...base, detail: { pr: 9 }, existing: { status: "unavailable", reason: "timeout" } }));
+    t("hotspot: a prose record is left untouched", () =>
+      "skip" in buildHotspotWrite({ ...base, detail: { pr: 9 }, existing: { status: "found", value: "## hotspot notes" } }));
+    t("hotspot: without the merge script checked out, the write is skipped — never written unmerged", () => {
+      const r = buildHotspotWrite({ ...base, detail: { pr: 9 }, existing: { status: "absent" }, plan: null });
+      return "skip" in r && /sparse-checkout/.test(r.skip);
+    });
+  }
 
   let failed = 0;
   for (const [name, fn] of cases) {
