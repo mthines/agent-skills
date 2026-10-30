@@ -135,7 +135,7 @@
     "id": "size-scaled-small-first-run",
     "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 40, "newFiles": 1 },
     "expected": "standard",
-    "notes": "Size scaling: a first run of a 40-line PR with no risk trigger waives D1/D6/D13 and lands in the 31-300 band."
+    "notes": "Size scaling: a first run of a 40-line PR with no risk trigger waives D1/D6/D13 and lands in the 31-400 band."
   },
   {
     "id": "size-scaled-tiny-first-run",
@@ -163,9 +163,9 @@
   },
   {
     "id": "size-scaled-large-first-run-deep",
-    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 400, "newFiles": 3 },
+    "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["code"], "deltaLines": 500, "newFiles": 3 },
     "expected": "deep",
-    "notes": "Over SMALL_PR_LINES (300): size scaling does not apply, so D1 and D12 stand."
+    "notes": "Over SMALL_PR_LINES (400): size scaling does not apply, so D1 and D12 stand."
   },
   {
     "id": "size-scaling-not-on-rerun",

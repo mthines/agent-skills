@@ -70,7 +70,7 @@ Why these rules exist: `agents/pr-reviewer/references/agent-body-rationale.md` (
 
 - Stop and report if no PR reference is found; report BLOCKED if the inline sub-pipeline fails twice.
 - Tool-call budget: **60** calls for ≤ 10 changed files, **120** for 11–30, **200** for > 30 (the larger of the fetched file list and GitHub's `changedFiles` count), times the thoroughness multiplier — read `budget.toolCalls` off `context.json` ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#thoroughness-budget)). `--full` on a large PR always uses the top band.
-- Memory calls sit **inside** that total: the PR-state `memory_read` (0.7) and `memory_write` (4c) — fixed cost, never traded against the pool — plus **4** `memory_list` (1.0), **2** knowledge calls (1.2a), **1** `memory_search` (1.2c), and a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` records (batched via `refs`). That pool spans three sites — 1.2a (≤ 5, first), 1.2d (at most **half**, rounded down), 2.7b (the remainder); stop at zero at any site. Step 4d's writes, and the one batch `memory_read` before them, sit outside it (`memory.md § Write budget`).
+- Memory calls sit **inside** that total: the PR-state `memory_read` (0.7) and `memory_write` (4c) — fixed cost, never traded against the pool — plus **3** `memory_list` (1.0, none on a lean budget), **2** knowledge calls (1.2a), **2** `memory_search` (1.2c), and a shared **`MEMORY_READ_BUDGET`** of **5 / 10 / 15** `memory_read` records (batched via `refs`). That pool spans three sites — 1.2a (≤ 5, first), 1.2d (at most **half**, rounded down), 2.7b (the remainder); stop at zero at any site. Step 4d's writes, and the one batch `memory_read` before them, sit outside it (`memory.md § Write budget`).
 - If the budget is exhausted, stop and report partial results: the terminal report and the review body (its `PARTIAL_BANNER` slot, never free prose) both carry `⚠️ Partial review — tool budget exhausted after <N> calls; <M> of <T> files scanned.`
 - Never post a GitHub review that was not produced from fully consolidated results.
 
@@ -314,78 +314,58 @@ reviewer — for Gate 3; both count, and only the report's label differs.
 - If `OPEN_BOT_COMMENTS[]` is empty, Gate 3 passes (✅). A non-empty set is graded ⚠️ or ❌ from
   `blocking` and `answered` at Step 1.8.
 
-Also load **comment-relevance memories** and **reviewer-lessons** via a narrow-to-broad fan-out.
+Also load **comment-relevance memories** and **reviewer-lessons**: three ranked lists here, and the
+diff-keyed searches at Step 1.2c, which carry most of the recall.
 **This read is a mandatory attempt.**
 Step 0.7 already touched this backend to read the PR-state record, so **carry that outcome
 forward rather than re-deriving it**: a hard "tool unavailable" there settles `LOREKIT_CONNECTED`
-to `false` here without four more doomed calls, and a successful state read settles it to `true`.
-Only a `STATE_STATUS` of `miss` leaves the question open — a miss is a normal first-run answer from
-a working backend, so the fan-out below still runs and still decides.
+to `false` here without more doomed calls, and a successful state read settles it to `true`.
+Only a `STATE_STATUS` of `miss` leaves the question open, and the lists below still run and decide.
 Issue each line below as a real `mcp__lorekit__memory_list` tool call. On a thrown error, a tool missing from the registry, or a server still connecting, follow
 [`memory-load.md` § When a LoreKit call fails](./pr-reviewer/rules/memory-load.md#when-a-lorekit-call-fails)
 before setting `LOREKIT_CONNECTED`: one transient throw is never `false`, and a `false` is
 re-probed by every later memory step.
 As a sub-agent you get no SessionStart memory priming: run this read yourself.
 
+**On a lean budget (`context.budget.topologyReason == "lean"`) skip these three lists** and rely on
+Step 1.2c's searches alone; when `context.json` is not bound yet, run Step 1.1 first and decide then.
+
 ```text
-# Issue each as a real mcp__lorekit__memory_list tool call (narrow-to-broad).
-# repo:: wins on key collision. Skip expired entries.
-# view="summary" returns key + tags + updated_at + value_bytes + a 200-char preview,
-# NOT the body — this is the index; Step 1.2d resolves the bodies that matter.
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=50 view="summary"
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=50 order="rank" view="summary"
-mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=50 view="summary"
-mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-comment-relevance"] limit=50 order="rank" view="summary"
+# repo:: wins on key collision. Skip expired entries. view="summary" returns key + tags +
+# value_bytes + a 200-char preview, never the body; Step 1.2d resolves the bodies that matter.
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-lessons"]           limit=8  order="rank" view="summary"
+mcp__lorekit__memory_list: scope="global"               tags=["loop::reviewer-lessons"]           limit=10 order="rank" view="summary"
+mcp__lorekit__memory_list: scope="repo::{owner}/{repo}" tags=["loop::reviewer-comment-relevance"] limit=15 order="rank" view="summary"
 ```
 
-**The two `global` reads use `order="rank"`, the `repo::` reads recency** — a recency-ordered
-global page drops the oldest, most mature lessons ([why](./pr-reviewer/references/agent-body-rationale.md#memory-model-step-10)).
+These lists keep the generic lessons and concept-keyed rules a path search cannot reach; global
+relevance rules are reached by the Step 1.2c search, not a list ([why these limits](./pr-reviewer/references/agent-body-rationale.md#memory-model-step-10)).
 
-**This read is keyed by TAG and SCOPE, and by nothing else.** Two filters a reader
-reasonably expects here do not exist, and both absences are deliberate:
+**These lists filter on tag, scope, and expiry, then on source attribution — nothing else.**
 
-- **It is not filtered by the diff.** Whether a lesson's gist has anything to do with
-  *these* changed files does not affect whether these four calls return it — the
-  changed-file list is not even known yet (Step 1.1 computes it). Diff relevance
-  governs only the *additional* Step 1.2c enriched search, which is an **OR** on top
-  of this read, never a filter that can remove something list-reachable. A lesson
-  carrying one of the two tags above surfaces on a PR that shares no symbol with it.
-- **It is not gated on `seen_count`.** `seen_count ≥ 3` is the *promotion* bar — what
-  makes a lesson a should-fire rather than a candidate (see the promotion rules below
-  and `memory.md § Lifecycle`). It is not a surfacing threshold. A `seen_count: 1`
-  lesson is read here and weighed as weak evidence; it is not withheld.
+- **They are not filtered by the diff.** A lesson inside a list's ranked window surfaces on a PR that
+  shares no path or symbol with it; the diff decides only what Step 1.2c's searches add.
+- **They are not gated on `seen_count`.** `seen_count ≥ 3` is the *promotion* bar
+  (`memory.md § Lifecycle`), not a surfacing threshold: a `seen_count: 1` lesson is read and weighed
+  as weak evidence.
 
-What *does* exclude a record is being outside this read's scope: a different loop's
-namespace (`loop::fix-bug-lessons` is not one of the two tags), a scope neither
-`repo::{owner}/{repo}` nor `global`, or falling outside the `limit: 50` window — which
-is the gap Step 1.2c exists to close.
+What excludes a record: a different loop's tag (`loop::fix-bug-lessons`), a scope other than
+`repo::{owner}/{repo}` or `global`, expiry, a source failing
+`source.agent == "pr-reviewer" ∨ source.explicit == true` (Rule 1), or falling outside every list's
+window **and** missing every Step 1.2c search — and, on a lean budget, not matching a search.
 
 Derive `{owner}/{repo}` from `RESOLVED_REPO` (set in Step 0), lowercased.
-Merge both lists per tag (`repo::` wins on key collision).
-Skip expired entries.
+Merge the lists per tag (`repo::` wins on key collision).
 
 **The `scope` parameter matches exactly — it is not a prefix or a hierarchy.**
-`lorekit_memory_list`'s predicate is `m.scope = p_scope`, so `scope="repo::{owner}/{repo}"` returns
-records written at *that* scope and no other: not a `branch::{owner}/{repo}::…` record beneath it,
-and not another repository's `repo::` record. This is load-bearing in both directions — it is why
-[`memory.md`](./pr-reviewer/rules/memory.md) can put per-PR state in a `branch::` scope and rely on
-it staying out of the lesson read, and it is why these two scopes must be listed explicitly rather
-than assumed to be reachable from one broader query.
+`scope="repo::{owner}/{repo}"` returns records written at *that* scope and no other: not a
+`branch::{owner}/{repo}::…` record beneath it, and not another repository's `repo::` record.
 
-**These four calls filter on three things and nothing else — tag, scope, and expiry.**
-They carry no diff parameter and no `seen_count` parameter, so neither narrows what this read returns.
-**A fourth filter then applies to what they returned: source attribution.**
-Rule 1 above binds every read this step issues, so a record failing `source.agent == "pr-reviewer" ∨ source.explicit == true` is dropped here rather than never fetched.
-The distinction is where the filter runs, not whether it applies: such a record does not reach the finders, exactly as a wrong-tag or expired one does not.
-Read together, tag, scope, expiry, and source attribution are the four — and the only four — things that decide whether this step surfaces a record.
-Diff-keying enters later and *additively*: Step 1.2c runs a diff-built `memory_search` on top of these lists, and Step 1.2d shortlists the merged index by changed path and symbol before spending body reads — so a lesson unrelated to these changed files is still in the pool this step loads, and stops being a candidate only downstream, where the diff is actually in hand.
-`seen_count` is not available here at all: it lives in record bodies, and this step loads the index only.
-It governs *promotion* (guard 2 below) and the Step 2.7b suppress / downgrade / promote decision — never whether an entry is returned.
-Narrowing this read by your own sense of what looks relevant to the diff is a defect, not an optimisation.
-The 50-per-tag window exists precisely so relevance is decided after the diff is read, by the steps that have it.
+`seen_count` lives in record bodies, which this step does not load; it governs promotion and the
+Step 2.7b suppress / downgrade / promote decision, never whether an entry is returned.
 
 Bind `SUMMARY_VIEW` once, before the first call: `true` when the live `mcp__lorekit__memory_list`
-schema lists `view` — send `view="summary"` on all four calls (keys, tags, and a preview; Step 1.2d
+schema lists `view` — send `view="summary"` on all three calls (keys, tags, and a preview; Step 1.2d
 fetches the bodies that matter). When the schema lacks `view` or a call rejects it, follow
 [`memory-load.md` § Without `view`](./pr-reviewer/rules/memory-load.md#without-view); a schema
 rejection never flips `LOREKIT_CONNECTED`.
@@ -481,33 +461,45 @@ Delta triage runs in incremental modes only; depth routing runs in every mode. B
 
 ### 1.2c Diff-keyed lesson search (all modes)
 
-The two broad `mcp__lorekit__memory_list` calls in Step 1.0 are capped at 50 per tag; on a large repository the lesson most relevant to *these* changed files can fall outside that window.
-Now that the changed-file list is known (Step 1.1 command A and Step 1.2), run one targeted `mcp__lorekit__memory_search` to pull those in.
+Step 1.0's lists are small and ranked; these searches pull in the lessons and rules keyed to the
+paths and symbols this diff changes.
 
 **Build the five field groups and bind `INTENT_PHRASE` FIRST — unconditionally, before any
 connection check below can skip anything**: Step 1.3 expands `INTENT_PHRASE`, and a skipped or
 failed search must not leave it unset.
 
-Build the query from the diff's own vocabulary, concatenating these five field groups (space-separated) into one query string:
+Collect these five field groups. Only groups 2 and 4 build the search query; groups 3 and 5 bind
+`INTENT_PHRASE` and the integration names Step 1.3 and Step 5 use.
 
 1. **Changed top-level directories** — the first path segment of each changed file.
-2. **Changed file basenames** — each changed file's basename without its extension.
+2. **Changed file paths** — each changed file's full repo-relative path, most-changed first, top 20.
 3. **Dependency-manifest filenames** present in the diff (`package.json`, `go.mod`, `Cargo.toml`, `requirements.txt`, …).
 4. **Changed symbol names** — the function, type, class, and export identifiers that the diff added or modified. Extract them from the `+`-side of the hunks (e.g. a `+function fooBar(`, `+export const baz`, `+type Qux =`, `+class Widget`, `+def handler(` line yields `fooBar`, `baz`, `Qux`, `Widget`, `handler`). Dedupe, then rank deterministically and keep the top 20 so the query stays focused: order by the number of `+`-side lines in the diff that contain the identifier (descending), break ties by first appearance in diff order (file path ascending, then line number ascending), and break any remaining tie by the identifier's byte order.
 5. **Synthesized intent + integrations** — the one-line intent phrase produced from the PR title, body, commit messages, and branch name (Step 1.3's synthesis, hoisted here because the search needs it first), plus any external-integration names detected in the diff (SDK, service, or API identifiers — e.g. `stripe`, `s3`, `oauth`, `graphql`). Bind the phrase to `INTENT_PHRASE`: this step is its **single derivation point**. Detect the integration names here, from the diff alone, by two concrete sources: (a) the package names on `+`-side dependency-manifest lines (group 3's files), and (b) the module specifiers on `+`-side `import` / `require` / `from` / `use` statements, stripped of any leading `@scope/` prefix first, then reduced to the first remaining path segment (`@acme/stripe-sdk` → `stripe-sdk`; `stripe/lib/webhooks` → `stripe`). Keep only third-party specifiers — drop relative (`./`, `../`) and standard-library ones. Never source them from the dependency finder: it runs later, and not at all at `quick`.
 
-In `incremental` and `incremental-quick` modes, key groups 1, 2, and 4 on `REVIEW_DIFF`'s paths and hunks, not the full PR; groups 3 and 5 stay whole-PR.
+In `incremental` and `incremental-quick` modes, key groups 1, 2, and 4 on `REVIEW_DIFF`'s paths and hunks; groups 3 and 5 stay whole-PR.
 
-With `INTENT_PHRASE` bound, now issue the search — skip it when `LOREKIT_CONNECTED` is already
-`false` (the Step 1.0 attempt failed, so there is no backend to search), and otherwise treat an
-error here as a non-blocking addend miss that does NOT flip `LOREKIT_CONNECTED`.
+With `INTENT_PHRASE` bound, issue the searches — skip them when `LOREKIT_CONNECTED` is already
+`false`, and treat an error here as a non-blocking miss that does NOT flip `LOREKIT_CONNECTED`.
+
+**Join the query terms with ` OR `.** `memory_search` ANDs space-separated words, so a
+space-joined query matches nothing; the index treats a path as one token, so use full paths, never
+basenames or directory names.
 
 ```text
-# Issue as a real mcp__lorekit__memory_search tool call.
-mcp__lorekit__memory_search: q="<changed dirs + basenames + manifest names + changed symbol names + synthesized intent + integrations>" scopes=["repo::{owner}/{repo}", "global"] limit=15
+# Issue each as a real mcp__lorekit__memory_search tool call — one per loop tag (tags filter is AND).
+Q = "<group 2 paths> OR <group 4 symbols>", each term joined with " OR "
+mcp__lorekit__memory_search: q=Q scopes=["repo::{owner}/{repo}", "global"] tags=["loop::reviewer-lessons"]           limit=6
+mcp__lorekit__memory_search: q=Q scopes=["repo::{owner}/{repo}", "global"] tags=["loop::reviewer-comment-relevance"] limit=15
 ```
 
-Keep only returned hits carrying the tag `loop::reviewer-lessons` or `loop::reviewer-comment-relevance`, then merge them into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
+```text
+✗ q="agents pr-reviewer route-depth finalize"   → 0 hits (four ANDed words)
+✓ q="agents/pr-reviewer/scripts/route-depth.mjs OR agents/pr-reviewer/scripts/finalize.mjs OR routeDepth"
+```
+
+Search returns full bodies: a hit needs no Step 1.2d read.
+Merge the hits into the pools loaded at Step 1.0 (dedupe by `scope` + `key`; `repo::` wins; skip expired).
 A hit surfaced here is applied exactly as one loaded at Step 1.0 — a `reviewer-lessons` consideration, or a `reviewer-comment-relevance` suppress / downgrade / promote at Step 2.7b.
 Add the number of newly-surfaced, non-duplicate **`reviewer-comment-relevance`** entries to
 `MEMORIES_READ_COUNT` — Step 1.0 owns that counter's definition and it stays relevance-only.

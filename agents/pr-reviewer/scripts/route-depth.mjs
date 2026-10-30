@@ -66,7 +66,7 @@ const SIZE_EXCLUDED_SHAPES = new Set(["docs-only", "test-only", "generated"]);
 /** Size scaling (depth-routing.md § Size scaling): on a first run, a PR at or under SMALL_PR_LINES
  *  changed lines that fires no risk trigger is excused from the history and size triggers (D1, D6,
  *  D12, D13), and routes `quick` at or under TINY_PR_LINES and `standard` above. */
-export const SMALL_PR_LINES = 300;
+export const SMALL_PR_LINES = 400;
 export const TINY_PR_LINES = 30;
 /** The triggers that measure risk; a small PR firing any of them still routes deep. */
 const RISK_TRIGGERS = new Set(["D2", "D3", "D4", "D5", "D7", "D8", "D9", "D10", "D11"]);
@@ -492,7 +492,7 @@ function selfTest() {
   const constOk = FULL_REFRESH_DELTA === 150 && FULL_REFRESH_RUNS === 3 && TRIGGERS.length === 13;
   if (!constOk) fails.push("FULL_REFRESH_DELTA/FULL_REFRESH_RUNS/TRIGGERS drifted from depth-routing.md's stated values");
 
-  const capped = routeDepth({ firstRun: true, deltaLines: 400, depthCapability: "diff-only" });
+  const capped = routeDepth({ firstRun: true, deltaLines: 500, depthCapability: "diff-only" });
   if (!(capped.tier === "standard" && capped.capApplied === true)) fails.push("capability cap did not downgrade a deep-triggering diff-only run to standard");
 
   // ---- resolveBudget: each tier default resolves to the budget depth-routing.md states ----

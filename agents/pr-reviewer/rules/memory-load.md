@@ -28,17 +28,17 @@ Distinguish them by whether the tool exists in the session's registry at all: ab
 **`view` is a capability, not a guarantee — probe once, then commit.** It requires LoreKit
 **≥ the release carrying lorekit#464**; older servers do not have it.
 
-Bind `SUMMARY_VIEW` before the first call and never re-evaluate it mid-fan-out, so all four calls
+Bind `SUMMARY_VIEW` before the first call and never re-evaluate it mid-fan-out, so all three list calls
 and every later step agree on one answer:
 
 - **`true`** — the live `mcp__lorekit__memory_list` schema lists `view`. Send `view="summary"` on
-  all four calls. This is the default outcome on a current server.
+  all three list calls. This is the default outcome on a current server.
 - **`false`** — either failure shape below fired. The calls return full bodies.
 
 The two failure shapes are handled differently, and neither may cost you `LOREKIT_CONNECTED`:
 
 - **The tool's input schema does not list `view`.** Check the live `mcp__lorekit__memory_list`
-  schema before the first call. If `view` is absent, set `SUMMARY_VIEW = false` and issue all four
+  schema before the first call. If `view` is absent, set `SUMMARY_VIEW = false` and issue all three
   calls WITHOUT it. Do not send an unknown key to a strict-schema tool.
 - **The call throws specifically because of `view`** (an unknown/unexpected-argument error naming
   it). Set `SUMMARY_VIEW = false`, retry that same call once without `view`, and carry on. This
@@ -46,6 +46,6 @@ The two failure shapes are handled differently, and neither may cost you `LOREKI
   the backend is down — flipping `LOREKIT_CONNECTED` here would turn a missing optimisation into a
   total memory outage.
 
-When `SUMMARY_VIEW` is `false` the four calls return full bodies, exactly as they did before this
+When `SUMMARY_VIEW` is `false` the three list calls return full bodies, exactly as they did before this
 pipeline existed. That is a cost regression, not a correctness one: skip Step 1.2d entirely (the
 bodies are already in hand), and match at Step 1.2e against them directly.
