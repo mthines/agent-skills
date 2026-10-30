@@ -9,8 +9,32 @@ tags:
 
 # Handoff
 
-Phase 6 dispatches each PR's pack to **one worker sub-agent**. There is one lane:
-no planner runs between the pack and the worker.
+Phase 6 applies each PR's pack. There is one lane: no planner runs between the
+pack and whoever applies it. In this file, "the worker" means that applier —
+this context for one PR, a dispatched sub-agent per PR for two or more.
+
+## Who applies
+
+| PRs in this run | Applier | Prompt |
+| --- | --- | --- |
+| 1 | This context | None. Follow the [worker prompt template](#worker-prompt-template)'s *What to do* and *Hard rules* yourself, with `<worktree>`, `<pack>`, and `<head-sha-from-pack>` from Phase 5. |
+| ≥ 2 | One generic sub-agent per PR, all dispatched in one message | The filled [worker prompt template](#worker-prompt-template). |
+
+- Count PRs after Phase 0 parsing; `--watch` and a `review-loop` sub-step B always have one.
+- Applying here never widens the pack: touch only the files an `apply` entry lists, and never
+  re-run `/critical` or `/confidence` on an entry Phase 4 already passed.
+- Return the same per-comment report rows the [*Output you return*](#output-you-return) block
+  names, so Phase 7 reads both paths alike.
+
+```text
+# correct — one PR
+pack written → this context: verify clean HEAD → per-comment edit + fast check + commit → full check → push → resolve
+
+# incorrect — one PR, dispatched: the worker re-reads the pack and the code this context just read
+Agent(subagent_type="general-purpose", prompt="Apply suggestion-pack to PR #123 …")
+```
+
+**Why:** a lone worker buys no parallelism and only re-reads context this session already holds — [`../references/apply-context.md`](../references/apply-context.md).
 
 ## Before dispatching — order the pack
 
@@ -43,6 +67,8 @@ It was removed in v3.0.0:
 A `/critical` `Must-fix` still forces `surface` in Phase 4, exactly as before.
 
 ## Dispatch
+
+Two or more PRs only:
 
 ```
 Agent(
@@ -276,5 +302,6 @@ misclassified, not that the agent needs more attempts.
   With `resolve-all`, the step-6 pass also closes reply-only threads (answered
   question, taken discussion, declined change); only `flag` entries stay open.
 - **Contradictory `apply` comments are surfaced, never ordered by guess.** See [Before dispatching](#before-dispatching--order-the-pack).
-- **Main agent does not edit files in Phase 6** — all `Edit` / `Write` calls
-  happen inside the worker subagent.
+- **With two or more PRs, the main agent does not edit files in Phase 6** — all
+  `Edit` / `Write` calls happen inside the worker sub-agents. With one PR, this
+  context is the worker and follows every rule above.
