@@ -73,13 +73,17 @@ const arr = (v) => (Array.isArray(v) ? v : []);
 /** @param {any} v @returns {number} */
 const count = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
 
+// Structured fields only: prose (`gist`, `reason`) and people (`by`) are left out, so a re-review
+// that rewords the same finding still counts once.
+const ID_FIELDS = Object.freeze(["pr", "sha", "fp", "line", "event", "verdict", "outcome", "exception_type", "source"]);
+
 /**
  * The identity of an example or history entry, so a replayed run adds nothing.
  * @param {any} e @returns {string}
  */
 export function entryId(e) {
   if (!isObject(e)) return `s:${String(e)}`;
-  return ["pr", "sha", "fp", "line"].map((k) => String(e[k] ?? "")).join("|");
+  return ID_FIELDS.map((k) => String(e[k] ?? "")).join("|");
 }
 
 /** @param {any} e @returns {string} */
@@ -285,6 +289,20 @@ function selfTest() {
     const again = { ...hotUpdate, confirmed_examples: [{ pr: 1, sha: "aaa", fp: "x" }], last_touched_by: ["#1"] };
     const v = val(run([{ scope: S, key: "hotspot::src/a.ts", update: again }]), "hotspot::src/a.ts");
     return v.confirmed === 6 && v.confirmed_examples.length === 1 && v.last_touched_by.length === 2;
+  });
+  t("distinct regressions on one file and PR both count; a reworded replay does not", () => {
+    const r = run([{ scope: S, key: "hotspot::src/new.ts", update: { path: "src/new.ts", missed_examples: [
+      { pr: 5, exception_type: "TypeError", source: "post-deploy" },
+      { pr: 5, exception_type: "RangeError", source: "post-deploy" },
+    ] } }]);
+    const replay = run([{ scope: S, key: "hotspot::src/a.ts", update: { ...hotUpdate,
+      confirmed_examples: [{ pr: 1, sha: "aaa", fp: "x", gist: "the same finding, worded differently" }] } }]);
+    return val(r, "hotspot::src/new.ts").missed === 2 && val(replay, "hotspot::src/a.ts").confirmed === 6;
+  });
+  t("a history entry that differs only by event is kept", () => {
+    const v = val(run([{ scope: S, key: "knowledge::f@src/b.ts", update: {
+      symbol: "f", path: "src/b.ts", history: [{ pr: 1, sha: "aaa", fp: "x", verdict: "confirmed", outcome: "fixed" }] } }]), "knowledge::f@src/b.ts");
+    return v.history.length === 2;
   });
   t("a legacy `examples` list is carried into confirmed_examples, never lost", () => {
     const legacyRead = { entries: [{ scope: S, key: "hotspot::src/l.ts", value: JSON.stringify({ v: 1, path: "src/l.ts", confirmed: 3, examples: [{ pr: 7, fp: "z" }] }) }], missing: [] };
