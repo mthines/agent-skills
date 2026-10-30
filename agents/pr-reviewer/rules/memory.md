@@ -280,7 +280,7 @@ At Step 1.0, for every inline comment on **this** PR carrying this agent's marke
 | First non-author reply reading as `disagree` / `not-a-bug` | wrong here | rule evidence toward `suppress`, **with the reply text stored as `reason`** so the next run can show *why* |
 | First non-author reply reading as `agree` / `will-fix`, or a later commit touching `(path, line ± 5)` that resolves the thread | right | rule evidence toward `amplify`; knowledge `history[].outcome = fixed` |
 | Thread resolved with no reply and no touching commit | **ambiguous** | no directional write — a counter only |
-| A human comment on a changed line this agent did not flag | missed | hotspot `missed[]`, plus a `detection::` lesson candidate |
+| A human comment on a changed line this agent did not flag | missed | hotspot `missed_examples[]` (and `missed`), plus a `detection::` lesson candidate |
 
 The ambiguous row is the one to hold onto.
 A thread resolved with nothing to corroborate it is not evidence of acceptance and not evidence of dismissal, and the earlier `ignored-at-merge` sweep that read it as dismissal was writing a directional signal on no evidence.
