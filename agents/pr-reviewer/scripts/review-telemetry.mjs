@@ -1124,6 +1124,15 @@ export async function finishRun(runDir, opts = {}, env = process.env) {
   }
 }
 
+/** A step marker's start attributes: the marker's own `--attr` bag, plus the OpenCode tool call the
+ *  marker ran in. A sub-agent runs in its own OpenCode session, which only that call id reaches
+ *  (run-telemetry.md § The cost of a review), so each step carries the id of the session it ran in.
+ *  @param {Record<string, any>} attrBag @param {NodeJS.ProcessEnv} env @returns {Record<string, any>} */
+export function stepStartAttrs(attrBag, env = process.env) {
+  const toolCall = detectOpencodeToolCallId(env);
+  return toolCall ? { ...attrBag, "opencode.tool_call_id": toolCall } : attrBag;
+}
+
 /**
  * The facts a script knows about the reviewer itself: its version and the git identity, the same
  * source the Dash0 agent plugin reads for `user.name`.
@@ -1319,7 +1328,7 @@ async function main(argv) {
       const { notes, emptyVerify } = markerNotes(readLedger(runDir), name, attrBag);
       // The flag lands on the still-open verify step (attr records apply to the open step).
       if (emptyVerify) appendRecord(runDir, { t: "attr", target: "step", attrs: { empty: true } });
-      appendRecord(runDir, { t: "step", phase: "start", name, attrs: attrBag });
+      appendRecord(runDir, { t: "step", phase: "start", name, attrs: stepStartAttrs(attrBag) });
       for (const n of notes) process.stderr.write(`review-telemetry: note — ${n}\n`);
     } else if (cmd === "end") {
       appendRecord(runDir, { t: "step", phase: "end", ...(positional[1] ? { name: positional[1] } : {}), attrs: attrBag });
@@ -1774,6 +1783,12 @@ async function selfTest() {
     [...SESSION_HARNESSES].every((h) => !PLUGIN_HARNESSES.has(h)));
 
   // The OpenCode tool call that started the run: the handle back to the Agent0 run.
+  ok("stepStartAttrs stamps the marker's OpenCode tool call, keeps its --attr bag, and adds nothing outside OpenCode",
+    stepStartAttrs({ tool_calls_so_far: 3 }, { OPENCODE_PARENT_TOOL_CALL_ID: "toolu_sub_1" })["opencode.tool_call_id"] === "toolu_sub_1"
+      && stepStartAttrs({ tool_calls_so_far: 3 }, { OPENCODE_PARENT_TOOL_CALL_ID: "toolu_sub_1" }).tool_calls_so_far === 3
+      && JSON.stringify(stepStartAttrs({ a: 1 }, {})) === '{"a":1}'
+      && JSON.stringify(stepStartAttrs({}, { OPENCODE_PARENT_TOOL_CALL_ID: "x; rm" })) === "{}"
+      && /attrs: stepStartAttrs\(attrBag\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
   ok("hostFacts records OPENCODE_PARENT_TOOL_CALL_ID and ignores a value that is not an id",
     hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "toolu_vrtx_01abc" }).opencode_parent_tool_call_id === "toolu_vrtx_01abc"
       && hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "x; rm -rf /" }).opencode_parent_tool_call_id === undefined

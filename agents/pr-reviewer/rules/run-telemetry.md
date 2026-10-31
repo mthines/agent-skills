@@ -165,7 +165,7 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 | Span | Attributes |
 | --- | --- |
 | `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` (including `pr_review.impact_image` = `added` · `skipped` · `failed` and `pr_review.impact_image.reason`), the memory the review used and read ([§ The memory](#the-memory)), and the lenses it loaded ([§ The lenses](#the-lenses)) |
-| `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`; ERROR with `error.type=step_failed` when the step failed; the `lenses` step also carries `pr_review.lenses.loaded` and `pr_review.lenses.names` |
+| `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`, `pr_review.opencode.tool_call_id` (the OpenCode tool call whose marker opened it, when `OPENCODE_PARENT_TOOL_CALL_ID` is set); ERROR with `error.type=step_failed` when the step failed; the `lenses` step also carries `pr_review.lenses.loaded` and `pr_review.lenses.names` |
 | `pr_review.phase <name>` | child of a script step: `pr_review.step.name`, `pr_review.phase.name` |
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
 | every span | `gen_ai.agent.name`, `gen_ai.conversation.id`, `dash0.gen_ai.vcs.*` (repository, owner, PR URL, head ref and revision), `user.name` |
@@ -296,8 +296,17 @@ GROUP BY session ORDER BY cost_usd DESC LIMIT 20
 SELECT ... WHERE span_attributes['opencode.session.id'] = <the root's gen_ai.conversation.id>
 ```
 
-The sum covers the session that ran the review; a sub-agent's own session is not in it.
-To cost one step, sum the session's model steps whose `timestamp` falls inside that `pr_review.step <name>` span.
+The root's id names the session that ran `prepare-review.mjs`; under `/pr-review` that is the caller, and the review itself runs in a dispatched sub-agent's own session.
+Each marked step carries `pr_review.opencode.tool_call_id` from the session its marker ran in, so swap the innermost sub-select for the step spans to cost the sub-agent's session too:
+
+```sql
+-- the sessions every marked step of a review ran in, caller and sub-agent alike
+SELECT span_attributes['pr_review.opencode.tool_call_id'] FROM spans
+WHERE resource_attributes['service.name'] = 'pr-reviewer' AND name LIKE 'pr_review.step %'
+  AND trace_id = '<the review's trace id>'
+```
+
+To cost one step, sum its session's model steps whose `timestamp` falls inside that `pr_review.step <name>` span.
 D0QL names the span column `name`, has no `quantile` (use `avg` and `max`), and needs a quoted `INTERVAL '30 MINUTE'`.
 
 Three things the trace never contains:
