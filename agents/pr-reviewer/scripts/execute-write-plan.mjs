@@ -29,7 +29,7 @@ import { readFileSync, writeFileSync, realpathSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { run as defaultRun, scratchRoot } from "./prepare-review.mjs";
-import { appendRecord, finishRun } from "./review-telemetry.mjs";
+import { appendRecord, finishRun, stepStartAttrs } from "./review-telemetry.mjs";
 import { assertPostable } from "./comment-spine.mjs";
 
 /** When this process started — the `post` step span's start. */
@@ -806,7 +806,7 @@ async function main() {
   // directory in the plan; a dry run was already finished there, so nothing is recorded here.
   if (writePlan?.telemetry_run_dir && !opts["dry-run"]) {
     const runDir = String(writePlan.telemetry_run_dir);
-    appendRecord(runDir, { t: "step", phase: "start", name: "post", ns: PROCESS_START_NS });
+    appendRecord(runDir, { t: "step", phase: "start", name: "post", ns: PROCESS_START_NS, attrs: stepStartAttrs({}) });
     appendRecord(runDir, { t: "step", phase: "end", attrs: { result_code: result.code ?? 0 } });
     await finishRun(runDir, result.code === 5 || result.code === 3 ? { status: "error", message: `execute-write-plan exited ${result.code}` } : {});
   }

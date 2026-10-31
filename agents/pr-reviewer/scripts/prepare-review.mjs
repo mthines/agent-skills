@@ -51,7 +51,7 @@ import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, openSy
 import { tmpdir } from "node:os";
 import { join, dirname, posix, resolve as pathResolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS } from "./review-telemetry.mjs";
+import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS, stepStartAttrs } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
@@ -2620,7 +2620,7 @@ async function prepare(opts) {
       /** @type {Record<string, number>} */
       const phaseAttrs = {};
       for (const [name, ms] of Object.entries(context.timing?.phases || {})) phaseAttrs[`phase.${name.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_ms`] = ms;
-      appendRecord(runDir, { t: "step", phase: "start", name: "prepare", ns: startNs });
+      appendRecord(runDir, { t: "step", phase: "start", name: "prepare", ns: startNs, attrs: stepStartAttrs({}) });
       // `sub` carries each internal phase with its own start and end, so the trace shows them as
       // child spans of `prepare` — a 14 s step is only actionable once its 6 s clone is visible.
       const sub = timing.segments().map((g) => ({ name: g.name, start_ns: String(BigInt(g.startMs) * 1_000_000n), end_ns: String(BigInt(g.endMs) * 1_000_000n) }));

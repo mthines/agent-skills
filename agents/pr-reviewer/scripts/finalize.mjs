@@ -52,7 +52,7 @@ import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
 import { MARKER_RE } from "./fingerprint.mjs";
-import { appendRecord, finishRun, readLedger } from "./review-telemetry.mjs";
+import { appendRecord, finishRun, readLedger, stepStartAttrs } from "./review-telemetry.mjs";
 import { LENS_DIR } from "./select-lenses.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -3230,7 +3230,7 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
     const runDir = dirname(contextPath);
     if (!readLedger(runDir).some((r) => r.t === "run")) return null;
     const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
-    appendRecord(runDir, { t: "step", phase: "start", name: "finalize", ns: PROCESS_START_NS });
+    appendRecord(runDir, { t: "step", phase: "start", name: "finalize", ns: PROCESS_START_NS, attrs: stepStartAttrs({}) });
     appendRecord(runDir, { t: "step", phase: "end", ...(how.failed ? { status: "error", message: "finalize.mjs could not render the report" } : {}) });
     appendRecord(runDir, {
       t: "attr", target: "run",

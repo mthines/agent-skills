@@ -1788,7 +1788,9 @@ async function selfTest() {
       && stepStartAttrs({ tool_calls_so_far: 3 }, { OPENCODE_PARENT_TOOL_CALL_ID: "toolu_sub_1" }).tool_calls_so_far === 3
       && JSON.stringify(stepStartAttrs({ a: 1 }, {})) === '{"a":1}'
       && JSON.stringify(stepStartAttrs({}, { OPENCODE_PARENT_TOOL_CALL_ID: "x; rm" })) === "{}"
-      && /attrs: stepStartAttrs\(attrBag\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+      && /attrs: stepStartAttrs\(attrBag\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8"))
+      && [["prepare-review.mjs", "prepare"], ["finalize.mjs", "finalize"], ["execute-write-plan.mjs", "post"]].every(([f, step]) =>
+        new RegExp(`name: "${step}", ns: [A-Za-z_]+, attrs: stepStartAttrs\\(\\{\\}\\) \\}`).test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), f), "utf8"))));
   ok("hostFacts records OPENCODE_PARENT_TOOL_CALL_ID and ignores a value that is not an id",
     hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "toolu_vrtx_01abc" }).opencode_parent_tool_call_id === "toolu_vrtx_01abc"
       && hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "x; rm -rf /" }).opencode_parent_tool_call_id === undefined
