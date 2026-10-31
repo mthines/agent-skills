@@ -1,6 +1,6 @@
 # Why the run counter has the shape it has
 
-The rule is [`rules/run-telemetry.md` § The run counter](../rules/run-telemetry.md#the-run-counter); this file holds only the reasons.
+The rule is [`run-telemetry-export.md` § The run counter](./run-telemetry-export.md#the-run-counter); this file holds only the reasons.
 
 ## Why a separate counter, not the duration histogram
 

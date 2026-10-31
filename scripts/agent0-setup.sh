@@ -42,7 +42,7 @@
 #           trusted_only allows; see its output.
 # envVars:  PIN, REPO, PR_REVIEWER_LOGIN, PR_REVIEWER_AGENT0_ORG, SRC_DIR (a local checkout; no download),
 #           WITH_PLAYWRIGHT, REQUIRE_PLAYWRIGHT. Run-telemetry export settings reach a
-#           run only through $DASH0_AGENT_ENV (agents/pr-reviewer/rules/run-telemetry.md).
+#           run only through $DASH0_AGENT_ENV (agents/pr-reviewer/references/run-telemetry-export.md).
 
 set -uo pipefail
 

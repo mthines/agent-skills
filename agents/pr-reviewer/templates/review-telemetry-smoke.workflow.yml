@@ -3,7 +3,7 @@
 name: pr-reviewer · telemetry smoke
 
 # Exports one synthetic pr-reviewer run to Dash0 whenever the run-telemetry code changes, so the
-# trace shape (agents/pr-reviewer/rules/run-telemetry.md) is proven against the real backend and
+# trace shape (agents/pr-reviewer/references/run-telemetry-export.md) is proven against the real backend and
 # not only against the self-test's local OTLP receiver. The run carries pr_review.smoke=true.
 # Uses the same endpoint variable and token secret as the L2 eval telemetry (evals-l2.yml).
 

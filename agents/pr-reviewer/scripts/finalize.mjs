@@ -613,7 +613,7 @@ export function lensOrigin(source) {
 }
 
 /**
- * The impact image's outcome for the root span (run-telemetry.md § The trace): `added` when the
+ * The impact image's outcome for the root span (references/run-telemetry-export.md § The trace): `added` when the
  * context carries the rendered image, `skipped` with prepare-review.mjs's reason when the run was not
  * eligible, `failed` with the agent's `context.impactImage.failure` when it was eligible and no image
  * arrived. Empty for a context with no `impactImage` (one from before the gate): unknown, never skipped.
