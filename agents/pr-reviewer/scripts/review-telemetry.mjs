@@ -173,6 +173,7 @@ export const STEPS = Object.freeze({
   verify: "model",
   judgments: "model",
   validate: "script",
+  "impact-image": "model",
   finalize: "script",
   assert: "model",
   post: "script",
@@ -183,17 +184,20 @@ const STEP_NAME_RE = /^[a-z][a-z0-9-]{0,39}$/;
  *  instead of in a rule it read before Step 1. `quick` runs no lenses; only `hybrid` waits
  *  for the intent worker, and does it AFTER verifying its own candidates, so the wait starts as
  *  late as it can (dispatch-topology.md § Running hybrid); `intent-verify` then verifies only the
- *  intent candidates the verified pool did not already hold. `assert` is Step 4a's pre-write
- *  checks between `finalize` and `post`.
+ *  intent candidates the verified pool did not already hold. `impact-image` is the opt-in image
+ *  (posting.md § The impact image), listed only when the context made it eligible; the real
+ *  finalize closes it. `assert` is Step 4a's pre-write checks between `finalize` and `post`.
  *  `state` is not a step: Step 4c's LoreKit writes happen after `post` has exported the run.
- *  @param {{ tier?: string|null, topology?: string|null }} run @returns {string[]} */
-export function modelSteps({ tier, topology }) {
+ *  @param {{ tier?: string|null, topology?: string|null, impactImage?: boolean }} run @returns {string[]} */
+export function modelSteps({ tier, topology, impactImage }) {
   return [
     "memory", "gates", "finders",
     ...(tier === "quick" ? [] : ["lenses"]),
     "consolidate", "verify",
     ...(topology === "hybrid" ? ["intent-wait", "intent-verify"] : []),
-    "judgments", "validate", "assert",
+    "judgments", "validate",
+    ...(impactImage === true ? ["impact-image"] : []),
+    "assert",
   ];
 }
 
@@ -2032,6 +2036,11 @@ async function selfTest() {
         && !modelSteps({ tier: "standard", topology: "in-context" }).includes("intent-wait")
         && !modelSteps({ tier: "quick", topology: "in-context" }).includes("lenses")
         && modelSteps({ tier: "deep", topology: "hybrid" }).every((n) => n in STEPS));
+    ok("modelSteps lists impact-image between validate and assert only when the image is eligible",
+      modelSteps({ tier: "standard", topology: "in-context", impactImage: true }).slice(-3).join() === "validate,impact-image,assert"
+        && !modelSteps({ tier: "standard", topology: "in-context", impactImage: false }).includes("impact-image")
+        && !modelSteps({ tier: "standard", topology: "in-context" }).includes("impact-image")
+        && STEPS["impact-image"] === "model");
     const mRun = join(dir, "marker");
     beginRun(mRun, facts);
     const filled = markerCommand(mRun).replace("<step>", "verify").replace("<N>", "7").replace(/;$/, "");

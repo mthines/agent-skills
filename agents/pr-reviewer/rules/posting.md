@@ -102,7 +102,9 @@ Facts `finalize.mjs` cannot compute go in `context.render.*` before it runs ([`j
 
 #### The impact image
 
-Add the impact-map diagram when `context.impactImage.eligible` is `true` — `prepare-review.mjs` decides from the PR's structure, never from findings, then rules out a host that has no browser for `render-png.mjs` or no credential for `attach-media` (`reason: no browser on host` / `no upload credential on host`), so do not re-judge it.
+Add the impact-map diagram when `context.impactImage.eligible` is `true` — `prepare-review.mjs` decides, so do not re-judge it.
+It is opt-in: with no `impact_image: true` in the base commit's review config and no `--impact-image`, it is `skipped (not enabled …)` ([`review-config.md` § Run-level knobs](../../shared/rules/review-config.md#run-level-knobs)).
+Enabled, it decides from the PR's structure, never from findings, then rules out a host that has no browser for `render-png.mjs` or no credential for `attach-media` (`reason: no browser on host` / `no upload credential on host`).
 With findings, its badges are the findings table's row numbers; with none, `impact-map` draws it unbadged and the image sits under the headline.
 Every run states the outcome in Step 5: `impact image added`, `skipped (<context.impactImage.reason>)`, or `failed (<step>: <error>)`.
 The outcome goes in Step 5 only, never in `RUN_ANOMALY`: the image changes nothing this run reviewed, and `skipped (no browser on host)` is the expected outcome on a host installed without a browser.
@@ -110,7 +112,9 @@ The outcome goes in Step 5 only, never in `RUN_ANOMALY`: the image changes nothi
 ```bash
 # 1. Number the findings: a dry run writes the body without posting it. --no-telemetry keeps
 #    this preview out of the run trace; without it the dry run finishes the trace and the real
-#    finalize below is missing from it.
+#    finalize below is missing from it. The impact-image marker rides on this command, and the
+#    real finalize closes the step (run-telemetry.md § What you mark).
+node "$TELEMETRY" step impact-image --attr tool_calls_so_far=<N> --run-dir "$RUN_DIR"; \
 node "$FINALIZE" --context /tmp/review-context.json --judgments /tmp/judgments.json \
   --out-dir /tmp/finalize-dry --dry-run --no-telemetry
 # 2. Draw the diagram with those numbers as badges (impact-map § Badges from a pr-reviewer report).
@@ -127,7 +131,8 @@ jq --arg l "$LIGHT_URL" --arg d "$DARK_URL" --arg a "$ALT" \
   && mv /tmp/ctx.json /tmp/review-context.json
 ```
 
-The row numbers are a pure function of `judgments.json` (blocking, then decisions, then by tier), so the dry run and the real run number the findings identically. Change no judgment between the two runs, or the badges point at the wrong rows. When any step fails, post the report without `IMPACT_IMAGE` and report `failed (<step>: <error>)`.
+The row numbers are a pure function of `judgments.json` (blocking, then decisions, then by tier), so the dry run and the real run number the findings identically. Change no judgment between the two runs, or the badges point at the wrong rows. When any step fails, record it for the trace with `jq '.impactImage.failure = "<step>: <error>"'` on the context, post the report without `IMPACT_IMAGE`, and report `failed (<step>: <error>)`.
+`finalize.mjs` puts the outcome on the run's root span as `pr_review.impact_image` (`added` · `skipped` · `failed`) and `pr_review.impact_image.reason`.
 
 **Seven assertions guard `REPORT_BODY` immediately before the write, whatever produced it**: the
 report marker, the `Review details` accordion (not pre-expanded), no terminal-only `**Verdict**`

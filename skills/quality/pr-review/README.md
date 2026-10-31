@@ -301,6 +301,7 @@ effort: high               # optional: force deep on every PR (costliest)
 thoroughness: 0.8          # optional: 0–1; omit for the routed default (quick 0.4, standard 0.7, deep 0.85)
 critical: auto             # auto (default) | always: run the adversarial pre-mortem on every PR
 finder_passes: 1           # 1 (default) | 2: a second independent finder pass (two more sub-agents, 1.5× tool budget)
+impact_image: false        # false (default) | true: add the impact-map diagram to the report on wide PRs (a second impact-map pass, a render, and an upload)
 
 # What counts as risky.
 high_stakes_paths:         # regexes added to the built-in list; a match always routes deep
@@ -319,7 +320,8 @@ agent0_fix_links: true     # on by default; false turns the buttons off
 | `balanced` | The defaults | 5 |
 | `assertive` | Lower-confidence and lower-severity findings too | 7 |
 
-`effort`, `thoroughness`, `critical`, and `finder_passes` cost tokens on every PR, so set them only when your repo's risk needs it; the CLI flags (`--effort`, `--thoroughness`, `--no-critical`) beat them for one run.
+`effort`, `thoroughness`, `critical`, `finder_passes`, and `impact_image` cost tokens on every PR, so set them only when your repo's risk needs it; the CLI flags (`--effort`, `--thoroughness`, `--no-critical`, `--impact-image`) beat them for one run.
+For a diagram on one PR without turning it on for the repo, run `/impact-map <pr> --comment`.
 A built-in high-stakes area (auth, payments, schema migrations, secrets, infra) always reviews at thoroughness ≥ 0.5, whatever you set; a path you add under `high_stakes_paths` routes the review `deep` but takes your `thoroughness` as set.
 
 ### Per folder: `.review.yaml`
@@ -345,7 +347,7 @@ How folders combine, from the repo root down to the changed file:
 | --- | --- |
 | `lenses`, `filters` | Union: a folder adds to its parents and can't remove what they set |
 | `path_instructions`, `standards` | Concatenated, closest folder first |
-| `profile`, `effort`, `thoroughness`, `critical`, `finder_passes`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
+| `profile`, `effort`, `thoroughness`, `critical`, `finder_passes`, `impact_image`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
 
 Lenses and the run-level knobs (the last row above) are read from the PR's **base** commit, so a PR can't loosen its own review; a PR may add a high-stakes path but never remove one.
 `filters`, `path_instructions`, `standards`, `measurable`, and the `agent0_*` keys are read from the PR's head.

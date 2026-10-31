@@ -112,6 +112,13 @@ finder_passes: 2                         # 1 (default) | 2 — `2` runs the acti
                                          # See agents/pr-reviewer/rules/dispatch-topology.md
                                          # § Two finder passes
 
+impact_image: true                       # false (default) | true — `true` adds the impact-map
+                                         # diagram to the report on PRs wide enough to earn it.
+                                         # Costs a second impact-map pass, a browser render, and an
+                                         # upload per run. --impact-image on prepare-review.mjs
+                                         # turns it on for one run. See
+                                         # agents/pr-reviewer/rules/posting.md § The impact image
+
 high_stakes_paths:                       # repo-specific critical paths (regex, case-insensitive)
   - "(^|/)ledger(/|$)"                   # EXTENDS the built-in list (auth, payments, migrations,
   - "(^|/)provisioning(/|$)"             # infra, secrets, …) owned by
@@ -471,7 +478,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 
 ## Run-level knobs
 
-`profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, `critical`, and `finder_passes` govern the whole run, not one file's findings.
+`profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, `critical`, `finder_passes`, and `impact_image` govern the whole run, not one file's findings.
 `prepare-review.mjs` resolves them once, from the repo-level config (`.agents/review/config.yaml`, else the deprecated `.github/review.yaml` or root `.review.yaml`) **at the PR's base commit**, and writes them to `context.reviewConfig`.
 **Why:** read from the head, a PR could lower its own review bar by editing the file it is reviewed under.
 
@@ -484,6 +491,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 | `thoroughness` | 0–1 | `prepare-review.mjs` — the budget's thoroughness | CLI `--effort` or `--thoroughness`; config `effort: high` |
 | `critical` | `auto` (default) / `always` | `pr-reviewer.md` Step 2 — the rubric load ([`rubric-composition.md` § Load order](./rubric-composition.md#load-order)) | CLI `--no-critical` |
 | `finder_passes` | `1` (default) / `2` | `prepare-review.mjs` — `budget.finderPasses`; the caller dispatches pass 2 ([`dispatch-topology.md` § Two finder passes](../../pr-reviewer/rules/dispatch-topology.md#two-finder-passes)) | CLI `--finder-passes` on `prepare-review.mjs` |
+| `impact_image` | `false` (default) / `true` | `prepare-review.mjs` — `context.impactImage`; off, it is `skipped (not enabled …)` and the host is never probed ([`posting.md` § The impact image](../../pr-reviewer/rules/posting.md#the-impact-image)) | CLI `--impact-image` on `prepare-review.mjs` turns it on |
 
 1. Take these values from `context.reviewConfig`.
    Never re-read the head's repo-level config for them, and never apply a head value the context does not carry.
@@ -506,11 +514,13 @@ profile: assertive
 ```
 
 ```yaml
-# ✗ ignored — `strict` is not a profile, 1.5 is outside 0–1, and 3 is not 1 or 2; the run keeps
-#   balanced, the routed thoroughness, and one finder pass, and lists all three keys in RUN_ANOMALY
+# ✗ ignored — `strict` is not a profile, 1.5 is outside 0–1, 3 is not 1 or 2, and `yes` is not
+#   true or false; the run keeps balanced, the routed thoroughness, one finder pass, and no impact
+#   image, and lists all four keys in RUN_ANOMALY
 profile: strict
 thoroughness: 1.5
 finder_passes: 3
+impact_image: yes
 ```
 
 ---

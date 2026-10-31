@@ -50,9 +50,10 @@ On dash0#20655 a deep run that read this rule before Step 1 marked `memory`, `ga
 | `intent-verify` | hybrid only: deduping and verifying the intent candidates the verified pool did not already hold |
 | `judgments` | writing `judgments.json` |
 | `validate` | the `validate-judgments.mjs` command — it closes `judgments`, so that step gets a tool-call count too |
+| `impact-image` | only when `context.impactImage.eligible`: the dry-run finalize that numbers the findings ([`posting.md` § The impact image](./posting.md#the-impact-image)); the real `finalize` closes it |
 | `assert` | Step 4a's pre-write assertions, after `finalize` and before `post`; not under `--dry-run`, where `finalize` has already exported the run |
 
-A step that does not run this time — `memory` when memory is skipped, `intent-wait` and `intent-verify` outside `hybrid`, `lenses` on `quick` — gets no marker.
+A step that does not run this time — `memory` when memory is skipped, `intent-wait` and `intent-verify` outside `hybrid`, `lenses` on `quick`, `impact-image` when the image is not eligible — gets no marker.
 Step 4c and 4d's LoreKit writes are not a step: they run after `post` has already exported the run, so a marker there records nothing.
 
 **Never spend a tool call on a marker.**
@@ -163,7 +164,7 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 | Span | Attributes |
 | --- | --- |
-| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*`, the memory the review used and read ([§ The memory](#the-memory)), and the lenses it loaded ([§ The lenses](#the-lenses)) |
+| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` (including `pr_review.impact_image` = `added` · `skipped` · `failed` and `pr_review.impact_image.reason`), the memory the review used and read ([§ The memory](#the-memory)), and the lenses it loaded ([§ The lenses](#the-lenses)) |
 | `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`; ERROR with `error.type=step_failed` when the step failed; the `lenses` step also carries `pr_review.lenses.loaded` and `pr_review.lenses.names` |
 | `pr_review.phase <name>` | child of a script step: `pr_review.step.name`, `pr_review.phase.name` |
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
@@ -268,6 +269,36 @@ histogram_count(increase({otel_metric_name="pr_review.run.duration"}[5m] anchore
 ```
 
 **Why:** [`references/run-counter.md`](../references/run-counter.md).
+
+### The cost of a review
+
+The trace carries no token counts, but on Agent0 it joins to the model steps that do.
+The root's `pr_review.opencode.parent_tool_call_id` is the `gen_ai.tool.call.id` of an `agent0-sdk.model.step` span in service `agents`, and that span's `opencode.session.id` names the session whose steps carry `gen_ai.usage.*` and `dash0.gen_ai.usage.cost`.
+Run it with the Dash0 `sql` tool on dataset `default`, over at most 3 days; a wider window times out:
+
+```sql
+-- correct: review -> the tool call that began it -> its Agent0 session -> that session's cost
+SELECT span_attributes['opencode.session.id'] AS session, count() AS model_steps,
+       round(sum(toFloat64OrZero(span_attributes['dash0.gen_ai.usage.cost'])), 2) AS cost_usd
+FROM spans
+WHERE resource_attributes['service.name'] = 'agents' AND name = 'agent0-sdk.model.step'
+  AND span_attributes['opencode.session.id'] IN (
+    SELECT span_attributes['opencode.session.id'] FROM spans
+    WHERE resource_attributes['service.name'] = 'agents' AND name = 'agent0-sdk.model.step'
+      AND span_attributes['gen_ai.tool.call.id'] IN (
+        SELECT span_attributes['pr_review.opencode.parent_tool_call_id'] FROM spans
+        WHERE resource_attributes['service.name'] = 'pr-reviewer' AND name = 'invoke_agent pr-reviewer'))
+GROUP BY session ORDER BY cost_usd DESC LIMIT 20
+```
+
+```sql
+-- incorrect: gen_ai.conversation.id is the review's own run id on Agent0, so this matches nothing
+SELECT ... WHERE span_attributes['opencode.session.id'] = <the root's gen_ai.conversation.id>
+```
+
+The sum covers the session that ran the review; a sub-agent's own session is not in it.
+To cost one step, sum the session's model steps whose `timestamp` falls inside that `pr_review.step <name>` span.
+D0QL names the span column `name`, has no `quantile` (use `avg` and `max`), and needs a quoted `INTERVAL '30 MINUTE'`.
 
 Three things the trace never contains:
 
