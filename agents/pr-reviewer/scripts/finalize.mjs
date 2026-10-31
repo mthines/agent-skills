@@ -628,6 +628,22 @@ export function impactImageOutcome(context) {
 }
 
 /**
+ * Where the scored candidates went that did not post inline, one count per finalizeReview() bucket,
+ * so the root span explains every confirmed finding that never became a comment. A bucket the
+ * result does not carry is omitted: unknown, never zero.
+ * @param {any} result finalizeReview()'s return @returns {Record<string, number>}
+ */
+export function dispositionCounts(result) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const [attr, key] of [["dedupe_dropped", "dedupeDropped"], ["confidence_dropped", "confidenceDropped"],
+    ["advisory_deferred", "advisoryDeferred"], ["anchorless", "anchorless"]]) {
+    if (Array.isArray(result?.[key])) out[attr] = result[key].length;
+  }
+  return out;
+}
+
+/**
  * The run trace's lenses (review-telemetry.mjs § THE LENSES): one item per lens select-lenses.mjs
  * loaded, with how it loaded and the candidates it raised; one per lens a candidate names that the
  * selection never listed (the gated animations lens loads in the model, not in select-lenses.mjs);
@@ -2954,6 +2970,13 @@ async function selfTest() {
           && JSON.stringify(impactImageOutcome({ impactImage: { eligible: true, failure: "upload: 401" } })) === '{"impact_image":"failed","impact_image.reason":"upload: 401"}'
           && impactImageOutcome({ impactImage: { eligible: true } })["impact_image.reason"] === "no image reached the renderer"
           && JSON.stringify(impactImageOutcome({})) === "{}");
+      check("dispositionCounts: one count per non-inline bucket, absent buckets omitted",
+        JSON.stringify(dispositionCounts({ dedupeDropped: [1], confidenceDropped: [1, 2], advisoryDeferred: [], anchorless: [1, 2, 3] }))
+          === '{"dedupe_dropped":1,"confidence_dropped":2,"advisory_deferred":0,"anchorless":3}'
+          && JSON.stringify(dispositionCounts({ confidenceDropped: [1] })) === '{"confidence_dropped":1}'
+          && JSON.stringify(dispositionCounts(null)) === "{}");
+      check("finalize spreads dispositionCounts(result) into the run's telemetry attributes",
+        /\.\.\.dispositionCounts\(result\),/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("finalize passes impactImageOutcome(context) into the run's telemetry attributes",
         /impactImage: impactImageOutcome\(context\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
     }
@@ -3244,6 +3267,7 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         dry_run: how.dryRun,
         topology: how.topology,
         "memory.suppressed": Array.isArray(result?.suppressed) ? result.suppressed.length : undefined,
+        ...dispositionCounts(result),
         ...(how.impactImage || {}),
       },
     });
