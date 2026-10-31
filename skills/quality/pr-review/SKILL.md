@@ -5,7 +5,7 @@ description: >
   and reports its verdict and findings without touching your code. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`; invoke with /pr-review.
 disable-model-invocation: false
-argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--impact-image] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
@@ -109,7 +109,7 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    scope `branch::<owner>/<repo>::<headRefName>`, key `ci-state::pr-review-<n>` — and save a hit to
    `<dir>/state.json`. Skip it under `--isolated`; on a miss, or with no LoreKit tool, pass no `--state`.
 3. Run prepare once, forwarding only the pass-through flags it takes (`--full`, `--effort`,
-   `--thoroughness`, `--finder-passes`, `--with`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
+   `--thoroughness`, `--finder-passes`, `--impact-image`, `--with`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
    when the pass-through flags carry `--review-sha`), and read the topology on the same command:
 
    ```bash

@@ -1,6 +1,6 @@
 # Why an Agent0 run exports under the AI SDLC Insights scope
 
-The rule is [`rules/run-telemetry.md` § The scope](../rules/run-telemetry.md#the-scope); this file holds only the reasons.
+The rule is [`run-telemetry-export.md` § The scope](../rules/run-telemetry-export.md#the-scope); this file holds only the reasons.
 
 ## Why the plugin's scope
 

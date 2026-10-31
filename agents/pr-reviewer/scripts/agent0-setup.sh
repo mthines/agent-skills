@@ -224,7 +224,7 @@ ENV_FILE="$ROOT/env.sh"
   echo "export PR_REVIEWER_AGENT0_ORG=${PR_REVIEWER_AGENT0_ORG:-}"
 } > "$ENV_FILE"
 if [ -n "${PR_REVIEWER_OTLP_ENDPOINT:-}${PR_REVIEWER_OTLP_HEADERS:-}${PR_REVIEWER_TELEMETRY:-}" ]; then
-  echo "telemetry: export settings seen here are not written to env.sh — a run exports only when a setup script appended them to \$DASH0_AGENT_ENV (rules/run-telemetry.md)"
+  echo "telemetry: export settings seen here are not written to env.sh — a run exports only when a setup script appended them to \$DASH0_AGENT_ENV (rules/run-telemetry-export.md)"
 fi
 
 if [ -n "${DASH0_AGENT_ENV:-}" ]; then

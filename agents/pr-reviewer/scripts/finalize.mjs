@@ -52,7 +52,7 @@ import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
 import { MARKER_RE } from "./fingerprint.mjs";
-import { appendRecord, finishRun, readLedger } from "./review-telemetry.mjs";
+import { appendRecord, finishRun, readLedger, stepStartAttrs } from "./review-telemetry.mjs";
 import { LENS_DIR } from "./select-lenses.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -610,6 +610,37 @@ export function lensOrigin(source) {
   if (source.startsWith(`${LENS_DIR}/`)) return "repo";
   if (source.startsWith(".agents/skills/")) return "repo-skill";
   return "bundled";
+}
+
+/**
+ * The impact image's outcome for the root span (rules/run-telemetry-export.md § The trace): `added` when the
+ * context carries the rendered image, `skipped` with prepare-review.mjs's reason when the run was not
+ * eligible, `failed` with the agent's `context.impactImage.failure` when it was eligible and no image
+ * arrived. Empty for a context with no `impactImage` (one from before the gate): unknown, never skipped.
+ * @param {any} context @returns {Record<string, string>}
+ */
+export function impactImageOutcome(context) {
+  const gate = context?.impactImage;
+  if (!gate || typeof gate !== "object") return {};
+  if (context?.render?.IMPACT_IMAGE?.light) return { impact_image: "added" };
+  if (!gate.eligible) return { impact_image: "skipped", "impact_image.reason": String(gate.reason || "unknown") };
+  return { impact_image: "failed", "impact_image.reason": String(gate.failure || "no image reached the renderer") };
+}
+
+/**
+ * Where the scored candidates went that did not post inline, one count per finalizeReview() bucket,
+ * so the root span explains every confirmed finding that never became a comment. A bucket the
+ * result does not carry is omitted: unknown, never zero.
+ * @param {any} result finalizeReview()'s return @returns {Record<string, number>}
+ */
+export function dispositionCounts(result) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const [attr, key] of [["dedupe_dropped", "dedupeDropped"], ["confidence_dropped", "confidenceDropped"],
+    ["advisory_deferred", "advisoryDeferred"], ["anchorless", "anchorless"]]) {
+    if (Array.isArray(result?.[key])) out[attr] = result[key].length;
+  }
+  return out;
 }
 
 /**
@@ -2932,6 +2963,22 @@ async function selfTest() {
       check("lensTelemetryItems: a lens only a candidate names is loaded and `unlisted`, with no origin",
         item("animations")?.trigger === "unlisted" && item("animations")?.findings === 1 && item("animations")?.origin === undefined);
       check("lensOrigin: nothing for no source", lensOrigin(undefined) === undefined && lensOrigin("") === undefined);
+      const img = { light: "https://github.com/user-attachments/assets/l", dark: "https://github.com/user-attachments/assets/d", alt: "a" };
+      check("impactImageOutcome: added, skipped with prepare's reason, failed with the agent's failure, and nothing for a pre-gate context",
+        impactImageOutcome({ impactImage: { eligible: true }, render: { IMPACT_IMAGE: img } }).impact_image === "added"
+          && JSON.stringify(impactImageOutcome({ impactImage: { eligible: false, reason: "not enabled (x)" } })) === '{"impact_image":"skipped","impact_image.reason":"not enabled (x)"}'
+          && JSON.stringify(impactImageOutcome({ impactImage: { eligible: true, failure: "upload: 401" } })) === '{"impact_image":"failed","impact_image.reason":"upload: 401"}'
+          && impactImageOutcome({ impactImage: { eligible: true } })["impact_image.reason"] === "no image reached the renderer"
+          && JSON.stringify(impactImageOutcome({})) === "{}");
+      check("dispositionCounts: one count per non-inline bucket, absent buckets omitted",
+        JSON.stringify(dispositionCounts({ dedupeDropped: [1], confidenceDropped: [1, 2], advisoryDeferred: [], anchorless: [1, 2, 3] }))
+          === '{"dedupe_dropped":1,"confidence_dropped":2,"advisory_deferred":0,"anchorless":3}'
+          && JSON.stringify(dispositionCounts({ confidenceDropped: [1] })) === '{"confidence_dropped":1}'
+          && JSON.stringify(dispositionCounts(null)) === "{}");
+      check("finalize spreads dispositionCounts(result) into the run's telemetry attributes",
+        /\.\.\.dispositionCounts\(result\),/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+      check("finalize passes impactImageOutcome(context) into the run's telemetry attributes",
+        /impactImage: impactImageOutcome\(context\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
     }
 
     {
@@ -3198,7 +3245,7 @@ const PROCESS_START_NS = BigInt(Date.now()) * 1_000_000n;
  * trace. A context with no ledger (built by an older prepare-review.mjs, or `--no-telemetry`)
  * records nothing. Never throws: telemetry never fails a review.
  * @param {string} contextPath @param {any} result @param {any} judgments
- * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any }} how `lenses` is context.lenses
+ * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any, impactImage?: Record<string, string> }} how `lenses` is context.lenses
  * @returns {Promise<string|null>} the run dir, when a ledger exists
  */
 async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
@@ -3206,7 +3253,7 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
     const runDir = dirname(contextPath);
     if (!readLedger(runDir).some((r) => r.t === "run")) return null;
     const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
-    appendRecord(runDir, { t: "step", phase: "start", name: "finalize", ns: PROCESS_START_NS });
+    appendRecord(runDir, { t: "step", phase: "start", name: "finalize", ns: PROCESS_START_NS, attrs: stepStartAttrs({}) });
     appendRecord(runDir, { t: "step", phase: "end", ...(how.failed ? { status: "error", message: "finalize.mjs could not render the report" } : {}) });
     appendRecord(runDir, {
       t: "attr", target: "run",
@@ -3220,6 +3267,8 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         dry_run: how.dryRun,
         topology: how.topology,
         "memory.suppressed": Array.isArray(result?.suppressed) ? result.suppressed.length : undefined,
+        ...dispositionCounts(result),
+        ...(how.impactImage || {}),
       },
     });
     // Which LoreKit memories the review used and read, each with its id — the root span's memory
@@ -3521,7 +3570,7 @@ async function main() {
   });
   // --no-telemetry: a preview render (posting.md § The impact image) must not record the finalize
   // step or finish the run — the real finalize after it does both.
-  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses });
+  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses, impactImage: impactImageOutcome(context) });
   // execute-write-plan.mjs records the `post` step and exports the trace; this is how it finds
   // the ledger. Absent when no ledger exists.
   if (telemetryRunDir && !isDryRun) writePlan.telemetry_run_dir = telemetryRunDir;

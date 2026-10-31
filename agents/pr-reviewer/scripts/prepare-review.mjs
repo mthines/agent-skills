@@ -51,7 +51,7 @@ import { writeFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, openSy
 import { tmpdir } from "node:os";
 import { join, dirname, posix, resolve as pathResolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS } from "./review-telemetry.mjs";
+import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS, stepStartAttrs } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
@@ -1470,14 +1470,14 @@ const CONFIG_CRITICAL = ["auto", "always"];
 /**
  * The run-level review knobs (review-config.md § Run-level knobs), top-level keys only:
  * `profile`, `severity_thresholds` (a block-style nested map), `per_comment_confidence_threshold`,
- * `effort`, `thoroughness`, `critical`, and `finder_passes`. A key that is absent stays null. A value outside
+ * `effort`, `thoroughness`, `critical`, `finder_passes`, and `impact_image`. A key that is absent stays null. A value outside
  * its domain is never coerced: it stays null and lands in `invalid[]`, which the caller turns
  * into a RUN_ANOMALY line, so a typo can never silently change the review bar.
  * @param {string} yamlText
  */
 export function reviewSettings(yamlText) {
-  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, finderPasses: number|null, invalid: string[] }} */
-  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, critical: null, finderPasses: null, invalid: [] };
+  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, finderPasses: number|null, impactImage: boolean|null, invalid: string[] }} */
+  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, critical: null, finderPasses: null, impactImage: null, invalid: [] };
   if (!yamlText) return out;
   const clean = (/** @type {string} */ v) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
   const score = (/** @type {string} */ v) => {
@@ -1510,7 +1510,7 @@ export function reviewSettings(yamlText) {
       out.invalid.push(`severity_thresholds: ${clean(inlineSeverity[1])} (inline value; use the block form)`);
       continue;
     }
-    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical|finder_passes):\s*(.*)$/.exec(raw);
+    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical|finder_passes|impact_image):\s*(.*)$/.exec(raw);
     if (!m) continue;
     const v = clean(m[2]);
     if (m[1] === "profile") {
@@ -1530,6 +1530,9 @@ export function reviewSettings(yamlText) {
     } else if (m[1] === "finder_passes") {
       if (v === "1" || v === "2") out.finderPasses = Number(v);
       else out.invalid.push(`finder_passes: ${v}`);
+    } else if (m[1] === "impact_image") {
+      if (v === "true" || v === "false") out.impactImage = v === "true";
+      else out.invalid.push(`impact_image: ${v}`);
     } else if (CONFIG_CRITICAL.includes(v)) {
       out.critical = v;
     } else {
@@ -1578,6 +1581,22 @@ export function resolveFinderPasses(opts, settings) {
   if (settings.finderPasses === 2) return { passes: 2, source: "config", invalid: null };
   if (settings.finderPasses === 1) return { passes: 1, source: "config", invalid: null };
   return { passes: 1, source: "default", invalid: null };
+}
+
+/** The skip reason a run gets when nothing asked for the impact image. */
+export const IMPACT_IMAGE_OFF = "not enabled (set impact_image: true or pass --impact-image)";
+
+/**
+ * Whether a run draws the impact image at all (review-config.md § Run-level knobs, `impact_image`):
+ * `--impact-image` beats the config, and the default is off.
+ * @param {{ impactImage?: boolean }} opts
+ * @param {{ impactImage?: boolean|null }} settings
+ * @returns {{ enabled: boolean, source: "cli"|"config"|"default" }}
+ */
+export function resolveImpactImage(opts, settings) {
+  if (opts.impactImage === true) return { enabled: true, source: "cli" };
+  if (typeof settings.impactImage === "boolean") return { enabled: settings.impactImage, source: "config" };
+  return { enabled: false, source: "default" };
 }
 
 /**
@@ -2026,6 +2045,7 @@ async function prepare(opts) {
   const depthOverrides = resolveDepthOverrides(opts, settings);
   const finderPassesSetting = resolveFinderPasses(opts, settings);
   anomalies.push(...finderPassesAnomalies(finderPassesSetting));
+  const impactImageSetting = resolveImpactImage(opts, settings);
   const hsArgs = mergedHighStakes(baseConfig.text, reviewConfigText).flatMap((r) => ["--extra-high-stakes", r]);
   const classify = await run("node", [join(HERE, "classify-shape.mjs"), prFilesPath, ...hsArgs], { timeoutMs });
   if (classify.ok) {
@@ -2386,10 +2406,13 @@ async function prepare(opts) {
 
   timing.end(); // triage-routing
 
-  // A lean budget (a defaulted quick routing) never draws the image: the host probe is skipped too.
-  const impactImage = budget.impactImage
-    ? await decideImpactImage({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band, repo })
-    : { eligible: false, reason: "lean budget (quick tier)" };
+  // The image is opt-in, and a lean budget (a defaulted quick routing) never draws it: either way
+  // the host probe is skipped too.
+  const impactImage = !impactImageSetting.enabled
+    ? { eligible: false, reason: IMPACT_IMAGE_OFF }
+    : budget.impactImage
+      ? await decideImpactImage({ fileCount: files.length, shapes: shape?.shapes, band: impact?.blast_radius?.band, repo })
+      : { eligible: false, reason: "lean budget (quick tier)" };
 
   const context = {
     v: 1,
@@ -2460,6 +2483,8 @@ async function prepare(opts) {
       depthSource: depthOverrides.source,
       finderPasses: finderPassesSetting.passes,
       finderPassesSource: finderPassesSetting.source,
+      impactImage: impactImageSetting.enabled,
+      impactImageSource: impactImageSetting.source,
     },
 
     // Bulk payloads live on disk; the context names them. `inline` says which
@@ -2595,7 +2620,7 @@ async function prepare(opts) {
       /** @type {Record<string, number>} */
       const phaseAttrs = {};
       for (const [name, ms] of Object.entries(context.timing?.phases || {})) phaseAttrs[`phase.${name.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_ms`] = ms;
-      appendRecord(runDir, { t: "step", phase: "start", name: "prepare", ns: startNs });
+      appendRecord(runDir, { t: "step", phase: "start", name: "prepare", ns: startNs, attrs: stepStartAttrs({}) });
       // `sub` carries each internal phase with its own start and end, so the trace shows them as
       // child spans of `prepare` — a 14 s step is only actionable once its 6 s clone is visible.
       const sub = timing.segments().map((g) => ({ name: g.name, start_ns: String(BigInt(g.startMs) * 1_000_000n), end_ns: String(BigInt(g.endMs) * 1_000_000n) }));
@@ -2607,7 +2632,7 @@ async function prepare(opts) {
         runDir, ledger: ledgerPath(runDir),
         markers: {
           command: markerCommand(runDir),
-          steps: modelSteps({ tier: routing.tier, topology: budget.topology }),
+          steps: modelSteps({ tier: routing.tier, topology: budget.topology, impactImage: impactImage.eligible }),
           // Per-step attributes the marker carries beyond tool_calls_so_far (run-telemetry.md).
           attrs: STEP_REQUIRED_ATTRS,
         },
@@ -2682,10 +2707,34 @@ async function selfTest() {
     return small.reason === "single-file diff" && calls === 2
       && noBrowser.reason === "no browser on host" && unknown.eligible === true;
   });
-  t("prepare() takes the context's impactImage from decideImpactImage, the probed path, unless the budget is lean", () => {
+  t("prepare() takes the context's impactImage from decideImpactImage, the probed path, only when enabled and the budget is not lean", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     const body = src.slice(src.indexOf("async function prepare(opts)"));
-    return /const impactImage = budget\.impactImage\s+\? await decideImpactImage\(\{[^}]*\brepo\b[^}]*\}\)/.test(body) && /^\s+impactImage,$/m.test(body);
+    return /const impactImage = !impactImageSetting\.enabled\s+\? \{ eligible: false, reason: IMPACT_IMAGE_OFF \}\s+: budget\.impactImage\s+\? await decideImpactImage\(\{[^}]*\brepo\b[^}]*\}\)/.test(body)
+      && /^\s+impactImage,$/m.test(body)
+      && /const impactImageSetting = resolveImpactImage\(opts, settings\);/.test(body)
+      && /modelSteps\(\{ tier: routing\.tier, topology: budget\.topology, impactImage: impactImage\.eligible \}\)/.test(body);
+  });
+  t("impact_image: true / false parse from the review config; any other value is invalid and leaves it unset", () => {
+    const on = reviewSettings("impact_image: true  # draw it\n");
+    const off = reviewSettings("impact_image: \"false\"\n");
+    const bad = reviewSettings("impact_image: yes\n");
+    const none = reviewSettings("profile: chill\n");
+    return on.impactImage === true && on.invalid.length === 0 && off.impactImage === false
+      && bad.impactImage === null && bad.invalid[0] === "impact_image: yes" && none.impactImage === null;
+  });
+  t("resolveImpactImage: off by default, the config turns it on or keeps it off, and --impact-image beats the config", () => {
+    const def = resolveImpactImage({}, { impactImage: null });
+    const cfgOn = resolveImpactImage({ impactImage: false }, { impactImage: true });
+    const cfgOff = resolveImpactImage({}, { impactImage: false });
+    const cli = resolveImpactImage({ impactImage: true }, { impactImage: false });
+    return !def.enabled && def.source === "default" && cfgOn.enabled && cfgOn.source === "config"
+      && !cfgOff.enabled && cfgOff.source === "config" && cli.enabled && cli.source === "cli"
+      && IMPACT_IMAGE_OFF.startsWith("not enabled");
+  });
+  t("--impact-image parses to opts.impactImage and the default is off", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    return /a === "--impact-image"\) opts\.impactImage = true;/.test(src) && /^\s+impactImage: false,$/m.test(src);
   });
 
   // A/B round 1 delta: gh-credentialed git fetch/clone. `execFile` has no
@@ -3996,6 +4045,7 @@ async function main(argv) {
     reviewerLogin: "",
     workspace: true,
     impact: true,
+    impactImage: false,
     telemetry: true,
     timeoutMs: 90000,
     quiet: false,
@@ -4021,6 +4071,7 @@ async function main(argv) {
     else if (a === "--reviewer-login") opts.reviewerLogin = argv[++i];
     else if (a === "--no-workspace") opts.workspace = false;
     else if (a === "--no-impact") opts.impact = false;
+    else if (a === "--impact-image") opts.impactImage = true; // opt in to the impact image; beats the config's impact_image
     else if (a === "--no-telemetry") opts.telemetry = false;
     else if (a === "--timeout-ms") opts.timeoutMs = Number(argv[++i]);
     else if (a === "--quiet") opts.quiet = true;
@@ -4045,7 +4096,7 @@ async function main(argv) {
   if (!opts.pr) {
     process.stderr.write(
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
-        "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] " +
+        "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] [--impact-image] " +
         "[--no-telemetry] [--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
         "[--state file] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
     );

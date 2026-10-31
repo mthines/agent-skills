@@ -134,6 +134,7 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--context <path>` | The caller already ran `prepare-review.mjs`: skip it, read `<path>` as the context, and never clean up its workspace — the caller does ([`dispatch-topology.md`](./pr-reviewer/rules/dispatch-topology.md#the-two-topologies)) |
 | `--intent-from <path>` | Skip the intent finder; read `<path>` only after verifying your own candidates at Step 2.6b, then verify its new ones |
 | `--with a,b,c` | Review lenses by name, added to the ones the diff triggers; no count cap. Forward to `prepare-review.mjs` |
+| `--impact-image` | Add the impact-map diagram this run (off by default; config `impact_image: true`). Forward to `prepare-review.mjs` |
 | `--no-fix-links` / `--fix-links` | Suppress / force the "Fix with Agent0" buttons (on by default; `--no-fix-links` wins) |
 | `--effort high` | Force `DEPTH_TIER = deep` + Tier-2/3 receipts ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)); config `effort: high` |
 | `--thoroughness <0..1>` | Continuous dispatch/scope override; `--effort high` = `1` — [depth-routing.md § Thoroughness budget](./pr-reviewer/rules/depth-routing.md#thoroughness-budget) |
@@ -415,7 +416,7 @@ Announce `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` 
 
 ### 1.1 Fetch PR data in parallel
 
-`node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <ref> --out ctx.json [--with a,b]` (never
+`node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <ref> --out ctx.json [--with a,b] [--impact-image]` (never
 under `--context`; with no `--reviewer-login`, `PR_REVIEWER_LOGIN`, state record, or prior report author, it asks GraphQL `viewer` itself, so the relation and the Fix-this buttons survive) performs Step 1.1 and every mechanical step through *Bind `DEPTH_TIER`* — 1.1b,
 1.2, shape classification, 1.2a's graph, 1.2b — and binds them on `context.json`. **When it cannot
 run, or its context lacks a field, read `agents/pr-reviewer/rules/fetch-and-triage.md`** and run that

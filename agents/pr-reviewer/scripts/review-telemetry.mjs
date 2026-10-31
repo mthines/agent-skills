@@ -64,7 +64,7 @@
 //      PR_REVIEWER_TELEMETRY=off wins over everything. The ledger and the summary are written
 //      either way — the breakdown needs no backend. They are read from the process environment
 //      only: on an Agent0 Automation a setup script appends them to $DASH0_AGENT_ENV, and nothing
-//      writes them to a file this script reads (rules/run-telemetry.md § On an Agent0 Automation).
+//      writes them to a file this script reads (rules/run-telemetry-export.md § On an Agent0 Automation).
 //   2. A miss is not an error: a step that finds nothing stays status UNSET.
 //   3. An absent attribute is omitted, never a placeholder.
 //   4. Telemetry never fails a review: every CLI command exits 0 (a misuse is a stderr warning),
@@ -173,6 +173,7 @@ export const STEPS = Object.freeze({
   verify: "model",
   judgments: "model",
   validate: "script",
+  "impact-image": "model",
   finalize: "script",
   assert: "model",
   post: "script",
@@ -183,17 +184,20 @@ const STEP_NAME_RE = /^[a-z][a-z0-9-]{0,39}$/;
  *  instead of in a rule it read before Step 1. `quick` runs no lenses; only `hybrid` waits
  *  for the intent worker, and does it AFTER verifying its own candidates, so the wait starts as
  *  late as it can (dispatch-topology.md § Running hybrid); `intent-verify` then verifies only the
- *  intent candidates the verified pool did not already hold. `assert` is Step 4a's pre-write
- *  checks between `finalize` and `post`.
+ *  intent candidates the verified pool did not already hold. `impact-image` is the opt-in image
+ *  (posting.md § The impact image), listed only when the context made it eligible; the real
+ *  finalize closes it. `assert` is Step 4a's pre-write checks between `finalize` and `post`.
  *  `state` is not a step: Step 4c's LoreKit writes happen after `post` has exported the run.
- *  @param {{ tier?: string|null, topology?: string|null }} run @returns {string[]} */
-export function modelSteps({ tier, topology }) {
+ *  @param {{ tier?: string|null, topology?: string|null, impactImage?: boolean }} run @returns {string[]} */
+export function modelSteps({ tier, topology, impactImage }) {
   return [
     "memory", "gates", "finders",
     ...(tier === "quick" ? [] : ["lenses"]),
     "consolidate", "verify",
     ...(topology === "hybrid" ? ["intent-wait", "intent-verify"] : []),
-    "judgments", "validate", "assert",
+    "judgments", "validate",
+    ...(impactImage === true ? ["impact-image"] : []),
+    "assert",
   ];
 }
 
@@ -499,7 +503,7 @@ export function lensEvents(run) {
   }));
 }
 
-/** The run counter (rules/run-telemetry.md § The run counter): what a dashboard counts runs with. */
+/** The run counter (rules/run-telemetry-export.md § The run counter): what a dashboard counts runs with. */
 export const RUN_COUNTER = "pr_review.runs";
 /** Every verdict a run can end with; `none` is a run that finished without one. Each gets a 0
  *  series, so the verdict a run ends on always has a baseline before its 1. */
@@ -1120,6 +1124,15 @@ export async function finishRun(runDir, opts = {}, env = process.env) {
   }
 }
 
+/** A step marker's start attributes: the marker's own `--attr` bag, plus the OpenCode tool call the
+ *  marker ran in. A sub-agent runs in its own OpenCode session, which only that call id reaches
+ *  (rules/run-telemetry-export.md § The cost of a review), so each step carries the id of the session it ran in.
+ *  @param {Record<string, any>} attrBag @param {NodeJS.ProcessEnv} env @returns {Record<string, any>} */
+export function stepStartAttrs(attrBag, env = process.env) {
+  const toolCall = detectOpencodeToolCallId(env);
+  return toolCall ? { ...attrBag, "opencode.tool_call_id": toolCall } : attrBag;
+}
+
 /**
  * The facts a script knows about the reviewer itself: its version and the git identity, the same
  * source the Dash0 agent plugin reads for `user.name`.
@@ -1315,7 +1328,7 @@ async function main(argv) {
       const { notes, emptyVerify } = markerNotes(readLedger(runDir), name, attrBag);
       // The flag lands on the still-open verify step (attr records apply to the open step).
       if (emptyVerify) appendRecord(runDir, { t: "attr", target: "step", attrs: { empty: true } });
-      appendRecord(runDir, { t: "step", phase: "start", name, attrs: attrBag });
+      appendRecord(runDir, { t: "step", phase: "start", name, attrs: stepStartAttrs(attrBag) });
       for (const n of notes) process.stderr.write(`review-telemetry: note — ${n}\n`);
     } else if (cmd === "end") {
       appendRecord(runDir, { t: "step", phase: "end", ...(positional[1] ? { name: positional[1] } : {}), attrs: attrBag });
@@ -1770,6 +1783,14 @@ async function selfTest() {
     [...SESSION_HARNESSES].every((h) => !PLUGIN_HARNESSES.has(h)));
 
   // The OpenCode tool call that started the run: the handle back to the Agent0 run.
+  ok("stepStartAttrs stamps the marker's OpenCode tool call, keeps its --attr bag, and adds nothing outside OpenCode",
+    stepStartAttrs({ tool_calls_so_far: 3 }, { OPENCODE_PARENT_TOOL_CALL_ID: "toolu_sub_1" })["opencode.tool_call_id"] === "toolu_sub_1"
+      && stepStartAttrs({ tool_calls_so_far: 3 }, { OPENCODE_PARENT_TOOL_CALL_ID: "toolu_sub_1" }).tool_calls_so_far === 3
+      && JSON.stringify(stepStartAttrs({ a: 1 }, {})) === '{"a":1}'
+      && JSON.stringify(stepStartAttrs({}, { OPENCODE_PARENT_TOOL_CALL_ID: "x; rm" })) === "{}"
+      && /attrs: stepStartAttrs\(attrBag\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8"))
+      && [["prepare-review.mjs", "prepare"], ["finalize.mjs", "finalize"], ["execute-write-plan.mjs", "post"]].every(([f, step]) =>
+        new RegExp(`name: "${step}", ns: [A-Za-z_]+, attrs: stepStartAttrs\\(\\{\\}\\) \\}`).test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), f), "utf8"))));
   ok("hostFacts records OPENCODE_PARENT_TOOL_CALL_ID and ignores a value that is not an id",
     hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "toolu_vrtx_01abc" }).opencode_parent_tool_call_id === "toolu_vrtx_01abc"
       && hostFacts({ OPENCODE_PARENT_TOOL_CALL_ID: "x; rm -rf /" }).opencode_parent_tool_call_id === undefined
@@ -2032,6 +2053,11 @@ async function selfTest() {
         && !modelSteps({ tier: "standard", topology: "in-context" }).includes("intent-wait")
         && !modelSteps({ tier: "quick", topology: "in-context" }).includes("lenses")
         && modelSteps({ tier: "deep", topology: "hybrid" }).every((n) => n in STEPS));
+    ok("modelSteps lists impact-image between validate and assert only when the image is eligible",
+      modelSteps({ tier: "standard", topology: "in-context", impactImage: true }).slice(-3).join() === "validate,impact-image,assert"
+        && !modelSteps({ tier: "standard", topology: "in-context", impactImage: false }).includes("impact-image")
+        && !modelSteps({ tier: "standard", topology: "in-context" }).includes("impact-image")
+        && STEPS["impact-image"] === "model");
     const mRun = join(dir, "marker");
     beginRun(mRun, facts);
     const filled = markerCommand(mRun).replace("<step>", "verify").replace("<N>", "7").replace(/;$/, "");
