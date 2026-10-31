@@ -185,4 +185,4 @@ A run whose finalize never ran, or whose context predates lens selection, carrie
 
 ## Exporting and querying
 
-Export settings, the span and attribute contract, the instrumentation scope, the run counter, the cost query, and the proof live in [`references/run-telemetry-export.md`](../references/run-telemetry-export.md); a review never needs them to mark its steps.
+Export settings, the span and attribute contract, the instrumentation scope, the run counter, the cost query, and the proof live in [`run-telemetry-export.md`](./run-telemetry-export.md); a review never needs them to mark its steps.

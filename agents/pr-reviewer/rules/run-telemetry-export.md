@@ -1,6 +1,6 @@
 # Run telemetry — exporting and querying
 
-The rule the reviewer follows while it runs is [`rules/run-telemetry.md`](../rules/run-telemetry.md); this file is for whoever exports, queries, or changes the trace.
+The rule the reviewer follows while it runs is [`run-telemetry.md`](./run-telemetry.md); this file holds the rules for whoever exports, queries, or changes the trace, and is not inlined into the Agent0 bundle.
 
 ## Exporting to Dash0
 
@@ -41,7 +41,7 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 | Span | Attributes |
 | --- | --- |
-| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` (including where each scored candidate went — `posted_inline`, `deferred`, `dedupe_dropped`, `confidence_dropped`, `advisory_deferred`, `anchorless`, and `memory.suppressed` — and `pr_review.impact_image` = `added` · `skipped` · `failed` and `pr_review.impact_image.reason`), the memory the review used and read ([§ The memory](../rules/run-telemetry.md#the-memory)), and the lenses it loaded ([§ The lenses](../rules/run-telemetry.md#the-lenses)) |
+| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` (including where each scored candidate went — `posted_inline`, `deferred`, `dedupe_dropped`, `confidence_dropped`, `advisory_deferred`, `anchorless`, and `memory.suppressed` — and `pr_review.impact_image` = `added` · `skipped` · `failed` and `pr_review.impact_image.reason`), the memory the review used and read ([§ The memory](./run-telemetry.md#the-memory)), and the lenses it loaded ([§ The lenses](./run-telemetry.md#the-lenses)) |
 | `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`, `pr_review.opencode.tool_call_id` (the OpenCode tool call whose marker opened it, when `OPENCODE_PARENT_TOOL_CALL_ID` is set); ERROR with `error.type=step_failed` when the step failed; the `lenses` step also carries `pr_review.lenses.loaded` and `pr_review.lenses.names` |
 | `pr_review.phase <name>` | child of a script step: `pr_review.step.name`, `pr_review.phase.name` |
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
@@ -62,7 +62,7 @@ The run's trace and metrics export under one instrumentation scope, picked by th
 Add a harness to `SESSION_HARNESSES` only when no Dash0 agent plugin records its sessions.
 Never add a `PLUGIN_HARNESSES` member — the plugin already emits `invoke_agent pr-reviewer` there, and a second one under its scope counts every review twice — and never a CI or smoke harness, which would list synthetic runs as sessions.
 
-**Why:** [`references/insights-scope.md`](./insights-scope.md).
+**Why:** [`references/insights-scope.md`](../references/insights-scope.md).
 
 ### The run counter
 
@@ -89,7 +89,7 @@ sum by (pr_review_verdict) (increase({otel_metric_name="pr_review.runs", service
 histogram_count(increase({otel_metric_name="pr_review.run.duration"}[5m] anchored))
 ```
 
-**Why:** [`references/run-counter.md`](./run-counter.md).
+**Why:** [`references/run-counter.md`](../references/run-counter.md).
 
 ### The cost of a review
 

@@ -64,7 +64,7 @@
 //      PR_REVIEWER_TELEMETRY=off wins over everything. The ledger and the summary are written
 //      either way — the breakdown needs no backend. They are read from the process environment
 //      only: on an Agent0 Automation a setup script appends them to $DASH0_AGENT_ENV, and nothing
-//      writes them to a file this script reads (references/run-telemetry-export.md § On an Agent0 Automation).
+//      writes them to a file this script reads (rules/run-telemetry-export.md § On an Agent0 Automation).
 //   2. A miss is not an error: a step that finds nothing stays status UNSET.
 //   3. An absent attribute is omitted, never a placeholder.
 //   4. Telemetry never fails a review: every CLI command exits 0 (a misuse is a stderr warning),
@@ -503,7 +503,7 @@ export function lensEvents(run) {
   }));
 }
 
-/** The run counter (references/run-telemetry-export.md § The run counter): what a dashboard counts runs with. */
+/** The run counter (rules/run-telemetry-export.md § The run counter): what a dashboard counts runs with. */
 export const RUN_COUNTER = "pr_review.runs";
 /** Every verdict a run can end with; `none` is a run that finished without one. Each gets a 0
  *  series, so the verdict a run ends on always has a baseline before its 1. */
@@ -1126,7 +1126,7 @@ export async function finishRun(runDir, opts = {}, env = process.env) {
 
 /** A step marker's start attributes: the marker's own `--attr` bag, plus the OpenCode tool call the
  *  marker ran in. A sub-agent runs in its own OpenCode session, which only that call id reaches
- *  (references/run-telemetry-export.md § The cost of a review), so each step carries the id of the session it ran in.
+ *  (rules/run-telemetry-export.md § The cost of a review), so each step carries the id of the session it ran in.
  *  @param {Record<string, any>} attrBag @param {NodeJS.ProcessEnv} env @returns {Record<string, any>} */
 export function stepStartAttrs(attrBag, env = process.env) {
   const toolCall = detectOpencodeToolCallId(env);
