@@ -76,18 +76,21 @@ Neither class ever changes `RUN.tier`: supply it exactly as depth routing set it
 
 ## The three invocation sites
 
-Each lens has one owner file that references this rule — the file that owns the consequence of that lens failing:
+Each lens has one owner file that references this rule — the file that owns the consequence of that lens failing — and one `judgments.lenses` log its step writes on every run that reaches it:
 
-| Lens | Owner file |
-| --- | --- |
-| `measurable` | [`measurability-review.md`](./measurability-review.md) |
-| `confidence` | [`per-comment-confidence.md`](./per-comment-confidence.md) |
-| `verify-behavior` | [`verification-receipt.md`](./verification-receipt.md) |
+| Lens | Owner file | Step | Log |
+| --- | --- | --- | --- |
+| `measurable` | [`measurability-review.md`](./measurability-review.md) | 2.4e | `measurability_log` |
+| `confidence` | [`per-comment-confidence.md`](./per-comment-confidence.md) | 2.7 | `confidence_log` |
+| `verify-behavior` | [`verification-receipt.md`](./verification-receipt.md) | 2.6b | `verify_behavior_log` |
+
+Each log starts `ran` when the lens ran at least once, a host fallback included, and `skipped (<reason>)` otherwise; a lens that cannot run is `skipped (unavailable: <reason>)` beside its `RUN_ANOMALY`.
+The run trace reads these logs to record each composed lens, raised or not.
 
 ## What this rule does not do
 
 - It does not change what any lens computes; it decides only whether a lens runs and how loudly a skip is reported.
-- It does not add a report section or fill `RUN.tier`; it fills the existing `RUN_ANOMALY` slot only.
+- It does not add a report section or fill `RUN.tier`; it fills the existing `RUN_ANOMALY` slot and each step's `judgments.lenses` log.
 - It does not retry a failed host resolution; the file-presence check runs once, before the call.
 - It does not resolve review-checklist lenses (`lens.md` files: `ux`, `ai-engineering`, a team's `.agents/review/lenses/<name>.md`).
   [`select-lenses.mjs`](../../pr-reviewer/scripts/select-lenses.mjs) picks those and hands back their text, under [`rubric-composition.md` § Review lenses](./rubric-composition.md#review-lenses).

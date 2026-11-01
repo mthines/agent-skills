@@ -159,7 +159,7 @@ A run whose finalize never ran carries none of these, so "no memory attributes" 
 
 The root span says which review lenses loaded, where each one came from, how it loaded, and what it raised.
 `finalize.mjs` records them from `context.lenses` and `judgments.candidates` as one `lenses` ledger record; a finalize re-run replaces it.
-You supply the inputs only: give every lens candidate `"finder": "lens"` and the `lens` name from `context.lenses.loaded[].name` ([`rubric-composition.md`](../../shared/rules/rubric-composition.md)).
+You supply the inputs only: give every lens candidate `"finder": "lens"` and the `lens` name from `context.lenses.loaded[].name` ([`rubric-composition.md`](../../shared/rules/rubric-composition.md)), and write each composed lens's `judgments.lenses` log ([`lens-invocation.md` § The three invocation sites](../../shared/rules/lens-invocation.md#the-three-invocation-sites)).
 
 | Where | Attribute | Value |
 | --- | --- | --- |
@@ -170,7 +170,7 @@ You supply the inputs only: give every lens candidate `"finder": "lens"` and the
 | root | `pr_review.lenses.findings`, `pr_review.lenses.confirmed` | lens candidates raised, and how many verification confirmed |
 | root | `pr_review.lenses.skipped` | lenses named or found that did not load |
 | event `pr_review.lens.loaded` · `pr_review.lens.skipped` | `pr_review.lens.name` | one event per lens; `skipped` carries only the name and `pr_review.lens.reason` |
-| event `pr_review.lens.loaded` | `pr_review.lens.trigger` | `auto` (built-in auto lens) · `repo` (`.agents/review/lenses/`) · `review-yaml` (a `.review.yaml` `lenses:` list) · `with` (`--with`) · `step` (a composed lens its own step ran: `measurable` when `judgments.lenses.measurability_log` starts with `ran`) · `unlisted` (named only by a candidate, such as the gated `animations` lens) · `other` |
+| event `pr_review.lens.loaded` | `pr_review.lens.trigger` | `auto` (built-in auto lens) · `repo` (`.agents/review/lenses/`) · `review-yaml` (a `.review.yaml` `lenses:` list) · `with` (`--with`) · `step` (a composed lens its own step ran, raised or not: `measurable`, `verify-behavior`, or `confidence` when its `judgments.lenses` log — `measurability_log`, `verify_behavior_log`, `confidence_log` — starts with `ran`) · `unlisted` (named only by a candidate, such as the gated `animations` lens) · `other` |
 | event `pr_review.lens.loaded` | `pr_review.lens.origin` | where the lens came from, so a dashboard classifies by origin, never by name: `bundled` (shipped with pr-reviewer: its own skills tree or the Agent0 install; the gated `animations` lens too) · `composed` (`measurable`, `confidence`, `verify-behavior`, run through `Skill()`) · `repo` (`.agents/review/lenses/`) · `repo-skill` (`.agents/skills/<name>/lens.md`) · `installed` (`~/.claude/skills/<name>/lens.md`, not shipped with pr-reviewer); omitted only for an `unlisted` lens that is neither composed nor gated |
 | event `pr_review.lens.loaded` | `pr_review.lens.source` | the lens file's path, as `select-lenses.mjs` resolved it; omitted for a composed or `unlisted` lens |
 | event `pr_review.lens.loaded` | `pr_review.lens.reason`, `.files`, `.findings`, `.confirmed` | the full selection reason (a `step` lens: its step log), the changed files its trigger matched, and the candidates it raised |

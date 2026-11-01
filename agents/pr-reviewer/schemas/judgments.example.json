@@ -104,7 +104,9 @@
   "lenses": {
     "standards_log": "skipped (t=0.4)",
     "measurability_log": "ran · 0 paths classified · 0 missing · 0 unlinked",
-    "holistic_log": "skipped (lean budget, tier quick)"
+    "holistic_log": "skipped (lean budget, tier quick)",
+    "verify_behavior_log": "ran · 1 claim(s)",
+    "confidence_log": "skipped (every candidate came from a finder)"
   },
   "memory": {
     "relevance_rules": [],

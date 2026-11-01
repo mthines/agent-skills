@@ -57,6 +57,20 @@ receipt is what turns a checklist hit into a defensible `(blocking)` finding.
 The verifier runs in this turn under both topologies ([`dispatch-topology.md`](./dispatch-topology.md)):
 reading the rule in the context that produced the candidate is the weaker but acceptable form.
 
+**Log `verify-behavior`.** Write `judgments.lenses.verify_behavior_log` on every run that reaches
+this step: `ran · <n> claim(s)` when `verify-behavior` ran on at least one claim (resolved per
+[`lens-invocation.md`](../../shared/rules/lens-invocation.md), a host fallback included), otherwise
+`skipped (<reason>)`. A lens that could not run is `skipped (unavailable: <reason>)`, beside its
+`RUN_ANOMALY`. The run trace records `verify-behavior` as a composed lens from this line, whether or
+not it raised anything ([`run-telemetry.md` § The lenses](./run-telemetry.md#the-lenses)).
+
+```text
+✓ "verify_behavior_log": "ran · 2 claim(s)"
+✓ "verify_behavior_log": "skipped (no risky-shape behavioral candidate)"
+✗ "verify_behavior_log": "2 claims verified"   # no ran/skipped head — validate-judgments.mjs rejects it
+✗ (omitted after the lens ran)                  # the trace cannot tell it ran from never reaching the step
+```
+
 ### 2.7 Score the confirmed findings
 
 The **rubric** lives in [`finding-verifier.md § The finding rubric`](../../shared/rules/finding-verifier.md):
@@ -80,6 +94,19 @@ finder — the `quick`-tier rubric output, the `ux` / `critical` / `--with` lens
 a score when Phase E did not run on it. A finding with no score from **either** path is dropped:
 an unscored finding cannot be compared to a threshold, and posting it would mean posting it
 ungated.
+
+**Log `confidence`.** Write `judgments.lenses.confidence_log` on every run that reaches this step:
+`ran · <n> scored` when `confidence` scored at least one candidate (resolved per
+[`lens-invocation.md`](../../shared/rules/lens-invocation.md), a host fallback included), otherwise
+`skipped (<reason>)`. A lens that could not run is `skipped (unavailable: <reason>)`, beside its
+`RUN_ANOMALY`. The run trace records `confidence` as a composed lens from this line, whether or not it
+raised anything ([`run-telemetry.md` § The lenses](./run-telemetry.md#the-lenses)).
+
+```text
+✓ "confidence_log": "ran · 3 scored"
+✓ "confidence_log": "skipped (every candidate came from a finder)"
+✗ "confidence_log": "scored 3"   # no ran/skipped head — validate-judgments.mjs rejects it
+```
 
 ### 2.8 Comment shape — **rendered, not written**
 

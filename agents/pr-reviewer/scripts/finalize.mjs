@@ -601,11 +601,12 @@ export function lensesLine(lenses) {
 const LENS_TRIGGERS = /** @type {Record<string, string>} */ ({ "auto": "auto", "repo lens": "repo", ".review.yaml lenses:": "review-yaml", "--with": "with" });
 
 /**
- * The composed lenses (agents/shared/rules/lens-invocation.md): run by their own pipeline step
- * through Skill(), never by select-lenses.mjs. Each maps to the `judgments.lenses` log its step
- * writes, when it writes one; a log that starts with `ran` is that lens loading.
+ * The composed lenses (agents/shared/rules/lens-invocation.md § The three invocation sites): run by
+ * their own pipeline step through Skill(), never by select-lenses.mjs. Each maps to the
+ * `judgments.lenses` log its step writes (2.4e, 2.7, 2.6b); a log that starts with `ran` is that
+ * lens loading.
  */
-const COMPOSED_LENSES = /** @type {Record<string, string|null>} */ ({ "measurable": "measurability_log", "confidence": null, "verify-behavior": null });
+const COMPOSED_LENSES = /** @type {Record<string, string>} */ ({ "measurable": "measurability_log", "confidence": "confidence_log", "verify-behavior": "verify_behavior_log" });
 /** Lenses with their own gate (rubric-composition.md § The motion gate), loaded by the model from the lens shipped with this agent. */
 const GATED_LENSES = Object.freeze(["animations"]);
 
@@ -691,7 +692,7 @@ export function lensTelemetryItems(lenses, candidates = [], logs = {}) {
     });
   }
   for (const [name, log] of Object.entries(COMPOSED_LENSES)) {
-    const ran = log && typeof logs?.[log] === "string" && /^ran\b/.test(logs[log]) ? logs[log] : null;
+    const ran = typeof logs?.[log] === "string" && /^ran\b/.test(logs[log]) ? logs[log] : null;
     if (!ran || has(name)) continue;
     items.push({ status: "loaded", name, origin: "composed", trigger: "step", reason: ran, ...(raised.get(name) || { findings: 0, confirmed: 0 }) });
   }
@@ -2992,6 +2993,15 @@ async function selfTest() {
       check("lensTelemetryItems: measurable is loaded when its step log says it ran, though it raised nothing — origin `composed`, trigger `step`, the log as reason",
         quiet.length === 1 && quiet[0].name === "measurable" && quiet[0].origin === "composed" && quiet[0].trigger === "step"
           && quiet[0].reason === ranLog && quiet[0].findings === 0 && quiet[0].confirmed === 0, JSON.stringify(quiet));
+      const allRan = /** @type {Array<Record<string, any>>} */ (lensTelemetryItems({ loaded: [], skipped: [] }, [],
+        { measurability_log: ranLog, confidence_log: "ran · 3 scored", verify_behavior_log: "ran · 2 claim(s)" }));
+      check("lensTelemetryItems: confidence and verify-behavior load from their own step logs (2.7, 2.6b), in the composed order",
+        JSON.stringify(allRan.map((i) => `${i.name}:${i.origin}:${i.trigger}:${i.findings}`)) === '["measurable:composed:step:0","confidence:composed:step:0","verify-behavior:composed:step:0"]'
+          && allRan[1].reason === "ran · 3 scored" && allRan[2].reason === "ran · 2 claim(s)", JSON.stringify(allRan));
+      const someRan = lensTelemetryItems({ loaded: [], skipped: [] }, [],
+        { measurability_log: "skipped (t=0.2)", confidence_log: "skipped (every candidate came from a finder)", verify_behavior_log: "ran · 1 claim(s)" });
+      check("lensTelemetryItems: each composed lens follows its own log — a skipped confidence_log loads nothing beside a verify-behavior that ran",
+        JSON.stringify(someRan?.map((i) => i.name)) === '["verify-behavior"]', JSON.stringify(someRan));
       const loud = /** @type {Array<Record<string, any>>} */ (lensTelemetryItems({ loaded: [], skipped: [] },
         [{ finder: "lens", lens: "measurable", verdict: "confirmed" }, { finder: "lens", lens: "measurable", verdict: "contradicted" }], { measurability_log: ranLog }));
       check("lensTelemetryItems: a composed lens that ran and raised candidates is one item that counts them",
@@ -3048,7 +3058,9 @@ async function selfTest() {
         { name: "billing-audit", source: `${LENS_DIR}/billing-audit.md`, reason: "repo lens; applies-to services/billing/**", files: [] },
       ], skipped: [{ name: "soc2", reason: "--with names a lens that was not found" }], notes: [] } }, null, 2));
       const ltJudgmentsPath = join(ltDir, "judgments.json");
-      writeFileSync(ltJudgmentsPath, JSON.stringify({ ...e2eJudgments, candidates: [...e2eJudgments.candidates, {
+      writeFileSync(ltJudgmentsPath, JSON.stringify({ ...e2eJudgments,
+        lenses: { ...e2eJudgments.lenses, verify_behavior_log: "ran · 1 claim(s)", confidence_log: "skipped (every candidate came from a finder)" },
+        candidates: [...e2eJudgments.candidates, {
         ...e2eJudgments.candidates[0], finder: "lens", lens: "tdd", line: 120, symbol: "retryLoop", severity: "medium", blocking: false,
         claim: "the retry loop has no test", bad_outcome: "a backoff regression ships unnoticed", evidence: ["src/api/client.ts:120"],
         title: "The retry loop has no test", body: "The retry loop at this line has no test covering its backoff.",
@@ -3059,13 +3071,15 @@ async function selfTest() {
       const ltSummary = existsSync(join(ltDir, "telemetry-summary.json")) ? JSON.parse(readFileSync(join(ltDir, "telemetry-summary.json"), "utf8")) : {};
       check("finalize records context.lenses as one `lenses` ledger record, the lens candidate counted against its lens",
         lt.status === 0 && Array.isArray(lensRec?.items)
-          && JSON.stringify(lensRec.items.map((/** @type {any} */ i) => `${i.status}:${i.name}:${i.trigger ?? ""}`)) === '["loaded:tdd:auto","loaded:billing-audit:repo","loaded:measurable:step","skipped:soc2:"]'
+          && JSON.stringify(lensRec.items.map((/** @type {any} */ i) => `${i.status}:${i.name}:${i.trigger ?? ""}`)) === '["loaded:tdd:auto","loaded:billing-audit:repo","loaded:measurable:step","loaded:verify-behavior:step","skipped:soc2:"]'
           && lensRec.items[0].findings === 1 && lensRec.items[0].confirmed === 1 && lensRec.items[1].findings === 0,
         (lt.stderr || "").slice(0, 300) || JSON.stringify(lensRec));
-      check("finalize records measurable from judgments.lenses.measurability_log: `composed`, though it raised nothing",
-        lensRec?.items?.[2]?.origin === "composed" && lensRec.items[2].findings === 0 && /^ran\b/.test(lensRec.items[2].reason || ""), JSON.stringify(lensRec?.items?.[2]));
+      check("finalize records each composed lens whose judgments.lenses log ran — measurable and verify-behavior — as `composed`, though neither raised anything; a skipped confidence_log records none",
+        [2, 3].every((i) => lensRec?.items?.[i]?.origin === "composed" && lensRec.items[i].findings === 0 && /^ran\b/.test(lensRec.items[i].reason || ""))
+          && lensRec?.items?.[3]?.reason === "ran · 1 claim(s)" && !lensRec?.items?.some((/** @type {any} */ i) => i.name === "confidence"),
+        JSON.stringify(lensRec?.items?.slice(2)));
       check("the dry run's telemetry summary lists the lenses",
-        JSON.stringify(ltSummary.lenses?.loaded?.map((/** @type {any} */ l) => l.name)) === '["tdd","billing-audit","measurable"]' && ltSummary.lenses?.skipped?.[0]?.name === "soc2",
+        JSON.stringify(ltSummary.lenses?.loaded?.map((/** @type {any} */ l) => l.name)) === '["tdd","billing-audit","measurable","verify-behavior"]' && ltSummary.lenses?.skipped?.[0]?.name === "soc2",
         JSON.stringify(ltSummary.lenses));
 
       const noLensDir = join(e2eDir, "lens-telemetry-absent");
