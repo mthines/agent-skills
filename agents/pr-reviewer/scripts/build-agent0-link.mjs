@@ -29,14 +29,9 @@ const HOSTS = { production: "https://app.dash0.com", development: "https://app.d
 // format).
 const MAX_URL = 4000;
 
-// One value per button site — the click-attribution tag read back in Dash0 (agent0-fix-links.md
-// § Click attribution), sent as `d0_source=github:pr-reviewer-<SOURCE>`. Not `utm_source`: privacy
-// features strip every `utm_*` param by exact name (the DuckDuckGo extension among them), and a
-// stripped click reaches Dash0 with no attribution at all. `d0_source` is Dash0's own alias, which it
-// maps back to the `utm_*` web-event attributes. Required, not defaulted: an omitted or misspelled
-// --source silently drops the URL into the wrong (or no) attribution bucket with no visible symptom
-// on the rendered button — the same failure shape --env had before it was made
-// mandatory-by-convention. Fail closed instead.
+// One value per button site, sent as `d0_source=github:pr-reviewer-<SOURCE>` (agent0-fix-links.md
+// § Click attribution) — never `utm_*`, which privacy features strip by name. Required and fail-closed:
+// a missing or misspelled --source would mis-bucket every click with no visible symptom.
 const SOURCES = ["fix-all", "fix-this", "re-review", "loop"];
 
 // The optional Dash0 organization slug (agent0-fix-links.md § Organization). Absent by default: a
