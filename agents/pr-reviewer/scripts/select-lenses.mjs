@@ -42,6 +42,10 @@ import { readAtRefLocal } from "./review-context.mjs";
 
 export const LENS_DIR = ".agents/review/lenses";
 export const LENS_VERSION = 1;
+/** Lenses with their own gate (rubric-composition.md § The motion gate), never auto-loaded here: the
+ *  model loads them from the lens shipped with this agent. finalize.mjs imports this list to tag
+ *  such a lens `bundled` on the run trace. */
+export const GATED_LENSES = Object.freeze(["animations"]);
 const TIER_RANK = { quick: 0, standard: 1, deep: 2 };
 /** The lens names a finding can carry (judgments.schema.json `lens`). */
 const LENS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -237,10 +241,10 @@ export function triggerMatches(lens, { changed, tier, named = false, scope }) {
  *   repoLenses?: Record<string, string>,         // name → `.agents/review/lenses/<name>.md` text at the base
  *   repoSkillLenses?: Record<string, string>,    // name → `.agents/skills/<name>/lens.md` text at the base
  *   bundledLenses?: Record<string, { text: string, path: string, origin?: SkillDirOrigin }>,  // name → lens shipped with or installed for the agent; no origin is `bundled`
- *   gated?: string[],                            // lenses with their own gate (animations), never auto-loaded here
+ *   gated?: readonly string[],                   // lenses with their own gate (GATED_LENSES), never auto-loaded here
  * }} a
  */
-export function selectLenses({ changed, tier, withNames = [], configs = {}, repoLenses = {}, repoSkillLenses = {}, bundledLenses = {}, gated = ["animations"] }) {
+export function selectLenses({ changed, tier, withNames = [], configs = {}, repoLenses = {}, repoSkillLenses = {}, bundledLenses = {}, gated = GATED_LENSES }) {
   /** @type {Array<{ name: string, source: string, origin: LensOrigin, reason: string, files: string[], text: string }>} */
   const loaded = [];
   /** @type {Array<{ name: string, reason: string }>} */
@@ -471,6 +475,9 @@ function selfTest() {
   const s5 = selectLenses({ changed: [ch("app/Chart.tsx"), ch("a.css")], bundledLenses: { ux, charting, animations: anim } });
   check("a bundled lens auto-loads only with auto: true, and a gated lens (animations) never auto-loads here",
     JSON.stringify(names(s5)) === '["ux"]', JSON.stringify(names(s5)));
+  check("GATED_LENSES is selectLenses' default gate: frozen, holds animations, and an empty gate lets animations auto-load",
+    Object.isFrozen(GATED_LENSES) && GATED_LENSES.includes("animations")
+      && JSON.stringify(names(selectLenses({ changed: [ch("a.css")], bundledLenses: { animations: anim }, gated: [] }))) === '["animations"]');
 
   const repoUx = lens('applies-to: "**/*.tsx"', "## Checklist\n\n- [ ] the house rule\n");
   const s6 = selectLenses({ changed: [ch("a.tsx")], repoLenses: { ux: repoUx }, bundledLenses: { ux } });
