@@ -2890,7 +2890,7 @@ async function selfTest() {
     if (existsSync(join(outDir, "report-body.md"))) {
       check("default run, no login: Fix all is still built, calling /implement-suggestion",
         readFileSync(join(outDir, "report-body.md"), "utf8").includes(
-          "utm_source=pr-reviewer-fix-all")
+          "d0_source=github:pr-reviewer-fix-all")
         && readFileSync(join(outDir, "report-body.md"), "utf8").includes(encodeURIComponent("/implement-suggestion https://github.com/o/r/pull/205")));
     }
     {
@@ -2909,7 +2909,7 @@ async function selfTest() {
       };
       const on = spawnFx("on", []);
       check("default run with a login: the inline claim carries a Fix this button scoped to its path:line",
-        on.status === 0 && Boolean(on.plan?.review_create?.comments?.[0]?.body.includes("utm_source=pr-reviewer-fix-this"))
+        on.status === 0 && Boolean(on.plan?.review_create?.comments?.[0]?.body.includes("d0_source=github:pr-reviewer-fix-this"))
         && Boolean(on.plan?.review_create?.comments?.[0]?.body.includes(encodeURIComponent("src/api/client.ts:88"))));
       check("default run with a login: Fix all calls /implement-suggestion and Loop /review-loop --merge",
         on.report.includes(encodeURIComponent("/implement-suggestion https://github.com/o/r/pull/205"))

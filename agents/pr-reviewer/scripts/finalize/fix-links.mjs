@@ -175,11 +175,11 @@ async function selfTest() {
     { prefix: "issue", path: "d.ts", line: 4, fix_url: "https://app.dash0.com/goto/agent0?keep" },
   ]);
   const r = applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: "bot", inline });
-  check("Fix this is built for issue and suggestion", String(inline[0].fix_url).includes("utm_source=pr-reviewer-fix-this")
+  check("Fix this is built for issue and suggestion", String(inline[0].fix_url).includes("d0_source=github:pr-reviewer-fix-this")
     && String(inline[1].fix_url).includes(encodeURIComponent("b.ts:9")));
   check("Fix this is never built for a nitpick", inline[2].fix_url === undefined);
   check("a caller-supplied fix_url is kept", inline[3].fix_url === "https://app.dash0.com/goto/agent0?keep" && r.fixThis === 2);
-  check("Fix all calls /implement-suggestion with the full PR URL", r.fixAllUrl !== null && r.fixAllUrl.includes("utm_source=pr-reviewer-fix-all")
+  check("Fix all calls /implement-suggestion with the full PR URL", r.fixAllUrl !== null && r.fixAllUrl.includes("d0_source=github:pr-reviewer-fix-all")
     && r.fixAllUrl.includes(encodeURIComponent(`/implement-suggestion ${PR}`)) && r.fixAllUrl.startsWith("https://app.dash0.com/"));
   check("Fix this does not carry the full PR URL", !String(inline[0].fix_url).includes(encodeURIComponent("https://github.com")));
   check("Fix this names the PR by its short reference", String(inline[0].fix_url).includes(encodeURIComponent("/pr-fix o/r#7 bot — apply only the comment at a.ts:3.")));
@@ -216,8 +216,8 @@ async function selfTest() {
   check("normalizeLogin matches prepare-review.mjs's", ["app/dash0-dev", "dash0-dev[bot]", " Dash0-Dev ", "mthines", "", null]
     .every((v) => normalizeLogin(v) === canonical(v)));
   check("Re-review and Loop carry the full PR URL (review-loop has no short form)",
-    String(r.reviewUrl).includes(encodeURIComponent(`/pr-review ${PR}`)) && String(r.reviewUrl).includes("utm_source=pr-reviewer-re-review")
-    && String(r.loopUrl).includes(encodeURIComponent(`/review-loop ${PR} --merge`)) && String(r.loopUrl).includes("utm_source=pr-reviewer-loop"));
+    String(r.reviewUrl).includes(encodeURIComponent(`/pr-review ${PR}`)) && String(r.reviewUrl).includes("d0_source=github:pr-reviewer-re-review")
+    && String(r.loopUrl).includes(encodeURIComponent(`/review-loop ${PR} --merge`)) && String(r.loopUrl).includes("d0_source=github:pr-reviewer-loop"));
   const clean = applyFixLinks({ settings: resolveFixLinks({}), prUrl: PR, login: "bot", inline: [] });
   check("nothing to fix: Re-review stays, Loop goes with Fix all", clean.reviewUrl !== null && clean.fixAllUrl === null && clean.loopUrl === null);
   check("off builds no Re-review or Loop", offR.reviewUrl === null && offR.loopUrl === null);
