@@ -352,7 +352,7 @@
       }
     },
     "lenses": {
-      "description": "One log field per default-on lens (standards-conformance, measurability-review, holistic-review), each render-report.mjs's ^(ran|skipped) grammar. optimality_cards / optimality_log are legacy and optional — the optimality lens was removed; omit them.",
+      "description": "One log field per default-on lens (standards-conformance, measurability-review, holistic-review), each render-report.mjs's ^(ran|skipped) grammar. verify_behavior_log (Step 2.6b) and confidence_log (Step 2.7) log the two composed lenses that run only on some candidates, in the same grammar; they are optional because only the run trace reads them, so an absent one is unknown there, never skipped. optimality_cards / optimality_log are legacy and optional — the optimality lens was removed; omit them.",
       "type": "object",
       "additionalProperties": false,
       "required": ["standards_log", "measurability_log", "holistic_log"],
@@ -364,7 +364,9 @@
         "optimality_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
         "standards_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
         "measurability_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
-        "holistic_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 }
+        "holistic_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
+        "verify_behavior_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 },
+        "confidence_log": { "type": "string", "pattern": "^(ran|skipped)\\b", "minLength": 1 }
       }
     },
     "memory": {

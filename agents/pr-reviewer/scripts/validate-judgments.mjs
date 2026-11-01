@@ -588,6 +588,19 @@ async function selfTest() {
       const example = JSON.parse(readFileSync(join(HERE, "..", "schemas", "judgments.example.json"), "utf8"));
       const exampleErrors = validateJudgments(schema, example);
       check("schemas/judgments.example.json validates with zero errors", exampleErrors.length === 0, exampleErrors.join(" | "));
+      // The composed lenses' step logs (2.6b, 2.7) are optional, but a present one keeps the ran/skipped
+      // head the run trace reads them by (finalize.mjs lensTelemetryItems).
+      const without = structuredClone(example);
+      delete without.lenses.verify_behavior_log;
+      delete without.lenses.confidence_log;
+      const bad = structuredClone(example);
+      bad.lenses.verify_behavior_log = "2 claims verified";
+      bad.lenses.confidence_log = "scored 3";
+      const badErrors = validateJudgments(schema, bad);
+      check("verify_behavior_log and confidence_log are optional, and a present one must start with ran or skipped",
+        validateJudgments(schema, without).length === 0 && "verify_behavior_log" in example.lenses && "confidence_log" in example.lenses
+          && badErrors.some((e) => e.includes("lenses.verify_behavior_log")) && badErrors.some((e) => e.includes("lenses.confidence_log")),
+        badErrors.join(" | "));
     }
   }
 

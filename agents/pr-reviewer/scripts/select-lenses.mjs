@@ -13,6 +13,10 @@
  *      with this agent or installed under `~/.claude/skills/<name>/lens.md`.
  *   3. Built-in auto lenses — a bundled or installed lens that declares `auto: true`.
  *
+ * Every loaded lens carries its `origin`: `repo` (1), `repo-skill` (`.agents/skills/`), `bundled`
+ * (shipped with this agent: its own skills tree or the Agent0 install), or `installed` (the user's
+ * `~/.claude/skills`). The run trace splits built-in from custom lenses by it, never by name.
+ *
  * The trigger is the lens's frontmatter: `applies-to` (globs or `always`), `diff-matches` (regexes
  * over added lines), and `min-tier` (quick < standard < deep). A named lens keeps only its
  * `applies-to` filter: the caller asked for it.
@@ -24,6 +28,7 @@
  * Usage
  *   node select-lenses.mjs --base <ref> --files-json <local-files.json> [--root <dir>]
  *     [--tier quick|standard|deep] [--with a,b] [--skills-dir <dir>]...   # prints JSON, announces on stderr
+ *     (a --skills-dir replaces the default directories, and its lenses count as `bundled`)
  *   node select-lenses.mjs --self-test
  */
 
@@ -41,6 +46,11 @@ const TIER_RANK = { quick: 0, standard: 1, deep: 2 };
 /** The lens names a finding can carry (judgments.schema.json `lens`). */
 const LENS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_LENS_LINES = 1000; // review-lens-contract.md: a defensive guard against pointing at the wrong file
+/**
+ * @typedef {"bundled"|"installed"} SkillDirOrigin  shipped with this agent, or installed by the user
+ * @typedef {{ dir: string, origin: SkillDirOrigin }} SkillDir
+ * @typedef {"repo"|"repo-skill"|SkillDirOrigin} LensOrigin  where a loaded lens's file came from
+ */
 
 /* ------------------------------- parsing ------------------------------- */
 
@@ -226,12 +236,12 @@ export function triggerMatches(lens, { changed, tier, named = false, scope }) {
  *   configs?: Record<string, string>,            // `.review.yaml` path → text, read at the base
  *   repoLenses?: Record<string, string>,         // name → `.agents/review/lenses/<name>.md` text at the base
  *   repoSkillLenses?: Record<string, string>,    // name → `.agents/skills/<name>/lens.md` text at the base
- *   bundledLenses?: Record<string, { text: string, path: string }>,  // name → lens shipped with or installed for the agent
+ *   bundledLenses?: Record<string, { text: string, path: string, origin?: SkillDirOrigin }>,  // name → lens shipped with or installed for the agent; no origin is `bundled`
  *   gated?: string[],                            // lenses with their own gate (animations), never auto-loaded here
  * }} a
  */
 export function selectLenses({ changed, tier, withNames = [], configs = {}, repoLenses = {}, repoSkillLenses = {}, bundledLenses = {}, gated = ["animations"] }) {
-  /** @type {Array<{ name: string, source: string, reason: string, files: string[], text: string }>} */
+  /** @type {Array<{ name: string, source: string, origin: LensOrigin, reason: string, files: string[], text: string }>} */
   const loaded = [];
   /** @type {Array<{ name: string, reason: string }>} */
   const skipped = [];
@@ -240,14 +250,16 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
   const misses = new Map();
   const paths = changed.map((c) => c.path);
 
-  /** @param {string} name @returns {{ text: string, source: string } | null} */
+  /** @param {string} name @returns {{ text: string, source: string, origin: LensOrigin }} */
+  const bundledHit = (name) => ({ text: bundledLenses[name].text, source: bundledLenses[name].path, origin: bundledLenses[name].origin === "installed" ? "installed" : "bundled" });
+  /** @param {string} name @returns {{ text: string, source: string, origin: LensOrigin } | null} */
   const resolve = (name) => {
-    if (repoLenses[name] !== undefined) return { text: repoLenses[name], source: `${LENS_DIR}/${name}.md` };
-    if (repoSkillLenses[name] !== undefined) return { text: repoSkillLenses[name], source: `.agents/skills/${name}/lens.md` };
-    if (bundledLenses[name]) return { text: bundledLenses[name].text, source: bundledLenses[name].path };
+    if (repoLenses[name] !== undefined) return { text: repoLenses[name], source: `${LENS_DIR}/${name}.md`, origin: "repo" };
+    if (repoSkillLenses[name] !== undefined) return { text: repoSkillLenses[name], source: `.agents/skills/${name}/lens.md`, origin: "repo-skill" };
+    if (bundledLenses[name]) return bundledHit(name);
     return null;
   };
-  /** @param {string} name @param {{ text: string, source: string }} hit @param {{ named: boolean, scope?: string[], why: string }} how */
+  /** @param {string} name @param {{ text: string, source: string, origin: LensOrigin }} hit @param {{ named: boolean, scope?: string[], why: string }} how */
   // A lens file reached by several sources (a scoped `lenses:` entry, then its own auto trigger)
   // loads once, over the union of the files each source matched. A different file of the same
   // name never merges in: the first source's text keeps its own files.
@@ -265,7 +277,7 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
       prior.files = [...new Set([...prior.files, ...t.files])].sort();
       prior.reason += `; ${how.why}`;
     } else {
-      loaded.push({ name, source: hit.source, reason: `${how.why}; ${t.reason}`, files: t.files, text: lens.body });
+      loaded.push({ name, source: hit.source, origin: hit.origin, reason: `${how.why}; ${t.reason}`, files: t.files, text: lens.body });
     }
     if (!how.scope) seen.add(name);
   };
@@ -285,13 +297,13 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
   // 3. Repo lenses: auto unless they say `auto: false`.
   for (const name of Object.keys(repoLenses).sort()) {
     if (parseLens(repoLenses[name]).auto === false) continue;
-    consider(name, { text: repoLenses[name], source: `${LENS_DIR}/${name}.md` }, { named: false, why: "repo lens" });
+    consider(name, { text: repoLenses[name], source: `${LENS_DIR}/${name}.md`, origin: "repo" }, { named: false, why: "repo lens" });
   }
   // 4. Built-in lenses that opt into auto-loading. A repo lens of the same name already won in step 3.
   for (const name of Object.keys(bundledLenses).sort()) {
     if (gated.includes(name) || repoLenses[name] !== undefined) continue;
     if (parseLens(bundledLenses[name].text).auto !== true) continue;
-    consider(name, { text: bundledLenses[name].text, source: bundledLenses[name].path }, { named: false, why: "auto" });
+    consider(name, bundledHit(name), { named: false, why: "auto" });
   }
 
   for (const [name, reason] of misses) if (!loaded.some((l) => l.name === name)) skipped.push({ name, reason });
@@ -317,19 +329,23 @@ export function selectLenses({ changed, tier, withNames = [], configs = {}, repo
 
 /**
  * Lenses shipped with this agent (the repo or plugin it lives in) and installed under the given
- * skills directories. The first directory to provide a name wins.
- * @param {string[]} [dirs]
- * @returns {Record<string, { text: string, path: string }>}
+ * skills directories. The first directory to provide a name wins, and the lens keeps that
+ * directory's origin: a plain path is `bundled`, `{ dir, origin: "installed" }` is the user's own.
+ * @param {Array<string | SkillDir>} [dirs]
+ * @returns {Record<string, { text: string, path: string, origin: SkillDirOrigin }>}
  */
 export function readBundledLenses(dirs = defaultSkillDirs()) {
-  /** @type {Record<string, { text: string, path: string }>} */
+  /** @type {Record<string, { text: string, path: string, origin: SkillDirOrigin }>} */
   const out = {};
-  for (const root of dirs) {
+  for (const entry of dirs) {
+    const root = typeof entry === "string" ? entry : entry.dir;
+    /** @type {SkillDirOrigin} */
+    const origin = typeof entry !== "string" && entry.origin === "installed" ? "installed" : "bundled";
     if (!existsSync(root)) continue;
     /** @type {string[]} */
     const skillDirs = [];
-    for (const entry of readdirSync(root)) {
-      const p = join(root, entry);
+    for (const child of readdirSync(root)) {
+      const p = join(root, child);
       if (existsSync(join(p, "SKILL.md")) || existsSync(join(p, "lens.md"))) skillDirs.push(p);
       else if (existsSync(p) && safeIsDir(p)) for (const sub of readdirSync(p)) skillDirs.push(join(p, sub)); // skills/<category>/<name>
     }
@@ -337,7 +353,7 @@ export function readBundledLenses(dirs = defaultSkillDirs()) {
       const name = posix.basename(d.split("\\").join("/"));
       const lens = join(d, "lens.md");
       if (out[name] || !existsSync(lens)) continue;
-      out[name] = { text: readFileSync(lens, "utf8"), path: `${name}/lens.md` };
+      out[name] = { text: readFileSync(lens, "utf8"), path: `${name}/lens.md`, origin };
     }
   }
   return out;
@@ -346,12 +362,18 @@ export function readBundledLenses(dirs = defaultSkillDirs()) {
 /** @param {string} p */
 function safeIsDir(p) { try { return readdirSync(p) !== null; } catch { return false; } }
 
-/** This agent's own skills tree (checkout or plugin), then the user's installed skills. */
+/** This agent's own skills tree (checkout or plugin), then the user's installed skills.
+ *  @returns {SkillDir[]} */
 export function defaultSkillDirs() {
   const here = dirname(fileURLToPath(import.meta.url));
   // Checkout or plugin (`agents/pr-reviewer/scripts` → `skills/`), then the Agent0 install
-  // (`$AGENT_SUPPORT/skills`, see agent0-setup.sh), then the user's installed skills.
-  return [join(here, "..", "..", "..", "skills"), join(here, "..", "..", "skills"), join(homedir(), ".claude", "skills")];
+  // (`$AGENT_SUPPORT/skills`, see agent0-setup.sh): both ship with this agent. Then the user's
+  // installed skills, last, so an installed lens never shadows a shipped one of the same name.
+  return [
+    { dir: join(here, "..", "..", "..", "skills"), origin: "bundled" },
+    { dir: join(here, "..", "..", "skills"), origin: "bundled" },
+    { dir: join(homedir(), ".claude", "skills"), origin: "installed" },
+  ];
 }
 
 /**
@@ -454,8 +476,25 @@ function selfTest() {
   const s6 = selectLenses({ changed: [ch("a.tsx")], repoLenses: { ux: repoUx }, bundledLenses: { ux } });
   check("a repo lens overrides a built-in of the same name",
     s6.loaded.length === 1 && s6.loaded[0].source === `${LENS_DIR}/ux.md` && /house rule/.test(s6.loaded[0].text), JSON.stringify(s6.loaded));
+  check("a repo lens that overrides a built-in is `repo`, never `bundled`", s6.loaded[0]?.origin === "repo", JSON.stringify(s6.loaded));
   const s7 = selectLenses({ changed: [ch("a.ts")], withNames: ["tdd"], repoSkillLenses: { tdd: lens("for: pr-reviewer") }, bundledLenses: { tdd: { text: lens("x: 1"), path: "tdd/lens.md" } } });
   check("resolution order: repo .agents/skills lens before a bundled one", s7.loaded[0]?.source === ".agents/skills/tdd/lens.md", JSON.stringify(s7));
+
+  // Origin: every loaded lens says where its file came from, whichever step loaded it.
+  const mine = { text: lens('applies-to: "**/*.ts"\nauto: true'), path: "house-style/lens.md", origin: /** @type {const} */ ("installed") };
+  const o1 = selectLenses({
+    changed: [ch("a.ts"), ch("b.tsx")], withNames: ["ledger"],
+    repoLenses: { billing: lens("") }, repoSkillLenses: { ledger: lens("") },
+    bundledLenses: { ux, "house-style": mine, tdd: { text: lens("auto: true"), path: "tdd/lens.md", origin: "bundled" } },
+  });
+  const originOf = (/** @type {string} */ n) => o1.loaded.find((l) => l.name === n)?.origin;
+  check("origin: repo lens `repo`, .agents/skills lens `repo-skill`, shipped lens `bundled`, user-installed lens `installed`",
+    originOf("billing") === "repo" && originOf("ledger") === "repo-skill" && originOf("ux") === "bundled"
+      && originOf("tdd") === "bundled" && originOf("house-style") === "installed", JSON.stringify(o1.loaded.map((l) => [l.name, l.origin])));
+  check("origin: a bundled lens with no origin (an older caller) is `bundled`",
+    selectLenses({ changed: [ch("a.tsx")], bundledLenses: { ux: { text: ux.text, path: ux.path } } }).loaded[0]?.origin === "bundled");
+  check("origin: an installed lens named by --with keeps `installed`",
+    selectLenses({ changed: [ch("a.ts")], withNames: ["house-style"], bundledLenses: { "house-style": { ...mine, text: lens("auto: false") } } }).loaded[0]?.origin === "installed");
 
   const many = Object.fromEntries(["a", "b", "c", "d", "e"].map((n) => [n, { text: lens("x: 1"), path: `${n}/lens.md` }]));
   const s8 = selectLenses({ changed: [ch("f.ts")], withNames: ["a", "b", "c", "d", "e", "missing"], bundledLenses: many });
@@ -536,6 +575,29 @@ function selfTest() {
   const bundled = readBundledLenses([join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "skills")]);
   check("readBundledLenses finds this repo's lenses under skills/<category>/<name>/lens.md",
     ["ux", "ai-engineering", "charting", "animations"].every((n) => bundled[n]?.text.includes("lens-version")), Object.keys(bundled).join(","));
+  check("readBundledLenses: a plain directory is `bundled`", ["ux", "tdd"].every((n) => bundled[n]?.origin === "bundled"));
+
+  // Shipped vs installed: each lens keeps the origin of the first directory that provides it.
+  const roots = mkdtempSync(join(tmpdir(), "select-lenses-roots-"));
+  try {
+    const put = (/** @type {string} */ rel, /** @type {string} */ text) => { mkdirSync(dirname(join(roots, rel)), { recursive: true }); writeFileSync(join(roots, rel), text); };
+    put("shipped/quality/ux/lens.md", lens("auto: true", "## Checklist\n\n- [ ] shipped ux\n"));
+    put("home/ux/lens.md", lens("auto: true", "## Checklist\n\n- [ ] installed ux\n"));
+    put("home/house-style/lens.md", lens("auto: true"));
+    put("home/house-style/SKILL.md", "---\nname: house-style\n---\n");
+    const found = readBundledLenses([{ dir: join(roots, "shipped"), origin: "bundled" }, { dir: join(roots, "missing"), origin: "bundled" }, { dir: join(roots, "home"), origin: "installed" }]);
+    check("readBundledLenses: a lens only the installed directory has is `installed`",
+      found["house-style"]?.origin === "installed" && found["house-style"]?.path === "house-style/lens.md", JSON.stringify(found["house-style"]));
+    check("readBundledLenses: on a name clash the first directory still wins — an installed lens never shadows a shipped one",
+      found.ux?.origin === "bundled" && /shipped ux/.test(found.ux.text) && !/installed ux/.test(found.ux.text), JSON.stringify(found.ux));
+    const reversed = readBundledLenses([{ dir: join(roots, "home"), origin: "installed" }, { dir: join(roots, "shipped"), origin: "bundled" }]);
+    check("readBundledLenses: precedence is the directory order, and the origin follows the winner",
+      reversed.ux?.origin === "installed" && /installed ux/.test(reversed.ux.text), JSON.stringify(reversed.ux));
+  } finally { rmSync(roots, { recursive: true, force: true }); }
+  const defaults = defaultSkillDirs();
+  check("defaultSkillDirs: the agent's own tree and the Agent0 install are `bundled`; ~/.claude/skills is `installed` and last",
+    defaults.length === 3 && defaults[0].origin === "bundled" && defaults[1].origin === "bundled"
+      && defaults[2].origin === "installed" && defaults[2].dir === join(homedir(), ".claude", "skills"), JSON.stringify(defaults));
 
   if (failed) { console.error(`select-lenses self-test: ${failed} failed`); process.exit(1); }
   console.log("select-lenses self-test: all passed");
