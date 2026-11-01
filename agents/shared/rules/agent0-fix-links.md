@@ -249,10 +249,10 @@ Count one button's clicks by `utm_content` or `deeplink.source_detail`, never by
 
 ```text
 ✓ …&initial_prompt=…&d0_source=github:pr-reviewer-fix-all
-✗ …&initial_prompt=…&utm_source=pr-reviewer-fix-all                       (stripped by privacy features)
-✗ …&utm_source=pr-reviewer-fix-all&d0_source=github:pr-reviewer-fix-all   (two shapes for one button)
-✗ …&initial_prompt=…&d0_source=pr-reviewer-fix-all                        (never fires deeplink.opened)
-✗ …&initial_prompt=…&d0_source=github%3Apr-reviewer-fix-all               (+2 chars, no gain)
+✗ …&initial_prompt=…&utm_source=<any-tag>                          (stripped by privacy features)
+✗ …&utm_source=<any-tag>&d0_source=github:pr-reviewer-fix-all      (two shapes for one button)
+✗ …&initial_prompt=…&d0_source=pr-reviewer-fix-all                 (never fires deeplink.opened)
+✗ …&initial_prompt=…&d0_source=github%3Apr-reviewer-fix-all        (+2 chars, no gain)
 ```
 
 `build-agent0-link.mjs`'s `buildLink()` takes `source` as a required third argument and **throws** if
