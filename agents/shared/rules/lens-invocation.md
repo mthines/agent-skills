@@ -84,8 +84,15 @@ Each lens has one owner file that references this rule — the file that owns th
 | `confidence` | [`per-comment-confidence.md`](./per-comment-confidence.md) | 2.7 | `confidence_log` |
 | `verify-behavior` | [`verification-receipt.md`](./verification-receipt.md) | 2.6b | `verify_behavior_log` |
 
-Each log starts `ran` when the lens ran at least once, a host fallback included, and `skipped (<reason>)` otherwise; a lens that cannot run is `skipped (unavailable: <reason>)` beside its `RUN_ANOMALY`.
-The run trace reads these logs to record each composed lens, raised or not.
+Each log starts `ran` when the lens itself ran at least once, a host fallback included, and `skipped (<reason>)` otherwise; a lens that cannot run is `skipped (unavailable: <reason>)` beside its `RUN_ANOMALY`.
+The one exception is `measurable`: Step 2.4e also logs `ran · 0 missing · 0 unlinked` for its quiet no-op, when a gate failed and no lens was called ([`measurability-review.md` § Default-on](./measurability-review.md#default-on-opt-out-via---no-measurable)).
+The run trace reads these logs to record each composed lens, raised or not, so a `measurable` event means Step 2.4e ran, not that `Skill("measurable", "audit")` was called.
+
+```text
+✓ measurability_log: "ran · 0 missing · 0 unlinked"     # Gate 1 failed (docs-only diff): the step ran, the lens was not called
+✓ confidence_log: "skipped (every candidate came from a finder)"
+✗ measurability_log: "skipped (gate 1 failed)"           # a gate failure is a quiet no-op, logged `ran`; `skipped` is the flag, t, or trivial skip
+```
 
 ## What this rule does not do
 

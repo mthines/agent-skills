@@ -53,7 +53,7 @@ import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
 import { MARKER_RE } from "./fingerprint.mjs";
 import { appendRecord, finishRun, readLedger, stepStartAttrs, LENS_ORIGINS, lensItems as exportedLensItems } from "./review-telemetry.mjs";
-import { LENS_DIR } from "./select-lenses.mjs";
+import { LENS_DIR, GATED_LENSES } from "./select-lenses.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FINALIZE_SELF_TESTS = [
@@ -607,8 +607,6 @@ const LENS_TRIGGERS = /** @type {Record<string, string>} */ ({ "auto": "auto", "
  * lens loading.
  */
 const COMPOSED_LENSES = /** @type {Record<string, string>} */ ({ "measurable": "measurability_log", "confidence": "confidence_log", "verify-behavior": "verify_behavior_log" });
-/** Lenses with their own gate (rubric-composition.md § The motion gate), loaded by the model from the lens shipped with this agent. */
-const GATED_LENSES = Object.freeze(["animations"]);
 
 /**
  * Where a loaded lens's file came from, read from its source path: the reviewed repo's lens
@@ -696,7 +694,7 @@ export function lensTelemetryItems(lenses, candidates = [], logs = {}) {
     if (!ran || has(name)) continue;
     items.push({ status: "loaded", name, origin: "composed", trigger: "step", reason: ran, ...(raised.get(name) || { findings: 0, confirmed: 0 }) });
   }
-  const unlistedOrigin = (/** @type {string} */ name) => (name in COMPOSED_LENSES ? "composed" : GATED_LENSES.includes(name) ? "bundled" : undefined);
+  const unlistedOrigin = (/** @type {string} */ name) => (Object.hasOwn(COMPOSED_LENSES, name) ? "composed" : GATED_LENSES.includes(name) ? "bundled" : undefined);
   for (const [name, n] of raised) if (!has(name)) items.push({ status: "loaded", name, origin: unlistedOrigin(name), trigger: "unlisted", ...n });
   for (const s of Array.isArray(lenses.skipped) ? lenses.skipped : []) {
     if (typeof s?.name !== "string" || !s.name || has(s.name)) continue;
@@ -2988,6 +2986,12 @@ async function selfTest() {
           && item("confidence")?.trigger === "unlisted" && item("confidence")?.origin === "composed"
           && item("mystery")?.trigger === "unlisted" && item("mystery")?.origin === undefined && item("mystery")?.findings === 1,
         JSON.stringify(items.filter((i) => i.trigger === "unlisted")));
+      const protoNames = /** @type {Array<Record<string, any>>} */ (lensTelemetryItems({ loaded: [] },
+        ["constructor", "toString", "hasOwnProperty"].map((lens) => ({ finder: "lens", lens }))));
+      check("lensTelemetryItems: a lens named like an Object.prototype key is never `composed`",
+        protoNames.length === 3 && protoNames.every((i) => i.trigger === "unlisted" && i.origin === undefined), JSON.stringify(protoNames));
+      check("lensTelemetryItems: every lens in select-lenses.mjs's GATED_LENSES is `bundled` when only a candidate names it",
+        GATED_LENSES.length > 0 && GATED_LENSES.every((g) => lensTelemetryItems({ loaded: [] }, [{ finder: "lens", lens: g }])?.[0]?.origin === "bundled"));
       const ranLog = "ran · 2 paths classified · 0 missing · 0 unlinked";
       const quiet = /** @type {Array<Record<string, any>>} */ (lensTelemetryItems({ loaded: [], skipped: [] }, [], { measurability_log: ranLog }));
       check("lensTelemetryItems: measurable is loaded when its step log says it ran, though it raised nothing — origin `composed`, trigger `step`, the log as reason",
