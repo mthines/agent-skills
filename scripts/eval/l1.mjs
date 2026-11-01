@@ -959,9 +959,10 @@ const renderReport = (payload) => {
     buildLink("hi", "production", "fix-all").startsWith("https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt="));
   s.check("G31g buildLink throws on a missing or unknown source",
     throws(() => buildLink("hi", "production", undefined)) && throws(() => buildLink("hi", "production", "bogus")));
-  s.check("G31h buildLink appends the utm_source tag matching the source",
-    buildLink("hi", "production", "fix-all").includes("&utm_source=pr-reviewer-fix-all")
-      && buildLink("hi", "production", "fix-this").includes("&utm_source=pr-reviewer-fix-this"));
+  s.check("G31h buildLink appends the d0_source tag matching the source, and no utm_source",
+    buildLink("hi", "production", "fix-all").endsWith("&d0_source=github:pr-reviewer-fix-all")
+      && buildLink("hi", "production", "fix-this").endsWith("&d0_source=github:pr-reviewer-fix-this")
+      && !buildLink("hi", "production", "re-review").includes("utm_source"));
   for (const [what, org] of [["omitted", undefined], ["null", null], ["empty", ""], ["blank", "  "]]) {
     s.check(`G31j buildLink sends no org param when the org is ${what}`, !buildLink("hi", "production", "fix-all", org).includes("org="));
   }

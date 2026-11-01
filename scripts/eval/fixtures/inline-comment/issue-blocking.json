@@ -10,6 +10,6 @@
   ],
   "FENCE": { "lang": "ts", "code": "\"github.check_run\": [\"conclusion\", \"name\", \"started_at\"]," },
   "FP": "consumer-impact:contract-break:triggerKinds@src/triggers/kinds.ts",
-  "FIX_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%20finding&utm_source=pr-reviewer-fix-this",
+  "FIX_URL": "https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=Fix%20the%20finding&d0_source=github:pr-reviewer-fix-this",
   "SHA": "7389036"
 }

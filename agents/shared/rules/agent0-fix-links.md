@@ -170,13 +170,13 @@ length limit).
 ## Deep-link format
 
 ```text
-https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>&utm_source=pr-reviewer-<SOURCE>[&org=<ORG>]
+https://<app-host>/goto/agent0?auto_submit=true&initial_prompt=<ENCODED_PROMPT>&d0_source=github:pr-reviewer-<SOURCE>[&org=<ORG>]
 ```
 
 `<app-host>` is `app.dash0.com` (production) or `app.dash0-dev.com` (development), per § Environment.
-`<SOURCE>` is `fix-all` or `fix-this`, per § Click attribution. `&org=<ORG>` is present only when the
-repo configured one, per § Organization — it is the last parameter, so the prefix through
-`utm_source` is the same URL either way.
+`<SOURCE>` is `fix-all`, `fix-this`, `re-review`, or `loop`, per § Click attribution. `&org=<ORG>` is
+present only when the repo configured one, per § Organization — it is the last parameter, so the
+prefix through `d0_source` is the same URL either way.
 
 `<ENCODED_PROMPT>` is built by `agents/pr-reviewer/scripts/build-agent0-link.mjs`'s `encodePrompt` —
 the single source of truth for this encoding, so the report renderer and the inline-comment step
@@ -205,11 +205,11 @@ comments, applying the actionable ones, committing, and pushing. The prompt's wh
 
 That is what took **Fix this** from ~880 encoded chars to **~320** at its worst case — a 96-char
 path; a typical path lands nearer 230. **Fix all**, **Re-review**, and **Loop** carry the full PR URL
-and measure **174–194** (§ Relay length limit). All four are flat in the finding count: none carries
+and measure **180–199** (§ Relay length limit). All four are flat in the finding count: none carries
 per-finding data beyond the one `{path}:{line}` **Fix this** exists to name. Keep each under a
 **500**-char bound when you edit a template: measure the filled live template, so a re-added clause
 shows up as a length regression rather than vanishing into 2000+ chars of headroom under the 2500
-design target (the `&utm_source=...` tag from § Click attribution is a small, fixed addition on top
+design target (the `&d0_source=...` tag from § Click attribution is a small, fixed addition on top
 of each).
 
 Only **Fix this** addresses the PR by its **short reference**, `{owner}/{repo}#{n}` (§ Prompt
@@ -220,11 +220,40 @@ one `%23`. Never move the report buttons to the short form: `/implement-suggesti
 
 ## Click attribution
 
-Every deep link carries `&utm_source=pr-reviewer-<SOURCE>`, where `<SOURCE>` is `fix-all`,
-`fix-this`, `re-review`, or `loop` — one per button, a static tag with no per-PR or per-finding data, existing solely so a click on either
-button is distinguishable from the other in Dash0's own analytics (which button gets used tells the
-product something the report's structure alone can't). It is **not** an environment or a repo
-identifier — `app.dash0.com` vs. `app.dash0-dev.com` (§ Environment) already carries that.
+Every deep link carries `&d0_source=github:pr-reviewer-<SOURCE>`, where `<SOURCE>` is `fix-all`, `fix-this`, `re-review`, or `loop` — one per button.
+It is a static tag with no per-PR or per-finding data, existing solely so a click on one button is distinguishable from the others in Dash0's own analytics (which button gets used tells the product something the report's structure alone can't).
+It is **not** an environment or a repo identifier — `app.dash0.com` vs. `app.dash0-dev.com` (§ Environment) already carries that.
+
+Dash0 splits the value on its first `:` into a source (`github`, the producer) and a detail (the button), and records a click as:
+
+| Where | Attribute | Value |
+| --- | --- | --- |
+| `deeplink.opened` event | `deeplink.source` | `github` |
+| `deeplink.opened` event | `deeplink.source_detail` | `pr-reviewer-<SOURCE>` |
+| web events | `utm_source` | `github` |
+| web events | `utm_medium` | `deeplink` |
+| web events | `utm_content` | `pr-reviewer-<SOURCE>` |
+
+Count one button's clicks by `utm_content` or `deeplink.source_detail`, never by `utm_source`, which is `github` for every button.
+
+1. **Send `d0_source`, never `utm_source`.**
+   **Why:** privacy features strip every `utm_*` param by exact name (the DuckDuckGo extension does), so a `utm_source` click can reach Dash0 with no attribution at all; `d0_source` is Dash0's own alias, mapped back to the `utm_*` attributes above.
+   The name is fixed by Dash0's deep-link spec (`source.alias_param`): never substitute `from` (Dash0's time-range param on every `/goto` link) or `origin`.
+2. **Never send both.**
+   **Why:** when `utm_source` survives, Dash0 prefers it and ignores `d0_source`, so one button would land under two shapes depending on the reader's browser.
+3. **Keep the `github:` prefix.**
+   **Why:** Dash0 emits `deeplink.opened` only for a source in its closed list, and `github` is the entry that names this producer; a bare `d0_source=pr-reviewer-<SOURCE>` still sets `utm_source` but never fires the event.
+   The detail after the `:` allows `[A-Za-z0-9_.:-]`, at most 64 chars.
+4. **Write the `:` literally.**
+   **Why:** it is legal in a query (RFC 3986) and passes `comment-spine.mjs`'s `assertBareUrl`, while `%3A` costs 2 more chars of relay budget (§ Relay length limit).
+
+```text
+✓ …&initial_prompt=…&d0_source=github:pr-reviewer-fix-all
+✗ …&initial_prompt=…&utm_source=pr-reviewer-fix-all                       (stripped by privacy features)
+✗ …&utm_source=pr-reviewer-fix-all&d0_source=github:pr-reviewer-fix-all   (two shapes for one button)
+✗ …&initial_prompt=…&d0_source=pr-reviewer-fix-all                        (never fires deeplink.opened)
+✗ …&initial_prompt=…&d0_source=github%3Apr-reviewer-fix-all               (+2 chars, no gain)
+```
 
 `build-agent0-link.mjs`'s `buildLink()` takes `source` as a required third argument and **throws** if
 it is missing or not one of the four known values — the CLI's `--source <fix-all|fix-this|re-review|loop>` flag is
@@ -546,7 +575,7 @@ on a branch that gets deleted.
 `ACCESS_PATH == "mcp"`
 ([`github-access.md § Step 0`](./github-access.md#step-0--resolve-your-path-once-before-any-github-step)),
 which is also where a caller learns whether its body travels as a file or as a tool-call argument.
-Every realistic fix link exceeds the 140-char budget — **Fix this** always (its floor is 188), and
+Every realistic fix link exceeds the 140-char budget — **Fix this** always (its floor is 194), and
 **Fix all** unless the owner, repo, PR number, and login total 14 characters or fewer (see below) — so
 a check run **unconditionally** withholds the buttons on practically every run of every repo, `gh` runs included, where
 nothing would have been rewritten. That is not a conservative default; it is a silent, permanent
@@ -588,18 +617,18 @@ prose-encoded URLs, the only shape this pipeline builds.
 run, and a pure-markdown linked image — no inline HTML at all — is rewritten too.
 
 So `RELAY_SAFE_URL_MAX = 140` in `comment-spine.mjs` is a fact about the relay, not a budget to
-design the link around. A `fix-this` link spends ~110 body chars before the prompt starts, leaving
-~30 — enough for `Fix <basename>:<line>` and not the repo, the PR, or the finding. A button that
+design the link around. A `fix-this` link spends 112 body chars before the prompt starts, leaving
+28 — enough for `Fix <basename>:<line>` and not the repo, the PR, or the finding. A button that
 opens a session with no idea what to fix is worse than no button.
 
 **On a relayed write the buttons are unreachable for every PR — the floor sits above the ceiling.**
 The deep-link scaffold alone (`https://app.dash0.com/goto/agent0?auto_submit=true&initial_prompt=`
-plus `&utm_source=pr-reviewer-fix-all`) is **105 body chars** empty, leaving 35 for the encoded
+plus `&d0_source=github:pr-reviewer-fix-all`) is **111 body chars** empty, leaving 29 for the encoded
 prompt. Every report button carries the full PR URL, whose encoded `https%3A%2F%2Fgithub.com%2F…%2Fpull%2F`
-scaffolding alone exceeds that: the degenerate Fix all (`o/r`, PR #1) measures **174**, and
-`mthines/agent-skills#168` measures **193** for Fix all, **182** for Re-review, and **194** for Loop.
+scaffolding alone exceeds that: the degenerate Fix all (`o/r`, PR #1) measures **180**, and
+`mthines/agent-skills#168` measures **199** for Fix all, **190** for Re-review, and **197** for Loop.
 Fix this never fits either: its scope clause alone is ~50 encoded chars, so its degenerate fill
-measures **188**. Re-derive rather than trust those:
+measures **194**. Re-derive rather than trust those:
 
 ```bash
 node agents/pr-reviewer/scripts/build-agent0-link.mjs --env production --source fix-all \

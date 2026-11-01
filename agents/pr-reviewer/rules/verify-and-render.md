@@ -127,7 +127,7 @@ node "$AGENT_SUPPORT/pr-reviewer/scripts/comment-spine.mjs" --check /tmp/finding
   || { log "finding $i: body is not renderer output — dropped"; continue; }
 # ONLY ask on a relayed write. The MCP path carries the body as a tool-call argument and rewrites
 # long URLs; the `gh` path sends a file and rewrites nothing, so asking there withholds a button
-# that would have posted intact. Every Fix-this link is over budget by construction (floor 188), so an
+# that would have posted intact. Every Fix-this link is over budget by construction (floor 194), so an
 # unconditional check is a permanent, silent opt-out of the feature on every path
 # (agent0-fix-links.md § Relay length limit). This block is a separate tool call from Step 4a, so
 # resolve the path here with github-access.md § Step 0's own probe, as with $AGENT_MD above.
