@@ -35,8 +35,9 @@
 // finalize.mjs records them from judgments.memory as one `memory` ledger record; the last one wins.
 //
 // THE LENSES. Which review lenses loaded rides the root span too: counts plus the sorted names as
-// attributes (the names also on the `lenses` step span), and one `pr_review.lens.loaded` /
-// `pr_review.lens.skipped` event per lens carrying how it loaded and the candidates it raised
+// attributes, split by origin into the lenses shipped with pr-reviewer and the custom ones (the
+// names also on the `lenses` step span), and one `pr_review.lens.loaded` / `pr_review.lens.skipped`
+// event per lens carrying where it came from, how it loaded, and the candidates it raised
 // (lensEvents). finalize.mjs records them from context.lenses as one `lenses` record; the last wins.
 //
 // THE RUN COUNTER. `pr_review.runs` is what a dashboard counts runs with: a CUMULATIVE sum, one
@@ -408,10 +409,17 @@ export function memoryEvents(run, base) {
 
 /** At most this many lens events on one run; loaded lenses are recorded before skipped ones. */
 export const LENS_EVENTS_MAX = 50;
-/** How a lens loaded (finalize.mjs LENS_TRIGGERS, plus `unlisted` for a lens only a candidate names). */
-export const LENS_TRIGGERS = Object.freeze(["auto", "repo", "review-yaml", "with", "unlisted", "other"]);
-/** Where a loaded lens's file came from (finalize.mjs lensOrigin). */
-export const LENS_ORIGINS = Object.freeze(["repo", "repo-skill", "bundled"]);
+/** How a lens loaded (finalize.mjs LENS_TRIGGERS, plus `step` for a composed lens its own pipeline
+ *  step ran, and `unlisted` for a lens only a candidate names). */
+export const LENS_TRIGGERS = Object.freeze(["auto", "repo", "review-yaml", "with", "step", "unlisted", "other"]);
+/** Where a loaded lens came from (select-lenses.mjs LensOrigin, plus `composed` for a lens a pipeline
+ *  step runs through Skill()). finalize.mjs imports this list, so an origin it records always survives
+ *  lensItems(). */
+export const LENS_ORIGINS = Object.freeze(["repo", "repo-skill", "bundled", "installed", "composed"]);
+/** The origins that ship with pr-reviewer — `pr_review.lenses.builtin`. */
+export const BUILTIN_LENS_ORIGINS = Object.freeze(["bundled", "composed"]);
+/** The origins a repo or a user adds — `pr_review.lenses.custom`. */
+export const CUSTOM_LENS_ORIGINS = Object.freeze(["repo", "repo-skill", "installed"]);
 /** The lens names a finding can carry (select-lenses.mjs LENS_NAME); the gauge on what an event may name. */
 const LENS_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
@@ -453,15 +461,20 @@ export function lensItems(list) {
   return ordered.slice(0, LENS_EVENTS_MAX);
 }
 
-/** The lens attributes the root span and the `lenses` step span share: how many loaded, and which.
- *  None at all when finalize recorded no lenses (rule 3).
+/** The lens attributes the root span and the `lenses` step span share: how many loaded, which, and
+ *  which of them shipped with pr-reviewer (`builtin`) or were added by the repo or the user
+ *  (`custom`). Each list is omitted when empty; a lens with no origin is in `names` only. None at
+ *  all when finalize recorded no lenses (rule 3).
  *  @param {RunLenses|null} lenses @returns {Record<string, any>} */
 export function lensStepAttributes(lenses) {
   if (!lenses) return {};
   const loaded = lenses.items.filter((l) => l.status === "loaded");
+  const names = (/** @type {(l: LensItem) => boolean} */ keep) => loaded.filter(keep).map((l) => l.name).sort().join(",") || null;
   return {
     "pr_review.lenses.loaded": loaded.length,
-    "pr_review.lenses.names": loaded.map((l) => l.name).sort().join(",") || null,
+    "pr_review.lenses.names": names(() => true),
+    "pr_review.lenses.builtin": names((l) => BUILTIN_LENS_ORIGINS.includes(l.origin || "")),
+    "pr_review.lenses.custom": names((l) => CUSTOM_LENS_ORIGINS.includes(l.origin || "")),
   };
 }
 
@@ -1644,6 +1657,9 @@ async function selfTest() {
     ok("the root counts loaded and skipped lenses, lists the loaded names sorted, and sums what they raised",
       get(lRoot, "pr_review.lenses.loaded") === "4" && get(lRoot, "pr_review.lenses.names") === "animations,billing-audit,tdd,weird"
         && get(lRoot, "pr_review.lenses.findings") === "3" && get(lRoot, "pr_review.lenses.confirmed") === "2" && get(lRoot, "pr_review.lenses.skipped") === "1");
+    ok("the root splits loaded lenses by origin; a lens with no origin or an unknown one is in names only",
+      get(lRoot, "pr_review.lenses.builtin") === "tdd" && get(lRoot, "pr_review.lenses.custom") === "billing-audit",
+      `${get(lRoot, "pr_review.lenses.builtin")} | ${get(lRoot, "pr_review.lenses.custom")}`);
     const lEvents = (lRoot.events || []).filter((/** @type {any} */ e) => e.name.startsWith("pr_review.lens."));
     const lev = (/** @type {string} */ name) => lEvents.find((/** @type {any} */ e) => get(e, "pr_review.lens.name") === name);
     ok("one event per lens on the root: pr_review.lens.loaded for a walked lens, pr_review.lens.skipped for one that did not load",
@@ -1673,12 +1689,51 @@ async function selfTest() {
       bEvents.length === 6 && bEvents.filter((/** @type {any} */ e) => e.name === "pr_review.memory.used").length === 1);
     const none = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...ledger.slice(0, -1), at(108, { t: "lenses", items: [] }), ledger[ledger.length - 1]])));
     const nRoot = /** @type {any} */ (toExporter(none, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans[0];
-    ok("a recorded selection with nothing loaded is a real 0, with no names and no event",
+    ok("a recorded selection with nothing loaded is a real 0, with no names, no builtin or custom list, and no event",
       get(nRoot, "pr_review.lenses.loaded") === "0" && get(nRoot, "pr_review.lenses.skipped") === "0"
-        && get(nRoot, "pr_review.lenses.names") === undefined && nRoot.events === undefined);
+        && get(nRoot, "pr_review.lenses.names") === undefined && get(nRoot, "pr_review.lenses.builtin") === undefined
+        && get(nRoot, "pr_review.lenses.custom") === undefined && nRoot.events === undefined);
     const manyLenses = lensItems([...Array.from({ length: 60 }, (_, i) => ({ status: "skipped", name: `s${i}` })), ...Array.from({ length: 30 }, (_, i) => ({ status: "loaded", name: `l${i}` }))]);
     ok("at most LENS_EVENTS_MAX lenses are kept, loaded ones first",
       manyLenses.length === LENS_EVENTS_MAX && LENS_EVENTS_MAX === 50 && manyLenses.filter((l) => l.status === "loaded").length === 30 && manyLenses[0].name === "l0");
+    // Origins: every origin finalize.mjs records reaches the trace, and the root splits built-in from custom.
+    const originRun = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([
+      ...ledger,
+      at(90, { t: "step", phase: "start", name: "lenses" }),
+      at(106, { t: "lenses", items: [
+        { status: "loaded", name: "ux", origin: "bundled", source: "ux/lens.md", trigger: "auto" },
+        { status: "loaded", name: "measurable", origin: "composed", trigger: "step", reason: "ran · 2 paths classified · 1 missing · 0 unlinked", findings: 1, confirmed: 1 },
+        { status: "loaded", name: "billing-audit", origin: "repo", source: ".agents/review/lenses/billing-audit.md", trigger: "repo" },
+        { status: "loaded", name: "ledger", origin: "repo-skill", source: ".agents/skills/ledger/lens.md", trigger: "review-yaml" },
+        { status: "loaded", name: "house-style", origin: "installed", source: "house-style/lens.md", trigger: "auto" },
+        { status: "loaded", name: "animations", origin: "bundled", trigger: "unlisted", findings: 1 },
+        { status: "loaded", name: "mystery", trigger: "unlisted", findings: 1 },
+        { status: "skipped", name: "soc2", reason: "--with names a lens that was not found" },
+      ] }),
+    ])));
+    const oSpans = /** @type {any} */ (toExporter(originRun, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans;
+    const oRoot = oSpans[0];
+    const oEvent = (/** @type {string} */ name) => (oRoot.events || []).find((/** @type {any} */ e) => get(e, "pr_review.lens.name") === name);
+    ok("every origin survives lensItems: bundled, composed, repo, repo-skill, installed",
+      LENS_ORIGINS.every((o) => originRun.lenses?.items.some((l) => l.origin === o)) && LENS_ORIGINS.length === 5,
+      JSON.stringify(originRun.lenses?.items.map((l) => [l.name, l.origin])));
+    ok("pr_review.lenses.builtin lists the bundled and composed lenses, pr_review.lenses.custom the repo, repo-skill, and installed ones, each sorted",
+      get(oRoot, "pr_review.lenses.builtin") === "animations,measurable,ux" && get(oRoot, "pr_review.lenses.custom") === "billing-audit,house-style,ledger"
+        && get(oRoot, "pr_review.lenses.names") === "animations,billing-audit,house-style,ledger,measurable,mystery,ux",
+      `${get(oRoot, "pr_review.lenses.builtin")} | ${get(oRoot, "pr_review.lenses.custom")}`);
+    ok("a composed lens's event carries origin `composed` and trigger `step`; an installed lens's carries `installed`",
+      get(oEvent("measurable"), "pr_review.lens.origin") === "composed" && get(oEvent("measurable"), "pr_review.lens.trigger") === "step"
+        && get(oEvent("measurable"), "pr_review.lens.findings") === "1" && get(oEvent("house-style"), "pr_review.lens.origin") === "installed"
+        && get(oEvent("animations"), "pr_review.lens.origin") === "bundled" && get(oEvent("mystery"), "pr_review.lens.origin") === undefined);
+    const oStep = oSpans.find((/** @type {any} */ s) => s.name === "pr_review.step lenses");
+    ok("the lenses step span carries the same builtin and custom lists; every root key is in the declared contract",
+      get(oStep, "pr_review.lenses.builtin") === "animations,measurable,ux" && get(oStep, "pr_review.lenses.custom") === "billing-audit,house-style,ledger"
+        && oRoot.attributes.every((/** @type {any} */ a) => ALLOWED_SPAN_KEY(a.key)));
+    const builtinOnly = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...ledger,
+      at(106, { t: "lenses", items: [{ status: "loaded", name: "tdd", origin: "bundled", trigger: "auto" }] })])));
+    const boRoot = /** @type {any} */ (toExporter(builtinOnly, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans[0];
+    ok("a run with only built-in lenses omits pr_review.lenses.custom, never an empty string",
+      get(boRoot, "pr_review.lenses.builtin") === "tdd" && boRoot.attributes.every((/** @type {any} */ a) => a.key !== "pr_review.lenses.custom"));
     const sumLens = summarize(lensRun, {});
     ok("the summary lists the lenses: each loaded one with its trigger and findings, each skipped one with its reason",
       sumLens.lenses?.loaded.length === 4 && sumLens.lenses?.skipped[0].name === "soc2"
