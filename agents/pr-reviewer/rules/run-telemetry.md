@@ -157,7 +157,7 @@ A run whose finalize never ran carries none of these, so "no memory attributes" 
 
 ### The lenses
 
-The root span says which review lenses loaded, how each one loaded, and what each one raised.
+The root span says which review lenses loaded, where each one came from, how it loaded, and what it raised.
 `finalize.mjs` records them from `context.lenses` and `judgments.candidates` as one `lenses` ledger record; a finalize re-run replaces it.
 You supply the inputs only: give every lens candidate `"finder": "lens"` and the `lens` name from `context.lenses.loaded[].name` ([`rubric-composition.md`](../../shared/rules/rubric-composition.md)).
 
@@ -165,15 +165,26 @@ You supply the inputs only: give every lens candidate `"finder": "lens"` and the
 | --- | --- | --- |
 | root, `lenses` step | `pr_review.lenses.loaded` | lenses the review walked |
 | root, `lenses` step | `pr_review.lenses.names` | their names, sorted and comma-separated — group runs by it, or filter by one lens with `contains`; omitted when none loaded |
+| root, `lenses` step | `pr_review.lenses.builtin` | the loaded lenses that ship with pr-reviewer (origin `bundled` or `composed`), sorted and comma-separated; omitted when none |
+| root, `lenses` step | `pr_review.lenses.custom` | the loaded lenses a repo or user added (origin `repo`, `repo-skill`, or `installed`), sorted and comma-separated; omitted when none |
 | root | `pr_review.lenses.findings`, `pr_review.lenses.confirmed` | lens candidates raised, and how many verification confirmed |
 | root | `pr_review.lenses.skipped` | lenses named or found that did not load |
 | event `pr_review.lens.loaded` · `pr_review.lens.skipped` | `pr_review.lens.name` | one event per lens; `skipped` carries only the name and `pr_review.lens.reason` |
-| event `pr_review.lens.loaded` | `pr_review.lens.trigger` | `auto` (built-in auto lens) · `repo` (`.agents/review/lenses/`) · `review-yaml` (a `.review.yaml` `lenses:` list) · `with` (`--with`) · `unlisted` (named only by a candidate, such as the gated `animations` lens) · `other` |
-| event `pr_review.lens.loaded` | `pr_review.lens.origin`, `.source` | `repo` · `repo-skill` (`.agents/skills/<name>/lens.md`) · `bundled`, and the lens file's path; omitted for `unlisted` |
-| event `pr_review.lens.loaded` | `pr_review.lens.reason`, `.files`, `.findings`, `.confirmed` | the full selection reason, the changed files its trigger matched, and the candidates it raised |
+| event `pr_review.lens.loaded` | `pr_review.lens.trigger` | `auto` (built-in auto lens) · `repo` (`.agents/review/lenses/`) · `review-yaml` (a `.review.yaml` `lenses:` list) · `with` (`--with`) · `step` (a composed lens its own step ran: `measurable` when `judgments.lenses.measurability_log` starts with `ran`) · `unlisted` (named only by a candidate, such as the gated `animations` lens) · `other` |
+| event `pr_review.lens.loaded` | `pr_review.lens.origin` | where the lens came from, so a dashboard classifies by origin, never by name: `bundled` (shipped with pr-reviewer: its own skills tree or the Agent0 install; the gated `animations` lens too) · `composed` (`measurable`, `confidence`, `verify-behavior`, run through `Skill()`) · `repo` (`.agents/review/lenses/`) · `repo-skill` (`.agents/skills/<name>/lens.md`) · `installed` (`~/.claude/skills/<name>/lens.md`, not shipped with pr-reviewer); omitted only for an `unlisted` lens that is neither composed nor gated |
+| event `pr_review.lens.loaded` | `pr_review.lens.source` | the lens file's path, as `select-lenses.mjs` resolved it; omitted for a composed or `unlisted` lens |
+| event `pr_review.lens.loaded` | `pr_review.lens.reason`, `.files`, `.findings`, `.confirmed` | the full selection reason (a `step` lens: its step log), the changed files its trigger matched, and the candidates it raised |
 
 At most 50 events are kept, loaded lenses first.
 A run whose finalize never ran, or whose context predates lens selection, carries none of these, so "no lens attributes" means unknown and `pr_review.lenses.loaded=0` means none loaded.
+A shipped lens and an installed lens of the same name never both load: the agent's own skills tree is read before `~/.claude/skills`, so the shipped one wins and stays `bundled`.
+
+```text
+# correct: split by origin — a repo's own ux.md override lands in custom, and a new built-in lens needs no edit
+pr_review.lenses.custom contains "ux"
+# incorrect: a hard-coded built-in name list — the repo's ux.md override counts as built-in, and the list goes stale
+pr_review.lenses.names matches "^(ux|tdd|charting|ai-engineering|optimize-approach)"
+```
 
 ```text
 # correct: the lens candidate names its lens — the trace counts it against tdd
