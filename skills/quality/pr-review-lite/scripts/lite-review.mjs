@@ -583,7 +583,7 @@ async function main(/** @type {string[]} */ argv) {
     transport: mode === "api" ? anthropicTransport(/** @type {string} */ (key)) : claudeCliTransport(), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
   });
   r.skipped.push(...unaccounted(ctx.files || [], r));
-  writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.target || ctx.pr || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));
+  writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.target || ctx.pr || null, head: ctx.headSha || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));
   writeFileSync(join(out, "skipped.json"), JSON.stringify(r.skipped, null, 2));
   writeFileSync(join(out, "usage.json"), JSON.stringify({ ...r.usage, prefixTokens: r.prefixTokens, reflectFailOpen: r.reflectFailOpen, rejectedVetoes: r.rejectedVetoes }, null, 2));
   writeFileSync(join(out, "report.md"), renderReport(r));

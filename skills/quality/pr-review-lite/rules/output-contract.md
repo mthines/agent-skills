@@ -25,7 +25,7 @@
 
 | File | Holds |
 | --- | --- |
-| `findings.json` | `lenses` (loaded), `lensesSkipped`, `findings`, `vetoed` (with `veto_reason`), `dropped` (with `why`) |
+| `findings.json` | `pr`, `head` (the reviewed commit; `lite-compare` counts only full-reviewer comments made on it), `lenses` (loaded), `lensesSkipped`, `findings`, `vetoed` (with `veto_reason`), `dropped` (with `why`) |
 | `report.md` | findings, the not-reviewed list, errors |
 | `skipped.json` | every file not reviewed, with its reason |
 | `usage.json` | per stage: model, calls, input, cache-read, cache-write, output tokens, `usd` (null without a price); `prefixTokens`; `reflectFailOpen`; `rejectedVetoes` |

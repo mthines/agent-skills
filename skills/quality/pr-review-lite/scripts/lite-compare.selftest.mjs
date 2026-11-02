@@ -42,6 +42,12 @@ check("normalize: drops replies, outdated comments, and filters by author", () =
   eq(normalizeFull(withReply).map((c) => c.body), ["finding"]);
 });
 
+check("head: only comments made on the reviewed head count when a head is given", () => {
+  const raw = [{ path: "a", line: 4, body: "x", original_commit_id: "H1", user: { login: "bot" } }, { path: "a", line: 9, body: "y", original_commit_id: "H0", user: { login: "bot" } }];
+  eq(normalizeFull(raw, undefined, "H1").length, 1);
+  eq(normalizeFull(raw).length, 2);
+});
+
 check("usage: the table carries per-stage usage, and says so when absent", () => {
   const u = { review: { calls: 3, input: 1, cache_read: 2, cache_write: 3, output: 4, usd: null }, reflect: { calls: 1, input: 0, cache_read: 0, cache_write: 0, output: 5, usd: 0.5 } };
   const t = renderTable(match([], []), u);

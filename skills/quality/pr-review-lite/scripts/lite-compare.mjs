@@ -42,10 +42,11 @@ export function match(lite, full, tolerance = TOLERANCE) {
   };
 }
 
-/** Inline review comments from `gh api` JSON → {path,line,body,author}. Thread replies and outdated comments (no current line) are skipped. */
-export function normalizeFull(/** @type {any[]} */ comments, author) {
+/** Inline review comments from `gh api` JSON → {path,line,body,author}. Thread replies and outdated comments (no current line) are skipped; with `head`, only comments made on that commit count, so full-only is not inflated by earlier reviews of older heads. */
+export function normalizeFull(/** @type {any[]} */ comments, author, head) {
   return comments
     .filter((c) => !c.in_reply_to_id)
+    .filter((c) => !head || c.original_commit_id === head)
     .map((c) => ({ path: c.path, line: c.line ?? NaN, body: String(c.body || ""), author: c.user?.login || c.author || "" }))
     .filter((c) => c.path && Number.isInteger(c.line) && (!author || c.author === author));
 }
@@ -73,7 +74,7 @@ function fetchFull(/** @type {string} */ ref) {
   const m = /(?:github\.com\/)?([^/\s#]+\/[^/\s#]+)(?:\/pull\/|#)(\d+)/.exec(ref);
   if (!m) throw new Error(`cannot parse PR reference ${ref}`);
   // `--jq` emits one JSON object per line, so pages never need to be stitched by text replacement.
-  const r = spawnSync("gh", ["api", "--paginate", `repos/${m[1]}/pulls/${m[2]}/comments`, "--jq", ".[] | {path, line, in_reply_to_id, body, user: {login: .user.login}}"], { encoding: "utf8" });
+  const r = spawnSync("gh", ["api", "--paginate", `repos/${m[1]}/pulls/${m[2]}/comments`, "--jq", ".[] | {path, line, in_reply_to_id, original_commit_id, body, user: {login: .user.login}}"], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`gh api failed: ${(r.stderr || "").slice(0, 200)}`);
   return r.stdout.split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
@@ -84,14 +85,15 @@ async function main(/** @type {string[]} */ argv) {
   if (argv.includes("--self-test")) return (await import("./lite-compare.selftest.mjs")).selfTest();
   const litePath = arg(argv, "--lite");
   if (!litePath) { process.stderr.write("lite-compare: --lite <findings.json> is required\n"); return 2; }
-  const lite = JSON.parse(readFileSync(litePath, "utf8")).findings || [];
+  const liteDoc = JSON.parse(readFileSync(litePath, "utf8"));
+  const lite = liteDoc.findings || [];
   const fullPath = arg(argv, "--full");
   const pr = arg(argv, "--pr");
   if (!fullPath && !pr) { process.stderr.write("lite-compare: pass --pr <ref> or --full <comments.json>\n"); return 2; }
   const raw = fullPath ? JSON.parse(readFileSync(fullPath, "utf8")) : fetchFull(/** @type {string} */ (pr));
   const usagePath = join(dirname(litePath), "usage.json");
   const usage = existsSync(usagePath) ? JSON.parse(readFileSync(usagePath, "utf8")) : null;
-  process.stdout.write(`${renderTable(match(lite, normalizeFull(raw, arg(argv, "--full-author"))), usage)}\n`);
+  process.stdout.write(`${renderTable(match(lite, normalizeFull(raw, arg(argv, "--full-author"), liteDoc.head)), usage)}\n`);
   return 0;
 }
 
