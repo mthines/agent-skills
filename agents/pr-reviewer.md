@@ -283,6 +283,11 @@ Phase A/B, and Step 2 never run; Step 1.8, then Step 2.9c, then Step 3. When fal
 
 ## Step 1: Fetch all inputs + load memories
 
+**Batch independent LoreKit calls: one message, parallel tool calls, same calls as below.**
+Issue all three lists in one message at Step 1.0. Issue both searches in one message at Step 1.2c.
+A call that throws is retried per [`memory-load.md` § When a LoreKit call fails](./pr-reviewer/rules/memory-load.md#when-a-lorekit-call-fails), and only the calls that threw are retried.
+Why: [`batched-calls.md`](./pr-reviewer/references/batched-calls.md).
+
 ### 1.0 Prior-comment awareness + relevance memory load (default ON)
 
 Fetch existing review comments on the PR **and the PR's review-thread state**, then build the
@@ -604,13 +609,13 @@ collecting ALL findings before moving on, and apply its token-economy skip to St
 **Skip this step entirely** if the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or
 Step 1.2b's `REVIEW_DIFF == ""`); go to Step 2.9c, which runs whether or not Step 2 ran.
 
-Otherwise read `agents/pr-reviewer/rules/inline-pipeline.md` now: `REVIEW_DIFF` scope,
+Otherwise read these two files in one message: `agents/pr-reviewer/rules/inline-pipeline.md` and `agents/pr-reviewer/rules/verify-and-render.md`. `inline-pipeline.md` holds `REVIEW_DIFF` scope,
 `SCANNED_FILES`, the rubrics, the finders ([`finders.md`](./pr-reviewer/rules/finders.md),
 [`finder-consumer-impact.md`](./pr-reviewer/rules/finder-consumer-impact.md),
 [`finder-dependency.md`](./pr-reviewer/rules/finder-dependency.md)), the strict drop-point order,
 and Steps 2.3–2.6 (2.4d via `standards-conformance.md`). A finder's job is to **flag**; the
-verifier's job is to filter. Every candidate carries a `bad_outcome` and a `verify_by`. Then read
-`agents/pr-reviewer/rules/verify-and-render.md` at Step 2.6b.
+verifier's job is to filter. Every candidate carries a `bad_outcome` and a `verify_by`.
+`verify-and-render.md`, read above, governs Step 2.6b.
 
 ### 2.6b Verify each candidate (Phase E)
 
