@@ -116,7 +116,7 @@ check("reflection: vetoes only with a quoted reason, ignores unknown ids, never 
   const t = stub((req) => req.system ? JSON.stringify({ veto: [{ id: 1, reason: "  " }, { id: 2, reason: "x" }, { id: 77, reason: "x" }, { id: 1 }] }) : reviewReply(req), {});
   const r = await runPipeline({ packetText: PACKET, finders: "R", transport: t, opts: { unitTokens: 100000 } });
   eq(r.vetoed.length, 0, "blank reason, unknown id, missing reason are all ignored");
-  const t2 = stub((req) => req.system ? JSON.stringify({ veto: [{ id: 1, reason: "00003|+const v2" }, { id: 99, reason: "added" }] }) : reviewReply(req), {});
+  const t2 = stub((req) => req.system ? JSON.stringify({ veto: [{ id: 1, reason: "const v2 = 2;" }, { id: 99, reason: "added" }] }) : reviewReply(req), {});
   const r2 = await runPipeline({ packetText: PACKET, finders: "R", transport: t2, opts: { unitTokens: 100000 } });
   eq([r2.findings.length, r2.vetoed.length], [0, 1]);
   ok(r2.findings.every((f) => f.claim === "off by one"), "reflection must not rewrite");
@@ -213,6 +213,21 @@ check("failed unit: a throw or an unparseable reply puts its files in skipped.js
   const garbage = stub((req) => req.system ? '{"veto":[]}' : "I could not parse that");
   const g = await runPipeline({ packetText: PACKET, finders: "R", transport: garbage, opts: { unitTokens: 100000 } });
   ok(g.skipped.some((s) => s.path === "src/b.ts" && /unparseable/.test(s.reason)), "garbage not recorded");
+});
+
+check("veto: a short fragment, a path heading, or a repeated id does not veto twice or at all", async () => {
+  ok(!quotesDiff("const", "    3|+const v2 = 2;") && !quotesDiff("## src/a.ts", "## src/a.ts\n```text\n    3|+x = 1;"), "fragment or heading accepted");
+  ok(quotesDiff("v2 = 2; // and more text", "    3|+const v2 = 2; // and more text here") === true, "long in-line quote rejected");
+  const t = stub((req) => req.system ? JSON.stringify({ veto: [{ id: 1, reason: "const v2 = 2;" }, { id: 1, reason: "const v2 = 2;" }, { id: 42, reason: "const v2 = 2;" }] }) : reviewReply(req), {});
+  const r = await runPipeline({ packetText: PACKET, finders: "R", transport: t, opts: { unitTokens: 100000 } });
+  eq([r.vetoed.length, r.rejectedVetoes], [1, 2]);
+});
+
+check("prefix: PR text is framed as untrusted data between markers", async () => {
+  const t = stub(reviewReply);
+  await runPipeline({ packetText: PACKET, finders: "R", transport: t });
+  const p = t.calls[0].cachePrefix;
+  ok(p.includes("untrusted data") && p.indexOf("<pr_context>") < p.indexOf("## A heading inside the description") && p.indexOf("## A heading inside the description") < p.indexOf("</pr_context>"), "framing missing");
 });
 
 export async function selfTest() {

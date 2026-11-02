@@ -72,10 +72,10 @@ export function renderTable(/** @type {ReturnType<typeof match>} */ m, /** @type
 function fetchFull(/** @type {string} */ ref) {
   const m = /(?:github\.com\/)?([^/\s#]+\/[^/\s#]+)(?:\/pull\/|#)(\d+)/.exec(ref);
   if (!m) throw new Error(`cannot parse PR reference ${ref}`);
-  const r = spawnSync("gh", ["api", "--paginate", `repos/${m[1]}/pulls/${m[2]}/comments`], { encoding: "utf8" });
+  // `--jq` emits one JSON object per line, so pages never need to be stitched by text replacement.
+  const r = spawnSync("gh", ["api", "--paginate", `repos/${m[1]}/pulls/${m[2]}/comments`, "--jq", ".[] | {path, line, in_reply_to_id, body, user: {login: .user.login}}"], { encoding: "utf8" });
   if (r.status !== 0) throw new Error(`gh api failed: ${(r.stderr || "").slice(0, 200)}`);
-  // --paginate concatenates arrays: [..][..] → one array.
-  return JSON.parse(`[${r.stdout.trim().replace(/\]\s*\[/g, ",").replace(/^\[|\]$/g, "")}]`);
+  return r.stdout.split("\n").filter(Boolean).map((l) => JSON.parse(l));
 }
 
 function arg(/** @type {string[]} */ a, /** @type {string} */ n) { const i = a.indexOf(n); return i >= 0 ? a[i + 1] : undefined; }
