@@ -214,8 +214,8 @@ export function prFilesCompleteness(listed, changedFiles, parseError) {
   return { complete: true, note: null };
 }
 
-import { FULL_REFRESH_DELTA } from "./route-depth.mjs";
-export { FULL_REFRESH_DELTA };
+import { FULL_REFRESH_DELTA, CHURN_OVER_THRESHOLD } from "./route-depth.mjs";
+export { FULL_REFRESH_DELTA, CHURN_OVER_THRESHOLD };
 /** @typedef {{ok: true, files: PrFile[]} | {ok: false, reason: string}} LocalDeltaResult */
 /** @typedef {{ok: true, tree: TreeEntry[]} | {ok: false, reason: string}} PriorTreeResult */
 
@@ -261,7 +261,7 @@ export async function resolveChurnLines({ perFile, prFiles, history, readLocal }
   if (local.ok) {
     return { lines: deltaCounts(local.files).deltaLines, anomaly: `cumulative-churn compare untrusted (${trust.reason}) — churn computed from local git (authored commits since the last full pass, over the PR's files)` };
   }
-  return { lines: FULL_REFRESH_DELTA + 1, anomaly: `cumulative-churn compare untrusted (${trust.reason}) and local git unavailable (${local.reason}) — treated as over the refresh threshold` };
+  return { lines: CHURN_OVER_THRESHOLD, anomaly: `cumulative-churn compare untrusted (${trust.reason}) and local git unavailable (${local.reason}) — treated as over the refresh threshold` };
 }
 
 /**
@@ -269,7 +269,7 @@ export async function resolveChurnLines({ perFile, prFiles, history, readLocal }
  * D4). Three states, matching the shipped bash exactly:
  *   - no last-full SHA on record -> 0 (nothing to accumulate against)
  *   - intact compare -> the real summed delta
- *   - diverged compare -> FULL_REFRESH_DELTA + 1, i.e. treated as OVER the
+ *   - diverged compare -> CHURN_OVER_THRESHOLD, i.e. treated as OVER every
  *     threshold rather than guessed — "diverged history ⇒ refresh, never
  *     guess" (agents/pr-reviewer.md § Cumulative churn since the last full pass).
  * @param {{hasLastFull: boolean, meta?: CompareMeta, deltaLinesIfIntact?: number}} input
@@ -278,7 +278,7 @@ export async function resolveChurnLines({ perFile, prFiles, history, readLocal }
 export function churnState({ hasLastFull, meta, deltaLinesIfIntact }) {
   if (!hasLastFull) return 0;
   if (classifyDivergence(meta || {}) === "intact") return deltaLinesIfIntact ?? 0;
-  return FULL_REFRESH_DELTA + 1;
+  return CHURN_OVER_THRESHOLD;
 }
 
 /* --------------------------------- self-test --------------------------------- */
@@ -422,8 +422,8 @@ async function selfTest() {
   // churnState
   ok("churnState: no last-full SHA -> 0", churnState({ hasLastFull: false }) === 0);
   ok("churnState: intact compare -> the real summed delta", churnState({ hasLastFull: true, meta: { status: "ahead", behind_by: 0 }, deltaLinesIfIntact: 42 }) === 42);
-  ok("churnState: diverged compare -> FULL_REFRESH_DELTA + 1, never guessed",
-    churnState({ hasLastFull: true, meta: { status: "diverged" }, deltaLinesIfIntact: 5 }) === FULL_REFRESH_DELTA + 1);
+  ok("churnState: diverged compare -> CHURN_OVER_THRESHOLD, never guessed",
+    churnState({ hasLastFull: true, meta: { status: "diverged" }, deltaLinesIfIntact: 5 }) === CHURN_OVER_THRESHOLD);
 
   // resolveIntactDelta — the decision prepare-review.mjs runs, with the I/O injected.
   const priorTree20655 = [{ path: "agent0/store.ts", sha: "old1" }, { path: "agent0/page.tsx", sha: "old2" }, { path: "gen/attributes.gen.ts", sha: "new3" }];
@@ -460,7 +460,7 @@ async function selfTest() {
   ok("resolveChurnLines: trusted list sums PR files", churnTrusted.lines === 30 && churnTrusted.anomaly === null);
   const churnTrunc = await resolveChurnLines({ perFile: truncatedCmp.map((f) => ({ filename: f.filename, lines: 1 })), prFiles: pr20655, readLocal: noLocal });
   ok("resolveChurnLines: truncated list with no local git reads as over the threshold",
-    churnTrunc.lines === FULL_REFRESH_DELTA + 1 && /untrusted/.test(churnTrunc.anomaly || ""));
+    churnTrunc.lines === CHURN_OVER_THRESHOLD && /untrusted/.test(churnTrunc.anomaly || ""));
   const churnLocal = await resolveChurnLines({ perFile: [{ filename: "CODEOWNERS.bak", lines: 900 }, { filename: "agent0/store.ts", lines: 5 }], prFiles: pr20655,
     readLocal: async () => ({ ok: true, files: authored }) });
   ok("resolveChurnLines: polluted list uses the local-git authored lines and names the route and the reason",

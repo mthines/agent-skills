@@ -190,5 +190,68 @@
     "inputs": { "firstRun": true, "priorDeepRecorded": false, "band": "none", "deltaShapes": ["docs-only"], "deltaLines": 350, "newFiles": 2 },
     "expected": "standard",
     "notes": "A size-excluded shape (docs-only, test-only, generated) keeps the scaled standard band: scaling replaced deep, so it must not fall to quick and lose the standards finder."
+  },
+  {
+    "id": "delta-big-pr-new-file",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 180, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 180, "newFiles": 1, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 563 },
+    "expected": "standard",
+    "expectedDeltaScaled": true,
+    "notes": "A 180-line push that adds a file to a 563-line PR is reviewed as a delta: D12 and D13 are waived on a re-review of a big PR, and the cumulative 180 is under the scaled D4 threshold of 282."
+  },
+  {
+    "id": "delta-big-pr-large-push",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 350, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 350, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 1200 },
+    "expected": "standard",
+    "expectedDeltaScaled": true,
+    "notes": "A 350-line push to a 1200-line PR stays a delta: D12 alone, at or under the big-push ceiling, with cumulative churn under the scaled D4 threshold of 500."
+  },
+  {
+    "id": "delta-over-big-push",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 450, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 450, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 1200 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "A push over the 400-line ceiling is a big change to the PR, so D12 stays and the whole PR is re-read."
+  },
+  {
+    "id": "delta-big-pr-refresh-scaled",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 300, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 60, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 563 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "Cumulative churn of 300 on a 563-line PR passes the scaled D4 threshold of 282, so the refresh fires even though each push is small."
+  },
+  {
+    "id": "delta-small-pr-new-file",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 40, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 22, "newFiles": 1, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 200 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "On a PR at or under 400 lines a new file still routes deep: a whole-PR re-read is cheap there and nothing else measures the new file."
+  },
+  {
+    "id": "delta-unknown-pr-size",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 100, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 180, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "An unknown PR size is never delta-scaled, so a 180-line push keeps D12."
+  },
+  {
+    "id": "delta-big-pr-high-stakes",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 80, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": ["src/auth/session.ts"], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 80, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 900 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "A risk trigger (D7) is never waived: a high-stakes path in a small push to a big PR still routes deep."
+  },
+  {
+    "id": "delta-big-pr-no-prior-deep",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 180, "incrRunsSinceFull": 1, "priorDeepRecorded": false, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 180, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 900 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "Without a recorded prior deep pass (D6) there is no baseline to take a delta against, so the whole PR is reviewed."
+  },
+  {
+    "id": "delta-big-pr-third-incremental",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 200, "incrRunsSinceFull": 3, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 150, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 900 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "D5 is a risk trigger: the third incremental run since the last deep pass re-reads the PR even when each push is a plain delta."
   }
 ]

@@ -40,7 +40,7 @@ import { readFileSync } from "node:fs";
  *   cumDeltaLines?: number, incrRunsSinceFull?: number, priorDeepRecorded?: boolean,
  *   highStakesFiles?: string[], propagation?: boolean, band?: string,
  *   semverDeltas?: SemverDelta[], symbols?: ChangedSymbol[],
- *   deltaLines?: number, newFiles?: number,
+ *   deltaLines?: number, newFiles?: number, prLines?: number,
  *   deltaShapes?: string[], deltaRiskyShapes?: string[],
  *   sameSymbolOverlap?: boolean, threadOverlap?: number,
  *   depthCapability?: string,
@@ -48,11 +48,25 @@ import { readFileSync } from "node:fs";
  * }} RouteDepthInput
  * @typedef {{tier: "deep"|"standard"|"quick", triggers: string[],
  *   override: "quick"|null, sizeExcluded: boolean, capApplied: boolean,
- *   sizeScaled: boolean, why: string[]}} RouteDepthResult
+ *   sizeScaled: boolean, deltaScaled: boolean, waived: string[], why: string[]}} RouteDepthResult
  */
 
 export const FULL_REFRESH_DELTA = 150;
 export const FULL_REFRESH_RUNS = 3;
+/** D4's threshold scales with the PR (depth-routing.md § The deep-lens refresh): a fraction of the
+ *  PR's changed lines, never below FULL_REFRESH_DELTA and never above MAX_REFRESH_DELTA. */
+export const REFRESH_PR_FRACTION = 0.5;
+export const MAX_REFRESH_DELTA = 500;
+/** What a failed or untrusted cumulative-churn compare reports: over every threshold `refreshDeltaFor`
+ *  can return, so "assume over, run deep" holds however large the PR is. */
+export const CHURN_OVER_THRESHOLD = MAX_REFRESH_DELTA + 1;
+
+/** @param {number|undefined} prLines the PR's changed lines; unknown or non-positive gives the floor. */
+export function refreshDeltaFor(prLines) {
+  const n = Number(prLines);
+  if (!Number.isFinite(n) || n <= 0) return FULL_REFRESH_DELTA;
+  return Math.max(FULL_REFRESH_DELTA, Math.min(Math.ceil(REFRESH_PR_FRACTION * n), MAX_REFRESH_DELTA));
+}
 
 /** D1-D13, in order — the checklist depth-routing.md enumerates rather than
  *  packing into one table cell (the shape lesson: a 13-clause cell gets
@@ -68,6 +82,11 @@ const SIZE_EXCLUDED_SHAPES = new Set(["docs-only", "test-only", "generated"]);
  *  D12, D13), and routes `quick` at or under TINY_PR_LINES and `standard` above. */
 export const SMALL_PR_LINES = 400;
 export const TINY_PR_LINES = 30;
+/** Delta scaling (depth-routing.md § Delta scaling): on a re-review of a PR over BIG_PR_LINES changed
+ *  lines whose only deep triggers are the size triggers (D12, D13), a push at or under BIG_PUSH_LINES is
+ *  reviewed as a delta at `standard`; an unknown PR size is never scaled. */
+export const BIG_PR_LINES = SMALL_PR_LINES;
+export const BIG_PUSH_LINES = 400;
 /** The triggers that measure risk; a small PR firing any of them still routes deep. */
 const RISK_TRIGGERS = new Set(["D2", "D3", "D4", "D5", "D7", "D8", "D9", "D10", "D11"]);
 
@@ -102,7 +121,7 @@ export function routeDepth(i) {
   // 1. The quick override — before the table, "whatever the table would say".
   if (threadOverlap >= 0.8 && band === "none") {
     why.push(`quick override: THREAD_OVERLAP=${threadOverlap} >= 0.8 and band=none`);
-    return { tier: "quick", triggers: [], override: "quick", sizeExcluded: false, capApplied: false, sizeScaled: false, why };
+    return { tier: "quick", triggers: [], override: "quick", sizeExcluded: false, capApplied: false, sizeScaled: false, deltaScaled: false, waived: [], why };
   }
 
   // 2. The size exclusion — computed before the deep checklist so D12/D13
@@ -116,7 +135,7 @@ export function routeDepth(i) {
   if (i.firstRun) triggers.push("D1");
   if (i.full) triggers.push("D2");
   if (i.effortHigh) triggers.push("D3");
-  if (cumDeltaLines > FULL_REFRESH_DELTA) triggers.push("D4");
+  if (cumDeltaLines > refreshDeltaFor(i.prLines)) triggers.push("D4");
   if (incrRunsSinceFull >= FULL_REFRESH_RUNS) triggers.push("D5");
   if (i.priorDeepRecorded === false) triggers.push("D6");
   if (highStakesFiles.length > 0) triggers.push("D7");
@@ -131,8 +150,23 @@ export function routeDepth(i) {
   // DELTA_LINES is the whole PR; on a re-run it is one push, which says nothing about the PR's size.
   const sizeScaled = !!i.firstRun && deltaLines <= SMALL_PR_LINES
     && !triggers.some((t) => RISK_TRIGGERS.has(t));
+  /** @type {string[]} */
+  let waived = [];
   if (sizeScaled) {
     why.push(`size scaling: DELTA_LINES(${deltaLines}) <= ${SMALL_PR_LINES} and no risk trigger — waived ${triggers.join(", ")}`);
+    waived = [...triggers];
+    triggers.length = 0;
+  }
+
+  // Delta scaling: a re-review of a big PR whose only deep triggers are the size triggers reviews the
+  // delta. Every other trigger (risk, refresh counters, a missing prior deep pass) still routes deep,
+  // and `sizeScaled` stays false: it means "a whole-PR review at a lighter tier" and renders mode `full`.
+  const deltaScaled = !sizeScaled && !i.firstRun && i.priorDeepRecorded === true
+    && Number(i.prLines) > BIG_PR_LINES && deltaLines <= BIG_PUSH_LINES
+    && triggers.length > 0 && triggers.every((t) => t === "D12" || t === "D13");
+  if (deltaScaled) {
+    why.push(`delta scaling: PR(${i.prLines}) > ${BIG_PR_LINES}, DELTA_LINES(${deltaLines}) <= ${BIG_PUSH_LINES}, prior deep pass recorded, no risk trigger — waived ${triggers.join(", ")}`);
+    waived = [...triggers];
     triggers.length = 0;
   }
 
@@ -145,14 +179,14 @@ export function routeDepth(i) {
       capApplied = true;
       why.push("capability cap: DEPTH_CAPABILITY=diff-only caps deep -> standard");
     }
-    return { tier, triggers, override: null, sizeExcluded, capApplied, sizeScaled: false, why };
+    return { tier, triggers, override: null, sizeExcluded, capApplied, sizeScaled: false, deltaScaled: false, waived: [], why };
   }
 
   // 4. The standard row — five OR-conditions, any one fires.
   const usedSemverDelta = semverDeltas.find((d) => d.usageSites >= 1);
   // A size-scaled run reviews the whole PR, so its standard band starts above TINY_PR_LINES.
   const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : 11;
-  const bandCeiling = sizeScaled ? SMALL_PR_LINES : 100;
+  const bandCeiling = sizeScaled ? SMALL_PR_LINES : deltaScaled ? BIG_PUSH_LINES : 100;
   // On a scaled run the size band replaces deep, so a size-excluded shape keeps it (and its standards finder).
   const inSizeBand = (sizeScaled || !sizeExcluded) && deltaLines >= bandFloor && deltaLines <= bandCeiling;
   if (deltaRiskyShapes.length > 0) why.push(`standard: DELTA_RISKY_SHAPES=[${deltaRiskyShapes.join(",")}]`);
@@ -162,12 +196,12 @@ export function routeDepth(i) {
   if (inSizeBand) why.push(`standard: ${bandFloor} <= DELTA_LINES(${deltaLines}) <= ${bandCeiling}`);
 
   if (deltaRiskyShapes.length > 0 || band === "low" || usedSemverDelta || i.sameSymbolOverlap || inSizeBand) {
-    return { tier: "standard", triggers: [], override: null, sizeExcluded, capApplied: false, sizeScaled, why };
+    return { tier: "standard", triggers: [], override: null, sizeExcluded, capApplied: false, sizeScaled, deltaScaled, waived, why };
   }
 
   // 5. Otherwise -> quick.
   why.push("otherwise: no row above matched");
-  return { tier: "quick", triggers: [], override: null, sizeExcluded, capApplied: false, sizeScaled, why };
+  return { tier: "quick", triggers: [], override: null, sizeExcluded, capApplied: false, sizeScaled, deltaScaled, waived, why };
 }
 
 /* ------------------------------ resolveBudget ------------------------------ */
@@ -482,7 +516,9 @@ function selfTest() {
   for (const c of cases) {
     total++;
     const r = routeDepth(c.inputs);
-    if (r.tier === c.expected) {
+    if (c.expectedDeltaScaled !== undefined && r.deltaScaled !== c.expectedDeltaScaled) {
+      fails.push(`${c.id}: expected deltaScaled ${c.expectedDeltaScaled}, got ${r.deltaScaled} (${r.why.join(" | ")})`);
+    } else if (r.tier === c.expected) {
       passed++;
     } else {
       fails.push(`${c.id}: expected ${c.expected}, got ${r.tier} (${r.why.join(" | ")})`);

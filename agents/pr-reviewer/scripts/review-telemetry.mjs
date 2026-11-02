@@ -1519,6 +1519,20 @@ async function selfTest() {
     ok("a finalize-recorded topology overrides the budgeted one on the root span and the run histogram",
       get(rroot, "pr_review.topology") === "in-context" && histTopology === "in-context", `root=${get(rroot, "pr_review.topology")} hist=${histTopology}`);
   }
+  {
+    // finalize.mjs records the routing decision as run attrs; the root span carries them under pr_review.*,
+    // and an absent trigger list stays absent rather than rendering as an empty string.
+    const base = [...ledger, { t: "attr", target: "run", ns: ledger[ledger.length - 1].ns }];
+    const routed = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...base.slice(0, -1), { ...base[base.length - 1], attrs: { triggers: "D12,D13", delta_scaled: false, state_status: "none" } }])));
+    const scaled = /** @type {BuiltRun} */ (buildRun(/** @type {any} */ ([...base.slice(0, -1), { ...base[base.length - 1], attrs: { delta_scaled: true, state_status: "read" } }])));
+    const rootOf = (/** @type {BuiltRun} */ r) => /** @type {any} */ (toExporter(r, env).tracePayload()).resourceSpans[0].scopeSpans[0].spans[0];
+    const r1 = rootOf(routed), r2 = rootOf(scaled);
+    ok("the root span carries pr_review.triggers, pr_review.delta_scaled and pr_review.state_status",
+      get(r1, "pr_review.triggers") === "D12,D13" && get(r1, "pr_review.delta_scaled") === false && get(r1, "pr_review.state_status") === "none",
+      `triggers=${get(r1, "pr_review.triggers")} delta_scaled=${get(r1, "pr_review.delta_scaled")} state_status=${get(r1, "pr_review.state_status")}`);
+    ok("a delta-scaled run omits pr_review.triggers instead of rendering it empty",
+      get(r2, "pr_review.delta_scaled") === true && get(r2, "pr_review.triggers") === undefined && get(r2, "pr_review.state_status") === "read");
+  }
   const phaseSpans = spans.filter((/** @type {any} */ s) => s.name.startsWith("pr_review.phase "));
   const prepSpan = spans.find((/** @type {any} */ s) => s.name === "pr_review.step prepare");
   ok("every step and worker parents the root, in one deterministic trace",

@@ -52,7 +52,7 @@ import { tmpdir } from "node:os";
 import { join, dirname, posix, resolve as pathResolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS, stepStartAttrs } from "./review-telemetry.mjs";
-import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA } from "./delta-triage.mjs";
+import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA, CHURN_OVER_THRESHOLD } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
 import { discoverStandards, trivialSkip, REPO_CONFIG_PATHS } from "./discover-standards.mjs";
@@ -413,7 +413,7 @@ const MODE_FOR_TIER = { deep: "full", standard: "incremental", quick: "increment
  * (D4–D6) carried `mode: null`, finalize rendered `"unknown"`, and the render failed closed.
  * A capability cap (`deep` → `standard` under `diff-only`) keeps `full`: render-report.mjs's
  * carve-out expects exactly that pair, alongside the RUN_ANOMALY naming the cap.
- * @param {{ runMode: { mode: string|null }, zeroDelta: boolean, routing: { tier: string, capApplied?: boolean, sizeScaled?: boolean } }} args
+ * @param {{ runMode: { mode: string|null }, zeroDelta: boolean, routing: { tier: string, capApplied?: boolean, sizeScaled?: boolean, deltaScaled?: boolean } }} args
  * @returns {string}
  */
 export function resolveContextMode({ runMode, zeroDelta, routing }) {
@@ -421,6 +421,7 @@ export function resolveContextMode({ runMode, zeroDelta, routing }) {
   if (zeroDelta) return "zero-delta";
   if (routing.capApplied) return "full";
   // A size-scaled first run reviews the whole PR at a lighter tier: it is still a full review.
+  // A delta-scaled re-review reviews only the delta, so it takes its tier's own mode (incremental).
   if (routing.sizeScaled) return "full";
   const mode = MODE_FOR_TIER[routing.tier];
   if (!mode) throw new Error(`resolveContextMode: routed tier ${JSON.stringify(routing.tier)} maps to no mode`);
@@ -2317,13 +2318,13 @@ async function prepare(opts) {
             cumLines = churn.lines;
             if (churn.anomaly) anomalies.push(churn.anomaly);
           } else {
-            cumLines = FULL_REFRESH_DELTA + 1;
+            cumLines = CHURN_OVER_THRESHOLD;
           }
         }
         cumDeltaLines = churnState({ hasLastFull: true, meta: cum.value, deltaLinesIfIntact: cumLines });
       } else {
         anomalies.push(`cumulative-churn compare failed: ${cum.error} — treated as over the refresh threshold`);
-        cumDeltaLines = FULL_REFRESH_DELTA + 1;
+        cumDeltaLines = CHURN_OVER_THRESHOLD;
       }
     }
   }
@@ -2350,6 +2351,8 @@ async function prepare(opts) {
     symbols: (impact?.symbols || []).map((s) => ({ traffic_band: s.production?.traffic_band ?? "unknown", change: s.change })),
     deltaLines: deltaCountsResult.deltaLines,
     newFiles: deltaCountsResult.newFiles,
+    // The PR's changed lines: scales D4's threshold and gates delta scaling. Unknown stays undefined.
+    prLines: Number.isFinite(meta.additions) && Number.isFinite(meta.deletions) ? meta.additions + meta.deletions : undefined,
     deltaShapes: (deltaShape && deltaShape.shapes) || [],
     deltaRiskyShapes: (deltaShape && deltaShape.risky_shapes) || [],
     sameSymbolOverlap: (impact?.overlaps || []).some((o) => o.kind === "same-symbol"),
@@ -2597,6 +2600,9 @@ async function prepare(opts) {
     impact: opts.inlinePayloads ? impact : null,
 
     routing,
+    // Where the routing's history inputs came from: `read` (a --state record with a prior run), `empty`
+    // (a --state file with none), `none` (no --state), `ignored` (--isolated). `none` forces D6 every run.
+    stateStatus: runMode.stateIgnored ? "ignored" : !opts.state ? "none" : (state.priorSha || state.lastFullSha) ? "read" : "empty",
     budget,
     threads,
     gate4_precandidates: gate4Precandidates,
@@ -3291,6 +3297,8 @@ async function selfTest() {
   t("resolveContextMode: a size-scaled first run stays a full review at its lighter tier", () =>
     resolveContextMode({ runMode: undecided, zeroDelta: false, routing: { tier: "quick", sizeScaled: true } }) === "full"
     && resolveContextMode({ runMode: undecided, zeroDelta: false, routing: { tier: "standard", sizeScaled: true } }) === "full");
+  t("resolveContextMode: a delta-scaled re-review renders mode incremental, never full", () =>
+    resolveContextMode({ runMode: { mode: null }, zeroDelta: false, routing: { tier: "standard", deltaScaled: true } }) === "incremental");
   t("every mode resolveContextMode emits is one render-report.mjs accepts", () => {
     const valid = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
     return ["deep", "standard", "quick"].every((tier) => valid.has(resolveContextMode({ runMode: undecided, zeroDelta: false, routing: { tier } })));
