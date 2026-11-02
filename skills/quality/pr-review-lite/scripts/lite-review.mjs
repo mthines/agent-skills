@@ -508,7 +508,7 @@ export function renderReport(/** @type {any} */ r) {
   const sk = r.skipped.map((s) => `- \`${s.path}\` — ${s.reason}`);
   return [
     "# Lite review (shadow)", "",
-    `${r.findings.length} finding(s) from ${r.units.length} unit(s); ${r.vetoed.length} vetoed by reflection; ${r.dropped.length} dropped by the line filter.`, "",
+    `${r.findings.length} finding(s) from ${r.units.length} unit(s); ${r.vetoed.length} vetoed by reflection; ${r.dropped.length} dropped (line filter or per-unit cap, reason on each).`, "",
     `Lenses: ${(r.lenses || []).map((l) => `${l.name} (${l.origin})`).join(", ") || "none loaded"}.`, "",
     "## Findings", "", ...(rows.length ? rows : ["None."]), "",
     "## Not reviewed", "", ...(sk.length ? sk : ["Every changed file was reviewed."]), "",
