@@ -31,6 +31,7 @@ Every skipped file goes to `skipped.json` as `{path, reason}`. Reasons, in the o
 4. `not inlined in the packet (<note>)` — a file the packet only lists.
 5. `unit cap (<n>) reached`.
 6. `review call failed: <error>` or `unparseable reply (…)` — the unit's call threw or returned no JSON array; the files were not reviewed.
+7. `not found in the review packet index` — the context lists the file but the packet parser found no index row for it.
 
 ```text
 ✗ Wrong — drop a file the packet could not inline and say nothing
