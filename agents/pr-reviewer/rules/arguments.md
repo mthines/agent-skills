@@ -49,7 +49,7 @@ Each preset is one column of the [thoroughness budget](./depth-routing.md#thorou
 | Preset | Finders | Verifier tier | Tool-call budget | Tier |
 | --- | --- | --- | --- | --- |
 | `quick` | correctness, intent, quality; intent isolated; measurability lens | 1 | ×1 | routed |
-| `standard` | + consumer-impact, dependency, standards on the delta; optimality lens | 2 | ×1 | routed |
+| `standard` | + consumer-impact, dependency, standards on the delta | 2 | ×1 | routed |
 | `deep` | consumer-impact and standards on every file | 2 | ×1.5 | forced `deep` |
 | `max` | same as `deep` | 3 (execution) | ×2 | forced `deep` |
 
@@ -72,7 +72,10 @@ These keep working and add one `RUN_ANOMALY` line naming the replacement.
 | Deprecated | Runs as |
 | --- | --- |
 | `--effort high`, config `effort: high` | `--depth max` |
-| `--thoroughness <n>`, config `thoroughness: <n>` | the preset whose column holds `n`: below 0.5 `quick`, 0.5 to below 0.8 `standard`, 0.8 to below 0.95 `deep`, 0.95 and up `max` |
+| `--thoroughness <n>`, config `thoroughness: <n>` | the same value `n`, unchanged; the anomaly names the preset whose column holds it: below 0.5 `quick`, 0.5 to below 0.8 `standard`, 0.8 to below 0.95 `deep`, 0.95 and up `max` |
+
+A deprecated `thoroughness` value applies exactly: it never forces the `deep` tier, and a value below 0.4 still runs in-context.
+Only a preset forces a tier.
 
 `--full` is not deprecated and not a depth alias: it forces a full, non-incremental review at the `deep` tier.
 Pair it with `--depth` when you want a different budget.

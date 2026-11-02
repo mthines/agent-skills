@@ -1578,13 +1578,13 @@ export function reviewSettings(yamlText) {
  * 3. Config `depth:`.
  * 4. Config `effort: high`, then `thoroughness:` (both deprecated).
  * 5. Nothing: the routed tier's default.
- * A deprecated source adds one anomaly naming its replacement. `validateFlags` rejects a bad CLI value before
+ * A deprecated source adds one anomaly naming its replacement; a deprecated `thoroughness` keeps its exact value (`exact`). `validateFlags` rejects a bad CLI value before
  * this runs, so a garbage `--thoroughness` that still arrives here fails closed to `max`.
  * `deep` and `max` also force the deep tier; `quick` and `standard` never lower the routed tier.
  * @param {{ depth?: string, effort?: string, thoroughness?: string }} opts
  * @param {{ depth?: string|null, effort?: string|null, thoroughness?: number|null }} settings
  * @returns {{ preset: string|null, source: "cli"|"config"|"default", effortHigh: boolean, forceDeep: boolean,
- *   thoroughness: number|undefined, anomalies: string[] }}
+ *   thoroughness: number|undefined, exact: boolean, anomalies: string[] }}
  */
 export function resolveDepthOverrides(opts, settings) {
   /** @type {string[]} */
@@ -1593,9 +1593,14 @@ export function resolveDepthOverrides(opts, settings) {
   let preset = null;
   /** @type {"cli"|"config"|"default"} */
   let source = "default";
+  /** A deprecated `thoroughness` keeps its exact value: only a preset is a column, so an alias never
+   *  forces the deep tier, lifts a value below 0.4, or moves a value to its column's representative. */
+  /** @type {number|undefined} */
+  let exactT;
   const fromThoroughness = (/** @type {number} */ n, /** @type {string} */ label) => {
     const p = Number.isFinite(n) ? presetOfThoroughness(Math.min(1, Math.max(0, n))) : "max";
-    anomalies.push(`${label} is deprecated — ran as ${label.startsWith("config") ? "depth" : "--depth"}${label.startsWith("config") ? ": " : " "}${p}`);
+    if (Number.isFinite(n)) exactT = Math.min(1, Math.max(0, n));
+    anomalies.push(`${label} is deprecated — use ${label.startsWith("config") ? "depth" : "--depth"}${label.startsWith("config") ? ": " : " "}${p} (the value still applies exactly)`);
     return p;
   };
   if (opts.depth) {
@@ -1622,9 +1627,10 @@ export function resolveDepthOverrides(opts, settings) {
   return {
     preset,
     source,
-    effortHigh: preset === "max",
-    forceDeep: preset === "deep" || preset === "max",
-    thoroughness: preset && preset !== "max" ? PRESET_THOROUGHNESS[/** @type {"quick"|"standard"|"deep"} */ (preset)] : undefined,
+    effortHigh: preset === "max" && exactT === undefined,
+    forceDeep: (preset === "deep" || preset === "max") && exactT === undefined,
+    thoroughness: exactT !== undefined ? exactT : preset && preset !== "max" ? PRESET_THOROUGHNESS[/** @type {"quick"|"standard"|"deep"} */ (preset)] : undefined,
+    exact: exactT !== undefined,
     anomalies,
   };
 }
@@ -2486,7 +2492,7 @@ async function prepare(opts) {
 
   // A preset equal to the routed tier's own default IS the default: it keeps the lean and
   // small-incremental carve-outs, so `depth: quick` never costs more than no config on a quick PR.
-  const thoroughnessOverride = depthOverrides.thoroughness !== undefined
+  const thoroughnessOverride = depthOverrides.thoroughness !== undefined && !depthOverrides.exact
     && depthOverrides.thoroughness === TIER_DEFAULT_THOROUGHNESS[/** @type {"quick"|"standard"|"deep"} */ (routing.tier)]
     ? undefined : depthOverrides.thoroughness;
   const contextMode = resolveContextMode({ runMode, zeroDelta, routing });
@@ -2517,7 +2523,8 @@ async function prepare(opts) {
   // request is also an anomaly, so the sticky report's anomaly list carries it.
   const depth = describeDepth({
     requested: depthOverrides.preset,
-    source: depthOverrides.source === "cli" ? "--depth" : depthOverrides.source === "config" ? "config" : "default",
+    source: depthOverrides.source === "default" ? "default" : depthOverrides.source === "config" ? "config"
+      : opts.depth ? "--depth" : opts.effort === "high" ? "--effort" : "--thoroughness",
     budget,
   });
   if (depth.floor && depth.requested !== depth.effective) anomalies.push(`risk floor: ${depth.line}`);
@@ -3143,8 +3150,11 @@ async function selfTest() {
     const cfgE = resolveDepthOverrides(o({}), { effort: "high", thoroughness: 0.3 });
     const cfgT = resolveDepthOverrides(o({}), { thoroughness: 0.9 });
     const cliBeatsCfg = resolveDepthOverrides(o({ thoroughness: "0.4" }), { effort: "high" });
-    return t6.preset === "standard" && t6.thoroughness === 0.7 && t6.anomalies.length === 1 && t6.anomalies[0].includes("--depth standard") && t6.anomalies[0].includes("deprecated")
-      && t9.preset === "deep" && t1.preset === "max" && t1.effortHigh && t2.preset === "quick"
+    const t8 = resolveDepthOverrides(o({ thoroughness: "0.8" }), none);
+    const t3 = resolveDepthOverrides(o({ thoroughness: "0.3" }), none);
+    return t6.preset === "standard" && t6.thoroughness === 0.6 && t6.exact && !t6.forceDeep && t6.anomalies.length === 1 && t6.anomalies[0].includes("--depth standard") && t6.anomalies[0].includes("deprecated")
+      && t8.thoroughness === 0.8 && !t8.forceDeep && !t8.effortHigh && t3.thoroughness === 0.3
+      && t9.preset === "deep" && !t9.forceDeep && t1.preset === "max" && t1.exact && !t1.forceDeep && t2.preset === "quick"
       && eh.preset === "max" && eh.effortHigh && eh.anomalies[0].includes("--depth max")
       && cfgE.preset === "max" && cfgE.source === "config" && cfgE.anomalies[0].includes("depth: max")
       && cfgT.preset === "deep" && cfgT.anomalies[0].includes("depth: deep")

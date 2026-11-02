@@ -101,7 +101,7 @@ were exactly the two the routing missed.
 | --- | --- |
 | **D1** | first run on this PR |
 | **D2** | `--full` |
-| **D3** | `--effort high` |
+| **D3** | `--effort high`, `--depth deep`, or `--depth max` |
 | **D4** | `CUM_DELTA_LINES >` the refresh threshold: `max(150, min(ceil(0.5 × PR changed lines), 500))`, so 150 up to a 300-line PR |
 | **D5** | `INCR_RUNS_SINCE_FULL ≥ FULL_REFRESH_RUNS` 3 — `≥`, so 3 of 3 fires |
 | **D6** | **no** prior `deep` pass recorded |
@@ -247,7 +247,7 @@ Every preset resolves to one `t` and is the budget the tier default of the same 
 | Preset | `t` | Tier | Adds over the one above |
 | --- | --- | --- | --- |
 | `quick` | 0.4 | routed | correctness, intent, and quality finders; the intent finder isolated; measurability lens; holistic broad pass |
-| `standard` | 0.7 | routed | consumer-impact, dependency, and standards on the delta; verifier tier 2; optimality lens |
+| `standard` | 0.7 | routed | consumer-impact, dependency, and standards on the delta; verifier tier 2 |
 | `deep` | 0.85 | forced `deep` | consumer-impact and standards on every file; tool-call budget ×1.5 |
 | `max` | 1 | forced `deep` | tier-3 (execution) verification; tool-call budget ×2 |
 
@@ -281,7 +281,7 @@ continuously instead of jumping at two tier boundaries.
 The precedence of `--depth`, its deprecated aliases, and the config keys is one table in [`arguments.md` § Precedence](./arguments.md#precedence).
 Config keys come from the PR's base commit, already resolved in `context.reviewConfig` ([`review-config.md` § Run-level knobs](../../shared/rules/review-config.md#run-level-knobs)).
 
-1. A preset (`--depth`, or an alias that maps to one) → its `t` from the table above.
+1. A preset (`--depth`, config `depth:`, or `--effort high`) → its `t` from the table above; a deprecated `thoroughness: <n>` keeps `t = n` exactly.
    A garbage CLI value never reaches `resolveBudget()`: `prepare-review.mjs` exits 2 first ([`arguments.md` § Validation](./arguments.md#validation)).
    A config value outside its domain is ignored without coercion and listed in `RUN_ANOMALY`, so `t` falls through to item 2.
 2. No preset → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.85.**
