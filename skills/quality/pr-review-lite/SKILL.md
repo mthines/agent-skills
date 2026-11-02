@@ -21,7 +21,7 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
 
 ## Steps
 
-1. Run it; add `--with a,b` to load named lenses as `/pr-review` does (needs `ANTHROPIC_API_KEY`; it makes real model calls, so run it only on a PR the user named):
+1. Run it; add `--transport claude-cli` to use a Claude Code login with no API key (usage and dollars then come from the CLI's own output), and `--with a,b` to load named lenses as `/pr-review` does (needs `ANTHROPIC_API_KEY`; it makes real model calls, so run it only on a PR the user named):
 
    ```bash
    node ${CLAUDE_SKILL_DIR}/scripts/lite-review.mjs --pr <url|#n> --out <dir> --repo-dir <checkout>

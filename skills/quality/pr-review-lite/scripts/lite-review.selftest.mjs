@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -228,6 +228,34 @@ check("prefix: PR text is framed as untrusted data between markers", async () =>
   await runPipeline({ packetText: PACKET, finders: "R", transport: t });
   const p = t.calls[0].cachePrefix;
   ok(p.includes("untrusted data") && p.indexOf("<pr_context>") < p.indexOf("## A heading inside the description") && p.indexOf("## A heading inside the description") < p.indexOf("</pr_context>"), "framing missing");
+});
+
+check("cli transport: passes prefix as the system prompt, user on stdin, tools off; returns usage and reported cost", async () => {
+  const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lite-cli-"));
+  const bin = path.join(dir, "fake-claude");
+  fs.writeFileSync(bin, `#!/usr/bin/env node
+let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{ const a=process.argv.slice(2); const sys=a[a.indexOf("--system-prompt")+1];
+console.log(JSON.stringify({is_error:false,result:JSON.stringify({echo:{sys,user:s,tools:a[a.indexOf("--tools")+1],model:a[a.indexOf("--model")+1]}}),total_cost_usd:0.25,usage:{input_tokens:3,cache_read_input_tokens:4,cache_creation_input_tokens:5,output_tokens:6}})); });`);
+  fs.chmodSync(bin, 0o755);
+  const r = await claudeCliTransport({ bin })({ model: "m1", system: "STAGE", cachePrefix: "PREFIX", user: "UNIT", maxTokens: 10 });
+  const echo = JSON.parse(r.text).echo;
+  eq([echo.sys, echo.user, echo.tools, echo.model], ["PREFIX\n\nSTAGE", "UNIT", "", "m1"]);
+  eq([r.costUsd, r.usage.cache_read_input_tokens], [0.25, 4]);
+  const out = await runPipeline({ packetText: PACKET, finders: "R", transport: async (/** @type {any} */ q) => ({ ...(await stub(reviewReply)(q)), costUsd: 0.5 }), opts: { unitTokens: 100000 } });
+  eq([out.usage.review.usd, out.usage.review.usd_source], [0.5, "reported by the transport"]);
+  fs.rmSync(dir, { recursive: true });
+});
+
+check("cli transport: a non-zero exit or an error reply rejects", async () => {
+  const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lite-cli-"));
+  const bin = path.join(dir, "bad-claude");
+  fs.writeFileSync(bin, '#!/usr/bin/env node\nprocess.stdin.resume().on("end",()=>{console.log(JSON.stringify({is_error:true,result:"rate limited"}));process.exit(1)});');
+  fs.chmodSync(bin, 0o755);
+  let msg = ""; try { await claudeCliTransport({ bin })({ model: "m", system: "", cachePrefix: "P", user: "U", maxTokens: 1 }); } catch (e) { msg = String(/** @type {any} */ (e).message); }
+  ok(/rate limited/.test(msg), `got ${msg}`);
+  fs.rmSync(dir, { recursive: true });
 });
 
 export async function selfTest() {

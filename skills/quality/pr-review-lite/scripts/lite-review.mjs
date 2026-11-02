@@ -12,14 +12,14 @@
  *   node lite-review.mjs --context <context.json> --out <dir>
  *   node lite-review.mjs --self-test
  *
- * Flags: --with a,b (named lenses, passed to prepare), --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
- *        --prices <json file|inline json>, --finders <path>. Needs ANTHROPIC_API_KEY unless --self-test.
+ * Flags: --transport api|claude-cli, --with a,b (named lenses, passed to prepare), --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
+ *        --prices <json file|inline json>, --finders <path>. Needs ANTHROPIC_API_KEY unless --transport claude-cli or --self-test.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 export const DEFAULTS = {
   model: "claude-sonnet-5-5",
@@ -249,15 +249,18 @@ export function reflectMessage(/** @type {{files:any[]}[]} */ units, /** @type {
 
 // ── usage ─────────────────────────────────────────────────────────────────────────────────────
 
-export const emptyUsage = () => ({ calls: 0, input: 0, cache_read: 0, cache_write: 0, output: 0 });
+export const emptyUsage = () => ({ calls: 0, input: 0, cache_read: 0, cache_write: 0, output: 0, reported_usd: /** @type {number|null} */ (null) });
 
-export function addUsage(/** @type {any} */ acc, /** @type {any} */ u = {}) {
+export function addUsage(/** @type {any} */ acc, /** @type {any} */ u = {}, /** @type {number|undefined} */ costUsd) {
   acc.calls += 1;
+  if (typeof costUsd === "number") acc.reported_usd = (acc.reported_usd || 0) + costUsd;
   acc.input += Number(u.input_tokens) || 0;
   acc.cache_read += Number(u.cache_read_input_tokens) || 0;
   acc.cache_write += Number(u.cache_creation_input_tokens) || 0;
   acc.output += Number(u.output_tokens) || 0;
 }
+
+const roundUsd = (/** @type {number|null} */ n) => (n == null ? null : Number(n.toFixed(4)));
 
 /** USD only for a stage whose model has a caller-supplied price (per million tokens). */
 export function costUsd(/** @type {any} */ stage, /** @type {any} */ price) {
@@ -289,6 +292,36 @@ export function anthropicTransport(/** @type {string} */ apiKey) {
   };
 }
 
+/**
+ * A transport over the `claude` CLI, for a session with a Claude Code login and no API key. The prefix
+ * and stage instruction become the system prompt; tools, MCP servers, skills, and settings are off so a
+ * call carries little beyond them. Usage and dollars come from the CLI's own JSON, never from a price
+ * written here.
+ * @param {{bin?: string, timeoutMs?: number}} [o]
+ */
+export function claudeCliTransport(o = {}) {
+  const bin = o.bin || process.env.LITE_CLAUDE_BIN || "claude";
+  return (/** @type {{model:string,system:string,cachePrefix?:string,user:string,maxTokens:number}} */ req) => new Promise((resolve, reject) => {
+    const args = ["-p", "--model", req.model, "--system-prompt", [req.cachePrefix, req.system].filter(Boolean).join("\n\n"),
+      "--tools", "", "--strict-mcp-config", "--disable-slash-commands", "--setting-sources", "", "--no-session-persistence", "--output-format", "json"];
+    const p = spawn(bin, args, { stdio: ["pipe", "pipe", "pipe"] });
+    let out = ""; let err = "";
+    const timer = setTimeout(() => { p.kill(); reject(new Error("claude cli timed out")); }, o.timeoutMs ?? 600000);
+    p.stdout.on("data", (d) => { out += d; });
+    p.stderr.on("data", (d) => { err += d; });
+    p.on("error", (e) => { clearTimeout(timer); reject(e); });
+    p.on("close", (code) => {
+      clearTimeout(timer);
+      try {
+        const j = JSON.parse(out);
+        if (j.is_error || code !== 0) return reject(new Error(`claude cli: ${String(j.result || err).slice(0, 200)}`));
+        resolve({ text: String(j.result || ""), usage: j.usage || {}, costUsd: typeof j.total_cost_usd === "number" ? j.total_cost_usd : undefined });
+      } catch { reject(new Error(`claude cli exit ${code}: ${(err || out).slice(0, 200)}`)); }
+    });
+    p.stdin.end(req.user);
+  });
+}
+
 // ── pipeline ──────────────────────────────────────────────────────────────────────────────────
 
 /** Run `fn` over `items` with at most `limit` in flight; results keep input order. */
@@ -318,7 +351,7 @@ export async function runPipeline(a) {
   const reviewUnit = async (/** @type {any} */ unit) => {
     try {
       const r = await a.transport({ model: o.model, system: "", cachePrefix: prefix, user: unitMessage(unit), maxTokens: o.maxOutputTokens });
-      addUsage(usage.review, r.usage);
+      addUsage(usage.review, r.usage, r.costUsd);
       const parsed = parseJson(r.text);
       if (!Array.isArray(parsed)) { errors.push({ stage: "review", unit: unit.id, error: "unparseable reply" }); failUnit(unit, "unparseable reply (possibly cut off at the output cap)"); return []; }
       const f = filterCandidates(parsed, unit, lenses.map((l) => l.name));
@@ -353,7 +386,7 @@ export async function runPipeline(a) {
     const mine = cands.filter((c) => b.units.some((u) => u.id === c.unit));
     try {
       const r = await a.transport({ model: o.reflectModel, system: REFLECT_SYSTEM, user: reflectMessage(b.units, mine), maxTokens: o.maxOutputTokens });
-      addUsage(usage.reflect, r.usage);
+      addUsage(usage.reflect, r.usage, r.costUsd);
       const j = parseJson(r.text);
       if (!j || !Array.isArray(j.veto)) { failOpen++; continue; }
       const diffText = b.units.map(unitMessage).join("\n");
@@ -375,8 +408,8 @@ export async function runPipeline(a) {
 
   const prices = a.prices || {};
   const usageOut = {
-    review: { model: o.model, ...usage.review, usd: costUsd(usage.review, prices[o.model]) },
-    reflect: { model: o.reflectModel, ...usage.reflect, usd: costUsd(usage.reflect, prices[o.reflectModel]) },
+    review: { model: o.model, ...usage.review, usd: costUsd(usage.review, prices[o.model]) ?? roundUsd(usage.review.reported_usd), usd_source: prices[o.model] ? "prices" : usage.review.reported_usd != null ? "reported by the transport" : null },
+    reflect: { model: o.reflectModel, ...usage.reflect, usd: costUsd(usage.reflect, prices[o.reflectModel]) ?? roundUsd(usage.reflect.reported_usd), usd_source: prices[o.reflectModel] ? "prices" : usage.reflect.reported_usd != null ? "reported by the transport" : null },
   };
   return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, rejectedVetoes, prefixTokens: tokensOf(prefix), prefix };
 }
@@ -414,8 +447,10 @@ async function main(/** @type {string[]} */ argv) {
   if (argv.includes("--self-test")) return (await import("./lite-review.selftest.mjs")).selfTest();
   const out = arg(argv, "--out");
   if (!out) { process.stderr.write("lite-review: --out <dir> is required\n"); return 2; }
+  const mode = arg(argv, "--transport") || "api";
+  if (!["api", "claude-cli"].includes(mode)) { process.stderr.write("lite-review: --transport must be api or claude-cli\n"); return 2; }
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) { process.stderr.write("lite-review: ANTHROPIC_API_KEY is not set\n"); return 2; }
+  if (mode === "api" && !key) { process.stderr.write("lite-review: ANTHROPIC_API_KEY is not set (or pass --transport claude-cli)\n"); return 2; }
   mkdirSync(out, { recursive: true });
   let ctxPath = arg(argv, "--context");
   const support = resolveSupport();
@@ -448,7 +483,7 @@ async function main(/** @type {string[]} */ argv) {
   if (bad.length) { process.stderr.write(`lite-review: ${bad.join(", ")} must be a whole number of at least 1\n`); return 2; }
   const r = await runPipeline({
     packetText: readFileSync(packetPath, "utf8"), impact, lenses: ctx.lenses?.loaded || [], finders: readFileSync(findersPath, "utf8"),
-    transport: anthropicTransport(key), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
+    transport: mode === "api" ? anthropicTransport(/** @type {string} */ (key)) : claudeCliTransport(), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
   });
   writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.target || ctx.pr || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));
   writeFileSync(join(out, "skipped.json"), JSON.stringify(r.skipped, null, 2));

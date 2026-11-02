@@ -30,4 +30,6 @@
 | `skipped.json` | every file not reviewed, with its reason |
 | `usage.json` | per stage: model, calls, input, cache-read, cache-write, output tokens, `usd` (null without a price); `prefixTokens`; `reflectFailOpen` |
 
+`usd` comes from `--prices` when one is given for the stage's model, otherwise from the cost the transport reports (`--transport claude-cli`), and `usd_source` says which; with neither it is null.
+
 `--prices` is a JSON file or inline object keyed by model id, in USD per million tokens: `{"<model>":{"input":0,"cache_read":0,"cache_write":0,"output":0}}`.
