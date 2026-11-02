@@ -272,23 +272,23 @@ to `full` (the safe direction).
 
 #### Cumulative churn since the last full pass
 
-`FULL_REFRESH_DELTA` (150) and `FULL_REFRESH_RUNS` (3) are owned by the scripts, not restated here —
-`delta-triage.mjs` and `route-depth.mjs` export them, and `route-depth.mjs`'s self-test asserts both
+`FULL_REFRESH_DELTA` (150), `FULL_REFRESH_RUNS` (3), and the PR-scaled threshold `refreshDeltaFor(PR_LINES)` are owned by the scripts, not restated here —
+`delta-triage.mjs` and `route-depth.mjs` export them, and `route-depth.mjs`'s self-test asserts them
 against `depth-routing.md`'s stated numbers. `prepare-review.mjs` computes `CUM_DELTA_LINES` via
 `churnState()` with the same divergence rule as above (a non-`ahead` cumulative compare reads as
-**over** the threshold, never guessed) and feeds it into `routeDepth()`. Manual fallback: read the
+`CHURN_OVER_THRESHOLD`, over every threshold, never guessed) and feeds it into `routeDepth()`. Manual fallback: read the
 constants from the scripts and apply `churnState()`'s rule to the `LAST_FULL_SHA` compare.
 
 **Upgrade rules — any one condition forces `RUN_MODE = "full"`:**
-- `DELTA_LINES > 100`
-- `NEW_FILES > 0`
+- `DELTA_LINES > 100`, unless [delta scaling](./depth-routing.md#delta-scaling) applies
+- `NEW_FILES > 0`, unless [delta scaling](./depth-routing.md#delta-scaling) applies
 - `HIGH_STAKES_FILES` is non-empty (auth, payments, migrations, infra, secrets, or a repo-configured
   `high_stakes_paths:` regex — the classifier owns the list)
 - `DELTA_PROPAGATION` is true — the delta edits a governing document (`CLAUDE.md`, `AGENTS.md`,
   `.claude/rules/*.md`) alongside other files, since a delta-scoped scan structurally cannot see an
   induced contradiction in an untouched restatement
 - `LAST_FULL_SHA` is empty — no full-mode review is detectable
-- `CUM_DELTA_LINES > FULL_REFRESH_DELTA` — deep-lens refresh
+- `CUM_DELTA_LINES > refreshDeltaFor(PR_LINES)` — deep-lens refresh
 - `INCR_RUNS_SINCE_FULL >= FULL_REFRESH_RUNS` — deep-lens refresh
 
 **Risky content shapes escalate without upgrading.** When no upgrade rule fired but

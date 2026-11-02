@@ -21,6 +21,7 @@ This phase routes on **what the change reaches**, not how much of it there is.
 - [Five inputs](#five-inputs)
 - [The three tiers](#the-three-tiers)
 - [Size scaling](#size-scaling)
+- [Delta scaling](#delta-scaling)
 - [Announce the decision with its inputs](#announce-the-decision-with-its-inputs)
 - [The deep-lens refresh](#the-deep-lens-refresh)
 - [`--effort`](#--effort)
@@ -100,7 +101,7 @@ were exactly the two the routing missed.
 | **D1** | first run on this PR |
 | **D2** | `--full` |
 | **D3** | `--effort high` |
-| **D4** | `CUM_DELTA_LINES > FULL_REFRESH_DELTA` 150 |
+| **D4** | `CUM_DELTA_LINES >` the refresh threshold: `max(150, min(ceil(0.5 × PR changed lines), 500))`, so 150 up to a 300-line PR |
 | **D5** | `INCR_RUNS_SINCE_FULL ≥ FULL_REFRESH_RUNS` 3 — `≥`, so 3 of 3 fires |
 | **D6** | **no** prior `deep` pass recorded |
 | **D7** | `HIGH_STAKES_FILES` non-empty |
@@ -108,8 +109,8 @@ were exactly the two the routing missed.
 | **D9** | `blast_radius.band ∈ {medium, high}` |
 | **D10** | any `semver_delta == major` |
 | **D11** | any changed symbol with `traffic_band: high` **and** `change ∈ {signature, removed}` |
-| **D12** | `DELTA_LINES > 100` |
-| **D13** | `NEW_FILES > 0` |
+| **D12** | `DELTA_LINES > 100` (waived by [delta scaling](#delta-scaling)) |
+| **D13** | `NEW_FILES > 0` (waived by [delta scaling](#delta-scaling)) |
 
 `D4`–`D6` are [the deep-lens refresh](#the-deep-lens-refresh), and they are three **independent**
 triggers, not one condition with two qualifiers: a prior `deep` pass being on record satisfies
@@ -187,6 +188,28 @@ A first review of a small PR that fires no risk trigger skips `deep`.
 
 **Why:** `D1` alone sent every small first review to `deep`, whose fixed overhead dwarfs a small diff; size is a poor proxy for risk, so scaling never waives a trigger that measures what the change reaches.
 
+## Delta scaling
+
+A re-review of a big PR reviews the delta.
+[`route-depth.mjs`](../scripts/route-depth.mjs) applies it after size scaling and before the `standard` row:
+
+1. It applies only on a re-run, when a prior full-mode pass is recorded (`D6` did not fire; a size-scaled first run records `full` too), and when the PR has more than `BIG_PR_LINES` (400) changed lines; an unknown PR size is never scaled.
+2. It applies only when every trigger that fired is `D12` or `D13` and `DELTA_LINES ≤ BIG_PUSH_LINES` (400).
+   Any other trigger still routes `deep`: `D2`, `D3`, the refresh counters `D4` and `D5`, `D6`, and the risk triggers `D7`–`D11`.
+3. It waives `D12` and `D13`, then routes on the rows below with the `standard` size band widened to `0 ≤ DELTA_LINES ≤ BIG_PUSH_LINES`, so a push that adds a file never drops to `quick`: `standard` in that band, or on any other `standard` condition.
+4. The run takes its tier's own mode, `incremental` at `standard`, and carries `routing.deltaScaled: true`; it never sets `RUN.scaled`, which means a whole-PR review at a lighter tier and renders mode `full`.
+5. The run span records `pr_review.delta_scaled`, and `pr_review.triggers` lists the triggers that routed a run `deep`.
+
+```text
+✗ 563-line PR, 2nd review, 180-line push adding a test file, prior deep pass recorded → deep (D12, D13, D4): the whole PR is read again
+✓ the same push → standard, delta-scoped, routing.deltaScaled true (D4 threshold is 282)
+✓ 563-line PR, 80-line push to src/auth/ → deep (D7 is a risk trigger)
+✓ 200-line PR, 22-line push adding a file → deep (a PR of up to 400 lines is cheap to read again)
+✓ 563-line PR, 450-line push → deep (D12: over the big-push ceiling)
+```
+
+**Why:** the whole-PR re-read is the cost; [`delta-rereview.md`](../references/delta-rereview.md) holds the cost argument, the bound on what a delta run cannot see, and the alternative this beat.
+
 ## Announce the decision with its inputs
 
 Every tier decision is stated with the inputs that produced it, in the report and in the terminal.
@@ -204,11 +227,12 @@ An incremental run is promoted back to `deep` when any of these holds:
 
 | # | Counter | Threshold | Read from |
 | --- | --- | --- | --- |
-| `D4` | cumulative churn since the last `deep` pass | `FULL_REFRESH_DELTA` = 150 lines | PR-state record |
+| `D4` | cumulative churn since the last `deep` pass | `refreshDeltaFor(PR changed lines)`: `FULL_REFRESH_DELTA` = 150 lines for a PR of up to 300 lines, `0.5 ×` the PR above that, at most `MAX_REFRESH_DELTA` = 500 | PR-state record |
 | `D5` | incremental runs since the last `deep` pass | `FULL_REFRESH_RUNS` = 3 | PR-state record |
 | `D6` | no prior `deep` pass recorded | always | PR-state record — **including every run on the recovery rung**, which recovers a baseline but no history |
 
 Without this, a PR that grows by ninety lines a day never gets another holistic pass, because no single push is ever big enough to trigger one.
+A cumulative-churn compare that fails, diverges, or cannot be trusted reads as `CHURN_OVER_THRESHOLD` (501), over every threshold `refreshDeltaFor` returns, so an unknown churn always refreshes.
 
 ## `--effort`
 
