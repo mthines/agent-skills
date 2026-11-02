@@ -12,8 +12,8 @@
  *   node lite-review.mjs --context <context.json> --out <dir>
  *   node lite-review.mjs --self-test
  *
- * Flags: --cross (add the cross-cutting pass; off by default, no measured lift), --cold (unique prefix, so cost is measured without an earlier run's cache), --transport api|claude-cli, --with a,b (named lenses, passed to prepare), --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
- *        --prices <json file|inline json>, --finders <path>. Needs ANTHROPIC_API_KEY unless --transport claude-cli or --self-test.
+ * Flags: --cross (add the cross-cutting pass; off by default, no measured lift), --cold (unique prefix, so cost is measured without an earlier run's cache), --transport api|claude-cli|opencode (default: see detectTransport), --with a,b (named lenses, passed to prepare), --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
+ *        --prices <json file|inline json>, --finders <path>. Needs ANTHROPIC_API_KEY unless --transport claude-cli|opencode or --self-test.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
@@ -390,6 +390,57 @@ export function claudeCliTransport(o = {}) {
   });
 }
 
+/**
+ * A transport over `opencode run`, for a sandbox whose model access is opencode's injected provider
+ * config and not an API key. opencode has no system-prompt flag, so the prefix, stage instruction, and
+ * unit go in one stdin message. Reads stdout only (stderr carries unrelated plugin noise). Every call
+ * also pays opencode's own fixed context, which the CLI reports in `tokens.cache` and `cost`.
+ * @param {{bin?: string, timeoutMs?: number}} [o]
+ */
+export function opencodeTransport(o = {}) {
+  const bin = o.bin || process.env.LITE_OPENCODE_BIN || "opencode";
+  return (/** @type {{model:string,system:string,cachePrefix?:string,user:string,maxTokens:number}} */ req) => new Promise((resolve, reject) => {
+    const model = req.model.includes("/") ? req.model : `anthropic/${req.model}`;
+    const p = spawn(bin, ["run", "-m", model, "--format", "json"], { stdio: ["pipe", "pipe", "ignore"] });
+    let out = "";
+    const timer = setTimeout(() => { p.kill(); reject(new Error("opencode timed out")); }, o.timeoutMs ?? 600000);
+    p.stdout.on("data", (d) => { out += d; });
+    p.on("error", (e) => { clearTimeout(timer); reject(e); });
+    p.on("close", (code) => {
+      clearTimeout(timer);
+      let text = ""; let tokens = null; let cost; /** @type {string|null} */ let err = null;
+      for (const line of out.split("\n")) {
+        let e; try { e = JSON.parse(line); } catch { continue; }
+        if (e.type === "text") text += String(e.part?.text || "");
+        else if (e.type === "step_finish") { tokens = e.part?.tokens || tokens; if (typeof e.part?.cost === "number") cost = (cost || 0) + e.part.cost; }
+        else if (e.type === "error") { const st = /"statusCode":\s*(\d{3})/.exec(line)?.[1]; err = `opencode ${st || "error"}: ${String(e.error?.data?.message || e.error?.message || e.message || line).slice(0, 200)}`; }
+      }
+      if (err) return reject(new Error(err));
+      if (code !== 0 || !tokens) return reject(new Error(`opencode exit ${code}: ${out.slice(-200) || "no output"}`));
+      const t = /** @type {any} */ (tokens);
+      resolve({ text, costUsd: cost, usage: { input_tokens: t.input || 0, output_tokens: (t.output || 0) + (t.reasoning || 0), cache_read_input_tokens: t.cache?.read || 0, cache_creation_input_tokens: t.cache?.write || 0 } });
+    });
+    p.stdin.on("error", () => {});
+    p.stdin.end([req.cachePrefix, req.system, "Answer directly from the text above. Do not call any tool or read any file.", req.user].filter(Boolean).join("\n\n"));
+  });
+}
+
+/**
+ * Pick a transport when `--transport` is absent. An opencode sandbox injects `OPENCODE_CONFIG_CONTENT`
+ * and a placeholder `ANTHROPIC_API_KEY` that only opencode can use, so that variable wins; otherwise a
+ * real-looking key, then a `claude` login, then `opencode`. An explicit flag always overrides this.
+ * @param {NodeJS.ProcessEnv} env
+ * @param {(bin:string)=>boolean} onPath
+ * @returns {"api"|"claude-cli"|"opencode"}
+ */
+export function detectTransport(env, onPath) {
+  if (env.OPENCODE_CONFIG_CONTENT) return "opencode";
+  if (env.ANTHROPIC_API_KEY) return "api";
+  if (onPath("claude")) return "claude-cli";
+  if (onPath("opencode")) return "opencode";
+  return "api";
+}
+
 // ── pipeline ──────────────────────────────────────────────────────────────────────────────────
 
 /** Run `fn` over `items` with at most `limit` in flight; results keep input order. */
@@ -415,6 +466,9 @@ export async function runPipeline(a) {
   /** @type {any[]} */ const errors = [];
   /** @type {any[]} */ const dropped = [];
 
+  /** An auth rejection (401/403) fails every later call the same way, so the first one ends the run. */
+  const isAuth = (/** @type {any} */ e) => /^(anthropic|opencode) (401|403)\b/.test(String(e?.message || ""));
+  /** @type {string|null} */ let fatal = null;
   const failUnit = (/** @type {any} */ unit, /** @type {string} */ why) => { for (const f of unit.files) failed.push({ path: f.path, reason: why }); };
   const reviewUnit = async (/** @type {any} */ unit) => {
     try {
@@ -428,6 +482,7 @@ export async function runPipeline(a) {
       dropped.push(...capped.over.map((c) => ({ candidate: c, why: `over the per-unit cap (${o.maxPerUnit})`, unit: unit.id })));
       return capped.kept;
     } catch (e) {
+      if (isAuth(e)) fatal = String(/** @type {any} */ (e).message);
       errors.push({ stage: "review", unit: unit.id, error: String(/** @type {any} */ (e)?.message || e) });
       failUnit(unit, `review call failed: ${String(/** @type {any} */ (e)?.message || e).slice(0, 80)}`);
       return [];
@@ -435,10 +490,11 @@ export async function runPipeline(a) {
   };
   // The first call alone writes the cache; the rest then read it instead of each writing their own.
   const first = units.length ? [await reviewUnit(units[0])] : [];
-  const rest = await pool(units.slice(1), o.concurrency, reviewUnit);
+  if (fatal) for (const u of units.slice(1)) failUnit(u, `not attempted: ${String(fatal).slice(0, 60)}`);
+  const rest = fatal ? [] : await pool(units.slice(1), o.concurrency, reviewUnit);
   /** @type {any[]} */
   let cands = [...first, ...rest].flat();
-  if (o.cross && units.length > 1) {
+  if (o.cross && units.length > 1 && !fatal) {
     const dg = crossDigest(units.flatMap((u) => u.files));
     if (dg.text) {
       try {
@@ -502,7 +558,7 @@ export async function runPipeline(a) {
     cross: { model: o.model, ...usage.cross, usd: costUsd(usage.cross, prices[o.model]) ?? roundUsd(usage.cross.reported_usd), usd_source: prices[o.model] ? "prices" : usage.cross.reported_usd != null ? "reported by the transport" : null },
     reflect: { model: o.reflectModel, ...usage.reflect, usd: costUsd(usage.reflect, prices[o.reflectModel]) ?? roundUsd(usage.reflect.reported_usd), usd_source: prices[o.reflectModel] ? "prices" : usage.reflect.reported_usd != null ? "reported by the transport" : null },
   };
-  return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, rejectedVetoes, prefixTokens: tokensOf(prefix), prefix };
+  return { fatal, findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, rejectedVetoes, prefixTokens: tokensOf(prefix), prefix };
 }
 
 /** Files the context lists that landed in neither a unit nor `skipped.json`, so a packet the parser could not read is never reported as fully reviewed. */
@@ -544,10 +600,11 @@ async function main(/** @type {string[]} */ argv) {
   if (argv.includes("--self-test")) return (await import("./lite-review.selftest.mjs")).selfTest();
   const out = arg(argv, "--out");
   if (!out) { process.stderr.write("lite-review: --out <dir> is required\n"); return 2; }
-  const mode = arg(argv, "--transport") || "api";
-  if (!["api", "claude-cli"].includes(mode)) { process.stderr.write("lite-review: --transport must be api or claude-cli\n"); return 2; }
+  const onPath = (/** @type {string} */ b) => spawnSync(process.platform === "win32" ? "where" : "which", [b], { stdio: "ignore" }).status === 0;
+  const mode = arg(argv, "--transport") || detectTransport(process.env, onPath);
+  if (!["api", "claude-cli", "opencode"].includes(mode)) { process.stderr.write("lite-review: --transport must be api, claude-cli, or opencode\n"); return 2; }
   const key = process.env.ANTHROPIC_API_KEY;
-  if (mode === "api" && !key) { process.stderr.write("lite-review: ANTHROPIC_API_KEY is not set (or pass --transport claude-cli)\n"); return 2; }
+  if (mode === "api" && !key) { process.stderr.write("lite-review: ANTHROPIC_API_KEY is not set (or pass --transport claude-cli or opencode)\n"); return 2; }
   mkdirSync(out, { recursive: true });
   let ctxPath = arg(argv, "--context");
   let ownedPrepare = false;
@@ -582,7 +639,7 @@ async function main(/** @type {string[]} */ argv) {
   if (bad.length) { process.stderr.write(`lite-review: ${bad.join(", ")} must be a whole number of at least 1\n`); return 2; }
   const r = await runPipeline({
     packetText: readFileSync(packetPath, "utf8"), impact, lenses: ctx.lenses?.loaded || [], threads: ctx.threads || [], finders: readFileSync(findersPath, "utf8"),
-    transport: mode === "api" ? anthropicTransport(/** @type {string} */ (key)) : claudeCliTransport(), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
+    transport: mode === "api" ? anthropicTransport(/** @type {string} */ (key)) : mode === "opencode" ? opencodeTransport() : claudeCliTransport(), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
   });
   r.skipped.push(...unaccounted(ctx.files || [], r));
   writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.target || ctx.pr || null, head: ctx.headSha || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));
@@ -590,6 +647,10 @@ async function main(/** @type {string[]} */ argv) {
   writeFileSync(join(out, "usage.json"), JSON.stringify({ ...r.usage, prefixTokens: r.prefixTokens, reflectFailOpen: r.reflectFailOpen, rejectedVetoes: r.rejectedVetoes }, null, 2));
   writeFileSync(join(out, "report.md"), renderReport(r));
   if (ownedPrepare) spawnSync("node", [join(support, "pr-reviewer/scripts/prepare-review.mjs"), "--cleanup", ctxPath], { stdio: "ignore" });
+  if (r.fatal) {
+    process.stderr.write(`lite-review: the review did not run, ${r.skipped.length} file(s) unreviewed: ${r.fatal}\n${mode === "api" ? "ANTHROPIC_API_KEY is set but rejected; supply a valid key or pass --transport claude-cli.\n" : ""}`);
+    return 3;
+  }
   process.stdout.write(`lite-review: ${r.findings.length} finding(s), ${r.skipped.length} file(s) not reviewed → ${out}\n`);
   return 0;
 }

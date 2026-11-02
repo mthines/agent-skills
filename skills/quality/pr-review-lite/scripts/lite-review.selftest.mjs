@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { unaccounted, crossDigest, capCandidates, threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { unaccounted, crossDigest, capCandidates, threadsBlock, reflectWindows, claudeCliTransport, opencodeTransport, detectTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -206,6 +206,18 @@ check("lens: a finding keeps a loaded lens name and drops an unknown one", () =>
   eq(kept.map((k) => k.lens), ["ledger", undefined]);
 });
 
+check("auth failure: a 401 on the first call stops the run, skips later units, and sets fatal", async () => {
+  /** @type {any[]} */ const calls = [];
+  const denied = async (/** @type {any} */ req) => { calls.push(req); throw new Error("anthropic 401: invalid x-api-key"); };
+  const r = await runPipeline({ packetText: PACKET, finders: "R", transport: denied, opts: { unitTokens: 40, cross: true } });
+  ok(r.units.length > 1, "need several units");
+  eq(calls.length, 1, "calls after a 401");
+  ok(/anthropic 401/.test(r.fatal || ""), "fatal not set");
+  ok(r.units.flatMap((u) => u.files).every((p) => r.skipped.some((s) => s.path === p)), "unit files not all in skipped");
+  const rl = async () => { throw new Error("anthropic 429: slow down"); };
+  eq((await runPipeline({ packetText: PACKET, finders: "R", transport: rl, opts: { unitTokens: 40 } })).fatal, null, "429 must not be fatal");
+});
+
 check("failed unit: a throw or an unparseable reply puts its files in skipped.json", async () => {
   const boom = async (/** @type {any} */ req) => { if (!req.system) throw new Error("429 rate limited"); return { text: "{}", usage: {} }; };
   const r = await runPipeline({ packetText: PACKET, finders: "R", transport: boom, opts: { unitTokens: 100000 } });
@@ -266,6 +278,40 @@ check("cli transport: a CLI that exits before reading a large payload rejects in
   fs.chmodSync(bin, 0o755);
   let rejected = false; try { await claudeCliTransport({ bin })({ model: "m", system: "", cachePrefix: "P", user: "u".repeat(300000), maxTokens: 1 }); } catch { rejected = true; }
   ok(rejected, "expected a rejection");
+  fs.rmSync(dir, { recursive: true });
+});
+
+check("detectTransport: sandbox marker beats a placeholder key; local falls back key, claude, opencode", () => {
+  const none = () => false;
+  eq(detectTransport({ OPENCODE_CONFIG_CONTENT: "{}", ANTHROPIC_API_KEY: "proxy-hold" }, none), "opencode");
+  eq(detectTransport({ ANTHROPIC_API_KEY: "sk-ant-x" }, (b) => b === "claude"), "api");
+  eq(detectTransport({}, (b) => b === "claude"), "claude-cli");
+  eq(detectTransport({}, (b) => b === "opencode"), "opencode");
+  eq(detectTransport({}, none), "api");
+});
+
+check("opencode transport: sends one stdin message, reads the JSONL text and usage, ignores stderr, and maps an error event to a status", async () => {
+  const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lite-oc-"));
+  const good = path.join(dir, "oc-good");
+  fs.writeFileSync(good, `#!/usr/bin/env node
+let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{ console.error("plugin noise {not json");
+const a=process.argv.slice(2);
+console.log(JSON.stringify({type:"step_start"}));
+console.log(JSON.stringify({type:"text",part:{text:JSON.stringify({model:a[a.indexOf("-m")+1],fmt:a[a.indexOf("--format")+1],msg:s})}}));
+console.log(JSON.stringify({type:"step_finish",part:{reason:"stop",cost:0.25,tokens:{input:3,output:6,reasoning:1,total:10,cache:{read:4,write:5}}}})); });`);
+  const bad = path.join(dir, "oc-bad");
+  fs.writeFileSync(bad, '#!/usr/bin/env node\nprocess.stdin.resume().on("end",()=>{console.log(JSON.stringify({type:"error",error:{data:{statusCode:403,message:"Model not allowed"}}}));process.exit(1)});');
+  fs.chmodSync(good, 0o755); fs.chmodSync(bad, 0o755);
+  const r = await opencodeTransport({ bin: good })({ model: "claude-sonnet-5-5", system: "STAGE", cachePrefix: "PREFIX", user: "UNIT", maxTokens: 10 });
+  const echo = JSON.parse(r.text);
+  eq([echo.model, echo.fmt], ["anthropic/claude-sonnet-5-5", "json"]);
+  ok(echo.msg.indexOf("PREFIX") < echo.msg.indexOf("STAGE") && echo.msg.indexOf("STAGE") < echo.msg.indexOf("UNIT") && /Do not call any tool/.test(echo.msg), "message order or no-tools line");
+  eq([r.costUsd, r.usage.input_tokens, r.usage.output_tokens, r.usage.cache_read_input_tokens, r.usage.cache_creation_input_tokens], [0.25, 3, 7, 4, 5]);
+  let msg = ""; try { await opencodeTransport({ bin: bad })({ model: "m", system: "", cachePrefix: "P", user: "U", maxTokens: 1 }); } catch (e) { msg = String(/** @type {any} */ (e).message); }
+  ok(/^opencode 403: Model not allowed/.test(msg), `got ${msg}`);
+  const f = await runPipeline({ packetText: PACKET, finders: "R", transport: opencodeTransport({ bin: bad }), opts: { unitTokens: 40 } });
+  ok(/opencode 403/.test(f.fatal || ""), "a 403 from opencode must be fatal");
   fs.rmSync(dir, { recursive: true });
 });
 
