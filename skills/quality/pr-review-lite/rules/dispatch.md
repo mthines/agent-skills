@@ -10,10 +10,10 @@ Dispatch is code, not a model decision: the same packet and options give the sam
 | Impact graph | `context.json` → `paths.impact` | A bounded summary of the most-consumed changed symbols |
 | Finder rubric | `pr-reviewer/rules/finders.md`, read at run time | The reviewer prefix, verbatim |
 | Team lenses | `context.json` → `lenses.loaded`, selected by `prepare-review.mjs` | The `## Team lenses` block of the reviewer prefix ([`lenses.md`](./lenses.md)) |
-| Exclude list | `.agents/review/lite.yaml` (optional) | Extra paths to skip |
+| Exclude list | `lite.exclude` in `.agents/review/config.yaml`, and `.agents/review/lite.yaml` (both optional, merged) | Extra paths to skip |
 
-`lite.yaml` is read from `--repo-dir` or the working directory, so it is the checkout's copy and not the base commit's; every file it excludes still appears in `skipped.json`.
-It takes one key; anything else is ignored:
+Both files are read from `--repo-dir` or the working directory, so it is the checkout's copy and not the base commit's; every file it excludes still appears in `skipped.json`.
+`lite.yaml` takes one key; anything else in it is ignored:
 
 ```yaml
 exclude:

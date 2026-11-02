@@ -28,6 +28,18 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
    ```
 
    It runs `prepare-review.mjs` from the agent's support tree, so the packet is the one the full reviewer reads ([`rules/dispatch.md`](./rules/dispatch.md)).
+   Models: the review stage defaults to `claude-haiku-5-5` and reflection to `claude-sonnet-5-5`.
+   Override per repo in `.agents/review/config.yaml`, or per run with `--model` and `--reflect-model` (a flag beats the config, the config beats the default):
+
+   ```yaml
+   lite:
+     review_model: claude-haiku-5-5
+     reflect_model: claude-sonnet-5-5
+     exclude:
+       - "**/generated/**"
+   ```
+
+   A model id that does not start with `claude-` exits 2.
 2. Read `<dir>/skipped.json`. Every file lite did not review is listed with its reason; report that list, never "reviewed everything".
 3. Compare after the full reviewer has posted on the same head:
 

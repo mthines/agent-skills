@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 
 export const DEFAULTS = {
-  model: "claude-sonnet-5-5",
+  model: "claude-haiku-5-5",
   reflectModel: "claude-sonnet-5-5",
   windowLines: 12,
   nonce: "",
@@ -99,6 +99,31 @@ export function globToRegex(/** @type {string} */ g) {
 }
 
 /** Parse the optional `.agents/review/lite.yaml`: only the `exclude:` list is read. */
+const MODEL_ID = /^claude-[a-z0-9][a-z0-9.-]*$/;
+
+/** The `lite:` block of `.agents/review/config.yaml`: `review_model`, `reflect_model`, and an `exclude` list. A model id that is not a `claude-…` id is returned in `bad`. */
+export function parseReviewConfigLite(/** @type {string} */ text) {
+  /** @type {{exclude:string[], reviewModel?:string, reflectModel?:string, bad:string[]}} */
+  const out = { exclude: [], bad: [] };
+  let inBlock = false, inList = false;
+  for (const raw of String(text || "").split("\n")) {
+    if (/^lite:\s*$/.test(raw)) { inBlock = true; inList = false; continue; }
+    if (!inBlock) continue;
+    if (/^\S/.test(raw) && raw.trim()) { inBlock = false; continue; }
+    const kv = /^\s+(review_model|reflect_model):\s*["']?([^"'#\s]+)["']?\s*(#.*)?$/.exec(raw);
+    if (kv) {
+      inList = false;
+      if (!MODEL_ID.test(kv[2])) out.bad.push(`${kv[1]}: ${kv[2]}`);
+      else if (kv[1] === "review_model") out.reviewModel = kv[2]; else out.reflectModel = kv[2];
+      continue;
+    }
+    if (/^\s+exclude:\s*$/.test(raw)) { inList = true; continue; }
+    const li = inList ? /^\s+-\s*["']?(.+?)["']?\s*$/.exec(raw) : null;
+    if (li) out.exclude.push(li[1]); else if (inList && raw.trim() && !/^\s+-/.test(raw)) inList = false;
+  }
+  return out;
+}
+
 export function parseLiteConfig(/** @type {string} */ text) {
   /** @type {string[]} */
   const exclude = [];
@@ -567,7 +592,11 @@ async function main(/** @type {string[]} */ argv) {
   if (!packetPath) { process.stderr.write("lite-review: context has no review packet\n"); return 2; }
   const impact = ctx.paths?.impact && existsSync(ctx.paths.impact) ? JSON.parse(readFileSync(ctx.paths.impact, "utf8")) : null;
   const findersPath = arg(argv, "--finders") || join(support, "pr-reviewer/rules/finders.md");
-  const cfgPath = join(arg(argv, "--repo-dir") || process.cwd(), ".agents/review/lite.yaml");
+  const repoRoot = arg(argv, "--repo-dir") || process.cwd();
+  const cfgPath = join(repoRoot, ".agents/review/lite.yaml");
+  const rcPath = join(repoRoot, ".agents/review/config.yaml");
+  const rc = existsSync(rcPath) ? parseReviewConfigLite(readFileSync(rcPath, "utf8")) : { exclude: [], bad: [] };
+  if (rc.bad.length) { process.stderr.write(`lite-review: invalid model id in .agents/review/config.yaml (${rc.bad.join(", ")})\n`); return 2; }
   let prices = {};
   const pr = arg(argv, "--prices") || process.env.LITE_PRICES;
   if (pr) prices = JSON.parse(existsSync(pr) ? readFileSync(pr, "utf8") : pr);
@@ -578,11 +607,11 @@ async function main(/** @type {string[]} */ argv) {
     if (!Number.isInteger(v) || v < 1) { bad.push(n); return undefined; }
     return v;
   };
-  const opts = Object.fromEntries(Object.entries({ nonce: argv.includes("--cold") ? String(Date.now()) : undefined, model: arg(argv, "--model"), reflectModel: arg(argv, "--reflect-model"), concurrency: num("--concurrency"), unitTokens: num("--unit-tokens"), maxUnits: num("--max-units"), cross: argv.includes("--cross") ? true : undefined }).filter(([, v]) => v !== undefined));
+  const opts = Object.fromEntries(Object.entries({ nonce: argv.includes("--cold") ? String(Date.now()) : undefined, model: arg(argv, "--model") || rc.reviewModel, reflectModel: arg(argv, "--reflect-model") || rc.reflectModel, concurrency: num("--concurrency"), unitTokens: num("--unit-tokens"), maxUnits: num("--max-units"), cross: argv.includes("--cross") ? true : undefined }).filter(([, v]) => v !== undefined));
   if (bad.length) { process.stderr.write(`lite-review: ${bad.join(", ")} must be a whole number of at least 1\n`); return 2; }
   const r = await runPipeline({
     packetText: readFileSync(packetPath, "utf8"), impact, lenses: ctx.lenses?.loaded || [], threads: ctx.threads || [], finders: readFileSync(findersPath, "utf8"),
-    transport: mode === "api" ? anthropicTransport(/** @type {string} */ (key)) : claudeCliTransport(), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
+    transport: mode === "api" ? anthropicTransport(/** @type {string} */ (key)) : claudeCliTransport(), config: { exclude: [...(existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")).exclude : []), ...rc.exclude] }, opts, prices,
   });
   r.skipped.push(...unaccounted(ctx.files || [], r));
   writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.target || ctx.pr || null, head: ctx.headSha || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));

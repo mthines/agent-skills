@@ -19,5 +19,7 @@ Lite follows the shape of rule-guided, per-file, filter-reflected reviewers such
 ## Known limitation
 
 That design trades recall for precision. Lite inherits the trade and adds one of its own: with no tools it cannot follow a call into code the packet does not show. Its recall against the full reviewer is unmeasured.
+The review stage is nearly all of lite's cost, so it defaults to the cheapest model. Reflection runs on a stronger model because it only reads the candidates and the diff windows, and a weak filter lets noise through.
+Both are overridable per repo in `.agents/review/config.yaml`.
 A file the packet does not inline, that falls past the unit cap, or whose unit call failed is not reviewed; `skipped.json` names it so a gap is never silent.
 Memory is the static layers only (the REVIEW.md notes in the packet, the team lenses `prepare-review.mjs` selects, and `lite.yaml`); governing-doc standards are not read; learned suppression and relevance records are not read.
