@@ -14,7 +14,7 @@ The deterministic work that already exists (`prepare-review.mjs`: packet, hunks 
 
 ## Source design
 
-Lite follows the shape of rule-guided, per-file, filter-reflected reviewers such as [OpenCodeReview](https://arxiv.org/html/2608.09290v1): deterministic dispatch, isolated per-file context, bounded tools, and an independent filter-only reflection that sees the diff and the comments but not the exploration.
+Lite follows the shape of rule-guided, per-file, filter-reflected reviewers such as [OpenCodeReview](https://arxiv.org/html/2608.09290v1): deterministic dispatch, isolated per-unit context (a unit is one file or a few small ones), and an independent filter-only reflection that sees the diff and the comments but not the exploration.
 
 ## Known limitation
 
