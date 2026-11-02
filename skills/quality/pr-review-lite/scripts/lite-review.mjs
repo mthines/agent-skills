@@ -506,8 +506,8 @@ export async function runPipeline(a) {
 }
 
 /** Files the context lists that landed in neither a unit nor `skipped.json`, so a packet the parser could not read is never reported as fully reviewed. */
-export function unaccounted(/** @type {{filename?:string}[]} */ ctxFiles, /** @type {{units:{files:{path:string}[]}[], skipped:{path:string}[]}} */ r) {
-  const seen = new Set([...r.units.flatMap((u) => u.files.map((f) => f.path)), ...r.skipped.map((s) => s.path)]);
+export function unaccounted(/** @type {{filename?:string}[]} */ ctxFiles, /** @type {{units:{files:(string|{path:string})[]}[], skipped:{path:string}[]}} */ r) {
+  const seen = new Set([...r.units.flatMap((u) => u.files.map((f) => (typeof f === "string" ? f : f.path))), ...r.skipped.map((s) => s.path)]);
   return (ctxFiles || []).map((f) => f.filename).filter((p) => p && !seen.has(p)).map((path) => ({ path, reason: "not found in the review packet index" }));
 }
 
