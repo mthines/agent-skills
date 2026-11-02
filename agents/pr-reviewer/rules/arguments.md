@@ -104,6 +104,26 @@ Where a model cannot be chosen:
   Agent(subagent_type="pr-reviewer", model="sonnet", prompt="<PR> --context …")
 ```
 
+### Choosing the reviewer model
+
+| Diff | Reviewer model | How |
+| --- | --- | --- |
+| Routed `deep`, or any auth, payments, migration, secrets, or infra change | `opus` (the default) | pass nothing |
+| Small, low-risk, not floored by the risk floor, and a missed finding is tolerable | `sonnet` | `--model sonnet` on `/pr-review` |
+| A cheap extra pass beside another review | `haiku` | `--model haiku`; never the only reviewer |
+
+Never pick `haiku` as the only reviewer of a diff that gates a merge: a smaller model can return a `PASS` on a diff that holds a blocking bug.
+No setting maps a routed tier to a model, so the reviewer stays `opus` until a caller passes `--model`.
+**Why:** [`../references/depth-presets.md`](../references/depth-presets.md#why-opus-stays-the-default-reviewer).
+
+```text
+✗ Wrong — haiku alone gates a deep-routed change
+  /pr-review <PR> --model haiku      # then merge on its PASS
+✓ Right — the default on a risky diff, sonnet by choice on a small one
+  /pr-review <PR>
+  /pr-review <PR> --model sonnet
+```
+
 ## Precedence
 
 One rule, applied to every setting: **CLI > config > default**.

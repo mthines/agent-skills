@@ -44,6 +44,15 @@ The reviewer's model comes from the caller's dispatch because that is the only m
 An agent file's `model:` line sets the default when the caller passes none.
 Where a harness lacks the parameter the model cannot be chosen, and the run says so rather than pretending.
 
+## Why `opus` stays the default reviewer
+
+A cheaper reviewer runs the whole review in one context and grades its own confidence, so its output rests on a single reader.
+On the diffs tried, `sonnet` found a real authorization gap but graded it non-blocking, and `haiku` found a different real bug but missed that gap.
+Neither found a known blocking bug on a second diff, and `haiku` returned `PASS` there.
+So a cheaper model lowers the cost of a review and also lowers the chance that a blocking bug is caught, in a way the report does not show.
+Both tried diffs routed to the `deep` tier, so no cheaper model was measured on the quick or standard routing.
+No detection eval has scored a cheaper reviewer, so no setting maps a routed tier to a model: the choice stays with the caller, who knows the diff's risk.
+
 ## Why `--full` is not a depth alias
 
 `--full` also selects non-incremental run mode (it skips the prior-run diff), so removing it would remove a capability that no depth value provides.
