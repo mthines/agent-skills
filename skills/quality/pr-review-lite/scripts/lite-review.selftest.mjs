@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { crossDigest, capCandidates, threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { unaccounted, crossDigest, capCandidates, threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -279,6 +279,12 @@ check("threads: existing PR threads are listed in the shared prefix, trimmed, an
   await runPipeline({ packetText: PACKET, finders: "R", transport: t, threads, opts: { unitTokens: 40 } });
   const reviews = t.calls.filter((c) => !c.system);
   ok(reviews.length > 1 && reviews.every((c) => c.cachePrefix === reviews[0].cachePrefix) && reviews[0].cachePrefix.includes("Do not report any of them again"), "prefix");
+});
+
+check("unaccounted: a context file in no unit and no skip is reported, never counted as reviewed", () => {
+  const r = { units: [{ files: [{ path: "a.ts" }] }], skipped: [{ path: "b.ts" }] };
+  eq(unaccounted([{ filename: "a.ts" }, { filename: "b.ts" }, { filename: "c.ts" }], r).map((s) => s.path), ["c.ts"]);
+  eq(unaccounted([], r), []);
 });
 
 check("cross: the digest keeps only boundary-relevant added lines of source files; the pass adds a deduped candidate and is off unless --cross is set", async () => {

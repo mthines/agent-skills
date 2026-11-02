@@ -503,6 +503,12 @@ export async function runPipeline(a) {
   return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, rejectedVetoes, prefixTokens: tokensOf(prefix), prefix };
 }
 
+/** Files the context lists that landed in neither a unit nor `skipped.json`, so a packet the parser could not read is never reported as fully reviewed. */
+export function unaccounted(/** @type {{filename?:string}[]} */ ctxFiles, /** @type {{units:{files:{path:string}[]}[], skipped:{path:string}[]}} */ r) {
+  const seen = new Set([...r.units.flatMap((u) => u.files.map((f) => f.path)), ...r.skipped.map((s) => s.path)]);
+  return (ctxFiles || []).map((f) => f.filename).filter((p) => p && !seen.has(p)).map((path) => ({ path, reason: "not found in the review packet index" }));
+}
+
 export function renderReport(/** @type {any} */ r) {
   const rows = r.findings.map((f) => `- \`${f.path}:${f.line}\` (${f.severity}${f.lens ? `, lens ${f.lens}` : ""}) ${f.claim} — ${f.bad_outcome} *Verify:* ${f.verify_by}`);
   const sk = r.skipped.map((s) => `- \`${s.path}\` — ${s.reason}`);
@@ -574,6 +580,7 @@ async function main(/** @type {string[]} */ argv) {
     packetText: readFileSync(packetPath, "utf8"), impact, lenses: ctx.lenses?.loaded || [], threads: ctx.threads || [], finders: readFileSync(findersPath, "utf8"),
     transport: mode === "api" ? anthropicTransport(/** @type {string} */ (key)) : claudeCliTransport(), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
   });
+  r.skipped.push(...unaccounted(ctx.files || [], r));
   writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.target || ctx.pr || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));
   writeFileSync(join(out, "skipped.json"), JSON.stringify(r.skipped, null, 2));
   writeFileSync(join(out, "usage.json"), JSON.stringify({ ...r.usage, prefixTokens: r.prefixTokens, reflectFailOpen: r.reflectFailOpen, rejectedVetoes: r.rejectedVetoes }, null, 2));
