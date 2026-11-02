@@ -37,6 +37,8 @@ Each unit keeps at most 8 candidates, highest severity first, in input order wit
 `--cross` adds one call over a digest of boundary-relevant added lines (identity, ownership, permissions, tokens, exports) across the whole PR; it is off by default.
 Units default to 12,000 estimated tokens: larger units cost less and report fewer real issues.
 
+When `lite-review` runs `prepare-review.mjs` itself (`--pr`), it runs `--cleanup` on that context after writing the artifacts; a caller-supplied `--context` is never cleaned up.
+
 `--cold` puts a unique first line in the prefix so a cost measurement does not read an earlier run's cache; use it when comparing runs, never in normal use.
 
 `--prices` is a JSON file or inline object keyed by model id, in USD per million tokens: `{"<model>":{"input":0,"cache_read":0,"cache_write":0,"output":0}}`.

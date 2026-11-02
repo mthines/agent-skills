@@ -548,6 +548,7 @@ async function main(/** @type {string[]} */ argv) {
   if (mode === "api" && !key) { process.stderr.write("lite-review: ANTHROPIC_API_KEY is not set (or pass --transport claude-cli)\n"); return 2; }
   mkdirSync(out, { recursive: true });
   let ctxPath = arg(argv, "--context");
+  let ownedPrepare = false;
   const support = resolveSupport();
   if (!support) { process.stderr.write("lite-review: cannot locate pr-reviewer's support tree (set AGENT_SUPPORT)\n"); return 2; }
   if (!ctxPath) {
@@ -557,6 +558,7 @@ async function main(/** @type {string[]} */ argv) {
     const extra = [...(arg(argv, "--repo-dir") ? ["--repo-dir", /** @type {string} */ (arg(argv, "--repo-dir"))] : []), ...(arg(argv, "--with") ? ["--with", /** @type {string} */ (arg(argv, "--with"))] : [])];
     const p = spawnSync("node", [join(support, "pr-reviewer/scripts/prepare-review.mjs"), "--pr", pr, "--out", ctxPath, ...extra], { stdio: ["ignore", "inherit", "inherit"] });
     if (p.status !== 0) { process.stderr.write("lite-review: prepare-review failed\n"); return 2; }
+    ownedPrepare = true;
   }
   const ctx = JSON.parse(readFileSync(ctxPath, "utf8"));
   const packetPath = ctx.packet?.path || ctx.paths?.packet;
@@ -585,6 +587,7 @@ async function main(/** @type {string[]} */ argv) {
   writeFileSync(join(out, "skipped.json"), JSON.stringify(r.skipped, null, 2));
   writeFileSync(join(out, "usage.json"), JSON.stringify({ ...r.usage, prefixTokens: r.prefixTokens, reflectFailOpen: r.reflectFailOpen, rejectedVetoes: r.rejectedVetoes }, null, 2));
   writeFileSync(join(out, "report.md"), renderReport(r));
+  if (ownedPrepare) spawnSync("node", [join(support, "pr-reviewer/scripts/prepare-review.mjs"), "--cleanup", ctxPath], { stdio: "ignore" });
   process.stdout.write(`lite-review: ${r.findings.length} finding(s), ${r.skipped.length} file(s) not reviewed → ${out}\n`);
   return 0;
 }
