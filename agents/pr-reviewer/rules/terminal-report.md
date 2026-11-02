@@ -33,7 +33,7 @@ renderer, so one copy is the guard.)
 **Base ← Head**: <base> ← <head>
 **Intent**: <one-line from Step 1.3>
 **Run mode**: <full | incremental (delta: N lines since PRIOR_SHA_SHORT) | incremental-quick (delta: N lines since PRIOR_SHA_SHORT)>
-**Depth**: tier <deep | standard | quick> · capability <checkout | tarball | diff-only>
+**Depth**: tier <deep | standard | quick> · <`context.depth.line`, e.g. `depth standard (default)` or `depth quick -> standard (floor: infra)`> · capability <checkout | tarball | diff-only>
 
 ### Gate Status
 

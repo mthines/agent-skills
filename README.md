@@ -201,6 +201,39 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 A `/` name is a slash command; the rest also trigger from plain language.
 The skills dispatch five agents of their own: [`pr-reviewer`](./agents/pr-reviewer.md), [`branch-reviewer`](./agents/branch-reviewer.md), [`feature-pr-verifier`](./agents/feature-pr-verifier.md), [`aw-executor`](./skills/workflow/autonomous-workflow/templates/aw-executor.agent.md), and [`aw-tester`](./skills/workflow/autonomous-workflow/templates/aw-tester.agent.md).
 
+## Configuring pr-reviewer
+
+Two independent settings control a review: **depth** (how much work it does) and **model** (which model does it).
+Set either per run on `/pr-review`, or for the whole repo in `.agents/review/config.yaml`, which is read from the PR's base commit so a PR cannot lower its own bar.
+
+| Depth preset | Adds |
+| --- | --- |
+| `quick` | correctness, intent, and quality finders; measurability lens |
+| `standard` | consumer-impact, dependency, and standards on the delta; verifier tier 2 |
+| `deep` | consumer-impact and standards on every file; ×1.5 tool-call budget; forces the `deep` tier |
+| `max` | tier-3 (execution) verification; ×2 budget; forces the `deep` tier |
+
+With no setting, the routed tier picks the preset.
+A high-stakes diff (auth, payments, schema migration, secrets, infra, or a high blast radius) is lifted to at least `standard`, and the report says so: `depth quick -> standard (floor: infra)`.
+
+```yaml
+# .agents/review/config.yaml
+depth: standard        # quick | standard | deep | max
+models:
+  workers: haiku       # opus | sonnet | haiku | claude-* id; the intent and pass-2 sub-agents
+finder_passes: 1       # 1 | 2
+impact_image: false    # true | false
+```
+
+```text
+/pr-review 42 --depth deep --model sonnet
+```
+
+Precedence is CLI over config over default; `depth:` beats the deprecated `effort:` and `thoroughness:` keys.
+A bad flag or flag combination exits before any model turn.
+`--model` sets the reviewer's model; where a harness cannot set a model, the run says so.
+Full reference for people and agents setting this up: [`arguments.md`](./agents/pr-reviewer/rules/arguments.md); why it is shaped this way: [`depth-presets.md`](./agents/pr-reviewer/references/depth-presets.md).
+
 ## Install
 
 ```bash

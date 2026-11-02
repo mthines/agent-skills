@@ -53,7 +53,7 @@ import { join, dirname, posix, resolve as pathResolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS, stepStartAttrs } from "./review-telemetry.mjs";
 import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, CHURN_OVER_THRESHOLD } from "./delta-triage.mjs";
-import { routeDepth, resolveBudget } from "./route-depth.mjs";
+import { routeDepth, resolveBudget, TIER_DEFAULT_THOROUGHNESS, DEPTH_PRESETS, PRESET_THOROUGHNESS, presetOfThoroughness, describeDepth } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
 import { discoverStandards, trivialSkip, REPO_CONFIG_PATHS } from "./discover-standards.mjs";
 import { candidatePaths, selectReviewContext, renderReviewContext } from "./review-context.mjs";
@@ -1468,6 +1468,8 @@ export function withHostOrg(cfg, hostOrg) {
 
 const CONFIG_PROFILES = Object.keys(PROFILES);
 const CONFIG_CRITICAL = ["auto", "always"];
+/** A model a dispatch can name: a harness alias or a full `claude-…` id (arguments.md § The model axis). */
+export const MODEL_VALUE = /^(opus|sonnet|haiku|claude-[a-z0-9][a-z0-9.-]*)$/;
 
 /**
  * The run-level review knobs (review-config.md § Run-level knobs), top-level keys only:
@@ -1479,7 +1481,7 @@ const CONFIG_CRITICAL = ["auto", "always"];
  */
 export function reviewSettings(yamlText) {
   /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, finderPasses: number|null, impactImage: boolean|null, invalid: string[] }} */
-  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, critical: null, finderPasses: null, impactImage: null, invalid: [] };
+  const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, depth: null, models: { workers: null }, critical: null, finderPasses: null, impactImage: null, invalid: [] };
   if (!yamlText) return out;
   const clean = (/** @type {string} */ v) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
   const score = (/** @type {string} */ v) => {
@@ -1487,6 +1489,7 @@ export function reviewSettings(yamlText) {
     return Number.isFinite(n) && n >= 0 && n <= 100 ? n : null;
   };
   let inSeverity = false;
+  let inModels = false;
   // configLines(), never `split("\n")`: a leading BOM hides the first-line key and a CRLF line keeps its `\r`, so a `(.*)$` key below would read as absent with no anomaly.
   for (const raw of configLines(yamlText)) {
     if (inSeverity) {
@@ -1503,6 +1506,27 @@ export function reviewSettings(yamlText) {
       }
       inSeverity = false;
     }
+    if (inModels) {
+      if (/^\s*$/.test(raw) || /^\s+/.test(raw) || raw.startsWith("#")) {
+        const m = /^\s+(\w+):\s*(.*)$/.exec(raw);
+        if (!m) continue;
+        const v = clean(m[2]);
+        if (m[1] !== "workers") out.invalid.push(`models.${m[1]} (unknown role)`);
+        else if (MODEL_VALUE.test(v)) out.models.workers = v;
+        else out.invalid.push(`models.workers: ${v}`);
+        continue;
+      }
+      inModels = false;
+    }
+    if (/^models:\s*(#.*)?$/.test(raw)) {
+      inModels = true;
+      continue;
+    }
+    const inlineModels = /^models:\s*([^\s#].*)$/.exec(raw);
+    if (inlineModels) {
+      out.invalid.push(`models: ${clean(inlineModels[1])} (inline value; use the block form)`);
+      continue;
+    }
     if (/^severity_thresholds:\s*(#.*)?$/.test(raw)) {
       inSeverity = true;
       continue;
@@ -1512,7 +1536,7 @@ export function reviewSettings(yamlText) {
       out.invalid.push(`severity_thresholds: ${clean(inlineSeverity[1])} (inline value; use the block form)`);
       continue;
     }
-    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|critical|finder_passes|impact_image):\s*(.*)$/.exec(raw);
+    const m = /^(profile|per_comment_confidence_threshold|effort|thoroughness|depth|critical|finder_passes|impact_image):\s*(.*)$/.exec(raw);
     if (!m) continue;
     const v = clean(m[2]);
     if (m[1] === "profile") {
@@ -1529,6 +1553,9 @@ export function reviewSettings(yamlText) {
       const n = v === "" ? NaN : Number(v);
       if (Number.isFinite(n) && n >= 0 && n <= 1) out.thoroughness = n;
       else out.invalid.push(`thoroughness: ${v}`);
+    } else if (m[1] === "depth") {
+      if (DEPTH_PRESETS.includes(v)) out.depth = v;
+      else out.invalid.push(`depth: ${v}`);
     } else if (m[1] === "finder_passes") {
       if (v === "1" || v === "2") out.finderPasses = Number(v);
       else out.invalid.push(`finder_passes: ${v}`);
@@ -1545,24 +1572,98 @@ export function reviewSettings(yamlText) {
 }
 
 /**
- * The depth knobs a run actually uses (depth-routing.md § Thoroughness budget): an explicit CLI
- * flag beats the review config, and within the config `effort: high` beats `thoroughness:`.
- * A CLI `--thoroughness` also beats a config `effort: high` — the invocation is the narrower scope.
- * Only an empty `opts.thoroughness` is unset: a bare trailing `--thoroughness` leaves it undefined,
- * which reaches `resolveBudget()` as NaN and fails closed to t = 1.
- * @param {{ effort?: string, thoroughness?: string }} opts
- * @param {{ effort?: string|null, thoroughness?: number|null }} settings
- * @returns {{ effortHigh: boolean, thoroughness: number|undefined, source: "cli"|"config"|"default" }}
+ * The depth a run asks for (arguments.md § Precedence): one preset, from the first of these that is set.
+ * 1. CLI `--depth`.
+ * 2. CLI `--effort high` (deprecated, `max`) or `--thoroughness <n>` (deprecated, the preset whose column holds n).
+ * 3. Config `depth:`.
+ * 4. Config `effort: high`, then `thoroughness:` (both deprecated).
+ * 5. Nothing: the routed tier's default.
+ * A deprecated source adds one anomaly naming its replacement. `validateFlags` rejects a bad CLI value before
+ * this runs, so a garbage `--thoroughness` that still arrives here fails closed to `max`.
+ * `deep` and `max` also force the deep tier; `quick` and `standard` never lower the routed tier.
+ * @param {{ depth?: string, effort?: string, thoroughness?: string }} opts
+ * @param {{ depth?: string|null, effort?: string|null, thoroughness?: number|null }} settings
+ * @returns {{ preset: string|null, source: "cli"|"config"|"default", effortHigh: boolean, forceDeep: boolean,
+ *   thoroughness: number|undefined, anomalies: string[] }}
  */
 export function resolveDepthOverrides(opts, settings) {
-  const cliEffort = opts.effort === "high";
-  const cliThoroughness = opts.thoroughness !== "";
-  if (cliEffort || cliThoroughness) {
-    return { effortHigh: cliEffort, thoroughness: cliThoroughness ? Number(opts.thoroughness) : undefined, source: "cli" };
+  /** @type {string[]} */
+  const anomalies = [];
+  /** @type {string|null} */
+  let preset = null;
+  /** @type {"cli"|"config"|"default"} */
+  let source = "default";
+  const fromThoroughness = (/** @type {number} */ n, /** @type {string} */ label) => {
+    const p = Number.isFinite(n) ? presetOfThoroughness(Math.min(1, Math.max(0, n))) : "max";
+    anomalies.push(`${label} is deprecated — ran as ${label.startsWith("config") ? "depth" : "--depth"}${label.startsWith("config") ? ": " : " "}${p}`);
+    return p;
+  };
+  if (opts.depth) {
+    preset = opts.depth;
+    source = "cli";
+  } else if (opts.effort === "high") {
+    preset = "max";
+    source = "cli";
+    anomalies.push("`--effort high` is deprecated — use `--depth max`");
+  } else if (opts.thoroughness !== "") {
+    preset = fromThoroughness(Number(opts.thoroughness), `\`--thoroughness ${opts.thoroughness}\``);
+    source = "cli";
+  } else if (settings.depth) {
+    preset = settings.depth;
+    source = "config";
+  } else if (settings.effort === "high") {
+    preset = "max";
+    source = "config";
+    anomalies.push("config `effort: high` is deprecated — use `depth: max`");
+  } else if (typeof settings.thoroughness === "number") {
+    preset = fromThoroughness(settings.thoroughness, `config \`thoroughness: ${settings.thoroughness}\``);
+    source = "config";
   }
-  if (settings.effort === "high") return { effortHigh: true, thoroughness: undefined, source: "config" };
-  if (typeof settings.thoroughness === "number") return { effortHigh: false, thoroughness: settings.thoroughness, source: "config" };
-  return { effortHigh: false, thoroughness: undefined, source: "default" };
+  return {
+    preset,
+    source,
+    effortHigh: preset === "max",
+    forceDeep: preset === "deep" || preset === "max",
+    thoroughness: preset && preset !== "max" ? PRESET_THOROUGHNESS[/** @type {"quick"|"standard"|"deep"} */ (preset)] : undefined,
+    anomalies,
+  };
+}
+
+/**
+ * Every flag error a run can have, checked before any network call or model turn (arguments.md § Validation).
+ * Returns one message per error; the caller exits 2 when the list is not empty.
+ * An unset value is `""`; a value flag at the end of the line with nothing after it is `undefined`.
+ * @param {Record<string, any>} opts
+ * @returns {string[]}
+ */
+export function validateFlags(opts) {
+  /** @type {string[]} */
+  const errors = [];
+  const set = (/** @type {unknown} */ v) => v !== "" && v !== false;
+  if (set(opts.depth) && !DEPTH_PRESETS.includes(opts.depth)) {
+    errors.push(`--depth ${opts.depth ?? "(missing)"} is not one of ${DEPTH_PRESETS.join(" | ")}`);
+  }
+  if (set(opts.depth) && (set(opts.thoroughness) || set(opts.effort))) {
+    errors.push("--depth cannot be combined with --thoroughness or --effort — pass --depth alone");
+  }
+  if (set(opts.effort) && opts.effort !== "high") errors.push(`--effort ${opts.effort ?? "(missing)"} is not supported — the only value is high; use --depth`);
+  if (set(opts.thoroughness)) {
+    const n = typeof opts.thoroughness === "string" && opts.thoroughness.trim() !== "" ? Number(opts.thoroughness) : NaN;
+    if (!Number.isFinite(n) || n < 0 || n > 1) errors.push(`--thoroughness ${opts.thoroughness ?? "(missing)"} is not a number from 0 to 1 — use --depth ${DEPTH_PRESETS.join("|")}`);
+  }
+  if (set(opts.finderPasses) && opts.finderPasses !== "1" && opts.finderPasses !== "2") {
+    errors.push(`--finder-passes ${opts.finderPasses ?? "(missing)"} is not 1 or 2`);
+  }
+  if (opts.isolated && !opts.pinHead && !opts.reviewSha) {
+    errors.push("--isolated needs --pin-head <sha> (or --review-sha <sha>) — without a pinned head two runs may review different commits");
+  }
+  if (opts.reviewSha && !opts.isolated) {
+    errors.push("--review-sha requires --isolated — a historical review must not read live PR state that postdates the commit it is reviewing");
+  }
+  if (opts.reviewSha && opts.pinHead) {
+    errors.push("--review-sha and --pin-head are mutually exclusive — --review-sha already pins the review to a commit, and --pin-head compares against the live head");
+  }
+  return errors;
 }
 
 /**
@@ -2045,6 +2146,7 @@ async function prepare(opts) {
   const settings = reviewSettings(baseConfig.text);
   anomalies.push(...reviewConfigAnomalies(baseConfig, settings));
   const depthOverrides = resolveDepthOverrides(opts, settings);
+  anomalies.push(...depthOverrides.anomalies);
   const finderPassesSetting = resolveFinderPasses(opts, settings);
   anomalies.push(...finderPassesAnomalies(finderPassesSetting));
   const impactImageSetting = resolveImpactImage(opts, settings);
@@ -2342,6 +2444,7 @@ async function prepare(opts) {
     firstRun: runMode.isolated || (!sticky && !state.priorSha),
     full: runMode.full,
     effortHigh: depthOverrides.effortHigh,
+    forceDeep: depthOverrides.forceDeep,
     cumDeltaLines,
     incrRunsSinceFull: state.incrRunsSinceFull,
     priorDeepRecorded: !!state.lastFullSha,
@@ -2381,7 +2484,11 @@ async function prepare(opts) {
     anomalies.push(`review lenses not resolved: ${String(e && e.message || e).slice(0, 200)} — no lens loads this run`);
   }
 
-  const thoroughnessOverride = depthOverrides.thoroughness;
+  // A preset equal to the routed tier's own default IS the default: it keeps the lean and
+  // small-incremental carve-outs, so `depth: quick` never costs more than no config on a quick PR.
+  const thoroughnessOverride = depthOverrides.thoroughness !== undefined
+    && depthOverrides.thoroughness === TIER_DEFAULT_THOROUGHNESS[/** @type {"quick"|"standard"|"deep"} */ (routing.tier)]
+    ? undefined : depthOverrides.thoroughness;
   const contextMode = resolveContextMode({ runMode, zeroDelta, routing });
   const budget = resolveBudget({
     runMode: contextMode, // a small incremental re-review skips the intent worker (route-depth.mjs SMALL_INCREMENTAL_MODES)
@@ -2405,6 +2512,15 @@ async function prepare(opts) {
   // run actually reviewed" RUN_ANOMALY exists for — folded into the same anomalies[] every other
   // workspace/routing degrade already flows through, rather than a second, easy-to-miss channel.
   for (const note of budget.capabilityNotes) anomalies.push(note);
+
+  // The depth the run reports (arguments.md § Reading the depth line). A risk floor that lifted the
+  // request is also an anomaly, so the sticky report's anomaly list carries it.
+  const depth = describeDepth({
+    requested: depthOverrides.preset,
+    source: depthOverrides.source === "cli" ? "--depth" : depthOverrides.source === "config" ? "config" : "default",
+    budget,
+  });
+  if (depth.floor && depth.requested !== depth.effective) anomalies.push(`risk floor: ${depth.line}`);
 
   const gate4Precandidates = scanGate4(deltaFiles);
 
@@ -2483,6 +2599,8 @@ async function prepare(opts) {
       flatThreshold: settings.flatThreshold,
       effort: settings.effort,
       thoroughness: settings.thoroughness,
+      depth: settings.depth,
+      models: settings.models,
       critical: settings.critical,
       depthSource: depthOverrides.source,
       finderPasses: finderPassesSetting.passes,
@@ -2605,6 +2723,8 @@ async function prepare(opts) {
     // (a --state file with none), `unreadable` (a --state file that could not be read), `none` (no --state), `ignored` (--isolated). `none` forces D6 every run.
     stateStatus: runMode.stateIgnored ? "ignored" : !opts.state ? "none" : state.unreadable ? "unreadable" : (state.priorSha || state.lastFullSha) ? "read" : "empty",
     budget,
+    // The preset the run ran at and why (arguments.md § Reading the depth line); `line` is what the terminal report prints.
+    depth,
     threads,
     gate4_precandidates: gate4Precandidates,
 
@@ -2993,24 +3113,96 @@ async function selfTest() {
     return fallback.mode === "zero-delta" && fallback.budget.finderPasses === 2 && fallback.budget.finderPassesReason === "requested"
       && record.mode === "zero-delta" && record.budget.finderPasses === 1 && record.budget.finderPassesReason === "zero-delta";
   });
-  t("resolveDepthOverrides: a CLI flag beats the config, config effort beats config thoroughness", () => {
-    const cfg = { effort: "high", thoroughness: 0.6 };
-    const cliT = resolveDepthOverrides({ effort: "", thoroughness: "0.4" }, cfg);
-    const cliE = resolveDepthOverrides({ effort: "high", thoroughness: "" }, { thoroughness: 0.6 });
-    const cfgE = resolveDepthOverrides({ effort: "", thoroughness: "" }, cfg);
-    const cfgT = resolveDepthOverrides({ effort: "", thoroughness: "" }, { effort: null, thoroughness: 0.6 });
-    const none = resolveDepthOverrides({ effort: "", thoroughness: "" }, { effort: null, thoroughness: null });
-    return cliT.effortHigh === false && cliT.thoroughness === 0.4 && cliT.source === "cli"
-      && cliE.effortHigh === true && cliE.thoroughness === undefined && cliE.source === "cli"
-      && cfgE.effortHigh === true && cfgE.thoroughness === undefined && cfgE.source === "config"
-      && cfgT.effortHigh === false && cfgT.thoroughness === 0.6 && cfgT.source === "config"
-      && none.effortHigh === false && none.thoroughness === undefined && none.source === "default";
+  t("depth: preset resolution", () => {
+    const o = (/** @type {Record<string, string|undefined>} */ x) => ({ depth: "", effort: "", thoroughness: "", ...x });
+    const none = { depth: null, effort: null, thoroughness: null };
+    const q = resolveDepthOverrides(o({ depth: "quick" }), none);
+    const st = resolveDepthOverrides(o({ depth: "standard" }), none);
+    const dp = resolveDepthOverrides(o({ depth: "deep" }), none);
+    const mx = resolveDepthOverrides(o({ depth: "max" }), none);
+    const cfg = resolveDepthOverrides(o({}), { depth: "deep", effort: "high", thoroughness: 0.3 });
+    const cliOverCfg = resolveDepthOverrides(o({ depth: "quick" }), { depth: "max" });
+    const dflt = resolveDepthOverrides(o({}), none);
+    return q.thoroughness === 0.4 && !q.forceDeep && !q.effortHigh && q.source === "cli"
+      && st.thoroughness === 0.7 && !st.forceDeep
+      && dp.thoroughness === 0.85 && dp.forceDeep && !dp.effortHigh
+      && mx.effortHigh && mx.forceDeep && mx.thoroughness === undefined
+      && cfg.preset === "deep" && cfg.source === "config" && cfg.anomalies.length === 0
+      && cliOverCfg.preset === "quick"
+      && dflt.preset === null && dflt.thoroughness === undefined && dflt.source === "default" && !dflt.forceDeep && !dflt.effortHigh
+      && [q, st, dp, mx, cfg, dflt].every((r) => r.anomalies.length === 0);
   });
-  t("resolveDepthOverrides: a bare --thoroughness is a CLI value that fails closed to t = 1, never the config's", () => {
-    const bare = resolveDepthOverrides({ effort: "", thoroughness: undefined }, { effort: null, thoroughness: 0.3 });
-    const budget = resolveBudget({ routedTier: "quick", thoroughness: bare.thoroughness, effortHigh: bare.effortHigh });
-    return bare.source === "cli" && Number.isNaN(bare.thoroughness)
-      && budget.effectiveThoroughness === 1 && typeof budget.inputError === "string";
+  t("depth: deprecated aliases", () => {
+    const o = (/** @type {Record<string, string|undefined>} */ x) => ({ depth: "", effort: "", thoroughness: "", ...x });
+    const none = { depth: null, effort: null, thoroughness: null };
+    const t6 = resolveDepthOverrides(o({ thoroughness: "0.6" }), none);
+    const t9 = resolveDepthOverrides(o({ thoroughness: "0.9" }), none);
+    const t1 = resolveDepthOverrides(o({ thoroughness: "1" }), none);
+    const t2 = resolveDepthOverrides(o({ thoroughness: "0.2" }), none);
+    const eh = resolveDepthOverrides(o({ effort: "high" }), none);
+    const cfgE = resolveDepthOverrides(o({}), { effort: "high", thoroughness: 0.3 });
+    const cfgT = resolveDepthOverrides(o({}), { thoroughness: 0.9 });
+    const cliBeatsCfg = resolveDepthOverrides(o({ thoroughness: "0.4" }), { effort: "high" });
+    return t6.preset === "standard" && t6.thoroughness === 0.7 && t6.anomalies.length === 1 && t6.anomalies[0].includes("--depth standard") && t6.anomalies[0].includes("deprecated")
+      && t9.preset === "deep" && t1.preset === "max" && t1.effortHigh && t2.preset === "quick"
+      && eh.preset === "max" && eh.effortHigh && eh.anomalies[0].includes("--depth max")
+      && cfgE.preset === "max" && cfgE.source === "config" && cfgE.anomalies[0].includes("depth: max")
+      && cfgT.preset === "deep" && cfgT.anomalies[0].includes("depth: deep")
+      && cliBeatsCfg.preset === "quick" && cliBeatsCfg.source === "cli";
+  });
+  t("depth: garbage", () => {
+    const base = { depth: "", effort: "", thoroughness: "", finderPasses: "", isolated: false, pinHead: "", reviewSha: "" };
+    const bad = (/** @type {Record<string, any>} */ x) => validateFlags({ ...base, ...x });
+    const bareThoroughness = resolveDepthOverrides({ depth: "", effort: "", thoroughness: undefined }, {});
+    const budget = resolveBudget({ routedTier: "quick", thoroughness: bareThoroughness.thoroughness, effortHigh: bareThoroughness.effortHigh });
+    const cfg = reviewSettings("depth: ultra\nthoroughness: 7\nmodels:\n  workers: gpt4\n");
+    return bad({ depth: "foo" }).length === 1 && bad({ depth: undefined }).length === 1
+      && bad({ thoroughness: "abc" }).length === 1 && bad({ thoroughness: undefined }).length === 1
+      && bad({ thoroughness: "1.5" }).length === 1 && bad({ thoroughness: "-0.1" }).length === 1
+      && bad({ effort: "low" }).length === 1 && bad({ effort: "high" }).length === 0
+      && bad({ depth: "deep", thoroughness: "0.5" }).length === 1 && bad({ depth: "deep", effort: "high" }).length === 1
+      && bad({ depth: "deep" }).length === 0 && bad({ thoroughness: "0.5" }).length === 0 && bad({}).length === 0
+      && bareThoroughness.preset === "max" && budget.effectiveThoroughness === 1
+      && cfg.depth === null && cfg.thoroughness === null && cfg.models.workers === null && cfg.invalid.length === 3;
+  });
+  t("depth: risk floor reported", () => {
+    const b = resolveBudget({ thoroughness: 0.4, shape: ["infra"] });
+    const d = describeDepth({ requested: "quick", source: "--depth", budget: b });
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    return d.line === "depth quick -> standard (floor: infra)" && d.requested === "quick" && d.effective === "standard" && d.floor === "infra"
+      && /anomalies\.push\(`risk floor: \$\{depth\.line\}`\)/.test(src) && /^\s+depth,$/m.test(src);
+  });
+  t("flags: combination validation", () => {
+    const base = { depth: "", effort: "", thoroughness: "", finderPasses: "", isolated: false, pinHead: "", reviewSha: "" };
+    const v = (/** @type {Record<string, any>} */ x) => validateFlags({ ...base, ...x });
+    const iso = v({ isolated: true });
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    return iso.length === 1 && iso[0].includes("--pin-head")
+      && v({ isolated: true, pinHead: "abc1234" }).length === 0
+      && v({ isolated: true, reviewSha: "abc1234" }).length === 0
+      && v({ reviewSha: "abc1234" }).length === 1 && v({ reviewSha: "abc1234" })[0].includes("requires --isolated")
+      && v({ isolated: true, reviewSha: "abc1234", pinHead: "def5678" }).length === 1
+      && v({ finderPasses: "3" }).length === 1 && v({ finderPasses: "2" }).length === 0
+      && /const flagErrors = validateFlags\(opts\);[\s\S]{0,200}process\.exit\(2\);[\s\S]{0,400}await prepare\(opts\)/.test(src);
+  });
+  t("config: depth and models", () => {
+    const ok = reviewSettings("depth: deep\nmodels:\n  workers: haiku # cheap intent worker\nprofile: balanced\n");
+    const full = reviewSettings("models:\n  workers: claude-sonnet-5-5\n");
+    const bad = reviewSettings("models:\n  reviewer: opus\n  workers: Sonnet\n");
+    const inline = reviewSettings("models: haiku\n");
+    const crlf = reviewSettings("depth: max\r\nmodels:\r\n  workers: sonnet\r\n");
+    const none = reviewSettings("profile: assertive\n");
+    return ok.depth === "deep" && ok.models.workers === "haiku" && ok.profile === "balanced" && ok.invalid.length === 0
+      && full.models.workers === "claude-sonnet-5-5"
+      && bad.models.workers === null && bad.invalid.length === 2
+      && inline.models.workers === null && inline.invalid.length === 1
+      && crlf.depth === "max" && crlf.models.workers === "sonnet"
+      && none.depth === null && none.models.workers === null;
+  });
+  t("depth: a preset equal to the routed tier's default is the default, so it keeps the lean budget", () => {
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    const viaDefault = resolveBudget({ routedTier: "quick", thoroughness: undefined });
+    return /depthOverrides\.thoroughness === TIER_DEFAULT_THOROUGHNESS\[[^\]]*routing\.tier\)?\]/.test(src) && viaDefault.lean === true;
   });
   t("readBaseReviewConfig reads the BASE commit, not the head, and reports none when the base has no file", async () => {
     const dir = mkdtempSync(join(tmpdir(), "prr-basecfg-"));
@@ -4065,6 +4257,8 @@ async function main(argv) {
     state: "",
     effort: "",
     thoroughness: "",
+    depth: "",
+    finderPasses: "",
     config: "",
     threads: true,
     reviewSha: "",
@@ -4090,6 +4284,7 @@ async function main(argv) {
     else if (a === "--full") opts.full = true;
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
+    else if (a === "--depth") opts.depth = argv[++i]; // quick|standard|deep|max, the preset (arguments.md)
     else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
     else if (a === "--finder-passes") opts.finderPasses = argv[++i]; // 1|2, beats the config's finder_passes
     else if (a === "--with") opts.with = argv[++i]; // review lenses by name, added to the auto set (select-lenses.mjs)
@@ -4107,40 +4302,18 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] [--impact-image] " +
         "[--no-telemetry] [--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
+        "[--state file] [--depth quick|standard|deep|max] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
   }
 
-  // `--review-sha` write-refusal gate (D8/D9, AC-15) — checked BEFORE `prepare()` spawns any
-  // `gh` process, so a caller who got the combination wrong never spends a network round trip
-  // (or, on a PATH-shim test double, ever writes to the shim's argv log) finding that out.
-  // Two refusals, never combined into one message, so each names the exact flag to change:
-  //   1. `--review-sha` without `--isolated` — a historical review must not read live PR
-  //      state (Step 0.7, the sticky footer fallback) that postdates the commit it reviews.
-  //   2. `--review-sha` together with `--pin-head` — `--review-sha` already pins the review
-  //      to a specific (historical) commit; `--pin-head` compares against the LIVE head,
-  //      which is a different, live-head-only comparability contract this run does not need.
-  //      (`--isolated` runs WITHOUT `--review-sha` still require `--pin-head`, per
-  //      pipeline.md § --isolated item 3 — that requirement is unchanged and does not apply
-  //      here.)
-  if (opts.reviewSha) {
-    if (!opts.isolated) {
-      process.stderr.write(
-        "prepare-review.mjs: --review-sha requires --isolated — a historical review must not read " +
-          "live PR state that postdates the commit it is reviewing. Pass --isolated.\n",
-      );
-      process.exit(2);
-    }
-    if (opts.pinHead) {
-      process.stderr.write(
-        "prepare-review.mjs: --review-sha and --pin-head are mutually exclusive — --review-sha " +
-          "already pins this review to a specific (historical) commit, and --pin-head compares " +
-          "against the LIVE head, a different comparability contract this run does not need. " +
-          "Drop --pin-head.\n",
-      );
-      process.exit(2);
-    }
+  // Every flag error, checked BEFORE `prepare()` spawns any `gh` process, so a caller who got a flag
+  // or a combination wrong never spends a network round trip or a model turn finding that out
+  // (arguments.md § Validation). One message per error, each naming the flag to change.
+  const flagErrors = validateFlags(opts);
+  if (flagErrors.length) {
+    for (const e of flagErrors) process.stderr.write(`prepare-review.mjs: ${e}\n`);
+    process.exit(2);
   }
 
   try {
@@ -4159,7 +4332,7 @@ async function main(argv) {
           `  shape     ${context.shape ? JSON.stringify(context.shape).slice(0, 160) : "unavailable"}`,
           `  impact    ${context.impactSummary ? `band=${context.impactSummary.band} · ${context.impactSummary.changedSymbols} symbols (${context.impactSummary.changedExports} exported) · ${context.impactSummary.dependencies} deps` : "unavailable"}`,
           `  routing   tier=${context.routing.tier}${context.routing.capApplied ? " (capped)" : ""} · triggers=[${context.routing.triggers.join(",")}] · threads=${context.threads.length} · gate4=${context.gate4_precandidates.length} pre-candidate(s)`,
-          `  budget    thoroughness=${context.budget.effectiveThoroughness}${context.budget.riskFloorApplied ? ` (floored: ${context.budget.riskFloorReason})` : ""} · topology=${context.budget.topology} · votes=${context.budget.correctnessVotes} · tool calls=${context.budget.toolCalls ?? "?"}`,
+          `  budget    ${context.depth.line} · thoroughness=${context.budget.effectiveThoroughness} · topology=${context.budget.topology} · votes=${context.budget.correctnessVotes} · tool calls=${context.budget.toolCalls ?? "?"}`,
           `  lenses    ${context.lenses.loaded.length ? context.lenses.loaded.map((l) => l.name).join(", ") : "none"}`,
           ...context.lenses.announce.map((l) => `    ${l}`),
           `  context   ${(Buffer.byteLength(JSON.stringify(context)) / 1024).toFixed(0)} KB index + sidecars in ${dirname(outPath)}`,

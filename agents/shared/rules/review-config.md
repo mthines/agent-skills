@@ -50,24 +50,26 @@ Nothing that clears the confidence threshold is hidden in either relation: the c
 
 profile: chill | balanced | assertive   # default: balanced
 
-effort: high                             # repo-wide default for the depth lever — equivalent to
-                                         # always passing --effort high: forces DEPTH_TIER = deep
-                                         # AND thoroughness = 1 (the ceiling on every dispatch/scope
-                                         # lever below). Omit for the routed default. `high` is the
-                                         # only accepted value; the routed tiers are not settable
-                                         # here, because pinning a repo to `quick` would silently cap
-                                         # every review on it. Takes precedence over `thoroughness:`
-                                         # when both are set.
-                                         # See agents/pr-reviewer/rules/depth-routing.md#--effort
+depth: standard                          # repo-wide default depth preset: quick | standard | deep | max.
+                                         # Equivalent to always passing --depth <preset>. Omit for the
+                                         # routed-tier default. deep and max force DEPTH_TIER = deep;
+                                         # quick and standard never lower the routed tier. A high-stakes
+                                         # shape (auth, payments, schema-migration, secrets, infra) or a
+                                         # high blast radius floors the EFFECTIVE depth at standard
+                                         # whatever this says, and the report prints the lift.
+                                         # See agents/pr-reviewer/rules/arguments.md
 
-thoroughness: 0.8                        # repo-wide default for the continuous 0..1 dispatch/scope
-                                         # knob resolveBudget() reads — equivalent to always passing
-                                         # --thoroughness <n>. Omit for the routed-tier default
-                                         # (quick=0.4, standard=0.7, deep=0.85). A high-stakes shape
-                                         # (auth, payments, schema-migration, secrets, infra) floors
-                                         # the EFFECTIVE value at 0.5 regardless of this setting, so
-                                         # a repo cannot configure its way under-reviewing those.
-                                         # See agents/pr-reviewer/rules/depth-routing.md#thoroughness-budget
+effort: high                             # DEPRECATED alias of `depth: max`. Logged as a RUN_ANOMALY.
+thoroughness: 0.8                        # DEPRECATED alias of the depth preset whose column holds the
+                                         # value (below 0.5 quick, 0.5-0.8 standard, 0.8-0.95 deep, from
+                                         # 0.95 max). Logged as a RUN_ANOMALY. `depth:` beats both.
+
+models:                                  # the model axis, independent of depth (arguments.md#the-model-axis)
+  workers: haiku                         # the model the caller gives the intent and pass-2 worker
+                                         # sub-agents: opus | sonnet | haiku | a full claude-* id.
+                                         # Omit for the caller's own model. The reviewer's own model is
+                                         # not set here: it is `--model` on /pr-review, else the agent's
+                                         # `model: opus`.
 
 severity_thresholds:                     # DEFAULT — values shown are the `balanced` defaults.
   critical: 65                           # The reviewer tiers every finding via
@@ -271,7 +273,7 @@ Merge rules by field:
 
 | Field | Merge rule |
 | --- | --- |
-| `profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `thoroughness`, `critical` | **Base only, never subtree-merged** — run-level knobs, read once from the repo-level config at the PR's base commit ([§ Run-level knobs](#run-level-knobs)); a subtree `.review.yaml` that sets one is ignored. |
+| `profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `thoroughness`, `depth`, `models`, `critical` | **Base only, never subtree-merged** — run-level knobs, read once from the repo-level config at the PR's base commit ([§ Run-level knobs](#run-level-knobs)); a subtree `.review.yaml` that sets one is ignored. |
 | `filters` | **Union** — filters from all files in the hierarchy apply; a closer file cannot un-filter a category from the base |
 | `path_instructions` | **Concatenation** — all instructions from all files apply, with closer-file instructions listed first |
 | `lenses` | **Union** — every lens named by any file in the hierarchy loads for that config's files; a closer file cannot remove a lens the base names. Read at the base commit with the lens files themselves (`.agents/review/lenses/`), by [`select-lenses.mjs`](../../pr-reviewer/scripts/select-lenses.mjs) |
@@ -478,7 +480,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 
 ## Run-level knobs
 
-`profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `effort`, `thoroughness`, `critical`, `finder_passes`, and `impact_image` govern the whole run, not one file's findings.
+`profile`, `severity_thresholds`, `per_comment_confidence_threshold`, `depth`, `models`, `effort`, `thoroughness`, `critical`, `finder_passes`, and `impact_image` govern the whole run, not one file's findings.
 `prepare-review.mjs` resolves them once, from the repo-level config (`.agents/review/config.yaml`, else the deprecated `.github/review.yaml` or root `.review.yaml`) **at the PR's base commit**, and writes them to `context.reviewConfig`.
 **Why:** read from the head, a PR could lower its own review bar by editing the file it is reviewed under.
 
@@ -487,8 +489,10 @@ with an empty variable would swallow the next argument, so build the flag condit
 | `profile` | `chill` / `balanced` / `assertive` | `finalize.mjs` — confidence bars and per-file inline cap | `severity_thresholds` (that tier's bar), `per_comment_confidence_threshold` (every bar); the cap stays the profile's |
 | `severity_thresholds` | block-style map of `critical` / `high` / `medium` / `low` → 0–100 | `finalize.mjs` — a named tier replaces the profile's bar for that tier only | `per_comment_confidence_threshold` |
 | `per_comment_confidence_threshold` | 0–100 | `finalize.mjs` — one bar for every tier | — |
-| `effort` | `high` | `prepare-review.mjs` — forces `deep` and thoroughness 1 | CLI `--effort` or `--thoroughness` |
-| `thoroughness` | 0–1 | `prepare-review.mjs` — the budget's thoroughness | CLI `--effort` or `--thoroughness`; config `effort: high` |
+| `depth` | `quick` / `standard` / `deep` / `max` | `prepare-review.mjs` — the depth preset ([`arguments.md`](../../pr-reviewer/rules/arguments.md)) | CLI `--depth`, `--effort`, or `--thoroughness` |
+| `models` | block-style map; `workers:` is `opus` / `sonnet` / `haiku` / a `claude-*` id | `prepare-review.mjs` — `context.reviewConfig.models.workers`; the caller passes it as the worker dispatches' model ([`arguments.md` § The model axis](../../pr-reviewer/rules/arguments.md#the-model-axis)) | — |
+| `effort` | `high` | deprecated alias of `depth: max` | CLI `--depth`, `--effort`, or `--thoroughness`; config `depth:` |
+| `thoroughness` | 0–1 | deprecated alias of a `depth:` preset | CLI `--depth`, `--effort`, or `--thoroughness`; config `depth:` or `effort: high` |
 | `critical` | `auto` (default) / `always` | `pr-reviewer.md` Step 2 — the rubric load ([`rubric-composition.md` § Load order](./rubric-composition.md#load-order)) | CLI `--no-critical` |
 | `finder_passes` | `1` (default) / `2` | `prepare-review.mjs` — `budget.finderPasses`; the caller dispatches pass 2 ([`dispatch-topology.md` § Two finder passes](../../pr-reviewer/rules/dispatch-topology.md#two-finder-passes)) | CLI `--finder-passes` on `prepare-review.mjs` |
 | `impact_image` | `false` (default) / `true` | `prepare-review.mjs` — `context.impactImage`; off, it is `skipped (not enabled …)` and the host is never probed ([`posting.md` § The impact image](../../pr-reviewer/rules/posting.md#the-impact-image)) | CLI `--impact-image` on `prepare-review.mjs` turns it on |

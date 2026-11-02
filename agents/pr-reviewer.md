@@ -136,8 +136,10 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--with a,b,c` | Review lenses by name, added to the ones the diff triggers; no count cap. Forward to `prepare-review.mjs` |
 | `--impact-image` | Add the impact-map diagram this run (off by default; config `impact_image: true`). Forward to `prepare-review.mjs` |
 | `--no-fix-links` / `--fix-links` | Suppress / force the "Fix with Agent0" buttons (on by default; `--no-fix-links` wins) |
-| `--effort high` | Force `DEPTH_TIER = deep` + Tier-2/3 receipts ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)); config `effort: high` |
-| `--thoroughness <0..1>` | Continuous dispatch/scope override; `--effort high` = `1` — [depth-routing.md § Thoroughness budget](./pr-reviewer/rules/depth-routing.md#thoroughness-budget) |
+| `--depth quick\|standard\|deep\|max` | The depth preset ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#depth-presets)); `deep` and `max` force `DEPTH_TIER = deep`; config `depth:`. Forward to `prepare-review.mjs`; a bad value exits 2 before any model turn ([`arguments.md`](./pr-reviewer/rules/arguments.md)) |
+| `--effort high` | Deprecated alias of `--depth max`; config `effort: high` |
+| `--thoroughness <0..1>` | Deprecated alias of the `--depth` preset whose column holds the value; config `thoroughness:` — [depth-routing.md § Thoroughness budget](./pr-reviewer/rules/depth-routing.md#thoroughness-budget) |
+| `--finder-passes 1\|2` | `2` adds a second finder pass by two isolated workers (config `finder_passes:`); forward to `prepare-review.mjs` — [dispatch-topology.md](./pr-reviewer/rules/dispatch-topology.md) |
 | `--dry-run` | Full pipeline, zero GitHub and LoreKit writes; artifacts go to `$(scratchRoot())/<run-id>/`. Read [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--dry-run) before Step 1 |
 | `--isolated` | First-run semantics on every invocation; requires `--pin-head` unless `--review-sha` is set. Read [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated) before Step 0.7 |
 | `--pin-head <sha>` | `prepare-review.mjs` hard-stops with no review when the live head differs (`head moved: pinned <a> live <b>`) |

@@ -24,6 +24,7 @@ This phase routes on **what the change reaches**, not how much of it there is.
 - [Delta scaling](#delta-scaling)
 - [Announce the decision with its inputs](#announce-the-decision-with-its-inputs)
 - [The deep-lens refresh](#the-deep-lens-refresh)
+- [Depth presets](#depth-presets)
 - [`--effort`](#--effort)
 - [Thoroughness budget](#thoroughness-budget)
 - [Superseded head](#superseded-head)
@@ -234,15 +235,29 @@ An incremental run is promoted back to `deep` when any of these holds:
 Without this, a PR that grows by ninety lines a day never gets another holistic pass, because no single push is ever big enough to trigger one.
 A cumulative-churn compare that fails, diverges, or cannot be trusted reads as `CHURN_OVER_THRESHOLD` (501), over every threshold `refreshDeltaFor` returns, so an unknown churn always refreshes.
 
-## `--effort`
+## Depth presets
 
 ```bash
-/pr-review <PR> --effort high     # or `effort: high` in .agents/review/config.yaml
+/pr-review <PR> --depth deep     # or `depth: deep` in .agents/review/config.yaml
 ```
 
-`--effort high` forces `deep` **and** is an alias for `--thoroughness 1` — the ceiling on every
-lever the section below describes, not only the two named here.
-`--full` remains an alias for forcing `deep` only (`routedTier`, not thoroughness).
+`--depth` names one of four columns of the [thoroughness budget](#thoroughness-budget) below.
+Every preset resolves to one `t` and is the budget the tier default of the same name already gives; the full control surface is [`arguments.md`](./arguments.md).
+
+| Preset | `t` | Tier | Adds over the one above |
+| --- | --- | --- | --- |
+| `quick` | 0.4 | routed | correctness, intent, and quality finders; the intent finder isolated; measurability lens; holistic broad pass |
+| `standard` | 0.7 | routed | consumer-impact, dependency, and standards on the delta; verifier tier 2; optimality lens |
+| `deep` | 0.85 | forced `deep` | consumer-impact and standards on every file; tool-call budget ×1.5 |
+| `max` | 1 | forced `deep` | tier-3 (execution) verification; tool-call budget ×2 |
+
+`quick` and `standard` never lower the routed tier: a diff D1–D13 routes to `deep` still runs as `deep`, at that preset's budget.
+A preset equal to the routed tier's default **is** the default, so `--depth quick` on a quick routing keeps the lean budget a defaulted run has.
+
+## `--effort`
+
+`--effort high` and config `effort: high` are deprecated aliases of `--depth max`; the run logs a `RUN_ANOMALY` line naming the replacement.
+`--full` is not a depth alias: it forces a full, non-incremental review at the `deep` tier ([`pr-reviewer.md`](../../pr-reviewer.md)); pair it with `--depth` for any other budget.
 
 This is the explicit-cost lever: more findings per run at the same precision, paid for on purpose rather than triggered by a size heuristic.
 
@@ -263,27 +278,26 @@ continuously instead of jumping at two tier boundaries.
 
 **Input**, first match wins:
 
-An explicit CLI flag beats every config key, and within the config `effort: high` beats `thoroughness:`.
+The precedence of `--depth`, its deprecated aliases, and the config keys is one table in [`arguments.md` § Precedence](./arguments.md#precedence).
 Config keys come from the PR's base commit, already resolved in `context.reviewConfig` ([`review-config.md` § Run-level knobs](../../shared/rules/review-config.md#run-level-knobs)).
 
-1. `--effort high`, or (no CLI depth flag) `effort: high` → `t = 1`.
-2. `--thoroughness <n>`, or (no CLI depth flag) `thoroughness: <n>` → `t = clamp(n, 0, 1)`.
-   A non-finite or garbage CLI value, including a bare `--thoroughness` with no value, **fails closed to `t = 1`** — the safe direction for a broken override is maximum scrutiny, never a silent under-review.
-   A config `thoroughness:` outside 0–1 never reaches this item: `prepare-review.mjs` ignores it without coercing it and lists it in `RUN_ANOMALY`, so `t` falls through to item 3.
-3. Neither given → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.85.**
+1. A preset (`--depth`, or an alias that maps to one) → its `t` from the table above.
+   A garbage CLI value never reaches `resolveBudget()`: `prepare-review.mjs` exits 2 first ([`arguments.md` § Validation](./arguments.md#validation)).
+   A config value outside its domain is ignored without coercion and listed in `RUN_ANOMALY`, so `t` falls through to item 2.
+2. No preset → `t` defaults from `DEPTH_TIER`: **quick → 0.4, standard → 0.7, deep → 0.85.**
    Each default sits one band past a breakpoint, so a defaulted review buys the next lever up:
 
    | Tier | Default `t` | What the default turns on, over the band below it |
    | --- | --- | --- |
-   | `quick` | 0.4 | measurability lens; holistic escalation cap 2 → 4. A defaulted quick budget is **lean** on every run mode (`lean: true`, `holisticBroadPass: false`, `impactImage: false`): it dispatches no worker, skips the holistic broad pass, and draws no impact image. An explicit `--thoroughness` on a quick routing is a deliberate ask and keeps the breakpoint's levers |
+   | `quick` | 0.4 | measurability lens; holistic escalation cap 2 → 4. A defaulted quick budget is **lean** on every run mode (`lean: true`, `holisticBroadPass: false`, `impactImage: false`): it dispatches no worker, skips the holistic broad pass, and draws no impact image. A preset equal to the routed tier is the default and stays lean |
    | `standard` | 0.7 | holistic escalation cap 5 → 7 |
-   | `deep` | 0.85 | consumer-impact and standards widen to every file; tool-call budget ×1.5; holistic escalation cap 8 → 9. Tier-3 (execution) verification and the ×2 budget need `t ≥ 0.95`: `--effort high` or `thoroughness: 0.95` |
+   | `deep` | 0.85 | consumer-impact and standards widen to every file; tool-call budget ×1.5; holistic escalation cap 8 → 9. Tier-3 (execution) verification and the ×2 budget need `t ≥ 0.95`: `--depth max` |
 
    **Why:** a review's silence is read as coverage, so the default spends one band more than the minimum for its tier.
 
 **Risk floor.** A diff carrying a high-stakes shape (`auth`, `payments`, `schema-migration`,
 `secrets`, `infra`) **or** `impact.json`'s `blast_radius.band == "high"` floors the *effective*
-thoroughness at **0.5**, whatever `t` resolved to above — this guards only the override path:
+thoroughness at **0.5**, whatever `t` resolved to above, and the run reports it as `depth <requested> -> <effective> (floor: <reason>)` ([`arguments.md` § Reading the depth line](./arguments.md#reading-the-depth-line)) — this guards only the override path:
 D7/D9 already route these shapes/bands to `deep` (default `t = 0.85`) through `routeDepth()`, so the
 floor matters exactly when a low `--thoroughness` override or a repo-wide config default would
 otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.3` on a band-high PR
@@ -306,7 +320,7 @@ otherwise under-review one. `band == "high"` was the A/B round 2 gap: at `t = 0.
 
 `round(10t)` gives 4 / 7 / 9 at the three defaults: proportional scaling is what "escalation SCALES
 with thoroughness" means.
-On a `deep`-routed PR, `--effort high` (`t = 1`) adds tier-3 (execution) verification, the ×2 tool-call budget, and a 10th escalation; it also raises a `standard` or `quick` routing to `deep`.
+On a `deep`-routed PR, `--depth max` (`t = 1`) adds tier-3 (execution) verification, the ×2 tool-call budget, and a 10th escalation; it also raises a `standard` or `quick` routing to `deep`.
 
 **Tool-call budget (A/B iterations 1–3).** `pr-reviewer.md § Stop conditions` sizes the run's
 tool-call budget by changed-file count — 60 for ≤ 10 files, 120 for 11–30, 200 for > 30 — and

@@ -36,7 +36,7 @@ import { readFileSync } from "node:fs";
  * clean pass" is a statement about what still runs, not a fourth tier this
  * function owns).
  * @typedef {{
- *   firstRun?: boolean, full?: boolean, effortHigh?: boolean,
+ *   firstRun?: boolean, full?: boolean, effortHigh?: boolean, forceDeep?: boolean,
  *   cumDeltaLines?: number, incrRunsSinceFull?: number, priorDeepRecorded?: boolean,
  *   highStakesFiles?: string[], propagation?: boolean, band?: string,
  *   semverDeltas?: SemverDelta[], symbols?: ChangedSymbol[],
@@ -134,7 +134,7 @@ export function routeDepth(i) {
   const triggers = [];
   if (i.firstRun) triggers.push("D1");
   if (i.full) triggers.push("D2");
-  if (i.effortHigh) triggers.push("D3");
+  if (i.effortHigh || i.forceDeep) triggers.push("D3");
   if (cumDeltaLines > refreshDeltaFor(i.prLines)) triggers.push("D4");
   if (incrRunsSinceFull >= FULL_REFRESH_RUNS) triggers.push("D5");
   if (i.priorDeepRecorded === false) triggers.push("D6");
@@ -220,6 +220,32 @@ export function routeDepth(i) {
 /** Tier -> default thoroughness when no explicit override is given. What each default turns on is
  *  depth-routing.md § Thoroughness budget's per-tier table, the one place that lists it. */
 export const TIER_DEFAULT_THOROUGHNESS = { quick: 0.4, standard: 0.7, deep: 0.85 };
+
+/** The named depth presets (`--depth`, config `depth:`). Each is one of the breakpoint columns below,
+ *  represented by the thoroughness the matching tier default resolves to, so a preset and the tier
+ *  default of the same name give the same budget. `deep` and `max` also force the deep tier. */
+export const DEPTH_PRESETS = Object.freeze(["quick", "standard", "deep", "max"]);
+export const PRESET_THOROUGHNESS = Object.freeze({ quick: 0.4, standard: 0.7, deep: 0.85, max: 1 });
+
+/** The preset whose column contains `t`: below 0.5 quick, [0.5, 0.8) standard, [0.8, 0.95) deep, from 0.95 max. */
+export function presetOfThoroughness(t) {
+  return t >= 0.95 ? "max" : t >= 0.8 ? "deep" : t >= 0.5 ? "standard" : "quick";
+}
+
+/**
+ * The depth a run reports: the preset asked for (or the one the routed default lands in), the
+ * preset it ran at, and the risk floor when it lifted the two apart.
+ * @param {{ requested?: string|null, source: string, budget: { requestedThoroughness: number, effectiveThoroughness: number, riskFloorApplied: boolean, riskFloorReason: string|null } }} i
+ */
+export function describeDepth({ requested = null, source, budget }) {
+  const asked = requested ?? presetOfThoroughness(budget.requestedThoroughness);
+  const effective = presetOfThoroughness(budget.effectiveThoroughness);
+  const floor = budget.riskFloorApplied ? budget.riskFloorReason : null;
+  const line = floor && asked !== effective
+    ? `depth ${asked} -> ${effective} (floor: ${floor})`
+    : `depth ${effective} (${source})`;
+  return { requested: asked, effective, source, floor, line };
+}
 
 /** `--effort high` / `effort: high` is an alias for the ceiling. */
 export const EFFORT_HIGH_THOROUGHNESS = 1;
@@ -810,6 +836,36 @@ function selfTest() {
   }
   if (!monotonicityBroken) passed++;
   else fails.push(`monotonicity violated: ${monotonicityBroken}`);
+
+  // ---- depth presets: each preset is the budget of the tier default it is named after ----
+  for (const [preset, tier] of [["quick", "quick"], ["standard", "standard"], ["deep", "deep"]]) {
+    total++;
+    const viaPreset = resolveBudget({ routedTier: tier, thoroughness: PRESET_THOROUGHNESS[preset] });
+    const viaDefault = resolveBudget({ routedTier: tier });
+    // A defaulted quick routing is lean; every other field matches the preset's column.
+    const blank = { lean: 0, topology: 0, topologyReason: 0, holisticBroadPass: 0, impactImage: 0, isolatedFinders: 0 };
+    if (JSON.stringify({ ...viaPreset, ...blank }) === JSON.stringify({ ...viaDefault, ...blank })) passed++;
+    else fails.push(`preset ${preset} does not match the ${tier} tier default budget`);
+  }
+  total++;
+  const maxB = resolveBudget({ routedTier: "deep", thoroughness: PRESET_THOROUGHNESS.max });
+  if (maxB.maxVerificationTier === 3 && maxB.toolCallMultiplier === 2) passed++;
+  else fails.push(`preset max did not reach tier-3 verification and the x2 budget: ${JSON.stringify(maxB)}`);
+
+  // ---- presetOfThoroughness maps each column edge to the preset that column belongs to ----
+  total++;
+  const edges = [[0, "quick"], [0.49, "quick"], [0.5, "standard"], [0.79, "standard"], [0.8, "deep"], [0.94, "deep"], [0.95, "max"], [1, "max"]];
+  const badEdge = edges.find(([t, want]) => presetOfThoroughness(t) !== want);
+  if (!badEdge) passed++;
+  else fails.push(`presetOfThoroughness(${badEdge[0]}) !== ${badEdge[1]}`);
+
+  // ---- describeDepth reports a floor lift as `requested -> effective (floor: reason)` ----
+  total++;
+  const lifted = describeDepth({ requested: "quick", source: "cli", budget: resolveBudget({ thoroughness: 0.4, shape: ["infra"] }) });
+  const plain = describeDepth({ source: "default", budget: resolveBudget({ routedTier: "standard" }) });
+  if (lifted.line === "depth quick -> standard (floor: infra)" && lifted.floor === "infra"
+    && plain.line === "depth standard (default)" && plain.floor === null) passed++;
+  else fails.push(`describeDepth drifted: ${JSON.stringify([lifted, plain])}`);
 
   console.log(`route-depth self-test: ${passed}/${total}`);
   if (fails.length) {

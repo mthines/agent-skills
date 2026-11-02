@@ -5,7 +5,7 @@ description: >
   and reports its verdict and findings without touching your code. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`; invoke with /pr-review.
 disable-model-invocation: false
-argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--impact-image] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--depth quick|standard|deep|max] [--model opus|sonnet|haiku|<id>] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--impact-image] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
@@ -60,7 +60,7 @@ Everything after the PR reference is a **pass-through flag**: forward it verbati
 
 ```bash
 # Known agent flags, listed for the argument-hint only — NOT a validation allowlist.
-#   --critical --full --effort high --with a,b,c --no-holistic --no-escalate
+#   --critical --full --depth deep --model sonnet --with a,b,c --no-holistic --no-escalate
 #   --no-standards --skip-gates --fix-links
 ```
 
@@ -109,8 +109,10 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    scope `branch::<owner>/<repo>::<headRefName>`, key `ci-state::pr-review-<n>` — and save a hit to
    `<dir>/state.json`. Skip it under `--isolated`; on a miss, or with no LoreKit tool, pass no `--state`.
 3. Run prepare once, forwarding only the pass-through flags it takes (`--full`, `--effort`,
-   `--thoroughness`, `--finder-passes`, `--impact-image`, `--with`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
-   when the pass-through flags carry `--review-sha`), and read the topology on the same command:
+   `--depth`, `--thoroughness`, `--finder-passes`, `--impact-image`, `--with`, `--isolated`, `--pin-head`, `--repo-dir`; add `--review-sha <sha> --isolated`
+   when the pass-through flags carry `--review-sha`), and read the topology on the same command.
+   Never forward `--model`: it is a dispatch setting this skill applies in step 4, and prepare exits 2 on an argument it does not know.
+   A bad flag or flag combination exits 2 here, before any model turn: report prepare's message and stop.
 
    ```bash
    node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <PR_REF> --out <dir>/context.json [--state <dir>/state.json] <prepare flags> \
@@ -125,13 +127,20 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    if [ "$(jq -r '.budget.finderPasses // 1' <dir>/context.json)" = 2 ]; then mkdir -p <dir>/pass2 && date +%s > <dir>/pass2/dispatched_at; fi
    ```
 
-4. On `hybrid`, in **one message**, dispatch both:
+4. Pick the models once (`$AGENT_SUPPORT/pr-reviewer/rules/arguments.md`, § The model axis):
+   - the reviewer's model is `--model` when given, else none (the agent's own `model: opus`);
+   - the workers' model is `jq -r '.reviewConfig.models.workers // empty' <dir>/context.json`, else none.
+
+   Pass a chosen model as the dispatch tool's `model` parameter on that dispatch only.
+   When the dispatch tool has no model parameter, dispatch without one and print `models: not applied (<role>)` under the report's run line; never invent another mechanism.
+
+   On `hybrid`, in **one message**, dispatch both:
    - `pr-reviewer` with `<PR_REF> <pass-through flags> --context <dir>/context.json --intent-from <dir>/intent/intent.json`;
    - a general-purpose worker (the harness's general sub-agent type) with the [worker preamble](#worker-preamble--the-intent-worker),
      told to read `<dir>/context.json`, `finders.md`, and the review packet the context names, act as
      the `intent` finder only, and write its candidates to `<dir>/intent/intent.json` as a JSON array.
      It never runs `prepare-review.mjs`.
-5. On `in-context` — below thoroughness 0.4, or a small incremental re-review — dispatch
+5. On `in-context` (the budget's topology, e.g. a lean quick routing or a small incremental re-review) — dispatch
    `pr-reviewer` alone with `--context <dir>/context.json`, and no worker.
 5b. When `budget.finderPasses` is `2`, add two more general workers to the message from step 4 or 5,
    whichever topology: both get the [worker preamble](#worker-preamble--the-intent-worker) and
