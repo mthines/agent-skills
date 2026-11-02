@@ -285,7 +285,7 @@ Phase A/B, and Step 2 never run; Step 1.8, then Step 2.9c, then Step 3. When fal
 
 **Batch independent LoreKit calls: one message, parallel tool calls, same calls as below.**
 Issue all three lists in one message at Step 1.0. Issue both searches in one message at Step 1.2c.
-A call that throws is retried per [`memory-load.md` § When a LoreKit call fails](./pr-reviewer/rules/memory-load.md#when-a-lorekit-call-fails), and only the calls that threw are retried.
+A Step 1.0 list that throws follows [`memory-load.md` § When a LoreKit call fails](./pr-reviewer/rules/memory-load.md#when-a-lorekit-call-fails); a Step 1.2c search that errors stays a non-blocking miss with no retry, exactly as in 1.2c.
 Why: [`batched-calls.md`](./pr-reviewer/references/batched-calls.md).
 
 ### 1.0 Prior-comment awareness + relevance memory load (default ON)
