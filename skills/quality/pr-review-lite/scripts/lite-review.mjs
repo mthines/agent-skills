@@ -448,7 +448,9 @@ export async function runPipeline(a) {
         if (Array.isArray(parsed)) {
           const pseudo = { id: "cross", files: units.flatMap((u) => u.files).filter((f) => dg.paths.includes(f.path)) };
           const f = filterCandidates(parsed, pseudo, lenses.map((l) => l.name));
-          for (const c of capCandidates(f.kept, o.maxPerUnit).kept) {
+          const capped = capCandidates(f.kept, o.maxPerUnit);
+          dropped.push(...f.dropped.map((d) => ({ ...d, unit: "cross" })), ...capped.over.map((c) => ({ candidate: c, why: `over the per-unit cap (${o.maxPerUnit})`, unit: "cross" })));
+          for (const c of capped.kept) {
             if (!cands.some((x) => x.path === c.path && Math.abs(x.line - c.line) <= 3)) cands.push({ ...c, stage: "cross" });
           }
         } else errors.push({ stage: "cross", error: "unparseable reply" });
