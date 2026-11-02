@@ -21,13 +21,23 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
 
 ## Steps
 
-1. Run it; add `--transport claude-cli` to use a Claude Code login with no API key (usage and dollars then come from the CLI's own output), and `--with a,b` to load named lenses as `/pr-review` does (it makes real model calls, so run it only on a PR the user named; `--transport api` needs `ANTHROPIC_API_KEY`):
+1. Run it; it picks the model transport itself, and `--transport` overrides that (it makes real model calls, so run it only on a PR the user named). `--with a,b` loads named lenses as `/pr-review` does:
+
+   | Where it runs | Transport | Needs |
+   | --- | --- | --- |
+   | `OPENCODE_CONFIG_CONTENT` is set (an opencode sandbox such as Agent0) | `opencode` | nothing; the sandbox's `ANTHROPIC_API_KEY` is a placeholder only opencode can use |
+   | a local shell with `ANTHROPIC_API_KEY` | `api` | the key |
+   | a local shell with a Claude Code login | `claude-cli` | the `claude` binary |
+   | a local shell with `opencode` configured | `opencode` | the `opencode` binary |
+
+   With `opencode`, each call also pays opencode's own fixed context (about 194k tokens, reported in `usage.json`), so its cost is higher than `api` for the same PR.
 
    ```bash
    node ${CLAUDE_SKILL_DIR}/scripts/lite-review.mjs --pr <url|#n> --out <dir> --repo-dir <checkout>
    ```
 
    It runs `prepare-review.mjs` from the agent's support tree, so the packet is the one the full reviewer reads ([`rules/dispatch.md`](./rules/dispatch.md)).
+   Exit code 3 means the first model call got a 401 or 403: the run stopped after one call and every file is in `skipped.json`. Report "the review did not run", name the rejected key, and skip step 3.
 2. Read `<dir>/skipped.json`. Every file lite did not review is listed with its reason; report that list, never "reviewed everything".
 3. Compare after the full reviewer has posted on the same head:
 
