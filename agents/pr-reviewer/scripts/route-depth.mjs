@@ -506,7 +506,7 @@ function selfTest() {
   let passed = 0;
 
   const path = new URL("../../../scripts/eval/fixtures/route-depth/cases.json", import.meta.url);
-  /** @type {{id: string, inputs: RouteDepthInput, expected: string, notes?: string}[]} */
+  /** @type {{id: string, inputs: RouteDepthInput, expected: string, expectedDeltaScaled?: boolean, notes?: string}[]} */
   let cases;
   try {
     cases = JSON.parse(readFileSync(path, "utf8"));
