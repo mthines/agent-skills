@@ -45,7 +45,9 @@ Standalone runs write to `.agent/{branch}/recordings/`; a caller such as `aw-tes
 5. **A failed recording is a `notes` line, never a failed check.**
 6. **Chrome driver (claude-in-chrome):** no `recordVideo`, so record with `capture.mjs`, never `gif_creator`: a GIF gets one frame per tool call and is ~20× larger than the mp4.
    It needs Chrome's remote debugging on once (chrome://inspect/#remote-debugging), and the user clicks **Allow** once per Chrome session: the first `start` prints `connecting to Chrome` and waits, and later ones reuse the relay's connection. `--wait 600` when you start it before asking. Chrome paints only while the page changes and its window is visible, so the video starts at the first frame after `start`, and `stop` exits `6` if none came.
-   Run `overlay.js`'s source with `javascript_tool` after every navigation and call `__rec.step(label)` with each `capture.mjs step`, or the video has no captions.
+   `start` injects `overlay.js` into the tab and every later navigation, and `capture.mjs step "<label>"` draws that label as the bottom caption: never inject the overlay or call `__rec.step` yourself.
+   When `step` prints `caption not drawn`, the page blocked the script (a strict CSP); the video has no caption for that step, so say so in `notes`.
+   Write each label as what the viewer should notice, in the product's words ("The list keeps only slow requests"), not "Click Filter".
    Exit `6` (no debugging, no matching tab, no frames) → fall back to `gif_creator`, convert the GIF (`ffmpeg -i x.gif -movflags +faststart -vf "scale=1280:-2,format=yuv420p" -c:v libx264 -crf 28 -an x.mp4`), and add a `notes` line.
 7. **Narration is opt-in** (`--narrate`): each step's `say` line, spoken with macOS `say` or `SCREENCAST_TTS="<cmd with {text} and {out}>"`. Never by default — reviewers watch muted.
 

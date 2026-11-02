@@ -4,7 +4,7 @@
 //
 //   node capture.mjs start --out <dir>/<id>.mp4 --url <part of the tab's URL> [--port <n>] [--wait 60]
 //   node capture.mjs launch [--port 9222] [--profile <dir>]   a separate Chrome with a DevTools port
-//   node capture.mjs step "<label>" --out <dir>/<id>.mp4
+//   node capture.mjs step "<label>" --out <dir>/<id>.mp4      also draws <label> as the caption bar
 //   node capture.mjs stop --out <dir>/<id>.mp4 [--result pass|fail] [-- <finish.mjs flags>]
 //   node capture.mjs disconnect                                close the relay's connection to Chrome
 //   node capture.mjs --self-test
@@ -15,6 +15,8 @@
 // Allow once per Chrome session, not once per recording. start asks the relay to attach to the tab
 // whose URL contains --url and stream its rendered frames (Page.startScreencast) to disk. Keep the
 // window un-minimized: Chrome stops painting a minimized one.
+// start also injects overlay.js into the tab (and every later navigation), so the video shows the
+// cursor, click ring, and a caption bar at the bottom; step sets that caption to its label.
 // step closes the open step and opens the next. stop closes the last step, ends the stream, joins
 // the frames at their real timestamps, writes the timings, and runs finish.mjs, so the outputs are
 // the same <id>.mp4, <id>.timings.json and <id>.sheet.png as a Playwright recording.
@@ -112,6 +114,9 @@ const REPAINT = `(() => {
   requestAnimationFrame(() => requestAnimationFrame(() => dot.remove()));
 })()`;
 
+const REMOVE_OVERLAY = `(() => { document.getElementById('__screencast')?.remove(); try { sessionStorage.removeItem('__screencast_caption'); } catch {} delete window.__rec; })()`;
+const overlaySource = () => fs.readFileSync(path.join(HERE, 'overlay.js'), 'utf8');
+
 function writeAtomic(file, value) {
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(value));
   fs.renameSync(`${file}.tmp`, file);
@@ -141,6 +146,8 @@ async function relay(ws) {
     const rec = recordings.get(sessionId);
     if (!rec) return;
     recordings.delete(sessionId);
+    if (rec.overlayId) await Promise.race([send('Page.removeScriptToEvaluateOnNewDocument', { identifier: rec.overlayId }, sessionId), sleep(500)]);
+    await Promise.race([send('Runtime.evaluate', { expression: REMOVE_OVERLAY }, sessionId), sleep(500)]);
     await Promise.race([send('Page.stopScreencast', {}, sessionId), sleep(500)]);
     await Promise.race([send('Target.detachFromTarget', { sessionId }), sleep(500)]);
     fs.closeSync(rec.index);
@@ -188,6 +195,11 @@ async function relay(ws) {
       const session = attached.result.sessionId;
       recordings.set(session, { dir, count: 0, index: fs.openSync(path.join(dir, 'frames.jsonl'), 'a') });
       await send('Page.enable', {}, session);
+      // The overlay draws the cursor, click ring, and caption into the frames; a failed injection leaves a plain recording.
+      const overlay = overlaySource();
+      const registered = await send('Page.addScriptToEvaluateOnNewDocument', { source: overlay }, session);
+      recordings.get(session).overlayId = registered.result?.identifier;
+      await send('Runtime.evaluate', { expression: overlay }, session);
       await send('Page.startScreencast', { format: 'jpeg', quality: 85, maxWidth: 1920, maxHeight: 1920, everyNthFrame: 1 }, session);
       // Chrome sends a frame only when the page repaints, so a still page would send none until someone acts.
       const rec = recordings.get(session);
@@ -196,6 +208,14 @@ async function relay(ws) {
         await sleep(250);
       }
       return { title: target.title, url: target.url };
+    },
+    async '/caption'({ dir, label }) {
+      const session = [...recordings].find(([, rec]) => rec.dir === dir)?.[0];
+      if (!session) return { error: `no recording for ${dir}` };
+      const { result, error } = await send('Runtime.evaluate',
+        { expression: `window.__rec ? (window.__rec.step(${JSON.stringify(label)}), true) : false`, returnByValue: true }, session);
+      if (error) return { error: error.message };
+      return { shown: result?.result?.value === true };
     },
     async '/stop'({ dir }) {
       for (const [session, rec] of recordings) if (rec.dir === dir) await end(session);
@@ -360,11 +380,14 @@ function closeOpenStep(state, result) {
   }
 }
 
-function step(out, label) {
+async function step(out, label) {
   const state = readState(out);
   closeOpenStep(state);
   state.steps.push({ label, start: +(Date.now() / 1000 - state.startedAt).toFixed(2) });
   fs.writeFileSync(stateFile(out), JSON.stringify(state, null, 2));
+  // A caption that fails to draw never fails the step; the timing is already recorded.
+  const drawn = await ask('/caption', { dir: state.dir, label });
+  if (!drawn.shown) console.error(`screencast capture: caption not drawn (${drawn.error ?? 'overlay missing on this page'}); the video has no caption for "${label}"`);
 }
 
 async function stop(out, result, finishArgs) {
@@ -443,7 +466,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(fs.realpathSync(process
       if (command === 'start') {
         if (!at('--url')) fail(2, 'start needs --url <part of the tab URL>');
         await start(out, port, at('--url'), number('--wait') ?? 60);
-      } else if (command === 'step') step(out, rest.find((a, i) => !a.startsWith('--') && !rest[i - 1]?.startsWith('--')) ?? '');
+      } else if (command === 'step') await step(out, rest.find((a, i) => !a.startsWith('--') && !rest[i - 1]?.startsWith('--')) ?? '');
       else if (command === 'stop') await stop(out, at('--result'), finishArgs);
       else fail(2, `unknown command "${command}"`);
     }
