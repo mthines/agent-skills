@@ -19,16 +19,17 @@ A preset sets the budget; `deep` and `max` also force the tier because they are 
 A defaulted `quick` budget is lean: no worker, no holistic broad pass, no impact image.
 If `depth: quick` in a config produced a non-lean budget on a `quick` routing, writing the default value down would cost more than writing nothing.
 Treating an equal preset as the default makes the same words give the same behaviour.
+A preset below the routed tier's default is a deliberate ask, so it keeps `hybrid` even on a small re-review that the default would run in one context.
 
 ## Why the risk floor stays and is reported
 
 A repo-wide low depth must not under-review auth, payments, migrations, secrets, infra, or a high blast radius.
-The floor lifted the request without saying so, visible only in `context.json`.
-The run now prints the lift as `depth <requested> -> <effective> (floor: <reason>)` and records it as an anomaly, so a reader sees that the review ran deeper than asked.
+A lift that nobody can see makes the review cost more than the user asked with no explanation.
+The run prints the lift as `depth <requested> -> <effective> (floor: <reason>)` and records it as an anomaly, so a reader sees that the review ran deeper than asked.
 
 ## Why garbage is an error
 
-A garbage depth value used to fail closed to the maximum budget, so a typo bought the most expensive review without a word.
+A garbage depth value that failed closed to the maximum budget would let a typo buy the most expensive review without a word.
 Failing closed protects quality and spends money silently; an exit before any model turn protects both.
 Config values still fall back to the default with an anomaly, because a config is read after the run has started and a missing repo-wide setting must not block every review.
 

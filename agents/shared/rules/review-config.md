@@ -60,9 +60,10 @@ depth: standard                          # repo-wide default depth preset: quick
                                          # See agents/pr-reviewer/rules/arguments.md
 
 effort: high                             # DEPRECATED alias of `depth: max`. Logged as a RUN_ANOMALY.
-thoroughness: 0.8                        # DEPRECATED alias of the depth preset whose column holds the
-                                         # value (below 0.5 quick, 0.5-0.8 standard, 0.8-0.95 deep, from
-                                         # 0.95 max). Logged as a RUN_ANOMALY. `depth:` beats both.
+thoroughness: 0.8                        # DEPRECATED: the value still applies exactly and never forces a
+                                         # tier; the RUN_ANOMALY names the nearest depth preset (below 0.5
+                                         # quick, 0.5-0.8 standard, 0.8-0.95 deep, from 0.95 max).
+                                         # `depth:` beats both.
 
 models:                                  # the model axis, independent of depth (arguments.md#the-model-axis)
   workers: haiku                         # the model the caller gives the intent and pass-2 worker
@@ -492,7 +493,7 @@ with an empty variable would swallow the next argument, so build the flag condit
 | `depth` | `quick` / `standard` / `deep` / `max` | `prepare-review.mjs` — the depth preset ([`arguments.md`](../../pr-reviewer/rules/arguments.md)) | CLI `--depth`, `--effort`, or `--thoroughness` |
 | `models` | block-style map; `workers:` is `opus` / `sonnet` / `haiku` / a `claude-*` id | `prepare-review.mjs` — `context.reviewConfig.models.workers`; the caller passes it as the worker dispatches' model ([`arguments.md` § The model axis](../../pr-reviewer/rules/arguments.md#the-model-axis)) | — |
 | `effort` | `high` | deprecated alias of `depth: max` | CLI `--depth`, `--effort`, or `--thoroughness`; config `depth:` |
-| `thoroughness` | 0–1 | deprecated alias of a `depth:` preset | CLI `--depth`, `--effort`, or `--thoroughness`; config `depth:` or `effort: high` |
+| `thoroughness` | 0–1 | deprecated; applies exactly, never forces a tier | CLI `--depth`, `--effort`, or `--thoroughness`; config `depth:` or `effort: high` |
 | `critical` | `auto` (default) / `always` | `pr-reviewer.md` Step 2 — the rubric load ([`rubric-composition.md` § Load order](./rubric-composition.md#load-order)) | CLI `--no-critical` |
 | `finder_passes` | `1` (default) / `2` | `prepare-review.mjs` — `budget.finderPasses`; the caller dispatches pass 2 ([`dispatch-topology.md` § Two finder passes](../../pr-reviewer/rules/dispatch-topology.md#two-finder-passes)) | CLI `--finder-passes` on `prepare-review.mjs` |
 | `impact_image` | `false` (default) / `true` | `prepare-review.mjs` — `context.impactImage`; off, it is `skipped (not enabled …)` and the host is never probed ([`posting.md` § The impact image](../../pr-reviewer/rules/posting.md#the-impact-image)) | CLI `--impact-image` on `prepare-review.mjs` turns it on |
