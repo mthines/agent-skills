@@ -32,7 +32,7 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
 3. Compare after the full reviewer has posted on the same head:
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/scripts/lite-compare.mjs --lite <dir>/findings.json --pr <url|#n> --full-author <login the full reviewer posts as>
+   node ${CLAUDE_SKILL_DIR}/scripts/lite-compare.mjs --lite <dir>/findings.json --pr <owner/repo#n|url> --full-author <login the full reviewer posts as>
    ```
 
    Thread replies and outdated comments are excluded; without `--full-author`, a human's inline comment counts as a full-only finding.
