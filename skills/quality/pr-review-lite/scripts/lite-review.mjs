@@ -385,6 +385,7 @@ export function claudeCliTransport(o = {}) {
         resolve({ text: String(j.result || ""), usage: j.usage || {}, costUsd: typeof j.total_cost_usd === "number" ? j.total_cost_usd : undefined });
       } catch { reject(new Error(`claude cli exit ${code}: ${(err || out).slice(0, 200)}`)); }
     });
+    p.stdin.on("error", () => {});
     p.stdin.end(req.user);
   });
 }

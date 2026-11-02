@@ -258,6 +258,17 @@ check("cli transport: a non-zero exit or an error reply rejects", async () => {
   fs.rmSync(dir, { recursive: true });
 });
 
+check("cli transport: a CLI that exits before reading a large payload rejects instead of crashing", async () => {
+  const fs = await import("node:fs"); const os = await import("node:os"); const path = await import("node:path");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lite-cli-"));
+  const bin = path.join(dir, "quit-claude");
+  fs.writeFileSync(bin, "#!/usr/bin/env node\nprocess.exit(1);");
+  fs.chmodSync(bin, 0o755);
+  let rejected = false; try { await claudeCliTransport({ bin })({ model: "m", system: "", cachePrefix: "P", user: "u".repeat(300000), maxTokens: 1 }); } catch { rejected = true; }
+  ok(rejected, "expected a rejection");
+  fs.rmSync(dir, { recursive: true });
+});
+
 check("threads: existing PR threads are listed in the shared prefix, trimmed, and absent when there are none", async () => {
   const threads = [{ path: "src/a.ts", line: 5, root_body: "### **Stop hold lost**\nlong text", is_resolved: false }, { path: "src/b.ts", line: null, root_body: "x".repeat(400), is_resolved: true }, { root_body: "no path" }];
   const b = threadsBlock(threads);
