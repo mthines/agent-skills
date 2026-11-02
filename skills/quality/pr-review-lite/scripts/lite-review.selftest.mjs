@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { capCandidates, threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -267,6 +267,17 @@ check("threads: existing PR threads are listed in the shared prefix, trimmed, an
   await runPipeline({ packetText: PACKET, finders: "R", transport: t, threads, opts: { unitTokens: 40 } });
   const reviews = t.calls.filter((c) => !c.system);
   ok(reviews.length > 1 && reviews.every((c) => c.cachePrefix === reviews[0].cachePrefix) && reviews[0].cachePrefix.includes("Do not report any of them again"), "prefix");
+});
+
+check("cap: the per-unit cap keeps the highest severities first and reports the rest as dropped", async () => {
+  const c = [{ severity: "low", n: 1 }, { severity: "high", n: 2 }, { severity: "medium", n: 3 }, { severity: "high", n: 4 }];
+  const { kept, over } = capCandidates(c, 2);
+  eq(kept.map((x) => x.n), [2, 4]);
+  eq(over.map((x) => x.n), [3, 1]);
+  const many = (/** @type {any} */ req) => req.system ? '{"veto":[]}' : JSON.stringify(Array.from({ length: 5 }, (_, i) => ({ path: "src/a.ts", line: i + 1, severity: "low", claim: `c${i}` })));
+  const r = await runPipeline({ packetText: PACKET, finders: "R", transport: stub(many), opts: { unitTokens: 100000, maxPerUnit: 3 } });
+  eq([r.findings.length, r.dropped.filter((d) => /per-unit cap/.test(d.why)).length], [3, 2]);
+  ok(buildPrefix({ finders: "F", preamble: "P", impactSummary: "" }).includes("Severity: high = a security or authorization gap"), "severity rubric in the prefix");
 });
 
 check("cold: a nonce makes the prefix unique per run and leaves it identical across a run's units", async () => {

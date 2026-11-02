@@ -31,6 +31,7 @@ export const DEFAULTS = {
   maxUnits: 12,
   reflectTokens: 40000,
   maxOutputTokens: 4096,
+  maxPerUnit: 8,
 };
 
 /** Rough token estimate; only used for grouping, never for billing. */
@@ -159,7 +160,9 @@ export const CONTRACT = [
   "Where the rubric above says to open a file or run a command, put that check in `verify_by` instead and do not skip the candidate.",
   "Reply with ONLY a JSON array, no prose and no code fence. Each element:",
   '{"path": "<file in this unit>", "line": <RIGHT-side number from the NNNNN| prefix>, "severity": "high"|"medium"|"low", "lens": "<team lens name, only when the finding comes from one>", "claim": "<what is wrong>", "bad_outcome": "<what breaks and for whom>", "verify_by": "<the concrete check that would confirm it>"}',
-  "Flag everything suspicious; a separate step filters. Return [] when the unit has nothing.",
+  "Severity: high = a security or authorization gap, one user reaching another user's or org's data, data loss, a message or action delivered twice, or a crash on a normal path; medium = wrong behavior on a realistic path, or a contract the code and its docs disagree on; low = anything else you would still raise.",
+  "Do not report style, naming, ordering, formatting, comment wording, or a test's structure or mocking choices. In a test file report only a test that would still pass if the code under test were broken.",
+  "Flag everything else suspicious; a separate step filters. Return [] when the unit has nothing.",
 ].join("\n");
 
 /** The prefix every unit call shares, byte for byte: that identity is what the cache keys on. */
@@ -282,6 +285,13 @@ export function reflectMessage(/** @type {{files:any[]}[]} */ units, /** @type {
 
 // ── usage ─────────────────────────────────────────────────────────────────────────────────────
 
+/** Highest severity first, order kept within a severity; the rest are returned as dropped. */
+export function capCandidates(/** @type {any[]} */ kept, max) {
+  const rank = { high: 0, medium: 1, low: 2 };
+  const sorted = kept.map((c, i) => ({ c, i })).sort((a, b) => rank[a.c.severity] - rank[b.c.severity] || a.i - b.i).map((x) => x.c);
+  return { kept: sorted.slice(0, max), over: sorted.slice(max) };
+}
+
 export const emptyUsage = () => ({ calls: 0, input: 0, cache_read: 0, cache_write: 0, output: 0, reported_usd: /** @type {number|null} */ (null) });
 
 export function addUsage(/** @type {any} */ acc, /** @type {any} */ u = {}, /** @type {number|undefined} */ costUsd) {
@@ -389,7 +399,9 @@ export async function runPipeline(a) {
       if (!Array.isArray(parsed)) { errors.push({ stage: "review", unit: unit.id, error: "unparseable reply" }); failUnit(unit, "unparseable reply (possibly cut off at the output cap)"); return []; }
       const f = filterCandidates(parsed, unit, lenses.map((l) => l.name));
       dropped.push(...f.dropped.map((d) => ({ ...d, unit: unit.id })));
-      return f.kept;
+      const capped = capCandidates(f.kept, o.maxPerUnit);
+      dropped.push(...capped.over.map((c) => ({ candidate: c, why: `over the per-unit cap (${o.maxPerUnit})`, unit: unit.id })));
+      return capped.kept;
     } catch (e) {
       errors.push({ stage: "review", unit: unit.id, error: String(/** @type {any} */ (e)?.message || e) });
       failUnit(unit, `review call failed: ${String(/** @type {any} */ (e)?.message || e).slice(0, 80)}`);
