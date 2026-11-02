@@ -193,7 +193,7 @@ A first review of a small PR that fires no risk trigger skips `deep`.
 A re-review of a big PR reviews the delta.
 [`route-depth.mjs`](../scripts/route-depth.mjs) applies it after size scaling and before the `standard` row:
 
-1. It applies only on a re-run, when a prior `deep` pass is recorded (`D6` did not fire), and when the PR has more than `BIG_PR_LINES` (400) changed lines; an unknown PR size is never scaled.
+1. It applies only on a re-run, when a prior full-mode pass is recorded (`D6` did not fire; a size-scaled first run records `full` too), and when the PR has more than `BIG_PR_LINES` (400) changed lines; an unknown PR size is never scaled.
 2. It applies only when every trigger that fired is `D12` or `D13` and `DELTA_LINES ≤ BIG_PUSH_LINES` (400).
    Any other trigger still routes `deep`: `D2`, `D3`, the refresh counters `D4` and `D5`, `D6`, and the risk triggers `D7`–`D11`.
 3. It waives `D12` and `D13`, then routes on the rows below with the `standard` size band widened to `0 ≤ DELTA_LINES ≤ BIG_PUSH_LINES`, so a push that adds a file never drops to `quick`: `standard` in that band, or on any other `standard` condition.
