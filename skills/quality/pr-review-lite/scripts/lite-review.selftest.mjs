@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -256,6 +256,17 @@ check("cli transport: a non-zero exit or an error reply rejects", async () => {
   let msg = ""; try { await claudeCliTransport({ bin })({ model: "m", system: "", cachePrefix: "P", user: "U", maxTokens: 1 }); } catch (e) { msg = String(/** @type {any} */ (e).message); }
   ok(/rate limited/.test(msg), `got ${msg}`);
   fs.rmSync(dir, { recursive: true });
+});
+
+check("threads: existing PR threads are listed in the shared prefix, trimmed, and absent when there are none", async () => {
+  const threads = [{ path: "src/a.ts", line: 5, root_body: "### **Stop hold lost**\nlong text", is_resolved: false }, { path: "src/b.ts", line: null, root_body: "x".repeat(400), is_resolved: true }, { root_body: "no path" }];
+  const b = threadsBlock(threads);
+  ok(b.includes("- src/a.ts:5 — Stop hold lost") && b.includes("- src/b.ts (resolved) — " + "x".repeat(140)) && !b.includes("x".repeat(141)) && !b.includes("no path"), b);
+  eq(threadsBlock([]), "");
+  const t = stub(reviewReply);
+  await runPipeline({ packetText: PACKET, finders: "R", transport: t, threads, opts: { unitTokens: 40 } });
+  const reviews = t.calls.filter((c) => !c.system);
+  ok(reviews.length > 1 && reviews.every((c) => c.cachePrefix === reviews[0].cachePrefix) && reviews[0].cachePrefix.includes("Do not report any of them again"), "prefix");
 });
 
 check("cold: a nonce makes the prefix unique per run and leaves it identical across a run's units", async () => {

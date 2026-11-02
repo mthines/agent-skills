@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | Review | one per unit; the first alone, the rest under `--concurrency` (default 4) | cached prefix, then the unit's diff sections | JSON array `{path, line, severity, claim, bad_outcome, verify_by}` |
 | Line filter | none | the unit's packet lines | candidates citing a file in the unit and a right-side line the packet shows |
-| Reflection | one per batch of units with candidates, under 40000 estimated tokens | a window of 12 lines around each candidate (`--` none of the rest of the diff) and the numbered candidates only | `{"veto":[{"id","reason"}]}` |
+| Reflection | one per batch of units with candidates, under 40000 estimated tokens | a window of 12 lines around each candidate, never the rest of the diff, and the numbered candidates only | `{"veto":[{"id","reason"}]}` |
 
 ## Rules
 
