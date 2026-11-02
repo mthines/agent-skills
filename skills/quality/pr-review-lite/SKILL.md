@@ -53,6 +53,6 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
 ## Hard rules
 
 - **Shadow only.** Never post, resolve, or edit anything on GitHub; `--post` does not exist.
-- **Never hard-code a price.** USD appears only when `--prices` or `LITE_PRICES` supplies one.
+- **Never hard-code a price.** USD appears only when `--prices` or `LITE_PRICES` supplies a price, or when the `claude-cli` transport reports the cost itself.
 - **Never present lite's output as a verdict.** Its recall is unmeasured; it is compared, not trusted.
 - **Do not edit `agents/pr-reviewer/**`, `finders.md`, or `finding-verifier.md` from this skill.** Lite reads them and nothing more.
