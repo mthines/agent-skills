@@ -47,6 +47,7 @@ check("usage: the table carries per-stage usage, and says so when absent", () =>
   const t = renderTable(match([], []), u);
   if (!t.includes("review: 3 calls") || !t.includes("$0.5")) throw new Error(t);
   eq(usageLine(null), "usage: not recorded");
+  if (!usageLine({ review: u.review, cross: { calls: 1, input: 0, cache_read: 0, cache_write: 0, output: 0, usd: 0.1 } }).includes("cross: 1 calls")) throw new Error("cross stage missing");
 });
 
 export function selfTest() {

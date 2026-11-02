@@ -53,7 +53,7 @@ export function normalizeFull(/** @type {any[]} */ comments, author) {
 export function usageLine(/** @type {any} */ u) {
   if (!u) return "usage: not recorded";
   const s = (/** @type {string} */ k) => u[k] ? `${k}: ${u[k].calls} calls, in ${u[k].input}, cache-read ${u[k].cache_read}, cache-write ${u[k].cache_write}, out ${u[k].output}${u[k].usd != null ? `, $${u[k].usd}` : ""}` : null;
-  return [s("review"), s("reflect")].filter(Boolean).join(" · ") || "usage: not recorded";
+  return [s("review"), s("cross"), s("reflect")].filter(Boolean).join(" · ") || "usage: not recorded";
 }
 
 export function renderTable(/** @type {ReturnType<typeof match>} */ m, /** @type {any} */ usage) {
