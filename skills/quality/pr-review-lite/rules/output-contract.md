@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | Review | one per unit; the first alone, the rest under `--concurrency` (default 4) | cached prefix, then the unit's diff sections | JSON array `{path, line, severity, claim, bad_outcome, verify_by}` |
 | Line filter | none | the unit's packet lines | candidates citing a file in the unit and a right-side line the packet shows |
-| Reflection | one per batch of units with candidates, under 40000 estimated tokens | the diff sections and the numbered candidates only | `{"veto":[{"id","reason"}]}` |
+| Reflection | one per batch of units with candidates, under 40000 estimated tokens | a window of 12 lines around each candidate (`--` none of the rest of the diff) and the numbered candidates only | `{"veto":[{"id","reason"}]}` |
 
 ## Rules
 
@@ -31,5 +31,7 @@
 | `usage.json` | per stage: model, calls, input, cache-read, cache-write, output tokens, `usd` (null without a price); `prefixTokens`; `reflectFailOpen` |
 
 `usd` comes from `--prices` when one is given for the stage's model, otherwise from the cost the transport reports (`--transport claude-cli`), and `usd_source` says which; with neither it is null.
+
+`--cold` puts a unique first line in the prefix so a cost measurement does not read an earlier run's cache; use it when comparing runs, never in normal use.
 
 `--prices` is a JSON file or inline object keyed by model id, in USD per million tokens: `{"<model>":{"input":0,"cache_read":0,"cache_write":0,"output":0}}`.

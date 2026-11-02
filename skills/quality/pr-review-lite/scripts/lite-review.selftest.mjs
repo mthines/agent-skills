@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -256,6 +256,20 @@ check("cli transport: a non-zero exit or an error reply rejects", async () => {
   let msg = ""; try { await claudeCliTransport({ bin })({ model: "m", system: "", cachePrefix: "P", user: "U", maxTokens: 1 }); } catch (e) { msg = String(/** @type {any} */ (e).message); }
   ok(/rate limited/.test(msg), `got ${msg}`);
   fs.rmSync(dir, { recursive: true });
+});
+
+check("cold: a nonce makes the prefix unique per run and leaves it identical across a run's units", async () => {
+  const a = buildPrefix({ finders: "F", preamble: "P", impactSummary: "", nonce: "1" });
+  ok(a !== buildPrefix({ finders: "F", preamble: "P", impactSummary: "", nonce: "2" }) && a === buildPrefix({ finders: "F", preamble: "P", impactSummary: "", nonce: "1" }), "nonce");
+  eq(buildPrefix({ finders: "F", preamble: "P", impactSummary: "" }).startsWith("F"), true);
+});
+
+check("reflection window: only lines near a candidate are sent, with a gap marker, and a far quote cannot veto", async () => {
+  const unit = { id: 1, files: [{ path: "src/big.ts", text: Array.from({ length: 60 }, (_, i) => `${String(i + 1).padStart(5)}|+const line${i + 1} = ${i + 1};`).join("\n") }] };
+  const w = reflectWindows([unit], [{ path: "src/big.ts", line: 30 }], 3);
+  ok(w.includes("const line30 =") && w.includes("const line33 =") && !w.includes("const line10 =") && w.includes("⋮"), "window wrong");
+  ok(quotesDiff("const line30 = 30;", w) && !quotesDiff("const line10 = 10;", w), "quote check must use the window");
+  eq(reflectWindows([unit], [{ path: "other.ts", line: 1 }], 3), "");
 });
 
 export async function selfTest() {
