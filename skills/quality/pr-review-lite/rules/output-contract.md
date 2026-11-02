@@ -32,6 +32,11 @@
 
 `usd` comes from `--prices` when one is given for the stage's model, otherwise from the cost the transport reports (`--transport claude-cli`), and `usd_source` says which; with neither it is null.
 
+The review prefix defines severity (`high` is a security or authorization gap, cross-user data access, data loss, a doubled action, or a crash on a normal path; `medium` is wrong behavior on a realistic path or a code-and-docs disagreement; `low` is the rest) and tells the model not to report style, naming, formatting, comment wording, or a test's structure.
+Each unit keeps at most 8 candidates, highest severity first, in input order within a severity; the rest are not reported.
+`--cross` adds one call over a digest of boundary-relevant added lines (identity, ownership, permissions, tokens, exports) across the whole PR; it is off by default.
+Units default to 12,000 estimated tokens: larger units cost less and report fewer real issues.
+
 `--cold` puts a unique first line in the prefix so a cost measurement does not read an earlier run's cache; use it when comparing runs, never in normal use.
 
 `--prices` is a JSON file or inline object keyed by model id, in USD per million tokens: `{"<model>":{"input":0,"cache_read":0,"cache_write":0,"output":0}}`.

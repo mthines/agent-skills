@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { capCandidates, threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { crossDigest, capCandidates, threadsBlock, reflectWindows, claudeCliTransport, quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -267,6 +267,20 @@ check("threads: existing PR threads are listed in the shared prefix, trimmed, an
   await runPipeline({ packetText: PACKET, finders: "R", transport: t, threads, opts: { unitTokens: 40 } });
   const reviews = t.calls.filter((c) => !c.system);
   ok(reviews.length > 1 && reviews.every((c) => c.cachePrefix === reviews[0].cachePrefix) && reviews[0].cachePrefix.includes("Do not report any of them again"), "prefix");
+});
+
+check("cross: the digest keeps only boundary-relevant added lines of source files; the pass adds a deduped candidate and is off unless --cross is set", async () => {
+  const files = [{ path: "src/r.ts", role: "source", text: "    1|+const x = 1;\n    2|+if (user.userId !== owner) throw 403;\n    3| context userId" }, { path: "src/r.test.ts", role: "test", text: "    1|+userId" }, { path: "src/q.ts", role: "source", text: "    1|+const y = 2;" }];
+  const d = crossDigest(files);
+  ok(d.paths.length === 1 && d.paths[0] === "src/r.ts" && d.text.includes("403") && !d.text.includes("const x") && !d.text.includes("context userId"), d.text);
+  const reply = (/** @type {any} */ req) => req.system.includes("Cross-cutting pass") ? JSON.stringify([{ path: "src/a.ts", line: 8, severity: "high", claim: "boundary", bad_outcome: "x", verify_by: "y" }, { path: "src/a.ts", line: 3, severity: "low", claim: "dupe of unit finding" }]) : req.system ? '{"veto":[]}' : reviewReply(req);
+  const withX = stub(reply);
+  const r = await runPipeline({ packetText: PACKET.replace("const v0 = 0;", "if (userId !== owner) throw 403;"), finders: "R", transport: withX, opts: { unitTokens: 40, cross: true } });
+  ok(r.findings.some((f) => f.claim === "boundary") && !r.findings.some((f) => f.claim === "dupe of unit finding"), JSON.stringify(r.findings.map((f) => f.claim)));
+  eq(r.usage.cross.calls, 1);
+  const none = stub(reply);
+  const r2 = await runPipeline({ packetText: PACKET, finders: "R", transport: none, opts: { unitTokens: 40 } });
+  eq(r2.usage.cross.calls, 0);
 });
 
 check("cap: the per-unit cap keeps the highest severities first and reports the rest as dropped", async () => {

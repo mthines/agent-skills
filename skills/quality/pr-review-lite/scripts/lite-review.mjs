@@ -12,7 +12,7 @@
  *   node lite-review.mjs --context <context.json> --out <dir>
  *   node lite-review.mjs --self-test
  *
- * Flags: --cold (unique prefix, so cost is measured without an earlier run's cache), --transport api|claude-cli, --with a,b (named lenses, passed to prepare), --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
+ * Flags: --cross (add the cross-cutting pass; off by default, no measured lift), --cold (unique prefix, so cost is measured without an earlier run's cache), --transport api|claude-cli, --with a,b (named lenses, passed to prepare), --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
  *        --prices <json file|inline json>, --finders <path>. Needs ANTHROPIC_API_KEY unless --transport claude-cli or --self-test.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
@@ -32,6 +32,7 @@ export const DEFAULTS = {
   reflectTokens: 40000,
   maxOutputTokens: 4096,
   maxPerUnit: 8,
+  cross: false,
 };
 
 /** Rough token estimate; only used for grouping, never for billing. */
@@ -292,6 +293,29 @@ export function capCandidates(/** @type {any[]} */ kept, max) {
   return { kept: sorted.slice(0, max), over: sorted.slice(max) };
 }
 
+const CROSS_RE = /\b(userId|user_id|auth\w*|permission\w*|owner\w*|organi[sz]ation\w*|tenant\w*|role|403|401|forbidden|router|claim\w*|token|export (async )?(function|const|class))\b/i;
+
+/** The added lines most likely to carry a boundary or a contract, per source file, under a token budget. */
+export function crossDigest(/** @type {{path:string,role:string,text:string}[]} */ files, perFile = 40, maxTokens = 12000) {
+  const parts = []; let used = 0;
+  for (const f of files) {
+    if (f.role === "test" || /\.(test|spec)\./.test(f.path)) continue;
+    const rows = f.text.split("\n").filter((l) => /^\s*\d+\|\+/.test(l) && CROSS_RE.test(l)).slice(0, perFile);
+    if (!rows.length) continue;
+    const block = `## ${f.path}\n\`\`\`text\n${rows.join("\n")}\n\`\`\``;
+    if (used + tokensOf(block) > maxTokens) break;
+    used += tokensOf(block); parts.push({ path: f.path, text: block });
+  }
+  return { text: parts.map((p) => p.text).join("\n\n"), paths: parts.map((p) => p.path) };
+}
+
+export const CROSS_SYSTEM = [
+  "## Cross-cutting pass",
+  "Below is a digest of added lines across the whole PR that touch identity, ownership, permissions, tokens, routes, or exports. It is not the whole diff.",
+  "Report only: (1) a user, org, or tenant boundary this PR does not enforce where it hands out or accepts data, (2) a caller and its callee, route, or spec that disagree, (3) data reaching a role that should not see it.",
+  "Cite a line shown in the digest. Use the same JSON array contract. Return [] when none applies.",
+].join("\n");
+
 export const emptyUsage = () => ({ calls: 0, input: 0, cache_read: 0, cache_write: 0, output: 0, reported_usd: /** @type {number|null} */ (null) });
 
 export function addUsage(/** @type {any} */ acc, /** @type {any} */ u = {}, /** @type {number|undefined} */ costUsd) {
@@ -386,7 +410,7 @@ export async function runPipeline(a) {
   const lenses = a.lenses || [];
   const prefix = buildPrefix({ finders: a.finders, preamble, impactSummary: summarizeImpact(a.impact), lenses, threads: a.threads || [], nonce: o.nonce });
   /** @type {{path:string,reason:string}[]} */ const failed = [];
-  const usage = { review: emptyUsage(), reflect: emptyUsage() };
+  const usage = { review: emptyUsage(), cross: emptyUsage(), reflect: emptyUsage() };
   /** @type {any[]} */ const errors = [];
   /** @type {any[]} */ const dropped = [];
 
@@ -413,13 +437,30 @@ export async function runPipeline(a) {
   const rest = await pool(units.slice(1), o.concurrency, reviewUnit);
   /** @type {any[]} */
   let cands = [...first, ...rest].flat();
+  if (o.cross && units.length > 1) {
+    const dg = crossDigest(units.flatMap((u) => u.files));
+    if (dg.text) {
+      try {
+        const r = await a.transport({ model: o.model, system: CROSS_SYSTEM, cachePrefix: prefix, user: dg.text, maxTokens: o.maxOutputTokens });
+        addUsage(usage.cross, r.usage, r.costUsd);
+        const parsed = parseJson(r.text);
+        if (Array.isArray(parsed)) {
+          const pseudo = { id: "cross", files: units.flatMap((u) => u.files).filter((f) => dg.paths.includes(f.path)) };
+          const f = filterCandidates(parsed, pseudo, lenses.map((l) => l.name));
+          for (const c of capCandidates(f.kept, o.maxPerUnit).kept) {
+            if (!cands.some((x) => x.path === c.path && Math.abs(x.line - c.line) <= 3)) cands.push({ ...c, stage: "cross" });
+          }
+        } else errors.push({ stage: "cross", error: "unparseable reply" });
+      } catch (e) { errors.push({ stage: "cross", error: String(/** @type {any} */ (e)?.message || e) }); }
+    }
+  }
   cands.forEach((c, i) => { c._id = i + 1; });
 
   // Reflection: filter-only, batched under a token budget, fails open on any error or garbage.
   /** @type {any[]} */ const vetoed = [];
   let failOpen = 0;
   let rejectedVetoes = 0;
-  const withCands = units.filter((u) => cands.some((c) => c.unit === u.id));
+  const withCands = units.filter((u) => cands.some((c) => c.unit === u.id || (c.stage === "cross" && u.files.some((f) => f.path === c.path))));
   /** @type {{units:any[],tokens:number}[]} */
   const batches = [];
   for (const u of withCands) {
@@ -428,7 +469,7 @@ export async function runPipeline(a) {
     else batches.push({ units: [u], tokens: u.tokens });
   }
   for (const b of batches) {
-    const mine = cands.filter((c) => b.units.some((u) => u.id === c.unit));
+    const mine = cands.filter((c) => b.units.some((u) => u.id === c.unit || (c.stage === "cross" && u.files.some((f) => f.path === c.path))));
     try {
       const windows = reflectWindows(b.units, mine, o.windowLines);
       const r = await a.transport({ model: o.reflectModel, system: REFLECT_SYSTEM, user: reflectMessage(b.units, mine, windows), maxTokens: o.maxOutputTokens });
@@ -455,6 +496,7 @@ export async function runPipeline(a) {
   const prices = a.prices || {};
   const usageOut = {
     review: { model: o.model, ...usage.review, usd: costUsd(usage.review, prices[o.model]) ?? roundUsd(usage.review.reported_usd), usd_source: prices[o.model] ? "prices" : usage.review.reported_usd != null ? "reported by the transport" : null },
+    cross: { model: o.model, ...usage.cross, usd: costUsd(usage.cross, prices[o.model]) ?? roundUsd(usage.cross.reported_usd), usd_source: prices[o.model] ? "prices" : usage.cross.reported_usd != null ? "reported by the transport" : null },
     reflect: { model: o.reflectModel, ...usage.reflect, usd: costUsd(usage.reflect, prices[o.reflectModel]) ?? roundUsd(usage.reflect.reported_usd), usd_source: prices[o.reflectModel] ? "prices" : usage.reflect.reported_usd != null ? "reported by the transport" : null },
   };
   return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, rejectedVetoes, prefixTokens: tokensOf(prefix), prefix };
@@ -525,7 +567,7 @@ async function main(/** @type {string[]} */ argv) {
     if (!Number.isInteger(v) || v < 1) { bad.push(n); return undefined; }
     return v;
   };
-  const opts = Object.fromEntries(Object.entries({ nonce: argv.includes("--cold") ? String(Date.now()) : undefined, model: arg(argv, "--model"), reflectModel: arg(argv, "--reflect-model"), concurrency: num("--concurrency"), unitTokens: num("--unit-tokens"), maxUnits: num("--max-units") }).filter(([, v]) => v !== undefined));
+  const opts = Object.fromEntries(Object.entries({ nonce: argv.includes("--cold") ? String(Date.now()) : undefined, model: arg(argv, "--model"), reflectModel: arg(argv, "--reflect-model"), concurrency: num("--concurrency"), unitTokens: num("--unit-tokens"), maxUnits: num("--max-units"), cross: argv.includes("--cross") ? true : undefined }).filter(([, v]) => v !== undefined));
   if (bad.length) { process.stderr.write(`lite-review: ${bad.join(", ")} must be a whole number of at least 1\n`); return 2; }
   const r = await runPipeline({
     packetText: readFileSync(packetPath, "utf8"), impact, lenses: ctx.lenses?.loaded || [], threads: ctx.threads || [], finders: readFileSync(findersPath, "utf8"),
