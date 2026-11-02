@@ -184,7 +184,9 @@ check("reflection: a veto whose reason does not quote the diff is ignored", asyn
   const t = stub((req) => req.system ? JSON.stringify({ veto: [{ id: 1, reason: "probably handled upstream" }] }) : reviewReply(req), {});
   const r = await runPipeline({ packetText: PACKET, finders: "R", transport: t, opts: { unitTokens: 100000 } });
   eq([r.findings.length, r.vetoed.length], [1, 0]);
+  eq(r.rejectedVetoes, 1);
   ok(quotesDiff("00003|+const v2 = 2;", "    3|+const v2 = 2;") && !quotesDiff("ab", "ab cd"), "quotesDiff");
+  ok(quotesDiff("`const v2 = 2;`", "    3|+const v2 = 2;") && quotesDiff('"const v2 = 2;"', "    3|+const v2 = 2;"), "wrapping quotes are stripped");
 });
 
 check("lens: loaded lens text is in the shared prefix, scoped to its files, and identical across units", async () => {

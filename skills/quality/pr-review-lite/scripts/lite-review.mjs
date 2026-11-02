@@ -235,7 +235,7 @@ export const REFLECT_SYSTEM = [
 
 /** A veto stands only when its reason quotes text the batch's diff shows (a leading `NNNNN|+` is ignored). */
 export function quotesDiff(/** @type {string} */ reason, /** @type {string} */ diff) {
-  const q = String(reason || "").trim().replace(/^\d+\|[+ -]?/, "").trim();
+  const q = String(reason || "").trim().replace(/^(["'`])([\s\S]*)\1$/, "$2").trim().replace(/^\d+\|[+ -]?/, "").trim();
   return q.length >= 4 && diff.includes(q);
 }
 
@@ -338,6 +338,7 @@ export async function runPipeline(a) {
   // Reflection: filter-only, batched under a token budget, fails open on any error or garbage.
   /** @type {any[]} */ const vetoed = [];
   let failOpen = 0;
+  let rejectedVetoes = 0;
   const withCands = units.filter((u) => cands.some((c) => c.unit === u.id));
   /** @type {{units:any[],tokens:number}[]} */
   const batches = [];
@@ -356,7 +357,8 @@ export async function runPipeline(a) {
       const diffText = b.units.map(unitMessage).join("\n");
       for (const v of j.veto) {
         const c = mine.find((x) => x._id === v?.id);
-        if (c && quotesDiff(v.reason, diffText)) vetoed.push({ ...c, veto_reason: String(v.reason) });
+        if (c && !quotesDiff(v.reason, diffText)) rejectedVetoes++;
+        else if (c) vetoed.push({ ...c, veto_reason: String(v.reason) });
       }
     } catch (e) {
       failOpen++;
@@ -371,7 +373,7 @@ export async function runPipeline(a) {
     review: { model: o.model, ...usage.review, usd: costUsd(usage.review, prices[o.model]) },
     reflect: { model: o.reflectModel, ...usage.reflect, usd: costUsd(usage.reflect, prices[o.reflectModel]) },
   };
-  return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, prefixTokens: tokensOf(prefix), prefix };
+  return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, rejectedVetoes, prefixTokens: tokensOf(prefix), prefix };
 }
 
 export function renderReport(/** @type {any} */ r) {
@@ -438,7 +440,7 @@ async function main(/** @type {string[]} */ argv) {
   });
   writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.pr || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));
   writeFileSync(join(out, "skipped.json"), JSON.stringify(r.skipped, null, 2));
-  writeFileSync(join(out, "usage.json"), JSON.stringify({ ...r.usage, prefixTokens: r.prefixTokens, reflectFailOpen: r.reflectFailOpen }, null, 2));
+  writeFileSync(join(out, "usage.json"), JSON.stringify({ ...r.usage, prefixTokens: r.prefixTokens, reflectFailOpen: r.reflectFailOpen, rejectedVetoes: r.rejectedVetoes }, null, 2));
   writeFileSync(join(out, "report.md"), renderReport(r));
   process.stdout.write(`lite-review: ${r.findings.length} finding(s), ${r.skipped.length} file(s) not reviewed → ${out}\n`);
   return 0;
