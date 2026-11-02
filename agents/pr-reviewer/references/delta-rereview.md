@@ -34,4 +34,4 @@ Scaling `D4` with the PR keeps the refresh proportional, and gating on PR size k
 ## What delta scaling does not do
 
 It does not apply when no state record is passed: `D6` fires on every run then, because no prior `deep` pass is recorded, and the report says so in `RUN_ANOMALY`.
-Read `pr_review.state_status` on the run span before expecting the saving: `none` means the automation is not passing `--state`.
+Read `pr_review.state_status` on the run span before expecting the saving: `none` on a re-review means the automation is not passing `--state`; a first run reports `none` too, because it has no record to pass.

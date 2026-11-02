@@ -73,7 +73,7 @@ Count runs with `pr_review.runs`, never with `histogram_count` of `pr_review.run
 | Type | monotonic Sum, CUMULATIVE (`aggregationTemporality: 2`), unit `{run}` |
 | Series | one per verdict per run — the resource's `service.instance.id` is the run's trace id |
 | Verdicts | `PASS`, `WARN`, `FAIL`, and `none` for a run that finished without one (`finish --status error` before a finalize rendered) |
-| Attributes | `pr_review.verdict`, `pr_review.dry_run` (omitted when the run finished before finalize), `pr_review.tier` |
+| Attributes | `pr_review.verdict`, `pr_review.dry_run` (omitted when the run finished before finalize), `pr_review.tier`, `pr_review.triggers` (comma-joined `D`-ids that fired, omitted when none), `pr_review.delta_scaled` (boolean), `pr_review.state_status` (`read`, `empty`, `unreadable`, `none`, or `ignored`; `none` also marks a first run) |
 | Points | a `0` on every series 1 ms after the run's start and every 30 s after that, then the final point at the run's end: `1` on the run's verdict, `0` on the rest; every point's `startTimeUnixNano` is the run's start. At most 480 points per series: a run longer than 4 h keeps its first `0` and the last 478 before the final point |
 
 `finish` writes every point in the same export as the trace, backdated to the times it describes: two requests, `/v1/traces` then `/v1/metrics`, and `telemetry-summary.json` says `exported: true` only when both returned 2xx.

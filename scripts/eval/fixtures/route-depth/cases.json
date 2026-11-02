@@ -267,5 +267,12 @@
     "expected": "deep",
     "expectedDeltaScaled": false,
     "notes": "The scaled D4 threshold is capped at 500, so 501 cumulative lines refresh even on a 2000-line PR."
+  },
+  {
+    "id": "delta-big-pr-empty-new-file",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 0, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 0, "newFiles": 1, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 900 },
+    "expected": "standard",
+    "expectedDeltaScaled": true,
+    "notes": "A push that adds only an empty or binary file counts 0 delta lines; it still keeps standard, never quick."
   }
 ]

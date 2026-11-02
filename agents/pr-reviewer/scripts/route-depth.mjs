@@ -186,8 +186,8 @@ export function routeDepth(i) {
   const usedSemverDelta = semverDeltas.find((d) => d.usageSites >= 1);
   // A size-scaled run reviews the whole PR, so its standard band starts above TINY_PR_LINES.
   // A delta-scaled run waived a trigger that measures something no other row does (D13's new file), so its
-  // floor is 1: a tiny push that adds a file keeps `standard`'s consumer-impact and standards finders.
-  const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : deltaScaled ? 1 : 11;
+  // floor is 0: a tiny or empty push that adds a file keeps `standard`'s consumer-impact and standards finders.
+  const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : deltaScaled ? 0 : 11;
   const bandCeiling = sizeScaled ? SMALL_PR_LINES : deltaScaled ? BIG_PUSH_LINES : 100;
   // On a scaled run the size band replaces deep, so a size-excluded shape keeps it (and its standards finder).
   const inSizeBand = (sizeScaled || !sizeExcluded) && deltaLines >= bandFloor && deltaLines <= bandCeiling;
