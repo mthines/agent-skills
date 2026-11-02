@@ -21,7 +21,7 @@ Folding independent calls into one turn removes whole re-reads without changing 
 
 - The state-record read at Step 0.7 stays first and alone, because `prepare-review.mjs --state` needs its result.
 - The lean-budget skip of the three lists, `repo::` precedence on a key collision, and the attribution filter are unchanged.
-- A call that throws is retried per [`memory-load.md`](../rules/memory-load.md#when-a-lorekit-call-fails), for the failed calls only.
+- Failure handling matches the sequence a batch replaces: the first list is retried until it returns, and each other list that threw is issued once more after it, per [`memory-load.md`](../rules/memory-load.md#when-a-lorekit-call-fails). A blip that fails the whole batch therefore loses no list.
 - The `### 1.0` and `### 1.2c` bodies are untouched, so the retrieval-relevance suite that reads them has no changed rubric.
 
 ## What a batch does not do
