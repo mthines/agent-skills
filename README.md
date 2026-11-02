@@ -153,6 +153,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | **`quality/`** | *Code, tests, plans, AI apps* |
 | [`/pr-review`](./skills/quality/pr-review/SKILL.md) | One read-only review of a PR: a single report plus inline findings. Drop a `REVIEW.md` in any directory to brief the reviewer, or a [team lens](./skills/quality/pr-review/README.md) in `.agents/review/lenses/` to have it check your own rules on your paths. |
 | [`/review-loop`](./skills/quality/review-loop/SKILL.md) | Reviews, fixes, and resolves a PR's threads until it converges; with no PR, it does the same on the local branch. |
+| [`/pr-review-lite`](./skills/quality/pr-review-lite/SKILL.md) | A cost-first shadow reviewer: a script, not an agent, that reviews the same packet with direct cached model calls and lists every file it skipped. `lite-compare` shows how it differs from `/pr-review`. Writes artifacts only; never posts. |
 | [`/optimize-approach`](./skills/quality/optimize-approach/SKILL.md) | Asks whether a change or plan takes the best approach, and names a better one only when it clearly wins. |
 | [`/polish`](./skills/quality/polish/SKILL.md) | Pre-PR cleanup: simplifies the changed code and prunes noise comments. |
 | [`impact-map`](./skills/quality/impact-map/SKILL.md) | An impact-first view of a PR: a verdict, one colored diagram, and the decisions a reviewer must make. |
