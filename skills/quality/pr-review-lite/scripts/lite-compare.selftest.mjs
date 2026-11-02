@@ -34,10 +34,12 @@ check("deterministic: the same input gives the same output", () => {
   eq(match(l, f), match(l, f));
 });
 
-check("normalize: drops comments with no line and filters by author", () => {
-  const raw = [{ path: "a", line: 4, body: "x", user: { login: "bot" } }, { path: "a", line: null, original_line: null, body: "y", user: { login: "bot" } }, { path: "b", original_line: 7, body: "z", user: { login: "human" } }];
+check("normalize: drops replies, outdated comments, and filters by author", () => {
+  const raw = [{ path: "a", line: 4, body: "x", user: { login: "bot" } }, { path: "a", line: null, original_line: null, body: "y", user: { login: "bot" } }, { path: "b", line: 7, body: "z", user: { login: "human" } }];
   eq(normalizeFull(raw).map((c) => `${c.path}:${c.line}`), ["a:4", "b:7"]);
   eq(normalizeFull(raw, "bot").length, 1);
+  const withReply = [{ path: "a", line: 4, body: "finding", user: { login: "bot" } }, { path: "a", line: 4, in_reply_to_id: 1, body: "Fixed in abc", user: { login: "me" } }, { path: "a", line: null, original_line: 9, body: "outdated", user: { login: "bot" } }];
+  eq(normalizeFull(withReply).map((c) => c.body), ["finding"]);
 });
 
 check("usage: the table carries per-stage usage, and says so when absent", () => {

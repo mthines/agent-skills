@@ -1,7 +1,7 @@
 // @ts-check
 // Offline self-test for lite-review.mjs: a stub transport with canned replies and usage numbers.
 // `fetch` is replaced with a thrower for the whole run, so any network use fails the test.
-import { parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
+import { quotesDiff, lensBlock, parsePacket, dispatch, validLines, buildPrefix, runPipeline, parseJson, parseLiteConfig, globToRegex, filterCandidates, costUsd, emptyUsage, addUsage, summarizeImpact, resolveSupport } from "./lite-review.mjs";
 
 const sec = (/** @type {string} */ path, /** @type {number} */ n, /** @type {number} */ start = 1) =>
   `## ${path}\n\n\`\`\`text\n${Array.from({ length: n }, (_, i) => `${String(start + i).padStart(5)}|+const v${i} = ${i};`).join("\n")}\n\`\`\`\n`;
@@ -171,6 +171,46 @@ check("parse: parseJson tolerates a fence, rejects prose; impact summary ranks b
   eq(parseJson("no json here"), undefined);
   eq(summarizeImpact({ symbols: [{ path: "a.ts", name: "f", consumer_count: 2 }, { path: "b.ts", name: "g", consumer_count: 9 }, { path: "c.ts", consumer_count: 0 }] }).split("\n")[0], "- b.ts g — 9 consumers");
   ok(resolveSupport({}) === null || typeof resolveSupport({}) === "string", "resolveSupport shape");
+});
+
+check("parse: a `## Files` heading inside the description does not end the preamble", () => {
+  const text = PACKET.replace("## A heading inside the description\nbody", "## Files\nin the description\nREVIEW NOTE");
+  const p = parsePacket(text);
+  ok(p.preamble.includes("REVIEW NOTE"), "preamble cut at the description's own heading");
+  eq(p.files.length, 7);
+});
+
+check("reflection: a veto whose reason does not quote the diff is ignored", async () => {
+  const t = stub((req) => req.system ? JSON.stringify({ veto: [{ id: 1, reason: "probably handled upstream" }] }) : reviewReply(req), {});
+  const r = await runPipeline({ packetText: PACKET, finders: "R", transport: t, opts: { unitTokens: 100000 } });
+  eq([r.findings.length, r.vetoed.length], [1, 0]);
+  ok(quotesDiff("00003|+const v2 = 2;", "    3|+const v2 = 2;") && !quotesDiff("ab", "ab cd"), "quotesDiff");
+});
+
+check("lens: loaded lens text is in the shared prefix, scoped to its files, and identical across units", async () => {
+  const lenses = [{ name: "ledger", origin: "repo", files: ["src/a.ts"], text: "- Money is integer cents." }];
+  const t = stub(reviewReply);
+  const r = await runPipeline({ packetText: PACKET, finders: "R", transport: t, lenses, opts: { unitTokens: 40 } });
+  const reviews = t.calls.filter((c) => !c.system);
+  ok(reviews.length > 1 && reviews.every((c) => c.cachePrefix === reviews[0].cachePrefix), "prefix differs");
+  ok(reviews[0].cachePrefix.includes("### Lens: ledger") && reviews[0].cachePrefix.includes("Applies to: src/a.ts") && reviews[0].cachePrefix.includes("Money is integer cents."), "lens missing");
+  eq(r.lenses.map((l) => l.name), ["ledger"]);
+  eq(lensBlock([]), "");
+});
+
+check("lens: a finding keeps a loaded lens name and drops an unknown one", () => {
+  const unit = { id: 1, files: parsePacket(PACKET).files.slice(0, 1) };
+  const { kept } = filterCandidates([{ path: "src/a.ts", line: 3, claim: "x", lens: "ledger" }, { path: "src/a.ts", line: 4, claim: "y", lens: "made-up" }], unit, ["ledger"]);
+  eq(kept.map((k) => k.lens), ["ledger", undefined]);
+});
+
+check("failed unit: a throw or an unparseable reply puts its files in skipped.json", async () => {
+  const boom = async (/** @type {any} */ req) => { if (!req.system) throw new Error("429 rate limited"); return { text: "{}", usage: {} }; };
+  const r = await runPipeline({ packetText: PACKET, finders: "R", transport: boom, opts: { unitTokens: 100000 } });
+  ok(r.skipped.some((s) => s.path === "src/a.ts" && /review call failed: 429/.test(s.reason)), "throw not recorded");
+  const garbage = stub((req) => req.system ? '{"veto":[]}' : "I could not parse that");
+  const g = await runPipeline({ packetText: PACKET, finders: "R", transport: garbage, opts: { unitTokens: 100000 } });
+  ok(g.skipped.some((s) => s.path === "src/b.ts" && /unparseable/.test(s.reason)), "garbage not recorded");
 });
 
 export async function selfTest() {

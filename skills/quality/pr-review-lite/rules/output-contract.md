@@ -12,9 +12,9 @@
 
 1. The first unit call finishes before the others start, so the rest read the cached prefix instead of each writing it.
 2. The prefix is identical for every unit call: rubric, output contract, PR description, REVIEW.md notes, impact summary.
-3. Reflection only deletes. It vetoes a candidate when `reason` quotes a diff line that contradicts the claim; a blank reason or an unknown id is ignored.
+3. Reflection only deletes. It vetoes a candidate when `reason` quotes text the batch's diff shows (a leading `NNNNN|+` is ignored, at least 4 characters); a reason that is not in the diff, a blank one, or an unknown id is ignored.
 4. Reflection fails open: a throw, unparseable text, or a reply without a `veto` array keeps every candidate and counts in `usage.json` as `reflectFailOpen`.
-5. A unit whose reply is not a JSON array adds an `errors` entry and no candidates; it is never retried silently.
+5. A unit whose call throws or whose reply is not a JSON array adds an `errors` entry and no candidates, and its files go to `skipped.json`; it is never retried silently.
 
 ```text
 ✗ Wrong — reflection rewrites a claim, or adds a finding it noticed
@@ -25,7 +25,7 @@
 
 | File | Holds |
 | --- | --- |
-| `findings.json` | `findings`, `vetoed` (with `veto_reason`), `dropped` (with `why`) |
+| `findings.json` | `lenses` (loaded), `lensesSkipped`, `findings`, `vetoed` (with `veto_reason`), `dropped` (with `why`) |
 | `report.md` | findings, the not-reviewed list, errors |
 | `skipped.json` | every file not reviewed, with its reason |
 | `usage.json` | per stage: model, calls, input, cache-read, cache-write, output tokens, `usd` (null without a price); `prefixTokens`; `reflectFailOpen` |

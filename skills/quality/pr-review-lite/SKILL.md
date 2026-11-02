@@ -21,7 +21,7 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
 
 ## Steps
 
-1. Run it (needs `ANTHROPIC_API_KEY`; it makes real model calls, so run it only on a PR the user named):
+1. Run it; add `--with a,b` to load named lenses as `/pr-review` does (needs `ANTHROPIC_API_KEY`; it makes real model calls, so run it only on a PR the user named):
 
    ```bash
    node ${CLAUDE_SKILL_DIR}/scripts/lite-review.mjs --pr <url|#n> --out <dir> --repo-dir <checkout>
@@ -32,10 +32,12 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
 3. Compare after the full reviewer has posted on the same head:
 
    ```bash
-   node ${CLAUDE_SKILL_DIR}/scripts/lite-compare.mjs --lite <dir>/findings.json --pr <url|#n>
+   node ${CLAUDE_SKILL_DIR}/scripts/lite-compare.mjs --lite <dir>/findings.json --pr <url|#n> --full-author <login the full reviewer posts as>
    ```
 
-4. Report the overlap, lite-only, and full-only counts and the usage line exactly as printed.
+   Thread replies and outdated comments are excluded; without `--full-author`, a human's inline comment counts as a full-only finding.
+
+4. Report the lenses `report.md` names as loaded (or "none loaded"), then the overlap, lite-only, and full-only counts and the usage line exactly as printed.
 
 ```text
 ✗ Wrong — "lite found 2 issues, so the PR is clean"
@@ -46,6 +48,7 @@ Why it is shaped this way, and what it gives up: [`references/design-rationale.m
 
 - [`rules/dispatch.md`](./rules/dispatch.md) — what is reviewed, grouped, and skipped, and what lite reuses read-only.
 - [`rules/output-contract.md`](./rules/output-contract.md) — what each stage returns and which filters apply.
+- [`rules/lenses.md`](./rules/lenses.md) — how team lenses in `.agents/review/lenses/` reach lite.
 
 ## Hard rules
 

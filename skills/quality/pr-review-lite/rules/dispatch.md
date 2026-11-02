@@ -9,6 +9,7 @@ Dispatch is code, not a model decision: the same packet and options give the sam
 | Review packet | `prepare-review.mjs`, run unchanged | PR description, REVIEW.md notes, every hunk with right-side line numbers |
 | Impact graph | `context.json` → `paths.impact` | A bounded summary of the most-consumed changed symbols |
 | Finder rubric | `pr-reviewer/rules/finders.md`, read at run time | The reviewer prefix, verbatim |
+| Team lenses | `context.json` → `lenses.loaded`, selected by `prepare-review.mjs` | The `## Team lenses` block of the reviewer prefix ([`lenses.md`](./lenses.md)) |
 | Exclude list | `.agents/review/lite.yaml` (optional) | Extra paths to skip |
 
 `lite.yaml` takes one key; anything else is ignored:
@@ -28,6 +29,7 @@ Every skipped file goes to `skipped.json` as `{path, reason}`. Reasons, in the o
 3. `generated file` (the packet's `generated` role, which covers lockfiles).
 4. `not inlined in the packet (<note>)` — a file the packet only lists.
 5. `unit cap (<n>) reached`.
+6. `review call failed: <error>` or `unparseable reply (…)` — the unit's call threw or returned no JSON array; the files were not reviewed.
 
 ```text
 ✗ Wrong — drop a file the packet could not inline and say nothing

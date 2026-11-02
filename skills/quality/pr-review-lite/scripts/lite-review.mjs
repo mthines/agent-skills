@@ -12,7 +12,7 @@
  *   node lite-review.mjs --context <context.json> --out <dir>
  *   node lite-review.mjs --self-test
  *
- * Flags: --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
+ * Flags: --with a,b (named lenses, passed to prepare), --model, --reflect-model, --concurrency N, --unit-tokens N, --max-units N,
  *        --prices <json file|inline json>, --finders <path>. Needs ANTHROPIC_API_KEY unless --self-test.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, realpathSync } from "node:fs";
@@ -46,7 +46,8 @@ const INDEX_ROW = /^\| \d+ \| `(.+?)` \| (\S+) \| \+(\d+) −(\d+) \| (\w+) \| [
  */
 export function parsePacket(text) {
   const lines = text.split("\n");
-  const filesAt = lines.indexOf("## Files");
+  // The real index heading is followed by its table header; a `## Files` inside the PR description is not.
+  const filesAt = lines.findIndex((l, i) => l === "## Files" && String(lines[i + 2] || "").startsWith("| # | Path |"));
   const preamble = (filesAt < 0 ? lines : lines.slice(0, filesAt)).join("\n").trim();
   /** @type {{path:string,status:string,role:string,mode:string,note:string,changed:number,text:string}[]} */
   const files = [];
@@ -155,13 +156,23 @@ export const CONTRACT = [
   "You review one unit of a pull request. You have no tools and cannot open files: the numbered diff sections are everything you can see.",
   "Where the rubric above says to open a file or run a command, put that check in `verify_by` instead and do not skip the candidate.",
   "Reply with ONLY a JSON array, no prose and no code fence. Each element:",
-  '{"path": "<file in this unit>", "line": <RIGHT-side number from the NNNNN| prefix>, "severity": "high"|"medium"|"low", "claim": "<what is wrong>", "bad_outcome": "<what breaks and for whom>", "verify_by": "<the concrete check that would confirm it>"}',
+  '{"path": "<file in this unit>", "line": <RIGHT-side number from the NNNNN| prefix>, "severity": "high"|"medium"|"low", "lens": "<team lens name, only when the finding comes from one>", "claim": "<what is wrong>", "bad_outcome": "<what breaks and for whom>", "verify_by": "<the concrete check that would confirm it>"}',
   "Flag everything suspicious; a separate step filters. Return [] when the unit has nothing.",
 ].join("\n");
 
 /** The prefix every unit call shares, byte for byte: that identity is what the cache keys on. */
-export function buildPrefix({ finders, preamble, impactSummary }) {
-  return [finders.trim(), CONTRACT, "## PR context", preamble, impactSummary ? `## Impact summary\n${impactSummary}` : ""].filter(Boolean).join("\n\n");
+export function buildPrefix({ finders, preamble, impactSummary, lenses = [] }) {
+  return [finders.trim(), CONTRACT, lensBlock(lenses), "## PR context", preamble, impactSummary ? `## Impact summary\n${impactSummary}` : ""].filter(Boolean).join("\n\n");
+}
+
+/** The team lenses `prepare-review.mjs` selected (read at the base commit): checklists to walk, each scoped to its files. */
+export function lensBlock(/** @type {{name:string,origin?:string,files?:string[],text:string}[]} */ lenses) {
+  if (!lenses.length) return "";
+  const parts = lenses.map((l) => {
+    const files = l.files?.length ? `Applies to: ${l.files.slice(0, 20).join(", ")}${l.files.length > 20 ? `, and ${l.files.length - 20} more` : ""}` : "Applies to: every file";
+    return `### Lens: ${l.name}\n${files}\n\n${l.text.trim()}`;
+  });
+  return `## Team lenses\nWalk each lens against the files it applies to. When a finding comes from a lens, set "lens" to its name.\n\n${parts.join("\n\n")}`;
 }
 
 export function summarizeImpact(/** @type {any} */ impact, max = 40) {
@@ -194,7 +205,7 @@ export function parseJson(/** @type {string} */ text) {
  * Keep candidates that cite a file in the unit and a right-side line the packet shows.
  * @returns {{kept:any[],dropped:{candidate:any,why:string}[]}}
  */
-export function filterCandidates(/** @type {any} */ raw, /** @type {{files:any[]}} */ unit) {
+export function filterCandidates(/** @type {any} */ raw, /** @type {{files:any[]}} */ unit, /** @type {string[]} */ lensNames = []) {
   const lines = new Map(unit.files.map((f) => [f.path, validLines(f.text)]));
   const kept = [];
   const dropped = [];
@@ -207,6 +218,7 @@ export function filterCandidates(/** @type {any} */ raw, /** @type {{files:any[]
     if (!String(c.claim || "").trim()) { dropped.push({ candidate: c, why: "empty claim" }); continue; }
     kept.push({
       path: c.path, line: c.line, severity: ["high", "medium", "low"].includes(c.severity) ? c.severity : "medium",
+      ...(lensNames.includes(c.lens) ? { lens: c.lens } : {}),
       claim: String(c.claim), bad_outcome: String(c.bad_outcome || ""), verify_by: String(c.verify_by || ""), unit: /** @type {any} */ (unit).id,
     });
   }
@@ -220,6 +232,12 @@ export const REFLECT_SYSTEM = [
   "Doubt, missing context, or a style opinion is NOT a veto.",
   'Reply with ONLY JSON: {"veto":[{"id":<number>,"reason":"<quoted contradicting diff line>"}]}. Reply {"veto":[]} when nothing is contradicted.',
 ].join("\n");
+
+/** A veto stands only when its reason quotes text the batch's diff shows (a leading `NNNNN|+` is ignored). */
+export function quotesDiff(/** @type {string} */ reason, /** @type {string} */ diff) {
+  const q = String(reason || "").trim().replace(/^\d+\|[+ -]?/, "").trim();
+  return q.length >= 4 && diff.includes(q);
+}
 
 export function reflectMessage(/** @type {{files:any[]}[]} */ units, /** @type {any[]} */ cands) {
   const diff = units.map(unitMessage).join("\n\n");
@@ -281,28 +299,32 @@ export async function pool(/** @type {any[]} */ items, /** @type {number} */ lim
 }
 
 /**
- * @param {{packetText:string, impact?:any, finders:string, transport:Function, config?:{exclude?:string[]}, opts?:Partial<typeof DEFAULTS>, prices?:any}} a
+ * @param {{packetText:string, impact?:any, finders:string, transport:Function, lenses?:any[], config?:{exclude?:string[]}, opts?:Partial<typeof DEFAULTS>, prices?:any}} a
  */
 export async function runPipeline(a) {
   const o = { ...DEFAULTS, ...(a.opts || {}) };
   const { preamble, files } = parsePacket(a.packetText);
   const { units, skipped } = dispatch(files, { unitTokens: o.unitTokens, maxUnits: o.maxUnits, exclude: a.config?.exclude });
-  const prefix = buildPrefix({ finders: a.finders, preamble, impactSummary: summarizeImpact(a.impact) });
+  const lenses = a.lenses || [];
+  const prefix = buildPrefix({ finders: a.finders, preamble, impactSummary: summarizeImpact(a.impact), lenses });
+  /** @type {{path:string,reason:string}[]} */ const failed = [];
   const usage = { review: emptyUsage(), reflect: emptyUsage() };
   /** @type {any[]} */ const errors = [];
   /** @type {any[]} */ const dropped = [];
 
+  const failUnit = (/** @type {any} */ unit, /** @type {string} */ why) => { for (const f of unit.files) failed.push({ path: f.path, reason: why }); };
   const reviewUnit = async (/** @type {any} */ unit) => {
     try {
       const r = await a.transport({ model: o.model, system: "", cachePrefix: prefix, user: unitMessage(unit), maxTokens: o.maxOutputTokens });
       addUsage(usage.review, r.usage);
       const parsed = parseJson(r.text);
-      if (!Array.isArray(parsed)) { errors.push({ stage: "review", unit: unit.id, error: "unparseable reply" }); return []; }
-      const f = filterCandidates(parsed, unit);
+      if (!Array.isArray(parsed)) { errors.push({ stage: "review", unit: unit.id, error: "unparseable reply" }); failUnit(unit, "unparseable reply (possibly cut off at the output cap)"); return []; }
+      const f = filterCandidates(parsed, unit, lenses.map((l) => l.name));
       dropped.push(...f.dropped.map((d) => ({ ...d, unit: unit.id })));
       return f.kept;
     } catch (e) {
       errors.push({ stage: "review", unit: unit.id, error: String(/** @type {any} */ (e)?.message || e) });
+      failUnit(unit, `review call failed: ${String(/** @type {any} */ (e)?.message || e).slice(0, 80)}`);
       return [];
     }
   };
@@ -331,9 +353,10 @@ export async function runPipeline(a) {
       addUsage(usage.reflect, r.usage);
       const j = parseJson(r.text);
       if (!j || !Array.isArray(j.veto)) { failOpen++; continue; }
+      const diffText = b.units.map(unitMessage).join("\n");
       for (const v of j.veto) {
         const c = mine.find((x) => x._id === v?.id);
-        if (c && String(v.reason || "").trim()) vetoed.push({ ...c, veto_reason: String(v.reason) });
+        if (c && quotesDiff(v.reason, diffText)) vetoed.push({ ...c, veto_reason: String(v.reason) });
       }
     } catch (e) {
       failOpen++;
@@ -348,15 +371,16 @@ export async function runPipeline(a) {
     review: { model: o.model, ...usage.review, usd: costUsd(usage.review, prices[o.model]) },
     reflect: { model: o.reflectModel, ...usage.reflect, usd: costUsd(usage.reflect, prices[o.reflectModel]) },
   };
-  return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped, units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, prefixTokens: tokensOf(prefix), prefix };
+  return { findings, vetoed: vetoed.map(({ _id, ...c }) => c), dropped, skipped: [...skipped, ...failed], lenses: lenses.map((l) => ({ name: l.name, origin: l.origin || "", files: l.files || [] })), units: units.map((u) => ({ id: u.id, tokens: u.tokens, files: u.files.map((f) => f.path) })), usage: usageOut, errors, reflectFailOpen: failOpen, prefixTokens: tokensOf(prefix), prefix };
 }
 
 export function renderReport(/** @type {any} */ r) {
-  const rows = r.findings.map((f) => `- \`${f.path}:${f.line}\` (${f.severity}) ${f.claim} — ${f.bad_outcome} *Verify:* ${f.verify_by}`);
+  const rows = r.findings.map((f) => `- \`${f.path}:${f.line}\` (${f.severity}${f.lens ? `, lens ${f.lens}` : ""}) ${f.claim} — ${f.bad_outcome} *Verify:* ${f.verify_by}`);
   const sk = r.skipped.map((s) => `- \`${s.path}\` — ${s.reason}`);
   return [
     "# Lite review (shadow)", "",
     `${r.findings.length} finding(s) from ${r.units.length} unit(s); ${r.vetoed.length} vetoed by reflection; ${r.dropped.length} dropped by the line filter.`, "",
+    `Lenses: ${(r.lenses || []).map((l) => `${l.name} (${l.origin})`).join(", ") || "none loaded"}.`, "",
     "## Findings", "", ...(rows.length ? rows : ["None."]), "",
     "## Not reviewed", "", ...(sk.length ? sk : ["Every changed file was reviewed."]), "",
     ...(r.errors.length ? ["## Errors", "", ...r.errors.map((e) => `- ${e.stage}${e.unit ? ` unit ${e.unit}` : ""}: ${e.error}`), ""] : []),
@@ -393,7 +417,7 @@ async function main(/** @type {string[]} */ argv) {
     const pr = arg(argv, "--pr");
     if (!pr) { process.stderr.write("lite-review: pass --pr <ref> or --context <context.json>\n"); return 2; }
     ctxPath = join(out, "context.json");
-    const extra = arg(argv, "--repo-dir") ? ["--repo-dir", /** @type {string} */ (arg(argv, "--repo-dir"))] : [];
+    const extra = [...(arg(argv, "--repo-dir") ? ["--repo-dir", /** @type {string} */ (arg(argv, "--repo-dir"))] : []), ...(arg(argv, "--with") ? ["--with", /** @type {string} */ (arg(argv, "--with"))] : [])];
     const p = spawnSync("node", [join(support, "pr-reviewer/scripts/prepare-review.mjs"), "--pr", pr, "--out", ctxPath, ...extra], { stdio: ["ignore", "inherit", "inherit"] });
     if (p.status !== 0) { process.stderr.write("lite-review: prepare-review failed\n"); return 2; }
   }
@@ -409,10 +433,10 @@ async function main(/** @type {string[]} */ argv) {
   const num = (n) => (arg(argv, n) ? Number(arg(argv, n)) : undefined);
   const opts = Object.fromEntries(Object.entries({ model: arg(argv, "--model"), reflectModel: arg(argv, "--reflect-model"), concurrency: num("--concurrency"), unitTokens: num("--unit-tokens"), maxUnits: num("--max-units") }).filter(([, v]) => v !== undefined));
   const r = await runPipeline({
-    packetText: readFileSync(packetPath, "utf8"), impact, finders: readFileSync(findersPath, "utf8"),
+    packetText: readFileSync(packetPath, "utf8"), impact, lenses: ctx.lenses?.loaded || [], finders: readFileSync(findersPath, "utf8"),
     transport: anthropicTransport(key), config: existsSync(cfgPath) ? parseLiteConfig(readFileSync(cfgPath, "utf8")) : {}, opts, prices,
   });
-  writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.pr || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped }, null, 2));
+  writeFileSync(join(out, "findings.json"), JSON.stringify({ pr: ctx.pr || null, findings: r.findings, vetoed: r.vetoed, dropped: r.dropped, lenses: r.lenses, lensesSkipped: ctx.lenses?.skipped || [] }, null, 2));
   writeFileSync(join(out, "skipped.json"), JSON.stringify(r.skipped, null, 2));
   writeFileSync(join(out, "usage.json"), JSON.stringify({ ...r.usage, prefixTokens: r.prefixTokens, reflectFailOpen: r.reflectFailOpen }, null, 2));
   writeFileSync(join(out, "report.md"), renderReport(r));

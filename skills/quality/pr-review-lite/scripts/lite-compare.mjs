@@ -42,10 +42,11 @@ export function match(lite, full, tolerance = TOLERANCE) {
   };
 }
 
-/** Inline review comments from `gh api` JSON → {path,line,body,author}. A comment on a moved diff has no line and is skipped. */
+/** Inline review comments from `gh api` JSON → {path,line,body,author}. Thread replies and outdated comments (no current line) are skipped. */
 export function normalizeFull(/** @type {any[]} */ comments, author) {
   return comments
-    .map((c) => ({ path: c.path, line: c.line ?? c.original_line ?? NaN, body: String(c.body || ""), author: c.user?.login || c.author || "" }))
+    .filter((c) => !c.in_reply_to_id)
+    .map((c) => ({ path: c.path, line: c.line ?? NaN, body: String(c.body || ""), author: c.user?.login || c.author || "" }))
     .filter((c) => c.path && Number.isInteger(c.line) && (!author || c.author === author));
 }
 
