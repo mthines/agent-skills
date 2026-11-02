@@ -52,7 +52,7 @@ import { tmpdir } from "node:os";
 import { join, dirname, posix, resolve as pathResolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { Timing, beginRun, appendRecord, hostFacts, ledgerPath, markerCommand, modelSteps, STEP_REQUIRED_ATTRS, stepStartAttrs } from "./review-telemetry.mjs";
-import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, FULL_REFRESH_DELTA, CHURN_OVER_THRESHOLD } from "./delta-triage.mjs";
+import { classifyDivergence, blobDelta, deltaCounts, churnState, resolveIntactDelta, resolveChurnLines, compareHistory, authoredPrPaths, parseLocalDiff, prFilesCompleteness, CHURN_OVER_THRESHOLD } from "./delta-triage.mjs";
 import { routeDepth, resolveBudget } from "./route-depth.mjs";
 import { buildReviewPacket, consumersByFile } from "./review-packet.mjs";
 import { discoverStandards, trivialSkip, REPO_CONFIG_PATHS } from "./discover-standards.mjs";
@@ -1011,7 +1011,8 @@ export function readStateFile(path) {
       incrRunsSinceFull: Number(raw.incrRunsSinceFull ?? raw.incr_runs_since_full ?? 0) || 0,
     };
   } catch {
-    return none;
+    // An unreadable or unparsable file is not an empty record: stateStatus tells them apart.
+    return { ...none, unreadable: true };
   }
 }
 
@@ -2601,8 +2602,8 @@ async function prepare(opts) {
 
     routing,
     // Where the routing's history inputs came from: `read` (a --state record with a prior run), `empty`
-    // (a --state file with none), `none` (no --state), `ignored` (--isolated). `none` forces D6 every run.
-    stateStatus: runMode.stateIgnored ? "ignored" : !opts.state ? "none" : (state.priorSha || state.lastFullSha) ? "read" : "empty",
+    // (a --state file with none), `unreadable` (a --state file that could not be read), `none` (no --state), `ignored` (--isolated). `none` forces D6 every run.
+    stateStatus: runMode.stateIgnored ? "ignored" : !opts.state ? "none" : state.unreadable ? "unreadable" : (state.priorSha || state.lastFullSha) ? "read" : "empty",
     budget,
     threads,
     gate4_precandidates: gate4Precandidates,

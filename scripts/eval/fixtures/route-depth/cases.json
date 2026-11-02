@@ -253,5 +253,19 @@
     "expected": "deep",
     "expectedDeltaScaled": false,
     "notes": "D5 is a risk trigger: the third incremental run since the last deep pass re-reads the PR even when each push is a plain delta."
+  },
+  {
+    "id": "delta-big-pr-tiny-new-file",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 8, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 8, "newFiles": 1, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 900 },
+    "expected": "standard",
+    "expectedDeltaScaled": true,
+    "notes": "A push under 11 lines that adds a file to a big PR keeps standard: waiving D13 must not drop the new file to quick, which skips consumer-impact and standards."
+  },
+  {
+    "id": "delta-big-pr-refresh-cap",
+    "inputs": { "firstRun": false, "full": false, "effortHigh": false, "cumDeltaLines": 501, "incrRunsSinceFull": 1, "priorDeepRecorded": true, "highStakesFiles": [], "propagation": false, "band": "none", "semverDeltas": [], "symbols": [], "deltaLines": 60, "newFiles": 0, "deltaShapes": [], "deltaRiskyShapes": [], "sameSymbolOverlap": false, "threadOverlap": 0, "prLines": 2000 },
+    "expected": "deep",
+    "expectedDeltaScaled": false,
+    "notes": "The scaled D4 threshold is capped at 500, so 501 cumulative lines refresh even on a 2000-line PR."
   }
 ]

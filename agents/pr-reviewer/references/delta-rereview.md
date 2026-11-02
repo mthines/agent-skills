@@ -1,13 +1,13 @@
 # Delta re-review
 
-A re-review of a large PR used to read the whole PR again whenever one push was over 100 lines, added a file, or pushed cumulative churn past 150 lines.
+Without delta scaling, a re-review of a large PR reads the whole PR again whenever one push is over 100 lines, adds a file, or pushes cumulative churn past 150 lines.
 The delta is what changed, so the delta is what the review buys information about.
 
 ## Why the whole-PR re-read was the cost
 
 A later review of a PR costs about as much as the first and posts fewer findings, because the first review already read the unchanged code.
 A 180-line push to a 563-line PR is the common shape: `D12` (over 100 lines) and `D4` (over 150 cumulative lines) both fire, and `deep` re-reads all 563 lines.
-The run span did not record which trigger fired, so the split between size triggers and a missing state record was not measurable; `pr_review.triggers` and `pr_review.state_status` close that gap.
+The run span records which trigger fired (`pr_review.triggers`) and where the routing's history came from (`pr_review.state_status`), so the split between size triggers and a missing state record is measurable.
 
 ## The rule
 

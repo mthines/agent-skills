@@ -185,7 +185,9 @@ export function routeDepth(i) {
   // 4. The standard row — five OR-conditions, any one fires.
   const usedSemverDelta = semverDeltas.find((d) => d.usageSites >= 1);
   // A size-scaled run reviews the whole PR, so its standard band starts above TINY_PR_LINES.
-  const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : 11;
+  // A delta-scaled run waived a trigger that measures something no other row does (D13's new file), so its
+  // floor is 1: a tiny push that adds a file keeps `standard`'s consumer-impact and standards finders.
+  const bandFloor = sizeScaled ? TINY_PR_LINES + 1 : deltaScaled ? 1 : 11;
   const bandCeiling = sizeScaled ? SMALL_PR_LINES : deltaScaled ? BIG_PUSH_LINES : 100;
   // On a scaled run the size band replaces deep, so a size-excluded shape keeps it (and its standards finder).
   const inSizeBand = (sizeScaled || !sizeExcluded) && deltaLines >= bandFloor && deltaLines <= bandCeiling;
@@ -529,6 +531,11 @@ function selfTest() {
   // itself — the constants and the D-id set depth-routing.md states.
   const constOk = FULL_REFRESH_DELTA === 150 && FULL_REFRESH_RUNS === 3 && TRIGGERS.length === 13;
   if (!constOk) fails.push("FULL_REFRESH_DELTA/FULL_REFRESH_RUNS/TRIGGERS drifted from depth-routing.md's stated values");
+  const scaleOk = REFRESH_PR_FRACTION === 0.5 && MAX_REFRESH_DELTA === 500 && BIG_PR_LINES === 400 && BIG_PUSH_LINES === 400
+    && CHURN_OVER_THRESHOLD > MAX_REFRESH_DELTA
+    && refreshDeltaFor(undefined) === 150 && refreshDeltaFor(200) === 150 && refreshDeltaFor(300) === 150
+    && refreshDeltaFor(563) === 282 && refreshDeltaFor(1000) === 500 && refreshDeltaFor(5000) === 500;
+  if (!scaleOk) fails.push("the scaled D4 threshold or the delta-scaling constants drifted from depth-routing.md's stated values");
 
   const capped = routeDepth({ firstRun: true, deltaLines: 500, depthCapability: "diff-only" });
   if (!(capped.tier === "standard" && capped.capApplied === true)) fails.push("capability cap did not downgrade a deep-triggering diff-only run to standard");
