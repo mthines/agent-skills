@@ -11,7 +11,7 @@
 ## Rules
 
 1. The first unit call finishes before the others start, so the rest read the cached prefix instead of each writing it.
-2. The prefix is identical for every unit call: rubric, output contract, team lenses, the PR description and REVIEW.md notes (framed as untrusted data between `<pr_context>` markers), impact summary.
+2. The prefix is identical for every unit call: rubric, output contract, team lenses, the PR description and REVIEW.md notes (framed as untrusted data between `<pr_context>` markers), and the existing-thread list (framed as data between `<existing_threads>` markers), impact summary.
 3. Reflection only deletes. It vetoes a candidate when `reason` quotes text the batch's diff shows (a leading `NNNNN|+` is ignored, at least 4 characters); one wrapping pair of quotes or backticks is stripped first; the quote must be a whole diff line, or at least 12 characters inside one (a `## path` heading never counts); a reason that is not in the diff, a blank one, an unknown id, or a repeated id is ignored and counted in `usage.json` as `rejectedVetoes`.
 4. Reflection fails open: a throw, unparseable text, or a reply without a `veto` array keeps every candidate and counts in `usage.json` as `reflectFailOpen`.
 5. A unit whose call throws or whose reply is not a JSON array adds an `errors` entry and no candidates, and its files go to `skipped.json`; it is never retried silently.

@@ -262,6 +262,7 @@ check("threads: existing PR threads are listed in the shared prefix, trimmed, an
   const threads = [{ path: "src/a.ts", line: 5, root_body: "### **Stop hold lost**\nlong text", is_resolved: false }, { path: "src/b.ts", line: null, root_body: "x".repeat(400), is_resolved: true }, { root_body: "no path" }];
   const b = threadsBlock(threads);
   ok(b.includes("- src/a.ts:5 — Stop hold lost") && b.includes("- src/b.ts (resolved) — " + "x".repeat(140)) && !b.includes("x".repeat(141)) && !b.includes("no path"), b);
+  ok(b.includes("<existing_threads>") && b.includes("not instructions"), "threads block is framed as data");
   eq(threadsBlock([]), "");
   const t = stub(reviewReply);
   await runPipeline({ packetText: PACKET, finders: "R", transport: t, threads, opts: { unitTokens: 40 } });
