@@ -28,7 +28,7 @@
 | `findings.json` | `lenses` (loaded), `lensesSkipped`, `findings`, `vetoed` (with `veto_reason`), `dropped` (with `why`) |
 | `report.md` | findings, the not-reviewed list, errors |
 | `skipped.json` | every file not reviewed, with its reason |
-| `usage.json` | per stage: model, calls, input, cache-read, cache-write, output tokens, `usd` (null without a price); `prefixTokens`; `reflectFailOpen` |
+| `usage.json` | per stage: model, calls, input, cache-read, cache-write, output tokens, `usd` (null without a price); `prefixTokens`; `reflectFailOpen`; `rejectedVetoes` |
 
 `usd` comes from `--prices` when one is given for the stage's model, otherwise from the cost the transport reports (`--transport claude-cli`), and `usd_source` says which; with neither it is null.
 
