@@ -228,6 +228,7 @@ export const DEPTH_PRESETS = Object.freeze(["quick", "standard", "deep", "max"])
 export const PRESET_THOROUGHNESS = Object.freeze({ quick: 0.4, standard: 0.7, deep: 0.85, max: 1 });
 
 /** The preset whose column contains `t`: below 0.5 quick, [0.5, 0.8) standard, [0.8, 0.95) deep, from 0.95 max. */
+/** @param {number} t */
 export function presetOfThoroughness(t) {
   return t >= 0.95 ? "max" : t >= 0.8 ? "deep" : t >= 0.5 ? "standard" : "quick";
 }
@@ -838,7 +839,9 @@ function selfTest() {
   else fails.push(`monotonicity violated: ${monotonicityBroken}`);
 
   // ---- depth presets: each preset is the budget of the tier default it is named after ----
-  for (const [preset, tier] of [["quick", "quick"], ["standard", "standard"], ["deep", "deep"]]) {
+  /** @type {Array<["quick" | "standard" | "deep", "quick" | "standard" | "deep"]>} */
+  const presetTiers = [["quick", "quick"], ["standard", "standard"], ["deep", "deep"]];
+  for (const [preset, tier] of presetTiers) {
     total++;
     const viaPreset = resolveBudget({ routedTier: tier, thoroughness: PRESET_THOROUGHNESS[preset] });
     const viaDefault = resolveBudget({ routedTier: tier });
@@ -854,6 +857,7 @@ function selfTest() {
 
   // ---- presetOfThoroughness maps each column edge to the preset that column belongs to ----
   total++;
+  /** @type {Array<[number, string]>} */
   const edges = [[0, "quick"], [0.49, "quick"], [0.5, "standard"], [0.79, "standard"], [0.8, "deep"], [0.94, "deep"], [0.95, "max"], [1, "max"]];
   const badEdge = edges.find(([t, want]) => presetOfThoroughness(t) !== want);
   if (!badEdge) passed++;
