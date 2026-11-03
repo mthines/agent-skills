@@ -108,6 +108,12 @@ filters*) → [`agents/shared/rules/finding-verifier.md`](./shared/rules/finding
 [`telemetry.md`](./pr-reviewer/rules/telemetry.md) (Step 1.0), and [`run-telemetry.md`](./pr-reviewer/rules/run-telemetry.md) (step
 markers — read before Step 1). Other rules are named at the step that reads them.
 
+**Right after `prepare-review.mjs` writes the context, read the early rules in one call** — `read-rules.mjs run-telemetry` plus `pipeline` under `--dry-run`/`--isolated`/`--review-sha`, plus `dispatch-topology` when the topology is not `single` — instead of one `Read` each:
+
+```text
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" run-telemetry [pipeline] [dispatch-topology]
+```
+
 Read [`agents/pr-reviewer/rules/agent0-runtime.md`](./pr-reviewer/rules/agent0-runtime.md) **only
 inside a Dash0 Agent0 Automation**.
 
