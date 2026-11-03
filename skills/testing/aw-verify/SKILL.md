@@ -69,6 +69,7 @@ Agent(subagent_type="general-purpose",
 - Backend `dash0-mcp` → first check that `mcp__<telemetry.yml mcp_server>__getSpans` exists. Absent → `telemetry: skipped (Dash0 MCP server '<name>' not connected)`, no dispatch; never query another Dash0 server, whose empty answer proves nothing.
 - One dispatch per run, after the last window: the sub-agent pays its setup once, and its ingest wait starts from the last window. A fix loop dispatches once more for the windows it re-probed.
 - `ui-verify` always gets `--no-telemetry`, so no window is read twice; both witnesses always get `--no-comment`, so the PR holds one aggregate ([`rules/pr-comment.md`](./rules/pr-comment.md)).
+- A path that emits no web event, span, or log (a client-side fill, a local-state apply) cannot be `confirms`: report it as `no regression observed (path emits no signal)` and say the browser run is its only proof.
 - The block has `pipe:`, one `AC-n <verdict>` line per AC, `signals:`, `findings:`, and `[receipt] verdict: confirms|contradicts|ambiguous|null`; its findings join `findings.jsonl` as `T-<n>`.
 - On Dash0 Agent0 the sub-agent type is `general`; with no dispatch tool, run it here and say `telemetry: same-context (reduced independence)`.
 
@@ -84,6 +85,6 @@ Agent(subagent_type="general-purpose",
 
 - [ ] `intent.md`, `probes.jsonl`, `findings.jsonl`, and `report.md` under `.agent/{branch}/verify/`; `specs.md` for a UI change.
 - [ ] Every AC and guardrail: `pass`, `fixed → pass`, or `fail`, with evidence; every edge row probed or `n/a` with a reason.
-- [ ] A `TELEMETRY` block covering every window, or `telemetry: skipped (<reason>)`.
+- [ ] A `TELEMETRY` block covering every window, or `telemetry: skipped (<reason>)`. Never leave it out: the report is incomplete without one of the two, and a connected Dash0 MCP server is never a valid skip reason.
 - [ ] Each fix its own commit, pushed per policy; stack left per policy.
 - [ ] The PR comment's `aggregate` region posted with every screenshot and recording uploaded, or a `comment: not posted (<reason>)` line.
