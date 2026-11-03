@@ -2499,6 +2499,8 @@ async function prepare(opts) {
   const budget = resolveBudget({
     runMode: contextMode, // a small incremental re-review skips the intent worker (route-depth.mjs SMALL_INCREMENTAL_MODES)
     thoroughness: thoroughnessOverride,
+    // A quick/standard preset keeps the small-incremental carve-out; an exact thoroughness does not.
+    presetAsk: !depthOverrides.exact && (depthOverrides.preset === "quick" || depthOverrides.preset === "standard") ? depthOverrides.preset : undefined,
     routedTier: routing.tier,
     shape: (deltaShape && deltaShape.shapes) || [],
     band: impact?.blast_radius?.band ?? "none",

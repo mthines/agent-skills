@@ -368,7 +368,7 @@ function highStakesReason(shape, band) {
  *   shape?: string[], band?: string, depthCapability?: string,
  *   dispatchAvailable?: boolean, effortHigh?: boolean, changedFiles?: number,
  *   runMode?: string, finderPasses?: number, priorShaFromState?: boolean,
- *   lensCount?: number,
+ *   lensCount?: number, presetAsk?: "quick"|"standard",
  * }} ResolveBudgetInput
  * @typedef {{
  *   effectiveThoroughness: number, requestedThoroughness: number,
@@ -452,7 +452,10 @@ export function resolveBudget(i = {}) {
   // DEFAULTED thoroughness skips the worker — see SMALL_INCREMENTAL_MODES for why, and that it is
   // unmeasured. An explicit override is a deliberate ask and keeps the breakpoint's answer.
   const defaulted = !i.effortHigh && (i.thoroughness === undefined || i.thoroughness === null);
-  const smallIncremental = defaulted && SMALL_INCREMENTAL_MODES.includes(String(i.runMode))
+  // A `quick` or `standard` preset is an ask for less work, so it keeps the carve-out too; a
+  // `deep`/`max` preset, an exact thoroughness, and `effortHigh` are asks for more and never do.
+  const lowPresetAsk = !i.effortHigh && (i.presetAsk === "quick" || i.presetAsk === "standard");
+  const smallIncremental = (defaulted || lowPresetAsk) && SMALL_INCREMENTAL_MODES.includes(String(i.runMode))
     && SMALL_INCREMENTAL_TIERS.has(String(i.routedTier));
   const lean = defaulted && LEAN_TIERS.has(String(i.routedTier));
   /** @type {"below-breakpoint"|"no-dispatch"|"small-incremental"|"lean"|"hybrid"} */
@@ -759,6 +762,23 @@ function selfTest() {
       && JSON.stringify(incStd.finders) === JSON.stringify(noMode.finders);
     if (ok) passed++;
     else fails.push(`small-incremental topology drifted: ${JSON.stringify({ incStd: [incStd.topology, incStd.topologyReason], incQuick: incQuick.topology, zero: zero.topology, fullStd: fullStd.topology, incDeep: incDeep.topology, asked: incStdAsked.topology, effort: incStdEffort.topology, noMode: noMode.topology })}`);
+  }
+
+  // ---- resolveBudget: a quick/standard preset ask keeps the small-incremental carve-out; deeper asks do not ----
+  total++;
+  {
+    const inc = (/** @type {any} */ x) => resolveBudget({ dispatchAvailable: true, routedTier: "standard", runMode: "incremental", ...x });
+    const q = inc({ thoroughness: 0.4, presetAsk: "quick" });
+    const s = inc({ thoroughness: 0.7, presetAsk: "standard" });
+    const exactQ = inc({ thoroughness: 0.4 });
+    const deepAsk = inc({ thoroughness: 0.85 });
+    const effort = inc({ effortHigh: true, presetAsk: "quick" });
+    const deepTier = inc({ routedTier: "deep", thoroughness: 0.4, presetAsk: "quick" });
+    const ok = q.topology === "in-context" && q.topologyReason === "small-incremental" && s.topology === "in-context"
+      && exactQ.topology === "hybrid" && deepAsk.topology === "hybrid" && effort.topology === "hybrid"
+      && deepTier.topology === "hybrid";
+    if (ok) passed++;
+    else fails.push(`preset-ask carve-out drifted: ${JSON.stringify({ q: q.topology, s: s.topology, exactQ: exactQ.topology, deepAsk: deepAsk.topology, effort: effort.topology, deepTier: deepTier.topology })}`);
   }
 
   // ---- resolveBudget: each lens past the first three adds LENS_CALLS (select-lenses.mjs has no cap) ----
