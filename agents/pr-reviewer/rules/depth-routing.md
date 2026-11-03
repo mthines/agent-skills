@@ -367,7 +367,7 @@ the dispatch count is the number to watch, not the prompt size.
 | Band | Sub-agents |
 | --- | --- |
 | `t < 0.4` | 0 — `in-context` |
-| `t ≥ 0.4` | 1 — `hybrid`: the intent finder; 0 on a small incremental re-review with a defaulted thoroughness (unmeasured — [`dispatch-topology.md`](./dispatch-topology.md#the-two-topologies)) |
+| `t ≥ 0.4` | 1 — `hybrid`: the intent finder; 0 on a small incremental re-review with a defaulted thoroughness or a `quick`/`standard` preset (unmeasured — [`dispatch-topology.md`](./dispatch-topology.md#the-two-topologies)) |
 
 Everything else — the other finders, the lenses, verification — runs in the reviewer's own context
 at every band, so there are no lens or verifier dispatches to count.

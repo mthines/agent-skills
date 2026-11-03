@@ -19,7 +19,7 @@ A preset sets the budget; `deep` and `max` also force the tier because they are 
 A defaulted `quick` budget is lean: no worker, no holistic broad pass, no impact image.
 If `depth: quick` in a config produced a non-lean budget on a `quick` routing, writing the default value down would cost more than writing nothing.
 Treating an equal preset as the default makes the same words give the same behaviour.
-A preset below the routed tier's default is a deliberate ask, so it keeps `hybrid` even on a small re-review that the default would run in one context.
+A `quick` or `standard` preset is an ask for less work, so it also keeps the small-re-review carve-out and runs in one context; a `deep` or `max` preset, an exact `--thoroughness`, and `--effort high` are asks for more and keep `hybrid`.
 
 ## Why the risk floor stays and is reported
 
