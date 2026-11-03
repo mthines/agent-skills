@@ -611,7 +611,7 @@ collecting ALL findings before moving on, and apply its token-economy skip to St
 **Skip this step entirely** if the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or
 Step 1.2b's `REVIEW_DIFF == ""`); go to Step 2.9c, which runs whether or not Step 2 ran.
 
-Otherwise read these two files in one message: `agents/pr-reviewer/rules/inline-pipeline.md` and `agents/pr-reviewer/rules/verify-and-render.md`. `inline-pipeline.md` holds `REVIEW_DIFF` scope,
+Otherwise read these files in one message — two, plus `agents/pr-reviewer/rules/thread-reconcile.md` when `IS_RE_REVIEW == true` (Step 2.9c then needs no turn of its own): `agents/pr-reviewer/rules/inline-pipeline.md` and `agents/pr-reviewer/rules/verify-and-render.md`. `inline-pipeline.md` holds `REVIEW_DIFF` scope,
 `SCANNED_FILES`, the rubrics, the finders ([`finders.md`](./pr-reviewer/rules/finders.md),
 [`finder-consumer-impact.md`](./pr-reviewer/rules/finder-consumer-impact.md),
 [`finder-dependency.md`](./pr-reviewer/rules/finder-dependency.md)), the strict drop-point order,
@@ -667,7 +667,14 @@ Then make the LoreKit writes in [`rules/run-writes.md`](./pr-reviewer/rules/run-
 record, always; 4d knowledge + hotspot). The writes fail independently and none cascades.
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
 (MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
-`context.impactImage.eligible` is true (§ The impact image only). The script lines, exactly — never probe them with `--help`:
+`context.impactImage.eligible` is true (§ The impact image only). **On a clean `gh`-path run with no impact image, make Step 4a–4b one call** — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
+
+```text
+node "$AGENT_SUPPORT/pr-reviewer/scripts/finish-review.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> --tool-calls <N> [--dry-run]
+```
+
+Use `--no-post` instead when `context.impactImage.eligible` is true (the dry-run finalize and the real one need `posting.md` between them), then run the post line yourself.
+The script lines, exactly — never probe them with `--help`:
 
 ```text
 node "$AGENT_SUPPORT/pr-reviewer/scripts/validate-judgments.mjs" <judgments.json>
