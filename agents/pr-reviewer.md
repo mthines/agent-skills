@@ -136,8 +136,10 @@ Examine the **raw arguments** verbatim. Do not paraphrase.
 | `--with a,b,c` | Review lenses by name, added to the ones the diff triggers; no count cap. Forward to `prepare-review.mjs` |
 | `--impact-image` | Add the impact-map diagram this run (off by default; config `impact_image: true`). Forward to `prepare-review.mjs` |
 | `--no-fix-links` / `--fix-links` | Suppress / force the "Fix with Agent0" buttons (on by default; `--no-fix-links` wins) |
-| `--effort high` | Force `DEPTH_TIER = deep` + Tier-2/3 receipts ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#--effort)); config `effort: high` |
-| `--thoroughness <0..1>` | Continuous dispatch/scope override; `--effort high` = `1` — [depth-routing.md § Thoroughness budget](./pr-reviewer/rules/depth-routing.md#thoroughness-budget) |
+| `--depth quick\|standard\|deep\|max` | The depth preset ([`depth-routing.md`](./pr-reviewer/rules/depth-routing.md#depth-presets)); `deep` and `max` force `DEPTH_TIER = deep`; config `depth:`. Forward to `prepare-review.mjs`; a bad value exits 2 before any model turn ([`arguments.md`](./pr-reviewer/rules/arguments.md)) |
+| `--effort high` | Deprecated alias of `--depth max`; config `effort: high` |
+| `--thoroughness <0..1>` | Deprecated: the value applies exactly and never forces a tier; the anomaly names the nearest `--depth` preset; config `thoroughness:` — [depth-routing.md § Thoroughness budget](./pr-reviewer/rules/depth-routing.md#thoroughness-budget) |
+| `--finder-passes 1\|2` | `2` adds a second finder pass by two isolated workers (config `finder_passes:`); forward to `prepare-review.mjs` — [dispatch-topology.md](./pr-reviewer/rules/dispatch-topology.md) |
 | `--dry-run` | Full pipeline, zero GitHub and LoreKit writes; artifacts go to `$(scratchRoot())/<run-id>/`. Read [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--dry-run) before Step 1 |
 | `--isolated` | First-run semantics on every invocation; requires `--pin-head` unless `--review-sha` is set. Read [`rules/pipeline.md`](./pr-reviewer/rules/pipeline.md#--isolated) before Step 0.7 |
 | `--pin-head <sha>` | `prepare-review.mjs` hard-stops with no review when the live head differs (`head moved: pinned <a> live <b>`) |
@@ -421,7 +423,7 @@ Announce `Memory scope: repo::<owner>/<repo> + global — <N> entries indexed.` 
 
 ### 1.1 Fetch PR data in parallel
 
-`node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <ref> --out ctx.json [--with a,b] [--impact-image]` (never
+`node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <ref> --out ctx.json [--with a,b] [--impact-image] [--depth <preset>] [--finder-passes 1|2]` (never
 under `--context`; with no `--reviewer-login`, `PR_REVIEWER_LOGIN`, state record, or prior report author, it asks GraphQL `viewer` itself, so the relation and the Fix-this buttons survive) performs Step 1.1 and every mechanical step through *Bind `DEPTH_TIER`* — 1.1b,
 1.2, shape classification, 1.2a's graph, 1.2b — and binds them on `context.json`. **When it cannot
 run, or its context lacks a field, read `agents/pr-reviewer/rules/fetch-and-triage.md`** and run that
@@ -482,7 +484,7 @@ Delta triage runs in incremental modes only; depth routing runs in every mode. B
 - **`REVIEW_DIFF`** is the full PR diff in `full` mode, else `/tmp/pr-delta.json`'s patches;
   `/tmp/pr-files.json` is never replaced. Gate 4 scans `REVIEW_DIFF`.
 - **`DEPTH_TIER`** comes from `routeDepth()` and is never re-derived; `diff-only` caps it at
-  `standard`, `--effort high` raises it to `deep`. A small first run with no risk trigger is
+  `standard`, `--depth deep|max` (or `--effort high`) raises it to `deep`. A small first run with no risk trigger is
   `context.routing.sizeScaled` ([§ Size scaling](./pr-reviewer/rules/depth-routing.md#size-scaling)):
   review the whole PR at the routed tier and follow `context.budget` — a lean `quick` budget
   dispatches no worker, skips Step 2.4, and draws no impact image.

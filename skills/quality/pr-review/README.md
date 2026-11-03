@@ -257,7 +257,7 @@ Cost is turns × context: every turn re-reads everything loaded so far, so each 
 | --- | --- | --- | --- |
 | `quick` | A first review of ≤ 30 changed lines with no risk trigger, or a tiny follow-up push | The core finders and verifier, in one context | Consumer-impact, dependency, and standards finders, the holistic pass, the impact image, and the ranked memory lists |
 | `standard` | A first review of 31–400 lines with no risk trigger, or a medium follow-up push | Adds consumer-impact (callers of what the delta changed), dependency, and standards finders, and a separate intent worker | Repo-wide caller tracing |
-| `deep` | Any risk trigger, more than 400 lines, or `--full` | Whole-repo consumer impact and standards, more escalation traces, and 1.5× the tool budget | Execution-level verification (running the code to prove a finding) and the 2× budget; `--effort high` turns both on |
+| `deep` | Any risk trigger, more than 400 lines, or `--full` | Whole-repo consumer impact and standards, more escalation traces, and 1.5× the tool budget | Execution-level verification (running the code to prove a finding) and the 2× budget; `--depth max` turns both on |
 
 A **risk trigger** keeps even a one-line PR at `deep`: a high-stakes path (auth, payments, migrations, infra, secrets, plus your `high_stakes_paths`), propagation to other packages, wide blast radius, a major dependency bump, or a changed signature on a hot symbol.
 
@@ -265,11 +265,11 @@ A follow-up push reviews only the delta since the last reviewed commit, and a re
 
 What you trade going lighter:
 
-- **`--effort high` → `deep`:** a finding is proven by reasoning and type checks rather than by running the code, so a subtle runtime defect can land in "Less certain" instead of inline.
+- **`--depth max` (or `--effort high`) → `deep`:** a finding is proven by reasoning and type checks rather than by running the code, so a subtle runtime defect can land in "Less certain" instead of inline.
 - **`deep` → `standard`:** a caller you broke three files away, outside the delta's direct callers, can be missed.
 - **`standard` → `quick`:** no check of callers, dependency bumps, or your written standards, and findings carry weaker proof, so a borderline one lands in "Less certain" instead of inline.
 
-Nudge the depth per run with `--effort high` or `--full`, or for the whole repo with `effort:` / `thoroughness:` in `.agents/review/config.yaml` (below).
+Nudge the depth per run with `--depth quick|standard|deep|max` or `--full`, or for the whole repo with `depth:` in `.agents/review/config.yaml` (below).
 
 ---
 
@@ -297,8 +297,8 @@ severity_thresholds:       # optional: override one tier's confidence bar (0–1
   medium: 80
 
 # How deep to look.
-effort: high               # optional: force deep on every PR (costliest)
-thoroughness: 0.8          # optional: 0–1; omit for the routed default (quick 0.4, standard 0.7, deep 0.85)
+depth: standard            # optional: quick | standard | deep | max; omit for the routed default
+# effort: high / thoroughness: 0.8 still work as deprecated aliases and log an anomaly
 critical: auto             # auto (default) | always: run the adversarial pre-mortem on every PR
 finder_passes: 1           # 1 (default) | 2: a second independent finder pass (two more sub-agents, 1.5× tool budget)
 impact_image: false        # false (default) | true: add the impact-map diagram to the report on wide PRs (a second impact-map pass, a render, and an upload)
@@ -320,9 +320,9 @@ agent0_fix_links: true     # on by default; false turns the buttons off
 | `balanced` | The defaults | 5 |
 | `assertive` | Lower-confidence and lower-severity findings too | 7 |
 
-`effort`, `thoroughness`, `critical`, `finder_passes`, and `impact_image` cost tokens on every PR, so set them only when your repo's risk needs it; the CLI flags (`--effort`, `--thoroughness`, `--no-critical`, `--impact-image`) beat them for one run.
+`depth`, `critical`, `finder_passes`, and `impact_image` cost tokens on every PR, so set them only when your repo's risk needs it; the CLI flags (`--depth`, `--no-critical`, `--impact-image`) beat them for one run.
 For a diagram on one PR without turning it on for the repo, run `/impact-map <pr> --comment`.
-A built-in high-stakes area (auth, payments, schema migrations, secrets, infra) always reviews at thoroughness ≥ 0.5, whatever you set; a path you add under `high_stakes_paths` routes the review `deep` but takes your `thoroughness` as set.
+A built-in high-stakes area (auth, payments, schema migrations, secrets, infra) always reviews at thoroughness ≥ 0.5, whatever you set; a path you add under `high_stakes_paths` routes the review `deep` but takes your `depth` as set.
 
 ### Per folder: `.review.yaml`
 
@@ -347,7 +347,7 @@ How folders combine, from the repo root down to the changed file:
 | --- | --- |
 | `lenses`, `filters` | Union: a folder adds to its parents and can't remove what they set |
 | `path_instructions`, `standards` | Concatenated, closest folder first |
-| `profile`, `effort`, `thoroughness`, `critical`, `finder_passes`, `impact_image`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
+| `profile`, `depth`, `effort`, `thoroughness`, `models`, `critical`, `finder_passes`, `impact_image`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
 
 Lenses and the run-level knobs (the last row above) are read from the PR's **base** commit, so a PR can't loosen its own review; a PR may add a high-stakes path but never remove one.
 `filters`, `path_instructions`, `standards`, `measurable`, and the `agent0_*` keys are read from the PR's head.
@@ -360,7 +360,7 @@ The full schema, every key's validation, and the loading order are in [`review-c
 ```text
 /pr-review 42                       # one read-only review: a report plus inline findings
 /pr-review 42 --with ux,tdd         # add lenses for this run
-/pr-review 42 --critical --effort high   # the deepest pass, for risky PRs
+/pr-review 42 --critical --depth max   # the deepest pass, for risky PRs
 /review-loop 42                     # review, fix, and resolve threads until the PR converges
 /pr-review remember <fact>          # teach the reviewer to stop raising one kind of finding
 ```
