@@ -601,7 +601,14 @@ Announce `context.reviewContext.announce` verbatim whenever the packet carries t
 ## Step 1.8: Run pre-merge gate checks
 
 Skip this step entirely if `--skip-gates` was passed; set all Gate 1–5 results to `SKIPPED`.
-Otherwise read `agents/pr-reviewer/rules/gates.md` now and evaluate Gates 1–5 per its § Step 1.8,
+**Read every remaining rule file in this one call — never one `Read` per file** (a measured run spent six turns on six):
+
+```text
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates inline-pipeline verify-and-render finders judgments [thread-reconcile when IS_RE_REVIEW]
+```
+
+Drop `gates` under `--skip-gates` and skip the Step 2 / 2.9c / Step 4 reads that name those files; they are already in context.
+Otherwise evaluate Gates 1–5 per `gates.md` § Step 1.8,
 collecting ALL findings before moving on, and apply its token-economy skip to Steps 2.4/2.4b.
 
 ---
@@ -667,7 +674,7 @@ Then make the LoreKit writes in [`rules/run-writes.md`](./pr-reviewer/rules/run-
 record, always; 4d knowledge + hotspot). The writes fail independently and none cascades.
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
 (MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
-`context.impactImage.eligible` is true (§ The impact image only). **On a clean `gh`-path run with no impact image, make Step 4a–4b one call** — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
+`context.impactImage.eligible` is true (§ The impact image only). **Always run Step 4a–4b as this one call** (add `--dry-run` under `--dry-run`; use `--no-post` only for an impact image) — never as separate validate / finalize / post calls — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
 
 ```text
 node "$AGENT_SUPPORT/pr-reviewer/scripts/finish-review.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> --tool-calls <N> [--dry-run]
