@@ -1480,7 +1480,7 @@ export const MODEL_VALUE = /^(opus|sonnet|haiku|claude-[a-z0-9][a-z0-9.-]*)$/;
  * @param {string} yamlText
  */
 export function reviewSettings(yamlText) {
-  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, critical: string|null, finderPasses: number|null, impactImage: boolean|null, invalid: string[] }} */
+  /** @type {{ profile: string|null, severityThresholds: Record<string, number>|null, flatThreshold: number|null, effort: string|null, thoroughness: number|null, depth: string|null, models: { workers: string|null }, critical: string|null, finderPasses: number|null, impactImage: boolean|null, invalid: string[] }} */
   const out = { profile: null, severityThresholds: null, flatThreshold: null, effort: null, thoroughness: null, depth: null, models: { workers: null }, critical: null, finderPasses: null, impactImage: null, invalid: [] };
   if (!yamlText) return out;
   const clean = (/** @type {string} */ v) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();

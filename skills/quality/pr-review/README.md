@@ -347,7 +347,7 @@ How folders combine, from the repo root down to the changed file:
 | --- | --- |
 | `lenses`, `filters` | Union: a folder adds to its parents and can't remove what they set |
 | `path_instructions`, `standards` | Concatenated, closest folder first |
-| `profile`, `effort`, `thoroughness`, `critical`, `finder_passes`, `impact_image`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
+| `profile`, `depth`, `effort`, `thoroughness`, `models`, `critical`, `finder_passes`, `impact_image`, `high_stakes_paths`, `agent0_*` | Read from `.agents/review/config.yaml` only; a folder file that sets one is ignored |
 
 Lenses and the run-level knobs (the last row above) are read from the PR's **base** commit, so a PR can't loosen its own review; a PR may add a high-stakes path but never remove one.
 `filters`, `path_instructions`, `standards`, `measurable`, and the `agent0_*` keys are read from the PR's head.

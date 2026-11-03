@@ -48,7 +48,7 @@ Each preset is one column of the [thoroughness budget](./depth-routing.md#thorou
 
 | Preset | Finders | Verifier tier | Tool-call budget | Tier |
 | --- | --- | --- | --- | --- |
-| `quick` | correctness, intent, quality; intent isolated; measurability lens | 1 | ×1 | routed |
+| `quick` | correctness, intent, quality; measurability lens; lean (one context, no holistic pass) on a quick-routed PR, intent isolated plus holistic pass on a higher routed tier | 1 | ×1 | routed |
 | `standard` | + consumer-impact, dependency, standards on the delta | 2 | ×1 | routed |
 | `deep` | consumer-impact and standards on every file | 2 | ×1.5 | forced `deep` |
 | `max` | same as `deep` | 3 (execution) | ×2 | forced `deep` |
@@ -95,6 +95,7 @@ Where a model cannot be chosen:
 - A harness whose dispatch tool has no `model` parameter runs every sub-agent on its own model.
   The skill dispatches without one and prints `models: not applied (<role>)`.
 - `/review-loop` and a direct `Task(subagent_type="pr-reviewer")` run the reviewer on `model: opus`: neither takes `--model`.
+- `/review-loop` dispatches its intent worker without a model, so config `models: workers:` applies only on the `/pr-review` path and is silently unused inside the loop.
 - The orchestrator that dispatches the reviewer runs on whatever model the user's session uses.
 
 ```text
@@ -147,7 +148,7 @@ An opt-out flag always wins over a preset: the lever stays off whatever the dept
 | Flag | Turns off | Lever the preset would otherwise set |
 | --- | --- | --- |
 | `--no-measurable` | the measurability lens | on from `quick` |
-| `--no-holistic` | the holistic broad pass and escalation | on from `quick` |
+| `--no-holistic` | the holistic broad pass and escalation | on from `quick` on a higher routed tier |
 | `--no-escalate` | escalation only | cap grows with depth |
 | `--no-standards` | the standards finder | on from `standard` |
 | `--skip-gates` | Gates 1–5; inline review only | not a depth lever |

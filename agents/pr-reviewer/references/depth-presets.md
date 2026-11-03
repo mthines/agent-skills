@@ -47,11 +47,9 @@ Where a harness lacks the parameter the model cannot be chosen, and the run says
 ## Why `opus` stays the default reviewer
 
 A cheaper reviewer runs the whole review in one context and grades its own confidence, so its output rests on a single reader.
-On the diffs tried, `sonnet` found a real authorization gap but graded it non-blocking, and `haiku` found a different real bug but missed that gap.
-Neither found a known blocking bug on a second diff, and `haiku` returned `PASS` there.
-So a cheaper model lowers the cost of a review and also lowers the chance that a blocking bug is caught, in a way the report does not show.
-Both tried diffs routed to the `deep` tier, so no cheaper model was measured on the quick or standard routing.
-No detection eval has scored a cheaper reviewer, so no setting maps a routed tier to a model: the choice stays with the caller, who knows the diff's risk.
+A cheaper model lowers the cost of a review and also lowers the chance that a blocking bug is caught, in a way the report does not show: a smaller reviewer can return `PASS` on a diff that holds one.
+No detection eval has scored a cheaper reviewer, and none has measured one on the quick or standard routing, so no setting maps a routed tier to a model.
+The choice stays with the caller, who knows the diff's risk.
 
 ## Why `--full` is not a depth alias
 

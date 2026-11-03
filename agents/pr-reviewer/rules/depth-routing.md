@@ -246,7 +246,7 @@ Every preset resolves to one `t` and is the budget the tier default of the same 
 
 | Preset | `t` | Tier | Adds over the one above |
 | --- | --- | --- | --- |
-| `quick` | 0.4 | routed | correctness, intent, and quality finders; the intent finder isolated; measurability lens; holistic broad pass |
+| `quick` | 0.4 | routed | correctness, intent, and quality finders; measurability lens; on a quick-routed PR the lean default (one context, no holistic broad pass), on a higher routed tier the intent finder isolated and the holistic broad pass |
 | `standard` | 0.7 | routed | consumer-impact, dependency, and standards on the delta; verifier tier 2 |
 | `deep` | 0.85 | forced `deep` | consumer-impact and standards on every file; tool-call budget ×1.5 |
 | `max` | 1 | forced `deep` | tier-3 (execution) verification; tool-call budget ×2 |
