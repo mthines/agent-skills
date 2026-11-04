@@ -38,6 +38,7 @@ A candidate's `verify_by` is usually 2–5 greps and `sed` reads; run them all i
 and put the probes of every candidate you have not yet started in the same call when they are independent.
 The reads are the same, the verdicts are judged on the same evidence; only the turn count changes.
 A probe whose target depends on a previous probe's output waits for that output.
+Keep one batch's expected output under about 20 KB — the Bash tool saves anything over ~30 KB to a file and shows a 2 KB preview, which hides the evidence — by capping each probe (`| head -40`, a `sed -n` range) and splitting the batch when the caps add up to more.
 
 ```bash
 # correct: one turn, three probes, labelled

@@ -645,7 +645,7 @@ anything `(blocking)` are never suppressed.
 
 ## Step 2.9c: Reconcile prior threads (re-review only)
 
-When `IS_RE_REVIEW == true`, read `agents/pr-reviewer/rules/thread-reconcile.md` and run it now —
+When `IS_RE_REVIEW == true`, run `agents/pr-reviewer/rules/thread-reconcile.md` now (Step 1.8 already loaded it) —
 whether or not Step 2 ran, before the verdict and posting. Skip it on a first-pass review.
 
 ---
