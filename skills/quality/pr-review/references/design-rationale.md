@@ -24,6 +24,12 @@ An isolated intent finder catches high-severity defects that the same finder mis
 One shared `prepare-review.mjs` run serves both: a worker that runs its own prepare repeats the GitHub reads and leaves a worktree behind.
 The preamble's explicit read-list and forbidden-file rule stop the worker from re-reading the full agent document; the dispatch prompt is the one part of a worker's context this skill controls.
 
+## Why the reviewer prompt carries a resolved `INTENT_WAIT` line
+
+The reviewer reads the intent file at Step 2.6b, and the file exists only once the concurrent worker finishes.
+The agent's own wait command needs `$TELEMETRY`, `$RUN_DIR`, and `$INTENT_FROM` assembled by the reviewer; a Sonnet reviewer instead ran one `ls` of the intent directory, found it empty, and finished without the intent candidates and without the full pipeline (3 of 3 Sonnet-reviewer runs on dash0#24688; the Opus reviewer ran the wait every time).
+The caller already knows every path, so it resolves the command once and hands it over; the polling, the 10-minute cap, and the `intent: timed out` in-context fallback stay in `agents/pr-reviewer/rules/dispatch-topology.md`.
+
 ## Why `date +%s`, not `%s%3N`
 
 BSD `date` on macOS has no `%N`, so `%s%3N` prints a literal `3N`.
