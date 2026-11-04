@@ -108,12 +108,6 @@ filters*) → [`agents/shared/rules/finding-verifier.md`](./shared/rules/finding
 [`telemetry.md`](./pr-reviewer/rules/telemetry.md) (Step 1.0), and [`run-telemetry.md`](./pr-reviewer/rules/run-telemetry.md) (step
 markers — read before Step 1). Other rules are named at the step that reads them.
 
-**Right after `prepare-review.mjs` writes the context, read the early rules in one call** — `read-rules.mjs run-telemetry` plus `pipeline` under `--dry-run`/`--isolated`/`--review-sha`, plus `dispatch-topology` when the topology is not `single` — instead of one `Read` each:
-
-```text
-node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" run-telemetry [pipeline] [dispatch-topology]
-```
-
 Read [`agents/pr-reviewer/rules/agent0-runtime.md`](./pr-reviewer/rules/agent0-runtime.md) **only
 inside a Dash0 Agent0 Automation**.
 
@@ -606,16 +600,20 @@ Announce `context.reviewContext.announce` verbatim whenever the packet carries t
 
 ## Step 1.8: Run pre-merge gate checks
 
-Skip this step entirely if `--skip-gates` was passed; set all Gate 1–5 results to `SKIPPED`.
-**Read every remaining rule file in this one call — never one `Read` per file** (a measured run spent six turns on six):
+Skip the gate checks entirely if `--skip-gates` was passed; set all Gate 1–5 results to `SKIPPED`.
+
+**Load the rule files in three calls, never one `Read` per file** — unless the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or Step 1.2b's `REVIEW_DIFF == ""`), when only `gates` and `thread-reconcile` are needed.
+Each call stays under the Bash tool's output cap (~30 KB, above which it saves to a file and shows 2 KB); `read-rules.mjs` refuses a larger bundle.
+Drop `gates` under `--skip-gates` and `thread-reconcile` on a first-pass review.
 
 ```text
-node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates inline-pipeline verify-and-render finders judgments [thread-reconcile when IS_RE_REVIEW]
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates thread-reconcile
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" inline-pipeline judgments
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" verify-and-render finders
 ```
 
-Skip the Step 2 / 2.9c / Step 4 reads that name these files; they are already in context.
-Under `--skip-gates` this whole step is skipped, so run the same command at Step 2 without `gates`; `gates.md` is then read where lines 93–95 say.
-Otherwise evaluate Gates 1–5 per `gates.md` § Step 1.8,
+The Step 2, 2.9c, and Step 4 reads of these files are then already done.
+Unless `--skip-gates`, evaluate Gates 1–5 per `gates.md` § Step 1.8,
 collecting ALL findings before moving on, and apply its token-economy skip to Steps 2.4/2.4b.
 
 ---
