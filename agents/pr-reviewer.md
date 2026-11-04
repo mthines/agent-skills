@@ -604,7 +604,7 @@ Skip the gate checks entirely if `--skip-gates` was passed; set all Gate 1–5 r
 
 **Load the rule files in these calls, never one `Read` per file** — unless the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or Step 1.2b's `REVIEW_DIFF == ""`), when only `gates` and `thread-reconcile` are needed (skip the second and third lines).
 Each call stays under the Bash tool's output cap (~30 KB, above which it saves to a file and shows 2 KB); `read-rules.mjs` refuses a larger bundle.
-Drop `gates` under `--skip-gates`; skip the last line on a first-pass review.
+Keep `gates` even under `--skip-gates` (§ Gate criteria reads its *Gate states* before Step 3); skip the last line on a first-pass review.
 
 ```text
 node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates judgments
