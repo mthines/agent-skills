@@ -88,7 +88,7 @@ With `--intent-from <path>`:
    node "$TELEMETRY" step intent-wait --attr tool_calls_so_far=<N> --run-dir "$RUN_DIR"; node "$TELEMETRY" worker intent import --from "$(dirname "$INTENT_FROM")" --done "$INTENT_FROM" --wait 540 --run-dir "$RUN_DIR"; cat "$INTENT_FROM"
    ```
 
-   When the prompt carries an `INTENT_WAIT:` line, run that line in place of this command, once: it is this command with its paths resolved by the caller, and running both folds the worker into the trace twice.
+   When the prompt carries an `INTENT_WAIT:` line, run that line in place of this command, never both: it is this command with its paths resolved by the caller, and running both folds the worker into the trace twice.
 
    It prints `intent: ready after <s>s wait` once the file exists and is non-empty, polling every 2
    seconds, for at most 10 minutes in total, and records the time as `intent_wait_ms`
