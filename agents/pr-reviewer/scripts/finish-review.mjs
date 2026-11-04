@@ -9,7 +9,7 @@
  * reads exactly as it does when the stages run by hand. It never retries and never skips a stage.
  *
  * usage: finish-review.mjs --context <ctx.json> --judgments <judgments.json> --out-dir <dir>
- *          [--dry-run] [--tool-calls <n>]
+ *          [--dry-run] [--tool-calls <n>] [--skip-gates] [--no-dispatch] [--no-fix-links] [--fix-links]
  *   --dry-run   finalize runs with --dry-run (it exports the run itself); no assert marker, and
  *               execute-write-plan runs with --dry-run so its pre-write checks and step preview still run.
  *   --self-test
@@ -19,6 +19,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+/** finalize.mjs reads these from its own command line only, so every one given here is forwarded. */
+const FINALIZE_FLAGS = ["--skip-gates", "--no-dispatch", "--no-fix-links", "--fix-links"];
 
 /** @param {string[]} argv @returns {Record<string, string|boolean>} */
 export function parseArgs(argv) {
@@ -45,7 +47,7 @@ export function planStages(o) {
     {
       name: "finalize",
       argv: [node("finalize.mjs"), "--context", String(o.context), "--judgments", String(o.judgments),
-        "--out-dir", String(o["out-dir"]), ...(o["dry-run"] ? ["--dry-run"] : [])],
+        "--out-dir", String(o["out-dir"]), ...(o["dry-run"] ? ["--dry-run"] : []), ...FINALIZE_FLAGS.filter((f) => o[f.slice(2)])],
     },
   ];
   const plan = join(String(o["out-dir"]), "write-plan.json");
@@ -94,6 +96,9 @@ function selfTest() {
   check("assert marker carries the run dir and tool-call count",
     planStages({ ...base, "tool-calls": "41" })[2].argv.join(" ").includes("tool_calls_so_far=41 --run-dir /r"));
   check("post reads <out-dir>/write-plan.json", planStages(base)[3].argv.at(-1) === "/r/out/write-plan.json");
+  const fwd = planStages({ ...base, "skip-gates": true, "no-fix-links": true, "no-dispatch": true })[1].argv;
+  check("finalize receives --skip-gates, --no-fix-links and --no-dispatch", ["--skip-gates", "--no-fix-links", "--no-dispatch"].every((f) => fwd.includes(f)));
+  check("flags not given are not forwarded", !planStages(base)[1].argv.some((a) => ["--skip-gates", "--no-fix-links", "--fix-links", "--no-dispatch"].includes(a)));
   const miss = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { encoding: "utf8" });
   check("missing flags exit 2", miss.status === 2);
   console.log(fail ? `${fail} FAILED` : "all passed");

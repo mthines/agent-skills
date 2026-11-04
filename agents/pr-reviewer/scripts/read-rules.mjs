@@ -32,6 +32,11 @@ if (args[0] === "--self-test") {
   const check = (/** @type {string} */ n, /** @type {boolean} */ ok) => { console.log(`${ok ? "ok  " : "FAIL"} ${n}`); if (!ok) fail++; };
   const r = bundle(["gates", "judgments"]);
   check("two rules bundle in order with headers", r.ok && r.text.indexOf("===== gates.md") === 0 && r.text.includes("===== judgments.md ====="));
+  // The calls pr-reviewer.md documents must keep headroom under the cap, so a small edit to a rule file cannot make one refuse.
+  const doc = readFileSync(join(RULES, "..", "..", "pr-reviewer.md"), "utf8");
+  const calls = [...doc.matchAll(/read-rules\.mjs" ([a-z0-9 -]+?)(?:\s+#.*)?$/gm)].map((m) => m[1].trim().split(/\s+/));
+  const sizes = calls.map((c) => { const r = bundle(c); return r.ok ? Buffer.byteLength(r.text) : Infinity; });
+  check(`documented bundles (${calls.length}) leave 1500 bytes of headroom`, calls.length >= 4 && sizes.every((n) => n <= MAX_BYTES - 1500));
   const big = bundle(["gates", "inline-pipeline", "verify-and-render"]);
   check("a bundle over the Bash output cap is refused", !big.ok && (big.tooBig || 0) > MAX_BYTES);
   const b = bundle(["gates", "../x", "nope-not-a-rule"]);

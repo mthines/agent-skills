@@ -602,14 +602,15 @@ Announce `context.reviewContext.announce` verbatim whenever the packet carries t
 
 Skip the gate checks entirely if `--skip-gates` was passed; set all Gate 1–5 results to `SKIPPED`.
 
-**Load the rule files in three calls, never one `Read` per file** — unless the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or Step 1.2b's `REVIEW_DIFF == ""`), when only `gates` and `thread-reconcile` are needed.
+**Load the rule files in these calls, never one `Read` per file** — unless the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or Step 1.2b's `REVIEW_DIFF == ""`), when only `gates` and `thread-reconcile` are needed (skip the second and third lines).
 Each call stays under the Bash tool's output cap (~30 KB, above which it saves to a file and shows 2 KB); `read-rules.mjs` refuses a larger bundle.
-Drop `gates` under `--skip-gates` and `thread-reconcile` on a first-pass review.
+Drop `gates` under `--skip-gates`; skip the last line on a first-pass review.
 
 ```text
-node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates thread-reconcile
-node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" inline-pipeline judgments
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates judgments
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" inline-pipeline
 node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" verify-and-render finders
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" thread-reconcile   # re-review only
 ```
 
 The Step 2, 2.9c, and Step 4 reads of these files are then already done.
@@ -623,7 +624,7 @@ collecting ALL findings before moving on, and apply its token-economy skip to St
 **Skip this step entirely** if the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or
 Step 1.2b's `REVIEW_DIFF == ""`); go to Step 2.9c, which runs whether or not Step 2 ran.
 
-Otherwise read these files in one message — two, plus `agents/pr-reviewer/rules/thread-reconcile.md` when `IS_RE_REVIEW == true` (Step 2.9c then needs no turn of its own): `agents/pr-reviewer/rules/inline-pipeline.md` and `agents/pr-reviewer/rules/verify-and-render.md`. `inline-pipeline.md` holds `REVIEW_DIFF` scope,
+Otherwise Step 1.8 already loaded `inline-pipeline.md`, `verify-and-render.md`, and `finders.md`; do not read them again. `inline-pipeline.md` holds `REVIEW_DIFF` scope,
 `SCANNED_FILES`, the rubrics, the finders ([`finders.md`](./pr-reviewer/rules/finders.md),
 [`finder-consumer-impact.md`](./pr-reviewer/rules/finder-consumer-impact.md),
 [`finder-dependency.md`](./pr-reviewer/rules/finder-dependency.md)), the strict drop-point order,
@@ -679,10 +680,10 @@ Then make the LoreKit writes in [`rules/run-writes.md`](./pr-reviewer/rules/run-
 record, always; 4d knowledge + hotspot). The writes fail independently and none cascades.
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
 (MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
-`context.impactImage.eligible` is true (§ The impact image only). **Always run Step 4a–4b as this one call** (add `--dry-run` under `--dry-run`; when `context.impactImage.eligible` is true, do not use it — run the stages by hand per `posting.md` § The impact image) — never as separate validate / finalize / post calls — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
+`context.impactImage.eligible` is true (§ The impact image only). **Always run Step 4a–4b as this one call** (forward each of `--dry-run`, `--skip-gates`, `--no-dispatch`, `--no-fix-links`, `--fix-links` that this run was given — `finalize.mjs` reads them only from its command line; when `context.impactImage.eligible` is true, do not use it — run the stages by hand per `posting.md` § The impact image) — never as separate validate / finalize / post calls — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
 
 ```text
-node "$AGENT_SUPPORT/pr-reviewer/scripts/finish-review.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> --tool-calls <N> [--dry-run]
+node "$AGENT_SUPPORT/pr-reviewer/scripts/finish-review.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> --tool-calls <N> [--dry-run] [--skip-gates] [--no-dispatch] [--no-fix-links] [--fix-links]
 ```
 
 The script lines, exactly — never probe them with `--help`:
