@@ -135,7 +135,14 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    When the dispatch tool has no model parameter, dispatch without one and print `models: not applied (<role>)` under the report's run line; never invent another mechanism.
 
    On `hybrid`, in **one message**, dispatch both:
-   - `pr-reviewer` with `<PR_REF> <pass-through flags> --context <dir>/context.json --intent-from <dir>/intent/intent.json`;
+   - `pr-reviewer` with `<PR_REF> <pass-through flags> --context <dir>/context.json --intent-from <dir>/intent/intent.json`,
+     then a new line `INTENT_WAIT: ` followed by the wait command below with `<dir>` and `$AGENT_SUPPORT` already resolved to absolute paths.
+     The worker runs beside the reviewer, so the file does not exist when the reviewer starts; the reviewer runs this line at its Step 2.6b, after verifying its own candidates, replaces `<N>` with its own running tool-call count (the only part the caller cannot know), and never replaces the line with `ls` or `cat`:
+
+     ```bash
+     node "$AGENT_SUPPORT/pr-reviewer/scripts/review-telemetry.mjs" step intent-wait --attr tool_calls_so_far=<N> --run-dir <dir>; node "$AGENT_SUPPORT/pr-reviewer/scripts/review-telemetry.mjs" worker intent import --from <dir>/intent --done <dir>/intent/intent.json --wait 540 --run-dir <dir>; cat <dir>/intent/intent.json
+     ```
+
    - a general-purpose worker (the harness's general sub-agent type) with the [worker preamble](#worker-preamble--the-intent-worker),
      told to read `<dir>/context.json`, `finders.md`, and the review packet the context names, act as
      the `intent` finder only, and write its candidates to `<dir>/intent/intent.json` as a JSON array.
@@ -165,9 +172,11 @@ The agent reads the intent file only after verifying its own candidates, and run
 
 ```text
 ✅ RIGHT — prepare once, then one message, two dispatches
-Task(subagent_type="pr-reviewer", prompt="<PR_REF> --context /…/context.json --intent-from /…/intent/intent.json")
 Task(subagent_type="general-purpose", prompt="<worker preamble> … read /…/context.json … act as the intent finder … write /…/intent/intent.json")
 
+Task(subagent_type="pr-reviewer", prompt="<PR_REF> --context /…/context.json --intent-from /…/intent/intent.json\nINTENT_WAIT: node /…/review-telemetry.mjs step intent-wait --attr tool_calls_so_far=<N> --run-dir /…; node /…/review-telemetry.mjs worker intent import --from /…/intent --done /…/intent/intent.json --wait 540 --run-dir /…; cat /…/intent/intent.json")
+
+❌ WRONG — no INTENT_WAIT line: a reviewer that runs `ls /…/intent` once sees an empty directory, reads it as "the worker failed", and finishes without the intent candidates
 ❌ WRONG — the worker in a second message: the reviewer's wait becomes the worker's full runtime
 ❌ WRONG — a worker told to run prepare-review.mjs: a second set of GitHub reads, and a leaked worktree
 ```
