@@ -33,7 +33,9 @@ workspace and the impact graph. It **never** receives which finder produced it, 
 carries, the confidence bar, or anything else about the run — all of which would let it grade the
 source rather than the claim.
 
-**Probe in batches, never one probe per turn.** A candidate's `verify_by` is usually 2–5 greps and `sed` reads; run them all in one Bash call, joined with `;` and each prefixed by an `echo "## <what it checks>"` line, and put the probes of every candidate you have not yet started in the same call when they are independent.
+**Probe in batches, never one probe per turn.**
+A candidate's `verify_by` is usually 2–5 greps and `sed` reads; run them all in one Bash call, joined with `;` and each prefixed by an `echo "## <what it checks>"` line,
+and put the probes of every candidate you have not yet started in the same call when they are independent.
 The reads are the same, the verdicts are judged on the same evidence; only the turn count changes.
 A probe whose target depends on a previous probe's output waits for that output.
 

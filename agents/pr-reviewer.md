@@ -613,7 +613,8 @@ Skip this step entirely if `--skip-gates` was passed; set all Gate 1–5 results
 node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates inline-pipeline verify-and-render finders judgments [thread-reconcile when IS_RE_REVIEW]
 ```
 
-Drop `gates` under `--skip-gates` and skip the Step 2 / 2.9c / Step 4 reads that name those files; they are already in context.
+Skip the Step 2 / 2.9c / Step 4 reads that name these files; they are already in context.
+Under `--skip-gates` this whole step is skipped, so run the same command at Step 2 without `gates`; `gates.md` is then read where lines 93–95 say.
 Otherwise evaluate Gates 1–5 per `gates.md` § Step 1.8,
 collecting ALL findings before moving on, and apply its token-economy skip to Steps 2.4/2.4b.
 
@@ -680,13 +681,12 @@ Then make the LoreKit writes in [`rules/run-writes.md`](./pr-reviewer/rules/run-
 record, always; 4d knowledge + hotspot). The writes fail independently and none cascades.
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
 (MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
-`context.impactImage.eligible` is true (§ The impact image only). **Always run Step 4a–4b as this one call** (add `--dry-run` under `--dry-run`; use `--no-post` only for an impact image) — never as separate validate / finalize / post calls — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
+`context.impactImage.eligible` is true (§ The impact image only). **Always run Step 4a–4b as this one call** (add `--dry-run` under `--dry-run`; when `context.impactImage.eligible` is true, do not use it — run the stages by hand per `posting.md` § The impact image) — never as separate validate / finalize / post calls — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
 
 ```text
 node "$AGENT_SUPPORT/pr-reviewer/scripts/finish-review.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> --tool-calls <N> [--dry-run]
 ```
 
-Use `--no-post` instead when `context.impactImage.eligible` is true (the dry-run finalize and the real one need `posting.md` between them), then run the post line yourself.
 The script lines, exactly — never probe them with `--help`:
 
 ```text

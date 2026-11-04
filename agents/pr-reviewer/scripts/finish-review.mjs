@@ -9,9 +9,9 @@
  * reads exactly as it does when the stages run by hand. It never retries and never skips a stage.
  *
  * usage: finish-review.mjs --context <ctx.json> --judgments <judgments.json> --out-dir <dir>
- *          [--dry-run] [--tool-calls <n>] [--no-post]
- *   --dry-run   finalize runs with --dry-run (it exports the run itself); no assert marker, no post.
- *   --no-post   stop after finalize, for a run that needs posting.md's impact-image step first.
+ *          [--dry-run] [--tool-calls <n>]
+ *   --dry-run   finalize runs with --dry-run (it exports the run itself); no assert marker, and
+ *               execute-write-plan runs with --dry-run so its pre-write checks and step preview still run.
  *   --self-test
  */
 import { spawnSync } from "node:child_process";
@@ -48,13 +48,17 @@ export function planStages(o) {
         "--out-dir", String(o["out-dir"]), ...(o["dry-run"] ? ["--dry-run"] : [])],
     },
   ];
-  if (o["dry-run"] || o["no-post"]) return stages;
+  const plan = join(String(o["out-dir"]), "write-plan.json");
+  if (o["dry-run"]) {
+    stages.push({ name: "post", argv: [node("execute-write-plan.mjs"), "--plan", plan, "--dry-run"] });
+    return stages;
+  }
   stages.push({
     name: "assert",
     argv: [node("review-telemetry.mjs"), "step", "assert", ...(o["tool-calls"] ? ["--attr", `tool_calls_so_far=${o["tool-calls"]}`] : []),
       "--run-dir", dirname(resolve(String(o.context)))],
   });
-  stages.push({ name: "post", argv: [node("execute-write-plan.mjs"), "--plan", join(String(o["out-dir"]), "write-plan.json")] });
+  stages.push({ name: "post", argv: [node("execute-write-plan.mjs"), "--plan", plan] });
   return stages;
 }
 
@@ -82,8 +86,9 @@ function selfTest() {
   const base = { context: "/r/ctx.json", judgments: "/r/j.json", "out-dir": "/r/out" };
   const names = (/** @type {any} */ o) => planStages(o).map((s) => s.name).join(",");
   check("real run: validate, finalize, assert, post in order", names(base) === "validate,finalize,assert,post");
-  check("--dry-run: no assert, no post", names({ ...base, "dry-run": true }) === "validate,finalize");
-  check("--no-post: stops after finalize", names({ ...base, "no-post": true }) === "validate,finalize");
+  check("--dry-run: no assert, but the post stage still runs", names({ ...base, "dry-run": true }) === "validate,finalize,post");
+  check("--dry-run post stage passes --dry-run to execute-write-plan", planStages({ ...base, "dry-run": true })[2].argv.includes("--dry-run"));
+  check("real run's post stage has no --dry-run", !planStages(base)[3].argv.includes("--dry-run"));
   const fin = planStages({ ...base, "dry-run": true })[1].argv;
   check("--dry-run reaches finalize", fin.includes("--dry-run"));
   check("assert marker carries the run dir and tool-call count",
