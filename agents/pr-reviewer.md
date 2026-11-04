@@ -600,8 +600,21 @@ Announce `context.reviewContext.announce` verbatim whenever the packet carries t
 
 ## Step 1.8: Run pre-merge gate checks
 
-Skip this step entirely if `--skip-gates` was passed; set all Gate 1–5 results to `SKIPPED`.
-Otherwise read `agents/pr-reviewer/rules/gates.md` now and evaluate Gates 1–5 per its § Step 1.8,
+Skip the gate checks entirely if `--skip-gates` was passed; set all Gate 1–5 results to `SKIPPED`.
+
+**Load the rule files in these calls, never one `Read` per file** — unless the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or Step 1.2b's `REVIEW_DIFF == ""`), when only `gates` and `thread-reconcile` are needed (skip the second and third lines).
+Each call stays under the Bash tool's output cap (~30 KB, above which it saves to a file and shows 2 KB); `read-rules.mjs` refuses a larger bundle.
+Keep `gates` even under `--skip-gates` (§ Gate criteria reads its *Gate states* before Step 3); skip the last line on a first-pass review.
+
+```text
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" gates judgments
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" inline-pipeline
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" verify-and-render finders
+node "$AGENT_SUPPORT/pr-reviewer/scripts/read-rules.mjs" thread-reconcile   # re-review only
+```
+
+The Step 2, 2.9c, and Step 4 reads of these files are then already done.
+Unless `--skip-gates`, evaluate Gates 1–5 per `gates.md` § Step 1.8,
 collecting ALL findings before moving on, and apply its token-economy skip to Steps 2.4/2.4b.
 
 ---
@@ -611,7 +624,7 @@ collecting ALL findings before moving on, and apply its token-economy skip to St
 **Skip this step entirely** if the zero-delta short-circuit fired (Step 0.8's `FAST_ZERO_DELTA` or
 Step 1.2b's `REVIEW_DIFF == ""`); go to Step 2.9c, which runs whether or not Step 2 ran.
 
-Otherwise read these two files in one message: `agents/pr-reviewer/rules/inline-pipeline.md` and `agents/pr-reviewer/rules/verify-and-render.md`. `inline-pipeline.md` holds `REVIEW_DIFF` scope,
+Otherwise Step 1.8 already loaded `inline-pipeline.md`, `verify-and-render.md`, and `finders.md`; do not read them again. `inline-pipeline.md` holds `REVIEW_DIFF` scope,
 `SCANNED_FILES`, the rubrics, the finders ([`finders.md`](./pr-reviewer/rules/finders.md),
 [`finder-consumer-impact.md`](./pr-reviewer/rules/finder-consumer-impact.md),
 [`finder-dependency.md`](./pr-reviewer/rules/finder-dependency.md)), the strict drop-point order,
@@ -632,7 +645,7 @@ anything `(blocking)` are never suppressed.
 
 ## Step 2.9c: Reconcile prior threads (re-review only)
 
-When `IS_RE_REVIEW == true`, read `agents/pr-reviewer/rules/thread-reconcile.md` and run it now —
+When `IS_RE_REVIEW == true`, run `agents/pr-reviewer/rules/thread-reconcile.md` now (Step 1.8 already loaded it) —
 whether or not Step 2 ran, before the verdict and posting. Skip it on a first-pass review.
 
 ---
@@ -667,7 +680,13 @@ Then make the LoreKit writes in [`rules/run-writes.md`](./pr-reviewer/rules/run-
 record, always; 4d knowledge + hotspot). The writes fail independently and none cascades.
 **Read [`rules/posting.md`](./pr-reviewer/rules/posting.md) only when** `execute-write-plan.mjs` exits 3
 (MCP path: you post, after `--check-report`), a step in its result has `ok: false`, or
-`context.impactImage.eligible` is true (§ The impact image only). The script lines, exactly — never probe them with `--help`:
+`context.impactImage.eligible` is true (§ The impact image only). **Always run Step 4a–4b as this one call** (forward each of `--dry-run`, `--skip-gates`, `--no-dispatch`, `--no-fix-links`, `--fix-links` that this run was given — `finalize.mjs` reads them only from its command line; when `context.impactImage.eligible` is true, do not use it — run the stages by hand per `posting.md` § The impact image) — never as separate validate / finalize / post calls — it runs the three scripts below in order, stops at the first non-zero exit with that stage's output, and puts the `assert` marker between `finalize` and the post (a rejection, a refusal, or exit 3 reads exactly as it does by hand):
+
+```text
+node "$AGENT_SUPPORT/pr-reviewer/scripts/finish-review.mjs" --context <ctx.json> --judgments <judgments.json> --out-dir <dir> --tool-calls <N> [--dry-run] [--skip-gates] [--no-dispatch] [--no-fix-links] [--fix-links]
+```
+
+The script lines, exactly — never probe them with `--help`:
 
 ```text
 node "$AGENT_SUPPORT/pr-reviewer/scripts/validate-judgments.mjs" <judgments.json>
