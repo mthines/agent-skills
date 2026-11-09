@@ -44,7 +44,8 @@ policies:
   foreign_stack: ask      # teardown | ask | abort — a stack this run did not start
   cleanup: leave          # leave | teardown
   push: own-prs           # always | own-prs | never — fix commits
-  pr_comment: always      # always | own-prs | never — standalone ui-verify / telemetry-verify regions; aw-verify's aggregate always posts
+  pr_comment: always      # always | own-prs | never — standalone ui-verify / telemetry-verify regions only
+  trusted_bots: []        # bot logins (no `app/`, no `[bot]`) whose PRs aw-verify's aggregate posts to without asking, like your own
 repos:
   acme/shop:
     telemetry:

@@ -43,3 +43,6 @@ A repo skill may be slash-only so `Skill()` refuses it; then follow its `SKILL.m
 - Treating "no ERROR spans" as proof when the services emitted nothing.
 - Wrapping a failure in a catch-all to make a probe pass.
 - Tearing down a stack someone else is using when the policy says `ask`.
+- Posting a hand-written PR comment, or one made with `gh pr comment` or `attach-media --to comment`, instead of rendering `report.md` and running `verify-comment.mjs`; a hand-driven run still uses the template.
+- Asking the user before posting on their own PR or a trusted bot's PR, or posting on someone else's PR without asking.
+- Comparing PR and viewer logins without stripping a leading `app/`: `gh` prints bots as `app/<name>`.
