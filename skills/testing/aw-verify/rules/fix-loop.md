@@ -63,7 +63,7 @@ Runs on your own PR (`local` or `preview`) and on a branch with no PR yet ([Own 
 
 ## Own PR: fix until verified
 
-The PR is yours when `gh pr view <pr> --json author --jq .author.login` matches `gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login`, both lowercased with one trailing `[bot]` stripped; an unknown viewer means it is not.
+The PR is yours when `gh pr view <pr> --json author --jq .author.login` matches `gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login`, both normalized as in [`pr-comment.md § Whose PR posts automatically`](./pr-comment.md#whose-pr-posts-automatically) (lowercase, a leading `app/` and one trailing `[bot]` stripped); an unknown viewer means it is not. A trusted bot's PR is posted to automatically but is not yours to fix.
 
 | PR | Do |
 | --- | --- |
