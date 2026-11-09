@@ -65,7 +65,8 @@ Then merge if and **only if all** of the following hold — any single failure m
 | **CI green** | CI is actually **green**, or the repo genuinely has no CI. Pending is **not** green — the loop never waits for CI, so a converged-but-pending run stops here without merging | a fresh stateless `gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"` read (**run this even under `--no-ci`** — `--no-ci` only skips the in-loop `ci-auto-fix` delegation) |
 
 A `WARN` is an approval only because the clean-convergence and zero-open-threads gates already hold: no blocking finding stands and every review thread was fixed or answered.
-A `Description vs. code` ⚠️ never becomes a thread, so the merge accepts it rather than resolving it.
+Two kinds of ⚠️ never become a thread: a `Description vs. code` warning, and a Gate 6 finding the reviewer put in the report body (near-miss, over the inline cap, or no line to attach to).
+The merge accepts both rather than resolving them.
 A `FAIL` final verdict is **not** an approval: report `not merged (verdict FAIL — not an approval)` and stop.
 
 ```text
