@@ -431,7 +431,7 @@ The report renders its Agent0 buttons as one row, in this order, each only when 
 - **Fill `{pr_url}` with the full PR URL, never `prRef()`'s short form.** `/review-loop` parses only a github.com PR URL or `#<n>`, and any other first argument switches it to local mode, which has no branch to converge inside an Agent0 session.
   `/pr-review` uses the same form so the two prompts read alike.
 - **Re-review stays on a clean report.** It answers "is it clean now?" after a push, so a PASS with zero findings still offers it.
-- **Loop squash-merges.** `--merge` merges only on a clean convergence, a `PASS` verdict, and green CI (`review-loop`'s `rules/merge.md`); any other outcome leaves the PR open.
+- **Loop squash-merges.** `--merge` merges only on a clean convergence, a `PASS` or `WARN` verdict (never `FAIL`), and green CI (`review-loop`'s `rules/merge.md`); any other outcome leaves the PR open.
 - **Loop renders only beside Fix all.** A loop with nothing to fix spends a review to learn it has converged, which Re-review already answers; the renderer rejects `LOOP_URL` with zero findings and no `CI_NOTE`, as it does `FIX_ALL_URL`.
 - **`/implement-suggestion`, `/pr-review`, and `/review-loop` must exist as Agent0 skills.** Agent0's skill tool resolves a fixed set of built-ins (`agent0-host.md`), so the report row depends on Agent0 shipping all three, as **Fix this** depends on `/pr-fix`.
 - `finalize/fix-links.mjs` builds all three from the same settings, so `--no-fix-links` and `agent0_fix_links: false` withhold the whole row; a caller-supplied `REVIEW_URL` / `LOOP_URL` is never overwritten.
@@ -693,7 +693,7 @@ bytes* remains the backstop for whatever this check does not predict.
 - The buttons only *prepare* a prompt; a human clicks, and Agent0 runs under its own guardrails and
   commits to the PR the human is already looking at. The reviewer never triggers a fix itself.
 - **Loop can merge the PR.** Its prompt is `/review-loop {pr_url} --merge`, which undrafts and
-  squash-merges when the loop converges with zero open threads, a `PASS` verdict, and green CI
+  squash-merges when the loop converges with zero open threads, a `PASS` or `WARN` verdict (never `FAIL`), and green CI
   (`review-loop`'s `rules/merge.md`); any other outcome leaves the PR open. It never merges with
   `--admin` or past branch protection. **Fix all**, **Fix this**, and **Re-review** never merge.
 - **No prompt embeds any comment text.** They carry a PR reference and — for **Fix this** — the
