@@ -28,7 +28,7 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 | Region | Owner | Written when |
 | --- | --- | --- |
-| `aggregate` | `aw-verify` | Every run with a PR, always — `policies.pr_comment` never suppresses it; `--replace-all` drops the other regions, because the aggregate already holds the browser, adversarial, and telemetry proof |
+| `aggregate` | `aw-verify` | Every run with a PR, on your own PRs and trusted bots' PRs without asking, on anyone else's after a yes — `policies.pr_comment` never suppresses it; `--replace-all` drops the other regions, because the aggregate already holds the browser, adversarial, and telemetry proof |
 | `ui` | `ui-verify` | A standalone `run` or `verify` with a PR |
 | `telemetry` | `telemetry-verify` | A standalone run with a PR |
 
@@ -54,17 +54,17 @@ Take the first row that applies.
 | --- | --- |
 | `ui-verify` with `--post-findings` and a PR | Post, whatever `--no-comment` or the policy says: `review-loop --ui` reads the region's status lines |
 | `aw-verify`'s `aggregate` region, a PR resolves, and [the PR is trusted](#whose-pr-posts-automatically) | Post automatically, without asking. `pr_comment` does not apply; `--no-comment` only defers it to the caller's `report <pr-url>` (`comment: deferred (--no-comment)`) |
-| `aw-verify`'s `aggregate` region, a PR resolves, and the PR is not trusted (or the viewer is unknown) | Do not post. Write `report.md`, print `comment: not posted (not your PR — ask)`, and ask the user once whether to post; on a yes, run the same `verify-comment.mjs` command (§ Write the region) |
+| `aw-verify`'s `aggregate` region, a PR resolves, the PR is not trusted (an unknown viewer trusts only `trusted_bots`), and `--no-comment` was not passed | Do not post. Write `report.md`, print `comment: not posted (not your PR — ask)`, and ask the user once whether to post; on a yes, run the same `verify-comment.mjs` command (§ Write the region) |
 | `--no-comment` was passed | `comment: not posted (--no-comment)` |
 | No PR resolves (a local `specs-path`, no PR for the branch) | `comment: not posted (no PR)` |
 | `policies.pr_comment: never` | `comment: not posted (pr_comment: never)` |
 | `policies.pr_comment: own-prs` and the viewer is unknown (`gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login` fails or is empty) | `comment: not posted (pr_comment: own-prs, identity unknown)` |
-| `policies.pr_comment: own-prs` and the PR author differs from the viewer, both lowercased with one trailing `[bot]` stripped | `comment: not posted (pr_comment: own-prs, not your PR)` |
+| `policies.pr_comment: own-prs` and [the PR is not trusted](#whose-pr-posts-automatically) (the author differs from the viewer after the same normalization, and is not in `trusted_bots`) | `comment: not posted (pr_comment: own-prs, not your PR)` |
 | Otherwise, including no policy set (default `always`) | Post |
 
 ### Whose PR posts automatically
 
-A PR is **trusted** when its author is the viewer, or a bot account listed in `policies.trusted_bots` (default `[]`; `~/.agents/aw/config.yml` sets `[dash0-app]` for Dash0's own PR bot).
+A PR is **trusted** when its author is the viewer, or a bot account listed in `policies.trusted_bots` (default `[]`; for example `[dash0-app]` for Dash0's own PR bot).
 Compare logins after this normalization on both sides: lowercase, strip a leading `app/` (the `gh` CLI prints bots as `app/dash0-app`; GraphQL prints `dash0-app`), and strip one trailing `[bot]`.
 Read the author with `gh pr view <pr> --json author --jq .author.login` and the viewer with `gh api graphql -f query='{ viewer { login } }' --jq .data.viewer.login`; an unknown viewer trusts only the listed bots.
 Everyone else's PR is never posted to without a yes from the user, because a comment notifies the PR's author and its watchers.
@@ -74,7 +74,7 @@ Everyone else's PR is never posted to without a yes from the user, because a com
 The comment is the `aggregate` region of `<!-- verify:report -->`, and the only way to write it is `verify-comment.mjs` fed by a `report.md` rendered from [`templates/report.md.template`](../templates/report.md.template).
 This holds when the run was driven by hand (a Chrome session, a single probe, a quick re-check): fill the template from what you observed, then run the script.
 Never `gh pr comment` or `gh pr edit` a hand-written body, and never use `attach-media --to comment` for proof; upload the screenshot, put its URL in the media strip, and let the script write the comment.
-When a hand-written comment already exists, post the real one first, then delete the hand-written one.
+When a hand-written comment already exists, post the real one first, then delete the hand-written one, but only when it does not start with `<!-- verify:report -->` and its URL differs from the one the script printed: the script edits a marked comment in place, so a marked one may now be the real comment.
 
 **A parent never lets a child post.** `aw-verify` passes `--no-comment` to every `ui-verify` and `telemetry-verify` call, `ui-verify` passes it to every `telemetry-verify` call, and so does every other skill or agent that calls `telemetry-verify` for its own receipt (`verify-behavior`, `measurable`, `fix-bug`, `pr-reviewer`); the parent posts the child's proof inside its own region.
 
