@@ -7,7 +7,7 @@ description: >
   reference it runs local mode: branch-reviewer over a local findings file,
   zero GitHub calls, for an un-pushed branch. Run it at
   the top level of a session with a dispatch tool; flags --ui (parallel
-  ui-verify lane), --merge (squash on clean approval), --no-ci, --no-feedback;
+  ui-verify lane), --merge (squash on a PASS or WARN approval), --no-ci, --no-feedback;
   triggers on "/review-loop".
 disable-model-invocation: false
 argument-hint: '[<PR-URL|#n>] [--base <ref>] [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--ui] [--merge]'
@@ -118,7 +118,7 @@ No PR reference → **local mode**: read [`rules/local-mode.md`](./rules/local-m
 | `--no-ci` | Skip sub-step D. `create-pr` and `autonomous-workflow` pass it (they own CI). |
 | `--no-preview-run` | Skip Step 1.6. `autonomous-workflow` passes it; `create-pr` does not. |
 | `--ui` | Run `ui-verify` against the live preview in a parallel lane and resolve its findings inside the loop; replaces Step 1.6. Read [`rules/ui-lane.md`](./rules/ui-lane.md) when `--ui` is set. |
-| `--merge` | Squash-merge on a clean convergence, a `PASS` verdict, and green CI (Step 2.5). Read [`rules/merge.md`](./rules/merge.md) when `--merge` is set. |
+| `--merge` | Squash-merge on a clean convergence, a `PASS` or `WARN` verdict (never `FAIL`), and green CI (Step 2.5). Read [`rules/merge.md`](./rules/merge.md) when `--merge` is set. |
 
 Step 0 refuses `--ui` + `--no-feedback`, `--ui` + `--no-preview-run`, and `--merge` + `--no-feedback` (messages in the flag block).
 
@@ -300,7 +300,7 @@ while ITERATION < CAP:
         # AGENT0 == 1 (rules/agent0-runtime.md): subagent_type="general" with that rule's bundle-pointing prompt — never pr-reviewer, never a review in this context.
         # A refusal or BLOCKED reply is not a review: STOP_REASON = "reviewer-refused"; break.
         NEW_FINDINGS  = (pr-reviewer reported new actionable findings)
-        FINAL_VERDICT = review.verdict   # PASS | WARN | FAIL — the --merge approval gate reads this
+        FINAL_VERDICT = review.verdict   # PASS | WARN | FAIL — the --merge approval gate reads this (FAIL blocks)
 
     if NO_FEEDBACK == 1:
         STOP_REASON = "report-only"
@@ -462,7 +462,7 @@ PR description: <refreshed | unchanged (no code applied) | skipped (--no-refresh
 Linear note: <posted <ticket> | no ticket linked | Linear MCP unavailable | skipped>
 
 Merge re-review: <PASS | WARN | FAIL | refused | not needed (final verdict PASS) | not needed (description unchanged) | not run (<STOP_REASON>) | not requested (no --merge)>
-Merge: <merged (squash) | not merged (verdict <V> — not a clean approval) | not merged (post-refresh re-review refused) | not merged (post-refresh re-review found <N> new findings) | not merged (converged, awaiting CI) | not merged (UI lane red on <sha7>) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
+Merge: <merged (squash) | not merged (verdict FAIL — not an approval) | not merged (post-refresh re-review refused) | not merged (post-refresh re-review found <N> new findings) | not merged (converged, awaiting CI) | not merged (UI lane red on <sha7>) | not merged (<STOP_REASON>) | merge failed (<verbatim gh error>) | not requested (no --merge)>
 
 Final pr-reviewer verdict: <PASS | WARN | FAIL | n/a (no review this run — prior review at <PRIOR_SHA>)>
 # The post-refresh re-review's verdict when it ran, else the loop's last review pass.
@@ -478,7 +478,7 @@ Never describe a run that stopped with CI red, or that skipped, as converged; a 
 - **Never review in this context.** Sub-step A is always a dispatch: `pr-reviewer`, or under Agent0 a `general` sub-agent reading the bundle. A refusing reply is `reviewer-refused`, never a clean pass.
 - **Never write to GitHub directly, except the Step 2 description refresh.** `pr-reviewer` posts reviews and `implement-suggestion` resolves threads.
 - **Never undraft the PR — except under `--merge`**, where Step 2.5 undrafts only after every merge gate passed.
-- **`--merge` merges only on a clean approval.** `STOP_REASON == "all-threads-resolved"`, zero open threads, a `PASS` verdict, and green CI. The final verdict is the post-refresh re-review's when Step 2 changed the body after a non-`PASS` review. Squash only, never `--admin` or `--force`.
+- **`--merge` merges only on a clean approval.** `STOP_REASON == "all-threads-resolved"`, zero open threads, a `PASS` or `WARN` verdict (never `FAIL`), and green CI. The final verdict is the post-refresh re-review's when Step 2 changed the body after a non-`PASS` review. Squash only, never `--admin` or `--force`.
 - **One `implement-suggestion` per iteration, no `--watch`.**
 - **Iteration 1 skips the review only when the last review still stands.** All five apply-first conditions must hold and any failed read fails the check; `NEW_FINDINGS` is `true` on the skip, so convergence and `--merge` always follow a review pass.
 - **The cap is a hard limit.**

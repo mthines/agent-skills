@@ -1,5 +1,5 @@
 ---
-title: --merge — squash-merge a converged PR on a clean approval
+title: --merge — squash-merge a converged PR on a PASS or WARN approval
 impact: HIGH
 tags:
   - review-loop
@@ -16,12 +16,13 @@ Why each gate exists: [`references/design-rationale.md` § --merge](../reference
 ### Step 2.5: Merge (under `--merge`, on approval)
 
 This is the one step that overrides *never undraft*: to merge, a draft must first be marked ready.
-Merge on the **first agent approval**: the loop already ran to clean convergence (every non-blocking comment fixed or answered), and the review that ended the loop was an approval.
+Merge on the **first agent approval**: the loop already ran to clean convergence (every non-blocking comment fixed or answered), and the review that ended the loop was a `PASS` or a `WARN`.
+A `WARN` means no hard gate failed and no blocking finding stands (only ⚠️ graded gates), so after clean convergence it is an approval; only `FAIL` blocks.
 
 #### Post-refresh re-review — before the gates
 
 The loop's last review judged the PR body as it was **before** Step 2 rewrote it.
-So when that review's verdict is not `PASS` and Step 2 changed the body, its verdict is stale: a `Description vs. code` warning the refresh fixed would still block the merge.
+So when that review's verdict is not `PASS` and Step 2 changed the body, its verdict is stale: the refresh can change the verdict either way, a `Description vs. code` warning fixed or a hard gate newly failed (`FAIL`), and only a `FAIL` blocks the merge.
 Run **exactly one** more review pass before reading the gates, when **all** of these hold:
 
 | Condition | Why |
@@ -29,7 +30,7 @@ Run **exactly one** more review pass before reading the gates, when **all** of t
 | `MERGE == 1` | Without `--merge` nothing reads the verdict |
 | `STOP_REASON == "all-threads-resolved"` | Any other stop reason fails the first gate whatever the verdict says |
 | `DESCRIPTION_REFRESHED == 1` | An unchanged body cannot change the verdict |
-| `FINAL_VERDICT != "PASS"` | A `PASS` needs no second look |
+| `FINAL_VERDICT != "PASS"` | A `PASS` needs no second look; a stale `WARN` or `FAIL` may have been fixed by the refresh |
 
 How it runs:
 
@@ -41,7 +42,8 @@ How it runs:
 4. Do not merge when it does not come back clean:
    - a refusal or `BLOCKED` reply → `MERGE_REREVIEW = refused`, report `not merged (post-refresh re-review refused)`;
    - new actionable findings → report `not merged (post-refresh re-review found <N> new findings)` and leave them for the next run;
-   - `WARN` or `FAIL` → the Approval gate below reports it as usual.
+   - `WARN` → still merge-eligible; the Approval gate below passes it;
+   - `FAIL` → the Approval gate below reports it as usual.
 
 ```text
 # correct: the refresh changed the body after a WARN, so the gates read a verdict on the new body
@@ -50,7 +52,7 @@ Step 2:   body refreshed → DESCRIPTION_REFRESHED = 1
 Step 2.5: post-refresh re-review → PASS → FINAL_VERDICT = PASS → gates pass → merged (squash)
 
 # incorrect: gating on the verdict that predates the refresh
-Step 2.5: FINAL_VERDICT == WARN (iteration 2) → not merged — the warning it carried was fixed by Step 2
+Step 2.5: FINAL_VERDICT == WARN (iteration 2) → merged — without checking whether Step 2 turned the body into a FAIL
 ```
 
 Then merge if and **only if all** of the following hold — any single failure means *do not merge*, record the reason, and stop with the PR left review-ready:
@@ -59,10 +61,21 @@ Then merge if and **only if all** of the following hold — any single failure m
 | --- | --- | --- |
 | **Clean convergence** | `STOP_REASON == "all-threads-resolved"` | the loop's exit. `no-progress` (human-judgment flags remain), `cap-reached`, `ci-red`, and `ci-error` are all **not** merge-eligible |
 | **Zero open threads** | `unresolved_thread_count() == 0` | re-read now, do not trust the loop's last value |
-| **Approval** | `FINAL_VERDICT == "PASS"` | the last review pass — the post-refresh re-review when one ran |
+| **Approval** | `FINAL_VERDICT` is `PASS` or `WARN` (never `FAIL`) | the last review pass — the post-refresh re-review when one ran |
 | **CI green** | CI is actually **green**, or the repo genuinely has no CI. Pending is **not** green — the loop never waits for CI, so a converged-but-pending run stops here without merging | a fresh stateless `gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"` read (**run this even under `--no-ci`** — `--no-ci` only skips the in-loop `ci-auto-fix` delegation) |
 
-A non-`PASS` final verdict (`WARN` or `FAIL`) is **not** an approval: report `not merged (verdict <V> — not a clean approval)` and stop.
+A `WARN` is an approval only because the clean-convergence and zero-open-threads gates already hold: no blocking finding stands and every review thread was fixed or answered.
+Two kinds of ⚠️ never become a thread: a `Description vs. code` warning, and a Gate 6 finding the reviewer deferred to the report body over the inline cap.
+The merge accepts both rather than resolving them.
+A `FAIL` final verdict is **not** an approval: report `not merged (verdict FAIL — not an approval)` and stop.
+
+```text
+# correct: WARN carried only a non-blocking gate warning, and convergence resolved every thread
+Final verdict WARN (Description vs. code ⚠️), all-threads-resolved, 0 open threads, CI green → merged (squash)
+
+# incorrect: refusing a converged WARN
+Final verdict WARN, all-threads-resolved, 0 open threads, CI green → not merged (verdict WARN)
+```
 The Step 1.6 ui-verify verdict is report-only and never gates the merge; surface a `red` preview verdict in the report, but do not let it block or force the merge.
 Under `--ui` the lane is part of convergence, so it **does** gate: when the lane's last run on the final head reported `verdict: red`, report `not merged (UI lane red on <sha7>)` and stop.
 An `inconclusive` lane does not block the merge; name it in the report.
