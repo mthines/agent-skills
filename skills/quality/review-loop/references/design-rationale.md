@@ -104,8 +104,8 @@ Every other `polish` mode runs an internal reviewer pass, which would create a d
 ## `--merge`
 
 - The override of *never undraft* is scoped to `--merge`; a caller that did not pass the flag never reaches Step 2.5.
-- The loop's last review judges the body as it was before Step 2 rewrote it, so a `Description vs. code` warning the refresh fixed would block every `--merge` run that applied code without the post-refresh re-review.
-- `WARN` is merge-eligible: it means no hard gate failed and no blocking finding stands, and convergence already required zero open threads and no new findings, so the remaining ⚠️ is non-blocking; `FAIL` still blocks.
+- The loop's last review judges the body as it was before Step 2 rewrote it, so a refresh that turns the body into a `FAIL` (Gate 5) would merge unseen without the post-refresh re-review, and a stale `WARN` would be reported as the final verdict.
+- `WARN` is merge-eligible: it means no hard gate failed and no blocking finding stands, and convergence already required zero open threads and no new findings, so the remaining ⚠️ is non-blocking (a `Description vs. code` warning is accepted at merge, not resolved); `FAIL` still blocks.
 - Zero open threads is implied by clean convergence, but it is re-read because merging is irreversible.
 - `--merge` + `--no-feedback` is refused: `--no-feedback` applies nothing and never converges, so there is no approval to merge on.
 

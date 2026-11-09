@@ -22,7 +22,7 @@ A `WARN` means no hard gate failed and no blocking finding stands (only ⚠️ g
 #### Post-refresh re-review — before the gates
 
 The loop's last review judged the PR body as it was **before** Step 2 rewrote it.
-So when that review's verdict is not `PASS` and Step 2 changed the body, its verdict is stale: a `Description vs. code` warning the refresh fixed would still block the merge.
+So when that review's verdict is not `PASS` and Step 2 changed the body, its verdict is stale: the refresh can change the verdict either way, a `Description vs. code` warning fixed or a hard gate newly failed (`FAIL`), and only a `FAIL` blocks the merge.
 Run **exactly one** more review pass before reading the gates, when **all** of these hold:
 
 | Condition | Why |
@@ -52,7 +52,7 @@ Step 2:   body refreshed → DESCRIPTION_REFRESHED = 1
 Step 2.5: post-refresh re-review → PASS → FINAL_VERDICT = PASS → gates pass → merged (squash)
 
 # incorrect: gating on the verdict that predates the refresh
-Step 2.5: FINAL_VERDICT == WARN (iteration 2) → not merged — the warning it carried was fixed by Step 2
+Step 2.5: FINAL_VERDICT == WARN (iteration 2) → merged — without checking whether Step 2 turned the body into a FAIL
 ```
 
 Then merge if and **only if all** of the following hold — any single failure means *do not merge*, record the reason, and stop with the PR left review-ready:
@@ -64,11 +64,12 @@ Then merge if and **only if all** of the following hold — any single failure m
 | **Approval** | `FINAL_VERDICT` is `PASS` or `WARN` (never `FAIL`) | the last review pass — the post-refresh re-review when one ran |
 | **CI green** | CI is actually **green**, or the repo genuinely has no CI. Pending is **not** green — the loop never waits for CI, so a converged-but-pending run stops here without merging | a fresh stateless `gh pr checks "$PR_NUMBER" --repo "$RESOLVED_REPO"` read (**run this even under `--no-ci`** — `--no-ci` only skips the in-loop `ci-auto-fix` delegation) |
 
-A `WARN` is an approval only because the clean-convergence and zero-open-threads gates already hold: no blocking finding stands and every non-blocking one was fixed or answered.
+A `WARN` is an approval only because the clean-convergence and zero-open-threads gates already hold: no blocking finding stands and every review thread was fixed or answered.
+A `Description vs. code` ⚠️ never becomes a thread, so the merge accepts it rather than resolving it.
 A `FAIL` final verdict is **not** an approval: report `not merged (verdict FAIL — not an approval)` and stop.
 
 ```text
-# correct: WARN carried only non-blocking gates, and convergence resolved every finding
+# correct: WARN carried only a non-blocking gate warning, and convergence resolved every thread
 Final verdict WARN (Description vs. code ⚠️), all-threads-resolved, 0 open threads, CI green → merged (squash)
 
 # incorrect: refusing a converged WARN
