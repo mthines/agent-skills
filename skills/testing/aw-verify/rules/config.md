@@ -45,6 +45,8 @@ policies:
   cleanup: leave          # leave | teardown
   push: own-prs           # always | own-prs | never — fix commits
   pr_comment: always      # always | own-prs | never — standalone ui-verify / telemetry-verify regions only
+credentials:
+  provider: bitwarden     # env | bitwarden | 1password — where the fixture test user's login is read from
   trusted_bots: []        # bot logins (no `app/`, no `[bot]`) whose PRs aw-verify's aggregate posts to without asking, like your own
 repos:
   acme/shop:

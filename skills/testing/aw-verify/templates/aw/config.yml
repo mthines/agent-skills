@@ -5,6 +5,9 @@ policies:
   cleanup: leave              # leave | teardown
   push: own-prs               # always | own-prs | never
   pr_comment: always          # always | own-prs | never — standalone regions; aw-verify's aggregate always posts
+credentials:
+  provider: env               # env | bitwarden | 1password — where the fixture test user's login is read from
+                              # bitwarden: `bw get` (unlock first: export BW_SESSION=$(bw unlock --raw)); 1password: `op item get`
 repos: {}
 #  <owner>/<name>:
 #    telemetry: { mcp_server: <server key>, environments: { local: { dataset: <yours> } } }

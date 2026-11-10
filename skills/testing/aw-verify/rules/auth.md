@@ -106,6 +106,8 @@ The login uses a fixture test user, not a person's account and not SSO. The user
 - **Playwright / headless:** a missing, expired, or login-page state file → run `refresh.command` (it reads the test user's credentials from env vars or `.browser/credentials.json`), wait for `authed_check`, and carry on. Do not stop to ask the user to run a login script.
 - **Chrome driver:** see the next section.
 
+**Credential source.** `credentials.provider` in `~/.agents/aw/config.yml` (`env`, `bitwarden`, `1password`; set by `/aw-verify setup`) says where `refresh.command` reads the login. The item name lives in the environment's `auth.credentials.item`. The runner exports `AUTH_CREDENTIALS_PROVIDER` and `AUTH_CREDENTIALS_ITEM`, and `login-credentials` reads the item from the unlocked manager at run time, so no password file is needed. A locked vault is `unconfirmed (unlock <provider> and re-run)`; never ask for the master password.
+
 The limits stay: only the environment's `auth.identity` test user, never a real person's password, never SSO, never repeat a credential value in chat, a report, or a log, and never write one to a tracked file.
 
 ## Sign in inside Chrome (chrome driver)

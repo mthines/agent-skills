@@ -92,7 +92,8 @@ Ask only what Phase A did not settle; pre-fill the detected value as the first o
 3. **Test user** — email and role (the smoke spec and `E2E_EMAIL` default).
 4. **Telemetry** — dataset per environment for a `dash0-mcp` candidate, or `logs`.
 5. **Repo facts** — "Anything a new developer must know to run and test this repo (login, seed data, tenant, test commands, commit format)?" → `notes.md`. Skip when it exists.
-6. **Your policies** — foreign stack (`teardown` / `ask` / `abort`), cleanup (`leave` / `teardown`), push (`own-prs` / `always` / `never`), and PR comment (`always` / `own-prs` / `never`; default `always`). Skip when `~/.agents/aw/config.yml` has them.
+6. **Credential source** (personal; skip when `~/.agents/aw/config.yml` has `credentials.provider`) — where the fixture test user's login comes from: `bitwarden`, `1password`, or `env` (`E2E_EMAIL` / `E2E_PASSWORD`). For a manager, also ask the item name, shared in `auth.credentials.item`. Never ask for the password itself.
+7. **Your policies** — foreign stack (`teardown` / `ask` / `abort`), cleanup (`leave` / `teardown`), push (`own-prs` / `always` / `never`), and PR comment (`always` / `own-prs` / `never`; default `always`). Skip when `~/.agents/aw/config.yml` has them.
 
 `manual` login → warn: `Authed specs will be skipped (auth.strategy: manual). Add a test-mode login and re-run /aw-verify setup to enable them.`
 
@@ -100,13 +101,14 @@ Ask only what Phase A did not settle; pre-fill the detected value as the first o
 
 For each environment with `storage-state`: run `refresh.command` once (local: `url` exported as `PREVIEW_URL`; preview: only when a PR with a resolvable preview exists, else `unconfirmed (no preview yet)`).
 The state file must be written and `authed_check` visible on `url`; a failure prints the script's output and returns to Phase B.
+With a manager provider, the runner exports `AUTH_CREDENTIALS_PROVIDER` and `AUTH_CREDENTIALS_ITEM` to `refresh.command`; a locked vault → `unconfirmed (unlock <provider> and re-run)`.
 Env vars named in `refresh.env` that are unset → never prompt for values; record `unconfirmed (set <names> and re-run)`.
 
 ## Phase D — Write
 
 1. Render the committed files from [`templates/aw/`](../templates/aw/) with only keys that differ from the template defaults: `.agents/aw/environments.yml`, `ui.yml`, `telemetry.yml`, and `notes.md`.
 2. Copy the chosen login script from [`templates/scripts/`](../templates/scripts/) to `.agents/aw/scripts/auth/`.
-3. Personal values (a dataset only you export to, the MCP server key, policies) → `~/.agents/aw/config.yml` under `repos.<slug>` and `policies`; merge, never drop another repo's block.
+3. Personal values (a dataset only you export to, the MCP server key, the credential provider, policies) → `~/.agents/aw/config.yml` under `repos.<slug>` and `policies`; merge, never drop another repo's block.
 4. Gitignore the state directory: `grep -qx '.auth/' .gitignore || echo '.auth/' >> .gitignore` (or the reused convention's directory).
 5. First run: show every file before writing. Re-run: show a unified diff and write only after the user confirms; an empty diff → `No changes — .agents/aw is up to date.`
 6. Never overwrite an existing state file without asking.
