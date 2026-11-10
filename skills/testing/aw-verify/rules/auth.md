@@ -108,6 +108,8 @@ The login uses a fixture test user, not a person's account and not SSO. The user
 
 **Credential source.** `credentials.provider` in `~/.agents/aw/config.yml` (`env`, `bitwarden`, `1password`; set by `/aw-verify setup`) says where `refresh.command` reads the login. The item name lives in the environment's `auth.credentials.item`. The runner exports `AUTH_CREDENTIALS_PROVIDER` and `AUTH_CREDENTIALS_ITEM`, and `login-credentials` reads the item from the unlocked manager at run time, so no password file is needed. A locked vault is `unconfirmed (unlock <provider> and re-run)`; never ask for the master password.
 
+**Unattended refresh.** For a run with no human, schedule the login outside the agent: copy [`aw-refresh-auth.sh.template`](../templates/scripts/aw-refresh-auth.sh.template) to `~/.config/aw/aw-refresh-auth.sh` and fill [`aw-refresh-auth.plist.template`](../templates/scripts/aw-refresh-auth.plist.template) into `~/Library/LaunchAgents/`. The user installs it (`launchctl load`) and writes the Bitwarden key once (`bw unlock --raw > ~/.config/aw/bw-session`, `chmod 600`). The agent never loads it. It refreshes the state file every 6 hours; the agent only reads it. Untested until the first successful run is confirmed.
+
 The limits stay: only the environment's `auth.identity` test user, never a real person's password, never SSO, never repeat a credential value in chat, a report, or a log, and never write one to a tracked file.
 
 ## Sign in inside Chrome (chrome driver)

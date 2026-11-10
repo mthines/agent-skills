@@ -1,0 +1,19 @@
+#!/bin/sh
+# aw-refresh-auth.sh — keeps an aw-verify storage-state file fresh, unattended.
+# Run by launchd (see aw-refresh-auth.plist.template), under YOUR account, so no agent ever
+# types a password: agents only read the saved session.
+#
+# Usage: aw-refresh-auth.sh <repo-dir> <bitwarden-item> <login-url> <state-file> <post-login-regex>
+# Needs: bw, node, a Bitwarden session key in ~/.config/aw/bw-session (chmod 600; written by you with
+#        `bw unlock --raw > ~/.config/aw/bw-session`). A locked/expired key makes the run exit 2 and log it.
+set -eu
+REPO="$1"; ITEM="$2"; LOGIN_URL="$3"; STATE="$4"; POST="$5"
+KEY_FILE="$HOME/.config/aw/bw-session"
+[ -r "$KEY_FILE" ] || { echo "aw-refresh-auth: no $KEY_FILE — run: bw unlock --raw > $KEY_FILE" >&2; exit 2; }
+BW_SESSION="$(cat "$KEY_FILE")"; export BW_SESSION
+[ "$(bw status 2>/dev/null | sed -n 's/.*"status":"\([a-z]*\)".*/\1/p')" = "unlocked" ] || { echo "aw-refresh-auth: Bitwarden is locked — re-run: bw unlock --raw > $KEY_FILE" >&2; exit 2; }
+bw sync >/dev/null
+cd "$REPO"
+AUTH_CREDENTIALS_PROVIDER=bitwarden AUTH_CREDENTIALS_ITEM="$ITEM" AUTH_LOGIN_URL="$LOGIN_URL" \
+AUTH_STORAGE_STATE="$STATE" AUTH_POST_LOGIN_URL_PATTERN="$POST" \
+  node .agents/aw/scripts/auth/login-credentials.mjs
