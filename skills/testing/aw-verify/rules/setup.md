@@ -88,7 +88,7 @@ For web events, record `web.service_name` from the web SDK init call.
 Ask only what Phase A did not settle; pre-fill the detected value as the first option.
 
 1. **Local stack** — driver, commands, URL (only when A2 was ambiguous or empty).
-2. **Login per environment** — strategy from [`auth.md`](./auth.md); for the preview, whether it sits behind deployment protection.
+2. **Login per environment** — strategy from [`auth.md`](./auth.md); the sign-in URL with the org param (`auth.login_url`); for the preview, whether it sits behind deployment protection.
 3. **Test user** — email and role (the smoke spec and `E2E_EMAIL` default).
 4. **Telemetry** — dataset per environment for a `dash0-mcp` candidate, or `logs`.
 5. **Repo facts** — "Anything a new developer must know to run and test this repo (login, seed data, tenant, test commands, commit format)?" → `notes.md`. Skip when it exists.
@@ -99,10 +99,7 @@ Ask only what Phase A did not settle; pre-fill the detected value as the first o
 
 ## Phase C — Probe the login
 
-For each environment with `storage-state`: run `refresh.command` once (local: `url` exported as `PREVIEW_URL`; preview: only when a PR with a resolvable preview exists, else `unconfirmed (no preview yet)`).
-The state file must be written and `authed_check` visible on `url`; a failure prints the script's output and returns to Phase B.
-With a manager provider, the runner exports `AUTH_CREDENTIALS_PROVIDER` and `AUTH_CREDENTIALS_ITEM` to `refresh.command`; a locked vault → `unconfirmed (unlock <provider> and re-run)`.
-Env vars named in `refresh.env` that are unset → never prompt for values; record `unconfirmed (set <names> and re-run)`.
+Per `storage-state` environment, print the command from [`auth.md`](./auth.md#the-agent-reads-a-session-it-does-not-type-the-login) and wait for the user to run it; then check the state file is new and `authed_check` is visible. A failure shows the script's `final page:` / `page errors:` lines and returns to Phase B. Offer the scheduled refresh once a login works. A preview with no resolvable PR → `unconfirmed (no preview yet)`.
 
 ## Phase D — Write
 

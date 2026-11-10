@@ -8,6 +8,8 @@ environments:
       driver: none            # cli | compose | command | none
     auth:
       strategy: none          # none | storage-state | bypass-header | manual
+      # login_url: https://app.example.com/sign-in?org=<org>   # with the org param; a multi-org app can bounce without it
+      # credentials: { item: "<fixture user's item name>" }     # provider (bitwarden | 1password | env) is personal: ~/.agents/aw/config.yml
   preview:
     url:
       from: pr-deployment

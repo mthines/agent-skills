@@ -99,27 +99,18 @@ No stable element → omit it; the run falls back to "URL is not the login page"
 | Outer wall | bypass secret from an untracked `.env` | bypass secret from a CI secret |
 | Inner wall | `refresh.command`, or log in once with `login-headful` | `refresh.command` from CI-secret env vars, or a pre-captured state stored as a base64 secret |
 
-## Fixture test-user login is pre-authorized (every driver)
+## The agent reads a session; it does not type the login
 
-The login uses a fixture test user, not a person's account and not SSO. The user has authorized it for every `aw-verify` run, so do not ask first and do not hand the step back:
+The fixture test user's login is run by the user (`!` command) or a scheduler, never by the agent. A missing or expired state file → `blocked (auth: <state_file> expired)` plus the command below; after the user runs it, check the file's modified time changed and `authed_check` is visible.
 
-- **Playwright / headless:** a missing, expired, or login-page state file → run `refresh.command` (it reads the test user's credentials from env vars or `.browser/credentials.json`), wait for `authed_check`, and carry on. Do not stop to ask the user to run a login script.
-- **Chrome driver:** see the next section.
+```text
+! cd <repo> && AUTH_CREDENTIALS_PROVIDER=<provider> AUTH_CREDENTIALS_ITEM="<item>" AUTH_LOGIN_URL="<login_url>" AUTH_STORAGE_STATE=<state_file> AUTH_POST_LOGIN_URL_PATTERN='^(?!.*/sign-in)' node .agents/aw/scripts/auth/login-credentials.mjs
+```
 
-**Credential source.** `credentials.provider` in `~/.agents/aw/config.yml` (`env`, `bitwarden`, `1password`; set by `/aw-verify setup`) says where `refresh.command` reads the login. The item name lives in the environment's `auth.credentials.item`. The runner exports `AUTH_CREDENTIALS_PROVIDER` and `AUTH_CREDENTIALS_ITEM`, and `login-credentials` reads the item from the unlocked manager at run time, so no password file is needed. A locked vault is `unconfirmed (unlock <provider> and re-run)`; never ask for the master password.
-
-**Unattended refresh.** For a run with no human, schedule the login outside the agent: copy [`aw-refresh-auth.sh.template`](../templates/scripts/aw-refresh-auth.sh.template) to `~/.config/aw/aw-refresh-auth.sh` and fill [`aw-refresh-auth.plist.template`](../templates/scripts/aw-refresh-auth.plist.template) into `~/Library/LaunchAgents/`. The user installs it (`launchctl load`) and writes the Bitwarden key once (`bw unlock --raw > ~/.config/aw/bw-session`, `chmod 600`). The agent never loads it. It refreshes the state file every 6 hours; the agent only reads it. Untested until the first successful run is confirmed.
-
-The limits stay: only the environment's `auth.identity` test user, never a real person's password, never SSO, never repeat a credential value in chat, a report, or a log, and never write one to a tracked file.
-
-## Sign in inside Chrome (chrome driver)
-
-When the run drives the user's own Chrome and the tab lands on the login page, sign in there yourself with the environment's test identity. Do not hand the step back to the user.
-The user has authorized this for every `aw-verify` run, with no per-host confirmation: the credentials are fixture test-user data, not personal auth data, so reading and entering them is not sensitive.
-
-- Credentials: the test user that `refresh.command` reads (for example `.browser/credentials.json`). Never use a real person's password, and never use SSO.
-- Never repeat a credential value in chat, a report, or a log.
-- Only the login page of the environment under test (its `url`, or the sign-in host its app redirects to, such as the Clerk host). A sign-in page the run was not sent to, or one that asks for a real person's account, is not covered: stop and report it.
+- **Source:** `credentials.provider` (`env` | `bitwarden` | `1password`) is personal, in `~/.agents/aw/config.yml`; the item name is `auth.credentials.item`. Bitwarden needs `BW_SESSION` and a fresh `bw sync` (an item added since the last sync is invisible). A locked vault is `unconfirmed (unlock <provider> and re-run)`.
+- **`auth.login_url` carries the org param** (`…/sign-in?org=<org>`). Without it a multi-org app bounces to a sign-in page for an org the user is not in, and the post-login check times out.
+- **A failed login** prints `final page:` and `page errors:` and saves `<state_file>.fail.png`. "Incorrect password" → the stored item is wrong; another org in the URL → `login_url` lacks the org.
+- **Unattended:** [`aw-refresh-auth.sh.template`](../templates/scripts/aw-refresh-auth.sh.template) and [`.plist.template`](../templates/scripts/aw-refresh-auth.plist.template) refresh the file every 6 h under the user's account (needs `bw unlock --raw > ~/.config/aw/bw-session`, `chmod 600`; use a vault that holds only the fixture user). The wrapper is untested; the login script is tested.
 
 **Google SSO:** scripted Google logins are blocked. Use a password-capable test account against the app's own form, or a pre-captured state a human refreshes on a schedule; with neither, authed specs are `skipped` with the reason — never a faked pass.
 Never put a real person's credentials in CI.
