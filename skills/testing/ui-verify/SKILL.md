@@ -212,7 +212,7 @@ The commands in this skill are the `gh`-path form; on the `mcp` path use these e
 | `gh pr view <pr> --json body` | `mcp__github__pull_request_read` with `method: "get"` |
 | `gh pr edit <pr> --body <body>` | `mcp__github__update_pull_request` with `body` |
 | `gh api repos/<owner>/<repo>/pulls/<n>/comments … -f subject_type=file` (`--post-findings` threads) | `mcp__github__pull_request_review_write` (`create`, then `submit_pending`) around `mcp__github__add_comment_to_pending_review` with `subjectType: "FILE"` |
-| `node …/verify-comment.mjs --pr <pr> --section ui …` (the verify report's `ui` region) | Own PR: `mcp__github__pull_request_read` (`get`), the script with `--dry-run --to body --existing <PR body>`, then `mcp__github__update_pull_request`. Anyone else's: `mcp__github__issue_read` (`get_comments`), the script with `--dry-run --existing <comment body>`, then `mcp__github__update_issue_comment`, or `mcp__github__add_issue_comment` when none exists |
+| `node …/verify-comment.mjs --pr <pr> --section ui …` (the verify report's `ui` region) | Own PR, or a trusted author's PR whose description already holds the report: `mcp__github__pull_request_read` (`get`), the script with `--dry-run --to body --existing <PR body>`, then `mcp__github__update_pull_request`. Any other PR: `mcp__github__issue_read` (`get_comments`), the script with `--dry-run --existing <comment body>`, then `mcp__github__update_issue_comment`, or `mcp__github__add_issue_comment` when none exists |
 | `gh api repos/<owner>/<repo>/deployments?sha=…` | **none — see below** |
 
 **`author` works on both paths; `run`'s URL resolution does not.**
