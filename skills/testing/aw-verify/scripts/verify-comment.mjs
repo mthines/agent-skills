@@ -45,6 +45,7 @@ export const END = "<!-- /verify:report -->";
 export const MOVED = "<!-- verify:moved -->";
 // GitHub refuses an issue or PR body longer than 65536 characters.
 export const BODY_LIMIT = 65536;
+const OVER_LIMIT = Symbol("over the body limit");
 const VERDICTS = ["✅", "⚠️", "❌", "⛔", "⏭️"];
 const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
 // A login, normalized: lowercase, one trailing `[bot]` stripped.
@@ -146,13 +147,20 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   return `${MARKER}\n\n${parts.join("\n\n")}\n`;
 }
 
-// Where the report sits in a PR body: both markers on lines of their own, so a description that
-// quotes them inline holds no report. [start, end of the end marker], or null.
+// Where the report sits in a PR body: both markers on lines of their own and outside a ``` or ~~~
+// fence, so a description that quotes them holds no report. [start, end of the end marker], or null.
 function locate(b) {
-  const first = /^<!-- verify:report -->[ \t]*$/m.exec(b);
-  if (!first) return null;
-  const last = /^<!-- \/verify:report -->[ \t]*$/m.exec(b.slice(first.index));
-  return last ? [first.index, first.index + last.index + END.length] : null;
+  let fence = null, start = -1, at = 0;
+  for (const line of b.split("\n")) {
+    const text = line.replace(/\r$/, "");
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(text);
+    if (fence) { if (f && f[1][0] === fence[0] && f[1].length >= fence.length && !text.slice(f[0].length).trim()) fence = null; }
+    else if (f) fence = f[1];
+    else if (start < 0 && /^<!-- verify:report -->[ \t]*$/.test(text)) start = at;
+    else if (start >= 0 && /^<!-- \/verify:report -->[ \t]*$/.test(text)) return [start, at + END.length];
+    at += line.length + 1;
+  }
+  return null;
 }
 
 // The verify report inside a PR body, from its marker up to the end marker, or "" when it has none.
@@ -223,10 +231,21 @@ export function upsert({ pr, repo, section, content, replaceAll, to = "auto" }, 
   // trust rule the comment path applies: a fork author's planted ✅ is never adopted.
   const bodyReport = prBody !== null && (own || trustedAuthor) ? bodyBlock(prBody) : "";
   const toBody = to === "body" || (to === "auto" && prBody !== null && (own || bodyReport !== ""));
+  let overLimit = false;
   if (toBody) {
     const url = writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, content, replaceAll, head }, run);
-    if (url) return url;
+    if (url && url !== OVER_LIMIT) return url;
+    overLimit = url === OVER_LIMIT;
   }
+  // Past the limit the comment starts from the body's report; the body drops its copy only once the
+  // comment holds it, so a failed comment write never leaves the PR with no report.
+  const dropBodyCopy = (url) => {
+    if (overLimit && bodyReport) {
+      try { run(["api", "-X", "PATCH", `repos/${slug}/pulls/${prNumber}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: withBlock(prBody, "").trimEnd() + "\n" })); }
+      catch (e) { console.error(`verify-comment: the old report was not removed from the PR body: ${e.message}`); }
+    }
+    return url;
+  };
   let existing = bodyReport;
   if (found.length) {
     const [id, , , , , b64] = found[0];
@@ -239,18 +258,18 @@ export function upsert({ pr, repo, section, content, replaceAll, to = "auto" }, 
         try { run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: notice })); }
         catch (e) { console.error(`verify-comment: verdict-change notice not posted: ${e.message}`); }
       }
-      return url;
+      return dropBodyCopy(url);
     } catch (e) {
       if (!/HTTP 40[34]/.test(e.message)) throw e;
     }
   }
   // A comment we may not edit hands its regions and history to the new one.
   const body = splice(existing, section, content, { replaceAll, head });
-  return run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
+  return dropBodyCopy(run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body })));
 }
 
-// Write the report into the PR body; null when the comment must take it instead (the body would pass
-// GitHub's limit, or the token may not edit it). An own PR's verify comment is migrated: its regions
+// Write the report into the PR body; OVER_LIMIT or null when the comment must take it instead (the
+// body would pass GitHub's limit, or the token may not edit it). An own PR's verify comment is migrated: its regions
 // seed the body once, and the comment becomes a pointer so the PR shows one report.
 function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, content, replaceAll, head }, run) {
   if (prBody === null) throw Object.assign(new Error("cannot read the PR body for --to body"), { code: 2 });
@@ -261,12 +280,7 @@ function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, 
   const next = withBlock(prBody, block);
   if (next.length > BODY_LIMIT) {
     console.error(`verify-comment: the PR body would pass GitHub's ${BODY_LIMIT}-character limit; writing the comment instead`);
-    // The comment starts from the body's report; drop it from the body so the PR shows one report.
-    if (inBody) {
-      try { run(["api", "-X", "PATCH", `repos/${slug}/pulls/${prNumber}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: withBlock(prBody, "").trimEnd() + "\n" })); }
-      catch (e) { console.error(`verify-comment: the old report was not removed from the PR body: ${e.message}`); }
-    }
-    return null;
+    return OVER_LIMIT;
   }
   let url;
   try {
@@ -454,6 +468,14 @@ function selfTest() {
   let fallbackBody = ""; const bigRun = (a, i) => { if (a[2] === "POST") fallbackBody = JSON.parse(i).body; return bigWithReport.run(a, i); };
   upsert({ ...req, content: "U".repeat(800) }, bigRun);
   assert(parseRegions(fallbackBody).get("telemetry") === "TEL kept" && bodyBlock(bigWithReport.run.body) === "", "a fallback comment starts from the body's report, and the body drops its stale copy");
+  const fenced = "Example:\n\n```text\n<!-- verify:report -->\nquoted\n<!-- /verify:report -->\n```\n\nAfter.";
+  const fencedOut = withBlock(fenced, `${MARKER}\nREPORT`);
+  assert(bodyBlock(fenced) === "" && fencedOut.startsWith(`${fenced}\n\n${MARKER}\nREPORT`) && bodyBlock(fencedOut) === `${MARKER}\nREPORT\n`, "markers quoted inside a code fence hold no report, and the fence is kept");
+  assert(bodyBlock(`~~~\n${END}\n~~~\n${MARKER}\nreal\n${END}\n`).startsWith(`${MARKER}\nreal`), "a report after a fenced end marker is still found");
+  const bigLost = prGh([], { author: "me", body: withBlock("x".repeat(BODY_LIMIT - 400), splice("", "telemetry", "TEL kept")) });
+  let lostFailed = false;
+  try { upsert({ ...req, content: "U".repeat(800) }, (a, i) => { if (a[2] === "POST") throw ghErr("gh: HTTP 502"); return bigLost.run(a, i); }); } catch { lostFailed = true; }
+  assert(lostFailed && !bigLost.calls.includes("PATCH body"), "past the limit, a failed fallback comment leaves the body's report in place");
   let badTo = false; try { upsert({ ...req, to: "wiki" }, fakeGh([]).run); } catch { badTo = true; }
   assert(badTo, "an unknown --to is refused");
   console.log(`verify-comment self-test: ${n} assertions passed`);
