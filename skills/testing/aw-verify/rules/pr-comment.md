@@ -1,5 +1,5 @@
 ---
-title: PR comment — one verify comment per PR, one region per witness, progressive disclosure
+title: PR comment — one verify report per PR (the description on your own PR, else a comment), one region per witness, progressive disclosure
 impact: HIGH
 tags:
   - pr-comment
@@ -11,12 +11,31 @@ tags:
 
 # PR comment
 
-`aw-verify`, `ui-verify`, and `telemetry-verify` post their proof to **one** comment per PR, whichever account the run posts from.
-Its first line is `<!-- verify:report -->`; each witness owns one region of it.
-[`scripts/verify-comment.mjs`](../scripts/verify-comment.mjs) is the only writer: it splices a region, keeps the others, records the run it replaced under **Previous runs**, and refuses a local path.
+`aw-verify`, `ui-verify`, and `telemetry-verify` post their proof to **one** verify report per PR, whichever account the run posts from; each witness owns one region of it.
+[`scripts/verify-comment.mjs`](../scripts/verify-comment.mjs) is the only writer: it picks where the report lives, splices a region, keeps the others, records the run it replaced under **Previous runs**, and refuses a local path.
+
+## Where the report lives
+
+| PR | The report is |
+| --- | --- |
+| Your own (the PR author is the GraphQL `viewer`, both lowercased with one trailing `[bot]` stripped), or one whose body already holds the report and whose author is an app or has repo access (`author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`) | A region at the end of the PR description, `<!-- verify:report -->` … `<!-- /verify:report -->`; no verify comment is posted |
+| Anyone else's, or the PR cannot be read | One comment whose first line is `<!-- verify:report -->` |
+
+`--to body` or `--to comment` overrides the choice; the default is `--to auto`.
+Each marker counts only on a line of its own, so a description that quotes them inline holds no report; a report a fork author planted in their description is never adopted, the same trust rule the comment path applies.
+In the body, the script replaces only its region and keeps every character outside it, so the author's text, the ui-verify spec, and the media region stay.
+An own PR that already has a verify comment moves it once: the comment's regions and history seed the body, and the comment becomes a one-line pointer, first line `<!-- verify:moved -->`.
+The comment takes the report instead when the body would pass GitHub's 65,536-character limit, or when the body edit is refused (HTTP 403 or 404); it starts from the body's report, and past the limit the body drops its copy. Any other GitHub failure exits `2`.
+
+```text
+✗ an own PR gets a verify comment, and the next run from Agent0 adds a second report in the body
+✓ node "$VC" --pr <url> --section aggregate --file report.md --replace-all
+  # own PR → the description's verify region; someone else's PR → the one verify comment
+```
 
 ## Contents
 
+- [Where the report lives](#where-the-report-lives)
 - [Regions and owners](#regions-and-owners)
 - [When to post](#when-to-post)
 - [Layout: verdict, checks, then collapsed detail](#layout-verdict-checks-then-collapsed-detail)
@@ -34,7 +53,7 @@ Its first line is `<!-- verify:report -->`; each witness owns one region of it.
 
 A later standalone run adds its region beside the aggregate; each region names the head SHA it verified, so a reader can tell which is newer.
 A comment written before regions existed is kept as the `aggregate` region.
-A PR has one verify comment, whoever's account the run posts from: the script edits the PR's newest marker comment written by an app, by someone with access to the repo (`author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`), or by the account running it (GraphQL `viewer`, so a fork author re-uses their own), so a run from Agent0 (a bot account) and a run from a local session (your own) update the same comment, and a drive-by commenter's fake report is never adopted.
+On a PR whose report is a comment, the PR has one verify comment, whoever's account the run posts from: the script edits the PR's newest marker comment written by an app, by someone with access to the repo (`author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`), or by the account running it (GraphQL `viewer`, so a fork author re-uses their own), so a run from Agent0 (a bot account) and a run from a local session (your own) update the same comment, and a drive-by commenter's fake report is never adopted.
 Before it replaces a region, the script adds one line for the old run (`<sha7> · <section> · <headline> · replaced <date>`) to its own last region, `<!-- verify:history -->`, rendered as a collapsed **Previous runs** list of at most 10 entries; a region author never writes it.
 A comment the token may not edit (HTTP 403 or 404) gets a new comment that carries its regions and history forward; any other GitHub failure exits `2` and posts nothing.
 The script also does what a region author must not do by hand:
@@ -44,7 +63,7 @@ The script also does what a region author must not do by hand:
 | Replaces `{{UPDATED}}` with the write time (`YYYY-MM-DD HH:MM UTC`) | The time a reviewer sees matches **Previous runs** |
 | Adds the blank lines GitHub needs after `</summary>` and before `</details>` | Without them the reviewer sees raw Markdown |
 | Folds a region on an older commit than the PR head (read from the PR; the region just written when it cannot be read) into one closed `Older run on <sha7>: <headline>` row, including a late run on an older commit | A stale ✅ never reads as the current verdict, and never takes space |
-| Posts one notice comment, `Verify re-ran on <sha7>: ✅ → ❌. See the report`, first line `<!-- verify:notice -->`, when a run changes the verdict glyph a reader last saw (the section's own, else the comment's first region) | Editing a comment notifies nobody; a changed verdict must |
+| Posts one notice comment, `Verify re-ran on <sha7>: ✅ → ❌. See the report`, first line `<!-- verify:notice -->`, when a run changes the verdict glyph a reader last saw (the section's own, else the report's first region), also when the report lives in the body | Editing a comment or a description notifies nobody; a changed verdict must |
 
 ## When to post
 
@@ -304,11 +323,14 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 
 | Exit | Meaning | Do |
 | --- | --- | --- |
-| `0` | Prints the comment URL | Report it |
+| `0` | Prints the PR URL (report in the description) or the comment URL | Report it |
 | `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
-- **`mcp` access path (no `gh`):** read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the newest comment starting with the marker whose author is an app, has `author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`, or is `mcp__github__get_me`. Run the script with `--dry-run --existing <its body> --head <the PR's head SHA>` and write its stdout with `mcp__github__update_issue_comment`; when that update is refused as forbidden, post the same stdout with `mcp__github__add_issue_comment`, so the other regions and the history carry over. When no comment qualifies, run `--dry-run --head <sha>` without `--existing` and post it with `mcp__github__add_issue_comment`.
+Pass `--to body` or `--to comment` only when the user asks for that place; the default picks it (§ Where the report lives).
+
+- **`mcp` access path (no `gh`), report in the description:** read the PR with `mcp__github__pull_request_read` (`method: "get"`). Take this path when the PR is your own (its author is `mcp__github__get_me`), or when its body already holds the report on lines of their own and its author is an app or has `author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`: the same choice the `gh` path makes, so a bot run never adds a second report beside one in the description. Run the script with `--dry-run --to body --existing <the PR body> --head <the PR's head SHA>`, plus `--seed <the verify comment's body>` when the body holds no report yet and a verify comment qualifies (below), and write its stdout, the whole new body, with `mcp__github__update_pull_request`. After a successful write, edit that seed comment to `<!-- verify:moved -->` and a one-line link to the description with `mcp__github__update_issue_comment`, and post `notice.md` as below. When the write is refused, take the comment path below.
+- **`mcp` access path (no `gh`), any other PR:** read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the newest comment starting with the marker whose author is an app, has `author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`, or is `mcp__github__get_me`. Run the script with `--dry-run --existing <its body> --head <the PR's head SHA>` and write its stdout with `mcp__github__update_issue_comment`; when that update is refused as forbidden, post the same stdout with `mcp__github__add_issue_comment`, so the other regions and the history carry over. When no comment qualifies, run `--dry-run --head <sha>` without `--existing` and post it with `mcp__github__add_issue_comment`.
   With `--existing`, also pass `--notice-out <run dir>/notice.md --comment-url <that comment's html_url>`; after a successful update, when `notice.md` exists, post its contents with `mcp__github__add_issue_comment`, because an edit notifies nobody; after a refused update, post no notice, as the script's own fallback does, because the new comment already notifies.
   The `gh` path needs neither flag: the script posts the notice itself.
 - **Script not found** (`aw-verify` not installed) → `comment: not posted (aw-verify not installed)`.
@@ -316,4 +338,4 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 
 ## Report line
 
-Print one line after the skill's report: `comment: <comment-url> (region <section>)`, or the `not posted (<reason>)` / `failed (<reason>)` line.
+Print one line after the skill's report: `comment: <comment-url> (region <section>)`, `comment: <pr-url> (region <section>, in the PR description)`, or the `not posted (<reason>)` / `failed (<reason>)` line.

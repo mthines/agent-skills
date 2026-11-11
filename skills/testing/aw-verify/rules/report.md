@@ -60,13 +60,13 @@ Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-c
 ## Destinations
 
 1. **File:** `.agent/{branch}/verify/report.md` — always.
-2. **PR comment** — the rendered report is the `aggregate` region, written after the fix loop has pushed so it describes the final head SHA:
+2. **PR** — the rendered report is the `aggregate` region, written after the fix loop has pushed so it describes the final head SHA; the script puts it in the description on your own PR and in the verify comment on anyone else's:
 
    ```bash
    node "${CLAUDE_SKILL_DIR}/scripts/verify-comment.mjs" --pr "$PR_URL" --section aggregate --file .agent/<branch>/verify/report.md --replace-all
    ```
 
-   Gate, `mcp` path, and exit codes: [`pr-comment.md`](./pr-comment.md). The script refuses a region that holds a local path, a token is never rendered, and a request body is summarized, never pasted.
+   Where it lands, gate, `mcp` path, and exit codes: [`pr-comment.md`](./pr-comment.md). The script refuses a region that holds a local path, a token is never rendered, and a request body is summarized, never pasted.
 3. **Terminal** — printed last: the verdict line, the summary sentence, the attention bullets with every open finding, the report path, the `comment:` line, and the absolute path of every screenshot and recording that was not attached.
 
 ## `report` mode
