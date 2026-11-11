@@ -10,7 +10,8 @@
 //   baseline = the pre-rollout window; the reference only when control.n is 0 (the 100 % step)
 // Exit code: 0 PASS, 10 HOLD, 20 ROLLBACK, 2 bad input.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 export const DEFAULT_THRESHOLDS = {
 	min_test_requests: 20,
@@ -89,4 +90,11 @@ function main() {
 	}
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+const self = (() => {
+	try {
+		return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1]);
+	} catch {
+		return false;
+	}
+})();
+if (self) main();
