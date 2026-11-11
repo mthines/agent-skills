@@ -273,9 +273,8 @@ export function upsert({ pr, repo, section, content, replaceAll, to = "auto" }, 
 // seed the body once, and the comment becomes a pointer so the PR shows one report.
 function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, content, replaceAll, head }, run) {
   if (prBody === null) throw Object.assign(new Error("cannot read the PR body for --to body"), { code: 2 });
-  const inBody = bodyReport;
-  const seed = !inBody && found.length ? found[0] : null;
-  const existing = inBody || (seed ? Buffer.from(seed[5], "base64").toString("utf8") : "");
+  const seed = !bodyReport && found.length ? found[0] : null;
+  const existing = bodyReport || (seed ? Buffer.from(seed[5], "base64").toString("utf8") : "");
   const block = splice(existing, section, content, { replaceAll, head, where: "body" });
   const next = withBlock(prBody, block);
   if (next.length > BODY_LIMIT) {
