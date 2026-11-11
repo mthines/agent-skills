@@ -74,6 +74,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `aw-verify` (`/`) — proves a feature works on `local` or `preview`: probes specs, concurrency, and guardrail faults, reads telemetry once via `telemetry-verify`, fixes locally, posts proof and media to the PR's one verify comment. `setup` writes `.agents/aw/`
 - `ui-verify` (`Skill()` + `/`) — browser witness: Markdown intent spec in the PR body (`<!-- ui-verify:v2 -->`); checks every outcome with evidence, then tries to break it and records it; profiles a motion diff's frames and reduced motion; posts its `ui` region of the PR's verify comment
 - `telemetry-verify` (`Skill()`) — telemetry witness: reads one traffic window's web events, traces, and logs; follows each criterion from web event to API to database; grades the brief's `telemetry:` criteria; run alone, posts its `telemetry` region
+- `deployment-verify` (`/`) — after the merge: steps the change's flag 1 → 100 %, compares flag-on and flag-off cohorts from telemetry, `decide.mjs` returns PASS / HOLD / ROLLBACK, flips it back, proves recovery, notifies; resumable ticks run unattended. `setup` writes `.agents/aw/release.yml`
 
 ### `design/` — UI, visual, interaction
 
