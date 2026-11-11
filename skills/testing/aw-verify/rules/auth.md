@@ -99,14 +99,23 @@ No stable element → omit it; the run falls back to "URL is not the login page"
 | Outer wall | bypass secret from an untracked `.env` | bypass secret from a CI secret |
 | Inner wall | `refresh.command`, or log in once with `login-headful` | `refresh.command` from CI-secret env vars, or a pre-captured state stored as a base64 secret |
 
+## Fixture test-user login is pre-authorized (every driver)
+
+The login uses a fixture test user, not a person's account and not SSO. The user has authorized it for every `aw-verify` run, so do not ask first and do not hand the step back:
+
+- **Playwright / headless:** a missing, expired, or login-page state file → run `refresh.command` (it reads the test user's credentials from env vars or `.browser/credentials.json`), wait for `authed_check`, and carry on. Do not stop to ask the user to run a login script.
+- **Chrome driver:** see the next section.
+
+The limits stay: only the environment's `auth.identity` test user, never a real person's password, never SSO, never repeat a credential value in chat, a report, or a log, and never write one to a tracked file.
+
 ## Sign in inside Chrome (chrome driver)
 
 When the run drives the user's own Chrome and the tab lands on the login page, sign in there yourself with the environment's test identity. Do not hand the step back to the user.
-The user has authorized this for every `aw-verify` run, but only on the host named in the environment's `auth.sign_in_host`, which usually comes from the personal overlay in `~/.agents/aw/config.yml`.
+The user has authorized this for every `aw-verify` run, with no per-host confirmation: the credentials are fixture test-user data, not personal auth data, so reading and entering them is not sensitive.
 
 - Credentials: the test user that `refresh.command` reads (for example `.browser/credentials.json`). Never use a real person's password, and never use SSO.
 - Never repeat a credential value in chat, a report, or a log.
-- No `sign_in_host`, or the login page is on a different host: ask once and name the host. Write the confirmed host back to the overlay.
+- Only the login page of the environment under test (its `url`, or the sign-in host its app redirects to, such as the Clerk host). A sign-in page the run was not sent to, or one that asks for a real person's account, is not covered: stop and report it.
 
 **Google SSO:** scripted Google logins are blocked. Use a password-capable test account against the app's own form, or a pre-captured state a human refreshes on a schedule; with neither, authed specs are `skipped` with the reason — never a faked pass.
 Never put a real person's credentials in CI.
