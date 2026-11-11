@@ -1,0 +1,58 @@
+# .agents/aw/release.yml — deployment-verify. Committed; no secrets.
+# Field reference: the deployment-verify skill's rules/config.md. Written by /deployment-verify setup.
+# Personal policy (rollback: ask | auto | never) goes in ~/.agents/aw/config.yml → policies.
+version: 1
+telemetry:
+  kind: dash0-mcp                       # dash0-mcp | command
+  url: https://api.eu-west-1.aws.dash0.com/mcp
+  token_env: DASH0_AUTH_TOKEN           # a read-only auth token; never the token itself
+on_exception: ""                        # e.g. 'curl -sS -X POST "$AGENT0_WEBHOOK_URL" -H "Content-Type: application/json" --data @{event}'
+environments:
+  production:
+    dataset: default                    # telemetry dataset; the MCP server comes from telemetry.yml
+    deploy:
+      # How to tell the merged commit is serving. First matching row wins in rules/deploy.md.
+      detect: { attribute: vercel.sha, equals: merge_sha }   # or { attribute: service.version, equals: merge_sha }
+      timeout_minutes: 60
+    traffic: real                       # real | <command that sends requests; {n} = count>
+    ingest_wait_seconds: 45
+  local:
+    dataset: ""                         # your local dataset; set it in ~/.agents/aw/config.yml
+    deploy: { detect: manual }          # the restart is the deploy; deployment-verify records the time
+    traffic: ""                         # e.g. "for i in $(seq 1 {n}); do curl -s -o /dev/null http://localhost:3000/<route>; done"
+    ingest_wait_seconds: 45
+flags:
+  providers:
+    # One entry per flag system. `set` must be idempotent and exit non-zero on failure.
+    # Placeholders: {flag} {value} {env}. `propagation_seconds` = how long a change takes to reach traffic.
+    - name: example
+      covers: ["apps/web/**"]           # changed paths this provider's flags gate
+      rollout: percent                  # percent | boolean (on/off only → steps collapse to [100])
+      set: ".agents/aw/scripts/flags/set.sh {flag} {value} {env}"
+      propagation_seconds: 0
+rollback:
+  # Used only when a change has no flag. Tried in order; each must be safe to run twice.
+  - kind: platform
+    run: ""                             # e.g. "vercel rollback --yes" or "kubectl rollout undo deploy/<name>"
+  - kind: revert-pr                     # always available; slowest
+steps: [1, 10, 50, 100]                 # rollout percentages
+step_window_minutes: 10                 # production: how long each step is watched before measuring
+max_hold_minutes: 30                   # per step; then return to the last passed step and stop
+thresholds:                             # defaults; a PR contract may tighten them
+  min_test_requests: 20
+  min_reference_requests: 20
+  max_error_rate_delta_pp: 5
+  max_latency_ratio: 3
+  min_latency_delta_ms: 50
+notify:                                 # rules/notify.md; the PR comment is always updated
+  - on: [ROLLED_BACK, ESCALATE]
+    slack: { channel: "#deploys", mention: [pr_author, codeowners] }
+  - on: [INCONCLUSIVE]
+    slack: { channel: "#deploys" }
+  # - on: [ROLLED_BACK]
+  #   linear: { team: ENG, labels: [rollback] }
+  # - on: [ESCALATE]
+  #   run: ".agents/aw/scripts/page.sh {pr} {outcome}"
+people: {}                              # GitHub login → Slack user ID, for mentions
+posting:
+  forbidden: []                         # strings that trigger other automations in your org; redacted before posting

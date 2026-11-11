@@ -23,6 +23,7 @@ It is committed, so a teammate who clones the repo runs `/aw-verify` with no set
 | `.agents/aw/ui.yml` | yes | `ui-verify`, `aw-tester` | What counts as a UI change, driver, screenshots, recording, the adversarial pass |
 | `.agents/aw/telemetry.yml` | yes | `telemetry-verify` | Backend, dataset and service per environment, web SDK events, thresholds |
 | `.agents/aw/notes.md` | yes | every skill in the suite | Repo facts: login quirks, test commands, commit format, which telemetry server is right |
+| `.agents/aw/release.yml` | yes | `deployment-verify` | Deploy detection, flag providers, rollback commands, rollout steps, and thresholds per environment |
 | `.agents/aw/scripts/` | yes | `environments.yml` commands | Runnable helpers: `auth/login-headful.mjs`, `auth/login-credentials.mjs`, `auth/refresh-preview.mjs`, seed scripts. No secrets |
 | `~/.agents/aw/config.yml` | never | every skill in the suite | Your policies, and your per-repo overrides under `repos.<owner>/<name>` |
 

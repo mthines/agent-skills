@@ -171,6 +171,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | [`/aw-verify`](./skills/testing/aw-verify/SKILL.md) | Proves a feature works on your local stack or the preview — browser and telemetry — fixes what fails, and posts the proof with screenshots and recordings to one PR comment. `setup` writes the shared `.agents/aw/` config. |
 | [`/ui-verify`](./skills/testing/ui-verify/SKILL.md) | Puts a plain-language UI spec in the PR, runs it, tries to break it, and posts the evidence to the PR. |
 | [`telemetry-verify`](./skills/testing/telemetry-verify/SKILL.md) | Reads back what the services recorded during a run and checks each journey from web event to database. |
+| [`/deployment-verify`](./skills/testing/deployment-verify/SKILL.md) | After the merge, rolls the change's feature flag out step by step on the real deployment, compares flag-on and flag-off traffic from telemetry, and turns the flag back off with proof of recovery when it hurts. |
 | [`/e2e-testing`](./skills/testing/e2e-testing/SKILL.md) | Plans, writes, and heals Playwright end-to-end tests. |
 | [`/e2e-testing-mobile`](./skills/testing/e2e-testing-mobile/SKILL.md) | Maestro flows for Expo and React Native. |
 | **`design/`** | *UI, visual, interaction* |
