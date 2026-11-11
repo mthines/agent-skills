@@ -146,22 +146,29 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   return `${MARKER}\n\n${parts.join("\n\n")}\n`;
 }
 
+// Where the report sits in a PR body: both markers on lines of their own, so a description that
+// quotes them inline holds no report. [start, end of the end marker], or null.
+function locate(b) {
+  const first = /^<!-- verify:report -->[ \t]*$/m.exec(b);
+  if (!first) return null;
+  const last = /^<!-- \/verify:report -->[ \t]*$/m.exec(b.slice(first.index));
+  return last ? [first.index, first.index + last.index + END.length] : null;
+}
+
 // The verify report inside a PR body, from its marker up to the end marker, or "" when it has none.
 export function bodyBlock(prBody) {
   const b = prBody || "";
-  const start = b.indexOf(MARKER);
-  const end = start === -1 ? -1 : b.indexOf(END, start);
-  return end === -1 ? "" : b.slice(start, end).trimEnd() + "\n";
+  const at = locate(b);
+  return at ? b.slice(at[0], at[1] - END.length).trimEnd() + "\n" : "";
 }
 
 // The PR body with its report replaced by `block`, or appended after the author's text when it has
-// none; every character outside the region is kept.
+// none; every character outside the region is kept. An empty `block` removes the region.
 export function withBlock(prBody, block) {
   const b = prBody || "";
-  const wrapped = `${block.trimEnd()}\n${END}`;
-  const start = b.indexOf(MARKER);
-  const end = start === -1 ? -1 : b.indexOf(END, start);
-  if (end !== -1) return b.slice(0, start) + wrapped + b.slice(end + END.length);
+  const wrapped = block ? `${block.trimEnd()}\n${END}` : "";
+  const at = locate(b);
+  if (at) return b.slice(0, at[0]) + wrapped + b.slice(at[1]);
   return `${b.trimEnd()}${b.trim() ? "\n\n" : ""}${wrapped}\n`;
 }
 
@@ -204,22 +211,26 @@ export function upsert({ pr, repo, section, content, replaceAll, to = "auto" }, 
     // re-running on their own PR): a drive-by commenter's fake ✅ must never become the verify comment.
     .filter(([, , assoc, type, login]) => TRUSTED.includes(assoc) || type === "Bot" || (me && normLogin(login) === me))
     .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
-  let head = null, author = "", prUrl = "", prBody = null;
+  let head = null, author = "", prUrl = "", prBody = null, trustedAuthor = false;
   try {
-    const [h, a, u, b64] = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", `[.head.sha, .user.login, .html_url, (.body // "" | @base64)] | @tsv`]).split("\t");
+    const [h, a, u, b64, assoc, type] = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", `[.head.sha, .user.login, .html_url, (.body // "" | @base64), .author_association, .user.type] | @tsv`]).split("\t");
     head = h || null; author = a || ""; prUrl = u || "";
     prBody = b64 === undefined ? null : Buffer.from(b64, "base64").toString("utf8");
+    trustedAuthor = TRUSTED.includes(assoc) || type === "Bot";
   } catch { head = null; }
   const own = Boolean(me) && normLogin(author) === me;
-  const toBody = to === "body" || (to === "auto" && prBody !== null && (own || bodyBlock(prBody) !== ""));
+  // The PR author writes the description, so a report already in it counts only under the same
+  // trust rule the comment path applies: a fork author's planted ✅ is never adopted.
+  const bodyReport = prBody !== null && (own || trustedAuthor) ? bodyBlock(prBody) : "";
+  const toBody = to === "body" || (to === "auto" && prBody !== null && (own || bodyReport !== ""));
   if (toBody) {
-    const url = writeBody({ slug, prNumber, prUrl, prBody, found, section, content, replaceAll, head }, run);
+    const url = writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, content, replaceAll, head }, run);
     if (url) return url;
   }
-  let existing = "";
+  let existing = bodyReport;
   if (found.length) {
     const [id, , , , , b64] = found[0];
-    existing = Buffer.from(b64, "base64").toString("utf8");
+    existing = bodyReport || Buffer.from(b64, "base64").toString("utf8");
     const body = splice(existing, section, content, { replaceAll, head });
     try {
       const url = run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${id}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
@@ -241,15 +252,20 @@ export function upsert({ pr, repo, section, content, replaceAll, to = "auto" }, 
 // Write the report into the PR body; null when the comment must take it instead (the body would pass
 // GitHub's limit, or the token may not edit it). An own PR's verify comment is migrated: its regions
 // seed the body once, and the comment becomes a pointer so the PR shows one report.
-function writeBody({ slug, prNumber, prUrl, prBody, found, section, content, replaceAll, head }, run) {
+function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, content, replaceAll, head }, run) {
   if (prBody === null) throw Object.assign(new Error("cannot read the PR body for --to body"), { code: 2 });
-  const inBody = bodyBlock(prBody);
+  const inBody = bodyReport;
   const seed = !inBody && found.length ? found[0] : null;
   const existing = inBody || (seed ? Buffer.from(seed[5], "base64").toString("utf8") : "");
   const block = splice(existing, section, content, { replaceAll, head, where: "body" });
   const next = withBlock(prBody, block);
   if (next.length > BODY_LIMIT) {
     console.error(`verify-comment: the PR body would pass GitHub's ${BODY_LIMIT}-character limit; writing the comment instead`);
+    // The comment starts from the body's report; drop it from the body so the PR shows one report.
+    if (inBody) {
+      try { run(["api", "-X", "PATCH", `repos/${slug}/pulls/${prNumber}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: withBlock(prBody, "").trimEnd() + "\n" })); }
+      catch (e) { console.error(`verify-comment: the old report was not removed from the PR body: ${e.message}`); }
+    }
     return null;
   }
   let url;
@@ -395,10 +411,10 @@ function selfTest() {
   assert(rerun.startsWith(`${intro}\n\n${MARKER}`) && rerun.endsWith(`${END}${tail}`) && (rerun.match(/verify:report -->/g) || []).length === 2 && parseRegions(bodyBlock(rerun)).get("aggregate").includes("❌"), "a re-run replaces the region in place and keeps every character outside the region");
   assert(bodyBlock(intro) === "" && bodyBlock(`${MARKER}\nno end`) === "", "a body without both markers holds no report");
   assert(splice(splice("", "ui", "a"), "ui", "b", { where: "body" }).includes("this description's edit history"), "a body report points at the description's history");
-  const prGh = (comments, { author, body = "", bodyErr } = {}) => {
+  const prGh = (comments, { author, body = "", bodyErr, assoc = "MEMBER" } = {}) => {
     const calls = [];
     const run = (a, input) => {
-      if (String(a[1]).includes("/pulls/")) { calls.push("GET pr"); return `bbbbbbb0000\t${author}\thttps://x/pr\t${Buffer.from(body).toString("base64")}`; }
+      if (String(a[1]).includes("/pulls/")) { calls.push("GET pr"); return `bbbbbbb0000\t${author}\thttps://x/pr\t${Buffer.from(body).toString("base64")}\t${assoc}\tUser`; }
       if (a[2] === "PATCH" && a[3].includes("/pulls/")) { calls.push("PATCH body"); if (bodyErr) throw bodyErr; run.body = JSON.parse(input).body; return "https://x/pr"; }
       if (a[2] === "PATCH") { calls.push(`PATCH ${a[3].split("/").pop()}`); run.patched = JSON.parse(input).body; return `https://x/${a[3].split("/").pop()}`; }
       if (a[2] === "POST") { calls.push("POST"); return "https://x/new"; }
@@ -426,6 +442,18 @@ function selfTest() {
   const outage = prGh([], { author: "me", bodyErr: ghErr("gh: HTTP 502") });
   let failed = false; try { upsert(req, outage.run); } catch { failed = true; }
   assert(failed && !outage.calls.includes("POST"), "a GitHub outage on the body edit fails the write instead of posting a comment");
+  const quoted = "The report goes between `<!-- verify:report -->` and `<!-- /verify:report -->` in the body.";
+  assert(bodyBlock(quoted) === "" && withBlock(quoted, "x").startsWith(`${quoted}\n\nx`), "a description that quotes the markers inline holds no report, and nothing is spliced into its prose");
+  const quotedPr = prGh([["3", "2026-01-03T00:00:00Z", "me", two]], { author: "someone", body: quoted });
+  assert(upsert(req, quotedPr.run) === "https://x/3" && !quotedPr.calls.includes("PATCH body"), "someone else's PR keeps the comment when its description only quotes the markers");
+  const planted = withBlock("Fork PR.", splice("", "telemetry", "### ✅ Telemetry verified (FAKE)"));
+  const forkPr = prGh([], { author: "forker", body: planted, assoc: "CONTRIBUTOR" });
+  upsert(req, (a, i) => { if (a[2] === "POST") forkPr.run.posted = JSON.parse(i).body; return forkPr.run(a, i); });
+  assert(!forkPr.calls.includes("PATCH body") && forkPr.run.posted && !forkPr.run.posted.includes("FAKE"), "a report a fork author planted in the description is never adopted");
+  const bigWithReport = prGh([], { author: "me", body: withBlock("x".repeat(BODY_LIMIT - 400), splice("", "telemetry", "TEL kept")) });
+  let fallbackBody = ""; const bigRun = (a, i) => { if (a[2] === "POST") fallbackBody = JSON.parse(i).body; return bigWithReport.run(a, i); };
+  upsert({ ...req, content: "U".repeat(800) }, bigRun);
+  assert(parseRegions(fallbackBody).get("telemetry") === "TEL kept" && bodyBlock(bigWithReport.run.body) === "", "a fallback comment starts from the body's report, and the body drops its stale copy");
   let badTo = false; try { upsert({ ...req, to: "wiki" }, fakeGh([]).run); } catch { badTo = true; }
   assert(badTo, "an unknown --to is refused");
   console.log(`verify-comment self-test: ${n} assertions passed`);

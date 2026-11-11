@@ -18,13 +18,14 @@ tags:
 
 | PR | The report is |
 | --- | --- |
-| Your own (the PR author is the GraphQL `viewer`, both lowercased with one trailing `[bot]` stripped), or one whose body already holds the report | A region at the end of the PR description, `<!-- verify:report -->` … `<!-- /verify:report -->`; no verify comment is posted |
+| Your own (the PR author is the GraphQL `viewer`, both lowercased with one trailing `[bot]` stripped), or one whose body already holds the report and whose author is an app or has repo access (`author_association` `OWNER`, `MEMBER`, or `COLLABORATOR`) | A region at the end of the PR description, `<!-- verify:report -->` … `<!-- /verify:report -->`; no verify comment is posted |
 | Anyone else's, or the PR cannot be read | One comment whose first line is `<!-- verify:report -->` |
 
 `--to body` or `--to comment` overrides the choice; the default is `--to auto`.
+Each marker counts only on a line of its own, so a description that quotes them inline holds no report; a report a fork author planted in their description is never adopted, the same trust rule the comment path applies.
 In the body, the script replaces only its region and keeps every character outside it, so the author's text, the ui-verify spec, and the media region stay.
 An own PR that already has a verify comment moves it once: the comment's regions and history seed the body, and the comment becomes a one-line pointer, first line `<!-- verify:moved -->`.
-The comment takes the report instead when the body would pass GitHub's 65,536-character limit, or when the body edit is refused (HTTP 403 or 404); any other GitHub failure exits `2`.
+The comment takes the report instead when the body would pass GitHub's 65,536-character limit, or when the body edit is refused (HTTP 403 or 404); it starts from the body's report, and past the limit the body drops its copy. Any other GitHub failure exits `2`.
 
 ```text
 ✗ an own PR gets a verify comment, and the next run from Agent0 adds a second report in the body
