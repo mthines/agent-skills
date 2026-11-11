@@ -1,7 +1,9 @@
 #!/usr/bin/env node
-// verify-comment.mjs — upsert one region of the PR's single verify comment.
+// verify-comment.mjs — upsert one region of the PR's single verify report.
 //
-// One comment per PR, whoever's account posts it. Its first line is `<!-- verify:report -->`.
+// One report per PR, whoever's account writes it. On the viewer's own PR it is a region of the PR
+// description, `<!-- verify:report -->` … `<!-- /verify:report -->`; on anyone else's PR it is one
+// comment whose first line is `<!-- verify:report -->`.
 // Each witness owns one region:
 //   <!-- verify:section=<name> --> … <!-- /verify:section=<name> -->
 // Sections: aggregate (aw-verify), ui (ui-verify), telemetry (telemetry-verify).
@@ -12,11 +14,15 @@
 //
 // Usage:
 //   node verify-comment.mjs --pr <n|url> --section <name> --file <region.md> [--repo <owner/name>] [--replace-all]
+//     [--to auto|body|comment]
 //   node verify-comment.mjs --section <name> --file <region.md> --existing <body.md|-> --dry-run [--replace-all] [--head <sha>]
-//     [--notice-out <file> --comment-url <url>]
+//     [--to body [--seed <comment.md>]] [--notice-out <file> --comment-url <url>]
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
+// --to auto (default) writes the PR body when the PR's author is the viewer or the body already holds
+// the report, else the comment; body and comment force one. With --dry-run --to body, --existing is
+// the PR body and stdout is the whole new body; --seed is a verify comment to carry into it.
 // --dry-run prints the merged body instead of writing it (the MCP access path writes it itself).
 // --notice-out writes the verdict-change notice (linking --comment-url) to <file> when there is
 // one, and removes a stale <file> when there is none; the MCP access path posts it itself.
@@ -35,6 +41,10 @@ const HISTORY = "verify:history";
 const HISTORY_CAP = 10;
 const STALE = "<!-- verify:stale -->";
 export const NOTICE = "<!-- verify:notice -->";
+export const END = "<!-- /verify:report -->";
+export const MOVED = "<!-- verify:moved -->";
+// GitHub refuses an issue or PR body longer than 65536 characters.
+export const BODY_LIMIT = 65536;
 const VERDICTS = ["✅", "⚠️", "❌", "⛔", "⏭️"];
 const TRUSTED = ["OWNER", "MEMBER", "COLLABORATOR"];
 // A login, normalized: lowercase, one trailing `[bot]` stripped.
@@ -108,9 +118,9 @@ export function historyEntry(section, region, date) {
   return [sha ? `\`${sha}\`` : null, section, headline, `replaced ${date}`].filter(Boolean).join(" · ");
 }
 
-export function splice(existing, section, content, { replaceAll = false, now = new Date(), head = null } = {}) {
+export function splice(existing, section, content, { replaceAll = false, now = new Date(), head = null, where = "comment" } = {}) {
   if (!SECTIONS.includes(section)) throw new Error(`unknown section "${section}" (expected ${SECTIONS.join(", ")})`);
-  if (/verify:(report|section=|history|stale|notice)/.test(content)) throw new Error("refused: the region holds a verify marker of its own");
+  if (/verify:(report|section=|history|stale|notice|moved)/.test(content)) throw new Error("refused: the region holds a verify marker of its own");
   const bad = localPathLine(content);
   if (bad) throw new Error(`refused: the region holds a local path a reviewer cannot open: ${bad.trim()}`);
   const date = now.toISOString().slice(0, 16).replace("T", " ") + " UTC";
@@ -132,8 +142,27 @@ export function splice(existing, section, content, { replaceAll = false, now = n
     const headline = headlineOf(r).replace(/^#+\s*/, "").replace(/<[^>]+>/g, "").replace(/`([^`]*)`/g, "<code>$1</code>");
     return `${open(s)}\n${STALE}<details><summary>Older run on <code>${shaOf(r)}</code>: ${headline}</summary>\n\n${r}\n\n</details>${STALE}\n${close(s)}`;
   });
-  if (history.length) parts.push(`<!-- ${HISTORY} -->\n<details><summary>Previous runs (${history.length})</summary>\n\nEarlier full reports are in this comment's edit history.\n\n${history.map((h) => `- ${h}`).join("\n")}\n\n</details>\n<!-- /${HISTORY} -->`);
+  if (history.length) parts.push(`<!-- ${HISTORY} -->\n<details><summary>Previous runs (${history.length})</summary>\n\nEarlier full reports are in this ${where === "body" ? "description" : "comment"}'s edit history.\n\n${history.map((h) => `- ${h}`).join("\n")}\n\n</details>\n<!-- /${HISTORY} -->`);
   return `${MARKER}\n\n${parts.join("\n\n")}\n`;
+}
+
+// The verify report inside a PR body, from its marker up to the end marker, or "" when it has none.
+export function bodyBlock(prBody) {
+  const b = prBody || "";
+  const start = b.indexOf(MARKER);
+  const end = start === -1 ? -1 : b.indexOf(END, start);
+  return end === -1 ? "" : b.slice(start, end).trimEnd() + "\n";
+}
+
+// The PR body with its report replaced by `block`, or appended after the author's text when it has
+// none; every character outside the region is kept.
+export function withBlock(prBody, block) {
+  const b = prBody || "";
+  const wrapped = `${block.trimEnd()}\n${END}`;
+  const start = b.indexOf(MARKER);
+  const end = start === -1 ? -1 : b.indexOf(END, start);
+  if (end !== -1) return b.slice(0, start) + wrapped + b.slice(end + END.length);
+  return `${b.trimEnd()}${b.trim() ? "\n\n" : ""}${wrapped}\n`;
 }
 
 // The one-line comment a run posts when it changes the verdict a reader saw last: the section's
@@ -155,11 +184,13 @@ function gh(args, input) {
   return r.stdout.trim();
 }
 
-// Edit the PR's newest verify comment, whoever wrote it, else post a new one: one PR, one
-// comment, even when the same person runs verify from Agent0 (a bot account) and from a local
-// session (their own). The replaced run stays in the comment's history region. A comment the
-// token may not edit (HTTP 403 / 404) gets a new comment instead. `run` is injectable for --self-test.
-export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
+// On the viewer's own PR (or a PR whose body already holds the report), write the report into the
+// PR body. Otherwise edit the PR's newest verify comment, whoever wrote it, else post a new one: one
+// PR, one report, even when the same person runs verify from Agent0 (a bot account) and from a local
+// session (their own). The replaced run stays in the history region. A comment the token may not
+// edit (HTTP 403 / 404) gets a new comment instead. `run` is injectable for --self-test.
+export function upsert({ pr, repo, section, content, replaceAll, to = "auto" }, run = gh) {
+  if (!["auto", "body", "comment"].includes(to)) throw new Error(`unknown --to "${to}" (expected auto, body, comment)`);
   const prNumber = String(pr).match(/(\d+)\/?$/)?.[1];
   if (!prNumber) throw new Error(`cannot read a PR number from "${pr}"`);
   const slug = repo || String(pr).match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1]
@@ -173,8 +204,18 @@ export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
     // re-running on their own PR): a drive-by commenter's fake ✅ must never become the verify comment.
     .filter(([, , assoc, type, login]) => TRUSTED.includes(assoc) || type === "Bot" || (me && normLogin(login) === me))
     .sort(([ia, ta], [ib, tb]) => (tb > ta ? 1 : tb < ta ? -1 : Number(ib) - Number(ia)));
-  let head = null;
-  try { head = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", ".head.sha"]) || null; } catch { head = null; }
+  let head = null, author = "", prUrl = "", prBody = null;
+  try {
+    const [h, a, u, b64] = run(["api", `repos/${slug}/pulls/${prNumber}`, "--jq", `[.head.sha, .user.login, .html_url, (.body // "" | @base64)] | @tsv`]).split("\t");
+    head = h || null; author = a || ""; prUrl = u || "";
+    prBody = b64 === undefined ? null : Buffer.from(b64, "base64").toString("utf8");
+  } catch { head = null; }
+  const own = Boolean(me) && normLogin(author) === me;
+  const toBody = to === "body" || (to === "auto" && prBody !== null && (own || bodyBlock(prBody) !== ""));
+  if (toBody) {
+    const url = writeBody({ slug, prNumber, prUrl, prBody, found, section, content, replaceAll, head }, run);
+    if (url) return url;
+  }
   let existing = "";
   if (found.length) {
     const [id, , , , , b64] = found[0];
@@ -195,6 +236,41 @@ export function upsert({ pr, repo, section, content, replaceAll }, run = gh) {
   // A comment we may not edit hands its regions and history to the new one.
   const body = splice(existing, section, content, { replaceAll, head });
   return run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body }));
+}
+
+// Write the report into the PR body; null when the comment must take it instead (the body would pass
+// GitHub's limit, or the token may not edit it). An own PR's verify comment is migrated: its regions
+// seed the body once, and the comment becomes a pointer so the PR shows one report.
+function writeBody({ slug, prNumber, prUrl, prBody, found, section, content, replaceAll, head }, run) {
+  if (prBody === null) throw Object.assign(new Error("cannot read the PR body for --to body"), { code: 2 });
+  const inBody = bodyBlock(prBody);
+  const seed = !inBody && found.length ? found[0] : null;
+  const existing = inBody || (seed ? Buffer.from(seed[5], "base64").toString("utf8") : "");
+  const block = splice(existing, section, content, { replaceAll, head, where: "body" });
+  const next = withBlock(prBody, block);
+  if (next.length > BODY_LIMIT) {
+    console.error(`verify-comment: the PR body would pass GitHub's ${BODY_LIMIT}-character limit; writing the comment instead`);
+    return null;
+  }
+  let url;
+  try {
+    url = run(["api", "-X", "PATCH", `repos/${slug}/pulls/${prNumber}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: next })) || prUrl;
+  } catch (e) {
+    if (!/HTTP 40[34]/.test(e.message)) throw e;
+    console.error("verify-comment: the PR body edit is refused; writing the comment instead");
+    return null;
+  }
+  if (seed) {
+    const pointer = `${MOVED}\nThe verify report moved to the [PR description](${url}).`;
+    try { run(["api", "-X", "PATCH", `repos/${slug}/issues/comments/${seed[0]}`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: pointer })); }
+    catch (e) { console.error(`verify-comment: the old verify comment was not turned into a pointer: ${e.message}`); }
+  }
+  const notice = flipNotice(existing, section, block, url, head);
+  if (notice) {
+    try { run(["api", "-X", "POST", `repos/${slug}/issues/${prNumber}/comments`, "--input", "-", "--jq", ".html_url"], JSON.stringify({ body: notice })); }
+    catch (e) { console.error(`verify-comment: verdict-change notice not posted: ${e.message}`); }
+  }
+  return url;
 }
 
 function selfTest() {
@@ -310,6 +386,48 @@ function selfTest() {
   const down = fakeGh([["5", "2026-01-05T00:00:00Z", "me", one]], ghErr("gh: HTTP 502"));
   let rethrown = false; try { upsert(req, down.run); } catch { rethrown = true; }
   assert(rethrown && !down.calls.includes("POST"), "a GitHub outage fails the write instead of posting a duplicate");
+  // The PR body: the viewer's own PR keeps its report in the description, not in a comment.
+  const intro = "## Why\n\nIntro text.\n\n<!-- ui-verify:v2 -->\nspec\n<!-- /ui-verify:v2 -->";
+  const placed = withBlock(intro, splice("", "aggregate", "## ✅ Verified — x"));
+  assert(placed.startsWith(`${intro}\n\n${MARKER}`) && placed.trimEnd().endsWith(END) && bodyBlock(placed).startsWith(MARKER), "a first report is appended after the author's text, inside its markers");
+  const tail = "\n\n<!-- attach-media:v1 -->\nmedia\n<!-- /attach-media:v1 -->\n";
+  const rerun = withBlock(placed.trimEnd() + tail, splice(bodyBlock(placed + tail), "aggregate", "## ❌ Not verified — y", { replaceAll: true }));
+  assert(rerun.startsWith(`${intro}\n\n${MARKER}`) && rerun.endsWith(`${END}${tail}`) && (rerun.match(/verify:report -->/g) || []).length === 2 && parseRegions(bodyBlock(rerun)).get("aggregate").includes("❌"), "a re-run replaces the region in place and keeps every character outside the region");
+  assert(bodyBlock(intro) === "" && bodyBlock(`${MARKER}\nno end`) === "", "a body without both markers holds no report");
+  assert(splice(splice("", "ui", "a"), "ui", "b", { where: "body" }).includes("this description's edit history"), "a body report points at the description's history");
+  const prGh = (comments, { author, body = "", bodyErr } = {}) => {
+    const calls = [];
+    const run = (a, input) => {
+      if (String(a[1]).includes("/pulls/")) { calls.push("GET pr"); return `bbbbbbb0000\t${author}\thttps://x/pr\t${Buffer.from(body).toString("base64")}`; }
+      if (a[2] === "PATCH" && a[3].includes("/pulls/")) { calls.push("PATCH body"); if (bodyErr) throw bodyErr; run.body = JSON.parse(input).body; return "https://x/pr"; }
+      if (a[2] === "PATCH") { calls.push(`PATCH ${a[3].split("/").pop()}`); run.patched = JSON.parse(input).body; return `https://x/${a[3].split("/").pop()}`; }
+      if (a[2] === "POST") { calls.push("POST"); return "https://x/new"; }
+      return fakeGh(comments).run(a, input);
+    };
+    return { run, calls };
+  };
+  const mine = prGh([], { author: "Me", body: "Intro." });
+  assert(upsert({ ...req, section: "aggregate", content: "## ✅ ok" }, mine.run) === "https://x/pr" && mine.calls.includes("PATCH body") && !mine.calls.includes("POST")
+    && mine.run.body.startsWith("Intro.\n\n") && parseRegions(bodyBlock(mine.run.body)).get("aggregate") === "## ✅ ok", "an own PR writes the body and posts no verify comment");
+  const theirs = prGh([["3", "2026-01-03T00:00:00Z", "me", two]], { author: "someone" });
+  assert(upsert(req, theirs.run) === "https://x/3" && !theirs.calls.includes("PATCH body"), "someone else's PR keeps the comment");
+  const kept = prGh([], { author: "someone", body: placed });
+  assert(upsert(req, kept.run) === "https://x/pr" && kept.calls.includes("PATCH body"), "a body that already holds the report keeps it there, whoever runs");
+  const forced = prGh([], { author: "me" });
+  assert(upsert({ ...req, to: "comment" }, forced.run) === "https://x/new" && !forced.calls.includes("PATCH body"), "--to comment overrides an own PR");
+  const migrate = prGh([["6", "2026-01-06T00:00:00Z", "dash0-app[bot]", two]], { author: "me", body: "Intro." });
+  upsert({ ...req, section: "ui", content: "UI v9" }, migrate.run);
+  assert(parseRegions(bodyBlock(migrate.run.body)).get("telemetry") === "TEL v1" && parseRegions(bodyBlock(migrate.run.body)).get("ui") === "UI v9"
+    && migrate.calls.includes("PATCH 6") && migrate.run.patched.startsWith(MOVED) && !migrate.run.patched.startsWith(MARKER), "an own PR's verify comment is migrated into the body once and becomes a pointer");
+  const big = prGh([], { author: "me", body: "x".repeat(BODY_LIMIT) });
+  assert(upsert(req, big.run) === "https://x/new" && !big.calls.includes("PATCH body"), `a body past GitHub's ${BODY_LIMIT}-character limit (65536) writes the comment instead`);
+  const refused = prGh([], { author: "me", bodyErr: ghErr("gh: HTTP 403") });
+  assert(upsert(req, refused.run) === "https://x/new", "when the body edit is refused (403), the comment takes the report");
+  const outage = prGh([], { author: "me", bodyErr: ghErr("gh: HTTP 502") });
+  let failed = false; try { upsert(req, outage.run); } catch { failed = true; }
+  assert(failed && !outage.calls.includes("POST"), "a GitHub outage on the body edit fails the write instead of posting a comment");
+  let badTo = false; try { upsert({ ...req, to: "wiki" }, fakeGh([]).run); } catch { badTo = true; }
+  assert(badTo, "an unknown --to is refused");
   console.log(`verify-comment self-test: ${n} assertions passed`);
 }
 
@@ -326,21 +444,26 @@ else if (isMain) {
     if (!section || !file) throw new Error("--section and --file are required");
     const content = readFileSync(file === "-" ? 0 : file, "utf8");
     const replaceAll = has("--replace-all");
+    const to = opt("--to") ?? "auto";
     if (has("--dry-run")) {
+      if (!["auto", "body", "comment"].includes(to)) throw new Error(`unknown --to "${to}" (expected auto, body, comment)`);
       const existingPath = opt("--existing");
-      const existing = existingPath ? readFileSync(existingPath === "-" ? 0 : existingPath, "utf8") : "";
+      const read = (p) => (p ? readFileSync(p === "-" ? 0 : p, "utf8") : "");
+      const prBody = read(existingPath);
+      const seedPath = opt("--seed");
+      const existing = to === "body" ? (bodyBlock(prBody) || read(seedPath)) : prBody;
       const head = opt("--head") ?? null;
-      const body = splice(existing, section, content, { replaceAll, head });
+      const block = splice(existing, section, content, { replaceAll, head, where: to === "body" ? "body" : "comment" });
       const noticeOut = opt("--notice-out");
       if (noticeOut) {
         if (!opt("--comment-url")) throw new Error("--notice-out needs --comment-url");
-        const notice = existingPath ? flipNotice(existing, section, body, opt("--comment-url"), head) : null;
+        const notice = existing ? flipNotice(existing, section, block, opt("--comment-url"), head) : null;
         if (notice) writeFileSync(noticeOut, notice); else rmSync(noticeOut, { force: true });
       }
-      process.stdout.write(body);
+      process.stdout.write(to === "body" ? withBlock(prBody, block) : block);
     } else {
       if (!opt("--pr")) throw new Error("--pr is required unless --dry-run");
-      console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll }));
+      console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll, to }));
     }
   } catch (e) {
     console.error(`verify-comment: ${e.message}`);

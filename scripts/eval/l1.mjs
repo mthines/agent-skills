@@ -1695,6 +1695,13 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
   s.check("G96a every attach-media region writer and refresher names both markers", missing.length === 0, missing.join(", "));
 }
 
+// ── G96b: review-loop's description refresh preserves the verify report region an own PR carries in its body ──
+{
+  const missing = ["skills/delivery/create-pr/rules/description-contract.md", "skills/quality/review-loop/SKILL.md"]
+    .filter((f) => { const t = readOr(f); return !t.includes("<!-- verify:report -->") || !t.includes("<!-- /verify:report -->"); });
+  s.check("G96b every PR-body refresher names both verify report markers", missing.length === 0, missing.join(", "));
+}
+
 // ── G97: a script's main guard survives a symlinked install; Node realpaths import.meta.url but not argv[1] ──
 {
   const tracked = execFileSync("git", ["ls-files", "*.mjs"], { cwd: REPO_ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
@@ -1709,9 +1716,9 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
   s.check("G97b run-checks.mjs --self-test run through a symlink prints PASS", /self-test: PASS/.test(r.stdout), (r.stdout + r.stderr).slice(-200) || "no output");
 }
 
-// ── G131: review-loop's --ui lane reads the `ui` region that verify-comment.mjs writes; a drifted reader never sees a finished run ──
+// ── G131: review-loop's --ui lane reads the `ui` region that verify-comment.mjs writes, in a comment or the PR body; a drifted reader never sees a finished run ──
 {
-  const { splice } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/aw-verify/scripts/verify-comment.mjs")).href);
+  const { splice, withBlock } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/aw-verify/scripts/verify-comment.mjs")).href);
   const lane = readOr("skills/quality/review-loop/rules/ui-lane.md");
   const jqFilter = ((lane.match(/## Reading a lane run's result[\s\S]*?jq -r '([\s\S]*?)'\n```/) || ["", ""])[1]);
   // Input is `--paginate --slurp` output: an array of pages, each an array of comments.
@@ -1727,6 +1734,9 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
   const miss = run([["me", splice("", "aggregate", "AGG")]], []);
   s.check("G131b the ui-lane jq filter reads no region when only the aggregate exists (executed)",
     miss.status === 0 && miss.stdout.trim() === "", `exit ${miss.status}: ${miss.stdout.slice(0, 120)}`);
+  const inBody = run([["me", older]], [["author", withBlock("## Why\n\nIntro.", splice(splice("", "aggregate", "AGG"), "ui", ui))]]);
+  s.check("G131c the ui-lane jq filter reads the ui region from an own PR's body, the last page, past an older comment (executed)",
+    inBody.status === 0 && inBody.stdout.includes("finished: 2026-01-01") && !/AGG|OLDER|Intro/.test(inBody.stdout), `exit ${inBody.status}: ${inBody.stdout.slice(0, 120)}`);
 }
 
 process.exit(s.report() ? 0 : 1);

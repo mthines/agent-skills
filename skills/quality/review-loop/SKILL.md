@@ -415,7 +415,7 @@ It is report-only: it never gates convergence, never reopens the loop, and never
 
 Skip when `NO_REFRESH == 1`, `NO_FEEDBACK == 1`, or `APPLIED_TOTAL == 0` (no code changed, so the description cannot have drifted).
 
-1. Regenerate the title and body following the shared [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md) — the contract `create-pr` uses. Diff against the PR base and read the current body first; make a minimal edit, not a rewrite. Carry the `<!-- attach-media:v1 -->` … `<!-- /attach-media:v1 -->` media region and the ui-verify region forward verbatim, markers included — dropping either deletes uploaded screenshots or the spec.
+1. Regenerate the title and body following the shared [`description-contract.md`](../../delivery/create-pr/rules/description-contract.md) — the contract `create-pr` uses. Diff against the PR base and read the current body first; make a minimal edit, not a rewrite. Carry the `<!-- attach-media:v1 -->` … `<!-- /attach-media:v1 -->` media region, the ui-verify region, and the `<!-- verify:report -->` … `<!-- /verify:report -->` verify report forward verbatim, markers included — dropping one deletes uploaded screenshots, the spec, or the proof.
 2. Apply it:
 
    ```bash

@@ -134,20 +134,22 @@ A red verdict whose findings were all deduped against still-open threads is sett
 
 ## Reading a lane run's result
 
-Every mechanism ends in the same place: of the PR's verify comments (first line `<!-- verify:report -->`), the `ui` region (`<!-- verify:section=ui -->` … `<!-- /verify:section=ui -->`) for this head.
+Every mechanism ends in the same place: the `ui` region (`<!-- verify:section=ui -->` … `<!-- /verify:section=ui -->`) for this head, in the PR's verify report — a region of the PR body on the author's own PR (`<!-- verify:report -->` … `<!-- /verify:report -->`), else a comment whose first line is `<!-- verify:report -->`.
 A run on head `<sha>` is **finished** when that region shows `head \`<sha>\`` and a `finished:` line.
 Select by head, never by author: a PR has one verify comment, but one posted before that rule may sit beside it.
 The region keeps its status lines inside its collapsed **Details** block; the filter reads the raw Markdown, so the block changes nothing.
 `--slurp` joins the pages first; `--jq` would run the filter once per page and print one region per page.
+The PR body is read as one more page, last, so a region in the body wins over one left in an older comment.
 
 ```bash
-gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate --slurp \
-  | SHA="$HEAD_SHA" jq -r '[add[] | select(.body | startswith("<!-- verify:report -->")) | .body
+{ gh api "repos/$RESOLVED_REPO/issues/$PR_NUMBER/comments?per_page=100" --paginate --slurp
+  gh api "repos/$RESOLVED_REPO/pulls/$PR_NUMBER" --jq '[[{body: (.body // "")}]]'; } | jq -s add \
+  | SHA="$HEAD_SHA" jq -r '[add[] | select(.body | startswith("<!-- verify:report -->") or contains("<!-- /verify:report -->")) | .body
          | capture("<!-- verify:section=ui -->(?<r>[\\s\\S]*?)<!-- /verify:section=ui -->").r // empty
          | select(contains("head `" + env.SHA[0:7]))] | last // empty'
 ```
 
-On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and take the last `ui` region, across every verify comment, whose text contains ``head `<sha7>``.
+On the `mcp` path, read the comments with `mcp__github__issue_read` (`method: "get_comments"`) and the body with `mcp__github__pull_request_read` (`method: "get"`), and take the last `ui` region, across every verify comment and then the body, whose text contains ``head `<sha7>``.
 No such region (none posted yet, an `aw-verify` aggregate replaced it, or every region names another head) means no summary for this head.
 Parse `verdict`, `adversarial`, `telemetry`, and the `threads:` line from it: `<N> posted, <D> deduped, <X> declined` sets `posted = N`, and `failed (<reason>)` sets `post_failed = true`.
 

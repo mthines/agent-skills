@@ -4,7 +4,7 @@ description: >
   The telemetry witness: reads what the services recorded during one closed window of traffic
   another skill produced (ui-verify, verify, a repro), traces each acceptance criterion from web
   event to backend trace to database, and finds errors behind a green UI, slow paths, and missing
-  signals. Never edits code; run on its own, it posts its receipt to the PR's verify comment. Triggers on "check the telemetry", "prove it with traces", "/telemetry-verify".
+  signals. Never edits code; run on its own, it posts its receipt to the PR's verify report (the description on your own PR, else a comment). Triggers on "check the telemetry", "prove it with traces", "/telemetry-verify".
 disable-model-invocation: false
 argument-hint: '--env <local|preview> --from <ISO> --to <ISO> [--host <host>] [--driver playwright|chrome] [--brief <plan.md>] [--out <findings.jsonl>] [--pr <url|n>] [--no-comment]'
 license: MIT
@@ -110,7 +110,7 @@ Print exactly the block in [`rules/receipt.md § Output`](./rules/receipt.md#out
 
 ## Step 6 — Post the `telemetry` region
 
-Run on its own (no `--no-comment`), post the receipt as the `telemetry` region of the PR's one verify comment, per the `aw-verify` skill's `rules/pr-comment.md` (its § When to post gate, and its script):
+Run on its own (no `--no-comment`), post the receipt as the `telemetry` region of the PR's one verify report (the description on your own PR, else a comment), per the `aw-verify` skill's `rules/pr-comment.md` (its § When to post gate, and its script):
 
 ```bash
 node "${CLAUDE_SKILL_DIR}/../aw-verify/scripts/verify-comment.mjs" --pr <pr-url> --section telemetry --file .agent/<branch>/telemetry-verify/comment-telemetry.md
