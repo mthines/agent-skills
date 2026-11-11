@@ -103,7 +103,8 @@ No stable element → omit it; the run falls back to "URL is not the login page"
 
 The login uses a fixture test user, not a person's account and not SSO. The user has authorized it for every `aw-verify` run, so do not ask first and do not hand the step back:
 
-- **Playwright / headless:** a missing, expired, or login-page state file → run `refresh.command` (it reads the test user's credentials from env vars or `.browser/credentials.json`), wait for `authed_check`, and carry on. Do not stop to ask the user to run a login script.
+- **Playwright / headless, non-interactive `refresh.command`:** a missing, expired, or login-page state file → run `refresh.command` (it reads the test user's credentials from env vars or `.browser/credentials.json`), wait for `authed_check`, and carry on. Do not stop to ask the user to run a login script.
+- **Playwright / headless, `refresh.command` that runs `login-headful` or `strategy: manual`:** a human must log in, so this rule does not apply. Ask once, or mark authed specs `skipped (auth.strategy: manual)`.
 - **Chrome driver:** see the next section.
 
 The limits stay: only the environment's `auth.identity` test user, never a real person's password, never SSO, never repeat a credential value in chat, a report, or a log, and never write one to a tracked file.
