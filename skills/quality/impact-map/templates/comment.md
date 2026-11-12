@@ -8,6 +8,14 @@
   <img alt="{{the diagram caption plus one clause per box group, naming each decision number}}" src="{{light PNG asset URL}}">
 </picture>
 
+**Where it shows up:**
+
+| Interface | Gets | Made by | Turned on by |
+| --- | --- | --- | --- |
+| {{Web app}} | {{what it receives, in the reader's words}} | [`{{path:line}}`]({{primary URL}}) | {{flag, role, or "nothing"}} |
+
+<!-- One row per interface or integration, in the diagram's order, unchanged ones included. One row is fine. -->
+
 **Verdict:** {{one sentence}} Open a line for the detail and the lines to check.
 
 <details>

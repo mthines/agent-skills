@@ -114,6 +114,14 @@ svg .fill-risk{fill:var(--risk)}
 svg .bdg circle{fill:var(--ink);stroke:var(--sheet);stroke-width:2}
 svg .bdg text{fill:var(--sheet);font:600 11px var(--f-mono);text-anchor:middle}
 
+.surfaces{overflow-x:auto;background:var(--sheet);border:1px solid var(--line)}
+.surfaces table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+.surfaces th{font:500 11px/1.4 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
+.surfaces td{padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.surfaces tr:last-child td{border-bottom:0}
+.surfaces td:first-child{font-weight:600;white-space:nowrap}
+.surfaces .gate{font:12.5px var(--f-mono);color:var(--muted)}
+.surfaces .gate.live{color:var(--risk)}
 .decisions{display:flex;flex-direction:column;gap:16px}
 .decision{background:var(--sheet);border:1px solid var(--line);display:flex;flex-direction:column}
 .decision-head{display:grid;grid-template-columns:24px 1fr;gap:12px;padding:16px 16px 14px}
@@ -182,6 +190,17 @@ svg .fill-muted{fill:var(--muted)}
     </div>
     <figcaption><!-- SLOT: the diagram's one-sentence claim --></figcaption>
   </figure>
+</section>
+
+<section class="section" aria-labelledby="where">
+  <div class="section-head"><span class="eyebrow">Where it shows up</span><h2 id="where"><!-- SLOT: e.g. Four interfaces get the feature, in two different forms --></h2>
+    <p class="lede">Every interface or integration the feature reaches, including the ones this PR does not edit. A gate in red means live on merge.</p></div>
+  <div class="surfaces"><table>
+    <thead><tr><th>Interface</th><th>Gets</th><th>Made by</th><th>Turned on by</th></tr></thead>
+    <tbody>
+      <tr><td><!-- SLOT: Web app --></td><td><!-- SLOT: what it receives, in the reader's words --></td><td><a href="<!-- SLOT: primary -->"><!-- SLOT: short/path.ext:a–b --></a></td><td class="gate"><!-- SLOT: flag or role; class="gate live" when nothing gates it --></td></tr>
+    </tbody>
+  </table></div>
 </section>
 
 <section class="section" aria-labelledby="dec">
