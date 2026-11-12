@@ -26,7 +26,7 @@
 // --dry-run prints the merged body instead of writing it (the MCP access path writes it itself).
 // --notice-out writes the verdict-change notice (linking --comment-url) to <file> when there is
 // one, and removes a stale <file> when there is none; the MCP access path posts it itself.
-// Exit codes: 0 written or printed; 1 refused (local path or bad input); 2 GitHub call failed.
+// Exit codes: 0 written or printed; 1 refused (local path, a verify marker, media a reviewer cannot see, or bad input); 2 GitHub call failed.
 
 import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -85,6 +85,30 @@ export function localPathLine(text) {
   return text.split("\n").find((l) => LOCAL_PATH.test(l)) ?? null;
 }
 
+const MEDIA = /<img\b|user-attachments\/assets\/|\.mp4\b/i;
+
+// Media a reviewer cannot see without a click: inside a <details> that is not the strip's
+// "+N more" fold (a check row, Details), or placed after the first <details>, so the strip is empty.
+// A <picture> block is exempt: the impact map lives in Details by design (impact-map template).
+// Reads tags across lines, so a <summary> on its own line still opens a row. Returns the offending
+// text, or null. rules/pr-comment.md § Media strip.
+export function hiddenMediaLine(text) {
+  const body = text.replace(/<picture>[\s\S]*?<\/picture>/gi, "");
+  const token = /<details\b[^>]*>|<\/details>|<summary>([\s\S]*?)<\/summary>|<img\b[^>]*>|\S*user-attachments\/assets\/\S*|\S*\.mp4\b/gi;
+  const stack = [];
+  let seenDetails = false;
+  for (const m of body.matchAll(token)) {
+    const t = m[0];
+    if (/^<details/i.test(t)) { stack.push({ fold: false }); seenDetails = true; }
+    else if (/^<\/details>/i.test(t)) stack.pop();
+    else if (/^<summary>/i.test(t)) {
+      if (MEDIA.test(m[1])) return m[1].trim().slice(0, 100);
+      if (stack.length) stack[stack.length - 1].fold = /^\s*\+\d+ more/.test(m[1]);
+    } else if (stack.length ? !stack.some((d) => d.fold) : seenDetails) return t.trim().slice(0, 100);
+  }
+  return null;
+}
+
 // Regions in the existing body, in order. A body with the marker but no regions is a
 // report written before regions existed: keep it as the aggregate region.
 export function parseRegions(body) {
@@ -124,6 +148,8 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   if (/verify:(report|section=|history|stale|notice|moved)/.test(content)) throw new Error("refused: the region holds a verify marker of its own");
   const bad = localPathLine(content);
   if (bad) throw new Error(`refused: the region holds a local path a reviewer cannot open: ${bad.trim()}`);
+  const hidden = section === "aggregate" ? hiddenMediaLine(content) : null;
+  if (hidden) throw new Error(`refused: a screenshot or recording sits where a reviewer must click to see it: ${hidden}. Put recordings and screenshots in the media strip under "What I checked" (one recording, two thumbnails, the rest in one "+N more" fold) and have the check rows only name them`);
   const date = now.toISOString().slice(0, 16).replace("T", " ") + " UTC";
   const fresh = normalize(content.replaceAll("{{UPDATED}}", date)).trim();
   const old = parseRegions(existing);
@@ -305,6 +331,17 @@ function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, 
 function selfTest() {
   let n = 0;
   const assert = (ok, msg) => { n++; if (!ok) { console.error(`self-test FAIL: ${msg}`); process.exit(1); } };
+  const url = "https://github.com/user-attachments/assets/aaaa";
+  assert(hiddenMediaLine(`## ✅ x\n\nWhat I checked\n\n${url}.mp4\n\n<details><summary>✅ row</summary>\n\nnamed only\n\n</details>`) === null, "media in the strip before the rows is allowed");
+  assert(hiddenMediaLine(`strip\n\n<details><summary>+1 more recording</summary>\n\n${url}.mp4\n\n</details>`) === null, "media in the +N more fold is allowed");
+  assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`) !== null, "a recording inside a check row is refused");
+  assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\n<img src="x" width="420">\n\n</details>`) !== null, "a screenshot inside a check row is refused");
+  assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\nok\n\n</details>\n\n${url}.mp4`) !== null, "media after the first row means the strip is empty");
+  assert(hiddenMediaLine(`<details><summary>Details</summary>\n\n<picture>\n  <source srcset="${url}">\n  <img alt="map" src="${url}">\n</picture>\n\n</details>`) === null, "an impact-map <picture> block in Details is allowed");
+  assert(hiddenMediaLine(`<details>\n<summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`) !== null, "a row with <summary> on its own line still refuses media");
+  assert(hiddenMediaLine(`<details><summary>✅ row ${url}.mp4</summary>\n\nok\n\n</details>`) !== null, "media on the summary line is refused");
+  let hiddenRefused = false; try { splice("", "aggregate", `<details><summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`); } catch { hiddenRefused = true; }
+  assert(hiddenRefused, "splice refuses hidden media in the aggregate region");
   const one = splice("", "ui", "UI v1");
   assert(one.startsWith(MARKER), "a new body starts with the marker");
   assert(parseRegions(one).get("ui") === "UI v1", "a new region round-trips");

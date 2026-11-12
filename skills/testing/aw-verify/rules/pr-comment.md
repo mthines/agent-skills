@@ -225,7 +225,7 @@ Its `<summary>` is `<emoji> <b><what I did></b> → <what happened>`, under 80 c
 - **Order:** failed, then fixed (`🔧`), then passed, each group in the brief's order.
 - **Open state:** a failed row is `<details open>`; every other row is closed.
 - **Body:** one or two sentences (what I did, what happened, with the HTTP status or event name when that is the proof), ending on the same line with `<sub>Proves <AC-n></sub>` so the row traces to its criterion.
-- **No media in a row:** recordings and screenshots live in the strip; a row whose check is shown there names it (`see the made-up-id recording`).
+- **No media in a row:** `verify-comment.mjs` refuses an aggregate region with an image or `.mp4` inside any `<details>` other than the strip's `+N more` fold, or placed after the first `<details>`. Recordings and screenshots live in the strip; a row whose check is shown there names it (`see the made-up-id recording`).
 
 ### Media strip
 
@@ -324,7 +324,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | Exit | Meaning | Do |
 | --- | --- | --- |
 | `0` | Prints the PR URL (report in the description) or the comment URL | Report it |
-| `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
+| `1` | Refused: a local path, a verify marker, or a screenshot or recording a reviewer must click to see | Replace the path with its uploaded URL or `not attached (<reason>)`; move media into the strip under "What I checked" (an impact-map `<picture>` in Details is allowed); then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
 Pass `--to body` or `--to comment` only when the user asks for that place; the default picks it (§ Where the report lives).
