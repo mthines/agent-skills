@@ -41,7 +41,7 @@ export function extractMigration(html) {
   const rows = (section.match(/class="sign /g) ?? []).length;
   const box = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(section);
   const svg = box ? (SVG_WIDTH * Number(box[2])) / Number(box[1]) : 0;
-  const height = Math.ceil(250 + rows * 34 + svg + 140);
+  const height = Math.ceil(310 + rows * 34 + svg + 140);
   return { section, height };
 }
 

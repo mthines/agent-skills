@@ -77,7 +77,7 @@ Under `--dry-run`, fill everything in [`templates/comment.md`](../templates/comm
    An upload cannot be deleted, so a post that fails after the upload leaves orphan images on GitHub.
 1. **Upload the PNGs** with `Skill("attach-media", "<pr> <out-dir>/what-changes-light.png <out-dir>/what-changes-dark.png [<out-dir>/migration-light.png <out-dir>/migration-dark.png] --to urls")`.
    Use `--to urls` and substitute the URLs yourself: `gh --attach` rewrites Markdown image references, and a `<picture>` `srcset` is not one.
-2. **Fill** [`templates/comment.md`](../templates/comment.md): the light URL goes in `<img src>`, the dark URL in `<source srcset>`; a dry-run `comment.md` only needs its two tokens replaced.
+2. **Fill** [`templates/comment.md`](../templates/comment.md): the light URL goes in `<img src>`, the dark URL in `<source srcset>`; a dry-run `comment.md` only needs its tokens replaced (four with a migration).
    The "Where it shows up" table sits right under the picture.
    The verdict rows are the decisions; do not add a separate decisions section.
 3. **Post:**

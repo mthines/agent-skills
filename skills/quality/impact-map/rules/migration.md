@@ -8,7 +8,7 @@ Keep it to one screen. Three parts, nothing else.
 
 The diff adds or edits a file in a migrations directory (`**/migrations/**`, `**/db/migrate/**`, `*.sql` under a `schema` or `migrations` path) or a Kysely, Prisma, Alembic, Flyway, or Goose migration.
 No migration in the diff: skip this phase and emit no section. `--no-migration` skips it on request.
-Several migrations in one PR: one figure, tiles computed over all of them, one schema row per table.
+Several migrations in one PR: one figure, tiles computed over all of them, one schema block per table.
 
 ## The three parts
 
