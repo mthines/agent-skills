@@ -16,6 +16,12 @@
 
 <!-- One row per interface or integration, in the diagram's order, unchanged ones included. One row is fine. -->
 
+<!-- Only when the diff has a migration: a second picture, after the table, with the migration PNG URLs. -->
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="{{dark migration PNG asset URL}}">
+  <img alt="{{the migration verdict, and the four tiles with their colors}}" src="{{light migration PNG asset URL}}">
+</picture>
+
 **Verdict:** {{one sentence}} Open a line for the detail and the lines to check.
 
 <details>

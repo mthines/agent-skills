@@ -2,21 +2,22 @@
 name: impact-map
 description: >
   Builds an impact-first view of a GitHub PR: a verdict with expandable What/Risk/Ask rows,
-  one diagram colored new/changed/removed, at most three decisions with linked lines, and
-  what is already settled. Every claim is checked against code, tests, and docs first.
+  one diagram colored new/changed/removed, a second one-screen migration figure when the diff has a
+  database migration, at most three decisions with linked lines, and what is already settled. Every claim is checked against code, tests, and docs first.
   --comment or --body posts it to the PR with light and dark PNGs. Triggers on
   "impact map", "visualize this PR", "/impact-map".
-argument-hint: '<pr-url|#n>... [--stack] [--comment] [--body] [--dry-run] [--findings <report-body.md>]'
+argument-hint: '<pr-url|#n>... [--stack] [--no-migration] [--comment] [--body] [--dry-run] [--findings <report-body.md>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.0'
+  version: '1.2.0'
   workflow_type: advisory
   tags:
     - pull-request
     - impact-analysis
     - code-review
     - architecture-diagram
+    - database-migration
     - risk
     - visualization
 ---
@@ -44,6 +45,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/render-png.mjs" <page.html> <out-dir>        #
 | `<pr-url\|#n>...` | the current branch's PR | The PR to map. Several refs map each PR separately: [§ Several PRs or a stack](#several-prs-or-a-stack). |
 | `--stack` | — | Map every PR in the stack that holds the given PR, bottom to top, each separately. |
 | *(none)* | yes | Build the page only: publish it as an Artifact when the host has the Artifact tool, else write `.agent/{branch}/impact-map/pr-<n>.html`. |
+| `--no-migration` | — | Skip the migration figure even when the diff has a migration. |
 | `--comment` | — | Also post the map as a PR comment with the diagram as light and dark PNGs. A re-run edits the same comment. |
 | `--body` | — | Also write the map into the PR description's owned region, above the author's text. A re-run replaces the region. |
 | `--dry-run` | — | Build the page, the PNGs, and the comment Markdown; post nothing. |
@@ -59,7 +61,7 @@ Without either flag in the user's own request, write nothing to GitHub.
 2. **Map each PR against its own base** (`gh pr diff <n>`), treating the PRs below it as existing code.
    Say the position in the Why: `Second of three stacked PRs (#a → **#b** → #c).`
 3. **Run one worker per PR when you split the work, always with `--dry-run`.**
-   Each worker returns its `comment.md`, still holding the `{{LIGHT_PNG_URL}}` and `{{DARK_PNG_URL}}` tokens, and its two PNG paths.
+   Each worker returns its `comment.md`, still holding the `{{LIGHT_PNG_URL}}` and `{{DARK_PNG_URL}}` tokens, and its PNG paths (four when the diff has a migration).
    Post from the session that holds the user's request, running [`outputs.md § Comment and body`](./rules/outputs.md#comment-and-body) steps 0–3 on each worker's files: a worker never sees a consent message the user types after it started, and a relayed "the user asked" is not consent.
 4. **Cross-check after every map is built.** When one risk shows up in more than one PR, keep it a decision in each and end each Risk with `Same gap in #<n>.`
    Then report the shared risks once, under the per-PR report blocks.
@@ -78,6 +80,7 @@ Without either flag in the user's own request, write nothing to GitHub.
 | 2 | Verify | [`rules/analysis.md § Verify`](./rules/analysis.md#verify) | Every candidate classified open / settled / wrong, with evidence; each interface traced to the code that feeds it |
 | 3 | Decide | [`rules/analysis.md § Decide`](./rules/analysis.md#decide) | ≤ 3 decisions, each What / Risk / Ask and ≤ 3 linked lines |
 | 4 | Diagram | [`rules/diagram.md`](./rules/diagram.md) | One SVG, ≤ 14 service boxes plus an interfaces band, decision badges placed |
+| 4b | Migration | [`rules/migration.md`](./rules/migration.md) | Only when the diff has a migration: verdict line, four tiles, schema rows, and a ≤ 5-box usage diagram on one screen |
 | 5 | Page | [`rules/outputs.md § Page`](./rules/outputs.md#page) | PNGs rendered and looked at (or reported as not rendered when no Chrome exists), page built from `templates/page.html` and published or written |
 | 6 | Post | [`rules/outputs.md § Comment and body`](./rules/outputs.md#comment-and-body) | Only with `--comment` / `--body`: PNGs uploaded, posted, read back clean |
 
@@ -93,6 +96,7 @@ Every output has the same six parts, in this order, and nothing else:
    Every interface or integration the feature reaches (the web app, Slack, Linear, MCP, a CLI, an API, a webhook) is its own band or box, so the reader sees who receives what.
 4. **Where it shows up** — one row per interface or integration: what it receives, how the code produces that, and what turns it on.
    A reader who wants to understand the feature reads this before the decisions; it is never optional, and a one-interface feature says so in one row.
+   When the diff has a migration, a second **Migration** figure follows the table: [`rules/migration.md`](./rules/migration.md).
 5. **Decisions** — each with its linked lines and the question to answer at each line.
    In a PR comment the expandable rows *are* the decisions; do not repeat them.
 6. **Already settled** — things that look risky but are intended, each citing the test, doc, or description line that settles it, plus one "safe to skim" line.
@@ -123,6 +127,7 @@ impact-map: <pr-url> · <n> decisions · <n> settled
   comment: <comment-url | not posted>
   body:    <updated | not written>
   pngs:    <rendered | not rendered (no Chrome)>
+  migration: <safe | needs care | unsafe | none in diff>
 ```
 
 Several PRs: one block per PR, bottom of the stack first, then `shared: <risk> — #a, #b` for each risk named in more than one map.

@@ -6,6 +6,7 @@
 //   node render-png.mjs --find-browser     # print the browser it would use; exit 2 when none
 //   node render-png.mjs --self-test
 //
+// When the page has the optional migration section it also writes migration-light.png and migration-dark.png.
 // Writes <out-dir>/what-changes-light.png and <out-dir>/what-changes-dark.png at 2x scale.
 // The page must come from templates/page.html: the renderer reuses its <style>, the
 // first .legend, and the first <svg> inside .fig-scroll, and forces each theme through
@@ -31,6 +32,24 @@ export function extract(html) {
   if (!style || !svg || !box) return null;
   const height = Math.ceil(CHROME_FIXED + (SVG_WIDTH * Number(box[2])) / Number(box[1]));
   return { style, fonts, legend, svg, height };
+}
+
+// The optional migration section (rules/migration.md): tiles, schema rows, and the usage diagram.
+export function extractMigration(html) {
+  const section = /<section class="section" id="migration"[\s\S]*?<\/section>/.exec(html)?.[0];
+  if (!section) return null;
+  const rows = (section.match(/class="sign /g) ?? []).length;
+  const box = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(section);
+  const svg = box ? (SVG_WIDTH * Number(box[2])) / Number(box[1]) : 0;
+  const height = Math.ceil(250 + rows * 34 + svg + 140);
+  return { section, height };
+}
+
+export function migrationPage(parts, migration, theme) {
+  return `<!doctype html><html data-theme="${theme}"><head><meta charset="utf-8">${parts.fonts}<style>${parts.style}
+html,body{margin:0} body{padding:20px 24px;width:${PAGE_WIDTH}px}
+.section{gap:12px} .fig-scroll{overflow:visible} .fig-scroll svg{min-width:0}</style></head>
+<body>${migration.section}</body></html>`;
 }
 
 export function themedPage(parts, theme) {
@@ -107,20 +126,27 @@ function render(pagePath, outDir) {
   mkdirSync(outDir, { recursive: true });
   const work = join(tmpdir(), `impact-map-${process.pid}`);
   mkdirSync(work, { recursive: true });
-  for (const theme of ["light", "dark"]) {
-    const html = join(work, `diagram-${theme}.html`);
-    const png = resolve(outDir, `what-changes-${theme}.png`);
-    writeFileSync(html, themedPage(parts, theme));
-    try {
-      execFileSync(browser, browserArgs({ width: PAGE_WIDTH, height: parts.height, png, url: pathToFileURL(html).href }),
-        { stdio: ["ignore", "ignore", "pipe"], timeout: 60000 });
-    } catch (err) {
-      const why = String(err.stderr || err.message).trim().split("\n").filter(Boolean).pop() || "unknown error";
-      console.error(`render failed (${theme}, ${browser}): ${why}`);
-      return 1;
+  const migration = extractMigration(readFileSync(pagePath, "utf8"));
+  const figures = [
+    { name: "what-changes", height: parts.height, page: (theme) => themedPage(parts, theme) },
+    ...(migration ? [{ name: "migration", height: migration.height, page: (theme) => migrationPage(parts, migration, theme) }] : []),
+  ];
+  for (const figure of figures) {
+    for (const theme of ["light", "dark"]) {
+      const html = join(work, `${figure.name}-${theme}.html`);
+      const png = resolve(outDir, `${figure.name}-${theme}.png`);
+      writeFileSync(html, figure.page(theme));
+      try {
+        execFileSync(browser, browserArgs({ width: PAGE_WIDTH, height: figure.height, png, url: pathToFileURL(html).href }),
+          { stdio: ["ignore", "ignore", "pipe"], timeout: 60000 });
+      } catch (err) {
+        const why = String(err.stderr || err.message).trim().split("\n").filter(Boolean).pop() || "unknown error";
+        console.error(`render failed (${figure.name} ${theme}, ${browser}): ${why}`);
+        return 1;
+      }
+      if (!existsSync(png)) { console.error(`render failed: ${png}`); return 1; }
+      console.log(png);
     }
-    if (!existsSync(png)) { console.error(`render failed: ${png}`); return 1; }
-    console.log(png);
   }
   return 0;
 }
@@ -136,6 +162,8 @@ function selfTest() {
     ["height scales with the viewBox", p?.height, Math.ceil(CHROME_FIXED + (SVG_WIDTH * 300) / 900)],
     ["dark page carries data-theme", themedPage(p, "dark").includes('data-theme="dark"'), true],
     ["a page without a diagram is rejected", extract("<style></style>"), null],
+    ["a page without a migration section has none", extractMigration(page), null],
+    ["finds the migration section", extractMigration('<section class="section" id="migration"><div class="sign r-new"></div></section>')?.section.includes("sign"), true],
   ];
   // findBrowser over a fake filesystem: an Agent0 install has only Playwright's browsers, under
   // $PLAYWRIGHT_BROWSERS_PATH, sometimes only the headless shell.

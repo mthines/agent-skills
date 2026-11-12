@@ -11,7 +11,7 @@
   --mod:#9A5800; --mod-bg:#FBF0DB;
   --risk:#B8321F; --risk-bg:#FBE5E1;
   --same:#848A99; --same-bg:#F1F2F5;
-  --ok:#1F7A4D;
+  --ok:#1F7A4D; --ok-bg:#E3F3EA;
   --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -20,13 +20,13 @@
   color-scheme:dark;
   --bg:#0E1014; --sheet:#161920; --ink:#E7E9EF; --muted:#9BA2B3; --line:#2B303B; --line-soft:#21252E;
   --new:#86A0FF; --new-bg:#1B2445; --mod:#E6A94A; --mod-bg:#33270F; --risk:#FF8573; --risk-bg:#3B1C18;
-  --same:#727889; --same-bg:#1D2028; --ok:#5BCB92;
+  --same:#727889; --same-bg:#1D2028; --ok:#5BCB92; --ok-bg:#12291D;
 }}
 :root[data-theme="dark"]{
   color-scheme:dark;
   --bg:#0E1014; --sheet:#161920; --ink:#E7E9EF; --muted:#9BA2B3; --line:#2B303B; --line-soft:#21252E;
   --new:#86A0FF; --new-bg:#1B2445; --mod:#E6A94A; --mod-bg:#33270F; --risk:#FF8573; --risk-bg:#3B1C18;
-  --same:#727889; --same-bg:#1D2028; --ok:#5BCB92;
+  --same:#727889; --same-bg:#1D2028; --ok:#5BCB92; --ok-bg:#12291D;
 }
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:15px/1.6 var(--f-body);
@@ -152,6 +152,39 @@ svg .e.gone{stroke:var(--same);stroke-dasharray:4 4}
 svg .fill-muted{fill:var(--muted)}
 .sw.gone{background:transparent;border-color:var(--same);border-style:dashed}
 .undoc.drift{background:var(--mod-bg);color:var(--mod)}
+
+/* migration figure (rules/migration.md): verdict tiles and a schema summary */
+.fact-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.fact{display:flex;flex-direction:column;gap:5px;padding:10px 12px;border:1px solid var(--line);background:var(--bg)}
+.fact .k{font:500 10.5px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.fact .v{font:600 15px/1.25 var(--f-body);display:flex;align-items:center;gap:7px}
+.pip{width:9px;height:9px;border-radius:50%;flex:none}
+.pip.ok{background:var(--ok)} .pip.warn{background:var(--mod)} .pip.bad{background:var(--risk)}
+.fact.ok{border-color:var(--ok);background:var(--ok-bg)}
+.fact.warn{border-color:var(--mod);background:var(--mod-bg)}
+.fact.bad{border-color:var(--risk);background:var(--risk-bg)}
+.mig-verdict{background:var(--sheet);border:1px solid var(--line);border-left:6px solid var(--ok);padding:14px 18px;display:flex;flex-direction:column;gap:12px}
+.mig-verdict.warn{border-left-color:var(--mod)} .mig-verdict.bad{border-left-color:var(--risk)}
+.mig-verdict .lead{font-size:16px;line-height:1.45;font-weight:500}
+.tbl-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;padding:0 0 10px}
+.tbl-head code{font-size:15px;font-weight:500}
+.tag{font:500 10.5px/1 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;padding:3px 6px;border-radius:2px}
+.tag.new{background:var(--new-bg);color:var(--new)} .tag.mod{background:var(--mod-bg);color:var(--mod)}
+.tag.gone{background:var(--same-bg);color:var(--muted)} .tag.risk{background:var(--risk-bg);color:var(--risk)} .tag.ok{background:var(--ok-bg);color:var(--ok)}
+.schema{min-width:560px}
+.rows{display:grid;grid-template-columns:22px minmax(150px,1.2fr) 110px minmax(160px,1.6fr);border:1px solid var(--line)}
+.rows>div{padding:6px 10px;border-bottom:1px solid var(--line-soft);font-size:13px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-height:32px}
+.rows>div:nth-last-child(-n+4){border-bottom:0}
+.rows .h{font:500 10.5px/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--bg);min-height:28px}
+.rows .sign{justify-content:center;font:600 14px var(--f-mono);padding:6px 0}
+.rows .col{font:500 13px var(--f-mono)} .rows .ty{font:12.5px var(--f-mono);color:var(--muted)} .rows .nt{font-size:12.5px;color:var(--muted)}
+.r-new{background:var(--new-bg)} .r-new.sign{color:var(--new)}
+.r-mod{background:var(--mod-bg)} .r-mod.sign{color:var(--mod)}
+.r-gone{background:var(--same-bg)} .r-gone.sign{color:var(--muted)} .r-gone.col{text-decoration:line-through;color:var(--muted)}
+.chip{font:500 10.5px/1 var(--f-mono);padding:2px 5px;border-radius:2px;border:1px solid var(--line);background:var(--sheet);color:var(--ink)}
+.chip.key{border-color:var(--new);color:var(--new)}
+svg .zone{fill:none;stroke:var(--mod);stroke-width:1.5;stroke-dasharray:6 4}
+svg .zone-l{font:600 10.5px var(--f-mono);letter-spacing:.06em;fill:var(--mod);paint-order:stroke;stroke:var(--sheet);stroke-width:6px;stroke-linejoin:round}
 </style>
 
 <main class="sheet">
@@ -202,6 +235,40 @@ svg .fill-muted{fill:var(--muted)}
     </tbody>
   </table></div>
 </section>
+
+<!-- OPTIONAL: migration figure. Delete from here to the matching END marker when the diff has no migration (rules/migration.md). -->
+<section class="section" id="migration" aria-labelledby="mig">
+  <div class="section-head"><span class="eyebrow">Migration</span><h2 id="mig"><!-- SLOT: e.g. Adds agents.thread_followups --></h2></div>
+  <div class="mig-verdict"><!-- class "warn" or "bad" after mig-verdict when the verdict is not safe -->
+    <p class="lead"><!-- SLOT: one sentence, e.g. Safe in any deploy order. New table, nothing reads it until the flag is on. --></p>
+    <div class="fact-tiles">
+      <!-- Exactly four tiles, class ok | warn | bad: Change, Locks / backfill, Old pods, Rollback. -->
+      <div class="fact ok"><span class="k">Change</span><span class="v"><i class="pip ok"></i><!-- SLOT: Additive --></span></div>
+      <div class="fact ok"><span class="k">Locks / backfill</span><span class="v"><i class="pip ok"></i><!-- SLOT --></span></div>
+      <div class="fact ok"><span class="k">Old pods</span><span class="v"><i class="pip ok"></i><!-- SLOT --></span></div>
+      <div class="fact warn"><span class="k">Rollback</span><span class="v"><i class="pip warn"></i><!-- SLOT --></span></div>
+    </div>
+  </div>
+  <figure>
+    <div class="fig-scroll">
+      <div class="schema">
+        <div class="tbl-head"><code><!-- SLOT: schema.table --></code><span class="tag new">new table</span></div>
+        <div class="rows" role="table" aria-label="Schema changes">
+          <div class="h"></div><div class="h">Item</div><div class="h">Kind</div><div class="h">Why it matters</div>
+          <!-- One row per change group: sign "+" r-new, "~" r-mod, "−" r-gone. -->
+          <div class="sign r-new">+</div><div class="col r-new"><!-- SLOT --></div><div class="ty r-new"><!-- SLOT --></div><div class="nt r-new"><!-- SLOT --></div>
+        </div>
+      </div>
+    </div>
+  </figure>
+  <figure>
+    <div class="fig-scroll">
+      <!-- SLOT: the usage SVG, viewBox 0 0 900 <h>, at most five boxes, a dashed .zone around code behind a flag. -->
+    </div>
+    <figcaption><!-- SLOT: who can reach the new shape, in one sentence --></figcaption>
+  </figure>
+</section>
+<!-- END OPTIONAL: migration figure -->
 
 <section class="section" aria-labelledby="dec">
   <div class="section-head"><span class="eyebrow">What to decide</span><h2 id="dec"><!-- SLOT: e.g. Three things to agree on before approving --></h2>
