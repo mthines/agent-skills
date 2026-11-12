@@ -26,7 +26,7 @@
 // --dry-run prints the merged body instead of writing it (the MCP access path writes it itself).
 // --notice-out writes the verdict-change notice (linking --comment-url) to <file> when there is
 // one, and removes a stale <file> when there is none; the MCP access path posts it itself.
-// Exit codes: 0 written or printed; 1 refused (local path or bad input); 2 GitHub call failed.
+// Exit codes: 0 written or printed; 1 refused (local path, a verify marker, media a reviewer cannot see, or bad input); 2 GitHub call failed.
 
 import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -89,23 +89,22 @@ const MEDIA = /<img\b|user-attachments\/assets\/|\.mp4\b/i;
 
 // Media a reviewer cannot see without a click: inside a <details> that is not the strip's
 // "+N more" fold (a check row, Details), or placed after the first <details>, so the strip is empty.
-// Returns the offending line, or null. rules/pr-comment.md § Media strip.
+// A <picture> block is exempt: the impact map lives in Details by design (impact-map template).
+// Reads tags across lines, so a <summary> on its own line still opens a row. Returns the offending
+// text, or null. rules/pr-comment.md § Media strip.
 export function hiddenMediaLine(text) {
-  const lines = text.split("\n");
-  let depth = 0, fold = false, firstDetails = false;
-  for (const line of lines) {
-    const opens = [...line.matchAll(/<details\b[^>]*><summary>([^<]*)/g)];
-    for (const m of opens) {
-      depth++;
-      fold = /^\s*\+\d+ more/.test(m[1]);
-      firstDetails = true;
-    }
-    if (MEDIA.test(line) && !opens.length) {
-      if (depth > 0 && !fold) return line.trim().slice(0, 100);
-      if (depth === 0 && firstDetails) return line.trim().slice(0, 100);
-    }
-    depth -= (line.match(/<\/details>/g) ?? []).length;
-    if (depth <= 0) { depth = 0; fold = false; }
+  const body = text.replace(/<picture>[\s\S]*?<\/picture>/gi, "");
+  const token = /<details\b[^>]*>|<\/details>|<summary>([\s\S]*?)<\/summary>|<img\b[^>]*>|\S*user-attachments\/assets\/\S*|\S*\.mp4\b/gi;
+  const stack = [];
+  let seenDetails = false;
+  for (const m of body.matchAll(token)) {
+    const t = m[0];
+    if (/^<details/i.test(t)) { stack.push({ fold: false }); seenDetails = true; }
+    else if (/^<\/details>/i.test(t)) stack.pop();
+    else if (/^<summary>/i.test(t)) {
+      if (MEDIA.test(m[1])) return m[1].trim().slice(0, 100);
+      if (stack.length) stack[stack.length - 1].fold = /^\s*\+\d+ more/.test(m[1]);
+    } else if (stack.length ? !stack.some((d) => d.fold) : seenDetails) return t.trim().slice(0, 100);
   }
   return null;
 }
@@ -338,6 +337,9 @@ function selfTest() {
   assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`) !== null, "a recording inside a check row is refused");
   assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\n<img src="x" width="420">\n\n</details>`) !== null, "a screenshot inside a check row is refused");
   assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\nok\n\n</details>\n\n${url}.mp4`) !== null, "media after the first row means the strip is empty");
+  assert(hiddenMediaLine(`<details><summary>Details</summary>\n\n<picture>\n  <source srcset="${url}">\n  <img alt="map" src="${url}">\n</picture>\n\n</details>`) === null, "an impact-map <picture> block in Details is allowed");
+  assert(hiddenMediaLine(`<details>\n<summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`) !== null, "a row with <summary> on its own line still refuses media");
+  assert(hiddenMediaLine(`<details><summary>✅ row ${url}.mp4</summary>\n\nok\n\n</details>`) !== null, "media on the summary line is refused");
   let hiddenRefused = false; try { splice("", "aggregate", `<details><summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`); } catch { hiddenRefused = true; }
   assert(hiddenRefused, "splice refuses hidden media in the aggregate region");
   const one = splice("", "ui", "UI v1");

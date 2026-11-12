@@ -324,7 +324,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | Exit | Meaning | Do |
 | --- | --- | --- |
 | `0` | Prints the PR URL (report in the description) or the comment URL | Report it |
-| `1` | Refused: a local path or a verify marker in the region | Replace the path with its uploaded URL or `not attached (<reason>)`, then write once more |
+| `1` | Refused: a local path, a verify marker, or a screenshot or recording a reviewer must click to see | Replace the path with its uploaded URL or `not attached (<reason>)`; move media into the strip under "What I checked" (an impact-map `<picture>` in Details is allowed); then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
 Pass `--to body` or `--to comment` only when the user asks for that place; the default picks it (§ Where the report lives).
