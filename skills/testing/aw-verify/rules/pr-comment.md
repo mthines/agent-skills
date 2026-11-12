@@ -225,7 +225,7 @@ Its `<summary>` is `<emoji> <b><what I did></b> → <what happened>`, under 80 c
 - **Order:** failed, then fixed (`🔧`), then passed, each group in the brief's order.
 - **Open state:** a failed row is `<details open>`; every other row is closed.
 - **Body:** one or two sentences (what I did, what happened, with the HTTP status or event name when that is the proof), ending on the same line with `<sub>Proves <AC-n></sub>` so the row traces to its criterion.
-- **No media in a row:** recordings and screenshots live in the strip; a row whose check is shown there names it (`see the made-up-id recording`).
+- **No media in a row:** `verify-comment.mjs` refuses an aggregate region with an image or `.mp4` inside any `<details>` other than the strip's `+N more` fold, or placed after the first `<details>`. Recordings and screenshots live in the strip; a row whose check is shown there names it (`see the made-up-id recording`).
 
 ### Media strip
 

@@ -85,6 +85,31 @@ export function localPathLine(text) {
   return text.split("\n").find((l) => LOCAL_PATH.test(l)) ?? null;
 }
 
+const MEDIA = /<img\b|user-attachments\/assets\/|\.mp4\b/i;
+
+// Media a reviewer cannot see without a click: inside a <details> that is not the strip's
+// "+N more" fold (a check row, Details), or placed after the first <details>, so the strip is empty.
+// Returns the offending line, or null. rules/pr-comment.md § Media strip.
+export function hiddenMediaLine(text) {
+  const lines = text.split("\n");
+  let depth = 0, fold = false, firstDetails = false;
+  for (const line of lines) {
+    const opens = [...line.matchAll(/<details\b[^>]*><summary>([^<]*)/g)];
+    for (const m of opens) {
+      depth++;
+      fold = /^\s*\+\d+ more/.test(m[1]);
+      firstDetails = true;
+    }
+    if (MEDIA.test(line) && !opens.length) {
+      if (depth > 0 && !fold) return line.trim().slice(0, 100);
+      if (depth === 0 && firstDetails) return line.trim().slice(0, 100);
+    }
+    depth -= (line.match(/<\/details>/g) ?? []).length;
+    if (depth <= 0) { depth = 0; fold = false; }
+  }
+  return null;
+}
+
 // Regions in the existing body, in order. A body with the marker but no regions is a
 // report written before regions existed: keep it as the aggregate region.
 export function parseRegions(body) {
@@ -124,6 +149,8 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   if (/verify:(report|section=|history|stale|notice|moved)/.test(content)) throw new Error("refused: the region holds a verify marker of its own");
   const bad = localPathLine(content);
   if (bad) throw new Error(`refused: the region holds a local path a reviewer cannot open: ${bad.trim()}`);
+  const hidden = section === "aggregate" ? hiddenMediaLine(content) : null;
+  if (hidden) throw new Error(`refused: a screenshot or recording sits where a reviewer must click to see it: ${hidden}. Put recordings and screenshots in the media strip under "What I checked" (one recording, two thumbnails, the rest in one "+N more" fold) and have the check rows only name them`);
   const date = now.toISOString().slice(0, 16).replace("T", " ") + " UTC";
   const fresh = normalize(content.replaceAll("{{UPDATED}}", date)).trim();
   const old = parseRegions(existing);
@@ -305,6 +332,14 @@ function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, 
 function selfTest() {
   let n = 0;
   const assert = (ok, msg) => { n++; if (!ok) { console.error(`self-test FAIL: ${msg}`); process.exit(1); } };
+  const url = "https://github.com/user-attachments/assets/aaaa";
+  assert(hiddenMediaLine(`## ✅ x\n\nWhat I checked\n\n${url}.mp4\n\n<details><summary>✅ row</summary>\n\nnamed only\n\n</details>`) === null, "media in the strip before the rows is allowed");
+  assert(hiddenMediaLine(`strip\n\n<details><summary>+1 more recording</summary>\n\n${url}.mp4\n\n</details>`) === null, "media in the +N more fold is allowed");
+  assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`) !== null, "a recording inside a check row is refused");
+  assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\n<img src="x" width="420">\n\n</details>`) !== null, "a screenshot inside a check row is refused");
+  assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\nok\n\n</details>\n\n${url}.mp4`) !== null, "media after the first row means the strip is empty");
+  let hiddenRefused = false; try { splice("", "aggregate", `<details><summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`); } catch { hiddenRefused = true; }
+  assert(hiddenRefused, "splice refuses hidden media in the aggregate region");
   const one = splice("", "ui", "UI v1");
   assert(one.startsWith(MARKER), "a new body starts with the marker");
   assert(parseRegions(one).get("ui") === "UI v1", "a new region round-trips");
