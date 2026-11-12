@@ -14,13 +14,14 @@ Phases 5–6 of `impact-map`.
 
 1. Copy [`templates/page.html`](../templates/page.html) and fill every `<!-- SLOT: … -->`.
    Keep its stylesheet unchanged: the PNG renderer and both themes depend on its class names.
-2. Verdict rows are `<details>` with a `<summary>`; each holds a `<dl>` of What / Risk / Ask and a `Lines to check →` link to `#d<n>`.
-3. Each decision is an `<article class="decision" id="d<n>">` holding its `<ul class="spots">` of line links.
+2. Fill "Where it shows up" from the rows recorded in [`analysis.md § Interfaces`](./analysis.md#interfaces): one `<tr>` per interface, in the order the diagram shows them.
+3. Verdict rows are `<details>` with a `<summary>`; each holds a `<dl>` of What / Risk / Ask and a `Lines to check →` link to `#d<n>`.
+4. Each decision is an `<article class="decision" id="d<n>">` holding its `<ul class="spots">` of line links.
    The "also live on merge" item uses `class="decision also"` and no badge.
-4. Render the PNGs ([§ PNGs](#pngs)) and open the light one, even when nothing will be posted: a label spilling out of its box shows only in the render.
+5. Render the PNGs ([§ PNGs](#pngs)) and open the light one, even when nothing will be posted: a label spilling out of its box shows only in the render.
    Fix the page and re-render until the light one is clean; the dark one shares its layout.
    When `render-png.mjs` exits 2 (no Chrome or Chromium), still publish the page and add `pngs: not rendered (no Chrome)` to the report; `--comment` and `--body` then stop before step 0, because they have no images to post.
-5. Publish with the Artifact tool (title `<Subject> Impact Map`, icon `map`) when the host has it.
+6. Publish with the Artifact tool (title `<Subject> Impact Map`, icon `map`) when the host has it.
    Otherwise write `.agent/{branch}/impact-map/pr-<n>.html` and report the path.
 
 ## Line links
@@ -71,6 +72,7 @@ Under `--dry-run`, fill everything in [`templates/comment.md`](../templates/comm
 1. **Upload the PNGs** with `Skill("attach-media", "<pr> <out-dir>/what-changes-light.png <out-dir>/what-changes-dark.png --to urls")`.
    Use `--to urls` and substitute the URLs yourself: `gh --attach` rewrites Markdown image references, and a `<picture>` `srcset` is not one.
 2. **Fill** [`templates/comment.md`](../templates/comment.md): the light URL goes in `<img src>`, the dark URL in `<source srcset>`; a dry-run `comment.md` only needs its two tokens replaced.
+   The "Where it shows up" table sits right under the picture.
    The verdict rows are the decisions; do not add a separate decisions section.
 3. **Post:**
 

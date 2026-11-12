@@ -7,6 +7,7 @@ The output of this file is a list of at most three decisions, at most one "also 
 
 - [Fetch](#fetch)
 - [Candidates](#candidates)
+- [Interfaces](#interfaces)
 - [Verify](#verify)
 - [Decide](#decide)
 - [Writing What / Risk / Ask](#writing-what--risk--ask)
@@ -50,12 +51,36 @@ A row with no hit in the diff produces nothing.
 | 6 | Behavior changes for current users | Anything a person or automation mid-flight hits differently after merge |
 | 7 | Safety net | Tests or eval suites changed, removed, skipped, or not run; CI checks weakened |
 | 8 | Description drift | A claim in the PR body the code does not back, or a change the body does not mention |
+| 9 | Interfaces and integrations | Every surface that receives the feature's output or can trigger it: see [§ Interfaces](#interfaces) |
 
 For a removal (row 5), search the head commit for live callers:
 
 ```bash
 git grep -n -E "Skill\(\"?${NAME}|subagent_type=\"?${NAME}|/${NAME}\b|import .*${NAME}" "${HEAD_SHA}"
 ```
+
+## Interfaces
+
+The reader is trying to understand the feature: where it lives, who gets what, and how far it reaches.
+List every interface or integration it touches, even when the PR changes no code in it.
+
+1. **Find them.** Search the head commit for the places that name a surface:
+   enums or unions of sources (`slack`, `linear`, `mcp`, `chat`, `cli`, `api`, `webhook`), delivery sinks, adapters, connectors, API clients, SDKs, exporters, operators or Terraform providers, notification channels, and docs or skills that tell an agent to use the feature.
+   ```bash
+   git grep -n -i -E "slack|linear|mcp|webhook|cli\b|sdk" "${HEAD_SHA}" -- <the changed packages>
+   ```
+2. **Record one row per interface:**
+
+   | Field | Says |
+   | --- | --- |
+   | Interface | Its name as the reader knows it: *Web app*, *Slack*, *Linear*, *MCP*, *REST API*, *CLI* |
+   | Gets | What it receives or can do, in the reader's words: *the visual drawn live*, *markdown text with captured data*, *a link only* |
+   | Made by | The function or module that produces it, linked to a line when it is in the diff |
+   | Turned on by | The flag, role, or setting that gates it; "nothing" when it is live on merge |
+   | Code in the PR | Whether the PR changes this interface's own code: new, changed, or unchanged (it only receives new content) |
+
+3. **Include unchanged interfaces that receive new content.** An interface the PR never edits but whose output now carries new data is the case most often missed.
+4. **One row is fine.** A feature with a single interface says so in one row: it is still named.
 
 ## Verify
 
@@ -74,6 +99,9 @@ Checks that turn a candidate into "settled" or "wrong":
 - **Check the default branch's convention** before flagging an oddity: a renamed or disabled file may match what the repo already does.
 - **Read the permission code** before writing who can reach a route; name the role the code requires, never "anyone".
 - **Do not assert database behavior you cannot see.** Whether a migration file runs in one transaction depends on the runner; state the lock, not a uniqueness gap.
+- **Trace each interface to its source.** For every row from [§ Interfaces](#interfaces), read the code that feeds it, not only the PR's side: who builds the text or payload, which credentials it runs with, who can read the result, and what gates it.
+  When the code answers a question you were about to ask, state the answer and drop the question.
+- **Read the head commit, not only the diff.** In a local clone, `git show "${HEAD_SHA}:path"` and `git grep -n <pattern> "${HEAD_SHA}" -- <paths>` read any file at the PR's head without touching a worktree; brace every variable (`"${HEAD_SHA}:path"`).
 - **Verify the PR's own claims** that the decision rests on (e.g. "commands are byte-identical": compare every fenced block; report the count that differ and how).
 
 ```text
@@ -86,6 +114,7 @@ Checks that turn a candidate into "settled" or "wrong":
 1. Rank the open candidates by **reversibility, then reach**: data loss and anything kept forever first, then what runs for every user on merge, then the rest.
 2. Keep at most **three** as decisions.
    Merge candidates that share one Ask.
+   An interface that gets data from a different permission context than its source, or that is live on merge while the feature is flagged, is a candidate.
 3. Keep at most **one** non-decision item that runs on merge (typically a hot-path refactor) as the "also live on merge" row.
 4. Give each decision **≤ 3 linked lines**, each with one question to answer at that line.
    Build the links with `scripts/line-link.mjs` ([`outputs.md § Line links`](./outputs.md#line-links)).

@@ -11,6 +11,23 @@ The diagram shows where the change lands; the decisions say what to worry about;
 | Consolidates or removes units | Entry point → now does the work → removed (folded in), plus a "safety net" band for tests/evals | Deleting skills and folding them into callers |
 | Mixed | Use the running-system shape; show removals as dashed struck-through boxes in their column | — |
 
+## Interfaces band
+
+Every interface or integration from [`analysis.md § Interfaces`](./analysis.md#interfaces) appears in the diagram.
+
+1. **Draw the web app as its own service band** when the feature has a UI part, labelled `WEB APP · <path>`.
+2. **Draw every other interface as a box in one `band ctx` at the top**, labelled `OTHER INTERFACES · <what they get>`: Slack, Linear, MCP, a CLI, an API, a webhook.
+3. **Class by what the PR did to the interface's own code:** `n new` / `n mod` when it changed, `n same` when it only receives new content.
+   Say what it now gets in the subtitle (`thread reply, captured data`).
+4. **Edges run from the box that produces the output to each interface**, through one shared lane in the gap above the producer's band: one `e new` bus with an arrowhead per interface, not one long line each.
+5. **At most 6 interface boxes.** Merge siblings that behave alike (`Slack, Linear: markdown replies`) only when their rows in "Where it shows up" are identical.
+6. **The interfaces do not count toward the 14-box cap**, and they are never dropped to meet it.
+
+```text
+✅ RIGHT — MCP, Slack and Linear as three grey boxes in "OTHER INTERFACES · markdown text, not drawn", one edge each from "Visual tag expansion"
+❌ WRONG — the same fact written only in a decision's Risk, so the diagram suggests the web app is the only reader
+```
+
 ## Group by service
 
 When the boxes belong to two or more services, stack one full-width band per service, top to bottom in call order, and let the diagram grow taller, never wider.
@@ -57,7 +74,7 @@ A `band ctx` label also takes `ctx`, so its halo matches the unfilled sheet.
 
 Rules:
 
-1. **≤ 14 boxes.** Merge siblings that share a fate ("Environments + variables API", "holistic-analysis + 3 agents").
+1. **≤ 14 service boxes**, interface boxes aside ([§ Interfaces band](#interfaces-band)). Merge siblings that share a fate ("Environments + variables API", "holistic-analysis + 3 agents").
 2. **Box text:** a title of ≤ 4 words and a subtitle of ≤ 7 words that says what changed (`+2 columns, index rebuilt`), never what the component is.
 3. **Draw only edges that carry the story.** Callers into new code, changed code into changed data, removed units into what absorbed them.
 4. **Badge** the top-right corner of each box a decision is about, at the box's corner coordinates (`cx = x + width`, `cy = y`).

@@ -74,29 +74,33 @@ Without either flag in the user's own request, write nothing to GitHub.
 | Phase | Name | Rule | Gate |
 | --- | --- | --- | --- |
 | 0 | Fetch | [`rules/analysis.md § Fetch`](./rules/analysis.md#fetch) | Diff, description, head SHA, and merge base in hand |
-| 1 | Candidates | [`rules/analysis.md § Candidates`](./rules/analysis.md#candidates) | Every live-on-merge surface walked |
-| 2 | Verify | [`rules/analysis.md § Verify`](./rules/analysis.md#verify) | Every candidate classified open / settled / wrong, with evidence |
+| 1 | Candidates | [`rules/analysis.md § Candidates`](./rules/analysis.md#candidates) | Every live-on-merge surface walked, and every interface and integration the feature reaches listed ([§ Interfaces](./rules/analysis.md#interfaces)) |
+| 2 | Verify | [`rules/analysis.md § Verify`](./rules/analysis.md#verify) | Every candidate classified open / settled / wrong, with evidence; each interface traced to the code that feeds it |
 | 3 | Decide | [`rules/analysis.md § Decide`](./rules/analysis.md#decide) | ≤ 3 decisions, each What / Risk / Ask and ≤ 3 linked lines |
-| 4 | Diagram | [`rules/diagram.md`](./rules/diagram.md) | One SVG, ≤ 14 boxes, decision badges placed |
+| 4 | Diagram | [`rules/diagram.md`](./rules/diagram.md) | One SVG, ≤ 14 service boxes plus an interfaces band, decision badges placed |
 | 5 | Page | [`rules/outputs.md § Page`](./rules/outputs.md#page) | PNGs rendered and looked at (or reported as not rendered when no Chrome exists), page built from `templates/page.html` and published or written |
 | 6 | Post | [`rules/outputs.md § Comment and body`](./rules/outputs.md#comment-and-body) | Only with `--comment` / `--body`: PNGs uploaded, posted, read back clean |
 
 ## Shape of the result
 
-Every output has the same five parts, in this order, and nothing else:
+Every output has the same six parts, in this order, and nothing else:
 
 1. **Title and Why** — the PR's purpose in one sentence a reviewer would say aloud.
 2. **Verdict** — one sentence, then one expandable row per decision (badged ①②③) plus at most one unbadged "also live on merge" row.
    Each row opens to **What**, **Risk**, and **Ask**, one sentence each, and links to its lines.
    Under the rows, one **Verified / Not run** line.
 3. **Diagram** — the system after merge, colored by what the PR did to each part, with decision badges on the boxes they concern.
-4. **Decisions** — each with its linked lines and the question to answer at each line.
+   Every interface or integration the feature reaches (the web app, Slack, Linear, MCP, a CLI, an API, a webhook) is its own band or box, so the reader sees who receives what.
+4. **Where it shows up** — one row per interface or integration: what it receives, how the code produces that, and what turns it on.
+   A reader who wants to understand the feature reads this before the decisions; it is never optional, and a one-interface feature says so in one row.
+5. **Decisions** — each with its linked lines and the question to answer at each line.
    In a PR comment the expandable rows *are* the decisions; do not repeat them.
-5. **Already settled** — things that look risky but are intended, each citing the test, doc, or description line that settles it, plus one "safe to skim" line.
+6. **Already settled** — things that look risky but are intended, each citing the test, doc, or description line that settles it, plus one "safe to skim" line.
 
 ```text
 ✗ Wrong — a survey: risk matrix, LOC bars, contract tables, stack chips, 9-file tour, then decisions, then a separate "where to look" list
-✓ Right — verdict rows → one diagram → three decisions holding their own links → settled
+✗ Wrong — a diagram of services only, so "Slack, Linear and MCP get the data" shows up nowhere until a decision mentions it
+✓ Right — verdict rows → one diagram with its interfaces → where it shows up → three decisions holding their own links → settled
 ```
 
 ## Core rules
@@ -106,6 +110,8 @@ Every output has the same five parts, in this order, and nothing else:
 3. **Red means exposure only** — a caller that can reach new code on merge, an unverified safety net, a "not in description" tag.
 4. **Name description drift.** When the PR body says something the code does not do, tag the decision it belongs to.
 5. **Never write to GitHub without `--comment` or `--body` in the user's own request** — an uploaded image cannot be deleted, so the check comes before the upload.
+6. **Name every interface.** The reader is trying to understand the feature's architecture and reach; a surface that receives the feature's output and is missing from the diagram and from "Where it shows up" is a defect.
+7. **An Ask the code answers is not an Ask.** Before a question reaches the page, read the path that decides it (delivery code, read route, permission check, flag gate); state the answer in the Risk, or move the item to "Already settled".
 
 ## Report
 

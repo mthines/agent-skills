@@ -15,6 +15,8 @@ A risk matrix, line-count bars, contract tables, a stack view, and a file-by-fil
 | Expandable What / Risk / Ask rows | A dense verdict paragraph that hides which item matters |
 | "Already settled" section | Reviewers re-raising behavior that a test or doc already marks as intended |
 | Verify before writing | Claims written from the diff alone that the code, its permissions, or its tests contradict |
+| Interfaces band, plus a "Where it shows up" table | A feature that looks web-only because Slack, Linear and MCP only appear inside a Risk sentence; a reader trying to understand the architecture never sees who receives what |
+| An Ask the code answers is stated, not asked | Questions a reviewer could have answered in a minute by reading the delivery path, the read route, or the flag gate |
 | Red only for exposure | A color that meant both "decision" and "dangerous caller" |
 | One map per PR in a stack, with `Same gap in #<n>` on shared risks | A stack-wide view that becomes a survey, or per-PR maps that each show half of one contract bug |
 | Workers build with `--dry-run`; the requesting session posts | A worker started before the user consented reads a relayed "post it" as unverified, so posting splits into refusals, blocked posts, and flagged posts |
