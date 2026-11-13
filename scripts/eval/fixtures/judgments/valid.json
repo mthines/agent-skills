@@ -80,7 +80,8 @@
       "body": "left-pad's upstream changelog for 3.0.0 could not be fetched (network unreachable from this context), so the documented break could not be checked against this repo's own usage sites.",
       "materiality": true,
       "category": "dependency-verification",
-      "unverified_reason": "upstream changelog host unreachable"
+      "unverified_reason": "upstream changelog host unreachable",
+      "first_seen_sha": "9f8e7d6"
     }
   ],
   "gates": {
@@ -134,5 +135,28 @@
   "memory": {
     "relevance_rules": [],
     "lessons_used": []
-  }
+  },
+  "prior_dedup": [
+    {
+      "path": "src/lib/widget.ts",
+      "line": 57,
+      "prefix": "suggestion",
+      "reason": "already-posted",
+      "comment_id": 2145678901
+    },
+    {
+      "path": "src/lib/widget.ts",
+      "line": 30,
+      "prefix": "suggestion",
+      "reason": "flip-flop",
+      "comment_id": 2145678902
+    },
+    {
+      "path": "src/lib/legacy.ts",
+      "line": 14,
+      "prefix": "issue",
+      "reason": "addressed",
+      "first_seen_sha": "9f8e7d6"
+    }
+  ]
 }

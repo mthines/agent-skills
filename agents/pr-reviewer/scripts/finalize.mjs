@@ -51,7 +51,7 @@ import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
-import { MARKER_RE } from "./fingerprint.mjs";
+import { MARKER_RE, buildFingerprint, extractFingerprint } from "./fingerprint.mjs";
 import { appendRecord, finishRun, readLedger, stepStartAttrs, LENS_ORIGINS, lensItems as exportedLensItems } from "./review-telemetry.mjs";
 import { LENS_DIR, GATED_LENSES } from "./select-lenses.mjs";
 
@@ -677,6 +677,156 @@ export function severityCounts(result) {
 }
 
 /**
+ * Whether this run skipped Step 2, the inline review: an unmoved head (`mode: zero-delta`, Step 0.8),
+ * or a re-review the Zero-delta short-circuit stops (fetch-and-triage.md): no delta lines and no new
+ * file — a rebase, a base merge, or a binary-, mode-, or rename-only push, which runs as
+ * `incremental*` even when it lists a changed file. Such a run re-admits no carried finding and drops
+ * nothing. A context without `deltaNewFiles` (one from before it existed) is never read as skipped.
+ * @param {any} context @returns {boolean}
+ */
+export function step2Skipped(context) {
+  if (context?.mode === "zero-delta") return true;
+  return typeof context?.mode === "string" && context.mode !== "full"
+    && context.deltaLines === 0 && context.deltaNewFiles === 0;
+}
+
+/** A head SHA as judgments.schema.json's first_seen_sha pattern allows it. */
+const SHA_RE = /^[0-9a-f]{7,40}$/;
+const hasSha = (/** @type {unknown} */ v) => typeof v === "string" && SHA_RE.test(v);
+
+/** The order pr_review.prior.check lists its problems in, so the value stays one of a few. */
+export const PRIOR_CHECKS = Object.freeze(["reposted", "carried_lost", "unrecorded"]);
+
+/**
+ * This agent's own review threads on the PR: those whose first comment ends with a v2 fingerprint
+ * marker, with that fingerprint. Matched by the marker, never by login — on Agent0 every automation
+ * posts as the same GitHub App, so a login match would count another reviewer's thread as this one's.
+ * @param {any} threads context.threads (prepare-review.mjs buildThreads)
+ * @returns {Array<{ thread_id: string, root_comment_id: number|null, is_resolved: boolean, fp: string }>}
+ */
+export function ownThreads(threads) {
+  /** @type {Array<{ thread_id: string, root_comment_id: number|null, is_resolved: boolean, fp: string }>} */
+  const out = [];
+  for (const t of Array.isArray(threads) ? threads : []) {
+    const got = typeof t?.root_body === "string" ? extractFingerprint(t.root_body) : null;
+    if (got?.source !== "marker" || got.fp_v !== 2) continue;
+    out.push({ thread_id: String(t.thread_id), root_comment_id: Number.isInteger(t.root_comment_id) ? t.root_comment_id : null,
+      is_resolved: t.is_resolved === true, fp: got.fp });
+  }
+  return out;
+}
+
+/**
+ * The re-review counts for the root span (rules/run-telemetry-export.md § Re-reviews), from the
+ * reported findings (`result.inline` + `result.deferred`, the population severityCounts counts),
+ * `judgments.prior_dedup`, `judgments.threads`, and the context's threads and prior run:
+ *
+ * - `findings.new` / `findings.carried`: reported findings without / with `first_seen_sha`; they sum
+ *   to `posted_inline + deferred`.
+ * - `findings.repeat_dropped` (`_foreign`: those whose prior comment is not on one of this agent's
+ *   threads), `findings.flip_flop_dropped`, and `findings.withdrawn` (`addressed` entries plus this
+ *   agent's own threads classified fixed or obsolete): every prior_dedup entry counted once.
+ * - `findings.reposted`: inline findings whose fingerprint is an open thread of this agent's — the
+ *   duplicate comment the dedup exists to prevent, counted without trusting the model.
+ * - `prior.carried_in` / `findings.carried_unaccounted`: carried findings the state record handed
+ *   in, and those neither back as candidates nor in prior_dedup.
+ * - `prior.check` (re-reviews only): `ok`, or the problems among PRIOR_CHECKS — the one bounded
+ *   value an alert can match, since PromQL label matchers on numeric attributes find nothing.
+ *
+ * Unknown is never zero: a re-review whose judgments carry no `prior_dedup` records none of the
+ * model-dependent counts, only `findings.reposted` and `prior.check=unrecorded`, plus a warning. A
+ * first run needs no prior_dedup: everything it reports is new. Neither does a run that skipped
+ * Step 2 (step2Skipped), which drops nothing and re-admits no carried entry: it is not held to
+ * prior_dedup, and its carried findings are not checked (Step 4c keeps the record's list).
+ * @param {any} context @param {any} judgments @param {any} result finalizeReview()'s return
+ * @returns {{ attrs: Record<string, number|string>, warnings: string[] }}
+ */
+export function priorCounts(context, judgments, result) {
+  /** @type {Record<string, number|string>} */
+  const attrs = {};
+  /** @type {string[]} */
+  const warnings = [];
+  if (!Array.isArray(result?.inline) || !Array.isArray(result?.deferred)) return { attrs, warnings };
+  const source = context?.priorRun?.source;
+  const reReview = typeof source === "string" && source !== "none";
+  const noStep2 = step2Skipped(context);
+  const threadsKnown = Array.isArray(context?.threads);
+  const own = ownThreads(context?.threads);
+  /** @type {string[]} */
+  const problems = [];
+
+  if (threadsKnown) {
+    const openFps = new Set(own.filter((t) => !t.is_resolved).map((t) => t.fp));
+    const reposted = result.inline.filter((/** @type {any} */ f) => f?.finder && f?.path
+      && openFps.has(buildFingerprint({ finder: f.finder, defectClass: f.defect_class, symbol: f.symbol || "", path: f.path }))).length;
+    attrs["findings.reposted"] = reposted;
+    if (reposted > 0) {
+      problems.push("reposted");
+      warnings.push(`${reposted} inline finding(s) repeat an open pr-reviewer thread on this PR — the prior-comment dedup missed them`);
+    }
+  }
+
+  const priorDedup = judgments?.prior_dedup;
+  if (reReview && !noStep2 && !Array.isArray(priorDedup)) {
+    problems.push("unrecorded");
+    warnings.push("re-review wrote no prior_dedup — new, carried, repeat_dropped, and withdrawn are not recorded");
+  } else {
+    const entries = Array.isArray(priorDedup) ? priorDedup : [];
+    const reported = [...result.inline, ...result.deferred];
+    const carried = reported.filter((/** @type {any} */ f) => hasSha(f?.first_seen_sha)).length;
+    attrs["findings.new"] = reported.length - carried;
+    attrs["findings.carried"] = carried;
+    const byReason = (/** @type {string} */ reason) => entries.filter((/** @type {any} */ d) => d?.reason === reason);
+    const repeats = byReason("already-posted");
+    attrs["findings.repeat_dropped"] = repeats.length;
+    if (threadsKnown) {
+      const ownComments = new Set(own.map((t) => t.root_comment_id).filter((id) => id !== null));
+      attrs["findings.repeat_dropped_foreign"] = repeats.filter((/** @type {any} */ d) => !ownComments.has(d?.comment_id)).length;
+    }
+    attrs["findings.flip_flop_dropped"] = byReason("flip-flop").length;
+    const ownIds = new Set(own.map((t) => t.thread_id));
+    const withdrawnThreads = (Array.isArray(judgments?.threads) ? judgments.threads : [])
+      .filter((/** @type {any} */ t) => (t?.classification === "fixed" || t?.classification === "obsolete") && ownIds.has(String(t.thread_id))).length;
+    attrs["findings.withdrawn"] = byReason("addressed").length + withdrawnThreads;
+
+    const carriedIn = context?.priorRun?.carriedIn;
+    if (reReview && !noStep2 && Number.isInteger(carriedIn)) {
+      const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
+      const accounted = candidates.filter((/** @type {any} */ c) => hasSha(c?.first_seen_sha)).length
+        + entries.filter((/** @type {any} */ d) => hasSha(d?.first_seen_sha)).length;
+      const lost = Math.max(0, carriedIn - accounted);
+      attrs["prior.carried_in"] = carriedIn;
+      attrs["findings.carried_unaccounted"] = lost;
+      if (lost > 0) {
+        problems.push("carried_lost");
+        warnings.push(`${lost} of ${carriedIn} carried finding(s) are neither back as candidates nor recorded in prior_dedup`);
+      }
+    }
+  }
+  if (reReview) attrs["prior.check"] = problems.length ? PRIOR_CHECKS.filter((p) => problems.includes(p)).join(",") : "ok";
+  return { attrs, warnings };
+}
+
+/**
+ * The PR-state record's next `carried_findings` (run-writes.md § 4c): every finding deferred over the
+ * inline cap, in the record's shape. A carried finding keeps the `first_seen_sha` it arrived with; a
+ * finding deferred for the first time gets this run's head SHA, so it reads as carried, not new, on
+ * every later review.
+ * @param {any[]|undefined} deferred finalizeReview()'s `deferred` (anything else is no findings) @param {string} runSha this run's 7-char head SHA
+ * @returns {Array<{ path: string, line?: number, prefix: string, body: string, confidence: number, first_seen_sha: string }>}
+ */
+export function carriedFindingsFor(deferred, runSha) {
+  return (Array.isArray(deferred) ? deferred : []).map((/** @type {any} */ f) => ({
+    path: f.path,
+    ...(Number.isInteger(f.line) ? { line: f.line } : {}),
+    prefix: f.prefix,
+    body: f.body,
+    confidence: f.final,
+    first_seen_sha: hasSha(f.first_seen_sha) ? f.first_seen_sha : runSha,
+  }));
+}
+
+/**
  * The run trace's lenses (review-telemetry.mjs § THE LENSES): one item per lens select-lenses.mjs
  * loaded, with where it came from, how it loaded, and the candidates it raised; one per composed
  * lens whose step log says it ran (`origin: composed`, `trigger: step`), raised or not; one per lens
@@ -1100,6 +1250,10 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     findingsBusRecords,
     // The Step 4c state write's `cited` (posting.md § 4c) — copied from finalize-result.json.
     citedRefs: citedRefs(judgments?.memory, suppressed),
+    // The Step 4c state write's `carried_findings` (run-writes.md § 4c), each with its first_seen_sha.
+    // Null when Step 2 never ran (step2Skipped): no carried entry was re-admitted, and an empty list
+    // would erase the record's — null tells Step 4c to keep the record's own list.
+    carriedFindings: step2Skipped(context) ? null : carriedFindingsFor(overCapDeferred, runSha),
   };
 }
 
@@ -3090,8 +3244,94 @@ async function selfTest() {
         /\} catch \(e\) \{\n(?:\s*\/\/.*\n)*\s*process\.stderr\.write\(`finalize: run telemetry not recorded — /.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("severityCounts: the tiers are judgments.schema.json's severity_tier enum",
         JSON.stringify((await import("./validate-judgments.mjs")).loadSchema().$defs.severity_tier.enum) === JSON.stringify(SEVERITY_TIERS));
-      check("finalize passes impactImageOutcome(context) into the run's telemetry attributes",
-        /impactImage: impactImageOutcome\(context\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+
+      // priorCounts: the re-review counts. Own threads carry a v2 marker; T3 is another automation's
+      // under the same login (no marker). Inline finding A repeats open own thread T1; B matches T2,
+      // which is resolved, so only A is a repost.
+      const fpm = await import("./fingerprint.mjs");
+      const F = (/** @type {any} */ o) => ({ finder: "correctness", defect_class: "logic", symbol: "foo", path: "src/a.ts", line: 10, prefix: "issue",
+        severity: "high", blocking: false, body: "b", final: 90, verdict: "confirmed", ...o });
+      const fpOf = (/** @type {string} */ symbol, /** @type {string} */ path) => fpm.buildFingerprint({ finder: "correctness", defectClass: "logic", symbol, path });
+      const prThreads = [
+        { thread_id: "T1", root_comment_id: 101, is_resolved: false, root_body: `issue: x\n${fpm.marker(fpOf("foo", "src/a.ts"))}` },
+        { thread_id: "T2", root_comment_id: 102, is_resolved: true, root_body: `issue: y\n${fpm.marker(fpOf("bar", "src/b.ts"))}` },
+        { thread_id: "T3", root_comment_id: 103, is_resolved: false, root_body: "issue: another automation said this, with no marker" },
+        { thread_id: "T4", root_comment_id: 104, is_resolved: false, root_body: `suggestion: z\n${fpm.marker(fpOf("qux", "src/q.ts"))}` },
+        { thread_id: "T5", root_comment_id: 105, is_resolved: false, root_body: "issue: w\n<!-- fp:v9:correctness:logic:foo@src/a.ts -->" },
+      ];
+      const rrResult = { inline: [F({}), F({ symbol: "bar", path: "src/b.ts" })], deferred: [F({ symbol: "baz", path: "src/c.ts", first_seen_sha: "9f8e7d6" })] };
+      const rrJudgments = {
+        candidates: [...rrResult.inline, ...rrResult.deferred, F({ symbol: "low", path: "src/l.ts", first_seen_sha: "9f8e7d6", final: 40 })],
+        prior_dedup: [
+          { path: "src/a.ts", line: 12, prefix: "issue", reason: "already-posted", comment_id: 101 },
+          { path: "src/d.ts", line: 3, prefix: "issue", reason: "already-posted", comment_id: 103 },
+          { path: "src/e.ts", line: 4, prefix: "suggestion", reason: "flip-flop", comment_id: 102 },
+          { path: "src/f.ts", line: 5, prefix: "issue", reason: "addressed", first_seen_sha: "9f8e7d6" },
+        ],
+        threads: [{ thread_id: "T1", classification: "persisting" }, { thread_id: "T2", classification: "fixed", reply: "r" },
+          { thread_id: "T3", classification: "fixed", reply: "r" }, { thread_id: "T4", classification: "obsolete", reply: "r" },
+          { thread_id: "T5", classification: "declined", reply: "r" }],
+      };
+      const sorted = (/** @type {Record<string, any>} */ o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
+      check("ownThreads keeps only threads whose first comment carries a valid v2 marker — never another automation's, never an unrecognised marker",
+        JSON.stringify(ownThreads(prThreads).map((t) => t.thread_id)) === '["T1","T2","T4"]' && ownThreads(undefined).length === 0);
+      const rr = priorCounts({ priorRun: { source: "state-record", carriedIn: 4 }, threads: prThreads }, rrJudgments, rrResult);
+      check("priorCounts on a re-review: new/carried split, repeats (one foreign), a flip-flop, withdrawn = addressed + own fixed/obsolete threads, a repost, a lost carried finding",
+        sorted(rr.attrs) === sorted({
+          "findings.reposted": 1, "findings.new": 2, "findings.carried": 1, "findings.repeat_dropped": 2, "findings.repeat_dropped_foreign": 1,
+          "findings.flip_flop_dropped": 1, "findings.withdrawn": 3, "prior.carried_in": 4, "findings.carried_unaccounted": 1,
+          "prior.check": "reposted,carried_lost",
+        }), JSON.stringify(rr.attrs));
+      check("priorCounts: each problem is a warning naming its count",
+        rr.warnings.length === 2 && /^1 inline finding\(s\) repeat an open pr-reviewer thread/.test(rr.warnings[0]) && /^1 of 4 carried finding\(s\)/.test(rr.warnings[1]),
+        rr.warnings.join(" | "));
+      check("priorCounts: new + carried equals posted_inline + deferred, the population severityCounts counts",
+        Number(rr.attrs["findings.new"]) + Number(rr.attrs["findings.carried"]) === rrResult.inline.length + rrResult.deferred.length
+          && SEVERITY_TIERS.reduce((n, t) => n + severityCounts(rrResult)[`findings.${t}`], 0) === rrResult.inline.length + rrResult.deferred.length);
+      const clean = priorCounts({ priorRun: { source: "state-record", carriedIn: 3 }, threads: prThreads.slice(1) }, rrJudgments, rrResult);
+      check("priorCounts: a re-review with every carried finding accounted for and no repost says prior.check=ok and warns nothing",
+        clean.attrs["prior.check"] === "ok" && clean.attrs["findings.carried_unaccounted"] === 0 && clean.attrs["findings.reposted"] === 0 && clean.warnings.length === 0,
+        JSON.stringify(clean));
+      const first = priorCounts({ priorRun: { source: "none" }, threads: [] }, { candidates: rrResult.inline, threads: [] }, { inline: rrResult.inline, deferred: [] });
+      check("priorCounts on a first run: everything reported is new, nothing else, no prior.check, no warning — prior_dedup not needed",
+        sorted(first.attrs) === sorted({ "findings.reposted": 0, "findings.new": 2, "findings.carried": 0, "findings.repeat_dropped": 0,
+          "findings.repeat_dropped_foreign": 0, "findings.flip_flop_dropped": 0, "findings.withdrawn": 0 }) && first.warnings.length === 0, JSON.stringify(first));
+      const { prior_dedup: _pd, ...noDedup } = rrJudgments;
+      const unrecorded = priorCounts({ priorRun: { source: "github-fallback-rung" }, threads: prThreads }, noDedup, rrResult);
+      check("priorCounts on a re-review without prior_dedup: no model-dependent count (unknown, never zero), prior.check names it, and a warning says so",
+        sorted(unrecorded.attrs) === sorted({ "findings.reposted": 1, "prior.check": "reposted,unrecorded" })
+          && unrecorded.warnings.some((w) => /re-review wrote no prior_dedup/.test(w)), JSON.stringify(unrecorded));
+      check("priorCounts: without context.threads there is no repost or foreign count; without both result arrays, nothing",
+        !("findings.reposted" in priorCounts({ priorRun: { source: "none" } }, rrJudgments, rrResult).attrs)
+          && !("findings.repeat_dropped_foreign" in priorCounts({ priorRun: { source: "none" } }, rrJudgments, rrResult).attrs)
+          && JSON.stringify(priorCounts({}, rrJudgments, { inline: [] })) === '{"attrs":{},"warnings":[]}');
+      check("carriedFindingsFor: the record's shape, an arriving first_seen_sha kept, a first deferral stamped with this run's SHA, no line when there is none",
+        JSON.stringify(carriedFindingsFor([F({ first_seen_sha: "9f8e7d6" }), F({ line: undefined, path: "package.json" })], "abc1234")) === JSON.stringify([
+          { path: "src/a.ts", line: 10, prefix: "issue", body: "b", confidence: 90, first_seen_sha: "9f8e7d6" },
+          { path: "package.json", prefix: "issue", body: "b", confidence: 90, first_seen_sha: "abc1234" },
+        ]) && JSON.stringify(carriedFindingsFor(undefined, "abc1234")) === "[]");
+      const zdJudgments = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
+        gate5: { status: "PASS", details: "x" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+      const baseMerge = { mode: "incremental-quick", headSha: "abc1234def", deltaLines: 0, deltaNewFiles: 0, scopePaths: [] };
+      check("step2Skipped: the short-circuit's own test — an unmoved head, or no delta lines and no new file (a base merge, or a binary-only push that still lists its file); never a reviewed delta, a new file, a full run, or a context without deltaNewFiles",
+        step2Skipped({ mode: "zero-delta" }) && step2Skipped(baseMerge) && step2Skipped({ ...baseMerge, mode: "incremental" })
+          && step2Skipped({ ...baseMerge, scopePaths: ["docs/review-levers.png"] })
+          && !step2Skipped({ ...baseMerge, deltaNewFiles: 1 }) && !step2Skipped({ ...baseMerge, deltaLines: 4 })
+          && !step2Skipped({ ...baseMerge, mode: "full" }) && !step2Skipped({ mode: "incremental", deltaLines: 0, scopePaths: [] }) && !step2Skipped({}));
+      check("finalizeReview returns carriedFindings as a list on a reviewed run, and null when Step 2 was skipped (unmoved head or base merge) so Step 4c keeps the record's list",
+        JSON.stringify(finalizeReview({ context: { mode: "full", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings) === "[]"
+          && finalizeReview({ context: { mode: "zero-delta", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings === null
+          && finalizeReview({ context: baseMerge, judgments: zdJudgments }).carriedFindings === null);
+      const zd = priorCounts({ mode: "zero-delta", priorRun: { source: "state-record", carriedIn: 4 }, threads: prThreads.slice(1) }, noDedup, { inline: [], deferred: [] });
+      const bm = priorCounts({ ...baseMerge, priorRun: { source: "state-record", carriedIn: 4 }, threads: prThreads.slice(1) }, noDedup, { inline: [], deferred: [] });
+      check("priorCounts when Step 2 was skipped (zero-delta, or a base merge): no carried-loss check and no `unrecorded` without prior_dedup — nothing was dropped or re-admitted",
+        [zd, bm].every((x) => x.attrs["prior.check"] === "ok" && !("prior.carried_in" in x.attrs) && !("findings.carried_unaccounted" in x.attrs)
+          && x.attrs["findings.new"] === 0 && x.warnings.length === 0), JSON.stringify({ zd, bm }));
+      check("main prints every priorCounts warning except in the --no-telemetry preview",
+        /if \(!opts\["no-telemetry"\]\) for \(const w of prior\.warnings\) console\.error\(`finalize: warning — \$\{w\}`\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+      check("finalize passes impactImageOutcome(context) and priorCounts(...).attrs into the run's telemetry attributes",
+        /impactImage: impactImageOutcome\(context\), prior: prior\.attrs \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8"))
+          && /const prior = priorCounts\(context, judgments, result\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
     }
 
     {
@@ -3133,6 +3373,35 @@ async function selfTest() {
           && ltRunAttrs["findings.low"] === 0 && ltRunAttrs["findings.blocking"] === 1 && ltRunAttrs.anchorless === 1
           && SEVERITY_TIERS.reduce((n, t) => n + ltRunAttrs[`findings.${t}`], 0) === ltRunAttrs.posted_inline + ltRunAttrs.deferred,
         JSON.stringify(ltRunAttrs));
+      const ltResult = JSON.parse(readFileSync(join(ltDir, "out", "finalize-result.json"), "utf8"));
+      check("a first run records everything it reported as new and no prior.check, and finalize-result.json carries carriedFindings",
+        ltRunAttrs["findings.new"] === ltRunAttrs.posted_inline + ltRunAttrs.deferred && ltRunAttrs["findings.carried"] === 0
+          && ltRunAttrs["prior.check"] === undefined && Array.isArray(ltResult.carriedFindings) && ltResult.carriedFindings.length === ltRunAttrs.deferred,
+        JSON.stringify(ltRunAttrs));
+
+      // A re-review (the state record was read) whose judgments carry no prior_dedup: said on stderr, and
+      // recorded as prior.check=unrecorded with no new/carried counts. With prior_dedup: [] it is `ok`.
+      for (const [label, withDedup] of /** @type {Array<[string, boolean]>} */ ([["without prior_dedup", false], ["with prior_dedup: []", true]])) {
+        const rrDir = join(e2eDir, `rereview-${withDedup ? "dedup" : "nodedup"}`);
+        rmSync(rrDir, { recursive: true, force: true });
+        mkdirSync(rrDir, { recursive: true });
+        spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), "begin", "--run-dir", rrDir], { encoding: "utf8", env: off });
+        writeFileSync(join(rrDir, "context.json"), JSON.stringify({ ...e2eContext, priorRun: { ...e2eContext.priorRun, source: "state-record", carriedIn: 0 } }, null, 2));
+        const { prior_dedup: _drop, ...base } = /** @type {any} */ (e2eJudgments);
+        writeFileSync(join(rrDir, "judgments.json"), JSON.stringify(withDedup ? { ...base, prior_dedup: [] } : base, null, 2));
+        const rrRun = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(rrDir, "context.json"),
+          "--judgments", join(rrDir, "judgments.json"), "--out-dir", join(rrDir, "out"), "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: off });
+        const rrAttrs = Object.assign({}, ...readLedger(rrDir).filter((r) => r.t === "attr" && r.target === "run").map((r) => r.attrs || {}));
+        if (withDedup) {
+          check(`a re-review ${label} records prior.check=ok and the new/carried split, and warns nothing`,
+            rrRun.status === 0 && rrAttrs["prior.check"] === "ok" && rrAttrs["findings.new"] === rrAttrs.posted_inline + rrAttrs.deferred
+              && rrAttrs["findings.carried_unaccounted"] === 0 && !/finalize: warning — re-review/.test(rrRun.stderr || ""), JSON.stringify(rrAttrs));
+        } else {
+          check(`a re-review ${label} prints the finalize warning and records prior.check=unrecorded with no new/carried count`,
+            rrRun.status === 0 && /finalize: warning — re-review wrote no prior_dedup/.test(rrRun.stderr || "")
+              && rrAttrs["prior.check"] === "unrecorded" && rrAttrs["findings.new"] === undefined, `${JSON.stringify(rrAttrs)} ${(rrRun.stderr || "").slice(0, 200)}`);
+        }
+      }
       check("the dry run's telemetry summary lists the lenses",
         JSON.stringify(ltSummary.lenses?.loaded?.map((/** @type {any} */ l) => l.name)) === '["tdd","billing-audit","measurable","verify-behavior"]' && ltSummary.lenses?.skipped?.[0]?.name === "soc2",
         JSON.stringify(ltSummary.lenses));
@@ -3387,7 +3656,7 @@ export function routingAttrs(routing, stateStatus) {
  * trace. A context with no ledger (built by an older prepare-review.mjs, or `--no-telemetry`)
  * records nothing. Never throws: telemetry never fails a review.
  * @param {string} contextPath @param {any} result @param {any} judgments
- * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any, impactImage?: Record<string, string>, routing?: any, stateStatus?: string }} how `lenses` is context.lenses, `routing` and `stateStatus` the context's
+ * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any, impactImage?: Record<string, string>, routing?: any, stateStatus?: string, prior?: Record<string, number|string> }} how `lenses` is context.lenses, `routing` and `stateStatus` the context's, `prior` priorCounts().attrs
  * @returns {Promise<string|null>} the run dir, when a ledger exists
  */
 async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
@@ -3412,6 +3681,7 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         "memory.suppressed": Array.isArray(result?.suppressed) ? result.suppressed.length : undefined,
         ...dispositionCounts(result),
         ...severityCounts(result),
+        ...(how.prior || {}),
         ...(how.impactImage || {}),
       },
     });
@@ -3717,7 +3987,11 @@ async function main() {
   });
   // --no-telemetry: a preview render (posting.md § The impact image) must not record the finalize
   // step or finish the run — the real finalize after it does both.
-  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses, routing: context?.routing, stateStatus: context?.stateStatus, impactImage: impactImageOutcome(context) });
+  // The re-review counts (priorCounts). Each problem is said here, where it is known; the
+  // --no-telemetry preview stays quiet, because the real finalize that follows says it.
+  const prior = priorCounts(context, judgments, result);
+  if (!opts["no-telemetry"]) for (const w of prior.warnings) console.error(`finalize: warning — ${w}`);
+  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses, routing: context?.routing, stateStatus: context?.stateStatus, impactImage: impactImageOutcome(context), prior: prior.attrs });
   // execute-write-plan.mjs records the `post` step and exports the trace; this is how it finds
   // the ledger. Absent when no ledger exists.
   if (telemetryRunDir && !isDryRun) writePlan.telemetry_run_dir = telemetryRunDir;

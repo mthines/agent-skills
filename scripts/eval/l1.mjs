@@ -1244,7 +1244,8 @@ const renderReport = (payload) => {
   const loadJ = (n) => JSON.parse(readFileSync(join(JF, n), "utf8"));
   s.check("G62d fixtures/judgments/valid.json validates with zero errors", vj.validateJudgments(schema, loadJ("valid.json")).length === 0);
   for (const [name, needle] of [["invalid-unknown-top-level-key.json", "unknown property"], ["invalid-secret-exempt.json", "secret"],
-    ["invalid-title-mismatch.json", "title"], ["invalid-unverified-reason.json", "unverified_reason"], ["invalid-thread-reply.json", "reply"]]) {
+    ["invalid-title-mismatch.json", "title"], ["invalid-unverified-reason.json", "unverified_reason"], ["invalid-thread-reply.json", "reply"],
+    ["invalid-prior-dedup-comment-id.json", "comment_id"], ["invalid-prior-dedup-addressed.json", "first_seen_sha"]]) {
     const errs = existsSync(join(JF, name)) ? vj.validateJudgments(schema, loadJ(name)) : [];
     s.check(`G62d fixtures/judgments/${name} is rejected (mentions "${needle}")`, errs.some((e) => e.includes(needle)));
   }

@@ -283,6 +283,26 @@ export function domainRules(data, errors) {
     }
   });
 
+  // prior_dedup: which prior comment a repeat or a flip-flop names, and that only a carried entry can
+  // be `addressed` — finalize.mjs needs the comment id to tell this agent's comment from another
+  // automation's under the same login, and the SHA to account for every carried entry.
+  /** @type {any[]} */
+  const priorDedup = Array.isArray(data?.prior_dedup) ? data.prior_dedup : [];
+  priorDedup.forEach((/** @type {any} */ d, /** @type {number} */ i) => {
+    if (d === null || typeof d !== "object") return;
+    const path = `#.prior_dedup[${i}]`;
+    const hasComment = Number.isInteger(d.comment_id);
+    if ((d.reason === "already-posted" || d.reason === "flip-flop") && !hasComment) {
+      errors.push(`${path}: reason ${JSON.stringify(d.reason)} requires "comment_id" — the prior comment it repeats or contradicts`);
+    }
+    if (d.reason === "addressed") {
+      if (typeof d.first_seen_sha !== "string" || !d.first_seen_sha) {
+        errors.push(`${path}: reason "addressed" requires "first_seen_sha" — only a carried entry can be addressed`);
+      }
+      if (hasComment) errors.push(`${path}: reason "addressed" names no prior comment and must not carry "comment_id"`);
+    }
+  });
+
   /** @type {any[]} */
   const threads = Array.isArray(data?.threads) ? data.threads : [];
   threads.forEach((/** @type {any} */ t, /** @type {number} */ i) => {
@@ -477,6 +497,27 @@ async function selfTest() {
       const data = loadFixture("invalid-thread-reply.json");
       const errs = validateJudgments(schema, data);
       check("thread classification/reply domain rule is enforced", errs.length > 0 && errs.some(e => e.includes("reply")));
+    }
+    {
+      const data = loadFixture("invalid-prior-dedup-comment-id.json");
+      const errs = validateJudgments(schema, data);
+      check("prior_dedup: already-posted and flip-flop require comment_id",
+        errs.filter((e) => e.includes("comment_id")).length === 2 && errs.every((e) => e.includes("prior_dedup")), errs.join(" | "));
+    }
+    {
+      const data = loadFixture("invalid-prior-dedup-addressed.json");
+      const errs = validateJudgments(schema, data);
+      check("prior_dedup: addressed requires first_seen_sha and forbids comment_id",
+        errs.some((e) => e.includes("first_seen_sha")) && errs.some((e) => e.includes("must not carry")), errs.join(" | "));
+    }
+    {
+      const data = loadFixture("valid.json");
+      check("valid.json exercises the re-review shape: a carried candidate and one prior_dedup entry per reason",
+        data.candidates.some((/** @type {any} */ c) => typeof c.first_seen_sha === "string")
+          && ["already-posted", "flip-flop", "addressed"].every((r) => data.prior_dedup?.some((/** @type {any} */ d) => d.reason === r)));
+      const badSha = { ...data, candidates: data.candidates.map((/** @type {any} */ c, /** @type {number} */ i) => (i === 0 ? { ...c, first_seen_sha: "not-a-sha" } : c)) };
+      check("a first_seen_sha that is not a hex SHA is rejected by the schema pattern",
+        validateJudgments(schema, badSha).some((e) => e.includes("first_seen_sha")));
     }
     {
       // ab/DISPATCH-READY.md's 5th field-bridging gap, fixed at the source: an over-120-char

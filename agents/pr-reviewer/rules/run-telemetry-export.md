@@ -126,6 +126,44 @@ GROUP BY review
 SELECT sum(toFloat64OrZero(span_attributes['pr_review.posted_inline'])) AS delivered FROM spans WHERE ...
 ```
 
+### Re-reviews
+
+`finalize.mjs` (`priorCounts()`) separates what a review found for the first time from what it carried or dropped because of an earlier review, from `candidates[].first_seen_sha`, `prior_dedup`, `threads`, and the context's threads and prior run:
+
+| Attribute | Value |
+| --- | --- |
+| `pr_review.findings.new` · `.carried` | reported findings (posted inline or listed over the cap) without and with `first_seen_sha`; they sum to `posted_inline + deferred` |
+| `pr_review.findings.repeat_dropped` | `prior_dedup` entries `already-posted`; `.repeat_dropped_foreign` is the subset whose prior comment is not on one of this agent's threads |
+| `pr_review.findings.flip_flop_dropped` | `prior_dedup` entries `flip-flop` |
+| `pr_review.findings.withdrawn` | `prior_dedup` entries `addressed`, plus this agent's own threads `judgments.threads` classifies `fixed` or `obsolete` |
+| `pr_review.findings.reposted` | inline findings whose fingerprint is an unresolved thread of this agent's — the duplicate the dedup prevents; should be 0 |
+| `pr_review.prior.carried_in` · `pr_review.findings.carried_unaccounted` | carried findings the state record handed in, and those neither back as candidates nor in `prior_dedup`; should be 0 |
+| `pr_review.prior.check` | re-reviews only: `ok`, or `reposted`, `carried_lost`, `unrecorded` (no `prior_dedup`), comma-joined in that order |
+
+"This agent's threads" are those whose first comment carries a v2 `<!-- fp:v2:… -->` marker, never those matching the login: on Agent0 every automation posts as the same GitHub App.
+A first run computes all of these without `prior_dedup` — everything it reports is new.
+A run that skips Step 2 — an unmoved head, or a push with no delta lines and no new file (a rebase, a base merge, a binary- or mode-only change) — drops and re-admits nothing: it is not held to `prior_dedup`, its carried findings are not checked, and its `carriedFindings` is `null` so Step 4c keeps the record's list.
+A re-review without `prior_dedup` records none of the model-dependent counts, and `prior.check` says `unrecorded`; each problem is also a `finalize: warning — …` line on stderr.
+
+Sum findings per PR from `new`, never from `confirmed`, which counts a carried finding again on every re-review; alert on `prior.check`, the one bounded string, because PromQL label matchers on numeric `pr_review.*` attributes find nothing:
+
+```sql
+-- correct: findings a PR received, each once
+SELECT span_attributes['dash0.gen_ai.vcs.pull_request.url'] AS pr, count() AS reviews,
+       sum(toFloat64OrZero(span_attributes['pr_review.findings.new'])) AS new_findings,
+       sum(toFloat64OrZero(span_attributes['pr_review.findings.withdrawn'])) AS withdrawn
+FROM spans
+WHERE resource_attributes['service.name'] = 'pr-reviewer' AND name = 'invoke_agent pr-reviewer'
+GROUP BY pr
+
+-- incorrect: a finding carried across five reviews is counted five times
+SELECT sum(toFloat64OrZero(span_attributes['pr_review.confirmed'])) FROM spans WHERE ...
+```
+
+```promql
+sum(increase({otel_metric_name="dash0.spans", service_name="pr-reviewer", otel_span_name="invoke_agent pr-reviewer", pr_review_prior_check=~".*(reposted|carried_lost|unrecorded).*"}[1d]))
+```
+
 Two histograms carry the durations across runs: `pr_review.step.duration` (by step and kind) and `pr_review.run.duration` (by tier, topology, and verdict).
 Neither carries a run id, a PR number, or a user as an attribute.
 

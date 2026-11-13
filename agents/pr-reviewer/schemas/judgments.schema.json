@@ -44,9 +44,39 @@
       "description": "The consumer-impact and dependency trace: per changed export (and per dependency, symbol = package name, path = its manifest), the consumer FILES read and found to hold. finalize.mjs builds the report's Reach, Dependencies, and Overlapping PRs rows from it and impact.json; a file not listed counts as not checked.",
       "type": "array",
       "items": { "$ref": "#/$defs/impact_trace_entry" }
+    },
+    "prior_dedup": {
+      "description": "Every finding this run dropped because of an earlier review (prior-comment-awareness.md): a repeat of a prior comment (Step 2.5b, or a carried entry already posted), a contradiction of a resolved suggestion (anti-flip-flop), or a carried entry whose line no longer exists or changed. Write [] when nothing was dropped. finalize.mjs counts it for the run trace; the report never renders it.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/prior_dedup_entry" }
     }
   },
   "$defs": {
+    "prior_dedup_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "prefix", "reason"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "line": { "type": "integer", "minimum": 1 },
+        "prefix": { "$ref": "#/$defs/prefix" },
+        "reason": {
+          "description": "already-posted: a prior comment already says it (path, line ± 2, same prefix). flip-flop: it contradicts a suggestion the author already resolved. addressed: a carried entry whose line no longer exists or changed since the run that deferred it. validate-judgments.mjs requires comment_id on the first two and first_seen_sha (without comment_id) on the third.",
+          "type": "string",
+          "enum": ["already-posted", "flip-flop", "addressed"]
+        },
+        "comment_id": {
+          "description": "already-posted / flip-flop: the REST id of the prior comment it repeats or contradicts (BOT_COMMENTS[].id).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "first_seen_sha": {
+          "description": "Set when the dropped finding was a carried entry: that entry's first_seen_sha.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        }
+      }
+    },
     "impact_trace_entry": {
       "type": "object",
       "additionalProperties": false,
@@ -237,6 +267,11 @@
         "pseudo": {
           "description": "AC-11/D5: render-comment.mjs's PSEUDO — the FENCE is illustrative pseudo-code, not a literal patch.",
           "type": "boolean"
+        },
+        "first_seen_sha": {
+          "description": "Only on a candidate re-admitted from the PR-state record's carried_findings (prior-comment-awareness.md § Carry-forward of deferred findings), copied from that entry: the head SHA of the run that first deferred it. A fresh finding that duplicates a carried entry takes the entry's value. Absent on a fresh finding — finalize.mjs counts a reported finding without it as new.",
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
         }
       }
     },

@@ -58,6 +58,16 @@ cited = ["repo::acme/widget::hotspot::src/api/client.ts", "global::reviewer-less
 ```
 
 ```bash
+# This run's carried_findings: finalize's carriedFindings (each with its first_seen_sha) when
+# finalize-result.json is this run's and holds a list, else the record's own list unchanged — a run
+# that never finalized, or one that skipped Step 2 (carriedFindings: null), must not drop what it was handed.
+# Test the type, never `// []`: jq's `//` turns null into the fallback and would write [] here.
+CARRIED_FINDINGS_JSON=$(jq -c --arg sha "${HEAD_SHA:0:7}" \
+  'if .payload.RUN.sha == $sha and (.carriedFindings | type) == "array" then .carriedFindings else null end' /tmp/finalize/finalize-result.json 2>/dev/null)
+if [ -z "$CARRIED_FINDINGS_JSON" ] || [ "$CARRIED_FINDINGS_JSON" = "null" ]; then
+  CARRIED_FINDINGS_JSON=$(jq -c '.data.carried_findings // []' <<< "${PR_STATE:-{\}}")
+fi
+
 # Same scope+key is an UPDATE, so this is one row per PR forever — never one per run.
 NEW_STATE=$(jq -c \
   --arg sha "$HEAD_SHA" --arg mode "$RUN_MODE" --arg verdict "$VERDICT" \
@@ -92,7 +102,7 @@ even when the input is already short — a cap that only fires when someone reme
 | Field | Source | Note |
 | --- | --- | --- |
 | `runs[-1].open` · `runs[-1].blocking` | `finalize-result.json`'s `round` | The review threads this run leaves open, and the blocking subset — the next run's `Progress` row. Copied, never recounted: finalize computes it with the report's own formula. `null` when finalize did not run, or when the file's `payload.RUN.sha` is not this run's head (a result left by an earlier run); the next run then skips this point. |
-| `carried_findings` | Step 2.9b's `Additional findings`, plus any surviving Step 0.7 entry | Posted-inline or resolved findings are dropped — they'd come back as duplicates. |
+| `carried_findings` | `finalize-result.json`'s `carriedFindings`: every finding deferred over the inline cap, a surviving Step 0.7 entry included; `null` on a run that skipped Step 2 (an unmoved head, or a push with no delta lines and no new file), which keeps the record's list | Copied, never rebuilt by hand: finalize keeps each entry's `first_seen_sha` and stamps a first deferral with this run's head, so a finding carried twice still counts as carried. Posted-inline or resolved findings are not in it — they'd come back as duplicates. |
 | `diagnostics.gate_rows` | Step 1.8's ⚠️/❌ rows | `✅` rows are not recorded. |
 | `diagnostics.standards` | Step 2.4d's run-state | `{ran, docs_scanned, finding_count}`. |
 | `diagnostics.measurability` | Step 2.4e's run-state | `{ran, paths_classified, missing, unlinked}` — a `missing` finding itself carries via `carried_findings`, not here. |
