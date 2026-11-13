@@ -142,7 +142,7 @@ SELECT sum(toFloat64OrZero(span_attributes['pr_review.posted_inline'])) AS deliv
 
 "This agent's threads" are those whose first comment carries a v2 `<!-- fp:v2:… -->` marker, never those matching the login: on Agent0 every automation posts as the same GitHub App.
 A first run computes all of these without `prior_dedup` — everything it reports is new.
-A run that skips Step 2 — an unmoved head, or a rebase or base merge with no authored change — drops and re-admits nothing: it is not held to `prior_dedup`, its carried findings are not checked, and its `carriedFindings` is `null` so Step 4c keeps the record's list.
+A run that skips Step 2 — an unmoved head, or a push with no delta lines and no new file (a rebase, a base merge, a binary- or mode-only change) — drops and re-admits nothing: it is not held to `prior_dedup`, its carried findings are not checked, and its `carriedFindings` is `null` so Step 4c keeps the record's list.
 A re-review without `prior_dedup` records none of the model-dependent counts, and `prior.check` says `unrecorded`; each problem is also a `finalize: warning — …` line on stderr.
 
 Sum findings per PR from `new`, never from `confirmed`, which counts a carried finding again on every re-review; alert on `prior.check`, the one bounded string, because PromQL label matchers on numeric `pr_review.*` attributes find nothing:

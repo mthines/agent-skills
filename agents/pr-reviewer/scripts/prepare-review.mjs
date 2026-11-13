@@ -2655,6 +2655,9 @@ async function prepare(opts) {
     // The delta's own count on an incremental run (what RUN.delta_lines renders as "N lines in
     // delta"), 0 on zero-delta, and the full-PR count otherwise — deltaCountsResult is initialised to it.
     deltaLines: contextDeltaLines({ mode: contextMode, deltaLines: deltaCountsResult.deltaLines }),
+    // The files the delta adds, on the same footing as deltaLines (0 on zero-delta). With deltaLines it
+    // is the Zero-delta short-circuit's own test (fetch-and-triage.md), which finalize.mjs reads.
+    deltaNewFiles: contextMode === "zero-delta" ? 0 : deltaCountsResult.newFiles,
     // Which route produced the incremental delta: compare | local-git | blob-diff | full-pr | none.
     deltaRoute,
 
@@ -4016,6 +4019,8 @@ async function selfTest() {
       && !checksReadable({ ok: false, code: 1, stdout: "" })
       && !checksReadable({ ok: false, code: 1, stdout: "x", timedOut: true })
       && !checksReadable({ ok: false, code: 4, stdout: "x" }));
+  t("the context carries deltaNewFiles next to deltaLines (0 on zero-delta), the short-circuit's second input", () =>
+    /deltaNewFiles: contextMode === "zero-delta" \? 0 : deltaCountsResult\.newFiles,/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
   t("readStateFile: carriedIn counts the record's carried_findings, and is null when the record has no list", () => {
     const p = join(tmpdir(), `prr-state-carried-${process.pid}.json`);
     writeFileSync(p, JSON.stringify({ v: 1, data: { runs: [{ sha: "aaa", mode: "full" }], carried_findings: [{ path: "a.ts", line: 1, prefix: "issue", body: "x", confidence: 80, first_seen_sha: "aaa" }, { path: "b.ts", line: 2, prefix: "issue", body: "y", confidence: 81, first_seen_sha: "aaa" }] } }), "utf8");

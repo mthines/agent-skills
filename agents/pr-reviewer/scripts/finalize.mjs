@@ -678,16 +678,16 @@ export function severityCounts(result) {
 
 /**
  * Whether this run skipped Step 2, the inline review: an unmoved head (`mode: zero-delta`, Step 0.8),
- * or a re-review whose authored delta is empty — a rebase or base merge (fetch-and-triage.md §
- * Zero-delta short-circuit), which runs as `incremental*` with no delta lines and no delta file.
- * Such a run re-admits no carried finding and drops nothing. A context without `scopePaths` (one
- * from before it existed) is never read as skipped.
+ * or a re-review the Zero-delta short-circuit stops (fetch-and-triage.md): no delta lines and no new
+ * file — a rebase, a base merge, or a binary-, mode-, or rename-only push, which runs as
+ * `incremental*` even when it lists a changed file. Such a run re-admits no carried finding and drops
+ * nothing. A context without `deltaNewFiles` (one from before it existed) is never read as skipped.
  * @param {any} context @returns {boolean}
  */
 export function step2Skipped(context) {
   if (context?.mode === "zero-delta") return true;
   return typeof context?.mode === "string" && context.mode !== "full"
-    && context.deltaLines === 0 && Array.isArray(context.scopePaths) && context.scopePaths.length === 0;
+    && context.deltaLines === 0 && context.deltaNewFiles === 0;
 }
 
 /** A head SHA as judgments.schema.json's first_seen_sha pattern allows it. */
@@ -3312,11 +3312,12 @@ async function selfTest() {
         ]) && JSON.stringify(carriedFindingsFor(undefined, "abc1234")) === "[]");
       const zdJudgments = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
         gate5: { status: "PASS", details: "x" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
-      const baseMerge = { mode: "incremental-quick", headSha: "abc1234def", deltaLines: 0, scopePaths: [] };
-      check("step2Skipped: an unmoved head, and a re-review with no authored delta (rebase or base merge); never a reviewed delta, a full run, or a context without scopePaths",
+      const baseMerge = { mode: "incremental-quick", headSha: "abc1234def", deltaLines: 0, deltaNewFiles: 0, scopePaths: [] };
+      check("step2Skipped: the short-circuit's own test — an unmoved head, or no delta lines and no new file (a base merge, or a binary-only push that still lists its file); never a reviewed delta, a new file, a full run, or a context without deltaNewFiles",
         step2Skipped({ mode: "zero-delta" }) && step2Skipped(baseMerge) && step2Skipped({ ...baseMerge, mode: "incremental" })
-          && !step2Skipped({ ...baseMerge, scopePaths: ["a.ts"] }) && !step2Skipped({ ...baseMerge, deltaLines: 4 })
-          && !step2Skipped({ ...baseMerge, mode: "full" }) && !step2Skipped({ mode: "incremental", deltaLines: 0 }) && !step2Skipped({}));
+          && step2Skipped({ ...baseMerge, scopePaths: ["docs/review-levers.png"] })
+          && !step2Skipped({ ...baseMerge, deltaNewFiles: 1 }) && !step2Skipped({ ...baseMerge, deltaLines: 4 })
+          && !step2Skipped({ ...baseMerge, mode: "full" }) && !step2Skipped({ mode: "incremental", deltaLines: 0, scopePaths: [] }) && !step2Skipped({}));
       check("finalizeReview returns carriedFindings as a list on a reviewed run, and null when Step 2 was skipped (unmoved head or base merge) so Step 4c keeps the record's list",
         JSON.stringify(finalizeReview({ context: { mode: "full", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings) === "[]"
           && finalizeReview({ context: { mode: "zero-delta", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings === null
