@@ -25,11 +25,12 @@
  * independently, exactly as in prose — one failing does not block the rest.
  */
 
-import { readFileSync, writeFileSync, realpathSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, realpathSync, rmSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { run as defaultRun, scratchRoot } from "./prepare-review.mjs";
-import { appendRecord, finishRun, stepStartAttrs } from "./review-telemetry.mjs";
+import { ALLOWED_SPAN_KEY, appendRecord, beginRun, buildRun, finishRun, readLedger, stepStartAttrs, toExporter } from "./review-telemetry.mjs";
 import { assertPostable } from "./comment-spine.mjs";
 
 /** When this process started — the `post` step span's start. */
@@ -176,6 +177,59 @@ export function refusalReason(writePlan) {
       + " so it must never reach a GitHub write";
   }
   return null;
+}
+
+/**
+ * The id GitHub returned for a write, read from `gh api`'s JSON stdout — a string, so a comment or
+ * review id joins as written and never loses precision. Undefined when the output carries none.
+ * @param {string|undefined} stdout @returns {string|undefined}
+ */
+export function githubId(stdout) {
+  try {
+    const id = JSON.parse(String(stdout || ""))?.id;
+    return (typeof id === "number" && Number.isSafeInteger(id) && id > 0) || (typeof id === "string" && /^[A-Za-z0-9_=-]{1,64}$/.test(id))
+      ? String(id) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * What the post step delivered, as root-span attributes (rules/run-telemetry-export.md § The trace):
+ * the access path, how the sticky report landed, whether the inline review posted and its id, how
+ * many inline comments it sent, and the thread replies and resolves that succeeded or failed. A dry
+ * run records nothing; a refused plan or one with no gh access path records only its path, because
+ * this script wrote nothing — on `mcp` the agent posts over MCP, outside this trace.
+ * @param {any} result executeWritePlan()'s return
+ * @returns {Record<string, string|number>}
+ */
+export function postSummary(result) {
+  if (!result || result.dryRun) return {};
+  if (result.refused || result.code === 5) return { "post.path": "refused" };
+  if (result.ghAccess === false || result.code === 3) return { "post.path": "mcp" };
+  const executed = Array.isArray(result.executed) ? result.executed : [];
+  const sticky = executed.find((/** @type {any} */ e) => e?.kind === "sticky.upsert");
+  const review = executed.find((/** @type {any} */ e) => e?.kind === "review.create");
+  const count = (/** @type {string} */ kind, /** @type {boolean} */ ok) => executed.filter((/** @type {any} */ e) => e?.kind === kind && e.ok === ok).length;
+  const stickyOutcome = !sticky ? "none"
+    : sticky.aborted ? "aborted"
+      : sticky.recreated ? "recreated"
+        : !sticky.ok ? "failed"
+          : sticky.degraded ? "pointer"
+            : sticky.created ? "created" : "updated";
+  const reviewOutcome = !review ? "none" : review.aborted ? "aborted" : review.ok ? "posted" : "failed";
+  return {
+    "post.path": "gh",
+    "post.sticky": stickyOutcome,
+    ...(sticky?.ok && sticky.id ? { "post.sticky.comment_id": sticky.id } : {}),
+    "post.review": reviewOutcome,
+    ...(review?.ok && review.id ? { "post.review.id": review.id } : {}),
+    "post.inline_sent": review?.ok ? Number(review.count) || 0 : 0,
+    "post.threads.replied": count("thread.reply", true),
+    "post.threads.reply_failed": count("thread.reply", false),
+    "post.threads.resolved": count("thread.resolve", true),
+    "post.threads.resolve_failed": count("thread.resolve", false),
+  };
 }
 
 /**
@@ -336,13 +390,15 @@ export async function executeWritePlan(writePlan, opts = {}) {
     const rc = deleted
       ? await runner("gh", ["api", `repos/${repo}/issues/${writePlan.pr_number}/comments`, "-F", `body=@${su.body_path}`])
       : null;
+    // `id` is the comment GitHub wrote (postSummary's `post.sticky.comment_id`); `created` tells a
+    // first POST from a PATCH of the existing sticky.
     if (rc?.ok) {
-      executed.push({ kind: "sticky.upsert", recreated: true, degraded: false, ok: true });
+      executed.push({ kind: "sticky.upsert", recreated: true, degraded: false, ok: true, id: githubId(rc.stdout) });
     } else if (!r.ok && su.pointer_body_path) {
       const rp = await runner("gh", ["api", `repos/${repo}/issues/${writePlan.pr_number}/comments`, "-F", `body=@${su.pointer_body_path}`]);
-      executed.push({ kind: "sticky.upsert", degraded: true, ok: rp.ok });
+      executed.push({ kind: "sticky.upsert", degraded: true, ok: rp.ok, ...(rp.ok ? { id: githubId(rp.stdout) } : {}) });
     } else {
-      executed.push({ kind: "sticky.upsert", degraded: false, ok: r.ok });
+      executed.push({ kind: "sticky.upsert", degraded: false, ok: r.ok, created: !su.comment_id, ...(r.ok ? { id: githubId(r.stdout) } : {}) });
     }
   }
 
@@ -378,11 +434,31 @@ export async function executeWritePlan(writePlan, opts = {}) {
         "api", `repos/${repo}/pulls/${writePlan.pr_number}/reviews`, "-X", "POST",
         "--input", reviewPayloadPath,
       ]);
-      executed.push({ kind: "review.create", ok: r.ok, count: inlineCount });
+      executed.push({ kind: "review.create", ok: r.ok, count: inlineCount, ...(r.ok ? { id: githubId(r.stdout) } : {}) });
     }
   }
 
   return { executed, dryRun: false, ghAccess: true, lorekitOps };
+}
+
+/**
+ * Record the `post` step and what it delivered (postSummary) in the run-telemetry ledger, then
+ * finish and export the run: a real run's last step. Never throws: telemetry never fails a post.
+ * @param {string} runDir the ledger's directory, finalize.mjs's `telemetry_run_dir`
+ * @param {any} result executeWritePlan()'s return
+ * @param {{ finish?: (runDir: string, how: any) => Promise<any> }} [opts] `finish` replaces finishRun in the self-test
+ */
+export async function recordPostTelemetry(runDir, result, opts = {}) {
+  const finish = opts.finish || finishRun;
+  try {
+    appendRecord(runDir, { t: "step", phase: "start", name: "post", ns: PROCESS_START_NS, attrs: stepStartAttrs({}) });
+    appendRecord(runDir, { t: "step", phase: "end", attrs: { result_code: result?.code ?? 0 } });
+    const delivered = postSummary(result);
+    if (Object.keys(delivered).length) appendRecord(runDir, { t: "attr", target: "run", attrs: delivered });
+    return await finish(runDir, result?.code === 5 || result?.code === 3 ? { status: "error", message: `execute-write-plan exited ${result.code}` } : {});
+  } catch {
+    return null;
+  }
 }
 
 // ── CLI ──
@@ -766,6 +842,117 @@ async function selfTest() {
     check("no gh access -> lorekit ops are still returned", JSON.stringify(result.lorekitOps) === JSON.stringify([{ op: "state" }]));
   }
 
+  // githubId: the id a gh api write returned, as a string; nothing when stdout carries none.
+  check("githubId reads a numeric or node id as a string and nothing from output without one",
+    githubId('{"id":2145678901,"html_url":"x"}') === "2145678901" && githubId('{"id":"PRR_kwDOabc"}') === "PRR_kwDOabc"
+      && githubId("{}") === undefined && githubId("not json") === undefined && githubId('{"id":-1}') === undefined
+      && githubId('{"id":"a b"}') === undefined && githubId(undefined) === undefined);
+
+  // The post summary: every write's outcome and GitHub id, from executed[] (a real executeWritePlan run).
+  {
+    /** @type {Array<{ cmd: string, args: string[] }>} */
+    const calls = [];
+    const runner = async (/** @type {string} */ cmd, /** @type {string[]} */ args) => {
+      calls.push({ cmd, args });
+      const a = args.join(" ");
+      if (args.includes("--jq")) return { ok: true, code: 0, stdout: '"owner/repo"', stderr: "" };
+      if (a.includes("id=T2")) return { ok: false, code: 1, stdout: "", stderr: "HTTP 502" };
+      if (a.includes("/issues/comments/7")) return { ok: true, code: 0, stdout: '{"id":7}', stderr: "" };
+      if (a.includes("/reviews")) return { ok: true, code: 0, stdout: '{"id":3456789012,"state":"COMMENTED"}', stderr: "" };
+      return { ok: true, code: 0, stdout: "{}", stderr: "" };
+    };
+    const res = await executeWritePlan({
+      repo: "owner/repo", pr_number: 1,
+      thread_reply: [{ thread_id: "T1", body: "Fixed in abc1234." }],
+      thread_resolve: [{ thread_id: "T1" }, { thread_id: "T2" }],
+      sticky_upsert: { comment_id: 7, body_path: BODY },
+      review_create: { commit_id: "abc1234", comments: [
+        { path: "a.ts", line: 1, side: "RIGHT", body: "nitpick: one. <sup>`pr-reviewer` · commit `abc1234`</sup>" },
+        { path: "a.ts", line: 2, side: "RIGHT", body: "nitpick: two. <sup>`pr-reviewer` · commit `abc1234`</sup>" },
+      ] },
+    }, { runner });
+    const sum = postSummary(res);
+    check("postSummary records the path, the updated sticky and its id, the posted review and its id, the inline comments sent, and the thread writes that succeeded and failed",
+      JSON.stringify(sum) === JSON.stringify({
+        "post.path": "gh", "post.sticky": "updated", "post.sticky.comment_id": "7", "post.review": "posted", "post.review.id": "3456789012",
+        "post.inline_sent": 2, "post.threads.replied": 1, "post.threads.reply_failed": 0, "post.threads.resolved": 1, "post.threads.resolve_failed": 1,
+      }), JSON.stringify(sum));
+  }
+
+  // Each sticky and review outcome maps to one value, with no id unless the write succeeded.
+  {
+    const mk = (/** @type {(a: string) => {ok: boolean, stdout?: string, stderr?: string} | null} */ answer) => async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
+      if (args.includes("--jq")) return { ok: true, code: 0, stdout: '"owner/repo"', stderr: "" };
+      const r = answer(args.join(" "));
+      return r ? { code: r.ok ? 0 : 1, stdout: "", stderr: "", ...r } : { ok: true, code: 0, stdout: '{"id":11}', stderr: "" };
+    };
+    const comments = [{ path: "a.ts", line: 1, side: "RIGHT", body: "nitpick: one. <sup>`pr-reviewer` · commit `abc1234`</sup>" }];
+    const plan = (/** @type {any} */ sticky, withReview = false) => ({ repo: "owner/repo", pr_number: 1, sticky_upsert: sticky,
+      ...(withReview ? { review_create: { commit_id: "abc1234", comments } } : {}) });
+    const created = postSummary(await executeWritePlan(plan({ comment_id: null, body_path: BODY }), { runner: mk(() => null) }));
+    const recreated = postSummary(await executeWritePlan(plan({ comment_id: 7, body_path: BODY }),
+      { runner: mk((a) => (a.includes("PATCH") ? { ok: false, stderr: "HTTP 404: Not Found" } : null)) }));
+    const pointer = postSummary(await executeWritePlan(plan({ comment_id: 7, body_path: BODY, pointer_body_path: "/tmp/pointer.md" }),
+      { runner: mk((a) => (a.includes("PATCH") ? { ok: false, stderr: "HTTP 403" } : null)) }));
+    const failed = postSummary(await executeWritePlan(plan({ comment_id: null, body_path: BODY }, true),
+      { runner: mk(() => ({ ok: false, stderr: "HTTP 500" })) }));
+    const badBody = join(tmpdir(), `ewp-bad-body-${process.pid}.md`);
+    writeFileSync(badBody, "no report marker\n");
+    const aborted = postSummary(await executeWritePlan(plan({ comment_id: null, body_path: badBody }), { runner: mk(() => null) }));
+    rmSync(badBody, { force: true });
+    check("postSummary: a first POST is `created` with its id, a 404'd PATCH `recreated`, a 403'd PATCH `pointer`",
+      created["post.sticky"] === "created" && created["post.sticky.comment_id"] === "11"
+        && recreated["post.sticky"] === "recreated" && recreated["post.sticky.comment_id"] === "11"
+        && pointer["post.sticky"] === "pointer" && pointer["post.sticky.comment_id"] === "11",
+      JSON.stringify({ created, recreated, pointer }));
+    check("postSummary: a failed sticky and a failed review carry no id and send no inline comments; a plan with no review records `none`",
+      failed["post.sticky"] === "failed" && !("post.sticky.comment_id" in failed) && failed["post.review"] === "failed"
+        && !("post.review.id" in failed) && failed["post.inline_sent"] === 0 && created["post.review"] === "none" && created["post.inline_sent"] === 0,
+      JSON.stringify(failed));
+    check("postSummary: a sticky body that fails its pre-write check is `aborted`", aborted["post.sticky"] === "aborted", JSON.stringify(aborted));
+    check("postSummary: a dry run records nothing; a refused plan and a missing gh access path record only the path",
+      JSON.stringify(postSummary({ executed: [], dryRun: true })) === "{}"
+        && JSON.stringify(postSummary({ executed: [], refused: true, code: 5 })) === '{"post.path":"refused"}'
+        && JSON.stringify(postSummary({ executed: [], ghAccess: false, code: 3 })) === '{"post.path":"mcp"}'
+        && JSON.stringify(postSummary(null)) === "{}");
+  }
+
+  // recordPostTelemetry: the post step and the summary reach the ledger, the root span carries them
+  // as pr_review.post.* (inside ALLOWED_SPAN_KEY), and a run with no gh access finishes as an error.
+  {
+    const runDir = mkdtempSync(join(tmpdir(), "ewp-telemetry-"));
+    beginRun(runDir, { repo: "owner/repo", number: 1 });
+    /** @type {any[]} */
+    const finished = [];
+    const finish = async (/** @type {string} */ dir, /** @type {any} */ how) => { finished.push(how); return { exported: false, dir }; };
+    await recordPostTelemetry(runDir, { executed: [
+      { kind: "sticky.upsert", degraded: false, ok: true, created: false, id: "7" },
+      { kind: "review.create", ok: true, count: 3, id: "99" },
+    ], dryRun: false, ghAccess: true }, { finish });
+    const ledger = readLedger(runDir);
+    const post = ledger.filter((r) => r.t === "step" && (r.name === "post" || r.phase === "end"));
+    const runAttrs = ledger.find((r) => r.t === "attr" && r.target === "run")?.attrs;
+    check("recordPostTelemetry writes the post step and one run attribute record with the summary, and finishes without an error status",
+      post.some((r) => r.phase === "start" && r.name === "post") && runAttrs?.["post.sticky"] === "updated" && runAttrs?.["post.review.id"] === "99"
+        && runAttrs?.["post.inline_sent"] === 3 && JSON.stringify(finished[0]) === "{}", JSON.stringify(ledger));
+    const run = buildRun(ledger);
+    const root = run ? toExporter(run, {}).spans.find((/** @type {any} */ s) => s.name === "invoke_agent pr-reviewer") : null;
+    const keys = (root?.attributes || []).map((/** @type {any} */ a) => a.key);
+    check("the root span carries the summary as pr_review.post.* keys, every one inside ALLOWED_SPAN_KEY",
+      ["pr_review.post.path", "pr_review.post.sticky", "pr_review.post.sticky.comment_id", "pr_review.post.review", "pr_review.post.review.id",
+        "pr_review.post.inline_sent", "pr_review.post.threads.resolve_failed"].every((k) => keys.includes(k))
+        && keys.filter((/** @type {string} */ k) => k.startsWith("pr_review.post.")).every(ALLOWED_SPAN_KEY), JSON.stringify(keys));
+    const mcpDir = mkdtempSync(join(tmpdir(), "ewp-telemetry-mcp-"));
+    beginRun(mcpDir, { repo: "owner/repo", number: 1 });
+    await recordPostTelemetry(mcpDir, { executed: [], ghAccess: false, code: 3 }, { finish });
+    check("a run with no gh access path records post.path=mcp and finishes as an error",
+      readLedger(mcpDir).find((r) => r.t === "attr" && r.target === "run")?.attrs?.["post.path"] === "mcp" && finished[1]?.status === "error");
+    rmSync(runDir, { recursive: true, force: true });
+    rmSync(mcpDir, { recursive: true, force: true });
+    check("main() records a real run's post step through recordPostTelemetry",
+      /await recordPostTelemetry\(String\(writePlan\.telemetry_run_dir\), result\);/.test(readFileSync(new URL(import.meta.url), "utf8")));
+  }
+
   rmSync(BODY, { force: true });
 
   if (failed > 0) {
@@ -805,10 +992,7 @@ async function main() {
   // Run telemetry (review-telemetry.mjs): a real run's last step. finalize.mjs names the ledger's
   // directory in the plan; a dry run was already finished there, so nothing is recorded here.
   if (writePlan?.telemetry_run_dir && !opts["dry-run"]) {
-    const runDir = String(writePlan.telemetry_run_dir);
-    appendRecord(runDir, { t: "step", phase: "start", name: "post", ns: PROCESS_START_NS, attrs: stepStartAttrs({}) });
-    appendRecord(runDir, { t: "step", phase: "end", attrs: { result_code: result.code ?? 0 } });
-    await finishRun(runDir, result.code === 5 || result.code === 3 ? { status: "error", message: `execute-write-plan exited ${result.code}` } : {});
+    await recordPostTelemetry(String(writePlan.telemetry_run_dir), result);
   }
   if (result.code === 5) {
     console.error(`execute-write-plan: refused — ${result.reason}`);
