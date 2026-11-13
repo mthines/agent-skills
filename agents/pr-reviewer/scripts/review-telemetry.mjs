@@ -289,6 +289,79 @@ export function detectOpencodeToolCallId(env) {
   return /^[A-Za-z0-9_.:-]{1,128}$/.test(v) ? v : null;
 }
 
+/** An id an Agent0 automation prompt passes in (`{{dash0.workflow.run.id}}`, `{{dash0.workflow.id}}`).
+ *  An unresolved `{{…}}` placeholder, or anything carrying spaces or shell syntax, fails it. */
+const AGENT0_ID_RE = /^[A-Za-z0-9_.:-]{1,128}$/;
+/** The environment variables that link a review to its Agent0 run, and the run fact each one sets. */
+export const AGENT0_LINK_ENV = Object.freeze({
+  PR_REVIEWER_AGENT0_RUN_ID: "agent0_run_id",
+  PR_REVIEWER_AGENT0_WORKFLOW_ID: "agent0_workflow_id",
+  OPENCODE_STEP_TRACEPARENT: "agent0_trace_id",
+});
+
+/** A W3C `traceparent` (`00-<32 hex trace id>-<16 hex span id>-<2 hex flags>`), as OpenCode sets
+ *  OPENCODE_STEP_TRACEPARENT for each tool call. Null for anything else, the reserved version `ff`,
+ *  or an all-zero id (the spec's invalid values).
+ *  @param {string|undefined} v @returns {{ traceId: string, spanId: string } | null} */
+export function parseTraceparent(v) {
+  const m = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/.exec(String(v || "").trim().toLowerCase());
+  if (!m || m[1] === "ff" || /^0+$/.test(m[2]) || /^0+$/.test(m[3])) return null;
+  return { traceId: m[2], spanId: m[3] };
+}
+
+/**
+ * The link from a review to the Agent0 run it ran in, read from the run's own environment: the run
+ * and automation ids an automation prompt exports (PR_REVIEWER_AGENT0_RUN_ID,
+ * PR_REVIEWER_AGENT0_WORKFLOW_ID), and the trace context Agent0's OpenCode sets for each tool call
+ * (OPENCODE_STEP_TRACEPARENT). Every one is optional: outside Agent0 none is set, and nothing is
+ * recorded. A variable that is set but malformed — an unresolved `{{dash0.workflow.run.id}}` above
+ * all — is never recorded as an id; its name goes to `rejected`.
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {{ facts: { agent0_run_id?: string, agent0_workflow_id?: string, agent0_trace_id?: string, agent0_span_id?: string }, rejected: string[] }}
+ */
+export function agent0LinkFacts(env) {
+  /** @type {{ agent0_run_id?: string, agent0_workflow_id?: string, agent0_trace_id?: string, agent0_span_id?: string }} */
+  const facts = {};
+  /** @type {string[]} */
+  const rejected = [];
+  for (const key of /** @type {const} */ (["PR_REVIEWER_AGENT0_RUN_ID", "PR_REVIEWER_AGENT0_WORKFLOW_ID"])) {
+    const v = String(env[key] ?? "").trim();
+    if (!v) continue;
+    if (AGENT0_ID_RE.test(v)) facts[/** @type {"agent0_run_id"|"agent0_workflow_id"} */ (AGENT0_LINK_ENV[key])] = v;
+    else rejected.push(key);
+  }
+  const tp = String(env.OPENCODE_STEP_TRACEPARENT ?? "").trim();
+  if (tp) {
+    const parsed = parseTraceparent(tp);
+    if (parsed) { facts.agent0_trace_id = parsed.traceId; facts.agent0_span_id = parsed.spanId; } else rejected.push("OPENCODE_STEP_TRACEPARENT");
+  }
+  return { facts, rejected };
+}
+
+/**
+ * The root span's Agent0 link status, from the run's facts: `run` when the run id is known, `trace`
+ * when only the step trace context is, `none` on an Agent0 run with neither — the value a dashboard
+ * watches to catch an automation that stopped passing the run id. Null outside Agent0 with nothing
+ * set, so a local run carries no Agent0 attribute at all.
+ * @param {RunFacts} f @returns {"run"|"trace"|"none"|null}
+ */
+export function agent0LinkStatus(f) {
+  if (f.agent0_run_id) return "run";
+  if (f.agent0_trace_id) return "trace";
+  return f.harness === "agent0" || f.agent0_workflow_id || f.agent0_rejected ? "none" : null;
+}
+
+/**
+ * The link variables that were set but rejected and that no later `begin` supplied, comma-joined in
+ * a fixed order — three possible names, so the value stays bounded. Null when none.
+ * @param {RunFacts} f @returns {string|null}
+ */
+export function agent0Rejected(f) {
+  const rejected = String(f.agent0_rejected || "").split(",")
+    .filter((k) => Object.hasOwn(AGENT0_LINK_ENV, k) && !f[/** @type {keyof RunFacts} */ (AGENT0_LINK_ENV[/** @type {keyof typeof AGENT0_LINK_ENV} */ (k)])]);
+  return rejected.length ? Object.keys(AGENT0_LINK_ENV).filter((k) => rejected.includes(k)).join(",") : null;
+}
+
 /** Every attribute key a span may carry. The self-test holds every emitted span to it, so a new
  *  key is a deliberate edit here rather than a drift into Dash0's views. */
 export const ALLOWED_SPAN_KEY = (/** @type {string} */ k) =>
@@ -298,6 +371,9 @@ export const ALLOWED_SPAN_KEY = (/** @type {string} */ k) =>
     "gen_ai.operation.name", "gen_ai.agent.name", "gen_ai.agent.id", "gen_ai.conversation.id", "gen_ai.conversation.name",
     "gen_ai.harness.name", "gen_ai.provider.name", "gen_ai.request.model",
     "dash0.team.name", "user.name", "dash0.gen_ai.user.identity.source", "error.type",
+    // The Agent0 automation run and automation the review ran in — the names Agent0's own
+    // `agentic_workflow.invoke` span and the Darkplane reviewer use, so one join serves both.
+    "agentic_workflow.run.id", "agentic_workflow.id",
   ].includes(k);
 
 const HIST_BOUNDS = {
@@ -654,7 +730,8 @@ function spanIdFor(runId, key) {
  * @typedef {{ repo?: string, number?: number, head_sha?: string, head_ref?: string, mode?: string,
  *   tier?: string, thoroughness?: number, topology?: string, model?: string,
  *   conversation_id?: string, harness?: string, user_name?: string, version?: string,
- *   opencode_parent_tool_call_id?: string }} RunFacts
+ *   opencode_parent_tool_call_id?: string, agent0_run_id?: string, agent0_workflow_id?: string,
+ *   agent0_trace_id?: string, agent0_span_id?: string, agent0_rejected?: string }} RunFacts
  */
 
 /** @param {string} runDir @returns {string} */
@@ -703,8 +780,10 @@ export function beginRun(runDir, facts, opts = {}) {
     const prev = /** @type {RunFacts} */ (existing.facts || {});
     const otherPr = (clean.repo && prev.repo && clean.repo !== prev.repo) || (clean.number && prev.number && clean.number !== prev.number);
     if (!records.some((r) => r.t === "finish") && !otherPr) {
-      // The tool call that STARTED the run stays: a later begin runs in a later tool call.
+      // The tool call that STARTED the run stays: a later begin runs in a later tool call. So does
+      // its step trace context, whose span id OpenCode changes on every tool call.
       if (prev.opencode_parent_tool_call_id) delete clean.opencode_parent_tool_call_id;
+      if (prev.agent0_trace_id) { delete clean.agent0_trace_id; delete clean.agent0_span_id; }
       appendRecord(runDir, { t: "facts", facts: clean });
       return String(existing.run_id);
     }
@@ -936,6 +1015,10 @@ export function toExporter(run, env) {
       "service.instance.id": traceId,
       "gen_ai.agent.name": AGENT_NAME,
       "gen_ai.harness.name": identity["gen_ai.harness.name"],
+      // The Agent0 run and automation on the resource too, so pr_review.runs and the duration
+      // histograms group by automation. No new series: service.instance.id is already one per run.
+      "agentic_workflow.run.id": f.agent0_run_id || null,
+      "agentic_workflow.id": f.agent0_workflow_id || null,
     },
   });
   ex.traceId = traceId;
@@ -955,11 +1038,19 @@ export function toExporter(run, env) {
       // The session title AI Coding Insights lists. Only for a run that IS its own session — a run
       // joined to a harness session (PR_REVIEWER_CONVERSATION_ID) must not rename that session.
       "gen_ai.conversation.name": f.conversation_id ? null : conversationName(f),
+      // The Agent0 automation run and automation this review ran in (rules/run-telemetry-export.md
+      // § Linking a review to its Agent0 run); absent outside Agent0.
+      "agentic_workflow.run.id": f.agent0_run_id || null,
+      "agentic_workflow.id": f.agent0_workflow_id || null,
       ...ns({
         mode: f.mode, tier: f.tier, thoroughness: f.thoroughness, topology: f.topology,
         "pr.number": f.number,
         // The OpenCode tool call that started the run — the handle back to the Agent0 run.
         "opencode.parent_tool_call_id": f.opencode_parent_tool_call_id,
+        "agent0.trace_id": f.agent0_trace_id,
+        "agent0.span_id": f.agent0_span_id,
+        "agent0.link": agent0LinkStatus(f),
+        "agent0.rejected": agent0Rejected(f),
         ...run.runAttrs,
       }),
       ...memoryRootAttributes(run.memory),
@@ -968,6 +1059,10 @@ export function toExporter(run, env) {
     }),
     status: run.status === 2 ? { code: 2, message: run.message || "review failed" } : { code: 0 },
     ...(rootEvents.length ? { events: rootEvents } : {}),
+    // A link, not a parent: the run keeps its own trace id (traceIdFor, stable across re-exports),
+    // and the step span it links to is only the tool call that ran `begin`
+    // (references/insights-scope.md § Why link to the harness's trace, not nest under it).
+    ...(f.agent0_trace_id && f.agent0_span_id ? { links: [{ traceId: f.agent0_trace_id, spanId: f.agent0_span_id, attributes: [] }] } : {}),
   });
   run.steps.forEach((s, i) => {
     const stepId = spanIdFor(run.runId, `step:${i}:${s.name}`);
@@ -1148,14 +1243,24 @@ export function stepStartAttrs(attrBag, env = process.env) {
 
 /**
  * The facts a script knows about the reviewer itself: its version and the git identity, the same
- * source the Dash0 agent plugin reads for `user.name`.
- * @param {NodeJS.ProcessEnv} env @returns {{ version?: string, user_name?: string, harness?: string,
- *   conversation_id?: string, opencode_parent_tool_call_id?: string }}
+ * source the Dash0 agent plugin reads for `user.name`, and the link to the Agent0 run it ran in
+ * (agent0LinkFacts). A link variable that is set but malformed is named on stderr and recorded in
+ * `agent0_rejected`, so a misconfigured automation is visible on the trace rather than silently
+ * unlinked.
+ * @param {NodeJS.ProcessEnv} env @param {(msg: string) => void} [warnLine] where a rejected link variable is said
+ * @returns {RunFacts}
  */
-export function hostFacts(env = process.env) {
-  /** @type {{ version?: string, user_name?: string, harness?: string, conversation_id?: string,
-   *   opencode_parent_tool_call_id?: string }} */
+export function hostFacts(env = process.env, warnLine = warn) {
+  /** @type {RunFacts} */
   const out = {};
+  const link = agent0LinkFacts(env);
+  Object.assign(out, link.facts);
+  if (link.rejected.length) {
+    out.agent0_rejected = link.rejected.join(",");
+    for (const key of link.rejected) {
+      warnLine(`${key} is not ${key === "OPENCODE_STEP_TRACEPARENT" ? "a W3C traceparent" : "an id (an unresolved {{…}} prompt variable?)"}: ${JSON.stringify(String(env[key]).slice(0, 80))} — the review is not linked by it`);
+    }
+  }
   const here = dirname(fileURLToPath(import.meta.url));
   // The checkout this script runs from first; AGENT_SKILLS_COMMIT (the Agent0 setup script's pin)
   // only when that is not a git checkout — the two differ whenever a snapshot runs next to the
@@ -1869,6 +1974,69 @@ async function selfTest() {
     get(tcSpans[0], "pr_review.opencode.parent_tool_call_id") === "toolu_1"
       && tcSpans.slice(1).every((/** @type {any} */ s) => get(s, "pr_review.opencode.parent_tool_call_id") === undefined)
       && get(root, "pr_review.opencode.parent_tool_call_id") === undefined);
+  // The link to the Agent0 run: optional, so a local run carries none of it.
+  const TP = "00-d0420000c047cb429461a335cfbf5d21-7118a2d37e79b30e-01";
+  ok("parseTraceparent reads a W3C traceparent and refuses the spec's invalid values",
+    JSON.stringify(parseTraceparent(TP)) === '{"traceId":"d0420000c047cb429461a335cfbf5d21","spanId":"7118a2d37e79b30e"}'
+      && parseTraceparent(TP.toUpperCase())?.traceId === "d0420000c047cb429461a335cfbf5d21"
+      && parseTraceparent(`ff${TP.slice(2)}`) === null
+      && parseTraceparent(`00-${"0".repeat(32)}-7118a2d37e79b30e-01`) === null
+      && parseTraceparent(`00-d0420000c047cb429461a335cfbf5d21-${"0".repeat(16)}-01`) === null
+      && parseTraceparent("garbage") === null && parseTraceparent(undefined) === null);
+  const a0Env = { PR_REVIEWER_AGENT0_RUN_ID: "agentic_workflow_run_01k9z", PR_REVIEWER_AGENT0_WORKFLOW_ID: "agentic_workflow_01m63gjsz7ecbrx40yjynshwej", OPENCODE_STEP_TRACEPARENT: TP };
+  ok("agent0LinkFacts reads the run id, the automation id, and the step trace context",
+    JSON.stringify(agent0LinkFacts(a0Env)) === JSON.stringify({ facts: { agent0_run_id: "agentic_workflow_run_01k9z", agent0_workflow_id: "agentic_workflow_01m63gjsz7ecbrx40yjynshwej",
+      agent0_trace_id: "d0420000c047cb429461a335cfbf5d21", agent0_span_id: "7118a2d37e79b30e" }, rejected: [] }));
+  ok("agent0LinkFacts rejects an unresolved {{…}} placeholder and a bad traceparent, and ignores unset or blank variables",
+    JSON.stringify(agent0LinkFacts({ PR_REVIEWER_AGENT0_RUN_ID: "{{dash0.workflow.run.id}}", PR_REVIEWER_AGENT0_WORKFLOW_ID: "  ", OPENCODE_STEP_TRACEPARENT: "00-xyz" }))
+      === '{"facts":{},"rejected":["PR_REVIEWER_AGENT0_RUN_ID","OPENCODE_STEP_TRACEPARENT"]}'
+      && JSON.stringify(agent0LinkFacts({})) === '{"facts":{},"rejected":[]}');
+  /** @type {string[]} */
+  const a0Warnings = [];
+  const localFacts = hostFacts({}, (m) => a0Warnings.push(m));
+  const localWarnings = a0Warnings.length;
+  const badFacts = hostFacts({ PR_REVIEWER_AGENT0_RUN_ID: "{{dash0.workflow.run.id}}" }, (m) => a0Warnings.push(m));
+  ok("hostFacts: a local run (nothing set) records no Agent0 fact and says nothing",
+    Object.keys(localFacts).every((k) => !k.startsWith("agent0_")) && localWarnings === 0);
+  ok("hostFacts: a rejected variable is recorded in agent0_rejected and named once on stderr, never recorded as an id",
+    badFacts.agent0_rejected === "PR_REVIEWER_AGENT0_RUN_ID" && badFacts.agent0_run_id === undefined
+      && /^PR_REVIEWER_AGENT0_RUN_ID is not an id \(an unresolved \{\{…\}\} prompt variable\?\): "\{\{dash0\.workflow\.run\.id\}\}"/.test(a0Warnings[0] || ""), a0Warnings.join(" | "));
+  ok("hostFacts reads the link variables into the run facts",
+    hostFacts(a0Env, () => {}).agent0_run_id === "agentic_workflow_run_01k9z" && hostFacts(a0Env, () => {}).agent0_span_id === "7118a2d37e79b30e");
+  const a0Spans = (/** @type {RunFacts} */ extra) => /** @type {any} */ (toExporter({ ...run, facts: { ...facts, ...extra } }, env).tracePayload()).resourceSpans[0];
+  const linked = a0Spans({ harness: "agent0", ...agent0LinkFacts(a0Env).facts });
+  const linkedRoot = linked.scopeSpans[0].spans[0];
+  const resAttr = (/** @type {any} */ rs, /** @type {string} */ k) => rs.resource.attributes.find((/** @type {any} */ a) => a.key === k)?.value?.stringValue;
+  ok("a linked run's root carries agentic_workflow.run.id, agentic_workflow.id, the step trace context, and pr_review.agent0.link=run",
+    get(linkedRoot, "agentic_workflow.run.id") === "agentic_workflow_run_01k9z" && get(linkedRoot, "agentic_workflow.id") === "agentic_workflow_01m63gjsz7ecbrx40yjynshwej"
+      && get(linkedRoot, "pr_review.agent0.trace_id") === "d0420000c047cb429461a335cfbf5d21" && get(linkedRoot, "pr_review.agent0.span_id") === "7118a2d37e79b30e"
+      && get(linkedRoot, "pr_review.agent0.link") === "run" && get(linkedRoot, "pr_review.agent0.rejected") === undefined);
+  ok("a linked run's root links to the OpenCode step span, and no other span carries the link or the ids",
+    JSON.stringify(linkedRoot.links) === '[{"traceId":"d0420000c047cb429461a335cfbf5d21","spanId":"7118a2d37e79b30e","attributes":[]}]'
+      && linked.scopeSpans[0].spans.slice(1).every((/** @type {any} */ s) => !s.links && get(s, "agentic_workflow.run.id") === undefined));
+  ok("the run and automation ids are on the resource too, so the run counter groups by automation",
+    resAttr(linked, "agentic_workflow.run.id") === "agentic_workflow_run_01k9z" && resAttr(linked, "agentic_workflow.id") === "agentic_workflow_01m63gjsz7ecbrx40yjynshwej"
+      && /** @type {any} */ (toExporter({ ...run, facts: { ...facts, ...agent0LinkFacts(a0Env).facts } }, env).metricPayload()).resourceMetrics[0].resource.attributes
+        .some((/** @type {any} */ a) => a.key === "agentic_workflow.id"));
+  ok("every Agent0 key on the linked root is inside ALLOWED_SPAN_KEY",
+    linkedRoot.attributes.map((/** @type {any} */ a) => a.key).every(ALLOWED_SPAN_KEY)
+      && ["agentic_workflow.run.id", "agentic_workflow.id", "pr_review.agent0.link"].every(ALLOWED_SPAN_KEY));
+  const localRs = a0Spans({});
+  const localRoot = localRs.scopeSpans[0].spans[0];
+  ok("a local run carries no Agent0 attribute, no link, and no Agent0 resource attribute",
+    localRoot.attributes.every((/** @type {any} */ a) => !a.key.startsWith("agentic_workflow.") && !a.key.startsWith("pr_review.agent0."))
+      && !localRoot.links && localRs.resource.attributes.every((/** @type {any} */ a) => !a.key.startsWith("agentic_workflow.")));
+  ok("pr_review.agent0.link: `trace` with only the step context, `none` on an Agent0 run with neither, `none` plus the rejected name for a bad value",
+    get(a0Spans({ harness: "agent0", agent0_trace_id: "d0420000c047cb429461a335cfbf5d21", agent0_span_id: "7118a2d37e79b30e" }).scopeSpans[0].spans[0], "pr_review.agent0.link") === "trace"
+      && get(a0Spans({ harness: "agent0" }).scopeSpans[0].spans[0], "pr_review.agent0.link") === "none"
+      && get(a0Spans({ agent0_rejected: "PR_REVIEWER_AGENT0_RUN_ID" }).scopeSpans[0].spans[0], "pr_review.agent0.link") === "none"
+      && get(a0Spans({ agent0_rejected: "PR_REVIEWER_AGENT0_RUN_ID" }).scopeSpans[0].spans[0], "pr_review.agent0.rejected") === "PR_REVIEWER_AGENT0_RUN_ID");
+  ok("agent0Rejected drops a name a later begin supplied, keeps a fixed order, and ignores anything else",
+    agent0Rejected({ agent0_rejected: "OPENCODE_STEP_TRACEPARENT,PR_REVIEWER_AGENT0_RUN_ID", agent0_run_id: "r1" }) === "OPENCODE_STEP_TRACEPARENT"
+      && agent0Rejected({ agent0_rejected: "OPENCODE_STEP_TRACEPARENT,PR_REVIEWER_AGENT0_RUN_ID" }) === "PR_REVIEWER_AGENT0_RUN_ID,OPENCODE_STEP_TRACEPARENT"
+      && agent0Rejected({ agent0_rejected: "SOMETHING_ELSE" }) === null && agent0Rejected({}) === null);
+  ok("prepare-review.mjs starts the run with hostFacts(), so the link is read at `begin`",
+    /beginRun\(runDir, \{\n\s*\.\.\.hostFacts\(\),/.test(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "prepare-review.mjs"), "utf8")));
   ok("providerForModel follows the plugin's mapping",
     providerForModel("claude-opus-5-5") === "anthropic" && providerForModel("o3") === "openai" && providerForModel("gemini-2") === "gcp.gemini" && providerForModel("x") === null);
   ok("parseHeaders decodes percent-encoded values (the OTel spec form)",
@@ -1912,6 +2080,12 @@ async function selfTest() {
     const tcRun = buildRun(readLedger(tcDir));
     ok("a later begin adds facts but keeps the tool call that started the run",
       tcRun?.facts.opencode_parent_tool_call_id === "toolu_first" && tcRun?.facts.model === "claude-opus-5-5");
+    const tpDir = join(dir, "traceparent");
+    beginRun(tpDir, { ...facts, agent0_trace_id: "d0420000c047cb429461a335cfbf5d21", agent0_span_id: "7118a2d37e79b30e" });
+    beginRun(tpDir, { agent0_trace_id: "d0420000c047cb429461a335cfbf5d21", agent0_span_id: "980e64eda32c84bf", agent0_run_id: "agentic_workflow_run_01k9z" });
+    const tpRun = buildRun(readLedger(tpDir));
+    ok("a later begin keeps the step trace context of the tool call that started the run, and still adds a run id it lacked",
+      tpRun?.facts.agent0_span_id === "7118a2d37e79b30e" && tpRun?.facts.agent0_run_id === "agentic_workflow_run_01k9z");
     appendRecord(runDir, { t: "step", phase: "start", name: "prepare" });
     appendRecord(runDir, { t: "step", phase: "end" });
     const otherDir = join(dir, "shared");
@@ -1947,6 +2121,16 @@ async function selfTest() {
     const before = received.length;
     const again = await finishRun(runDir, {}, { PR_REVIEWER_OTLP_ENDPOINT: `http://127.0.0.1:${port}` });
     ok("finish is idempotent: an exported run is not exported twice", received.length === before && again.skipped === "already exported");
+    const a0Dir = join(dir, "agent0-linked");
+    beginRun(a0Dir, { ...facts, harness: "agent0", ...agent0LinkFacts(a0Env).facts });
+    const a0Before = received.length;
+    const a0Out = await finishRun(a0Dir, {}, { PR_REVIEWER_OTLP_ENDPOINT: `http://127.0.0.1:${port}` });
+    const a0Trace = received.slice(a0Before).find((r) => r.path === "/v1/traces")?.body?.resourceSpans?.[0];
+    const a0Root = a0Trace?.scopeSpans?.[0]?.spans?.[0];
+    ok("exported through a real OTLP receiver, a linked run's root keeps its link to the OpenCode step span and the Agent0 run id",
+      a0Out.exported === true && a0Root?.links?.[0]?.traceId === "d0420000c047cb429461a335cfbf5d21" && a0Root?.links?.[0]?.spanId === "7118a2d37e79b30e"
+        && get(a0Root, "agentic_workflow.run.id") === "agentic_workflow_run_01k9z"
+        && a0Trace?.resource?.attributes?.some((/** @type {any} */ a) => a.key === "agentic_workflow.id"), JSON.stringify(a0Root?.links));
     const deadDir = join(dir, "dead");
     beginRun(deadDir, facts);
     const dead = await finishRun(deadDir, {}, { PR_REVIEWER_OTLP_ENDPOINT: "http://127.0.0.1:1" });
