@@ -41,11 +41,43 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 
 | Span | Attributes |
 | --- | --- |
-| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` (including where each scored candidate went — `posted_inline`, `deferred`, `dedupe_dropped`, `confidence_dropped`, `advisory_deferred`, `anchorless`, and `memory.suppressed` — and `pr_review.impact_image` = `added` · `skipped` · `failed` and `pr_review.impact_image.reason`), the routing decision (`pr_review.triggers`: the comma-joined `D`-ids that fired, omitted when none; `pr_review.delta_scaled`: boolean; `pr_review.state_status`: `read`, `empty`, `unreadable`, `none`, or `ignored`, where `none` also marks a first run), the memory the review used and read ([§ The memory](./run-telemetry.md#the-memory)), and the lenses it loaded ([§ The lenses](./run-telemetry.md#the-lenses)) |
+| `invoke_agent pr-reviewer` (root) | `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.id=<run id>`, `gen_ai.conversation.name=pr-reviewer <owner>/<repo>#<n>` (only when the run is not joined to a harness session), `pr_review.opencode.parent_tool_call_id` (the OpenCode tool call that ran `begin`, when `OPENCODE_PARENT_TOOL_CALL_ID` is set), the outcome under `pr_review.*` (including where each scored candidate went — `posted_inline`, `deferred`, `dedupe_dropped`, `confidence_dropped`, `advisory_deferred`, `anchorless`, and `memory.suppressed` — the reported findings' severity ([§ Severity and delivery](#severity-and-delivery)), and `pr_review.impact_image` = `added` · `skipped` · `failed` and `pr_review.impact_image.reason`), what the post step delivered (`pr_review.post.*`, [§ Severity and delivery](#severity-and-delivery)), the routing decision (`pr_review.triggers`: the comma-joined `D`-ids that fired, omitted when none; `pr_review.delta_scaled`: boolean; `pr_review.state_status`: `read`, `empty`, `unreadable`, `none`, or `ignored`, where `none` also marks a first run), the memory the review used and read ([§ The memory](./run-telemetry.md#the-memory)), and the lenses it loaded ([§ The lenses](./run-telemetry.md#the-lenses)) |
 | `pr_review.step <name>` | `pr_review.step.name`, `pr_review.step.kind` (`script` · `model` · `dispatch`), `pr_review.step.marked`, `pr_review.opencode.tool_call_id` (the OpenCode tool call whose marker opened it, when `OPENCODE_PARENT_TOOL_CALL_ID` is set); ERROR with `error.type=step_failed` when the step failed; the `lenses` step also carries `pr_review.lenses.loaded`, `pr_review.lenses.names`, `pr_review.lenses.builtin`, and `pr_review.lenses.custom` |
 | `pr_review.phase <name>` | child of a script step: `pr_review.step.name`, `pr_review.phase.name` |
 | `pr_review.worker <unit>` | `pr_review.worker.unit` |
 | every span | `gen_ai.agent.name`, `gen_ai.conversation.id`, `dash0.gen_ai.vcs.*` (repository, owner, PR URL, head ref and revision), `user.name` |
+
+### Severity and delivery
+
+`finalize.mjs` records the severity of the findings the review reported, and `execute-write-plan.mjs` records what the `post` step wrote to GitHub, both on the root span:
+
+| Attribute | Set by | Value |
+| --- | --- | --- |
+| `pr_review.findings.critical` · `.high` · `.medium` · `.low` | `finalize` | reported findings per `severity` tier — posted inline or listed over the inline cap; the four sum to `posted_inline + deferred`, and match the tiers of `dash0.darkplane.review.findings.*` |
+| `pr_review.findings.blocking` | `finalize` | the reported findings marked `(blocking)` |
+| `pr_review.post.path` | `post` | `gh` (this script wrote) · `mcp` (no gh access path: the agent posts over MCP, outside the trace) · `refused` (a historical, dry-run, or isolated plan) |
+| `pr_review.post.sticky` | `post` | `created` · `updated` · `recreated` (the PATCH 404'd) · `pointer` (the PATCH failed, the pointer posted) · `aborted` (the body failed its pre-write check) · `failed` · `none` |
+| `pr_review.post.sticky.comment_id` | `post` | the comment GitHub wrote, as a string; only when the write succeeded |
+| `pr_review.post.review` | `post` | `posted` · `aborted` (the payload failed its safety check) · `failed` · `none` (no inline comments) |
+| `pr_review.post.review.id` | `post` | the review GitHub created, as a string; only when it posted |
+| `pr_review.post.inline_sent` | `post` | inline comments in the review that posted, `0` otherwise — compare with `posted_inline`, which finalize planned |
+| `pr_review.post.threads.replied` · `.reply_failed` · `.resolved` · `.resolve_failed` | `post` | thread writes that succeeded and failed |
+
+A dry run finishes at `finalize` and carries no `pr_review.post.*`; a run that never reached finalize carries no `pr_review.findings.*`.
+Neither is zero: an absent attribute means the step did not run.
+
+```sql
+-- correct: delivery read from what the post step wrote
+SELECT span_attributes['pr_review.post.review'] AS review, count() AS runs,
+       sum(toFloat64OrZero(span_attributes['pr_review.post.inline_sent'])) AS sent,
+       sum(toFloat64OrZero(span_attributes['pr_review.posted_inline'])) AS planned
+FROM spans
+WHERE resource_attributes['service.name'] = 'pr-reviewer' AND name = 'invoke_agent pr-reviewer'
+GROUP BY review
+
+-- incorrect: posted_inline is finalize's plan, set before anything is posted, and on a dry run too
+SELECT sum(toFloat64OrZero(span_attributes['pr_review.posted_inline'])) AS delivered FROM spans WHERE ...
+```
 
 Two histograms carry the durations across runs: `pr_review.step.duration` (by step and kind) and `pr_review.run.duration` (by tier, topology, and verdict).
 Neither carries a run id, a PR number, or a user as an attribute.
