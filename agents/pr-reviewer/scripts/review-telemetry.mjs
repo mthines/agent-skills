@@ -325,14 +325,14 @@ export function agent0LinkFacts(env) {
   /** @type {string[]} */
   const rejected = [];
   for (const key of /** @type {const} */ (["PR_REVIEWER_AGENT0_RUN_ID", "PR_REVIEWER_AGENT0_WORKFLOW_ID"])) {
-    const v = String(env[key] ?? "").trim();
-    if (!v) continue;
-    if (AGENT0_ID_RE.test(v)) facts[/** @type {"agent0_run_id"|"agent0_workflow_id"} */ (AGENT0_LINK_ENV[key])] = v;
+    const id = String(env[key] ?? "").trim();
+    if (!id) continue;
+    if (AGENT0_ID_RE.test(id)) facts[/** @type {"agent0_run_id"|"agent0_workflow_id"} */ (AGENT0_LINK_ENV[key])] = id;
     else rejected.push(key);
   }
-  const tp = String(env.OPENCODE_STEP_TRACEPARENT ?? "").trim();
-  if (tp) {
-    const parsed = parseTraceparent(tp);
+  const traceparent = String(env.OPENCODE_STEP_TRACEPARENT ?? "").trim();
+  if (traceparent) {
+    const parsed = parseTraceparent(traceparent);
     if (parsed) { facts.agent0_trace_id = parsed.traceId; facts.agent0_span_id = parsed.spanId; } else rejected.push("OPENCODE_STEP_TRACEPARENT");
   }
   return { facts, rejected };
