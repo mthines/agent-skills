@@ -39,10 +39,11 @@ export const POST_TIMEOUT_MS = 10_000;
  * @typedef {Record<string, AttrScalar>} AttrBag
  * @typedef {{code: number, message?: string}} SpanStatus
  * @typedef {{timeUnixNano: string, name: string, attributes: Attribute[]}} SpanEvent
+ * @typedef {{traceId: string, spanId: string, attributes: Attribute[]}} SpanLink
  * @typedef {{traceId: string, spanId: string, parentSpanId?: string,
  *   name: string, kind: number, startTimeUnixNano: string,
  *   endTimeUnixNano: string|null, attributes: Attribute[], status: SpanStatus,
- *   events?: SpanEvent[]}} SpanRecord
+ *   events?: SpanEvent[], links?: SpanLink[]}} SpanRecord
  * @typedef {{spanId: string|null, durationS: () => number,
  *   end: (extra?: AttrBag) => void, fail: (message: unknown, extra?: AttrBag) => void}} SpanHandle
  */
