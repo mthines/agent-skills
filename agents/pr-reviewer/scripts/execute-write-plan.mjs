@@ -208,6 +208,9 @@ export function failureReason(r) {
   return line ? line.slice(0, 160) : `exit ${r?.code ?? "?"}`;
 }
 
+/** The reason postFailures() gives when a failed write carries none of its own. */
+const WRITE_FAILED = "write failed";
+
 /**
  * The post step's failures, split by severity (measurable § regression signals). `errors`: the
  * sticky report or the inline review never reached GitHub — they mark the `post` step ERROR.
@@ -224,13 +227,13 @@ export function postFailures(result) {
   for (const e of Array.isArray(result.executed) ? result.executed : []) {
     if (e?.kind === "sticky.upsert") {
       if (e.aborted) errors.push(`sticky report not posted: its body failed the pre-write check (${e.aborted})`);
-      else if (!e.ok) errors.push(`sticky report not posted: ${e.error || "write failed"}`);
+      else if (!e.ok) errors.push(`sticky report not posted: ${e.error || WRITE_FAILED}`);
       else if (e.degraded) warnings.push("sticky report could not be written; the pointer comment was posted instead");
     } else if (e?.kind === "review.create") {
       if (e.aborted) errors.push(`inline review (${e.count} comments) not posted: ${e.reason || "payload failed its safety check"}`);
-      else if (!e.ok) errors.push(`inline review (${e.count} comments) not posted: ${e.error || "write failed"}`);
+      else if (!e.ok) errors.push(`inline review (${e.count} comments) not posted: ${e.error || WRITE_FAILED}`);
     } else if ((e?.kind === "thread.reply" || e?.kind === "thread.resolve") && !e.ok) {
-      warnings.push(`${e.kind === "thread.reply" ? "reply to" : "resolve of"} thread ${e.thread_id} failed: ${e.error || "write failed"}`);
+      warnings.push(`${e.kind === "thread.reply" ? "reply to" : "resolve of"} thread ${e.thread_id} failed: ${e.error || WRITE_FAILED}`);
     }
   }
   return { errors, warnings };
