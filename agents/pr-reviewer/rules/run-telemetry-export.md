@@ -59,7 +59,9 @@ printf 'export PR_REVIEWER_AGENT0_RUN_ID=%q\nexport PR_REVIEWER_AGENT0_WORKFLOW_
 export PR_REVIEWER_AGENT0_RUN_ID='{{dash0.workflow.run.id}}'
 ```
 
-Watch the link on the root's span metric; a share of `none` or a non-empty `pr_review_agent0_rejected` on an automation that passes the ids means it stopped linking:
+Watch the link on the root's span metric.
+On an automation that passes the ids every review reads `run`, so a rise in any other value means it stopped linking: `trace` when the run id was dropped (Agent0 still sets the step traceparent, so a dropped id never reads `none`), `none` when the traceparent is missing too, and a non-empty `pr_review_agent0_rejected` when a value was malformed.
+Chat reviews read `trace` by design, so watch the change, not the level:
 
 ```promql
 sum by (pr_review_agent0_link, pr_review_agent0_rejected) (increase({otel_metric_name="dash0.spans", service_name="pr-reviewer", otel_span_name="invoke_agent pr-reviewer", gen_ai_harness_name="agent0"}[1d]))

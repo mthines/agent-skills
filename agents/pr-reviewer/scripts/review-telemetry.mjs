@@ -340,9 +340,10 @@ export function agent0LinkFacts(env) {
 
 /**
  * The root span's Agent0 link status, from the run's facts: `run` when the run id is known, `trace`
- * when only the step trace context is, `none` on an Agent0 run with neither — the value a dashboard
- * watches to catch an automation that stopped passing the run id. Null outside Agent0 with nothing
- * set, so a local run carries no Agent0 attribute at all.
+ * when only the step trace context is, `none` on an Agent0 run with neither. On an automation that
+ * passes the ids anything but `run` means it stopped linking; a dropped run id reads `trace`, not
+ * `none`, because Agent0 sets the step traceparent on every tool call. Null outside Agent0 with
+ * nothing set, so a local run carries no Agent0 attribute at all.
  * @param {RunFacts} f @returns {"run"|"trace"|"none"|null}
  */
 export function agent0LinkStatus(f) {
