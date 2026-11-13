@@ -721,7 +721,9 @@ export function ownThreads(threads) {
  *
  * Unknown is never zero: a re-review whose judgments carry no `prior_dedup` records none of the
  * model-dependent counts, only `findings.reposted` and `prior.check=unrecorded`, plus a warning. A
- * first run needs no prior_dedup: everything it reports is new.
+ * first run needs no prior_dedup: everything it reports is new. Neither does a zero-delta run, which
+ * runs no Step 2 and so drops nothing and re-admits no carried entry: it is not held to prior_dedup,
+ * and its carried findings are not checked (Step 4c keeps the record's list).
  * @param {any} context @param {any} judgments @param {any} result finalizeReview()'s return
  * @returns {{ attrs: Record<string, number|string>, warnings: string[] }}
  */
@@ -733,6 +735,7 @@ export function priorCounts(context, judgments, result) {
   if (!Array.isArray(result?.inline) || !Array.isArray(result?.deferred)) return { attrs, warnings };
   const source = context?.priorRun?.source;
   const reReview = typeof source === "string" && source !== "none";
+  const zeroDelta = context?.mode === "zero-delta";
   const threadsKnown = Array.isArray(context?.threads);
   const own = ownThreads(context?.threads);
   /** @type {string[]} */
@@ -750,7 +753,7 @@ export function priorCounts(context, judgments, result) {
   }
 
   const priorDedup = judgments?.prior_dedup;
-  if (reReview && !Array.isArray(priorDedup)) {
+  if (reReview && !zeroDelta && !Array.isArray(priorDedup)) {
     problems.push("unrecorded");
     warnings.push("re-review wrote no prior_dedup — new, carried, repeat_dropped, and withdrawn are not recorded");
   } else {
@@ -773,7 +776,7 @@ export function priorCounts(context, judgments, result) {
     attrs["findings.withdrawn"] = byReason("addressed").length + withdrawnThreads;
 
     const carriedIn = context?.priorRun?.carriedIn;
-    if (reReview && Number.isInteger(carriedIn)) {
+    if (reReview && !zeroDelta && Number.isInteger(carriedIn)) {
       const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
       const accounted = candidates.filter((/** @type {any} */ c) => hasSha(c?.first_seen_sha)).length
         + entries.filter((/** @type {any} */ d) => hasSha(d?.first_seen_sha)).length;
@@ -1234,7 +1237,9 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     // The Step 4c state write's `cited` (posting.md § 4c) — copied from finalize-result.json.
     citedRefs: citedRefs(judgments?.memory, suppressed),
     // The Step 4c state write's `carried_findings` (run-writes.md § 4c), each with its first_seen_sha.
-    carriedFindings: carriedFindingsFor(overCapDeferred, runSha),
+    // Null on a zero-delta run: Step 2 never ran, so no carried entry was re-admitted, and an empty
+    // list would erase the record's — null tells Step 4c to keep the record's own list.
+    carriedFindings: context?.mode === "zero-delta" ? null : carriedFindingsFor(overCapDeferred, runSha),
   };
 }
 
@@ -3291,8 +3296,15 @@ async function selfTest() {
           { path: "src/a.ts", line: 10, prefix: "issue", body: "b", confidence: 90, first_seen_sha: "9f8e7d6" },
           { path: "package.json", prefix: "issue", body: "b", confidence: 90, first_seen_sha: "abc1234" },
         ]) && JSON.stringify(carriedFindingsFor(undefined, "abc1234")) === "[]");
-      check("finalizeReview returns carriedFindings from the over-cap deferred findings and this run's SHA, so finalize-result.json carries them to Step 4c",
-        /carriedFindings: carriedFindingsFor\(overCapDeferred, runSha\),/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+      const zdJudgments = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
+        gate5: { status: "PASS", details: "x" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+      check("finalizeReview returns carriedFindings as a list on a reviewed run, and null on a zero-delta run so Step 4c keeps the record's list",
+        JSON.stringify(finalizeReview({ context: { mode: "full", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings) === "[]"
+          && finalizeReview({ context: { mode: "zero-delta", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings === null);
+      const zd = priorCounts({ mode: "zero-delta", priorRun: { source: "state-record", carriedIn: 4 }, threads: prThreads.slice(1) }, noDedup, { inline: [], deferred: [] });
+      check("priorCounts on a zero-delta re-run: no carried-loss check and no `unrecorded` without prior_dedup — Step 2 never ran, so nothing was dropped or re-admitted",
+        zd.attrs["prior.check"] === "ok" && !("prior.carried_in" in zd.attrs) && !("findings.carried_unaccounted" in zd.attrs)
+          && zd.attrs["findings.new"] === 0 && zd.warnings.length === 0, JSON.stringify(zd));
       check("main prints every priorCounts warning except in the --no-telemetry preview",
         /if \(!opts\["no-telemetry"\]\) for \(const w of prior\.warnings\) console\.error\(`finalize: warning — \$\{w\}`\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("finalize passes impactImageOutcome(context) and priorCounts(...).attrs into the run's telemetry attributes",
