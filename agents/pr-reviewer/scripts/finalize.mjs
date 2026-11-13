@@ -3225,6 +3225,76 @@ async function selfTest() {
         /\} catch \(e\) \{\n(?:\s*\/\/.*\n)*\s*process\.stderr\.write\(`finalize: run telemetry not recorded — /.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("severityCounts: the tiers are judgments.schema.json's severity_tier enum",
         JSON.stringify((await import("./validate-judgments.mjs")).loadSchema().$defs.severity_tier.enum) === JSON.stringify(SEVERITY_TIERS));
+
+      // priorCounts: the re-review counts. Own threads carry a v2 marker; T3 is another automation's
+      // under the same login (no marker). Inline finding A repeats open own thread T1; B matches T2,
+      // which is resolved, so only A is a repost.
+      const fpm = await import("./fingerprint.mjs");
+      const F = (/** @type {any} */ o) => ({ finder: "correctness", defect_class: "logic", symbol: "foo", path: "src/a.ts", line: 10, prefix: "issue",
+        severity: "high", blocking: false, body: "b", final: 90, verdict: "confirmed", ...o });
+      const fpOf = (/** @type {string} */ symbol, /** @type {string} */ path) => fpm.buildFingerprint({ finder: "correctness", defectClass: "logic", symbol, path });
+      const prThreads = [
+        { thread_id: "T1", root_comment_id: 101, is_resolved: false, root_body: `issue: x\n${fpm.marker(fpOf("foo", "src/a.ts"))}` },
+        { thread_id: "T2", root_comment_id: 102, is_resolved: true, root_body: `issue: y\n${fpm.marker(fpOf("bar", "src/b.ts"))}` },
+        { thread_id: "T3", root_comment_id: 103, is_resolved: false, root_body: "issue: another automation said this, with no marker" },
+        { thread_id: "T4", root_comment_id: 104, is_resolved: false, root_body: `suggestion: z\n${fpm.marker(fpOf("qux", "src/q.ts"))}` },
+        { thread_id: "T5", root_comment_id: 105, is_resolved: false, root_body: "issue: w\n<!-- fp:v9:correctness:logic:foo@src/a.ts -->" },
+      ];
+      const rrResult = { inline: [F({}), F({ symbol: "bar", path: "src/b.ts" })], deferred: [F({ symbol: "baz", path: "src/c.ts", first_seen_sha: "9f8e7d6" })] };
+      const rrJudgments = {
+        candidates: [...rrResult.inline, ...rrResult.deferred, F({ symbol: "low", path: "src/l.ts", first_seen_sha: "9f8e7d6", final: 40 })],
+        prior_dedup: [
+          { path: "src/a.ts", line: 12, prefix: "issue", reason: "already-posted", comment_id: 101 },
+          { path: "src/d.ts", line: 3, prefix: "issue", reason: "already-posted", comment_id: 103 },
+          { path: "src/e.ts", line: 4, prefix: "suggestion", reason: "flip-flop", comment_id: 102 },
+          { path: "src/f.ts", line: 5, prefix: "issue", reason: "addressed", first_seen_sha: "9f8e7d6" },
+        ],
+        threads: [{ thread_id: "T1", classification: "persisting" }, { thread_id: "T2", classification: "fixed", reply: "r" },
+          { thread_id: "T3", classification: "fixed", reply: "r" }, { thread_id: "T4", classification: "obsolete", reply: "r" },
+          { thread_id: "T5", classification: "declined", reply: "r" }],
+      };
+      const sorted = (/** @type {Record<string, any>} */ o) => JSON.stringify(Object.keys(o).sort().map((k) => [k, o[k]]));
+      check("ownThreads keeps only threads whose first comment carries a valid v2 marker — never another automation's, never an unrecognised marker",
+        JSON.stringify(ownThreads(prThreads).map((t) => t.thread_id)) === '["T1","T2","T4"]' && ownThreads(undefined).length === 0);
+      const rr = priorCounts({ priorRun: { source: "state-record", carriedIn: 4 }, threads: prThreads }, rrJudgments, rrResult);
+      check("priorCounts on a re-review: new/carried split, repeats (one foreign), a flip-flop, withdrawn = addressed + own fixed/obsolete threads, a repost, a lost carried finding",
+        sorted(rr.attrs) === sorted({
+          "findings.reposted": 1, "findings.new": 2, "findings.carried": 1, "findings.repeat_dropped": 2, "findings.repeat_dropped_foreign": 1,
+          "findings.flip_flop_dropped": 1, "findings.withdrawn": 3, "prior.carried_in": 4, "findings.carried_unaccounted": 1,
+          "prior.check": "reposted,carried_lost",
+        }), JSON.stringify(rr.attrs));
+      check("priorCounts: each problem is a warning naming its count",
+        rr.warnings.length === 2 && /^1 inline finding\(s\) repeat an open pr-reviewer thread/.test(rr.warnings[0]) && /^1 of 4 carried finding\(s\)/.test(rr.warnings[1]),
+        rr.warnings.join(" | "));
+      check("priorCounts: new + carried equals posted_inline + deferred, the population severityCounts counts",
+        Number(rr.attrs["findings.new"]) + Number(rr.attrs["findings.carried"]) === rrResult.inline.length + rrResult.deferred.length
+          && SEVERITY_TIERS.reduce((n, t) => n + severityCounts(rrResult)[`findings.${t}`], 0) === rrResult.inline.length + rrResult.deferred.length);
+      const clean = priorCounts({ priorRun: { source: "state-record", carriedIn: 3 }, threads: prThreads.slice(1) }, rrJudgments, rrResult);
+      check("priorCounts: a re-review with every carried finding accounted for and no repost says prior.check=ok and warns nothing",
+        clean.attrs["prior.check"] === "ok" && clean.attrs["findings.carried_unaccounted"] === 0 && clean.attrs["findings.reposted"] === 0 && clean.warnings.length === 0,
+        JSON.stringify(clean));
+      const first = priorCounts({ priorRun: { source: "none" }, threads: [] }, { candidates: rrResult.inline, threads: [] }, { inline: rrResult.inline, deferred: [] });
+      check("priorCounts on a first run: everything reported is new, nothing else, no prior.check, no warning — prior_dedup not needed",
+        sorted(first.attrs) === sorted({ "findings.reposted": 0, "findings.new": 2, "findings.carried": 0, "findings.repeat_dropped": 0,
+          "findings.repeat_dropped_foreign": 0, "findings.flip_flop_dropped": 0, "findings.withdrawn": 0 }) && first.warnings.length === 0, JSON.stringify(first));
+      const { prior_dedup: _pd, ...noDedup } = rrJudgments;
+      const unrecorded = priorCounts({ priorRun: { source: "github-fallback-rung" }, threads: prThreads }, noDedup, rrResult);
+      check("priorCounts on a re-review without prior_dedup: no model-dependent count (unknown, never zero), prior.check names it, and a warning says so",
+        sorted(unrecorded.attrs) === sorted({ "findings.reposted": 1, "prior.check": "reposted,unrecorded" })
+          && unrecorded.warnings.some((w) => /re-review wrote no prior_dedup/.test(w)), JSON.stringify(unrecorded));
+      check("priorCounts: without context.threads there is no repost or foreign count; without both result arrays, nothing",
+        !("findings.reposted" in priorCounts({ priorRun: { source: "none" } }, rrJudgments, rrResult).attrs)
+          && !("findings.repeat_dropped_foreign" in priorCounts({ priorRun: { source: "none" } }, rrJudgments, rrResult).attrs)
+          && JSON.stringify(priorCounts({}, rrJudgments, { inline: [] })) === '{"attrs":{},"warnings":[]}');
+      check("carriedFindingsFor: the record's shape, an arriving first_seen_sha kept, a first deferral stamped with this run's SHA, no line when there is none",
+        JSON.stringify(carriedFindingsFor([F({ first_seen_sha: "9f8e7d6" }), F({ line: undefined, path: "package.json" })], "abc1234")) === JSON.stringify([
+          { path: "src/a.ts", line: 10, prefix: "issue", body: "b", confidence: 90, first_seen_sha: "9f8e7d6" },
+          { path: "package.json", prefix: "issue", body: "b", confidence: 90, first_seen_sha: "abc1234" },
+        ]) && JSON.stringify(carriedFindingsFor(undefined, "abc1234")) === "[]");
+      check("finalizeReview returns carriedFindings from the over-cap deferred findings and this run's SHA, so finalize-result.json carries them to Step 4c",
+        /carriedFindings: carriedFindingsFor\(overCapDeferred, runSha\),/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+      check("main prints every priorCounts warning except in the --no-telemetry preview",
+        /if \(!opts\["no-telemetry"\]\) for \(const w of prior\.warnings\) console\.error\(`finalize: warning — \$\{w\}`\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("finalize passes impactImageOutcome(context) and priorCounts(...).attrs into the run's telemetry attributes",
         /impactImage: impactImageOutcome\(context\), prior: prior\.attrs \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8"))
           && /const prior = priorCounts\(context, judgments, result\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
@@ -3269,6 +3339,35 @@ async function selfTest() {
           && ltRunAttrs["findings.low"] === 0 && ltRunAttrs["findings.blocking"] === 1 && ltRunAttrs.anchorless === 1
           && SEVERITY_TIERS.reduce((n, t) => n + ltRunAttrs[`findings.${t}`], 0) === ltRunAttrs.posted_inline + ltRunAttrs.deferred,
         JSON.stringify(ltRunAttrs));
+      const ltResult = JSON.parse(readFileSync(join(ltDir, "out", "finalize-result.json"), "utf8"));
+      check("a first run records everything it reported as new and no prior.check, and finalize-result.json carries carriedFindings",
+        ltRunAttrs["findings.new"] === ltRunAttrs.posted_inline + ltRunAttrs.deferred && ltRunAttrs["findings.carried"] === 0
+          && ltRunAttrs["prior.check"] === undefined && Array.isArray(ltResult.carriedFindings) && ltResult.carriedFindings.length === ltRunAttrs.deferred,
+        JSON.stringify(ltRunAttrs));
+
+      // A re-review (the state record was read) whose judgments carry no prior_dedup: said on stderr, and
+      // recorded as prior.check=unrecorded with no new/carried counts. With prior_dedup: [] it is `ok`.
+      for (const [label, withDedup] of /** @type {Array<[string, boolean]>} */ ([["without prior_dedup", false], ["with prior_dedup: []", true]])) {
+        const rrDir = join(e2eDir, `rereview-${withDedup ? "dedup" : "nodedup"}`);
+        rmSync(rrDir, { recursive: true, force: true });
+        mkdirSync(rrDir, { recursive: true });
+        spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), "begin", "--run-dir", rrDir], { encoding: "utf8", env: off });
+        writeFileSync(join(rrDir, "context.json"), JSON.stringify({ ...e2eContext, priorRun: { ...e2eContext.priorRun, source: "state-record", carriedIn: 0 } }, null, 2));
+        const { prior_dedup: _drop, ...base } = /** @type {any} */ (e2eJudgments);
+        writeFileSync(join(rrDir, "judgments.json"), JSON.stringify(withDedup ? { ...base, prior_dedup: [] } : base, null, 2));
+        const rrRun = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(rrDir, "context.json"),
+          "--judgments", join(rrDir, "judgments.json"), "--out-dir", join(rrDir, "out"), "--dry-run"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: off });
+        const rrAttrs = Object.assign({}, ...readLedger(rrDir).filter((r) => r.t === "attr" && r.target === "run").map((r) => r.attrs || {}));
+        if (withDedup) {
+          check(`a re-review ${label} records prior.check=ok and the new/carried split, and warns nothing`,
+            rrRun.status === 0 && rrAttrs["prior.check"] === "ok" && rrAttrs["findings.new"] === rrAttrs.posted_inline + rrAttrs.deferred
+              && rrAttrs["findings.carried_unaccounted"] === 0 && !/finalize: warning — re-review/.test(rrRun.stderr || ""), JSON.stringify(rrAttrs));
+        } else {
+          check(`a re-review ${label} prints the finalize warning and records prior.check=unrecorded with no new/carried count`,
+            rrRun.status === 0 && /finalize: warning — re-review wrote no prior_dedup/.test(rrRun.stderr || "")
+              && rrAttrs["prior.check"] === "unrecorded" && rrAttrs["findings.new"] === undefined, `${JSON.stringify(rrAttrs)} ${(rrRun.stderr || "").slice(0, 200)}`);
+        }
+      }
       check("the dry run's telemetry summary lists the lenses",
         JSON.stringify(ltSummary.lenses?.loaded?.map((/** @type {any} */ l) => l.name)) === '["tdd","billing-audit","measurable","verify-behavior"]' && ltSummary.lenses?.skipped?.[0]?.name === "soc2",
         JSON.stringify(ltSummary.lenses));
