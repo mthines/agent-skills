@@ -795,7 +795,7 @@ export function priorCounts(context, judgments, result) {
  * inline cap, in the record's shape. A carried finding keeps the `first_seen_sha` it arrived with; a
  * finding deferred for the first time gets this run's head SHA, so it reads as carried, not new, on
  * every later review.
- * @param {any[]} deferred finalizeReview()'s `deferred` @param {string} runSha this run's 7-char head SHA
+ * @param {any[]|undefined} deferred finalizeReview()'s `deferred` (anything else is no findings) @param {string} runSha this run's 7-char head SHA
  * @returns {Array<{ path: string, line?: number, prefix: string, body: string, confidence: number, first_seen_sha: string }>}
  */
 export function carriedFindingsFor(deferred, runSha) {
