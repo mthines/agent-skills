@@ -51,7 +51,7 @@ import { toFindingsBusRecords } from "./finalize/findings-bus.mjs";
 import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
-import { MARKER_RE } from "./fingerprint.mjs";
+import { MARKER_RE, buildFingerprint, extractFingerprint } from "./fingerprint.mjs";
 import { appendRecord, finishRun, readLedger, stepStartAttrs, LENS_ORIGINS, lensItems as exportedLensItems } from "./review-telemetry.mjs";
 import { LENS_DIR, GATED_LENSES } from "./select-lenses.mjs";
 
@@ -676,6 +676,139 @@ export function severityCounts(result) {
   return out;
 }
 
+/** A head SHA as judgments.schema.json's first_seen_sha pattern allows it. */
+const SHA_RE = /^[0-9a-f]{7,40}$/;
+const hasSha = (/** @type {unknown} */ v) => typeof v === "string" && SHA_RE.test(v);
+
+/** The order pr_review.prior.check lists its problems in, so the value stays one of a few. */
+export const PRIOR_CHECKS = Object.freeze(["reposted", "carried_lost", "unrecorded"]);
+
+/**
+ * This agent's own review threads on the PR: those whose first comment ends with a v2 fingerprint
+ * marker, with that fingerprint. Matched by the marker, never by login — on Agent0 every automation
+ * posts as the same GitHub App, so a login match would count another reviewer's thread as this one's.
+ * @param {any} threads context.threads (prepare-review.mjs buildThreads)
+ * @returns {Array<{ thread_id: string, root_comment_id: number|null, is_resolved: boolean, fp: string }>}
+ */
+export function ownThreads(threads) {
+  /** @type {Array<{ thread_id: string, root_comment_id: number|null, is_resolved: boolean, fp: string }>} */
+  const out = [];
+  for (const t of Array.isArray(threads) ? threads : []) {
+    const got = typeof t?.root_body === "string" ? extractFingerprint(t.root_body) : null;
+    if (got?.source !== "marker" || got.fp_v !== 2) continue;
+    out.push({ thread_id: String(t.thread_id), root_comment_id: Number.isInteger(t.root_comment_id) ? t.root_comment_id : null,
+      is_resolved: t.is_resolved === true, fp: got.fp });
+  }
+  return out;
+}
+
+/**
+ * The re-review counts for the root span (rules/run-telemetry-export.md § Re-reviews), from the
+ * reported findings (`result.inline` + `result.deferred`, the population severityCounts counts),
+ * `judgments.prior_dedup`, `judgments.threads`, and the context's threads and prior run:
+ *
+ * - `findings.new` / `findings.carried`: reported findings without / with `first_seen_sha`; they sum
+ *   to `posted_inline + deferred`.
+ * - `findings.repeat_dropped` (`_foreign`: those whose prior comment is not on one of this agent's
+ *   threads), `findings.flip_flop_dropped`, and `findings.withdrawn` (`addressed` entries plus this
+ *   agent's own threads classified fixed or obsolete): every prior_dedup entry counted once.
+ * - `findings.reposted`: inline findings whose fingerprint is an open thread of this agent's — the
+ *   duplicate comment the dedup exists to prevent, counted without trusting the model.
+ * - `prior.carried_in` / `findings.carried_unaccounted`: carried findings the state record handed
+ *   in, and those neither back as candidates nor in prior_dedup.
+ * - `prior.check` (re-reviews only): `ok`, or the problems among PRIOR_CHECKS — the one bounded
+ *   value an alert can match, since PromQL label matchers on numeric attributes find nothing.
+ *
+ * Unknown is never zero: a re-review whose judgments carry no `prior_dedup` records none of the
+ * model-dependent counts, only `findings.reposted` and `prior.check=unrecorded`, plus a warning. A
+ * first run needs no prior_dedup: everything it reports is new.
+ * @param {any} context @param {any} judgments @param {any} result finalizeReview()'s return
+ * @returns {{ attrs: Record<string, number|string>, warnings: string[] }}
+ */
+export function priorCounts(context, judgments, result) {
+  /** @type {Record<string, number|string>} */
+  const attrs = {};
+  /** @type {string[]} */
+  const warnings = [];
+  if (!Array.isArray(result?.inline) || !Array.isArray(result?.deferred)) return { attrs, warnings };
+  const source = context?.priorRun?.source;
+  const reReview = typeof source === "string" && source !== "none";
+  const threadsKnown = Array.isArray(context?.threads);
+  const own = ownThreads(context?.threads);
+  /** @type {string[]} */
+  const problems = [];
+
+  if (threadsKnown) {
+    const openFps = new Set(own.filter((t) => !t.is_resolved).map((t) => t.fp));
+    const reposted = result.inline.filter((/** @type {any} */ f) => f?.finder && f?.path
+      && openFps.has(buildFingerprint({ finder: f.finder, defectClass: f.defect_class, symbol: f.symbol || "", path: f.path }))).length;
+    attrs["findings.reposted"] = reposted;
+    if (reposted > 0) {
+      problems.push("reposted");
+      warnings.push(`${reposted} inline finding(s) repeat an open pr-reviewer thread on this PR — the prior-comment dedup missed them`);
+    }
+  }
+
+  const priorDedup = judgments?.prior_dedup;
+  if (reReview && !Array.isArray(priorDedup)) {
+    problems.push("unrecorded");
+    warnings.push("re-review wrote no prior_dedup — new, carried, repeat_dropped, and withdrawn are not recorded");
+  } else {
+    const entries = Array.isArray(priorDedup) ? priorDedup : [];
+    const reported = [...result.inline, ...result.deferred];
+    const carried = reported.filter((/** @type {any} */ f) => hasSha(f?.first_seen_sha)).length;
+    attrs["findings.new"] = reported.length - carried;
+    attrs["findings.carried"] = carried;
+    const byReason = (/** @type {string} */ reason) => entries.filter((/** @type {any} */ d) => d?.reason === reason);
+    const repeats = byReason("already-posted");
+    attrs["findings.repeat_dropped"] = repeats.length;
+    if (threadsKnown) {
+      const ownComments = new Set(own.map((t) => t.root_comment_id).filter((id) => id !== null));
+      attrs["findings.repeat_dropped_foreign"] = repeats.filter((/** @type {any} */ d) => !ownComments.has(d?.comment_id)).length;
+    }
+    attrs["findings.flip_flop_dropped"] = byReason("flip-flop").length;
+    const ownIds = new Set(own.map((t) => t.thread_id));
+    const withdrawnThreads = (Array.isArray(judgments?.threads) ? judgments.threads : [])
+      .filter((/** @type {any} */ t) => (t?.classification === "fixed" || t?.classification === "obsolete") && ownIds.has(String(t.thread_id))).length;
+    attrs["findings.withdrawn"] = byReason("addressed").length + withdrawnThreads;
+
+    const carriedIn = context?.priorRun?.carriedIn;
+    if (reReview && Number.isInteger(carriedIn)) {
+      const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
+      const accounted = candidates.filter((/** @type {any} */ c) => hasSha(c?.first_seen_sha)).length
+        + entries.filter((/** @type {any} */ d) => hasSha(d?.first_seen_sha)).length;
+      const lost = Math.max(0, carriedIn - accounted);
+      attrs["prior.carried_in"] = carriedIn;
+      attrs["findings.carried_unaccounted"] = lost;
+      if (lost > 0) {
+        problems.push("carried_lost");
+        warnings.push(`${lost} of ${carriedIn} carried finding(s) are neither back as candidates nor recorded in prior_dedup`);
+      }
+    }
+  }
+  if (reReview) attrs["prior.check"] = problems.length ? PRIOR_CHECKS.filter((p) => problems.includes(p)).join(",") : "ok";
+  return { attrs, warnings };
+}
+
+/**
+ * The PR-state record's next `carried_findings` (run-writes.md § 4c): every finding deferred over the
+ * inline cap, in the record's shape. A carried finding keeps the `first_seen_sha` it arrived with; a
+ * finding deferred for the first time gets this run's head SHA, so it reads as carried, not new, on
+ * every later review.
+ * @param {any[]} deferred finalizeReview()'s `deferred` @param {string} runSha this run's 7-char head SHA
+ * @returns {Array<{ path: string, line?: number, prefix: string, body: string, confidence: number, first_seen_sha: string }>}
+ */
+export function carriedFindingsFor(deferred, runSha) {
+  return (Array.isArray(deferred) ? deferred : []).map((/** @type {any} */ f) => ({
+    path: f.path,
+    ...(Number.isInteger(f.line) ? { line: f.line } : {}),
+    prefix: f.prefix,
+    body: f.body,
+    confidence: f.final,
+    first_seen_sha: hasSha(f.first_seen_sha) ? f.first_seen_sha : runSha,
+  }));
+}
+
 /**
  * The run trace's lenses (review-telemetry.mjs § THE LENSES): one item per lens select-lenses.mjs
  * loaded, with where it came from, how it loaded, and the candidates it raised; one per composed
@@ -1100,6 +1233,8 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     findingsBusRecords,
     // The Step 4c state write's `cited` (posting.md § 4c) — copied from finalize-result.json.
     citedRefs: citedRefs(judgments?.memory, suppressed),
+    // The Step 4c state write's `carried_findings` (run-writes.md § 4c), each with its first_seen_sha.
+    carriedFindings: carriedFindingsFor(overCapDeferred, runSha),
   };
 }
 
@@ -3090,8 +3225,9 @@ async function selfTest() {
         /\} catch \(e\) \{\n(?:\s*\/\/.*\n)*\s*process\.stderr\.write\(`finalize: run telemetry not recorded — /.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("severityCounts: the tiers are judgments.schema.json's severity_tier enum",
         JSON.stringify((await import("./validate-judgments.mjs")).loadSchema().$defs.severity_tier.enum) === JSON.stringify(SEVERITY_TIERS));
-      check("finalize passes impactImageOutcome(context) into the run's telemetry attributes",
-        /impactImage: impactImageOutcome\(context\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+      check("finalize passes impactImageOutcome(context) and priorCounts(...).attrs into the run's telemetry attributes",
+        /impactImage: impactImageOutcome\(context\), prior: prior\.attrs \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8"))
+          && /const prior = priorCounts\(context, judgments, result\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
     }
 
     {
@@ -3387,7 +3523,7 @@ export function routingAttrs(routing, stateStatus) {
  * trace. A context with no ledger (built by an older prepare-review.mjs, or `--no-telemetry`)
  * records nothing. Never throws: telemetry never fails a review.
  * @param {string} contextPath @param {any} result @param {any} judgments
- * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any, impactImage?: Record<string, string>, routing?: any, stateStatus?: string }} how `lenses` is context.lenses, `routing` and `stateStatus` the context's
+ * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any, impactImage?: Record<string, string>, routing?: any, stateStatus?: string, prior?: Record<string, number|string> }} how `lenses` is context.lenses, `routing` and `stateStatus` the context's, `prior` priorCounts().attrs
  * @returns {Promise<string|null>} the run dir, when a ledger exists
  */
 async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
@@ -3412,6 +3548,7 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         "memory.suppressed": Array.isArray(result?.suppressed) ? result.suppressed.length : undefined,
         ...dispositionCounts(result),
         ...severityCounts(result),
+        ...(how.prior || {}),
         ...(how.impactImage || {}),
       },
     });
@@ -3717,7 +3854,11 @@ async function main() {
   });
   // --no-telemetry: a preview render (posting.md § The impact image) must not record the finalize
   // step or finish the run — the real finalize after it does both.
-  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses, routing: context?.routing, stateStatus: context?.stateStatus, impactImage: impactImageOutcome(context) });
+  // The re-review counts (priorCounts). Each problem is said here, where it is known; the
+  // --no-telemetry preview stays quiet, because the real finalize that follows says it.
+  const prior = priorCounts(context, judgments, result);
+  if (!opts["no-telemetry"]) for (const w of prior.warnings) console.error(`finalize: warning — ${w}`);
+  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses, routing: context?.routing, stateStatus: context?.stateStatus, impactImage: impactImageOutcome(context), prior: prior.attrs });
   // execute-write-plan.mjs records the `post` step and exports the trace; this is how it finds
   // the ledger. Absent when no ledger exists.
   if (telemetryRunDir && !isDryRun) writePlan.telemetry_run_dir = telemetryRunDir;
