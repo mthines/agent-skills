@@ -208,6 +208,12 @@ Log dedup drops:
 
 Count in the Quality Gate summary: `Prior-comment dedup drops: N`.
 
+Record every dedup drop in `judgments.json`'s `prior_dedup`, with the prior comment's id, so the run trace counts it (`pr_review.findings.repeat_dropped`):
+
+```json
+{ "path": "src/foo.ts", "line": 42, "prefix": "suggestion", "reason": "already-posted", "comment_id": 12345 }
+```
+
 **`BOT_IDENTITY_UNKNOWN == true` is disclosed, never silent.** Dedup, the anti-flip-flop check and
 thread reconciliation all read `BOT_COMMENTS`, so an empty set from an unresolved identity would
 present as "nothing was ever posted here" and let the run re-post findings the PR already carries.
@@ -256,6 +262,7 @@ Log the drop:
 
 This drop is NOT subject to override or confidence gate.
 A contradiction with a resolved suggestion is dropped regardless of confidence score.
+Record it in `prior_dedup` as `{ "path", "line", "prefix", "reason": "flip-flop", "comment_id": <the resolved comment> }`.
 The finding may be surfaced in the terminal output for human review, but it is never posted.
 
 ---
@@ -353,11 +360,16 @@ Carry-forward closes that hole.
 Run this immediately after the prior-comment fetch, in every mode:
 
 1. Read `CARRIED_FINDINGS` — the `data.carried_findings` array of the PR-state record, already fetched at Step 0.7. It is **structured state, not parsed prose**: each entry arrives as `{path, line, prefix, body, confidence, first_seen_sha}`, so there is no `(confidence 84)` to recover from a rendered bullet and no heading to match. When the record was unusable, this array is empty and the run says so — the fallback rung recovers a delta baseline, never carried findings.
-2. Re-admit each entry into the current run's finding stream, tagged `carried-forward`, with its recorded confidence score.
-3. Drop a carried entry when **any** holds:
-   - Its `(file, line)` no longer exists in the current PR state, or the line's content changed since the review that deferred it (the finding was likely addressed).
-   - It duplicates a finding produced fresh in this run (normal dedup, `§ Dedup against prior bot comments`).
-   - It duplicates a prior **posted** comment (it was promoted inline in a later run).
+2. Re-admit each entry into the current run's finding stream, tagged `carried-forward`, with its recorded confidence score, and copy its `first_seen_sha` onto the candidate in `judgments.json`.
+3. Drop a carried entry when **any** holds, and record each drop as the table says:
+
+   | The carried entry | Record |
+   | --- | --- |
+   | Its `(file, line)` no longer exists in the current PR state, or the line's content changed since the review that deferred it (the finding was likely addressed) | `prior_dedup`: `reason: "addressed"`, its `first_seen_sha`, no `comment_id` |
+   | Duplicates a finding produced fresh in this run (normal dedup, `§ Dedup against prior bot comments`) | no entry — keep the fresh finding and give it the carried entry's `first_seen_sha`, so it counts as carried, not new |
+   | Duplicates a prior **posted** comment (it was promoted inline in a later run) | `prior_dedup`: `reason: "already-posted"`, the comment's `comment_id`, and its `first_seen_sha` |
+
+   `finalize.mjs` compares the record's carried count with the candidates and `prior_dedup` entries that carry a `first_seen_sha`; a carried entry in neither is reported as lost (`pr_review.findings.carried_unaccounted`).
 4. A carried entry skips re-generation but **not** the gates: it re-enters at 2.6 grounding and flows through receipt, confidence, and shape again, because the code may have moved under it.
 5. Placement (2.9b) then treats it like any other cleared finding, and its priority ordering is unchanged — so an unaddressed deferred `issue` outranks a fresh `nitpick` for the inline slots and eventually surfaces inline.
 
