@@ -66,6 +66,21 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 A dry run finishes at `finalize` and carries no `pr_review.post.*`; a run that never reached finalize carries no `pr_review.findings.*`.
 Neither is zero: an absent attribute means the step did not run.
 
+A sticky report or inline review that never reached GitHub (`aborted` or `failed`) marks the `pr_review.step post` span ERROR, `error.type=step_failed`, its status message naming the write and GitHub's reason (`inline review (3 comments) not posted: HTTP 422: …`), and prints `execute-write-plan: error — …` on stderr.
+The root stays OK, because the review ran.
+A degraded but delivered write — `pointer`, or a failed thread reply or resolve — prints `execute-write-plan: warning — …` and leaves the step OK, so the step's error rate counts only undelivered reviews.
+A ledger or export failure prints `execute-write-plan: run telemetry not recorded — …` (`finalize: run telemetry not recorded — …` at finalize) and never fails the post.
+
+Watch delivery on the `post` step's span metric, never on the root's verdict:
+
+```promql
+# correct: runs whose report or inline review never reached GitHub
+sum(increase({otel_metric_name="dash0.spans", service_name="pr-reviewer", otel_span_name="pr_review.step post", otel_span_status_code="ERROR"}[1h]))
+
+# incorrect: Agent0 marks an automation run `success` whether or not anything posted, and the root stays OK on a failed post
+sum(increase({otel_metric_name="dash0.spans", service_name="pr-reviewer", otel_span_name="invoke_agent pr-reviewer", otel_span_status_code="ERROR"}[1h]))
+```
+
 ```sql
 -- correct: delivery read from what the post step wrote
 SELECT span_attributes['pr_review.post.review'] AS review, count() AS runs,

@@ -3086,6 +3086,8 @@ async function selfTest() {
       check("severityCounts: zero findings record zeros; a result without both arrays records nothing",
         JSON.stringify(severityCounts({ inline: [], deferred: [] })) === '{"findings.critical":0,"findings.high":0,"findings.medium":0,"findings.low":0,"findings.blocking":0}'
           && JSON.stringify(severityCounts({ inline: [] })) === "{}" && JSON.stringify(severityCounts(null)) === "{}");
+      check("recordFinalizeTelemetry never swallows a telemetry failure silently: it says so on stderr",
+        /\} catch \(e\) \{\n(?:\s*\/\/.*\n)*\s*process\.stderr\.write\(`finalize: run telemetry not recorded — /.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("severityCounts: the tiers are judgments.schema.json's severity_tier enum",
         JSON.stringify((await import("./validate-judgments.mjs")).loadSchema().$defs.severity_tier.enum) === JSON.stringify(SEVERITY_TIERS));
       check("finalize passes impactImageOutcome(context) into the run's telemetry attributes",
@@ -3439,7 +3441,10 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
       console.log(`finalize: run telemetry ${said} → ${join(runDir, "telemetry-summary.json")}`);
     }
     return runDir;
-  } catch {
+  } catch (e) {
+    // Telemetry never fails a review, but a run that silently stops recording reads as one with no
+    // outcome: say it on stderr.
+    process.stderr.write(`finalize: run telemetry not recorded — ${String(/** @type {Error} */ (e)?.message || e).slice(0, 200)}\n`);
     return null;
   }
 }

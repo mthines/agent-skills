@@ -195,6 +195,45 @@ export function githubId(stdout) {
 }
 
 /**
+ * GitHub's own words for a failed write: the first non-empty line `gh` printed, at most 160 chars.
+ * It becomes part of the post step's ERROR status message, never an attribute, so its free text
+ * adds no attribute cardinality.
+ * @param {{ stderr?: string, stdout?: string, code?: number|string }|null|undefined} r @returns {string}
+ */
+export function failureReason(r) {
+  const line = `${r?.stderr || ""}\n${r?.stdout || ""}`.split("\n").map((l) => l.trim()).find(Boolean);
+  return line ? line.slice(0, 160) : `exit ${r?.code ?? "?"}`;
+}
+
+/**
+ * The post step's failures, split by severity (measurable § regression signals). `errors`: the
+ * sticky report or the inline review never reached GitHub — they mark the `post` step ERROR.
+ * `warnings`: degraded but delivered — the pointer posted in place of the report, or a thread reply
+ * or resolve failed (the resolve-failed handler already corrected the report). A recreated sticky
+ * is a handled case and neither. A dry run, a refused plan, or no gh access path has none: nothing
+ * was attempted here.
+ * @param {any} result executeWritePlan()'s return @returns {{ errors: string[], warnings: string[] }}
+ */
+export function postFailures(result) {
+  /** @type {string[]} */ const errors = [];
+  /** @type {string[]} */ const warnings = [];
+  if (!result || result.dryRun || result.refused || result.ghAccess === false) return { errors, warnings };
+  for (const e of Array.isArray(result.executed) ? result.executed : []) {
+    if (e?.kind === "sticky.upsert") {
+      if (e.aborted) errors.push(`sticky report not posted: its body failed the pre-write check (${e.aborted})`);
+      else if (!e.ok) errors.push(`sticky report not posted: ${e.error || "write failed"}`);
+      else if (e.degraded) warnings.push("sticky report could not be written; the pointer comment was posted instead");
+    } else if (e?.kind === "review.create") {
+      if (e.aborted) errors.push(`inline review (${e.count} comments) not posted: ${e.reason || "payload failed its safety check"}`);
+      else if (!e.ok) errors.push(`inline review (${e.count} comments) not posted: ${e.error || "write failed"}`);
+    } else if ((e?.kind === "thread.reply" || e?.kind === "thread.resolve") && !e.ok) {
+      warnings.push(`${e.kind === "thread.reply" ? "reply to" : "resolve of"} thread ${e.thread_id} failed: ${e.error || "write failed"}`);
+    }
+  }
+  return { errors, warnings };
+}
+
+/**
  * What the post step delivered, as root-span attributes (rules/run-telemetry-export.md § The trace):
  * the access path, how the sticky report landed, whether the inline review posted and its id, how
  * many inline comments it sent, and the thread replies and resolves that succeeded or failed. A dry
@@ -354,7 +393,7 @@ export async function executeWritePlan(writePlan, opts = {}) {
       "-f", "query=mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}",
       "-f", `id=${reply.thread_id}`, "-f", `body=${reply.body}`,
     ]);
-    executed.push({ kind: "thread.reply", thread_id: reply.thread_id, ok: r.ok });
+    executed.push({ kind: "thread.reply", thread_id: reply.thread_id, ok: r.ok, ...(r.ok ? {} : { error: failureReason(r) }) });
   }
   for (const resolve of writePlan.thread_resolve || []) {
     const r = await runner("gh", [
@@ -362,7 +401,7 @@ export async function executeWritePlan(writePlan, opts = {}) {
       "-f", "query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}",
       "-f", `id=${resolve.thread_id}`,
     ]);
-    executed.push({ kind: "thread.resolve", thread_id: resolve.thread_id, ok: r.ok });
+    executed.push({ kind: "thread.resolve", thread_id: resolve.thread_id, ok: r.ok, ...(r.ok ? {} : { error: failureReason(r) }) });
     if (!r.ok) resolveFailed.push(resolve.thread_id);
   }
 
@@ -396,9 +435,9 @@ export async function executeWritePlan(writePlan, opts = {}) {
       executed.push({ kind: "sticky.upsert", recreated: true, degraded: false, ok: true, id: githubId(rc.stdout) });
     } else if (!r.ok && su.pointer_body_path) {
       const rp = await runner("gh", ["api", `repos/${repo}/issues/${writePlan.pr_number}/comments`, "-F", `body=@${su.pointer_body_path}`]);
-      executed.push({ kind: "sticky.upsert", degraded: true, ok: rp.ok, ...(rp.ok ? { id: githubId(rp.stdout) } : {}) });
+      executed.push({ kind: "sticky.upsert", degraded: true, ok: rp.ok, ...(rp.ok ? { id: githubId(rp.stdout) } : { error: failureReason(rp) }) });
     } else {
-      executed.push({ kind: "sticky.upsert", degraded: false, ok: r.ok, created: !su.comment_id, ...(r.ok ? { id: githubId(r.stdout) } : {}) });
+      executed.push({ kind: "sticky.upsert", degraded: false, ok: r.ok, created: !su.comment_id, ...(r.ok ? { id: githubId(r.stdout) } : { error: failureReason(rc ?? r) }) });
     }
   }
 
@@ -434,7 +473,7 @@ export async function executeWritePlan(writePlan, opts = {}) {
         "api", `repos/${repo}/pulls/${writePlan.pr_number}/reviews`, "-X", "POST",
         "--input", reviewPayloadPath,
       ]);
-      executed.push({ kind: "review.create", ok: r.ok, count: inlineCount, ...(r.ok ? { id: githubId(r.stdout) } : {}) });
+      executed.push({ kind: "review.create", ok: r.ok, count: inlineCount, ...(r.ok ? { id: githubId(r.stdout) } : { error: failureReason(r) }) });
     }
   }
 
@@ -443,20 +482,30 @@ export async function executeWritePlan(writePlan, opts = {}) {
 
 /**
  * Record the `post` step and what it delivered (postSummary) in the run-telemetry ledger, then
- * finish and export the run: a real run's last step. Never throws: telemetry never fails a post.
+ * finish and export the run: a real run's last step. A sticky report or inline review that never
+ * reached GitHub (postFailures().errors) marks the `post` step ERROR with what failed and GitHub's
+ * reason; the run itself still finishes OK, because the review ran. Never throws — telemetry never
+ * fails a post — but a ledger or export failure is said on stderr, never swallowed.
  * @param {string} runDir the ledger's directory, finalize.mjs's `telemetry_run_dir`
  * @param {any} result executeWritePlan()'s return
- * @param {{ finish?: (runDir: string, how: any) => Promise<any> }} [opts] `finish` replaces finishRun in the self-test
+ * @param {{ finish?: (runDir: string, how: any) => Promise<any>, warn?: (line: string) => void }} [opts]
+ *   `finish` replaces finishRun and `warn` the stderr writer in the self-test
  */
 export async function recordPostTelemetry(runDir, result, opts = {}) {
   const finish = opts.finish || finishRun;
+  const warn = opts.warn || ((/** @type {string} */ line) => process.stderr.write(`${line}\n`));
   try {
+    const { errors } = postFailures(result);
     appendRecord(runDir, { t: "step", phase: "start", name: "post", ns: PROCESS_START_NS, attrs: stepStartAttrs({}) });
-    appendRecord(runDir, { t: "step", phase: "end", attrs: { result_code: result?.code ?? 0 } });
+    appendRecord(runDir, {
+      t: "step", phase: "end", attrs: { result_code: result?.code ?? 0 },
+      ...(errors.length ? { status: "error", message: errors.join("; ") } : {}),
+    });
     const delivered = postSummary(result);
     if (Object.keys(delivered).length) appendRecord(runDir, { t: "attr", target: "run", attrs: delivered });
     return await finish(runDir, result?.code === 5 || result?.code === 3 ? { status: "error", message: `execute-write-plan exited ${result.code}` } : {});
-  } catch {
+  } catch (e) {
+    warn(`execute-write-plan: run telemetry not recorded — ${String(/** @type {Error} */ (e)?.message || e).slice(0, 200)}`);
     return null;
   }
 }
@@ -953,6 +1002,85 @@ async function selfTest() {
       /await recordPostTelemetry\(String\(writePlan\.telemetry_run_dir\), result\);/.test(readFileSync(new URL(import.meta.url), "utf8")));
   }
 
+  // The failure path: a write GitHub rejected keeps GitHub's reason, marks the post step ERROR, and is
+  // said on stderr; a degraded-but-delivered write is a warning only (measurable § regression signals).
+  check("failureReason keeps the first line gh printed, at most 160 chars, else the exit code",
+    failureReason({ stderr: "\nHTTP 422: Unprocessable Entity (https://api.github.com/x)\nmore" }) === "HTTP 422: Unprocessable Entity (https://api.github.com/x)"
+      && failureReason({ stderr: "x".repeat(300) }).length === 160 && failureReason({ code: 1 }) === "exit 1");
+  {
+    const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
+      if (args.includes("--jq")) return { ok: true, code: 0, stdout: '"owner/repo"', stderr: "" };
+      if (args.join(" ").includes("/reviews")) return { ok: false, code: 1, stdout: "", stderr: "HTTP 422: Unprocessable Entity" };
+      if (args.join(" ").includes("id=T9")) return { ok: false, code: 1, stdout: "", stderr: "HTTP 502: Bad Gateway" };
+      return { ok: true, code: 0, stdout: '{"id":5}', stderr: "" };
+    };
+    const res = await executeWritePlan({ repo: "owner/repo", pr_number: 1,
+      thread_resolve: [{ thread_id: "T9" }],
+      sticky_upsert: { comment_id: null, body_path: BODY },
+      review_create: { commit_id: "abc1234", comments: [{ path: "a.ts", line: 1, side: "RIGHT", body: "nitpick: one. <sup>`pr-reviewer` · commit `abc1234`</sup>" }] },
+    }, { runner });
+    const review = res.executed.find((/** @type {any} */ e) => e.kind === "review.create");
+    const f = postFailures(res);
+    check("a rejected review keeps GitHub's reason on its executed[] entry",
+      review?.ok === false && review?.error === "HTTP 422: Unprocessable Entity", JSON.stringify(review));
+    check("postFailures: the undelivered inline review is an error; the failed thread resolve is a warning; the delivered sticky is neither",
+      JSON.stringify(f) === JSON.stringify({
+        errors: ["inline review (1 comments) not posted: HTTP 422: Unprocessable Entity"],
+        warnings: ["resolve of thread T9 failed: HTTP 502: Bad Gateway"],
+      }), JSON.stringify(f));
+    check("postFailures: an aborted or failed sticky is an error, the pointer fallback a warning, a recreated sticky and a dry run nothing",
+      postFailures({ executed: [{ kind: "sticky.upsert", ok: false, aborted: "headline" }] }).errors[0]?.includes("pre-write check (headline)")
+        && postFailures({ executed: [{ kind: "sticky.upsert", ok: false, degraded: false, error: "HTTP 403" }] }).errors[0] === "sticky report not posted: HTTP 403"
+        && postFailures({ executed: [{ kind: "sticky.upsert", ok: true, degraded: true }] }).warnings.length === 1
+        && JSON.stringify(postFailures({ executed: [{ kind: "sticky.upsert", ok: true, recreated: true }] })) === '{"errors":[],"warnings":[]}'
+        && JSON.stringify(postFailures({ executed: [], dryRun: true })) === '{"errors":[],"warnings":[]}');
+
+    const runDir = mkdtempSync(join(tmpdir(), "ewp-telemetry-fail-"));
+    beginRun(runDir, { repo: "owner/repo", number: 1 });
+    /** @type {any[]} */
+    const finished = [];
+    await recordPostTelemetry(runDir, res, { finish: async (/** @type {string} */ _d, /** @type {any} */ how) => { finished.push(how); return {}; } });
+    const run = buildRun(readLedger(runDir));
+    const spans = run ? toExporter(run, {}).spans : [];
+    const post = spans.find((/** @type {any} */ s) => s.name === "pr_review.step post");
+    const root = spans.find((/** @type {any} */ s) => s.name === "invoke_agent pr-reviewer");
+    const strAttr = (/** @type {any} */ span, /** @type {string} */ k) => /** @type {any} */ (span?.attributes.find((/** @type {any} */ a) => a.key === k)?.value)?.stringValue;
+    const postAttr = (/** @type {string} */ k) => strAttr(post, k);
+    check("an undelivered inline review exports the post step as ERROR (error.type=step_failed) with GitHub's reason in the status message",
+      post?.status?.code === 2 && postAttr("error.type") === "step_failed"
+        && post?.status?.message === "inline review (1 comments) not posted: HTTP 422: Unprocessable Entity", JSON.stringify(post?.status));
+    check("the run still finishes OK — the review ran; its delivery failed — and the root says pr_review.post.review=failed",
+      root?.status?.code === 0 && JSON.stringify(finished[0]) === "{}"
+        && strAttr(root, "pr_review.post.review") === "failed");
+    rmSync(runDir, { recursive: true, force: true });
+
+    const okDir = mkdtempSync(join(tmpdir(), "ewp-telemetry-pointer-"));
+    beginRun(okDir, { repo: "owner/repo", number: 1 });
+    await recordPostTelemetry(okDir, { executed: [{ kind: "sticky.upsert", degraded: true, ok: true, id: "8" }], dryRun: false, ghAccess: true },
+      { finish: async () => ({}) });
+    const okRun = buildRun(readLedger(okDir));
+    const okPost = okRun ? toExporter(okRun, {}).spans.find((/** @type {any} */ s) => s.name === "pr_review.step post") : null;
+    check("a degraded-but-delivered post (the pointer fallback) leaves the post step OK — no manufactured error",
+      okPost?.status?.code === 0, JSON.stringify(okPost?.status));
+    rmSync(okDir, { recursive: true, force: true });
+  }
+
+  // A telemetry failure never fails the post, and is never silent.
+  {
+    const runDir = mkdtempSync(join(tmpdir(), "ewp-telemetry-throw-"));
+    beginRun(runDir, { repo: "owner/repo", number: 1 });
+    /** @type {string[]} */
+    const lines = [];
+    const out = await recordPostTelemetry(runDir, { executed: [], dryRun: false, ghAccess: true },
+      { finish: async () => { throw new Error("disk full"); }, warn: (l) => lines.push(l) });
+    check("a ledger or export failure returns null and says so on stderr",
+      out === null && lines.length === 1 && lines[0] === "execute-write-plan: run telemetry not recorded — disk full", JSON.stringify(lines));
+    rmSync(runDir, { recursive: true, force: true });
+    const src = readFileSync(new URL(import.meta.url), "utf8");
+    check("main() prints every post failure to stderr — errors and warnings — whether or not telemetry is on",
+      /const failures = postFailures\(result\);\n  for \(const line of failures\.errors\) console\.error\(`execute-write-plan: error — \$\{line\}`\);\n  for \(const line of failures\.warnings\) console\.error\(`execute-write-plan: warning — \$\{line\}`\);/.test(src));
+  }
+
   rmSync(BODY, { force: true });
 
   if (failed > 0) {
@@ -989,6 +1117,11 @@ async function main() {
     process.exit(2);
   }
   const result = await executeWritePlan(writePlan, { repo, dryRun: Boolean(opts["dry-run"]) });
+  // Every write that failed is said at the point it failed, telemetry or not: an error when the
+  // report or the inline review never reached GitHub, a warning when it degraded.
+  const failures = postFailures(result);
+  for (const line of failures.errors) console.error(`execute-write-plan: error — ${line}`);
+  for (const line of failures.warnings) console.error(`execute-write-plan: warning — ${line}`);
   // Run telemetry (review-telemetry.mjs): a real run's last step. finalize.mjs names the ledger's
   // directory in the plan; a dry run was already finished there, so nothing is recorded here.
   if (writePlan?.telemetry_run_dir && !opts["dry-run"]) {
