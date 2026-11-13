@@ -676,6 +676,20 @@ export function severityCounts(result) {
   return out;
 }
 
+/**
+ * Whether this run skipped Step 2, the inline review: an unmoved head (`mode: zero-delta`, Step 0.8),
+ * or a re-review whose authored delta is empty — a rebase or base merge (fetch-and-triage.md §
+ * Zero-delta short-circuit), which runs as `incremental*` with no delta lines and no delta file.
+ * Such a run re-admits no carried finding and drops nothing. A context without `scopePaths` (one
+ * from before it existed) is never read as skipped.
+ * @param {any} context @returns {boolean}
+ */
+export function step2Skipped(context) {
+  if (context?.mode === "zero-delta") return true;
+  return typeof context?.mode === "string" && context.mode !== "full"
+    && context.deltaLines === 0 && Array.isArray(context.scopePaths) && context.scopePaths.length === 0;
+}
+
 /** A head SHA as judgments.schema.json's first_seen_sha pattern allows it. */
 const SHA_RE = /^[0-9a-f]{7,40}$/;
 const hasSha = (/** @type {unknown} */ v) => typeof v === "string" && SHA_RE.test(v);
@@ -721,9 +735,9 @@ export function ownThreads(threads) {
  *
  * Unknown is never zero: a re-review whose judgments carry no `prior_dedup` records none of the
  * model-dependent counts, only `findings.reposted` and `prior.check=unrecorded`, plus a warning. A
- * first run needs no prior_dedup: everything it reports is new. Neither does a zero-delta run, which
- * runs no Step 2 and so drops nothing and re-admits no carried entry: it is not held to prior_dedup,
- * and its carried findings are not checked (Step 4c keeps the record's list).
+ * first run needs no prior_dedup: everything it reports is new. Neither does a run that skipped
+ * Step 2 (step2Skipped), which drops nothing and re-admits no carried entry: it is not held to
+ * prior_dedup, and its carried findings are not checked (Step 4c keeps the record's list).
  * @param {any} context @param {any} judgments @param {any} result finalizeReview()'s return
  * @returns {{ attrs: Record<string, number|string>, warnings: string[] }}
  */
@@ -735,7 +749,7 @@ export function priorCounts(context, judgments, result) {
   if (!Array.isArray(result?.inline) || !Array.isArray(result?.deferred)) return { attrs, warnings };
   const source = context?.priorRun?.source;
   const reReview = typeof source === "string" && source !== "none";
-  const zeroDelta = context?.mode === "zero-delta";
+  const noStep2 = step2Skipped(context);
   const threadsKnown = Array.isArray(context?.threads);
   const own = ownThreads(context?.threads);
   /** @type {string[]} */
@@ -753,7 +767,7 @@ export function priorCounts(context, judgments, result) {
   }
 
   const priorDedup = judgments?.prior_dedup;
-  if (reReview && !zeroDelta && !Array.isArray(priorDedup)) {
+  if (reReview && !noStep2 && !Array.isArray(priorDedup)) {
     problems.push("unrecorded");
     warnings.push("re-review wrote no prior_dedup — new, carried, repeat_dropped, and withdrawn are not recorded");
   } else {
@@ -776,7 +790,7 @@ export function priorCounts(context, judgments, result) {
     attrs["findings.withdrawn"] = byReason("addressed").length + withdrawnThreads;
 
     const carriedIn = context?.priorRun?.carriedIn;
-    if (reReview && !zeroDelta && Number.isInteger(carriedIn)) {
+    if (reReview && !noStep2 && Number.isInteger(carriedIn)) {
       const candidates = Array.isArray(judgments?.candidates) ? judgments.candidates : [];
       const accounted = candidates.filter((/** @type {any} */ c) => hasSha(c?.first_seen_sha)).length
         + entries.filter((/** @type {any} */ d) => hasSha(d?.first_seen_sha)).length;
@@ -1237,9 +1251,9 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     // The Step 4c state write's `cited` (posting.md § 4c) — copied from finalize-result.json.
     citedRefs: citedRefs(judgments?.memory, suppressed),
     // The Step 4c state write's `carried_findings` (run-writes.md § 4c), each with its first_seen_sha.
-    // Null on a zero-delta run: Step 2 never ran, so no carried entry was re-admitted, and an empty
-    // list would erase the record's — null tells Step 4c to keep the record's own list.
-    carriedFindings: context?.mode === "zero-delta" ? null : carriedFindingsFor(overCapDeferred, runSha),
+    // Null when Step 2 never ran (step2Skipped): no carried entry was re-admitted, and an empty list
+    // would erase the record's — null tells Step 4c to keep the record's own list.
+    carriedFindings: step2Skipped(context) ? null : carriedFindingsFor(overCapDeferred, runSha),
   };
 }
 
@@ -3298,13 +3312,20 @@ async function selfTest() {
         ]) && JSON.stringify(carriedFindingsFor(undefined, "abc1234")) === "[]");
       const zdJudgments = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] },
         gate5: { status: "PASS", details: "x" } }, threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
-      check("finalizeReview returns carriedFindings as a list on a reviewed run, and null on a zero-delta run so Step 4c keeps the record's list",
+      const baseMerge = { mode: "incremental-quick", headSha: "abc1234def", deltaLines: 0, scopePaths: [] };
+      check("step2Skipped: an unmoved head, and a re-review with no authored delta (rebase or base merge); never a reviewed delta, a full run, or a context without scopePaths",
+        step2Skipped({ mode: "zero-delta" }) && step2Skipped(baseMerge) && step2Skipped({ ...baseMerge, mode: "incremental" })
+          && !step2Skipped({ ...baseMerge, scopePaths: ["a.ts"] }) && !step2Skipped({ ...baseMerge, deltaLines: 4 })
+          && !step2Skipped({ ...baseMerge, mode: "full" }) && !step2Skipped({ mode: "incremental", deltaLines: 0 }) && !step2Skipped({}));
+      check("finalizeReview returns carriedFindings as a list on a reviewed run, and null when Step 2 was skipped (unmoved head or base merge) so Step 4c keeps the record's list",
         JSON.stringify(finalizeReview({ context: { mode: "full", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings) === "[]"
-          && finalizeReview({ context: { mode: "zero-delta", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings === null);
+          && finalizeReview({ context: { mode: "zero-delta", headSha: "abc1234def" }, judgments: zdJudgments }).carriedFindings === null
+          && finalizeReview({ context: baseMerge, judgments: zdJudgments }).carriedFindings === null);
       const zd = priorCounts({ mode: "zero-delta", priorRun: { source: "state-record", carriedIn: 4 }, threads: prThreads.slice(1) }, noDedup, { inline: [], deferred: [] });
-      check("priorCounts on a zero-delta re-run: no carried-loss check and no `unrecorded` without prior_dedup — Step 2 never ran, so nothing was dropped or re-admitted",
-        zd.attrs["prior.check"] === "ok" && !("prior.carried_in" in zd.attrs) && !("findings.carried_unaccounted" in zd.attrs)
-          && zd.attrs["findings.new"] === 0 && zd.warnings.length === 0, JSON.stringify(zd));
+      const bm = priorCounts({ ...baseMerge, priorRun: { source: "state-record", carriedIn: 4 }, threads: prThreads.slice(1) }, noDedup, { inline: [], deferred: [] });
+      check("priorCounts when Step 2 was skipped (zero-delta, or a base merge): no carried-loss check and no `unrecorded` without prior_dedup — nothing was dropped or re-admitted",
+        [zd, bm].every((x) => x.attrs["prior.check"] === "ok" && !("prior.carried_in" in x.attrs) && !("findings.carried_unaccounted" in x.attrs)
+          && x.attrs["findings.new"] === 0 && x.warnings.length === 0), JSON.stringify({ zd, bm }));
       check("main prints every priorCounts warning except in the --no-telemetry preview",
         /if \(!opts\["no-telemetry"\]\) for \(const w of prior\.warnings\) console\.error\(`finalize: warning — \$\{w\}`\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("finalize passes impactImageOutcome(context) and priorCounts(...).attrs into the run's telemetry attributes",
