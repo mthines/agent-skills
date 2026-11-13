@@ -653,6 +653,29 @@ export function dispositionCounts(result) {
   return out;
 }
 
+/** The severity tiers judgments.schema.json's `severity_tier` allows, in the order the root span lists them. */
+export const SEVERITY_TIERS = Object.freeze(["critical", "high", "medium", "low"]);
+
+/**
+ * The severity of the findings the review reported — posted inline (`result.inline`) or listed in the
+ * report body over the inline cap (`result.deferred`) — one count per tier, plus how many of them are
+ * (blocking). The tiers are the four `dash0.darkplane.review.findings.*` counts, so the two reviewers
+ * compare on severity. The four tiers sum to `posted_inline + deferred`, because the schema requires a
+ * tier on every candidate. Every count is written, zero included, once the result carries both
+ * arrays; a result without them records nothing: unknown, never zero.
+ * @param {any} result finalizeReview()'s return @returns {Record<string, number>}
+ */
+export function severityCounts(result) {
+  if (!Array.isArray(result?.inline) || !Array.isArray(result?.deferred)) return {};
+  /** @type {Record<string, number>} */
+  const out = Object.fromEntries([...SEVERITY_TIERS.map((t) => [`findings.${t}`, 0]), ["findings.blocking", 0]]);
+  for (const f of [...result.inline, ...result.deferred]) {
+    if (SEVERITY_TIERS.includes(f?.severity)) out[`findings.${f.severity}`] += 1;
+    if (f?.blocking === true) out["findings.blocking"] += 1;
+  }
+  return out;
+}
+
 /**
  * The run trace's lenses (review-telemetry.mjs § THE LENSES): one item per lens select-lenses.mjs
  * loaded, with where it came from, how it loaded, and the candidates it raised; one per composed
@@ -3051,6 +3074,20 @@ async function selfTest() {
           && JSON.stringify(dispositionCounts(null)) === "{}");
       check("finalize spreads dispositionCounts(result) into the run's telemetry attributes",
         /\.\.\.dispositionCounts\(result\),/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
+      const sev = severityCounts({
+        inline: [{ severity: "high", blocking: true }, { severity: "medium", blocking: false }, { severity: "medium" }],
+        deferred: [{ severity: "critical", blocking: true }],
+        confidenceDropped: [{ severity: "low", blocking: true }],
+      });
+      check("severityCounts: one count per tier over inline and deferred, every tier written (zero included), blocking counted, dropped buckets ignored",
+        JSON.stringify(sev) === '{"findings.critical":1,"findings.high":1,"findings.medium":2,"findings.low":0,"findings.blocking":2}', JSON.stringify(sev));
+      check("severityCounts: the tiers sum to inline + deferred",
+        SEVERITY_TIERS.reduce((n, t) => n + sev[`findings.${t}`], 0) === 4);
+      check("severityCounts: zero findings record zeros; a result without both arrays records nothing",
+        JSON.stringify(severityCounts({ inline: [], deferred: [] })) === '{"findings.critical":0,"findings.high":0,"findings.medium":0,"findings.low":0,"findings.blocking":0}'
+          && JSON.stringify(severityCounts({ inline: [] })) === "{}" && JSON.stringify(severityCounts(null)) === "{}");
+      check("severityCounts: the tiers are judgments.schema.json's severity_tier enum",
+        JSON.stringify((await import("./validate-judgments.mjs")).loadSchema().$defs.severity_tier.enum) === JSON.stringify(SEVERITY_TIERS));
       check("finalize passes impactImageOutcome(context) into the run's telemetry attributes",
         /impactImage: impactImageOutcome\(context\) \}\);/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
     }
@@ -3088,6 +3125,12 @@ async function selfTest() {
         [2, 3].every((i) => lensRec?.items?.[i]?.origin === "composed" && lensRec.items[i].findings === 0 && /^ran\b/.test(lensRec.items[i].reason || ""))
           && lensRec?.items?.[3]?.reason === "ran · 1 claim(s)" && !lensRec?.items?.some((/** @type {any} */ i) => i.name === "confidence"),
         JSON.stringify(lensRec?.items?.slice(2)));
+      const ltRunAttrs = Object.assign({}, ...readLedger(ltDir).filter((r) => r.t === "attr" && r.target === "run").map((r) => r.attrs || {}));
+      check("finalize records the reported findings' severity on the run: the high blocking finding counts, the anchorless medium lens finding (line 120 is outside the diff) does not, and the tiers sum to posted_inline + deferred",
+        ltRunAttrs["findings.critical"] === 0 && ltRunAttrs["findings.high"] === 1 && ltRunAttrs["findings.medium"] === 0
+          && ltRunAttrs["findings.low"] === 0 && ltRunAttrs["findings.blocking"] === 1 && ltRunAttrs.anchorless === 1
+          && SEVERITY_TIERS.reduce((n, t) => n + ltRunAttrs[`findings.${t}`], 0) === ltRunAttrs.posted_inline + ltRunAttrs.deferred,
+        JSON.stringify(ltRunAttrs));
       check("the dry run's telemetry summary lists the lenses",
         JSON.stringify(ltSummary.lenses?.loaded?.map((/** @type {any} */ l) => l.name)) === '["tdd","billing-audit","measurable","verify-behavior"]' && ltSummary.lenses?.skipped?.[0]?.name === "soc2",
         JSON.stringify(ltSummary.lenses));
@@ -3366,6 +3409,7 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         ...routingAttrs(how.routing, how.stateStatus),
         "memory.suppressed": Array.isArray(result?.suppressed) ? result.suppressed.length : undefined,
         ...dispositionCounts(result),
+        ...severityCounts(result),
         ...(how.impactImage || {}),
       },
     });
