@@ -1508,7 +1508,9 @@ const renderReport = (payload) => {
   // Guards the extractor: matching nothing would pass every invocation vacuously.
   s.check(`G43a the invocation extractor found the documented commands (${invocations})`, invocations >= 4);
 
-  const SHELL_PROVIDED = new Set(["HOME", "PATH", "ARG", "BASH_REMATCH", "DASH0_EXPOSURE", "DASH0_AGENT_ENV"]);
+  // BASH_ENV: the file bash sources before every non-interactive command; on Agent0 it is the env
+  // file the setup script appends to through DASH0_AGENT_ENV, so a run can export into it too.
+  const SHELL_PROVIDED = new Set(["HOME", "PATH", "ARG", "BASH_REMATCH", "DASH0_EXPOSURE", "DASH0_AGENT_ENV", "BASH_ENV"]);
   const RUN_CONSTRUCTED = new Set(["VERDICT", "PR_STATE", "CARRIED_FINDINGS_JSON", "DIAGNOSTICS_JSON", "INLINE_COMMENTS_JSON", "OPEN_BOT_COMMENT_IDS_JSON"]);
   const boundVars = new Set();
   const varReads = new Set();

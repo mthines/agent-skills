@@ -35,6 +35,36 @@ fi
 The harness is named `agent0` when either `/tmp/workspace/agent-skills/env.sh` or `/tmp/workspace/pr-reviewer/env.sh` exists; an automation that installs only the reviewer writes the second.
 An `agent0` run exports under the AI SDLC Insights scope ([§ The scope](#the-scope)), so it is listed there as an `agent0` session.
 
+#### Linking a review to its Agent0 run
+
+The link is optional: with none of the three variables below set, as on a local run, the trace carries no Agent0 attribute, link, or warning.
+`begin` reads them through `hostFacts()`, so they must be in the environment `prepare-review.mjs` runs in.
+
+| Variable | Set by | Recorded as |
+| --- | --- | --- |
+| `PR_REVIEWER_AGENT0_RUN_ID` | the automation prompt, from `{{dash0.workflow.run.id}}` | `agentic_workflow.run.id` on the root span and the resource |
+| `PR_REVIEWER_AGENT0_WORKFLOW_ID` | the automation prompt, from `{{dash0.workflow.id}}` | `agentic_workflow.id` on the root span and the resource |
+| `OPENCODE_STEP_TRACEPARENT` | Agent0's OpenCode, for every tool call — chat runs included | `pr_review.agent0.trace_id` and `.span_id` on the root span, and a span link from the root to that step span; the first `begin`'s value is kept |
+
+The root also carries `pr_review.agent0.link`: `run` (the run id is known), `trace` (only the step trace context), or `none` (an Agent0 run with neither).
+A variable that is set but malformed — an unresolved `{{dash0.workflow.run.id}}`, a traceparent that is not W3C — is never recorded as an id: `review-telemetry: ignored — PR_REVIEWER_AGENT0_RUN_ID is not an id …` goes to stderr and its name to `pr_review.agent0.rejected`.
+
+Prompt variables never reach the shell, and each Bash call starts a fresh shell, so export the two ids from the prompt into `$BASH_ENV`, the file Agent0 sources before every command:
+
+```bash
+# correct: the automation prompt's first command — every later command, prepare-review.mjs included, sees both ids
+printf 'export PR_REVIEWER_AGENT0_RUN_ID=%q\nexport PR_REVIEWER_AGENT0_WORKFLOW_ID=%q\n' '{{dash0.workflow.run.id}}' '{{dash0.workflow.id}}' >> "$BASH_ENV"
+
+# incorrect: an export in its own Bash call is gone before the review's first command runs
+export PR_REVIEWER_AGENT0_RUN_ID='{{dash0.workflow.run.id}}'
+```
+
+Watch the link on the root's span metric; a share of `none` or a non-empty `pr_review_agent0_rejected` on an automation that passes the ids means it stopped linking:
+
+```promql
+sum by (pr_review_agent0_link, pr_review_agent0_rejected) (increase({otel_metric_name="dash0.spans", service_name="pr-reviewer", otel_span_name="invoke_agent pr-reviewer", gen_ai_harness_name="agent0"}[1d]))
+```
+
 ### The trace
 
 It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) as Dash0 reads them for coding agents ([span attributes](https://dash0.com/docs/dash0/darkplane/insights/span-attributes)), and the attribute contract of the [Dash0 agent plugin](https://github.com/dash0hq/dash0-agent-plugin):
@@ -93,7 +123,22 @@ histogram_count(increase({otel_metric_name="pr_review.run.duration"}[5m] anchore
 
 ### The cost of a review
 
-The trace carries no token counts, but on Agent0 it joins to the model steps that do.
+On an automation that passes the run id ([§ Linking a review to its Agent0 run](#linking-a-review-to-its-agent0-run)), join on `agentic_workflow.run.id`: Agent0's `agentic_workflow.invoke` span carries the same id and the run's cost.
+Several reviews in one run share it, so divide the run's cost by them rather than counting it once per review.
+
+```sql
+-- correct: review -> its Agent0 automation run -> that run's cost
+SELECT span_attributes['agentic_workflow.run.id'] AS run, span_attributes['gen_ai.usage.cost_usd_cents'] AS cost_cents
+FROM spans
+WHERE resource_attributes['service.name'] = 'agents' AND name = 'agentic_workflow.invoke'
+  AND span_attributes['agentic_workflow.run.id'] IN (
+    SELECT span_attributes['agentic_workflow.run.id'] FROM spans
+    WHERE resource_attributes['service.name'] = 'pr-reviewer' AND name = 'invoke_agent pr-reviewer')
+
+-- incorrect: agents.cost divided by the review count — chat and /review-loop reviews in the same window inflate the count
+```
+
+Without the run id, the trace carries no token counts, but on Agent0 it joins to the model steps that do.
 The root's `pr_review.opencode.parent_tool_call_id` is the `gen_ai.tool.call.id` of an `agent0-sdk.model.step` span in service `agents`, and that span's `opencode.session.id` names the session whose steps carry `gen_ai.usage.*` and `dash0.gen_ai.usage.cost`.
 Run it with the Dash0 `sql` tool on dataset `default`, over at most 3 days; a wider window times out:
 

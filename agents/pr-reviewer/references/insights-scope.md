@@ -14,10 +14,13 @@ A second `invoke_agent pr-reviewer` under the plugin's scope would count every r
 On Agent0 no plugin runs, so the reviewer's trace is the only record of the review, and nothing is counted twice.
 A CI or smoke harness stays out because its runs are synthetic.
 
-## Why not nest under the harness's trace instead
+## Why link to the harness's trace, not nest under it
 
-Nesting the steps under a harness span needs a W3C `TRACEPARENT` handed to the command that runs the script.
-The Agent0 OpenCode sandbox sets none in a tool's environment, so there is no harness span to nest under.
+Agent0's OpenCode sets `OPENCODE_STEP_TRACEPARENT` in every tool call's environment: a W3C traceparent whose trace id stays the same across one turn's tool calls and whose span id changes with every call.
+The run links its root to the step span of the tool call that ran `begin` instead of using it as a parent, for two reasons.
+First, the run's trace id is derived from its run id (`traceIdFor`), and `service.instance.id` on the run counter is that trace id; adopting the harness's trace id would tie both to whichever turn happened to run `begin`.
+Second, a parent span names one tool call, so every later step of the run would hang under a span that ended seconds after the run began.
+A link keeps the run's own tree intact and still leads from the review to the Agent0 turn, and the run and automation ids the prompt exports lead to the automation run itself.
 
 ## What an Agent0 session shows
 
