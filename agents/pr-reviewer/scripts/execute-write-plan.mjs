@@ -196,11 +196,14 @@ export function githubId(stdout) {
 
 /**
  * GitHub's own words for a failed write: the first non-empty line `gh` printed, at most 160 chars.
+ * A call `run()` stopped at its 60 s default reads `timed out after 60s` instead, because a killed
+ * `gh` printed nothing and would otherwise read as `exit 1`; every write here uses that default.
  * It becomes part of the post step's ERROR status message, never an attribute, so its free text
  * adds no attribute cardinality.
- * @param {{ stderr?: string, stdout?: string, code?: number|string }|null|undefined} r @returns {string}
+ * @param {{ stderr?: string, stdout?: string, code?: number|string, timedOut?: boolean }|null|undefined} r @returns {string}
  */
 export function failureReason(r) {
+  if (r?.timedOut) return "timed out after 60s";
   const line = `${r?.stderr || ""}\n${r?.stdout || ""}`.split("\n").map((l) => l.trim()).find(Boolean);
   return line ? line.slice(0, 160) : `exit ${r?.code ?? "?"}`;
 }
@@ -1007,6 +1010,10 @@ async function selfTest() {
   check("failureReason keeps the first line gh printed, at most 160 chars, else the exit code",
     failureReason({ stderr: "\nHTTP 422: Unprocessable Entity (https://api.github.com/x)\nmore" }) === "HTTP 422: Unprocessable Entity (https://api.github.com/x)"
       && failureReason({ stderr: "x".repeat(300) }).length === 160 && failureReason({ code: 1 }) === "exit 1");
+  check("failureReason names a gh call run() stopped at its 60 s timeout, ahead of any partial output",
+    failureReason({ code: 1, stdout: "", stderr: "", timedOut: true }) === "timed out after 60s"
+      && failureReason({ code: 1, stdout: "", stderr: "partial line", timedOut: true }) === "timed out after 60s"
+      && failureReason({ code: 1, stdout: "", stderr: "HTTP 502", timedOut: false }) === "HTTP 502");
   {
     const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
       if (args.includes("--jq")) return { ok: true, code: 0, stdout: '"owner/repo"', stderr: "" };
