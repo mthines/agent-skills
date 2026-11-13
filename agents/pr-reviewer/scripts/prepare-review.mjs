@@ -973,7 +973,9 @@ export function contextDeltaLines({ mode, deltaLines }) {
  * `rounds` is the worklist each recorded run left (`runs[].open`/`.blocking`, Step 4c), oldest
  * first and capped at the last four; a run recorded before those fields existed is skipped, never
  * guessed. It feeds the report's `Progress` row.
- * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null, rounds?: {sha: string, open: number, blocking: number}[]}}
+ * `carriedIn` is how many carried findings the record hands this run (`data.carried_findings`), so
+ * finalize.mjs can check that every one of them is accounted for; null when the record has no list.
+ * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null, rounds?: {sha: string, open: number, blocking: number}[], carriedIn?: number|null}}
  */
 export function readStateFile(path) {
   const none = { priorSha: null, lastFullSha: null, incrRunsSinceFull: 0 };
@@ -997,6 +999,7 @@ export function readStateFile(path) {
         priorSha: runs.length ? String(runs[runs.length - 1]?.sha || "") || null : null,
         lastFullSha: lastFull < 0 ? null : String(runs[lastFull]?.sha || "") || null,
         incrRunsSinceFull: lastFull < 0 ? runs.length : runs.length - 1 - lastFull,
+        carriedIn: Array.isArray(raw.data.carried_findings) ? raw.data.carried_findings.length : null,
         rounds: runs
           .filter((r) => /^[0-9a-f]{7,40}$/.test(String(r?.sha || "").toLowerCase())
             && Number.isInteger(r?.open) && r.open >= 0
@@ -2681,6 +2684,9 @@ async function prepare(opts) {
       // The report's `Progress` row history. Empty under --isolated: a comparability run is judged
       // as a first run, so it must not show a trend from runs it is pretending not to know about.
       rounds: priorRunRounds(runMode, state),
+      // How many carried findings the state record handed this run (finalize.mjs § priorCounts): null
+      // under --isolated, which reads no record, and when the record carries no list.
+      carriedIn: runMode.isolated ? null : state.carriedIn ?? null,
       priorDiagnostics: null,
       note: runMode.isolated
         ? "--isolated: first-run semantics — no prior-run diagnostics, no delta triage, no fallback-rung priorSha (pipeline.md § --isolated)."
@@ -4010,6 +4016,14 @@ async function selfTest() {
       && !checksReadable({ ok: false, code: 1, stdout: "" })
       && !checksReadable({ ok: false, code: 1, stdout: "x", timedOut: true })
       && !checksReadable({ ok: false, code: 4, stdout: "x" }));
+  t("readStateFile: carriedIn counts the record's carried_findings, and is null when the record has no list", () => {
+    const p = join(tmpdir(), `prr-state-carried-${process.pid}.json`);
+    writeFileSync(p, JSON.stringify({ v: 1, data: { runs: [{ sha: "aaa", mode: "full" }], carried_findings: [{ path: "a.ts", line: 1, prefix: "issue", body: "x", confidence: 80, first_seen_sha: "aaa" }, { path: "b.ts", line: 2, prefix: "issue", body: "y", confidence: 81, first_seen_sha: "aaa" }] } }), "utf8");
+    const two = readStateFile(p).carriedIn;
+    writeFileSync(p, JSON.stringify({ v: 1, data: { runs: [{ sha: "aaa", mode: "full" }] } }), "utf8");
+    return two === 2 && readStateFile(p).carriedIn === null && readStateFile(null).carriedIn === undefined
+      && /carriedIn: runMode\.isolated \? null : state\.carriedIn \?\? null,/.test(readFileSync(fileURLToPath(import.meta.url), "utf8"));
+  });
   t("readStateFile: the record's sticky_comment_id is returned for a sticky the marker scan cannot find", () => {
     const p = join(tmpdir(), `prr-state-sticky-${process.pid}.json`);
     writeFileSync(p, JSON.stringify({ v: 1, data: { sticky_comment_id: 5876011167, runs: [{ sha: "aaa", mode: "full" }] } }), "utf8");
