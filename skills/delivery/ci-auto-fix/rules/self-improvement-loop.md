@@ -168,6 +168,7 @@ memory.search { q: "<touched paths / symbols> codebase-knowledge", scopes: ["rep
 
 Use the named files in the evidence note when the mechanical path needs no plan.
 Filter results to matching paths and preserve any recorded invariants.
+Show a hotspot only at `confirmed >= 2`, `missed > 0` or `regressed > 0` ([`codebase-knowledge.md`](../../../../agents/shared/rules/codebase-knowledge.md)).
 
 The read is **read-only, structural, bounded to the plan, advisory, and raises care
 without suppressing** — it can never relax the Phase 3 verdict gate or shrink the

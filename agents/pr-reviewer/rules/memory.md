@@ -64,7 +64,7 @@ The full taxonomy, with the other thirteen buckets, is [`memory-buckets.md`](../
 Knowledge and hotspot records are **facts, not advice**.
 They are parsed and branched on, never weighed. That is why they are not lessons and why the entrenchment guards that govern lessons do not apply to them — the guards that do apply are bounded cardinality, no secrets, an explicit TTL, and re-verification before use.
 
-**Docs files are not recorded for doc-sync findings.** A hotspot update for a docs path (`*.md`, `*.mdx`, anything under `docs/`) whose classes are all doc-sync (`missing-update`, `intent-mismatch`, `standards`, `maintainability`) is skipped by `merge-memory-record.mjs` and reported in `skipped[]` (`isDocSyncOnly`): "this file lags the code" is not something a checklist line can act on.
+**Docs files are not recorded for doc-sync findings.** A hotspot update for a docs path (`*.md`, `*.mdx`, anything under the repo-root `docs/`) whose classes are all doc-sync (`missing-update`, `intent-mismatch`, `standards`, `maintainability`) is skipped by `merge-memory-record.mjs` and reported in `skipped[]` (`isDocSyncOnly`): "this file lags the code" is not something a checklist line can act on.
 A `missed` or `regressed` example, or any other class, still records, and so do further findings on a docs hotspot that already holds one.
 A hotspot is shown to finders only once it has earned it: `confirmed >= 2`, or `missed > 0`, or `regressed > 0` ([`codebase-knowledge.md`](../../shared/rules/codebase-knowledge.md)).
 

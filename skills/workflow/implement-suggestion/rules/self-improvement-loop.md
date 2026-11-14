@@ -164,6 +164,7 @@ worker will edit — that is the moment the structural key is matchable.
 
 ```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Hotspots show only at confirmed >= 2, missed > 0 or regressed > 0 (codebase-knowledge.md).
 # Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> a pack entry
 # will edit. Fold into the pack as apply-time constraints: a known hotspot →
 # tighter change + more coverage; a known invariant / consumer count → preserve it.
