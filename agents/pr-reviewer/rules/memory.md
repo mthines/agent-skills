@@ -64,6 +64,10 @@ The full taxonomy, with the other thirteen buckets, is [`memory-buckets.md`](../
 Knowledge and hotspot records are **facts, not advice**.
 They are parsed and branched on, never weighed. That is why they are not lessons and why the entrenchment guards that govern lessons do not apply to them — the guards that do apply are bounded cardinality, no secrets, an explicit TTL, and re-verification before use.
 
+**Docs files are not recorded for doc-sync findings.** A hotspot update for a docs path (`*.md`, `*.mdx`, anything under the repo-root `docs/`) whose classes are all doc-sync (`missing-update`, `intent-mismatch`, `standards`, `maintainability`) is skipped by `merge-memory-record.mjs` and reported in `skipped[]` (`isDocSyncOnly`): "this file lags the code" is not something a checklist line can act on.
+A `missed` or `regressed` example, or any other class, still records, and so do further findings on a docs hotspot that already holds one.
+A hotspot is shown to finders only once it has earned it: `confirmed >= 2`, or `missed > 0`, or `regressed > 0` ([`codebase-knowledge.md`](../../shared/rules/codebase-knowledge.md)).
+
 ## One fingerprint, and where it comes from
 
 ```text
@@ -175,7 +179,7 @@ Then match:
 | The impact graph says | Look up | The finders receive |
 | --- | --- | --- |
 | `retryRequest@src/api/client.ts` changed signature | `knowledge::retryRequest@src/api/client.ts` | the recorded contract to check callers against, plus `history[]` — "#98 raised `contract-break` on `sync.ts:88`, fixed in `a1b2c3d`" |
-| `src/api/client.ts` is in the delta | `hotspot::src/api/client.ts` | a checklist line: "history: 6 defects here in 90 d, classes: nil-deref, contract-break" |
+| `src/api/client.ts` is in the delta | `hotspot::src/api/client.ts`, only when `confirmed >= 2` or `missed > 0` or `regressed > 0` | a checklist line: "history: 6 defects here in 90 d, classes: nil-deref, contract-break" |
 | a candidate's `fp` matches an `active suppress` rule | `rule::<fp>` | nothing at find time — suppression is applied later, see below |
 | a candidate's `fp` matches an `active amplify` rule | `rule::<fp>` | a focus line, and the verifier's threshold for that `fp` drops one notch |
 | a human previously caught something on this file | `hotspot::<path>` `missed_examples[]` | the human's comment text as a checklist line: "a reviewer previously caught: …" |

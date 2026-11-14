@@ -278,7 +278,8 @@ memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit
 
 Keep only the records that match the plan:
 
-- a `hotspot::<path>` whose `<path>` is a file the plan will touch, and
+- a `hotspot::<path>` whose `<path>` is a file the plan will touch and that has
+  earned it (`confirmed >= 2`, or `missed > 0`, or `regressed > 0`; the contract's threshold), and
 - a `knowledge::<symbol>@<path>` whose `<path>` is a planned file (and, where the
   plan names symbols, whose `<symbol>` the plan will change).
 

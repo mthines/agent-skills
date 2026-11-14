@@ -1168,6 +1168,10 @@ function selfTest() {
       const v = JSON.parse(buildHotspotWrite({ ...base, detail: { pr: 9, line: 12 }, existing: { status: "absent" } }).value);
       return v.missed === 1 && v.confirmed === 0 && v.missed_examples.length === 1;
     });
+    t("hotspot: a human catch on a docs file still records — the docs gate never drops missed signal", () => {
+      const v = JSON.parse(buildHotspotWrite({ ...base, path: "docs/GUIDE.md", detail: { pr: 9, line: 3 }, existing: { status: "absent" } }).value);
+      return v.missed === 1 && v.path === "docs/GUIDE.md";
+    });
     t("hotspot: an unreadable store writes nothing", () =>
       "skip" in buildHotspotWrite({ ...base, detail: { pr: 9 }, existing: { status: "unavailable", reason: "timeout" } }));
     t("hotspot: a prose record is left untouched", () =>

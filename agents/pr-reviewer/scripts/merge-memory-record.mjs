@@ -57,6 +57,27 @@ const KNOWLEDGE_CARRIED = Object.freeze([
 ]);
 const COUNTERS = Object.freeze(["confirmed", "missed", "regressed"]);
 
+/** Finding classes that a docs file collects when it merely lags the code. */
+export const DOC_SYNC_CLASSES = Object.freeze(["missing-update", "intent-mismatch", "standards", "maintainability"]);
+
+/** @param {any} p @returns {boolean} a prose/docs path: `*.md`, `*.mdx`, or anything under the repo-root `docs/` folder */
+export function isDocsPath(p) {
+  return typeof p === "string" && (/\.mdx?$/i.test(p) || /^docs\//i.test(p));
+}
+
+/**
+ * A hotspot on a docs file whose findings are all doc-sync is not worth a record: "this file goes stale when the
+ * code changes" is not something a checklist line can act on. A `missed` or `regressed` example is real signal
+ * and always records, as does any other class (a docs file with a `logic` finding).
+ * @param {Record<string, any>} update @returns {boolean}
+ */
+export function isDocSyncOnly(update) {
+  if (!isDocsPath(update.path)) return false;
+  if (arr(update.missed_examples).length > 0 || arr(update.regressed_examples).length > 0) return false;
+  const classes = arr(update.classes).filter((c) => typeof c === "string" && c.length > 0);
+  return classes.length > 0 && classes.every((c) => DOC_SYNC_CLASSES.includes(c));
+}
+
 /** @param {string} key @returns {"knowledge"|"hotspot"|null} */
 export function recordKind(key) {
   if (key.startsWith("knowledge::")) return "knowledge";
@@ -186,6 +207,14 @@ export function indexRead(read) {
 }
 
 /**
+ * A stored hotspot record, read as the update shape `isDocSyncOnly` takes.
+ * @param {Record<string, any>} rec @returns {Record<string, any>}
+ */
+function storedAsUpdate(rec) {
+  return { path: rec.path, classes: rec.classes, missed_examples: arr(rec.missed_examples), regressed_examples: arr(rec.regressed_examples) };
+}
+
+/**
  * @param {{ read: any, updates: any[], now: string }} args
  * @returns {{ writes: Array<{scope: string, key: string, value: string, merged_from: string}>,
  *   skipped: Array<{scope: string, key: string, reason: string}>, dropped_fields: Array<{key: string, fields: string[]}> }}
@@ -227,6 +256,10 @@ export function planMemoryWrites({ read, updates, now }) {
       from = "read";
     } else if (!missing.has(ref)) {
       skip("not read before the write; name it in the Step 4d memory_read refs"); continue;
+    }
+    // A docs hotspot that already earned its place (a human catch, a logic class) keeps accruing.
+    if (kind === "hotspot" && isDocSyncOnly(update) && (!existing || isDocSyncOnly(storedAsUpdate(existing)))) {
+      skip("docs file with only doc-sync findings; not recorded"); continue;
     }
     const r = kind === "hotspot" ? mergeHotspot(existing, update, now) : mergeKnowledge(existing, update);
     if (!prior && r.dropped.length > 0) droppedFields.push({ key, fields: r.dropped });
@@ -318,6 +351,38 @@ function selfTest() {
     const v = JSON.parse(r.writes[0].value);
     return v.confirmed === 3 && v.confirmed_examples.length === 1 && !("examples" in v);
   });
+  const docUpdate = (/** @type {Partial<Record<string, any>>} */ over) => ({
+    path: "docs/GUIDE.md", classes: ["missing-update"], confirmed_examples: [{ pr: 5, sha: "ddd", fp: "q" }], last_touched_by: ["#5"], ...over,
+  });
+  const docRun = (/** @type {Record<string, any>} */ u) =>
+    planMemoryWrites({ read: { entries: [], missing: [`${S}::hotspot::${u.path}`] }, updates: [{ scope: S, key: `hotspot::${u.path}`, update: u }], now: NOW });
+  t("a docs file with only doc-sync findings is skipped with a reason and writes nothing", () => {
+    const r = docRun(docUpdate({}));
+    return r.writes.length === 0 && r.skipped.length === 1 && /doc-sync/.test(r.skipped[0].reason);
+  });
+  t("a root markdown file counts as a docs file", () =>
+    docRun(docUpdate({ path: "CLAUDE.md", classes: ["intent-mismatch", "maintainability"] })).writes.length === 0);
+  t("a docs file with a logic finding still records", () =>
+    docRun(docUpdate({ classes: ["missing-update", "logic"] })).writes.length === 1);
+  t("a docs file a human caught something on still records, whatever the class", () =>
+    docRun(docUpdate({ missed_examples: [{ pr: 6, line: 3 }] })).writes.length === 1);
+  t("a source file with a doc-sync class is unaffected", () =>
+    docRun(docUpdate({ path: "src/a.ts" })).writes.length === 1);
+  t("skipping a docs hotspot adds no write type and removes exactly its own write", () => {
+    const r = run([
+      { scope: S, key: "hotspot::src/a.ts", update: hotUpdate },
+      { scope: S, key: "hotspot::README.md", update: docUpdate({ path: "README.md" }) },
+    ]);
+    return r.writes.length === 1 && r.writes[0].key === "hotspot::src/a.ts" && r.skipped.length === 1;
+  });
+  t("a docs hotspot that already holds a human catch keeps accruing doc-sync findings", () => {
+    const stored = { v: 1, path: "docs/G.md", confirmed: 1, missed: 1, regressed: 0, flaky: 0, classes: ["missing-update"], missed_examples: [{ pr: 2, line: 1 }] };
+    const r = planMemoryWrites({ read: { entries: [{ scope: S, key: "hotspot::docs/G.md", value: JSON.stringify(stored) }], missing: [] },
+      updates: [{ scope: S, key: "hotspot::docs/G.md", update: docUpdate({ path: "docs/G.md" }) }], now: NOW });
+    return r.writes.length === 1 && JSON.parse(r.writes[0].value).confirmed === 2;
+  });
+  t("a docs-site app source file is not treated as a docs file", () =>
+    docRun(docUpdate({ path: "apps/docs/src/Nav.tsx", classes: ["maintainability"] })).writes.length === 1);
   t("an absent hotspot is written fresh, marked absent, counting only its own examples", () => {
     const v = val(run([{ scope: S, key: "hotspot::src/new.ts", update: { ...hotUpdate, path: "src/new.ts" } }]), "hotspot::src/new.ts");
     return v._from === "absent" && v.confirmed === 1 && v.missed === 0 && v.regressed === 0 && v.flaky === 0;

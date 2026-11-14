@@ -61,6 +61,13 @@ Four rules make the read safe, and they are non-negotiable:
 - **Raises care, never lowers a bar.** A record can add coverage or bias a design
   choice. It can never skip a step, drop a finding, or lower a review tier. Absent
   records are **not** evidence of safety.
+- **A hotspot is surfaced only once it has earned it.** Show a `hotspot::<path>` to
+  finders or planners only when `confirmed >= 2`, or `missed > 0`, or `regressed > 0`.
+  Below that it is stored and still counts (the next confirmed finding takes it over the
+  line) but gives the reader nothing to act on. Read the counters from the record you
+  already have; never add a read to find out, and when the read budget is spent treat the
+  hotspot as below the threshold. This filters what is shown, never what is checked: a
+  file with no surfaced hotspot is reviewed exactly as before.
 - **Advisory and stale-aware.** A cross-host fact carries the *writer's*
   `verified_at_sha`, not the reader's. Treat it as a consideration and re-verify
   against the code in front of you.

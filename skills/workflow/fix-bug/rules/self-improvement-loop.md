@@ -159,6 +159,7 @@ without `aw`, so that read never fires — `/fix-bug` must issue it itself, once
 
 ```text
 memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Hotspots show only at confirmed >= 2, missed > 0 or regressed > 0 (codebase-knowledge.md).
 # Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> the File
 # Changes table will touch. Fold in as planning inputs: a known regression hotspot
 # on the fix's file → plan more coverage; a recorded invariant / consumer count →

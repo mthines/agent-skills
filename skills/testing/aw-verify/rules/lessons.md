@@ -36,6 +36,7 @@ At the start of Phase 4, once the files to change are known:
 
 ```text
 memory.list { scope: "repo::<slug>", tags: ["codebase-knowledge"], limit: 100 }
+# Hotspots show only at confirmed >= 2, missed > 0 or regressed > 0 (codebase-knowledge.md).
 # keep only hotspot::<path> / knowledge::<symbol>@<path> records for files this run will touch
 ```
 
