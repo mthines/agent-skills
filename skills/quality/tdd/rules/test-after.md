@@ -52,6 +52,9 @@ For each behavior:
 
 If the test passes even after mutation, the test is not actually verifying the behavior — rewrite it.
 
+The mutation step proves the test fails on a break. Also check the other direction: a behaviour-preserving change (inline a helper, rename a private field, reorder internal calls) must not fail it.
+Check each kept test against [`lens.md`](../lens.md), the checklist `pr-reviewer` applies to the same file.
+
 ### 4. Characterization Tests for Complex Logic
 
 When code has complex logic that's hard to understand:

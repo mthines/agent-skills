@@ -77,7 +77,7 @@ export const DEFECT_CLASSES = [
   // standards
   "standards",
   // quality
-  "maintainability", "test-gap", "naming",
+  "maintainability", "test-gap", "test-brittle", "test-tautology", "test-redundant", "naming",
   // telemetry leads (4.8.3) — the lead becomes an ordinary finding once verified
   "live-error-signature", "missing-signal",
   // ux
