@@ -3778,7 +3778,7 @@ async function selfTest() {
     const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
     return /run\("gh", \["pr", "checks", String\(number\), "--repo", repo, "--json", "name,bucket,link",/.test(body)
       && /if \(!me\) \{\s*\(\{ me, identitySource \} = resolveReviewerIdentity\(\{ \.\.\.identityInput, viewerLogin: await fetchViewerLogin\(/.test(body)
-      && /if \(!opts\.state && !runMode\.isolated && sticky\) \{/.test(body);
+      && /else if \(stateSource === "none" && !runMode\.isolated && \(sticky \|\| stateSelfRead\?\.status === "error"\)\) \{/.test(body);
   });
   t("prepare() wires historicalThreads into the --review-sha path (not merely exported)", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
@@ -4084,6 +4084,82 @@ async function selfTest() {
   t("readStateFile: absent path defaults to no prior deep pass on record (the safe direction)", () => {
     const s = readStateFile(null);
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
+  });
+  // ── Re-review routing: the PR-state record without --state, and D9 on the push ──
+  t("stateRecordRef keys the record the way Step 4c writes it, and refuses to guess a branch", () => {
+    const r = stateRecordRef({ repo: "mthines/gw-tools", headRef: "feat/clean-recency-sort", number: 86 });
+    return r?.scope === "branch::mthines/gw-tools::feat/clean-recency-sort" && r.key === "ci-state::pr-review-86"
+      && stateRecordRef({ repo: "o/r", headRef: "", number: 1 }) === null
+      && stateRecordRef({ repo: "o/r", headRef: null, number: 1 }) === null;
+  });
+  t("parseLorekitShow: the remote record wins, offline is the fallback, a clean miss is not an error", () => {
+    const rec = (/** @type {string} */ v) => ({ available: true, found: true, record: { value: v } });
+    const miss = { available: true, found: false, record: null };
+    const both = parseLorekitShow(JSON.stringify({ remote: rec("R"), offline: rec("L") }));
+    const off = parseLorekitShow(JSON.stringify({ remote: { available: false, reason: "no token", found: false, record: null }, offline: rec("L") }));
+    const none = parseLorekitShow(JSON.stringify({ remote: miss, offline: miss }));
+    const down = parseLorekitShow(JSON.stringify({ remote: { available: false, reason: "no token configured", found: false, record: null }, offline: { available: false, reason: "disabled", found: false, record: null } }));
+    const failed = parseLorekitShow(JSON.stringify({ remote: { ...miss, error: "HTTP 500" }, offline: { available: false, reason: "disabled", found: false, record: null } }));
+    return both.found && both.value === "R" && both.store === "remote"
+      && off.found && off.value === "L" && off.store === "offline"
+      && !none.found && !none.error
+      && !down.found && /no token configured/.test(String(down.error))
+      && !failed.found && /HTTP 500/.test(String(failed.error))
+      && Boolean(parseLorekitShow("not json").error);
+  });
+  t("readStateFromLorekit runs `show <scope> <key> --json` on LOREKIT_BIN or lorekit, and maps every outcome", async () => {
+    const ref = { scope: "branch::o/r::feat/x", key: "ci-state::pr-review-7" };
+    /** @type {any[]} */
+    const calls = [];
+    const runner = (/** @type {any} */ r) => /** @type {any} */ (async (/** @type {string} */ cmd, /** @type {string[]} */ args) => { calls.push([cmd, args]); return r; });
+    const found = JSON.stringify({ remote: { available: true, found: true, record: { value: "{\"v\":1}" } }, offline: { available: true, found: false, record: null } });
+    const missed = JSON.stringify({ remote: { available: true, found: false, record: null }, offline: { available: true, found: false, record: null } });
+    const read = await readStateFromLorekit({ ref, env: {}, runner: runner({ ok: true, code: 0, stdout: found, stderr: "", timedOut: false }) });
+    const custom = await readStateFromLorekit({ ref, env: { LOREKIT_BIN: "/opt/lk" }, runner: runner({ ok: false, code: 1, stdout: missed, stderr: "", timedOut: false }) });
+    const absent = await readStateFromLorekit({ ref, env: {}, runner: runner({ ok: false, code: "ENOENT", stdout: "", stderr: "", timedOut: false }) });
+    const slow = await readStateFromLorekit({ ref, env: {}, timeoutMs: 5000, runner: runner({ ok: false, code: 1, stdout: "", stderr: "", timedOut: true }) });
+    const broken = await readStateFromLorekit({ ref, env: {}, runner: runner({ ok: false, code: 1, stdout: "", stderr: "Error: HTTP 401\nat x", timedOut: false }) });
+    return read.status === "read" && read.value === "{\"v\":1}" && read.store === "remote"
+      && custom.status === "miss" && calls[1][0] === "/opt/lk"
+      && JSON.stringify(calls[0]) === JSON.stringify(["lorekit", ["show", ref.scope, ref.key, "--json"]])
+      && absent.status === "unavailable" && slow.status === "error" && /timed out after 5s/.test(String(slow.detail))
+      && broken.status === "error" && broken.detail === "Error: HTTP 401";
+  });
+  t("parseStateRecord reads the record text exactly as readStateFile reads the file", () => {
+    const value = JSON.stringify({ v: 1, data: { runs: [{ sha: "aaa1111", mode: "full" }, { sha: "bbb2222", mode: "incremental" }] } });
+    const p = join(tmpdir(), `prr-state-parse-${process.pid}.json`);
+    writeFileSync(p, value, "utf8");
+    const fromFile = readStateFile(p);
+    rmSync(p, { force: true });
+    const fromText = parseStateRecord(value);
+    return JSON.stringify(fromText) === JSON.stringify(fromFile) && fromText.lastFullSha === "aaa1111"
+      && fromText.priorSha === "bbb2222" && fromText.incrRunsSinceFull === 1
+      && parseStateRecord("{nope").unreadable === true && readStateFile("/nonexistent/prr-state.json").unreadable === true;
+  });
+  t("deltaScopedBlast scores only the graph rows in files this push changed, and needs a graph to run", () => {
+    const impact = {
+      symbols: [
+        { name: "wide", path: "src/a.ts", change: "signature", consumer_files: 14, cross_package: true, package_count: 3 },
+        { name: "local", path: "src/b.ts", change: "body", consumer_files: 0 },
+      ],
+      dependencies: [{ name: "stripe", manifest: "package.json", lockfile: "pnpm-lock.yaml", semver_delta: "major", usage_sites: [{}, {}, {}, {}] }],
+      blast_radius: { band: "high", score: 96 },
+    };
+    const onB = deltaScopedBlast(impact, ["src/b.ts"]);
+    const onA = deltaScopedBlast(impact, ["./src/a.ts"]);
+    const onLock = deltaScopedBlast(impact, ["pnpm-lock.yaml"]);
+    return onB?.band === "none" && onA?.band === "high" && onLock?.band === "medium"
+      && deltaScopedBlast(null, ["src/a.ts"]) === null
+      && deltaScopedBlast({ blast_radius: { band: "high" } }, ["src/a.ts"]) === null
+      && deltaScopedBlast(impact, [])?.band === "none";
+  });
+  t("prepare() reads the state record only without --state and outside --isolated, and routes D9 on the push only on a re-run", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+    return /if \(!opts\.state && !runMode\.isolated && opts\.lorekit\) \{/.test(body)
+      && /const pushBlast = firstRun \? null : deltaScopedBlast\(impact, deltaFiles\.map\(\(f\) => f\.filename\)\);/.test(body)
+      && /band: routingBand,/.test(body) && /firstRun,\n\s+full: runMode\.full,/.test(body)
+      && body.indexOf("const pushBlast") > body.indexOf("timing.end(); // impact-graph");
   });
   t("priorRunRounds: the state record's rounds reach the context, and none under --isolated", () => {
     const rounds = [{ sha: "1234567", open: 2, blocking: 1 }];
