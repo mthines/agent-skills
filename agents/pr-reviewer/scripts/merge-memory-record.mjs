@@ -60,9 +60,9 @@ const COUNTERS = Object.freeze(["confirmed", "missed", "regressed"]);
 /** Finding classes that a docs file collects when it merely lags the code. */
 export const DOC_SYNC_CLASSES = Object.freeze(["missing-update", "intent-mismatch", "standards", "maintainability"]);
 
-/** @param {any} p @returns {boolean} a prose/docs path: `*.md`, `*.mdx`, or anything under a `docs/` folder */
+/** @param {any} p @returns {boolean} a prose/docs path: `*.md`, `*.mdx`, or anything under the repo-root `docs/` folder */
 export function isDocsPath(p) {
-  return typeof p === "string" && (/\.mdx?$/i.test(p) || /(^|\/)docs\//i.test(p));
+  return typeof p === "string" && (/\.mdx?$/i.test(p) || /^docs\//i.test(p));
 }
 
 /**
@@ -207,6 +207,14 @@ export function indexRead(read) {
 }
 
 /**
+ * A stored hotspot record, read as the update shape `isDocSyncOnly` takes.
+ * @param {Record<string, any>} rec @returns {Record<string, any>}
+ */
+function storedAsUpdate(rec) {
+  return { path: rec.path, classes: rec.classes, missed_examples: arr(rec.missed_examples), regressed_examples: arr(rec.regressed_examples) };
+}
+
+/**
  * @param {{ read: any, updates: any[], now: string }} args
  * @returns {{ writes: Array<{scope: string, key: string, value: string, merged_from: string}>,
  *   skipped: Array<{scope: string, key: string, reason: string}>, dropped_fields: Array<{key: string, fields: string[]}> }}
@@ -229,7 +237,6 @@ export function planMemoryWrites({ read, updates, now }) {
     if (!kind) { skip("not a knowledge:: or hotspot:: key"); continue; }
     const expectedKey = kind === "hotspot" ? `hotspot::${update.path}` : `knowledge::${update.symbol}@${update.path}`;
     if (key !== expectedKey) { skip(`key does not match the update (expected ${expectedKey})`); continue; }
-    if (kind === "hotspot" && isDocSyncOnly(update)) { skip("docs file with only doc-sync findings; not recorded"); continue; }
     if (kind === "knowledge" && Array.isArray(update.facts) && !update.verified_at_sha) {
       skip("facts without verified_at_sha"); continue;
     }
@@ -249,6 +256,10 @@ export function planMemoryWrites({ read, updates, now }) {
       from = "read";
     } else if (!missing.has(ref)) {
       skip("not read before the write; name it in the Step 4d memory_read refs"); continue;
+    }
+    // A docs hotspot that already earned its place (a human catch, a logic class) keeps accruing.
+    if (kind === "hotspot" && isDocSyncOnly(update) && (!existing || isDocSyncOnly(storedAsUpdate(existing)))) {
+      skip("docs file with only doc-sync findings; not recorded"); continue;
     }
     const r = kind === "hotspot" ? mergeHotspot(existing, update, now) : mergeKnowledge(existing, update);
     if (!prior && r.dropped.length > 0) droppedFields.push({ key, fields: r.dropped });
@@ -364,6 +375,14 @@ function selfTest() {
     ]);
     return r.writes.length === 1 && r.writes[0].key === "hotspot::src/a.ts" && r.skipped.length === 1;
   });
+  t("a docs hotspot that already holds a human catch keeps accruing doc-sync findings", () => {
+    const stored = { v: 1, path: "docs/G.md", confirmed: 1, missed: 1, regressed: 0, flaky: 0, classes: ["missing-update"], missed_examples: [{ pr: 2, line: 1 }] };
+    const r = planMemoryWrites({ read: { entries: [{ scope: S, key: "hotspot::docs/G.md", value: JSON.stringify(stored) }], missing: [] },
+      updates: [{ scope: S, key: "hotspot::docs/G.md", update: docUpdate({ path: "docs/G.md" }) }], now: NOW });
+    return r.writes.length === 1 && JSON.parse(r.writes[0].value).confirmed === 2;
+  });
+  t("a docs-site app source file is not treated as a docs file", () =>
+    docRun(docUpdate({ path: "apps/docs/src/Nav.tsx", classes: ["maintainability"] })).writes.length === 1);
   t("an absent hotspot is written fresh, marked absent, counting only its own examples", () => {
     const v = val(run([{ scope: S, key: "hotspot::src/new.ts", update: { ...hotUpdate, path: "src/new.ts" } }]), "hotspot::src/new.ts");
     return v._from === "absent" && v.confirmed === 1 && v.missed === 0 && v.regressed === 0 && v.flaky === 0;
