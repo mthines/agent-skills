@@ -57,6 +57,27 @@ const KNOWLEDGE_CARRIED = Object.freeze([
 ]);
 const COUNTERS = Object.freeze(["confirmed", "missed", "regressed"]);
 
+/** Finding classes that a docs file collects when it merely lags the code. */
+export const DOC_SYNC_CLASSES = Object.freeze(["missing-update", "intent-mismatch", "standards", "maintainability"]);
+
+/** @param {any} p @returns {boolean} a prose/docs path: `*.md`, `*.mdx`, or anything under a `docs/` folder */
+export function isDocsPath(p) {
+  return typeof p === "string" && (/\.mdx?$/i.test(p) || /(^|\/)docs\//i.test(p));
+}
+
+/**
+ * A hotspot on a docs file whose findings are all doc-sync is not worth a record: "this file goes stale when the
+ * code changes" is not something a checklist line can act on. A `missed` or `regressed` example is real signal
+ * and always records, as does any other class (a docs file with a `logic` finding).
+ * @param {Record<string, any>} update @returns {boolean}
+ */
+export function isDocSyncOnly(update) {
+  if (!isDocsPath(update.path)) return false;
+  if (arr(update.missed_examples).length > 0 || arr(update.regressed_examples).length > 0) return false;
+  const classes = arr(update.classes).filter((c) => typeof c === "string" && c.length > 0);
+  return classes.length > 0 && classes.every((c) => DOC_SYNC_CLASSES.includes(c));
+}
+
 /** @param {string} key @returns {"knowledge"|"hotspot"|null} */
 export function recordKind(key) {
   if (key.startsWith("knowledge::")) return "knowledge";
@@ -208,6 +229,7 @@ export function planMemoryWrites({ read, updates, now }) {
     if (!kind) { skip("not a knowledge:: or hotspot:: key"); continue; }
     const expectedKey = kind === "hotspot" ? `hotspot::${update.path}` : `knowledge::${update.symbol}@${update.path}`;
     if (key !== expectedKey) { skip(`key does not match the update (expected ${expectedKey})`); continue; }
+    if (kind === "hotspot" && isDocSyncOnly(update)) { skip("docs file with only doc-sync findings; not recorded"); continue; }
     if (kind === "knowledge" && Array.isArray(update.facts) && !update.verified_at_sha) {
       skip("facts without verified_at_sha"); continue;
     }
@@ -317,6 +339,30 @@ function selfTest() {
     const r = planMemoryWrites({ read: legacyRead, updates: [{ scope: S, key: "hotspot::src/l.ts", update: { path: "src/l.ts" } }], now: NOW });
     const v = JSON.parse(r.writes[0].value);
     return v.confirmed === 3 && v.confirmed_examples.length === 1 && !("examples" in v);
+  });
+  const docUpdate = (/** @type {Partial<Record<string, any>>} */ over) => ({
+    path: "docs/GUIDE.md", classes: ["missing-update"], confirmed_examples: [{ pr: 5, sha: "ddd", fp: "q" }], last_touched_by: ["#5"], ...over,
+  });
+  const docRun = (/** @type {Record<string, any>} */ u) =>
+    planMemoryWrites({ read: { entries: [], missing: [`${S}::hotspot::${u.path}`] }, updates: [{ scope: S, key: `hotspot::${u.path}`, update: u }], now: NOW });
+  t("a docs file with only doc-sync findings is skipped with a reason and writes nothing", () => {
+    const r = docRun(docUpdate({}));
+    return r.writes.length === 0 && r.skipped.length === 1 && /doc-sync/.test(r.skipped[0].reason);
+  });
+  t("a root markdown file counts as a docs file", () =>
+    docRun(docUpdate({ path: "CLAUDE.md", classes: ["intent-mismatch", "maintainability"] })).writes.length === 0);
+  t("a docs file with a logic finding still records", () =>
+    docRun(docUpdate({ classes: ["missing-update", "logic"] })).writes.length === 1);
+  t("a docs file a human caught something on still records, whatever the class", () =>
+    docRun(docUpdate({ missed_examples: [{ pr: 6, line: 3 }] })).writes.length === 1);
+  t("a source file with a doc-sync class is unaffected", () =>
+    docRun(docUpdate({ path: "src/a.ts" })).writes.length === 1);
+  t("skipping a docs hotspot adds no write type and removes exactly its own write", () => {
+    const r = run([
+      { scope: S, key: "hotspot::src/a.ts", update: hotUpdate },
+      { scope: S, key: "hotspot::README.md", update: docUpdate({ path: "README.md" }) },
+    ]);
+    return r.writes.length === 1 && r.writes[0].key === "hotspot::src/a.ts" && r.skipped.length === 1;
   });
   t("an absent hotspot is written fresh, marked absent, counting only its own examples", () => {
     const v = val(run([{ scope: S, key: "hotspot::src/new.ts", update: { ...hotUpdate, path: "src/new.ts" } }]), "hotspot::src/new.ts");
