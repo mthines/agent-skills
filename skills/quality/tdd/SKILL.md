@@ -10,7 +10,7 @@ argument-hint: '[after | provenance] [<feature-description> | <test files>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: applied
   modes:
     - tdd-full
@@ -121,6 +121,7 @@ After all items in the test list are complete:
 - **Test behavior, not implementation** — tests must exercise public interfaces only. A test must survive a complete internal refactor unchanged.
 - **One behavior per test** — each test should verify exactly one thing. The test name should describe that behavior.
 - **No testing framework internals** — never test that `setTimeout` works, that React renders, or that Go's `http.ListenAndServe` starts. Test YOUR code.
+- **Fails on a break, passes on a refactor** — before keeping a test, name a behaviour-breaking change it catches and confirm no behaviour-preserving change breaks it. The full checklist, shared with the `pr-reviewer` lens, is [`lens.md`](./lens.md).
 - **Maximum 10-15 tests per file** — if you need more, split by behavior group.
 - **Factory functions for test data** — use `buildUser(overrides?)` patterns instead of inline object literals scattered across tests.
 
@@ -158,6 +159,9 @@ For REFACTOR, address each checklist finding as a separate refactoring move (one
 | Changing test expectations to pass | Masks real bugs | Fix the source code |
 | Testing private methods | Couples tests to implementation | Test through public API |
 | Copy-pasting mock setup | Brittle, hard to maintain | Extract shared fixtures |
+| Asserting a mock's return value | Passes whatever the code does | Assert what the code computed from it |
+| Expected value computed with the code's own formula | Breaks in step with the bug | Write the expected value as a literal |
+| Many tests on trivial code, none on the new error branch | Volume without coverage | One test per behaviour, branches first |
 
 ### When Things Go Wrong
 - **Test won't fail (RED phase):** The behavior already exists or the test is wrong. Investigate before proceeding.

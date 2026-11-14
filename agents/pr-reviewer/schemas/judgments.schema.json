@@ -115,7 +115,7 @@
         "dep-breaking-change", "dep-deprecated", "dep-unverified",
         "intent-mismatch", "scope-creep",
         "standards",
-        "maintainability", "test-gap", "naming",
+        "maintainability", "test-gap", "test-brittle", "test-tautology", "test-redundant", "naming",
         "live-error-signature", "missing-signal",
         "a11y", "ux",
         "optimality"

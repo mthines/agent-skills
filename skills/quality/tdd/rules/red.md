@@ -49,6 +49,9 @@ it('should call database.findById with the user id', async () => {
 });
 ```
 
+Before running it, check the test against [`lens.md`](../lens.md), the checklist `pr-reviewer` uses on test files:
+no assertion on a mock's own return value, no expected value computed with the production formula, and no assertion on internal calls or private state.
+
 ### 3. Run the Test
 
 Run ONLY the new test (single test or test file, not the full suite):
