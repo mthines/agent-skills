@@ -446,14 +446,15 @@ export function resolveContextMode({ runMode, zeroDelta, routing }) {
  * Where `priorSha` came from, stated in the artifact's own words. A non-isolated run whose
  * `--state` record supplied `priorSha` must not be told that value is the GitHub fallback rung
  * — the two rungs carry different guarantees, and a consumer reads these strings literally.
- * @param {{ fromState: boolean }} args
+ * @param {{ fromState: boolean, via?: string }} args `via` is the context's stateSource
  * @returns {{ loreKitNotCovered: string, note: string }}
  */
-export function priorShaProvenance({ fromState }) {
+export function priorShaProvenance({ fromState, via = "flag" }) {
+  const record = via === "lorekit" ? "state record this script read through the LoreKit CLI" : "--state record";
   return fromState
     ? {
-      loreKitNotCovered: "LoreKit reads (Steps 1.0, 1.2c, 1.2d) — priorSha below is from the --state record (Step 0.7), and carries no PRIOR_DIAGNOSTICS",
-      note: "priorSha is from the --state record. PRIOR_DIAGNOSTICS is not carried into context.json — read it off that record before taking Step 0.8's fast path.",
+      loreKitNotCovered: `LoreKit reads (Steps 1.0, 1.2c, 1.2d) — priorSha below is from the ${record} (Step 0.7), and carries no PRIOR_DIAGNOSTICS`,
+      note: `priorSha is from the ${record}. PRIOR_DIAGNOSTICS is not carried into context.json — read it off that record before taking Step 0.8's fast path.`,
     }
     : {
       loreKitNotCovered: "LoreKit reads (Steps 0.7, 1.0, 1.2c, 1.2d) — priorSha below is the GitHub FALLBACK rung only, and carries no PRIOR_DIAGNOSTICS",
@@ -2719,8 +2720,8 @@ async function prepare(opts) {
     notCovered: [
       runMode.isolated
         ? "LoreKit reads — Step 0.7 (the state record) is SKIPPED entirely under --isolated, and priorSha below is null (pipeline.md § --isolated). Steps 1.0/1.2c/1.2d (codebase-knowledge/lesson reads) are NOT skipped by --isolated — those are project memory, not run-comparability state, and persist by design across PRs and across runs; a comparability run (A/B, shadow) that wants a clean memory baseline must arrange that itself, --isolated does not guarantee it."
-        : priorShaProvenance({ fromState: !!state.priorSha }).loreKitNotCovered,
-      "routing{} below is only as accurate as the --state file the caller passed — no --state means lastFullSha/incrRunsSinceFull default to none/0 (see anomalies[] when this fired)",
+        : priorShaProvenance({ fromState: !!state.priorSha, via: stateSource }).loreKitNotCovered,
+      "routing{} below is only as accurate as the PR-state record it read (stateSource: `flag` from --state, `lorekit` from the LoreKit CLI) — with no record, lastFullSha/incrRunsSinceFull default to none/0 (see anomalies[] when this fired)",
       "Phases D and E, Steps 2.4*, 2.7, 2.9c — the Gate 4 SCAN below is mechanical pre-candidates only; confirm/exempt disposition and any AI-stub findings are judgment",
       "every write: the sticky, the review, the state record",
       "files[].patch — stripped from the inline context (see `inline`) to keep the context an index, not an archive; the full per-file patch text lives in the `paths.files` sidecar (pr-files.json, one JSON object per line), which is what a consumer needing to anchor a line (finalize.mjs's line-validity pre-flight) must read, never context.files itself unless --inline-payloads was passed",
@@ -2847,7 +2848,7 @@ async function prepare(opts) {
       priorDiagnostics: null,
       note: runMode.isolated
         ? "--isolated: first-run semantics — no prior-run diagnostics, no delta triage, no fallback-rung priorSha (pipeline.md § --isolated)."
-        : priorShaProvenance({ fromState: !!state.priorSha }).note,
+        : priorShaProvenance({ fromState: !!state.priorSha, via: stateSource }).note,
     },
 
     workspace: {
@@ -3712,6 +3713,11 @@ async function selfTest() {
     const p = priorShaProvenance({ fromState: true });
     return p.loreKitNotCovered.includes("from the --state record") && !/FALLBACK rung/i.test(p.loreKitNotCovered)
       && p.loreKitNotCovered.includes("carries no PRIOR_DIAGNOSTICS") && !/fallback rung/i.test(p.note);
+  });
+  t("priorShaProvenance: a self-read priorSha is named as the LoreKit CLI read, never as --state", () => {
+    const p = priorShaProvenance({ fromState: true, via: "lorekit" });
+    return p.loreKitNotCovered.includes("read through the LoreKit CLI") && !p.loreKitNotCovered.includes("--state")
+      && p.note.includes("read through the LoreKit CLI");
   });
   t("priorShaProvenance: without a --state priorSha the fallback-rung wording stands", () => {
     const p = priorShaProvenance({ fromState: false });
