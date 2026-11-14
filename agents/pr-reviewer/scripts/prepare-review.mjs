@@ -994,8 +994,7 @@ export function readStateFile(path) {
 }
 
 /**
- * `readStateFile`'s parse, on the record text itself — what `--state` holds, or the value
- * `readStateFromLorekit` read. Same shapes, same result, same `unreadable` on bad JSON.
+ * `readStateFile`'s parse on the record text itself, for the value `readStateFromLorekit` read.
  * @param {string} text @returns {ReturnType<typeof readStateFile>}
  */
 export function parseStateRecord(text) {
@@ -1040,8 +1039,7 @@ export function parseStateRecord(text) {
 }
 
 /**
- * Where Step 4c writes the PR-state record (pr-reviewer.md § Step 0.7). Null without a head ref:
- * the scope is branch-keyed, so a guessed branch would read some other PR's history.
+ * The scope and key Step 4c writes the PR-state record under; null without a head ref, because the scope is branch-keyed.
  * @param {{ repo: string, headRef?: string|null, number: number|string }} args
  * @returns {{ scope: string, key: string } | null}
  */
@@ -1051,61 +1049,49 @@ export function stateRecordRef({ repo, headRef, number }) {
 }
 
 /**
- * The record value out of `lorekit show <scope> <key> --json`. The remote store wins over the
- * offline one, because Step 4c writes the remote; an offline hit is still a record. A miss is
- * real (a first review, `found: false` with no `error`) only when the REMOTE answered: an
- * offline-only miss with the remote unavailable says nothing about the record Step 4c wrote.
+ * The record value out of `lorekit show --json`, preferring the remote store Step 4c writes; a miss is real only when the remote answered.
  * @param {string} stdout
  * @returns {{ found: boolean, value: string|null, store: "remote"|"offline"|null, error?: string }}
  */
 export function parseLorekitShow(stdout) {
-  let out;
+  let shown;
   try {
-    out = JSON.parse(stdout);
+    shown = JSON.parse(stdout);
   } catch {
     return { found: false, value: null, store: null, error: "unparseable `lorekit show --json` output" };
   }
   for (const store of /** @type {const} */ (["remote", "offline"])) {
-    const sec = out?.[store];
-    if (sec?.found && typeof sec.record?.value === "string" && sec.record.value) {
-      return { found: true, value: sec.record.value, store };
+    const section = shown?.[store];
+    if (section?.found && typeof section.record?.value === "string" && section.record.value) {
+      return { found: true, value: section.record.value, store };
     }
   }
-  const remote = out?.remote;
+  const remote = shown?.remote;
   if (remote?.available && !remote.error) return { found: false, value: null, store: null };
   return { found: false, value: null, store: null, error: `remote store unavailable: ${remote?.error || remote?.reason || "not reported"}` };
 }
 
 /**
- * Reads the PR-state record through the LoreKit CLI when the caller passed no `--state`. The CLI
- * resolves its own endpoint and token (LOREKIT_TOKEN, `.mcp.json`, `lorekit install`), so this
- * holds no credential. `LOREKIT_BIN` names the binary (default `lorekit`); it is never fetched.
- * Never throws: every outcome is a status the caller reports.
+ * Reads the PR-state record through the LoreKit CLI (`LOREKIT_BIN`, default `lorekit`, never fetched), which holds its own credential; never throws.
  * @param {{ ref: { scope: string, key: string }, timeoutMs?: number, env?: NodeJS.ProcessEnv,
  *   runner?: typeof run }} args
  * @returns {Promise<{ status: "read"|"miss"|"unavailable"|"error", value?: string, store?: string, detail?: string }>}
  */
 export async function readStateFromLorekit({ ref, timeoutMs = 15000, env = process.env, runner = run }) {
   const bin = String(env.LOREKIT_BIN || "").trim() || "lorekit";
-  const r = await runner(bin, ["show", ref.scope, ref.key, "--json"], { timeoutMs, env });
-  if (!r.ok && r.code === "ENOENT") return { status: "unavailable", detail: `\`${bin}\` is not on PATH` };
-  if (!r.ok && r.timedOut) return { status: "error", detail: `\`${bin} show\` timed out after ${Math.round(timeoutMs / 1000)}s` };
+  const result = await runner(bin, ["show", ref.scope, ref.key, "--json"], { timeoutMs, env });
+  if (!result.ok && result.code === "ENOENT") return { status: "unavailable", detail: `\`${bin}\` is not on PATH` };
+  if (!result.ok && result.timedOut) return { status: "error", detail: `\`${bin} show\` timed out after ${Math.round(timeoutMs / 1000)}s` };
   // `show` exits non-zero on a miss in some versions, and still prints its JSON: parse first.
-  const parsed = parseLorekitShow(r.stdout);
+  const parsed = parseLorekitShow(result.stdout);
   if (parsed.found) return { status: "read", value: /** @type {string} */ (parsed.value), store: /** @type {string} */ (parsed.store) };
   if (!parsed.error) return { status: "miss" };
-  const stderr = (r.stderr || "").trim().split("\n")[0].slice(0, 160);
+  const stderr = (result.stderr || "").trim().split("\n")[0].slice(0, 160);
   return { status: "error", detail: stderr || parsed.error };
 }
 
 /**
- * D9's blast radius on a re-run: the impact graph's rows that this push changed, scored by the
- * graph's own `blastRadius`. A delta file with a patch keeps only the graph symbols the push's
- * hunks change (`changedSymbolsForFile`, with the head file from `readHead` for enclosing-symbol
- * attribution), at the push's change kind; a delta file without a patch keeps every graph symbol
- * in it. Dependency rows count when the push changed their manifest or lockfile.
- * Reads only the graph Phase B already built: no graph (`--no-impact`, no workspace, a failed
- * build) returns null and builds nothing.
+ * D9's blast radius on a re-run: the already-built impact graph's rows this push changed (symbols its hunks touch at the push's change kind, every symbol in a patchless file, dependency rows whose manifest or lockfile it changed); null when no graph was built.
  * @param {any} impact
  * @param {Array<{ filename: string, patch?: string, status?: string }>} deltaFiles
  * @param {(path: string) => string|null} [readHead]

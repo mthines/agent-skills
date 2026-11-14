@@ -35,9 +35,7 @@ import { readFileSync } from "node:fs";
  * (depth-routing.md § Zero-delta: "downgrades cost; it never predicts a
  * clean pass" is a statement about what still runs, not a fourth tier this
  * function owns).
- * `band` is the blast-radius band D9 and the band-gated rows read. On a re-run prepare-review.mjs
- * passes the band of the files this push changed (depth-routing.md § D9 on a re-run) and the
- * whole PR's band as `prBand`, which only explains the decision in `why[]` and never routes.
+ * On a re-run `band` is this push's band and `prBand` the whole PR's, which only explains the decision in `why[]`.
  * @typedef {{
  *   firstRun?: boolean, full?: boolean, effortHigh?: boolean, forceDeep?: boolean,
  *   cumDeltaLines?: number, incrRunsSinceFull?: number, priorDeepRecorded?: boolean,
