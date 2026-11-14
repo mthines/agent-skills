@@ -1828,6 +1828,8 @@ async function selfTest() {
     check("routingAttrs omits an empty trigger list and an unknown state status, and records nothing without routing",
       JSON.stringify(routingAttrs({ triggers: [], deltaScaled: true }, undefined)) === JSON.stringify({ delta_scaled: true })
         && JSON.stringify(routingAttrs(undefined, "read")) === "{}");
+    check("routingAttrs records where the state record came from when it is known",
+      JSON.stringify(routingAttrs({ triggers: ["D9"], deltaScaled: false }, "read", "lorekit")) === JSON.stringify({ triggers: "D9", delta_scaled: false, state_status: "read", state_source: "lorekit" }));
     // A/B iteration 2: --no-dispatch renders dispatch-topology.md's line from the budget.
     const noDispatch = buildAutoRunAnomaly({ capApplied: false, contextAnomalies: [], noDispatchAt: 0.8 });
     check("the no-dispatch line names the intent finder it could not isolate, with the effective thoroughness",
@@ -3637,16 +3639,17 @@ const PROCESS_START_NS = BigInt(Date.now()) * 1_000_000n;
  * The routing decision as run-span attributes: the deep triggers that fired (absent when none), whether
  * delta scaling waived the size triggers, and where the routing's history came from. A context with no
  * routing records nothing.
- * @param {any} routing @param {string|undefined} stateStatus
+ * @param {any} routing @param {string|undefined} stateStatus @param {string|undefined} [stateSource]
  * @returns {Record<string, string|boolean>}
  */
-export function routingAttrs(routing, stateStatus) {
+export function routingAttrs(routing, stateStatus, stateSource) {
   if (!routing || typeof routing !== "object") return {};
   const triggers = Array.isArray(routing.triggers) ? routing.triggers.filter((/** @type {any} */ t) => typeof t === "string") : [];
   return {
     ...(triggers.length ? { triggers: triggers.join(",") } : {}),
     delta_scaled: routing.deltaScaled === true,
     ...(typeof stateStatus === "string" && stateStatus ? { state_status: stateStatus } : {}),
+    ...(typeof stateSource === "string" && stateSource ? { state_source: stateSource } : {}),
   };
 }
 
@@ -3656,7 +3659,7 @@ export function routingAttrs(routing, stateStatus) {
  * trace. A context with no ledger (built by an older prepare-review.mjs, or `--no-telemetry`)
  * records nothing. Never throws: telemetry never fails a review.
  * @param {string} contextPath @param {any} result @param {any} judgments
- * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any, impactImage?: Record<string, string>, routing?: any, stateStatus?: string, prior?: Record<string, number|string> }} how `lenses` is context.lenses, `routing` and `stateStatus` the context's, `prior` priorCounts().attrs
+ * @param {{ dryRun: boolean, failed: boolean, topology?: string, lenses?: any, impactImage?: Record<string, string>, routing?: any, stateStatus?: string, stateSource?: string, prior?: Record<string, number|string> }} how `lenses` is context.lenses, `routing`, `stateStatus` and `stateSource` the context's, `prior` priorCounts().attrs
  * @returns {Promise<string|null>} the run dir, when a ledger exists
  */
 async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
@@ -3677,7 +3680,7 @@ async function recordFinalizeTelemetry(contextPath, result, judgments, how) {
         deferred: Array.isArray(result?.deferred) ? result.deferred.length : undefined,
         dry_run: how.dryRun,
         topology: how.topology,
-        ...routingAttrs(how.routing, how.stateStatus),
+        ...routingAttrs(how.routing, how.stateStatus, how.stateSource),
         "memory.suppressed": Array.isArray(result?.suppressed) ? result.suppressed.length : undefined,
         ...dispositionCounts(result),
         ...severityCounts(result),
@@ -3991,7 +3994,7 @@ async function main() {
   // --no-telemetry preview stays quiet, because the real finalize that follows says it.
   const prior = priorCounts(context, judgments, result);
   if (!opts["no-telemetry"]) for (const w of prior.warnings) console.error(`finalize: warning — ${w}`);
-  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses, routing: context?.routing, stateStatus: context?.stateStatus, impactImage: impactImageOutcome(context), prior: prior.attrs });
+  const telemetryRunDir = opts["no-telemetry"] ? null : await recordFinalizeTelemetry(/** @type {string} */ (opts.context), result, judgments, { dryRun: isDryRun, failed: renderFailed, topology: effectiveTopology(context), lenses: context?.lenses, routing: context?.routing, stateStatus: context?.stateStatus, stateSource: context?.stateSource, impactImage: impactImageOutcome(context), prior: prior.attrs });
   // execute-write-plan.mjs records the `post` step and exports the trace; this is how it finds
   // the ledger. Absent when no ledger exists.
   if (telemetryRunDir && !isDryRun) writePlan.telemetry_run_dir = telemetryRunDir;
