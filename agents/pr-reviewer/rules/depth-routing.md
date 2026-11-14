@@ -22,6 +22,7 @@ This phase routes on **what the change reaches**, not how much of it there is.
 - [The three tiers](#the-three-tiers)
 - [Size scaling](#size-scaling)
 - [Delta scaling](#delta-scaling)
+- [D9 on a re-run](#d9-on-a-re-run)
 - [Announce the decision with its inputs](#announce-the-decision-with-its-inputs)
 - [The deep-lens refresh](#the-deep-lens-refresh)
 - [Depth presets](#depth-presets)
@@ -107,7 +108,7 @@ were exactly the two the routing missed.
 | **D6** | **no** prior `deep` pass recorded |
 | **D7** | `HIGH_STAKES_FILES` non-empty |
 | **D8** | `PROPAGATION` |
-| **D9** | `blast_radius.band ∈ {medium, high}` |
+| **D9** | `blast_radius.band ∈ {medium, high}` — on a re-run, the band of the files this push changed ([D9 on a re-run](#d9-on-a-re-run)) |
 | **D10** | any `semver_delta == major` |
 | **D11** | any changed symbol with `traffic_band: high` **and** `change ∈ {signature, removed}` |
 | **D12** | `DELTA_LINES > 100` (waived by [delta scaling](#delta-scaling)) |
@@ -211,6 +212,24 @@ A re-review of a big PR reviews the delta.
 
 **Why:** the whole-PR re-read is the cost; [`delta-rereview.md`](../references/delta-rereview.md) holds the cost argument, the bound on what a delta run cannot see, and the alternative this beat.
 
+## D9 on a re-run
+
+On a re-run, every band-gated rule reads the blast radius of this push, not the whole PR: `D9`, the `standard` row's `band == low`, the size exclusion, and the `quick` override.
+`prepare-review.mjs` derives it with `deltaScopedBlast()`:
+
+1. It runs only on a re-run (`D1` did not fire) and only when Phase B built an impact graph. With no graph (`--no-impact`, no workspace, a failed build) nothing is computed or rebuilt, and the band stays what it is without a graph.
+2. For each file this push changed, it keeps the graph's symbols that the push's own hunks change (`changedSymbolsForFile()`, with the checked-out head file for enclosing-symbol attribution), at the push's change kind. A delta file with no patch keeps every graph symbol in it. Dependency rows count when the push changed their `manifest` or `lockfile`. The graph's own `blastRadius()` scores the result.
+3. The routing records the whole-PR band beside it in `routing.why[]` (`blast radius scoped to this push: band=none (whole PR: high)`). The impact summary, the impact image and the finders still read the whole-PR graph.
+
+```text
+✗ PR scored band=high on its first review; 2nd review, 12-line push to a test helper → deep (D9): the whole PR is read again
+✓ the same push → band of the push = none → routes on the rows below
+✓ 2nd review, push edits a 0-consumer helper in the same file as a 14-consumer export → band of the push = none
+✓ 2nd review, push changes that export's signature → band of the push = high → deep (D9)
+```
+
+**Why:** the whole-PR band is fixed once a PR scores `medium` or `high`, so it fired `D9` on every re-review regardless of what the push touched.
+
 ## Announce the decision with its inputs
 
 Every tier decision is stated with the inputs that produced it, in the report and in the terminal.
@@ -231,6 +250,8 @@ An incremental run is promoted back to `deep` when any of these holds:
 | `D4` | cumulative churn since the last `deep` pass | `refreshDeltaFor(PR changed lines)`: `FULL_REFRESH_DELTA` = 150 lines for a PR of up to 300 lines, `0.5 ×` the PR above that, at most `MAX_REFRESH_DELTA` = 500 | PR-state record |
 | `D5` | incremental runs since the last `deep` pass | `FULL_REFRESH_RUNS` = 3 | PR-state record |
 | `D6` | no prior `deep` pass recorded | always | PR-state record — **including every run on the recovery rung**, which recovers a baseline but no history |
+
+`prepare-review.mjs` reads the PR-state record from `--state`, and without it through the LoreKit CLI (`lorekit show <scope> <key> --json`; `LOREKIT_BIN` names the binary, `--no-lorekit` turns the read off). `context.stateSource` says which (`flag`, `lorekit`, `none`, `ignored`), and the run span records it as `pr_review.state_source`.
 
 Without this, a PR that grows by ninety lines a day never gets another holistic pass, because no single push is ever big enough to trigger one.
 A cumulative-churn compare that fails, diverges, or cannot be trusted reads as `CHURN_OVER_THRESHOLD` (501), over every threshold `refreshDeltaFor` returns, so an unknown churn always refreshes.

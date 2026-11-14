@@ -262,7 +262,7 @@ INCR_RUNS_SINCE_FULL=$(jq -r '
   | if $i == null then ($all | length) else (($all | length) - 1 - $i) end' <<< "$PR_STATE")
 ```
 
-Save `$PR_STATE` to a file and pass it as `prepare-review.mjs --state <file>`, or it routes a re-review as a first run.
+Save `$PR_STATE` to a file and pass it as `prepare-review.mjs --state <file>`. Without it the script reads the record itself through the LoreKit CLI when one is installed (`context.stateSource: "lorekit"`); with no CLI it routes a re-review as a first run.
 
 `PRIOR_SHA` is both the delta-triage baseline and the provenance of everything carried — one
 variable for both, now bound in every mode. `PRIOR_SHA_SHORT` (`${PRIOR_SHA:0:7}`) is what the

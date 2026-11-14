@@ -35,6 +35,7 @@ import { readFileSync } from "node:fs";
  * (depth-routing.md § Zero-delta: "downgrades cost; it never predicts a
  * clean pass" is a statement about what still runs, not a fourth tier this
  * function owns).
+ * On a re-run `band` is this push's band and `prBand` the whole PR's, which only explains the decision in `why[]`.
  * @typedef {{
  *   firstRun?: boolean, full?: boolean, effortHigh?: boolean, forceDeep?: boolean,
  *   cumDeltaLines?: number, incrRunsSinceFull?: number, priorDeepRecorded?: boolean,
@@ -45,6 +46,7 @@ import { readFileSync } from "node:fs";
  *   sameSymbolOverlap?: boolean, threadOverlap?: number,
  *   depthCapability?: string,
  *   zeroDelta?: boolean,
+ *   prBand?: string,
  * }} RouteDepthInput
  * @typedef {{tier: "deep"|"standard"|"quick", triggers: string[],
  *   override: "quick"|null, sizeExcluded: boolean, capApplied: boolean,
@@ -117,6 +119,7 @@ export function routeDepth(i) {
 
   /** @type {string[]} */
   const why = [];
+  if (i.prBand && i.prBand !== band) why.push(`blast radius scoped to this push: band=${band} (whole PR: ${i.prBand})`);
 
   // 1. The quick override — before the table, "whatever the table would say".
   if (threadOverlap >= 0.8 && band === "none") {
@@ -569,6 +572,21 @@ function selfTest() {
 
   const capped = routeDepth({ firstRun: true, deltaLines: 500, depthCapability: "diff-only" });
   if (!(capped.tier === "standard" && capped.capApplied === true)) fails.push("capability cap did not downgrade a deep-triggering diff-only run to standard");
+
+  // ---- prBand explains a push-scoped band and never routes on its own ----
+  total++;
+  {
+    const base = { priorDeepRecorded: true, incrRunsSinceFull: 0, deltaLines: 20 };
+    const scoped = routeDepth({ ...base, band: "none", prBand: "high" });
+    const same = routeDepth({ ...base, band: "high", prBand: "high" });
+    const unscoped = routeDepth({ ...base, band: "none" });
+    const ok = scoped.tier === unscoped.tier && !scoped.triggers.includes("D9")
+      && scoped.why.some((w) => w.includes("band=none (whole PR: high)"))
+      && same.triggers.includes("D9") && !same.why.some((w) => w.startsWith("blast radius scoped"))
+      && !unscoped.why.some((w) => w.startsWith("blast radius scoped"));
+    if (ok) passed++;
+    else fails.push(`prBand drifted: ${JSON.stringify({ scoped: [scoped.tier, scoped.triggers, scoped.why], same: [same.tier, same.triggers] })}`);
+  }
 
   // ---- resolveBudget: each tier default resolves to the budget depth-routing.md states ----
   total++;

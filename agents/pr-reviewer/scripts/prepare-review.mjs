@@ -19,9 +19,12 @@
  *
  * What it deliberately does NOT do
  * --------------------------------
- *   - No LoreKit. The memory reads (Steps 0.7, 1.0, 1.2c, 1.2d) need the
- *     caller's own MCP grant and are judgment-adjacent — which lessons matter is
- *     not mechanical. This script emits only the GitHub FALLBACK rung's
+ *   - No LoreKit lesson reads. Steps 1.0, 1.2c and 1.2d are judgment-adjacent —
+ *     which lessons matter is not mechanical — and stay with the caller. The one
+ *     LoreKit read here is mechanical: when no `--state` is passed, Step 0.7's
+ *     PR-state record is read through the LoreKit CLI (`lorekit show`, which
+ *     holds its own credential) so routing does not fire D6 on every re-review.
+ *     No CLI, or `--no-lorekit`, leaves only the GitHub FALLBACK rung's
  *     `priorSha`, and says so, so a caller cannot mistake it for the record.
  *   - No finding, no score, no verdict, no write. Nothing here reaches GitHub
  *     except five GETs.
@@ -35,7 +38,7 @@
  *        [--out <file>] [--workdir <dir>] [--repo-dir <dir>] [--reviewer-login <login>]
  *        [--no-workspace] [--no-impact] [--no-telemetry] [--inline-payloads]
  *        [--timeout-ms N] [--quiet] [--pin-head <sha>] [--isolated] [--full]
- *        [--state <file>] [--effort high] [--thoroughness 0..1] [--config <file>] [--finder-passes 1|2]
+ *        [--state <file>] [--no-lorekit] [--effort high] [--thoroughness 0..1] [--config <file>] [--finder-passes 1|2]
  *        [--no-threads] [--review-sha <sha>]
  *   node prepare-review.mjs --cleanup <context.json>
  *   node prepare-review.mjs --self-test
@@ -61,6 +64,7 @@ import { LENS_DIR, selectLenses, changedWithAdded, configCandidatePaths, subtree
 import { scanGate4 } from "./gate4-scan.mjs";
 import { PROFILES } from "./finalize/thresholds.mjs";
 import { TIERS as SEVERITY_TIERS } from "./comment-spine.mjs";
+import { blastRadius, changedSymbolsForFile } from "./build-impact-graph.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORT_MARKER = "<!-- PR_REVIEWER_REPORT -->";
@@ -442,14 +446,15 @@ export function resolveContextMode({ runMode, zeroDelta, routing }) {
  * Where `priorSha` came from, stated in the artifact's own words. A non-isolated run whose
  * `--state` record supplied `priorSha` must not be told that value is the GitHub fallback rung
  * — the two rungs carry different guarantees, and a consumer reads these strings literally.
- * @param {{ fromState: boolean }} args
+ * @param {{ fromState: boolean, via?: string }} args `via` is the context's stateSource
  * @returns {{ loreKitNotCovered: string, note: string }}
  */
-export function priorShaProvenance({ fromState }) {
+export function priorShaProvenance({ fromState, via = "flag" }) {
+  const record = via === "lorekit" ? "state record this script read through the LoreKit CLI" : "--state record";
   return fromState
     ? {
-      loreKitNotCovered: "LoreKit reads (Steps 1.0, 1.2c, 1.2d) — priorSha below is from the --state record (Step 0.7), and carries no PRIOR_DIAGNOSTICS",
-      note: "priorSha is from the --state record. PRIOR_DIAGNOSTICS is not carried into context.json — read it off that record before taking Step 0.8's fast path.",
+      loreKitNotCovered: `LoreKit reads (Steps 1.0, 1.2c, 1.2d) — priorSha below is from the ${record} (Step 0.7), and carries no PRIOR_DIAGNOSTICS`,
+      note: `priorSha is from the ${record}. PRIOR_DIAGNOSTICS is not carried into context.json — read it off that record before taking Step 0.8's fast path.`,
     }
     : {
       loreKitNotCovered: "LoreKit reads (Steps 0.7, 1.0, 1.2c, 1.2d) — priorSha below is the GitHub FALLBACK rung only, and carries no PRIOR_DIAGNOSTICS",
@@ -964,8 +969,8 @@ export function contextDeltaLines({ mode, deltaLines }) {
 /**
  * Reads the `--state` file (D10) — the caller's already-fetched LoreKit
  * state record `data`, read by the AGENT before invoking this script
- * (Steps 0.7/1.0; this script does no LoreKit I/O itself, per its own
- * "What it deliberately does NOT do" note above). Absent or unreadable
+ * (Steps 0.7/1.0). Without `--state` the script reads the same record itself
+ * through the LoreKit CLI and parses it with `parseStateRecord`. Absent or unreadable
  * degrades to "no prior deep pass on record" — the SAFE direction per
  * depth-routing.md's D6 ("no prior full review is recorded").
  * Accepts the record as Step 4c writes it (`{v, commit, data: {runs[]}}`, or a LoreKit read's
@@ -978,10 +983,24 @@ export function contextDeltaLines({ mode, deltaLines }) {
  * @param {string|null} path @returns {{priorSha: string|null, lastFullSha: string|null, incrRunsSinceFull: number, stickyCommentId?: number|null, botLogin?: string|null, rounds?: {sha: string, open: number, blocking: number}[], carriedIn?: number|null}}
  */
 export function readStateFile(path) {
-  const none = { priorSha: null, lastFullSha: null, incrRunsSinceFull: 0 };
-  if (!path) return none;
+  if (!path) return { priorSha: null, lastFullSha: null, incrRunsSinceFull: 0 };
+  let text;
   try {
-    let raw = JSON.parse(readFileSync(path, "utf8"));
+    text = readFileSync(path, "utf8");
+  } catch {
+    return { priorSha: null, lastFullSha: null, incrRunsSinceFull: 0, unreadable: true };
+  }
+  return parseStateRecord(text);
+}
+
+/**
+ * `readStateFile`'s parse on the record text itself, for the value `readStateFromLorekit` read.
+ * @param {string} text @returns {ReturnType<typeof readStateFile>}
+ */
+export function parseStateRecord(text) {
+  const none = { priorSha: null, lastFullSha: null, incrRunsSinceFull: 0 };
+  try {
+    let raw = JSON.parse(text);
     // A LoreKit read returns the record's value as a string; accept the envelope as well.
     if (typeof raw?.value === "string") raw = JSON.parse(raw.value);
     // The record itself (Step 4c's shape): the same three bindings Step 0.7 derives with jq.
@@ -1017,6 +1036,93 @@ export function readStateFile(path) {
     // An unreadable or unparsable file is not an empty record: stateStatus tells them apart.
     return { ...none, unreadable: true };
   }
+}
+
+/**
+ * The scope and key Step 4c writes the PR-state record under; null without a head ref, because the scope is branch-keyed.
+ * @param {{ repo: string, headRef?: string|null, number: number|string }} args
+ * @returns {{ scope: string, key: string } | null}
+ */
+export function stateRecordRef({ repo, headRef, number }) {
+  if (!repo || !headRef || !number) return null;
+  return { scope: `branch::${repo}::${headRef}`, key: `ci-state::pr-review-${number}` };
+}
+
+/**
+ * The record value out of `lorekit show --json`, preferring the remote store Step 4c writes; a miss is real only when the remote answered.
+ * @param {string} stdout
+ * @returns {{ found: boolean, value: string|null, store: "remote"|"offline"|null, error?: string }}
+ */
+export function parseLorekitShow(stdout) {
+  let shown;
+  try {
+    shown = JSON.parse(stdout);
+  } catch {
+    return { found: false, value: null, store: null, error: "unparseable `lorekit show --json` output" };
+  }
+  for (const store of /** @type {const} */ (["remote", "offline"])) {
+    const section = shown?.[store];
+    if (section?.found && typeof section.record?.value === "string" && section.record.value) {
+      return { found: true, value: section.record.value, store };
+    }
+  }
+  const remote = shown?.remote;
+  if (remote?.available && !remote.error) return { found: false, value: null, store: null };
+  return { found: false, value: null, store: null, error: `remote store unavailable: ${remote?.error || remote?.reason || "not reported"}` };
+}
+
+/**
+ * Reads the PR-state record through the LoreKit CLI (`LOREKIT_BIN`, default `lorekit`, never fetched), which holds its own credential; never throws.
+ * @param {{ ref: { scope: string, key: string }, timeoutMs?: number, env?: NodeJS.ProcessEnv,
+ *   runner?: typeof run }} args
+ * @returns {Promise<{ status: "read"|"miss"|"unavailable"|"error", value?: string, store?: string, detail?: string }>}
+ */
+export async function readStateFromLorekit({ ref, timeoutMs = 15000, env = process.env, runner = run }) {
+  const bin = String(env.LOREKIT_BIN || "").trim() || "lorekit";
+  const result = await runner(bin, ["show", ref.scope, ref.key, "--json"], { timeoutMs, env });
+  if (!result.ok && result.code === "ENOENT") return { status: "unavailable", detail: `\`${bin}\` is not on PATH` };
+  if (!result.ok && result.timedOut) return { status: "error", detail: `\`${bin} show\` timed out after ${Math.round(timeoutMs / 1000)}s` };
+  // `show` exits non-zero on a miss in some versions, and still prints its JSON: parse first.
+  const parsed = parseLorekitShow(result.stdout);
+  if (parsed.found) return { status: "read", value: /** @type {string} */ (parsed.value), store: /** @type {string} */ (parsed.store) };
+  if (!parsed.error) return { status: "miss" };
+  const stderr = (result.stderr || "").trim().split("\n")[0].slice(0, 160);
+  return { status: "error", detail: stderr || parsed.error };
+}
+
+/**
+ * D9's blast radius on a re-run: the already-built impact graph's rows this push changed (symbols its hunks touch at the push's change kind, every symbol in a patchless file, dependency rows whose manifest or lockfile it changed); null when no graph was built.
+ * @param {any} impact
+ * @param {Array<{ filename: string, patch?: string, status?: string }>} deltaFiles
+ * @param {(path: string) => string|null} [readHead]
+ * @returns {{ score: number, band: string, why: string[] } | null}
+ */
+export function deltaScopedBlast(impact, deltaFiles, readHead = () => null) {
+  if (!impact || !Array.isArray(impact.symbols)) return null;
+  const norm = (/** @type {unknown} */ p) => posix.normalize(String(p || "").replace(/\\/g, "/"));
+  /** @type {Map<string, Map<string, string> | null>} path → symbol name → the push's change kind; null = whole file */
+  const pushed = new Map();
+  for (const f of deltaFiles || []) {
+    if (!f?.filename) continue;
+    const path = norm(f.filename);
+    if (typeof f.patch !== "string" || !f.patch) { pushed.set(path, null); continue; }
+    let head = null;
+    try { head = readHead(path); } catch { head = null; }
+    const names = new Map(changedSymbolsForFile({ ...f, filename: path }, head).map((sym) => [sym.name, sym.change]));
+    pushed.set(path, names);
+  }
+  const symbols = [];
+  for (const sym of impact.symbols) {
+    if (!sym?.path) continue;
+    const path = norm(sym.path);
+    if (!pushed.has(path)) continue;
+    const names = pushed.get(path);
+    if (names === null || names === undefined) { symbols.push(sym); continue; }
+    if (names.has(sym.name)) symbols.push({ ...sym, change: names.get(sym.name) });
+  }
+  const dependencies = (Array.isArray(impact.dependencies) ? impact.dependencies : [])
+    .filter((/** @type {any} */ d) => [d?.manifest, d?.lockfile].some((p) => p && pushed.has(norm(p))));
+  return blastRadius(symbols, dependencies);
 }
 
 /* ---------------------------- workspace ladder ---------------------------- */
@@ -2068,7 +2174,24 @@ async function prepare(opts) {
   // series (or, worse, an entirely earlier review of the same PR) left behind. A
   // sticky can still EXIST on the PR (duplicate-sticky detection above still runs),
   // but under `--isolated` this run never treats it as a prior run to diff against.
-  const state = readStateFile(runMode.stateIgnored ? null : (opts.state || null));
+  // Step 0.7 when the caller passed no `--state`: read the record here, through the LoreKit CLI,
+  // so a re-review routes on its history instead of D6 "no prior deep pass" every run. A
+  // `--state` file always wins; `--isolated` never reads one; `--no-lorekit` turns this off.
+  /** @type {{ ref?: { scope: string, key: string }, status: string, value?: string, store?: string, detail?: string } | null} */
+  let stateSelfRead = null;
+  if (!opts.state && !runMode.isolated && opts.lorekit) {
+    timing.start("state-read");
+    const ref = stateRecordRef({ repo, headRef: meta.headRefName, number });
+    stateSelfRead = ref
+      ? { ref, ...(await readStateFromLorekit({ ref, timeoutMs: Math.min(timeoutMs, 20000) })) }
+      : { status: "unavailable", detail: "the PR metadata carried no head ref to key the record on" };
+    timing.start("resolve");
+  }
+  const state = stateSelfRead?.status === "read"
+    ? parseStateRecord(/** @type {string} */ (stateSelfRead.value))
+    : readStateFile(runMode.stateIgnored ? null : (opts.state || null));
+  /** Where the routing's history came from: `flag` (--state), `lorekit` (read here), `none`, `ignored` (--isolated). */
+  const stateSource = runMode.stateIgnored ? "ignored" : opts.state ? "flag" : stateSelfRead?.status === "read" ? "lorekit" : "none";
   const { priorSha, zeroDelta } = resolvePriorRun({
     isolated: runMode.isolated,
     stickyBody: sticky ? sticky.body : null,
@@ -2292,11 +2415,16 @@ async function prepare(opts) {
   // isolated comparability run must not depend on.
   // Only when a prior report exists: on a first review there is no state record to read, so its
   // absence is the expected input, not an anomaly worth a line in every first report.
-  if (!opts.state && !runMode.isolated && sticky) {
+  if (stateSource === "lorekit" && state.unreadable) {
+    anomalies.push(`the LoreKit state record ${stateSelfRead?.ref?.scope}::${stateSelfRead?.ref?.key} is not valid JSON — routing computed with lastFullSha=none (D6 fires)`);
+  } else if (stateSource === "none" && !runMode.isolated && (sticky || stateSelfRead?.status === "error")) {
+    const tried = !opts.lorekit ? "--no-lorekit turned the self-read off"
+      : stateSelfRead?.status === "miss" ? `LoreKit has no record at ${stateSelfRead.ref?.scope}::${stateSelfRead.ref?.key}`
+        : `the LoreKit self-read was ${stateSelfRead?.status}${stateSelfRead?.detail ? ` (${stateSelfRead.detail})` : ""}`;
     anomalies.push(
-      "no --state file supplied although a prior report exists — routing computed with lastFullSha=none, incrRunsSinceFull=0 " +
-        "(forces the D6 'no prior deep pass on record' trigger every run); pass --state after " +
-        "reading the LoreKit state record for an accurate routing decision",
+      `no PR-state record although ${sticky ? "a prior report exists" : "one may exist (the LoreKit read failed)"} — no --state file, and ${tried}. ` +
+        "Routing computed with lastFullSha=none, incrRunsSinceFull=0 (forces the D6 'no prior deep pass on record' trigger); " +
+        "pass --state after reading the LoreKit state record, or install the LoreKit CLI, for an accurate routing decision",
     );
   } else if (runMode.stateIgnored) {
     anomalies.push(
@@ -2443,6 +2571,18 @@ async function prepare(opts) {
 
   const threadOverlap = computeThreadOverlap(deltaFiles, threads);
 
+  const firstRun = runMode.isolated || (!sticky && !state.priorSha);
+  // D9 on a re-run reads the band of the files this push changed (depth-routing.md § D9 on a
+  // re-run), from the impact graph Phase B already built. No graph ran → null → the band stays
+  // whatever the (absent) graph gave, exactly as before; nothing is rebuilt for routing.
+  const prBand = impact?.blast_radius?.band ?? "none";
+  const pushBlast = firstRun ? null : deltaScopedBlast(impact, deltaFiles, (path) => {
+    if (!workspace.dir) return null;
+    const abs = join(workspace.dir, path);
+    return existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  });
+  const routingBand = pushBlast ? pushBlast.band : prBand;
+
   const routing = routeDepth({
     // D1's first-run trigger must fire on EVERY `--isolated` invocation (pipeline.md §
     // --isolated item 2), regardless of whether a sticky happens to already exist on
@@ -2450,7 +2590,7 @@ async function prepare(opts) {
     // that case (a re-review of an already-reviewed PR run under `--isolated`).
     // A state record with runs is a prior review even when no sticky carries the marker
     // (dash0#20655's sticky held a file path, not a report, and D1 fired on its seventh run).
-    firstRun: runMode.isolated || (!sticky && !state.priorSha),
+    firstRun,
     full: runMode.full,
     effortHigh: depthOverrides.effortHigh,
     forceDeep: depthOverrides.forceDeep,
@@ -2459,7 +2599,8 @@ async function prepare(opts) {
     priorDeepRecorded: !!state.lastFullSha,
     highStakesFiles: (deltaShape && deltaShape.high_stakes_files) || [],
     propagation: !!(deltaShape && deltaShape.propagation),
-    band: impact?.blast_radius?.band ?? "none",
+    band: routingBand,
+    ...(pushBlast ? { prBand } : {}),
     semverDeltas: (impact?.dependencies || []).map((d) => ({ delta: d.semver_delta, usageSites: (d.usage_sites || []).length })),
     symbols: (impact?.symbols || []).map((s) => ({ traffic_band: s.production?.traffic_band ?? "unknown", change: s.change })),
     deltaLines: deltaCountsResult.deltaLines,
@@ -2565,8 +2706,8 @@ async function prepare(opts) {
     notCovered: [
       runMode.isolated
         ? "LoreKit reads — Step 0.7 (the state record) is SKIPPED entirely under --isolated, and priorSha below is null (pipeline.md § --isolated). Steps 1.0/1.2c/1.2d (codebase-knowledge/lesson reads) are NOT skipped by --isolated — those are project memory, not run-comparability state, and persist by design across PRs and across runs; a comparability run (A/B, shadow) that wants a clean memory baseline must arrange that itself, --isolated does not guarantee it."
-        : priorShaProvenance({ fromState: !!state.priorSha }).loreKitNotCovered,
-      "routing{} below is only as accurate as the --state file the caller passed — no --state means lastFullSha/incrRunsSinceFull default to none/0 (see anomalies[] when this fired)",
+        : priorShaProvenance({ fromState: !!state.priorSha, via: stateSource }).loreKitNotCovered,
+      "routing{} below is only as accurate as the PR-state record it read (stateSource: `flag` from --state, `lorekit` from the LoreKit CLI) — with no record, lastFullSha/incrRunsSinceFull default to none/0 (see anomalies[] when this fired)",
       "Phases D and E, Steps 2.4*, 2.7, 2.9c — the Gate 4 SCAN below is mechanical pre-candidates only; confirm/exempt disposition and any AI-stub findings are judgment",
       "every write: the sticky, the review, the state record",
       "files[].patch — stripped from the inline context (see `inline`) to keep the context an index, not an archive; the full per-file patch text lives in the `paths.files` sidecar (pr-files.json, one JSON object per line), which is what a consumer needing to anchor a line (finalize.mjs's line-validity pre-flight) must read, never context.files itself unless --inline-payloads was passed",
@@ -2693,7 +2834,7 @@ async function prepare(opts) {
       priorDiagnostics: null,
       note: runMode.isolated
         ? "--isolated: first-run semantics — no prior-run diagnostics, no delta triage, no fallback-rung priorSha (pipeline.md § --isolated)."
-        : priorShaProvenance({ fromState: !!state.priorSha }).note,
+        : priorShaProvenance({ fromState: !!state.priorSha, via: stateSource }).note,
     },
 
     workspace: {
@@ -2737,9 +2878,13 @@ async function prepare(opts) {
     impact: opts.inlinePayloads ? impact : null,
 
     routing,
-    // Where the routing's history inputs came from: `read` (a --state record with a prior run), `empty`
-    // (a --state file with none), `unreadable` (a --state file that could not be read), `none` (no --state), `ignored` (--isolated). `none` forces D6 every run.
-    stateStatus: runMode.stateIgnored ? "ignored" : !opts.state ? "none" : state.unreadable ? "unreadable" : (state.priorSha || state.lastFullSha) ? "read" : "empty",
+    // Whether the routing had history: `read` (a record with a prior run), `empty` (a record with none),
+    // `unreadable` (a record that could not be parsed), `none` (no record), `ignored` (--isolated). `none` forces D6 every run.
+    stateStatus: stateSource === "ignored" ? "ignored" : stateSource === "none" ? "none" : state.unreadable ? "unreadable" : (state.priorSha || state.lastFullSha) ? "read" : "empty",
+    // Where that record came from: `flag` (--state), `lorekit` (this script's CLI read), `none`, `ignored`.
+    stateSource,
+    // The self-read's outcome when there was one: `read`, `miss` (no record: a first review), `unavailable` (no CLI), `error`.
+    ...(stateSelfRead ? { stateSelfRead: { status: stateSelfRead.status, ...(stateSelfRead.ref ? { scope: stateSelfRead.ref.scope, key: stateSelfRead.ref.key } : {}), ...(stateSelfRead.store ? { store: stateSelfRead.store } : {}), ...(stateSelfRead.detail ? { detail: stateSelfRead.detail } : {}) } } : {}),
     budget,
     // The preset the run ran at and why (arguments.md § Reading the depth line); `line` is what the terminal report prints.
     depth,
@@ -3555,6 +3700,11 @@ async function selfTest() {
     return p.loreKitNotCovered.includes("from the --state record") && !/FALLBACK rung/i.test(p.loreKitNotCovered)
       && p.loreKitNotCovered.includes("carries no PRIOR_DIAGNOSTICS") && !/fallback rung/i.test(p.note);
   });
+  t("priorShaProvenance: a self-read priorSha is named as the LoreKit CLI read, never as --state", () => {
+    const p = priorShaProvenance({ fromState: true, via: "lorekit" });
+    return p.loreKitNotCovered.includes("read through the LoreKit CLI") && !p.loreKitNotCovered.includes("--state")
+      && p.note.includes("read through the LoreKit CLI");
+  });
   t("priorShaProvenance: without a --state priorSha the fallback-rung wording stands", () => {
     const p = priorShaProvenance({ fromState: false });
     return p.loreKitNotCovered.includes("GitHub FALLBACK rung only") && p.note.includes("fallback rung");
@@ -3647,7 +3797,7 @@ async function selfTest() {
     const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
     return /run\("gh", \["pr", "checks", String\(number\), "--repo", repo, "--json", "name,bucket,link",/.test(body)
       && /if \(!me\) \{\s*\(\{ me, identitySource \} = resolveReviewerIdentity\(\{ \.\.\.identityInput, viewerLogin: await fetchViewerLogin\(/.test(body)
-      && /if \(!opts\.state && !runMode\.isolated && sticky\) \{/.test(body);
+      && /else if \(stateSource === "none" && !runMode\.isolated && \(sticky \|\| stateSelfRead\?\.status === "error"\)\) \{/.test(body);
   });
   t("prepare() wires historicalThreads into the --review-sha path (not merely exported)", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
@@ -3953,6 +4103,99 @@ async function selfTest() {
   t("readStateFile: absent path defaults to no prior deep pass on record (the safe direction)", () => {
     const s = readStateFile(null);
     return s.lastFullSha === null && s.incrRunsSinceFull === 0;
+  });
+  // ── Re-review routing: the PR-state record without --state, and D9 on the push ──
+  t("stateRecordRef keys the record the way Step 4c writes it, and refuses to guess a branch", () => {
+    const r = stateRecordRef({ repo: "mthines/gw-tools", headRef: "feat/clean-recency-sort", number: 86 });
+    return r?.scope === "branch::mthines/gw-tools::feat/clean-recency-sort" && r.key === "ci-state::pr-review-86"
+      && stateRecordRef({ repo: "o/r", headRef: "", number: 1 }) === null
+      && stateRecordRef({ repo: "o/r", headRef: null, number: 1 }) === null;
+  });
+  t("parseLorekitShow: the remote record wins, offline is the fallback, a clean miss is not an error", () => {
+    const rec = (/** @type {string} */ v) => ({ available: true, found: true, record: { value: v } });
+    const miss = { available: true, found: false, record: null };
+    const both = parseLorekitShow(JSON.stringify({ remote: rec("R"), offline: rec("L") }));
+    const off = parseLorekitShow(JSON.stringify({ remote: { available: false, reason: "no token", found: false, record: null }, offline: rec("L") }));
+    const none = parseLorekitShow(JSON.stringify({ remote: miss, offline: miss }));
+    const down = parseLorekitShow(JSON.stringify({ remote: { available: false, reason: "no token configured", found: false, record: null }, offline: { available: false, reason: "disabled", found: false, record: null } }));
+    const failed = parseLorekitShow(JSON.stringify({ remote: { ...miss, error: "HTTP 500" }, offline: { available: false, reason: "disabled", found: false, record: null } }));
+    // CLI 1.76.0 with no remote configured: the offline store answers a miss, the remote never looked.
+    const offlineOnlyMiss = parseLorekitShow(JSON.stringify({ remote: { available: false, reason: "no token configured — set LOREKIT_TOKEN or run `lorekit install`", found: false, record: null }, offline: miss }));
+    return both.found && both.value === "R" && both.store === "remote"
+      && off.found && off.value === "L" && off.store === "offline"
+      && !none.found && !none.error
+      && !down.found && /no token configured/.test(String(down.error))
+      && !failed.found && /HTTP 500/.test(String(failed.error))
+      && !offlineOnlyMiss.found && /remote store unavailable: no token configured/.test(String(offlineOnlyMiss.error))
+      && Boolean(parseLorekitShow("not json").error);
+  });
+  t("readStateFromLorekit runs `show <scope> <key> --json` on LOREKIT_BIN or lorekit, and maps every outcome", async () => {
+    const ref = { scope: "branch::o/r::feat/x", key: "ci-state::pr-review-7" };
+    /** @type {any[]} */
+    const calls = [];
+    const runner = (/** @type {any} */ r) => /** @type {any} */ (async (/** @type {string} */ cmd, /** @type {string[]} */ args) => { calls.push([cmd, args]); return r; });
+    const found = JSON.stringify({ remote: { available: true, found: true, record: { value: "{\"v\":1}" } }, offline: { available: true, found: false, record: null } });
+    const missed = JSON.stringify({ remote: { available: true, found: false, record: null }, offline: { available: true, found: false, record: null } });
+    const read = await readStateFromLorekit({ ref, env: {}, runner: runner({ ok: true, code: 0, stdout: found, stderr: "", timedOut: false }) });
+    const custom = await readStateFromLorekit({ ref, env: { LOREKIT_BIN: "/opt/lk" }, runner: runner({ ok: false, code: 1, stdout: missed, stderr: "", timedOut: false }) });
+    const absent = await readStateFromLorekit({ ref, env: {}, runner: runner({ ok: false, code: "ENOENT", stdout: "", stderr: "", timedOut: false }) });
+    const slow = await readStateFromLorekit({ ref, env: {}, timeoutMs: 5000, runner: runner({ ok: false, code: 1, stdout: "", stderr: "", timedOut: true }) });
+    const broken = await readStateFromLorekit({ ref, env: {}, runner: runner({ ok: false, code: 1, stdout: "", stderr: "Error: HTTP 401\nat x", timedOut: false }) });
+    return read.status === "read" && read.value === "{\"v\":1}" && read.store === "remote"
+      && custom.status === "miss" && calls[1][0] === "/opt/lk"
+      && JSON.stringify(calls[0]) === JSON.stringify(["lorekit", ["show", ref.scope, ref.key, "--json"]])
+      && absent.status === "unavailable" && slow.status === "error" && /timed out after 5s/.test(String(slow.detail))
+      && broken.status === "error" && broken.detail === "Error: HTTP 401";
+  });
+  t("parseStateRecord reads the record text exactly as readStateFile reads the file", () => {
+    const value = JSON.stringify({ v: 1, data: { runs: [{ sha: "aaa1111", mode: "full" }, { sha: "bbb2222", mode: "incremental" }] } });
+    const p = join(tmpdir(), `prr-state-parse-${process.pid}.json`);
+    writeFileSync(p, value, "utf8");
+    const fromFile = readStateFile(p);
+    rmSync(p, { force: true });
+    const fromText = parseStateRecord(value);
+    return JSON.stringify(fromText) === JSON.stringify(fromFile) && fromText.lastFullSha === "aaa1111"
+      && fromText.priorSha === "bbb2222" && fromText.incrRunsSinceFull === 1
+      && parseStateRecord("{nope").unreadable === true && readStateFile("/nonexistent/prr-state.json").unreadable === true;
+  });
+  t("deltaScopedBlast scores only the graph rows this push changed, and needs a graph to run", () => {
+    const impact = {
+      symbols: [
+        { name: "wide", path: "src/a.ts", change: "signature", consumer_files: 14, cross_package: true, package_count: 3 },
+        { name: "helper", path: "src/a.ts", change: "added", consumer_files: 0 },
+        { name: "local", path: "src/b.ts", change: "body", consumer_files: 0 },
+      ],
+      dependencies: [{ name: "stripe", manifest: "package.json", lockfile: "pnpm-lock.yaml", semver_delta: "major", usage_sites: [{}, {}, {}, {}] }],
+      blast_radius: { band: "high", score: 96 },
+    };
+    const head = "export function wide(a, b) {\n  return a + b;\n}\n\nexport function helper() {\n  return 1;\n}\n";
+    const readHead = (/** @type {string} */ p) => (p === "src/a.ts" ? head : null);
+    // A push editing only helper's body touches the file, not wide.
+    const helperOnly = { filename: "src/a.ts", status: "modified", patch: "@@ -5,3 +5,3 @@ export function helper() {\n export function helper() {\n-  return 0;\n+  return 1;\n }" };
+    // A push editing wide's body: wide counts, at the push's change kind (body, not the PR's signature).
+    const wideBody = { filename: "src/a.ts", status: "modified", patch: "@@ -1,3 +1,3 @@\n export function wide(a, b) {\n-  return a - b;\n+  return a + b;\n }" };
+    const onB = deltaScopedBlast(impact, [{ filename: "src/b.ts", patch: "@@ -1 +1 @@\n-x\n+y" }], readHead);
+    const onHelper = deltaScopedBlast(impact, [helperOnly], readHead);
+    const onWide = deltaScopedBlast(impact, [wideBody], readHead);
+    const noPatch = deltaScopedBlast(impact, [{ filename: "./src/a.ts" }], readHead);
+    const onLock = deltaScopedBlast(impact, [{ filename: "pnpm-lock.yaml" }]);
+    return onB?.band === "none" && onHelper?.band === "none"
+      && onWide?.band === "medium" && onWide.score === 28 && noPatch?.band === "high" && noPatch.score === 84
+      && onLock?.band === "medium"
+      && deltaScopedBlast(null, [{ filename: "src/a.ts" }]) === null
+      && deltaScopedBlast({ blast_radius: { band: "high" } }, [{ filename: "src/a.ts" }]) === null
+      && deltaScopedBlast(impact, [])?.band === "none";
+  });
+  t("prepare() reads the state record only without --state and outside --isolated, and routes D9 on the push only on a re-run", () => {
+    const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
+    return /if \(!opts\.state && !runMode\.isolated && opts\.lorekit\) \{/.test(body)
+      && /const pushBlast = firstRun \? null : deltaScopedBlast\(impact, deltaFiles, \(path\) => \{/.test(body)
+      && /band: routingBand,/.test(body) && /firstRun,\n\s+full: runMode\.full,/.test(body)
+      && body.indexOf("const pushBlast") > body.indexOf("timing.end(); // impact-graph")
+      // Both provenance call sites name the record's source; without `via` a self-read reads as --state.
+      && (body.match(/priorShaProvenance\(\{ fromState: !!state\.priorSha, via: stateSource \}\)/g) || []).length === 2
+      && !/priorShaProvenance\(\{ fromState: !!state\.priorSha \}\)/.test(body);
   });
   t("priorRunRounds: the state record's rounds reach the context, and none under --isolated", () => {
     const rounds = [{ sha: "1234567", open: 2, blocking: 1 }];
@@ -4286,6 +4529,7 @@ async function main(argv) {
     isolated: false,
     full: false,
     state: "",
+    lorekit: true,
     effort: "",
     thoroughness: "",
     depth: "",
@@ -4314,6 +4558,7 @@ async function main(argv) {
     else if (a === "--isolated") opts.isolated = true;
     else if (a === "--full") opts.full = true;
     else if (a === "--state") opts.state = argv[++i]; // D10: the LoreKit state record's lastFullSha/incrRunsSinceFull
+    else if (a === "--no-lorekit") opts.lorekit = false; // skip the LoreKit CLI self-read of the state record when --state is absent
     else if (a === "--effort") opts.effort = argv[++i]; // "high" raises routing.tier to deep (D10/route-depth.mjs D3)
     else if (a === "--depth") opts.depth = argv[++i]; // quick|standard|deep|max, the preset (arguments.md)
     else if (a === "--thoroughness") opts.thoroughness = argv[++i]; // 0..1, resolveBudget()'s explicit override
@@ -4333,7 +4578,7 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] [--impact-image] " +
         "[--no-telemetry] [--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--depth quick|standard|deep|max] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
+        "[--state file] [--no-lorekit] [--depth quick|standard|deep|max] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
   }
