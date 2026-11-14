@@ -90,7 +90,7 @@ This replaces the per-test findings for that class in that file.
 
 ## Severity hints
 
-- **Must-fix**: a test that re-declares the code it tests; a new error branch with no test; a file rollup where most tests are `test-tautology`, since that file gives false confidence.
+- **Must-fix**: a test that re-declares the code it tests; a new error branch with no test; a file rollup where more than half the tests are `test-tautology`, since that file gives false confidence.
 - **Should-fix**: a `test-brittle` finding with a named breaking change; a `test-tautology` finding on a single test; mocking the module's own helpers.
 - **Nice-to-have**: `test-redundant`; a whole-object snapshot where two fields matter; a method-named test.
 
