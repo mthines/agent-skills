@@ -34,6 +34,17 @@ whole tree.
 - Weaver version: <the version pinned in CI, or "—">
 - CI gate: <"`weaver registry check`" | "`weaver registry live-check` (fail-on: none)" | "none">
 
+## Interaction Capture
+
+> Read by [`../rules/autocapture.md`](../rules/autocapture.md) Step 1. `none`
+> is a valid answer.
+
+- Mechanism: <global click listener (path) | vendor autocapture (name) | "none">
+- Context attribute: <e.g. `data-testid` ancestor path, or "—">
+- Mounted in: <layouts / route groups, or "everywhere">
+- Customer-data opt-out: <class name or attribute, or "—">
+- Test-id catalog: <path, or "none">
+
 ## Regression Detection Surface
 
 - Existing dashboards: <name/link, or "none yet">

@@ -20,6 +20,15 @@ Walk every changed path in the diff (or the given target) against:
 - [ ] **Frontend coverage.** Every new user-facing flow (`web`, `mobile`)
       has a tracking event, or an explicit, cited reason it doesn't need one
       — [`frontend-rum.md`](./frontend-rum.md).
+- [ ] **Interaction capture, not per-button events.** Where the repo has
+      global click autocapture, a new button/link/menu item is `pass` when it
+      is a semantic element with a label inside a container that has a stable
+      test id — [`autocapture.md`](./autocapture.md). Do not report a missing
+      event for it, and flag a tracker call added to a handler the listener
+      already covers as redundant. `missing` applies to an element the
+      listener cannot see (a clickable `div`, an unlabeled icon button, a
+      route group the listener is not mounted in) and to outcomes it cannot
+      see (form submit result, keyboard-only action).
 - [ ] **No silent failure.** No `catch {}` (or language equivalent) that
       swallows an exception without a log at `error`/`warn` severity and,
       for a traced operation, a span status flip —

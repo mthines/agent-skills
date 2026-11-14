@@ -62,6 +62,13 @@ Ask these in **one** message so the user answers once:
    [`weaver-schema.md`](./weaver-schema.md) Step 1 take its advisory branch
    instead of searching the tree on every run. Do not propose adopting Weaver
    during the interview; record the state and move on.
+7. **Interaction capture** — for each `web` package: is there a global
+   click listener or vendor autocapture (see
+   [`autocapture.md`](./autocapture.md) Step 1)? Record the mechanism, the
+   attribute it reads for context (for example `data-testid`), the layouts or
+   route groups it is mounted in, the opt-out for customer data, and the
+   test-id catalog if there is one. Record `none` when there is no
+   autocapture; do not propose adding one during the interview.
 Confirm the answers back to the user verbatim before writing.
 **Do not guess any of these** — a wrong package map silently misroutes
 every future `guide`/`implement`/`audit` call.
@@ -69,7 +76,7 @@ every future `guide`/`implement`/`audit` call.
 ## Writing the profile
 
 Fill [`templates/observability-profile.template.md`](../templates/observability-profile.template.md)
-from the confirmed answers **for Q1–Q6** and pass it as the entry content to the
+from the confirmed answers **for Q1–Q7** and pass it as the entry content to the
 `persistent-memory` write pipeline (Step 2 "Extract candidates" — this
 profile *is* the candidate; there's no further extraction to do). The
 Package Map table is the load-bearing part — keep it as the first table

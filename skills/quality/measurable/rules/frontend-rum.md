@@ -10,12 +10,22 @@ plan). This rule file only covers the two things `rum-tracking` does not
 own: **deciding whether this specific change needs an event**, and folding
 the result into the shared regression-signal check.
 
+## Step 0: Check interaction autocapture first
+
+Before deciding a button or link needs an event, apply
+[`autocapture.md`](./autocapture.md). If the repo records clicks with a global
+listener, a new button needs **markup** (a semantic element, a label, a
+`data-testid` on its container), not an event. Only the outcomes that rule's
+Step 4 lists as invisible to autocapture continue to Step 1.
+
 ## Step 1: Decide if this change needs a RUM event
 
 A change needs at least one new or updated tracking event when it:
 
-- Introduces a new user-facing flow, screen, or action (a button, form
-  submission, navigation, or feature toggle a user can trigger).
+- Introduces a new user-facing flow, screen, or action whose **outcome** a
+  global listener cannot see (a form submission result, a keyboard-only
+  action, a programmatic navigation or mutation). A plain button, link, or
+  menu item is not on this list when autocapture covers it.
 - Changes the success/failure outcome of an existing tracked flow (e.g. adds
   a new failure branch to checkout).
 - Adds a new client-side error boundary or a code path that can throw in the

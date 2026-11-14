@@ -11,7 +11,7 @@ argument-hint: '[guide|implement|audit|setup] [<target>] [--strict]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.1.1'
+  version: '1.2.0'
   workflow_type: gate-and-applied
   tags:
     - observability
@@ -85,7 +85,11 @@ The user is deciding *whether* and *what* telemetry a change needs.
    mixed. In a monorepo, check for a committed Observability Profile first
    (see [`rules/setup-profile.md`](./rules/setup-profile.md)) so package
    boundaries and stack choices don't have to be re-guessed.
-2. For a frontend classification, recommend the user-facing events per
+2. For a frontend classification, first apply
+   [`rules/autocapture.md`](./rules/autocapture.md): if the repo records
+   clicks with a global listener, a new button needs markup (semantic
+   element, label, test id on its container), not an event. Then recommend
+   only the remaining outcome events per
    [`rules/frontend-rum.md`](./rules/frontend-rum.md) (thin pointer into
    `rum-tracking`).
 3. For a backend/API classification, recommend the spans, metrics, and
@@ -111,7 +115,11 @@ instrumentation written.
 
 1. Run the Guide-mode classification (Step 1 above) first — never write
    telemetry code without first stating what kind of change this is.
-2. Frontend user-facing change → delegate:
+2. Frontend user-facing change → apply
+   [`rules/autocapture.md`](./rules/autocapture.md) Step 2 to the markup
+   (never add a tracker call to a handler a global listener already
+   covers), and propose a missing global listener as its own change (Step 3).
+   Delegate whatever is left, such as outcome events, listener design and naming:
    ```
    Skill("rum-tracking", "implement", "<target>")
    ```
@@ -207,9 +215,9 @@ Load on demand — do not preload.
 
 | Mode        | Files                                                                                                                                                                                                            |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `guide`     | [`rules/scope-detection.md`](./rules/scope-detection.md), [`rules/frontend-rum.md`](./rules/frontend-rum.md), [`rules/backend-instrumentation.md`](./rules/backend-instrumentation.md), [`rules/regression-signals.md`](./rules/regression-signals.md), and [`rules/weaver-schema.md`](./rules/weaver-schema.md) when the change adds or renames a signal name |
+| `guide`     | [`rules/scope-detection.md`](./rules/scope-detection.md), [`rules/autocapture.md`](./rules/autocapture.md) and [`rules/frontend-rum.md`](./rules/frontend-rum.md) for `web`, [`rules/backend-instrumentation.md`](./rules/backend-instrumentation.md), [`rules/regression-signals.md`](./rules/regression-signals.md), and [`rules/weaver-schema.md`](./rules/weaver-schema.md) when the change adds or renames a signal name |
 | `implement` | Same as `guide`, plus the delegated skill's own required reading (`rum-tracking`, `otel-instrumentation` when installed)                                                                                       |
-| `audit`     | [`rules/audit-checklist.md`](./rules/audit-checklist.md), [`rules/scope-detection.md`](./rules/scope-detection.md), and [`rules/weaver-schema.md`](./rules/weaver-schema.md) when the Observability Profile names a registry |
+| `audit`     | [`rules/audit-checklist.md`](./rules/audit-checklist.md), [`rules/scope-detection.md`](./rules/scope-detection.md), [`rules/autocapture.md`](./rules/autocapture.md) for `web` diffs, and [`rules/weaver-schema.md`](./rules/weaver-schema.md) when the Observability Profile names a registry |
 | `setup`     | [`rules/setup-profile.md`](./rules/setup-profile.md), [`templates/observability-profile.template.md`](./templates/observability-profile.template.md)                                                          |
 
 ---
@@ -246,8 +254,19 @@ Load on demand — do not preload.
    [`rules/weaver-schema.md`](./rules/weaver-schema.md) is how it is
    answered mechanically rather than by memory.
 
+8. **Instrument interactions once, globally.** Clicks on buttons, links and
+   menu items are recorded by one listener reading the DOM, so coverage of a
+   new control is a markup question (element, label, container test id), not
+   a tracking-code question. Explicit events are for outcomes the listener
+   cannot see. [`rules/autocapture.md`](./rules/autocapture.md) draws the line.
+
 ## Anti-patterns (one-liners)
 
+- Adding a per-button `track…("x-clicked")` call where a global click
+  listener already records the click, or hand-instrumenting every control
+  instead of proposing one global listener.
+- Calling a form "tracked" because its submit button is clicked, with no
+  success or failure signal.
 - Calling a change "instrumented" because a log line was added, with no
   metric or alert that would ever surface a regression.
 - Re-deriving the monorepo package map or telemetry stack every run instead
