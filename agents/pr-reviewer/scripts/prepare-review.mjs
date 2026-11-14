@@ -4542,7 +4542,7 @@ async function main(argv) {
       "usage: prepare-review.mjs --pr <url|owner/repo#n|n> [--repo owner/repo] [--out file] " +
         "[--workdir dir] [--repo-dir dir] [--reviewer-login login] [--no-workspace] [--no-impact] [--impact-image] " +
         "[--no-telemetry] [--inline-payloads] [--timeout-ms N] [--quiet] [--pin-head sha] [--isolated] [--full] " +
-        "[--state file] [--depth quick|standard|deep|max] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
+        "[--state file] [--no-lorekit] [--depth quick|standard|deep|max] [--effort high] [--thoroughness 0..1] [--config file] [--finder-passes 1|2] [--no-threads] [--review-sha sha] | --self-test\n",
     );
     process.exit(2);
   }

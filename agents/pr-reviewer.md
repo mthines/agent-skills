@@ -260,7 +260,9 @@ mcp__lorekit__memory_read: scope="<STATE_SCOPE>" key="<STATE_KEY>"
 - **A `v: 1` record came back, or the read threw / `v` is unrecognised:** read
   `agents/pr-reviewer/rules/prior-run.md` now for the bindings (`STATE_STATUS`, `PRIOR_SHA`,
   `CARRIED_FINDINGS`, `PRIOR_DIAGNOSTICS`, `IS_RE_REVIEW`, `RUN_MODE`, …). Save `$PR_STATE` to a file
-  and pass it as `prepare-review.mjs --state <file>`, or it routes a re-review as a first run.
+  and pass it as `prepare-review.mjs --state <file>`. Without it the script reads the record itself
+  through the LoreKit CLI when one is installed (`context.stateSource: "lorekit"`); with no CLI it
+  routes a re-review as a first run.
 - **No record, or one past its expiry (`STATE_STATUS="miss"`):** bind the first-run values below and
   skip `prior-run.md`. `prepare-review.mjs` runs the GitHub fallback rung itself; when its
   `context.priorRun.source` is not `"none"`, a sticky exists, so read `prior-run.md § The GitHub
