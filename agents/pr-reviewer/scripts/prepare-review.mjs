@@ -64,7 +64,7 @@ import { LENS_DIR, selectLenses, changedWithAdded, configCandidatePaths, subtree
 import { scanGate4 } from "./gate4-scan.mjs";
 import { PROFILES } from "./finalize/thresholds.mjs";
 import { TIERS as SEVERITY_TIERS } from "./comment-spine.mjs";
-import { blastRadius } from "./build-impact-graph.mjs";
+import { blastRadius, changedSymbolsForFile } from "./build-impact-graph.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPORT_MARKER = "<!-- PR_REVIEWER_REPORT -->";
@@ -1098,20 +1098,43 @@ export async function readStateFromLorekit({ ref, timeoutMs = 15000, env = proce
 }
 
 /**
- * D9's blast radius on a re-run: the impact graph's changed symbols and dependency rows that sit
- * in files this push changed, scored by the graph's own `blastRadius`. File-granular, so a file
- * this push touched keeps every symbol the PR changed in it. Reads only the graph Phase B already
- * built: no graph (`--no-impact`, no workspace, a failed build) returns null and builds nothing.
- * @param {any} impact @param {string[]} deltaPaths
+ * D9's blast radius on a re-run: the impact graph's rows that this push changed, scored by the
+ * graph's own `blastRadius`. A delta file with a patch keeps only the graph symbols the push's
+ * hunks change (`changedSymbolsForFile`, with the head file from `readHead` for enclosing-symbol
+ * attribution), at the push's change kind; a delta file without a patch keeps every graph symbol
+ * in it. Dependency rows count when the push changed their manifest or lockfile.
+ * Reads only the graph Phase B already built: no graph (`--no-impact`, no workspace, a failed
+ * build) returns null and builds nothing.
+ * @param {any} impact
+ * @param {Array<{ filename: string, patch?: string, status?: string }>} deltaFiles
+ * @param {(path: string) => string|null} [readHead]
  * @returns {{ score: number, band: string, why: string[] } | null}
  */
-export function deltaScopedBlast(impact, deltaPaths) {
+export function deltaScopedBlast(impact, deltaFiles, readHead = () => null) {
   if (!impact || !Array.isArray(impact.symbols)) return null;
   const norm = (/** @type {unknown} */ p) => posix.normalize(String(p || "").replace(/\\/g, "/"));
-  const inDelta = new Set((deltaPaths || []).filter(Boolean).map(norm));
-  const symbols = impact.symbols.filter((/** @type {any} */ sym) => sym?.path && inDelta.has(norm(sym.path)));
+  /** @type {Map<string, Map<string, string> | null>} path → symbol name → the push's change kind; null = whole file */
+  const pushed = new Map();
+  for (const f of deltaFiles || []) {
+    if (!f?.filename) continue;
+    const path = norm(f.filename);
+    if (typeof f.patch !== "string" || !f.patch) { pushed.set(path, null); continue; }
+    let head = null;
+    try { head = readHead(path); } catch { head = null; }
+    const names = new Map(changedSymbolsForFile({ ...f, filename: path }, head).map((sym) => [sym.name, sym.change]));
+    pushed.set(path, names);
+  }
+  const symbols = [];
+  for (const sym of impact.symbols) {
+    if (!sym?.path) continue;
+    const path = norm(sym.path);
+    if (!pushed.has(path)) continue;
+    const names = pushed.get(path);
+    if (names === null || names === undefined) { symbols.push(sym); continue; }
+    if (names.has(sym.name)) symbols.push({ ...sym, change: names.get(sym.name) });
+  }
   const dependencies = (Array.isArray(impact.dependencies) ? impact.dependencies : [])
-    .filter((/** @type {any} */ d) => [d?.manifest, d?.lockfile].some((p) => p && inDelta.has(norm(p))));
+    .filter((/** @type {any} */ d) => [d?.manifest, d?.lockfile].some((p) => p && pushed.has(norm(p))));
   return blastRadius(symbols, dependencies);
 }
 
@@ -2566,7 +2589,11 @@ async function prepare(opts) {
   // re-run), from the impact graph Phase B already built. No graph ran → null → the band stays
   // whatever the (absent) graph gave, exactly as before; nothing is rebuilt for routing.
   const prBand = impact?.blast_radius?.band ?? "none";
-  const pushBlast = firstRun ? null : deltaScopedBlast(impact, deltaFiles.map((f) => f.filename));
+  const pushBlast = firstRun ? null : deltaScopedBlast(impact, deltaFiles, (path) => {
+    if (!workspace.dir) return null;
+    const abs = join(workspace.dir, path);
+    return existsSync(abs) ? readFileSync(abs, "utf8") : null;
+  });
   const routingBand = pushBlast ? pushBlast.band : prBand;
 
   const routing = routeDepth({
@@ -4136,28 +4163,39 @@ async function selfTest() {
       && fromText.priorSha === "bbb2222" && fromText.incrRunsSinceFull === 1
       && parseStateRecord("{nope").unreadable === true && readStateFile("/nonexistent/prr-state.json").unreadable === true;
   });
-  t("deltaScopedBlast scores only the graph rows in files this push changed, and needs a graph to run", () => {
+  t("deltaScopedBlast scores only the graph rows this push changed, and needs a graph to run", () => {
     const impact = {
       symbols: [
         { name: "wide", path: "src/a.ts", change: "signature", consumer_files: 14, cross_package: true, package_count: 3 },
+        { name: "helper", path: "src/a.ts", change: "added", consumer_files: 0 },
         { name: "local", path: "src/b.ts", change: "body", consumer_files: 0 },
       ],
       dependencies: [{ name: "stripe", manifest: "package.json", lockfile: "pnpm-lock.yaml", semver_delta: "major", usage_sites: [{}, {}, {}, {}] }],
       blast_radius: { band: "high", score: 96 },
     };
-    const onB = deltaScopedBlast(impact, ["src/b.ts"]);
-    const onA = deltaScopedBlast(impact, ["./src/a.ts"]);
-    const onLock = deltaScopedBlast(impact, ["pnpm-lock.yaml"]);
-    return onB?.band === "none" && onA?.band === "high" && onLock?.band === "medium"
-      && deltaScopedBlast(null, ["src/a.ts"]) === null
-      && deltaScopedBlast({ blast_radius: { band: "high" } }, ["src/a.ts"]) === null
+    const head = "export function wide(a, b) {\n  return a + b;\n}\n\nexport function helper() {\n  return 1;\n}\n";
+    const readHead = (/** @type {string} */ p) => (p === "src/a.ts" ? head : null);
+    // A push editing only helper's body touches the file, not wide.
+    const helperOnly = { filename: "src/a.ts", status: "modified", patch: "@@ -5,3 +5,3 @@ export function helper() {\n export function helper() {\n-  return 0;\n+  return 1;\n }" };
+    // A push editing wide's body: wide counts, at the push's change kind (body, not the PR's signature).
+    const wideBody = { filename: "src/a.ts", status: "modified", patch: "@@ -1,3 +1,3 @@\n export function wide(a, b) {\n-  return a - b;\n+  return a + b;\n }" };
+    const onB = deltaScopedBlast(impact, [{ filename: "src/b.ts", patch: "@@ -1 +1 @@\n-x\n+y" }], readHead);
+    const onHelper = deltaScopedBlast(impact, [helperOnly], readHead);
+    const onWide = deltaScopedBlast(impact, [wideBody], readHead);
+    const noPatch = deltaScopedBlast(impact, [{ filename: "./src/a.ts" }], readHead);
+    const onLock = deltaScopedBlast(impact, [{ filename: "pnpm-lock.yaml" }]);
+    return onB?.band === "none" && onHelper?.band === "none"
+      && onWide?.band === "medium" && onWide.score === 28 && noPatch?.band === "high" && noPatch.score === 84
+      && onLock?.band === "medium"
+      && deltaScopedBlast(null, [{ filename: "src/a.ts" }]) === null
+      && deltaScopedBlast({ blast_radius: { band: "high" } }, [{ filename: "src/a.ts" }]) === null
       && deltaScopedBlast(impact, [])?.band === "none";
   });
   t("prepare() reads the state record only without --state and outside --isolated, and routes D9 on the push only on a re-run", () => {
     const src = readFileSync(fileURLToPath(import.meta.url), "utf8");
     const body = src.slice(src.indexOf("async function prepare("), src.indexOf("function selfTest("));
     return /if \(!opts\.state && !runMode\.isolated && opts\.lorekit\) \{/.test(body)
-      && /const pushBlast = firstRun \? null : deltaScopedBlast\(impact, deltaFiles\.map\(\(f\) => f\.filename\)\);/.test(body)
+      && /const pushBlast = firstRun \? null : deltaScopedBlast\(impact, deltaFiles, \(path\) => \{/.test(body)
       && /band: routingBand,/.test(body) && /firstRun,\n\s+full: runMode\.full,/.test(body)
       && body.indexOf("const pushBlast") > body.indexOf("timing.end(); // impact-graph");
   });

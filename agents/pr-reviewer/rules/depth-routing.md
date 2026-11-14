@@ -218,13 +218,14 @@ On a re-run, every band-gated rule reads the blast radius of this push, not the 
 `prepare-review.mjs` derives it with `deltaScopedBlast()`:
 
 1. It runs only on a re-run (`D1` did not fire) and only when Phase B built an impact graph. With no graph (`--no-impact`, no workspace, a failed build) nothing is computed or rebuilt, and the band stays what it is without a graph.
-2. It keeps the graph's changed symbols whose `path` is a file this push changed, and the dependency rows whose `manifest` or `lockfile` this push changed, and scores them with the graph's own `blastRadius()`.
+2. For each file this push changed, it keeps the graph's symbols that the push's own hunks change (`changedSymbolsForFile()`, with the checked-out head file for enclosing-symbol attribution), at the push's change kind. A delta file with no patch keeps every graph symbol in it. Dependency rows count when the push changed their `manifest` or `lockfile`. The graph's own `blastRadius()` scores the result.
 3. The routing records the whole-PR band beside it in `routing.why[]` (`blast radius scoped to this push: band=none (whole PR: high)`). The impact summary, the impact image and the finders still read the whole-PR graph.
 
 ```text
 ✗ PR scored band=high on its first review; 2nd review, 12-line push to a test helper → deep (D9): the whole PR is read again
 ✓ the same push → band of the push = none → routes on the rows below
-✓ 2nd review, push changes the exported signature with 14 consumers → band of the push = high → deep (D9)
+✓ 2nd review, push edits a 0-consumer helper in the same file as a 14-consumer export → band of the push = none
+✓ 2nd review, push changes that export's signature → band of the push = high → deep (D9)
 ```
 
 **Why:** the whole-PR band is fixed once a PR scores `medium` or `high`, so it fired `D9` on every re-review regardless of what the push touched.
