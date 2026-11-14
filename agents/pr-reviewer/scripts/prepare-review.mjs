@@ -4192,7 +4192,10 @@ async function selfTest() {
     return /if \(!opts\.state && !runMode\.isolated && opts\.lorekit\) \{/.test(body)
       && /const pushBlast = firstRun \? null : deltaScopedBlast\(impact, deltaFiles, \(path\) => \{/.test(body)
       && /band: routingBand,/.test(body) && /firstRun,\n\s+full: runMode\.full,/.test(body)
-      && body.indexOf("const pushBlast") > body.indexOf("timing.end(); // impact-graph");
+      && body.indexOf("const pushBlast") > body.indexOf("timing.end(); // impact-graph")
+      // Both provenance call sites name the record's source; without `via` a self-read reads as --state.
+      && (body.match(/priorShaProvenance\(\{ fromState: !!state\.priorSha, via: stateSource \}\)/g) || []).length === 2
+      && !/priorShaProvenance\(\{ fromState: !!state\.priorSha \}\)/.test(body);
   });
   t("priorRunRounds: the state record's rounds reach the context, and none under --isolated", () => {
     const rounds = [{ sha: "1234567", open: 2, blocking: 1 }];
