@@ -1,6 +1,6 @@
 ---
 type: regex
-pattern: '## Findings file[\s\S]*tax\.test\.mjs[\s\S]{0,600}(tautolog|re-?deriv|same formula|production formula|own return|returns? what (the|it) (mock|stub)|by construction|never (runs|exercises|calls))'
+pattern: '## Findings file[\s\S]*tax\.test\.mjs[\s\S]{0,600}(tautolog|re-?deriv|same formula|production formula|own return|returns? what (the|it) (mock|stub)|by construction)'
 flags: i
 ---
 
