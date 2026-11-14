@@ -1051,8 +1051,9 @@ export function stateRecordRef({ repo, headRef, number }) {
 
 /**
  * The record value out of `lorekit show <scope> <key> --json`. The remote store wins over the
- * offline one, because Step 4c writes the remote. `found: false` with no `error` is a real miss
- * (a first review); an `error` means no store answered, so nothing is known.
+ * offline one, because Step 4c writes the remote; an offline hit is still a record. A miss is
+ * real (a first review, `found: false` with no `error`) only when the REMOTE answered: an
+ * offline-only miss with the remote unavailable says nothing about the record Step 4c wrote.
  * @param {string} stdout
  * @returns {{ found: boolean, value: string|null, store: "remote"|"offline"|null, error?: string }}
  */
@@ -1069,10 +1070,9 @@ export function parseLorekitShow(stdout) {
       return { found: true, value: sec.record.value, store };
     }
   }
-  const answered = ["remote", "offline"].some((k) => out?.[k]?.available && !out[k].error);
-  if (answered) return { found: false, value: null, store: null };
-  const why = ["remote", "offline"].map((k) => out?.[k]?.error || out?.[k]?.reason).filter(Boolean).join("; ");
-  return { found: false, value: null, store: null, error: why || "no LoreKit store answered" };
+  const remote = out?.remote;
+  if (remote?.available && !remote.error) return { found: false, value: null, store: null };
+  return { found: false, value: null, store: null, error: `remote store unavailable: ${remote?.error || remote?.reason || "not reported"}` };
 }
 
 /**
@@ -4127,11 +4127,14 @@ async function selfTest() {
     const none = parseLorekitShow(JSON.stringify({ remote: miss, offline: miss }));
     const down = parseLorekitShow(JSON.stringify({ remote: { available: false, reason: "no token configured", found: false, record: null }, offline: { available: false, reason: "disabled", found: false, record: null } }));
     const failed = parseLorekitShow(JSON.stringify({ remote: { ...miss, error: "HTTP 500" }, offline: { available: false, reason: "disabled", found: false, record: null } }));
+    // CLI 1.76.0 with no remote configured: the offline store answers a miss, the remote never looked.
+    const offlineOnlyMiss = parseLorekitShow(JSON.stringify({ remote: { available: false, reason: "no token configured — set LOREKIT_TOKEN or run `lorekit install`", found: false, record: null }, offline: miss }));
     return both.found && both.value === "R" && both.store === "remote"
       && off.found && off.value === "L" && off.store === "offline"
       && !none.found && !none.error
       && !down.found && /no token configured/.test(String(down.error))
       && !failed.found && /HTTP 500/.test(String(failed.error))
+      && !offlineOnlyMiss.found && /remote store unavailable: no token configured/.test(String(offlineOnlyMiss.error))
       && Boolean(parseLorekitShow("not json").error);
   });
   t("readStateFromLorekit runs `show <scope> <key> --json` on LOREKIT_BIN or lorekit, and maps every outcome", async () => {
