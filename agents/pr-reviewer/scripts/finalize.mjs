@@ -2864,10 +2864,10 @@ async function selfTest() {
       badResult.ok === false && badResult.violations.length === 1
         && badResult.violations[0].index === 0 && badResult.violations[0].field === "TITLE");
 
-    // finalizeReview prefixes `[lens:<name>]`, so a lens body that fits untagged can overflow once tagged.
+    // finalizeReview prefixes `[lens:<name>]`, but the inline payload drops it for the footer's `lens`, so the tag costs no prose budget.
     const lensBody = (/** @type {number} */ n) => ({ candidates: [{ ...mkCandidate({ final: 90 }), finder: "lens", lens: "billing-audit", body: "b".repeat(n) }] });
-    const fits = checkShape(lensBody(150)), overflows = checkShape(lensBody(190));
-    check("checkShape measures a lens body with its [lens:<name>] tag",
+    const fits = checkShape(lensBody(190)), overflows = checkShape(lensBody(210));
+    check("checkShape measures a lens body without its [lens:<name>] tag, which the footer's lens replaces inline",
       fits.ok === true && overflows.ok === false && overflows.violations[0]?.field === "BODY", JSON.stringify(overflows.violations));
   }
 

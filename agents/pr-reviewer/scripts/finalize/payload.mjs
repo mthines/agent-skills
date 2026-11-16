@@ -245,7 +245,12 @@ export function toInlineCommentPayload(c, { sha }) {
   }
   if (c.fix_url) payload.FIX_URL = c.fix_url;
   // A lens finding names its lens in the footer (comment-shape.md § The footer).
-  if (c.finder === "lens" && c.lens) payload.LENS = c.lens;
+  // The footer carries the lens, so the body's `[lens:<name>]` tag (kept for the report) is dropped
+  // here instead of spending the 200-char prose budget on the same fact twice.
+  if (c.finder === "lens" && c.lens) {
+    payload.LENS = c.lens;
+    payload.BODY = String(c.body).replace(`[lens:${c.lens}] `, "");
+  }
   if (Array.isArray(c.evidence_anchors) && c.evidence_anchors.length) {
     payload.EVIDENCE = c.evidence_anchors.map((/** @type {any} */ e) => (
       e.note ? { path: e.path, line: e.line, note: e.note } : { path: e.path, line: e.line }
@@ -542,7 +547,8 @@ async function selfTest() {
       withEvidence.EVIDENCE.length === 2 && withEvidence.EVIDENCE[0].note === "x" && withEvidence.EVIDENCE[1].note === undefined);
     const lensed = toInlineCommentPayload({ prefix: "nitpick", severity: "low", body: "b", finder: "lens", lens: "animations" }, { sha: "abc1234" });
     check("toInlineCommentPayload carries a lens finder's lens as LENS, and no other finder's",
-      lensed.LENS === "animations" && !("LENS" in toInlineCommentPayload({ prefix: "nitpick", severity: "low", body: "b", finder: "quality", lens: "animations" }, { sha: "abc1234" })));
+      lensed.LENS === "animations"
+      && toInlineCommentPayload({ prefix: "nitpick", severity: "low", body: "[lens:animations] b", finder: "lens", lens: "animations" }, { sha: "abc1234" }).BODY === "b" && !("LENS" in toInlineCommentPayload({ prefix: "nitpick", severity: "low", body: "b", finder: "quality", lens: "animations" }, { sha: "abc1234" })));
     const suggestion = toInlineCommentPayload({ prefix: "suggestion", severity: "medium", body: "b", finder: "quality", defect_class: "maintainability", path: "b.ts" }, { sha: "abc1234" });
     check("toInlineCommentPayload builds FP for suggestion: too, not only issue: (both are CLAIM_PREFIXES)",
       suggestion.FP === "quality:maintainability:-@b.ts");
