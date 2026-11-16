@@ -56,7 +56,7 @@ Format: intent                     # Markdown intent spec — Steps guide the ru
 **Changed:** the Rename button in the dashboard header (new in this change)
 **Start:** /dashboards/{dashboardId}
 **Preconditions:**
-- Dashboard "{dashboardId}" exists (handled by aw-target seed).
+- Dashboard "{dashboardId}" exists (handled by aw-target seed) — reachable.
 **Steps:**
 1. Open the dashboard.
 2. [must-follow] Click **Rename** in the dashboard header.

@@ -97,12 +97,12 @@ A failed test never drops or silently rewrites a criterion:
 
 | Source of the AC | Action |
 | --- | --- |
-| Derived by this run (sources 2 and 3) | Rewrite it in place so it passes the test |
-| An `/aw` brief | Keep the ID and text verbatim; write a `criterion-quality` finding ([`findings.md`](./findings.md#kind)) and a stronger probe as an `EC-n` row naming the AC under **Applies to** |
-| Fails test 4 | Name the missing precondition in `intent.md`; the AC reports `⏭️ not verified on target (<cause>)` ([`report.md § Substitution`](./report.md#substitution)), never `pass` |
+| Fails test 4, from any source | Name the missing precondition in `intent.md`; keep the AC on its own target and never rewrite it onto a reachable sibling; it reports `⏭️ not verified on target (<cause>)` ([`report.md § Substitution`](./report.md#substitution)), never `pass` |
+| Fails another test, derived by this run (sources 2 and 3) | Rewrite it in place, on the same target, so it passes the test |
+| Fails another test, from an `/aw` brief | Keep the ID and text verbatim; write a `criterion-quality` finding ([`findings.md`](./findings.md#kind)) and a stronger probe as an `EC-n` row naming the AC under **Applies to** |
 
 Then fill the **Coverage** table in `intent.md`: one row per changed surface from Step 1 — route, endpoint, event added or removed, and every performance or security claim in the PR text.
-A claim that is not a UI outcome needs an `api:` or `telemetry:` criterion; a UI check does not cover it.
+A claim that is not a UI outcome needs an `api:` or `worker:` criterion, or a `telemetry:` one when the claim is an event or span; a UI check does not cover it.
 A surface with no AC and no `Not applicable — <reason>` is a `criterion-quality` finding.
 
 ```text
@@ -168,7 +168,7 @@ Intent source: /aw brief | PR + ticket | diff only
 | --- | --- |
 | /settings/notifications | AC-1 |
 | event `notification.saved` | AC-3 (telemetry:) |
-| removed event `footer.diag` | Not applicable — the PR deletes a diagnostic; AC-4 checks it no longer fires |
+| removed event `footer.diag` | AC-4 (the event no longer fires) |
 
 ## Edge-case matrix
 | ID | Class | Probe | Applies to | Expected graceful outcome |

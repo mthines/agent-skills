@@ -117,7 +117,7 @@ Write it in the intent format (`Format: intent`, [`templates/intent-spec.md.temp
 
 <!-- ✓ Right — exact, state-changing, and a reload proves it persisted -->
 ## Spec 2: AC-3 — A user mutes a channel and it stays muted
-**Changed:** the per-channel Mute switch on the notifications page
+**Changed:** the per-channel Mute switch on the notifications page (new in this change)
 **Start:** /settings/notifications
 **Preconditions:**
 - The workspace has the four seeded channels; #deploys is unmuted.

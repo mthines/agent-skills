@@ -33,7 +33,8 @@ A run on a merged PR starts `{{SUMMARY}}` with `Run after merge —` and lists e
 
 ## Substitution
 
-An AC is `✅ pass` only when the run exercised its own `Changed` target, performed its `[must-follow]` step there, and observed its outcome with evidence there.
+A `ui:` AC is `✅ pass` only when the run exercised its own `Changed` target, performed its `[must-follow]` step there, and observed its outcome with evidence there.
+An `api:` or `worker:` AC is `✅ pass` only when a probe hit its own endpoint or component and observed the outcome with evidence.
 Anything else is `⏭️ not verified on target (<what ran instead>)`:
 
 | What stood in | Example |

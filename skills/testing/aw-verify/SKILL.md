@@ -56,7 +56,7 @@ Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, w
 5. **Findings** ([`rules/findings.md`](./rules/findings.md)): one JSON line per defect in `findings.jsonl`, with its probe and evidence.
 6. **Fix** (your own PR or no PR yet, `local` or `preview`; never someone else's PR; unless `--no-fix`: [`rules/fix-loop.md`](./rules/fix-loop.md)), then **report** ([`rules/report.md`](./rules/report.md)), **lessons and cleanup** ([`rules/lessons.md § Write`](./rules/lessons.md#write-step)). After a fix, re-run the probe that found it; stop at `✅ verified` or at `--loops`, and report a finding open at the cap as `open`.
 
-The verdict is the first row of [`rules/report.md § Verdict`](./rules/report.md#verdict) whose condition holds: an AC that fails or a guardrail that does not hold is `❌ not verified`; an AC verified on a stand-in, not on its own target, caps the run at `⚠️` ([`rules/report.md § Substitution`](./rules/report.md#substitution)); a defect outside the ACs is reported but does not flip it.
+The verdict is the most severe row of [`rules/report.md § Verdict`](./rules/report.md#verdict) whose condition holds, in the order `⛔`, `❌`, `⚠️`, `✅`: an AC that fails or a guardrail that does not hold is `❌ not verified`; an AC verified on a stand-in, not on its own target, caps the run at `⚠️` ([`rules/report.md § Substitution`](./rules/report.md#substitution)); a defect outside the ACs is reported but does not flip it.
 
 ## The two witnesses
 

@@ -92,7 +92,7 @@ Each block carries, in this order:
 | --- | --- | --- |
 | `**Changed:**` | yes | Name the control, component, or region the diff adds or changes, the way a user sees it: "the Rename button in the dashboard header". The run fails when it never touches this target. End the line with `(base: <what the base build shows there>)`, or `(new in this change)` when base has no such target. |
 | `**Start:**` | yes | A path relative to the preview's base URL; `{placeholders}` resolve from the preview target's `fixtures.references`. |
-| `**Preconditions:**` | no | Bullets naming the state the run needs — a feature flag, a seeded record. Name each one: the runner may call an item unreachable only for a flag or record named here. End each bullet with whether the target reaches it: `— reachable on preview`, or `— not reachable on preview (feature flag)` / `(seed data)`. |
+| `**Preconditions:**` | no | Bullets naming the state the run needs — a feature flag, a seeded record. Name each one: the runner may call an item unreachable only for a flag or record named here. End each bullet with whether the run's target reaches it: `— reachable`, or `— not reachable (feature flag)` / `(seed data)`. |
 | `**Steps:**` | yes | A numbered list of imperative user actions, one per step. Plain steps are guidance the runner may adapt. Start the step that exercises the `Changed` target with `[must-follow]` — at least one per spec. |
 | `**Expected:**` | yes | Bullets, one user-observable outcome each, observable on the `Changed` target or its direct effect. Name concrete text, values, or counts. At least one bullet states something the base build cannot show. A network outcome uses exactly `` `METHOD /path` returns NNN ``. |
 | `**Hints:**` | no | Bullets carrying locators and navigation quirks from lessons ([`memory.md`](./memory.md)), in the single-braces locator form: `{role: "textbox", name: "Dashboard name"}`. |
@@ -121,7 +121,7 @@ It uses the same fields as any intent spec — no new syntax — with three conv
 
 ```markdown
 ## Spec 3: Out of bounds: reload while a question is pending, then answer it
-**Changed:** the question card in an Agent0 thread
+**Changed:** the question card in an Agent0 thread (base: the card is lost on reload)
 **Start:** /agent0
 **Preconditions:**
 - A seeded thread whose last turn is paused on an unanswered question
@@ -155,7 +155,7 @@ Target: preview
 Format: intent
 
 ## Spec 1: A user renames a dashboard from the header
-**Changed:** the Rename button in the dashboard header (new in this PR)
+**Changed:** the Rename button in the dashboard header (new in this change)
 **Start:** /dashboards/{dashboardId}
 **Steps:**
 1. Open the dashboard.
@@ -203,4 +203,4 @@ Why each fails: `aw-verify`'s `references/criterion-quality.md`.
 | Attribute, not effect | `The toggle has aria-pressed="true".` | `After the toggle is pressed, the list shows only the 3 archived rows.` |
 | Reaches a state, never checks it moved | `After ArrowDown, the "Memory detail" dialog is visible.` | `After ArrowDown, the second row is selected and the dialog title changes from "Rule A" to "Rule B".` |
 | Either / or | `The field shows 0.97 with the outline, or the form's saved value.` | `The target field shows 0.97 with the Agent0 outline.` |
-| Removal checked by what is gone from the UI | `The removed conversation is not listed in the footer.` | `` With the footer open for 30 seconds, no `POST /v1/events` carries `agent0.footer.diag`. `` |
+| Removal checked by what is gone from the UI | `The footer shows no diagnostic warning.` | `With the footer open for 30 seconds, the web-event feed holds no agent0.footer.diag event.` |
