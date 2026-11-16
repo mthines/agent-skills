@@ -65,6 +65,8 @@ export const GATE_DETAILS_MAX = 120;
 
 /** A 7-char sha, everywhere. Both surfaces render the same length or neither is trustworthy. */
 export const SHA7 = /^[0-9a-f]{7}$/;
+/** A review lens name as it appears in a footer: a file or directory stem, never markup. */
+export const LENS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
 
 /** Where the button images live (`agent0-fix-links.md § Button markup`). */
 export const ASSET_BASE =
@@ -173,11 +175,19 @@ export function tierTally(counts) {
  * `pr-reviewer`'s own fallback rung reads to recover a delta baseline when its state record is
  * unusable (`reviewer-report-ingest.md § Footer SHA`). Keep it matchable by that substring alone.
  */
-export function footerLine({ sha, run = null, at = null, docs = false }) {
+export function footerLine({ sha, run = null, at = null, docs = false, lens = null }) {
   if (!SHA7.test(String(sha))) {
     throw new Error(`footer sha must be exactly 7 lowercase hex chars, got ${JSON.stringify(sha)}`);
   }
   const parts = [`\`${AGENT_NAME}\``, `commit \`${sha}\``];
+  // The lens that raised the finding, after the commit so the identity prefix stays byte-stable.
+  // Inline-only: a report has no single lens, and `run` is the report's own phrase.
+  if (lens) {
+    if (!LENS_NAME.test(String(lens))) {
+      throw new Error(`footer lens must match ${LENS_NAME}, got ${JSON.stringify(lens)}`);
+    }
+    parts.push(`lens \`${lens}\``);
+  }
   if (run) parts.push(String(run));
   if (docs) parts.push(`[how these findings are produced](${AGENT_URL})`);
   // The freshness stamp. `at` is an object `{ datetime, display }`: `datetime` is a full ISO-8601
