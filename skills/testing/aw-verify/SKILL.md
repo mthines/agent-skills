@@ -22,7 +22,7 @@ metadata:
 Prove a feature works on a real environment, try hard to break it, read what the services recorded while you did, and report it in one shape.
 The checks, the browser, and the telemetry must agree.
 Repo values come from `.agents/aw/` ([`rules/config.md`](./rules/config.md)); repo facts from `.agents/aw/notes.md`.
-Who owns what, the spec contract, and the anti-patterns: [`rules/delegation.md`](./rules/delegation.md); why it is shaped this way: [`references/design.md`](./references/design.md).
+Who owns what, the spec contract, and the anti-patterns: [`rules/delegation.md`](./rules/delegation.md); why it is shaped this way: [`references/design.md`](./references/design.md); why each criterion test exists: [`references/criterion-quality.md`](./references/criterion-quality.md).
 
 ## Modes and flags
 
@@ -47,7 +47,7 @@ Do these in order; `Read` a step's rule before its first action when it is not a
 Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, where another run uses the same names.
 
 0. **Config** ([`rules/config.md § Resolve`](./rules/config.md#resolve-the-config-every-skill-before-any-other-step)). No `.agents/aw/environments.yml`, or no entry for the environment → run `setup` first; never guess a URL, dataset, or start command. Read lessons ([`rules/lessons.md § Read`](./rules/lessons.md#read-step)).
-1. **Intent** ([`rules/intent.md`](./rules/intent.md)). Write `intent.md`: the brief's `AC-n` verbatim, each tagged `ui:` / `api:` / `worker:`, and the edge-case matrix.
+1. **Intent** ([`rules/intent.md`](./rules/intent.md)). Write `intent.md`: the brief's `AC-n` verbatim, each tagged `ui:` / `api:` / `worker:`, every criterion linted ([`§ Step 3b`](./rules/intent.md#step-3b--lint-every-criterion-and-map-the-surfaces)), the changed surfaces mapped to criteria, and the edge-case matrix.
    The matrix always has a **Concurrency** row for any AC that creates a record (fire the trigger twice in parallel, count rows) and one **Failure** row per guardrail in the brief (break the dependency the guardrail names: make the file unwritable, block the route, stop the service).
 2. **Stack** ([`rules/local-stack.md`](./rules/local-stack.md) + the driver file; login per [`rules/auth.md`](./rules/auth.md)). Start it detached, logs to `procs/<name>.log`, poll the ready URL. A sandbox that refuses `listen` → drive the app's own request handler in-process and say `browser: not run (no local port)`.
 3. **Probe in windows** ([`rules/browser-verification.md`](./rules/browser-verification.md)). Per batch, append to `probes.jsonl`: `window_start`, run it, then `window_end` and each log's byte `log_offsets`. Batches: acceptance specs, then edge rows, then fault rows; restore every injected fault before the next batch.
@@ -56,7 +56,7 @@ Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, w
 5. **Findings** ([`rules/findings.md`](./rules/findings.md)): one JSON line per defect in `findings.jsonl`, with its probe and evidence.
 6. **Fix** (your own PR or no PR yet, `local` or `preview`; never someone else's PR; unless `--no-fix`: [`rules/fix-loop.md`](./rules/fix-loop.md)), then **report** ([`rules/report.md`](./rules/report.md)), **lessons and cleanup** ([`rules/lessons.md § Write`](./rules/lessons.md#write-step)). After a fix, re-run the probe that found it; stop at `✅ verified` or at `--loops`, and report a finding open at the cap as `open`.
 
-The verdict is `BROKEN` when any AC fails or any guardrail does not hold; a defect outside them is reported but does not flip the verdict.
+The verdict is the first row of [`rules/report.md § Verdict`](./rules/report.md#verdict) whose condition holds: an AC that fails or a guardrail that does not hold is `❌ not verified`; an AC verified on a stand-in, not on its own target, caps the run at `⚠️` ([`rules/report.md § Substitution`](./rules/report.md#substitution)); a defect outside the ACs is reported but does not flip it.
 
 ## The two witnesses
 
@@ -84,7 +84,7 @@ Agent(subagent_type="general-purpose",
 ## Definition of done
 
 - [ ] `intent.md`, `probes.jsonl`, `findings.jsonl`, and `report.md` under `.agent/{branch}/verify/`; `specs.md` for a UI change.
-- [ ] Every AC and guardrail: `pass`, `fixed → pass`, or `fail`, with evidence; every edge row probed or `n/a` with a reason.
+- [ ] Every AC and guardrail: `pass`, `fixed → pass`, `fail`, or `⏭️ not verified on target (<what ran instead>)`, with evidence; every edge row probed or `n/a` with a reason; every changed surface in the Coverage table.
 - [ ] A `TELEMETRY` block covering every window, or `telemetry: skipped (<reason>)`. Never leave it out: the report is incomplete without one of the two, and a connected Dash0 MCP server is never a valid skip reason.
 - [ ] Each fix its own commit, pushed per policy; stack left per policy.
 - [ ] The PR comment's `aggregate` region posted with every screenshot and recording uploaded, or a `comment: not posted (<reason>)` line.

@@ -40,6 +40,14 @@ memory.list { scope: "repo::<slug>", tags: ["codebase-knowledge"], limit: 100 }
 # keep only hotspot::<path> / knowledge::<symbol>@<path> records for files this run will touch
 ```
 
+Before Phase 1's Step 3 (writing criteria), read what earlier runs learned about criterion shape:
+
+```text
+memory.list { scope: "repo::<slug>", tags: ["criterion-quality"], limit: 10 }
+```
+
+Apply each matching **Do this instead** line to the criteria you are about to write.
+
 Match each lesson's **Applies when** against this run and treat matching **Do this instead** lines as considerations, not commands.
 `repo::` wins over `global` on a conflict.
 Re-verify against the code before relying on a lesson; an absent lesson is never evidence that something is safe.
@@ -59,6 +67,10 @@ Never write a lesson whose fix works around a defect in the code under verificat
 | A fix took ≥ 2 attempts | `stuck-loop` | Views form state resets on remount; fix lives in the store, not the component |
 | A finding was missed until telemetry caught it | `near-miss` | Spec passed while api logged a 500 on retry |
 | A precedent search settled an unclear expectation fast | `paid-off` | Empty states in the UI package use `<EmptyState>` with a primary action |
+| A path this run reported verified later shows a defect (a review, Bugbot, or a human found it) | `near-miss` | The run checked the automation form; the SLO form had the defect. Add tag `criterion-quality` |
+| [`intent.md § Step 3b`](./intent.md#step-3b--lint-every-criterion-and-map-the-surfaces) test 3 flagged a criterion this run wrote | `assumption-wrong` | "No badge" passed without the feature; write the count. Add tag `criterion-quality` |
+
+A `criterion-quality` lesson's **What happened** names the criterion shape that missed, and **Do this instead** names the shape that would have caught it.
 
 ```text
 memory.search { q: "<key words of the lesson>", scopes: ["repo::<slug>", "global"], limit: 10 }   # dedup first
@@ -96,3 +108,10 @@ When a fix verified a structural fact (an invariant a symbol must hold, a file t
 A lesson with `seen_count >= 3`, or tagged `status::structural`, is promotion-eligible.
 List eligible lessons in the report's **Lessons** section with a one-line suggested edit to the promotion target.
 Never edit `rules/` from inside a run.
+
+A cause that keeps costing runs on one repo — a lesson with `seen_count >= 2` whose **Do this instead** is a config change (an `adversarial.allowed_origins` entry, a seeded test user) — goes into the report's `Needs you` as that one-line config diff, not into **Notes**:
+
+```text
+✗ Notes: the adversarial pass was blocked again by the API origin.
+✓ Needs you: add `https://api.staging.example.com` to `adversarial.allowed_origins` in `.agents/aw/ui.yml` → the adversarial pass runs.
+```

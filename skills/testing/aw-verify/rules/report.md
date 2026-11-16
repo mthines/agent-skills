@@ -22,10 +22,37 @@ An open `critical`/`high` one still reaches the attention line ([`pr-comment.md 
 
 | Verdict | Condition |
 | --- | --- |
-| `✅ verified` | Every AC passes in the browser, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `high` or `critical` |
-| `⚠️ verified with open items` | Every AC passes; some `medium`/`low` findings open, or any finding escalated |
+| `✅ verified` | Every AC passes in the browser on its own changed target, none is `⏭️ not verified on target`, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `high` or `critical` |
+| `⚠️ verified with open items` | Every AC that ran passes; some `medium`/`low` findings open (a `criterion-quality` finding is `medium`), any finding escalated, or an AC is `⏭️ not verified on target` |
 | `❌ not verified` | An AC fails after the fix loop, a brief `telemetry:` AC `contradicts`, or a `critical`/`high` finding is still open |
-| `⛔ blocked` | A phase could not run (stack, auth, checkout); name the phase and the fix |
+| `⛔ blocked` | A phase could not run (stack, auth, checkout), or no AC was verified on its target; name the phase and the fix |
+
+The headline uses exactly one row's words: `Verified`, `Verified with open items`, `Not verified`, or `Blocked`.
+Free text such as "works" or "verified on the scratch branch" is not a verdict.
+A run on a merged PR starts `{{SUMMARY}}` with `Run after merge —` and lists every open `medium`-or-higher finding as a `Needs you` bullet ending `→ follow-up PR`.
+
+## Substitution
+
+An AC is `✅ pass` only when the run exercised its own `Changed` target, performed its `[must-follow]` step there, and observed its outcome with evidence there.
+Anything else is `⏭️ not verified on target (<what ran instead>)`:
+
+| What stood in | Example |
+| --- | --- |
+| A sibling surface | The automation edit form was checked; the SLO form was not reachable |
+| Unit tests | `vitest` covers the fill; no browser run reached it |
+| A scratch branch carrying commits the PR lacks | The fix was verified on `main` plus a merge, not on the PR head |
+| Demo or seeded data for a live source | A fixture bridge log, not a live bridge |
+| A witness with no answer | The receipt's `[receipt] verdict:` is `ambiguous` or `null`, or the line is absent, for a `telemetry:` AC |
+
+Such an AC never shows `✅ pass`; its trace row names the substitute under `witnesses`; the `Why not ✅` bullet names the AC and the surface left uncovered.
+`{{TELEMETRY_VERDICT}}` is copied from the receipt's `[receipt] verdict:` line, never re-derived from the per-AC lines.
+
+```text
+✗ AC-2 ✅ pass — automation edit form fills (SLO form unreachable)
+✓ AC-2 ⏭️ not verified on target (SLO form unreachable; automation form checked instead)
+✗ Telemetry: confirms (5 of 5 signals)        [receipt verdict: ambiguous, 1 signal missing]
+✓ Telemetry: ambiguous (4 of 5 signals; AC-4 signal missing)
+```
 
 ## Placeholders
 
@@ -48,7 +75,7 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{FIXES_PART}}` | When a fix was pushed: `**Fixed during the run**` and one `- <sha7> (F-n) <what changed for the user>` line each, the `F-n` matching the `✅ after fix (F-n)` row it fixed; otherwise nothing |
 | `{{TELEMETRY_VERDICT}}` / `{{FLOW_LINES}}` | Never blank: the verdict word or `not reviewed (<reason>)` (a connected MCP server is not a reason). An AC whose path emits no signal gets `no regression observed (path emits no signal)`, not `confirms`; one `- <journey>` line per AC from `telemetry.md`, then the ERROR-span line |
 | `{{NOTES_PART}}` | When there are any: `**Notes**` and one line per not-defect, `medium`/`low` finding, out-of-scope finding (`Outside this PR:`), `n/a` edge row, or lesson written; otherwise nothing |
-| `{{TRACE_ROWS}}` | One row per AC, edge row, and probe: ID, criterion, result (`✅ pass`, `✅ after fix (F-1)`, `❌ fail (F-2)`, `⏭️ skipped (<reason>)`), witnesses (`browser · telemetry`, `unit tests`). Text only |
+| `{{TRACE_ROWS}}` | One row per AC, edge row, and probe: ID, criterion, result (`✅ pass`, `✅ after fix (F-1)`, `❌ fail (F-2)`, `⏭️ skipped (<reason>)`, `⏭️ not verified on target (<what ran instead>)`), witnesses (`browser · telemetry`, `unit tests`). Text only |
 | `{{URL}}` / `{{DRIVER}}` / `{{RECORDINGS_LINE}}` | The URL the run used (`localhost` as text); the browser driver; `recordings: not attached (<reason>)` when the region holds none, else nothing |
 | `{{TICKET_LINK}}` / `{{PR_LINK}}` | `· <ticket link>` from the brief, or nothing; the PR URL |
 
