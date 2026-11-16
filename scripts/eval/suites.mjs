@@ -283,8 +283,10 @@ export const SUITES = [
     // decoys that point at a failure and pass — a removal paired with its observable effect (reads
     // as an absence), a list entry that is the action's direct effect (reads as a sibling surface),
     // a flag the environment has on (reads as unreachable), and a count-and-parent telemetry
-    // criterion (reads as by-construction). The decision is the first-failing-test table, so the
-    // five-row table and the removal exception are the rubric; the Coverage text after them is not.
+    // criterion (reads as by-construction). The decision is the first-failing-test table. The
+    // rubric is the whole Step 3b section, so the action table and the Coverage text ride along; the
+    // goldens exercise only the five-row table and the removal exception, and editing either of the
+    // other two changes what the model is sent.
     rubric: {
       file: "skills/testing/aw-verify/rules/intent.md",
       section: "## Step 3b — Lint every criterion and map the surfaces",

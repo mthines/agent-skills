@@ -77,4 +77,4 @@ Format: intent                     # Markdown intent spec — Steps guide the ru
 2. Type "Draft name", then press Escape.
 **Expected:**
 - The header still shows the original dashboard name.
-- No rename field is visible.
+- No rename field is visible, and the Rename button is still shown in the header.
