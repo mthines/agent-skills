@@ -149,7 +149,7 @@ Section rules:
 | Task | 1–3 sentences a reviewer can agree or disagree with in under a minute |
 | Requirements | Numbered by position (R1, R2, …); every item tagged `[user-stated]` or `[inferred]` and cites its source; an `[inferred]` item is an observable outcome, never a design choice; Out of Scope items are not numbered |
 | Guardrails | Each names a path, an interface, or a forbidden move, and its source is the user, the ticket, or a repo doc — never "be careful", and never a function or file you decided to keep unchanged. No Guardrail may forbid something a requirement or AC needs |
-| Acceptance Criteria | Each carries a unique `AC-{n}` and `(covers: R{m})`; every `[user-stated]` requirement is covered; each states an observable outcome (EARS "When …, the system shall …"), never which function or mechanism produces it; the After-editing and Before-PR commands contain no `{` `}` placeholders |
+| Acceptance Criteria | Each carries a unique `AC-{n}` and `(covers: R{m})`; every `[user-stated]` requirement is covered; each states an observable outcome (EARS "When …, the system shall …"), never which function or mechanism produces it; each response is something the code before the change does not already do, and no AC is only an absence ("does not show X"); the After-editing and Before-PR commands contain no `{` `}` placeholders |
 | Turn Cap | An integer from the table below, or a different integer with a one-clause reason |
 | File Changes | The files the work likely starts from; the worker may change others and names them in the walkthrough |
 
@@ -170,6 +170,11 @@ The turn cap feeds the paste-ready `/goal` line defined in the `autonomous-workf
 
 <!-- ✓ Right — names the area and where the limit came from -->
 - Do not modify: `src/api/public/**` — CLAUDE.md: external consumers pin this contract.
+```
+
+```text
+✗ AC-2 — When a user has no pending invites, the header shows no invites badge.        (passes before the change)
+✓ AC-2 — When a user has 1 pending invite, the header shows a badge reading 1; with none, no badge.
 ```
 
 The two compatibility headings (`## Requirements`, `## Acceptance Criteria (Definition of Done)`) are load-bearing for `confidence(plan)` and `checks.yaml` derivation — do not rename them.
@@ -255,3 +260,5 @@ node "${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}/scripts/run-chec
 | `checks.yaml` edited after sealing | Re-run `--seal`; the runner fails every check whose sealed fields changed |
 | Runner prints `CHECKS 0/0 FAIL: checks.lock missing` | Step 3 skipped `--seal`; re-derive and seal — the runner refuses an unsealed `checks.yaml` (exit 2) |
 | Most checks are `kind: judge` | Rewrite the criteria toward EARS trigger→response so a command decides them |
+| An AC the code before the change already satisfies, or one that is only an absence | Restate it as the response the change adds; for a removal, add the removal's observable effect (a request that no longer fires) |
+| A perf, security, or event claim in the ticket covered only by a UI-visible AC | Add a `telemetry:` AC or a `command` check that measures the claim |

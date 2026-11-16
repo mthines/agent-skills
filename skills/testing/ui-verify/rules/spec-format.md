@@ -21,6 +21,7 @@ The markers make the block **machine-findable** — the runner and `review-loop`
 - [Writing an intent spec (v2)](#writing-an-intent-spec-v2)
 - [Two host-contract rules](#two-host-contract-rules)
 - [Good and bad](#good-and-bad)
+- [Weak criteria and their rewrites](#weak-criteria-and-their-rewrites)
 
 ## The marker contract
 
@@ -89,20 +90,23 @@ Each block carries, in this order:
 
 | Field | Required | Rule |
 | --- | --- | --- |
-| `**Changed:**` | yes | Name the control, component, or region the diff adds or changes, the way a user sees it: "the Rename button in the dashboard header". The run fails when it never touches this target. |
+| `**Changed:**` | yes | Name the control, component, or region the diff adds or changes, the way a user sees it: "the Rename button in the dashboard header". The run fails when it never touches this target. End the line with `(base: <what the base build shows there>)`, or `(new in this change)` when base has no such target. |
 | `**Start:**` | yes | A path relative to the preview's base URL; `{placeholders}` resolve from the preview target's `fixtures.references`. |
-| `**Preconditions:**` | no | Bullets naming the state the run needs — a feature flag, a seeded record. Name each one: the runner may call an item unreachable only for a flag or record named here. |
+| `**Preconditions:**` | no | Bullets naming the state the run needs — a feature flag, a seeded record. Name each one: the runner may call an item unreachable only for a flag or record named here. End each bullet with whether the run's target reaches it: `— reachable`, or `— not reachable (feature flag)` / `(seed data)`. |
 | `**Steps:**` | yes | A numbered list of imperative user actions, one per step. Plain steps are guidance the runner may adapt. Start the step that exercises the `Changed` target with `[must-follow]` — at least one per spec. |
-| `**Expected:**` | yes | Bullets, one user-observable outcome each, observable on the `Changed` target or its direct effect. Name concrete text, values, or counts. A network outcome uses exactly `` `METHOD /path` returns NNN ``. |
+| `**Expected:**` | yes | Bullets, one user-observable outcome each, observable on the `Changed` target or its direct effect. Name concrete text, values, or counts. At least one bullet states something the base build cannot show. A network outcome uses exactly `` `METHOD /path` returns NNN ``. |
 | `**Hints:**` | no | Bullets carrying locators and navigation quirks from lessons ([`memory.md`](./memory.md)), in the single-braces locator form: `{role: "textbox", name: "Dashboard name"}`. |
 | `**Out of scope:**` | no | Bullets naming what the spec deliberately does not check. |
 
-Four authoring rules decide whether the run can prove anything:
+Five authoring rules decide whether the run can prove anything:
 
 1. **Mark the change, not the scaffolding, as `[must-follow]`.** When the diff adds a button, the click on that button is must-follow; opening the page that holds it is guidance.
 2. **Expect what the changed component itself renders.** An outcome visible before the change could run — a picker entry, a menu item that reveals the new widget — proves a flag or a route, not the change. Expect the widget's own content.
 3. **Name the instance.** When several elements share a name or test id, say which one: "the tool step titled *List all services in catalog*", never "the tool step".
 4. **Keep each `Expected` item checkable.** "Works correctly" and "looks good" cannot be observed. "The header shows *Q3 revenue*" can.
+5. **Make the spec able to fail on base.** Before writing an `Expected` list, state in `Changed` what base shows (`(base: …)`), then write at least one outcome base cannot show.
+   A list of only absences ("no X is shown") passes on base and proves nothing, unless the change removes X: then pair it with the removal's observable effect, such as a request that no longer fires.
+   See [Weak criteria](#weak-criteria-and-their-rewrites).
 
 Never put a CSS selector, `nth-child`, or XPath in any field, and never a credential — the block is public.
 
@@ -117,7 +121,7 @@ It uses the same fields as any intent spec — no new syntax — with three conv
 
 ```markdown
 ## Spec 3: Out of bounds: reload while a question is pending, then answer it
-**Changed:** the question card in an Agent0 thread
+**Changed:** the question card in an Agent0 thread (base: the card is lost on reload)
 **Start:** /agent0
 **Preconditions:**
 - A seeded thread whose last turn is paused on an unanswered question
@@ -151,7 +155,7 @@ Target: preview
 Format: intent
 
 ## Spec 1: A user renames a dashboard from the header
-**Changed:** the Rename button in the dashboard header (new in this PR)
+**Changed:** the Rename button in the dashboard header (new in this change)
 **Start:** /dashboards/{dashboardId}
 **Steps:**
 1. Open the dashboard.
@@ -185,3 +189,18 @@ Format: intent
 ```
 
 (Why it is bad: the close marker's version does not match the open, so the runner finds no block; `<details open>` shouts at the reader; the header has no `Format: intent`; the spec has no `Changed`, no `Start`, and no `[must-follow]` step, so the runner skips it as malformed; `.btn-primary` is a CSS selector; and "works correctly" names nothing the runner can observe.)
+
+## Weak criteria and their rewrites
+
+Each weak form below passes on the base build, or hides the defect it was written to catch.
+Rewrite it before writing the block.
+Why each fails: `aw-verify`'s `references/criterion-quality.md`.
+
+| Weak form | ✗ Wrong | ✓ Right |
+| --- | --- | --- |
+| Absence only | `The page does not show "Your invitations".` | `With one pending invite, the header shows a badge reading 1; with none, it shows no badge.` |
+| Absence a base backend also satisfies | `The reply has no "Add to dashboard" button.` | `The reply shows the artifact card titled "Latency by service".` |
+| Attribute, not effect | `The toggle has aria-pressed="true".` | `After the toggle is pressed, the list shows only the 3 archived rows.` |
+| Reaches a state, never checks it moved | `After ArrowDown, the "Memory detail" dialog is visible.` | `After ArrowDown, the second row is selected and the dialog title changes from "Rule A" to "Rule B".` |
+| Either / or | `The field shows 0.97 with the outline, or the form's saved value.` | `The target field shows 0.97 with the Agent0 outline.` |
+| Removal checked by what is gone from the UI | `The footer shows no diagnostic warning.` | `With the footer open for 30 seconds, the web-event feed holds no agent0.footer.diag event.` |

@@ -27,6 +27,11 @@ memory.search { q: "<3–6 keywords from the task: area, component, verb, joined
 1. Search, never list: everything the intake returns is re-read on every later turn, and a 50-item listing of both scopes costs more context than the whole Full procedure. Read a lesson's full body only when its title matches the task. On a contradiction the `repo::` lesson wins.
 2. Match each lesson's **Applies when** line against the task.
 3. Matches inform the tier decision and the approach; on Full they shape the brief and go to `aw-executor` in its dispatch prompt.
+4. Lite and Full also run one capped search for the criteria they are about to write; a match's **Do this instead** shapes the brief's `AC-n`. Micro skips it.
+
+```text
+memory.search { q: "<the same keywords>", scopes: ["repo::{owner}/{repo}", "global"], tags: ["criterion-quality"], limit: 3 }
+```
 
 ## Exit write
 

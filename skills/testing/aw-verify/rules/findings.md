@@ -47,6 +47,7 @@ Update a record in place (rewrite its line) when its status changes; never appen
 | `missing-signal` | The feature's new path emits no span/log/metric, or an expected attribute is absent |
 | `unlinked` | A web request whose backend trace is not linked to it — trace context was not propagated, so the journey breaks at the browser |
 | `spec-drift` | The PR's behavior and the ticket's acceptance criteria disagree |
+| `criterion-quality` | An AC fails an [`intent.md § Step 3b`](./intent.md#step-3b--lint-every-criterion-and-map-the-surfaces) test, a changed surface has no AC, or a path this report marked verified later shows a defect |
 
 ## `severity`
 
@@ -54,7 +55,7 @@ Update a record in place (rewrite its line) when its status changes; never appen
 | --- | --- |
 | `critical` | Data loss, security exposure, crash or 5xx on the happy path |
 | `high` | An acceptance criterion fails, or a crash/5xx on an edge input |
-| `medium` | Ungraceful but recoverable; performance over threshold; missing signal on a new path; `unlinked` |
+| `medium` | Ungraceful but recoverable; performance over threshold; missing signal on a new path; `unlinked`; `criterion-quality` |
 | `low` | Polish: copy, spacing, a WARN log with no user impact |
 
 ## `in_scope`

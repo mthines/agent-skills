@@ -20,6 +20,16 @@ Phase 1 produces three files, all tested against by later phases:
 
 A vague criterion here becomes a vague verdict later.
 
+## Contents
+
+- [Step 1 — Find the intent source](#step-1--find-the-intent-source-first-that-exists-wins)
+- [Step 2 — Prove the change is in the checkout](#step-2--prove-the-change-is-in-the-checkout)
+- [Step 3 — Write acceptance criteria](#step-3--write-acceptance-criteria-sources-2-and-3-only)
+- [Step 3b — Lint every criterion and map the surfaces](#step-3b--lint-every-criterion-and-map-the-surfaces)
+- [Step 4 — Write or reuse `specs.md`](#step-4--write-or-reuse-specsmd)
+- [Step 5 — Build the edge-case matrix](#step-5--build-the-edge-case-matrix)
+- [Output — `intent.md`](#output--intentmd)
+
 ## Step 1 — Find the intent source (first that exists wins)
 
 | # | Source | How to tell | Use |
@@ -58,16 +68,50 @@ The grep must hit; a miss stops the run with `blocked — checkout does not cont
 
 ## Step 3 — Write acceptance criteria (sources 2 and 3 only)
 
-One line per user-visible or API-visible behavior, each testable by an observer, numbered `AC-1`, `AC-2`, …:
+One line per user-visible or API-visible behavior, each testable by an observer, numbered `AC-1`, `AC-2`, …, each saying what base does so the criterion can fail:
 
 ```text
-✅ AC-2: Saving a view with an empty name shows "Name is required" under the field and sends no request.
+✅ AC-2: Saving a view with an empty name shows "Name is required" under the field and sends no request (base: saves a view named "").
 ❌ AC-2: Validation works.
+❌ AC-3: The page does not show "Your invitations".      (absence only: base passes it)
 ```
 
 When the PR and ticket disagree, the ticket wins; record the mismatch as `spec-drift`.
 
 Tag every criterion, from every source, with its surface: `ui:<route>`, `api:<METHOD path>`, or `worker:<component>`.
+
+## Step 3b — Lint every criterion and map the surfaces
+
+Run all five tests on every `AC-{n}` from every source, a brief's included.
+Most runs derive their own criteria, so Step 3 is where a weak one is cheapest to fix.
+
+| # | Test | The criterion fails it when |
+| --- | --- | --- |
+| 1 | Observable | No screenshot, response, span, or log line could show it |
+| 2 | On the changed target | It checks a sibling surface instead of the one the diff changed |
+| 3 | Fails on base | It is absence only, checks an attribute and not the effect, reaches a state without checking it moved, accepts either of two outcomes, or base already satisfies it. A removal passes this test when it checks the removal's observable effect, such as a request that stops firing |
+| 4 | Reachable on this environment | A flag, seeded record, credential, or backend change it needs is missing on `<env>` |
+| 5 | Not by construction | Reading the source would satisfy it |
+
+A failed test never drops or silently rewrites a criterion:
+
+| Source of the AC | Action |
+| --- | --- |
+| Fails test 4, from any source | Name the missing precondition in `intent.md`; keep the AC on its own target and never rewrite it onto a reachable sibling; it reports `⏭️ not verified on target (<cause>)` ([`report.md § Substitution`](./report.md#substitution)), never `pass` |
+| Fails test 2, derived by this run (sources 2 and 3) | Rewrite it onto the changed target the diff names |
+| Fails test 1, 3, or 5, derived by this run | Rewrite it in place, on the same target, so it passes the test |
+| Fails test 1, 2, 3, or 5, from an `/aw` brief | Keep the ID and text verbatim; write a `criterion-quality` finding ([`findings.md`](./findings.md#kind)) and a stronger probe as an `EC-n` row naming the AC under **Applies to** |
+
+Then fill the **Coverage** table in `intent.md`: one row per changed surface from Step 1 — route, endpoint, event added or removed, and every performance or security claim in the PR text.
+A claim that is not a UI outcome needs an `api:` or `worker:` criterion, or a `telemetry:` one when the claim is an event or span; a UI check does not cover it.
+A surface with no AC and no `Not applicable — <reason>` is a `criterion-quality` finding.
+
+```text
+✗ Perf claim "idle chats run no animations" → AC-4 [ui:/agent0] the chat looks the same as before
+✓ Perf claim "idle chats run no animations" → AC-4 [ui:/agent0] with the chat idle for 5 s, the page reports 0 running animations
+```
+
+Why each test exists: [`../references/criterion-quality.md`](../references/criterion-quality.md).
 
 ## Step 4 — Write or reuse `specs.md`
 
@@ -79,6 +123,7 @@ Tag every criterion, from every source, with its surface: `ui:<route>`, `api:<ME
 
 Name the spec after its criterion so the report can join them: `## Spec 2: AC-2 — An empty name is rejected inline`.
 Every target in a spec comes from the code: grep the component and locale files and put the locator under `**Hints:**`.
+End each spec's `**Changed:**` line with `(base: …)` and give its `**Expected:**` list at least one outcome base cannot show (`ui-verify`'s `rules/spec-format.md`, rule 5).
 
 ## Step 5 — Build the edge-case matrix
 
@@ -119,6 +164,13 @@ Intent source: /aw brief | PR + ticket | diff only
 ## Surfaces
 - Routes: …   Endpoints: …   Components (stack component names): …
 
+## Coverage
+| Surface | Covered by |
+| --- | --- |
+| /settings/notifications | AC-1 |
+| event `notification.saved` | AC-3 (telemetry:) |
+| removed event `footer.diag` | AC-4 (the event no longer fires) |
+
 ## Edge-case matrix
 | ID | Class | Probe | Applies to | Expected graceful outcome |
 | EC-1 | Empty | No channels configured | AC-1 | Empty state with a create action |
@@ -137,3 +189,6 @@ Intent source: /aw brief | PR + ticket | diff only
 - Deriving criteria from the diff alone when a ticket exists. **Fix:** the diff shows what changed, not what was wanted.
 - An edge case with no expected outcome. **Fix:** every row states the graceful result, so Phase 3 has an oracle.
 - Verifying the base branch because a worktree was already open. **Fix:** Step 2's grep is mandatory.
+- An AC every run would pass: absence only, an attribute, a state reached but never checked. **Fix:** Step 3b test 3; write the positive outcome and the `(base: …)` clause.
+- A claim about performance, security, or an event, covered only by a UI screenshot. **Fix:** the Coverage table; add an `api:` or `telemetry:` criterion.
+- Running a sibling surface because the named one is unreachable, then reporting the AC as passed. **Fix:** Step 3b test 4; the AC is `⏭️ not verified on target`.

@@ -20,7 +20,11 @@ Format: intent                     # Markdown intent spec — Steps guide the ru
 #   **Changed:**       REQUIRED. The control, component, or region the diff adds
 #                      or changes, named the way a user sees it ("the Rename
 #                      button in the dashboard header"). The run fails when it
-#                      never interacts with or observes this target.
+#                      never interacts with or observes this target. End the line
+#                      with `(base: <what the base build shows on this target>)`,
+#                      or `(new in this change)` when base has no such target.
+#                      A spec whose Changed target behaves the same on base cannot
+#                      fail, so it proves nothing.
 #   **Start:**         REQUIRED. A path relative to base_url. {placeholders}
 #                      resolve from aw-target fixtures.references.
 #   **Preconditions:** optional bullets. State the run needs, and what makes it
@@ -35,6 +39,8 @@ Format: intent                     # Markdown intent spec — Steps guide the ru
 #                      numbered E1, E2, … by position. Every item must be
 #                      observed, with evidence, on the Changed target or its
 #                      direct effect. Name concrete text, values, or counts.
+#                      At least one item states something base cannot show; a
+#                      list of only absences ("no X is shown") passes on base.
 #                      Network form (checked mechanically):
 #                        `METHOD /path` returns NNN
 #   **Hints:**         optional bullets. Locators and navigation quirks from
@@ -50,7 +56,7 @@ Format: intent                     # Markdown intent spec — Steps guide the ru
 **Changed:** the Rename button in the dashboard header (new in this change)
 **Start:** /dashboards/{dashboardId}
 **Preconditions:**
-- Dashboard "{dashboardId}" exists (handled by aw-target seed).
+- Dashboard "{dashboardId}" exists (handled by aw-target seed) — reachable.
 **Steps:**
 1. Open the dashboard.
 2. [must-follow] Click **Rename** in the dashboard header.
@@ -64,11 +70,11 @@ Format: intent                     # Markdown intent spec — Steps guide the ru
 - Renaming from the dashboard list.
 
 ## Spec 2: A user cancels a rename
-**Changed:** the Rename button in the dashboard header
+**Changed:** the Rename button in the dashboard header (new in this change)
 **Start:** /dashboards/{dashboardId}
 **Steps:**
 1. [must-follow] Click **Rename** in the dashboard header.
 2. Type "Draft name", then press Escape.
 **Expected:**
 - The header still shows the original dashboard name.
-- No rename field is visible.
+- No rename field is visible, and the Rename button is still shown in the header.

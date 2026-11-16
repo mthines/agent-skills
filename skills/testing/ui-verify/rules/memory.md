@@ -40,6 +40,7 @@ Apply matched lessons as authoring constraints:
 
 - A `ui-verify-lessons` navigation lesson → write its step into an intent spec's `**Steps:**` or `**Preconditions:**`, or its path into `**Start:**` (e.g. dismiss the cookie banner first, add `?tab=settings` to the start path); in a lifted grammar spec, the same lesson belongs in `preconditions:` or `flow:`.
 - An `aw-tester-lessons` locator lesson → put the locator form that healed reliably under the intent spec's `**Hints:**`; never the one that drifted.
+- A lesson tagged `criterion-quality` → write its **Do this instead** shape into the matching spec's `**Expected:**` list.
 
 Lessons are **advisory**. They shape the spec; they never make you skip authoring a spec or invent a step you cannot justify from the diff.
 
@@ -61,6 +62,7 @@ After the runner reports its verdict (`run` Step 6), write a `ui-verify-lessons`
 - A preview-deployment access quirk (a protection-bypass header, an auth-refresh step specific to the preview environment).
 - The spec's `Target: preview` resolved but the app required a navigation the spec did not encode.
 - An adversarial probe ([`adversarial.md`](./adversarial.md)) hit a `probe-error` twice because of an app-wide quirk the next pass should plan around — inputs that debounce, an optimistic success toast that reverts on failure, a route that needs a query param. Pass the matched lessons to the next pass on its `Lessons:` input line.
+- Every `Expected` item passed on a `Changed` target, and a defect on that target surfaced afterwards (the adversarial pass, a reviewer, a later run). Add tag `criterion-quality`; **What happened** names the `Expected` shape that passed, **Do this instead** names the shape that would have failed.
 - An intent spec passed with an `adapted` or `added` deviation the author could have written — a step the page always needs, or the real route to the changed control. Record the route the runner took, so the next author writes it as a step or a `**Hints:**` line.
 
 **Do not write** when:

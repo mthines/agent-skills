@@ -276,6 +276,25 @@ export const SUITES = [
     inputKey: "input", inputLabel: "The author's situation",
     choices: ["skipped", "deep", "fan-out", "in-context"],
   },
+  {
+    name: "criterion-quality",
+    golden: "golden/criterion-quality.jsonl",
+    // 21 cases: 5 pass / 3 observable / 3 target / 4 base / 3 reachable / 3 construction. Four are
+    // decoys that point at a failure and pass — a removal paired with its observable effect (reads
+    // as an absence), a list entry that is the action's direct effect (reads as a sibling surface),
+    // a flag the environment has on (reads as unreachable), and a count-and-parent telemetry
+    // criterion (reads as by-construction). The decision is the first-failing-test table. The
+    // rubric is the whole Step 3b section, so the action table and the Coverage text ride along; the
+    // goldens exercise only the five-row table and the removal exception, and editing either of the
+    // other two changes what the model is sent.
+    rubric: {
+      file: "skills/testing/aw-verify/rules/intent.md",
+      section: "## Step 3b — Lint every criterion and map the surfaces",
+    },
+    instruction: "You are aw-verify linting ONE acceptance criterion before any browser run. Using ONLY the rules below, name the first test, in table order, that the criterion fails, or `pass` when it fails none. Reply with one word: pass, observable, target, base, reachable, or construction.",
+    inputKey: "input", inputLabel: "The criterion and its context",
+    choices: ["pass", "observable", "target", "base", "reachable", "construction"],
+  },
 ];
 
 /** Repo-relative path of a suite's golden file (the `golden` field is relative to scripts/eval/). */
