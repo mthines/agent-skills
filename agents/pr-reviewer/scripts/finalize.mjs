@@ -1506,7 +1506,7 @@ export function checkShape(judgments) {
   const violations = [];
   candidates.forEach((/** @type {any} */ c, /** @type {number} */ index) => {
     try {
-      // finalizeReview tags a lens body ([lens:<name>]) before rendering, so the shape check measures the tagged body.
+      // finalizeReview tags a lens body ([lens:<name>]); the inline payload drops that tag for the footer's lens, so the shape check measures the untagged body.
       const payload = toInlineCommentPayload(lensTagged(c), { sha });
       renderComment(payload);
     } catch (e) {
