@@ -40,7 +40,7 @@ import {
 } from "./comment-spine.mjs";
 
 const SCALARS = ["PREFIX", "TIER", "TITLE", "BODY", "BLOCKING", "PSEUDO", "FP", "FIX_URL", "SHA",
-  "UNVERIFIED"];
+  "UNVERIFIED", "LENS"];
 const STRUCTURED = ["EVIDENCE", "FENCE"];
 const KNOWN = new Set([...SCALARS, ...STRUCTURED]);
 
@@ -334,7 +334,7 @@ function build(data) {
     if (data.PSEUDO === true) blocks.push("_Pseudo-code — verify before applying._");
   }
   if (button) blocks.push(button);
-  blocks.push(footerLine({ sha: String(data.SHA) }));
+  blocks.push(footerLine({ sha: String(data.SHA), lens: data.LENS ? String(data.LENS) : null }));
   if (fpMarker) blocks.push(fpMarker);
 
   const out = `${blocks.join("\n\n")}\n`;
@@ -435,6 +435,12 @@ function selfTest() {
   // the direction this can regress: `footerLine`'s `docs` flag defaults off, so the link comes back
   // only if this surface starts passing it — and the assertion above would still pass if it did,
   // since it only checks a prefix. The methodology link belongs once per review, on the report.
+  t("a lens finding names its lens in the footer, after the commit", () =>
+    renderComment({ ...ISSUE, LENS: "animations" })
+      .includes("<sup>`pr-reviewer` · commit `7389036` · lens `animations`</sup>"));
+  t("a lens name that is markup is rejected", () => {
+    try { renderComment({ ...ISSUE, LENS: "a`b" }); return false; } catch { return true; }
+  });
   t("the inline footer carries no methodology link", () =>
     !renderComment(ISSUE).includes("how these findings are produced"));
   t("the fingerprint marker is built, not typed", () =>

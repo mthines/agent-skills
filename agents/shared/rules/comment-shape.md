@@ -58,6 +58,7 @@ One JSON object per finding. **It is data, not markdown.**
 | `PSEUDO` | no | Boolean; appends the pseudo-code disclaimer. Rejected with no `FENCE` to disclaim. |
 | `FP` | on `issue` / `suggestion` | The v2 fingerprint. **Rejected** on the one-liner prefixes, and rejected if it is not a real v2 key. |
 | `FIX_URL` | no | The Agent0 deep link (§ Fix-with-Agent0 button). |
+| `LENS` | no | The review lens that raised the finding (`[A-Za-z0-9._-]`, the pattern `select-lenses.mjs` admits); `finalize` sets it from a `finder: "lens"` candidate's `lens`, never the model. Renders in the footer, and replaces the body's `[lens:<name>]` tag on the inline surface (the report keeps the tag). **Rejected** if it is not a bare name. |
 | `SHA` | yes | `${HEAD_SHA:0:7}` — exactly 7 lowercase hex chars, for the footer. |
 
 An unknown key is a hard error, not a no-op: a typo'd slot would otherwise render nothing and silently drop the evidence line, the patch, or the button.
@@ -252,7 +253,7 @@ Every posted inline comment ends with the shared attribution footer, built by
 carve-out is a decision to re-make on every finding, and the cost of the rule as stated is one
 `<sup>` line on a rare comment.
 
-**Inline carries the identity half only — `` `pr-reviewer` · commit `<sha7>` `` and nothing else.**
+**Inline carries the identity half only — `` `pr-reviewer` · commit `<sha7>` `` — plus `` · lens `<name>` `` when a review lens raised the finding.**
 The shared function is the same; the *arguments* differ, and always have (the report passes its run
 line and its `updated` stamp, an inline finding passes neither). The **methodology link** belongs
 once per review, on the object that *is* the review — repeating
@@ -260,7 +261,7 @@ once per review, on the object that *is* the review — repeating
 say the same thing the report already says once, on the surface with the least room for it. So
 `footerLine()`'s `docs` flag defaults **off** and only `render-report.mjs` passes `docs: true`: a
 surface has to *ask* for the link, which is why this cannot silently come back. Guarded from both
-directions — L1 `G46d` diffs the four inline reference renderings, which carry the whole footer and
+directions — L1 `G46d` diffs the inline reference renderings, which carry the whole footer and
 no methodology link, and `G25` diffs the report's own renderings, which do carry it.
 
 It answers two questions nothing else on this surface could. *Who is speaking* — an inline comment
