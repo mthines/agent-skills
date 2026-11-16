@@ -14,7 +14,7 @@
     "code": "const jitter = () => Math.random() * base;"
   },
   "PSEUDO": true,
-  "FP": "quality:maintainability:jitter@src/api/backoff.ts",
+  "FP": "lens:maintainability:jitter@src/api/backoff.ts",
   "SHA": "7389036",
   "LENS": "animations"
 }

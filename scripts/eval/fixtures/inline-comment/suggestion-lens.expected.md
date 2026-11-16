@@ -12,4 +12,4 @@ _Pseudo-code — verify before applying._
 
 <sup>`pr-reviewer` · commit `7389036` · lens `animations`</sup>
 
-<!-- fp:v2:quality:maintainability:jitter@src/api/backoff.ts -->
+<!-- fp:v2:lens:maintainability:jitter@src/api/backoff.ts -->

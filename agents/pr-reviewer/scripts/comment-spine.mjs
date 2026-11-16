@@ -66,7 +66,7 @@ export const GATE_DETAILS_MAX = 120;
 /** A 7-char sha, everywhere. Both surfaces render the same length or neither is trustworthy. */
 export const SHA7 = /^[0-9a-f]{7}$/;
 /** A review lens name as it appears in a footer: a file or directory stem, never markup. */
-export const LENS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$/;
+export const LENS_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 /** Where the button images live (`agent0-fix-links.md § Button markup`). */
 export const ASSET_BASE =
