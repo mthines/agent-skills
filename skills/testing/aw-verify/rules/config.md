@@ -15,6 +15,10 @@ Every skill in the verification suite — `aw-verify`, `ui-verify`, `telemetry-v
 `/aw-verify setup` writes it; nothing else does.
 It is committed, so a teammate who clones the repo runs `/aw-verify` with no setup.
 
+## Contents
+
+[Files](#files) · [Resolve](#resolve-the-config-every-skill-before-any-other-step) · [`environments.yml`](#environmentsyml) · [`flags`](#flags) · [`ui.yml`](#uiyml) · [`telemetry.yml`](#telemetryyml) · [Rules](#rules)
+
 ## Files
 
 | Path | Committed | Read by | Holds |
@@ -90,6 +94,32 @@ environments:
 
 `auth` fields: [`auth.md`](./auth.md). `auth` and `fixtures` keep the field meanings `aw-tester` reads.
 At run time the caller writes `aw-tester`'s target file from one environment to `.agent/{branch}/aw-target.<env>.yml` (`name: <env>`, `base_url: <resolved url>`, plus that environment's `auth`, `fixtures`, and `ui.yml`'s `constraints`); that file is never committed.
+
+### `flags`
+
+`environments.<env>.flags` says how a run sets a feature flag in each service, so a criterion that needs a flag state never waits for a human.
+The protocol is [`flags.md`](./flags.md).
+
+```yaml
+    flags:                            # on a hosted environment: `flags: manual`
+      ui:                             # a name the repo picks, one per service that reads flags
+        components: [ui]              # restarted to apply, named as in stack.component_map
+        shared: true                  # the file is read by other checkouts too (default false)
+        set: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh ui set {key} {value}'
+        restore: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh ui restore {key}'
+        apply: ['l0cal-next config reload --no-restart --output json', 'l0cal-next restart ui --output json']
+        verify: '.agents/aw/scripts/flags/flags.sh ui verify {key}'
+```
+
+| Field | Meaning |
+| --- | --- |
+| `set`, `restore` | Commands run from the checkout root. `{key}`, `{value}`, `{backup_dir}` are substituted. `set` saves the original value under `{backup_dir}` once; `restore` puts that value back, or removes a key that was absent |
+| `apply` | Commands, in order, that make the running service read the change; empty when the service reads the file on every request |
+| `verify` | Prints the value the running service holds; empty when it cannot be observed (reported as `set, not observed`) |
+| `components`, `shared` | What `apply` restarts, and whether other checkouts see the change |
+
+A repo ships the commands as a script under `.agents/aw/scripts/flags/` so a run never composes a file edit itself.
+A value that is a secret, or a file that holds one, never appears in a command, in `flags.json`, or in the report.
 
 ## `ui.yml`
 
