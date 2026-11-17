@@ -3,8 +3,8 @@ name: deployment-verify
 description: >
   Verifies a merged change on a real deployment and reverses it when it hurts: waits until the merged
   commit is serving, steps the change's feature flag through a rollout (1 → 10 → 50 → 100 %), compares
-  the flag-on and flag-off cohorts in the same window from telemetry, lets a deterministic rule decide
-  PASS, HOLD, or ROLLBACK, flips the flag back on a failure, proves recovery, and notifies where the
+  the flag-on and flag-off cohorts in the same window from telemetry (a change with no flag is compared
+  before and after the deploy), lets a deterministic rule decide PASS, HOLD, or ROLLBACK, flips the flag back on a failure, proves recovery, and notifies where the
   outcome needs a human. Resumable across short runs, so a scheduled automation can drive it unattended.
   `setup` writes `.agents/aw/release.yml`. Triggers on "verify the deploy", "is it working in production", "roll out this flag", "/deployment-verify".
 disable-model-invocation: false
@@ -38,7 +38,7 @@ Why it is shaped this way: [`references/design.md`](./references/design.md).
 | `<pr>` | A merged PR carrying a contract; `--all` = every merged PR labelled `deployment-verify` |
 | `run` (default) | Tick repeatedly, waiting until the next unit is due, until the outcome is terminal |
 | `tick` | Do every unit that is due now, then exit ([`rules/state.md`](./rules/state.md)) |
-| `--env` | A `release.yml` environment; default `production` |
+| `--env` | A `release.yml` environment; default is the contract's `env`, else `production` |
 | `--steps` | Override `release.yml` → `steps` |
 | `--rollback` | Override the personal `rollback` policy for this run |
 | `--deployed-at` | Required when the environment's deploy detection is `manual` |
