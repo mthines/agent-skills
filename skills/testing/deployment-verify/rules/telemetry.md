@@ -55,6 +55,22 @@ WHERE c.resource_attributes['service.name'] = '<service>'
 GROUP BY variant
 ```
 
+## Query — no flag (before/after)
+
+One aggregate row per window, split by deploy version instead of cohort (`<k>` = `detect.attribute`, `<live>` = `live_values`):
+
+```sql
+SELECT count() AS n,
+       countIf(status_code = 'ERROR') AS errors,
+       round(avg(duration) / 1000000, 1) AS avg_ms
+FROM spans
+WHERE resource_attributes['service.name'] = '<service>'
+  AND kind = 'SERVER'
+  AND name IN ('<root_span>', ...)
+  AND resource_attributes['<k>'] IN ('<live>', ...)                         -- after
+  -- AND resource_attributes['<k>'] != '' AND resource_attributes['<k>'] NOT IN ('<live>', ...)   -- before
+```
+
 Recommend `cohort.on: root` in the report whenever a run needed the join: it is cheaper and cannot double-count.
 
 ## D0QL limits (Dash0)

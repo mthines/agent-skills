@@ -70,7 +70,8 @@ export function parseContract(body) {
 }
 
 export function validateContract(contract, config) {
-	for (const k of ["service", "root_spans", "cohort"]) if (!contract[k]) return `contract is missing "${k}"`;
+	// A cohort only exists when a flag splits traffic; a no-flag contract is measured before/after the deploy.
+	for (const k of contract.flag ? ["service", "root_spans", "cohort"] : ["service", "root_spans"]) if (!contract[k]) return `contract is missing "${k}"`;
 	if (contract.flag && !providerFor(contract, config)) return `unknown provider ${contract.flag.provider}`;
 	for (const [k, v] of Object.entries(contract.thresholds || {})) {
 		const base = config.thresholds[k];
@@ -104,6 +105,20 @@ export function cohortQuery(contract) {
 	return `SELECT span_attributes[${q(c.attribute)}] AS variant, count() AS n, countIf(status_code = 'ERROR') AS errors, round(avg(duration) / 1000000, 1) AS avg_ms FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND kind = 'SERVER' AND name IN (${spans}) AND span_attributes[${q(c.attribute)}] IN (${values}) GROUP BY variant`;
 }
 
+// No-flag measurement: one aggregate over SERVER root spans, split by deploy version instead of cohort.
+//   before — spans of any version that does not contain the change; after — spans of the versions that do.
+//   any — everything (the recovery window after a platform rollback). `versions` empty → time window only.
+export function windowQuery(contract, { attribute, versions = [], mode }) {
+	const spans = contract.root_spans.map(q).join(", ");
+	let filter = "";
+	if (attribute && versions.length && mode !== "any") {
+		const k = `resource_attributes[${q(attribute)}]`;
+		const list = versions.map(q).join(", ");
+		filter = mode === "after" ? ` AND ${k} IN (${list})` : ` AND ${k} != '' AND ${k} NOT IN (${list})`;
+	}
+	return `SELECT count() AS n, countIf(status_code = 'ERROR') AS errors, round(avg(duration) / 1000000, 1) AS avg_ms FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND kind = 'SERVER' AND name IN (${spans})${filter}`;
+}
+
 // The values of the detect attribute currently serving, most traffic first.
 export function deployQuery(contract, detect) {
 	const k = q(detect.attribute);
@@ -112,12 +127,34 @@ export function deployQuery(contract, detect) {
 
 // Live when a serving value equals the target, or (merge_sha) a serving commit already contains the merge:
 // a busy repo deploys a later commit and never the merge commit itself.
-export async function isDeployed(rows, detect, sha, contains) {
+export async function liveValues(rows, detect, sha, contains) {
 	const want = detect.equals === "merge_sha" ? sha : detect.equals;
-	if (rows.some((r) => r.live === want)) return true;
-	if (detect.equals !== "merge_sha" || !contains) return false;
-	for (const r of rows) if (await contains(sha, r.live)) return true;
-	return false;
+	const live = [];
+	for (const r of rows) {
+		if (r.live === want || (detect.equals === "merge_sha" && contains && (await contains(sha, r.live, detect)))) live.push(r.live);
+	}
+	return live;
+}
+
+export async function isDeployed(rows, detect, sha, contains) {
+	return (await liveValues(rows, detect, sha, contains)).length > 0;
+}
+
+// Git refs to try for a serving `service.version`: a commit SHA is itself; a release tag is tried with and
+// without the "v" (or only `detect.tag_prefix` when set). Anything else cannot be resolved → no refs.
+export function releaseRefs(live, tagPrefix) {
+	const v = String(live);
+	if (/^[0-9a-f]{7,40}$/.test(v)) return [v];
+	if (!/^v?\d+\.\d+\.\d+$/.test(v)) return [];
+	const bare = v.replace(/^v/, "");
+	return tagPrefix === undefined ? [`v${bare}`, bare] : [`${tagPrefix}${bare}`];
+}
+
+// No-flag stats: the single aggregate row lands in `test` (before/after) or `control` (any).
+function toWindowStats(rows, mode) {
+	const r = rows[0];
+	const x = r && Number(r.n) > 0 ? { n: Number(r.n), errors: Number(r.errors), avg_ms: Number(r.avg_ms) || 0 } : { n: 0, errors: 0, avg_ms: 0 };
+	return mode === "any" ? { test: { n: 0, errors: 0, avg_ms: 0 }, control: x } : { test: x, control: { n: 0, errors: 0, avg_ms: 0 } };
 }
 
 function toStats(rows, contract) {
@@ -199,7 +236,11 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 	const propagation = (providerFor(contract, config)?.propagation_seconds ?? 0) * 1000;
 	const synthetic = env.traffic && env.traffic !== "real";
 	const holdCap = (config.max_hold_minutes ?? 30) * 60_000;
-	const query = (from, to) => io.sql(cohortQuery(contract), { dataset: env.dataset, from: iso(from), to: iso(to) }).then((r) => toStats(r, contract));
+	const detectAttr = env.deploy?.detect?.attribute;
+	const query = (from, to, mode) =>
+		contract.flag
+			? io.sql(cohortQuery(contract), { dataset: env.dataset, from: iso(from), to: iso(to) }).then((r) => toStats(r, contract))
+			: io.sql(windowQuery(contract, { attribute: detectAttr, versions: s.live_values || [], mode }), { dataset: env.dataset, from: iso(from), to: iso(to) }).then((r) => toWindowStats(r, mode));
 	const end = (outcome, reason) => Object.assign(s, { phase: "done", outcome, reason, ended_at: iso(io.now()) });
 	const offValue = providerFor(contract, config)?.rollout === "boolean" ? false : 0;
 	const valueFor = (pct) => (providerFor(contract, config)?.rollout === "boolean" ? pct > 0 : pct);
@@ -217,11 +258,11 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 		return { from, to, due: io.now() };
 	}
 
-	async function measure(from, to) {
-		let stats = await query(from, to);
+	async function measure(from, to, mode) {
+		let stats = await query(from, to, mode);
 		if (synthetic && s.sent && stats.test.n + stats.control.n < 0.9 * s.sent) {
 			await io.sleep(ingest);
-			stats = await query(from, to);
+			stats = await query(from, to, mode);
 		}
 		return stats;
 	}
@@ -238,14 +279,34 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 				s.deploy_live_at = deployedAt;
 			} else {
 				const rows = await io.sql(deployQuery(contract, env.deploy.detect), { dataset: env.dataset, from: iso(now - 15 * 60_000), to: iso(now) });
-				if (!(await isDeployed(rows, env.deploy.detect, sha, io.contains))) {
+				const live = await liveValues(rows, env.deploy.detect, sha, io.contains);
+				if (!live.length) {
 					const minutes = env.deploy.timeout_minutes ?? 60;
 					if (mergedAt && now - Date.parse(mergedAt) > minutes * 60_000) return end("STOPPED", `deploy not detected in ${minutes} min — nothing changed`);
 					return s;
 				}
 				s.deploy_live_at = iso(now);
+				s.live_values = live;
 			}
 			s.phase = "baseline";
+			continue;
+		}
+
+		if (s.phase === "baseline" && !contract.flag) {
+			// No flag: the baseline is the past — the old version's traffic just before the deploy. Nothing to wait for.
+			if (!s.baseline_window) {
+				const to = Date.parse(s.deploy_live_at) - ingest;
+				s.baseline_window = { from: iso(to - 2 * window), to: iso(to), due: iso(now) };
+			}
+			const st = await measure(Date.parse(s.baseline_window.from), Date.parse(s.baseline_window.to), "before");
+			if (st.test.n < t.min_reference_requests) {
+				if (s.baseline_extended) return end("STOPPED", `not enough traffic to verify — ${st.test.n} requests before the deploy`);
+				s.baseline_extended = true;
+				s.baseline_window = { ...s.baseline_window, from: iso(Date.parse(s.baseline_window.from) - 4 * window) };
+				continue;
+			}
+			s.baseline = { ...st.test, ...s.baseline_window };
+			Object.assign(s, { phase: "step", step_index: 0, last_passed_value: 0, window: null, hold_since: null });
 			continue;
 		}
 
@@ -277,25 +338,26 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 				if (contract.flag) await io.setFlag(valueFor(pct));
 				s.step_set_at = iso(io.now());
 				await io.sleep(synthetic ? propagation : 0);
-				const w = await produceWindow(pct, io.now() + (synthetic ? 0 : propagation));
+				// No flag: the after window opens at the deploy, not at this tick.
+				const w = await produceWindow(pct, contract.flag ? io.now() + (synthetic ? 0 : propagation) : Date.parse(s.deploy_live_at));
 				s.window = { from: iso(w.from), to: iso(w.to), due: iso(w.due) };
 			}
 			if (io.now() < Date.parse(s.window.due)) return s;
-			const stats = await measure(Date.parse(s.window.from), Date.parse(s.window.to));
+			const stats = await measure(Date.parse(s.window.from), Date.parse(s.window.to), contract.flag ? undefined : "after");
 			const total = stats.test.n + stats.control.n;
 			const share = total ? stats.test.n / total : 0;
 			const live = pct === 100 ? stats.test.n > 0 && (stats.control.n === 0 || share >= 0.95) : total < 200 || share >= pct / 200;
 			let verdict = live ? decide({ ...stats, baseline: s.baseline }, t) : { verdict: "HOLD", reason: `step not live: test share ${(share * 100).toFixed(1)}% at ${pct}%` };
 			if (!live && s.not_live_once) {
 				if (contract.flag) await io.setFlag(valueFor(s.last_passed_value));
-				return end("INCONCLUSIVE", "flag change not visible in telemetry — check the provider's set command and the cohort attribute");
+				return end("INCONCLUSIVE", contract.flag ? "flag change not visible in telemetry — check the provider's set command and the cohort attribute" : "new version not seen in the after window — check the environment's detect attribute");
 			}
 			if (!live) s.not_live_once = true;
 			s.steps = s.steps.filter((x) => x.value !== pct).concat([{ value: pct, ...s.window, test: stats.test, control: stats.control, verdict: verdict.verdict, reason: verdict.reason }]);
 			io.log(`step ${pct}%: ${verdict.verdict} — ${verdict.reason}`);
 			if (verdict.verdict === "PASS") {
 				s.last_passed_value = pct;
-				if (s.step_index + 1 >= steps.length) return end("PASS", `${pct}% passed; flag left on`);
+				if (s.step_index + 1 >= steps.length) return end("PASS", contract.flag ? `${pct}% passed; flag left on` : "after window held against the before window");
 				Object.assign(s, { step_index: s.step_index + 1, window: null, hold_since: null, holds: 0, not_live_once: false });
 				continue;
 			}
@@ -336,7 +398,7 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 				s.recovery_window = { from: iso(w.from), to: iso(w.to), due: iso(w.due) };
 			}
 			if (io.now() < Date.parse(s.recovery_window.due)) return s;
-			const st = await measure(Date.parse(s.recovery_window.from), Date.parse(s.recovery_window.to));
+			const st = await measure(Date.parse(s.recovery_window.from), Date.parse(s.recovery_window.to), contract.flag ? undefined : "any");
 			const rate = (x) => (x.n ? (100 * x.errors) / x.n : 0);
 			const secs = Math.round((io.now() - Date.parse(s.rollback_at)) / 1000);
 			if (contract.flag && st.test.n > 0) {
@@ -362,6 +424,7 @@ export function renderReport(s, contract, pr) {
 	const lines = [
 		`DEPLOYMENT ${status}`,
 		`change:   ${pr?.title ? `${pr.title} (#${pr.number})` : "local run"} · flag ${contract.flag?.key || "none"}${contract.flag ? ` via ${contract.flag.provider}` : ""} · ${s.env}`,
+		...(contract.flag ? [] : ["mode:     no flag — before/after only, attribution weaker"]),
 		`deploy:   ${s.deploy_live_at ? `live at ${s.deploy_live_at}` : "waiting"}`,
 		`baseline: ${s.baseline ? `${s.baseline.n} requests, ${s.baseline.errors} errors, ${s.baseline.avg_ms} ms` : "pending"}`,
 		`step   test n/err/ms    control n/err/ms   verdict`,
@@ -443,10 +506,12 @@ function realIo({ config, contract }) {
 			return true;
 		},
 		// Does commit `live` contain commit `merge`? GitHub compare: merge...live is "ahead" or "identical".
-		contains: async (merge, live) => {
-			if (!/^[0-9a-f]{7,40}$/.test(String(live))) return false;
-			const r = spawnSync("gh", ["api", `repos/{owner}/{repo}/compare/${merge}...${live}`, "--jq", ".status"], { encoding: "utf8" });
-			return r.status === 0 && ["ahead", "identical"].includes(r.stdout.trim());
+		contains: async (merge, live, detect) => {
+			for (const ref of releaseRefs(live, detect?.tag_prefix)) {
+				const r = spawnSync("gh", ["api", `repos/{owner}/{repo}/compare/${merge}...${ref}`, "--jq", ".status"], { encoding: "utf8" });
+				if (r.status === 0) return ["ahead", "identical"].includes(r.stdout.trim());
+			}
+			return false;
 		},
 		log: (m) => console.error(`[deployment-verify] ${m}`),
 	};
@@ -603,7 +668,80 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} deploy detection accepts a later commit that contains the merge`);
 	}
-	const total = 8;
+	// Release tags: a serving v2.0.N / 2.0.N resolves to a git ref; hex SHAs pass through; noise does not.
+	{
+		const detect = { attribute: "service.version", equals: "merge_sha" };
+		const contains = async (merge, live, d) => releaseRefs(live, d?.tag_prefix).includes("v2.0.4541");
+		const ok =
+			JSON.stringify(releaseRefs("2.0.4541")) === '["v2.0.4541","2.0.4541"]' &&
+			JSON.stringify(releaseRefs("v2.0.4541")) === '["v2.0.4541","2.0.4541"]' &&
+			JSON.stringify(releaseRefs("2.0.4541", "rel-")) === '["rel-2.0.4541"]' &&
+			JSON.stringify(releaseRefs("abc1234")) === '["abc1234"]' &&
+			releaseRefs("dpl_xyz").length === 0 &&
+			(await isDeployed([{ live: "2.0.4541", n: 9 }], detect, "m", contains)) &&
+			(await isDeployed([{ live: "v2.0.4541", n: 9 }], detect, "m", contains)) &&
+			!(await isDeployed([{ live: "dpl_xyz", n: 9 }], detect, "m", contains));
+		if (!ok) failed++;
+		console.log(`${ok ? "ok  " : "FAIL"} deploy detection resolves release tags to refs`);
+	}
+	// No flag: a contract needs a cohort only when a flag is set.
+	{
+		const nf = { service: "api", root_spans: ["GET /x"] };
+		const ok = validateContract(nf, base) === null && /cohort/.test(validateContract({ ...nf, flag: { key: "f", provider: "sim" } }, base) || "");
+		if (!ok) failed++;
+		console.log(`${ok ? "ok  " : "FAIL"} contract requires cohort only with a flag`);
+	}
+	// No flag, before/after: old versions serve before the deploy, the new version after. Version filter splits them.
+	async function noFlagWorld({ afterErrorRate = 0, afterMs = 5, beforeN = 300 }) {
+		let clock = Date.parse("2026-11-11T10:00:00Z");
+		const deployAt = clock;
+		const queries = [];
+		const io = {
+			now: () => clock,
+			sleep: async (ms) => void (clock += ms),
+			setFlag: async () => assertNever(),
+			sendTraffic: async () => {},
+			platformRollback: async () => false,
+			contains: async () => true,
+			sql: async (query, { from, to }) => {
+				queries.push(query);
+				if (/GROUP BY live/.test(query)) return [{ live: "v2.0.9", n: 50 }];
+				const a = Date.parse(from), b = Date.parse(to);
+				const after = / IN \('v2.0.9'\)/.test(query);
+				const before = /NOT IN \('v2.0.9'\)/.test(query);
+				if (before) return b <= deployAt ? [{ n: beforeN, errors: 0, avg_ms: 5 }] : [{ n: 0, errors: 0, avg_ms: 0 }];
+				if (after) return a >= deployAt ? [{ n: 200, errors: Math.round(200 * afterErrorRate), avg_ms: afterMs }] : [{ n: 0, errors: 0, avg_ms: 0 }];
+				return [{ n: 200, errors: 0, avg_ms: 5 }];
+			},
+			log: () => {},
+		};
+		return { io, queries };
+	}
+	function assertNever() {
+		throw new Error("setFlag called for a no-flag contract");
+	}
+	const nfConfig = { ...base, environment: { dataset: "x", deploy: { detect: { attribute: "service.version", equals: "merge_sha" } }, ingest_wait_seconds: 0 }, steps: [100] };
+	const nfContract = { service: "api", root_spans: ["GET /x"] };
+	for (const [name, opts, expected, check] of [
+		["no flag: healthy rollout passes on before/after", {}, "PASS", (s) => s.baseline.n === 300 && s.steps.length === 1 && s.live_values[0] === "v2.0.9"],
+		["no flag: regression escalates, never touches a flag", { afterErrorRate: 0.3 }, "ESCALATE", (s) => /rollback needs a human/.test(s.reason)],
+		["no flag: no traffic before the deploy stops, not passes", { beforeN: 3 }, "STOPPED", (s) => /before the deploy/.test(s.reason)],
+	]) {
+		const w = await noFlagWorld(opts);
+		let s = null, err;
+		try {
+			for (let i = 0; i < 50 && s?.phase !== "done"; i++) {
+				s = await tick(s, { contract: nfContract, config: nfConfig, sha: "m", mergedAt: "2026-11-11T09:00:00Z", io: w.io });
+				await w.io.sleep(60_000); // real traffic: the window closes as time passes
+			}
+		} catch (e) {
+			err = e;
+		}
+		const ok = !err && s.outcome === expected && check(s);
+		if (!ok) failed++;
+		console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${err ? err.message : `${s.outcome} — ${s.reason}`}`);
+	}
+	const total = 14;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
@@ -632,7 +770,15 @@ async function main() {
 			return null;
 		}
 	})();
-	const config = loadConfig(a.env || "production", { slug });
+	const defaultEnv = a.env && a.env !== true ? a.env : "production";
+	const config = loadConfig(defaultEnv, { slug });
+	// A contract's own `env` picks its release.yml environment unless --env was passed explicitly.
+	const configs = new Map([[defaultEnv, config]]);
+	const configFor = (contract) => {
+		const name = (!a.env && contract?.env) || defaultEnv;
+		if (!configs.has(name)) configs.set(name, loadConfig(name, { slug }));
+		return configs.get(name);
+	};
 	if (a["check-config"]) {
 		console.log(`release.yml ok: environment ${config.env}, ${config.flags?.providers?.length || 0} provider(s), steps ${JSON.stringify(config.steps)}`);
 		return;
@@ -640,9 +786,10 @@ async function main() {
 	let worst = 0;
 	if (a.local) {
 		const contract = JSON.parse(readFileSync(a.contract, "utf8"));
-		const err = validateContract(contract, config);
+		const cfg = configFor(contract);
+		const err = validateContract(contract, cfg);
 		if (err) throw new Error(err);
-		const s = await runOne({ store: localStore(a.local), contract, config, deployedAt: a["deployed-at"], loop: !!a.run });
+		const s = await runOne({ store: localStore(a.local), contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run });
 		console.log(renderReport(s, contract, null).split("\n").slice(2, -2).join("\n"));
 		return process.exit(s.phase === "done" && EXCEPTION_OUTCOMES.includes(s.outcome) ? 3 : 0);
 	}
@@ -658,14 +805,23 @@ async function main() {
 				continue;
 			}
 			const { contract, error } = parseContract(store.pr.body);
-			const invalid = error || validateContract(contract, config);
+			let cfg = config;
+			let invalid = error;
+			if (!invalid) {
+				try {
+					cfg = configFor(contract);
+				} catch (e) {
+					invalid = e.message;
+				}
+			}
+			invalid ||= validateContract(contract, cfg);
 			if (invalid) {
-				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: config.env, steps: [] };
+				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: cfg.env, steps: [] };
 				store.write(renderReport(s, contract || {}, store.pr));
 				store.finish();
 				continue;
 			}
-			const s = await runOne({ store, contract, config, sha: store.pr.mergeCommit?.oid, mergedAt: store.pr.mergedAt, deployedAt: a["deployed-at"], loop: !!a.run });
+			const s = await runOne({ store, contract, config: cfg, sha: store.pr.mergeCommit?.oid, mergedAt: store.pr.mergedAt, deployedAt: a["deployed-at"], loop: !!a.run });
 			if (s.phase === "done" && EXCEPTION_OUTCOMES.includes(s.outcome)) worst = 3;
 		} catch (e) {
 			console.error(`#${n}: ${e.message}`);

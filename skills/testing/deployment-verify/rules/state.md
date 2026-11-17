@@ -44,7 +44,7 @@ Edit it in place with `gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id>
 
 ## One tick
 
-1. **Find work.** `--pr <n>`: that PR. `--all`: `gh pr list --state merged --label deployment-verify --json number` — every merged PR still in progress.
+1. **Find work.** `--pr <n>`: that PR. `--all`: `gh pr list --state merged --label deployment-verify --json number` — every merged PR still in progress, each in the environment its contract's `env` names (default `--env`).
 2. **Take the lease.** Skip the PR when `lease.until` is in the future and `holder` is not this run. Otherwise write `lease = { holder: <run id>, until: now + 15 min }`, re-read the comment, and continue only if `holder` is still this run.
 3. **Do the due unit** for the phase:
 
