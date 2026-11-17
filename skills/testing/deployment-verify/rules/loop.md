@@ -58,6 +58,22 @@ With `share = test.n / (test.n + control.n)`:
 
 Not live after one extension → stop and set the last passed step: `flag change not visible in telemetry — check the provider's set command and the cohort attribute`.
 
+## No flag — before and after
+
+With no `flag` there is no set, no control, and one step at 100 %.
+
+1. **Baseline is the past.** Once the deploy is live, measure `[deploy_live_at − ingest − 2 × step_window_minutes, deploy_live_at − ingest]` over spans whose `detect.attribute` is set and not in `live_values`. Fewer than `min_reference_requests` → widen once by `4 × step_window_minutes`; still short → `STOPPED — not enough traffic to verify — <n> requests before the deploy`. Nothing waits.
+2. **After.** Measure `[deploy_live_at, + step_window_minutes]` over spans whose `detect.attribute` is in `live_values`, after the ingest wait. Pass it as `test` with `control.n = 0` and the baseline.
+3. **Decide.** [`decide.mjs`](../scripts/decide.mjs) compares `test` with `baseline`. A ROLLBACK verdict runs `release.yml` → `rollback` `kind: platform`, else ends `ESCALATE — rollback needs a human`.
+
+With `manual` detection there is no attribute, so both windows are time-only.
+**Why:** filtering by version keeps pods still rolling from diluting the after side, and a late tick from leaking the new version into the before side.
+
+```text
+✗ Wrong — baseline window opens at max(now, deploy_live_at): it only ever sees the new version
+✓ Right — baseline window ends at deploy_live_at and excludes live_values
+```
+
 ## The 100 % step
 
 No control cohort is left, so `decide.mjs` compares `test` with `baseline` when `control.n` is 0.

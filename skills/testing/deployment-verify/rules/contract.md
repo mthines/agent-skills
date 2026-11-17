@@ -35,7 +35,8 @@ One fenced JSON block between the markers, anywhere in the PR body; JSON because
 | `service` | Resource `service.name` the change runs in |
 | `root_spans` | SERVER span names the flag changes; errors and latency are read here |
 | `flag` | The flag the change ships behind; `provider` names a `release.yml` → `flags.providers[].name`. Omit for a change with no flag |
-| `cohort` | The span attribute naming the cohort, its flag-on (`test`) and flag-off (`control`) values, and `on`: `root` or `child` ([`telemetry.md`](./telemetry.md)) |
+| `cohort` | Required with `flag`, ignored without one. The span attribute naming the cohort, its flag-on (`test`) and flag-off (`control`) values, and `on`: `root` or `child` ([`telemetry.md`](./telemetry.md)) |
+| `env` | Optional `release.yml` environment for this change; default is `--env`, else `production`. An explicit `--env` flag overrides it. Lets one `--all` run verify a backend and a UI PR that detect on different attributes |
 | `reversibility` | `flag`, `redeploy`, or `irreversible` |
 | `thresholds` | Optional; may only tighten `release.yml` thresholds |
 | `steps` | Optional; overrides `release.yml` → `steps` for this change |
@@ -59,6 +60,13 @@ Take the first row that fails; print its line and stop without touching the flag
 
 ## No flag
 
-A change with no flag has no cohorts.
-Run one step at 100 % with `baseline` as the reference ([`loop.md`](./loop.md#the-100--step)), and roll back with `release.yml` → `rollback` instead of the flag.
+A change with no flag has no cohorts; omit `flag` and `cohort`.
+The contract is measured before and after the deploy ([`loop.md`](./loop.md#no-flag--before-and-after)): one step at 100 % with `baseline` as the reference, and a rollback through `release.yml` → `rollback` instead of the flag.
 Say so in the report: `no flag — before/after only, attribution weaker`.
+
+```json
+// ✗ Wrong — a no-flag contract that invents a flag to satisfy the cohort check
+{ "service": "api", "root_spans": ["GET /x"], "flag": { "key": "none", "provider": "posthog" } }
+// ✓ Right
+{ "service": "api", "root_spans": ["GET /x"], "reversibility": "redeploy" }
+```

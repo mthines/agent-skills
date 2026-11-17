@@ -39,9 +39,19 @@ Take the first row that matches `environments.<env>.deploy.detect`:
 
 | `detect` | Live when |
 | --- | --- |
-| `{ attribute: <key>, equals: merge_sha }` | Spans of `service` carry `<key>` = the PR's merge commit SHA, or a later commit that contains it (`gh api repos/{owner}/{repo}/compare/<merge>...<live>` → `ahead` or `identical`) |
+| `{ attribute: <key>, equals: merge_sha }` | Spans of `service` carry `<key>` = the PR's merge commit SHA, or a later commit or release tag that contains it (`gh api repos/{owner}/{repo}/compare/<merge>...<live>` → `ahead` or `identical`) |
 | `{ attribute: <key>, equals: <literal> }` | Spans carry that value |
 | `manual` | The caller passes `--deployed-at <ISO>`; local stacks, where a restart is the deploy |
+
+A serving value that is a release tag (`v2.0.4541` or `2.0.4541`) resolves to a git ref: try `v<n>` then `<n>`, or only `<tag_prefix><n>` when `detect.tag_prefix` is set.
+Every serving value that contains the merge is recorded as `live_values`; the no-flag after window reads only those ([`loop.md`](./loop.md#no-flag--before-and-after)).
+
+```yaml
+# ✓ Right — a service whose service.version is the release tag
+detect: { attribute: service.version, equals: merge_sha }
+# ✓ Right — tags carry another prefix
+detect: { attribute: service.version, equals: merge_sha, tag_prefix: "rel-" }
+```
 
 Check once per tick until live; past `timeout_minutes` (default 60) after `mergedAt`, end with `STOPPED — deploy not detected in <n> min, nothing changed`.
 **Why:** a busy repository deploys the newest merge, so an earlier merge commit may never serve under its own SHA.
