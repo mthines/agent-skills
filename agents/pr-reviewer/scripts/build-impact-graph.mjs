@@ -152,29 +152,43 @@ function walkFiles(root, { onlySource = true } = {}) {
 const SOURCE_GLOB_ARGS = [...SOURCE_EXT].flatMap((ext) => ["--glob", `*${ext}`]);
 
 function rgArgs(pattern, onlySource) {
-  // `--sort path` trades rg's default (unordered, multi-threaded) file walk for a
-  // deterministic one. Without it, a symbol's `consumers` array (never itself sorted
-  // — only truncated to CONSUMER_LIST_CAP) could come back in a different relative
-  // order between two runs over the SAME tree, which is exactly what the batched vs.
-  // legacy equivalence self-test below needs to rule out to compare outputs by
-  // strict equality rather than by set membership.
-  const args = ["--no-heading", "--line-number", "--no-messages", "--sort", "path", "--regexp", pattern, "."];
+  // No `--sort path`: it forces rg onto one thread (one scan of a 27,808-file tree took 4.5 s
+  // sorted, 0.7 s unsorted). The deterministic order a symbol's `consumers` array needs (it is
+  // only ever truncated, never sorted) is restored in JS by `parseRgStdout`, BEFORE any cap, so
+  // which hits survive a cap never depends on rg's thread scheduling.
+  const args = ["--no-heading", "--line-number", "--no-messages", "--regexp", pattern, "."];
   for (const d of IGNORE_DIRS) args.push("--glob", `!${d}/**`);
   if (onlySource) args.push("--glob", "!*.min.js", "--glob", "!*.map", ...SOURCE_GLOB_ARGS);
   return args;
 }
 
+/**
+ * rg's `--sort path` order: path segments compared one directory level at a time by byte
+ * value, then the line number. A plain string compare differs — it orders `a-b/x` before
+ * `a/x` (`-` < `/`), while rg visits `a/` first because the segment `a` < `a-b`.
+ */
+export function compareHits(a, b) {
+  const as = a.path.split("/");
+  const bs = b.path.split("/");
+  for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+    if (as[i] !== bs[i]) return Buffer.compare(Buffer.from(as[i]), Buffer.from(bs[i]));
+  }
+  return as.length - bs.length || a.line - b.line;
+}
+
 function parseRgStdout(stdout, onlySource, cap) {
   const hits = [];
   for (const line of (stdout || "").split("\n")) {
-    if (!line || hits.length >= cap) break;
+    if (!line) continue;
     const m = /^(.*?):(\d+):([\s\S]*)$/.exec(line);
     if (!m) continue;
     const path = toPosix(m[1].replace(/^\.\//, ""));
     if (onlySource && !isSourcePath(path)) continue;
     hits.push({ path, line: parseInt(m[2], 10), text: m[3] });
   }
-  return hits;
+  // Sort the complete hit set, then cap: the first `cap` hits in the deterministic order.
+  hits.sort(compareHits);
+  return hits.length > cap ? hits.slice(0, cap) : hits;
 }
 
 function search(root, pattern, { useRg = true, cap = 5000, onlySource = true } = {}) {
@@ -1419,6 +1433,20 @@ async function selfTest() {
     const plus = h[0].lines.filter((l) => l.sign === "+");
     const minus = h[0].lines.filter((l) => l.sign === "-");
     return plus[0].newLine === 11 && plus[1].newLine === 12 && minus[0].oldLine === 11;
+  });
+
+  t("compareHits orders like rg --sort path: a directory before a longer sibling name, lines numerically", () => {
+    const paths = ["a/x.ts", "a/y.ts", "a-b/x.ts", "b.ts"];
+    const sorted = [...paths].reverse().map((path) => ({ path, line: 1 })).sort(compareHits).map((h) => h.path);
+    const lines = [{ path: "a/x.ts", line: 10 }, { path: "a/x.ts", line: 9 }].sort(compareHits).map((h) => h.line);
+    return JSON.stringify(sorted) === JSON.stringify(paths) && JSON.stringify(lines) === "[9,10]";
+  });
+
+  t("parseRgStdout applies the cap to the sorted hits, whatever order rg emitted them in", () => {
+    const out = ["z/a.ts:1:x", "a/a.ts:2:x", "m/a.ts:3:x", "a/a.ts:1:x"].join("\n");
+    const first = parseRgStdout(out, true, 2).map((h) => `${h.path}:${h.line}`);
+    const shuffled = parseRgStdout(out.split("\n").reverse().join("\n"), true, 2).map((h) => `${h.path}:${h.line}`);
+    return JSON.stringify(first) === '["a/a.ts:1","a/a.ts:2"]' && JSON.stringify(first) === JSON.stringify(shuffled);
   });
 
   t("parsePatch tolerates a single-line hunk header with no counts", () => {

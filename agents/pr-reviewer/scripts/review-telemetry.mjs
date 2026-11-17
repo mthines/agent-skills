@@ -135,6 +135,19 @@ export class Timing {
     this._openAt = null;
   }
 
+  /** Time `fn` as a child span named `name` WITHOUT touching the open phase or `phases` totals —
+   *  a phase's internals become visible while its own duration stays the single number the
+   *  dashboards already read. `name` must match STEP_NAME_RE or the exporter drops the span.
+   *  @template T @param {string} name @param {() => Promise<T>} fn @returns {Promise<T>} */
+  async measure(name, fn) {
+    const startMs = Date.now();
+    try {
+      return await fn();
+    } finally {
+      this._segments.push({ name, startMs, endMs: Date.now() });
+    }
+  }
+
   /** Every closed phase with its own start and end, in order — what a step's child spans are
    *  built from. @returns {Array<{ name: string, startMs: number, endMs: number }>} */
   segments() {
@@ -1563,6 +1576,16 @@ async function selfTest() {
   const timing = new Timing();
   timing.start("prepare"); timing.end();
   ok("Timing block has phases + total_ms", typeof timing.block().total_ms === "number" && typeof timing.block().phases.prepare === "number");
+  const mt = new Timing();
+  mt.start("workspace");
+  const v = await mt.measure("workspace-clone", async () => 7);
+  let threw = false;
+  try { await mt.measure("workspace-fetch", async () => { throw new Error("x"); }); } catch { threw = true; }
+  mt.end();
+  const segNames = mt.segments().map((g) => g.name).sort();
+  ok("Timing.measure returns the value, records a span even when fn throws, and leaves phase totals to the phase",
+    v === 7 && threw && JSON.stringify(segNames) === '["workspace","workspace-clone","workspace-fetch"]'
+    && JSON.stringify(Object.keys(mt.block().phases)) === '["workspace"]');
 
   // buildRun: marked steps, a gap, a worker, attrs, finish.
   const ledger = [
