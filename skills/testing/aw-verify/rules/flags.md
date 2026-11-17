@@ -38,6 +38,7 @@ Run per flag, from the PR's checkout, on `local` only.
 1. **Record** the service, the flag, the value needed, and the criterion it serves, appended to `.agent/{branch}/verify/flags.json` (append-only, never rewritten).
    Use `.agent/{branch}/verify/flags/<service>/` as that service's `{backup_dir}`.
    A service folder that still holds a saved original means an earlier run did not restore: for each `flags.json` entry of that service, run its `restore` and `apply` commands first, then continue.
+   A `restore` with nothing saved for the key does nothing and exits 0, so replaying an entry that was already restored changes no value.
 2. **Set**: run the service's `set` command.
    It must save the original value under `{backup_dir}` before it changes anything; a second `set` of the same key must not overwrite that original.
 3. **Apply**: run each `apply` command in order.

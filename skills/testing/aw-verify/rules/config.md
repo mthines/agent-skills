@@ -113,7 +113,7 @@ The protocol is [`flags.md`](./flags.md).
 
 | Field | Meaning |
 | --- | --- |
-| `set`, `restore` | Commands run from the checkout root. `{key}`, `{value}`, `{backup_dir}` are substituted. `{backup_dir}` is one folder per service ([`flags.md`](./flags.md)). `set` saves the original value under it once; `restore` puts that value back, or removes a key that was absent, then deletes what it saved |
+| `set`, `restore` | Commands run from the checkout root. `{key}`, `{value}`, `{backup_dir}` are substituted. `{backup_dir}` is one folder per service ([`flags.md`](./flags.md)). `set` saves the original value under it once; `restore` puts that value back, or removes a key that was absent, then deletes what it saved; with nothing saved it does nothing and exits 0 |
 | `apply` | Commands, in order, that make the running service read the change; empty when the service reads the file on every request |
 | `verify` | Prints the value the running service holds; empty when it cannot be observed (reported as `set, not observed`) |
 | `components`, `shared` | What `apply` restarts, and whether other checkouts see the change. When `shared` is true, `apply` must reload without restarting other checkouts, then restart only this checkout's `components` |
