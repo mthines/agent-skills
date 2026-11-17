@@ -177,7 +177,7 @@ A reviewer who sees anything but ✅ finds the reasons in the same place, in the
 
 **Bullets, in this order:**
 
-1. Each failed check (❌), or the phase that could not run and its fix (⛔, ⏭️ `not graded`).
+1. Each failed check (❌), or the phase that could not run and its fix (⛔, ⏭️ `not graded`), then each flag left set because `restore` failed: `**<key> is still <value> in <service>** (blocked) → needs you: <the restore command>` ([`flags.md § Report`](./flags.md#report)).
 2. Each open `in_scope: true` `critical`/`high` finding.
 3. Each escalated finding, `needs you: <the decision>`.
 4. Each open `in_scope: true` `medium`/`low` finding.

@@ -35,9 +35,9 @@ A `.env*` file is never read, grepped, or edited by the run, whatever the config
 
 Run per flag, from the PR's checkout, on `local` only.
 
-1. **Record** the flag, the value needed, and the criterion it serves in `.agent/{branch}/verify/flags.json`.
-   Use `.agent/{branch}/verify/flags/` as `{backup_dir}`.
-   A saved original already in it means an earlier run did not restore: run `restore` for each saved key and its `apply` commands first, then continue.
+1. **Record** the service, the flag, the value needed, and the criterion it serves in `.agent/{branch}/verify/flags.json`.
+   Use `.agent/{branch}/verify/flags/<service>/` as that service's `{backup_dir}`.
+   A service folder that still holds a saved original means an earlier run did not restore: for each `flags.json` entry of that service, run its `restore` and `apply` commands first, then continue.
 2. **Set**: run the service's `set` command.
    It must save the original value under `{backup_dir}` before it changes anything; a second `set` of the same key must not overwrite that original.
 3. **Apply**: run each `apply` command in order.
@@ -58,7 +58,7 @@ When one criterion needs a flag on and the next off, probe all the "on" criteria
 ## Report
 
 The report's `**Notes**` carry one line per flag: `key: <original> → <set> (<service>, applied by <command>, <observed|not observed>) → restored`.
-A flag left set because restore failed is environment state, not a product defect: it goes in the report's attention part (`#### Needs you`) with the command that restores it, never in `findings.jsonl`, so the fix loop never edits code for it.
+A flag left set because restore failed is environment state, not a product defect: it is a bullet in the report's attention section ([`pr-comment.md § Attention line`](./pr-comment.md#attention-line)) with the command that restores it, never in `findings.jsonl`, so the fix loop never edits code for it.
 
 ## Never
 

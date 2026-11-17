@@ -65,7 +65,7 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{HEADLINE}}` | What the change does, in the user's words; the whole `##` line under 70 characters |
 | `{{SUMMARY}}` | One sentence: what works for the user |
 | `{{ATTENTION}}` | `**Nothing needs your attention.**` under a ✅ with no bullets; otherwise nothing |
-| `{{ATTENTION_PART}}` | Per [`pr-comment.md § Attention line`](./pr-comment.md#attention-line): `#### Why not ✅` under ⚠️, ❌, and ⛔ (`#### Needs you` under a ✅ with bullets), then one `- **<what the user would notice>** (<tag>) → <next step>` bullet per item, at most five; otherwise nothing |
+| `{{ATTENTION_PART}}` | Per [`pr-comment.md § Attention line`](./pr-comment.md#attention-line): `#### Why not ✅` under ⚠️, ❌, and ⛔ (`#### Needs you` under a ✅ with bullets), then one `- **<what the user would notice>** (<tag>) → <next step>` bullet per item, a flag left set included, at most five; otherwise nothing |
 | `{{HEAD_SHA7}}` / `{{ENV}}` / `{{CI_STATE}}` / `{{FINDING_COUNT}}` | Seven-character head SHA; `local` or `preview`; `CI green` or the red checks; `<n> findings` |
 | `{{UPDATED}}` | Left as is: `verify-comment.mjs` stamps the write time |
 | `{{MEDIA_STRIP}}` | Per [`pr-comment.md § Media strip`](./pr-comment.md#media-strip): one visible recording (caption line, then the bare `.mp4` URL), then one visible row of up to two `<img width="420">` thumbnails, failed checks first, headers under 40 characters; the rest in a closed `+<r> more recordings · +<n> more screenshots` block, recordings first, never more than two columns; nothing when the run has no media |
