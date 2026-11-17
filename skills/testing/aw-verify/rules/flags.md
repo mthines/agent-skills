@@ -35,7 +35,7 @@ A `.env*` file is never read, grepped, or edited by the run, whatever the config
 
 Run per flag, from the PR's checkout, on `local` only.
 
-1. **Record** the service, the flag, the value needed, and the criterion it serves in `.agent/{branch}/verify/flags.json`.
+1. **Record** the service, the flag, the value needed, and the criterion it serves, appended to `.agent/{branch}/verify/flags.json` (append-only, never rewritten).
    Use `.agent/{branch}/verify/flags/<service>/` as that service's `{backup_dir}`.
    A service folder that still holds a saved original means an earlier run did not restore: for each `flags.json` entry of that service, run its `restore` and `apply` commands first, then continue.
 2. **Set**: run the service's `set` command.
@@ -71,5 +71,5 @@ A flag left set because restore failed is environment state, not a product defec
 # ✗ Wrong — edits an env file the agent may not read, or asks a human to
 sed -i '' 's/^USE_FLAG=.*/USE_FLAG=false/' app/.env.local
 # ✓ Right — the declared command, with a saved original and a proof
-AW_FLAGS_BACKUP_DIR=.agent/<branch>/verify/flags .agents/aw/scripts/flags/flags.sh web set USE_FLAG false
+AW_FLAGS_BACKUP_DIR=.agent/<branch>/verify/flags/web .agents/aw/scripts/flags/flags.sh web set USE_FLAG false
 ```
