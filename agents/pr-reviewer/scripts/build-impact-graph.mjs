@@ -152,10 +152,9 @@ function walkFiles(root, { onlySource = true } = {}) {
 const SOURCE_GLOB_ARGS = [...SOURCE_EXT].flatMap((ext) => ["--glob", `*${ext}`]);
 
 function rgArgs(pattern, onlySource) {
-  // No `--sort path`: it forces rg onto one thread (one scan of a 27,808-file tree took 4.5 s
-  // sorted, 0.7 s unsorted). The deterministic order a symbol's `consumers` array needs (it is
-  // only ever truncated, never sorted) is restored in JS by `parseRgStdout`, BEFORE any cap, so
-  // which hits survive a cap never depends on rg's thread scheduling.
+  // No `--sort path`: it forces rg onto one thread (4.5 s sorted vs 0.7 s unsorted on a 27,808-file
+  // tree). `parseRgStdout` restores the deterministic order in JS BEFORE any cap, so which hits
+  // survive a cap never depends on rg's thread scheduling.
   const args = ["--no-heading", "--line-number", "--no-messages", "--regexp", pattern, "."];
   for (const d of IGNORE_DIRS) args.push("--glob", `!${d}/**`);
   if (onlySource) args.push("--glob", "!*.min.js", "--glob", "!*.map", ...SOURCE_GLOB_ARGS);
@@ -186,7 +185,6 @@ function parseRgStdout(stdout, onlySource, cap) {
     if (onlySource && !isSourcePath(path)) continue;
     hits.push({ path, line: parseInt(m[2], 10), text: m[3] });
   }
-  // Sort the complete hit set, then cap: the first `cap` hits in the deterministic order.
   hits.sort(compareHits);
   return hits.length > cap ? hits.slice(0, cap) : hits;
 }

@@ -135,9 +135,8 @@ export class Timing {
     this._openAt = null;
   }
 
-  /** Time `fn` as a child span named `name` WITHOUT touching the open phase or `phases` totals —
-   *  a phase's internals become visible while its own duration stays the single number the
-   *  dashboards already read. `name` must match STEP_NAME_RE or the exporter drops the span.
+  /** Time `fn` as a child span named `name`, leaving the open phase and `phases` totals untouched.
+   *  `name` must match STEP_NAME_RE or the exporter silently drops the span.
    *  @template T @param {string} name @param {() => Promise<T>} fn @returns {Promise<T>} */
   async measure(name, fn) {
     const startMs = Date.now();
@@ -148,10 +147,7 @@ export class Timing {
     }
   }
 
-  /** Every closed phase and `measure` span with its own start and end, ordered by start (a
-   *  phase before the spans inside it that began the same millisecond) — what a step's child
-   *  spans are built from. A measured span is a sibling record, not a phase: it never enters
-   *  `block().phases`, so summing phase durations must use `block()`, not this list.
+  /** Every closed phase and measured span with its own start and end, ordered by start (phase first on a tie).
    *  @returns {Array<{ name: string, startMs: number, endMs: number }>} */
   segments() {
     if (this._openPhase) this.end();
