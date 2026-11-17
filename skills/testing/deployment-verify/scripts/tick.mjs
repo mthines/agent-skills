@@ -786,9 +786,10 @@ async function main() {
 	let worst = 0;
 	if (a.local) {
 		const contract = JSON.parse(readFileSync(a.contract, "utf8"));
-		const err = validateContract(contract, config);
+		const cfg = configFor(contract);
+		const err = validateContract(contract, cfg);
 		if (err) throw new Error(err);
-		const s = await runOne({ store: localStore(a.local), contract, config, deployedAt: a["deployed-at"], loop: !!a.run });
+		const s = await runOne({ store: localStore(a.local), contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run });
 		console.log(renderReport(s, contract, null).split("\n").slice(2, -2).join("\n"));
 		return process.exit(s.phase === "done" && EXCEPTION_OUTCOMES.includes(s.outcome) ? 3 : 0);
 	}
