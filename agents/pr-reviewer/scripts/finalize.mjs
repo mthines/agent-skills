@@ -676,23 +676,30 @@ export function severityCounts(result) {
   return out;
 }
 
+/** The finder names `findings.by_finder.<finder>` carries, as span keys: judgments.schema.json's `finder`
+ *  enum with each non-alphanumeric run as `_` (`consumer-impact` → `consumer_impact`), plus `unknown`. */
+export const FINDER_KEYS = Object.freeze([
+  "correctness", "consumer_impact", "dependency", "intent", "standards", "quality",
+  "ux", "critical", "optimality", "lens", "unknown",
+]);
+
 /**
  * How many of the reported findings each finder raised — posted inline or listed over the inline cap,
- * the same population severityCounts counts — as `findings.by_finder.<finder>`. A finder name is
- * lowercased and every run of non-alphanumerics becomes `_` (`consumer-impact` → `consumer_impact`),
- * because a span key allows no hyphen; a finding with no finder counts under `unknown`. Only finders
- * that raised something are written, so a key's absence means zero. A result without both arrays
- * records nothing: unknown, never zero.
+ * the same population severityCounts counts — as `findings.by_finder.<finder>`. Every name in
+ * FINDER_KEYS is written, zero included, so a finalize re-run overwrites a finder the first run
+ * counted (the run ledger merges attrs; a failed render records before the fixed re-run). A name is
+ * lowercased with each run of non-alphanumerics as `_`, because a span key allows no hyphen; a
+ * finding with no finder, or one outside the schema enum, counts under `unknown`. A result without
+ * both arrays records nothing: unknown, never zero.
  * @param {any} result finalizeReview()'s return @returns {Record<string, number>}
  */
 export function finderCounts(result) {
   if (!Array.isArray(result?.inline) || !Array.isArray(result?.deferred)) return {};
   /** @type {Record<string, number>} */
-  const out = {};
+  const out = Object.fromEntries(FINDER_KEYS.map((k) => [`findings.by_finder.${k}`, 0]));
   for (const f of [...result.inline, ...result.deferred]) {
     const name = typeof f?.finder === "string" ? f.finder.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") : "";
-    const key = `findings.by_finder.${name || "unknown"}`;
-    out[key] = (out[key] || 0) + 1;
+    out[`findings.by_finder.${FINDER_KEYS.includes(name) ? name : "unknown"}`] += 1;
   }
   return out;
 }
@@ -3265,15 +3272,21 @@ async function selfTest() {
           && JSON.stringify(severityCounts({ inline: [] })) === "{}" && JSON.stringify(severityCounts(null)) === "{}");
       const byFinder = finderCounts({
         inline: [{ finder: "correctness" }, { finder: "consumer-impact" }, { finder: "consumer-impact" }],
-        deferred: [{ finder: "Lens" }, {}],
+        deferred: [{ finder: "lens" }, {}, { finder: "not-in-the-schema" }],
       });
-      check("finderCounts: one count per finder over inline and deferred, hyphens become underscores, a missing finder is unknown",
-        JSON.stringify(byFinder) === '{"findings.by_finder.correctness":1,"findings.by_finder.consumer_impact":2,"findings.by_finder.lens":1,"findings.by_finder.unknown":1}', JSON.stringify(byFinder));
+      check("finderCounts: every finder is written, zero included; counts per finder over inline and deferred; hyphens become underscores; a missing or unlisted finder is unknown",
+        byFinder["findings.by_finder.correctness"] === 1 && byFinder["findings.by_finder.consumer_impact"] === 2
+          && byFinder["findings.by_finder.lens"] === 1 && byFinder["findings.by_finder.unknown"] === 2
+          && byFinder["findings.by_finder.dependency"] === 0 && Object.keys(byFinder).length === FINDER_KEYS.length, JSON.stringify(byFinder));
       check("finderCounts: the counts sum to inline + deferred, and every key passes the span-key allowlist",
-        Object.values(byFinder).reduce((n, v) => n + v, 0) === 5
+        Object.values(byFinder).reduce((n, v) => n + v, 0) === 6
           && Object.keys(byFinder).every((k) => ALLOWED_SPAN_KEY(`pr_review.${k}`)));
-      check("finderCounts: no findings record nothing; a result without both arrays records nothing",
-        JSON.stringify(finderCounts({ inline: [], deferred: [] })) === "{}" && JSON.stringify(finderCounts({ inline: [] })) === "{}" && JSON.stringify(finderCounts(null)) === "{}");
+      check("finderCounts: a re-run with fewer finders overwrites the first run's counts, key for key",
+        { ...finderCounts({ inline: [{ finder: "intent" }], deferred: [] }), ...finderCounts({ inline: [], deferred: [] }) }["findings.by_finder.intent"] === 0);
+      check("finderCounts: a result without both arrays records nothing",
+        JSON.stringify(finderCounts({ inline: [] })) === "{}" && JSON.stringify(finderCounts(null)) === "{}");
+      check("finderCounts: FINDER_KEYS is judgments.schema.json's finder enum, normalized, plus unknown",
+        JSON.stringify(FINDER_KEYS) === JSON.stringify([...(await import("./validate-judgments.mjs")).loadSchema().$defs.finder.enum.map((/** @type {string} */ n) => n.replace(/[^a-z0-9]+/g, "_")), "unknown"]));
       check("finalize spreads finderCounts(result) into the run's telemetry attributes",
         /\.\.\.finderCounts\(result\),/.test(readFileSync(fileURLToPath(import.meta.url), "utf8")));
       check("recordFinalizeTelemetry never swallows a telemetry failure silently: it says so on stderr",
