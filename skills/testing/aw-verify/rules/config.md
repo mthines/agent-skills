@@ -28,7 +28,7 @@ It is committed, so a teammate who clones the repo runs `/aw-verify` with no set
 | `.agents/aw/telemetry.yml` | yes | `telemetry-verify` | Backend, dataset and service per environment, web SDK events, thresholds |
 | `.agents/aw/notes.md` | yes | every skill in the suite | Repo facts: login quirks, test commands, commit format, which telemetry server is right |
 | `.agents/aw/release.yml` | yes | `deployment-verify` | Deploy detection, flag providers, rollback commands, rollout steps, and thresholds per environment |
-| `.agents/aw/scripts/` | yes | `environments.yml` commands | Runnable helpers: `auth/login-headful.mjs`, `auth/login-credentials.mjs`, `auth/refresh-preview.mjs`, seed scripts. No secrets |
+| `.agents/aw/scripts/` | yes | `environments.yml` commands | Runnable helpers: `auth/login-headful.mjs`, `auth/login-credentials.mjs`, `auth/refresh-preview.mjs`, `flags/` set-and-restore scripts, seed scripts. No secrets |
 | `~/.agents/aw/config.yml` | never | every skill in the suite | Your policies, and your per-repo overrides under `repos.<owner>/<name>` |
 
 Templates: [`templates/aw/`](../templates/aw/).
@@ -102,21 +102,21 @@ The protocol is [`flags.md`](./flags.md).
 
 ```yaml
     flags:                            # on a hosted environment: `flags: manual`
-      ui:                             # a name the repo picks, one per service that reads flags
-        components: [ui]              # restarted to apply, named as in stack.component_map
+      web:                            # a name the repo picks, one per service that reads flags
+        components: [web]             # restarted to apply, named as in stack.component_map
         shared: true                  # the file is read by other checkouts too (default false)
-        set: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh ui set {key} {value}'
-        restore: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh ui restore {key}'
-        apply: ['l0cal-next config reload --no-restart --output json', 'l0cal-next restart ui --output json']
-        verify: '.agents/aw/scripts/flags/flags.sh ui verify {key}'
+        set: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh web set {key} {value}'
+        restore: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh web restore {key}'
+        apply: ['<stack-cli> reload-config --no-restart', '<stack-cli> restart web']
+        verify: '.agents/aw/scripts/flags/flags.sh web verify {key}'
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `set`, `restore` | Commands run from the checkout root. `{key}`, `{value}`, `{backup_dir}` are substituted. `set` saves the original value under `{backup_dir}` once; `restore` puts that value back, or removes a key that was absent |
+| `set`, `restore` | Commands run from the checkout root. `{key}`, `{value}`, `{backup_dir}` are substituted. `set` saves the original value under `{backup_dir}` once; `restore` puts that value back, or removes a key that was absent, then deletes what it saved |
 | `apply` | Commands, in order, that make the running service read the change; empty when the service reads the file on every request |
 | `verify` | Prints the value the running service holds; empty when it cannot be observed (reported as `set, not observed`) |
-| `components`, `shared` | What `apply` restarts, and whether other checkouts see the change |
+| `components`, `shared` | What `apply` restarts, and whether other checkouts see the change. When `shared` is true, `apply` must reload without restarting other checkouts, then restart only this checkout's `components` |
 
 A repo ships the commands as a script under `.agents/aw/scripts/flags/` so a run never composes a file edit itself.
 A value that is a secret, or a file that holds one, never appears in a command, in `flags.json`, or in the report.

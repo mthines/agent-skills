@@ -36,16 +36,19 @@ A `.env*` file is never read, grepped, or edited by the run, whatever the config
 Run per flag, from the PR's checkout, on `local` only.
 
 1. **Record** the flag, the value needed, and the criterion it serves in `.agent/{branch}/verify/flags.json`.
-   Create `.agent/{branch}/verify/flags/` as `{backup_dir}`.
+   Use `.agent/{branch}/verify/flags/` as `{backup_dir}`.
+   A saved original already in it means an earlier run did not restore: run `restore` for each saved key and its `apply` commands first, then continue.
 2. **Set**: run the service's `set` command.
    It must save the original value under `{backup_dir}` before it changes anything; a second `set` of the same key must not overwrite that original.
 3. **Apply**: run each `apply` command in order.
    Restart only the components named in `components`, from this checkout.
-   A `shared` service changes a file every checkout reads: use the non-restarting reload and restart this checkout's components only, then say in the report which other checkouts still hold the old value until their next restart.
+   A `shared` service changes a file every checkout reads: its `apply` reloads without restarting other checkouts ([`config.md § flags`](./config.md#flags)).
+   Say in the report which other checkouts still hold the old value until their next restart.
 4. **Prove**: run `verify`; the output must show the value just set.
-   No `verify` command, or an output that does not show it → keep going, and report the flag as `set, not observed` in the report's setup notes.
+   No `verify` command, or an output that does not show it → keep going, and report the flag as `set, not observed` in the report's `**Notes**`.
 5. **Probe** the criterion.
-6. **Restore** after the last probe that needs the flag, and on every exit path (a crash, a cap, an abort): run `restore`, then the same `apply` commands, then `verify` again.
+6. **Restore** after the last probe that needs the flag, and on every exit path (a crash, a cap, an abort): run `restore`, then the same `apply` commands, then `verify` again, which must show the original value.
+   `restore` deletes the key's saved original, so the next run never restores a value older than the developer's own edits.
    Restore even when `policies.cleanup: leave`; a flag is state the developer did not ask for.
    `--keep-stack` keeps the stack, never the flipped flag.
 
@@ -54,8 +57,8 @@ When one criterion needs a flag on and the next off, probe all the "on" criteria
 
 ## Report
 
-The report's setup notes carry one line per flag: `key: <original> → <set> (<service>, applied by <command>, <observed|not observed>) → restored`.
-A flag left set because restore failed is a finding of severity `high` with the command that restores it.
+The report's `**Notes**` carry one line per flag: `key: <original> → <set> (<service>, applied by <command>, <observed|not observed>) → restored`.
+A flag left set because restore failed is environment state, not a product defect: it goes in the report's attention part (`#### Needs you`) with the command that restores it, never in `findings.jsonl`, so the fix loop never edits code for it.
 
 ## Never
 
@@ -63,3 +66,10 @@ A flag left set because restore failed is a finding of severity `high` with the 
 - Leave a shared file edited to make a run pass: a flag value is part of the test, not part of the fix.
 - Change a flag's registry default, a committed config, or a deployed environment to get a criterion green.
 - Print a file that holds credentials. Read only the key you set.
+
+```text
+# ✗ Wrong — edits an env file the agent may not read, or asks a human to
+sed -i '' 's/^USE_FLAG=.*/USE_FLAG=false/' app/.env.local
+# ✓ Right — the declared command, with a saved original and a proof
+AW_FLAGS_BACKUP_DIR=.agent/<branch>/verify/flags .agents/aw/scripts/flags/flags.sh web set USE_FLAG false
+```
