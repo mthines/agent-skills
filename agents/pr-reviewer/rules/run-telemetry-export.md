@@ -87,6 +87,7 @@ It follows the [OpenTelemetry GenAI conventions](https://opentelemetry.io/docs/s
 | --- | --- | --- |
 | `pr_review.findings.critical` · `.high` · `.medium` · `.low` | `finalize` | reported findings per `severity` tier — posted inline or listed over the inline cap; the four sum to `posted_inline + deferred`, and match the tiers of `dash0.darkplane.review.findings.*` |
 | `pr_review.findings.blocking` | `finalize` | the reported findings marked `(blocking)` |
+| `pr_review.findings.by_finder.<finder>` | `finalize` | reported findings per finder, same population as the tiers; every finder in the schema enum plus `unknown` is written, zero included (`consumer_impact` for `consumer-impact`), so a finalize re-run overwrites the first run's counts; a defect two finders raised is merged by dedupe and counts once, under the finder that survived (so a later finder's yield is a floor); a finding with no finder, or outside the enum, counts as `unknown`; a result without findings arrays records nothing |
 | `pr_review.post.path` | `post` | `gh` (this script wrote) · `mcp` (no gh access path: the agent posts over MCP, outside the trace) · `refused` (a historical, dry-run, or isolated plan) |
 | `pr_review.post.sticky` | `post` | `created` · `updated` · `recreated` (the PATCH 404'd) · `pointer` (the PATCH failed, the pointer posted) · `aborted` (the body failed its pre-write check) · `failed` · `none` |
 | `pr_review.post.sticky.comment_id` | `post` | the comment GitHub wrote, as a string; only when the write succeeded |
