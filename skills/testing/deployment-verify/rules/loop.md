@@ -62,7 +62,9 @@ Not live after one extension → stop and set the last passed step: `flag change
 
 With no `flag` there is no set, no control, and one step at 100 %.
 
-1. **Baseline is the past.** Once the deploy is live, measure `[deploy_live_at − ingest − 2 × step_window_minutes, deploy_live_at − ingest]` over spans whose `detect.attribute` is set and not in `live_values`. Fewer than `min_reference_requests` → widen once by `4 × step_window_minutes`; still short → `STOPPED — not enough traffic to verify — <n> requests before the deploy`. Nothing waits.
+1. **Baseline is the past.** Once the deploy is live, measure `[deploy_live_at − ingest − 2 × step_window_minutes, deploy_live_at − ingest]` over spans whose `detect.attribute` is set and not in `live_values`.
+   Fewer than `min_reference_requests` → widen once by `4 × step_window_minutes`; still short → `STOPPED — not enough traffic to verify — <n> requests before the deploy`.
+   Nothing waits.
 2. **After.** Measure `[deploy_live_at, + step_window_minutes]` over spans whose `detect.attribute` is in `live_values`, after the ingest wait. Pass it as `test` with `control.n = 0` and the baseline.
 3. **Decide.** [`decide.mjs`](../scripts/decide.mjs) compares `test` with `baseline`. A ROLLBACK verdict runs `release.yml` → `rollback` `kind: platform`, else ends `ESCALATE — rollback needs a human`.
 
