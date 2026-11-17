@@ -74,7 +74,14 @@ plain `.ts`/`.js` are UI in a frontend-only repo; only some monorepo packages ar
 The dataset may already be in the stack tool's config; when `notes.md` names that file and its keys, read **those keys only** — such files hold tokens. Read `.mcp.json` keys and URLs only, never headers.
 For web events, record `web.service_name` from the web SDK init call.
 
-### A8 — Dependencies
+### A8 — Feature flags
+
+Read `CLAUDE.md`, `AGENTS.md`, the stack tool's docs, and the flag module's README for where a flag is set per service (a stack config file, a gitignored service config, an env file).
+A service whose flag file is denied to the agent (an `.env*`) needs another route; look for a process-env override in the stack tool before writing `manual`.
+Prefill `environments.local.flags` from [`config.md § flags`](./config.md#flags); a hosted environment gets `flags: manual`.
+Run the repo's `verify` command on a flag that is already set; a command that cannot show the value is written without `verify`.
+
+### A9 — Dependencies
 
 | Value | Probe | Fallback |
 | --- | --- | --- |
@@ -87,7 +94,7 @@ For web events, record `web.service_name` from the web SDK init call.
 
 Ask only what Phase A did not settle; pre-fill the detected value as the first option.
 
-1. **Local stack** — driver, commands, URL (only when A2 was ambiguous or empty).
+1. **Local stack** — driver, commands, URL (only when A2 was ambiguous or empty). Also the flag mechanism per service when A8 found none or several.
 2. **Login per environment** — strategy from [`auth.md`](./auth.md); the sign-in URL with the org param (`auth.login_url`); for the preview, whether it sits behind deployment protection.
 3. **Test user** — email and role (the smoke spec and `E2E_EMAIL` default).
 4. **Telemetry** — dataset per environment for a `dash0-mcp` candidate, or `logs`.
@@ -103,7 +110,7 @@ Per `storage-state` environment, print the command from [`auth.md`](./auth.md#th
 
 ## Phase D — Write
 
-1. Render the committed files from [`templates/aw/`](../templates/aw/) with only keys that differ from the template defaults: `.agents/aw/environments.yml`, `ui.yml`, `telemetry.yml`, and `notes.md`.
+1. Render the committed files from [`templates/aw/`](../templates/aw/) with only keys that differ from the template defaults: `.agents/aw/environments.yml` (with `flags` and its scripts under `.agents/aw/scripts/flags/` when A8 found a mechanism), `ui.yml`, `telemetry.yml`, and `notes.md`.
 2. Copy the chosen login script from [`templates/scripts/`](../templates/scripts/) to `.agents/aw/scripts/auth/`.
 3. Personal values (a dataset only you export to, the MCP server key, the credential provider, policies) → `~/.agents/aw/config.yml` under `repos.<slug>` and `policies`; merge, never drop another repo's block.
 4. Gitignore the state directory: `grep -qx '.auth/' .gitignore || echo '.auth/' >> .gitignore` (or the reused convention's directory).

@@ -90,7 +90,7 @@ Most runs derive their own criteria, so Step 3 is where a weak one is cheapest t
 | 1 | Observable | No screenshot, response, span, or log line could show it |
 | 2 | On the changed target | It checks a sibling surface instead of the one the diff changed |
 | 3 | Fails on base | It is absence only, checks an attribute and not the effect, reaches a state without checking it moved, accepts either of two outcomes, or base already satisfies it. A removal passes this test when it checks the removal's observable effect, such as a request that stops firing |
-| 4 | Reachable on this environment | A flag, seeded record, credential, or backend change it needs is missing on `<env>` |
+| 4 | Reachable on this environment | A seeded record, credential, or backend change it needs is missing on `<env>`, or a flag it needs is neither in the needed state nor settable through `environments.<env>.flags` ([`flags.md`](./flags.md)) |
 | 5 | Not by construction | Reading the source would satisfy it |
 
 A failed test never drops or silently rewrites a criterion:

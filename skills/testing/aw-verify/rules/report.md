@@ -65,7 +65,7 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{HEADLINE}}` | What the change does, in the user's words; the whole `##` line under 70 characters |
 | `{{SUMMARY}}` | One sentence: what works for the user |
 | `{{ATTENTION}}` | `**Nothing needs your attention.**` under a ✅ with no bullets; otherwise nothing |
-| `{{ATTENTION_PART}}` | Per [`pr-comment.md § Attention line`](./pr-comment.md#attention-line): `#### Why not ✅` under ⚠️, ❌, and ⛔ (`#### Needs you` under a ✅ with bullets), then one `- **<what the user would notice>** (<tag>) → <next step>` bullet per item, at most five; otherwise nothing |
+| `{{ATTENTION_PART}}` | Per [`pr-comment.md § Attention line`](./pr-comment.md#attention-line): `#### Why not ✅` under ⚠️, ❌, and ⛔ (`#### Needs you` under a ✅ with bullets), then one `- **<what the user would notice>** (<tag>) → <next step>` bullet per item, a flag left set included, at most five; otherwise nothing |
 | `{{HEAD_SHA7}}` / `{{ENV}}` / `{{CI_STATE}}` / `{{FINDING_COUNT}}` | Seven-character head SHA; `local` or `preview`; `CI green` or the red checks; `<n> findings` |
 | `{{UPDATED}}` | Left as is: `verify-comment.mjs` stamps the write time |
 | `{{MEDIA_STRIP}}` | Per [`pr-comment.md § Media strip`](./pr-comment.md#media-strip): one visible recording (caption line, then the bare `.mp4` URL), then one visible row of up to two `<img width="420">` thumbnails, failed checks first, headers under 40 characters; the rest in a closed `+<r> more recordings · +<n> more screenshots` block, recordings first, never more than two columns; nothing when the run has no media |
@@ -75,7 +75,7 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{PROBE_RESULT}}` / `{{PROBE_LINES}}` | `<n> probes, nothing broke`, `<n> probes, <k> broke`, or `skipped (<reason>)`; one `- what I tried → what happened` line per probe |
 | `{{FIXES_PART}}` | When a fix was pushed: `**Fixed during the run**` and one `- <sha7> (F-n) <what changed for the user>` line each, the `F-n` matching the `✅ after fix (F-n)` row it fixed; otherwise nothing |
 | `{{TELEMETRY_VERDICT}}` / `{{FLOW_LINES}}` | Never blank: the verdict word or `not reviewed (<reason>)` (a connected MCP server is not a reason). An AC whose path emits no signal gets `no regression observed (path emits no signal)`, not `confirms`; one `- <journey>` line per AC from `telemetry.md`, then the ERROR-span line |
-| `{{NOTES_PART}}` | When there are any: `**Notes**` and one line per not-defect, `medium`/`low` finding, out-of-scope finding (`Outside this PR:`), `n/a` edge row, or lesson written; otherwise nothing |
+| `{{NOTES_PART}}` | When there are any: `**Notes**` and one line per not-defect, `medium`/`low` finding, out-of-scope finding (`Outside this PR:`), `n/a` edge row, lesson written, or flag the run set ([`flags.md § Report`](./flags.md#report)); otherwise nothing |
 | `{{TRACE_ROWS}}` | One row per AC, edge row, and probe: ID, criterion, result (`✅ pass`, `✅ after fix (F-1)`, `❌ fail (F-2)`, `⏭️ skipped (<reason>)`, `⏭️ not verified on target (<what ran instead>)`), witnesses (`browser · telemetry`, `unit tests`). Text only |
 | `{{URL}}` / `{{DRIVER}}` / `{{RECORDINGS_LINE}}` | The URL the run used (`localhost` as text); the browser driver; `recordings: not attached (<reason>)` when the region holds none, else nothing |
 | `{{TICKET_LINK}}` / `{{PR_LINK}}` | `· <ticket link>` from the brief, or nothing; the PR URL |

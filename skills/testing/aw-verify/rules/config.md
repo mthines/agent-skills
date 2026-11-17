@@ -15,6 +15,10 @@ Every skill in the verification suite — `aw-verify`, `ui-verify`, `telemetry-v
 `/aw-verify setup` writes it; nothing else does.
 It is committed, so a teammate who clones the repo runs `/aw-verify` with no setup.
 
+## Contents
+
+[Files](#files) · [Resolve](#resolve-the-config-every-skill-before-any-other-step) · [`environments.yml`](#environmentsyml) · [`flags`](#flags) · [`ui.yml`](#uiyml) · [`telemetry.yml`](#telemetryyml) · [Rules](#rules)
+
 ## Files
 
 | Path | Committed | Read by | Holds |
@@ -24,7 +28,7 @@ It is committed, so a teammate who clones the repo runs `/aw-verify` with no set
 | `.agents/aw/telemetry.yml` | yes | `telemetry-verify` | Backend, dataset and service per environment, web SDK events, thresholds |
 | `.agents/aw/notes.md` | yes | every skill in the suite | Repo facts: login quirks, test commands, commit format, which telemetry server is right |
 | `.agents/aw/release.yml` | yes | `deployment-verify` | Deploy detection, flag providers, rollback commands, rollout steps, and thresholds per environment |
-| `.agents/aw/scripts/` | yes | `environments.yml` commands | Runnable helpers: `auth/login-headful.mjs`, `auth/login-credentials.mjs`, `auth/refresh-preview.mjs`, seed scripts. No secrets |
+| `.agents/aw/scripts/` | yes | `environments.yml` commands | Runnable helpers: `auth/login-headful.mjs`, `auth/login-credentials.mjs`, `auth/refresh-preview.mjs`, `flags/` set-and-restore scripts, seed scripts. No secrets |
 | `~/.agents/aw/config.yml` | never | every skill in the suite | Your policies, and your per-repo overrides under `repos.<owner>/<name>` |
 
 Templates: [`templates/aw/`](../templates/aw/).
@@ -90,6 +94,32 @@ environments:
 
 `auth` fields: [`auth.md`](./auth.md). `auth` and `fixtures` keep the field meanings `aw-tester` reads.
 At run time the caller writes `aw-tester`'s target file from one environment to `.agent/{branch}/aw-target.<env>.yml` (`name: <env>`, `base_url: <resolved url>`, plus that environment's `auth`, `fixtures`, and `ui.yml`'s `constraints`); that file is never committed.
+
+### `flags`
+
+`environments.<env>.flags` says how a run sets a feature flag in each service, so a criterion that needs a flag state never waits for a human.
+The protocol is [`flags.md`](./flags.md).
+
+```yaml
+    flags:                            # on a hosted environment: `flags: manual`
+      web:                            # a name the repo picks, one per service that reads flags
+        components: [web]             # restarted to apply, named as in stack.component_map
+        shared: true                  # the file is read by other checkouts too (default false)
+        set: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh web set {key} {value}'
+        restore: 'AW_FLAGS_BACKUP_DIR={backup_dir} .agents/aw/scripts/flags/flags.sh web restore {key}'
+        apply: ['<stack-cli> reload-config --no-restart', '<stack-cli> restart web']
+        verify: '.agents/aw/scripts/flags/flags.sh web verify {key}'
+```
+
+| Field | Meaning |
+| --- | --- |
+| `set`, `restore` | Commands run from the checkout root. `{key}`, `{value}`, `{backup_dir}` are substituted. `{backup_dir}` is one folder per service ([`flags.md`](./flags.md)). `set` saves the original value under it once; `restore` puts that value back, or removes a key that was absent, then deletes what it saved; with nothing saved it does nothing and exits 0 |
+| `apply` | Commands, in order, that make the running service read the change; empty when the service reads the file on every request |
+| `verify` | Prints the value the running service holds; empty when it cannot be observed (reported as `set, not observed`) |
+| `components`, `shared` | What `apply` restarts, and whether other checkouts see the change. When `shared` is true, `apply` must reload without restarting other checkouts, then restart only this checkout's `components` |
+
+A repo ships the commands as a script under `.agents/aw/scripts/flags/` so a run never composes a file edit itself.
+A value that is a secret, or a file that holds one, never appears in a command, in `flags.json`, or in the report.
 
 ## `ui.yml`
 

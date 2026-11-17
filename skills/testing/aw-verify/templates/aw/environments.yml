@@ -10,8 +10,11 @@ environments:
       strategy: none          # none | storage-state | bypass-header | manual
       # login_url: https://app.example.com/sign-in?org=<org>   # with the org param; a multi-org app can bounce without it
       # credentials: { item: "<fixture user's item name>" }     # provider (bitwarden | 1password | env) is personal: ~/.agents/aw/config.yml
+    # flags:                  # how a run sets a feature flag per service (rules/flags.md); omit when the repo has none
+    #   <service>: { components: [<name>], set: "...{key}...{value}", restore: "...{key}", apply: ["..."], verify: "...{key}" }
   preview:
     url:
       from: pr-deployment
     auth:
       strategy: none
+    # flags: manual         # a hosted environment's flags are set by its owner; the run reports what it needs
