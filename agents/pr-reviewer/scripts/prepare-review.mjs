@@ -1285,7 +1285,7 @@ export function cleanupWorkspace(ws) {
   return { ok: !existsSync(dir), action, message: existsSync(dir) ? `${dir} still exists after ${action}` : `removed ${dir} (${action})` };
 }
 
-async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies, isolated = false, repoDir = null }) {
+async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalies, isolated = false, repoDir = null, measure = (/** @type {string} */ _n, /** @type {() => Promise<any>} */ fn) => fn() }) {
   // Rung 0's local clone. `--repo-dir` names it explicitly; otherwise it is the process's own cwd,
   // which is only right when the caller happens to run inside a clone of the PR's repo — a
   // `review-loop` session started in another repo skipped rung 0 and fell to the network rungs.
@@ -1329,16 +1329,16 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
     // A clone that already has the head commit needs no fetch: on dash0 the `pull/<n>/head`
     // fetch cost 2.6 s of a 14.7 s workspace phase for a commit that was already local.
     const present = await run("git", ["cat-file", "-e", `${headSha}^{commit}`], { timeoutMs, cwd: cloneCwd });
-    const fetched = present.ok ? present : await run(
+    const fetched = present.ok ? present : await measure("workspace-fetch", () => run(
       "git",
       [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "origin", `pull/${number}/head`],
       { timeoutMs, cwd: cloneCwd, env: GIT_NONINTERACTIVE_ENV },
-    );
+    ));
     if (fetched.ok) {
       mkdirSync(runScratchDir, { recursive: true });
       const parent = mkdtempSync(join(runScratchDir, "wt-"));
       const dir = join(parent, "w");
-      const added = await run("git", ["worktree", "add", "--detach", dir, headSha], { timeoutMs, cwd: cloneCwd });
+      const added = await measure("workspace-worktree", () => run("git", ["worktree", "add", "--detach", dir, headSha], { timeoutMs, cwd: cloneCwd }));
       if (added.ok) {
         return {
           dir,
@@ -1357,18 +1357,18 @@ async function materializeWorkspace({ repo, number, headSha, timeoutMs, anomalie
   // Rung 1 — shallow, partial clone of the head ref. `--filter=blob:none` (trees/commits eagerly,
   // blob content lazily) and a >= 300s timeout floor — see CLONE_TIMEOUT_FLOOR_MS's docstring.
   const cloneDir = mkdtempSync(join(scratchRoot(), "clone-"));
-  const cloned = await run(
+  const cloned = await measure("workspace-clone", () => run(
     "git",
     [...GIT_CREDENTIAL_ARGS, "clone", "-q", "--filter=blob:none", "--depth", "50", `https://github.com/${repo}.git`, cloneDir],
     { timeoutMs: cloneTimeoutMs, env: GIT_NONINTERACTIVE_ENV },
-  );
+  ));
   if (cloned.ok) {
-    await run("git", [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "--depth", "50", "origin", `pull/${number}/head`], {
+    await measure("workspace-head-fetch", () => run("git", [...GIT_CREDENTIAL_ARGS, "fetch", "-q", "--depth", "50", "origin", `pull/${number}/head`], {
       timeoutMs: cloneTimeoutMs,
       cwd: cloneDir,
       env: GIT_NONINTERACTIVE_ENV,
-    });
-    const co = await run("git", ["checkout", "-q", "--detach", headSha], { timeoutMs, cwd: cloneDir });
+    }));
+    const co = await measure("workspace-checkout", () => run("git", ["checkout", "-q", "--detach", headSha], { timeoutMs, cwd: cloneDir }));
     if (co.ok) {
       return {
         dir: cloneDir,
@@ -1994,9 +1994,14 @@ export async function readBaseLensInputs({ dir, baseSha, repo, changed, withName
     if (ls.ok) lensPaths = ls.stdout.split("\n").filter(Boolean);
     else if (!/\bHTTP 404\b/.test(ls.stderr)) unreadable.push(`listing ${LENS_DIR} at the base failed: ${describeFailure(ls).slice(0, 160)}`);
   }
-  for (const p of lensPaths.filter((p) => posix.dirname(p) === LENS_DIR && p.endsWith(".md"))) {
-    const t = await readOne(p);
-    if (t !== null) repoLenses[posix.basename(p, ".md")] = t;
+  // Read REVIEW_CONTEXT_API_CONCURRENCY at a time, then assign in path order, so `repoLenses`
+  // keeps the same key order as a serial read. dash0 carries 36 lens files; one at a time over the
+  // contents API was the ~13 s floor of the triage-routing phase.
+  const lensFiles = lensPaths.filter((p) => posix.dirname(p) === LENS_DIR && p.endsWith(".md"));
+  for (let i = 0; i < lensFiles.length; i += REVIEW_CONTEXT_API_CONCURRENCY) {
+    const batch = lensFiles.slice(i, i + REVIEW_CONTEXT_API_CONCURRENCY);
+    const texts = await Promise.all(batch.map(readOne));
+    batch.forEach((p, j) => { if (texts[j] !== null) repoLenses[posix.basename(p, ".md")] = /** @type {string} */ (texts[j]); });
   }
   // One read per ancestor config path; over the contents API that is one round trip each, so
   // read them REVIEW_CONTEXT_API_CONCURRENCY at a time, as readBaseReviewContext does.
@@ -2007,9 +2012,10 @@ export async function readBaseLensInputs({ dir, baseSha, repo, changed, withName
     batch.forEach((p, j) => { if (texts[j] !== null) configs[p] = /** @type {string} */ (texts[j]); });
   }
   const named = [...new Set([...withNames, ...Object.keys(subtreeLenses({ changed, configs }))])].filter((n) => repoLenses[n] === undefined);
-  for (const n of named) {
-    const t = await readOne(`.agents/skills/${n}/lens.md`);
-    if (t !== null) repoSkillLenses[n] = t;
+  for (let i = 0; i < named.length; i += REVIEW_CONTEXT_API_CONCURRENCY) {
+    const batch = named.slice(i, i + REVIEW_CONTEXT_API_CONCURRENCY);
+    const texts = await Promise.all(batch.map((n) => readOne(`.agents/skills/${n}/lens.md`)));
+    batch.forEach((n, j) => { if (texts[j] !== null) repoSkillLenses[n] = /** @type {string} */ (texts[j]); });
   }
   const source = local ? "workspace" : "contents API";
   if (unreadable.length) return { repoLenses, repoSkillLenses, configs, source, error: `unreadable at the base: ${unreadable.join("; ")}` };
@@ -2234,7 +2240,7 @@ async function prepare(opts) {
   if (opts.workspace && checkoutSha) {
     workspace = opts.workdir
       ? { dir: opts.workdir, worktreeParent: null, depthCapability: "checkout", rung: "caller-supplied", cleanup: "none" }
-      : await materializeWorkspace({ repo, number, headSha: checkoutSha, timeoutMs, anomalies, isolated: runMode.isolated, repoDir: opts.repoDir || null });
+      : await materializeWorkspace({ repo, number, headSha: checkoutSha, timeoutMs, anomalies, isolated: runMode.isolated, repoDir: opts.repoDir || null, measure: (n, fn) => timing.measure(n, fn) });
   }
   const tier2Checker = detectTier2Checker(workspace.dir);
   timing.end(); // workspace
@@ -2444,7 +2450,7 @@ async function prepare(opts) {
   const churnCompare = hasPriorRun && state.lastFullSha ? compareRange(repo, state.lastFullSha, headSha, CHURN_COMPARE_JQ, "{status, behind_by}", timeoutMs) : null;
   let threads = [];
   if (threadsRead) {
-    const tr = await threadsRead;
+    const tr = await timing.measure("triage-threads", () => threadsRead);
     threads = buildThreads(tr.nodes);
     if (!tr.complete) {
       anomalies.push("review threads read incomplete — THREAD_OVERLAP and open-thread data may undercount");
@@ -2472,7 +2478,7 @@ async function prepare(opts) {
   // there too — `runMode.full` (not the raw `opts.full`) so a plain `--full` (no
   // `--isolated`) gets the same treatment.
   if (hasPriorRun) {
-    const cmp = await /** @type {Promise<any>} */ (deltaCompare);
+    const cmp = await timing.measure("triage-compare", () => /** @type {Promise<any>} */ (deltaCompare));
     if (cmp.ok) {
       const divergence = classifyDivergence(cmp.value);
       if (divergence === "intact") {
@@ -2626,7 +2632,7 @@ async function prepare(opts) {
   try {
     const changedPaths = files.map((f) => f.filename);
     const withNames = String(opts.with || "").split(",").map((x) => x.trim()).filter(Boolean);
-    const repoInputs = await readBaseLensInputs({ dir: workspace.dir, baseSha, repo, changed: changedPaths, withNames, timeoutMs });
+    const repoInputs = await timing.measure("triage-lenses", () => readBaseLensInputs({ dir: workspace.dir, baseSha, repo, changed: changedPaths, withNames, timeoutMs }));
     if (repoInputs.error) anomalies.push(`review lenses: ${repoInputs.error} — those files are not loaded; the rest are`);
     const sel = selectLenses({ changed: changedWithAdded(files), tier: routing.tier, withNames, ...repoInputs, bundledLenses: readBundledLenses() });
     lenses = { ...sel, source: repoInputs.source };
@@ -3547,6 +3553,25 @@ async function selfTest() {
     };
     const r = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["svc/a.ts"], runner });
     return /svc\/\.review\.yaml@abc1234/.test(r.error || "") && typeof r.repoLenses.billing === "string";
+  });
+  t("readBaseLensInputs reads many lenses concurrently (bounded) and keeps path order", async () => {
+    const names = Array.from({ length: 20 }, (_, i) => `l${String(i).padStart(2, "0")}`);
+    let inFlight = 0, peak = 0;
+    const runner = async (/** @type {string} */ _cmd, /** @type {string[]} */ args) => {
+      const url = args.find((a) => a.includes("contents/")) || "";
+      const ok = (/** @type {string} */ stdout) => ({ ok: true, code: 0, stdout, stderr: "", timedOut: false });
+      if (url.includes(`contents/${LENS_DIR}?`)) return ok(names.map((n) => `${LENS_DIR}/${n}.md`).join("\n") + "\n");
+      const m = url.match(new RegExp(`contents/${LENS_DIR}/(l\\d+)\\.md`));
+      if (!m) return { ok: false, code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)", timedOut: false };
+      inFlight++; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 5));
+      inFlight--;
+      return ok(`body ${m[1]}`);
+    };
+    const r = await readBaseLensInputs({ baseSha: "abc1234def", repo: "o/r", changed: ["a.ts"], runner });
+    return peak > 1 && peak <= REVIEW_CONTEXT_API_CONCURRENCY
+      && JSON.stringify(Object.keys(r.repoLenses)) === JSON.stringify(names)
+      && r.repoLenses.l07 === "body l07";
   });
   t("extraHighStakes returns empty when the key is absent", () => {
     return extraHighStakes("profile: strict\n").length === 0 && extraHighStakes("").length === 0;

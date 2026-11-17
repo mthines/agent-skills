@@ -110,7 +110,7 @@ export class Timing {
     this._openPhase = null;
     /** @type {number|null} */
     this._openAt = null;
-    /** @type {Array<{ name: string, startMs: number, endMs: number }>} */
+    /** @type {Array<{ name: string, startMs: number, endMs: number, phase?: boolean }>} */
     this._segments = [];
   }
 
@@ -130,16 +130,28 @@ export class Timing {
     const now = Date.now();
     const ms = now - this._openAt;
     this._phases[this._openPhase] = (this._phases[this._openPhase] || 0) + ms;
-    this._segments.push({ name: this._openPhase, startMs: this._openAt, endMs: now });
+    this._segments.push({ name: this._openPhase, startMs: this._openAt, endMs: now, phase: true });
     this._openPhase = null;
     this._openAt = null;
   }
 
-  /** Every closed phase with its own start and end, in order — what a step's child spans are
-   *  built from. @returns {Array<{ name: string, startMs: number, endMs: number }>} */
+  /** Time `fn` as a child span named `name`, leaving the open phase and `phases` totals untouched.
+   *  `name` must match STEP_NAME_RE or the exporter silently drops the span.
+   *  @template T @param {string} name @param {() => Promise<T>} fn @returns {Promise<T>} */
+  async measure(name, fn) {
+    const startMs = Date.now();
+    try {
+      return await fn();
+    } finally {
+      this._segments.push({ name, startMs, endMs: Date.now() });
+    }
+  }
+
+  /** Every closed phase and measured span with its own start and end, ordered by start (phase first on a tie).
+   *  @returns {Array<{ name: string, startMs: number, endMs: number }>} */
   segments() {
     if (this._openPhase) this.end();
-    return this._segments.map((g) => ({ ...g }));
+    return this._segments.map((g) => ({ ...g })).sort((a, b) => a.startMs - b.startMs || b.endMs - a.endMs || Number(!!b.phase) - Number(!!a.phase));
   }
 
   /** The epoch ms this timer was created — a process's own start, for its step span. */
@@ -1182,7 +1194,7 @@ export function summarize(run, env = {}) {
 export function renderSummary(s) {
   const rows = s.steps.flatMap((x) => [
     `  ${x.name.padEnd(16)} ${x.kind.padEnd(8)} ${String(x.duration_s).padStart(7)}s ${String(x.share).padStart(4)}%${"tool_calls" in x ? `  ${x.tool_calls} calls` : ""}${"candidates" in x ? `  ${x.candidates} candidates` : ""}${x.empty ? "  EMPTY (marked late)" : ""}${x.failed ? "  FAILED" : ""}`,
-    ...(x.phases || []).map((g) => `    · ${g.name.padEnd(13)} ${"".padEnd(8)} ${String(g.duration_s).padStart(7)}s`),
+    ...(x.phases || []).map((g) => `    · ${g.name.padEnd(20)} ${"".padEnd(8)} ${String(g.duration_s).padStart(7)}s`),
   ]);
   const wrows = s.workers.map((w) => `  worker ${w.unit.padEnd(9)} ${"sub-agent".padEnd(8)} ${String(w.duration_s).padStart(7)}s  (from +${w.start_offset_s}s)`);
   const m = s.memory;
@@ -1563,6 +1575,17 @@ async function selfTest() {
   const timing = new Timing();
   timing.start("prepare"); timing.end();
   ok("Timing block has phases + total_ms", typeof timing.block().total_ms === "number" && typeof timing.block().phases.prepare === "number");
+  const mt = new Timing();
+  mt.start("workspace");
+  const v = await mt.measure("workspace-clone", async () => 7);
+  let threw = false;
+  try { await mt.measure("workspace-fetch", async () => { throw new Error("x"); }); } catch { threw = true; }
+  mt.end();
+  const segNames = mt.segments().map((g) => g.name).sort();
+  ok("Timing.segments lists a phase before the spans measured inside it", mt.segments()[0].name === "workspace");
+  ok("Timing.measure returns the value, records a span even when fn throws, and leaves phase totals to the phase",
+    v === 7 && threw && JSON.stringify(segNames) === '["workspace","workspace-clone","workspace-fetch"]'
+    && JSON.stringify(Object.keys(mt.block().phases)) === '["workspace"]');
 
   // buildRun: marked steps, a gap, a worker, attrs, finish.
   const ledger = [
