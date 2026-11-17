@@ -48,7 +48,7 @@ Run per flag, from the PR's checkout, on `local` only.
 4. **Prove**: run `verify`; the output must show the value just set.
    No `verify` command, or an output that does not show it → keep going, and report the flag as `set, not observed` in the report's `**Notes**`.
 5. **Probe** the criterion.
-6. **Restore** after the last probe that needs the flag, and on every exit path (a crash, a cap, an abort): run `restore`, then the same `apply` commands, then `verify` again, which must show the original value.
+6. **Restore** after the last probe that needs the flag, a fix-loop re-verify included ([`fix-loop.md`](./fix-loop.md)), so the flag stays set across the fix loop and its stack restarts, and on every exit path (a crash, a cap, an abort): run `restore`, then the same `apply` commands, then `verify` again, which must show the original value.
    `restore` deletes the key's saved original, so the next run never restores a value older than the developer's own edits.
    Restore even when `policies.cleanup: leave`; a flag is state the developer did not ask for.
    `--keep-stack` keeps the stack, never the flipped flag.

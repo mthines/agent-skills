@@ -42,7 +42,7 @@ Runs on your own PR (`local` or `preview`) and on a branch with no PR yet ([Own 
    4. record which of the three decided it, in one line, on the finding.
 4. **Guard it.** Add or extend the nearest test (unit, component, or table test) so the failure is caught without a stack. Skip only when no test harness covers that layer, and say so.
 5. **Rebuild** per [`local-stack.md § Step 4`](./local-stack.md#step-4--rebuild-after-a-fix).
-6. **Re-verify** the original probe, then have `telemetry-verify` re-read its new window. Fail → back to step 2, max 3 attempts, then `escalated`.
+6. **Re-verify** the original probe, then have `telemetry-verify` re-read its new window. A probe that needs a feature flag runs with the flag still set; restore it after the last re-verify ([`flags.md § Protocol`](./flags.md#protocol), step 6). Fail → back to step 2, max 3 attempts, then `escalated`.
 7. **Check for collateral.** Run the affected package's fast tests and re-run the AC specs that share the changed file.
    Test command, first that applies: `.agents/aw/notes.md` → the repo's `CLAUDE.md` / `AGENTS.md` / `CONTRIBUTING.md` → the manifest (`package.json` `test` script, `go test ./<pkg>/...`, `pytest <dir>`, `cargo test -p <crate>`).
 8. **Commit** only the files of this fix, in the repo's commit format, first that applies:
