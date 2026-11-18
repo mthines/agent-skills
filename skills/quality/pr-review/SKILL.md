@@ -5,7 +5,7 @@ description: >
   and reports its verdict and findings without touching your code. Also writes
   maintainer relevance rules via `/pr-review remember <fact>`; invoke with /pr-review.
 disable-model-invocation: false
-argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--depth quick|standard|deep|max] [--model opus|sonnet|haiku|<id>] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--impact-image] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] | remember <fact>'
+argument-hint: '[<pr-url>|#<n>] [--critical] [--full] [--depth quick|standard|deep|max] [--model opus|sonnet|haiku|<id>] [--effort high] [--thoroughness 0..1] [--finder-passes 1|2] [--impact-image] [--with a,b,c] [--no-holistic] [--no-escalate] [--no-standards] [--skip-gates] [--fix-links] [--force] | remember <fact>'
 license: MIT
 metadata:
   author: mthines
@@ -58,7 +58,7 @@ It governs the review operation; `remember` dispatches nothing and resolves its 
 
 ## Step 0: Parse the argument
 
-Everything after the PR reference is a **pass-through flag**: forward it verbatim and interpret none of it.
+Everything after the PR reference is a **pass-through flag**: forward it verbatim and interpret none of it — except `--force`, which this skill owns ([Step 2, item 3b](#step-2-dispatch-the-agent)): strip it, set `FORCE=1`, and forward `--full` in its place.
 
 ```bash
 # Known agent flags, listed for the argument-hint only — NOT a validation allowlist.
@@ -115,6 +115,12 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    when the pass-through flags carry `--review-sha`), and read the topology on the same command.
    Never forward `--model`: it is a dispatch setting this skill applies in step 4, and prepare exits 2 on an argument it does not know.
    A bad flag or flag combination exits 2 here, before any model turn: report prepare's message and stop.
+
+3b. **Stop on a head the last review already judged, unless `FORCE=1`.**
+   Read `jq -r '[.mode, .priorRun.priorSha] | @tsv' <dir>/context.json`.
+   When `.mode` is `zero-delta` and `FORCE=0`, run `prepare-review.mjs --cleanup <dir>/context.json`, dispatch nothing, and print the skip line from Step 3.
+   Any other mode, a missing `.mode`, or a failed read continues: never stop on a state you could not read.
+   `FORCE=1` skips this check, and the `--full` it forwards makes the reviewer review the whole head rather than return the zero-delta gate check.
 
    ```bash
    node "$AGENT_SUPPORT/pr-reviewer/scripts/prepare-review.mjs" --pr <PR_REF> --out <dir>/context.json [--state <dir>/state.json] <prepare flags> \
@@ -236,6 +242,12 @@ Report: <URL of the sticky comment>
 Apply these: /implement-suggestion <PR>   (or Skill("review-loop", "<PR>") to converge)
 ```
 
+When step 3b stopped the run, print only this line — there is no verdict, no findings, and no GitHub write:
+
+```text
+/pr-review — skipped (PR #<n> head <sha7> already reviewed). Pass --force to review it again.
+```
+
 Surface blocking findings and non-passing gates prominently — this summary is the only place the result reaches the user.
 Report the verdict **as returned**: never soften a `FAIL` or upgrade a `PASS`.
 
@@ -283,5 +295,6 @@ fi
 - **Read-only, always.** Never edit a file, commit, push, resolve a thread, or write to GitHub — the agent posts its own sticky report and inline findings.
 - **One prepare, one review dispatch per invocation, plus the intent worker in the same message when the budget is `hybrid`, and the two pass-2 workers when `budget.finderPasses` is `2`. Do not loop.** The caller that ran prepare runs `--cleanup`.
 - **Absent sub-agent dispatch is a skip, not a fallback — and it is a capability test, not a name test.** Never review in this context and label it a `pr-reviewer` review, and never retry the dispatch.
+- **An already-reviewed head is a skip, not a review.** `.mode == "zero-delta"` without `--force` dispatches nothing; `--force` forwards `--full`, never `--force`.
 - **Never re-adjudicate the verdict.** Report `PASS` / `WARN` / `FAIL` as returned, with the blocking findings named.
 - **`remember` writes an `fp`-keyed rule with `explicit: true`, or asks** — never an invented key — and never suppresses a `standards` or `(blocking)` finding ([`rules/remember.md`](./rules/remember.md)).
