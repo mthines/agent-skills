@@ -2938,7 +2938,7 @@ async function selfTest() {
     const partial = gate6(blocker, true, ["lenses"]);
     check("review incomplete: a verified blocker stays FAIL with the phrase in its details; a WARN leads with it; a partial review stays not evaluated",
       failed.status === "FAIL" && failed.details.endsWith("Review incomplete.")
-        && warned.status === "WARN" && String(warned.reason).startsWith("review incomplete: no lenses step recorded;")
+        && warned.status === "WARN" && String("reason" in warned ? warned.reason : "").startsWith("review incomplete: no lenses step recorded;")
         && partial.status === "SKIPPED"
         && gate6({ inline: [], deferred: [] }, false, ["finders", "lenses", "consolidate", "verify"]).details.length <= 120,
       `${JSON.stringify(failed)} | ${JSON.stringify(warned)} | ${JSON.stringify(partial)}`);
