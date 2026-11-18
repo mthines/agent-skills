@@ -7,10 +7,10 @@ description: >
   reference it runs local mode: branch-reviewer over a local findings file,
   zero GitHub calls, for an un-pushed branch. Run it at
   the top level of a session with a dispatch tool; flags --ui (parallel
-  ui-verify lane), --merge (squash on a PASS or WARN approval), --no-ci, --no-feedback;
+  ui-verify lane), --merge (squash on a PASS or WARN approval), --force (re-review a head already reviewed), --no-ci, --no-feedback;
   triggers on "/review-loop".
 disable-model-invocation: false
-argument-hint: '[<PR-URL|#n>] [--base <ref>] [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--ui] [--merge]'
+argument-hint: '[<PR-URL|#n>] [--base <ref>] [--cap N] [--critical] [--no-ci] [--no-feedback] [--no-refresh] [--no-preview-run] [--ui] [--merge] [--force]'
 license: MIT
 metadata:
   author: mthines
@@ -118,6 +118,7 @@ No PR reference → **local mode**: read [`rules/local-mode.md`](./rules/local-m
 | `--no-ci` | Skip sub-step D. `create-pr` and `autonomous-workflow` pass it (they own CI). |
 | `--no-preview-run` | Skip Step 1.6. `autonomous-workflow` passes it; `create-pr` does not. |
 | `--ui` | Run `ui-verify` against the live preview in a parallel lane and resolve its findings inside the loop; replaces Step 1.6. Read [`rules/ui-lane.md`](./rules/ui-lane.md) when `--ui` is set. |
+| `--force` | Review a head the last review already judged. Without it, iteration 1 stops as `already-reviewed` when the head is unchanged and no thread is open ([`rules/already-reviewed.md`](./rules/already-reviewed.md)); with it, iteration 1 skips the apply-first shortcut and sends `--full` to the reviewer. |
 | `--merge` | Squash-merge on a clean convergence, a `PASS` or `WARN` verdict (never `FAIL`), and green CI (Step 2.5). Read [`rules/merge.md`](./rules/merge.md) when `--merge` is set. |
 
 Step 0 refuses `--ui` + `--no-feedback`, `--ui` + `--no-preview-run`, and `--merge` + `--no-feedback` (messages in the flag block).
@@ -206,7 +207,7 @@ Never conclude "no dispatch" from the absence of the name `Task`, and never conc
 Parse the flags and set the iteration cap:
 
 ```bash
-cap_flag=""; CRITICAL=0; NO_FEEDBACK=0; NO_REFRESH=0; NO_CI=0; NO_PREVIEW_RUN=0; MERGE=0; UI=0
+cap_flag=""; CRITICAL=0; NO_FEEDBACK=0; NO_REFRESH=0; NO_CI=0; NO_PREVIEW_RUN=0; MERGE=0; UI=0; FORCE=0
 # --cap N accepts "--cap 5" or "--cap=5".
 if [[ " $ARGUMENTS " =~ [[:space:]]--cap[[:space:]=]+([0-9]+) ]]; then
   cap_flag="${BASH_REMATCH[1]}"
@@ -216,6 +217,7 @@ fi
 [[ " $ARGUMENTS " == *" --no-ci "* ]] && NO_CI=1
 [[ " $ARGUMENTS " == *" --no-preview-run "* ]] && NO_PREVIEW_RUN=1
 [[ " $ARGUMENTS " == *" --merge "* ]] && MERGE=1
+[[ " $ARGUMENTS " == *" --force "* ]] && FORCE=1
 if [[ " $ARGUMENTS " == *" --ui "* ]]; then
   UI=1
 fi
@@ -283,7 +285,7 @@ while ITERATION < CAP:
     if UI == 1: ui_lane_tick()
 
     # Iteration 1 only — see "Iteration 1 — apply first when the last review still stands".
-    if ITERATION == 1 and NO_FEEDBACK == 0:
+    if ITERATION == 1 and NO_FEEDBACK == 0 and FORCE == 0:
         APPLY_FIRST = (context.json .mode == "zero-delta"
                        AND OPEN >= 1       # unresolved threads
                        AND REPLIED == 0)   # unresolved threads holding more than one comment
@@ -382,7 +384,10 @@ prepare-review.mjs --cleanup <dir>/context.json
 
 ### Iteration 1 — apply first when the last review still stands
 
-At iteration 1, unless `NO_FEEDBACK == 1`, read [`rules/apply-first.md`](./rules/apply-first.md) and run its one-Bash-call check before sub-step A.
+Before anything else at iteration 1, with a PR reference, `FORCE == 0`, and `MERGE == 0`, read [`rules/already-reviewed.md`](./rules/already-reviewed.md): when the head is unchanged since the last review and no thread is open, the loop stops with `STOP_REASON = "already-reviewed"` and dispatches nothing.
+Under `FORCE == 1`, skip the apply-first check below, leave `APPLY_FIRST=0`, and add `--full` to iteration 1's `pr-reviewer` call.
+
+Otherwise, at iteration 1, unless `NO_FEEDBACK == 1` or `FORCE == 1`, read [`rules/apply-first.md`](./rules/apply-first.md) and run its one-Bash-call check before sub-step A.
 It skips sub-step A only when all five conditions hold — `ITERATION == 1`, `NO_FEEDBACK == 0`, `context.json` `.mode == "zero-delta"`, `OPEN >= 1`, `REPLIED == 0` — and any failed read leaves `APPLY_FIRST=0`.
 
 ### Sub-step D — CI
@@ -441,7 +446,7 @@ Only when `MERGE == 1`: read [`rules/merge.md`](./rules/merge.md) and run it —
 review-loop on PR #<n> (<RESOLVED_REPO>)
 
 Iterations: <N> of <CAP>
-Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | reviewer-refused (Agent0) | ui-red (lane findings not posted) | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level) | skipped (pr-reviewer is not a dispatchable agent type here) | skipped (Agent0 install failed: <reason>)>
+Stop reason: <all-threads-resolved | no-progress (flags remain) | cap-reached | ci-red (cap on ci-auto-fix handoffs) | ci-error (check query failed) | reviewer-refused (Agent0) | already-reviewed (head unchanged; --force overrides) | ui-red (lane findings not posted) | report-only (--no-feedback) | skipped (sub-agent dispatch unavailable) | skipped (nested dispatch — must run at top level) | skipped (pr-reviewer is not a dispatchable agent type here) | skipped (Agent0 install failed: <reason>)>
 # The STOP_REASON the loop set — never re-derived from the iteration count.
 Review source: <pr-reviewer | pr-reviewer bundle via general sub-agent (Agent0<, installed on demand>)>
 

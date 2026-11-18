@@ -129,3 +129,18 @@ Report-only means a review ran and its findings were not applied — the opposit
 | `ci-auto-fix` | Sub-step D: dispatched on a red check, capped at 2 handoffs per run |
 | `ui-verify run` | Step 1.6 at exit, report-only; under `--ui`, replaced by the lane (`rules/ui-lane.md`) |
 | `implement-suggestion --watch` | Sibling, never nested: `--watch` waits on an out-of-process reviewer; this loop dispatches its own |
+
+## Already-reviewed guard
+
+A second run on a head the last review judged costs a prepare, a dispatch, and gate checks, and returns the report that already exists; stopping before the dispatch is the only saving.
+The guard reads the same `context.json` `.mode == "zero-delta"` the apply-first check reads, so it adds no GitHub call of its own.
+
+| Condition | Why it is required |
+| --- | --- |
+| `.mode == "zero-delta"` | The reviewer's own state record says this head was judged; any push changes the head and clears the guard |
+| `OPEN == 0` | An open thread is work for sub-step B, which the apply-first path already runs without a re-review |
+| `REPLIED == 0` | A reply is the one thing a zero-delta pass acts on, so the reviewer must still run |
+| `MERGE == 0` | A merge needs a review pass behind it ([`rules/merge.md`](../rules/merge.md)); stopping would make `--merge` unusable on a PR that arrived clean |
+| `FORCE == 0` | The caller asked for another review; `--full` makes it a real one, because a bare re-run would return the zero-delta gate check |
+
+Local mode has no head SHA to compare, so the guard does not apply there.

@@ -48,6 +48,12 @@ A second pass over an unchanged head re-reads the same code and re-posts the sam
 The gates and the verifier made the verdict with evidence; re-adjudicating it here would produce two disagreeing verdicts for one run.
 The agent rewrites its sticky report in place so a PR does not accumulate copies, so this skill writes nothing to GitHub.
 
+## Why an already-reviewed head is a skip
+
+The reviewer's zero-delta path already skips the inline review, but it still costs a prepare, a dispatch, and a gate check to return the report the PR already carries.
+Step 2's item 3b reads the `.mode` that prepare computed, so the stop adds no GitHub call.
+`--force` is a skill flag rather than an agent flag so the agent's surface does not grow: it maps to the agent's existing `--full`, the one flag that makes a same-head re-run a real review.
+
 ## Which review command
 
 | Command | Reviews | Applies findings | Pushes | Loops |
