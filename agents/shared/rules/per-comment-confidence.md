@@ -23,7 +23,7 @@ unchanged, so everything downstream of the number reads exactly as it did.
 - [Where the score comes from](#where-the-score-comes-from)
 - [The check](#the-check)
 - [Drop vs. defer — the near-miss band](#drop-vs-defer--the-near-miss-band)
-- [Why 80, not 70](#why-80-not-70)
+- [Default bars](#default-bars)
 - [What `confidence(code)` returns](#what-confidencecode-returns)
 - [What this check does not catch](#what-this-check-does-not-catch)
 - [Order](#order)
@@ -147,24 +147,20 @@ Only `issue` and `suggestion` are deferred — they are the finding types whose 
 
 This keeps the `Findings cleared` / `Deferred (over inline cap)` / `Final findings posted` identity below untouched: advisory findings are neither `cleared` nor over-cap-deferred, so they are tracked on their own `Confidence-deferred (advisory)` counter and excluded from `<CL> - <DEF> == <F>`.
 
-## Why 80, not 70
+## Default bars
 
-| Threshold | Source | Outcome |
-| --- | --- | --- |
-| 70 | legacy reviewer.md Step 5.4 | Targets the published industry mean for self-graded threshold; produces 5–15 % false-positive rate (Crash Override 2026 LLM security review prompt study) |
-| 80 | Claude Code Review default; 2026 FindSkill.ai field comparison | Targets the < 5 % false-positive rate above which devs read every comment |
-| 90 | Bito / Qodo enterprise tier defaults | Drops too many true positives at typical SOTA model output quality; reserve for high-stakes-only repos |
-
-80 is the recommended setting, established by `profile: balanced` in `review-config.md`.
-Repos tune the threshold by setting `profile: chill` (90) or `profile: assertive` (70) in `.agents/review/config.yaml`.
+`profile: balanced` gates `critical` 65 · `high` 70 · `medium` 75 · `low` 85.
+Repos tune the bars with `profile: chill` (medium 90) or `profile: assertive` (medium 70) in `.agents/review/config.yaml`.
 A flat `per_comment_confidence_threshold: N` overrides every tier's bar, with or without a `profile:` field (`review-config.md` § Run-level knobs).
 See `agents/shared/rules/review-config.md` for the full profile table and hierarchical discovery rules.
+
+**Why:** the evidence for these numbers, and what it cannot show, is in [`confidence-thresholds.md`](../references/confidence-thresholds.md).
 
 ## What `confidence(code)` returns
 
 `confidence(code)` scores three dimensions — **Correctness** (40 %), **Completeness** (30 %), **No regressions** (30 %) — and returns one weighted **Final** score (see `skills/quality/confidence/SKILL.md` § For `code` mode).
 The drop decision is on the **Final** score.
-A finding whose Final is dragged below 80 by any dimension is noise — a claim that is correct but incomplete, or complete but wrong, does not help the author.
+A finding whose Final is dragged below the `medium` bar (75) by any dimension is noise — a claim that is correct but incomplete, or complete but wrong, does not help the author.
 
 ```python
 def passes_confidence(final_score: int, threshold: int = 75) -> bool:
