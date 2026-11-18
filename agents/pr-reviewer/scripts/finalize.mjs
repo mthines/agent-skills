@@ -2962,6 +2962,9 @@ async function selfTest() {
     const full = fin(true, ["memory", "gates", "finders", "lenses", "consolidate", "verify"]);
     const short = fin(true, ["memory", "gates", "finders", "verify"]);
     const noLedger = fin(false, []);
+    // A zero-delta re-review (a rebase, or review-loop's post-refresh re-review) skips Step 2 by
+    // design: no finders, consolidate, or verify marker, and still a complete review.
+    const zeroDelta = (() => { const saved = ictx.mode; ictx.mode = "zero-delta"; try { return fin(true, ["memory", "gates"]); } finally { ictx.mode = saved; } })();
     rmSync(iDir, { recursive: true, force: true });
     check("review incomplete: through the CLI a missing step prints the line and caps PASS at WARN with a rendered report; a full ledger and no ledger stay PASS",
       full.verdict === "PASS" && full.rendered && noLedger.rendered && !full.stdout.includes("review incomplete")
@@ -2969,6 +2972,9 @@ async function selfTest() {
         && short.stdout.includes("finalize: review incomplete: no lenses, consolidate step recorded — the verdict cannot be PASS")
         && noLedger.verdict === "PASS" && !noLedger.stdout.includes("review incomplete"),
       `${full.verdict} | ${short.verdict} ${short.rendered} | ${noLedger.verdict} | ${short.stderr.slice(-600)}`);
+    check("review incomplete: a zero-delta re-review with only memory and gates markers is complete and stays PASS",
+      zeroDelta.verdict === "PASS" && !zeroDelta.stdout.includes("review incomplete"),
+      `${zeroDelta.verdict} | ${zeroDelta.stdout.slice(-300)} | ${zeroDelta.stderr.slice(-300)}`);
   }
 
   // D4 / AC-10: checkShape() — the pure function, called directly.
@@ -3958,8 +3964,9 @@ async function main() {
     // The union's own run record (finalizeReview names a delivered pass 2 that was never unioned).
     context.finderUnionRan = finderUnionRan(ledger);
     // Planned review steps with no record: Gate 6 and RUN_ANOMALY name them as an incomplete review.
-    // An empty ledger (readLedger's answer for a missing file) proves nothing either way.
-    if (ledger.length > 0) context.incompleteSteps = incompleteSteps(ledger, context?.telemetry?.markers?.steps);
+    // An empty ledger (readLedger's answer for a missing file) proves nothing either way, and a
+    // zero-delta re-review skips Step 2 by design (fetch-and-triage.md § Zero-delta short-circuit).
+    if (ledger.length > 0 && !step2Skipped(context)) context.incompleteSteps = incompleteSteps(ledger, context?.telemetry?.markers?.steps);
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
