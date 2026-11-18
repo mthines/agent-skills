@@ -51,6 +51,8 @@ It governs the review operation; `remember` dispatches nothing and resolves its 
   **Read linked files from the install, never from the imported folder:** this skill's `rules/` and `references/` from `$AGENT_SKILLS_ROOT/skills/pr-review/`, a sibling skill from `$AGENT_SKILLS_ROOT/skills/<name>/`, and every `agents/<path>` link from `$AGENT_SKILLS_ROOT/<path>`.
   When `$AGENT_SKILLS_ROOT/skills/pr-review/SKILL.md` differs from the copy you are running, or you cannot compare them, follow the installed copy: **the installed copy at `$AGENT_SKILLS_COMMIT` wins**, because the files it links come from that commit.
   Then make the dispatch substitutions in `$AGENT_SKILLS_ROOT/shared/rules/agent0-host.md`: `pr-reviewer` becomes a `general` sub-agent that reads `$AGENT_SKILLS_ROOT/pr-reviewer.agent0.md`, and the intent worker's type is `general`.
+  **Step 2 runs workers first on this host.** A sub-agent here cannot dispatch, so the reviewer cannot isolate any finder itself. On `hybrid`, step 4 sends two `general` workers in one message instead of the worker and the reviewer: the intent worker and the other-finders worker, each with the prompt `$AGENT_SKILLS_ROOT/pr-reviewer/rules/agent0-runtime.md` § Phase D lists, writing `<dir>/intent/intent.json` and `<dir>/others/others.json` (plus `<dir>/others/others.trace.json`).
+  Stamp it beside the intent stamp with `mkdir -p <dir>/others && date +%s > <dir>/others/dispatched_at`. When both return, dispatch the reviewer alone with `<PR_REF> <pass-through flags> --context <dir>/context.json`, with no `--intent-from` and no `INTENT_WAIT:` line: it finds both files beside its context. Step 5b's pass-2 workers join the worker message. On `in-context`, step 5 is unchanged.
 - **Unprepared** — no `env.sh`, but `/tmp/workspace`, `/tmp/.opencode/skills/`, or `/tmp/.opencode/agents/general.md` exists. This skill does not install. Stop with `/pr-review — skipped (Agent0 sandbox not prepared; run /review-loop <PR> --no-feedback, which installs on demand and reviews once)`. After that install, `/pr-review` takes the prepared branch.
 - **Neither** — not Agent0. Continue with Step 0.
 
@@ -134,7 +136,7 @@ Dispatch **once**; iterating against fixes is [`review-loop`](../review-loop/SKI
    Pass a chosen model as the dispatch tool's `model` parameter on that dispatch only.
    When the dispatch tool has no model parameter, dispatch without one and print `models: not applied (<role>)` under the report's run line; never invent another mechanism.
 
-   On `hybrid`, in **one message**, dispatch both:
+   On `hybrid`, in **one message**, dispatch both (on a Dash0 Agent0 host, the workers-first shape in [Before Step 0](#before-step-0-on-a-dash0-agent0-host) replaces this step):
    - `pr-reviewer` with `<PR_REF> <pass-through flags> --context <dir>/context.json --intent-from <dir>/intent/intent.json`,
      then a new line `INTENT_WAIT: ` followed by the wait command below with `<dir>` and `$AGENT_SUPPORT` already resolved to absolute paths.
      The worker runs beside the reviewer, so the file does not exist when the reviewer starts; the reviewer runs this line at its Step 2.6b, after verifying its own candidates, replaces `<N>` with its own running tool-call count (the only part the caller cannot know), and never replaces the line with `ls` or `cat`:

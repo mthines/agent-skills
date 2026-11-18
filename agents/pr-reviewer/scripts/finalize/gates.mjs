@@ -117,13 +117,49 @@ export function gate3(contextThreads, judgmentThreads) {
  * on Gate 6 alone, and participates in neither FAIL_REASONS/WARN_REASONS nor the verdict
  * (computeVerdict only matches literal "FAIL"/"WARN", so "SKIPPED" here is already excluded
  * with no special-casing needed).
+ *
+ * `incompleteSteps` names review steps the run planned (context.telemetry.markers.steps) but never
+ * recorded on its ledger (dispatch-topology.md § An incomplete review is never a clean verdict).
+ * The review did run, so the gate is evaluated, but it cannot claim the review found nothing:
+ * a would-be PASS becomes WARN, a WARN carries the incomplete phrase first, and a FAIL (a verified
+ * blocker) stays FAIL with the phrase in its details.
  * @param {{ inline?: any[], deferred?: any[] }} [placement]
  * @param {boolean} [partialReview]
+ * @param {string[]} [incompleteSteps]
  */
-export function gate6(placement, partialReview = false) {
+export function gate6(placement, partialReview = false, incompleteSteps = []) {
   if (partialReview) {
     return { status: "SKIPPED", details: "not evaluated this run" };
   }
+  const base = gate6Findings(placement);
+  const missing = Array.isArray(incompleteSteps) ? incompleteSteps.filter(Boolean) : [];
+  if (missing.length === 0) return base;
+  // The details cell is capped at 120 chars (render-report.mjs), so it says only that the review is
+  // incomplete; the step list rides in `reason` (the verdict's Warnings line) and in RUN_ANOMALY.
+  const phrase = incompletePhrase(missing);
+  if (base.status === "FAIL") return { ...base, details: `${base.details} Review incomplete.` };
+  if (base.status === "WARN") return { status: "WARN", details: `${base.details} Review incomplete.`, reason: `${phrase}; ${base.reason}` };
+  const named = `${capitalize(phrase)} — not a full review.`;
+  return {
+    status: "WARN",
+    details: named.length <= 120 ? named : "Review incomplete — not a full review; the Run row names the missing steps.",
+    reason: phrase,
+  };
+}
+
+/** The one phrase every surface uses for an incomplete review — the report, RUN_ANOMALY, and the
+ *  CLI line all read "review incomplete", which is what an aw /goal condition matches.
+ *  @param {string[]} steps @returns {string} */
+export function incompletePhrase(steps) {
+  return `review incomplete: no ${steps.join(", ")} step recorded`;
+}
+
+/** @param {string} s */
+function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/** Gate 6 from the placed findings alone.
+ * @param {{ inline?: any[], deferred?: any[] }} [placement] */
+function gate6Findings(placement) {
   const inline = placement?.inline || [];
   const deferred = placement?.deferred || [];
   const blockingInline = inline.filter((f) => f.blocking === true);
@@ -166,9 +202,9 @@ export function computeVerdict({ g1, g3, g4, g5, g6 }) {
 }
 
 /**
- * @param {{ skipGates?: boolean, judgmentsGates?: any, contextThreads?: any[], judgmentThreads?: any[], placement?: any, partialReview?: boolean }} args
+ * @param {{ skipGates?: boolean, judgmentsGates?: any, contextThreads?: any[], judgmentThreads?: any[], placement?: any, partialReview?: boolean, incompleteSteps?: string[] }} args
  */
-export function computeGates({ skipGates, judgmentsGates, contextThreads, judgmentThreads, placement, partialReview }) {
+export function computeGates({ skipGates, judgmentsGates, contextThreads, judgmentThreads, placement, partialReview, incompleteSteps }) {
   if (skipGates) {
     return { g1: SKIPPED, g3: { ...SKIPPED, open: [] }, g4: SKIPPED, g5: SKIPPED, g6: SKIPPED, verdict: "SKIPPED" };
   }
@@ -176,7 +212,7 @@ export function computeGates({ skipGates, judgmentsGates, contextThreads, judgme
   const g4 = gate4(judgmentsGates?.gate4);
   const g5 = gate5(judgmentsGates?.gate5);
   const g3 = gate3(contextThreads || [], judgmentThreads || []);
-  const g6 = gate6(placement, partialReview);
+  const g6 = gate6(placement, partialReview, incompleteSteps);
   const verdict = computeVerdict({ g1, g3, g4, g5, g6 });
   return { g1, g3, g4, g5, g6, verdict };
 }

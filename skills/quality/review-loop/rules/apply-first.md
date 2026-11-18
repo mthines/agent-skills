@@ -28,7 +28,7 @@ Read the mode from exactly one `prepare-review.mjs` run in the loop's own contex
 | `REVIEWER_ROUTE` | Where `context.json` comes from | After the check |
 | --- | --- | --- |
 | `named` | The `prepare-review.mjs` run of [the named dispatch](../SKILL.md#sub-step-a--the-named-dispatch), item 1 — run it before the check | Passed: run its `--cleanup` and dispatch nothing. Failed: hand the same `context.json` to the dispatch |
-| `agent0` | `node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json`, run in the loop's context | Run its `--cleanup` either way; the `general` reviewer runs its own prepare ([`agent0-runtime.md`](./agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)) |
+| `agent0` | The prepare of [Agent0 sub-step A](./agent0-runtime.md#sub-step-a--workers-first-then-a-general-reviewer-pointed-at-the-bundle), step 1 — run it before the check | Passed: run its `--cleanup` and dispatch nothing. Failed: continue at its step 2 with the same `context.json` |
 
 Run the block as **one** Bash call with the loop's values written in for `<ITERATION>`, `<NO_FEEDBACK>`, `<OWNER>`, `<REPO>`, `<PR_NUMBER>`, and `<dir>`, and read `APPLY_FIRST` from its printed line, never from a variable set in another call.
 

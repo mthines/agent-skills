@@ -24,3 +24,15 @@ on-thread with a rationale, a finding fixed in a later commit whose thread this 
 permission to resolve. Gate 3 already refuses to fail on a thread whose state it could not read,
 for exactly that reason (*an unknown thread never fails it either*, below); grading by severity
 applies the same principle to threads whose state it can read.
+
+## An incomplete review caps Gate 6
+
+Gate 6 reads PASS when the placed findings hold no blocker, and before this check it could not tell a review that looked and found nothing from one that never looked.
+A deep run that skipped its holistic pass and its consolidation posted the same WARN with zero findings as a full review, and its only trace of the gap was the `Reach` row, which no verdict reader opens.
+
+The ledger's step markers are the only machine evidence of what ran, and `prepare-review.mjs` already writes the plan they are measured against, so the check needs no new signal.
+It caps instead of failing: the steps that did run still found or cleared what they found or cleared, and a missing marker can be a forgotten marker rather than skipped work.
+It never lifts a FAIL, because a verified blocker stands whether or not the rest of the review ran.
+
+The phrase `review incomplete` is the same on every surface (the Warnings reason, `RUN_ANOMALY`, and the CLI line) so a caller can match it without parsing the report: the aw `/goal` template treats it as not done.
+The alternative of a fourth verdict value was rejected: it would change the `VERDICTS` contract every renderer, orchestrator, and eval label reads, for a state WARN plus a named reason already expresses.

@@ -183,12 +183,14 @@ optional — each one is a measured failure of a real run, not a precaution.
    \`nohup\`, or \`setsid\` keeps the call's output open, so the call runs to its
    timeout and the host kills the process before it writes its output file.
 
-5. **Dispatched as a sub-agent, you run the finders your caller did not dispatch.**
-   You cannot dispatch another level, so running the non-intent finders in this
-   context is this host's shape, never a \`RUN_ANOMALY\`. The intent finder is the
-   exception: when no caller-dispatched intent worker delivered and you ran it here,
-   pass \`--no-dispatch\` to \`finalize.mjs\`, which names that recall loss
-   (\`dispatch-topology.md\`, "No-dispatch fallback is a degrade").
+5. **Dispatched as a sub-agent, you run only the finders your caller did not run.**
+   You cannot dispatch another level, so your caller runs the intent and
+   other-finders workers before dispatching you and leaves their files beside your
+   \`--context\` (\`intent/\`, \`others/\`). Fold them in as your \`finders\` step and
+   never re-run those finders (\`agent0-runtime.md\`, "Dispatched as a sub-agent:
+   your caller ran the workers"). With no \`others/\` beside the context, run every
+   finder here, and pass \`--no-dispatch\` to \`finalize.mjs\` when the budget said
+   \`hybrid\` (\`dispatch-topology.md\`, "No-dispatch fallback is a degrade").
 
 ## Start from the prepared context, not from Step 0
 

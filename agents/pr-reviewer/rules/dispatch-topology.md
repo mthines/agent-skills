@@ -219,6 +219,45 @@ This is the same `RUN_ANOMALY` slot every other capability cap in this pipeline 
 ([`report-rendering.md § Run slots`](./report-rendering.md)) — never a quiet downgrade a reader has
 to infer from a shorter run.
 
+## An incomplete review is never a clean verdict
+
+`finalize.mjs` compares the steps this run planned (`context.telemetry.markers.steps`) with the step
+markers on its ledger.
+A planned `finders`, `lenses`, `consolidate`, or `verify` step with no marker makes the review
+incomplete, whatever the reason: the step was skipped, cut short, or run without its marker.
+
+| Gate 6 without the check | Gate 6 with a missing step | Verdict |
+| --- | --- | --- |
+| PASS | WARN, reason `review incomplete: no <steps> step recorded` | WARN |
+| WARN (non-blocking findings) | WARN, the same phrase leads the reason | WARN |
+| FAIL (a verified blocker) | FAIL, details end `Review incomplete.` | FAIL |
+| not evaluated (partial review) | not evaluated | unchanged |
+
+`RUN_ANOMALY` leads with the same phrase, and `finalize.mjs` prints
+`finalize: review incomplete: no <steps> step recorded — the verdict cannot be PASS` on stdout.
+A context with no planned steps (`branch-reviewer`'s), an empty ledger, or a zero-delta re-review is never incomplete.
+`lenses` is required only when Step 2.4 must run: `context.mode` is `full` and the trivial-skip set did not fire.
+When you were given `--no-holistic`, pass `--no-holistic` to `finalize.mjs` as well, so a skipped holistic pass is not read as an incomplete review.
+
+1. Mark every step `prepare-review.mjs` lists on its `markers` line ([`run-telemetry.md`](./run-telemetry.md#what-you-mark-the-model-steps)).
+   A step you ran but did not mark reads as skipped, and the review posts as incomplete.
+2. Never mark a step you did not run to avoid the cap: the marker is the only evidence the step
+   happened.
+3. End your final message with the verdict line `finalize.mjs` printed, and copy its
+   `review incomplete` line beneath it when there is one, so a caller reading only that message
+   sees it.
+
+```text
+# correct: the run skipped lenses, and its final message says so
+WARN — 0 new findings — https://github.com/o/r/pull/7#issuecomment-1
+finalize: review incomplete: no lenses, consolidate step recorded — the verdict cannot be PASS
+
+# incorrect: a lenses marker issued on its own, after finalize warned, without running the lenses
+node "$TELEMETRY" step lenses --attr tool_calls_so_far=48 --run-dir "$RUN_DIR"
+```
+
+**Why:** a run that skipped its holistic pass posted the same WARN with zero findings as a full one ([`gate-rationale.md`](../references/gate-rationale.md#an-incomplete-review-caps-gate-6)).
+
 ## Diversify then vote (moved here from the agent body) — retired
 
 `budget.correctnessVotes` is `1` at every thoroughness, so the correctness finder runs once and

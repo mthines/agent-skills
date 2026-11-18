@@ -31,7 +31,7 @@ Fill one of the two templates on a single line.
 
 | Tier | Template |
 | --- | --- |
-| Full (has `checks.yaml`) | `/goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed, rejected, or flagged, and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
+| Full (has `checks.yaml`) | `/goal run-checks prints "CHECKS <M>/<M> PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed, rejected, or flagged, no review line printed after the last fix reads "review incomplete", and the draft PR URL is printed — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
 | Micro / Lite (no `checks.yaml`) | `/goal "<verify command>" exits 0 with "exit=0" printed, the draft PR URL is printed, and the printed git diff --name-only lists only <comma-separated files> — or stop after <turn_cap> turns or when a line starting "BLOCKED:" is printed.` |
 
 - `<M>` is the number of entries in `checks.yaml`.
@@ -39,12 +39,13 @@ Fill one of the two templates on a single line.
 - `<verify command>` is the exact before-PR command of the brief.
 - A user constraint that forbids the PR replaces "the draft PR URL is printed" with "a line starting `PR: none —` is printed".
 - Print `BLOCKED: <reason>` whenever you stop for the user, so the judge ends the loop instead of spinning.
+- A reviewer's `review incomplete: no <steps> step recorded` line means the review skipped a planned step; the Full goal stays unmet until a later review on the same head prints no such line. Re-run the review once; a second incomplete review is `BLOCKED: review incomplete twice — <the line>`.
 - Never add a second end state, a judgment word ("clean", "good", "robust"), or a condition the transcript cannot show.
 
 ```text
 ✗ /goal make the auth flow robust and well tested
    (no observable end state, no proof, no guardrail, no cap)
-✓ /goal run-checks prints "CHECKS 4/4 PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed, rejected, or flagged, and the draft PR URL is printed — or stop after 30 turns or when a line starting "BLOCKED:" is printed.
+✓ /goal run-checks prints "CHECKS 4/4 PASS", the Before-PR command prints "exit=0", the review findings are printed as fixed, rejected, or flagged, no review line printed after the last fix reads "review incomplete", and the draft PR URL is printed — or stop after 30 turns or when a line starting "BLOCKED:" is printed.
 ```
 
 ## Print it
@@ -71,6 +72,8 @@ PR: <draft PR URL | none — <the user constraint>>
 Changed files (git diff --name-only <base>...HEAD):
 <one path per line>
 ```
+
+When the last review printed a `review incomplete` line, append it verbatim to the `review:` line: `review: 0 findings — review incomplete: no lenses step recorded`.
 
 ```bash
 BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)
