@@ -38,7 +38,7 @@ import { resolveThreshold, reviewConfigOptions, dispose, deferFloor, recomputeFi
 import { applySuppression } from "./finalize/suppression.mjs";
 import { validateLine } from "./finalize/line-validity.mjs";
 import { place } from "./finalize/placement.mjs";
-import { computeGates } from "./finalize/gates.mjs";
+import { computeGates, gate6, incompletePhrase } from "./finalize/gates.mjs";
 import {
   buildReportPayload, buildQualitySummary,
   toFindingBullet, toAdvisoryFinding, toOpenThreadBullet, toInlineCommentPayload,
@@ -52,7 +52,7 @@ import { buildWritePlan } from "./finalize/write-plan.mjs";
 import { buildCoverage, buildImpact } from "./finalize/reach.mjs";
 import { scratchRoot } from "./prepare-review.mjs";
 import { MARKER_RE, buildFingerprint, extractFingerprint } from "./fingerprint.mjs";
-import { appendRecord, finishRun, readLedger, stepStartAttrs, LENS_ORIGINS, ALLOWED_SPAN_KEY, lensItems as exportedLensItems } from "./review-telemetry.mjs";
+import { appendRecord, finishRun, readLedger, stepStartAttrs, modelSteps, LENS_ORIGINS, ALLOWED_SPAN_KEY, lensItems as exportedLensItems } from "./review-telemetry.mjs";
 import { LENS_DIR, GATED_LENSES } from "./select-lenses.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -165,11 +165,15 @@ export function hydrateImpact(context) {
  * this run actually reviewed". Pure (D18): the caller resolves `capApplied`/`depthCapability`/
  * `contextAnomalies` from the context; this only formats them, and never begins with a glyph
  * (the renderer prepends its own ⚠️ — a value that did would double it).
- * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number, secondPassMissing?: string[], secondPassNotUnioned?: string[] }} args
+ * @param {{ capApplied: boolean, depthCapability?: string, contextAnomalies?: any[], noDispatchAt?: number, secondPassMissing?: string[], secondPassNotUnioned?: string[], incompleteSteps?: string[] }} args
  * @returns {string|undefined}
  */
-export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt, secondPassMissing, secondPassNotUnioned }) {
+export function buildAutoRunAnomaly({ capApplied, depthCapability, contextAnomalies, noDispatchAt, secondPassMissing, secondPassNotUnioned, incompleteSteps }) {
   const parts = [];
+  // A planned review step with no ledger record leads the line: it is the anomaly that changes
+  // what the verdict can claim (dispatch-topology.md § An incomplete review is never a clean verdict).
+  const incomplete = Array.isArray(incompleteSteps) ? incompleteSteps.filter(Boolean) : [];
+  if (incomplete.length) parts.push(incompletePhrase(incomplete));
   // A/B iteration 2: every in-context arm hand-wrote dispatch-topology.md's no-dispatch line into
   // context.render.RUN_ANOMALY, which REPLACED this function's output and dropped prepare-review's
   // own anomalies (two arms re-merged them by hand, one re-ran finalize three times). `--no-dispatch`
@@ -228,6 +232,25 @@ export function deliveredWorkers(ledger) {
  */
 export function finderUnionRan(ledger) {
   return ledger.some((r) => r.t === "attr" && typeof r.attrs?.finder_union_kept === "number");
+}
+
+/** The review steps whose absence means the review did not finish: finding, the holistic pass,
+ *  consolidation, and verification. Bookkeeping steps (memory, judgments, assert, …) are not here. */
+export const REQUIRED_REVIEW_STEPS = Object.freeze(["finders", "lenses", "consolidate", "verify"]);
+
+/**
+ * The required review steps this run planned but never recorded: a `REQUIRED_REVIEW_STEPS` name in
+ * `planned` (context.telemetry.markers.steps, which already drops `lenses` on `quick`) with no
+ * `step <name>` start record on the ledger. No plan (a context without run telemetry, e.g.
+ * branch-reviewer's) means nothing is required.
+ * @param {Array<{ t?: string, phase?: string, name?: unknown }>} ledger
+ * @param {unknown} planned
+ * @returns {string[]}
+ */
+export function incompleteSteps(ledger, planned) {
+  if (!Array.isArray(planned) || planned.length === 0) return [];
+  const recorded = new Set(ledger.filter((r) => r.t === "step" && r.phase === "start").map((r) => String(r.name)));
+  return REQUIRED_REVIEW_STEPS.filter((s) => planned.includes(s) && !recorded.has(s));
 }
 
 /**
@@ -1065,6 +1088,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     judgmentThreads: judgments?.threads || [],
     placement: { inline: inlineClaims, deferred: overCapDeferred },
     partialReview,
+    incompleteSteps: context?.incompleteSteps,
   });
 
   const produced = (judgments?.candidates || []).length;
@@ -1140,6 +1164,7 @@ export function finalizeReview({ context, judgments, profile = "balanced", flatO
     noDispatchAt,
     secondPassMissing,
     secondPassNotUnioned,
+    incompleteSteps: context?.incompleteSteps,
   });
 
   // MEMORIES_USED / MEMORIES_SUMMARY — computed from judgments.memory's two arrays (D4:
@@ -2882,6 +2907,70 @@ async function selfTest() {
         && src.includes(`r.unit === "intent" && r.phase === "end")) context.intentIsolated = true;`));
   }
 
+  // A planned review step with no ledger record is an incomplete review: Gate 6 cannot read PASS,
+  // RUN_ANOMALY leads with it, and the CLI prints it (dispatch-topology.md § An incomplete review…).
+  {
+    const deepPlan = modelSteps({ tier: "deep", topology: "hybrid" });
+    const quickPlan = modelSteps({ tier: "quick", topology: "in-context" });
+    const stepRec = (/** @type {string} */ name) => ({ t: "step", phase: "start", name });
+    const thin = ["prepare", "memory", "gates", "finders", "verify", "judgments"].map(stepRec);
+    check("review incomplete: a deep plan missing lenses and consolidate names both, in pipeline order; no plan requires nothing",
+      JSON.stringify(incompleteSteps(thin, deepPlan)) === '["lenses","consolidate"]'
+        && incompleteSteps(thin, undefined).length === 0 && incompleteSteps([], []).length === 0,
+      JSON.stringify(incompleteSteps(thin, deepPlan)));
+    check("review incomplete: a quick plan never requires lenses, so a quick run with finders, consolidate, and verify is complete",
+      incompleteSteps(["finders", "consolidate", "verify"].map(stepRec), quickPlan).length === 0
+        && !quickPlan.includes("lenses"));
+    const j0 = { candidates: [], gates: { gate1: { status: "PASS", details: "x" }, gate4: { precandidate_dispositions: [], ai_stub_findings: [] }, gate5: { status: "PASS", details: "x" } },
+      threads: [], memory: { relevance_rules: [], lessons_used: [] }, summary: "" };
+    const ictx = { mode: "full", headSha: "abc1234def", routing: { tier: "deep" }, workspace: { depthCapability: "checkout" }, anomalies: [],
+      budget: { topology: "hybrid", effectiveThoroughness: 0.85 }, intentIsolated: true };
+    const clean = finalizeReview({ context: ictx, judgments: j0 });
+    const cut = finalizeReview({ context: { ...ictx, incompleteSteps: ["lenses", "consolidate"] }, judgments: j0 });
+    check("review incomplete: a would-be PASS becomes WARN, its Warnings reason and RUN_ANOMALY both lead with the phrase",
+      clean.verdict === "PASS" && cut.verdict === "WARN"
+        && cut.payload.WARN_REASONS.includes("review incomplete: no lenses, consolidate step recorded")
+        && String(cut.payload.RUN_ANOMALY).startsWith("review incomplete: no lenses, consolidate step recorded"),
+      `${clean.verdict} → ${cut.verdict} | ${JSON.stringify(cut.payload.WARN_REASONS)} | ${cut.payload.RUN_ANOMALY}`);
+    const blocker = { inline: [{ blocking: true }], deferred: [] };
+    const failed = gate6(blocker, false, ["lenses"]);
+    const warned = gate6({ inline: [{ blocking: false }], deferred: [] }, false, ["lenses"]);
+    const partial = gate6(blocker, true, ["lenses"]);
+    check("review incomplete: a verified blocker stays FAIL with the phrase in its details; a WARN leads with it; a partial review stays not evaluated",
+      failed.status === "FAIL" && failed.details.endsWith("Review incomplete.")
+        && warned.status === "WARN" && String(warned.reason).startsWith("review incomplete: no lenses step recorded;")
+        && partial.status === "SKIPPED"
+        && gate6({ inline: [], deferred: [] }, false, ["finders", "lenses", "consolidate", "verify"]).details.length <= 120,
+      `${JSON.stringify(failed)} | ${JSON.stringify(warned)} | ${JSON.stringify(partial)}`);
+    // Through the real telemetry and finalize CLIs: a ledger with the planned steps is clean, one
+    // missing lenses and consolidate prints the line and caps the verdict, and no ledger changes nothing.
+    const iDir = join(scratchRoot(), "finalize-incomplete-cli");
+    const fin = (/** @type {boolean} */ withLedger, /** @type {string[]} */ steps) => {
+      rmSync(iDir, { recursive: true, force: true });
+      mkdirSync(iDir, { recursive: true });
+      const tel = (/** @type {string[]} */ a) => spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), ...a, "--run-dir", iDir],
+        { encoding: "utf8", env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+      if (withLedger) { tel(["begin"]); for (const s of steps) tel(["step", s, "--attr", "candidates=0"]); }
+      writeFileSync(join(iDir, "context.json"), JSON.stringify({ ...ictx, telemetry: { markers: { steps: deepPlan } } }));
+      writeFileSync(join(iDir, "judgments.json"), JSON.stringify({ ...j0, summary: "Adds a retry around the export call." }));
+      const run = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(iDir, "context.json"), "--judgments", join(iDir, "judgments.json"),
+        "--out-dir", join(iDir, "out"), "--dry-run", "--no-telemetry"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+      const res = join(iDir, "out", "finalize-result.json");
+      const verdict = existsSync(res) ? JSON.parse(readFileSync(res, "utf8")).verdict : "none";
+      return { verdict, stdout: run.stdout, stderr: run.stderr, rendered: existsSync(join(iDir, "out", "report-body.md")) };
+    };
+    const full = fin(true, ["memory", "gates", "finders", "lenses", "consolidate", "verify"]);
+    const short = fin(true, ["memory", "gates", "finders", "verify"]);
+    const noLedger = fin(false, []);
+    rmSync(iDir, { recursive: true, force: true });
+    check("review incomplete: through the CLI a missing step prints the line and caps PASS at WARN with a rendered report; a full ledger and no ledger stay PASS",
+      full.verdict === "PASS" && full.rendered && noLedger.rendered && !full.stdout.includes("review incomplete")
+        && short.verdict === "WARN" && short.rendered
+        && short.stdout.includes("finalize: review incomplete: no lenses, consolidate step recorded — the verdict cannot be PASS")
+        && noLedger.verdict === "PASS" && !noLedger.stdout.includes("review incomplete"),
+      `${full.verdict} | ${short.verdict} ${short.rendered} | ${noLedger.verdict} | ${short.stderr.slice(-600)}`);
+  }
+
   // D4 / AC-10: checkShape() — the pure function, called directly.
   {
     const conforming = { candidates: [mkCandidate({ title: "Handle the null case", final: 90 })] };
@@ -3868,6 +3957,9 @@ async function main() {
     context.workersDelivered = deliveredWorkers(ledger);
     // The union's own run record (finalizeReview names a delivered pass 2 that was never unioned).
     context.finderUnionRan = finderUnionRan(ledger);
+    // Planned review steps with no record: Gate 6 and RUN_ANOMALY name them as an incomplete review.
+    // An empty ledger (readLedger's answer for a missing file) proves nothing either way.
+    if (ledger.length > 0) context.incompleteSteps = incompleteSteps(ledger, context?.telemetry?.markers?.steps);
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
@@ -3932,6 +4024,7 @@ async function main() {
     }
     console.log(`finalize: wrote ${result.findingsBusRecords.length} record(s) to ${busPath} (findings-bus writer, no GitHub write plan built)`);
     console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
+    if (context.incompleteSteps?.length) console.log(`finalize: ${incompletePhrase(context.incompleteSteps)} — the verdict cannot be PASS`);
     return;
   }
 
@@ -4051,6 +4144,7 @@ async function main() {
     + `${writePlan.thread_resolve.length} resolves, ${writePlan.review_create.comments.length} inline comments)`);
 
   console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
+  if (context.incompleteSteps?.length) console.log(`finalize: ${incompletePhrase(context.incompleteSteps)} — the verdict cannot be PASS`);
   // What Step 4c passes as `cited` on the state write (posting.md § 4c) — never rebuilt by hand.
   console.log(isDryRun
     ? `finalize: --dry-run — no state write, so no LoreKit memory is cited (citedRefs: ${result.citedRefs.length})`
