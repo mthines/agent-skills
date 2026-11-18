@@ -23,7 +23,7 @@ The shared rule's substitutions still leave the Step 0 precondition **passing**:
 ## Contents
 
 - [Install on demand when the marker is absent](#install-on-demand-when-the-marker-is-absent)
-- [Sub-step A — dispatch a `general` reviewer pointed at the bundle](#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)
+- [Sub-step A — workers first, then a `general` reviewer pointed at the bundle](#sub-step-a--workers-first-then-a-general-reviewer-pointed-at-the-bundle)
 - [Where each other sub-step reads its procedure](#where-each-other-sub-step-reads-its-procedure)
 - [What still cannot run on this host](#what-still-cannot-run-on-this-host)
 - [What this rule does not do](#what-this-rule-does-not-do)
@@ -59,31 +59,47 @@ Five properties of the block are load-bearing:
 - **It needs an Agent0 signal, and `/tmp/workspace` is not required to exist.** The opencode import tree identifies an unprepared sandbox on its own, so the skill works out of the box after a flat import; a machine with none of the signals never gets an install into `/tmp`.
 - **The marker is the only success test.** The setup script writes `env.sh` before its own verification, so a failed exit removes it; otherwise the next run in the same sandbox would take row 2 on an install that never verified.
 
-## Sub-step A — dispatch a `general` reviewer pointed at the bundle
+## Sub-step A — workers first, then a `general` reviewer pointed at the bundle
 
 The review must still run in a **separate context**.
 Reading the bundle and reviewing in the loop's own context would be a self-review wearing a reviewer's label — the one substitution this rule forbids.
+The reviewer is one level deep and cannot dispatch, so the loop, which holds the only dispatch rung, runs the finder workers for it.
 
-```text
-<dispatch>(
-  subagent_type: "general",
-  description:   "pr-reviewer pass on PR #<n>",
-  prompt: |
-    Review <PR-URL> once, read-only.
-    Your procedure is /tmp/workspace/pr-reviewer/pr-reviewer.agent0.md — read it and follow it.
-    Your standing constraints are /tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md.
-    Start from the prepared context: node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> (writes /tmp/workspace/review-context.json).
-    You cannot dispatch sub-agents; run the finders and the verifier in this context, one after another.
-    Flags: <--critical, if set>
-    End with the verdict line (PASS | WARN | FAIL), the count of new actionable findings, and the sticky report URL.
-)
-```
+1. **Prepare once,** in the loop's context, into a fresh `<dir>` under `/tmp/workspace/`, and read the topology:
 
-Three properties of that prompt are load-bearing:
+   ```bash
+   node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json && jq -r '.budget.topology, (.budget.finderPasses // 1)' <dir>/context.json
+   ```
 
-- **It is short and points at files.** Never inline the constraints into it ([why](../../../../agents/shared/rules/agent0-host.md#a-custom-agent-becomes-a-general-sub-agent-that-reads-its-definition)).
-- **It states the serial fan-out.** The reviewer is already one level deep, so it has no second rung. [`finders.md`](../../../../agents/pr-reviewer/rules/finders.md) runs finders serially where parallel calls are unavailable, and [`finding-verifier.md`](../../../../agents/shared/rules/finding-verifier.md#sub-agent-isolation-when-available) permits the in-agent verifier shape. The review is slower than a top-level Agent0 review, with the same pipeline and the same verdict.
-- **It asks for the verdict in the final message.** That message is the only content the loop receives; `NEW_FINDINGS` and `FINAL_VERDICT` are read from it.
+   A non-zero exit: dispatch the reviewer below with no `--context` (it prepares its own and runs every finder itself), and skip steps 2 and 4.
+2. **On `hybrid`, send the workers in one message,** never with the reviewer: the intent worker and the other-finders worker, each a `general` sub-agent with the prompt [`agents/pr-reviewer/rules/agent0-runtime.md` § Phase D](../../../../agents/pr-reviewer/rules/agent0-runtime.md#phase-d-two-workers-in-one-message-never-expect-a-second-rung) lists, writing `<dir>/intent/intent.json` and `<dir>/others/others.json` (plus `<dir>/others/others.trace.json`).
+   Before the message, run `mkdir -p <dir>/intent <dir>/others && date +%s | tee <dir>/intent/dispatched_at > <dir>/others/dispatched_at`.
+   When `finderPasses` is `2`, add `intent-2` and `other-finders-2` to the same message, writing `<dir>/pass2/intent.json` and `<dir>/pass2/others.json`.
+   On `in-context`, send no workers.
+3. **When every worker has returned, dispatch the reviewer:**
+
+   ```text
+   <dispatch>(
+     subagent_type: "general",
+     description:   "pr-reviewer pass on PR #<n>",
+     prompt: |
+       Review <PR-URL> once, read-only.
+       Your procedure is /tmp/workspace/pr-reviewer/pr-reviewer.agent0.md — read it and follow it.
+       Your standing constraints are /tmp/workspace/pr-reviewer/RUN-CONSTRAINTS.md.
+       Start from the prepared context: --context <dir>/context.json. The finder workers' files are beside it.
+       Flags: <--critical, if set>
+       End with the verdict line (PASS | WARN | FAIL), the count of new actionable findings, and the sticky report URL.
+   )
+   ```
+
+4. **Release the workspace** after the reviewer returns: `node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --cleanup <dir>/context.json`. The loop ran prepare, so the cleanup is the loop's.
+
+Four properties of this shape are load-bearing:
+
+- **The prompt is short and points at files.** Never inline the constraints into it ([why](../../../../agents/shared/rules/agent0-host.md#a-custom-agent-becomes-a-general-sub-agent-that-reads-its-definition)).
+- **The workers go before the reviewer, not beside it.** A sub-agent on this host runs while the loop waits, so a reviewer in the workers' message would start before their files exist; sent after, it finds them and folds them in as its `finders` step ([reviewer side](../../../../agents/pr-reviewer/rules/agent0-runtime.md#dispatched-as-a-sub-agent-your-caller-ran-the-workers)).
+- **The reviewer never runs the workers' finders again.** It runs the lenses, consolidation, and verification over the pooled candidates, the same pipeline a top-level Agent0 review runs after its own Phase D.
+- **It asks for the verdict in the final message.** That message is the only content the loop receives; `NEW_FINDINGS` and `FINAL_VERDICT` are read from it. A `review incomplete` line under the verdict means the review skipped a planned step: report it with the verdict and never read it as converged on a `PASS`.
 
 A reply that opens with a refusal or a `BLOCKED` line is **not** a review.
 Set `STOP_REASON = "reviewer-refused"`, report the reply's first line verbatim, and stop — never read it as `NEW_FINDINGS == false`, which would converge an unreviewed PR.
@@ -91,18 +107,9 @@ Set `STOP_REASON = "reviewer-refused"`, report the reply's first line verbatim, 
 Step 2.5's [post-refresh re-review](./merge.md#post-refresh-re-review--before-the-gates) is a sub-step A dispatch and uses this same prompt.
 A refusal there is `MERGE_REREVIEW = refused` and the PR is not merged; the loop has already converged, so `STOP_REASON` stays as it was.
 
-The [iteration-1 apply-first check](./apply-first.md#iteration-1--apply-first-when-the-last-review-still-stands) needs `context.json` before this dispatch, and the `general` reviewer prepares its own.
-So on iteration 1 the loop runs one prepare in its own context, runs the apply-first block against the `context.json` it wrote, and cleans the prepare up whether or not the check passed:
-
-```bash
-node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json
-# then, as its own Bash call: the apply-first block from apply-first.md, which reads <dir>/context.json
-node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --cleanup <dir>/context.json
-```
-
-`--cleanup` removes the prepared checkout, not `context.json`, so the order above is safe either way.
-
-When the check fails, dispatch the prompt above unchanged.
+The [iteration-1 apply-first check](./apply-first.md#iteration-1--apply-first-when-the-last-review-still-stands) reads the `context.json` step 1 wrote, as its own Bash call before step 2.
+When the check passes, the loop skips the review this iteration: run step 4's `--cleanup` and send no workers.
+When it fails, continue at step 2 with the same `<dir>`; never prepare a second time.
 
 ## Where each other sub-step reads its procedure
 

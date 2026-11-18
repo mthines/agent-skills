@@ -28,6 +28,7 @@ gate: the review is the same review. It changes only how the pipeline is
 - [The setup script, not a first prompt step](#the-setup-script-not-a-first-prompt-step)
 - [Enter at Step 1.2c, from a prepared context](#enter-at-step-12c-from-a-prepared-context)
 - [Phase D: two workers in one message; never expect a second rung](#phase-d-two-workers-in-one-message-never-expect-a-second-rung)
+- [Dispatched as a sub-agent: your caller ran the workers](#dispatched-as-a-sub-agent-your-caller-ran-the-workers)
 - [The dispatch prompt is short on purpose](#the-dispatch-prompt-is-short-on-purpose)
 - [Budget](#budget)
 - [What this rule does not do](#what-this-rule-does-not-do)
@@ -232,15 +233,50 @@ Leave its file out of the union and add nothing by hand: `finalize.mjs` names th
 
 Fact 3 still binds: a worker cannot dispatch further, so no worker prompt may ask it to.
 
-**When `review-loop` dispatched you, there is no dispatch at all.** In a loop
-automation the top-level run is the loop, and this review is its one `general`
-sub-agent ([`review-loop/rules/agent0-runtime.md`](../../../skills/quality/review-loop/rules/agent0-runtime.md#sub-step-a--dispatch-a-general-reviewer-pointed-at-the-bundle)).
-Run every finder, the intent finder included, and the verifier in this context — the `in-context`
-topology, which the pipeline already permits — and return the verdict, the new-finding count, and
-the sticky URL in the final message.
-A `finder_passes: 2` budget gets no pass 2 here; `finalize.mjs` names both pass-2 units in
-`RUN_ANOMALY` because the ledger holds no `end` record for them. Never attempt a dispatch to recover the isolation: the second
-rung does not exist.
+## Dispatched as a sub-agent: your caller ran the workers
+
+`/pr-review` and `review-loop` dispatch you as a `general` sub-agent, so you hold no dispatch rung.
+On this host they run Phase D for you: they prepare once, send the workers above in one message, and
+dispatch you with `--context <dir>/context.json` only after every worker has returned
+([`pr-review` § Before Step 0](../../../skills/quality/pr-review/SKILL.md#before-step-0-on-a-dash0-agent0-host),
+[`review-loop` § Sub-step A](../../../skills/quality/review-loop/rules/agent0-runtime.md#sub-step-a--workers-first-then-a-general-reviewer-pointed-at-the-bundle)).
+The workers' files sit beside your context:
+
+| Directory beside `--context` | Worker | Files |
+| --- | --- | --- |
+| `<dir>/intent/` | intent | `intent.json` |
+| `<dir>/others/` | other finders | `others.json`, `others.trace.json` |
+| `<dir>/pass2/` | `intent-2`, `other-finders-2` (only when `budget.finderPasses == 2`) | `intent.json`, `others.json` |
+
+1. When `<dir>/others/` exists, do not run the intent finder or any other finder in this context.
+   Fold both workers into the run on one command, marked as your `finders` step:
+
+   ```bash
+   node "$TELEMETRY" step finders --attr tool_calls_so_far=<N> --run-dir "$RUN_DIR"; node "$TELEMETRY" worker intent import --from <dir>/intent --done <dir>/intent/intent.json --run-dir "$RUN_DIR"; node "$TELEMETRY" worker other-finders import --from <dir>/others --done <dir>/others/others.json --run-dir "$RUN_DIR"; cat <dir>/intent/intent.json <dir>/others/others.json
+   ```
+
+2. Then continue exactly as after Phase D above: pool both files (and pass 2's, through the union),
+   fold `others.trace.json` into `judgments.impact_trace`, run the lenses, consolidate, and verify
+   every candidate here. Mark `lenses`, `consolidate`, and `verify` as you reach them: a planned step
+   with no marker posts the review as incomplete
+   ([`dispatch-topology.md` § An incomplete review is never a clean verdict](./dispatch-topology.md#an-incomplete-review-is-never-a-clean-verdict)).
+3. A worker file that is missing or does not parse: run that worker's finders here and add
+   `<worker> worker returned no readable candidates — ran its finders in-context` to `RUN_ANOMALY`
+   through `context.render.RUN_ANOMALY`. A pass-2 file is left out of the union instead, never run here.
+4. When `<dir>/others/` does not exist (the caller's prepare failed, or the budget is `in-context`),
+   run every finder here and pass `--no-dispatch` to `finalize.mjs` when the budget said `hybrid`.
+   Never attempt a dispatch to recover the isolation: the second rung does not exist.
+
+```text
+# correct: the caller's workers are folded in as the finders step, then the rest of the pipeline runs here
+step finders + worker intent import + worker other-finders import → lenses → consolidate → verify → finalize
+
+# incorrect: re-running the other finders the worker already ran — twice the time, and its candidates counted twice
+step finders → run correctness, consumer-impact, quality here → read others.json → consolidate
+```
+
+End the final message with the verdict line, the new-finding count, and the sticky URL, plus the
+`review incomplete` line when `finalize.mjs` printed one.
 
 ## The dispatch prompt is short on purpose
 
