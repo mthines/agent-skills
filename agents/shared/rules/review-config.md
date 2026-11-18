@@ -16,8 +16,8 @@ The config surface is deliberately small — one profile knob, one noise-suppres
 For back-compat, when it is absent the deprecated `.github/review.yaml` is read, then the deprecated root `.review.yaml`; both are still read, never recommended.
 Per-subtree overrides are still named `<subtree>/.review.yaml` (the root was the pollution concern, not deep directories).
 
-**Back-compat & defaults:** with no repo-level config at any of the three paths (subtree files may still exist), configuration resolves to `profile: balanced`. The `medium`-tier confidence bar stays **80** (today's default for a typical finding) and the inline placement cap stays 5 per file, no filters, no path instructions. Severity-aware bars are on by default and fan out around the 80 anchor (high/critical lower, low higher); a flat `per_comment_confidence_threshold` override restores the uniform 80 with no fan-out.
-The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 80.
+**Back-compat & defaults:** with no repo-level config at any of the three paths (subtree files may still exist), configuration resolves to `profile: balanced`. The `medium`-tier confidence bar stays **75** (today's default for a typical finding) and the inline placement cap stays 5 per file, no filters, no path instructions. Severity-aware bars are on by default and fan out around the 75 anchor (high/critical lower, low higher); a flat `per_comment_confidence_threshold` override restores the uniform 75 with no fan-out.
+The config surface itself introduces no behaviour change: with no config file, `pr-reviewer` posts the same inline comments it always did, and the threshold is still 75.
 
 **One deliberate exception, introduced with placement (Step 2.9b):** the Step 3 terminal report has no per-file cap (local output, no posting cost) in either relation, so an absent config now reports *more* findings on a large branch than it used to.
 That is a widening, never a suppression — the terminal report prints every finding that clears confidence.
@@ -75,8 +75,8 @@ models:                                  # the model axis, independent of depth 
 severity_thresholds:                     # DEFAULT — values shown are the `balanced` defaults.
   critical: 65                           # The reviewer tiers every finding via
   high: 70                               # agents/shared/rules/severity.md and gates it on the
-  medium: 80                             # matching bar. `medium` anchors the profile's
-  low: 90                                # historical flat threshold; high/critical get a
+  medium: 75                             # matching bar. `medium` anchors the profile's
+  low: 85                                # historical flat threshold; high/critical get a
                                          # lower bar (surface more), low a higher one.
                                          # A flat per_comment_confidence_threshold: N
                                          # override collapses all tiers back to N.
@@ -150,15 +150,15 @@ lenses:                                  # review lenses to load for files under
 ## Profile knob
 
 `profile` is a single knob that maps to three correlated settings.
-`balanced`'s `medium` tier equals today's default (80); severity fans the other tiers out around it by default.
+`balanced`'s `medium` tier equals today's default (75); severity fans the other tiers out around it by default.
 
 | Profile | Generation aggression | Confidence bar — critical / high / **medium** / low | Inline placement cap per file |
 | --- | --- | --- | --- |
 | `chill` | Low — only high-confidence, high-severity findings | 75 / 85 / 90 / 95 | 3 |
-| `balanced` | Medium — today's defaults | 65 / 70 / **80** / 90 | **5** |
+| `balanced` | Medium — today's defaults | 65 / 70 / **75** / 85 | **5** |
 | `assertive` | High — include lower-confidence and lower-severity findings | 60 / 65 / 70 / 85 | 7 |
 
-The **medium** column is each profile's historical single threshold (`chill` 90, `balanced` **80**, `assertive` 70); severity fans the bar out around it by default. A flat `per_comment_confidence_threshold: N` override collapses all four tiers back to `N` (pre-severity behavior).
+The **medium** column is each profile's historical single threshold (`chill` 90, `balanced` **75**, `assertive` 70); severity fans the bar out around it by default. A flat `per_comment_confidence_threshold: N` override collapses all four tiers back to `N` (pre-severity behavior).
 
 The cap column governs **placement only** — how many findings are posted as inline comments per file on the Step 4 review. It applies to every run; `pr-reviewer` runs the identical pipeline and posts in both relations (`rubric-composition.md § Placement (Step 2.9b)`).
 It never discards a finding: overflow is deferred to the review body.
@@ -183,7 +183,7 @@ author actually wants to react on.
 the confidence rating (never a separate per-finding call),
 then uses `severity_thresholds[tier]` as the effective threshold in
 `per-comment-confidence.md`. The `medium` tier anchors the profile's historical bar
-(**80** for `balanced`), so a typical finding is gated exactly as before; `critical` /
+(**75** for `balanced`), so a typical finding is gated exactly as before; `critical` /
 `high` get a lower bar so a probable serious bug surfaces even at moderate confidence,
 and `low` gets a higher bar so trivia needs near-certainty or is deferred. Set the map
 explicitly to tune it, or set a flat `per_comment_confidence_threshold: N` to collapse
@@ -193,8 +193,8 @@ all tiers back to the pre-severity uniform bar.
 severity_thresholds:
   critical: 65
   high: 70
-  medium: 80   # equals the balanced flat default
-  low: 90
+  medium: 75   # equals the balanced flat default
+  low: 85
 ```
 
 Two invariants keep this from re-deriving policy the severity rule deliberately does
@@ -536,7 +536,7 @@ impact_image: yes
 
 ```
 threshold = resolved_profile.per_comment_confidence_threshold
-            (default: 80 when no config is present or profile: balanced)
+            (default: 75 when no config is present or profile: balanced)
 ```
 
 A flat `per_comment_confidence_threshold: N` collapses every tier's bar to `N`, with or without a `profile:` field ([§ Run-level knobs](#run-level-knobs)).

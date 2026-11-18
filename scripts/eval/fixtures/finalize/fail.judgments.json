@@ -68,7 +68,7 @@
       "body": "this early-return may skip the audit log write",
       "prefix": "issue",
       "severity": "medium",
-      "final": 76
+      "final": 72
     },
     {
       "finder": "quality",

@@ -22,7 +22,7 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 
 | | Finding | Where |
 |:-:|---|---|
-| **5** | issue: this early-return may skip the audit log write<br><sub>Confidence 76</sub> | `src/api/client.ts:88` |
+| **5** | issue: this early-return may skip the audit log write<br><sub>Confidence 72</sub> | `src/api/client.ts:88` |
 
 </details>
 
