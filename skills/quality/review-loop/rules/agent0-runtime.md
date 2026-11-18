@@ -71,7 +71,7 @@ The reviewer is one level deep and cannot dispatch, so the loop, which holds the
    node /tmp/workspace/pr-reviewer/pr-reviewer/scripts/prepare-review.mjs --pr <PR-URL> --out <dir>/context.json && jq -r '.budget.topology, (.budget.finderPasses // 1)' <dir>/context.json
    ```
 
-   A non-zero exit: dispatch the reviewer below with no `--context` (it prepares its own and runs every finder itself), and skip steps 2 and 4.
+   A non-zero exit: dispatch step 3's prompt with its `Start from the prepared context` line replaced by `Start from Step 0; prepare your own context.` (the reviewer then runs every finder itself), and skip steps 2 and 4.
 2. **On `hybrid`, send the workers in one message,** never with the reviewer: the intent worker and the other-finders worker, each a `general` sub-agent with the prompt [`agents/pr-reviewer/rules/agent0-runtime.md` § Phase D](../../../../agents/pr-reviewer/rules/agent0-runtime.md#phase-d-two-workers-in-one-message-never-expect-a-second-rung) lists, writing `<dir>/intent/intent.json` and `<dir>/others/others.json` (plus `<dir>/others/others.trace.json`).
    Before the message, run `mkdir -p <dir>/intent <dir>/others && date +%s | tee <dir>/intent/dispatched_at > <dir>/others/dispatched_at`.
    When `finderPasses` is `2`, add `intent-2` and `other-finders-2` to the same message, writing `<dir>/pass2/intent.json` and `<dir>/pass2/others.json`.
