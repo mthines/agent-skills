@@ -255,6 +255,12 @@ The workers' files sit beside your context:
    node "$TELEMETRY" step finders --attr tool_calls_so_far=<N> --run-dir "$RUN_DIR"; node "$TELEMETRY" worker intent import --from <dir>/intent --done <dir>/intent/intent.json --run-dir "$RUN_DIR"; node "$TELEMETRY" worker other-finders import --from <dir>/others --done <dir>/others/others.json --run-dir "$RUN_DIR"; cat <dir>/intent/intent.json <dir>/others/others.json
    ```
 
+   When `<dir>/pass2/` exists, add both pass-2 workers to that same command, because `finalize.mjs` counts a pass-2 unit as delivered only from its import record:
+
+   ```bash
+   node "$TELEMETRY" worker intent-2 import --from <dir>/pass2 --done <dir>/pass2/intent.json --run-dir "$RUN_DIR"; node "$TELEMETRY" worker other-finders-2 import --from <dir>/pass2 --done <dir>/pass2/others.json --run-dir "$RUN_DIR"
+   ```
+
 2. Then continue exactly as after Phase D above: pool both files (and pass 2's, through the union),
    fold `others.trace.json` into `judgments.impact_trace`, run the lenses, consolidate, and verify
    every candidate here. Mark `lenses`, `consolidate`, and `verify` as you reach them: a planned step
