@@ -76,14 +76,14 @@ For each finding that survives `finding-grounding.md` (2.6) and `verification-re
 
 1. Resolve the effective confidence threshold for this finding's file.
    The threshold is set by the resolved `profile` from `review-config.md` (Step 1.7).
-   The default (no review config present or `profile: balanced`) is **80**.
+   The default (no review config present or `profile: balanced`) is **75**.
    See `review-config.md` for the full profile→threshold table.
 
    **Severity-aware threshold (default).** Assess the finding's tier once by applying
    [`severity.md`](./severity.md) — in this same pass as the confidence rating, never a
    separate per-finding call — and use the profile's `severity_thresholds[tier]` as the
    effective threshold (`review-config.md` § Severity-aware thresholds). The `medium` tier
-   anchors the profile's historical bar (**80** for `balanced`), so a typical finding is
+   anchors the profile's historical bar (**75** for `balanced`), so a typical finding is
    gated exactly as before; `critical` / `high` get a lower bar (surface more) and `low` a
    higher one (surface less). A flat `per_comment_confidence_threshold: N` override
    collapses all tiers back to `N` (pre-severity behavior). The `defer_floor` band and all
@@ -167,8 +167,8 @@ The drop decision is on the **Final** score.
 A finding whose Final is dragged below 80 by any dimension is noise — a claim that is correct but incomplete, or complete but wrong, does not help the author.
 
 ```python
-def passes_confidence(final_score: int, threshold: int = 80) -> bool:
-    # threshold resolved from review-config.md profile (default: 80 = balanced)
+def passes_confidence(final_score: int, threshold: int = 75) -> bool:
+    # threshold resolved from review-config.md profile (default: 75 = balanced)
     # final_score = weighted average of Correctness (40%),
     # Completeness (30%), No-regressions (30%)
     return final_score >= threshold

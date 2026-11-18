@@ -13,7 +13,7 @@ import { realpathSync } from "node:fs";
 /** @type {Record<string, { thresholds: Record<string, number>, perFileCap: number }>} */
 export const PROFILES = {
   chill: { thresholds: { critical: 75, high: 85, medium: 90, low: 95 }, perFileCap: 3 },
-  balanced: { thresholds: { critical: 65, high: 70, medium: 80, low: 90 }, perFileCap: 5 },
+  balanced: { thresholds: { critical: 65, high: 70, medium: 75, low: 85 }, perFileCap: 5 },
   assertive: { thresholds: { critical: 60, high: 65, medium: 70, low: 85 }, perFileCap: 7 },
 };
 
@@ -138,7 +138,7 @@ async function selfTest() {
 
   check("a severity_thresholds tier overrides the profile's bar for that tier only",
     resolveThreshold({ profile: "balanced", severityTier: "high", severityThresholds: { high: 60 } }) === 60
-    && resolveThreshold({ profile: "balanced", severityTier: "medium", severityThresholds: { high: 60 } }) === 80);
+    && resolveThreshold({ profile: "balanced", severityTier: "medium", severityThresholds: { high: 60 } }) === 75);
   check("a flat per_comment_confidence_threshold beats a severity_thresholds tier",
     resolveThreshold({ profile: "balanced", severityTier: "high", severityThresholds: { high: 60 }, flatOverride: 75 }) === 75);
   check("reviewConfigOptions maps context.reviewConfig to finalize options",
@@ -150,7 +150,7 @@ async function selfTest() {
     reviewConfigOptions({}).profile === "balanced" && reviewConfigOptions({ reviewConfig: { profile: "strict" } }).profile === "balanced"
     && reviewConfigOptions(null).severityThresholds === undefined);
   check("PROFILES has exactly chill/balanced/assertive", Object.keys(PROFILES).sort().join(",") === "assertive,balanced,chill");
-  check("balanced.thresholds.medium is 80 (today's default)", PROFILES.balanced.thresholds.medium === 80);
+  check("balanced.thresholds are 65 / 70 / 75 / 85", Object.values(PROFILES.balanced.thresholds).join(",") === "65,70,75,85");
   check("balanced.perFileCap is 5", PROFILES.balanced.perFileCap === 5);
   check("TOTAL_INLINE_CAP is 20", TOTAL_INLINE_CAP === 20);
 

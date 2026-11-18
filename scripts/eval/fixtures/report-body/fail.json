@@ -80,7 +80,7 @@
       "line": 88,
       "prefix": "issue",
       "body": "this early-return may skip the audit log write",
-      "confidence": 76
+      "confidence": 72
     }
   ],
   "CI_NOTE": "`Integration smoke (local Supabase)` is red on `POST /memories/list` (expected 200, got 500) — the open thread above. Reported, not blocking.",

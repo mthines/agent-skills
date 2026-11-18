@@ -190,7 +190,7 @@ This rule introduces no new blocking class.
 
 **Enforcement threshold:** a standards finding is emitted only when the violation is **clear and
 high-confidence**, at or above the Step 2.7 bar for the prefix the finding will carry — `issue:` at
-the resolved profile threshold (80 on `balanced`), `suggestion:` at 90 — and never below the
+the resolved profile threshold (75 on `balanced`), `suggestion:` at 90 — and never below the
 profile threshold when that threshold is higher.
 Emitting below the downstream bar only produces a finding that Step 2.7 drops.
 Uncertain or borderline interpretations of a normative statement are not flagged.

@@ -583,7 +583,7 @@ The `animations` lens loads only when `is-motion-diff.mjs` prints `MOTION_DIFF: 
 ### 1.7 Load review config
 
 See `agents/shared/rules/review-config.md` — `.agents/review/config.yaml`, else the deprecated `.github/review.yaml` or root `.review.yaml`.
-`profile` and thresholds come from `context.reviewConfig` (base commit), never a subtree file; with no base file, `profile: balanced` (threshold 80, inline cap 5 per file).
+`profile` and thresholds come from `context.reviewConfig` (base commit), never a subtree file; with no base file, `profile: balanced` (medium threshold 75, inline cap 5 per file).
 
 ### 1.7b Load standards (default ON)
 
