@@ -238,6 +238,9 @@ export function finderUnionRan(ledger) {
  *  consolidation, and verification. Bookkeeping steps (memory, judgments, assert, …) are not here. */
 export const REQUIRED_REVIEW_STEPS = Object.freeze(["finders", "lenses", "consolidate", "verify"]);
 
+/** What the CLI line adds after the incomplete phrase on both finalize exit paths. */
+const INCOMPLETE_VERDICT_NOTE = "the verdict cannot be PASS";
+
 /**
  * The required review steps this run planned but never recorded: a `REQUIRED_REVIEW_STEPS` name in
  * `planned` (context.telemetry.markers.steps, which already drops `lenses` on `quick`) with no
@@ -4031,7 +4034,7 @@ async function main() {
     }
     console.log(`finalize: wrote ${result.findingsBusRecords.length} record(s) to ${busPath} (findings-bus writer, no GitHub write plan built)`);
     console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
-    if (context.incompleteSteps?.length) console.log(`finalize: ${incompletePhrase(context.incompleteSteps)} — the verdict cannot be PASS`);
+    if (context.incompleteSteps?.length) console.log(`finalize: ${incompletePhrase(context.incompleteSteps)} — ${INCOMPLETE_VERDICT_NOTE}`);
     return;
   }
 
@@ -4151,7 +4154,7 @@ async function main() {
     + `${writePlan.thread_resolve.length} resolves, ${writePlan.review_create.comments.length} inline comments)`);
 
   console.log(`finalize: verdict=${result.verdict} inline=${result.inline.length} deferred=${result.deferred.length} suppressed=${result.suppressed.length} anchorless=${result.anchorless.length}`);
-  if (context.incompleteSteps?.length) console.log(`finalize: ${incompletePhrase(context.incompleteSteps)} — the verdict cannot be PASS`);
+  if (context.incompleteSteps?.length) console.log(`finalize: ${incompletePhrase(context.incompleteSteps)} — ${INCOMPLETE_VERDICT_NOTE}`);
   // What Step 4c passes as `cited` on the state write (posting.md § 4c) — never rebuilt by hand.
   console.log(isDryRun
     ? `finalize: --dry-run — no state write, so no LoreKit memory is cited (citedRefs: ${result.citedRefs.length})`
