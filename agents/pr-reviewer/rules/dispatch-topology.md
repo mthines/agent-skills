@@ -235,7 +235,9 @@ incomplete, whatever the reason: the step was skipped, cut short, or run without
 
 `RUN_ANOMALY` leads with the same phrase, and `finalize.mjs` prints
 `finalize: review incomplete: no <steps> step recorded — the verdict cannot be PASS` on stdout.
-A context with no planned steps (`branch-reviewer`'s) or an empty ledger is never incomplete.
+A context with no planned steps (`branch-reviewer`'s), an empty ledger, or a zero-delta re-review is never incomplete.
+`lenses` is required only when Step 2.4 must run: `context.mode` is `full` and the trivial-skip set did not fire.
+When you were given `--no-holistic`, pass `--no-holistic` to `finalize.mjs` as well, so a skipped holistic pass is not read as an incomplete review.
 
 1. Mark every step `prepare-review.mjs` lists on its `markers` line ([`run-telemetry.md`](./run-telemetry.md#what-you-mark-the-model-steps)).
    A step you ran but did not mark reads as skipped, and the review posts as incomplete.

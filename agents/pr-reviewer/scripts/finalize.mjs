@@ -245,15 +245,27 @@ const INCOMPLETE_VERDICT_NOTE = "the verdict cannot be PASS";
  * The required review steps this run planned but never recorded: a `REQUIRED_REVIEW_STEPS` name in
  * `planned` (context.telemetry.markers.steps, which already drops `lenses` on `quick`) with no
  * `step <name>` start record on the ledger. No plan (a context without run telemetry, e.g.
- * branch-reviewer's) means nothing is required.
+ * branch-reviewer's) means nothing is required. `skippable` names planned steps the run may skip
+ * by rule this time (see lensesSkippable).
  * @param {Array<{ t?: string, phase?: string, name?: unknown }>} ledger
  * @param {unknown} planned
+ * @param {string[]} [skippable]
  * @returns {string[]}
  */
-export function incompleteSteps(ledger, planned) {
+export function incompleteSteps(ledger, planned, skippable = []) {
   if (!Array.isArray(planned) || planned.length === 0) return [];
   const recorded = new Set(ledger.filter((r) => r.t === "step" && r.phase === "start").map((r) => String(r.name)));
-  return REQUIRED_REVIEW_STEPS.filter((s) => planned.includes(s) && !recorded.has(s));
+  return REQUIRED_REVIEW_STEPS.filter((s) => planned.includes(s) && !skippable.includes(s) && !recorded.has(s));
+}
+
+/**
+ * Whether Step 2.4's holistic pass — the `lenses` step — may be skipped by rule on this run
+ * (inline-pipeline.md § 2.4): any mode but `full` (an incremental re-review), the trivial-skip set,
+ * or `--no-holistic`. The token-economy skip needs no case: it fires on ≥ 3 failing gates, a FAIL.
+ * @param {any} context @param {boolean} noHolistic @returns {boolean}
+ */
+export function lensesSkippable(context, noHolistic) {
+  return noHolistic || context?.mode !== "full" || context?.trivialSkip?.value === true;
 }
 
 /**
@@ -1588,14 +1600,14 @@ function parseArgs(argv) {
     else if (a === "--second-pass") opts.secondPass = argv[++i];
     else if (a === "--out") opts.out = argv[++i];
     else if (a === "--run-dir") opts.runDir = argv[++i];
-    else if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--no-telemetry" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-fix-links" || a === "--fix-links") opts[a.slice(2)] = true;
+    else if (a === "--self-test" || a === "--replay-fixtures" || a === "--dry-run" || a === "--no-telemetry" || a === "--skip-gates" || a === "--no-dispatch" || a === "--no-holistic" || a === "--no-fix-links" || a === "--fix-links") opts[a.slice(2)] = true;
     else if (a.startsWith("--")) { opts[a.slice(2)] = argv[i + 1]; i++; }
   }
   return opts;
 }
 
 function usage() {
-  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-telemetry] [--no-dispatch] [--skip-gates] [--no-fix-links] [--fix-links] [--self-test] [--replay-fixtures]\n"
+  console.error("usage: finalize.mjs --context <ctx.json> --judgments <j.json> [--config <review.yaml>] --out-dir <dir> [--writer github|findings-bus] [--bus-path <file>] [--dry-run] [--no-telemetry] [--no-dispatch] [--no-holistic] [--skip-gates] [--no-fix-links] [--fix-links] [--self-test] [--replay-fixtures]\n"
     + "   or: finalize.mjs --dedupe-candidates <candidates.json> [--out <file>]\n"
     + "   or: finalize.mjs --first-pass <a.json,b.json> --second-pass <c.json,d.json> [--out <file>] [--run-dir <dir>]\n"
     + "   or: finalize.mjs --check-shape <judgments.json>");
@@ -2948,16 +2960,16 @@ async function selfTest() {
     // Through the real telemetry and finalize CLIs: a ledger with the planned steps is clean, one
     // missing lenses and consolidate prints the line and caps the verdict, and no ledger changes nothing.
     const iDir = join(scratchRoot(), "finalize-incomplete-cli");
-    const fin = (/** @type {boolean} */ withLedger, /** @type {string[]} */ steps) => {
+    const fin = (/** @type {boolean} */ withLedger, /** @type {string[]} */ steps, /** @type {Record<string, any>} */ ctxOver = {}, /** @type {string[]} */ extra = []) => {
       rmSync(iDir, { recursive: true, force: true });
       mkdirSync(iDir, { recursive: true });
       const tel = (/** @type {string[]} */ a) => spawnSync(process.execPath, [join(HERE, "review-telemetry.mjs"), ...a, "--run-dir", iDir],
         { encoding: "utf8", env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
       if (withLedger) { tel(["begin"]); for (const s of steps) tel(["step", s, "--attr", "candidates=0"]); }
-      writeFileSync(join(iDir, "context.json"), JSON.stringify({ ...ictx, telemetry: { markers: { steps: deepPlan } } }));
+      writeFileSync(join(iDir, "context.json"), JSON.stringify({ ...ictx, ...ctxOver, telemetry: { markers: { steps: deepPlan } } }));
       writeFileSync(join(iDir, "judgments.json"), JSON.stringify({ ...j0, summary: "Adds a retry around the export call." }));
       const run = spawnSync(process.execPath, [join(HERE, "finalize.mjs"), "--context", join(iDir, "context.json"), "--judgments", join(iDir, "judgments.json"),
-        "--out-dir", join(iDir, "out"), "--dry-run", "--no-telemetry"], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
+        "--out-dir", join(iDir, "out"), "--dry-run", "--no-telemetry", ...extra], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024, env: { ...process.env, PR_REVIEWER_TELEMETRY: "off" } });
       const res = join(iDir, "out", "finalize-result.json");
       const verdict = existsSync(res) ? JSON.parse(readFileSync(res, "utf8")).verdict : "none";
       return { verdict, stdout: run.stdout, stderr: run.stderr, rendered: existsSync(join(iDir, "out", "report-body.md")) };
@@ -2967,7 +2979,12 @@ async function selfTest() {
     const noLedger = fin(false, []);
     // A zero-delta re-review (a rebase, or review-loop's post-refresh re-review) skips Step 2 by
     // design: no finders, consolidate, or verify marker, and still a complete review.
-    const zeroDelta = (() => { const saved = ictx.mode; ictx.mode = "zero-delta"; try { return fin(true, ["memory", "gates"]); } finally { ictx.mode = saved; } })();
+    const zeroDelta = fin(true, ["memory", "gates"], { mode: "zero-delta" });
+    // Step 2.4 (the lenses step) is skipped by rule on an incremental re-review and under --no-holistic.
+    const noLenses = ["memory", "gates", "finders", "consolidate", "verify"];
+    const incremental = fin(true, noLenses, { mode: "incremental", routing: { tier: "standard" } });
+    const noHolistic = fin(true, noLenses, {}, ["--no-holistic"]);
+    const deepNoLenses = fin(true, noLenses);
     rmSync(iDir, { recursive: true, force: true });
     check("review incomplete: through the CLI a missing step prints the line and caps PASS at WARN with a rendered report; a full ledger and no ledger stay PASS",
       full.verdict === "PASS" && full.rendered && noLedger.rendered && !full.stdout.includes("review incomplete")
@@ -2975,6 +2992,11 @@ async function selfTest() {
         && short.stdout.includes("finalize: review incomplete: no lenses, consolidate step recorded — the verdict cannot be PASS")
         && noLedger.verdict === "PASS" && !noLedger.stdout.includes("review incomplete"),
       `${full.verdict} | ${short.verdict} ${short.rendered} | ${noLedger.verdict} | ${short.stderr.slice(-600)}`);
+    check("review incomplete: an incremental re-review and a --no-holistic run need no lenses marker; a deep full run without one is incomplete",
+      incremental.verdict === "PASS" && noHolistic.verdict === "PASS" && deepNoLenses.verdict === "WARN"
+        && deepNoLenses.stdout.includes("review incomplete: no lenses step recorded")
+        && lensesSkippable({ mode: "full", trivialSkip: { value: true } }, false) && !lensesSkippable({ mode: "full" }, false),
+      `${incremental.verdict} | ${noHolistic.verdict} | ${deepNoLenses.verdict} | ${incremental.stderr.slice(-300)}`);
     check("review incomplete: a zero-delta re-review with only memory and gates markers is complete and stays PASS",
       zeroDelta.verdict === "PASS" && !zeroDelta.stdout.includes("review incomplete"),
       `${zeroDelta.verdict} | ${zeroDelta.stdout.slice(-300)} | ${zeroDelta.stderr.slice(-300)}`);
@@ -3969,7 +3991,10 @@ async function main() {
     // Planned review steps with no record: Gate 6 and RUN_ANOMALY name them as an incomplete review.
     // An empty ledger (readLedger's answer for a missing file) proves nothing either way, and a
     // zero-delta re-review skips Step 2 by design (fetch-and-triage.md § Zero-delta short-circuit).
-    if (ledger.length > 0 && !step2Skipped(context)) context.incompleteSteps = incompleteSteps(ledger, context?.telemetry?.markers?.steps);
+    if (ledger.length > 0 && !step2Skipped(context)) {
+      context.incompleteSteps = incompleteSteps(ledger, context?.telemetry?.markers?.steps,
+        lensesSkippable(context, Boolean(opts["no-holistic"])) ? ["lenses"] : []);
+    }
   } catch { /* no ledger: nothing to read */ }
   const judgments = JSON.parse(readFileSync(/** @type {string} */(opts.judgments), "utf8"));
   const outDir = /** @type {string} */(opts["out-dir"]);
