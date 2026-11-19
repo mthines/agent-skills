@@ -5,8 +5,8 @@
 //                   [--no-trim] [--narrate]
 //   node finish.mjs --self-test
 //
-// Each input may have a sibling <stem>.timings.json: [{ label, start, end, result, say? }],
-// seconds from the start of that video. Several inputs are joined in order and their
+// Each input may have a sibling <stem>.timings.json: [{ label, start, end, result, say?, fastForward? }],
+// seconds from the start of that video. `fastForward: N` squeezes that step into N seconds. Several inputs are joined in order and their
 // timings offset. Writes:
 //   <id>.mp4            H.264, yuv420p, faststart — plays inline on GitHub and Safari
 //   <id>.timings.json   { seconds, steps: [{ label, start, end, result }] } in output time
@@ -132,10 +132,40 @@ export function finish(inputs, opts) {
     chain.push(`${video}select='${keep}',setpts=N/${FPS}/TB[trimmed]`);
     video = '[trimmed]';
   }
+  steps = steps.map((s) => ({ ...s, start: +remap(s.start, ranges).toFixed(2), end: +remap(s.end, ranges).toFixed(2) }));
+
+  // A step with `fastForward: N` is squeezed into N seconds (a wait that animates, so it was not cut
+  // as dead time). Steps after it, and their narration, move up by the time saved.
+  const kept = ranges.reduce((sum, [a, b]) => sum + (b - a), 0);
+  const fast = steps.filter((s) => s.fastForward > 0 && s.end - s.start > s.fastForward + 0.1);
+  if (opts.narrate && steps.some((s) => s.fastForward > 0 && s.say)) {
+    console.error('screencast: a fast-forwarded step cannot have a `say` line (sped-up speech is useless); speak over the step before it.');
+    process.exit(2);
+  }
+  if (fast.length) {
+    const parts = [];
+    let from = 0;
+    for (const f of fast) {
+      if (f.start - from > 1 / FPS) parts.push(`trim=${from.toFixed(3)}:${f.start.toFixed(3)},setpts=PTS-STARTPTS`);
+      parts.push(`trim=${f.start.toFixed(3)}:${f.end.toFixed(3)},setpts=(PTS-STARTPTS)/${((f.end - f.start) / f.fastForward).toFixed(4)},fps=${FPS}`);
+      from = f.end;
+    }
+    if (kept - from > 1 / FPS) parts.push(`trim=start=${from.toFixed(3)},setpts=PTS-STARTPTS`);
+    chain.push(`${video}split=${parts.length}${parts.map((_, i) => `[f${i}]`).join('')}`,
+      ...parts.map((part, i) => `[f${i}]${part}[g${i}]`),
+      `${parts.map((_, i) => `[g${i}]`).join('')}concat=n=${parts.length}:v=1:a=0[fastened]`);
+    video = '[fastened]';
+    const saved = (f) => f.end - f.start - f.fastForward;
+    const savedBefore = (t) => fast.filter((f) => f.end <= t + 1e-6).reduce((sum, f) => sum + saved(f), 0);
+    steps = steps.map((s) => {
+      const start = s.start - savedBefore(s.start);
+      const end = fast.includes(s) ? start + s.fastForward : s.end - savedBefore(s.end);
+      return { ...s, start: +start.toFixed(2), end: +end.toFixed(2) };
+    });
+  }
+
   const maxWidth = opts.maxWidth ?? 1280;
   chain.push(`${video}scale='min(${maxWidth},iw)':-2:flags=lanczos,format=yuv420p[vout]`);
-
-  steps = steps.map((s) => ({ ...s, start: +remap(s.start, ranges).toFixed(2), end: +remap(s.end, ranges).toFixed(2) }));
 
   // 3. Optional narration: one clip per step with a `say` line, delayed to the step's start.
   const audioInputs = [];
@@ -250,12 +280,23 @@ function selfTest() {
   fs.writeFileSync(path.join(dir, 'after.timings.json'), JSON.stringify([{ label: 'b', start: 0, end: 4 }]));
   const kept = finish([tail, after], { out: path.join(dir, 'tail.mp4'), trim: true });
   if (!(kept.seconds > 6)) failures.push(`trailing freeze cut the next segment: ${kept.seconds} s`);
+  // A moving 6 s step squeezed into 2 s: the video shortens and the step after it moves up.
+  const moving = path.join(dir, 'moving.webm');
+  run('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=25:duration=10', '-c:v', 'libvpx', '-b:v', '300k', moving]);
+  fs.writeFileSync(path.join(dir, 'moving.timings.json'), JSON.stringify([
+    { label: 'open', start: 0, end: 2 },
+    { label: 'agent answers', start: 2, end: 8, fastForward: 2 },
+    { label: 'result', start: 8, end: 10 },
+  ]));
+  const sped = finish([moving], { out: path.join(dir, 'sped.mp4'), trim: false });
+  if (Math.abs(sped.seconds - 6) > 0.5) failures.push(`fastForward length wrong: ${sped.seconds} s, expected ~6`);
+  if (Math.abs(sped.steps[2].start - 4) > 0.1 || Math.abs(sped.steps[1].end - 4) > 0.1) failures.push(`fastForward timings not shifted: ${JSON.stringify(sped.steps)}`);
   if (failures.length) {
     console.error(`self-test FAIL: ${failures.join('; ')}`);
     process.exit(1);
   }
   fs.rmSync(dir, { recursive: true, force: true });
-  console.log(`self-test PASS (trimmed ${r.trimmed} s, ${t.steps.length} steps, join ok)`);
+  console.log(`self-test PASS (trimmed ${r.trimmed} s, ${t.steps.length} steps, join ok, fastForward ${sped.seconds} s)`);
 }
 
 function parseArgs(argv) {
