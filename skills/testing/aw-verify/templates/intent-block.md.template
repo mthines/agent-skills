@@ -1,0 +1,16 @@
+<!-- This is the `intent` region `verify-comment.mjs --section intent` writes into the PR's verify report.
+     Copy every line from .agent/{branch}/verify/intent.md verbatim; never reword a criterion.
+     The region opens with a visible, closed <details>. No HTML comment inside it: a reader cannot see one.
+     Line grammar (parsed by parseIntent, no model): `- [<status> ][🚀 ]<AC-n|G-n> [<ui|api|worker|telemetry>:<target>] <text>`
+     and `- G-n [guardrail] <text>`. First publication: every AC starts `⬜` (not run yet). Later runs change only
+     the leading status (✅ ❌ ⏭️) through `--marks`; never reword a line. Delete this comment when writing the file. -->
+<details><summary>📋 Acceptance criteria — {{N_AC}} criteria, {{N_G}} guardrails (source: {{SOURCE}})</summary>
+
+Source: {{SOURCE}} · Ticket: {{TICKET}} · Verified head: `{{HEAD_SHA7}}`
+
+- ⬜ AC-1 [ui:/settings/notifications] {{criterion, with its (base: …) clause}} (spec: Spec 1)
+- ⬜ AC-2 [api:PUT /api/notification-settings] {{criterion}}
+- ⬜ AC-3 [telemetry:notification.saved] {{criterion}}
+- G-1 [guardrail] {{guardrail, verbatim from the brief}}
+
+</details>

@@ -28,6 +28,7 @@ A vague criterion here becomes a vague verdict later.
 - [Step 3b — Lint every criterion and map the surfaces](#step-3b--lint-every-criterion-and-map-the-surfaces)
 - [Step 4 — Write or reuse `specs.md`](#step-4--write-or-reuse-specsmd)
 - [Step 5 — Build the edge-case matrix](#step-5--build-the-edge-case-matrix)
+- [Step 6 — Publish the criteria on the PR](#step-6--publish-the-criteria-on-the-pr)
 - [Output — `intent.md`](#output--intentmd)
 
 ## Step 1 — Find the intent source (first that exists wins)
@@ -147,6 +148,50 @@ Mark the rest `n/a` with a one-line reason; never drop them silently.
 Write each applicable `ui:` row as an intent spec in `edge-specs.md` (same header, titles `## Spec N: EC-n — …`).
 Each `**Expected:**` item is the row's graceful outcome, stated as something observable; the interruption step is `[must-follow]`.
 
+## Step 6 — Publish the criteria on the PR
+
+Whenever a PR resolves, every run, every surface, a UI diff or not: publish the criteria so `deployment-verify`, `telemetry-verify`, and a later session read the same list after `.agent/{branch}/` is gone.
+This is not optional and does not depend on the push policy: it is the `intent` region of the PR's verify report, written by the same script and under the same trust rules as the report ([`pr-comment.md § Where the report lives`](./pr-comment.md#where-the-report-lives)); on anyone else's PR where posting needs a yes, ask once for both.
+
+1. Render [`templates/intent-block.md.template`](../templates/intent-block.md.template) from `intent.md`: every `AC-n` line verbatim with its surface tag, then each guardrail from the brief as `G-n [guardrail]`. Write it to `.agent/{branch}/verify/comment-intent.md`.
+2. `node "$VC" --pr <pr-url> --section intent --file .agent/{branch}/verify/comment-intent.md`
+3. Exit `1` with `the PR is merged, so its criteria are frozen` → keep the PR's criteria, note `criteria: frozen (merged)`, and compare yours against them in `intent.md` as a `spec-drift` finding when they differ.
+4. A criterion added by this run (sources 2 and 3, or a `criterion-quality` rewrite of a derived one) is published as written; an `/aw` brief's criteria are published verbatim, their `criterion-quality` findings staying in `findings.jsonl`.
+
+```text
+✗ AC list only in the report's collapsed trace table, as `AC-2 | Saving … | ✅ pass | browser`
+✓ node "$VC" --pr <pr-url> --section intent --file .agent/<branch>/verify/comment-intent.md
+  # own PR → a region of the description, next to the ui-verify spec; the ui spec keeps its own marker pair
+```
+
+### The criteria are a living checklist
+
+Each `AC-n` line carries a leading status that says where it stands, so a reviewer reads the PR top-down without opening the report:
+
+| Mark | Meaning | Set by |
+| --- | --- | --- |
+| `⬜` | Published, not run yet | Step 6, first publication |
+| `✅` | Passed on its own target (`pass`, `after fix`) | `aw-verify`, end of every run |
+| `❌` | Failed, or a finding is still open on it | `aw-verify`, end of every run |
+| `⏭️` | `not verified on target` | `aw-verify`, end of every run |
+| `🚀` | Confirmed on production traffic | `deployment-verify` after a `PASS`, only for criteria a contract root span watches |
+
+After the report renders (and after each fix-loop re-verify), write the statuses from the trace rows, one call for all criteria:
+
+```bash
+node "$VC" --pr <pr-url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-2":{"status":"❌"},"AC-3":{"status":"⏭️"}}'
+```
+
+`--marks` changes only the leading marks of existing lines, never their text; an unknown ID or status exits `1`.
+A merged PR freezes the criteria text and still takes marks.
+
+```text
+✗ rewrite the whole intent region to tick a box, and reword AC-2 on the way
+✓ node "$VC" --pr <pr-url> --section intent --marks '{"AC-2":{"status":"✅"}}'
+```
+
+The UI spec stays in the `ui-verify:v2` block, joined to its criterion by the `AC-n` in the spec title; the `intent` region holds what must be true, the spec holds how the browser checks it.
+
 ## Output — `intent.md`
 
 ```markdown
@@ -158,8 +203,11 @@ Intent source: /aw brief | PR + ticket | diff only
 <two sentences: what the feature does and for whom>
 
 ## Acceptance criteria
-- AC-1 [ui:/settings/notifications] …   (spec: specs.md Spec 1)
+- AC-1 [ui:/settings/notifications] …   (spec: specs.md Spec 1)   # the PR copy adds a leading ⬜ ✅ ❌ ⏭️
 - AC-2 [api:PUT /api/notification-settings] …
+
+## Guardrails
+- G-1 [guardrail] Keep unchanged: the public settings API shape   (verbatim from the brief; none → omit the section)
 
 ## Surfaces
 - Routes: …   Endpoints: …   Components (stack component names): …

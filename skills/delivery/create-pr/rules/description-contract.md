@@ -161,7 +161,7 @@ Screenshots and recordings reach the body only through `Skill("attach-media", �
 
 ## Step 5: Length self-check (before writing the body)
 
-Count the rendered lines of the body, **skipping any `<!-- attach-media:v1 -->` region, any `<!-- verify:report -->` region, and any ui-verify region (`<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->`, or its `v1` / `preview-spec:v1` pair)** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
+Count the rendered lines of the body, **skipping any `<!-- attach-media:v1 -->` region, any `<!-- verify:report -->` region (its `intent` criteria included, which review-loop's refresh keeps verbatim), and any ui-verify region (`<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->`, or its `v1` / `preview-spec:v1` pair)** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
 
 - **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
 - **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.

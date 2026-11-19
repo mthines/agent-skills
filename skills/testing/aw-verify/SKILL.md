@@ -48,6 +48,7 @@ Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, w
 
 0. **Config** ([`rules/config.md § Resolve`](./rules/config.md#resolve-the-config-every-skill-before-any-other-step)). No `.agents/aw/environments.yml`, or no entry for the environment → run `setup` first; never guess a URL, dataset, or start command. Read lessons ([`rules/lessons.md § Read`](./rules/lessons.md#read-step)).
 1. **Intent** ([`rules/intent.md`](./rules/intent.md)). Write `intent.md`: the brief's `AC-n` verbatim, each tagged `ui:` / `api:` / `worker:`, every criterion linted ([`§ Step 3b`](./rules/intent.md#step-3b--lint-every-criterion-and-map-the-surfaces)), the changed surfaces mapped to criteria, and the edge-case matrix.
+   Then publish the criteria as the PR's `intent` region ([`§ Step 6`](./rules/intent.md#step-6--publish-the-criteria-on-the-pr)) whenever a PR resolves, before the first probe.
    The matrix always has a **Concurrency** row for any AC that creates a record (fire the trigger twice in parallel, count rows) and one **Failure** row per guardrail in the brief (break the dependency the guardrail names: make the file unwritable, block the route, stop the service).
 2. **Stack** ([`rules/local-stack.md`](./rules/local-stack.md) + the driver file; login per [`rules/auth.md`](./rules/auth.md)). Start it detached, logs to `procs/<name>.log`, poll the ready URL. A sandbox that refuses `listen` → drive the app's own request handler in-process and say `browser: not run (no local port)`.
    A criterion that needs a feature flag in a given state sets, proves, and restores it per [`rules/flags.md`](./rules/flags.md); it never asks the user to edit an env file.
@@ -84,6 +85,7 @@ Agent(subagent_type="general-purpose",
 
 ## Definition of done
 
+- [ ] The `intent` region on the PR (visible, collapsed), or `criteria: not posted (<reason>)`; never skipped for a non-UI diff. Its statuses (`⬜ ✅ ❌ ⏭️`) match the final trace rows, written with `--marks` after the report and after every fix-loop re-verify.
 - [ ] `intent.md`, `probes.jsonl`, `findings.jsonl`, and `report.md` under `.agent/{branch}/verify/`; `specs.md` for a UI change.
 - [ ] Every AC and guardrail: `pass`, `fixed → pass`, `fail`, or `⏭️ not verified on target (<what ran instead>)`, with evidence; every edge row probed or `n/a` with a reason; every changed surface in the Coverage table.
 - [ ] A `TELEMETRY` block covering every window, or `telemetry: skipped (<reason>)`. Never leave it out: the report is incomplete without one of the two, and a connected Dash0 MCP server is never a valid skip reason.

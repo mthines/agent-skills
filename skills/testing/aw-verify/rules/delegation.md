@@ -14,6 +14,7 @@ tags:
 | Artifact | Written by | Read by |
 | --- | --- | --- |
 | `.agent/{branch}/plan.md` (`AC-{n}`, Guardrails) | `/aw` | Intent, verbatim |
+| The PR's `intent` region (`AC-n` and `G-n` lines, visible and collapsed) | `aw-verify` Intent, on every run with a PR | `ui-verify`, `telemetry-verify`, `deployment-verify`, a later session |
 | `.agent/{branch}/specs.md` (`Format: intent`, one spec per `ui:` AC) | `/aw`, else Intent | `aw-tester`, `ui-verify author` (PR body), `ui-verify run` |
 | `.agent/{branch}/verify/edge-specs.md` (`Format: intent`) | Intent | Probes only — never the PR body |
 

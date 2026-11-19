@@ -42,7 +42,7 @@ Use `general` as the sub-agent type on OpenCode and Dash0 Agent0.
 | `--windows` | A `probes.jsonl` whose lines carry `id`, `window_start`, `window_end`, and optional `log_offsets`: read them all in one pass, from the first start to the last end, and attribute each record to the window that contains it |
 | `--host` | The preview host; filters web events to this run's pages |
 | `--driver` | The browser driver; `chrome` is the user's own browser, so sessions cannot be isolated |
-| `--brief` | `plan.md`; its `telemetry:` acceptance criteria become expectations. Default `.agent/{branch}/plan.md` when it exists |
+| `--brief` | `plan.md`; its `telemetry:` acceptance criteria become expectations. Default `.agent/{branch}/plan.md` when it exists, else the `telemetry:` and `api:` lines of the PR's `intent` region (`--pr`; written by `aw-verify`) |
 | `--out` | Append findings to this file in the `aw-verify` skill's findings record shape |
 | `--pr` | The PR whose verify comment gets the `telemetry` region; default the current branch's PR (`gh pr view --json url`) |
 | `--no-comment` | Post nothing; every calling skill passes it |
@@ -50,13 +50,14 @@ Use `general` as the sub-agent type on OpenCode and Dash0 Agent0.
 ## Step 0 — Resolve config and skip honestly
 
 Resolve `.agents/aw/telemetry.yml` and `environments.yml` plus the personal overlay (`~/.agents/aw/config.yml` → `repos.<owner>/<name>`), as the `aw-verify` skill's `rules/config.md` defines.
-Take the first row that applies; each prints its line and returns `verdict: null`:
+Take the first row that applies; each prints its line and returns `verdict: null`, except the row that falls back to the `logs` backend:
 
 | Condition | `pipe:` line |
 | --- | --- |
 | No `.agents/aw/environments.yml` | `skipped (no .agents/aw config — run /aw-verify setup)` |
 | `backend: none` | `skipped (telemetry.backend: none)` |
-| `backend: dash0-mcp` and no connected tool ends in `getSpans` or `getWebEvents` | `skipped (no Dash0 MCP server connected)` |
+| `backend: dash0-mcp`, no connected tool ends in `getSpans` or `getWebEvents`, and the brief has no `telemetry:` criterion | `skipped (no Dash0 MCP server connected)` |
+| The same, and the brief has a `telemetry:` criterion | Do not skip: [fall back to the `logs` backend](#a-telemetry-criterion-is-checked-not-skipped) |
 | The window holds only browser traffic and the app ships no web SDK (no `telemetry.yml` → `web` block, no `@dash0/sdk-web` dependency) | `skipped (no web SDK in this app)` |
 
 ## Step 1 — Wait for ingest
@@ -102,7 +103,23 @@ Run the backend file's queries for steps 2–4 of [`rules/receipt.md`](./rules/r
 | `dash0-mcp` | [`rules/dash0-mcp.md`](./rules/dash0-mcp.md) | Spans, logs, metrics, and web events in a Dash0 dataset |
 | `logs` | [`rules/logs.md`](./rules/logs.md) | Service logs the stack driver captured, plus browser console and network evidence |
 
-A configured backend that is unreachable is `pipe: skipped (<reason>)`; never swap backends silently.
+A configured backend that is unreachable is `pipe: skipped (<reason>)` unless the brief has a `telemetry:` criterion; never swap backends silently.
+
+### A telemetry criterion is checked, not skipped
+
+A `telemetry:` acceptance criterion is a promise, so an unreachable backend is a reason to look another way, not to stop.
+Run the `logs` backend ([`rules/logs.md`](./rules/logs.md)) over the same windows (service logs under `log_offsets`, the browser console, and the network requests the browser sent), name the swap on the `pipe:` line, and grade each criterion from that evidence:
+
+| Result | Grade |
+| --- | --- |
+| The event, span name, or log line the criterion names shows up in that evidence | `confirms`, with `pipe: logs (fallback — dash0-mcp unreachable)` |
+| The evidence shows it absent where the path runs | `contradicts` |
+| The signal only exists in the backend (a server span, a database child) | `ambiguous`, and the criterion is `⏭️ not verified on target (needs <backend>)`, naming the one thing that would settle it |
+
+```text
+✗ pipe: skipped (no Dash0 MCP server connected)      # AC-3 [telemetry:notification.saved] left ungraded
+✓ pipe: logs (fallback — dash0-mcp unreachable)      # AC-3 confirms: web event notification.saved fired once per save
+```
 
 ## Step 5 — Return the block
 

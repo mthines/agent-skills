@@ -11,12 +11,35 @@ The contract lives in the PR body, so it survives the merge and the worktree cle
 Write it before the PR merges; never write or edit it after the rollout starts.
 **Why:** a threshold chosen after seeing the numbers is chosen to pass them.
 
+## Visible, collapsed
+
+The block is readable by a reviewer and closed by default: the markers are the only hidden part, and the JSON sits in a `<details><summary>` that says what it is.
+The controller also reads an older bare fence.
+
+```text
+✗ a contract only a script can find: the JSON inside an HTML comment
+✓ <!-- deployment-verify:v1 --> <details><summary>🚦 Deployment contract — …</summary> ```json … ``` </details> <!-- /deployment-verify:v1 -->
+```
+
+## Draft from the criteria
+
+`/aw-verify` leaves the PR's acceptance criteria as the `intent` region of its verify report (visible, collapsed).
+A PR with no contract yet and not merged: `node ${CLAUDE_SKILL_DIR}/scripts/tick.mjs --draft-contract --pr <n>` prints a contract built from its `api:` criteria (`root_spans`), with `service` left as `<service.name>`.
+Review it, fill the placeholders, add `flag` and `cohort` when a flag exists, and write it into the PR body before the merge; the script never writes it, and refuses a merged PR.
+
+```text
+✗ tick.mjs --draft-contract on a merged PR, then pasting its output (thresholds chosen after the numbers)
+✓ tick.mjs --draft-contract --pr 214   # before the merge → edit → add to the PR body
+```
+
 ## Shape
 
-One fenced JSON block between the markers, anywhere in the PR body; JSON because the controller reads it with no dependencies:
+One fenced JSON block between the markers, anywhere in the PR body, inside the `<details>` above; JSON because the controller reads it with no dependencies:
 
 ````markdown
 <!-- deployment-verify:v1 -->
+<details><summary>🚦 Deployment contract — checkoutV2 via posthog, root span GET /api/checkout</summary>
+
 ```json
 {
   "service": "ui",
@@ -27,6 +50,8 @@ One fenced JSON block between the markers, anywhere in the PR body; JSON because
   "thresholds": { "max_error_rate_delta_pp": 2 }
 }
 ```
+
+</details>
 <!-- /deployment-verify:v1 -->
 ````
 

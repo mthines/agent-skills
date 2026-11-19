@@ -14,12 +14,14 @@ tags:
 Phase 3 checks every acceptance criterion and every applicable edge case against the environment's `url` with evidence, and has `telemetry-verify` read back every window.
 `ui-verify` owns the spec format, the runners, screenshots, recordings, and its adversarial pass; `telemetry-verify` owns the telemetry read; this rule decides what to feed them and when.
 
-## Step 1 — Publish the acceptance specs (optional)
+## Step 1 — Publish the acceptance specs
 
 | Condition | Action |
 | --- | --- |
 | The PR body has no ui-verify block, and the push policy allows writing to this PR (`always`, or `own-prs` and you are the author) | `Skill("ui-verify", "author <pr-url>")` — it lifts `.agent/{branch}/specs.md` verbatim into the PR body |
-| The PR body already has a block, or the policy forbids writing | Leave the PR body alone; note `spec not published (<reason>)` in the report |
+| The PR body has a block, `specs.md` has a spec the block lacks or words differently, and the policy allows writing | Refresh it with `Skill("ui-verify", "author <pr-url>")`; a stale block is the spec `ui-verify run` will check |
+| The PR body already has a current block, or the policy forbids writing | Leave the PR body alone; note `spec not published (<reason>)` in the report |
+| The diff has no UI files | No spec block; the criteria still go up as the `intent` region ([`intent.md § Step 6`](./intent.md#step-6--publish-the-criteria-on-the-pr)) |
 
 `edge-specs.md` is never published; edge probes are local evidence.
 
