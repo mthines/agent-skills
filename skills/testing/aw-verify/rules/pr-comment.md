@@ -33,6 +33,16 @@ The comment takes the report instead when the body would pass GitHub's 65,536-ch
   # own PR → the description's verify region; someone else's PR → the one verify comment
 ```
 
+## Visible, collapsed
+
+Everything a skill writes into the PR description is readable by a reviewer and closed by default: the HTML-comment markers are the only invisible part, and the content sits in a `<details><summary>` that says what it is.
+`verify-comment.mjs` refuses an `intent` region that holds an HTML comment or does not open with `<details><summary>`.
+
+```text
+✗ <!-- verify:section=intent -->\n<!-- AC-1 [ui:/x] … -->            (a reader sees nothing)
+✓ <details><summary>📋 Acceptance criteria — 3 criteria, 1 guardrail</summary>\n\n- AC-1 [ui:/x] …\n\n</details>
+```
+
 ## Contents
 
 - [Where the report lives](#where-the-report-lives)
@@ -47,6 +57,7 @@ The comment takes the report instead when the body would pass GitHub's 65,536-ch
 
 | Region | Owner | Written when |
 | --- | --- | --- |
+| `intent` | `aw-verify` | Every run with a PR, on the same trust rules as the report ([§ When to post](#when-to-post)), before the first probe; the criteria are a living checklist: each run changes only the leading status of each line through `--marks` (`⬜ ✅ ❌ ⏭️`, and `🚀` from `deployment-verify`), so `--replace-all` keeps it, it never folds as an older run, it never enters **Previous runs**, and once the PR is merged an existing one is frozen ([`intent.md § Step 6`](./intent.md#step-6--publish-the-criteria-on-the-pr)) |
 | `aggregate` | `aw-verify` | Every run with a PR, on your own PRs and trusted bots' PRs without asking, on anyone else's after a yes — `policies.pr_comment` never suppresses it; `--replace-all` drops the other regions, because the aggregate already holds the browser, adversarial, and telemetry proof |
 | `ui` | `ui-verify` | A standalone `run` or `verify` with a PR |
 | `telemetry` | `telemetry-verify` | A standalone run with a PR |
@@ -180,7 +191,7 @@ A reviewer who sees anything but ✅ finds the reasons in the same place, in the
 1. Each failed check (❌), or the phase that could not run and its fix (⛔, ⏭️ `not graded`), then each flag left set because `restore` failed: `**<key> is still <value> in <service>** (blocked) → needs you: <the restore command>` ([`flags.md § Report`](./flags.md#report)).
 2. Each open `in_scope: true` `critical`/`high` finding.
 3. Each escalated finding, `needs you: <the decision>`.
-4. Each open `in_scope: true` `medium`/`low` finding.
+4. Each open `in_scope: true` `medium` finding. An open `low` finding is a **Notes** line and never a bullet ([`report.md § What never caps the verdict`](./report.md#what-never-caps-the-verdict)).
 5. In a `ui` region at ⚠️ (inconclusive): one bullet, the runner's `notes:` line, `(inconclusive)`, and the next step. In a `telemetry` region at ⚠️: one bullet per ambiguous journey, `(ambiguous)`, and what would settle it.
 6. Last, every open `critical`/`high` finding that does not move the verdict — `in_scope: false` ([`findings.md` § in_scope](./findings.md)), or any finding in a `ui` or `telemetry` region — the `in_scope: false` ones starting `Outside this PR:`.
 
@@ -198,8 +209,6 @@ Agent0 only gets `testAutomation` when write approval is on, and the card states
 #### Why not ✅
 
 - **Testing a disabled automation fails with a 500 and "contact Dash0 support"** (medium) → fix: let a manual trigger start it, or drop the "runs whether or not enabled" promise and return a 4xx.
-- **An invalid `source` returns raw Go validator text** (low) → fine to merge as is.
-- **The PR body still lists the Agent0 marker as a follow-up** (low) → fix: drop that line.
 
 <!-- ✗ reasons inline after the summary, several findings and the evidence packed into one bullet -->
 Agent0 only gets `testAutomation` when write approval is on. **Why not ✅:**

@@ -1742,4 +1742,17 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
     inBody.status === 0 && inBody.stdout.includes("finished: 2026-01-01") && !/AGG|OLDER|Intro/.test(inBody.stdout), `exit ${inBody.status}: ${inBody.stdout.slice(0, 120)}`);
 }
 
+// ── G132: deployment-verify's tick.mjs reads the `intent` region exactly as verify-comment.mjs writes it; a drifted reader sees no criteria after the merge ──
+{
+  const { splice, withBlock, intentFrom } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/aw-verify/scripts/verify-comment.mjs")).href);
+  const { parseCriteria } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/deployment-verify/scripts/tick.mjs")).href);
+  const region = "<details><summary>📋 Acceptance criteria</summary>\n\n- ⬜ AC-1 [ui:/a] one\n- ✅ 🚀 AC-2 [api:PUT /b] two\n- G-1 [guardrail] keep\n\n</details>";
+  const report = splice("", "intent", region);
+  const body = withBlock("Intro.", report);
+  const key = (l) => JSON.stringify(l);
+  s.check("G132 tick.mjs parseCriteria returns what verify-comment.mjs intentFrom returns, from a PR body and from a comment (executed)",
+    parseCriteria(body).length === 3 && key(parseCriteria(body)) === key(intentFrom(body)) && key(parseCriteria("x", [{ body: report, trusted: true }])) === key(intentFrom(report)),
+    `body ${parseCriteria(body).length} vs ${intentFrom(body).length}`);
+}
+
 process.exit(s.report() ? 0 : 1);

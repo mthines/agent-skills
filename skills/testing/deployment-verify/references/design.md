@@ -11,6 +11,12 @@ A threshold chosen after seeing the rollout's numbers is chosen to pass them.
 So the contract lives in the PR body, written before the merge, and a contract may only tighten the repo's thresholds.
 The PR body also survives the merge and the worktree cleanup, which `.agent/{branch}/` files do not.
 
+## The criteria come from the PR too
+
+`aw-verify` writes the acceptance criteria into the PR as a visible, collapsed region, because `.agent/{branch}/` is gone after the merge and a later session has only the PR.
+The controller reads them to show which promises the rollout watches and which nothing watches, and to draft the contract before the merge; it never judges a criterion, so the verdict stays `decide.mjs`'s.
+The one write is a `🚀` on a watched criterion after a `PASS`: the checklist the reviewer saw go ✅ before the merge shows what production confirmed after it, and a rollback leaves the marks alone because a rollout verdict is about the contract's spans, not about each criterion.
+
 ## Cohorts in the same window, not before and after
 
 Before-and-after comparisons absorb everything else that changed in the gap: traffic mix, time of day, other deploys, an upstream incident.

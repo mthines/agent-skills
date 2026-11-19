@@ -22,14 +22,36 @@ An open `critical`/`high` one still reaches the attention line ([`pr-comment.md 
 
 | Verdict | Condition |
 | --- | --- |
-| `✅ verified` | Every AC passes in the browser on its own changed target, none is `⏭️ not verified on target`, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `high` or `critical` |
-| `⚠️ verified with open items` | Every AC that ran passes; some `medium`/`low` findings open (a `criterion-quality` finding is `medium`), any finding escalated, or an AC is `⏭️ not verified on target` |
+| `✅ verified` | Every AC passes in the browser on its own changed target, none is `⏭️ not verified on target`, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `medium`, `high`, or `critical`. Open `low` findings, a telemetry witness that could not confirm a path with no `telemetry:` AC, and failures outside the PR do not count ([§ What never caps the verdict](#what-never-caps-the-verdict)) |
+| `⚠️ verified with open items` | Every AC that ran passes; some `medium` findings open (a `criterion-quality` finding is `medium`), any finding escalated, an AC is `⏭️ not verified on target`, or a brief `telemetry:` AC has no confirming receipt after `telemetry-verify` tried every backend it could reach (`telemetry-verify` falls back to its `logs` backend for a `telemetry:` criterion instead of skipping) |
 | `❌ not verified` | An AC fails after the fix loop, a brief `telemetry:` AC `contradicts`, or a `critical`/`high` finding is still open |
 | `⛔ blocked` | A phase could not run (stack, auth, checkout), or no AC was verified on its target; name the phase and the fix |
 
 The headline uses exactly one row's words: `Verified`, `Verified with open items`, `Not verified`, or `Blocked`.
 Free text such as "works" or "verified on the scratch branch" is not a verdict.
 A run on a merged PR starts `{{SUMMARY}}` with `Run after merge —` and lists every open `medium`-or-higher finding as a `Needs you` bullet ending `→ follow-up PR`.
+
+## What never caps the verdict
+
+A ✅ with a few notes is a pass: the verdict answers "does the change do what it promised", and a reviewer who sees ⚠️ expects a promise that went unchecked or a defect worth a decision.
+None of these moves a run off ✅; each is a **Notes** line, never a `Why not ✅` bullet:
+
+| Not a cap | Why | Where it goes |
+| --- | --- | --- |
+| An open `low` finding (copy, spacing, a rough edge, an observation) | Polish, no AC affected | **Notes**, `fine to merge as is` |
+| Telemetry could not confirm a path that emits no signal (client-side), or no `telemetry:` AC exists and the server was unreachable | No promise rests on it | **Telemetry** line `no regression observed (path emits no signal)` or `not reviewed (<reason>)` |
+| A test, check, or CI failure in code the PR did not change (`in_scope: false`) | Not this change | **Notes**, `Outside this PR:` |
+| CI not run yet on a draft | A fact about the PR, not a result | The metadata line |
+
+```text
+✗ ⚠️ Verified with open items — one low rough edge open (a generic error toast), telemetry not connected
+✓ ✅ Verified — Nothing needs your attention.   Notes: a generic toast when control-plane-api is down (low)
+✗ ⚠️ … — 17 unrelated agents snapshot tests fail
+✓ ✅ Verified …   Notes: Outside this PR: 17 agents snapshot tests fail on main
+✓ ⚠️ Verified with open items — AC-5 not verified on target (no message sent)    # a promise went unchecked
+```
+
+A `low` finding becomes `medium` and caps the run only when it breaks a guardrail, loses data, or sits on an AC's own target.
 
 ## Substitution
 
@@ -75,7 +97,7 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{PROBE_RESULT}}` / `{{PROBE_LINES}}` | `<n> probes, nothing broke`, `<n> probes, <k> broke`, or `skipped (<reason>)`; one `- what I tried → what happened` line per probe |
 | `{{FIXES_PART}}` | When a fix was pushed: `**Fixed during the run**` and one `- <sha7> (F-n) <what changed for the user>` line each, the `F-n` matching the `✅ after fix (F-n)` row it fixed; otherwise nothing |
 | `{{TELEMETRY_VERDICT}}` / `{{FLOW_LINES}}` | Never blank: the verdict word or `not reviewed (<reason>)` (a connected MCP server is not a reason). An AC whose path emits no signal gets `no regression observed (path emits no signal)`, not `confirms`; one `- <journey>` line per AC from `telemetry.md`, then the ERROR-span line |
-| `{{NOTES_PART}}` | When there are any: `**Notes**` and one line per not-defect, `medium`/`low` finding, out-of-scope finding (`Outside this PR:`), `n/a` edge row, lesson written, or flag the run set ([`flags.md § Report`](./flags.md#report)); otherwise nothing |
+| `{{NOTES_PART}}` | When there are any: `**Notes**` and one line per not-defect, open `low` finding, `medium` finding already shown above, out-of-scope finding (`Outside this PR:`), `n/a` edge row, lesson written, or flag the run set ([`flags.md § Report`](./flags.md#report)); otherwise nothing |
 | `{{TRACE_ROWS}}` | One row per AC, edge row, and probe: ID, criterion, result (`✅ pass`, `✅ after fix (F-1)`, `❌ fail (F-2)`, `⏭️ skipped (<reason>)`, `⏭️ not verified on target (<what ran instead>)`), witnesses (`browser · telemetry`, `unit tests`). Text only |
 | `{{URL}}` / `{{DRIVER}}` / `{{RECORDINGS_LINE}}` | The URL the run used (`localhost` as text); the browser driver; `recordings: not attached (<reason>)` when the region holds none, else nothing |
 | `{{TICKET_LINK}}` / `{{PR_LINK}}` | `· <ticket link>` from the brief, or nothing; the PR URL |

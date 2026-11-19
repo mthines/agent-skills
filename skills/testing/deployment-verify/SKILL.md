@@ -50,7 +50,9 @@ Why it is shaped this way: [`references/design.md`](./references/design.md).
 1. Resolve `.agents/aw/release.yml` and `telemetry.yml` plus the personal overlay ([`rules/config.md`](./rules/config.md)). Missing `release.yml` → `STOPPED — run /deployment-verify setup first`.
 2. Run `node ${CLAUDE_SKILL_DIR}/scripts/decide.mjs --self-test`; a failure stops every PR: the verdict rule is broken.
 3. Per PR: `gh pr view <pr> --json body,mergeCommit,mergedAt,state,url,labels`. Closed without `mergedAt` → remove the label, stop: nothing deployed.
-4. Per PR without state: extract and validate the contract ([`rules/contract.md`](./rules/contract.md)).
+4. Per PR without state: extract and validate the contract ([`rules/contract.md`](./rules/contract.md)). No contract and not merged → `tick.mjs --draft-contract --pr <n>` ([`rules/contract.md § Draft from the criteria`](./rules/contract.md#draft-from-the-criteria)).
+5. After a `PASS`, the controller marks `🚀` on every criterion a contract root span watched, in the PR's `intent` region (through `aw-verify`'s `verify-comment.mjs --marks`, which changes only that mark). `aw-verify` not installed → `criteria not marked 🚀`, never a stop; a rollback marks nothing.
+6. The controller reads the PR's acceptance criteria (the `intent` region `/aw-verify` wrote) into the report's `criteria:` block; none on the PR → `criteria: none on the PR`, never a stop.
 
 ## Step 1 — Run the controller
 
@@ -89,6 +91,8 @@ The controller writes the PR's report comment (marker `<!-- deployment-verify:v1
 ```text
 DEPLOYMENT <IN PROGRESS | PASS | ROLLED_BACK | INCONCLUSIVE | ESCALATE | STOPPED>
 change:   <PR title> (#<n>) · flag <key> via <provider> · <env>
+criteria: <n> on the PR, <g> guardrails (aw-verify's `intent` region)
+  AC-2 api PUT /api/x — watched        # root span in the contract; not watched = nothing here reads it
 deploy:   live at <time> (<attribute>=<sha7>)
 baseline: <n> requests, <e> errors, <avg> ms
 step   test n/err/ms    control n/err/ms   verdict

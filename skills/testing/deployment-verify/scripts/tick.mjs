@@ -7,6 +7,7 @@
 //                                             one tick, state in a local file (no GitHub)
 //   add --run                                 tick until the outcome is terminal, sleeping between ticks
 //   add --env <name>                          release.yml environment (default production)
+//   node tick.mjs --draft-contract --pr <n>   print a contract to review, built from the PR's acceptance criteria
 //   node tick.mjs --check-config              validate .agents/aw/release.yml and exit
 //   node tick.mjs --self-test                 simulated rollouts, no network
 //
@@ -25,7 +26,12 @@ import { parseYaml } from "./yaml-lite.mjs";
 
 const REPORT_MARKER = "<!-- deployment-verify:v1:report -->";
 const STATE_RE = /<!-- deployment-verify:v1:state (\{.*?\}) -->/s;
-const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*```json\s*([\s\S]*?)```\s*<!-- \/deployment-verify:v1 -->/;
+// The JSON fence may sit bare (older PRs) or inside a visible, closed <details> (rules/contract.md § Visible).
+const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summary>\s*)?```json\s*([\s\S]*?)```\s*(?:<\/details>\s*)?<!-- \/deployment-verify:v1 -->/;
+// aw-verify's `intent` region of the PR's verify report (its writer is aw-verify/scripts/verify-comment.mjs;
+// L1 G132 keeps this reader and that writer's parseIntent in step).
+const INTENT_RE = /<!-- verify:section=intent -->([\s\S]*?)<!-- \/verify:section=intent -->/;
+const CRITERION_RE = /^- (?:(⬜|✅|❌|⏭️) )?(?:(🚀) )?((?:AC|G)-\d+) \[([a-z]+)(?::([^\]]*))?\] (.+)$/;
 const EXCEPTION_OUTCOMES = ["ROLLED_BACK", "ESCALATE", "INCONCLUSIVE"];
 const LABEL = "deployment-verify";
 const LEASE_MS = 15 * 60 * 1000;
@@ -67,6 +73,54 @@ export function parseContract(body) {
 	} catch (e) {
 		return { error: `contract is not valid JSON: ${e.message}` };
 	}
+}
+
+// The acceptance criteria aw-verify left on the PR: from the description's report, else from the newest
+// trusted verify comment. [] when none. `comments` is [{ body, trusted }].
+export function parseCriteria(body, comments = []) {
+	const region = [body, ...comments.filter((c) => c.trusted).map((c) => c.body)]
+		.map((t) => (t && /^<!-- verify:report -->[ \t]*$/m.test(t) ? t.match(INTENT_RE)?.[1] : null)).find(Boolean);
+	return (region || "").split("\n").map((l) => CRITERION_RE.exec(l.trim())).filter(Boolean)
+		.map(([, status = null, prod, id, kind, target = "", text]) => ({ id, kind, target, text, status, prod: Boolean(prod) }));
+}
+
+// What the rollout watches: an api:/worker:/telemetry: criterion is `watched` when a contract root span
+// names its target (`PUT /x` for `api:PUT /x`), else `not watched`; ui: ones were proven in the browser
+// before the merge and say so; a guardrail is listed as a guardrail.
+export function criteriaLines(criteria, contract) {
+	if (!criteria) return [];
+	if (!criteria.length) return ["criteria: none on the PR (run /aw-verify before the merge)"];
+	const spans = new Set(contract?.root_spans || []);
+	const head = `criteria: ${criteria.filter((c) => c.id.startsWith("AC")).length} on the PR, ${criteria.filter((c) => c.id.startsWith("G-")).length} guardrails`;
+	return [head, ...criteria.map((c) => {
+		const how = c.kind === "guardrail" ? "guardrail" : c.kind === "ui" ? "browser-proven before the merge"
+			: spans.has(c.target) ? "watched" : "not watched";
+		return `  ${c.prod ? "🚀 " : ""}${c.status ? `${c.status} ` : ""}${c.id} ${c.kind}${c.target ? ` ${c.target}` : ""} — ${how}`;
+	})];
+}
+
+// After a PASS: the criteria this rollout watched (a root span names their target) get 🚀 on the PR's
+// `intent` region, through aw-verify's verify-comment.mjs, which changes only that leading mark. Returns the
+// IDs marked, [] when none was watched, or null when aw-verify is not installed or the write failed.
+export function prodMarks(criteria, contract) {
+	const spans = new Set(contract?.root_spans || []);
+	return Object.fromEntries((criteria || []).filter((c) => c.kind !== "guardrail" && c.kind !== "ui" && !c.prod && spans.has(c.target)).map((c) => [c.id, { prod: true }]));
+}
+
+function markProduction(prNumber, marks) {
+	if (!Object.keys(marks).length) return [];
+	const vc = fileURLToPath(new URL("../../aw-verify/scripts/verify-comment.mjs", import.meta.url));
+	if (!existsSync(vc)) return null;
+	const r = spawnSync(process.execPath, [vc, "--pr", String(prNumber), "--section", "intent", "--marks", JSON.stringify(marks)], { encoding: "utf8" });
+	if (r.status !== 0) console.error(`[deployment-verify] criteria not marked: ${(r.stderr || r.stdout).trim().split("\n")[0]}`);
+	return r.status === 0 ? Object.keys(marks) : null;
+}
+
+// A contract to review for a PR that has none: root_spans from its api: criteria, the rest left to fill.
+// Printed for a human or /aw to confirm and write into the PR body before the merge; never written here.
+export function draftContract(criteria) {
+	const root_spans = [...new Set(criteria.filter((c) => c.kind === "api" && /^[A-Z]+ \//.test(c.target)).map((c) => c.target))];
+	return { service: "<service.name>", root_spans: root_spans.length ? root_spans : ["<METHOD /route>"], reversibility: "redeploy" };
 }
 
 export function validateContract(contract, config) {
@@ -430,6 +484,7 @@ export function renderReport(s, contract, pr) {
 		`step   test n/err/ms    control n/err/ms   verdict`,
 		...rows,
 	];
+	lines.push(...criteriaLines(pr?.criteria, contract));
 	if (s.phase === "rollback" || s.recovery) lines.push(`action:   flag off at ${s.rollback_at}${s.recovery ? `; RECOVERED in ${s.recovery.seconds} s` : ""}`);
 	if (s.phase === "done") lines.push(`result:   ${s.reason}`);
 	if (s.outcome === "ROLLED_BACK") lines.push(`next:     /fix-bug ${pr?.url || "<PR URL>"} — failing window ${s.steps.at(-1)?.from}..${s.steps.at(-1)?.to}`);
@@ -445,7 +500,8 @@ function gh(args, input) {
 
 function prStore(number) {
 	const pr = JSON.parse(gh(["pr", "view", String(number), "--json", "number,title,body,url,mergedAt,mergeCommit,state,labels"]));
-	const comments = JSON.parse(gh(["api", `repos/{owner}/{repo}/issues/${number}/comments`, "--paginate", "--jq", "[.[] | {id, body}]"]).replace(/\]\s*\[/g, ","));
+	const comments = JSON.parse(gh(["api", `repos/{owner}/{repo}/issues/${number}/comments`, "--paginate", "--jq", "[.[] | {id, body, trusted: ((.author_association | IN(\"OWNER\", \"MEMBER\", \"COLLABORATOR\")) or .user.type == \"Bot\")}]"]).replace(/\]\s*\[/g, ","));
+	pr.criteria = parseCriteria(pr.body, [...comments].reverse());
 	let comment = comments.find((c) => c.body?.includes(REPORT_MARKER));
 	return {
 		pr,
@@ -547,6 +603,10 @@ async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop
 		next.lease = null;
 		store.write(renderReport(next, contract, store.pr));
 		if (next.phase === "done") {
+			if (next.outcome === "PASS" && store.pr?.number) {
+				const marked = markProduction(store.pr.number, prodMarks(store.pr.criteria, contract));
+				io.log(marked === null ? "criteria not marked 🚀 (aw-verify missing or the write failed)" : `criteria marked 🚀: ${marked.join(", ") || "none watched"}`);
+			}
 			store.finish();
 			io.log(`outcome ${next.outcome}: ${next.reason}`);
 			if (EXCEPTION_OUTCOMES.includes(next.outcome)) {
@@ -691,6 +751,29 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} contract requires cohort only with a flag`);
 	}
+	// Criteria on the PR (aw-verify's `intent` region), the visible-collapsed contract, and the draft contract.
+	{
+		const region = "<details><summary>📋 Acceptance criteria</summary>\n\n- AC-1 [ui:/settings] Saving shows a toast\n- AC-2 [api:PUT /api/x] 400 for an empty name\n- AC-3 [api:GET /api/y] lists views\n- G-1 [guardrail] Keep unchanged: the API shape\n\n</details>";
+		const body = `Intro.\n\n<!-- verify:report -->\n\n<!-- verify:section=intent -->\n${region}\n<!-- /verify:section=intent -->\n\n<!-- /verify:report -->\n`;
+		const got = parseCriteria(body);
+		const lines = criteriaLines(got, { root_spans: ["PUT /api/x"] }).join("\n");
+		const fromComment = parseCriteria("No report here.", [{ body: body.slice(body.indexOf("<!-- verify:report -->")), trusted: true }]);
+		const untrusted = parseCriteria("", [{ body: body.slice(body.indexOf("<!-- verify:report -->")), trusted: false }]);
+		const wrapped = `<!-- deployment-verify:v1 -->\n<details><summary>🚦 Deployment contract</summary>\n\n\`\`\`json\n{"service":"api","root_spans":["GET /x"]}\n\`\`\`\n\n</details>\n<!-- /deployment-verify:v1 -->`;
+		const living = parseCriteria("<!-- verify:report -->\n<!-- verify:section=intent -->\n<details><summary>x</summary>\n\n- ✅ 🚀 AC-1 [api:GET /a] one\n- ❌ AC-2 [api:GET /b] two\n- ⬜ AC-3 [ui:/c] three\n- G-1 [guardrail] g\n\n</details>\n<!-- /verify:section=intent -->");
+		const pm = prodMarks(living, { root_spans: ["GET /a", "GET /b"] });
+		const okLiving = living.length === 4 && living[0].status === "✅" && living[0].prod && living[1].status === "❌" && !living[1].prod && living[2].status === "⬜" && living[3].status === null
+			&& JSON.stringify(pm) === '{"AC-2":{"prod":true}}' && /🚀 ✅ AC-1 api GET \/a/.test(criteriaLines(living, { root_spans: ["GET /a"] }).join("\n"));
+		if (!okLiving) failed++;
+		console.log(`${okLiving ? "ok  " : "FAIL"} status and 🚀 marks parse, show in the report, and only unmarked watched criteria get 🚀`);
+		const ok = got.length === 4 && got[1].kind === "api" && got[1].target === "PUT /api/x" && fromComment.length === 4 && untrusted.length === 0
+			&& /AC-2 api PUT \/api\/x — watched/.test(lines) && /AC-3 api GET \/api\/y — not watched/.test(lines) && /AC-1 ui \/settings — browser-proven/.test(lines) && /G-1 guardrail — guardrail/.test(lines)
+			&& criteriaLines([], {})[0].startsWith("criteria: none") && criteriaLines(null, {}).length === 0
+			&& parseContract(wrapped).contract?.service === "api" && parseContract(wrapped.replace(/<details>.*?<\/summary>\n\n/s, "").replace("\n\n</details>", "")).contract?.service === "api"
+			&& JSON.stringify(draftContract(got).root_spans) === '["PUT /api/x","GET /api/y"]';
+		if (!ok) failed++;
+		console.log(`${ok ? "ok  " : "FAIL"} criteria are read from the PR (body, trusted comment), marked watched or not, and drafted into a contract`);
+	}
 	// No flag, before/after: old versions serve before the deploy, the new version after. Version filter splits them.
 	async function noFlagWorld({ afterErrorRate = 0, afterMs = 5, beforeN = 300 }) {
 		let clock = Date.parse("2026-11-11T10:00:00Z");
@@ -741,7 +824,7 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${err ? err.message : `${s.outcome} — ${s.reason}`}`);
 	}
-	const total = 14;
+	const total = 15;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
@@ -779,6 +862,15 @@ async function main() {
 		if (!configs.has(name)) configs.set(name, loadConfig(name, { slug }));
 		return configs.get(name);
 	};
+	if (a["draft-contract"]) {
+		const pr = JSON.parse(gh(["pr", "view", String(a.pr), "--json", "body,mergedAt"]));
+		const comments = JSON.parse(gh(["api", `repos/{owner}/{repo}/issues/${a.pr}/comments`, "--paginate", "--jq", "[.[] | {body, trusted: ((.author_association | IN(\"OWNER\", \"MEMBER\", \"COLLABORATOR\")) or .user.type == \"Bot\")}]"]).replace(/\]\s*\[/g, ","));
+		const criteria = parseCriteria(pr.body, [...comments].reverse());
+		if (pr.mergedAt) throw new Error("the PR is merged: a contract written now is chosen after the numbers; start a new rollout instead");
+		if (!criteria.length) throw new Error("no criteria on the PR — run /aw-verify first");
+		console.log(JSON.stringify(draftContract(criteria), null, 2));
+		return;
+	}
 	if (a["check-config"]) {
 		console.log(`release.yml ok: environment ${config.env}, ${config.flags?.providers?.length || 0} provider(s), steps ${JSON.stringify(config.steps)}`);
 		return;
