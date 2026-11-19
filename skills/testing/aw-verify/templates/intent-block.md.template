@@ -1,16 +1,24 @@
 <!-- This is the `intent` region `verify-comment.mjs --section intent` writes into the PR's verify report.
-     Copy every line from .agent/{branch}/verify/intent.md verbatim; never reword a criterion.
-     The region opens with a visible, closed <details>. No HTML comment inside it: a reader cannot see one.
-     Line grammar (parsed by parseIntent, no model): `- [<status> ][🚀 ]<AC-n|G-n> [<ui|api|worker|telemetry>:<target>] <text>`
-     and `- G-n [guardrail] <text>`. First publication: every AC starts `⬜` (not run yet). Later runs change only
-     the leading status (✅ ❌ ⏭️) through `--marks`; never reword a line. Delete this comment when writing the file. -->
-<details><summary>📋 Acceptance criteria — {{N_AC}} criteria, {{N_G}} guardrails (source: {{SOURCE}})</summary>
+     It is the only place the criteria appear: a table in a collapsed <details>, above the verdict. The report body
+     never repeats them. Copy every criterion from .agent/{branch}/verify/intent.md verbatim; never reword one.
+     No HTML comment inside the region: a reader cannot see one. Delete this comment when writing the file.
+     Row grammar (parsed by parseIntent, no model):
+       | <status>&nbsp;[🚀&nbsp;]AC‑n | <criterion text> | <kind>[:<target>] · <witnesses> · <links> |
+       | 🛡️&nbsp;G‑n | <guardrail, verbatim from the brief> | guardrail |
+     - The ID uses a non-breaking hyphen (U+2011) so it never wraps; `&nbsp;` joins mark and ID.
+     - First publication: every AC starts ⬜ (not run). Later runs change only the leading mark (✅ ❌ ⏭️, 🚀)
+       through `--marks`, which also refreshes the counts in the summary. Never reword a row.
+     - Proof starts with `<kind>:<target>` for every kind (ui:/settings, api:PUT /api/x, worker:<component>,
+       telemetry:<span>), so the production watch and the draft contract read the target.
+     - Proof links are Dash0 deep links (traces explorer or trace), SHA-pinned test-file links, or screenshots.
+     - Escape a literal | in a cell as \|. -->
+<details><summary>📋 Acceptance criteria — {{N_AC}} criteria · {{N_G}} guardrails</summary>
 
-Source: {{SOURCE}} · Ticket: {{TICKET}} · Verified head: `{{HEAD_SHA7}}`
-
-- ⬜ AC-1 [ui:/settings/notifications] {{criterion, with its (base: …) clause}} (spec: Spec 1)
-- ⬜ AC-2 [api:PUT /api/notification-settings] {{criterion}}
-- ⬜ AC-3 [telemetry:notification.saved] {{criterion}}
-- G-1 [guardrail] {{guardrail, verbatim from the brief}}
+| | Criterion | Proof |
+| :-- | :-- | :-- |
+| ⬜&nbsp;AC‑1 | {{criterion, with its (base: …) clause}} | ui:/settings/notifications · {{witnesses}} · {{links}} |
+| ⬜&nbsp;AC‑2 | {{criterion}} | api:PUT /api/notification-settings · {{witnesses}} · {{links}} |
+| ⬜&nbsp;AC‑3 | {{criterion}} | telemetry:notification.saved · {{witnesses}} · {{links}} |
+| 🛡️&nbsp;G‑1 | {{guardrail, verbatim from the brief}} | guardrail |
 
 </details>

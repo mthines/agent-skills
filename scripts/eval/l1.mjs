@@ -1755,4 +1755,15 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
     `body ${parseCriteria(body).length} vs ${intentFrom(body).length}`);
 }
 
+{
+  const { splice, withBlock, intentFrom } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/aw-verify/scripts/verify-comment.mjs")).href);
+  const { parseCriteria } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/deployment-verify/scripts/tick.mjs")).href);
+  const region = "<details><summary>📋 Acceptance criteria — 3 criteria</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ⬜&nbsp;AC\u20111 | one | ui:/a · w1 |\n| ✅&nbsp;🚀&nbsp;AC\u20112 | two \\| b | api:PUT /b · w2 · [t](https://x) |\n| 🛡️&nbsp;G\u20111 | keep | guardrail |\n\n</details>";
+  const body = withBlock("Intro.", splice("", "intent", region));
+  const key = (l) => JSON.stringify(l);
+  s.check("G132b tick.mjs parseCriteria reads a table-form intent region exactly as verify-comment.mjs intentFrom does (executed)",
+    parseCriteria(body).length === 3 && parseCriteria(body)[1].target === "PUT /b" && parseCriteria(body)[1].prod === true && key(parseCriteria(body)) === key(intentFrom(body)),
+    `tick ${parseCriteria(body).length} vs verify ${intentFrom(body).length}`);
+}
+
 process.exit(s.report() ? 0 : 1);

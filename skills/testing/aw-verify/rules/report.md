@@ -22,8 +22,8 @@ An open `critical`/`high` one still reaches the attention line ([`pr-comment.md 
 
 | Verdict | Condition |
 | --- | --- |
-| `✅ verified` | Every AC passes in the browser on its own changed target, none is `⏭️ not verified on target`, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `medium`, `high`, or `critical`. Open `low` findings, a telemetry witness that could not confirm a path with no `telemetry:` AC, and failures outside the PR do not count ([§ What never caps the verdict](#what-never-caps-the-verdict)) |
-| `⚠️ verified with open items` | Every AC that ran passes; some `medium` findings open (a `criterion-quality` finding is `medium`), any finding escalated, an AC is `⏭️ not verified on target`, or a brief `telemetry:` AC has no confirming receipt after `telemetry-verify` tried every backend it could reach (`telemetry-verify` falls back to its `logs` backend for a `telemetry:` criterion instead of skipping) |
+| `✅ verified` | Every AC passes in the browser on its own changed target, or is covered only by committed unit or component tests and listed under **Worth a look in the preview** ([§ Substitution](#substitution)); none is `⏭️` on any other stand-in, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `medium`, `high`, or `critical`. Open `low` findings, a telemetry witness that could not confirm a path with no `telemetry:` AC, and failures outside the PR do not count ([§ What never caps the verdict](#what-never-caps-the-verdict)) |
+| `⚠️ verified with open items` | Every AC that ran passes; some `medium` findings open (a `criterion-quality` finding is `medium`), any finding escalated, an AC is `⏭️ not verified on target` on a stand-in other than committed tests, or a brief `telemetry:` AC has no confirming receipt after `telemetry-verify` tried every backend it could reach (`telemetry-verify` falls back to its `logs` backend for a `telemetry:` criterion instead of skipping) |
 | `❌ not verified` | An AC fails after the fix loop, a brief `telemetry:` AC `contradicts`, or a `critical`/`high` finding is still open |
 | `⛔ blocked` | A phase could not run (stack, auth, checkout), or no AC was verified on its target; name the phase and the fix |
 
@@ -41,7 +41,8 @@ None of these moves a run off ✅; each is a **Notes** line, never a `Why not �
 | An open `low` finding (copy, spacing, a rough edge, an observation) | Polish, no AC affected | **Notes**, `fine to merge as is` |
 | Telemetry could not confirm a path that emits no signal (client-side), or no `telemetry:` AC exists and the server was unreachable | No promise rests on it | **Telemetry** line `no regression observed (path emits no signal)` or `not reviewed (<reason>)` |
 | A test, check, or CI failure in code the PR did not change (`in_scope: false`) | Not this change | **Notes**, `Outside this PR:` |
-| CI not run yet on a draft | A fact about the PR, not a result | The metadata line |
+| CI state, whether green, red, or not run on a draft | Not this run's result; CI has its own check on the PR | Nowhere: the report never mentions CI |
+| An AC covered only by committed unit or component tests | A reviewer can look at it in the preview | `Worth a look in the preview`; the AC stays `⏭️` |
 
 ```text
 ✗ ⚠️ Verified with open items — one low rough edge open (a generic error toast), telemetry not connected
@@ -62,12 +63,15 @@ Anything else is `⏭️ not verified on target (<what ran instead>)`:
 | What stood in | Example |
 | --- | --- |
 | A sibling surface | The automation edit form was checked; the SLO form was not reachable |
-| Unit tests | `vitest` covers the fill; no browser run reached it |
+| Unit tests | `vitest` covers the fill; no browser run reached it (a **tests-only** criterion; see below) |
 | A scratch branch carrying commits the PR lacks | The fix was verified on `main` plus a merge, not on the PR head |
 | Demo or seeded data for a live source | A fixture bridge log, not a live bridge |
 | A witness with no answer | The receipt's `[receipt] verdict:` is `ambiguous` or `null`, or the line is absent, for a `telemetry:` AC |
 
-Such an AC never shows `✅ pass`; its trace row names the substitute under `witnesses`; the `Why not ✅` bullet names the AC and the surface left uncovered.
+**Tests-only criteria.** An AC proved only by committed unit or component tests, with no stand-in from another row, stays `⏭️` and is listed under **Worth a look in the preview**, but does not cap the verdict: the run says plainly what a reviewer can still look at, and the test link in the criteria table is its proof.
+Every other stand-in caps the run at `⚠️`.
+
+Such an AC never shows `✅ pass`; its Proof cell in the criteria table names the substitute (`tests`, `sibling surface`, …). For a stand-in that caps the run, the `Why not ✅` bullet names the AC and the surface left uncovered; for a tests-only AC, **Worth a look in the preview** names it instead and no `Why not ✅` bullet is written.
 `{{TELEMETRY_VERDICT}}` is copied from the receipt's `[receipt] verdict:` line, never re-derived from the per-AC lines.
 
 ```text
@@ -79,7 +83,7 @@ Such an AC never shows `✅ pass`; its trace row names the substitute under `wit
 
 ## Placeholders
 
-The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-then-collapsed-detail): a green run shows the verdict, one sentence, the metadata line, a media strip (one recording, then up to two screenshots), and closed check rows; everything else sits in one closed **Details** block.
+The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-criteria-verdict-media-then-collapsed-detail): a green run shows the verdict, one sentence, the metadata line, the worth-a-look checklist when it has items, and a media strip (one recording, then up to two screenshots); the criteria sit above it in the `intent` region; everything else sits in one closed **Details** block.
 
 | Placeholder | Content |
 | --- | --- |
@@ -88,24 +92,24 @@ The layout is [`pr-comment.md § Layout`](./pr-comment.md#layout-verdict-checks-
 | `{{SUMMARY}}` | One sentence: what works for the user |
 | `{{ATTENTION}}` | `**Nothing needs your attention.**` under a ✅ with no bullets; otherwise nothing |
 | `{{ATTENTION_PART}}` | Per [`pr-comment.md § Attention line`](./pr-comment.md#attention-line): `#### Why not ✅` under ⚠️, ❌, and ⛔ (`#### Needs you` under a ✅ with bullets), then one `- **<what the user would notice>** (<tag>) → <next step>` bullet per item, a flag left set included, at most five; otherwise nothing |
-| `{{HEAD_SHA7}}` / `{{ENV}}` / `{{CI_STATE}}` / `{{FINDING_COUNT}}` | Seven-character head SHA; `local` or `preview`; `CI green` or the red checks; `<n> findings` |
+| `{{HEAD_SHA7}}` / `{{ENV}}` / `{{FINDING_COUNT}}` | Seven-character head SHA; `local` or `preview`; `<n> findings` (`<n> findings (<k> fixed)` after a fix loop). Never a CI state |
+| `{{WORTH_A_LOOK}}` | When a criterion is `⏭️` and covered only by tests: `#### Worth a look in the preview`, then one `- [ ] **AC-n:** <what to look at and where>` line each; otherwise nothing. A plain checklist, never a table |
 | `{{UPDATED}}` | Left as is: `verify-comment.mjs` stamps the write time |
 | `{{MEDIA_STRIP}}` | Per [`pr-comment.md § Media strip`](./pr-comment.md#media-strip): one visible recording (caption line, then the bare `.mp4` URL), then one visible row of up to two `<img width="420">` thumbnails, failed checks first, headers under 40 characters; the rest in a closed `+<r> more recordings · +<n> more screenshots` block, recordings first, never more than two columns; nothing when the run has no media |
-| `{{CHECK_ROWS}}` | One `<details>` per AC, spec, and probe that broke something, per [`pr-comment.md § Check rows`](./pr-comment.md#check-rows): `<emoji> <b><what I did></b> → <what happened>`; failed rows first and open, the rest closed; one or two sentences ending in `<sub>Proves AC-n</sub>`; no recordings or screenshots |
 | `{{SKIPPED_LINE}}` | `⏭️ *Not checked <where>: <what>; <what covers it instead>.*`, or nothing |
 | `{{APPROACH}}` / `{{IMPACT_MAP}}` | One paragraph on how the run tested the feature; the PR's impact map per [`pr-comment.md § Impact map`](./pr-comment.md#impact-map) |
 | `{{PROBE_RESULT}}` / `{{PROBE_LINES}}` | `<n> probes, nothing broke`, `<n> probes, <k> broke`, or `skipped (<reason>)`; one `- what I tried → what happened` line per probe |
 | `{{FIXES_PART}}` | When a fix was pushed: `**Fixed during the run**` and one `- <sha7> (F-n) <what changed for the user>` line each, the `F-n` matching the `✅ after fix (F-n)` row it fixed; otherwise nothing |
 | `{{TELEMETRY_VERDICT}}` / `{{FLOW_LINES}}` | Never blank: the verdict word or `not reviewed (<reason>)` (a connected MCP server is not a reason). An AC whose path emits no signal gets `no regression observed (path emits no signal)`, not `confirms`; one `- <journey>` line per AC from `telemetry.md`, then the ERROR-span line |
 | `{{NOTES_PART}}` | When there are any: `**Notes**` and one line per not-defect, open `low` finding, `medium` finding already shown above, out-of-scope finding (`Outside this PR:`), `n/a` edge row, lesson written, or flag the run set ([`flags.md § Report`](./flags.md#report)); otherwise nothing |
-| `{{TRACE_ROWS}}` | One row per AC, edge row, and probe: ID, criterion, result (`✅ pass`, `✅ after fix (F-1)`, `❌ fail (F-2)`, `⏭️ skipped (<reason>)`, `⏭️ not verified on target (<what ran instead>)`), witnesses (`browser · telemetry`, `unit tests`). Text only |
+| `{{TRACE_ROWS}}` | One row per edge row and probe, never per AC (the criteria live once, in the `intent` region): ID, what I tried, result (`✅ pass`, `✅ after fix (F-1)`, `❌ fail (F-2)`, `⏭️ skipped (<reason>)`, `⏭️ not verified on target (<what ran instead>)`), witnesses (`browser · telemetry`, `unit tests`). Text only |
 | `{{URL}}` / `{{DRIVER}}` / `{{RECORDINGS_LINE}}` | The URL the run used (`localhost` as text); the browser driver; `recordings: not attached (<reason>)` when the region holds none, else nothing |
 | `{{TICKET_LINK}}` / `{{PR_LINK}}` | `· <ticket link>` from the brief, or nothing; the PR URL |
 
 ## Media
 
 Collect, upload, and embed every screenshot **and recording** per [`pr-comment.md § Media`](./pr-comment.md#media): image paths from `findings.jsonl` `evidence` and `probes.jsonl` `screenshots`, video paths from `probes.jsonl` `recordings` and the adversarial findings' `evidence`.
-Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-comment.md#when-to-post)); otherwise each check row says `not attached (<reason>)` and the terminal lists every file's absolute path.
+Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-comment.md#when-to-post)); otherwise **Details** says `not attached (<reason>)` and the terminal lists every file's absolute path.
 
 ## Destinations
 
