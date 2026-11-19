@@ -247,7 +247,7 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   if (section === "intent") {
     if (/<!--/.test(content)) throw new Error("refused: the intent region holds an HTML comment, which a reader cannot see");
     if (!/^\s*<details>\s*<summary>/.test(content)) throw new Error("refused: the intent region must open with a visible, collapsed <details><summary>");
-    if (parseIntent(content).length === 0) throw new Error("refused: the intent region holds no `- AC-n [surface:target] text` line");
+    if (parseIntent(content).length === 0) throw new Error("refused: the intent region holds no criterion row (`| ⬜&nbsp;AC‑n | text | kind:target · … |`) or line (`- AC-n [surface:target] text`)");
   }
   const date = now.toISOString().slice(0, 16).replace("T", " ") + " UTC";
   let fresh = normalize(content.replaceAll("{{UPDATED}}", date)).trim();

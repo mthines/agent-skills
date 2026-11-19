@@ -71,7 +71,7 @@ Anything else is `⏭️ not verified on target (<what ran instead>)`:
 **Tests-only criteria.** An AC proved only by committed unit or component tests, with no stand-in from another row, stays `⏭️` and is listed under **Worth a look in the preview**, but does not cap the verdict: the run says plainly what a reviewer can still look at, and the test link in the criteria table is its proof.
 Every other stand-in caps the run at `⚠️`.
 
-Such an AC never shows `✅ pass`; its Details row names the substitute under `witnesses`. For a stand-in that caps the run, the `Why not ✅` bullet names the AC and the surface left uncovered; for a tests-only AC, **Worth a look in the preview** names it instead and no `Why not ✅` bullet is written.
+Such an AC never shows `✅ pass`; its Proof cell in the criteria table names the substitute (`tests`, `sibling surface`, …). For a stand-in that caps the run, the `Why not ✅` bullet names the AC and the surface left uncovered; for a tests-only AC, **Worth a look in the preview** names it instead and no `Why not ✅` bullet is written.
 `{{TELEMETRY_VERDICT}}` is copied from the receipt's `[receipt] verdict:` line, never re-derived from the per-AC lines.
 
 ```text

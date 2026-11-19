@@ -178,7 +178,7 @@ Each criterion row carries a leading status that says where it stands, so a revi
 
 After the report renders (and after each fix-loop re-verify), fill each row's Proof cell and set the statuses, in two steps.
 
-**Proof.** Re-publish the region with every Proof cell completed: `<kind> · <witnesses> · <link>`, where the witnesses are `browser`, `telemetry`, or `tests`, and the link is the strongest proof the run has: a Dash0 deep link to the trace or traces explorer, else a SHA-pinned link to the committed test file, else a screenshot. Reword nothing else. A merged PR freezes the rows, so fill Proof before the merge.
+**Proof.** Re-publish the region with every Proof cell completed: `<kind>:<target> · <witnesses> · <link>` (keep the target exactly as published; a Proof cell without it makes `deployment-verify` read the criterion as unwatched), where the witnesses are `browser`, `telemetry`, or `tests`, and the link is the strongest proof the run has: a Dash0 deep link to the trace or traces explorer, else a SHA-pinned link to the committed test file, else a screenshot. Reword nothing else. A merged PR freezes the rows, so fill Proof before the merge.
 
 **Status.** Write the marks from the final results, one call for all criteria:
 

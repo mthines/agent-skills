@@ -40,7 +40,7 @@ Everything a skill writes into the PR description is readable by a reviewer and 
 
 ```text
 ✗ <!-- verify:section=intent -->\n<!-- AC-1 [ui:/x] … -->            (a reader sees nothing)
-✓ <details><summary>📋 Acceptance criteria — 3 criteria · 1 guardrail</summary>\n\n| | Criterion | Proof |\n| ⬜&nbsp;AC‑1 | … | ui · … |\n\n</details>
+✓ <details><summary>📋 Acceptance criteria — 3 criteria · 1 guardrail</summary>\n\n| | Criterion | Proof |\n| ⬜&nbsp;AC‑1 | … | ui:/x · … |\n\n</details>
 ```
 
 ## Contents
@@ -125,8 +125,8 @@ Everything else is one click away.
 
 | | Criterion | Proof |
 | :-- | :-- | :-- |
-| ✅&nbsp;AC‑1 | An attached image renders inline where Agent0 places it | ui · w1 · [trace](https://app.dash0.com/…) |
-| ⏭️&nbsp;AC‑14 | The card shows the artifact it read | ui · [test](https://github.com/…/card.test.tsx#L40) |
+| ✅&nbsp;AC‑1 | An attached image renders inline where Agent0 places it | ui:/chat · w1 · [trace](https://app.dash0.com/…) |
+| ⏭️&nbsp;AC‑14 | The card shows the artifact it read | ui:/chat · [test](https://github.com/…/card.test.tsx#L40) |
 | 🛡️&nbsp;G‑1 | No other file changes | guardrail |
 
 </details>
