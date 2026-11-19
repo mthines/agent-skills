@@ -128,7 +128,7 @@ export const STATUSES = ["⬜", "✅", "❌", "⏭️"];
 const PROD = "🚀";
 const CRITERION = /^- (?:(⬜|✅|❌|⏭️) )?(?:(🚀) )?((?:AC|G)-\d+) \[([a-z]+)(?::([^\]]*))?\] (.+)$/;
 const SP = "(?:&nbsp;| )";
-const ROW = new RegExp(`^\\|\\s*(?:(⬜|✅|❌|⏭️)${SP})?(?:(🚀)${SP})?(?:🛡️${SP})?((?:AC|G)[-\u2011]\\d+)\\s*\\|\\s*((?:\\\\\\||[^|])+?)\\s*\\|\\s*((?:\\\\\\||[^|])*?)\\s*\\|$`);
+const ROW = new RegExp(`^\\|\\s*(?:(⬜|✅|❌|⏭️)${SP})?(?:(🚀)${SP})?(?:🛡️${SP})?((?:AC|G)[-\u2011]\\d+)\\s*\\|\\s*((?:\\\\\\||\\\\(?!\\|)|[^|\\\\])+?)\\s*\\|\\s*((?:\\\\\\||\\\\(?!\\|)|[^|\\\\])*?)\\s*\\|$`);
 const ROW_MARKS = new RegExp(`^(\\|\\s*)(?:(?:⬜|✅|❌|⏭️)${SP})?(?:🚀${SP})?(🛡️${SP})?`);
 const unescapeCell = (c) => c.replace(/\\\|/g, "|");
 
@@ -243,7 +243,7 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   const bad = localPathLine(content);
   if (bad) throw new Error(`refused: the region holds a local path a reviewer cannot open: ${bad.trim()}`);
   const hidden = section === "aggregate" ? hiddenMediaLine(content) : null;
-  if (hidden) throw new Error(`refused: a screenshot or recording sits where a reviewer must click to see it: ${hidden}. Put recordings and screenshots in the media strip under the verdict (one recording, two thumbnails, the rest in one "+N more" fold) and have the check rows only name them`);
+  if (hidden) throw new Error(`refused: a screenshot or recording sits where a reviewer must click to see it: ${hidden}. Put recordings and screenshots in the media strip under the verdict (one recording, two thumbnails, the rest in one "+N more" fold) and have Details only name them`);
   if (section === "intent") {
     if (/<!--/.test(content)) throw new Error("refused: the intent region holds an HTML comment, which a reader cannot see");
     if (!/^\s*<details>\s*<summary>/.test(content)) throw new Error("refused: the intent region must open with a visible, collapsed <details><summary>");

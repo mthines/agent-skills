@@ -48,7 +48,7 @@ Everything a skill writes into the PR description is readable by a reviewer and 
 - [Where the report lives](#where-the-report-lives)
 - [Regions and owners](#regions-and-owners)
 - [When to post](#when-to-post)
-- [Layout: verdict, checks, then collapsed detail](#layout-criteria-verdict-media-then-collapsed-detail)
+- [Layout: criteria, verdict, media, then collapsed detail](#layout-criteria-verdict-media-then-collapsed-detail)
 - [Media](#media)
 - [Write the region](#write-the-region)
 - [Report line](#report-line)
@@ -283,7 +283,7 @@ One closed `<details><summary>Details</summary>` holds the rest, each part a `**
 | **Fixed during the run** | One line per pushed fix: short SHA, the finding ID it fixed (`F-n`), what changed for the user |
 | **Telemetry** · `<verdict>` | One line per journey, e.g. `Save: POST /api/views 201 → views-service PUT (21 ms) → postgres INSERT (4 ms)`; or `not reviewed (<reason>)` |
 | **Notes** | Not-defects, `medium`/`low` and out-of-scope findings (`Outside this PR:`), one line each |
-| **Run details** | The traceability table `ID \| Criterion \| Result \| Witness` (text only); the region's status lines (`ui-verify`: its `rules/runner.md` § Step 5a); URL, driver, `recordings: not attached (<reason>)` when the region holds none, and the re-run command |
+| **Edge cases and probes** | The table `ID \| What I tried \| Result \| Witness` for edge rows and probes, never per AC (text only); the region's status lines (`ui-verify`: its `rules/runner.md` § Step 5a); URL, driver, `recordings: not attached (<reason>)` when the region holds none, and the re-run command |
 
 ### Impact map
 
@@ -307,7 +307,7 @@ None → the line `No impact map on this PR (/impact-map <pr> --body draws one).
    `attach-media` opens every image before upload and skips one that shows a secret or personal data; it re-encodes a video over 10 MB and skips what still does not fit.
 4. **Embed** each returned URL once, in the strip (§ Media strip); a recording that covers several checks is captioned with the first, and the others name it.
 5. A file `attach-media` skipped or could not upload → **Details** says `<screenshot | recording> not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
-6. **Recordings are never silently missing.** When the region holds no recording, **Run details** says why: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
+6. **Recordings are never silently missing.** When the region holds no recording, **Details** says why: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
 
 ## Write the region
 

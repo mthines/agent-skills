@@ -23,7 +23,7 @@ An open `critical`/`high` one still reaches the attention line ([`pr-comment.md 
 | Verdict | Condition |
 | --- | --- |
 | `✅ verified` | Every AC passes in the browser on its own changed target, or is covered only by committed unit or component tests and listed under **Worth a look in the preview** ([§ Substitution](#substitution)); none is `⏭️` on any other stand-in, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `medium`, `high`, or `critical`. Open `low` findings, a telemetry witness that could not confirm a path with no `telemetry:` AC, and failures outside the PR do not count ([§ What never caps the verdict](#what-never-caps-the-verdict)) |
-| `⚠️ verified with open items` | Every AC that ran passes; some `medium` findings open (a `criterion-quality` finding is `medium`), any finding escalated, an AC is `⏭️ not verified on target`, or a brief `telemetry:` AC has no confirming receipt after `telemetry-verify` tried every backend it could reach (`telemetry-verify` falls back to its `logs` backend for a `telemetry:` criterion instead of skipping) |
+| `⚠️ verified with open items` | Every AC that ran passes; some `medium` findings open (a `criterion-quality` finding is `medium`), any finding escalated, an AC is `⏭️ not verified on target` on a stand-in other than committed tests, or a brief `telemetry:` AC has no confirming receipt after `telemetry-verify` tried every backend it could reach (`telemetry-verify` falls back to its `logs` backend for a `telemetry:` criterion instead of skipping) |
 | `❌ not verified` | An AC fails after the fix loop, a brief `telemetry:` AC `contradicts`, or a `critical`/`high` finding is still open |
 | `⛔ blocked` | A phase could not run (stack, auth, checkout), or no AC was verified on its target; name the phase and the fix |
 
@@ -71,7 +71,7 @@ Anything else is `⏭️ not verified on target (<what ran instead>)`:
 **Tests-only criteria.** An AC proved only by committed unit or component tests, with no stand-in from another row, stays `⏭️` and is listed under **Worth a look in the preview**, but does not cap the verdict: the run says plainly what a reviewer can still look at, and the test link in the criteria table is its proof.
 Every other stand-in caps the run at `⚠️`.
 
-Such an AC never shows `✅ pass`; its trace row names the substitute under `witnesses`; the `Why not ✅` bullet names the AC and the surface left uncovered.
+Such an AC never shows `✅ pass`; its Details row names the substitute under `witnesses`. For a stand-in that caps the run, the `Why not ✅` bullet names the AC and the surface left uncovered; for a tests-only AC, **Worth a look in the preview** names it instead and no `Why not ✅` bullet is written.
 `{{TELEMETRY_VERDICT}}` is copied from the receipt's `[receipt] verdict:` line, never re-derived from the per-AC lines.
 
 ```text

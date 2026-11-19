@@ -32,6 +32,8 @@ const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summ
 // L1 G132 keeps this reader and that writer's parseIntent in step).
 const INTENT_RE = /<!-- verify:section=intent -->([\s\S]*?)<!-- \/verify:section=intent -->/;
 const CRITERION_RE = /^- (?:(⬜|✅|❌|⏭️) )?(?:(🚀) )?((?:AC|G)-\d+) \[([a-z]+)(?::([^\]]*))?\] (.+)$/;
+// The table form of the same region: `| ✅&nbsp;AC‑1 | text | api:PUT /x · w1 · [link] |` (ID with a non-breaking hyphen).
+const ROW_RE = /^\|\s*(?:(⬜|✅|❌|⏭️)(?:&nbsp;| ))?(?:(🚀)(?:&nbsp;| ))?(?:🛡️(?:&nbsp;| ))?((?:AC|G)[-\u2011]\d+)\s*\|\s*((?:\\\||\\(?!\|)|[^|\\])+?)\s*\|\s*((?:\\\||\\(?!\|)|[^|\\])*?)\s*\|$/;
 const EXCEPTION_OUTCOMES = ["ROLLED_BACK", "ESCALATE", "INCONCLUSIVE"];
 const LABEL = "deployment-verify";
 const LEASE_MS = 15 * 60 * 1000;
@@ -77,11 +79,23 @@ export function parseContract(body) {
 
 // The acceptance criteria aw-verify left on the PR: from the description's report, else from the newest
 // trusted verify comment. [] when none. `comments` is [{ body, trusted }].
+function criterionOf(line) {
+	const l = line.trim();
+	const c = CRITERION_RE.exec(l);
+	if (c) return { id: c[3], kind: c[4], target: c[5] || "", text: c[6], status: c[1] || null, prod: Boolean(c[2]) };
+	const r = ROW_RE.exec(l);
+	if (!r) return null;
+	const id = r[3].replace("\u2011", "-");
+	const k = /^([a-z]+)(?::(.*))?$/.exec(r[5].replace(/\\\|/g, "|").split(" · ")[0].trim());
+	const kind = id.startsWith("G-") ? "guardrail" : k ? k[1] : null;
+	if (!kind) return null;
+	return { id, kind, target: kind === "guardrail" || !k ? "" : (k[2] || "").trim(), text: r[4].replace(/\\\|/g, "|"), status: r[1] || null, prod: Boolean(r[2]) };
+}
+
 export function parseCriteria(body, comments = []) {
 	const region = [body, ...comments.filter((c) => c.trusted).map((c) => c.body)]
 		.map((t) => (t && /^<!-- verify:report -->[ \t]*$/m.test(t) ? t.match(INTENT_RE)?.[1] : null)).find(Boolean);
-	return (region || "").split("\n").map((l) => CRITERION_RE.exec(l.trim())).filter(Boolean)
-		.map(([, status = null, prod, id, kind, target = "", text]) => ({ id, kind, target, text, status, prod: Boolean(prod) }));
+	return (region || "").split("\n").map(criterionOf).filter(Boolean);
 }
 
 // What the rollout watches: an api:/worker:/telemetry: criterion is `watched` when a contract root span

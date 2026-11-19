@@ -8,15 +8,15 @@
      - The ID uses a non-breaking hyphen (U+2011) so it never wraps; `&nbsp;` joins mark and ID.
      - First publication: every AC starts ⬜ (not run). Later runs change only the leading mark (✅ ❌ ⏭️, 🚀)
        through `--marks`, which also refreshes the counts in the summary. Never reword a row.
-     - Proof starts with the kind: ui, api, worker or telemetry. Write `api:PUT /api/x` (kind:target) for an
-       api or worker criterion so the production watch can read its target.
+     - Proof starts with `<kind>:<target>` for every kind (ui:/settings, api:PUT /api/x, worker:<component>,
+       telemetry:<span>), so the production watch and the draft contract read the target.
      - Proof links are Dash0 deep links (traces explorer or trace), SHA-pinned test-file links, or screenshots.
      - Escape a literal | in a cell as \|. -->
 <details><summary>📋 Acceptance criteria — {{N_AC}} criteria · {{N_G}} guardrails</summary>
 
 | | Criterion | Proof |
 | :-- | :-- | :-- |
-| ⬜&nbsp;AC‑1 | {{criterion, with its (base: …) clause}} | ui · {{witnesses}} · {{links}} |
+| ⬜&nbsp;AC‑1 | {{criterion, with its (base: …) clause}} | ui:/settings/notifications · {{witnesses}} · {{links}} |
 | ⬜&nbsp;AC‑2 | {{criterion}} | api:PUT /api/notification-settings · {{witnesses}} · {{links}} |
 | ⬜&nbsp;AC‑3 | {{criterion}} | telemetry:notification.saved · {{witnesses}} · {{links}} |
 | 🛡️&nbsp;G‑1 | {{guardrail, verbatim from the brief}} | guardrail |
