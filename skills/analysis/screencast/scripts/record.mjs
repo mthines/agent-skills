@@ -19,6 +19,16 @@
 //   }
 // Steps: { click | hover: <selector> }, { type: <selector>, text }, { press: <key> },
 //        { scroll: <selector> } (wheels until it sits 30% down), { scroll: { by: <px> } }, { wait: <ms> }.
+//        { highlight: <selector>, label, kicker, side: right|left|top|bottom, gap: 90, grow: "text", spot: true }
+//          dims the page around the target, outlines it, and points a callout at it; the next highlight
+//          glides there instead of jumping. "grow" widens the target to its nearest ancestor containing
+//          that text. "spot": false keeps the outline without dimming. Wait ~800 ms after a click first.
+//        { unhighlight: true }                  fade the highlight out, before a click that moves the layout
+//        { waitFor: <selector>, timeout: 30000 } wait until it is visible (a build, an answer streaming in)
+//        { ensure: <selector>, orClick: <selector> }  click orClick only when ensure is not visible yet
+// A scene with "fastForward": 6 is squeezed into 6 seconds of video with a "Sped up" badge ("fastLabel"
+// changes the text), for a wait that animates (so it is not cut as dead time). It cannot carry a "say"
+// line with --narrate (exit 2); later scenes and their voice move up by the time saved.
 // Selectors are Playwright selector strings (role=…, text=…, css).
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
@@ -80,6 +90,24 @@ async function step(page, s) {
     if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 15 });
     return s.click ? loc.click() : loc.hover();
   }
+  if (s.highlight) {
+    const { highlight, ...opts } = s;
+    const loc = page.locator(highlight).first();
+    await loc.scrollIntoViewIfNeeded().catch(() => {});
+    const grown = await loc.evaluate((el, o) => window.__rec?.highlight(el, o), opts);
+    if (grown === false) console.error(`highlight: no ancestor contains grow text "${s.grow}"; framing the target itself.`);
+    return page.waitForTimeout(s.settle ?? 900);
+  }
+  if (s.unhighlight) {
+    await page.evaluate(() => window.__rec?.unhighlight());
+    return page.waitForTimeout(s.settle ?? 450);
+  }
+  if (s.waitFor) return page.locator(s.waitFor).first().waitFor({ state: 'visible', timeout: s.timeout ?? 30000 });
+  if (s.ensure) {
+    if (await page.locator(s.ensure).first().isVisible()) return;
+    await step(page, { click: s.orClick });
+    return page.waitForTimeout(800);
+  }
   if (s.type) return page.locator(s.type).first().pressSequentially(s.text ?? '', { delay: 40 });
   if (s.press) return page.keyboard.press(s.press);
   if (s.scroll) return scroll(page, s.scroll);
@@ -88,6 +116,12 @@ async function step(page, s) {
 }
 
 export async function record(spec, { narrate = false } = {}) {
+  // Sped-up speech is useless: fail before a take is spent, not after.
+  const voicedFast = narrate ? (spec.scenes ?? []).filter((scene) => scene.fastForward && scene.say?.trim()) : [];
+  if (voicedFast.length) {
+    console.error(`screencast: a fast-forwarded scene cannot have a "say" line: ${voicedFast.map((s) => `"${s.caption ?? ''}"`).join(', ')}. Speak over the scene before it.`);
+    process.exit(2);
+  }
   const { chromium } = loadPlaywright();
   const viewport = spec.viewport ?? { width: 1280, height: 720 };
   const outDir = path.resolve(spec.out ?? branchDir());
@@ -113,13 +147,15 @@ export async function record(spec, { narrate = false } = {}) {
     await page.goto(spec.url, { waitUntil: 'load' });
     for (const scene of spec.scenes ?? []) {
       await page.evaluate((label) => window.__rec?.step(label), scene.caption ?? '');
-      const entry = { label: scene.caption ?? '', start: now(), result: 'ok', ...(scene.say ? { say: scene.say } : {}) };
+      const entry = { label: scene.caption ?? '', start: now(), result: 'ok', ...(scene.say ? { say: scene.say } : {}), ...(scene.fastForward ? { fastForward: scene.fastForward } : {}) };
+      if (scene.fastForward) await page.evaluate((text) => window.__rec?.badge(text), scene.fastLabel ?? 'Sped up');
       try {
         for (const s of scene.steps ?? []) await step(page, s);
       } catch (e) {
         entry.result = `error: ${String(e.message ?? e).split('\n')[0].slice(0, 200)}`;
       }
       await page.waitForTimeout(scene.hold ?? 1200);
+      if (scene.fastForward) await page.evaluate(() => window.__rec?.badge('')).catch(() => {});
       entry.end = now();
       steps.push(entry);
       if (entry.result !== 'ok') break;
@@ -165,12 +201,14 @@ async function selfTest() {
     scenes: [
       { caption: 'Type a name', steps: [{ type: '#i', text: 'Ada' }], hold: 300 },
       { caption: 'Save it', steps: [{ click: 'text=Save' }], hold: 300 },
+      { caption: 'Point at the result', steps: [{ highlight: '#b', label: 'Saved', side: 'bottom' }, { unhighlight: true }, { waitFor: '#b' }, { ensure: '#b', orClick: '#i' }], hold: 300 },
+      { caption: 'Wait it out', fastForward: 1, steps: [{ wait: 1500 }], hold: 300 },
     ],
   });
   const t = JSON.parse(fs.readFileSync(path.join(dir, 'smoke.timings.json'), 'utf8'));
   const failures = [];
   for (const f of ['smoke.mp4', 'smoke.timings.json', 'smoke.sheet.png']) if (!fs.existsSync(path.join(dir, f))) failures.push(`${f} missing`);
-  if (t.steps.length !== 2) failures.push(`expected 2 steps, got ${t.steps.length}`);
+  if (t.steps.length !== 4) failures.push(`expected 4 steps, got ${t.steps.length}`);
   if (t.steps.some((s) => s.result !== 'ok')) failures.push(`a step failed: ${JSON.stringify(t.steps)}`);
   if (failures.length) {
     console.error(`self-test FAIL: ${failures.join('; ')}`);
