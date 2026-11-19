@@ -50,7 +50,7 @@ Use `general` as the sub-agent type on OpenCode and Dash0 Agent0.
 ## Step 0 — Resolve config and skip honestly
 
 Resolve `.agents/aw/telemetry.yml` and `environments.yml` plus the personal overlay (`~/.agents/aw/config.yml` → `repos.<owner>/<name>`), as the `aw-verify` skill's `rules/config.md` defines.
-Take the first row that applies; each prints its line and returns `verdict: null`:
+Take the first row that applies; each prints its line and returns `verdict: null`, except the row that falls back to the `logs` backend:
 
 | Condition | `pipe:` line |
 | --- | --- |

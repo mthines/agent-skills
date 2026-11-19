@@ -205,8 +205,14 @@ export function splice(existing, section, content, { replaceAll = false, now = n
     if (parseIntent(content).length === 0) throw new Error("refused: the intent region holds no `- AC-n [surface:target] text` line");
   }
   const date = now.toISOString().slice(0, 16).replace("T", " ") + " UTC";
-  const fresh = normalize(content.replaceAll("{{UPDATED}}", date)).trim();
+  let fresh = normalize(content.replaceAll("{{UPDATED}}", date)).trim();
   const old = parseRegions(existing);
+  // A republished intent region (aw-verify's Step 6 writes the template's ⬜ lines every run) keeps the 🚀
+  // deployment-verify put on a criterion: production confirmation outlives a re-publish of the text.
+  if (section === "intent" && !marks && old.has("intent")) {
+    const kept = Object.fromEntries(parseIntent(old.get("intent")).filter((c) => c.prod && parseIntent(fresh).some((n) => n.id === c.id && !n.prod)).map((c) => [c.id, { prod: true }]));
+    if (Object.keys(kept).length) fresh = applyMarks(fresh, kept);
+  }
   if (section === "intent" && merged && old.has("intent") && stripMarks(old.get("intent")) !== stripMarks(fresh)) throw new Error("refused: the PR is merged, so its criteria text is frozen (statuses and 🚀 may still change)");
   const regions = new Map(replaceAll ? [...old].filter(([s]) => s === "intent") : old);
   regions.set(section, fresh);
@@ -609,6 +615,8 @@ function selfTest() {
   assert(noRegion, "marks with no intent region are refused");
   const withStatus = splice("", "intent", crit().replace("- AC-1", "- ⬜ AC-1"), { now: t });
   assert(intentFrom(withStatus)[0].status === "⬜" && intentFrom(withStatus)[1].status === null, "a freshly published line may start as ⬜ and parse");
+  const prodKept = splice(splice(marked, "intent", crit(), { now: t, merged: true }), "aggregate", "## ✅ ok `aaaaaaa`", { now: t });
+  assert(intentFrom(prodKept)[1].prod && !intentFrom(prodKept)[0].prod, "republishing the intent region keeps the 🚀 a deploy put on a criterion");
   console.log(`verify-comment self-test: ${n} assertions passed`);
 }
 
