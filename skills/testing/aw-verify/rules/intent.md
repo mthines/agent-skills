@@ -153,20 +153,20 @@ Each `**Expected:**` item is the row's graceful outcome, stated as something obs
 Whenever a PR resolves, every run, every surface, a UI diff or not: publish the criteria so `deployment-verify`, `telemetry-verify`, and a later session read the same list after `.agent/{branch}/` is gone.
 This is not optional and does not depend on the push policy: it is the `intent` region of the PR's verify report, written by the same script and under the same trust rules as the report ([`pr-comment.md § Where the report lives`](./pr-comment.md#where-the-report-lives)); on anyone else's PR where posting needs a yes, ask once for both.
 
-1. Render [`templates/intent-block.md.template`](../templates/intent-block.md.template) from `intent.md`: every `AC-n` line verbatim with its surface tag, then each guardrail from the brief as `G-n [guardrail]`. Write it to `.agent/{branch}/verify/comment-intent.md`.
+1. Render [`templates/intent-block.md.template`](../templates/intent-block.md.template) from `intent.md`: a collapsed `<details>` holding one table row per criterion, `| ⬜&nbsp;AC‑n | <criterion verbatim> | <kind> |` (the ID with a non-breaking hyphen, `api:<target>` for an api or worker criterion), then each guardrail from the brief as `| 🛡️&nbsp;G‑n | <text> | guardrail |`. Write it to `.agent/{branch}/verify/comment-intent.md`.
 2. `node "$VC" --pr <pr-url> --section intent --file .agent/{branch}/verify/comment-intent.md`
 3. Exit `1` with `the PR is merged, so its criteria are frozen` → keep the PR's criteria, note `criteria: frozen (merged)`, and compare yours against them in `intent.md` as a `spec-drift` finding when they differ.
 4. A criterion added by this run (sources 2 and 3, or a `criterion-quality` rewrite of a derived one) is published as written; an `/aw` brief's criteria are published verbatim, their `criterion-quality` findings staying in `findings.jsonl`.
 
 ```text
-✗ AC list only in the report's collapsed trace table, as `AC-2 | Saving … | ✅ pass | browser`
+✗ the criteria listed again in the report's body, or only in a trace table, as `AC-2 | Saving … | ✅ pass | browser`
 ✓ node "$VC" --pr <pr-url> --section intent --file .agent/<branch>/verify/comment-intent.md
   # own PR → a region of the description, next to the ui-verify spec; the ui spec keeps its own marker pair
 ```
 
 ### The criteria are a living checklist
 
-Each `AC-n` line carries a leading status that says where it stands, so a reviewer reads the PR top-down without opening the report:
+Each criterion row carries a leading status that says where it stands, so a reviewer reads the PR top-down without opening the report:
 
 | Mark | Meaning | Set by |
 | --- | --- | --- |
@@ -176,13 +176,18 @@ Each `AC-n` line carries a leading status that says where it stands, so a review
 | `⏭️` | `not verified on target` | `aw-verify`, end of every run |
 | `🚀` | Confirmed on production traffic | `deployment-verify` after a `PASS`, only for criteria a contract root span watches |
 
-After the report renders (and after each fix-loop re-verify), write the statuses from the trace rows, one call for all criteria:
+After the report renders (and after each fix-loop re-verify), fill each row's Proof cell and set the statuses, in two steps.
+
+**Proof.** Re-publish the region with every Proof cell completed: `<kind> · <witnesses> · <link>`, where the witnesses are `browser`, `telemetry`, or `tests`, and the link is the strongest proof the run has: a Dash0 deep link to the trace or traces explorer, else a SHA-pinned link to the committed test file, else a screenshot. Reword nothing else. A merged PR freezes the rows, so fill Proof before the merge.
+
+**Status.** Write the marks from the final results, one call for all criteria:
 
 ```bash
 node "$VC" --pr <pr-url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-2":{"status":"❌"},"AC-3":{"status":"⏭️"}}'
 ```
 
-`--marks` changes only the leading marks of existing lines, never their text; an unknown ID or status exits `1`.
+`--marks` changes only the leading marks of existing rows, never their text, and refreshes the counts in the summary (`18 criteria · 15 ✅ · 3 ⏭️ · 3 guardrails`); an unknown ID or status exits `1`.
+The older line form (`- ⬜ AC-1 [ui:/x] text`) is still read and marked, so a PR written by an earlier version keeps working.
 A merged PR freezes the criteria text and still takes marks.
 
 ```text

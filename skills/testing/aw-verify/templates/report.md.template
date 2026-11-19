@@ -4,13 +4,11 @@
 
 {{ATTENTION_PART}}
 
-<sub>`{{HEAD_SHA7}}` · {{ENV}} · {{CI_STATE}} · {{FINDING_COUNT}} · updated {{UPDATED}}</sub>
+<sub>`{{HEAD_SHA7}}` · {{ENV}} · {{FINDING_COUNT}} · updated {{UPDATED}}</sub>
 
-#### What I checked
+{{WORTH_A_LOOK}}
 
 {{MEDIA_STRIP}}
-
-{{CHECK_ROWS}}
 
 {{SKIPPED_LINE}}
 
@@ -30,9 +28,9 @@
 
 {{NOTES_PART}}
 
-**Run details**
+**Edge cases and probes**
 
-| ID | Criterion | Result | Witness |
+| ID | What I tried | Result | Witness |
 | --- | --- | --- | --- |
 {{TRACE_ROWS}}
 

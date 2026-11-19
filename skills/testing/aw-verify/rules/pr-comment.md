@@ -40,7 +40,7 @@ Everything a skill writes into the PR description is readable by a reviewer and 
 
 ```text
 ✗ <!-- verify:section=intent -->\n<!-- AC-1 [ui:/x] … -->            (a reader sees nothing)
-✓ <details><summary>📋 Acceptance criteria — 3 criteria, 1 guardrail</summary>\n\n- AC-1 [ui:/x] …\n\n</details>
+✓ <details><summary>📋 Acceptance criteria — 3 criteria · 1 guardrail</summary>\n\n| | Criterion | Proof |\n| ⬜&nbsp;AC‑1 | … | ui · … |\n\n</details>
 ```
 
 ## Contents
@@ -48,7 +48,7 @@ Everything a skill writes into the PR description is readable by a reviewer and 
 - [Where the report lives](#where-the-report-lives)
 - [Regions and owners](#regions-and-owners)
 - [When to post](#when-to-post)
-- [Layout: verdict, checks, then collapsed detail](#layout-verdict-checks-then-collapsed-detail)
+- [Layout: verdict, checks, then collapsed detail](#layout-criteria-verdict-media-then-collapsed-detail)
 - [Media](#media)
 - [Write the region](#write-the-region)
 - [Report line](#report-line)
@@ -114,36 +114,40 @@ When a hand-written comment already exists, post the real one first, then delete
 ✓ Skill("ui-verify", "run .agent/<branch>/specs.md --env local --url <url> --no-telemetry --no-comment")
 ```
 
-## Layout: verdict, checks, then collapsed detail
+## Layout: criteria, verdict, media, then collapsed detail
 
-A reviewer reads top-down and stops once they trust the result, so a green run shows five things and nothing else: the verdict, one sentence, the metadata line, a media strip (one recording, then up to two screenshot thumbnails), and one closed row per check.
+A reviewer reads top-down and stops once they trust the result, so a green run shows four things and nothing else: the verdict with one sentence and the metadata line, what is worth a look in the preview, and a media strip (one recording, then up to two screenshot thumbnails).
+The acceptance criteria sit once, above the verdict, in the collapsed `intent` region ([`intent.md § Step 6`](./intent.md#step-6--publish-the-criteria-on-the-pr)); the report never repeats them.
 Everything else is one click away.
 
 ```markdown
+<details><summary>📋 Acceptance criteria — 18 criteria · 15 ✅ · 3 ⏭️ · 3 guardrails</summary>
+
+| | Criterion | Proof |
+| :-- | :-- | :-- |
+| ✅&nbsp;AC‑1 | An attached image renders inline where Agent0 places it | ui · w1 · [trace](https://app.dash0.com/…) |
+| ⏭️&nbsp;AC‑14 | The card shows the artifact it read | ui · [test](https://github.com/…/card.test.tsx#L40) |
+| 🛡️&nbsp;G‑1 | No other file changes | guardrail |
+
+</details>
+
 ## ✅ Verified — images render where Agent0 places them
 
 Agent0 shows an attached image inline wherever its answer places it. **Nothing needs your attention.**
 
-<sub>`076fafc` · preview · CI green · 0 findings · updated {{UPDATED}}</sub>
+<sub>`076fafc` · preview · 0 findings · updated {{UPDATED}}</sub>
 
-#### What I checked
+#### Worth a look in the preview
+
+- [ ] **AC-14:** the card shows the artifact it read (covered by tests only)
+
+▶️ ✅ <b>Place an image in the answer</b> → it renders inline
+
+https://github.com/user-attachments/assets/…
 
 | ✅ Placed → inline | ✅ Made-up id → not shown |
 | :---: | :---: |
 | <img src="https://github.com/user-attachments/assets/…" width="420" alt="The chart renders inline in the answer"> | <img src="https://github.com/user-attachments/assets/…" width="420" alt="An unknown id shows an error"> |
-
-<details><summary>✅ <b>Place an image in the answer</b> → it renders inline</summary>
-
-I gave Agent0 an attachment id; it wrote the tag and the chart renders between its sentences. <sub>Proves AC-1</sub>
-
-</details>
-<details><summary>✅ <b>Use a made-up image id</b> → "not available", nothing fetched</summary>
-
-…
-
-</details>
-
-⏭️ *Not checked on the preview: backend tag text and link expansion; unit tests and CI cover them.*
 
 <details><summary>Details</summary>
 
@@ -159,10 +163,10 @@ I gave Agent0 an attachment id; it wrote the tag and the chart renders between i
 | 1 | Headline | `## <emoji> <Verdict> — <what the change does, in the user's words>`, at most 70 characters; verdict words from [`report.md § Verdict`](./report.md#verdict). A standalone `ui` or `telemetry` region uses `###` | An agent name, a SHA, or an environment |
 | 2 | Summary | One sentence on what works for the user; under a clean ✅, `**Nothing needs your attention.**` on the same line (§ Attention line) | The run's reasoning about its environment; an open item, a reason, or a next step |
 | 2b | Attention section | Under every headline but a clean ✅: `#### Why not ✅` (or `#### Needs you` under ✅) and one bullet per item (§ Attention line) | Prose, or a bullet longer than one sentence |
-| 3 | Metadata | One `<sub>` line: seven-character head SHA in backticks, environment, CI state, finding count, `updated {{UPDATED}}` (the script stamps it) | A URL, or a time the agent typed |
-| 4 | Media strip | Directly under **What I checked**: one recording, then one row of up to two thumbnails, the rest one click away (§ Media strip) | A full-width screenshot, or a recording or screenshot inside a check row |
-| 5 | Check rows | One `<details>` per check (§ Check rows) | A results table, or a `####` heading per check |
-| 6 | Skipped line | `⏭️ *Not checked <where>: <what>; <what covers it instead>.*`; omitted when nothing was skipped | A skipped item as a check row |
+| 3 | Metadata | One `<sub>` line: seven-character head SHA in backticks, environment, finding count (`<n> findings (<k> fixed)` after a fix loop), `updated {{UPDATED}}` (the script stamps it) | A URL, a time the agent typed, or a CI state |
+| 3b | Worth a look | `#### Worth a look in the preview` and a `- [ ] **AC-n:** …` checklist for each criterion covered only by tests (`⏭️`); omitted when there is none | A table, or a criterion that already passed in the browser |
+| 4 | Media strip | Directly under the verdict, worth-a-look list, and skipped line: one recording, then one row of up to two thumbnails, the rest one click away (§ Media strip) | A full-width screenshot, or a recording or screenshot inside a `<details>` row |
+| 5 | Skipped line | `⏭️ *Not checked <where>: <what>; <what covers it instead>.*`; omitted when nothing was skipped | A skipped item as its own row |
 
 ### Attention line
 
@@ -196,7 +200,7 @@ A reviewer who sees anything but ✅ finds the reasons in the same place, in the
 6. Last, every open `critical`/`high` finding that does not move the verdict — `in_scope: false` ([`findings.md` § in_scope](./findings.md)), or any finding in a `ui` or `telemetry` region — the `in_scope: false` ones starting `Outside this PR:`.
 
 - At most five bullets; past five, a last bullet `+<n> more in Details`.
-- One sentence per bullet: the evidence, the log line, and the reasoning go in the item's check row or **Notes**, never in the bullet.
+- One sentence per bullet: the evidence, the log line, and the reasoning go in **Details** or **Notes**, never in the bullet.
 - Every other `in_scope: false` finding is a **Notes** line and never moves the verdict ([`report.md § Verdict`](./report.md#verdict)).
 - Never a separate "Open items" block, and never a reason inline in the summary sentence: this section is the only place open items appear above **Details**.
 
@@ -219,22 +223,6 @@ Agent0 only gets `testAutomation` when write approval is on. **Why not ✅:**
 
 A message typed while Agent0 works is read inside the same turn. **Nothing needs your attention.**
 ```
-
-### Check rows
-
-One row is one thing the reviewer would try by hand: an acceptance criterion, a spec, or a probe that broke something.
-Its `<summary>` is `<emoji> <b><what I did></b> → <what happened>`, under 80 characters, with no ID.
-
-| Rule | Correct | Incorrect |
-| --- | --- | --- |
-| Action → outcome | `✅ <b>Type a tag in my own message</b> → it stays plain text` | `✅ AC-3 · rejected tags · pass` |
-| One behaviour per row | Separate rows for "made-up id" and "my own message" | `AC-2 · AC-3 · rejected tags` |
-| A failed row names the break | `❌ <b>Rename a view and save</b> → the old name comes back` | `❌ fail (F-2)` |
-
-- **Order:** failed, then fixed (`🔧`), then passed, each group in the brief's order.
-- **Open state:** a failed row is `<details open>`; every other row is closed.
-- **Body:** one or two sentences (what I did, what happened, with the HTTP status or event name when that is the proof), ending on the same line with `<sub>Proves <AC-n></sub>` so the row traces to its criterion.
-- **No media in a row:** `verify-comment.mjs` refuses an aggregate region with an image or `.mp4` inside any `<details>` other than the strip's `+N more` fold, or placed after the first `<details>`. Recordings and screenshots live in the strip; a row whose check is shown there names it (`see the made-up-id recording`).
 
 ### Media strip
 
@@ -272,7 +260,7 @@ https://github.com/user-attachments/assets/…
 
 </details>
 
-<!-- ✗ the recording inside a check row: closed by default, so nobody sees it -->
+<!-- ✗ the recording inside a <details> row: closed by default, so nobody sees it -->
 <details><summary>✅ <b>Reload the chat</b> → …</summary>
 
 https://github.com/user-attachments/assets/…
@@ -318,7 +306,7 @@ None → the line `No impact map on this PR (/impact-map <pr> --body draws one).
 
    `attach-media` opens every image before upload and skips one that shows a secret or personal data; it re-encodes a video over 10 MB and skips what still does not fit.
 4. **Embed** each returned URL once, in the strip (§ Media strip); a recording that covers several checks is captioned with the first, and the others name it.
-5. A file `attach-media` skipped or could not upload → its check row says `<screenshot | recording> not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
+5. A file `attach-media` skipped or could not upload → **Details** says `<screenshot | recording> not attached (<reason>)`, and the terminal lists the file's absolute path; the comment never does.
 6. **Recordings are never silently missing.** When the region holds no recording, **Run details** says why: `recordings: not attached (<reason>)` — `--no-recording`, `no UI criterion`, `screencast not installed`, the runner's `notes` line, or the upload failure.
 
 ## Write the region
@@ -333,7 +321,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | Exit | Meaning | Do |
 | --- | --- | --- |
 | `0` | Prints the PR URL (report in the description) or the comment URL | Report it |
-| `1` | Refused: a local path, a verify marker, or a screenshot or recording a reviewer must click to see | Replace the path with its uploaded URL or `not attached (<reason>)`; move media into the strip under "What I checked" (an impact-map `<picture>` in Details is allowed); then write once more |
+| `1` | Refused: a local path, a verify marker, or a screenshot or recording a reviewer must click to see | Replace the path with its uploaded URL or `not attached (<reason>)`; move media into the strip under the verdict (an impact-map `<picture>` in Details is allowed); then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
 Pass `--to body` or `--to comment` only when the user asks for that place; the default picks it (§ Where the report lives).

@@ -115,37 +115,82 @@ export function hiddenMediaLine(text) {
   return null;
 }
 
-// The criteria lines of an `intent` region: `- ⬜ AC-1 [ui:/settings] text`, `- ✅ 🚀 AC-2 [api:PUT /x] text`,
-// `- G-1 [guardrail] text`. An optional leading status (⬜ not run, ✅ passed, ❌ failed, ⏭️ not verified on
-// target) and an optional 🚀 (confirmed in production) are the only parts a later run changes; the rest is
-// the criterion and stays word for word. One strict grammar, so a reader parses it with no model.
+// The criteria of an `intent` region, in one of two strict grammars a reader parses with no model.
+// Table rows (what a new report writes): `| ✅&nbsp;AC‑1 | text | ui · w1 · [link] |`, a guardrail as
+// `| 🛡️&nbsp;G‑1 | text | guardrail |`. The first cell is an optional status, an optional 🚀 and the ID (written with a
+// non-breaking hyphen U+2011 so it never wraps; parsed back to `-`); the Proof cell starts with the kind, `ui`,
+// `api`, `worker` or `telemetry`, optionally `kind:target` (`api:PUT /api/x`, the target a production watch
+// reads), then `·`-separated witnesses and links; a literal `|` in a cell is written `\|`.
+// Lines (still read, so an older PR keeps working): `- ⬜ AC-1 [ui:/settings] text`, `- ✅ 🚀 AC-2 [api:PUT /x] text`,
+// `- G-1 [guardrail] text`. In both, the status (⬜ not run, ✅ passed, ❌ failed, ⏭️ not verified on target) and
+// the 🚀 (confirmed in production) are the only parts a later run changes; the rest stays word for word.
 export const STATUSES = ["⬜", "✅", "❌", "⏭️"];
 const PROD = "🚀";
 const CRITERION = /^- (?:(⬜|✅|❌|⏭️) )?(?:(🚀) )?((?:AC|G)-\d+) \[([a-z]+)(?::([^\]]*))?\] (.+)$/;
+const SP = "(?:&nbsp;| )";
+const ROW = new RegExp(`^\\|\\s*(?:(⬜|✅|❌|⏭️)${SP})?(?:(🚀)${SP})?(?:🛡️${SP})?((?:AC|G)[-\u2011]\\d+)\\s*\\|\\s*((?:\\\\\\||[^|])+?)\\s*\\|\\s*((?:\\\\\\||[^|])*?)\\s*\\|$`);
+const ROW_MARKS = new RegExp(`^(\\|\\s*)(?:(?:⬜|✅|❌|⏭️)${SP})?(?:🚀${SP})?(🛡️${SP})?`);
+const unescapeCell = (c) => c.replace(/\\\|/g, "|");
+
+function criterionOf(line) {
+  const l = line.trim();
+  const c = CRITERION.exec(l);
+  if (c) return { id: c[3], kind: c[4], target: c[5] || "", text: c[6], status: c[1] || null, prod: Boolean(c[2]) };
+  const r = ROW.exec(l);
+  if (!r) return null;
+  const id = r[3].replace("\u2011", "-");
+  const first = unescapeCell(r[5]).split(" · ")[0].trim();
+  const k = /^([a-z]+)(?::(.*))?$/.exec(first);
+  const kind = id.startsWith("G-") ? "guardrail" : k ? k[1] : null;
+  if (!kind) return null;
+  return { id, kind, target: id.startsWith("G-") || !k ? "" : (k[2] || "").trim(), text: unescapeCell(r[4]), status: r[1] || null, prod: Boolean(r[2]) };
+}
+
 export function parseIntent(region) {
-  return (region || "").split("\n").map((l) => CRITERION.exec(l.trim())).filter(Boolean)
-    .map(([, status = null, prod, id, kind, target = "", text]) => ({ id, kind, target, text, status, prod: Boolean(prod) }));
+  return (region || "").split("\n").map(criterionOf).filter(Boolean);
 }
 
 // The region with every status and 🚀 removed: what "the criteria text" means once the PR is merged.
-const stripMarks = (region) => (region || "").split("\n").map((l) => l.replace(/^(- )(?:(?:⬜|✅|❌|⏭️) )?(?:🚀 )?((?:AC|G)-\d+ \[)/, "$1$2")).join("\n");
+const stripMarks = (region) => (region || "").split("\n").map((l) => l
+  .replace(/^(- )(?:(?:⬜|✅|❌|⏭️) )?(?:🚀 )?((?:AC|G)-\d+ \[)/, "$1$2")
+  .replace(ROW_MARKS, "$1$2")).join("\n");
 
-// The region with `marks` ({ "AC-1": { status: "✅", prod: true } }) applied to its criteria lines; an
-// unknown ID or status throws. Nothing but the leading marks changes.
+// `📋 Acceptance criteria — 18 criteria · 15 ✅ · 3 ⏭️ · 3 guardrails`: the counts a reviewer sees while the
+// table is collapsed. Rewritten from the parsed rows whenever the region is a table, so a mark never leaves it stale.
+function summaryLine(criteria) {
+  const acs = criteria.filter((c) => c.kind !== "guardrail");
+  const gs = criteria.length - acs.length;
+  const parts = [`${acs.length} ${acs.length === 1 ? "criterion" : "criteria"}`];
+  for (const st of ["✅", "❌", "⏭️", "⬜"]) { const n = acs.filter((c) => c.status === st).length; if (n) parts.push(`${n} ${st}`); }
+  if (gs) parts.push(`${gs} ${gs === 1 ? "guardrail" : "guardrails"}`);
+  return `📋 Acceptance criteria — ${parts.join(" · ")}`;
+}
+const refreshSummary = (region) => {
+  if (!/^\s*\|/m.test(region)) return region;
+  return region.replace(/(<details><summary>)📋 Acceptance criteria[^<]*(<\/summary>)/, `$1${summaryLine(parseIntent(region))}$2`);
+};
+
+// The region with `marks` ({ "AC-1": { status: "✅", prod: true } }) applied to its criteria; an unknown ID
+// or status throws. Nothing but the leading marks (and a table's summary counts) changes.
 export function applyMarks(region, marks) {
   const ids = new Set(parseIntent(region).map((c) => c.id));
   for (const [id, m] of Object.entries(marks)) {
     if (!ids.has(id)) throw new Error(`refused: the intent region has no criterion ${id}`);
     if (m.status !== undefined && !STATUSES.includes(m.status)) throw new Error(`refused: unknown status "${m.status}" for ${id} (expected ${STATUSES.join(" ")})`);
   }
-  return region.split("\n").map((l) => {
-    const c = CRITERION.exec(l.trim());
-    if (!c || !marks[c[3]]) return l;
-    const m = marks[c[3]];
-    const status = m.status !== undefined ? m.status : c[1];
-    const prod = m.prod !== undefined ? m.prod : Boolean(c[2]);
+  const out = region.split("\n").map((l) => {
+    const c = criterionOf(l);
+    if (!c || !marks[c.id]) return l;
+    const m = marks[c.id];
+    const status = m.status !== undefined ? m.status : c.status;
+    const prod = m.prod !== undefined ? m.prod : c.prod;
+    if (/^\s*\|/.test(l)) {
+      const lead = [status, prod ? PROD : null].filter(Boolean).map((x) => `${x}&nbsp;`).join("");
+      return l.trim().replace(ROW_MARKS, (_, pipe, shield) => `${pipe}${lead}${shield || ""}`);
+    }
     return l.replace(/^(\s*- )(?:(?:⬜|✅|❌|⏭️) )?(?:🚀 )?/, `$1${[status, prod ? PROD : null].filter(Boolean).join(" ")}${status || prod ? " " : ""}`);
   }).join("\n");
+  return refreshSummary(out);
 }
 
 // The criteria on a PR: from its description's report, else from a verify comment's body; [] when none.
@@ -198,7 +243,7 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   const bad = localPathLine(content);
   if (bad) throw new Error(`refused: the region holds a local path a reviewer cannot open: ${bad.trim()}`);
   const hidden = section === "aggregate" ? hiddenMediaLine(content) : null;
-  if (hidden) throw new Error(`refused: a screenshot or recording sits where a reviewer must click to see it: ${hidden}. Put recordings and screenshots in the media strip under "What I checked" (one recording, two thumbnails, the rest in one "+N more" fold) and have the check rows only name them`);
+  if (hidden) throw new Error(`refused: a screenshot or recording sits where a reviewer must click to see it: ${hidden}. Put recordings and screenshots in the media strip under the verdict (one recording, two thumbnails, the rest in one "+N more" fold) and have the check rows only name them`);
   if (section === "intent") {
     if (/<!--/.test(content)) throw new Error("refused: the intent region holds an HTML comment, which a reader cannot see");
     if (!/^\s*<details>\s*<summary>/.test(content)) throw new Error("refused: the intent region must open with a visible, collapsed <details><summary>");
@@ -595,6 +640,16 @@ function selfTest() {
   let frozen = false; try { splice(withIntent, "intent", crit(" (edited)"), { merged: true }); } catch { frozen = true; }
   assert(frozen && splice(withIntent, "intent", crit(), { merged: true, now: t }) === withIntent && intentFrom(splice(withIntent, "aggregate", "## ✅ ok `aaaaaaa`", { merged: true })).length === 3, "a merged PR's criteria are frozen, but a same-text rewrite and other regions still write");
   assert(intentFrom(splice("", "intent", crit(), { merged: true })).length === 3, "the first publication on a merged PR is allowed");
+  // Table grammar: rows parse to the same criteria, marks rewrite only the first cell and the summary counts.
+  const tbl = (extra = "") => `<details><summary>📋 Acceptance criteria — 2 criteria · 1 guardrail</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ⬜&nbsp;AC\u20111 | Saving shows a toast${extra} | ui · w1 · [trace](https://x/y) |\n| ⬜&nbsp;AC\u20112 | PUT stores a \\| b | api:PUT /api/x · w2 |\n| 🛡️&nbsp;G\u20111 | No other file changes | guardrail |\n\n</details>`;
+  const trows = parseIntent(tbl());
+  assert(trows.length === 3 && trows[0].id === "AC-1" && trows[0].kind === "ui" && trows[1].kind === "api" && trows[1].target === "PUT /api/x" && trows[1].text === "PUT stores a | b" && trows[2].kind === "guardrail" && trows[2].id === "G-1", "table rows parse to the same criteria as lines, with a non-breaking hyphen ID and an escaped pipe");
+  const tmarked = applyMarks(tbl(), { "AC-1": { status: "✅" }, "AC-2": { status: "⏭️", prod: true } });
+  const tm = parseIntent(tmarked);
+  assert(tm[0].status === "✅" && tm[1].status === "⏭️" && tm[1].prod && tm[2].status === null && tmarked.includes("| ✅&nbsp;AC\u20111 |") && tmarked.includes("| 🛡️&nbsp;G\u20111 |") && tmarked.includes("2 criteria · 1 ✅ · 1 ⏭️ · 1 guardrail</summary>"), "marks on table rows rewrite the first cell and refresh the summary counts");
+  assert(applyMarks(tmarked, { "AC-1": { status: "⬜" } }).includes("| ⬜&nbsp;AC\u20111 |") && stripMarks(tmarked).includes("| AC\u20111 |"), "a status can be reset, and stripMarks leaves a bare ID cell");
+  const tsp = splice("", "intent", tbl(), { now: t });
+  assert(intentFrom(tsp).length === 3, "a table region is accepted by splice and read back by intentFrom");
   // Living status: marks change only the leading glyphs, and stay editable after the merge.
   const marked = splice(withIntent, "intent", "", { marks: { "AC-1": { status: "✅" }, "AC-2": { status: "❌", prod: true } }, now: t });
   const mk = intentFrom(marked);
