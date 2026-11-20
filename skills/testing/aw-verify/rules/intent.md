@@ -168,7 +168,7 @@ This is not optional and does not depend on the push policy: it is the `intent` 
 
 `/aw` opens the PR before `aw-verify` can post, so it publishes the brief's criteria itself, with `verify-comment.mjs --from-plan .agent/{branch}/plan.md --statuses "$(run-checks.mjs --statuses)"` (`/aw`'s side of this is its `rules/phase-6-pr-creation.md § Publish the criteria`).
 The rows are the brief's text verbatim: an AC tagged `[ui:/x]`, `[api:PUT /x]`, or `[worker:c]` keeps that tag in its Proof cell, a `telemetry:` AC reads `telemetry:<span>`, and an untagged one reads `check`.
-This run's Step 6 then re-publishes the region with the surfaces and Proof it found (a `check` row becomes `ui:/x`), and its **Status** call ticks every row from the final results.
+This run's Step 6 then adds the surfaces and Proof it found: `--from-plan <plan.md> --print > comment-intent.md`, edit the Proof cells in that file (a `check` row may become `ui:/x`), and publish it with `--file comment-intent.md`; its **Status** call then ticks every row from the final results.
 A run-checks `✅` can rest on a `grep` or `command` check, so `aw-verify`'s result replaces it.
 
 ```text

@@ -761,7 +761,8 @@ else if (isMain) {
     const statusArg = opt("--statuses");
     const statuses = statusArg && statusArg.trim() ? JSON.parse(statusArg.trim().startsWith("{") ? statusArg : readFileSync(statusArg, "utf8")) : null;
     if (fromPlan && section !== "intent") throw new Error("--from-plan writes the intent section only");
-    const content = marks ? "" : fromPlan ? intentFromPlan(readFileSync(fromPlan, "utf8"), { statuses }) : readFileSync(file === "-" ? 0 : file, "utf8");
+    const planText = (p) => { try { return readFileSync(p, "utf8"); } catch (e) { if (e.code === "ENOENT") { const n = new Error(`no brief at ${p}`); n.code = 3; throw n; } throw e; } };
+    const content = marks ? "" : fromPlan ? intentFromPlan(planText(fromPlan), { statuses }) : readFileSync(file === "-" ? 0 : file, "utf8");
     if (has("--print")) { process.stdout.write(content + "\n"); process.exit(0); }
     const replaceAll = has("--replace-all");
     const to = opt("--to") ?? "auto";
