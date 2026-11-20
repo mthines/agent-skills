@@ -65,6 +65,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `ci-auto-fix` (`/`) — evidence-gated CI diagnosis and fix; never weakens checks
 - `create-pr` (`/`) — narrative PR description; pre-push local `review-loop`, draft PR, post-draft `review-loop`, CI watch
 - `github-actions-author` (`/`) — author / review GHA workflows
+- `prepare` (`/`) — gets a PR or its stack green (conflicts → CI → review threads) without new work; `--merge` squash-merges bottom to top behind explicit gates
 - `resolve-conflicts` (`/`) — analyze and resolve merge / rebase conflicts
 
 ### `testing/` — E2E and fixture tooling
