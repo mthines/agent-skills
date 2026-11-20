@@ -164,6 +164,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | **`delivery/`** | *Git, PR, CI* |
 | [`/create-pr`](./skills/delivery/create-pr/SKILL.md) | Writes a short PR story, opens a draft, and drives review and CI to green. |
 | [`/ci-auto-fix`](./skills/delivery/ci-auto-fix/SKILL.md) | Diagnoses red CI and fixes it — never by weakening a check. |
+| [`/prepare`](./skills/delivery/prepare/SKILL.md) | Gets a PR or its stack green — conflicts, CI, review threads — and with `--merge` squash-merges bottom to top. |
 | [`/resolve-conflicts`](./skills/delivery/resolve-conflicts/SKILL.md) | Resolves merge and rebase conflicts; asks on the ambiguous ones. |
 | [`/attach-media`](./skills/delivery/attach-media/SKILL.md) | Uploads screenshots and recordings into a PR so they render inline. |
 | [`/github-actions-author`](./skills/delivery/github-actions-author/SKILL.md) | Writes and reviews fast, cheap GitHub Actions workflows. |

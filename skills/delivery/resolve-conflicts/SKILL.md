@@ -3,7 +3,8 @@ name: resolve-conflicts
 description: >
   Analyze and resolve Git merge/rebase conflicts intelligently, showing diffs and
   asking clarifying questions when needed. Invoke with /resolve-conflicts.
-disable-model-invocation: true
+disable-model-invocation: false
+argument-hint: '[<pr-url>|<branch>]'
 license: MIT
 metadata:
   author: mthines
