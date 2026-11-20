@@ -152,7 +152,7 @@ Debounce the search box so typing does not fire a request per keystroke.
 ## Guardrails
 - Keep unchanged: the `?q=` URL contract — docs/search.md
 ## Acceptance Criteria
-- [ ] AC-1 — When the user types "otel" quickly, the system shall send one search request.
+- [ ] AC-1 [ui:/search] — When the user types "otel" quickly, the system shall send one search request.
 - [ ] AC-2 — When the user clears the box, the system shall show the recent-searches list.
 - **Before PR**: `pnpm vitest run src/search`
 ## File Changes
@@ -171,7 +171,7 @@ Never write `checks.yaml` or `checks.lock` on Lite: `checks.lock` is what marks 
 | 3 | Code, commit; touch only the brief's files | Edit, fast check |
 | 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>`. Diff touches UI files → [Lite verify](#lite-verify) | Fast check |
 | 5 | `Skill("docs", "update --auto")` | Only on doc drift |
-| 6 | `Skill("create-pr", "--no-post-review")` (its Step 5.5 is the local review; see [`aw` § Review](./aw/SKILL.md#review)); when Phase 4 ran `aw-verify`, then `Skill("aw-verify", "report <pr-url>")`; then the `AW EVIDENCE` block | `Skill("create-pr", "--no-post-review")`, then the `AW EVIDENCE` block |
+| 6 | `Skill("create-pr", "--no-post-review")` (its Step 5.5 is the local review; see [`aw` § Review](./aw/SKILL.md#review)); then publish the criteria ([`phase-6-pr-creation.md` § Publish the criteria](./rules/phase-6-pr-creation.md#publish-the-criteria)); when Phase 4 ran `aw-verify`, then `Skill("aw-verify", "report <pr-url>")`; then the `AW EVIDENCE` block | `Skill("create-pr", "--no-post-review")`, publish the criteria, then the `AW EVIDENCE` block |
 | 7 | Watch CI, `ci-auto-fix` if needed | Watch CI |
 
 ### Lite verify

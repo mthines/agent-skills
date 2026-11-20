@@ -23,6 +23,9 @@
 //     [--to body [--seed <comment.md>]] [--notice-out <file> --comment-url <url>]
 //   node verify-comment.mjs --pr <n|url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-2":{"prod":true}}'
 //     changes only the leading status / 🚀 of existing criteria lines (a JSON string or a file); never their text
+//   node verify-comment.mjs --pr <n|url> --from-plan <plan.md> [--statuses <json|file>]
+//     publishes an `/aw` brief's criteria as the intent region (rows ⬜, or ticked from run-checks.mjs --statuses);
+//     --print renders it and exits with no GitHub call; exit 3 = the brief has no AC (nothing to publish)
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
@@ -34,8 +37,9 @@
 // one, and removes a stale <file> when there is none; the MCP access path posts it itself.
 // Exit codes: 0 written or printed; 1 refused (local path, a verify marker, media a reviewer cannot see, or bad input); 2 GitHub call failed.
 
-import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -196,6 +200,44 @@ export function applyMarks(region, marks) {
 // The criteria on a PR: from its description's report, else from a verify comment's body; [] when none.
 export function intentFrom(text) {
   return parseIntent(parseRegions(bodyBlock(text) || text || "").get("intent"));
+}
+
+// run-checks.mjs statuses → the marks a criterion shows. `pending` (and a judge check not yet run) is ⬜.
+export const CHECK_MARKS = { pass: "✅", fail: "❌", pending: "⬜", unsatisfiable: "⏭️" };
+
+// An `/aw` brief's criteria. ACs: the `- [ ] AC-n (covers: Rm) [kind:target] — text` lines of its
+// `## Acceptance Criteria` section (the tag is optional); a `telemetry:` AC is kind `telemetry` with the span as
+// its target, any other untagged AC is kind `check`. Guardrails: the `- ` lines of `## Guardrails`, numbered
+// G-1… by position. Text is copied verbatim.
+const PLAN_AC = /^- (?:\[[ xX]\] )?(AC-\d+)(?: \(covers: [^)]*\))?(?: \[(ui|api|worker)(?::([^\]]+))?\])?(?: —| -|:)? (.+)$/;
+const sectionOf = (md, heading) => {
+  const lines = md.split("\n");
+  const at = lines.findIndex((l) => new RegExp(`^##\\s+${heading}\\b`, "i").test(l));
+  if (at < 0) return [];
+  const end = lines.findIndex((l, i) => i > at && /^##\s/.test(l));
+  return lines.slice(at + 1, end < 0 ? undefined : end);
+};
+export function planCriteria(planMd) {
+  const acs = sectionOf(planMd, "Acceptance Criteria").map((l) => PLAN_AC.exec(l.trim())).filter(Boolean).map(([, id, tag, target = "", text]) => {
+    const tele = /^telemetry:\s*(\S+)/.exec(text);
+    return { id, kind: tag || (tele ? "telemetry" : "check"), target: tag ? target : tele ? tele[1] : "", text };
+  });
+  const guardrails = sectionOf(planMd, "Guardrails").map((l) => /^- (.+)$/.exec(l.trim())).filter(Boolean).map((m) => m[1]);
+  return { acs, guardrails };
+}
+
+// The `intent` region for an `/aw` brief: the same collapsed table `aw-verify` publishes, every row ⬜ unless
+// `statuses` ({ "AC-1": "pass" }, from `run-checks.mjs --statuses`) says otherwise. Throws code 3 with no AC.
+export function intentFromPlan(planMd, { statuses = null } = {}) {
+  const { acs, guardrails } = planCriteria(planMd);
+  if (!acs.length) throw Object.assign(new Error("no AC in the brief"), { code: 3 });
+  const cell = (t) => String(t).replace(/\|/g, "\\|");
+  const rows = [
+    ...acs.map((c) => `| ${CHECK_MARKS[statuses?.[c.id]] ?? "⬜"}&nbsp;${c.id.replace("-", "\u2011")} | ${cell(c.text)} | ${c.kind}${c.target ? `:${cell(c.target)}` : ""} |`),
+    ...guardrails.map((g, i) => `| 🛡️&nbsp;G\u2011${i + 1} | ${cell(g)} | guardrail |`),
+  ];
+  const region = `<details><summary>📋 Acceptance criteria</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n${rows.join("\n")}\n\n</details>`;
+  return refreshSummary(region);
 }
 
 // Regions in the existing body, in order. A body with the marker but no regions is a
@@ -672,9 +714,34 @@ function selfTest() {
   assert(intentFrom(withStatus)[0].status === "⬜" && intentFrom(withStatus)[1].status === null, "a freshly published line may start as ⬜ and parse");
   const prodKept = splice(splice(marked, "intent", crit(), { now: t, merged: true }), "aggregate", "## ✅ ok `aaaaaaa`", { now: t });
   assert(intentFrom(prodKept)[1].prod && !intentFrom(prodKept)[0].prod, "republishing the intent region keeps the 🚀 a deploy put on a criterion");
+  // An /aw brief's criteria, rendered once for both writers.
+  const plan = "# Plan: x\n\n## Guardrails\n\n- Do not modify: `src/a.ts` — the user\n- Never: weaken a test | skip one\n\n## Acceptance Criteria (Definition of Done)\n\n- [ ] AC-1 (covers: R1) [ui:/settings] — When a name is empty, the form shows \"Name is required\".\n- [x] AC-2 (covers: R2) [api:PUT /api/x] — A 400 for an empty name.\n- [ ] AC-3 (covers: R3) — The CLI exits 2 on a bad flag.\n- [ ] AC-4 (covers: R4) — telemetry: checkout.submit span has attribute plan.\n- [ ] AC-5 — Lite line with no covers.\n- **After editing**: `pnpm test`\n\n## Turn Cap\n\n3 turns.\n";
+  const pc = planCriteria(plan);
+  assert(pc.acs.map((c) => `${c.id}:${c.kind}:${c.target}`).join() === "AC-1:ui:/settings,AC-2:api:PUT /api/x,AC-3:check:,AC-4:telemetry:checkout.submit,AC-5:check:", `plan ACs are tagged, or check/telemetry: ${pc.acs.map((c) => `${c.id}:${c.kind}:${c.target}`)}`);
+  assert(pc.acs[0].text.startsWith("When a name is empty") && pc.guardrails.length === 2 && pc.guardrails[1].includes("weaken a test | skip one"), "criterion and guardrail text is verbatim");
+  const fp = intentFromPlan(plan, { statuses: { "AC-1": "pass", "AC-2": "fail", "AC-3": "pending", "AC-9": "pass" } });
+  const fpc = parseIntent(fp);
+  assert(fpc.length === 7 && fpc.map((c) => c.id).join() === "AC-1,AC-2,AC-3,AC-4,AC-5,G-1,G-2", "the rendered region parses back to every AC and guardrail");
+  assert(fpc[0].status === "✅" && fpc[1].status === "❌" && fpc[2].status === "⬜" && fpc[3].status === "⬜" && fpc[5].kind === "guardrail", "run-checks statuses become marks; others start ⬜; an unknown id is ignored");
+  assert(fpc[6].text.includes("weaken a test | skip one") && fpc[1].target === "PUT /api/x" && fpc[3].target === "checkout.submit", "a pipe in a cell survives, and targets reach the Proof cell");
+  assert(fp.includes("5 criteria · 1 ✅ · 1 ❌ · 3 ⬜ · 2 guardrails") && intentFrom(splice("", "intent", fp)).length === 7 && intentFromPlan(plan) === intentFromPlan(plan), "the summary counts the marks, splice accepts the region, and rendering is stable");
+  let noAc = null; try { intentFromPlan("## Acceptance Criteria\n\nnothing\n"); } catch (e) { noAc = e.code; }
+  assert(noAc === 3, "a brief with no AC exits 3, not 1");
+  const afterAw = splice(splice("", "intent", intentFromPlan(plan), { now: t }), "intent", "", { marks: { "AC-3": { status: "✅" } }, now: t });
+  assert(intentFrom(afterAw).find((c) => c.id === "AC-3").status === "✅", "aw-verify's marks apply to a row /aw wrote");
+  const cli = (...a) => spawnSync(process.execPath, [fileURLToPath(import.meta.url), ...a], { encoding: "utf8", input: "" });
+  const tmpPlan = join(mkdtempSync(join(tmpdir(), "vc-")), "plan.md"); writeFileSync(tmpPlan, plan);
+  const printed = cli("--from-plan", tmpPlan, "--statuses", '{"AC-1":"pass"}', "--print");
+  assert(printed.status === 0 && parseIntent(printed.stdout)[0].status === "✅", `--print renders with no PR: ${printed.stderr}`);
+  assert(cli("--from-plan", tmpPlan, "--bogus", "--print").status === 1 && cli("--from-plan", tmpPlan, "--section", "ui", "--print").status === 1, "an unknown flag, or --from-plan on another section, exits 1");
+  writeFileSync(tmpPlan, "## Acceptance Criteria\n\nnone\n");
+  assert(cli("--from-plan", tmpPlan, "--print").status === 3, "the CLI exits 3 for a brief with no AC");
   console.log(`verify-comment self-test: ${n} assertions passed`);
 }
 
+// Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
+export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -683,12 +750,20 @@ const isMain = process.argv[1] && realpathSync(resolve(process.argv[1])) === fil
 if (isMain && args.includes("--self-test")) selfTest();
 else if (isMain) {
   try {
-    const section = opt("--section");
+    const unknown = args.find((a) => a.startsWith("--") && !FLAGS.includes(a));
+    if (unknown) throw new Error(`unknown flag ${unknown}`);
+    const fromPlan = opt("--from-plan");
+    const section = opt("--section") ?? (fromPlan ? "intent" : undefined);
     const file = opt("--file");
     const marksArg = opt("--marks");
     const marks = marksArg ? JSON.parse(marksArg.trim().startsWith("{") ? marksArg : readFileSync(marksArg, "utf8")) : null;
-    if (!section || (!file && !marks)) throw new Error("--section and --file (or --marks) are required");
-    const content = marks ? "" : readFileSync(file === "-" ? 0 : file, "utf8");
+    if (!section || (!file && !marks && !fromPlan)) throw new Error("--section and --file (or --marks, or --from-plan) are required");
+    const statusArg = opt("--statuses");
+    const statuses = statusArg && statusArg.trim() ? JSON.parse(statusArg.trim().startsWith("{") ? statusArg : readFileSync(statusArg, "utf8")) : null;
+    if (fromPlan && section !== "intent") throw new Error("--from-plan writes the intent section only");
+    const planText = (p) => { try { return readFileSync(p, "utf8"); } catch (e) { if (e.code === "ENOENT") { const n = new Error(`no brief at ${p}`); n.code = 3; throw n; } throw e; } };
+    const content = marks ? "" : fromPlan ? intentFromPlan(planText(fromPlan), { statuses }) : readFileSync(file === "-" ? 0 : file, "utf8");
+    if (has("--print")) { process.stdout.write(content + "\n"); process.exit(0); }
     const replaceAll = has("--replace-all");
     const to = opt("--to") ?? "auto";
     if (has("--dry-run")) {
@@ -713,6 +788,6 @@ else if (isMain) {
     }
   } catch (e) {
     console.error(`verify-comment: ${e.message}`);
-    process.exit(e.code === 2 ? 2 : 1);
+    process.exit(e.code === 2 ? 2 : e.code === 3 ? 3 : 1);
   }
 }

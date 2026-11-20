@@ -57,7 +57,7 @@ Everything a skill writes into the PR description is readable by a reviewer and 
 
 | Region | Owner | Written when |
 | --- | --- | --- |
-| `intent` | `aw-verify` | Every run with a PR, on the same trust rules as the report ([§ When to post](#when-to-post)), before the first probe; the criteria are a living checklist: each run changes only the leading status of each line through `--marks` (`⬜ ✅ ❌ ⏭️`, and `🚀` from `deployment-verify`), so `--replace-all` keeps it, it never folds as an older run, it never enters **Previous runs**, and once the PR is merged an existing one is frozen ([`intent.md § Step 6`](./intent.md#step-6--publish-the-criteria-on-the-pr)) |
+| `intent` | `aw-verify`, and `/aw` when it opens the PR (`--from-plan`) | Every run with a PR, on the same trust rules as the report ([§ When to post](#when-to-post)), before the first probe; the criteria are a living checklist: each run changes only the leading status of each line through `--marks` (`⬜ ✅ ❌ ⏭️`, and `🚀` from `deployment-verify`), so `--replace-all` keeps it, it never folds as an older run, it never enters **Previous runs**, and once the PR is merged an existing one is frozen ([`intent.md § Step 6`](./intent.md#step-6--publish-the-criteria-on-the-pr)) |
 | `aggregate` | `aw-verify` | Every run with a PR, on your own PRs and trusted bots' PRs without asking, on anyone else's after a yes — `policies.pr_comment` never suppresses it; `--replace-all` drops the other regions, because the aggregate already holds the browser, adversarial, and telemetry proof |
 | `ui` | `ui-verify` | A standalone `run` or `verify` with a PR |
 | `telemetry` | `telemetry-verify` | A standalone run with a PR |

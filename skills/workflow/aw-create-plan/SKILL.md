@@ -120,8 +120,8 @@ approved: true
 
 ## Acceptance Criteria (Definition of Done)
 
-- [ ] AC-1 (covers: R1) — When {trigger}, the system shall {observable response}.
-- [ ] AC-2 (covers: R2) — {concrete, testable criterion}
+- [ ] AC-1 (covers: R1) [ui:{route}] — When {trigger}, the system shall {observable response}.
+- [ ] AC-2 (covers: R2) [api:{METHOD path}] — {concrete, testable criterion}
 
 - **After editing**: `{fast check, e.g. pnpm tsc --noEmit}`
 - **Before PR**: `{full suite, e.g. pnpm test && pnpm lint}`
@@ -149,7 +149,7 @@ Section rules:
 | Task | 1–3 sentences a reviewer can agree or disagree with in under a minute |
 | Requirements | Numbered by position (R1, R2, …); every item tagged `[user-stated]` or `[inferred]` and cites its source; an `[inferred]` item is an observable outcome, never a design choice; Out of Scope items are not numbered |
 | Guardrails | Each names a path, an interface, or a forbidden move, and its source is the user, the ticket, or a repo doc — never "be careful", and never a function or file you decided to keep unchanged. No Guardrail may forbid something a requirement or AC needs |
-| Acceptance Criteria | Each carries a unique `AC-{n}` and `(covers: R{m})`; every `[user-stated]` requirement is covered; each states an observable outcome (EARS "When …, the system shall …"), never which function or mechanism produces it; each response is something the code before the change does not already do, and no AC is only an absence ("does not show X"); the After-editing and Before-PR commands contain no `{` `}` placeholders |
+| Acceptance Criteria | Each carries a unique `AC-{n}` and `(covers: R{m})`; every `[user-stated]` requirement is covered; each states an observable outcome (EARS "When …, the system shall …"), never which function or mechanism produces it; each response is something the code before the change does not already do, and no AC is only an absence ("does not show X"); the After-editing and Before-PR commands contain no `{` `}` placeholders; an AC observed on a route, endpoint, or worker carries its surface as `[ui:<route>]`, `[api:<METHOD path>]`, or `[worker:<component>]` after `(covers: …)` (write a route parameter as `:id`, never `[id]`), and a `telemetry:` AC or one with no surface of its own carries no tag |
 | Turn Cap | An integer from the table below, or a different integer with a one-clause reason |
 | File Changes | The files the work likely starts from; the worker may change others and names them in the walkthrough |
 

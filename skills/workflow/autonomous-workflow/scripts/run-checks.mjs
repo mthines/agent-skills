@@ -3,6 +3,7 @@
 //
 //   node run-checks.mjs [checks.yaml] [--cwd <dir>] [--timeout <s>] [--no-write]
 //   node run-checks.mjs [checks.yaml] --seal      # record the immutable fields
+//   node run-checks.mjs [checks.yaml] --statuses  # print {"AC-1":"pass",…} from the file; runs nothing
 //   node run-checks.mjs --self-test
 //
 // Runs each check's `setup` then `run`, compares against `expect`, rewrites the
@@ -288,6 +289,11 @@ function selfTest() {
     expectEq("mixed: only status lines change",
       after.split("\n").filter((l) => !/^\s+status:/.test(l)).join("\n"),
       mixed.split("\n").filter((l) => !/^\s+status:/.test(l)).join("\n"));
+    r = cli(["checks.yaml", "--statuses"]);
+    expectEq("--statuses: prints each id's recorded status as JSON", r.stdout.trim(),
+      '{"AC-1":"pass","AC-2":"pass","AC-3":"pass","AC-4":"fail","AC-5":"fail","AC-6":"pending","AC-7":"unsatisfiable","AC-8":"pass"}');
+    expectEq("--statuses: exit code", r.status, 0);
+    expectEq("--statuses: file untouched", readFileSync(join(dir, "checks.yaml"), "utf8"), after);
     if (!/status: pass {3}# pending/.test(after)) fails.push("mixed: trailing comment on a status line was not preserved");
 
     const green = [
@@ -388,18 +394,24 @@ function selfTest() {
 // ── CLI ──────────────────────────────────────────────────────────────────────
 function main(argv) {
   if (argv.includes("--self-test")) return selfTest();
-  let file, cwd = process.cwd(), timeout = 300, write = true, doSeal = false;
+  let file, cwd = process.cwd(), timeout = 300, write = true, doSeal = false, onlyStatuses = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--cwd") cwd = resolve(argv[++i]);
     else if (a === "--timeout") timeout = Number(argv[++i]);
     else if (a === "--no-write") write = false;
     else if (a === "--seal") doSeal = true;
-    else if (a === "-h" || a === "--help") { console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 23).join("\n")); return 0; }
+    else if (a === "--statuses") onlyStatuses = true;
+    else if (a === "-h" || a === "--help") { console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1, 24).join("\n")); return 0; }
     else if (a.startsWith("--")) { console.log(`CHECKS 0/0 FAIL: unknown option ${a}`); return 2; }
     else file = resolve(cwd, a);
   }
   file ??= defaultPath(cwd);
+  if (onlyStatuses) {
+    if (!existsSync(file)) { console.error(`no such file: ${file}`); return 2; }
+    console.log(JSON.stringify(Object.fromEntries(parseChecks(readFileSync(file, "utf8")).map((c) => [c.id, c.status]))));
+    return 0;
+  }
   if (doSeal) {
     if (!existsSync(file)) { console.error(`no such file: ${file}`); return 2; }
     console.log(seal(file));

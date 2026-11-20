@@ -52,9 +52,39 @@ Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 | 1    | Pre-flight checks (clean tree, build, lint, test)                             | Full + Lite     |
 | 2    | `Skill("aw-create-walkthrough")` → `.agent/{branch}/walkthrough.md`           | **Full only**   |
 | 3    | `Skill("create-pr", <the tier's flags>)` ([PR Creation](#pr-creation)) → local review-loop (Lite), push, open draft PR, watch initial CI | Full + Lite     |
+| 3b   | Publish the criteria on the PR ([below](#publish-the-criteria))               | Full + Lite     |
 | 4    | `Skill("aw-verify", "report <pr-url>")` when `aw-verify` ran before the PR   | Full + Lite     |
 | 5    | Show `walkthrough.md` content inline in conversation                          | **Full only**   |
 | 6    | Report PR URL + summary, log Progress                                         | Full + Lite     |
+
+### Publish the criteria
+
+Once `create-pr` returns the PR URL, put the brief's acceptance criteria on the PR as the `intent` region of its verify report, ticked from the sealed checks, so `aw-verify` and `deployment-verify` later read and update the same list.
+One call, run before `aw-verify report`; a follow-up that re-runs Step 4 runs it again.
+
+```bash
+AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"
+VC="${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-comment.mjs"
+D=".agent/$(git branch --show-current)"
+ST=""; [ -f "$D/checks.yaml" ] && ST=$(node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --statuses)
+node "$VC" --pr "$PR_URL" --section intent --from-plan "$D/plan.md" --statuses "$ST"
+```
+
+| Result | Receipt line |
+| --- | --- |
+| Exit `0` | `criteria: posted <url>` |
+| Exit `3` (no `AC-{n}` in the brief, or no `plan.md`) | `criteria: n/a (no AC in the brief)` |
+| `$VC` missing | `criteria: not posted (aw-verify not installed)`, and `Degraded:` |
+| Any other exit | `criteria: not posted (<first stderr line without "verify-comment: ">)`, and `Degraded:` |
+
+Pass `--statuses` as one quoted argument; the user's shell is zsh, which does not word-split an unquoted variable.
+Lite has no `checks.yaml`, so `ST` is empty and every row starts `⬜`; `aw-verify report` ticks them when Lite verify ran, and a suite exit code is never turned into a per-criterion `✅`.
+Publishing never blocks the PR, and Micro has no brief, so it publishes nothing.
+
+```text
+✗ gh pr edit --body with a hand-written criteria list      # a second format that nothing reads
+✓ node "$VC" --pr "$PR_URL" --section intent --from-plan "$D/plan.md" --statuses "$ST"
+```
 
 ### Step 1: Pre-Flight Validation
 
@@ -194,6 +224,7 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 - local review-loop (branch-reviewer pass; create-pr Step 5.5 on Lite, Step 3 on Full): <N iterations, M findings, B open | skipped (<reason>)>
 - local review-loop (apply): <N findings applied, D declined | skipped (<reason>)>
 - local review-loop (polish simplify): <recipe IDs applied | none | skipped (<reason>)>
+- criteria: <posted <url> | not posted (<reason>) | n/a (no AC in the brief)>
 - aw-verify report: <posted <comment URL> | not posted — <aw-verify's reason> | n/a (aw-verify did not run: <no UI diff | not configured>)>
 ```
 

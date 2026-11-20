@@ -9,7 +9,8 @@
      - First publication: every AC starts ⬜ (not run). Later runs change only the leading mark (✅ ❌ ⏭️, 🚀)
        through `--marks`, which also refreshes the counts in the summary. Never reword a row.
      - Proof starts with `<kind>:<target>` for every kind (ui:/settings, api:PUT /api/x, worker:<component>,
-       telemetry:<span>), so the production watch and the draft contract read the target.
+       telemetry:<span>), so the production watch and the draft contract read the target. An `/aw` brief's
+       untagged criterion reads `check` until a run finds its surface.
      - Proof links are Dash0 deep links (traces explorer or trace), SHA-pinned test-file links, or screenshots.
      - Escape a literal | in a cell as \|. -->
 <details><summary>📋 Acceptance criteria — {{N_AC}} criteria · {{N_G}} guardrails</summary>
