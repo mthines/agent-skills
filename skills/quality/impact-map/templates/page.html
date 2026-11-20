@@ -153,6 +153,32 @@ svg .fill-muted{fill:var(--muted)}
 .sw.gone{background:transparent;border-color:var(--same);border-style:dashed}
 .undoc.drift{background:var(--mod-bg);color:var(--mod)}
 
+/* compare view (rules/compare.md): Today / After toggle, ghost boxes, numbered flow, side-by-side table */
+.seg{display:inline-flex;border:1px solid var(--line);background:var(--sheet);align-self:flex-start}
+.seg button{padding:7px 18px;font:500 13px/1 var(--f-body);cursor:pointer;color:var(--muted);background:transparent;border:0;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--sheet)}
+.seg button:focus-visible{outline:2px solid var(--new);outline-offset:2px}
+.view-after .f-today,.view-today .f-after{display:none}
+svg .n.ghost rect{fill:none;stroke:var(--same);stroke-dasharray:3 3;stroke-width:1.2}
+svg .n.ghost .t{fill:var(--muted);font-weight:500}
+svg .n.ghost .s{font-style:italic}
+svg .stp circle{fill:var(--sheet);stroke:var(--ink);stroke-width:1.5}
+svg .stp text{fill:var(--ink);font:600 10px var(--f-mono);text-anchor:middle}
+.sw.ghost{background:transparent;border:1.5px dashed var(--same)}
+.flow{list-style:none;margin:0;padding:12px 16px;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px 24px;border-top:1px solid var(--line);font-size:13.5px}
+.flow li{display:grid;grid-template-columns:22px 1fr;gap:8px;align-items:start}
+.stp-l{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;border:1.5px solid var(--ink);font:600 11px/1 var(--f-mono)}
+.cmp{overflow-x:auto;background:var(--sheet);border:1px solid var(--line)}
+.cmp table{border-collapse:collapse;width:100%;min-width:640px;font-size:14px}
+.cmp th{font:500 11px/1.4 var(--f-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
+.cmp td{padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+.cmp tr:last-child td{border-bottom:0}
+.cmp td:first-child{font-weight:600;white-space:nowrap}
+.cmp td:nth-child(2){color:var(--muted)}
+.cmp td:nth-child(3){border-left:3px solid var(--new)}
+.rk{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+
 /* migration figure (rules/migration.md): verdict tiles and a schema summary */
 .fact-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .fact{display:flex;flex-direction:column;gap:5px;padding:10px 12px;border:1px solid var(--line);background:var(--bg)}
@@ -189,6 +215,7 @@ svg .zone-l{font:600 10.5px var(--f-mono);letter-spacing:.06em;fill:var(--mod);p
 
 <main class="sheet">
 
+<!-- Plan mode (rules/plan-mode.md): eyebrow "Impact map · plan, no PR yet", meta "base <sha>" and "about <n> files (estimate)", links to blobs at the base sha, footer "Nothing was run.". -->
 <header>
   <span class="eyebrow">Impact map · <!-- SLOT: owner/repo --> <a href="<!-- SLOT: pr url -->">#<!-- SLOT: n --></a></span>
   <h1><!-- SLOT: what the PR does, one line --></h1>
@@ -200,7 +227,7 @@ svg .zone-l{font:600 10.5px var(--f-mono);letter-spacing:.06em;fill:var(--mod);p
     <div class="points">
       <!-- One <details> per decision (badge 1..3), then at most one with <span class="dot"> for "also live on merge". -->
       <details>
-        <summary><span class="badge">1</span><span class="sum"><!-- SLOT: the decision as one statement --></span></summary>
+        <summary><span class="badge">1</span><span class="sum"><!-- SLOT: the decision as one statement --><!-- OPTIONAL compare view: <span class="rk">Risk: …</span> --></span></summary>
         <dl>
           <dt>What</dt><dd><!-- SLOT --></dd>
           <dt>Risk</dt><dd><!-- SLOT --></dd>
@@ -223,7 +250,24 @@ svg .zone-l{font:600 10.5px var(--f-mono);letter-spacing:.06em;fill:var(--mod);p
     </div>
     <figcaption><!-- SLOT: the diagram's one-sentence claim --></figcaption>
   </figure>
+  <!-- OPTIONAL compare view (rules/compare.md): when the change alters an existing flow, delete the plain <figure> above and keep this block; otherwise delete from here to the END marker. -->
+  <div id="viewbox" class="view-after">
+    <div class="seg" role="group" aria-label="View"><button type="button" data-v="today" aria-pressed="false">Today</button><button type="button" data-v="after" aria-pressed="true">After</button></div>
+    <figure class="f-today"><div class="fig-scroll"><!-- SLOT: Today SVG --></div><ol class="flow"><!-- SLOT: <li><span class="stp-l">A</span><span>step</span></li> --></ol><figcaption><!-- SLOT --></figcaption></figure>
+    <figure class="f-after"><div class="fig-scroll"><!-- SLOT: After SVG --></div><ol class="flow"><!-- SLOT --></ol><figcaption><!-- SLOT --></figcaption></figure>
+    <script>(function(){var b=document.getElementById("viewbox");b.querySelectorAll("button[data-v]").forEach(function(x){x.addEventListener("click",function(){b.className="view-"+x.getAttribute("data-v");b.querySelectorAll("button[data-v]").forEach(function(y){y.setAttribute("aria-pressed",y===x?"true":"false")})})})})();</script>
+  </div>
+  <!-- END OPTIONAL compare view -->
 </section>
+
+<!-- OPTIONAL: side-by-side table (rules/compare.md). Delete when there is no compare view. -->
+<section class="section" aria-labelledby="cmp">
+  <div class="section-head"><span class="eyebrow">Side by side</span><h2 id="cmp"><!-- SLOT: e.g. Five behaviours, today and after --></h2></div>
+  <div class="cmp"><table><thead><tr><th>Behaviour</th><th>Today</th><th>After</th></tr></thead><tbody>
+    <tr><td><!-- SLOT --></td><td><!-- SLOT --></td><td><!-- SLOT --></td></tr>
+  </tbody></table></div>
+</section>
+<!-- END OPTIONAL: side-by-side table -->
 
 <section class="section" aria-labelledby="where">
   <div class="section-head"><span class="eyebrow">Where it shows up</span><h2 id="where"><!-- SLOT: e.g. Four interfaces get the feature, in two different forms --></h2>

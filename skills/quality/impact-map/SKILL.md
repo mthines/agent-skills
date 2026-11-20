@@ -1,16 +1,16 @@
 ---
 name: impact-map
 description: >
-  Builds an impact-first view of a GitHub PR: a verdict with expandable What/Risk/Ask rows,
+  Builds an impact-first view of a GitHub PR, or of a plan, design, or branch with no PR yet: a verdict with expandable What/Risk/Ask rows,
   one diagram colored new/changed/removed, a second one-screen migration figure when the diff has a
   database migration, at most three decisions with linked lines, and what is already settled. Every claim is checked against code, tests, and docs first.
   --comment or --body posts it to the PR with light and dark PNGs. Triggers on
-  "impact map", "visualize this PR", "/impact-map".
-argument-hint: '<pr-url|#n>... [--stack] [--no-migration] [--comment] [--body] [--dry-run] [--findings <report-body.md>]'
+  "impact map", "visualize this PR", "show the change for this plan", "/impact-map".
+argument-hint: '<pr-url|#n>... | --plan <file> | --branch <ref> [--stack] [--no-migration] [--comment] [--body] [--dry-run] [--findings <report-body.md>]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.2.0'
+  version: '1.3.0'
   workflow_type: advisory
   tags:
     - pull-request
@@ -24,7 +24,7 @@ metadata:
 
 # Impact Map
 
-Turns a PR into the few things a reviewer must decide, with the system change drawn once and every decision linked to the lines that carry it.
+Turns a PR (or, in [plan mode](./rules/plan-mode.md), a plan, a design, or a branch with no PR) into the few things a reviewer must decide, with the system change drawn once and every decision linked to the lines that carry it.
 The reader cares about impact, architecture, and risk, not line-by-line code.
 
 > **This `SKILL.md` is a thin index.** Rules load per phase from `rules/`; the page and comment skeletons are in `templates/`.
@@ -43,6 +43,8 @@ node "${CLAUDE_SKILL_DIR}/scripts/render-png.mjs" <page.html> <out-dir>        #
 | Argument | Default | Effect |
 | --- | --- | --- |
 | `<pr-url\|#n>...` | the current branch's PR | The PR to map. Several refs map each PR separately: [§ Several PRs or a stack](#several-prs-or-a-stack). |
+| `--plan <file>` | — | Map a plan or design that has no PR: the facts come from the plan and the code it names, and the page is built, never posted. [`rules/plan-mode.md`](./rules/plan-mode.md) |
+| `--branch <ref>` | — | Map a branch that has no PR yet, from its diff against the merge base. Same rules as `--plan` for the page and the report. |
 | `--stack` | — | Map every PR in the stack that holds the given PR, bottom to top, each separately. |
 | *(none)* | yes | Build the page only: publish it as an Artifact when the host has the Artifact tool, else write `.agent/{branch}/impact-map/pr-<n>.html`. |
 | `--no-migration` | — | Skip the migration figure even when the diff has a migration. |
@@ -51,7 +53,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/render-png.mjs" <page.html> <out-dir>        #
 | `--dry-run` | — | Build the page, the PNGs, and the comment Markdown; post nothing. |
 | `--findings <report-body.md>` | — | Diagram only, for a `pr-reviewer` report: badge each box with the numbers of that report's findings table and print the PNG paths and the alt text. Skips phases 3 and 6, builds phase 5's page file locally (`.agent/{branch}/impact-map/pr-<n>.html`, never published as an Artifact) because `render-png.mjs` reads it, and writes nothing to GitHub. Procedure: [`rules/diagram.md § Badges from a pr-reviewer report`](./rules/diagram.md#badges-from-a-pr-reviewer-report). |
 
-`--comment` and `--body` are the user's consent to write to GitHub, and an image upload counts as a write.
+`--comment` and `--body` are the user's consent to write to GitHub, and an image upload counts as a write. Plan mode has no PR, so both are refused there.
 Without either flag in the user's own request, write nothing to GitHub.
 
 ## Several PRs or a stack
@@ -75,18 +77,19 @@ Without either flag in the user's own request, write nothing to GitHub.
 
 | Phase | Name | Rule | Gate |
 | --- | --- | --- | --- |
-| 0 | Fetch | [`rules/analysis.md § Fetch`](./rules/analysis.md#fetch) | Diff, description, head SHA, and merge base in hand |
+| 0 | Fetch | [`rules/analysis.md § Fetch`](./rules/analysis.md#fetch) (plan mode: [`rules/plan-mode.md`](./rules/plan-mode.md)) | Diff, description, head SHA, and merge base in hand |
 | 1 | Candidates | [`rules/analysis.md § Candidates`](./rules/analysis.md#candidates) | Every live-on-merge surface walked, and every interface and integration the feature reaches listed ([§ Interfaces](./rules/analysis.md#interfaces)) |
 | 2 | Verify | [`rules/analysis.md § Verify`](./rules/analysis.md#verify) | Every candidate classified open / settled / wrong, with evidence; each interface traced to the code that feeds it |
 | 3 | Decide | [`rules/analysis.md § Decide`](./rules/analysis.md#decide) | ≤ 3 decisions, each What / Risk / Ask and ≤ 3 linked lines |
 | 4 | Diagram | [`rules/diagram.md`](./rules/diagram.md) | One SVG, ≤ 14 service boxes plus an interfaces band, decision badges placed |
+| 4a | Compare | [`rules/compare.md`](./rules/compare.md) | Only when the change alters an existing flow: a Today and an After diagram on the same layout, a Today / After toggle, a lettered flow, and a side-by-side table |
 | 4b | Migration | [`rules/migration.md`](./rules/migration.md) | Only when the diff has a migration: verdict line, four tiles, schema rows, and a ≤ 5-box usage diagram on one screen |
 | 5 | Page | [`rules/outputs.md § Page`](./rules/outputs.md#page) | PNGs rendered and looked at (or reported as not rendered when no Chrome exists), page built from `templates/page.html` and published or written |
 | 6 | Post | [`rules/outputs.md § Comment and body`](./rules/outputs.md#comment-and-body) | Only with `--comment` / `--body`: PNGs uploaded, posted, read back clean |
 
 ## Shape of the result
 
-Every output has the same six parts, in this order, and nothing else:
+Every output has the same six parts, in this order, and nothing else, except the optional side-by-side table of the [compare view](./rules/compare.md), which follows the diagram:
 
 1. **Title and Why** — the PR's purpose in one sentence a reviewer would say aloud.
 2. **Verdict** — one sentence, then one expandable row per decision (badged ①②③) plus at most one unbadged "also live on merge" row.

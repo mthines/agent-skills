@@ -69,6 +69,8 @@ No migration section: nothing extra is rendered or posted.
 
 ## Comment and body
 
+Never in plan mode: there is no PR to write to ([`plan-mode.md`](./plan-mode.md#what-plan-mode-never-does)).
+
 Only under `--comment` or `--body`; `--dry-run` stops before the upload.
 Under `--dry-run`, fill everything in [`templates/comment.md`](../templates/comment.md) except the image URLs: write the light one as `{{LIGHT_PNG_URL}}` and the dark one as `{{DARK_PNG_URL}}` (`{{MIGRATION_LIGHT_PNG_URL}}` and `{{MIGRATION_DARK_PNG_URL}}` for the migration pair), so the posting session substitutes them at step 2.
 
