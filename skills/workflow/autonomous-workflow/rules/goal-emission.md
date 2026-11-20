@@ -69,6 +69,7 @@ AW EVIDENCE
 <the run-checks sentinel line, verbatim> | verify: <command> exit=<code>
 review: <N> findings — <F> fixed, <R> rejected, <G> flagged | not run (<reason>)
 PR: <draft PR URL | none — <the user constraint>>
+criteria: <posted <url> | not posted (<reason>) | n/a (no AC in the brief) | n/a (no PR)>
 Changed files (git diff --name-only <base>...HEAD):
 <one path per line>
 ```
@@ -79,6 +80,8 @@ When the last review printed a `review incomplete` line, append it verbatim to t
 BASE=$(git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD main)
 git diff --name-only "$BASE"...HEAD
 ```
+
+The `criteria:` line is mandatory: a run that has a PR URL and prints no `criteria:` value has skipped Publish the criteria, so run it before printing the block.
 
 Never paraphrase the sentinel line, and never print `PR:` without a URL you received from GitHub.
 
