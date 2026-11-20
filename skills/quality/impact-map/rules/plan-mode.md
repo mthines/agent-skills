@@ -38,7 +38,7 @@ Record it; the links and the footer need it.
 | 1 Candidates | Walk the same rows against the **planned** change. A row stays empty when the plan does not touch it. Mark a surface as planned, never as live |
 | 2 Verify | Read the code the plan builds on. A claim in the plan that the code contradicts is a decision. Nothing is "verified by the author": use `Verified: read <files> at <sha>` and `Not run: nothing is built yet` |
 | 3 Decide | Unchanged: at most three decisions, each What / Risk / Ask. An Ask the code already answers moves to Already settled |
-| 4 Diagram | Unchanged. Boxes the plan creates are `new`, boxes it edits are `mod`, edges to code that does not exist yet are dashed. Never `risk`: nothing is exposed until it ships |
+| 4 Diagram | Unchanged, plus the [compare view](./compare.md): a plan almost always changes an existing flow, so build Today and After on the same layout. Boxes the plan creates are `new`, boxes it edits are `mod`, edges to code that does not exist yet are dashed. Never `risk`: nothing is exposed until it ships |
 | 4b Migration | Only when the plan adds or alters a table; draw it from the plan's columns and say `planned` in the verdict line |
 | 5 Page | [Page slots](#page-slots) |
 | 6 Post | Never runs ([What plan mode never does](#what-plan-mode-never-does)) |
