@@ -1808,4 +1808,15 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
   s.check("G133 every flag spelled out beside a verify-comment.mjs call in shipped skill files is one the script reads (an unknown flag exits 1)", stale.length === 0, stale.slice(0, 3).join("; "));
 }
 
+// ── G134: the criteria publish cannot be skipped silently — both evidence blocks carry a criteria: slot, and Full publishes before the verifier wait ──
+{
+  const FT = readOr("skills/workflow/autonomous-workflow/aw/rules/full-tier.md");
+  const GE = readOr("skills/workflow/autonomous-workflow/rules/goal-emission.md");
+  const slot = (md) => /AW EVIDENCE\n[\s\S]*?\n\s*criteria: <posted/.test(md);
+  const pub = FT.indexOf("(a) Publish the criteria");
+  const ver = FT.indexOf("(c) Dispatch `feature-pr-verifier`");
+  s.check("G134 both AW EVIDENCE templates carry a criteria: line, and full-tier.md publishes the criteria (a) before it dispatches the verifier (c)",
+    slot(FT) && slot(GE) && pub > 0 && ver > pub, `full-tier slot=${slot(FT)} goal-emission slot=${slot(GE)} order=${pub}<${ver}`);
+}
+
 process.exit(s.report() ? 0 : 1);

@@ -101,9 +101,12 @@ A follow-up on an open PR runs this step again before pushing; only with `--pr-r
    - A `telemetry:` check that is `contradicts`, or a failed `ui:` criterion, re-enters Step 2 under the same turn cap; then run Step 4.1 again.
    - No `.agents/aw/environments.yml` → `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
 2. **Walkthrough:** `Skill("aw-create-walkthrough")` — one page of what changed and what you assumed.
-3. **PR:** `Skill("create-pr", "--no-pre-review --no-post-review")` unless a user constraint forbids the push — Step 3 already reviewed the diff, and `--pr-review` drops `--no-post-review` ([`aw` § Review](../SKILL.md#review)); then, only once you hold a PR URL, dispatch `feature-pr-verifier` once with the plan, walkthrough, head and base SHAs, and the Before-PR command, and watch CI (`ci-auto-fix` on failure, cap 2). No PR → `Verified: not run (no PR)`; Step 3 already covered the local diff.
-   Then publish the criteria (`autonomous-workflow`'s `rules/phase-6-pr-creation.md § Publish the criteria`): one `verify-comment.mjs --from-plan` call that puts the brief's `AC-{n}` rows on the PR ticked from `run-checks.mjs --statuses`; a failure is `criteria: not posted (<reason>)` under `Degraded:`, never a blocker.
-   When Step 4.1 ran `aw-verify`, also run `Skill("aw-verify", "report <pr-url>")` once you hold the URL: it attaches the verify screenshots and upserts the report comment, with no stack or browser calls.
+3. **PR:** `Skill("create-pr", "--no-pre-review --no-post-review")` unless a user constraint forbids the push — Step 3 already reviewed the diff, and `--pr-review` drops `--no-post-review` ([`aw` § Review](../SKILL.md#review)). No PR → `Verified: not run (no PR)`, `criteria: n/a (no PR)`; Step 3 already covered the local diff.
+   Once you hold the PR URL, do these in order, and run (a) before you dispatch anything or wait on anything:
+   - **(a) Publish the criteria** (`autonomous-workflow`'s `rules/phase-6-pr-creation.md § Publish the criteria`): one `verify-comment.mjs --from-plan` call that puts the brief's `AC-{n}` rows on the PR ticked from `run-checks.mjs --statuses`. A failure is `criteria: not posted (<reason>)` under `Degraded:`, never a blocker. **Why first:** the next sub-step ends with a background wait, and a run that resumes from a notification has ended before reaching a step queued behind it.
+   - **(b) When Step 4.1 ran `aw-verify`,** run `Skill("aw-verify", "report <pr-url>")`: it attaches the verify screenshots and upserts the report comment, with no stack or browser calls.
+   - **(c) Dispatch `feature-pr-verifier` once** with the plan, walkthrough, head and base SHAs, and the Before-PR command, and watch CI (`ci-auto-fix` on failure, cap 2).
+   - When the verifier's hand-back arrives, go to Step 4.4 and 4.5; the hand-back is not the end of the run.
 4. **Lessons:** the exit write in [`lessons.md`](lessons.md), unless a user constraint forbids LoreKit writes.
 5. **Evidence,** verbatim, then the terminal contract:
 
@@ -112,6 +115,7 @@ A follow-up on an open PR runs this step again before pushing; only with `--pr-r
    <the run-checks sentinel line> | verify: <Before-PR command> exit=<code>
    review: <N> findings — <F> fixed, <R> rejected, <G> flagged | not run (<reason>)
    PR: <draft PR URL | none — <the user constraint>>
+   criteria: <posted <url> | not posted (<reason>) | n/a (no AC in the brief) | n/a (no PR)>
    Changed files (git diff --name-only <base>...HEAD):
    <one path per line>
    verify run: .agent/<branch>/verify/report.md — browser <green|red|not run (<reason>)>, telemetry <confirms|contradicts|ambiguous|null|not run (<reason>)> · preview: /ui-verify run <pr-url>

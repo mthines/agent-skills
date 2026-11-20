@@ -60,7 +60,7 @@ The brief says what to do, what must not change, and what done looks like; how y
 4. On a UI diff, `specs.md` was written against the built UI and run, its verdict logged — or `verify run: not run (<reason>)` is in `Degraded:` (correction C5).
 5. `.agent/{branch}/walkthrough.md` exists and its Review summary was printed inline.
 6. The draft PR is open and its URL printed, and the Phase 7 CI gate ran at least once.
-7. The `AW EVIDENCE` block from `rules/goal-emission.md` is printed — read it before your final message — followed by its `verify run:` handoff line when `specs.md` exists.
+7. The `AW EVIDENCE` block from `rules/goal-emission.md` is printed — read it before your final message — with its `criteria:` line filled in (the criteria were published, or the reason they were not), followed by its `verify run:` handoff line when `specs.md` exists.
 
 ## First actions
 
