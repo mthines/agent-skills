@@ -60,9 +60,19 @@ Skip every step that does not apply:
 
 | Order | Condition | Run |
 | --- | --- | --- |
-| 1 | Merge conflicts | `Skill("resolve-conflicts")` |
+| 1 | Merge conflicts | Start the update, then `Skill("resolve-conflicts")` (below) |
 | 2 | Failing CI | `Skill("ci-auto-fix", "<pr-url>")` |
-| 3 | Unresolved review threads | `Skill("implement-suggestion", "<pr-url>")` |
+| 3 | Unresolved review threads | `Skill("implement-suggestion", "<pr-url> --resolve-all")` |
+
+`resolve-conflicts` only resolves a merge or rebase that is already in progress, and previews against `origin/main` otherwise.
+So for row 1, start the update against the PR's own base first, so a stacked PR is compared with its real base:
+
+```bash
+git fetch origin <baseRefName>
+git rebase origin/<baseRefName>   # stops on conflicts; resolve-conflicts takes it from there
+```
+
+Once the rebase finishes, `git push --force-with-lease`.
 
 If a `Skill()` call is refused, apply that skill's contract inline rather than skipping the step.
 A push to a lower PR can create conflicts or red CI above it, so after every push re-run Step 1 for the PRs above.

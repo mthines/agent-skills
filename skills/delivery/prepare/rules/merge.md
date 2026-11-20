@@ -29,7 +29,9 @@ Check each of these explicitly, after the fixes are pushed, before merging a PR:
 
 1. Take the lowest open PR in `PRS`.
 2. Run Step 2 of [`SKILL.md`](../SKILL.md) on it if it needs work; a PR that was already green skips straight to the gates.
-3. If every gate passes, run `gh pr merge <n> --squash`.
+3. If every gate passes, take the PR out of draft when it is one (`gh pr ready <n>` when `gh pr view <n> --json isDraft -q .isDraft` is `true`), because `gh pr merge` refuses a draft.
+   Then run `gh pr merge <n> --squash`.
+   `--merge` is the user's consent to undraft.
 4. Move to the next PR.
    Before fixing it, retarget it to the base when GitHub did not (`gh pr edit <n> --base <base>`), then re-check its state: the merge below can create conflicts or red CI.
 5. Stop at the first PR that cannot be merged and say what blocks it.
