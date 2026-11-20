@@ -14,6 +14,8 @@ The output of this file is a list of at most three decisions, at most one "also 
 
 ## Fetch
 
+No PR (`--plan` or `--branch`)? Follow [`plan-mode.md`](./plan-mode.md) instead of the steps below.
+
 1. Read the PR metadata in one call:
 
    ```bash
