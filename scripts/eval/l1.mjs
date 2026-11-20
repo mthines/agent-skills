@@ -1766,4 +1766,46 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
     `tick ${parseCriteria(body).length} vs verify ${intentFrom(body).length}`);
 }
 
+// ── G132b–e, G133: /aw publishes its brief through the one renderer in verify-comment.mjs; a drifted template, grep, or flag silently publishes nothing ──
+{
+  const { planCriteria, intentFromPlan, FLAGS, CHECK_MARKS } = await import(pathToFileURL(join(REPO_ROOT, "skills/testing/aw-verify/scripts/verify-comment.mjs")).href);
+  const ACP = readOr("skills/workflow/aw-create-plan/SKILL.md");
+  const tpl = (ACP.match(/^## The brief \(Core\)[\s\S]*?````markdown\n([\s\S]*?)\n````/m) || ["", ""])[1];
+  const lines = (md, heading) => { const l = md.split("\n"); const at = l.findIndex((x) => x.startsWith(heading)); const end = l.findIndex((x, i) => i > at && /^##\s/.test(x)); return l.slice(at + 1, end < 0 ? undefined : end); };
+  const tplAcs = (tpl.match(/^- \[ \] AC-\d+/gm) || []).length;
+  const tplGs = lines(tpl, "## Guardrails").filter((x) => x.startsWith("- ")).length;
+  const pc = tpl ? planCriteria(tpl) : { acs: [], guardrails: [] };
+  s.check("G132b aw-create-plan's brief template renders through verify-comment.mjs planCriteria: every AC line and guardrail, and a tagged AC keeps its surface",
+    tplAcs >= 2 && pc.acs.length === tplAcs && pc.guardrails.length === tplGs && tplGs >= 1 && pc.acs[0].kind === "ui", `template ACs ${tplAcs}, rendered ${pc.acs.length}; guardrails ${tplGs}, rendered ${pc.guardrails.length}`);
+  const AW = readOr("skills/workflow/autonomous-workflow/SKILL.md");
+  const lite = (AW.match(/```markdown\n(---\ntier: Lite[\s\S]*?)\n```/) || ["", ""])[1];
+  const lc = lite ? planCriteria(lite).acs.map((c) => `${c.id}:${c.kind}`).join() : "";
+  s.check("G132c autonomous-workflow's Lite brief example renders through planCriteria (a tagged AC keeps its surface, an untagged one is `check`)",
+    lc === "AC-1:ui,AC-2:check", `rendered: ${lc || "no Lite example found"}`);
+  const tagged = "## Acceptance Criteria\n\n- [ ] AC-1 (covers: R1) [ui:/a] — x\n- [ ] AC-2 (covers: R2) [api:GET /b] — y\n";
+  const fx = join(tmpdir(), `l1-ac-${process.pid}.md`); writeFileSync(fx, tagged);
+  const grepAw = (ACP.match(/grep -cE '(\^- \\\[ \\\] AC-\[0-9\]\+ \\\(covers: R\[0-9\])' "\$P"/) || [])[1];
+  const grepFt = (readOr("skills/workflow/autonomous-workflow/aw/rules/full-tier.md").match(/grep -cE '(\^- \\\[ \\\] AC-\[0-9\]\+)' "\$D\/plan\.md"/) || [])[1];
+  const n = (re) => (re ? Number(spawnSync("grep", ["-cE", re, fx], { encoding: "utf8" }).stdout.trim()) : -1);
+  const [nAw, nFt] = [n(grepAw), n(grepFt)];
+  rmSync(fx, { force: true });
+  s.check("G132d the AC greps the planner's validation and Full Step 1 run still count a surface-tagged AC line",
+    nAw === 2 && nFt === 2, `validation grep ${grepAw ? nAw : "not found"}, Step 1 grep ${grepFt ? nFt : "not found"} (want 2, 2)`);
+  const rendered = intentFromPlan(tagged, { statuses: { "AC-1": "pass", "AC-2": "fail" } });
+  s.check("G132e the run-checks status names (pending, pass, fail, unsatisfiable) are exactly the keys verify-comment.mjs maps to marks",
+    ["pending", "pass", "fail", "unsatisfiable"].every((k) => CHECK_MARKS[k]) && Object.keys(CHECK_MARKS).length === 4 && /✅&nbsp;AC‑1/.test(rendered) && /❌&nbsp;AC‑2/.test(rendered)
+      && /const STATUSES = new Set\(\["pending", "pass", "fail", "unsatisfiable"\]\)/.test(readOr("skills/workflow/autonomous-workflow/scripts/run-checks.mjs")), "a renamed run-checks status maps to no mark");
+  // Every verify-comment.mjs call a shipped skill file spells out uses only flags the script reads; an unknown flag exits 1.
+  const stale = [];
+  const scan = (dir) => { for (const e of readdirSync(join(REPO_ROOT, dir), { withFileTypes: true })) {
+    const rel = `${dir}/${e.name}`;
+    if (e.isDirectory()) { if (!["node_modules", ".git", ".agent"].includes(e.name)) scan(rel); }
+    else if (/\.(md|template)$/.test(e.name)) for (const l of readOr(rel).split("\n"))
+      if (/node "?\$\{?VC\}?"?\s|node [^\s]*verify-comment\.mjs"?\s/.test(l) && !/^\s*(?:\/\/|#)/.test(l))
+        for (const f of l.match(/(?<=\s)--[a-z][a-z-]*/g) || []) if (!FLAGS.includes(f)) stale.push(`${rel}: ${f}`);
+  } };
+  scan("skills");
+  s.check("G133 every flag spelled out beside a verify-comment.mjs call in shipped skill files is one the script reads (an unknown flag exits 1)", stale.length === 0, stale.slice(0, 3).join("; "));
+}
+
 process.exit(s.report() ? 0 : 1);

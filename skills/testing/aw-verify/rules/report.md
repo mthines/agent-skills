@@ -126,4 +126,5 @@ Upload only when the comment will post ([`pr-comment.md § When to post`](./pr-c
 ## `report` mode
 
 Re-render from the existing run directory, re-run the Media steps, upsert the `aggregate` region (always, on any PR), and print the terminal block.
+Then make the criteria current: when the PR has no `intent` region, publish it ([`intent.md § Step 6`](./intent.md#step-6--publish-the-criteria-on-the-pr)); either way set each row's **Status** from the run's results, so a PR `/aw` opened ends with every criterion ticked.
 Missing run directory → `no verify run found for <branch>`.

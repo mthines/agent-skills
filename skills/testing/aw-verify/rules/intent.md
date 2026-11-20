@@ -35,7 +35,7 @@ A vague criterion here becomes a vague verdict later.
 
 | # | Source | How to tell | Use |
 | --- | --- | --- | --- |
-| 1 | An `/aw` brief on this branch | `.agent/{branch}/plan.md` has `## Acceptance Criteria` with `AC-{n}` items | Copy every `AC-{n}` verbatim with its ID; take surfaces from `## File Changes` |
+| 1 | An `/aw` brief on this branch | `.agent/{branch}/plan.md` has `## Acceptance Criteria` with `AC-{n}` items | Copy every `AC-{n}` verbatim with its ID; take each surface from the AC's own `[kind:target]` tag, else from `## File Changes`. `/aw` may already have published the rows ([§ Step 6](#step-6--publish-the-criteria-on-the-pr)) |
 | 2 | The PR and its ticket | A PR exists for the branch | Derive criteria per Step 3 |
 | 3 | The diff alone | No PR | Derive criteria per Step 3 and write `intent source: diff only` in `intent.md` |
 
@@ -79,7 +79,7 @@ One line per user-visible or API-visible behavior, each testable by an observer,
 
 When the PR and ticket disagree, the ticket wins; record the mismatch as `spec-drift`.
 
-Tag every criterion, from every source, with its surface: `ui:<route>`, `api:<METHOD path>`, or `worker:<component>`.
+Tag every criterion, from every source, with its surface: `ui:<route>`, `api:<METHOD path>`, or `worker:<component>` (an `/aw` brief may already carry the tag, or read `check` for a criterion with no surface of its own).
 
 ## Step 3b — Lint every criterion and map the surfaces
 
@@ -164,14 +164,26 @@ This is not optional and does not depend on the push policy: it is the `intent` 
   # own PR → a region of the description, next to the ui-verify spec; the ui spec keeps its own marker pair
 ```
 
+### An `/aw` brief is published by `/aw`, with the same script
+
+`/aw` opens the PR before `aw-verify` can post, so it publishes the brief's criteria itself, with `verify-comment.mjs --from-plan .agent/{branch}/plan.md --statuses "$(run-checks.mjs --statuses)"` (`/aw`'s side of this is its `rules/phase-6-pr-creation.md § Publish the criteria`).
+The rows are the brief's text verbatim: an AC tagged `[ui:/x]`, `[api:PUT /x]`, or `[worker:c]` keeps that tag in its Proof cell, a `telemetry:` AC reads `telemetry:<span>`, and an untagged one reads `check`.
+This run's Step 6 then re-publishes the region with the surfaces and Proof it found (a `check` row becomes `ui:/x`), and its **Status** call ticks every row from the final results.
+A run-checks `✅` can rest on a `grep` or `command` check, so `aw-verify`'s result replaces it.
+
+```text
+✗ rendering an /aw brief's rows by hand in Step 6 (a second renderer that drifts from /aw's)
+✓ node "$VC" --pr <pr-url> --section intent --from-plan .agent/<branch>/plan.md   # the one renderer, then add Proof
+```
+
 ### The criteria are a living checklist
 
 Each criterion row carries a leading status that says where it stands, so a reviewer reads the PR top-down without opening the report:
 
 | Mark | Meaning | Set by |
 | --- | --- | --- |
-| `⬜` | Published, not run yet | Step 6, first publication |
-| `✅` | Passed on its own target (`pass`, `after fix`) | `aw-verify`, end of every run |
+| `⬜` | Published, not run yet | `/aw` at PR open, or Step 6 |
+| `✅` | Passed on its own target (`pass`, `after fix`) | `/aw` from `run-checks.mjs` at PR open, then `aw-verify`, end of every run |
 | `❌` | Failed, or a finding is still open on it | `aw-verify`, end of every run |
 | `⏭️` | `not verified on target` | `aw-verify`, end of every run |
 | `🚀` | Confirmed on production traffic | `deployment-verify` after a `PASS`, only for criteria a contract root span watches |

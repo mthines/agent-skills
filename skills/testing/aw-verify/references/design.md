@@ -28,3 +28,9 @@ A public skill cannot carry one company's component map, ports, login flow, or d
 ## Real screenshots
 
 `attach-media` uploads to GitHub's attachment store directly, so the comment shows the images the run captured, after checking each for secrets.
+
+## One criteria list, two writers
+
+`/aw` opens the PR before `aw-verify` can post, so both publish the same `intent` region: `/aw` from the brief (`--from-plan`, statuses from `run-checks.mjs`), `aw-verify` from what it observed (surfaces, Proof, final statuses).
+One renderer for a brief means the text is byte-identical whoever publishes it, and a status means "as of the last run": a run starts by republishing `⬜` and ends by ticking every row, so a crash never leaves a tick from an older head.
+A criterion with no surface of its own (a CLI exit code, an internal rule) is `check`, which production verification reports as not watched instead of inventing a route.

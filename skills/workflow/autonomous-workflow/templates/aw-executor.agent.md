@@ -100,7 +100,7 @@ echo "FASTLANE=$(grep -cE '^## (TL;DR|Requirements|Decisions|Acceptance Criteria
 | 4 (review) | Run `Skill("review-loop", "--base <base sha> --cap 2")` (local mode, unposted) once the checks and Before-PR pass; re-run both after it returns | `aw/rules/full-tier.md` *Step 3* (autonomous-workflow) |
 | 4 (UI) | Write `specs.md` from the built UI and run it (C5) | [`phase-4-spec-verification.md`](../rules/phase-4-spec-verification.md) — when the diff touches UI files |
 | 5 | Update the docs the change makes wrong | [`phase-5-documentation.md`](../rules/phase-5-documentation.md) |
-| 6 | Walkthrough, then `Skill("create-pr", "--no-pre-review --no-post-review")` (`--pr-review` drops `--no-post-review`) | [`phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) |
+| 6 | Walkthrough, then `Skill("create-pr", "--no-pre-review --no-post-review")` (`--pr-review` drops `--no-post-review`), then publish the criteria | [`phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) |
 | 7 | Watch CI; `ci-auto-fix` on failure | [`phase-7-ci-gate.md`](../rules/phase-7-ci-gate.md) |
 
 - **Sub-agents are your call, capped at 3 at a time.** Use them for research that would flood your context, or for file-disjoint slices; never for a task you could finish in a few edits. Every fan-out prompt embeds the resource-discipline line — [`parallel-coordination.md`](../rules/parallel-coordination.md#sub-agent-resource-discipline).
