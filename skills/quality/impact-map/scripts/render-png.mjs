@@ -27,7 +27,7 @@ export function extract(html) {
   const style = /<style>([\s\S]*?)<\/style>/.exec(html)?.[1];
   const fonts = /<link rel="stylesheet"[^>]+>/.exec(html)?.[0] ?? "";
   const legend = /<div class="legend">[\s\S]*?<\/div>/.exec(html)?.[0] ?? "";
-  const svg = /<div class="fig-scroll">\s*(<svg[\s\S]*?<\/svg>)/.exec(html)?.[1];
+  const svg = (/<figure class="f-after">\s*<div class="fig-scroll">\s*(<svg[\s\S]*?<\/svg>)/.exec(html) ?? /<div class="fig-scroll">\s*(<svg[\s\S]*?<\/svg>)/.exec(html))?.[1];
   const box = svg && /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(svg);
   if (!style || !svg || !box) return null;
   const height = Math.ceil(CHROME_FIXED + (SVG_WIDTH * Number(box[2])) / Number(box[1]));

@@ -82,14 +82,14 @@ Without either flag in the user's own request, write nothing to GitHub.
 | 2 | Verify | [`rules/analysis.md § Verify`](./rules/analysis.md#verify) | Every candidate classified open / settled / wrong, with evidence; each interface traced to the code that feeds it |
 | 3 | Decide | [`rules/analysis.md § Decide`](./rules/analysis.md#decide) | ≤ 3 decisions, each What / Risk / Ask and ≤ 3 linked lines |
 | 4 | Diagram | [`rules/diagram.md`](./rules/diagram.md) | One SVG, ≤ 14 service boxes plus an interfaces band, decision badges placed |
-| 4a | Compare | [`rules/compare.md`](./rules/compare.md) | Only when the change alters an existing flow: a Today and an After diagram on the same layout, a Today / After toggle, a numbered flow, and a side-by-side table |
+| 4a | Compare | [`rules/compare.md`](./rules/compare.md) | Only when the change alters an existing flow: a Today and an After diagram on the same layout, a Today / After toggle, a lettered flow, and a side-by-side table |
 | 4b | Migration | [`rules/migration.md`](./rules/migration.md) | Only when the diff has a migration: verdict line, four tiles, schema rows, and a ≤ 5-box usage diagram on one screen |
 | 5 | Page | [`rules/outputs.md § Page`](./rules/outputs.md#page) | PNGs rendered and looked at (or reported as not rendered when no Chrome exists), page built from `templates/page.html` and published or written |
 | 6 | Post | [`rules/outputs.md § Comment and body`](./rules/outputs.md#comment-and-body) | Only with `--comment` / `--body`: PNGs uploaded, posted, read back clean |
 
 ## Shape of the result
 
-Every output has the same six parts, in this order, and nothing else:
+Every output has the same six parts, in this order, and nothing else, except the optional side-by-side table of the [compare view](./rules/compare.md), which follows the diagram:
 
 1. **Title and Why** — the PR's purpose in one sentence a reviewer would say aloud.
 2. **Verdict** — one sentence, then one expandable row per decision (badged ①②③) plus at most one unbadged "also live on merge" row.

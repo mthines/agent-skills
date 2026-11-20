@@ -29,6 +29,7 @@ The six-part result, the diagram grammar, and the decision rules are the same; o
 
 The base commit is the checkout the code was read at: `git rev-parse --short HEAD` of the worktree, or the base branch's head.
 Record it; the links and the footer need it.
+A link only works when GitHub has that commit: check `git branch -r --contains <sha>`. When the commit exists only locally, link the merge base with the default branch instead, and write a planned or unpushed file's path as `<code>`.
 
 ## Phases that change
 
@@ -53,8 +54,10 @@ Keep the stylesheet unchanged. Fill the slots that name a PR as follows.
 | Title (`<title>`) | `<Subject> Impact Map` |
 | Why | The plan's purpose in one sentence |
 | Meta | `base <short sha>` and `about <n> files (estimate)`; no author and no `+/−` counts |
-| Line links | A blob link at `BASE_SHA` for code that exists today: `https://github.com/<o>/<r>/blob/<sha>/<path>#L<a>-L<b>`. Add a line anchor only for a line you read. A planned file has no link, so write its path as `<code>` |
+| Line links | A blob link at `BASE_SHA` (a pushed commit, see [Sources](#sources)) for code that exists today: `https://github.com/<o>/<r>/blob/<sha>/<path>#L<a>-L<b>`. Add a line anchor only for a line you read. A planned file has no link, so write its path as `<code>` |
+| Proof line | Replace the label `Verified by the author:` with `Verified:` |
 | Legend | Drop `Exposed on merge`; use `Planned, not built` for the dashed edge |
+| Local file | `.agent/{branch}/impact-map/plan.html` when the host has no Artifact tool |
 | Footer | `Built from the plan and the code at <sha>, <date>. File counts are estimates. Nothing was run.` |
 
 Say "planned" or "proposed" wherever the Where it shows up table names a gate, so a reader never takes it for something live.
