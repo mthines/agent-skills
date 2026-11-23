@@ -18,7 +18,8 @@ lives*):
 
 - gate findings, which have **no inline anchor by design** — a `❌` on *Prior review feedback*,
   *Documentation*, or *Self-review signals* (or a `⚠️` on the tri-state *Prior review feedback*)
-  exists only as a row in the gate-status table;
+  exists only as a glyph in the gate strip and its bullet inside `Review details` (a row of the
+  gate-status table in a legacy body);
 - deferred findings (Step 2.9b), which cleared every quality gate but did not fit the inline caps.
 
 Any consumer that reads only the inline comments therefore sees an incomplete review.
@@ -160,8 +161,8 @@ Three consequences for a consumer:
 - **It counts findings, not gates.** Gate state is named in a `**Blocking:**` (FAIL),
   `**Before merge:**` (a WARN from the housekeeping gates only: Description vs. code, and Prior review
   feedback while none of the open threads is this reviewer's own finding), or `**Warnings:**` (any other WARN) line under the summary.
-  With findings, that line omits the Code-review gate's phrase, which the headline and the table
-  already state, and keeps every other gate's phrase; it is absent when nothing remains.
+  With findings, that line omits the Code-review gate's phrase, which the headline and the findings
+  table already state, and keeps every other gate's phrase; it is absent when nothing remains.
 - **`### ` is the report's identity marker.** An inline finding never uses a heading
   (`comment-shape.md § Shape` forbids it and uses a bold title line), so the presence of a `### `
   heading distinguishes the two surfaces without reading the marker.

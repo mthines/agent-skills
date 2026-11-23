@@ -415,7 +415,7 @@ any other WARN.
 **Why:** a stale description or another reviewer's open thread is a merge to-do, not a problem in
 the code, so it must not turn a clean review's heading ⚠️.
 With findings, it drops the Code-review gate's phrase (`<K> blocking finding(s) (see …)` /
-`<N> non-blocking finding(s)`), because the headline and the table already state it, and keeps
+`<N> non-blocking finding(s)`), because the headline and the findings table already state it, and keeps
 every other gate's phrase; the line is omitted when no phrase remains.
 It keeps the first two phrases and appends `; +<k> more` beyond that — the ~140-char bound
 expressed as a list bound, so it cannot be exceeded by wording.

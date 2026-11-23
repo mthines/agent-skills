@@ -1417,7 +1417,7 @@ function main() {
     fail(`SUMMARY is ${summary.length} chars, over the 240-char cap — it is one sentence about the`
       + " change, not the report");
   }
-  // With findings, the headline and the table already state the Code-review gate's phrase
+  // With findings, the headline and the findings table already state the Code-review gate's phrase
   // (`<K> blocking finding(s) (see …)` / `<N> non-blocking finding(s)`, gates.mjs `gate6`), so only
   // that phrase is dropped. Every other gate's phrase — an unanswered blocking thread, a doc gap,
   // a self-review signal, a description mismatch — is in neither, so it stays on the line.
