@@ -14,7 +14,7 @@ The layout contract is [`report-rendering.md`](../../../../agents/pr-reviewer/ru
 1. Add or edit `<name>.json` in this folder; the renderer fails closed, so fix the payload until it renders.
 2. Write the snapshot: `node agents/pr-reviewer/scripts/render-report.mjs scripts/eval/fixtures/report-body/<name>.json > scripts/eval/fixtures/report-body/<name>.expected.md`.
 3. Add `<name>` with a title and a one-line description to `REPORTS` in [`report-gallery.mjs`](../../report-gallery.mjs).
-4. Rebuild this file with `node scripts/eval/report-gallery.mjs`, and confirm with `node scripts/eval/l1.mjs`.
+4. Rebuild this file with `node scripts/eval/report-gallery.mjs`, and confirm with `node scripts/eval/l1.mjs`; CI (`evals-l1.yml`) runs `--check` and fails on a stale README.
 
 ```bash
 node scripts/eval/report-gallery.mjs --check   # exits 1 when this README is stale

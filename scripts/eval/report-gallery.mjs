@@ -16,8 +16,8 @@ const BODY_DIR = join(ROOT, "scripts/eval/fixtures/report-body");
 const POINTER_DIR = join(ROOT, "scripts/eval/fixtures/report-pointer");
 const OUT = join(BODY_DIR, "README.md");
 
-// Gallery order and the one line saying what each variation shows. A fixture missing here fails the build,
-// so a new payload cannot land without a place in the gallery.
+// Gallery order and the one line saying what each variation shows. A fixture missing here fails the
+// `--check` that evals-l1.yml runs, so a new payload cannot land without a place in the gallery.
 const REPORTS = [
   ["pass", "PASS, no findings", "Every gate ✅, nothing posted — the cleanest possible report."],
   ["pass-ci-pending", "PASS with CI still running", "A pending or red CI check renders as a `CI` row and never moves the verdict."],
@@ -105,7 +105,7 @@ const readme = [
   "1. Add or edit `<name>.json` in this folder; the renderer fails closed, so fix the payload until it renders.",
   "2. Write the snapshot: `node agents/pr-reviewer/scripts/render-report.mjs scripts/eval/fixtures/report-body/<name>.json > scripts/eval/fixtures/report-body/<name>.expected.md`.",
   "3. Add `<name>` with a title and a one-line description to `REPORTS` in [`report-gallery.mjs`](../../report-gallery.mjs).",
-  "4. Rebuild this file with `node scripts/eval/report-gallery.mjs`, and confirm with `node scripts/eval/l1.mjs`.",
+  "4. Rebuild this file with `node scripts/eval/report-gallery.mjs`, and confirm with `node scripts/eval/l1.mjs`; CI (`evals-l1.yml`) runs `--check` and fails on a stale README.",
   "",
   "```bash",
   "node scripts/eval/report-gallery.mjs --check   # exits 1 when this README is stale",
