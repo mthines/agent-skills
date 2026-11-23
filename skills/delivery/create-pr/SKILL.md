@@ -4,9 +4,9 @@ description: >
   Writes a short narrative PR description (≤ 25 lines, hard ceiling 40), converges the branch with
   review-loop in local mode, pushes, opens a draft PR, runs review-loop until every thread is resolved, and hands red
   CI to ci-auto-fix. Flags: --split (2–4 dependency-ordered draft PRs), --quick, --no-review,
-  --no-simplify, --no-quality, --no-pre-review, --no-post-review, --no-ui-verify, --no-media; invoke with /create-pr.
+  --no-simplify, --no-quality, --no-pre-review, --no-post-review, --no-ui-verify, --no-media, --merge (squash-merge on a clean review-loop convergence); invoke with /create-pr.
 disable-model-invocation: false
-argument-hint: '[--split] [--quick] [--no-pre-review] [--no-post-review] [--no-review] [--no-simplify] [--no-quality] [--no-ui-verify] [--attach <file>] [--no-media]'
+argument-hint: '[--split] [--quick] [--no-pre-review] [--no-post-review] [--no-review] [--no-simplify] [--no-quality] [--no-ui-verify] [--attach <file>] [--no-media] [--merge]'
 license: MIT
 metadata:
   author: mthines
@@ -46,6 +46,7 @@ Parse `$ARGUMENTS`. `--split` selects an alternate workflow; the other flags sca
 | `no-ui-verify` | `--no-ui-verify` anywhere | Skip the default-on Step 6.4. |
 | `no-pre-review` | `--no-pre-review` anywhere | Skip the default-on Step 5.5. |
 | `no-post-review` | `--no-post-review` anywhere | Skip Step 6.5 only; the PR gets no posted review. `aw` passes it because the branch already converged locally. |
+| `merge` | `--merge` | Step 6.5 runs `Skill("review-loop", "<pr-url> --no-ci --merge")`, so a clean convergence squash-merges. Needs the default review loop (row 4); see [Step 6.5](#step-65-post-draft-quality-loop-delegated-to-review-loop). |
 | `attach` / `no-media` | `--attach <file>` (repeatable) / `--no-media` | `--attach` adds a local file to Step 6.2 ahead of the branch's captures; `--no-media` skips Step 6.2. |
 
 `rules/legacy-flags.md` — read when `$ARGUMENTS` carries `--review`, `--simplify`, `--pre-review`, `--no-feedback`, or `--no-preview-spec`.
@@ -141,6 +142,14 @@ Otherwise evaluate in this precedence order (first match wins):
 | 4 | **none of the above (default)** | `Skill("review-loop", "<pr-url> --no-ci")` | `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations, until every thread is resolved (fix or reply); refreshes the PR description. |
 
 Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it.
+**`--merge` (row 4 only):** invoke `Skill("review-loop", "<pr-url> --no-ci --merge")`; `review-loop` owns the merge gates ([`merge.md`](../../quality/review-loop/rules/merge.md)): `PASS` or `WARN`, zero open threads, green CI, squash only.
+Rows 1–3, `--no-quality`, `--no-post-review`, and `--split` never run `review-loop`, so `--merge` cannot fire there: do not merge, and record `not merged (--merge needs the default review loop)` for Step 10.
+
+```text
+# correct: /create-pr --merge  → Skill("review-loop", "<pr-url> --no-ci --merge")
+# wrong:   /create-pr --merge --quick → gh pr merge (no review ran, so nothing approved it)
+```
+
 **Always pass `--no-ci` to `review-loop` here** — Steps 7–8 own CI for this invocation and cover every commit the loop pushes.
 
 **Rows 3 and 4 both need sub-agent dispatch.** Before taking either row, confirm that **some** available tool dispatches a sub-agent — a capability check, never a tool-name check (`Task` in Claude Code, `Agent` in the Agent SDK, `task` in OpenCode-based hosts such as Dash0 Agent0). If none does, do not attempt the dispatch and do not fall through to row 2 — record `NOT REVIEWED (sub-agent dispatch unavailable)` for Step 10.
@@ -227,6 +236,7 @@ Review loop (review-loop / pr-reviewer):
   Open threads at exit: <count>
   Description refreshed: <yes | unchanged | skipped>
   Final verdict: <PASS | FAIL>
+  Merge: <review-loop's `Merge:` line | not requested (no --merge) | not merged (--merge needs the default review loop)>
 
 CI:
   Watch attempts: <the `ci-watch attempt N/4` lines you printed, or "none needed">
