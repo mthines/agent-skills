@@ -682,6 +682,13 @@ const renderReport = (payload) => {
   s.check("G19g a housekeeping-only WARN keeps the clean heading and a **Before merge:** line", housekeeping.ok
     && /^### ✅ No issues found$/m.test(housekeeping.out)
     && /^\*\*Before merge:\*\* description omits the rename$/m.test(housekeeping.out), housekeeping.err);
+  const ownOpen = render((c) => {
+    c.VERDICT = "WARN"; c.GATE_PRIOR_STATUS = "⚠️"; c.GATE_PRIOR_DETAILS = "1 unresolved review thread(s) — see the thread list below";
+    c.WARN_REASONS = ["1 open review thread"];
+    c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://github.com/o/r/pull/1#discussion_r1", ask: "x is never freed", own: true }];
+  });
+  s.check("G19g an open thread that is this reviewer's own finding keeps the ⚠️ heading", ownOpen.ok
+    && !/^### ✅/m.test(ownOpen.out) && /^\*\*Warnings:\*\* 1 open review thread$/m.test(ownOpen.out), ownOpen.err);
   s.check("G19g a code-level WARN keeps the ⚠️ heading and a **Warnings:** line", warnForm.ok
     && /^\*\*Warnings:\*\* 1 doc gap$/m.test(warnForm.out), warnForm.err);
   const gatesOut = housekeeping.ok ? housekeeping.out : "";

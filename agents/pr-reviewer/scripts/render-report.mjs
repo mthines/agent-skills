@@ -116,7 +116,7 @@ const SHAPES = {
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note", "kind", "evidence"],
-  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
+  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot", "own"],
   "NOTES[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
@@ -314,6 +314,9 @@ function anchorBullet(where, item, textField) {
  */
 function openThreadBullet(where, item) {
   const line = anchorBullet(where, item, "ask");
+  if (item.own !== undefined && typeof item.own !== "boolean") {
+    fail(`${where}.own must be a boolean, got ${JSON.stringify(item.own)}`);
+  }
   const { author, is_bot: isBot } = item;
   if (isBot === undefined || isBot === null) return line; // type unknown → untagged, never guessed
   if (typeof isBot !== "boolean") {
@@ -1385,7 +1388,10 @@ function main() {
   // keeps the clean heading and names the to-dos on a `**Before merge:**` line. With findings, the
   // Code-review ⚠️ is already the heading, so it does not count against the housekeeping-only test.
   const counted = GATES.filter(([, k], i) => gateStatuses[i] === "⚠️" && !(n > 0 && k === "GATE_CODEREVIEW"));
-  const housekeepingOnly = verdict === "WARN" && counted.every(([, k]) => HOUSEKEEPING_GATES.has(k));
+  // Prior review feedback is housekeeping only while no open thread is this reviewer's own finding.
+  const ownOpen = arr("OPEN_THREADS").some((t) => t.own === true);
+  const housekeepingOnly = verdict === "WARN"
+    && counted.every(([, k]) => HOUSEKEEPING_GATES.has(k) && !(k === "GATE_PRIOR" && ownOpen));
   let headline;
   if (n > 0) {
     const glyph = TIER_GLYPH[worstTier(findings)];
