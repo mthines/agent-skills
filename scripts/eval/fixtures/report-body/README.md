@@ -60,13 +60,11 @@ Adds a `check_run` trigger kind and wires every registry keyed by the union.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -97,13 +95,11 @@ Adds a `check_run` trigger kind and wires every registry keyed by the union.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -139,13 +135,11 @@ Adds a `check_run` trigger kind and wires every registry keyed by the union.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -177,13 +171,11 @@ Adds a `check_run` trigger kind and wires every registry keyed by the union.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -243,13 +235,11 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -303,13 +293,11 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -328,7 +316,7 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 
 ## WARN, zero findings
 
-Only a soft gate (Description vs. code) warns, so the headline reads `No findings — 1 gate needs attention`; also shows a size-scaled `standard` tier.
+Only a soft gate (Description vs. code) warns, so the heading stays `✅ No issues found` with a `**Before merge:**` line naming it; also shows a size-scaled `standard` tier.
 
 Payload: [`warn-no-findings.json`](warn-no-findings.json) · snapshot: [`warn-no-findings.expected.md`](warn-no-findings.expected.md)
 
@@ -337,23 +325,27 @@ Payload: [`warn-no-findings.json`](warn-no-findings.json) · snapshot: [`warn-no
 
 ````markdown
 <!-- PR_REVIEWER_REPORT -->
-### ⚠️ No findings — 1 gate needs attention
+### ✅ No issues found
 
 Renames the `ingest` queue to `intake` across the producer and both consumers.
 
-**Warnings:** description omits the queue rename
+**Before merge:** description omits the queue rename
 
 <details>
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ⚠️ | The description omits the queue rename in `deploy/queues.yaml`. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+The description omits the queue rename in `deploy/queues.yaml`.
+
+</details>
+
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -376,23 +368,27 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 ---
 
 <!-- PR_REVIEWER_REPORT -->
-### ⚠️ No findings — 1 gate needs attention
+### ✅ No issues found
 
 Renames the `ingest` queue to `intake` across the producer and both consumers.
 
-**Warnings:** description omits the queue rename
+**Before merge:** description omits the queue rename
 
 <details>
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ⚠️ | The description omits the queue rename in `deploy/queues.yaml`. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+The description omits the queue rename in `deploy/queues.yaml`.
+
+</details>
+
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -424,7 +420,7 @@ Payload: [`warn.json`](warn.json) · snapshot: [`warn.expected.md`](warn.expecte
 
 Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
-**Warnings:** 2 open review threads
+**Before merge:** 2 open review threads
 
 | | Finding | Where |
 |:-:|---|---|
@@ -449,13 +445,24 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <summary>Review details — 2 open review threads</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 2 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⚠️ | 3 non-blocking findings — see inline comments. |
+✅ Description vs. code
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+2 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>⚠️ <b>Code review</b></summary>
+
+3 non-blocking findings — see inline comments.
+
+</details>
 
 **Open review threads (2)** <sup>4 resolved since `70cf147`</sup>
 
@@ -496,7 +503,7 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
 Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
-**Warnings:** 2 open review threads
+**Before merge:** 2 open review threads
 
 | | Finding | Where |
 |:-:|---|---|
@@ -521,13 +528,24 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <summary>Review details — 2 open review threads</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 2 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⚠️ | 3 non-blocking findings — see inline comments. |
+✅ Description vs. code
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+2 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>⚠️ <b>Code review</b></summary>
+
+3 non-blocking findings — see inline comments.
+
+</details>
 
 **Open review threads (2)** <sup>4 resolved since `70cf147`</sup>
 
@@ -577,13 +595,18 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | 2 threads resolved since `2c2bd19`; none open. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code
+
+<details>
+<summary>✅ <b>Prior review feedback</b></summary>
+
+2 threads resolved since `2c2bd19`; none open.
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -614,13 +637,18 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | 2 threads resolved since `2c2bd19`; none open. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code
+
+<details>
+<summary>✅ <b>Prior review feedback</b></summary>
+
+2 threads resolved since `2c2bd19`; none open.
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -656,13 +684,11 @@ No code changed since the last review; the PR description was updated.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -692,13 +718,11 @@ No code changed since the last review; the PR description was updated.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -744,13 +768,17 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ❌ | 1 blocking finding — see inline comments. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>❌ <b>Code review</b></summary>
+
+1 blocking finding — see inline comments.
+
+</details>
 
 | Run | Details |
 |---|---|
@@ -794,13 +822,17 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ❌ | 1 blocking finding — see inline comments. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>❌ <b>Code review</b></summary>
+
+1 blocking finding — see inline comments.
+
+</details>
 
 | Run | Details |
 |---|---|
@@ -872,13 +904,29 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ⚠️ | Claims `nx affected` is green; not true at this SHA. |
-| Prior review feedback | ❌ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⏭️ | not evaluated this run |
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+Claims `nx affected` is green; not true at this SHA.
+
+</details>
+
+<details>
+<summary>❌ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>⏭️ <b>Code review</b></summary>
+
+not evaluated this run
+
+</details>
 
 **Open review threads (1)**
 
@@ -952,13 +1000,29 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ⚠️ | Claims `nx affected` is green; not true at this SHA. |
-| Prior review feedback | ❌ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⏭️ | not evaluated this run |
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+Claims `nx affected` is green; not true at this SHA.
+
+</details>
+
+<details>
+<summary>❌ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>⏭️ <b>Code review</b></summary>
+
+not evaluated this run
+
+</details>
 
 **Open review threads (1)**
 
@@ -1010,13 +1074,24 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ❌ | 1 blocking finding — see inline comments. |
+✅ Description vs. code
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>❌ <b>Code review</b></summary>
+
+1 blocking finding — see inline comments.
+
+</details>
 
 **Open review threads (1)**
 
@@ -1082,13 +1157,24 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ❌ | 1 blocking finding — see inline comments. |
+✅ Description vs. code
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>❌ <b>Code review</b></summary>
+
+1 blocking finding — see inline comments.
+
+</details>
 
 **Open review threads (1)**
 
@@ -1152,13 +1238,11 @@ Renames the internal event-queue buffer and its comments.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1189,13 +1273,11 @@ Renames the internal event-queue buffer and its comments.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1231,13 +1313,11 @@ Reworks the private jitter helper behind every retrying client and exports `pars
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1269,13 +1349,11 @@ Reworks the private jitter helper behind every retrying client and exports `pars
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1308,7 +1386,7 @@ Payload: [`reach-progress.json`](reach-progress.json) · snapshot: [`reach-progr
 
 Makes `retryRequest` throw on exhaustion and moves the backoff policy into one module.
 
-**Warnings:** 1 open review thread
+**Before merge:** 1 open review thread
 
 | | Finding | Where |
 |:-:|---|---|
@@ -1328,13 +1406,24 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <summary>Review details — 1 open review thread</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⚠️ | 1 non-blocking finding — see inline comments. |
+✅ Description vs. code
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>⚠️ <b>Code review</b></summary>
+
+1 non-blocking finding — see inline comments.
+
+</details>
 
 **Open review threads (1)** <sup>2 resolved since `8d2e4a1`</sup>
 
@@ -1371,7 +1460,7 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 
 Makes `retryRequest` throw on exhaustion and moves the backoff policy into one module.
 
-**Warnings:** 1 open review thread
+**Before merge:** 1 open review thread
 
 | | Finding | Where |
 |:-:|---|---|
@@ -1391,13 +1480,24 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <summary>Review details — 1 open review thread</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⚠️ | 1 non-blocking finding — see inline comments. |
+✅ Description vs. code
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>⚠️ <b>Code review</b></summary>
+
+1 non-blocking finding — see inline comments.
+
+</details>
 
 **Open review threads (1)** <sup>2 resolved since `8d2e4a1`</sup>
 

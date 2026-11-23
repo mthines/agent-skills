@@ -7,13 +7,11 @@ Reworks the private jitter helper behind every retrying client and exports `pars
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|

@@ -1,21 +1,25 @@
 <!-- PR_REVIEWER_REPORT -->
-### ⚠️ No findings — 1 gate needs attention
+### ✅ No issues found
 
 Renames the `ingest` queue to `intake` across the producer and both consumers.
 
-**Warnings:** description omits the queue rename
+**Before merge:** description omits the queue rename
 
 <details>
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ⚠️ | The description omits the queue rename in `deploy/queues.yaml`. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+The description omits the queue rename in `deploy/queues.yaml`.
+
+</details>
+
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|

@@ -18,13 +18,17 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ❌ | 1 blocking finding — see inline comments. |
+✅ Description vs. code<br>
+✅ Prior review feedback<br>
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>❌ <b>Code review</b></summary>
+
+1 blocking finding — see inline comments.
+
+</details>
 
 | Run | Details |
 |---|---|

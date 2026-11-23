@@ -14,13 +14,24 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ❌ | 1 blocking finding — see inline comments. |
+✅ Description vs. code
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals
+
+<details>
+<summary>❌ <b>Code review</b></summary>
+
+1 blocking finding — see inline comments.
+
+</details>
 
 **Open review threads (1)**
 

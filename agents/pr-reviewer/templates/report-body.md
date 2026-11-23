@@ -50,13 +50,7 @@
 <summary>Review details{{OPEN_THREADS_SUFFIX}}</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | {{GATE_DESCRIPTION_STATUS}} | {{GATE_DESCRIPTION_DETAILS}} |
-| Prior review feedback | {{GATE_PRIOR_STATUS}} | {{GATE_PRIOR_DETAILS}} |
-| Documentation | {{GATE_DOCS_STATUS}} | {{GATE_DOCS_DETAILS}} |
-| Self-review signals | {{GATE_SELFREVIEW_STATUS}} | {{GATE_SELFREVIEW_DETAILS}} |
-| Code review | {{GATE_CODEREVIEW_STATUS}} | {{GATE_CODEREVIEW_DETAILS}} |
+{{GATE_LIST}}
 {{#OPEN_THREADS}}
 **Open review threads ({{OPEN_THREADS_COUNT}})**{{RESOLVED_SINCE}}
 

@@ -7,13 +7,18 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 <summary>Review details</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | 2 threads resolved since `2c2bd19`; none open. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
+✅ Description vs. code
+
+<details>
+<summary>✅ <b>Prior review feedback</b></summary>
+
+2 threads resolved since `2c2bd19`; none open.
+
+</details>
+
+✅ Documentation<br>
+✅ Self-review signals<br>
+✅ Code review
 
 | Run | Details |
 |---|---|
