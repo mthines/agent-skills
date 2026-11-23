@@ -716,7 +716,7 @@ No code changed since the last review; the PR description was updated.
 
 ## FAIL with the full worklist
 
-Blocking, `Decide:`, and plain rows in their fixed order, `Fix:` lines, the impact image above the table, and a `diff-only` depth that caps the tier and raises an anomaly.
+Blocking, `Decide:`, and plain rows in their fixed order, `Fix:` lines, the impact image above the table, and a `diff-only` depth that caps the tier and raises an anomaly. The image URL is a placeholder, so GitHub shows a broken-image icon where a real run shows its uploaded light and dark impact-map PNGs.
 
 Payload: [`worklist.json`](worklist.json) · snapshot: [`worklist.expected.md`](worklist.expected.md)
 

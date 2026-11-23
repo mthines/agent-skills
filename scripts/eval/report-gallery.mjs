@@ -26,7 +26,7 @@ const REPORTS = [
   ["warn", "WARN, incremental re-review with findings", "Non-blocking findings table, open review threads on the summary, resolved-since progress, notes, memories used, CI and verified notes, and the Agent0 Fix-all / Re-review / Loop buttons."],
   ["incremental-quick", "Incremental-quick re-review", "A small delta since the last review on the `quick` tier; the optional lenses are skipped and say so."],
   ["zero-delta", "Zero-delta (gate checks only)", "No code changed since the last review: no finder ran, so the `Checked` row is omitted and the footer names the gate-only run."],
-  ["worklist", "FAIL with the full worklist", "Blocking, `Decide:`, and plain rows in their fixed order, `Fix:` lines, the impact image above the table, and a `diff-only` depth that caps the tier and raises an anomaly."],
+  ["worklist", "FAIL with the full worklist", "Blocking, `Decide:`, and plain rows in their fixed order, `Fix:` lines, the impact image above the table, and a `diff-only` depth that caps the tier and raises an anomaly. The image URL is a placeholder, so GitHub shows a broken-image icon where a real run shows its uploaded light and dark impact-map PNGs."],
   ["fail", "FAIL, partial review", "Tool budget exhausted (the partial banner sits above the headline), blocking findings, open threads, optimality cards, and low-confidence findings."],
   ["deep", "FAIL on the deep tier", "A `deep` / `checkout` run with impact data, withheld findings, memories used, a run note, and a run anomaly."],
   ["reach-none", "Reach: no dependents", "The impact trace ran and found no dependent files, so the reach is explained in the footnote rather than left silent."],
