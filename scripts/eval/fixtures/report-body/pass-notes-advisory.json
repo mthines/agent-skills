@@ -1,0 +1,53 @@
+{
+  "VERDICT": "PASS",
+  "SUMMARY": "Extracts the date-range picker into a shared `DateRange` component used by both explorers.",
+  "FINDINGS": [],
+  "RUN": {
+    "mode": "full",
+    "sha": "e41c9b0",
+    "delta_lines": 212,
+    "at": "2026-11-04T16:20:00Z"
+  },
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "✅",
+  "GATE_PRIOR_DETAILS": "Earlier review comments are resolved.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "MEMORIES_SUMMARY": "53 indexed",
+  "QUALITY": "produced 4 → posted inline 0 · notes 2 · cleared 0 · carried forward 0 · deferred 0 · below-bar 1",
+  "INTEGRATIONS": "not activated",
+  "OPTIMALITY_LOG": "ran · 2 judged · 2 optimal · 0 proposal(s) · 0 inline pointer(s) · 0 withheld",
+  "STANDARDS_LOG": "ran · 2 docs · 0 finding(s)",
+  "MEASURABILITY_LOG": "ran · 3 paths classified · 0 missing · 0 unlinked",
+  "SKIPPED_FILES": "none",
+  "NOTES": [
+    {
+      "path": "src/components/DateRange.tsx",
+      "line": 12,
+      "prefix": "nitpick",
+      "body": "`onChange` fires twice when both ends move in one drag",
+      "confidence": 82
+    },
+    {
+      "path": "src/explorers/logs/Toolbar.tsx",
+      "line": 40,
+      "prefix": "praise",
+      "body": "the controlled/uncontrolled split reads cleanly",
+      "confidence": 90
+    }
+  ],
+  "LOW_CONFIDENCE_FINDINGS": [
+    {
+      "path": "src/components/DateRange.tsx",
+      "line": 58,
+      "prefix": "issue",
+      "body": "the timezone offset may be applied twice for UTC users",
+      "confidence": 55
+    }
+  ]
+}

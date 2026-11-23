@@ -25,6 +25,8 @@ that lost its marker or accordion. Where this file and the renderer disagree, **
 right** and this file is the bug — it exists so a run knows which payload to build, never so a run
 can hand-render a body.
 
+**Every variation, rendered:** [`report-body/README.md`](../../../scripts/eval/fixtures/report-body/README.md) shows each snapshot-tested payload as GitHub displays it.
+
 Heading levels are `###` / `####` because this text moved verbatim out of `pr-reviewer.md` § Step 4,
 and both the renderer and the L1 guards match some of these headings as literal strings.
 
