@@ -8,15 +8,10 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 ⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
 
 <details>
-<summary>⚠️ <b>Description vs. code</b></summary>
-
-The description omits the queue rename in `deploy/queues.yaml`.
-
-</details>
-
-<details>
 <summary>Review details</summary>
 <br>
+
+- ⚠️ **Description vs. code** — The description omits the queue rename in `deploy/queues.yaml`.
 
 | Run | Details |
 |---|---|

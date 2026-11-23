@@ -689,13 +689,14 @@ const renderReport = (payload) => {
   s.check("G19h the gate strip names all five gates above the accordion",
     /^⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review$/m.test(gatesHead)
       && !gatesOut.includes("| Gate |"), housekeeping.err);
-  s.check("G19h a ⚠️ gate renders a collapsed block with its Details above the accordion",
-    /<details>\n<summary>⚠️ <b>Description vs\. code<\/b><\/summary>\n\nomits the rename\n\n<\/details>/.test(gatesHead), housekeeping.err);
-  s.check("G19h a ✅ gate with its static Details renders no block", !/<b>Prior review feedback<\/b>/.test(gatesOut), housekeeping.err);
+  s.check("G19h a ⚠️ gate's Details is a bullet inside the accordion, never above it",
+    /^- ⚠️ \*\*Description vs\. code\*\* — omits the rename$/m.test(gatesOut)
+      && !gatesHead.includes("**Description vs. code**"), housekeeping.err);
+  s.check("G19h a ✅ gate with its static Details renders no bullet", !/\*\*Prior review feedback\*\*/.test(gatesOut), housekeeping.err);
   const saysSomething = render((c) => { c.GATE_PRIOR_DETAILS = "thread state unavailable — 2 comment(s) unverified"; });
   const saysTail = saysSomething.ok ? saysSomething.out.split("<details>\n<summary>Review details")[1] || "" : "";
-  s.check("G19h a ✅ gate whose Details is not its static text keeps a block inside the accordion",
-    /<summary>✅ <b>Prior review feedback<\/b><\/summary>\n\nthread state unavailable — 2 comment\(s\) unverified\n/.test(saysTail),
+  s.check("G19h a ✅ gate whose Details is not its static text keeps a bullet inside the accordion",
+    /^- ✅ \*\*Prior review feedback\*\* — thread state unavailable — 2 comment\(s\) unverified$/m.test(saysTail),
     saysSomething.err);
   const withFindings = render((c) => {
     c.QUALITY = "produced 3 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
@@ -1676,11 +1677,12 @@ const renderReport = (payload) => {
     const head = body.split("<details>\n<summary>Review details")[0];
     const strip = head.match(new RegExp(`^${G} Description · ${G} Prior feedback · ${G} Docs · ${G} Self-review · ${G} Code review$`, "mu"));
     s.check(`G25h ${name}: the gate strip above the accordion parses to 5 typed gates`, Boolean(strip));
+    const tail = body.split("<details>\n<summary>Review details")[1] || "";
     const GATE = "(Description vs\\. code|Prior review feedback|Documentation|Self-review signals|Code review)";
-    const attention = [...head.matchAll(new RegExp(`^<summary>(⚠️|❌) <b>${GATE}</b></summary>\\n\\n([^\\n]+)\\n\\n</details>$`, "gmu"))];
-    const needed = strip ? strip.slice(1).filter((g, i) => (g === "⚠️" || g === "❌") && !(i === 4 && /^\| \| Finding \| Where \|$/m.test(head))).length : -1;
-    s.check(`G25h ${name}: every ⚠️ / ❌ gate in the strip has its Details block above the accordion`,
-      attention.length === needed, `strip needs ${needed}, parsed ${attention.length}`);
+    const notes = [...tail.matchAll(new RegExp(`^- (⚠️|❌) \\*\\*${GATE}\\*\\* — (.+)$`, "gmu"))];
+    const needed = strip ? strip.slice(1).filter((g) => g === "⚠️" || g === "❌").length : -1;
+    s.check(`G25h ${name}: every ⚠️ / ❌ gate in the strip has its Details bullet inside the accordion`,
+      notes.length === needed, `strip needs ${needed}, parsed ${notes.length}`);
     const declared = body.match(/\*\*Open review threads \((\d+)\)\*\*/);
     if (declared) {
       const region = body.split("**Open review threads (")[1].split("\n\n")[1] || "";

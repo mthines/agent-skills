@@ -5,13 +5,6 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 
 ✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ❌ Code review
 
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **`LocalStore.search` drops the tenant filter**<br><sub>Blocking</sub> | [`local.ts:96`](https://github.com/o/r/pull/2#discussion_r31 "src/store/local.ts") |
@@ -23,12 +16,8 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
-<details>
-<summary>❌ <b>Code review</b></summary>
-
-1 blocking finding — see inline comments.
-
-</details>
+- ❌ **Code review** — 1 blocking finding — see inline comments.
+- ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 
 **Open review threads (1)**
 

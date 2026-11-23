@@ -20,12 +20,7 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <summary>Review details</summary>
 <br>
 
-<details>
-<summary>❌ <b>Code review</b></summary>
-
-1 blocking finding — see inline comments.
-
-</details>
+- ❌ **Code review** — 1 blocking finding — see inline comments.
 
 | Run | Details |
 |---|---|

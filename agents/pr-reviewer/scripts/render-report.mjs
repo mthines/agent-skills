@@ -54,8 +54,6 @@ const GATES = [
 ];
 /** The one-line gate strip: every gate, in report order, `<glyph> <strip label>` joined by ` · `. */
 const GATE_STRIP_RE = /^(?:✅|⚠️|❌|⏭️) Description · (?:✅|⚠️|❌|⏭️) Prior feedback · (?:✅|⚠️|❌|⏭️) Docs · (?:✅|⚠️|❌|⏭️) Self-review · (?:✅|⚠️|❌|⏭️) Code review$/mu;
-/** A collapsed gate block's summary line. */
-const GATE_BLOCK_RE = /^<summary>(?:✅|⚠️|❌|⏭️) <b>(?:Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review)<\/b><\/summary>$/mu;
 /** Gates whose ⚠️ is a merge to-do (the description, other reviewers' threads), not a code problem. */
 const HOUSEKEEPING_GATES = new Set(["GATE_DESCRIPTION", "GATE_PRIOR"]);
 const VALID_MODES = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
@@ -1497,29 +1495,21 @@ function main() {
   const lowRows = listRows("LOW_CONFIDENCE_FINDINGS", lowConfidence,
     n + additional.length + notesList.length + 1);
 
-  // Every gate shows as a glyph in one strip line. A ⚠️ or ❌ gate also gets a collapsed block above
-  // the fold, except Code review when findings exist (the findings table is its details). Any other
-  // gate whose Details is not its static text (Gate 3's unverified counts, a skipped gate's carry)
-  // keeps its block inside the accordion, so no Details text is lost.
+  // Every gate shows as a glyph in one strip line above the fold, and the reasons line above it
+  // already names what needs attention. Inside the accordion, each gate whose Details is not its
+  // static text is one bullet, ⚠️ / ❌ first, so opening Review details shows every reason at once.
   const gateStrip = GATES.map(([, , , short], i) => `${gateStatuses[i]} ${short}`).join(" · ");
-  const gateBlock = (label, i, k) => ["<details>", `<summary>${gateStatuses[i]} <b>${label}</b></summary>`, "",
-    String(data[`${k}_DETAILS`]).trim(), "", "</details>"].join("\n");
-  const attentionBlocks = [];
-  const noteBlocks = [];
-  GATES.forEach(([label, k, staticDetails], i) => {
-    const status = gateStatuses[i];
-    if ((status === "⚠️" || status === "❌") && !(n > 0 && k === "GATE_CODEREVIEW")) {
-      attentionBlocks.push(gateBlock(label, i, k));
-    } else if (String(data[`${k}_DETAILS`]).trim() !== staticDetails) {
-      noteBlocks.push(gateBlock(label, i, k));
-    }
-  });
+  const RANK = { "❌": 0, "⚠️": 1, "✅": 2, "⏭️": 3 };
+  const gateNotes = GATES
+    .map(([label, k, staticDetails], i) => ({ label, i, details: String(data[`${k}_DETAILS`]).trim(), staticDetails }))
+    .filter((g) => !(gateStatuses[g.i] === "✅" && g.details === g.staticDetails))
+    .sort((x, y) => RANK[gateStatuses[x.i]] - RANK[gateStatuses[y.i]] || x.i - y.i)
+    .map((g) => `- ${gateStatuses[g.i]} **${g.label}** — ${g.details}`);
 
   const derived = {
     HEADLINE: headline,
     GATE_STRIP: gateStrip,
-    GATE_ATTENTION: attentionBlocks.join("\n\n"),
-    GATE_NOTES: noteBlocks.join("\n\n"),
+    GATE_NOTES: gateNotes.join("\n"),
     SUMMARY_LINE: summary,
     REASONS_LINE: reasonsLine,
     ADVISORY_LINE: advisoryLine,
@@ -1630,11 +1620,8 @@ function main() {
   // `head` on a well-formed body — and on a flattened one (no accordion at all, `head` = the whole
   // body) the missing-accordion check above has already fired.
   if (!GATE_STRIP_RE.test(head)) fail("the gate strip is missing above the accordion");
-  for (const b of attentionBlocks) {
-    if (!head.includes(b)) fail("a gate needing attention rendered inside the accordion");
-  }
-  for (const b of noteBlocks) {
-    if (head.includes(b)) fail("a passing gate's note rendered above the accordion");
+  for (const note of gateNotes) {
+    if (head.includes(note)) fail("a gate's details rendered above the accordion");
   }
   for (const owned of ["| Run | Details |", "**Memories used**",
     "**Open review threads (", "<sup>Nothing to report —", "<summary>Withheld ("]) {

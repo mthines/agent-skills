@@ -67,9 +67,8 @@ Run table — not at the top level of the review body:
 - `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 
 The renderer derives the gates from the five `GATE_*_STATUS` / `GATE_*_DETAILS` slots. Above the
-`Review details` accordion sit a one-line gate strip naming every gate and a collapsed block per gate
-that needs attention; any other gate whose Details is not its static text keeps a collapsed block at
-the top of the accordion. See *The gate strip* below. The accordion has the same structure on PASS,
+`Review details` accordion sits a one-line gate strip naming every gate; the accordion opens with one
+bullet per gate whose Details is not its static text. See *The gate strip* below. The accordion has the same structure on PASS,
 WARN, and FAIL.
 The `<sup>` footer depends on run mode (substituted before posting):
 - `full`: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
@@ -233,7 +232,7 @@ it into a linked button above the accordion, rendered only when supplied, i.e. w
 
 #### The Run table
 
-Inside `Review details`, after any gate notes, the open threads, and any withheld findings, every
+Inside `Review details`, after the gate bullets, the open threads, and any withheld findings, every
 run fact is one labelled row of a `| Run | Details |` table, in this fixed order. A row renders only
 when it has something to say:
 
@@ -462,7 +461,7 @@ Gate 3's open-thread state renders across **two** slots, and the split is the co
 | Slot | Where | What it carries |
 | --- | --- | --- |
 | `OPEN_THREADS_SUFFIX` | appended to the `Review details` `<summary>` — **always visible** | the open count and, on ❌, the blocking subset |
-| `OPEN_THREADS_LIST` | **inside** the accordion, immediately after any gate notes | the per-thread bullets and the `resolved since` progress |
+| `OPEN_THREADS_LIST` | **inside** the accordion, immediately after the gate bullets | the per-thread bullets and the `resolved since` progress |
 
 **The counter rides on the `<summary>` rather than on a line of its own.** The summary is already
 visible when the report is collapsed *and* it is the control the reader clicks, so putting the count
@@ -666,7 +665,7 @@ rejects the key, so this is now impossible rather than merely forbidden.
 #### The accordion is the renderer's job, not yours
 
 The `Review details` `<details>` wrapper, the absence of an `open` attribute, the order of the
-lines inside it, and the fact that the gate strip and attention blocks sit above it are all
+lines inside it, and the fact that the gate strip sits above it and the gate details inside it are all
 properties of [`templates/report-body.md`](../templates/report-body.md). The renderer
 asserts each one as a post-condition and exits non-zero if a template edit breaks it, so there is
 nothing here for a run to remember, get wrong, or be guarded against. `F-report-accordion-flattened`
@@ -675,7 +674,7 @@ and `F-report-accordion-expanded` are now render-time errors rather than review-
 The visible surface of a report is therefore whatever the template leaves outside the accordion:
 the marker, an optional partial-review banner, the `### <glyph> <K> blocking · <D> to decide · <M>
 non-blocking` headline (a zero part is left out), the summary sentence, the reasons line, the
-advisory note, the gate strip and its attention blocks, the optional impact `<picture>`, the numbered
+advisory note, the gate strip, the optional impact `<picture>`, the numbered
 `| | Finding | Where |` findings table, the Fix-all button, and the collapsed `<summary>` lines of
 the optional `<details>` blocks.
 Coverage and reach are rows of the `| Run | Details |` table inside `Review details` (`Checked`,
@@ -693,35 +692,28 @@ Rules for table cells:
   ⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
   ```
 
-  Under it, each ⚠️ / ❌ gate gets a collapsed block, never pre-expanded, whose body is its Details.
-  Code review is the exception when the report has findings: the findings table is its details, so
-  its block moves into the accordion. A ✅ gate with its static Details gets no block at all; a ✅
-  or ⏭️ gate whose Details says something (the Gate 3 exceptions below, a carried skip) keeps its
-  block at the top of the accordion:
+  The strip is the only gate line above the fold; the reasons line above it already names what
+  needs attention. `Review details` opens with one bullet per gate whose Details is not its static
+  text, ❌ first, then ⚠️, ✅, and ⏭️, so one click shows every reason. A ✅ gate with its static
+  Details gets no bullet:
 
   ```markdown
-  <details>
-  <summary>⚠️ <b>Prior review feedback</b></summary>
+  - ❌ **Prior review feedback** — 2 unresolved review thread(s) — see the thread list below
+  - ⚠️ **Description vs. code** — the description omits the queue rename
+  ```
 
-  2 unresolved review thread(s) — see the thread list below
+  ```markdown
+  <!-- wrong: a per-gate block above the fold repeats the reasons line and costs a second click -->
+  <details>
+  <summary>⚠️ <b>Description vs. code</b></summary>
+
+  the description omits the queue rename
 
   </details>
   ```
 
-  ```markdown
-  <!-- wrong: five ✅ lines on every report, and a block for a gate that only restates its definition -->
-  ✅ Description vs. code
-  ✅ Prior review feedback
-  <details>
-  <summary>✅ <b>Documentation</b></summary>
-
-  The change is documented well enough to follow.
-
-  </details>
-  ```
-
-  **Why:** a reviewer needs whether to merge and what to open; a passing gate is proof it ran,
-  which one glyph carries, so the fold spends space only on gates that need attention.
+  **Why:** a reviewer needs whether to merge and what needs attention; the heading, the reasons
+  line, and one glyph per gate carry that, and every detail sits behind the one accordion.
 - The Run table is always two columns — `| Run | Details |` — one labelled row per run fact (see
   *The Run table*).
 - Details column: plain text only, max 120 chars per cell.
