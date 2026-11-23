@@ -39,6 +39,7 @@ Run `node scripts/validate-report-shape.mjs <file>` locally to see the same verd
 | `no-review-details-accordion` | No `<details>` immediately followed by `<summary>Review details` — the report renders expanded |
 | `accordion-pre-expanded` | A `<details>` carries `open` |
 | `accordion-owned-line-at-top-level` | A gate table, run mode, memories, quality or footer line renders above the accordion |
+| `gate-strip-inside-accordion` | The one-line gate strip renders inside `Review details` instead of above it, so the gates are hidden behind a click |
 | `verdict-in-posted-body` | The Step 3 advisory verdict is terminal-only |
 | `link-caged-in-code-span` | A markdown link wrapped in backticks renders as dead monospace text |
 | `count-disagrees-with-list` | `**Open review threads (N)**` does not equal the bullets under it |
