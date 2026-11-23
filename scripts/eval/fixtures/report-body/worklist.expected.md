@@ -3,6 +3,8 @@
 
 Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ❌ Code review
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b">
   <img alt="What changes on merge. 1: telemetry check stuck pending. 2: logged-out preview runs. 3: stale Skeleton paths." src="https://github.com/user-attachments/assets/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b">
@@ -17,11 +19,6 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>❌ <b>Code review</b></summary>

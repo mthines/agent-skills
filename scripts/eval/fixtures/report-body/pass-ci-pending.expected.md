@@ -3,15 +3,11 @@
 
 Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|

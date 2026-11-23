@@ -44,16 +44,18 @@ const NOTE_PREFIXES = CONV_PREFIXES.filter((p) => !CLAIM_PREFIXES.includes(p));
 const CODE_REVIEW_REASON_RE = /^\d+ (?:non-)?blocking findings?\b/u;
 
 const VALID_STATUS = new Set(["✅", "⚠️", "❌", "⏭️"]);
-/** A rendered gate line, bare (`✅ <label>`) or collapsed (`<summary>⚠️ <b><label></b></summary>`). */
-const GATE_LINE_RE = /^(?:✅ (?:Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review)(?:<br>)?|<summary>(?:✅|⚠️|❌|⏭️) <b>(?:Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review)<\/b><\/summary>)$/mu;
-/** The five graded gates in report order: label, payload key prefix, the static ✅ Details. */
+/** The five graded gates in report order: label, payload key prefix, the static ✅ Details, strip label. */
 const GATES = [
-  ["Description vs. code", "GATE_DESCRIPTION", "The description matches what the diff does."],
-  ["Prior review feedback", "GATE_PRIOR", "Earlier review comments are resolved."],
-  ["Documentation", "GATE_DOCS", "The change is documented well enough to follow."],
-  ["Self-review signals", "GATE_SELFREVIEW", "No debug logs, leftover TODOs, or unreviewed stubs."],
-  ["Code review", "GATE_CODEREVIEW", "The multi-lens review found no blocking issues."],
+  ["Description vs. code", "GATE_DESCRIPTION", "The description matches what the diff does.", "Description"],
+  ["Prior review feedback", "GATE_PRIOR", "Earlier review comments are resolved.", "Prior feedback"],
+  ["Documentation", "GATE_DOCS", "The change is documented well enough to follow.", "Docs"],
+  ["Self-review signals", "GATE_SELFREVIEW", "No debug logs, leftover TODOs, or unreviewed stubs.", "Self-review"],
+  ["Code review", "GATE_CODEREVIEW", "The multi-lens review found no blocking issues.", "Code review"],
 ];
+/** The one-line gate strip: every gate, in report order, `<glyph> <strip label>` joined by ` · `. */
+const GATE_STRIP_RE = /^(?:✅|⚠️|❌|⏭️) Description · (?:✅|⚠️|❌|⏭️) Prior feedback · (?:✅|⚠️|❌|⏭️) Docs · (?:✅|⚠️|❌|⏭️) Self-review · (?:✅|⚠️|❌|⏭️) Code review$/mu;
+/** A collapsed gate block's summary line. */
+const GATE_BLOCK_RE = /^<summary>(?:✅|⚠️|❌|⏭️) <b>(?:Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review)<\/b><\/summary>$/mu;
 /** Gates whose ⚠️ is a merge to-do (the description, other reviewers' threads), not a code problem. */
 const HOUSEKEEPING_GATES = new Set(["GATE_DESCRIPTION", "GATE_PRIOR"]);
 const VALID_MODES = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
@@ -1299,7 +1301,7 @@ function main() {
 
   // ── VERDICT → the headline ─────────────────────────────────────────────────────────────────────
   //
-  // The verdict is cross-checked against the gate list it summarises, which is a class of
+  // The verdict is cross-checked against the gate strip it summarises, which is a class of
   // contradiction the report could previously post: a `reviewer-lessons` entry records a posted
   // gate table reading PASS while the run's own contract said FAIL. The gates decide, so a
   // mismatched VERDICT is a rejection rather than a rendered disagreement. Gate 2 (CI) is
@@ -1316,7 +1318,7 @@ function main() {
   const warning = gateStatuses.filter((v) => v === "⚠️").length;
   const impliedVerdict = failing > 0 ? "FAIL" : warning > 0 ? "WARN" : "PASS";
   if (verdict !== impliedVerdict) {
-    fail(`VERDICT ${verdict} contradicts the gate list — ${failing} ❌ and ${warning} ⚠️ imply`
+    fail(`VERDICT ${verdict} contradicts the gate strip — ${failing} ❌ and ${warning} ⚠️ imply`
       + ` ${impliedVerdict}. The gates decide the verdict; fix whichever is wrong before rendering`);
   }
 
@@ -1348,7 +1350,7 @@ function main() {
       + " (report-rendering.md § Headlines)");
   }
   // The same cross-check FAIL_REASONS gets, and for the same reason: the reasons line is a count
-  // stated twice, once as a list and once as the gate list below it. `reasonList` truncates the
+  // stated twice, once as a list and once as the gate strip below it. `reasonList` truncates the
   // rendering at two phrases, so an over-long list did not LOOK wrong — it silently dropped the
   // third warning while the table showed one ⚠️, which is exactly the class of contradiction this
   // renderer exists to make unrepresentable. Validating one polarity and not the other is the
@@ -1495,30 +1497,29 @@ function main() {
   const lowRows = listRows("LOW_CONFIDENCE_FINDINGS", lowConfidence,
     n + additional.length + notesList.length + 1);
 
-  // A ✅ gate whose Details is its static text is one bare line; every other gate, including a ✅
-  // whose Details says something (Gate 3's unverified or still-open thread counts), is a collapsed
-  // block whose body is its Details, so the names scan without a click and the reason is one tap away.
-  const gateBlocks = [];
-  let passRun = [];
-  const flushPasses = () => {
-    if (passRun.length) gateBlocks.push(passRun.join("<br>\n"));
-    passRun = [];
-  };
+  // Every gate shows as a glyph in one strip line. A ⚠️ or ❌ gate also gets a collapsed block above
+  // the fold, except Code review when findings exist (the findings table is its details). Any other
+  // gate whose Details is not its static text (Gate 3's unverified counts, a skipped gate's carry)
+  // keeps its block inside the accordion, so no Details text is lost.
+  const gateStrip = GATES.map(([, , , short], i) => `${gateStatuses[i]} ${short}`).join(" · ");
+  const gateBlock = (label, i, k) => ["<details>", `<summary>${gateStatuses[i]} <b>${label}</b></summary>`, "",
+    String(data[`${k}_DETAILS`]).trim(), "", "</details>"].join("\n");
+  const attentionBlocks = [];
+  const noteBlocks = [];
   GATES.forEach(([label, k, staticDetails], i) => {
-    if (gateStatuses[i] === "✅" && String(data[`${k}_DETAILS`]).trim() === staticDetails) {
-      passRun.push(`✅ ${label}`);
-      return;
+    const status = gateStatuses[i];
+    if ((status === "⚠️" || status === "❌") && !(n > 0 && k === "GATE_CODEREVIEW")) {
+      attentionBlocks.push(gateBlock(label, i, k));
+    } else if (String(data[`${k}_DETAILS`]).trim() !== staticDetails) {
+      noteBlocks.push(gateBlock(label, i, k));
     }
-    flushPasses();
-    gateBlocks.push(["<details>", `<summary>${gateStatuses[i]} <b>${label}</b></summary>`, "",
-      String(data[`${k}_DETAILS`]).trim(), "", "</details>"].join("\n"));
   });
-  flushPasses();
-  const gateList = gateBlocks.join("\n\n");
 
   const derived = {
     HEADLINE: headline,
-    GATE_LIST: gateList,
+    GATE_STRIP: gateStrip,
+    GATE_ATTENTION: attentionBlocks.join("\n\n"),
+    GATE_NOTES: noteBlocks.join("\n\n"),
     SUMMARY_LINE: summary,
     REASONS_LINE: reasonsLine,
     ADVISORY_LINE: advisoryLine,
@@ -1622,13 +1623,19 @@ function main() {
     fail("rendered body has no `| Mode | <mode> · <N> lines in delta` row —"
       + " reviewer-report-ingest.md keys the Run mode unit on that shape");
   }
-  const head = body.split("<details>")[0];
+  const head = body.split("<details>\n<summary>Review details")[0];
   // Only the structural literals are listed. Model-authored optimality cards render above the
   // accordion, so a plain label a card might mention is deliberately absent.
   // The footer is NOT in this list: it renders below the accordion by design, so it is never in
   // `head` on a well-formed body — and on a flattened one (no accordion at all, `head` = the whole
   // body) the missing-accordion check above has already fired.
-  if (GATE_LINE_RE.test(head)) fail("the gate list rendered above the accordion");
+  if (!GATE_STRIP_RE.test(head)) fail("the gate strip is missing above the accordion");
+  for (const b of attentionBlocks) {
+    if (!head.includes(b)) fail("a gate needing attention rendered inside the accordion");
+  }
+  for (const b of noteBlocks) {
+    if (head.includes(b)) fail("a passing gate's note rendered above the accordion");
+  }
   for (const owned of ["| Run | Details |", "**Memories used**",
     "**Open review threads (", "<sup>Nothing to report —", "<summary>Withheld ("]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);

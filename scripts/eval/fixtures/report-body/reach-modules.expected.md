@@ -3,15 +3,11 @@
 
 Reworks the private jitter helper behind every retrying client and exports `parseRetryAfter`.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|

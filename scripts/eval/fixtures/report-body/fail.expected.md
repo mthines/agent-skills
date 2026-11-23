@@ -9,6 +9,22 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
+⚠️ Description · ❌ Prior feedback · ✅ Docs · ✅ Self-review · ⏭️ Code review
+
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+Claims `nx affected` is green; not true at this SHA.
+
+</details>
+
+<details>
+<summary>❌ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **Check-run variables rejected at runtime**<br><sub>Blocking</sub> | [`variables.ts:12`](https://github.com/o/r/pull/1#discussion_r21 "src/triggers/variables.ts") |
@@ -40,23 +56,6 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
-
-<details>
-<summary>⚠️ <b>Description vs. code</b></summary>
-
-Claims `nx affected` is green; not true at this SHA.
-
-</details>
-
-<details>
-<summary>❌ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⏭️ <b>Code review</b></summary>

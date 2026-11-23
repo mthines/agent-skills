@@ -5,9 +5,7 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 
 **Before merge:** description omits the queue rename
 
-<details>
-<summary>Review details</summary>
-<br>
+⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
 
 <details>
 <summary>⚠️ <b>Description vs. code</b></summary>
@@ -16,10 +14,9 @@ The description omits the queue rename in `deploy/queues.yaml`.
 
 </details>
 
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
+<details>
+<summary>Review details</summary>
+<br>
 
 | Run | Details |
 |---|---|

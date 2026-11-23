@@ -19,10 +19,10 @@ const OUT = join(BODY_DIR, "README.md");
 // Gallery order and the one line saying what each variation shows. A fixture missing here fails the
 // `--check` that evals-l1.yml runs, so a new payload cannot land without a place in the gallery.
 const REPORTS = [
-  ["pass", "PASS, no findings", "Every gate ✅, nothing posted — the cleanest possible report."],
+  ["pass", "PASS, no findings", "Every gate ✅ in the one-line gate strip, nothing posted — the cleanest possible report."],
   ["pass-ci-pending", "PASS with CI still running", "A pending or red CI check renders as a `CI` row and never moves the verdict."],
   ["pass-notes-advisory", "PASS with notes and an advisory", "Cleared one-liners (`nitpick:`, `praise:`) count as notes in the headline; a finding below the confidence bar adds the advisory line and a *Less certain* accordion."],
-  ["warn-no-findings", "WARN, zero findings", "Only a soft gate (Description vs. code) warns, so the heading stays `✅ No issues found` with a `**Before merge:**` line naming it; also shows a size-scaled `standard` tier."],
+  ["warn-no-findings", "WARN, zero findings", "Only a soft gate (Description vs. code) warns, so the heading stays `✅ No issues found` with a `**Before merge:**` line, and that gate's block opens from under the strip; also shows a size-scaled `standard` tier."],
   ["warn", "WARN, incremental re-review with findings", "Non-blocking findings table, open review threads on the summary, resolved-since progress, notes, memories used, CI and verified notes, and the Agent0 Fix-all / Re-review / Loop buttons."],
   ["incremental-quick", "Incremental-quick re-review", "A small delta since the last review on the `quick` tier; the optional lenses are skipped and say so."],
   ["zero-delta", "Zero-delta (gate checks only)", "No code changed since the last review: no finder ran, so the `Checked` row is omitted and the footer names the gate-only run."],

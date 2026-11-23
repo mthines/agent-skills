@@ -43,7 +43,7 @@ Review-body pointers (the review's own body, not the sticky comment):
 
 ## PASS, no findings
 
-Every gate ✅, nothing posted — the cleanest possible report.
+Every gate ✅ in the one-line gate strip, nothing posted — the cleanest possible report.
 
 Payload: [`pass.json`](pass.json) · snapshot: [`pass.expected.md`](pass.expected.md)
 
@@ -56,15 +56,11 @@ Payload: [`pass.json`](pass.json) · snapshot: [`pass.expected.md`](pass.expecte
 
 Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -91,15 +87,11 @@ Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
 Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -131,15 +123,11 @@ Payload: [`pass-ci-pending.json`](pass-ci-pending.json) · snapshot: [`pass-ci-p
 
 Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -167,15 +155,11 @@ Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
 Adds a `check_run` trigger kind and wires every registry keyed by the union.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -210,6 +194,8 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Notes (2) — posted inline</summary>
 <br>
@@ -234,12 +220,6 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -268,6 +248,8 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Notes (2) — posted inline</summary>
 <br>
@@ -293,12 +275,6 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 <summary>Review details</summary>
 <br>
 
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
-
 | Run | Details |
 |---|---|
 | Mode | full · 212 lines in delta |
@@ -316,7 +292,7 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 
 ## WARN, zero findings
 
-Only a soft gate (Description vs. code) warns, so the heading stays `✅ No issues found` with a `**Before merge:**` line naming it; also shows a size-scaled `standard` tier.
+Only a soft gate (Description vs. code) warns, so the heading stays `✅ No issues found` with a `**Before merge:**` line, and that gate's block opens from under the strip; also shows a size-scaled `standard` tier.
 
 Payload: [`warn-no-findings.json`](warn-no-findings.json) · snapshot: [`warn-no-findings.expected.md`](warn-no-findings.expected.md)
 
@@ -331,9 +307,7 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 
 **Before merge:** description omits the queue rename
 
-<details>
-<summary>Review details</summary>
-<br>
+⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
 
 <details>
 <summary>⚠️ <b>Description vs. code</b></summary>
@@ -342,10 +316,9 @@ The description omits the queue rename in `deploy/queues.yaml`.
 
 </details>
 
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
+<details>
+<summary>Review details</summary>
+<br>
 
 | Run | Details |
 |---|---|
@@ -374,9 +347,7 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 
 **Before merge:** description omits the queue rename
 
-<details>
-<summary>Review details</summary>
-<br>
+⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
 
 <details>
 <summary>⚠️ <b>Description vs. code</b></summary>
@@ -385,10 +356,9 @@ The description omits the queue rename in `deploy/queues.yaml`.
 
 </details>
 
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
+<details>
+<summary>Review details</summary>
+<br>
 
 | Run | Details |
 |---|---|
@@ -422,6 +392,15 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
 **Before merge:** 2 open review threads
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+2 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **Retry exhaustion now throws where it returned null** | [`client.ts:214`](https://github.com/o/r/pull/1#discussion_r11 "src/api/client.ts") |
@@ -444,18 +423,6 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <details>
 <summary>Review details — 2 open review threads</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-2 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⚠️ <b>Code review</b></summary>
@@ -505,6 +472,15 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
 **Before merge:** 2 open review threads
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+2 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **Retry exhaustion now throws where it returned null** | [`client.ts:214`](https://github.com/o/r/pull/1#discussion_r11 "src/api/client.ts") |
@@ -527,18 +503,6 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <details>
 <summary>Review details — 2 open review threads</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-2 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⚠️ <b>Code review</b></summary>
@@ -591,11 +555,11 @@ Payload: [`incremental-quick.json`](incremental-quick.json) · snapshot: [`incre
 
 Addresses the review on the retry path: `retryRequest` now logs the final attempt.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code
 
 <details>
 <summary>✅ <b>Prior review feedback</b></summary>
@@ -603,10 +567,6 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 2 threads resolved since `2c2bd19`; none open.
 
 </details>
-
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -633,11 +593,11 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 
 Addresses the review on the retry path: `retryRequest` now logs the final attempt.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code
 
 <details>
 <summary>✅ <b>Prior review feedback</b></summary>
@@ -645,10 +605,6 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 2 threads resolved since `2c2bd19`; none open.
 
 </details>
-
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -680,15 +636,11 @@ Payload: [`zero-delta.json`](zero-delta.json) · snapshot: [`zero-delta.expected
 
 No code changed since the last review; the PR description was updated.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -714,15 +666,11 @@ No code changed since the last review; the PR description was updated.
 
 No code changed since the last review; the PR description was updated.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -753,6 +701,8 @@ Payload: [`worklist.json`](worklist.json) · snapshot: [`worklist.expected.md`](
 
 Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ❌ Code review
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b">
   <img alt="What changes on merge. 1: telemetry check stuck pending. 2: logged-out preview runs. 3: stale Skeleton paths." src="https://github.com/user-attachments/assets/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b">
@@ -767,11 +717,6 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>❌ <b>Code review</b></summary>
@@ -807,6 +752,8 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 
 Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ❌ Code review
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b">
   <img alt="What changes on merge. 1: telemetry check stuck pending. 2: logged-out preview runs. 3: stale Skeleton paths." src="https://github.com/user-attachments/assets/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b">
@@ -821,11 +768,6 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>❌ <b>Code review</b></summary>
@@ -872,6 +814,22 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
+⚠️ Description · ❌ Prior feedback · ✅ Docs · ✅ Self-review · ⏭️ Code review
+
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+Claims `nx affected` is green; not true at this SHA.
+
+</details>
+
+<details>
+<summary>❌ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **Check-run variables rejected at runtime**<br><sub>Blocking</sub> | [`variables.ts:12`](https://github.com/o/r/pull/1#discussion_r21 "src/triggers/variables.ts") |
@@ -903,23 +861,6 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
-
-<details>
-<summary>⚠️ <b>Description vs. code</b></summary>
-
-Claims `nx affected` is green; not true at this SHA.
-
-</details>
-
-<details>
-<summary>❌ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⏭️ <b>Code review</b></summary>
@@ -968,6 +909,22 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
+⚠️ Description · ❌ Prior feedback · ✅ Docs · ✅ Self-review · ⏭️ Code review
+
+<details>
+<summary>⚠️ <b>Description vs. code</b></summary>
+
+Claims `nx affected` is green; not true at this SHA.
+
+</details>
+
+<details>
+<summary>❌ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **Check-run variables rejected at runtime**<br><sub>Blocking</sub> | [`variables.ts:12`](https://github.com/o/r/pull/1#discussion_r21 "src/triggers/variables.ts") |
@@ -999,23 +956,6 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
-
-<details>
-<summary>⚠️ <b>Description vs. code</b></summary>
-
-Claims `nx affected` is green; not true at this SHA.
-
-</details>
-
-<details>
-<summary>❌ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⏭️ <b>Code review</b></summary>
@@ -1063,6 +1003,15 @@ Payload: [`deep.json`](deep.json) · snapshot: [`deep.expected.md`](deep.expecte
 
 Replaces the in-process memory index with a `LocalStore` backed search path.
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ❌ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **`LocalStore.search` drops the tenant filter**<br><sub>Blocking</sub> | [`local.ts:96`](https://github.com/o/r/pull/2#discussion_r31 "src/store/local.ts") |
@@ -1073,18 +1022,6 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>❌ <b>Code review</b></summary>
@@ -1146,6 +1083,15 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 
 Replaces the in-process memory index with a `LocalStore` backed search path.
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ❌ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **`LocalStore.search` drops the tenant filter**<br><sub>Blocking</sub> | [`local.ts:96`](https://github.com/o/r/pull/2#discussion_r31 "src/store/local.ts") |
@@ -1156,18 +1102,6 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>❌ <b>Code review</b></summary>
@@ -1234,15 +1168,11 @@ Payload: [`reach-none.json`](reach-none.json) · snapshot: [`reach-none.expected
 
 Renames the internal event-queue buffer and its comments.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1269,15 +1199,11 @@ Renames the internal event-queue buffer and its comments.
 
 Renames the internal event-queue buffer and its comments.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1309,15 +1235,11 @@ Payload: [`reach-modules.json`](reach-modules.json) · snapshot: [`reach-modules
 
 Reworks the private jitter helper behind every retrying client and exports `parseRetryAfter`.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1345,15 +1267,11 @@ Reworks the private jitter helper behind every retrying client and exports `pars
 
 Reworks the private jitter helper behind every retrying client and exports `parseRetryAfter`.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|
@@ -1388,6 +1306,15 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 
 **Before merge:** 1 open review thread
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟡&nbsp;**1** | **`sync.ts` still branches on the old null contract** | [`sync.ts:88`](https://github.com/o/r/pull/7#discussion_r71 "src/jobs/sync.ts") |
@@ -1405,18 +1332,6 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <details>
 <summary>Review details — 1 open review thread</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⚠️ <b>Code review</b></summary>
@@ -1462,6 +1377,15 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 
 **Before merge:** 1 open review thread
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟡&nbsp;**1** | **`sync.ts` still branches on the old null contract** | [`sync.ts:88`](https://github.com/o/r/pull/7#discussion_r71 "src/jobs/sync.ts") |
@@ -1479,18 +1403,6 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <details>
 <summary>Review details — 1 open review thread</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⚠️ <b>Code review</b></summary>

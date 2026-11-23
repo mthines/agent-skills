@@ -5,6 +5,8 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 
 <sub>1 advisory finding below the confidence bar — see *Less certain* below.</sub>
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Notes (2) — posted inline</summary>
 <br>
@@ -29,12 +31,6 @@ Extracts the date-range picker into a shared `DateRange` component used by both 
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code<br>
-✅ Prior review feedback<br>
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|

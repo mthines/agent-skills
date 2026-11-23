@@ -5,6 +5,15 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
 **Before merge:** 2 open review threads
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+2 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟠&nbsp;**1** | **Retry exhaustion now throws where it returned null** | [`client.ts:214`](https://github.com/o/r/pull/1#discussion_r11 "src/api/client.ts") |
@@ -27,18 +36,6 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <details>
 <summary>Review details — 2 open review threads</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-2 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⚠️ <b>Code review</b></summary>

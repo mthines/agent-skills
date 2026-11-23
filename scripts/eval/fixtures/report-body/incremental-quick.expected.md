@@ -3,11 +3,11 @@
 
 Addresses the review on the retry path: `retryRequest` now logs the final attempt.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-✅ Description vs. code
 
 <details>
 <summary>✅ <b>Prior review feedback</b></summary>
@@ -15,10 +15,6 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 2 threads resolved since `2c2bd19`; none open.
 
 </details>
-
-✅ Documentation<br>
-✅ Self-review signals<br>
-✅ Code review
 
 | Run | Details |
 |---|---|

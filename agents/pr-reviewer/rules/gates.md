@@ -92,7 +92,7 @@ A finding is **blocking** only if it is broken behaviour, security (auth bypass 
 The overall verdict is **FAIL** when Gate 4 or Gate 5 fails **or** the Prior review feedback or Code review gate is ❌; otherwise **PASS** (with the Description vs. code, Prior review feedback, and Code review rows each showing ✅ or ⚠️, and CI's state in `CI_NOTE`). Gate 2 (CI) does **not** feed the verdict: it is surfaced in GitHub's checks section and in `CI_NOTE`, never as a table row and never in `FAILING_GATE_COUNT`. The PASS/WARN/FAIL presentation in Steps 3–4 is chosen from the review gates (3, 4, 5, Description vs. code, and Code review) only.
 
 `--skip-gates` bypasses Gates 1–5 and runs only the inline review pass (Gate 6).
-Those gates then render `⏭️` in every gate list, with the Details cell holding the carried prior text plus its `(carried from …)` suffix when Step 2.5c dispositioned the row `CARRY`, and `not evaluated this run` otherwise.
+Those gates then render `⏭️` in the gate strip, with the Details cell holding the carried prior text plus its `(carried from …)` suffix when Step 2.5c dispositioned the row `CARRY`, and `not evaluated this run` otherwise.
 `⏭️` is a fourth cell value alongside ✅ / ⚠️ / ❌: it is never counted in `FAILING_GATE_COUNT`, never selects the FAIL presentation, and never changes the verdict.
 
 

@@ -119,11 +119,11 @@ finding.
 
 | Section | Literal marker in the body | Extractable unit | Anchored? |
 | --- | --- | --- | --- |
-| Headline | first non-marker, non-banner line, always a `### ` heading | the count-forward verdict line — `### <glyph> <K> blocking · <D> to decide · <M> non-blocking` (a zero part is left out; a lone non-blocking part reads `<M> non-blocking finding(s)`; `<M>` includes the *Additional findings*), or `### ✅ No issues found` (on a PASS, or on a WARN whose ⚠️ gates are all housekeeping gates — read the verdict from the gate list, never from this heading), or `### <glyph> No findings — <M> gates need attention`. Any form may end in ` · <M> note(s)`, the count of posted one-liners listed under *Notes*, so match the forms as prefixes. The `SUMMARY` sentence about the change is the **next** non-empty line. | n/a |
+| Headline | first non-marker, non-banner line, always a `### ` heading | the count-forward verdict line — `### <glyph> <K> blocking · <D> to decide · <M> non-blocking` (a zero part is left out; a lone non-blocking part reads `<M> non-blocking finding(s)`; `<M>` includes the *Additional findings*), or `### ✅ No issues found` (on a PASS, or on a WARN whose ⚠️ gates are all housekeeping gates — read the verdict from the gate strip, never from this heading), or `### <glyph> No findings — <M> gates need attention`. Any form may end in ` · <M> note(s)`, the count of posted one-liners listed under *Notes*, so match the forms as prefixes. The `SUMMARY` sentence about the change is the **next** non-empty line. | n/a |
 | Partial-review banner | `⚠️ **Partial review — tool budget exhausted` | boolean: the run was truncated | n/a |
 | Progress row | the Run-table row `\| Progress \|` inside `Review details` | none — the open/blocking worklist across recent reviews. **Never a finding.** | n/a |
 | Impact image | a `<picture>` block directly above the findings index | none — the impact-map diagram as light and dark PNGs; its numbered badges are the findings' row numbers and its `alt` names each one. **Never a finding.** | n/a |
-| Gate list | inside `<details><summary>Review details…`: a bare `✅ <gate>` line (optionally ending `<br>`) per passing gate, and a nested `<details>` per other gate whose `<summary>` is `<glyph> <b><gate></b>` and whose first non-empty body line is its Details. A body posted before the gate list carries the legacy `\| Gate \| \| Details \|` table instead; parse that one row per gate | one unit per gate whose glyph is `❌` or `⚠️`: `{gate, status, details}`. `✅` gates carry no finding, collapsed or bare. | **No** — gate findings have no `path:line` |
+| Gate strip | above `<details><summary>Review details…`: one line, `<glyph> Description · <glyph> Prior feedback · <glyph> Docs · <glyph> Self-review · <glyph> Code review`, glyphs `✅` `⚠️` `❌` `⏭️`. The Details of a gate is the body of the collapsed `<details>` whose `<summary>` is `<glyph> <b><full gate name></b>`: above the accordion for a ⚠️ / ❌ gate, inside it for Code review when the report has findings and for a ✅ / ⏭️ gate with a note. A body posted before the strip carries the legacy `\| Gate \| \| Details \|` table inside the accordion instead; parse that one row per gate | one unit per gate whose glyph is `❌` or `⚠️`: `{gate, status, details}`. `✅` gates carry no finding. | **No** — gate findings have no `path:line` |
 | Optimality cards (legacy) | `<summary>Is there a better approach? (<N>)</summary>` — only in bodies written before the optimality lens was removed | one unit per `### Optimality proposal — <path>:<line>` heading, captured **verbatim** as a whole block: headline, Now / Better table, `Why it's better`, `Trade-off`, `Evidence`, and the `Intent · Blast radius · Confidence` footer | Yes — `path:line` in the card heading |
 | Findings index | the first `\| \| Finding \| Where \|` table, above the accordions | one unit per row: `\| <tier glyph>&nbsp;**<n>** \| **<title>**<br><sub>…</sub> \| [\`<file>:<line>\`](<url> "<path>") \|` → `{n, tier, title, decide, blocking, fix, path, line, url}`. A title reading `Decide: …` is a decision; the `<sub>` line carries `Blocking` and `Fix: <remedy>`. The link text is the file's basename; the full path is the link title. Rows are numbered blocking → decide → the rest by tier — the findings this run posted **inline**, which are also fetchable from `pulls/<n>/comments`. **Do not double-count**: a consumer reading both surfaces must dedupe on `path:line`, since the index is a pointer to the comment, not a second finding. | Yes |
 | Notes | `<summary>Notes (<N>) — posted inline</summary>` | one unit per row of its `\| \| Finding \| Where \|` table: `\| **<n>** \| <prefix>: <body><br><sub>Confidence <N></sub> \| <where> \|` — one-liners this run **posted inline**, so each is also a comment in `pulls/<n>/comments`. **Never expand a Notes row into a finding to act on**: it is a pointer to a comment that already exists, the same double-count rule as the findings index. A body written before this section existed listed posted notes under *Additional findings*; the dedupe-against-inline rule below still covers those. | Yes |
@@ -166,9 +166,9 @@ Three consequences for a consumer:
   (`comment-shape.md § Shape` forbids it and uses a bold title line), so the presence of a `### `
   heading distinguishes the two surfaces without reading the marker.
 
-### The accordion holds the gate list and a run table, and their labels are not sections
+### The accordion holds a run table, and its labels are not sections
 
-Inside `Review details` the gate list comes first, then the open threads and withheld findings,
+Inside `Review details` any gate notes come first, then the open threads and withheld findings,
 then a `| Run | Details |` table with one labelled row per run fact — `Mode`, `Anomaly`, `Checked`,
 `Reach`, `Telemetry`, `Dependencies`, `Overlapping PRs`, `Found`, `Dropped`, `Severity`, the lens
 logs, `Verified`, `Skipped files`, `Integrations`, `CI`, and `Memories` — then a `**Memories used**`
@@ -218,7 +218,7 @@ Gate 3's open threads render across two slots (`pr-reviewer.md § The Gate 3 ope
 | Slot | Literal to match | Where |
 | --- | --- | --- |
 | `OPEN_THREADS_SUFFIX` | `Review details — <N> open review threads` | appended inside the `<summary>` tag |
-| `OPEN_THREADS_LIST` | `**Open review threads (<N>)**` | inside the accordion, right after the gate list |
+| `OPEN_THREADS_LIST` | `**Open review threads (<N>)**` | inside the accordion, right after any gate notes |
 
 Neither literal has a row in the table above, so the "match by literal heading" rule already skips
 both. Never mine the list's linked `path:line` bullets for findings — that would double-count the

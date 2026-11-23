@@ -139,7 +139,7 @@ The matrix is not exhaustive — when a real failure exposes a guard not listed 
 | ID | Class | Symptom | Primary phase |
 | --- | --- | --- | --- |
 | `F-event-not-comment` | Posting event | Posted review used `APPROVE` / `REQUEST_CHANGES` or omitted `event` instead of the required `event: "COMMENT"` | 4 |
-| `F-body-empty` | Payload shape | The review was posted with an empty body; Step 4b requires a non-empty **pointer** body (the gate list lives in the sticky, not in the review) | 4 |
+| `F-body-empty` | Payload shape | The review was posted with an empty body; Step 4b requires a non-empty **pointer** body (the gate strip lives in the sticky, not in the review) | 4 |
 | `F-comment-overlong` | Comment shape | Posted prose > 200 chars OR > 2 sentences OR a title > 60 chars | 2.8 |
 | `F-comment-hand-written` | Comment shape | A posted inline body with no attribution footer, or a claim with no bold title — it did not come from `render-comment.mjs` | 2.8 |
 | `F-comment-unfounded` | Comment correctness | Body names a backticked symbol absent from the changed file | 2.6 |

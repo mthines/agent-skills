@@ -5,6 +5,15 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 
 **Before merge:** 1 open review thread
 
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
+
+<details>
+<summary>⚠️ <b>Prior review feedback</b></summary>
+
+1 unresolved review thread(s) — see the thread list below
+
+</details>
+
 | | Finding | Where |
 |:-:|---|---|
 | 🟡&nbsp;**1** | **`sync.ts` still branches on the old null contract** | [`sync.ts:88`](https://github.com/o/r/pull/7#discussion_r71 "src/jobs/sync.ts") |
@@ -22,18 +31,6 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <details>
 <summary>Review details — 1 open review thread</summary>
 <br>
-
-✅ Description vs. code
-
-<details>
-<summary>⚠️ <b>Prior review feedback</b></summary>
-
-1 unresolved review thread(s) — see the thread list below
-
-</details>
-
-✅ Documentation<br>
-✅ Self-review signals
 
 <details>
 <summary>⚠️ <b>Code review</b></summary>

@@ -90,10 +90,9 @@ const SHARED_FOOTER = "<sup>`pr-reviewer` · commit `";
 // `**Run mode**`, so a two-of-N rule over the diagnostic lines missed it. Column spacing varies
 // between runs (`| --- |` vs `|---|`), so match the header cells, not a fixed string.
 const GATE_TABLE_RE = /^\|\s*Gate\s*\|\s*(?:Status\s*)?\|\s*Details\s*\|/m;
-// The current gate list: `✅ <gate>` lines and collapsed `<summary>⚠️ <b><gate></b></summary>` blocks.
-// Three or more gate lines is the bar, so a human comment naming one gate never classifies.
-const GATE_LINE_RE = /^(?:✅ (?:Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review)(?:<br>)?|<summary>(?:✅|⚠️|❌|⏭️) <b>(?:Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review)<\/b><\/summary>)$/gmu;
-const gateLineCount = (text) => (text.match(GATE_LINE_RE) || []).length;
+// The current gate strip: all five gates on one line in a fixed order, decisive on its own because
+// nothing else emits it. It belongs above the accordion, the opposite of the legacy table.
+const GATE_STRIP_RE = /^(?:✅|⚠️|❌|⏭️) Description · (?:✅|⚠️|❌|⏭️) Prior feedback · (?:✅|⚠️|❌|⏭️) Docs · (?:✅|⚠️|❌|⏭️) Self-review · (?:✅|⚠️|❌|⏭️) Code review$/mu;
 // Every shape is listed: a current body carries `| Run | Details |` and the footer, a grouped one
 // `**Found**` + `**Run**`, a pre-grouping one two or more of the bold diagnostic labels. Two signals
 // is still the bar, so one incidental bold label in a human comment never classifies as a report.
@@ -114,7 +113,7 @@ function classify(body) {
   const hasReportMarker = body.includes(REPORT_MARKER);
   const hasPointerMarker = body.includes(POINTER_MARKER);
   const signals = REPORT_SIGNALS.filter((s) => body.includes(s)).length;
-  const isReport = GATE_TABLE_RE.test(body) || gateLineCount(body) >= 3 || signals >= 2;
+  const isReport = GATE_TABLE_RE.test(body) || GATE_STRIP_RE.test(body) || signals >= 2;
   // A pointer is one line plus an optional ledger; a report carries sections.
   if (hasReportMarker) return "report";
   if (isReport) return hasPointerMarker ? "report-mismarked-as-pointer" : "report-unmarked";
@@ -189,8 +188,8 @@ export function validate(body) {
   if (GATE_TABLE_RE.test(head)) {
     add("accordion-owned-line-at-top-level", "the `| Gate | | Details |` table renders above the accordion");
   }
-  if (gateLineCount(head) > 0) {
-    add("accordion-owned-line-at-top-level", "the gate list renders above the accordion");
+  if (accordionAt !== -1 && !GATE_STRIP_RE.test(head) && GATE_STRIP_RE.test(body)) {
+    add("gate-strip-inside-accordion", "the gate strip renders inside the accordion — it has to be visible without a click");
   }
 
   // ── the report's own identity: a `### ` headline ─────────────────────────────────────────────
