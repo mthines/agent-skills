@@ -23,6 +23,7 @@
 //     [--to body [--seed <comment.md>]] [--notice-out <file> --comment-url <url>]
 //   node verify-comment.mjs --pr <n|url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-2":{"prod":true}}'
 //     changes only the leading status / 🚀 of existing criteria lines (a JSON string or a file); never their text
+//   node verify-comment.mjs --pr <n|url> --check [--ui]   the end-of-run gate: exit 1 lists what the PR report lacks (intent ticked, aggregate in the template shape, ui spec block)
 //   node verify-comment.mjs --pr <n|url> --from-plan <plan.md> [--statuses <json|file>]
 //     publishes an `/aw` brief's criteria as the intent region (rows ⬜, or ticked from run-checks.mjs --statuses);
 //     --print renders it and exits with no GitHub call; exit 3 = the brief has no AC (nothing to publish)
@@ -476,10 +477,49 @@ function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, 
   return url;
 }
 
+// The completeness gate a run ends with: what is missing from the PR's report, as one line each (empty = complete).
+// `prBody` is the PR description, `comments` the verify comment bodies (newest first); `ui` is true for a UI diff.
+const VERDICT_HEADLINE = /^##\s+(?:✅ Verified|⚠️ Verified with open items|❌ Not verified|⛔ Blocked) — \S/;
+export function checkReport(prBody, comments = [], { ui = false } = {}) {
+  const problems = [];
+  const source = bodyBlock(prBody) || comments.find((c) => c.startsWith(MARKER)) || "";
+  const regions = parseRegions(source);
+  const intent = regions.get("intent");
+  if (!intent) problems.push("no intent region: publish the criteria (intent.md § Step 6)");
+  else {
+    const rows = parseIntent(intent);
+    const open = rows.filter((c) => c.id.startsWith("AC-") && c.status === "⬜").map((c) => c.id);
+    if (open.length) problems.push(`criteria still ⬜ after the run: ${open.join(", ")} (set them with --marks)`);
+    const noProof = rows.filter((c) => c.id.startsWith("AC-") && !c.kind).map((c) => c.id);
+    if (noProof.length) problems.push(`criteria without a proof cell: ${noProof.join(", ")}`);
+  }
+  const aggregate = regions.get("aggregate");
+  if (!aggregate) problems.push("no aggregate region: post the report (report.md)");
+  else {
+    const first = aggregate.split("\n").find((l) => l.trim()) || "";
+    if (!VERDICT_HEADLINE.test(first)) problems.push(`the report must open with "## <✅ Verified | ⚠️ Verified with open items | ❌ Not verified | ⛔ Blocked> — <headline>" (report.md.template), not "${first.slice(0, 60)}"`);
+    if (!/<details>\s*<summary>Details<\/summary>/.test(aggregate)) problems.push('the report has no closed <details><summary>Details</summary> block (report.md.template)');
+  }
+  if (ui && !/<!-- (?:ui-verify:v2|ui-verify:v1|preview-spec:v1) -->/.test(prBody || "")) problems.push("no ui-verify spec block in the PR description (ui-verify author, or lift specs.md)");
+  return problems;
+}
+
 function selfTest() {
   let n = 0;
   const assert = (ok, msg) => { n++; if (!ok) { console.error(`self-test FAIL: ${msg}`); process.exit(1); } };
   const url = "https://github.com/user-attachments/assets/aaaa";
+  {
+    const intentOk = "<details><summary>📋 Acceptance criteria — 1 criterion</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ✅&nbsp;AC‑1 | does x | ui:/x · browser |\n\n</details>";
+    const aggOk = "## ✅ Verified — does x\n\nbody\n\n<details><summary>Details</summary>\n\nmore\n\n</details>";
+    const full = withBlock("text", splice(splice("", "intent", intentOk), "aggregate", aggOk));
+    const spec = "<!-- ui-verify:v2 -->\n<details><summary>s</summary>\n</details>\n<!-- /ui-verify:v2 -->\n";
+    assert(checkReport(full + spec, [], { ui: true }).length === 0, "a complete report passes the gate");
+    assert(checkReport(full, [], { ui: true }).some((p) => p.includes("ui-verify spec")), "a UI diff with no spec block fails the gate");
+    assert(checkReport(withBlock("t", splice("", "aggregate", aggOk))).some((p) => p.includes("no intent region")), "no intent region fails the gate");
+    assert(checkReport(withBlock("t", splice(splice("", "intent", intentOk.replace("✅&nbsp;AC", "⬜&nbsp;AC")), "aggregate", aggOk))).some((p) => p.includes("still ⬜")), "a criterion left ⬜ fails the gate");
+    assert(checkReport(withBlock("t", splice(splice("", "intent", intentOk), "aggregate", aggOk.replace("✅ Verified — does x", "Verdict: verified")))).some((p) => p.includes("must open with")), "a free-text verdict fails the gate");
+    assert(checkReport(withBlock("t", splice(splice("", "intent", intentOk), "aggregate", "## ✅ Verified — x\n\nno details"))).some((p) => p.includes("Details")), "a report with no Details block fails the gate");
+  }
   assert(hiddenMediaLine(`## ✅ x\n\nWhat I checked\n\n${url}.mp4\n\n<details><summary>✅ row</summary>\n\nnamed only\n\n</details>`) === null, "media in the strip before the rows is allowed");
   assert(hiddenMediaLine(`strip\n\n<details><summary>+1 more recording</summary>\n\n${url}.mp4\n\n</details>`) === null, "media in the +N more fold is allowed");
   assert(hiddenMediaLine(`<details><summary>✅ row</summary>\n\n${url}.mp4\n\n</details>`) !== null, "a recording inside a check row is refused");
@@ -741,7 +781,7 @@ function selfTest() {
 
 // Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
 export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
-  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test"];
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -752,6 +792,19 @@ else if (isMain) {
   try {
     const unknown = args.find((a) => a.startsWith("--") && !FLAGS.includes(a));
     if (unknown) throw new Error(`unknown flag ${unknown}`);
+    if (has("--check")) {
+      if (!opt("--pr")) throw new Error("--check needs --pr");
+      const checkPr = String(opt("--pr"));
+      const num = checkPr.match(/(\d+)\/?$/)?.[1];
+      if (!num) throw new Error(`cannot read a PR number from "${checkPr}"`);
+      const slug = opt("--repo") || checkPr.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+      const body = Buffer.from(gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".body // \"\" | @base64"]).trim(), "base64").toString("utf8");
+      const comments = gh(["api", `repos/${slug}/issues/${num}/comments`, "--paginate", "--jq", ".[] | (.body | @base64)"]).split("\n").filter(Boolean).map((b) => Buffer.from(b, "base64").toString("utf8")).reverse();
+      const problems = checkReport(body, comments, { ui: has("--ui") });
+      if (problems.length) { console.error(`verify-comment: the PR's report is incomplete:\n${problems.map((p) => `  - ${p}`).join("\n")}`); process.exit(1); }
+      console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : ""));
+      process.exit(0);
+    }
     const fromPlan = opt("--from-plan");
     const section = opt("--section") ?? (fromPlan ? "intent" : undefined);
     const file = opt("--file");
