@@ -8,7 +8,9 @@
 {{REASONS_LINE}}
 {{/REASONS_LINE}}{{#ADVISORY_LINE}}
 {{ADVISORY_LINE}}
-{{/ADVISORY_LINE}}{{#IMPACT_IMAGE}}
+{{/ADVISORY_LINE}}
+{{GATE_STRIP}}
+{{#IMPACT_IMAGE}}
 {{IMPACT_IMAGE}}
 {{/IMPACT_IMAGE}}{{#FINDINGS_INDEX}}
 {{FINDINGS_INDEX}}
@@ -49,15 +51,9 @@
 <details>
 <summary>Review details{{OPEN_THREADS_SUFFIX}}</summary>
 <br>
-
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | {{GATE_DESCRIPTION_STATUS}} | {{GATE_DESCRIPTION_DETAILS}} |
-| Prior review feedback | {{GATE_PRIOR_STATUS}} | {{GATE_PRIOR_DETAILS}} |
-| Documentation | {{GATE_DOCS_STATUS}} | {{GATE_DOCS_DETAILS}} |
-| Self-review signals | {{GATE_SELFREVIEW_STATUS}} | {{GATE_SELFREVIEW_DETAILS}} |
-| Code review | {{GATE_CODEREVIEW_STATUS}} | {{GATE_CODEREVIEW_DETAILS}} |
-{{#OPEN_THREADS}}
+{{#GATE_NOTES}}
+{{GATE_NOTES}}
+{{/GATE_NOTES}}{{#OPEN_THREADS}}
 **Open review threads ({{OPEN_THREADS_COUNT}})**{{RESOLVED_SINCE}}
 
 {{OPEN_THREADS}}

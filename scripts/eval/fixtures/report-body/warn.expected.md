@@ -3,7 +3,9 @@
 
 Reworks the retry path so `retryRequest` throws instead of returning `null`.
 
-**Warnings:** 2 open review threads
+**Before merge:** 2 open review threads
+
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
 
 | | Finding | Where |
 |:-:|---|---|
@@ -28,13 +30,10 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <summary>Review details — 2 open review threads</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 2 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⚠️ | 3 non-blocking findings — see inline comments. |
+**Gates needing attention**
+
+- ⚠️ **Prior review feedback** — 2 unresolved review thread(s) — see the thread list below
+- ⚠️ **Code review** — 3 non-blocking findings — see inline comments.
 
 **Open review threads (2)** <sup>4 resolved since `70cf147`</sup>
 

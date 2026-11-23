@@ -674,6 +674,41 @@ const renderReport = (payload) => {
   const warnForm = render((c) => { c.VERDICT = "WARN"; c.GATE_DOCS_STATUS = "⚠️"; c.GATE_DOCS_DETAILS = "x"; c.WARN_REASONS = ["1 doc gap"]; });
   s.check("G19b the renderer emits the zero-finding non-PASS form", warnForm.ok
     && /^### ⚠️ No findings — 1 gate needs? attention$/m.test(warnForm.out), warnForm.err);
+  // A WARN from the housekeeping gates only (description, other reviewers' threads) is a merge to-do.
+  const housekeeping = render((c) => {
+    c.VERDICT = "WARN"; c.GATE_DESCRIPTION_STATUS = "⚠️"; c.GATE_DESCRIPTION_DETAILS = "omits the rename";
+    c.WARN_REASONS = ["description omits the rename"];
+  });
+  s.check("G19g a housekeeping-only WARN keeps the clean heading and a **Before merge:** line", housekeeping.ok
+    && /^### ✅ No issues found$/m.test(housekeeping.out)
+    && /^\*\*Before merge:\*\* description omits the rename$/m.test(housekeeping.out), housekeeping.err);
+  const ownOpen = render((c) => {
+    c.VERDICT = "WARN"; c.GATE_PRIOR_STATUS = "⚠️"; c.GATE_PRIOR_DETAILS = "1 unresolved review thread(s) — see the thread list below";
+    c.WARN_REASONS = ["1 open review thread"];
+    c.OPEN_THREADS = [{ path: "a.ts", line: 1, url: "https://github.com/o/r/pull/1#discussion_r1", ask: "x is never freed", own: true }];
+  });
+  s.check("G19g an open thread that is this reviewer's own finding keeps the ⚠️ heading", ownOpen.ok
+    && !/^### ✅/m.test(ownOpen.out) && /^\*\*Warnings:\*\* 1 open review thread$/m.test(ownOpen.out), ownOpen.err);
+  s.check("G19g a code-level WARN keeps the ⚠️ heading and a **Warnings:** line", warnForm.ok
+    && /^\*\*Warnings:\*\* 1 doc gap$/m.test(warnForm.out), warnForm.err);
+  const gatesOut = housekeeping.ok ? housekeeping.out : "";
+  const gatesHead = gatesOut.split("<details>\n<summary>Review details")[0];
+  s.check("G19h the gate strip names all five gates above the accordion",
+    /^⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review$/m.test(gatesHead)
+      && !gatesOut.includes("| Gate |"), housekeeping.err);
+  s.check("G19h a ⚠️ gate's Details is a bullet inside the accordion, never above it",
+    /^- ⚠️ \*\*Description vs\. code\*\* — omits the rename$/m.test(gatesOut)
+      && !gatesHead.includes("**Description vs. code**"), housekeeping.err);
+  s.check("G19h the gate bullets sit under a heading, `Gates needing attention` when every one is ⚠️ / ❌",
+    /^\*\*Gates needing attention\*\*\n\n- ⚠️ \*\*Description vs\. code\*\*/m.test(gatesOut), housekeeping.err);
+  s.check("G19h a ✅ gate with its static Details renders no bullet", !/\*\*Prior review feedback\*\*/.test(gatesOut), housekeeping.err);
+  const saysSomething = render((c) => { c.GATE_PRIOR_DETAILS = "thread state unavailable — 2 comment(s) unverified"; });
+  const saysTail = saysSomething.ok ? saysSomething.out.split("<details>\n<summary>Review details")[1] || "" : "";
+  s.check("G19h a ✅ gate's note sits under the plain `Gates` heading",
+    /^\*\*Gates\*\*\n\n- ✅ \*\*Prior review feedback\*\*/m.test(saysTail), saysSomething.err);
+  s.check("G19h a ✅ gate whose Details is not its static text keeps a bullet inside the accordion",
+    /^- ✅ \*\*Prior review feedback\*\* — thread state unavailable — 2 comment\(s\) unverified$/m.test(saysTail),
+    saysSomething.err);
   const withFindings = render((c) => {
     c.QUALITY = "produced 3 → posted inline 2 · cleared 2 · carried forward 0 · deferred 0 · below-bar 0";
     c.FINDINGS = [
@@ -1102,6 +1137,13 @@ const renderReport = (payload) => {
     const r = run(readFileSync(p, "utf8"));
     s.check(`G26 the rendered ${name} snapshot passes the external validator`, r.status === 0, `exit ${r.status}: ${r.err.slice(0, 120)}`);
   }
+  {
+    const strip = "✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review\n";
+    const r = run(`Reviewed your changes — no blocking issues.\n\n${strip}`);
+    s.check("G26 the gate strip alone classifies a body as a report", r.status === 1 && r.verdict?.kind === "report-unmarked");
+    const one = run("✅ Docs · looks good to me\n");
+    s.check("G26 a human comment using a gate word is not a report", one.status === 0 && one.verdict?.kind === "not-a-reviewer-body");
+  }
   for (const [why, sep] of [["tight pipes", "|---|---|---|"], ["padded pipes", "| --- | --- | --- |"]]) {
     const r = run(`Reviewed your changes — no blocking issues.\n\n| Gate | Status | Details |\n${sep}\n| Code review | ✅ | fine |\n`);
     s.check(`G26 the gate table alone classifies a body as a report (${why})`, r.status === 1 && r.verdict?.kind === "report-unmarked");
@@ -1137,6 +1179,10 @@ const renderReport = (payload) => {
     ["a caged markdown link", good.replace(/^- (\[[^\]]*\]\([^)]*\))/m, "- ``$1``"), "link-caged-in-code-span"],
     ["a count disagreeing with its list", good.replace("**Open review threads (2)**", "**Open review threads (5)**"), "count-disagrees-with-list"],
     ["a drift-worded count disagreeing with its list", good.replace("**Open review threads (2)**", "**Open threads (5)**"), "count-disagrees-with-list"],
+    ["a gate strip inside the accordion", (() => {
+      const strip = (good.match(/^(?:✅|⚠️|❌|⏭️) Description · .*$/m) || [""])[0];
+      return good.replace(`${strip}\n`, "").replace("<summary>Review details — 2 open review threads</summary>\n<br>\n", `<summary>Review details — 2 open review threads</summary>\n<br>\n\n${strip}\n`);
+    })(), "gate-strip-inside-accordion"],
     ["a flat body preceded by an unrelated <details> fold",
       "Reviewed your changes.\n\n<details>\n<summary>Additional findings</summary>\n\n- a\n\n</details>\n\n"
         + "| Gate | Status | Details |\n|---|---|---|\n| Code review | ✅ | fine |\n\n**Run mode** — full\n", "accordion-owned-line-at-top-level"],
@@ -1638,8 +1684,16 @@ const renderReport = (payload) => {
     for (const [section, fn] of Object.entries(EXTRACT)) {
       s.check(`G25h ${name}: the ingest grammar parses "${section}"`, fn(body));
     }
-    const rows = [...body.matchAll(/^\| (Description vs\. code|Prior review feedback|Documentation|Self-review signals|Code review) \| (✅|⚠️|❌|⏭️) \| ([^|]*) \|$/gm)];
-    s.check(`G25h ${name}: the gate table parses to 5 typed rows`, rows.length === 5, `parsed ${rows.length}`);
+    const G = "(✅|⚠️|❌|⏭️)";
+    const head = body.split("<details>\n<summary>Review details")[0];
+    const strip = head.match(new RegExp(`^${G} Description · ${G} Prior feedback · ${G} Docs · ${G} Self-review · ${G} Code review$`, "mu"));
+    s.check(`G25h ${name}: the gate strip above the accordion parses to 5 typed gates`, Boolean(strip));
+    const tail = body.split("<details>\n<summary>Review details")[1] || "";
+    const GATE = "(Description vs\\. code|Prior review feedback|Documentation|Self-review signals|Code review)";
+    const notes = [...tail.matchAll(new RegExp(`^- (⚠️|❌) \\*\\*${GATE}\\*\\* — (.+)$`, "gmu"))];
+    const needed = strip ? strip.slice(1).filter((g) => g === "⚠️" || g === "❌").length : -1;
+    s.check(`G25h ${name}: every ⚠️ / ❌ gate in the strip has its Details bullet inside the accordion`,
+      notes.length === needed, `strip needs ${needed}, parsed ${notes.length}`);
     const declared = body.match(/\*\*Open review threads \((\d+)\)\*\*/);
     if (declared) {
       const region = body.split("**Open review threads (")[1].split("\n\n")[1] || "";

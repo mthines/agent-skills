@@ -28,6 +28,9 @@ jobs:
       # No install step — the harness is zero-dependency (node builtins + bash).
       - name: L1 contract checks
         run: node scripts/eval/l1.mjs
+      - name: pr-reviewer report gallery is current
+        if: ${{ !cancelled() }}
+        run: node scripts/eval/report-gallery.mjs --check
 
   typecheck:
     # The pr-reviewer deterministic pipeline's new agents/pr-reviewer/scripts/*.mjs

@@ -16,7 +16,7 @@
  * toInlineCommentPayload's FP), never relayed from a model-supplied string.
  */
 
-import { buildFingerprint } from "../fingerprint.mjs";
+import { MARKER_RE, buildFingerprint } from "../fingerprint.mjs";
 import { readFileSync, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -219,6 +219,8 @@ export function toOpenThreadBullet(t) {
   const out = { path: t.path, line: t.line, ask, blocking };
   if (t.url) out.url = t.url;
   if (typeof t.is_bot === "boolean") { out.author = t.author; out.is_bot = t.is_bot; }
+  // This reviewer's own unfixed finding is never merge housekeeping; its fingerprint marker marks it.
+  if (MARKER_RE.test(rootBody)) out.own = true;
   return out;
 }
 
@@ -440,6 +442,8 @@ async function selfTest() {
     const thread = toOpenThreadBullet({ path: "a.ts", line: 1, root_body: "issue: x (blocking)", author: "cursor", is_bot: true, url: "https://x" });
     check("toOpenThreadBullet derives blocking from the decoration regex", thread.blocking === true && thread.author === "cursor" && thread.is_bot === true);
     const untyped = toOpenThreadBullet({ path: "a.ts", line: 1, root_body: "just an observation" });
+    const own = toOpenThreadBullet({ path: "a.ts", line: 1, root_body: "suggestion: x\n\n<!-- fp:v2:abc123 -->", url: "https://x" });
+    check("toOpenThreadBullet marks this reviewer's own finding from its fingerprint marker", own.own === true && thread.own === undefined);
     check("toOpenThreadBullet omits author/is_bot when type unknown", untyped.author === undefined && untyped.is_bot === undefined);
     // ab/B/20230/2: `blocking` must keep reading the RAW root_body's decoration regardless of
     // normalizeAsk's cleanup of the derived `ask` string — the two are independent computations

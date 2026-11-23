@@ -2334,7 +2334,8 @@ async function selfTest() {
     const rendered = renderVia(scratchRoot(), RENDER_REPORT_SCRIPT, r.payload, "self-test-nitpick-only-headline");
     check("the payload renders through render-report.mjs with zero manual edits", rendered.ok, rendered.stderr.trim());
     check("the headline counts the posted note instead of reading as if nothing happened",
-      rendered.ok && /^### ⚠️ No findings — \d+ gates? needs? attention · 1 note$/m.test(rendered.stdout));
+      rendered.ok && /^### ✅ No issues found · 1 note$/m.test(rendered.stdout)
+        && /^\*\*Before merge:\*\* /m.test(rendered.stdout));
     check("the rendered report lists it under the posted-notes accordion, not the too-minor one",
       rendered.ok && /<summary>Notes \(1\) — posted inline<\/summary>/.test(rendered.stdout)
         && !/too minor to comment on/.test(rendered.stdout));

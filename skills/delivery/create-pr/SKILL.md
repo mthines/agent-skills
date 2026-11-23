@@ -142,7 +142,7 @@ Otherwise evaluate in this precedence order (first match wins):
 | 4 | **none of the above (default)** | `Skill("review-loop", "<pr-url> --no-ci")` | `pr-reviewer` → `implement-suggestion` → `polish simplify`, up to 5 iterations, until every thread is resolved (fix or reply); refreshes the PR description. |
 
 Pass `--critical` through to `review-loop` / `pr-reviewer` if the user passed it.
-**`--merge` (row 4 only):** invoke `Skill("review-loop", "<pr-url> --no-ci --merge")`; `review-loop` owns the merge gates ([`merge.md`](../../quality/review-loop/rules/merge.md)): `PASS` or `WARN`, zero open threads, green CI, squash only.
+**`--merge` (row 4 only):** invoke `Skill("review-loop", "<pr-url> --no-ci --merge")`; `review-loop` owns the merge gates (its `--merge` rule): `PASS` or `WARN`, zero open threads, green CI, squash only.
 Rows 1–3, `--no-quality`, `--no-post-review`, and `--split` never run `review-loop`, so `--merge` cannot fire there: do not merge, and record `not merged (--merge needs the default review loop)` for Step 10.
 
 ```text

@@ -25,6 +25,8 @@ that lost its marker or accordion. Where this file and the renderer disagree, **
 right** and this file is the bug — it exists so a run knows which payload to build, never so a run
 can hand-render a body.
 
+**Every variation, rendered:** [`report-body/README.md`](../../../scripts/eval/fixtures/report-body/README.md) shows each snapshot-tested payload as GitHub displays it.
+
 Heading levels are `###` / `####` because this text moved verbatim out of `pr-reviewer.md` § Step 4,
 and both the renderer and the L1 guards match some of these headings as literal strings.
 
@@ -60,14 +62,14 @@ back; `reviewer-report-ingest.md` cites this section by its current title.
 
 The `<sup>` footer line varies by run mode. It renders **inside** the `Review details`
 accordion — the first line of the accordion body, immediately after the `<summary>` and before the
-gate table — not at the top level of the review body:
+Run table — not at the top level of the review body:
 - `full` mode: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
 - `incremental` or `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
 
-The `Review details` `<details>` block has the same structure on PASS, WARN, and FAIL, but each verdict
-template embeds its **own** gate-table variant — PASS renders every gate ✅, WARN renders ✅/⚠️, and
-FAIL renders ✅/⚠️/❌. Use the table from the template matching the chosen verdict; a PASS (all-✅)
-table must never be rendered on a WARN or FAIL body. Fill in the actual values.
+The renderer derives the gates from the five `GATE_*_STATUS` / `GATE_*_DETAILS` slots. Above the
+`Review details` accordion sits a one-line gate strip naming every gate; the accordion opens with one
+bullet per gate whose Details is not its static text. See *The gate strip* below. The accordion has the same structure on PASS,
+WARN, and FAIL.
 The `<sup>` footer depends on run mode (substituted before posting):
 - `full`: `<sup>Reviewed for commit \`HEAD_SHA\`.</sup>`
 - `incremental` / `incremental-quick`: `<sup>Incremental review for commit \`HEAD_SHA\` (delta since \`PRIOR_SHA_SHORT\`).</sup>`
@@ -86,7 +88,7 @@ of those was a real defect before it became derived.
 
 | Key | Content |
 | --- | --- |
-| `VERDICT` | `PASS` · `WARN` · `FAIL`. The renderer **cross-checks it against the gate table** and rejects a disagreement — see *Headlines* below. |
+| `VERDICT` | `PASS` · `WARN` · `FAIL`. The renderer **cross-checks it against the gate strip** and rejects a disagreement — see *Headlines* below. |
 | `SUMMARY` | One sentence about the **change**, ≤ 240 chars, single line. It is the only part of the headline region that needs judgment; the glyph, the counts, and the blocking subset are all derived. |
 | `GATE_DESCRIPTION_STATUS` · `GATE_PRIOR_STATUS` · `GATE_DOCS_STATUS` · `GATE_SELFREVIEW_STATUS` · `GATE_CODEREVIEW_STATUS` | One of `✅` `⚠️` `❌` `⏭️`. Gate 2 (CI) is not a row — it renders via `CI_NOTE`. |
 | `GATE_DESCRIPTION_DETAILS` · `GATE_PRIOR_DETAILS` · `GATE_DOCS_DETAILS` · `GATE_SELFREVIEW_DETAILS` · `GATE_CODEREVIEW_DETAILS` | The Details cell. **Single line, no `\|`, ≤ 120 chars** — all three enforced; the full finding belongs in an inline comment. |
@@ -201,7 +203,7 @@ length**, so there is no count to supply and none to get wrong:
 
 | Key | Shape | Notes |
 | --- | --- | --- |
-| `OPEN_THREADS` | `[{path, line, url?, ask, blocking?, author?, is_bot?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`, then an author tag `` (bot · `author`) `` or `` (human · `author`) `` when `is_bot`/`author` are supplied (omitted when they are not); it derives `Open review threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. `is_bot` is a boolean (thread author's GitHub type is `Bot`); `author` is the login, code-wrapped by the renderer so it does not `@mention`. A missing `url` renders unlinked inline code, never a broken link. |
+| `OPEN_THREADS` | `[{path, line, url?, ask, blocking?, author?, is_bot?, own?}]` | The renderer builds the bullet `- ` + a link whose text is `` `path:line` `` and whose target is `url`, then ` — ask`, then an author tag `` (bot · `author`) `` or `` (human · `author`) `` when `is_bot`/`author` are supplied (omitted when they are not); it derives `Open review threads (N)` and the `<summary>` suffix, and appends ` (K blocking)` only when some item has `blocking: true`. `is_bot` is a boolean (thread author's GitHub type is `Bot`); `author` is the login, code-wrapped by the renderer so it does not `@mention`. `own: true` marks this reviewer's own finding (its root comment carries an `fp:` marker); it renders nothing and keeps Prior review feedback out of the housekeeping heading. A missing `url` renders unlinked inline code, never a broken link. |
 | `RESOLVED_SINCE` | `{count, sha}` | Suppressed at `count: 0`. Rejected when `OPEN_THREADS` is empty — with Gate 3 clean the counter belongs in its Details cell. |
 | `MEMORIES_USED` | `[{key, url?, note?, kind?, evidence?}]` | One bullet per applied memory, under `**Memories used**` below the Run table. `kind` is `knowledge` · `hotspot` · `rule` ([`memory.md`](./memory.md)) and renders as a bold prefix; when any entry supplies one, the summary's `used` half gains a per-kind breakdown (`3 used (1 knowledge · 1 hotspot · 1 rule)`) derived from the array. `evidence` is an array of the PR numbers a `rule` was learned from, rendered `<sup>evidence #88 #91 #97</sup>`; a `rule`-kind entry with an empty `evidence` array is **rejected** — a suppression rule with no evidence trail is exactly the unauditable suppression `memory.md` forbids. Omit `evidence` entirely on the other two kinds. |
 | `IMPACT` | `{telemetry?, symbols?, modules?, dependencies?, dependencies_omitted?, overlaps?}` | The `Reach`, `Telemetry`, `Dependencies`, and `Overlapping PRs` rows of the Run table, from [`impact-graph.md`](./impact-graph.md) — see *The Run table* below. Built by `finalize/reach.mjs` from `impact.json` and `judgments.impact_trace` ([`impact-graph.md` § In the report](./impact-graph.md#in-the-report)); a `context.render.IMPACT` overrides it. `symbols` is `[{name, path, change, consumer_files, verified_unaffected, findings, consumers?}]` — `change` is `added` · `signature` · `body` · `removed`; `consumers` is `[{path, line?, status}]` with `status` `finding` · `verified` · `untraced`, one entry per consumer **file**; `modules` is `[{path, importer_files, importers?}]` — a changed file no listed export covers and the files that import it (`importers` at most `importer_files` entries, never the file itself), counted in the `Reach` row as `<N> changed files imported by <M> files, not traced` and never counted as a dependent file; `dependencies` is `[{name, from, to, delta, usage_sites, url?, checked_sites?}]` — `checked_sites` is how many usage sites a read covered (the entry then says `checked`, `not checked`, or `K checked`; absent, it says every site was checked) — `reach.mjs` lists a renderable delta only when it is direct (`direct !== false`) or has at least one usage site; `dependencies_omitted` is a non-negative integer counting the transitive deltas with no usage site left out of `dependencies`, rendered as one last entry in the `Dependencies` row (`N more dependency bumps — transitive, no usage sites in this repo, not listed`), so an unlisted bump is never hidden; `overlaps` is `[{pr, author, path, symbol?, url?}]`; `telemetry` is one plain line ([`telemetry.md`](./telemetry.md)). The renderer derives the `Reach` counts, builds every link from `url`, and joins each row's entries with `<br>`. It rejects `verified_unaffected + findings > consumer_files`, and a `consumers` list whose `verified` / `finding` entries do not equal `verified_unaffected` / `findings` (list every verified and flagged file; an unlisted file is untraced), and states any untraced remainder as `<N> not checked`, so a partial trace can never render as a complete one. |
@@ -230,7 +232,7 @@ it into a linked button above the accordion, rendered only when supplied, i.e. w
 
 #### The Run table
 
-Inside `Review details`, after the gate table, the open threads, and any withheld findings, every
+Inside `Review details`, after the gate bullets, the open threads, and any withheld findings, every
 run fact is one labelled row of a `| Run | Details |` table, in this fixed order. A row renders only
 when it has something to say:
 
@@ -360,7 +362,8 @@ findings), then an optional advisory note:
 |---|---|
 | `FINDINGS` non-empty | `### <worst-tier glyph> <K> blocking · <D> to decide · <M> non-blocking` — `<K>` counts `blocking: true`, `<D>` counts `decide: true`, and `<M>` the rest of `FINDINGS` plus `ADDITIONAL_FINDINGS`. A zero part is dropped, never rendered as `0 blocking`; a lone non-blocking part reads `<M> non-blocking finding(s)`. Say "non-blocking", never "minor": a `high` finding can be non-blocking |
 | empty, `VERDICT: PASS` | `### ✅ No issues found` |
-| empty, `VERDICT: WARN` / `FAIL` | `### <verdict glyph> No findings — <M> gates need attention` |
+| empty, `VERDICT: WARN`, and every ⚠️ gate is a housekeeping gate (Description vs. code, or Prior review feedback while no open thread is `own: true`) | `### ✅ No issues found` — the to-dos go on the `**Before merge:**` line |
+| empty, any other `VERDICT: WARN`, or `FAIL` | `### <verdict glyph> No findings — <M> gates need attention` |
 
 **Notes are counted, never folded into findings.**
 A cleared `nitpick:` / `question:` / `praise:` one-liner posts inline but earns no `FINDINGS` row,
@@ -387,7 +390,7 @@ the findings table directly beneath.
 the two surfaces apart without reading a marker. The renderer refuses to emit a body with no `### `
 line.
 
-**`VERDICT` is cross-checked against the gate table and a disagreement is rejected.** Any ❌ implies
+**`VERDICT` is cross-checked against the gate strip and a disagreement is rejected.** Any ❌ implies
 `FAIL`; otherwise any ⚠️ implies `WARN`; otherwise `PASS`. Gate 2 (CI) has no table row —
 `CI_NOTE` is its whole surface — and `CI_NOTE` **never counts as a gate**: CI is a timing/branch
 fact, not a signal about the diff, and a red or pending check can never move the verdict away from
@@ -404,10 +407,15 @@ report. It is the only part of this region that needs judgment.
 
 `FAIL_REASONS` / `WARN_REASONS` — **arrays** of terse noun phrases (≤ 8 words each), the important
 bit distilled from each ❌ (resp. ⚠️) gate's Details, derived from the gate and never a copy of the
-cell, most-severe first. The renderer joins them and renders `**Blocking:** …` on a FAIL or
-`**Warnings:** …` on a WARN.
+cell, most-severe first. The renderer joins them and renders `**Blocking:** …` on a FAIL,
+`**Before merge:** …` on a WARN whose ⚠️ gates are all housekeeping gates (the Code-review ⚠️ is not
+counted when there are findings, because the heading already states it; Prior review feedback is not
+housekeeping while an `OPEN_THREADS` item is `own: true`, an unfixed finding of this reviewer's), and `**Warnings:** …` on
+any other WARN.
+**Why:** a stale description or another reviewer's open thread is a merge to-do, not a problem in
+the code, so it must not turn a clean review's heading ⚠️.
 With findings, it drops the Code-review gate's phrase (`<K> blocking finding(s) (see …)` /
-`<N> non-blocking finding(s)`), because the headline and the table already state it, and keeps
+`<N> non-blocking finding(s)`), because the headline and the findings table already state it, and keeps
 every other gate's phrase; the line is omitted when no phrase remains.
 It keeps the first two phrases and appends `; +<k> more` beyond that — the ~140-char bound
 expressed as a list bound, so it cannot be exceeded by wording.
@@ -454,7 +462,7 @@ Gate 3's open-thread state renders across **two** slots, and the split is the co
 | Slot | Where | What it carries |
 | --- | --- | --- |
 | `OPEN_THREADS_SUFFIX` | appended to the `Review details` `<summary>` — **always visible** | the open count and, on ❌, the blocking subset |
-| `OPEN_THREADS_LIST` | **inside** the accordion, immediately after the gate table | the per-thread bullets and the `resolved since` progress |
+| `OPEN_THREADS_LIST` | **inside** the accordion, immediately after the gate bullets | the per-thread bullets and the `resolved since` progress |
 
 **The counter rides on the `<summary>` rather than on a line of its own.** The summary is already
 visible when the report is collapsed *and* it is the control the reader clicks, so putting the count
@@ -546,7 +554,7 @@ Rules for the list:
   (`isResolved` is the authority — `prior-comment-awareness.md § Thread state`), gets overwritten by
   the next patch, and would contradict Gate 3's ❌ or ⚠️ while it survived. Do not reintroduce
   checkboxes.
-- **Actionable-only** — the unresolved threads and nothing else; never restate the gate table,
+- **Actionable-only** — the unresolved threads and nothing else; never restate the gate strip,
   tally, or other findings. It is a rendering of Gate 3 state, not a new finding, so it is never
   auto-applied or ingested (`reviewer-report-ingest.md`).
 
@@ -608,7 +616,7 @@ cap) and must not be mixed into that section — the two carry different confide
 a carried gate finding in the gate-status table's Details cell, a carried 2.4d run-state on the `Standards — ` log line — each
 suffixed ` (carried from <PRIOR_SHA_SHORT>)`. The suffix is mandatory: it is the only
 thing distinguishing a finding this run verified from one it merely preserved because the owning
-step was skipped. A carried entry never changes the gate table's ✅/⚠️/❌ status, which Step 1.8
+step was skipped. A carried entry never changes the gate strip's ✅/⚠️/❌ status, which Step 1.8
 always sets from the current PR state, and never affects the verdict.
 
 `MEMORIES_SECTION` is the persistent memory block inside `Review details`, the last entry in the
@@ -658,7 +666,7 @@ rejects the key, so this is now impossible rather than merely forbidden.
 #### The accordion is the renderer's job, not yours
 
 The `Review details` `<details>` wrapper, the absence of an `open` attribute, the order of the
-lines inside it, and the fact that the gate table sits within it rather than above it are all
+lines inside it, and the fact that the gate strip sits above it and the gate details inside it are all
 properties of [`templates/report-body.md`](../templates/report-body.md). The renderer
 asserts each one as a post-condition and exits non-zero if a template edit breaks it, so there is
 nothing here for a run to remember, get wrong, or be guarded against. `F-report-accordion-flattened`
@@ -667,7 +675,7 @@ and `F-report-accordion-expanded` are now render-time errors rather than review-
 The visible surface of a report is therefore whatever the template leaves outside the accordion:
 the marker, an optional partial-review banner, the `### <glyph> <K> blocking · <D> to decide · <M>
 non-blocking` headline (a zero part is left out), the summary sentence, the reasons line, the
-advisory note, the optional impact `<picture>`, the numbered
+advisory note, the gate strip, the optional impact `<picture>`, the numbered
 `| | Finding | Where |` findings table, the Fix-all button, and the collapsed `<summary>` lines of
 the optional `<details>` blocks.
 Coverage and reach are rows of the `| Run | Details |` table inside `Review details` (`Checked`,
@@ -676,9 +684,40 @@ A harness-appended attribution footer may also appear; it is not authored here a
 suppressed or reproduced.
 
 Rules for table cells:
-- Gate 2 (CI) is excluded from the table — GitHub's checks section shows it.
-- The gate table is always three columns — `| Gate | | Details |`, the status glyph in the
-  unlabelled centre column — on the PASS (all-clear), WARN, and FAIL bodies alike.
+- Gate 2 (CI) is excluded from the gate strip — GitHub's checks section shows it.
+- **The gate strip.** One line below the reasons and advisory lines, every gate in fixed order as
+  `<glyph> <short label>` joined by ` · `; the short labels are `Description`, `Prior feedback`,
+  `Docs`, `Self-review`, and `Code review`:
+
+  ```markdown
+  ⚠️ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+  ```
+
+  The strip is the only gate line above the fold; the reasons line above it already names what
+  needs attention. `Review details` opens with one bullet per gate whose Details is not its static
+  text, ❌ first, then ⚠️, ✅, and ⏭️, so one click shows every reason. A ✅ gate with its static
+  Details gets no bullet. The bullets sit under `**Gates needing attention**` when every one is
+  ⚠️ / ❌, and under `**Gates**` otherwise:
+
+  ```markdown
+  **Gates needing attention**
+
+  - ❌ **Prior review feedback** — 2 unresolved review thread(s) — see the thread list below
+  - ⚠️ **Description vs. code** — the description omits the queue rename
+  ```
+
+  ```markdown
+  <!-- wrong: a per-gate block above the fold repeats the reasons line and costs a second click -->
+  <details>
+  <summary>⚠️ <b>Description vs. code</b></summary>
+
+  the description omits the queue rename
+
+  </details>
+  ```
+
+  **Why:** a reviewer needs whether to merge and what needs attention; the heading, the reasons
+  line, and one glyph per gate carry that, and every detail sits behind the one accordion.
 - The Run table is always two columns — `| Run | Details |` — one labelled row per run fact (see
   *The Run table*).
 - Details column: plain text only, max 120 chars per cell.
@@ -712,7 +751,7 @@ Rules for table cells:
   dispositioned the row `CARRY`, and `not evaluated this run` otherwise (see *Gate states*).
   A `⏭️` row never counts toward `FAILING_GATE_COUNT` and never selects the WARN or FAIL variant.
 
-Static descriptions (shown verbatim in the Details cell when the gate is ✅):
+Static descriptions (the ✅ Details value, still required in the payload and shown in the terminal report; the posted report shows a ✅ gate with this text as a strip glyph only):
 
 | Gate | Static description (shown on ✅) |
 | --- | --- |
@@ -735,7 +774,7 @@ Static descriptions (shown verbatim in the Details cell when the gate is ✅):
   WARN run, so the Step 3 terminal FAIL verdict's `SEVERITY_TALLY` can report warnings alongside
   errors. (`SEVERITY_TALLY` is a **terminal-only** term now — see
   [`terminal-report.md`](./terminal-report.md); the posted headline counts findings.)
-  `WARN_GATE_COUNT` does not appear in the posted body: the gate table renders per-gate ✅/⚠️
+  `WARN_GATE_COUNT` does not appear in the posted body: the gate strip renders per-gate ✅/⚠️
   marks rather than a count, and the headline counts findings and names gate state in its reasons
   line.
   Its only rendered use is the Step 3 terminal WARN/FAIL verdict line.

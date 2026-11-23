@@ -3,17 +3,11 @@
 
 Renames the internal event-queue buffer and its comments.
 
+✅ Description · ✅ Prior feedback · ✅ Docs · ✅ Self-review · ✅ Code review
+
 <details>
 <summary>Review details</summary>
 <br>
-
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ✅ | Earlier review comments are resolved. |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ✅ | The multi-lens review found no blocking issues. |
 
 | Run | Details |
 |---|---|

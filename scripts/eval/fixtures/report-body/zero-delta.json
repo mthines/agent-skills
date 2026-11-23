@@ -1,0 +1,27 @@
+{
+  "VERDICT": "PASS",
+  "SUMMARY": "No code changed since the last review; the PR description was updated.",
+  "FINDINGS": [],
+  "RUN": {
+    "mode": "zero-delta",
+    "sha": "9e8d7c6",
+    "prior_sha": "7f3a2b1",
+    "at": "2026-08-21T12:40:00Z"
+  },
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "✅",
+  "GATE_PRIOR_DETAILS": "Earlier review comments are resolved.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "MEMORIES_SUMMARY": "53 indexed",
+  "QUALITY": "produced 0 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0",
+  "INTEGRATIONS": "skipped (zero-delta)",
+  "STANDARDS_LOG": "skipped (zero-delta)",
+  "MEASURABILITY_LOG": "skipped (zero-delta)",
+  "SKIPPED_FILES": "none"
+}

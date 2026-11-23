@@ -3,7 +3,9 @@
 
 Makes `retryRequest` throw on exhaustion and moves the backoff policy into one module.
 
-**Warnings:** 1 open review thread
+**Before merge:** 1 open review thread
+
+✅ Description · ⚠️ Prior feedback · ✅ Docs · ✅ Self-review · ⚠️ Code review
 
 | | Finding | Where |
 |:-:|---|---|
@@ -23,13 +25,10 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <summary>Review details — 1 open review thread</summary>
 <br>
 
-| Gate | | Details |
-|---|:-:|---|
-| Description vs. code | ✅ | The description matches what the diff does. |
-| Prior review feedback | ⚠️ | 1 unresolved review thread(s) — see the thread list below |
-| Documentation | ✅ | The change is documented well enough to follow. |
-| Self-review signals | ✅ | No debug logs, leftover TODOs, or unreviewed stubs. |
-| Code review | ⚠️ | 1 non-blocking finding — see inline comments. |
+**Gates needing attention**
+
+- ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
+- ⚠️ **Code review** — 1 non-blocking finding — see inline comments.
 
 **Open review threads (1)** <sup>2 resolved since `8d2e4a1`</sup>
 

@@ -44,6 +44,18 @@ const NOTE_PREFIXES = CONV_PREFIXES.filter((p) => !CLAIM_PREFIXES.includes(p));
 const CODE_REVIEW_REASON_RE = /^\d+ (?:non-)?blocking findings?\b/u;
 
 const VALID_STATUS = new Set(["✅", "⚠️", "❌", "⏭️"]);
+/** The five graded gates in report order: label, payload key prefix, the static ✅ Details, strip label. */
+const GATES = [
+  ["Description vs. code", "GATE_DESCRIPTION", "The description matches what the diff does.", "Description"],
+  ["Prior review feedback", "GATE_PRIOR", "Earlier review comments are resolved.", "Prior feedback"],
+  ["Documentation", "GATE_DOCS", "The change is documented well enough to follow.", "Docs"],
+  ["Self-review signals", "GATE_SELFREVIEW", "No debug logs, leftover TODOs, or unreviewed stubs.", "Self-review"],
+  ["Code review", "GATE_CODEREVIEW", "The multi-lens review found no blocking issues.", "Code review"],
+];
+/** The one-line gate strip: every gate, in report order, `<glyph> <strip label>` joined by ` · `. */
+const GATE_STRIP_RE = /^(?:✅|⚠️|❌|⏭️) Description · (?:✅|⚠️|❌|⏭️) Prior feedback · (?:✅|⚠️|❌|⏭️) Docs · (?:✅|⚠️|❌|⏭️) Self-review · (?:✅|⚠️|❌|⏭️) Code review$/mu;
+/** Gates whose ⚠️ is a merge to-do (the description, other reviewers' threads), not a code problem. */
+const HOUSEKEEPING_GATES = new Set(["GATE_DESCRIPTION", "GATE_PRIOR"]);
 const VALID_MODES = new Set(["full", "incremental", "incremental-quick", "zero-delta"]);
 // Phase C tiers. `mode` stays the parseable grammar field reviewer-report-ingest.md keys on;
 // `tier` is the routing decision that produced it, and the two are checked against each other
@@ -104,7 +116,7 @@ const SHAPES = {
   PARTIAL_REVIEW: ["calls", "scanned", "total"],
   RESOLVED_SINCE: ["count", "sha"],
   "MEMORIES_USED[]": ["key", "url", "note", "kind", "evidence"],
-  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot"],
+  "OPEN_THREADS[]": ["path", "line", "url", "ask", "blocking", "author", "is_bot", "own"],
   "NOTES[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "ADDITIONAL_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
   "LOW_CONFIDENCE_FINDINGS[]": ["path", "line", "url", "prefix", "body", "confidence"],
@@ -302,6 +314,9 @@ function anchorBullet(where, item, textField) {
  */
 function openThreadBullet(where, item) {
   const line = anchorBullet(where, item, "ask");
+  if (item.own !== undefined && typeof item.own !== "boolean") {
+    fail(`${where}.own must be a boolean, got ${JSON.stringify(item.own)}`);
+  }
   const { author, is_bot: isBot } = item;
   if (isBot === undefined || isBot === null) return line; // type unknown → untagged, never guessed
   if (typeof isBot !== "boolean") {
@@ -1283,12 +1298,11 @@ function main() {
     footnotes.SKIPPED_FILES,
   ].filter((f) => f).join(", ");
 
-  const gateStatuses = ["GATE_DESCRIPTION_STATUS", "GATE_PRIOR_STATUS", "GATE_DOCS_STATUS",
-    "GATE_SELFREVIEW_STATUS", "GATE_CODEREVIEW_STATUS"].map((k) => String(data[k]).trim());
+  const gateStatuses = GATES.map(([, k]) => String(data[`${k}_STATUS`]).trim());
 
   // ── VERDICT → the headline ─────────────────────────────────────────────────────────────────────
   //
-  // The verdict is cross-checked against the gate table it sits above, which is a class of
+  // The verdict is cross-checked against the gate strip it summarises, which is a class of
   // contradiction the report could previously post: a `reviewer-lessons` entry records a posted
   // gate table reading PASS while the run's own contract said FAIL. The gates decide, so a
   // mismatched VERDICT is a rejection rather than a rendered disagreement. Gate 2 (CI) is
@@ -1305,7 +1319,7 @@ function main() {
   const warning = gateStatuses.filter((v) => v === "⚠️").length;
   const impliedVerdict = failing > 0 ? "FAIL" : warning > 0 ? "WARN" : "PASS";
   if (verdict !== impliedVerdict) {
-    fail(`VERDICT ${verdict} contradicts the gate table — ${failing} ❌ and ${warning} ⚠️ imply`
+    fail(`VERDICT ${verdict} contradicts the gate strip — ${failing} ❌ and ${warning} ⚠️ imply`
       + ` ${impliedVerdict}. The gates decide the verdict; fix whichever is wrong before rendering`);
   }
 
@@ -1337,7 +1351,7 @@ function main() {
       + " (report-rendering.md § Headlines)");
   }
   // The same cross-check FAIL_REASONS gets, and for the same reason: the reasons line is a count
-  // stated twice, once as a list and once as the gate table above it. `reasonList` truncates the
+  // stated twice, once as a list and once as the gate strip below it. `reasonList` truncates the
   // rendering at two phrases, so an over-long list did not LOOK wrong — it silently dropped the
   // third warning while the table showed one ⚠️, which is exactly the class of contradiction this
   // renderer exists to make unrepresentable. Validating one polarity and not the other is the
@@ -1370,6 +1384,14 @@ function main() {
   const notesSuffix = notes > 0 ? ` · ${notes} note${notes === 1 ? "" : "s"}` : "";
   const decideFindings = findings.filter((f) => f.decide === true).length;
   const nonBlocking = n - blockingFindings - decideFindings + arr("ADDITIONAL_FINDINGS").length;
+  // A WARN raised only by the housekeeping gates is a merge to-do, not a problem in the code, so it
+  // keeps the clean heading and names the to-dos on a `**Before merge:**` line. With findings, the
+  // Code-review ⚠️ is already the heading, so it does not count against the housekeeping-only test.
+  const counted = GATES.filter(([, k], i) => gateStatuses[i] === "⚠️" && !(n > 0 && k === "GATE_CODEREVIEW"));
+  // Prior review feedback is housekeeping only while no open thread is this reviewer's own finding.
+  const ownOpen = arr("OPEN_THREADS").some((t) => t.own === true);
+  const housekeepingOnly = verdict === "WARN"
+    && counted.every(([, k]) => HOUSEKEEPING_GATES.has(k) && !(k === "GATE_PRIOR" && ownOpen));
   let headline;
   if (n > 0) {
     const glyph = TIER_GLYPH[worstTier(findings)];
@@ -1381,7 +1403,7 @@ function main() {
         : `${nonBlocking} non-blocking finding${nonBlocking === 1 ? "" : "s"}`);
     }
     headline = `### ${glyph} ${parts.join(" · ")}${notesSuffix}`;
-  } else if (verdict === "PASS") {
+  } else if (verdict === "PASS" || housekeepingOnly) {
     headline = `### ✅ No issues found${notesSuffix}`;
   } else {
     const gates = failing + warning;
@@ -1395,7 +1417,7 @@ function main() {
     fail(`SUMMARY is ${summary.length} chars, over the 240-char cap — it is one sentence about the`
       + " change, not the report");
   }
-  // With findings, the headline and the table already state the Code-review gate's phrase
+  // With findings, the headline and the findings table already state the Code-review gate's phrase
   // (`<K> blocking finding(s) (see …)` / `<N> non-blocking finding(s)`, gates.mjs `gate6`), so only
   // that phrase is dropped. Every other gate's phrase — an unanswered blocking thread, a doc gap,
   // a self-review signal, a description mismatch — is in neither, so it stays on the line.
@@ -1403,7 +1425,7 @@ function main() {
   const reasons = verdict === "FAIL" ? reasonList("FAIL_REASONS", keep)
     : verdict === "WARN" ? reasonList("WARN_REASONS", keep) : "";
   const reasonsLine = reasons
-    ? `**${verdict === "FAIL" ? "Blocking" : "Warnings"}:** ${reasons}`
+    ? `**${verdict === "FAIL" ? "Blocking" : housekeepingOnly ? "Before merge" : "Warnings"}:** ${reasons}`
     : "";
 
   // A PASS headline must not overstate cleanliness while advisory `issue:` entries sit below it.
@@ -1479,8 +1501,22 @@ function main() {
   const lowRows = listRows("LOW_CONFIDENCE_FINDINGS", lowConfidence,
     n + additional.length + notesList.length + 1);
 
+  // Every gate shows as a glyph in one strip line above the fold, and the reasons line above it
+  // already names what needs attention. Inside the accordion, each gate whose Details is not its
+  // static text is one bullet, ⚠️ / ❌ first, so opening Review details shows every reason at once.
+  const gateStrip = GATES.map(([, , , short], i) => `${gateStatuses[i]} ${short}`).join(" · ");
+  const RANK = { "❌": 0, "⚠️": 1, "✅": 2, "⏭️": 3 };
+  const gateNotes = GATES
+    .map(([label, k, staticDetails], i) => ({ label, i, details: String(data[`${k}_DETAILS`]).trim(), staticDetails }))
+    .filter((g) => !(gateStatuses[g.i] === "✅" && g.details === g.staticDetails))
+    .sort((x, y) => RANK[gateStatuses[x.i]] - RANK[gateStatuses[y.i]] || x.i - y.i)
+    .map((g) => `- ${gateStatuses[g.i]} **${g.label}** — ${g.details}`);
+  const gateNotesHeading = gateNotes.every((l) => /^- (?:❌|⚠️) /u.test(l)) ? "**Gates needing attention**" : "**Gates**";
+
   const derived = {
     HEADLINE: headline,
+    GATE_STRIP: gateStrip,
+    GATE_NOTES: gateNotes.length ? [gateNotesHeading, "", ...gateNotes].join("\n") : "",
     SUMMARY_LINE: summary,
     REASONS_LINE: reasonsLine,
     ADVISORY_LINE: advisoryLine,
@@ -1584,13 +1620,17 @@ function main() {
     fail("rendered body has no `| Mode | <mode> · <N> lines in delta` row —"
       + " reviewer-report-ingest.md keys the Run mode unit on that shape");
   }
-  const head = body.split("<details>")[0];
+  const head = body.split("<details>\n<summary>Review details")[0];
   // Only the structural literals are listed. Model-authored optimality cards render above the
   // accordion, so a plain label a card might mention is deliberately absent.
   // The footer is NOT in this list: it renders below the accordion by design, so it is never in
   // `head` on a well-formed body — and on a flattened one (no accordion at all, `head` = the whole
   // body) the missing-accordion check above has already fired.
-  for (const owned of ["| Gate | | Details |", "| Run | Details |", "**Memories used**",
+  if (!GATE_STRIP_RE.test(head)) fail("the gate strip is missing above the accordion");
+  for (const note of gateNotes) {
+    if (head.includes(note)) fail("a gate's details rendered above the accordion");
+  }
+  for (const owned of ["| Run | Details |", "**Memories used**",
     "**Open review threads (", "<sup>Nothing to report —", "<summary>Withheld ("]) {
     if (head.includes(owned)) fail(`${owned} rendered above the accordion`);
   }

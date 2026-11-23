@@ -50,9 +50,9 @@ renderer, so one copy is the guard.)
 [rest of sections follow]
 ```
 
-Three columns in every presentation, matching the posted body
-(`report-rendering.md § Rules for table cells`) — the old PASS copy dropped Details, so the
-all-clear run said least about what had been checked. The *selector* above, never this table,
+Three columns in every presentation, so the all-clear run still says what each gate checked.
+The posted body differs on purpose: a one-line gate strip above the fold, with each gate's
+details as a bullet inside `Review details` (`report-rendering.md § Rules for table cells`). The *selector* above, never this table,
 decides the presentation:
 
 | Gate | Glyphs it may show | Details cell |

@@ -1,0 +1,30 @@
+{
+  "VERDICT": "PASS",
+  "SUMMARY": "Addresses the review on the retry path: `retryRequest` now logs the final attempt.",
+  "FINDINGS": [],
+  "RUN": {
+    "mode": "incremental-quick",
+    "sha": "7f3a2b1",
+    "prior_sha": "2c2bd19",
+    "delta_lines": 9,
+    "at": "2026-08-21T10:02:00Z",
+    "tier": "quick",
+    "depth": "checkout"
+  },
+  "GATE_DESCRIPTION_STATUS": "✅",
+  "GATE_DESCRIPTION_DETAILS": "The description matches what the diff does.",
+  "GATE_PRIOR_STATUS": "✅",
+  "GATE_PRIOR_DETAILS": "2 threads resolved since `2c2bd19`; none open.",
+  "GATE_DOCS_STATUS": "✅",
+  "GATE_DOCS_DETAILS": "The change is documented well enough to follow.",
+  "GATE_SELFREVIEW_STATUS": "✅",
+  "GATE_SELFREVIEW_DETAILS": "No debug logs, leftover TODOs, or unreviewed stubs.",
+  "GATE_CODEREVIEW_STATUS": "✅",
+  "GATE_CODEREVIEW_DETAILS": "The multi-lens review found no blocking issues.",
+  "MEMORIES_SUMMARY": "53 indexed",
+  "QUALITY": "produced 3 → posted inline 0 · cleared 0 · carried forward 0 · deferred 0 · below-bar 0",
+  "INTEGRATIONS": "skipped (tier: quick)",
+  "STANDARDS_LOG": "skipped (tier: quick)",
+  "MEASURABILITY_LOG": "skipped (tier: quick)",
+  "SKIPPED_FILES": "none"
+}
