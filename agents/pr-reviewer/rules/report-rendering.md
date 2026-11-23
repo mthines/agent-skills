@@ -695,9 +695,12 @@ Rules for table cells:
   The strip is the only gate line above the fold; the reasons line above it already names what
   needs attention. `Review details` opens with one bullet per gate whose Details is not its static
   text, ❌ first, then ⚠️, ✅, and ⏭️, so one click shows every reason. A ✅ gate with its static
-  Details gets no bullet:
+  Details gets no bullet. The bullets sit under `**Gates needing attention**` when every one is
+  ⚠️ / ❌, and under `**Gates**` otherwise:
 
   ```markdown
+  **Gates needing attention**
+
   - ❌ **Prior review feedback** — 2 unresolved review thread(s) — see the thread list below
   - ⚠️ **Description vs. code** — the description omits the queue rename
   ```

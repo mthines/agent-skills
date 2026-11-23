@@ -43,6 +43,8 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
+**Gates**
+
 - ❌ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 - ⚠️ **Description vs. code** — Claims `nx affected` is green; not true at this SHA.
 - ⏭️ **Code review** — not evaluated this run

@@ -16,6 +16,8 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
+**Gates needing attention**
+
 - ❌ **Code review** — 1 blocking finding — see inline comments.
 - ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 

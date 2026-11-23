@@ -1505,11 +1505,12 @@ function main() {
     .filter((g) => !(gateStatuses[g.i] === "✅" && g.details === g.staticDetails))
     .sort((x, y) => RANK[gateStatuses[x.i]] - RANK[gateStatuses[y.i]] || x.i - y.i)
     .map((g) => `- ${gateStatuses[g.i]} **${g.label}** — ${g.details}`);
+  const gateNotesHeading = gateNotes.every((l) => /^- (?:❌|⚠️) /u.test(l)) ? "**Gates needing attention**" : "**Gates**";
 
   const derived = {
     HEADLINE: headline,
     GATE_STRIP: gateStrip,
-    GATE_NOTES: gateNotes.join("\n"),
+    GATE_NOTES: gateNotes.length ? [gateNotesHeading, "", ...gateNotes].join("\n") : "",
     SUMMARY_LINE: summary,
     REASONS_LINE: reasonsLine,
     ADVISORY_LINE: advisoryLine,

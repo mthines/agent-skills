@@ -30,6 +30,8 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <summary>Review details — 2 open review threads</summary>
 <br>
 
+**Gates needing attention**
+
 - ⚠️ **Prior review feedback** — 2 unresolved review thread(s) — see the thread list below
 - ⚠️ **Code review** — 3 non-blocking findings — see inline comments.
 

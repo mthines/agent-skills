@@ -11,6 +11,8 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 <summary>Review details</summary>
 <br>
 
+**Gates needing attention**
+
 - ⚠️ **Description vs. code** — The description omits the queue rename in `deploy/queues.yaml`.
 
 | Run | Details |

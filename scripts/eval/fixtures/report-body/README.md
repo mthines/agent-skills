@@ -313,6 +313,8 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 <summary>Review details</summary>
 <br>
 
+**Gates needing attention**
+
 - ⚠️ **Description vs. code** — The description omits the queue rename in `deploy/queues.yaml`.
 
 | Run | Details |
@@ -347,6 +349,8 @@ Renames the `ingest` queue to `intake` across the producer and both consumers.
 <details>
 <summary>Review details</summary>
 <br>
+
+**Gates needing attention**
 
 - ⚠️ **Description vs. code** — The description omits the queue rename in `deploy/queues.yaml`.
 
@@ -407,6 +411,8 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <summary>Review details — 2 open review threads</summary>
 <br>
 
+**Gates needing attention**
+
 - ⚠️ **Prior review feedback** — 2 unresolved review thread(s) — see the thread list below
 - ⚠️ **Code review** — 3 non-blocking findings — see inline comments.
 
@@ -476,6 +482,8 @@ Reworks the retry path so `retryRequest` throws instead of returning `null`.
 <summary>Review details — 2 open review threads</summary>
 <br>
 
+**Gates needing attention**
+
 - ⚠️ **Prior review feedback** — 2 unresolved review thread(s) — see the thread list below
 - ⚠️ **Code review** — 3 non-blocking findings — see inline comments.
 
@@ -529,6 +537,8 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 <summary>Review details</summary>
 <br>
 
+**Gates**
+
 - ✅ **Prior review feedback** — 2 threads resolved since `2c2bd19`; none open.
 
 | Run | Details |
@@ -561,6 +571,8 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 <details>
 <summary>Review details</summary>
 <br>
+
+**Gates**
 
 - ✅ **Prior review feedback** — 2 threads resolved since `2c2bd19`; none open.
 
@@ -676,6 +688,8 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <summary>Review details</summary>
 <br>
 
+**Gates needing attention**
+
 - ❌ **Code review** — 1 blocking finding — see inline comments.
 
 | Run | Details |
@@ -721,6 +735,8 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <details>
 <summary>Review details</summary>
 <br>
+
+**Gates needing attention**
 
 - ❌ **Code review** — 1 blocking finding — see inline comments.
 
@@ -796,6 +812,8 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
+**Gates**
+
 - ❌ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 - ⚠️ **Description vs. code** — Claims `nx affected` is green; not true at this SHA.
 - ⏭️ **Code review** — not evaluated this run
@@ -874,6 +892,8 @@ Adds `github.check_run` to the trigger-kind union but leaves four keyed registri
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
 
+**Gates**
+
 - ❌ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 - ⚠️ **Description vs. code** — Claims `nx affected` is green; not true at this SHA.
 - ⏭️ **Code review** — not evaluated this run
@@ -929,6 +949,8 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
+
+**Gates needing attention**
 
 - ❌ **Code review** — 1 blocking finding — see inline comments.
 - ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
@@ -998,6 +1020,8 @@ Replaces the in-process memory index with a `LocalStore` backed search path.
 <details>
 <summary>Review details — 1 open review thread (1 blocking)</summary>
 <br>
+
+**Gates needing attention**
 
 - ❌ **Code review** — 1 blocking finding — see inline comments.
 - ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
@@ -1218,6 +1242,8 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <summary>Review details — 1 open review thread</summary>
 <br>
 
+**Gates needing attention**
+
 - ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 - ⚠️ **Code review** — 1 non-blocking finding — see inline comments.
 
@@ -1277,6 +1303,8 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <details>
 <summary>Review details — 1 open review thread</summary>
 <br>
+
+**Gates needing attention**
 
 - ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 - ⚠️ **Code review** — 1 non-blocking finding — see inline comments.

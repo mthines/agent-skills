@@ -9,6 +9,8 @@ Addresses the review on the retry path: `retryRequest` now logs the final attemp
 <summary>Review details</summary>
 <br>
 
+**Gates**
+
 - ✅ **Prior review feedback** — 2 threads resolved since `2c2bd19`; none open.
 
 | Run | Details |

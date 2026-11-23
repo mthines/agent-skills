@@ -20,6 +20,8 @@ Moves the aw Full tier's telemetry check behind the new `checks.lock` seal.
 <summary>Review details</summary>
 <br>
 
+**Gates needing attention**
+
 - ❌ **Code review** — 1 blocking finding — see inline comments.
 
 | Run | Details |

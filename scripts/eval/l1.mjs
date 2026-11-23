@@ -692,9 +692,13 @@ const renderReport = (payload) => {
   s.check("G19h a ⚠️ gate's Details is a bullet inside the accordion, never above it",
     /^- ⚠️ \*\*Description vs\. code\*\* — omits the rename$/m.test(gatesOut)
       && !gatesHead.includes("**Description vs. code**"), housekeeping.err);
+  s.check("G19h the gate bullets sit under a heading, `Gates needing attention` when every one is ⚠️ / ❌",
+    /^\*\*Gates needing attention\*\*\n\n- ⚠️ \*\*Description vs\. code\*\*/m.test(gatesOut), housekeeping.err);
   s.check("G19h a ✅ gate with its static Details renders no bullet", !/\*\*Prior review feedback\*\*/.test(gatesOut), housekeeping.err);
   const saysSomething = render((c) => { c.GATE_PRIOR_DETAILS = "thread state unavailable — 2 comment(s) unverified"; });
   const saysTail = saysSomething.ok ? saysSomething.out.split("<details>\n<summary>Review details")[1] || "" : "";
+  s.check("G19h a ✅ gate's note sits under the plain `Gates` heading",
+    /^\*\*Gates\*\*\n\n- ✅ \*\*Prior review feedback\*\*/m.test(saysTail), saysSomething.err);
   s.check("G19h a ✅ gate whose Details is not its static text keeps a bullet inside the accordion",
     /^- ✅ \*\*Prior review feedback\*\* — thread state unavailable — 2 comment\(s\) unverified$/m.test(saysTail),
     saysSomething.err);

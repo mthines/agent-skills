@@ -25,6 +25,8 @@ Makes `retryRequest` throw on exhaustion and moves the backoff policy into one m
 <summary>Review details — 1 open review thread</summary>
 <br>
 
+**Gates needing attention**
+
 - ⚠️ **Prior review feedback** — 1 unresolved review thread(s) — see the thread list below
 - ⚠️ **Code review** — 1 non-blocking finding — see inline comments.
 
