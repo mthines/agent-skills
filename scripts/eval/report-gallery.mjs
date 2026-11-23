@@ -42,12 +42,13 @@ const POINTERS = [
 function section([name, title, what], dir, ext) {
   const snapshot = join(dir, `${name}.expected.md`);
   const body = readFileSync(snapshot, "utf8").trimEnd();
+  const rel = dir === BODY_DIR ? "" : "../report-pointer/";
   return [
     `## ${title}`,
     "",
     `${what}`,
     "",
-    `Payload: [\`${name}.${ext}\`](${dir === BODY_DIR ? "" : "../report-pointer/"}${name}.${ext}) · snapshot: [\`${name}.expected.md\`](${dir === BODY_DIR ? "" : "../report-pointer/"}${name}.expected.md)`,
+    `Payload: [\`${name}.${ext}\`](${rel}${name}.${ext}) · snapshot: [\`${name}.expected.md\`](${rel}${name}.expected.md)`,
     "",
     "<details>",
     "<summary>Markdown source</summary>",
