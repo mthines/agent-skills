@@ -1,47 +1,42 @@
 # Brief: <short title>
 
 **Readiness:** ready | ready-with-assumptions | blocked
-**Branch:** <branch>   **Updated:** <ISO 8601>
-
-## Request (verbatim)
-
-<the user's exact words>
 
 ## Restatement
 
 <one paragraph in your own words>
 
 - [user-stated] <requirement>
-- [inferred] <requirement — was a delta, now confirmed or assumed>
+- [inferred] <requirement, confirmed or assumed>
 
 ## In scope
 
-- <what this change will do>
+- <what this change does>
 
 ## Out of scope (non-goals)
 
-- <what this change deliberately will not do>
-
-## Open questions resolved
-
-- Q: <blocking unknown>  →  A: <the user's answer>
-
-## Assumptions (advisory)
-
-- <default proceeded on, not user-confirmed> — reversible because <why>
+- <what this change deliberately does not do>
 
 ## Success criteria
 
-- <observably true when the work is done>
+- <observably true when done, ideally a command or check>
 
 ## Constraints
 
-- <performance / compatibility / security / governing-doc rules the design must honor>
+- <governing-doc rule, compatibility, or performance limit the work must honor>
 
-## Affected areas (from research)
+## Decisions
 
-- `path/to/file.ts` — <role in the change>
+- Q: <blocking unknown> → A: <the user's answer>
 
-## Handoff
+## Assumptions (advisory)
 
-Next: <planning entry point> | blocked on <unknown>
+- <default proceeded on, or `settle by spike: <what>`>
+
+## Open questions
+
+- <blocking unknown left unanswered; only when blocked>
+
+## Affected areas
+
+- `path/to/file.ts`: <role in the change>
