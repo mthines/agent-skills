@@ -697,6 +697,8 @@ async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop
 		let state = store.read();
 		// A hold with no decision has nothing due: leave the comment untouched (no lease churn every tick).
 		if (state?.phase === "hold" && !decision) return state;
+		// Refuse a misplaced decision before taking the lease, so scheduled ticks are never locked out by it.
+		if (decision && state?.phase !== "hold") throw new Error(`not at a hold (phase ${state?.phase || "none"}) — nothing to ${decision.action}`);
 		if (state?.lease && Date.parse(state.lease.until) > Date.now() && state.lease.holder !== holder) {
 			io.log(`lease held by ${state.lease.holder}; skipping`);
 			return state;
@@ -705,7 +707,6 @@ async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop
 		store.write(renderReport(state, contract, store.pr));
 		store.reread();
 		if (store.read()?.lease?.holder !== holder) return state;
-		if (decision && state.phase !== "hold") throw new Error(`not at a hold (phase ${state.phase || "none"}) — nothing to ${decision.action}`);
 		const next = await tick(state, { contract, config, sha, mergedAt, deployedAt, io, decision });
 		decision = null;
 		next.lease = null;
