@@ -553,7 +553,7 @@ export function checkReport(prBody, comments = [], { ui = false } = {}) {
 
 // The rules both gates share. `rows` are the parsed criteria (null: none published), `report` the rendered
 // report (null: none). Every AC has a final status and a proof kind; a `ui:` AC is never ⏭️ under a ✅ verdict
-// (a criterion with no UI path is tagged api:, worker:, or left untagged, never ui:); the report opens with a
+// (a criterion with no UI path is tagged api:, worker:, or check, never ui:); the report opens with a
 // verdict headline and keeps a closed Details block. `unmarked: "open"` counts an AC with no mark as not run.
 function checkCompleteness(rows, report, { noIntent, noReport, setMarks, unmarked = "ignore" }) {
   const problems = [];

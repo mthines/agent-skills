@@ -22,7 +22,7 @@ An open `critical`/`high` one still reaches the attention line ([`pr-comment.md 
 
 | Verdict | Condition |
 | --- | --- |
-| `✅ verified` | Every AC passes on its own changed target, or is an `api:`, `worker:`, or untagged AC covered only by committed unit or component tests and listed under **Worth a look in the preview** ([§ Substitution](#substitution)); no `ui:` AC is `⏭️`, none is `⏭️` on any other stand-in, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `medium`, `high`, or `critical`. Open `low` findings, a telemetry witness that could not confirm a path with no `telemetry:` AC, and failures outside the PR do not count ([§ What never caps the verdict](#what-never-caps-the-verdict)) |
+| `✅ verified` | Every AC passes on its own changed target, or is an `api:`, `worker:`, or `check` AC covered only by committed unit or component tests and listed under **Worth a look in the preview** ([§ Substitution](#substitution)); no `ui:` AC is `⏭️`, none is `⏭️` on any other stand-in, no telemetry journey `contradicts`, no `open`/`escalated` finding of severity `medium`, `high`, or `critical`. Open `low` findings, a telemetry witness that could not confirm a path with no `telemetry:` AC, and failures outside the PR do not count ([§ What never caps the verdict](#what-never-caps-the-verdict)) |
 | `⚠️ verified with open items` | Every AC that ran passes; some `medium` findings open (a `criterion-quality` finding is `medium`), any finding escalated, an AC is `⏭️ not verified on target` on a stand-in other than committed tests, a `ui:` AC is `⏭️` on any stand-in, tests included, or a brief `telemetry:` AC has no confirming receipt after `telemetry-verify` tried every backend it could reach (`telemetry-verify` falls back to its `logs` backend for a `telemetry:` criterion instead of skipping) |
 | `❌ not verified` | An AC fails after the fix loop, a brief `telemetry:` AC `contradicts`, or a `critical`/`high` finding is still open |
 | `⛔ blocked` | A phase could not run (stack, auth, checkout), or no AC was verified on its target; name the phase and the fix |
@@ -42,7 +42,7 @@ None of these moves a run off ✅; each is a **Notes** line, never a `Why not �
 | Telemetry could not confirm a path that emits no signal (client-side), or no `telemetry:` AC exists and the server was unreachable | No promise rests on it | **Telemetry** line `no regression observed (path emits no signal)` or `not reviewed (<reason>)` |
 | A test, check, or CI failure in code the PR did not change (`in_scope: false`) | Not this change | **Notes**, `Outside this PR:` |
 | CI state, whether green, red, or not run on a draft | Not this run's result; CI has its own check on the PR | Nowhere: the report never mentions CI |
-| An `api:`, `worker:`, or untagged AC covered only by committed unit or component tests | A reviewer can look at it in the preview | `Worth a look in the preview`; the AC stays `⏭️` |
+| An `api:`, `worker:`, or `check` AC covered only by committed unit or component tests | A reviewer can look at it in the preview | `Worth a look in the preview`; the AC stays `⏭️` |
 
 ```text
 ✗ ⚠️ Verified with open items — one low rough edge open (a generic error toast), telemetry not connected
@@ -68,9 +68,9 @@ Anything else is `⏭️ not verified on target (<what ran instead>)`:
 | Demo or seeded data for a live source | A fixture bridge log, not a live bridge |
 | A witness with no answer | The receipt's `[receipt] verdict:` is `ambiguous` or `null`, or the line is absent, for a `telemetry:` AC |
 
-**Tests-only criteria.** An `api:`, `worker:`, or untagged AC proved only by committed unit or component tests, with no stand-in from another row, stays `⏭️` and is listed under **Worth a look in the preview**, but does not cap the verdict: the run says plainly what a reviewer can still look at, and the test link in the criteria table is its proof.
+**Tests-only criteria.** An `api:`, `worker:`, or `check` AC proved only by committed unit or component tests, with no stand-in from another row, stays `⏭️` and is listed under **Worth a look in the preview**, but does not cap the verdict: the run says plainly what a reviewer can still look at, and the test link in the criteria table is its proof.
 A `ui:` AC proved only by tests caps the run at `⚠️`, like every other stand-in: its promise is what the user sees, and a test does not see it. The gate (`verify-comment.mjs --check`, with or without `--local`) fails a `ui:` AC left `⏭️` under a `✅` verdict.
-A criterion with no UI path is tagged `api:`, `worker:`, or left untagged at intent time, never `ui:`.
+A criterion with no UI path is tagged `api:`, `worker:`, or `check` at intent time, never `ui:`.
 **Why:** [`../references/design.md § A ui: criterion needs the browser`](../references/design.md#a-ui-criterion-needs-the-browser).
 
 Such an AC never shows `✅ pass`; its Proof cell in the criteria table names the substitute (`tests`, `sibling surface`, …). For a stand-in that caps the run, the `Why not ✅` bullet names the AC and the surface left uncovered; for a tests-only AC, **Worth a look in the preview** names it instead and no `Why not ✅` bullet is written.
