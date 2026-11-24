@@ -60,49 +60,69 @@ export function userVisible(files, { surfaceJson, surfaceFile } = {}) {
 	return { isUI: line[1] === "yes", matched };
 }
 
-// deployment-verify's own parse and validation: a contract the gate passes is one /deployment-verify accepts.
-// Without release.yml the provider name cannot be checked, so any named provider stands in for it;
-// a release.yml that exists but does not load refuses, because /deployment-verify would stop on it too.
+// deployment-verify's own parse and validation: a contract the gate passes is one /deployment-verify accepts,
+// except for the flag's provider. The gate asks "behind a flag a human can turn off", not "can
+// /deployment-verify step it": with no matching provider in release.yml (or no release.yml, or
+// `providers: []`), the contract passes with NO_PROVIDER_WARNING and the cohort, which only a provider
+// can split on, is not required. Every other validateContract() failure still refuses.
+// A release.yml that exists but does not load refuses, because /deployment-verify would stop on it too.
+export const NO_PROVIDER_WARNING = "deployment-verify cannot step this flag here: no provider; a human flips it";
+
 export async function flagContract(body, repoDir = process.cwd()) {
 	const { parseContract, loadConfig, validateContract } = await deploymentVerifyModule("tick.mjs");
 	const { contract, error } = parseContract(body || "");
-	if (error) return { has: false, missing: error.startsWith("no contract") ? "contract" : "valid-json", detail: error };
-	if (!contract || typeof contract !== "object") return { has: false, missing: "valid-json", detail: "the contract is not a JSON object" };
-	const key = contract.flag?.key;
-	if (typeof key !== "string" || !key.trim()) return { has: false, missing: "flag", detail: "the contract names no flag" };
+	const parsed = !error && contract && typeof contract === "object";
 	let config;
 	const releaseDir = join(repoDir, ".agents", "aw");
 	if (existsSync(join(releaseDir, "release.yml")) || existsSync(join(releaseDir, "release.json"))) {
 		try {
-			config = loadConfig(contract.env || "production", { cwd: repoDir });
+			config = loadConfig((parsed && contract.env) || "production", { cwd: repoDir });
 		} catch (e) {
-			return { has: false, missing: "invalid", detail: e.message };
+			// An unparsed contract has no environment to load: the refusal below names the parse failure instead.
+			if (parsed) return { has: false, missing: "invalid", detail: e.message, providers: [] };
 		}
 	} else {
 		const { DEFAULT_THRESHOLDS } = await deploymentVerifyModule("decide.mjs");
-		config = { flags: { providers: contract.flag.provider ? [{ name: contract.flag.provider }] : [] }, thresholds: DEFAULT_THRESHOLDS };
+		config = { flags: { providers: [] }, thresholds: DEFAULT_THRESHOLDS };
 	}
-	const invalid = validateContract(contract, config);
-	if (invalid) return { has: false, missing: "invalid", detail: invalid };
-	return { has: true, flag: key };
+	const providers = (config?.flags?.providers || []).map((p) => p.name).filter(Boolean);
+	if (error) return { has: false, missing: error.startsWith("no contract") ? "contract" : "valid-json", detail: error, providers };
+	if (!parsed) return { has: false, missing: "valid-json", detail: "the contract is not a JSON object", providers };
+	const key = contract.flag?.key;
+	if (typeof key !== "string" || !key.trim()) return { has: false, missing: "flag", detail: "the contract names no flag", providers };
+	const steppable = providers.includes(contract.flag.provider);
+	// No provider to step it: validate the rest against a stand-in provider, and a cohort nobody can split on is not asked for.
+	const checked = steppable ? contract : { ...contract, cohort: contract.cohort ?? { unused: "no provider" } };
+	const checkedConfig = steppable ? config : { ...config, flags: { ...config.flags, providers: [{ name: contract.flag.provider }] } };
+	const invalid = validateContract(checked, checkedConfig);
+	if (invalid) return { has: false, missing: "invalid", detail: invalid, providers };
+	return { has: true, flag: key, warning: steppable ? null : NO_PROVIDER_WARNING, providers };
 }
 
 export function decide({ isUI, contract }) {
 	if (!isUI) return { decision: "pass", reason: "not user-visible — no UI file in the diff" };
-	if (contract.has) return { decision: "pass", reason: `user-visible, behind flag ${contract.flag}` };
+	if (contract.has) {
+		const reason = `user-visible, behind flag ${contract.flag}`;
+		return contract.warning ? { decision: "pass", reason: `${reason}; ${contract.warning}`, warning: contract.warning } : { decision: "pass", reason };
+	}
 	const what = {
 		contract: "no <!-- deployment-verify:v1 --> contract in the PR body",
 		"valid-json": `the deployment-verify:v1 contract does not parse (${contract.detail})`,
 		flag: "the deployment-verify:v1 contract names no flag",
 		invalid: `deployment-verify would refuse the contract (${contract.detail})`,
 	}[contract.missing];
+	// Name a provider only when release.yml declares one: never send the author after one that does not exist.
+	const providers = contract.providers || [];
+	const flagLine = providers.length
+		? `Fill "service" and "root_spans", add "flag": {"key": "<flag>", "provider": "${providers.join('" | "')}"} and "cohort",`
+		: 'Fill "service" and "root_spans", add "flag": {"key": "<flag>"} (release.yml declares no flag provider, so a human flips it),';
 	return {
 		decision: "refuse",
 		reason: `user-visible diff, ${what}`,
 		how: [
 			"Ship the change behind a flag, then add the contract to the PR body before the merge:",
 			"node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>   # prints a draft from the PR's criteria",
-			'Fill "service" and "root_spans", add "flag": {"key": "<flag>", "provider": "<release.yml provider>"} and "cohort",',
+			flagLine,
 			`and put the JSON between <!-- deployment-verify:v1 --> and <!-- /deployment-verify:v1 --> (${CONTRACT_DOC}).`,
 		].join("\n"),
 	};
@@ -113,7 +133,7 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
 	const d = decide({ isUI: ui.isUI, contract });
-	return { ...d, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, ui_files: ui.matched };
+	return { ...d, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched };
 }
 
 function fromGh(pr) {
@@ -143,10 +163,12 @@ async function selfTest() {
 	t("UI diff without a contract refuses", r.decision === "refuse" && !r.has_flag_contract && r.user_visible);
 	t("refusal names the marker", /deployment-verify:v1/.test(r.reason));
 	t("refusal says how to add it", /--draft-contract/.test(r.how) && /"flag"/.test(r.how));
+	t("with no provider declared, the refusal names none", !/"provider"/.test(r.how) && /declares no flag provider/.test(r.how), r.how);
 	r = await run(["src/components/Header.tsx"], NOFLAG_BODY);
 	t("UI diff with a no-flag contract refuses on the flag", r.decision === "refuse" && /names no flag/.test(r.reason));
 	r = await run(["src/components/Header.tsx"], FLAG_BODY);
 	t("UI diff with a flag contract passes", r.decision === "pass" && r.flag === "newHeader" && r.has_flag_contract);
+	t("without release.yml the pass carries the no-provider warning", r.warning === NO_PROVIDER_WARNING && r.reason.includes(NO_PROVIDER_WARNING), r.reason);
 	r = await run(["src/components/Header.tsx"], FLAG_BODY.replace('"service"', 'service'));
 	t("a contract that does not parse refuses", r.decision === "refuse" && /does not parse/.test(r.reason));
 	r = await run(["docs/guide.md", "README.md"], "");
@@ -167,6 +189,31 @@ async function selfTest() {
 	writeFileSync(join(withSurface, ".agents", "aw", "release.yml"), "environments:\n  staging:\n    url: x\n");
 	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: withSurface });
 	t("a release.yml that lacks the contract's environment refuses", r.decision === "refuse" && /production/.test(r.reason), r.reason);
+	// providers: [] — a repo that declares no flag provider on purpose (no cohort to split on).
+	const noProv = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	mkdirSync(join(noProv, ".agents", "aw"), { recursive: true });
+	writeFileSync(join(noProv, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\nflags:\n  providers: []\n");
+	const NOCOHORT_BODY = FLAG_BODY.replace(/, "cohort": \{[^}]*\}/, "").replace(', "provider": "posthog"', "");
+	r = await gate({ files: ["src/components/Header.tsx"], body: NOCOHORT_BODY, repoDir: noProv });
+	t("providers: [] passes a flag contract with the warning", r.decision === "pass" && r.has_flag_contract && r.warning === NO_PROVIDER_WARNING, JSON.stringify(r));
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: noProv });
+	t("providers: [] passes a contract naming an undeclared provider, with the warning", r.decision === "pass" && r.warning === NO_PROVIDER_WARNING, JSON.stringify(r));
+	r = await gate({ files: ["src/components/Header.tsx"], body: NOFLAG_BODY, repoDir: noProv });
+	t("providers: [] still refuses a contract with no flag, naming no provider", r.decision === "refuse" && /names no flag/.test(r.reason) && !/"provider"/.test(r.how), r.how);
+	r = await gate({ files: ["src/components/Header.tsx"], body: NOCOHORT_BODY.replace(/"service": "ui", /, ""), repoDir: noProv });
+	t("providers: [] still refuses another validateContract failure", r.decision === "refuse" && /missing "service"/.test(r.reason), r.reason);
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY.replace('"reversibility"', '"thresholds": { "max_latency_ratio": 9 }, "reversibility"'), repoDir: noProv });
+	t("providers: [] still refuses a loosened threshold", r.decision === "refuse" && /loosens/.test(r.reason), r.reason);
+	const withProv = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	mkdirSync(join(withProv, ".agents", "aw"), { recursive: true });
+	writeFileSync(join(withProv, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\nflags:\n  providers:\n    - name: posthog\n      rollout: percent\n");
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: withProv });
+	t("a declared matching provider passes with no warning", r.decision === "pass" && r.warning === null, JSON.stringify(r));
+	r = await gate({ files: ["src/components/Header.tsx"], body: NOCOHORT_BODY.replace('"newHeader"', '"newHeader", "provider": "posthog"'), repoDir: withProv });
+	t("a steppable flag still needs its cohort", r.decision === "refuse" && /missing "cohort"/.test(r.reason), r.reason);
+	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: withProv });
+	t("with a provider declared, the refusal names it", /"provider": "posthog"/.test(r.how), r.how);
+	for (const d of [noProv, withProv]) rmSync(d, { recursive: true, force: true });
 	rmSync(empty, { recursive: true, force: true });
 	rmSync(withSurface, { recursive: true, force: true });
 	return done();
@@ -186,6 +233,7 @@ async function main() {
 		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd() });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
+		if (r.warning) console.log(`warning: ${r.warning}`);
 		console.log(`MERGE_GATE: ${r.decision} — ${r.reason}`);
 		process.exit(r.decision === "pass" ? 0 : 1);
 	} catch (e) {

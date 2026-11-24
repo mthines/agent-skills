@@ -49,7 +49,15 @@ gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$
 
 A PR needs work when `mergeable` is `CONFLICTING`, any check is failing, or any review thread is unresolved.
 
-If no PR needs work, print `Already green` (without `--merge`) and stop.
+A check still running is not green: `gh pr checks <n> --watch` first, then decide.
+A PR whose checks all concluded `SKIPPED` (a repo that skips CI on drafts) has not run CI: report it as `CI not run (all checks skipped)`, never as green, and do not merge it.
+
+```text
+✗ draft PR, every check SKIPPED, none failing → Already green
+✓ #41 CI not run (all checks skipped)
+```
+
+If no PR needs work and every PR ran CI, print `Already green` (without `--merge`) and stop.
 Under `--merge`, skip Step 2 and go to the merge step.
 
 ## Step 2: Fix, bottom to top
@@ -91,10 +99,10 @@ A PR that is not passing after the fixes is reported as blocked, with the reason
 One line per PR:
 
 ```text
-#1 already green · #2 fixed CI · #3 resolved conflicts
+#1 already green · #2 fixed CI · #3 resolved conflicts · #4 CI not run (all checks skipped)
 ```
 
-Say `Already green` only when every PR in scope is.
+Say `Already green` only when every PR in scope is, and never for a PR whose CI did not run.
 
 ## Hard rules
 

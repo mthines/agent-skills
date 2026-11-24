@@ -6,12 +6,12 @@ description: >
   the squash-merge only when a user-visible diff ships behind a
   deployment-verify flag contract — then stops and says what a human does
   next. Resumable from a sticky PR comment; invoke with /atelier.
-argument-hint: '<request> | <pr-url|#n>'
+argument-hint: '<request> | <pr-url|#n> [--unattended] [--keep-draft]'
 license: MIT
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '0.1.0'
+  version: '0.2.0'
   workflow_type: orchestrator
   tags: [workflow, orchestrator, merge, gate, deployment-verify, lorekit, resumable]
 ---
@@ -37,16 +37,33 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | --- | --- |
 | `<request>` | Free text: start at Build. |
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
+| `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
+| `--keep-draft` | Ready leaves the PR a draft; when the repo skips CI on drafts, Ready records `hold` (reason `CI not run: draft`). |
 
 ## Step 0 — Setup
 
-1. Resolve the GitHub path per `agents/shared/rules/github-access.md` in this repo and bind `ACCESS_PATH`.
-   The scripts' `--pr`, `--fetch`, and `--upsert` modes need `gh`; on the `mcp` path read the PR and comments with the MCP tools, then pass files and bodies to the scripts' offline flags.
-   `none` → print the terminal contract with `Needs you: GitHub access` and stop.
-2. Probe LoreKit: `memory.*` tools present and one call answers.
+1. **Script paths.** `CLAUDE_SKILL_DIR` is the directory holding this `SKILL.md`.
+   A model that follows this file without `Skill()` (a sub-agent, or a parent that read it) has it unset, so every command below uses `"${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}"`; when this file was read from another path, export `CLAUDE_SKILL_DIR` to its directory first.
+
+   ```text
+   ✗ node "$CLAUDE_SKILL_DIR/scripts/state.mjs" …                            # unset → /scripts/state.mjs
+   ✓ node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" …
+   ```
+
+2. **GitHub path.** Run from the target repo's checkout, then probe that repo, never `gh auth status`:
+
+   ```bash
+   TARGET_REPO="${TARGET_REPO:-$(git remote get-url origin 2>/dev/null | sed 's#\.git$##' | awk -F'[/:]' 'NF>1 {print $(NF-1)"/"$NF}')}"
+   command -v gh >/dev/null 2>&1 && [ -n "$TARGET_REPO" ] && gh api "repos/$TARGET_REPO" --jq .full_name >/dev/null 2>&1 && echo GH_OK
+   ```
+
+   `GH_OK` → `ACCESS_PATH=gh`; no output with `mcp__github__*` tools present → `mcp`: read the PR and comments with the MCP tools, then pass files and bodies to the scripts' offline flags; neither → `none`: print the terminal contract with `Needs you: GitHub access` and stop.
+   The scripts' `--pr`, `--fetch`, and `--upsert` modes need `gh`.
+3. Probe LoreKit: `memory.*` tools present and one call answers.
    Absent or failing → one line `Degraded: lorekit unreachable — decision log and outcomes skipped`, and every LoreKit step below is a no-op; no stage waits on it.
-3. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
-4. With a PR: read its state (`node "${CLAUDE_SKILL_DIR}/scripts/state.mjs" --fetch --pr <n> > state.md`) and its head (`gh pr view <n> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
+4. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
+5. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
+   Pass the PR URL, not a bare number: `state.mjs` takes owner/repo from the URL, and from cwd's `origin` only for a number.
    No atelier comment yet: record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
    With a request: the stage is `build`.
 
@@ -55,7 +72,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 Run the stage `--next` named, then the ones after it, in order.
 After **every** stage decision, do both, in this order:
 
-1. Record it: `node "${CLAUDE_SKILL_DIR}/scripts/state.mjs" --record --stage <s> --decision <d> --head <sha> --reason "<r>" --pr <url> --body-file state.md > next.md && node "${CLAUDE_SKILL_DIR}/scripts/state.mjs" --upsert --pr <n> --body-file next.md && mv next.md state.md` ([`rules/state.md`](./rules/state.md)).
+1. Record it: `S="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs"; node "$S" --record --stage <s> --decision <d> --head <sha> --reason "<r>" --pr <pr-url> --body-file state.md > next.md && node "$S" --upsert --pr <pr-url> --body-file next.md && mv next.md state.md` ([`rules/state.md`](./rules/state.md)).
 2. Write one `bus` event ([`rules/decision-log.md`](./rules/decision-log.md)).
 
 A decision of `refuse`, `hold`, or `failed` ends the run at Step 4.
@@ -63,13 +80,22 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
-| **build** | `Skill("aw", "<request>")` | it printed a draft PR URL; bind `PR` and its head sha | `failed`, reason = aw's `Needs you:` line |
-| **ready** | `Skill("prepare", "<pr-url> --single")` | it printed `Already green` or fixed every PR it touched | `failed`, reason = prepare's blocker line |
-| **merge** | gate first: `node "${CLAUDE_SKILL_DIR}/scripts/merge-gate.mjs" --pr <n>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` | the PR state is `MERGED`; reason = `merged <squash sha>` | gate exit 1 → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+| **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, the [sentinel](#after-build-returns) passes, and the early gate passes | `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft; then `Skill("prepare", "<pr-url> --single")` | it printed `Already green` or fixed every PR it touched, and did not report `CI not run` | `CI not run (all checks skipped)` → `hold`, reason `CI not run: all checks skipped`; under `--keep-draft`, a draft with any `SKIPPED` check (`gh pr view <pr-url> --json isDraft,statusCheckRollup`) → `hold`, reason `CI not run: draft`; blocked → `failed`, reason = prepare's blocker line |
+| **merge** | gate first: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")`; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+
+The build suffix, appended verbatim to every request:
+
+```text
+Atelier merges this PR. A user-visible change must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider (format: deployment-verify rules/contract.md).
+```
+
+Under `--unattended` add the line `No human is present: run interview with --non-interactive; a blocking question ends the run.`
 
 - Ready records the head it ran on; re-read the head before the gate, and a head that moved since Ready runs Ready again (`--next` returns `ready`).
+- Never record Ready `proceed` on skipped CI: a draft whose checks were skipped has proven nothing.
 - The gate judges one head, `GATED`; prepare can still push a fix before it merges.
-  After the merge, read `gh pr view <n> --json headRefOid -q .headRefOid`; when it differs from `GATED`, run the gate again on the merged PR, and a refusal goes into the merge reason and under `Needs you:` (`merged unchecked head <sha>: <MERGE_GATE line> — add the contract or revert`).
+  After the merge, read `gh pr view <pr-url> --json headRefOid -q .headRefOid`; when it differs from `GATED`, run the gate again on the merged PR, and a refusal goes into the merge reason and under `Needs you:` (`merged unchecked head <sha>: <MERGE_GATE line> — add the contract or revert`).
 - `--single` keeps atelier to its one PR; prepare's stack walk would merge PRs atelier never built.
 - Never run the merge with a gate that exited 1 or 2, and never edit the PR body to make the gate pass: the contract is the author's ([`rules/merge-gate.md`](./rules/merge-gate.md)).
 
@@ -78,6 +104,63 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 ✓ MERGE_GATE: refuse — … → record refuse, print the gate's how-to under Needs you:, stop
 ```
 
+```text
+✗ prepare: Already green (draft, 16 of 18 checks skipped) → record ready proceed
+✓ gh pr ready <pr-url> → prepare watches the real CI → proceed; under --keep-draft → hold "CI not run: draft"
+```
+
+### After Build returns
+
+`aw` can run for hours in this context; do these in order before anything else, and re-read this section when unsure where the run is:
+
+1. **Hand-back.** Find aw's terminal block, the hand-back marker `AW RUN COMPLETE`.
+   No block, or no PR URL in its `Delivered:` line → Build `failed`, reason = its `Needs you:` line (or `no AW RUN COMPLETE block`); bind `PR` and its head sha otherwise.
+2. **Sentinel.** In the PR branch's worktree (`git worktree list` names it), when `.agent/<branch>/checks.yaml` exists (Full tier), run the checks fresh; Micro and Lite have none and skip this:
+
+   ```bash
+   AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"
+   D=".agent/$(git branch --show-current)"
+   node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --no-write | tail -1    # the sentinel
+   node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --statuses              # each check's stored status
+   ```
+
+   | Sentinel | Build |
+   | --- | --- |
+   | `CHECKS M/M PASS` | continue |
+   | `CHECKS p/M FAIL: <ids>`, every listed id `unsatisfiable` in `--statuses` | continue; carry each id into the final `Needs you:` (`AC-4 unsatisfiable: <why>`) and into the Build reason |
+   | any other `FAIL` | `failed`, reason = the sentinel line |
+
+3. **Early gate.** `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`.
+   Exit 0 → continue.
+   Exit 1 → send Build back once, for that fix only: `Skill("aw", "<pr-url>: make the merge gate pass — <MERGE_GATE line> <the gate's how-to lines> <build suffix>")` (one paragraph each), then run the gate again; a second exit 1 → Build `refuse`, reason = the `MERGE_GATE:` line.
+   Exit 2 → Build `failed`, reason = its stderr.
+4. **Record** Build `proceed` (or the decision above) on the PR, write the bus event with this gate JSON's `user_visible` and `has_flag_contract`, then run Ready.
+
+A resumed `build` on a PR that exists (the state comment shows Build `refuse` or `failed` after a PR URL was bound) skips `aw` and starts at step 3, so a contract a human added is gated, not rebuilt.
+
+### After the merge
+
+Only once the PR state is `MERGED`, score the quality findings per autonomous-workflow's `rules/finding-outcomes.md` § When it runs, before any worktree is removed:
+
+```bash
+AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"
+F="<the PR branch's worktree>/.agent/<head-branch>/quality-findings.jsonl"
+HEAD_SHA=$(gh pr view <pr-url> --json headRefOid -q .headRefOid)
+OPENED_SHA=$(gh pr view <pr-url> --json createdAt,commits \
+  -q '.createdAt as $c | [.commits[] | select(.committedDate <= $c)] | last | .oid')
+git fetch -q origin "pull/<n>/head"
+if [ -z "$OPENED_SHA" ] || [ "$OPENED_SHA" = null ]; then
+  echo "Degraded: quality finding outcomes — not recorded (opening head not found: PR rebased)"
+elif test -s "$F"; then
+  node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --record --findings "$F" \
+    --since "$OPENED_SHA" --later "$HEAD_SHA" --repo <owner/repo> --pr <n> --model "<your model id>"
+fi
+```
+
+1. No worktree for the branch, or no findings file → skip it and print nothing.
+2. Exit 2, or no LoreKit → `Degraded: quality finding outcomes — not recorded (<stderr or lorekit unreachable>)`; the merge decision stands.
+3. Never run it on a merge that did not happen: a refused or held merge scores nothing.
+
 ## Step 4 — Stop
 
 Atelier never flips a flag and never runs `deployment-verify`.
@@ -85,7 +168,8 @@ After a merge, put the next human step under `Needs you:`:
 
 | The merged PR | `Needs you:` |
 | --- | --- |
-| has a contract with a flag | `flip <flag> on per release.yml, or run /deployment-verify <pr> to roll it out` |
+| has a contract whose flag provider `release.yml` declares | `run /deployment-verify <pr> to roll <flag> out; when release.yml sets hold_after, the rollout waits there for /deployment-verify approve <pr> (tick.mjs --approve) or override <pr> (--override)` |
+| has a contract the gate passed with the no-provider warning | `flip <flag> on by hand — deployment-verify cannot step it here (no provider)` |
 | has no user-visible diff | `nothing — not user-visible` |
 
 ## Terminal contract

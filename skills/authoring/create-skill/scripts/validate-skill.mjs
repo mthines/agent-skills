@@ -487,7 +487,9 @@ function checkPortabilityDocs(f, ctx) {
   // variable satisfied SC01 on the very state it is meant to flag.
   const scriptsDir = join(dir, "scripts");
   if (existsSync(scriptsDir) && statSync(scriptsDir).isDirectory()) {
-    f.check("SC01", "WARN", /\$\{CLAUDE_SKILL_DIR\}\/scripts\//.test(text), "SKILL.md", null,
+    // The `${CLAUDE_SKILL_DIR:-<fallback>}` form counts too: a skill a model follows without
+    // Skill() (disable-model-invocation, read by a sub-agent) has the variable unset.
+    f.check("SC01", "WARN", /\$\{CLAUDE_SKILL_DIR(?::-[^}\s]*)?\}\/scripts\//.test(text), "SKILL.md", null,
       "scripts/ exists but SKILL.md never invokes a script through a ${CLAUDE_SKILL_DIR}/scripts/ path — a bare mention of the variable in prose does not count (a cwd-relative scripts/ path is not portable — see rules/scripts-and-assets.md § Path convention)");
 
     // The row above proves a correct path EXISTS. It cannot prove no incorrect one does:
@@ -762,6 +764,13 @@ function selfTest() {
     return dir;
   }, (dir) => {
     t("scripts/ with ${CLAUDE_SKILL_DIR} path: SC01 does not fire", !hasId(validateSkill(dir), "SC01"));
+  });
+  withFixture((root) => {
+    const dir = writeSkill(root, "has-scripts-fallback", [], ["# Body", "", "Run `node \"${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/has-scripts-fallback}/scripts/check.mjs\"`."]);
+    mkdirSync(join(dir, "scripts"), { recursive: true });
+    return dir;
+  }, (dir) => {
+    t("scripts/ with a ${CLAUDE_SKILL_DIR:-fallback} path: SC01 does not fire", !hasId(validateSkill(dir), "SC01"));
   });
   withFixture((root) => {
     const dir = writeSkill(root, "has-scripts-prose", [], [

@@ -8,8 +8,10 @@
 //   node state.mjs --record --stage <s> --decision <d> --head <sha> [--reason <r>] [--pr <n>] [--body-file <f>]
 //                                                          prints the re-rendered comment body
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
-//   node state.mjs --fetch  --pr <n>                        prints the existing comment body via gh (empty when none)
-//   node state.mjs --upsert --pr <n> --body-file <f>        edits the sticky comment in place, or creates it (gh)
+//   node state.mjs --fetch  --pr <url|n>                    prints the existing comment body via gh (empty when none)
+//   node state.mjs --upsert --pr <url|n> --body-file <f>    edits the sticky comment in place, or creates it (gh)
+// --fetch/--upsert take owner/repo from a PR URL; with a bare number they use cwd's `origin`,
+// so run them from the target repo's checkout or pass the URL.
 //   node state.mjs --self-test
 // --body-file defaults to stdin; an empty body or a missing file means no state yet.
 // Exit: 0 ok, 2 error.
@@ -96,17 +98,19 @@ function readBody(a) {
 	}
 }
 
-function repoSlug() {
-	return execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" })
-		.trim()
-		.replace(/\.git$/, "")
-		.split(/[/:]/)
-		.slice(-2)
-		.join("/");
+// owner/repo of a remote URL: the last two path segments, split on both `/` and `:`.
+export function slugFromRemote(url) {
+	return url.trim().replace(/\.git$/, "").split(/[/:]/).slice(-2).join("/");
 }
 
-function prNumber(pr) {
-	const m = String(pr).match(/(\d+)\s*$/);
+// A PR URL names its repo; only a bare number falls back to cwd's origin, which may be another checkout.
+export function repoSlug(pr, originUrl = () => execFileSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" })) {
+	const m = String(pr ?? "").match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/\d+/);
+	return m ? `${m[1]}/${m[2]}` : slugFromRemote(originUrl());
+}
+
+export function prNumber(pr) {
+	const m = String(pr).match(/\/pull\/(\d+)/) || String(pr).match(/(\d+)\s*$/);
 	if (!m) throw new Error(`cannot read a PR number from ${pr}`);
 	return m[1];
 }
@@ -119,7 +123,7 @@ function findComment(pr) {
 		"gh",
 		[
 			"api",
-			`repos/${repoSlug()}/issues/${prNumber(pr)}/comments`,
+			`repos/${repoSlug(pr)}/issues/${prNumber(pr)}/comments`,
 			"--paginate",
 			"--jq",
 			`.[] | select(.user.login == "${me}" and (.body | startswith("${MARKER}"))) | {id, body}`,
@@ -132,7 +136,7 @@ function findComment(pr) {
 
 function upsert(pr, bodyFile) {
 	const c = findComment(pr);
-	const path = c ? `repos/${repoSlug()}/issues/comments/${c.id}` : `repos/${repoSlug()}/issues/${prNumber(pr)}/comments`;
+	const path = c ? `repos/${repoSlug(pr)}/issues/comments/${c.id}` : `repos/${repoSlug(pr)}/issues/${prNumber(pr)}/comments`;
 	execFileSync("gh", ["api", "-X", c ? "PATCH" : "POST", path, "-F", `body=@${bodyFile}`], { stdio: ["ignore", "ignore", "inherit"] });
 	console.log(c ? `updated comment ${c.id}` : "created comment");
 }
@@ -170,6 +174,11 @@ function selfTest() {
 	}
 	t("an unknown stage is rejected", threw);
 	t("a reason holding '-->' cannot end the state line early", parse(render(record(null, { stage: "build", decision: "failed", reason: "a} --> b" }))).stages.build.reason === "a} --> b");
+	const origin = () => "git@github.com:other/checkout.git";
+	t("a PR URL's owner/repo wins over cwd origin", repoSlug("https://github.com/acme/web/pull/41", origin) === "acme/web");
+	t("a PR URL with a trailing path still names its repo", repoSlug("https://github.com/acme/web/pull/41/files", origin) === "acme/web" && prNumber("https://github.com/acme/web/pull/41/files") === "41");
+	t("a bare number falls back to cwd origin", repoSlug("41", origin) === "other/checkout" && repoSlug("#41", origin) === "other/checkout");
+	t("an https origin parses too", repoSlug(41, () => "https://github.com/a/b.git\n") === "a/b");
 	return done();
 }
 
