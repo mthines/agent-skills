@@ -32,7 +32,8 @@ memory.write {
 }
 ```
 
-1. `user_visible` and `has_flag_contract` come from the last `merge-gate.mjs` JSON on this head; before the gate has run, run it once with `--pr <n>` to fill them (it decides nothing at that point).
+1. `user_visible` and `has_flag_contract` come from the last `merge-gate.mjs` JSON on this head (Build's early gate fills them); when the gate has not run on this head (a run started from an existing PR, or a head that moved), run it once with `--pr <pr-url>` to fill them (it decides nothing at that point).
+   When that JSON carries a `warning` (no flag provider), `has_flag_contract` is `true` and the `reason` ends with the warning.
 2. A merge `proceed` also carries `merge_sha`, the squash commit; the outcome sweep reads it.
 3. A Build that failed before a PR exists uses the worktree's branch for the scope, `pr: 0`, and `failed-{ISO timestamp}` in place of `{decision}-{sha7}`.
 4. A `skipped` Build is not a decision and writes no event.
@@ -59,7 +60,7 @@ At the start of every run, before any stage:
 
    ```bash
    git fetch -q origin
-   node "${CLAUDE_SKILL_DIR}/scripts/outcomes.mjs" --merged '[{"pr":41,"sha":"<merge_sha>"}]' --base origin/<default-branch>
+   node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/outcomes.mjs" --merged '[{"pr":41,"sha":"<merge_sha>"}]' --base origin/<default-branch>
    ```
 
 4. For each result with `final: true` whose `outcome` differs from the stored one, write the event with `expected_version` set to the stored `version` (`0` when none), so two concurrent runs cannot both write it:
