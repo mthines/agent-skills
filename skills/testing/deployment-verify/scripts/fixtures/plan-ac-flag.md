@@ -1,4 +1,4 @@
-# Plan: AI-3112 Create automation card above the follow-up steps in Agent0 threads
+# Plan: create automation card above the follow-up steps
 
 <!-- Fixture: the Requirements, Guardrails, and Acceptance Criteria lines of the real /aw brief behind
      dash0hq/dash0#29652, which names its flag only in AC-5 and AC-6; plus the legacyCart guardrail that

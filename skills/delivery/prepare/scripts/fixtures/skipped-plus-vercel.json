@@ -17,7 +17,7 @@
           "nodes": [
            {
             "__typename": "CheckRun",
-            "name": "Detect changes",
+            "name": "job-1",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -29,7 +29,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Check dependency release age",
+            "name": "required-job-2",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": true,
@@ -41,7 +41,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "E2E Setup",
+            "name": "job-3",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -53,7 +53,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Validate",
+            "name": "job-4",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -65,7 +65,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Select affected images",
+            "name": "job-5",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -77,7 +77,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Build & deploy Storybook preview",
+            "name": "job-6",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -89,7 +89,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "E2E Tests",
+            "name": "job-7",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -101,7 +101,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Run E2E tests [${{ matrix.browser }}]",
+            "name": "job-8",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -113,7 +113,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Images",
+            "name": "job-9",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -125,7 +125,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Require Passing Auth E2E Tests",
+            "name": "job-10",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -137,7 +137,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Run E2E tests [serial]",
+            "name": "job-11",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -149,7 +149,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Cleanup E2E test data",
+            "name": "job-12",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -161,7 +161,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Lint GitHub Actions",
+            "name": "job-13",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": false,
@@ -173,7 +173,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Run E2E tests",
+            "name": "required-job-14",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": true,
@@ -185,7 +185,7 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Require PR CI Pass",
+            "name": "required-job-15",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": true,
@@ -197,13 +197,13 @@
            },
            {
             "__typename": "CheckRun",
-            "name": "Aikido Security: check code",
+            "name": "required-job-16",
             "status": "COMPLETED",
             "conclusion": "SKIPPED",
             "isRequired": true,
             "checkSuite": {
              "app": {
-              "slug": "aikido-pr-checks"
+              "slug": "security-scanner"
              }
             }
            },
