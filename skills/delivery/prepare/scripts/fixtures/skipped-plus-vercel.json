@@ -1,0 +1,238 @@
+{
+ "data": {
+  "repository": {
+   "pullRequest": {
+    "headRefOid": "b56dfb5d160f396ced864927a44d363265b1b537",
+    "commits": {
+     "nodes": [
+      {
+       "commit": {
+        "oid": "b56dfb5d160f396ced864927a44d363265b1b537",
+        "statusCheckRollup": {
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": false,
+           "endCursor": "MTg"
+          },
+          "nodes": [
+           {
+            "__typename": "CheckRun",
+            "name": "Detect changes",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Check dependency release age",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "E2E Setup",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Validate",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Select affected images",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Build & deploy Storybook preview",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "E2E Tests",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Run E2E tests [${{ matrix.browser }}]",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Images",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Require Passing Auth E2E Tests",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Run E2E tests [serial]",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Cleanup E2E test data",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Lint GitHub Actions",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Run E2E tests",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Require PR CI Pass",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Aikido Security: check code",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "aikido-pr-checks"
+             }
+            }
+           },
+           {
+            "__typename": "StatusContext",
+            "context": "Vercel",
+            "state": "SUCCESS",
+            "isRequired": false
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Vercel Preview Comments",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "vercel"
+             }
+            }
+           }
+          ]
+         }
+        }
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

@@ -28,8 +28,16 @@ A PR with no contract yet and not merged: `node ${CLAUDE_SKILL_DIR}/scripts/tick
 Review it, fill the placeholders, add `flag` and `cohort` when a flag exists, and write it into the PR body before the merge; the script never writes it, and refuses a merged PR.
 
 Before the criteria are on the PR, draft from the `/aw` brief: `--draft-contract --from-plan .agent/<branch>/plan.md` (add `--pr <n>` to prefer the PR's criteria and keep the merged-PR refusal).
-It reads the brief's `[api:…]` criteria, and prefills `flag.key` only when the brief's `## Requirements` and `## Guardrails` name exactly one flag as a backticked key in one of three shapes: `` `checkoutV2` feature flag `` (or `` feature flag `checkoutV2` ``), `` behind the `checkoutV2` flag ``, or `` flag key `checkoutV2` ``.
-A bare `` the `archived` flag `` is a record field and never counts, nor does a key with a dot, slash, or space; in `## Guardrails`, which name flags the change must not touch, only the "behind" shape counts.
+It reads the brief's `[api:…]` criteria, and prefills `flag.key` only when the brief's `## Requirements`, `## Acceptance Criteria`, and `## Guardrails` name exactly one flag as a backticked key in one of three shapes: `` `checkoutV2` feature flag `` (or `` feature flag `checkoutV2` ``), `` behind the `checkoutV2` flag ``, or `` flag key `checkoutV2` ``.
+An acceptance criterion also names a flag as `` `flag.key` is `checkoutV2` ``, `` the `checkoutV2` flag on `` (or `off`), `` flag `checkoutV2` ``, or `` read `checkoutV2` `` on a line that says "flag".
+A bare `` the `archived` flag `` is a record field and never counts, nor does a key with a dot, slash, or space; in `## Guardrails`, which name flags the change must not touch, only the "behind" shape counts, and never on a line that keeps, leaves, or forbids something.
+
+```text
+✗ - Leave the code behind the `legacyCart` flag untouched.          (Guardrails → prefills legacyCart)
+✓ - Ship only behind the `newCart` flag.                              (Guardrails → newCart)
+✓ - [ ] AC-6 — the contract's `flag.key` is `enableAutomationProposeFlow`.   (Acceptance Criteria → enableAutomationProposeFlow)
+```
+
 Zero or several such keys → no `flag`, and stderr says which; a prefilled flag still needs `flag.provider` and `cohort` filled.
 
 ```text

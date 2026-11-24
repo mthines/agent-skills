@@ -247,7 +247,7 @@ export const CHECK_MARKS = { pass: "✅", fail: "❌", pending: "⬜", unsatisfi
 // An `/aw` brief's criteria. ACs: the `- [ ] AC-n (covers: Rm) [kind:target] — text` lines of its
 // `## Acceptance Criteria` section (the tag is optional); a `telemetry:` AC is kind `telemetry` with the span as
 // its target (a `(covers: …)` group on either side of `telemetry:` is skipped), any other untagged AC is kind `check`. Guardrails: the `- ` lines of `## Guardrails`, numbered
-// G-1… by position. Text is copied verbatim.
+// G-1… by position. Text is copied verbatim, except that a `(covers: …)` group is dropped wherever it sits.
 const PLAN_AC = /^- (?:\[[ xX]\] )?(AC-\d+)(?: \(covers: [^)]*\))?(?: \[(ui|api|worker)(?::([^\]]+))?\])?(?: —| -|:)? (.+)$/;
 const sectionOf = (md, heading) => {
   const lines = md.split("\n");
@@ -257,9 +257,10 @@ const sectionOf = (md, heading) => {
   return lines.slice(at + 1, end < 0 ? undefined : end);
 };
 export function planCriteria(planMd) {
-  const acs = sectionOf(planMd, "Acceptance Criteria").map((l) => PLAN_AC.exec(l.trim())).filter(Boolean).map(([, id, tag, target = "", text]) => {
-    // A `(covers: …)` group may sit before or after `telemetry:` in the text; it is never the target.
-    const tele = /^telemetry:\s*(\S+)/.exec(text.replace(/\(covers:[^)]*\)\s*/g, "").trim());
+  const acs = sectionOf(planMd, "Acceptance Criteria").map((l) => PLAN_AC.exec(l.trim())).filter(Boolean).map(([, id, tag, target = "", raw]) => {
+    // A `(covers: …)` group may sit before or after `telemetry:` in the text; it is never the target, nor criterion text.
+    const text = raw.replace(/\s*\(covers:[^)]*\)/g, "").trim();
+    const tele = /^telemetry:\s*(\S+)/.exec(text);
     return { id, kind: tag || (tele ? "telemetry" : "check"), target: tag ? target : tele ? tele[1] : "", text };
   });
   const guardrails = sectionOf(planMd, "Guardrails").map((l) => /^- (.+)$/.exec(l.trim())).filter(Boolean).map((m) => m[1]);
@@ -879,6 +880,9 @@ function selfTest() {
   assert(fp.includes("5 criteria · 1 ✅ · 1 ❌ · 3 ⬜ · 2 guardrails") && intentFrom(splice("", "intent", fp)).length === 7 && intentFromPlan(plan) === intentFromPlan(plan), "the summary counts the marks, splice accepts the region, and rendering is stable");
   const covers = planCriteria("## Acceptance Criteria\n\n- [ ] AC-4 — telemetry: (covers: R3) checkout.submit span with order.id\n- [ ] AC-5 — (covers: R3) telemetry: checkout.pay span\n- [ ] AC-6 (covers: R3) telemetry: checkout.done span\n").acs;
   assert(covers.map((c) => `${c.kind}:${c.target}`).join() === "telemetry:checkout.submit,telemetry:checkout.pay,telemetry:checkout.done", `a (covers: …) group on either side of telemetry: never becomes the target: ${covers.map((c) => `${c.kind}:${c.target}`)}`);
+  assert(covers.map((c) => c.text).join("|") === "telemetry: checkout.submit span with order.id|telemetry: checkout.pay span|telemetry: checkout.done span", `a (covers: …) group never reaches the Criterion text, in either order: ${covers.map((c) => c.text).join("|")}`);
+  const real = planCriteria("## Acceptance Criteria\n\n- [ ] AC-4 telemetry: (covers: R3) `automation.create_form.submitted` web event from `dash0-ui` carries `entryPoint = agent0_thread` after a creation from the card.\n").acs[0];
+  assert(real.text === "telemetry: `automation.create_form.submitted` web event from `dash0-ui` carries `entryPoint = agent0_thread` after a creation from the card." && real.target === "`automation.create_form.submitted`" && !intentFromPlan("## Acceptance Criteria\n\n- [ ] AC-4 telemetry: (covers: R3) `a.b` web event\n").includes("covers"), `the #29652 AC-4 line renders without its (covers: …): ${real.text}`);
   let noAc = null; try { intentFromPlan("## Acceptance Criteria\n\nnothing\n"); } catch (e) { noAc = e.code; }
   assert(noAc === 3, "a brief with no AC exits 3, not 1");
   const afterAw = splice(splice("", "intent", intentFromPlan(plan), { now: t }), "intent", "", { marks: { "AC-3": { status: "✅" } }, now: t });

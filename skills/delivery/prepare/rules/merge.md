@@ -19,7 +19,7 @@ Check each of these explicitly, after the fixes are pushed, before merging a PR:
 | Gate | Passes when |
 | --- | --- |
 | Threads | Every review thread is resolved |
-| CI | Checks on the new head are passing |
+| CI | `scripts/ci-ran.mjs --pr <pr-url>` prints `CI: green` on the new head |
 | Conflicts | `mergeable` is not `CONFLICTING` |
 | Review | `reviewDecision` is not `CHANGES_REQUESTED` |
 

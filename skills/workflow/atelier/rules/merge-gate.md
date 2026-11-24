@@ -6,8 +6,19 @@ tags: [atelier, merge, gate, deployment-verify, ui]
 
 # Merge gate
 
-Run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>` after Build and before the merge stage, on the current head; its exit code is the decision.
+Run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>` in the merge stage, on the current head, immediately before `prepare --merge`; its exit code is the decision.
+After Build, run it with `--contract-only`: CI on a fresh draft has not run, so only the contract half is judged there.
 **Why:** [`../references/design.md` § The merge gate](../references/design.md#the-merge-gate).
+
+CI comes first: unless `--contract-only`, the gate reads the head's checks through `prepare`'s `scripts/ci-ran.mjs` and refuses (exit 1) on anything but `CI: green` — `not-run` (every required check, or with none required every GitHub Actions run, skipped or absent; external statuses never count), `pending`, or `red`.
+Offline (`--files … --body-file …`) it needs `--rollup-file <json>` (a saved response of `ci-ran.mjs`'s query) or `--contract-only`.
+
+```text
+✗ Ready proceed in the state comment → skip the CI read → prepare --merge on a head whose checks all skipped
+✓ MERGE_GATE: refuse — CI not run at b56dfb5: every required check skipped (4)
+```
+
+With CI green, the diff and the body decide:
 
 | Diff | PR body | Exit | Decision |
 | --- | --- | --- | --- |

@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 // merge-gate.mjs — atelier's deterministic merge gate (rules/merge-gate.md).
 //
-// Refuses a merge when the diff is user-visible and the PR body has no
-// deployment-verify contract that names a flag. Owns no detector of its own:
+// Refuses a merge when CI did not run green on the PR's current head, or when the diff is
+// user-visible and the PR body has no deployment-verify contract that names a flag.
+// Owns no detector of its own:
+//   CI ran green  = prepare's scripts/ci-ran.mjs (ciStatus/classify), read at the head right now
 //   user-visible  = ui-verify's scripts/is-ui-diff.mjs, run by path
 //   flag contract = deployment-verify's parseContract() from scripts/tick.mjs
 //
-//   node merge-gate.mjs --pr <n|url>                          files + body via gh
-//   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f>  offline
+//   node merge-gate.mjs --pr <n|url>                          files, body, and CI via gh
+//   node merge-gate.mjs --pr <n|url> --contract-only          skip the CI check (atelier's early gate after Build only)
+//   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f> (--rollup-file <json> | --contract-only)   offline
 //   add --surface-json '<json>' | --surface-file <path>       forwarded to is-ui-diff; without either,
 //                                                             the surface in <repo-dir>/.agents/aw/ui.yml is used
 //   add --repo-dir <path>                                     where .agents/aw/ lives (default: cwd)
@@ -28,6 +31,23 @@ export const CONTRACT_DOC = "skills/testing/deployment-verify/rules/contract.md"
 
 function uiVerifyScript() {
 	return join(skillDir("ui-verify", "testing", "UI_VERIFY_DIR"), "scripts", "is-ui-diff.mjs");
+}
+
+function prepareModule(file) {
+	return import(pathToFileURL(join(skillDir("prepare", "delivery", "PREPARE_DIR"), "scripts", file)).href);
+}
+
+// CI at the PR's current head, through prepare's own definition of "CI ran"; `run` is injectable for tests.
+export async function ciCheck(pr, { run } = {}) {
+	const { ciStatus } = await prepareModule("ci-ran.mjs");
+	return ciStatus(pr, run ? { run } : {});
+}
+
+// The same decision from a saved `gh api graphql` response of ci-ran.mjs's query (offline mode).
+export async function ciFromRollup(json) {
+	const { classify, fromResponses, normalize } = await prepareModule("ci-ran.mjs");
+	const { head, nodes } = fromResponses([json]);
+	return classify(nodes.map(normalize), { head });
 }
 
 function deploymentVerifyModule(file) {
@@ -133,19 +153,37 @@ export function decide({ isUI, contract }) {
 	};
 }
 
-export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd() }) {
+// A merge needs CI that ran and passed on this head; a skipped, pending, or red head is refused.
+export function decideCi(ci) {
+	if (ci.state === "green") return null;
+	const at = ci.head ? ci.head.slice(0, 7) : "head";
+	const reason = ci.state === "not-run" ? ci.reason : `CI ${ci.state} at ${at}: ${ci.reason}`;
+	const how = {
+		"not-run": "Get CI to run on this head (undraft the PR, or push), then re-run /atelier <pr>: --next returns ready until Ready records green CI evidence.",
+		pending: "Wait for the checks (gh pr checks <pr> --watch), then run the gate again.",
+		red: "Run /atelier <pr> again: Ready runs prepare, which fixes the failing CI.",
+	}[ci.state];
+	return { decision: "refuse", reason, how };
+}
+
+// `ci` is ci-ran.mjs's result for the head; `null` only for the contract-only early gate.
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null }) {
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
-	const d = decide({ isUI: ui.isUI, contract });
-	return { ...d, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched };
+	let d = decide({ isUI: ui.isUI, contract });
+	if (d.decision === "pass" && ci) d = decideCi(ci) ?? d;
+	const ciOut = ci ? { state: ci.state, head: ci.head, reason: ci.reason } : "not checked (--contract-only)";
+	return { ...d, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut };
 }
 
-function fromGh(pr) {
+async function fromGh(pr, { contractOnly }) {
 	const gh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 	const files = gh(["pr", "diff", String(pr), "--name-only"]).split("\n").filter(Boolean);
 	const body = gh(["pr", "view", String(pr), "--json", "body", "-q", ".body"]);
-	return { files, body };
+	// Read last, so the CI answer is about the head as it is right before the merge.
+	const ci = contractOnly ? null : await ciCheck(pr);
+	return { files, body, ci };
 }
 
 const FLAG_BODY = `x
@@ -222,6 +260,30 @@ async function selfTest() {
 	t("a contract naming no provider passes with the warning where providers exist", r.decision === "pass" && r.warning === NO_PROVIDER_WARNING, JSON.stringify(r));
 	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: withProv });
 	t("with a provider declared, the refusal names it", /"provider": "posthog"/.test(r.how), r.how);
+	// CI at the head (F17/F18): a contract that passes still merges only on CI that ran green.
+	const page = (nodes) => JSON.stringify({ data: { repository: { pullRequest: { headRefOid: "h1", commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { pageInfo: { hasNextPage: false }, nodes } } } }] } } } } });
+	const cr = (name, conclusion, extra = {}) => ({ __typename: "CheckRun", name, status: "COMPLETED", conclusion, isRequired: false, checkSuite: { app: { slug: "github-actions" } }, ...extra });
+	const skippedOnly = page([cr("test", "SKIPPED"), cr("ci", "SKIPPED", { isRequired: true }), { __typename: "StatusContext", context: "Vercel", state: "SUCCESS", isRequired: false }]);
+	let calls = 0;
+	const ci = await ciCheck("https://github.com/acme/web/pull/41", { run: () => { calls++; return skippedOnly; } });
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: empty, ci });
+	t("skipped-only CI refuses even with a valid flag contract", calls === 1 && r.decision === "refuse" && /^CI not run at h1/.test(r.reason) && /undraft/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci });
+	t("skipped-only CI refuses a docs-only diff too", r.decision === "refuse" && r.ci.state === "not-run", JSON.stringify(r));
+	const green = await ciCheck("https://github.com/acme/web/pull/41", { run: () => page([cr("test", "SUCCESS"), cr("e2e", "SKIPPED")]) });
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: empty, ci: green });
+	t("green CI with a valid contract passes", r.decision === "pass" && r.ci.state === "green", JSON.stringify(r));
+	const pending = await ciCheck("https://github.com/a/b/pull/1", { run: () => page([cr("test", null, { status: "IN_PROGRESS" })]) });
+	r = await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci: pending });
+	t("pending CI refuses", r.decision === "refuse" && /^CI pending at h1/.test(r.reason), r.reason);
+	const red = await ciCheck("https://github.com/a/b/pull/1", { run: () => page([cr("test", "FAILURE")]) });
+	r = await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci: red });
+	t("red CI refuses", r.decision === "refuse" && /^CI red/.test(r.reason), r.reason);
+	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: empty, ci: green });
+	t("a contract refusal still wins with green CI", r.decision === "refuse" && /deployment-verify:v1/.test(r.reason));
+	const real = await ciFromRollup(JSON.parse(readFileSync(join(skillDir("prepare", "delivery", "PREPARE_DIR"), "scripts", "fixtures", "skipped-plus-vercel.json"), "utf8")));
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: empty, ci: real });
+	t("PR #29652's real rollup (16 skipped + Vercel) refuses", r.decision === "refuse" && /CI not run/.test(r.reason), r.reason);
 	for (const d of [noProv, withProv]) rmSync(d, { recursive: true, force: true });
 	rmSync(empty, { recursive: true, force: true });
 	rmSync(withSurface, { recursive: true, force: true });
@@ -234,12 +296,16 @@ async function main() {
 	try {
 		let files;
 		let body;
-		if (a.pr) ({ files, body } = fromGh(a.pr));
+		let ci = null;
+		const contractOnly = !!a["contract-only"];
+		if (a.pr) ({ files, body, ci } = await fromGh(a.pr, { contractOnly }));
 		else if (a.files && a["body-file"]) {
 			files = String(a.files).split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 			body = readFileSync(a["body-file"], "utf8");
+			if (typeof a["rollup-file"] === "string") ci = await ciFromRollup(JSON.parse(readFileSync(a["rollup-file"], "utf8")));
+			else if (!contractOnly) throw new Error("offline mode needs --rollup-file <json> (ci-ran.mjs's query) or --contract-only");
 		} else throw new Error("pass --pr <n>, or --files <list> --body-file <path>");
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd() });
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd(), ci });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);
