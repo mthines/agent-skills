@@ -27,7 +27,7 @@ Lens-eligible for the `pr-reviewer` agent: [`lens.md`](./lens.md) auto-loads on 
 | Args | Mode | Output |
 | --- | --- | --- |
 | files, a `plan.md` path, or none | approach (default) | Steps 0–3 below: at most two proposals, or one `optimal` line |
-| `--inventory [--base <ref>]` | inventory | One verdict per item the diff adds — [`rules/reuse-inventory.md`](./rules/reuse-inventory.md); `aw`'s post-build quality pass calls this mode |
+| `--inventory [--base <ref>]` | inventory | One verdict per item `node "${CLAUDE_SKILL_DIR}/scripts/reuse-inventory.mjs" --base <ref>` lists — [`rules/reuse-inventory.md`](./rules/reuse-inventory.md) (why: [`references/reuse-inventory.md`](./references/reuse-inventory.md)); `aw`'s post-build quality pass calls this mode |
 
 ## Step 0 — Scope
 

@@ -16,9 +16,8 @@ Report only; never edit files, never re-run, never block.
 ## Step 1 — List the items
 
 ```bash
-FIT_DIR="<the directory this skill loaded from>"
 BASE="${BASE:-$(git merge-base HEAD origin/main)}"
-OUT=$(mktemp); node "$FIT_DIR/scripts/reuse-inventory.mjs" --base "$BASE" > "$OUT"; echo "exit=$?"; cat "$OUT"
+OUT=$(mktemp); node "${CLAUDE_SKILL_DIR}/scripts/reuse-inventory.mjs" --base "$BASE" > "$OUT"; echo "exit=$?"; cat "$OUT"
 ```
 
 Each row is `<kind>\t<name>\t<file>:<line>`, kind one of `file`, `export`, `component`, `route`.
