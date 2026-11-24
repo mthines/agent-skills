@@ -601,8 +601,8 @@ export function checkLocal({ intent = null, report = null, specs = false } = {},
     unmarked: "open",
   });
   if (rows) {
-    const parsed = new Set(rows.map((c) => c.id));
-    const untagged = [...new Set([...intent.matchAll(LOCAL_AC)].map((m) => m[1].replace("\u2011", "-")))].filter((id) => !parsed.has(id));
+    // Line by line, so an unparsed line is reported even when another line already uses its ID.
+    const untagged = [...new Set(intent.split("\n").filter((l) => !criterionOf(l, { local: true })).flatMap((l) => [...l.matchAll(LOCAL_AC)].map((m) => m[1].replace("\u2011", "-"))))];
     if (untagged.length) problems.push(`criteria without a [kind:target] tag, or not in the \`- <mark> AC-n [kind:target] text\` form, in intent.md: ${untagged.join(", ")} (intent.md § Step 3)`);
     if (!rows.some((c) => c.id.startsWith("AC-")) && !untagged.length) problems.push("intent.md lists no criterion (`- AC-n [kind:target] text`)");
   }
@@ -919,6 +919,7 @@ function selfTest() {
     for (const odd of ["1. ⬜ AC-9 [ui:/x] text", "- **AC-9** [ui:/x] text", "- ⬜  AC-9 [ui:/x] text", "- ⬜AC-9 [ui:/x] text", "- 🚀 ⬜ AC-9 [ui:/x] text", "- [] AC-9 [ui:/x] text", "- ⬜ AC\u20119 [ui:/x] text", "- ⬜ AC-9 [UI:/x] text"]) {
       assert(checkLocal({ intent: `${intent}${odd}\n`, report }).some((p) => p.includes("AC-9") && p.includes("not in the")), `local gate: an AC line the parser rejects is reported, never skipped: ${odd}`);
     }
+    assert(checkLocal({ intent: `${intent}- AC-1 later untagged copy\n`, report }).some((p) => p.includes("AC-1") && p.includes("not in the")), "local gate: an untagged line that reuses a tagged ID is still reported");
     assert(!checkLocal({ intent: `${intent}- see AC-7 for the toggle\n1. Step one mentions AC-8\n`, report }).some((p) => p.includes("not in the")), "local gate: an AC named mid-sentence is not a criterion line");
     const run = mkdtempSync(join(tmpdir(), "vc-local-"));
     writeFileSync(join(run, "intent.md"), "- [ ] AC-1 (covers: R1) [ui:/x] — text\n"); writeFileSync(join(run, "report.md"), report);
