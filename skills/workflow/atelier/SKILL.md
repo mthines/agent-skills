@@ -112,8 +112,8 @@ Under `--unattended` add the line `No human is present: run interview with --non
 ### After undrafting
 
 Read `gh pr view <pr-url> --json statusCheckRollup` before `gh pr ready`.
-No check in it concluded `SKIPPED` → CI already ran on the draft (and a workflow without a `ready_for_review` trigger will not run again): go straight to `prepare`.
-Otherwise the checks listed right after `gh pr ready` are still the draft's skipped ones, which `prepare` would read as green.
+At least one check, and none concluded `SKIPPED` → CI already ran on the draft (and a workflow without a `ready_for_review` trigger will not run again): go straight to `prepare`.
+An empty rollup, or any `SKIPPED` check → CI has not run on this head: the checks listed right after `gh pr ready` are none or the draft's skipped ones, which `prepare` would read as green.
 Re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `gh pr checks <pr-url> --watch`, then call `prepare`.
 No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks started after undraft`.
 
@@ -127,7 +127,8 @@ No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks st
 `aw` can run for hours in this context; do these in order before anything else, and re-read this section when unsure where the run is:
 
 1. **Hand-back.** Find aw's terminal block, the hand-back marker `AW RUN COMPLETE`.
-   No block, or no PR URL in its `Delivered:` line → Build `failed`, reason = its `Needs you:` line (or `no AW RUN COMPLETE block`); bind `PR` and its head sha otherwise.
+   Take the PR URL from the block's `Delivered:` line, or from the one-line form Micro and Lite may print (`AW RUN COMPLETE — Lite, PR <url>, …`).
+   No block, or no PR URL in either form → Build `failed`, reason = its `Needs you:` line (or `no AW RUN COMPLETE block`); bind `PR` and its head sha otherwise.
 2. **Sentinel.** In the PR branch's worktree (`git worktree list` names it), when `.agent/<branch>/checks.yaml` exists (Full tier), run the checks fresh; Micro and Lite have none and skip this:
 
    ```bash
