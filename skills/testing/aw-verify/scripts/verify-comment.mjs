@@ -167,8 +167,10 @@ const unescapeCell = (c) => c.replace(/\\\|/g, "|");
 const LOCAL_MARK = "(?:(⬜|✅|❌|⏭)\\uFE0F? )?(?:(🚀) )?";
 const LOCAL_HEAD = `^([ \\t]*[-*+] (?:\\[[ xX]\\] )?)${LOCAL_MARK}`;
 const LOCAL_CRITERION = new RegExp(`${LOCAL_HEAD}((?:AC|G)-\\d+)(?: \\(covers:[^)]*\\))? \\[([a-z]+)(?::([^\\]]*))?\\](?:\\s*[—–:-](?=\\s))?\\s+(.+)$`);
-// Every local line that names an AC as its list item, tagged or not: the count no criterion may fall out of.
-const LOCAL_AC = new RegExp(`${LOCAL_HEAD}(AC-\\d+)\\b`, "gm");
+// Every local list item (bulleted or numbered) whose first word is an AC ID, whatever marks, checkbox, bold, or
+// spacing come before it: the count no criterion may fall out of. Deliberately looser than LOCAL_CRITERION, so a
+// line the parser rejects is reported, never skipped.
+const LOCAL_AC = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]?\]|[^A-Za-z0-9\n])*?(AC[-\u2011]\d+)\b/gm;
 const fullMark = (m) => (m === "⏭" ? "⏭️" : m || null);
 
 function criterionOf(line, { local = false } = {}) {
@@ -600,8 +602,8 @@ export function checkLocal({ intent = null, report = null, specs = false } = {},
   });
   if (rows) {
     const parsed = new Set(rows.map((c) => c.id));
-    const untagged = [...new Set([...intent.matchAll(LOCAL_AC)].map((m) => m[4]))].filter((id) => !parsed.has(id));
-    if (untagged.length) problems.push(`criteria without a [kind:target] tag in intent.md: ${untagged.join(", ")} (intent.md § Step 3)`);
+    const untagged = [...new Set([...intent.matchAll(LOCAL_AC)].map((m) => m[1].replace("\u2011", "-")))].filter((id) => !parsed.has(id));
+    if (untagged.length) problems.push(`criteria without a [kind:target] tag, or not in the \`- <mark> AC-n [kind:target] text\` form, in intent.md: ${untagged.join(", ")} (intent.md § Step 3)`);
     if (!rows.some((c) => c.id.startsWith("AC-")) && !untagged.length) problems.push("intent.md lists no criterion (`- AC-n [kind:target] text`)");
   }
   if (ui && !specs) problems.push("no specs.md beside the run directory for a UI diff: write .agent/<branch>/specs.md in aw-verify's Intent step (intent.md § Step 4), or keep the one /aw wrote");
@@ -914,6 +916,10 @@ function selfTest() {
     assert(covered === "- [ ] ✅ AC-1 (covers: R1) [ui:/x] — text\n- [x] ❌ AC-2 [api:GET /y] text", "local gate: --marks --local sets only the leading mark on the (covers: …) and checkbox forms");
     assert(checkLocal({ intent, report }, { ui: true }).some((p) => p.includes("Intent step") && !p.includes("ui-verify author")), "local gate: a missing specs.md points at the step that writes it");
     assert(checkLocal({ intent: intent + "  - ✅ AC-3 checked by hand, no tag\n", report }).some((p) => p.includes("AC-3") && p.includes("tag")) && applyMarks("  - AC-1 [ui:/x] text", { "AC-1": { status: "✅" } }, { local: true }) === "  - ✅ AC-1 [ui:/x] text", "local gate: an indented AC is counted when untagged and marked in place");
+    for (const odd of ["1. ⬜ AC-9 [ui:/x] text", "- **AC-9** [ui:/x] text", "- ⬜  AC-9 [ui:/x] text", "- ⬜AC-9 [ui:/x] text", "- 🚀 ⬜ AC-9 [ui:/x] text", "- [] AC-9 [ui:/x] text", "- ⬜ AC\u20119 [ui:/x] text", "- ⬜ AC-9 [UI:/x] text"]) {
+      assert(checkLocal({ intent: `${intent}${odd}\n`, report }).some((p) => p.includes("AC-9") && p.includes("not in the")), `local gate: an AC line the parser rejects is reported, never skipped: ${odd}`);
+    }
+    assert(!checkLocal({ intent: `${intent}- see AC-7 for the toggle\n1. Step one mentions AC-8\n`, report }).some((p) => p.includes("not in the")), "local gate: an AC named mid-sentence is not a criterion line");
     const run = mkdtempSync(join(tmpdir(), "vc-local-"));
     writeFileSync(join(run, "intent.md"), "- [ ] AC-1 (covers: R1) [ui:/x] — text\n"); writeFileSync(join(run, "report.md"), report);
     const markedCli = cli("--local", run, "--marks", '{"AC-1":{"status":"✅"}}');
