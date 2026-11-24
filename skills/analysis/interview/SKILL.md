@@ -37,7 +37,8 @@ If empty, use the conversation's active request; if there is none, ask what to s
 | ------------------- | --------------------------------------------------------------------------------------------------------- |
 | `--non-interactive` | Never prompt. If a `blocking` unknown remains, list it under `## Open questions` and return `blocked`. For headless callers. |
 
-Inside `aw`, this skill runs on demand from Phase 0; do not also run it standalone. Contract: [`rules/aw-integration.md`](./rules/aw-integration.md).
+Inside `aw`, this skill runs on demand from Phase 0; do not also run it standalone.
+Contract: [`rules/aw-integration.md`](./rules/aw-integration.md).
 
 ## Procedure
 
