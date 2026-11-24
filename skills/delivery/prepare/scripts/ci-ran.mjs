@@ -47,17 +47,18 @@ export function classify(contexts, { head = null, expectedHead = null } = {}) {
 	const failed = contexts.filter((c) => c.phase === "failed");
 	const pending = contexts.filter((c) => c.phase === "pending");
 	const what = required.length ? "required check" : "GitHub Actions check run";
+	const at = head ? head.slice(0, 7) : "head";
 	const names = (xs) => xs.slice(0, 5).map((c) => c.name).join(", ") + (xs.length > 5 ? ` (+${xs.length - 5})` : "");
 	const base = { head, ran: ran.length > 0, basis: required.length ? "required" : "actions", ran_checks: ran.map((c) => c.name).slice(0, 10), counts: { total: contexts.length, required: required.length, skipped: contexts.filter((c) => c.phase === "skipped").length } };
 	if (expectedHead && head && expectedHead !== head) return { ...base, state: "pending", reason: `head moved: expected ${expectedHead.slice(0, 7)}, PR is at ${head.slice(0, 7)}` };
 	const basisPending = basis.some((c) => c.phase === "pending");
 	if (!ran.length && !basisPending) {
 		const why = !contexts.length ? "no checks reported" : basis.length ? `every ${what} skipped (${basis.length})` : `no ${what} reported; only ${names(contexts)}`;
-		return { ...base, state: "not-run", reason: `CI not run at ${head ? head.slice(0, 7) : "head"}: ${why}` };
+		return { ...base, state: "not-run", reason: `CI not run at ${at}: ${why}` };
 	}
 	if (failed.length) return { ...base, state: "red", reason: `${failed.length} failing: ${names(failed)}` };
 	if (pending.length) return { ...base, state: "pending", reason: `${pending.length} still running: ${names(pending)}` };
-	return { ...base, state: "green", reason: `${ran.length} ${what}${ran.length === 1 ? "" : "s"} ran and passed at ${head ? head.slice(0, 7) : "head"}` };
+	return { ...base, state: "green", reason: `${ran.length} ${what}${ran.length === 1 ? "" : "s"} ran and passed at ${at}` };
 }
 
 // owner/repo/number from a PR URL, or a bare number against cwd's origin.
