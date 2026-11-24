@@ -62,7 +62,8 @@ A second login location drifts from the one the repo maintains. Probe in order; 
 3. A repo-provided credentials file that the repo's own authed Playwright tooling reads, such as `.browser/credentials.json`.
    Use it only when `git check-ignore -q <file>` exits 0 (gitignored); a tracked credentials file is a finding, never a login source.
    Reference it in `refresh.command`, which passes its fields to the login script as `E2E_EMAIL` and `E2E_PASSWORD` in that command's environment only; never print, log, echo, or copy the file or a value from it.
-   Such a `refresh.command` is run by the user or a scheduler; the agent, `ui-verify`'s runner, and `aw-tester` run it only under [Pre-authorized sign-in](#pre-authorized-sign-in), and otherwise stop at `blocked (auth: <state_file> expired)`.
+   Such a `refresh.command` is run by the user or a scheduler; the agent, `ui-verify`'s runner, and `aw-tester` run it only under [Pre-authorized sign-in](#pre-authorized-sign-in), host rule included.
+   Otherwise the agent and the runner stop at `blocked (auth: <state_file> expired)`, and `aw-tester` marks each authed spec `skipped` with reason `auth-refresh-not-authorized`.
 
 Scaffold only when nothing is found.
 

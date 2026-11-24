@@ -20,6 +20,7 @@ The repo declares the mechanism ([`config.md § flags`](./config.md#flags)); thi
 - [`intent.md` test 4](./intent.md#step-3b--lint-every-criterion-and-map-the-surfaces) found a flag missing on `<env>`.
 
 Do nothing for a flag already in the needed state; read it with `verify` first.
+[Protocol step 0](#protocol) is the exception: it runs on every `local` run, whether or not a criterion needs a flag, because it only puts back what an earlier run changed.
 
 ## Preconditions
 

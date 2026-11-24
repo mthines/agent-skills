@@ -188,7 +188,7 @@ mechanism differs.
 
 For `storage-state`, when the session is missing or a first authed page returns
 HTTP 401, run `auth.refresh.command` with its `timeout_seconds` (one that reads a
-repo credentials file only under `auth.sign_in_host`, per `aw-tester-auth.md`), retry the spec
+repo credentials file only when `auth.sign_in_host` equals its login host, per `aw-tester-auth.md`), retry the spec
 once, and if it still 401s mark the spec `skipped` with reason
 `auth-refresh-failed` rather than failing the whole run. **Never** put a
 credential in the spec, the target file, or a lesson — auth lives in the refresh
