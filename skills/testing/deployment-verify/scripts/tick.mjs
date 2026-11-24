@@ -167,6 +167,9 @@ export function validateContract(contract, config) {
 
 // A rollout that has not reached step 1 yet: no state, or still waiting for its deploy or baseline (flag never set on).
 export const beforeStepOne = (state) => !state || !state.phase || state.phase === "deploy" || state.phase === "baseline";
+// A live lease means another tick is mid-rollout: never stop it from outside; the next tick decides.
+const leaseLive = (state, now = Date.now()) => Boolean(state?.lease && Date.parse(state.lease.until) > now);
+export const holdCheckDue = (state, now) => beforeStepOne(state) && !leaseLive(state, now);
 
 // Before step 1 only: a configured hold the rollout cannot reach (contract steps, a boolean provider) would
 // ship unheld, so the rollout stops instead. A rollout already in flight is never stopped by a later config edit.
@@ -902,7 +905,8 @@ async function selfTest() {
 		report("hold: a contract whose steps skip hold_after stops before step 1", /hold_after: 10 is not a step/.test(checkHoldReachable({ ...contract, steps: [1, 25, 100] }, holdConfig) || "") && checkHoldReachable(contract, holdConfig) === null
 			&& /hold_after: 10 is not a step/.test(checkHoldReachable(contract, { ...holdConfig, flags: { providers: [{ name: "sim", rollout: "boolean" }] } }) || "")
 			&& validateContract({ ...contract, steps: [1, 25, 100] }, holdConfig) === null
-			&& beforeStepOne(null) && beforeStepOne({ phase: "deploy" }) && beforeStepOne({ phase: "baseline" }) && !beforeStepOne({ phase: "step" }) && !beforeStepOne({ phase: "hold" }));
+			&& beforeStepOne(null) && beforeStepOne({ phase: "deploy" }) && beforeStepOne({ phase: "baseline" }) && !beforeStepOne({ phase: "step" }) && !beforeStepOne({ phase: "hold" })
+			&& holdCheckDue({ phase: "baseline", lease: null }, 0) && !holdCheckDue({ phase: "baseline", lease: { holder: "x", until: "2099-01-01T00:00:00Z" } }, 0));
 		report("hold: hold_after must be a step before the last", checkHoldAfter({ steps: [1, 10, 50, 100] }) === null && checkHoldAfter({ hold_after: 10 }) === null && /must be one of/.test(checkHoldAfter({ hold_after: 100 }) || "") && /must be one of/.test(checkHoldAfter({ hold_after: 5 }) || ""));
 	}
 	// Deploy detection: a later commit that contains the merge counts as live; an older one does not.
@@ -1083,7 +1087,7 @@ async function main() {
 		const contract = JSON.parse(readFileSync(a.contract, "utf8"));
 		const cfg = configFor(contract);
 		const local = localStore(a.local);
-		const err = validateContract(contract, cfg) || (beforeStepOne(local.read()) ? checkHoldReachable(contract, cfg) : null);
+		const err = validateContract(contract, cfg) || (holdCheckDue(local.read()) ? checkHoldReachable(contract, cfg) : null);
 		if (err) throw new Error(err);
 		const s = await runOne({ store: local, contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run, decision, slug });
 		console.log(renderReport(s, contract, null).split("\n").slice(2, -2).join("\n"));
@@ -1110,7 +1114,7 @@ async function main() {
 					invalid = e.message;
 				}
 			}
-			invalid ||= validateContract(contract, cfg) || (beforeStepOne(store.read()) ? checkHoldReachable(contract, cfg) : null);
+			invalid ||= validateContract(contract, cfg) || (holdCheckDue(store.read()) ? checkHoldReachable(contract, cfg) : null);
 			if (invalid) {
 				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: cfg.env, steps: [] };
 				store.write(renderReport(s, contract || {}, store.pr));
