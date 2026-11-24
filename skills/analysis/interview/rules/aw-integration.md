@@ -1,5 +1,5 @@
 ---
-title: aw Integration — On-Demand Delegation Contract
+title: aw Integration — Default-On Delegation Contract
 impact: MEDIUM
 tags:
   - autonomous-workflow

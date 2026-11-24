@@ -330,7 +330,7 @@ MODE SELECTION:
 Before leaving Phase 0:
 
 - [ ] User request fully understood
-- [ ] Scope alignment: `interview` companion ran (Full tier default, unless `--no-interview`) with a non-`blocked` verdict, OR inline Step 3b/3c used and the fallback logged (anchor: `scope-alignment`)
+- [ ] Scope alignment: `interview` companion ran (Full and Lite default, unless `--no-interview`) with a non-`blocked` verdict, OR inline Step 3b/3c used and the fallback logged (anchor: `scope-alignment`)
 - [ ] Requirements restated in own words and diffed against the user's words; every delta surfaced (anchor: `restate-and-diff`)
 - [ ] Missing information enumerated and classified `blocking` / `advisory`; no unresolved `blocking` item — even under `--no-confirm` (anchor: `missing-information-gate`)
 - [ ] All ambiguities clarified
