@@ -44,9 +44,10 @@ Contract: [`rules/aw-integration.md`](./rules/aw-integration.md).
 
 ### 1. Restate and read the code
 
-1. Restate the request in one paragraph plus requirement bullets, each tagged `[user-stated]` or `[inferred]`.
-2. Read the affected code (`Grep` / `Glob` / `Read`; an `Explore` agent only for a broad sweep): where it lives, what already exists to reuse, the repo's conventions, and governing docs (`CLAUDE.md`, `.claude/rules/`).
-3. Delete every candidate question the code answers.
+1. Read any existing spec first: `.agent/{branch}/brief.md`, `.agent/{branch}/plan.md`, and a spec file or ticket the user names. Do not ask what it already settles.
+2. Restate the request in one paragraph plus requirement bullets, each tagged `[user-stated]` or `[inferred]`.
+3. Read the affected code (`Grep` / `Glob` / `Read`; an `Explore` agent only for a broad sweep): where it lives, what already exists to reuse, the repo's conventions, and governing docs (`CLAUDE.md`, `.claude/rules/`).
+4. Delete every candidate question the spec or the code answers.
 
 ```text
 Good: "src/lib/pr-status-cache.ts already caches per-branch status → reuse it."
