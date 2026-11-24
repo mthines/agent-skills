@@ -202,6 +202,8 @@ node "$VC" --pr <pr-url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-
 The older line form (`- ⬜ AC-1 [ui:/x] text`) is still read and marked, so a PR written by an earlier version keeps working.
 A merged PR freezes the criteria text and still takes marks.
 With no PR yet, mark the run directory's `intent.md` the same way, `node "$VC" --local .agent/<branch>/verify --marks '<json>'`, before `--check --local` ([run card Step 7](../SKILL.md#run-card)); an AC line there with no mark counts as not run.
+That `intent.md` also reads the `/aw` brief's AC line copied verbatim (`- [ ] AC-1 (covers: R1) [ui:/x] — text`), and the mark goes after the checkbox.
+Every line whose list item names an `AC-n` is counted, and one with no `[kind:target]` tag fails the gate as untagged.
 
 ```text
 ✗ rewrite the whole intent region to tick a box, and reword AC-2 on the way

@@ -160,9 +160,21 @@ const SP = "(?:&nbsp;| )";
 const ROW = new RegExp(`^\\|\\s*(?:(⬜|✅|❌|⏭️)${SP})?(?:(🚀)${SP})?(?:🛡️${SP})?((?:AC|G)[-\u2011]\\d+)\\s*\\|\\s*((?:\\\\\\||\\\\(?!\\|)|[^|\\\\])+?)\\s*\\|\\s*((?:\\\\\\||\\\\(?!\\|)|[^|\\\\])*?)\\s*\\|$`);
 const ROW_MARKS = new RegExp(`^(\\|\\s*)(?:(?:⬜|✅|❌|⏭️)${SP})?(?:🚀${SP})?(🛡️${SP})?`);
 const unescapeCell = (c) => c.replace(/\\\|/g, "|");
+// A run directory's `intent.md` (no PR yet) is read more leniently, since `aw-verify` copies the `/aw` brief's AC
+// lines verbatim: any list bullet, an optional checkbox (`[ ]`/`[x]`, never a status), any of the four marks with or
+// without U+FE0F, an optional `(covers: …)` before the tag, and an optional ` — `/` - `/`: ` after it.
+// PR bodies keep the strict CRITERION grammar, so a report that passes the PR gate today still passes.
+const LOCAL_MARK = "(?:(⬜|✅|❌|⏭)\\uFE0F? )?(?:(🚀) )?";
+const LOCAL_HEAD = `^([ \\t]*[-*+] (?:\\[[ xX]\\] )?)${LOCAL_MARK}`;
+const LOCAL_CRITERION = new RegExp(`${LOCAL_HEAD}((?:AC|G)-\\d+)(?: \\(covers:[^)]*\\))? \\[([a-z]+)(?::([^\\]]*))?\\](?:\\s*[—–:-](?=\\s))?\\s+(.+)$`);
+// Every local line that names an AC as its list item, tagged or not: the count no criterion may fall out of.
+const LOCAL_AC = new RegExp(`${LOCAL_HEAD}(AC-\\d+)\\b`, "gm");
+const fullMark = (m) => (m === "⏭" ? "⏭️" : m || null);
 
-function criterionOf(line) {
+function criterionOf(line, { local = false } = {}) {
   const l = line.trim();
+  const lc = local && LOCAL_CRITERION.exec(l);
+  if (lc) return { id: lc[4], kind: lc[5], target: lc[6] || "", text: lc[7], status: fullMark(lc[2]), prod: Boolean(lc[3]) };
   const c = CRITERION.exec(l);
   if (c) return { id: c[3], kind: c[4], target: c[5] || "", text: c[6], status: c[1] || null, prod: Boolean(c[2]) };
   const r = ROW.exec(l);
@@ -175,8 +187,8 @@ function criterionOf(line) {
   return { id, kind, target: id.startsWith("G-") || !k ? "" : (k[2] || "").trim(), text: unescapeCell(r[4]), status: r[1] || null, prod: Boolean(r[2]) };
 }
 
-export function parseIntent(region) {
-  return (region || "").split("\n").map(criterionOf).filter(Boolean);
+export function parseIntent(region, { local = false } = {}) {
+  return (region || "").split("\n").map((l) => criterionOf(l, { local })).filter(Boolean);
 }
 
 // The region with every status and 🚀 removed: what "the criteria text" means once the PR is merged.
@@ -201,14 +213,14 @@ const refreshSummary = (region) => {
 
 // The region with `marks` ({ "AC-1": { status: "✅", prod: true } }) applied to its criteria; an unknown ID
 // or status throws. Nothing but the leading marks (and a table's summary counts) changes.
-export function applyMarks(region, marks) {
-  const ids = new Set(parseIntent(region).map((c) => c.id));
+export function applyMarks(region, marks, { local = false } = {}) {
+  const ids = new Set(parseIntent(region, { local }).map((c) => c.id));
   for (const [id, m] of Object.entries(marks)) {
     if (!ids.has(id)) throw new Error(`refused: the intent region has no criterion ${id}`);
     if (m.status !== undefined && !STATUSES.includes(m.status)) throw new Error(`refused: unknown status "${m.status}" for ${id} (expected ${STATUSES.join(" ")})`);
   }
   const out = region.split("\n").map((l) => {
-    const c = criterionOf(l);
+    const c = criterionOf(l, { local });
     if (!c || !marks[c.id]) return l;
     const m = marks[c.id];
     const status = m.status !== undefined ? m.status : c.status;
@@ -217,7 +229,7 @@ export function applyMarks(region, marks) {
       const lead = [status, prod ? PROD : null].filter(Boolean).map((x) => `${x}&nbsp;`).join("");
       return l.trim().replace(ROW_MARKS, (_, pipe, shield) => `${pipe}${lead}${shield || ""}`);
     }
-    return l.replace(/^(\s*- )(?:(?:⬜|✅|❌|⏭️) )?(?:🚀 )?/, `$1${[status, prod ? PROD : null].filter(Boolean).join(" ")}${status || prod ? " " : ""}`);
+    return l.replace(local ? new RegExp(LOCAL_HEAD) : /^(\s*- )(?:(?:⬜|✅|❌|⏭️) )?(?:🚀 )?/, `$1${[status, prod ? PROD : null].filter(Boolean).join(" ")}${status || prod ? " " : ""}`);
   }).join("\n");
   return refreshSummary(out);
 }
@@ -575,12 +587,11 @@ function checkCompleteness(rows, report, { noIntent, noReport, setMarks, unmarke
   return problems;
 }
 
-// The gate for a run with no PR yet, over its run directory (`.agent/<branch>/verify/`): `intent.md` (its
-// `- <mark> AC-n [kind:target] text` lines, marked with --marks --local), `report.md`, and with `ui` the brief's
-// `specs.md` one level up. An AC line with no [kind:target] tag is a problem, never skipped: an unparsed
-// criterion is one the count would miss.
+// The gate for a run with no PR yet, over its run directory (`.agent/<branch>/verify/`): `intent.md` (its AC lines in
+// the LOCAL_CRITERION grammar, marked with --marks --local), `report.md`, and with `ui` the brief's `specs.md` one
+// level up. Every line LOCAL_AC finds is counted: one with no [kind:target] tag is a problem, never skipped.
 export function checkLocal({ intent = null, report = null, specs = false } = {}, { ui = false } = {}) {
-  const rows = intent === null ? null : parseIntent(intent);
+  const rows = intent === null ? null : parseIntent(intent, { local: true });
   const problems = checkCompleteness(rows, report, {
     noIntent: "no intent.md in the run directory: write it first (intent.md)",
     noReport: "no report.md in the run directory: render it (report.md)",
@@ -589,11 +600,11 @@ export function checkLocal({ intent = null, report = null, specs = false } = {},
   });
   if (rows) {
     const parsed = new Set(rows.map((c) => c.id));
-    const untagged = (intent.match(/^- (?:(?:⬜|✅|❌|⏭️) )?(?:🚀 )?AC-\d+\b/gm) || []).map((l) => l.match(/AC-\d+/)[0]).filter((id) => !parsed.has(id));
+    const untagged = [...new Set([...intent.matchAll(LOCAL_AC)].map((m) => m[4]))].filter((id) => !parsed.has(id));
     if (untagged.length) problems.push(`criteria without a [kind:target] tag in intent.md: ${untagged.join(", ")} (intent.md § Step 3)`);
     if (!rows.some((c) => c.id.startsWith("AC-")) && !untagged.length) problems.push("intent.md lists no criterion (`- AC-n [kind:target] text`)");
   }
-  if (ui && !specs) problems.push("no specs.md beside the run directory for a UI diff (ui-verify author)");
+  if (ui && !specs) problems.push("no specs.md beside the run directory for a UI diff: write .agent/<branch>/specs.md in aw-verify's Intent step (intent.md § Step 4), or keep the one /aw wrote");
   return problems;
 }
 
@@ -890,6 +901,24 @@ function selfTest() {
     assert(!checkLocal({ intent, report }).some((p) => p.includes("AC-2")), "local gate: an api: AC ⏭️ (tests-only) under ✅ stays allowed");
     const marked = applyMarks(fx("open", "intent.md"), { "AC-2": { status: "✅" } });
     assert(marked.includes("- ✅ AC-2 [api:PUT /api/notification-settings] An empty") && marked.split("\n").length === fx("open", "intent.md").split("\n").length, "local gate: --marks --local sets only the leading mark");
+    // local gate: the /aw brief's own AC shapes, which aw-verify copies verbatim into intent.md
+    const one = (line) => checkLocal({ intent: `## Acceptance criteria\n${line}\n`, report });
+    const ok = (line, status = "✅") => { const r = parseIntent(line, { local: true }); return r.length === 1 && r[0].id === "AC-1" && r[0].kind === "ui" && r[0].target === "/x" && r[0].text === "text" && r[0].status === status; };
+    assert(ok("- ✅ AC-1 (covers: R1) [ui:/x] — text") && one("- ✅ AC-1 (covers: R1) [ui:/x] — text").length === 0, "local gate: a (covers: …) AC with a ` — ` separator parses and passes");
+    assert(ok("- [x] ✅ AC-1 (covers: R1) [ui:/x] — text") && ok("- [ ] ✅ AC-1 [ui:/x] - text") && ok("  - ✅ AC-1 [ui:/x]: text"), "local gate: a checkbox, a `-` or `:` separator, and indentation parse");
+    assert(ok("- ⏭ AC-1 [ui:/x] text", "⏭️") && ok("- ✅️ AC-1 [ui:/x] text"), "local gate: a mark with or without U+FE0F parses, ⏭ as ⏭️");
+    assert(one("- [x] AC-1 (covers: R1) [ui:/x] — text").some((p) => p.includes("still ⬜") && p.includes("AC-1")) && one("- [ ] AC-1 (covers: R1) [ui:/x] — text").some((p) => p.includes("still ⬜") && p.includes("AC-1")), "local gate: a checkbox AC with no mark is counted and open, never \"no criterion\"");
+    assert(checkLocal({ intent: intent + "- [ ] ✅ AC-3 (covers: R2) — checked by hand\n", report }).some((p) => p.includes("AC-3") && p.includes("tag")), "local gate: an untagged checkbox (covers: …) AC is named untagged");
+    assert(checkLocal({ intent: intent + "- ⏭ AC-3 [ui:/y] text\n", report }).some((p) => p.includes("AC-3") && p.includes("caps the run")), "local gate: a ⏭ (no U+FE0F) ui: AC is counted, never skipped");
+    const covered = applyMarks("- [ ] AC-1 (covers: R1) [ui:/x] — text\n- [x] ⏭ AC-2 [api:GET /y] text", { "AC-1": { status: "✅" }, "AC-2": { status: "❌" } }, { local: true });
+    assert(covered === "- [ ] ✅ AC-1 (covers: R1) [ui:/x] — text\n- [x] ❌ AC-2 [api:GET /y] text", "local gate: --marks --local sets only the leading mark on the (covers: …) and checkbox forms");
+    assert(checkLocal({ intent, report }, { ui: true }).some((p) => p.includes("Intent step") && !p.includes("ui-verify author")), "local gate: a missing specs.md points at the step that writes it");
+    assert(checkLocal({ intent: intent + "  - ✅ AC-3 checked by hand, no tag\n", report }).some((p) => p.includes("AC-3") && p.includes("tag")) && applyMarks("  - AC-1 [ui:/x] text", { "AC-1": { status: "✅" } }, { local: true }) === "  - ✅ AC-1 [ui:/x] text", "local gate: an indented AC is counted when untagged and marked in place");
+    const run = mkdtempSync(join(tmpdir(), "vc-local-"));
+    writeFileSync(join(run, "intent.md"), "- [ ] AC-1 (covers: R1) [ui:/x] — text\n"); writeFileSync(join(run, "report.md"), report);
+    const markedCli = cli("--local", run, "--marks", '{"AC-1":{"status":"✅"}}');
+    assert(markedCli.status === 0 && readFileSync(join(run, "intent.md"), "utf8") === "- [ ] ✅ AC-1 (covers: R1) [ui:/x] — text\n" && cli("--check", "--local", run).status === 0, `local gate: the CLI marks and passes the (covers: …) form: ${markedCli.stderr}`);
+    assert(parseIntent("- ⏭ AC-1 [ui:/x] text\n- [x] AC-2 [ui:/x] text").length === 0, "PR gate: the strict line grammar is unchanged");
     const intentUi = "<details><summary>📋 Acceptance criteria — 1 criterion</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ⏭️&nbsp;AC‑1 | does x | ui:/x · tests |\n\n</details>";
     const agg = "## ✅ Verified — does x\n\nWorks.\n\n<details><summary>Details</summary>\n\nmore\n\n</details>";
     assert(checkReport(withBlock("t", splice(splice("", "intent", intentUi), "aggregate", agg))).some((p) => p.includes("caps the run")), "PR gate: a ui: AC ⏭️ under ✅ fails");
@@ -924,7 +953,7 @@ else if (isMain) {
       const intent = read("intent.md");
       if (intent === null) throw new Error(`no intent.md in ${local}`);
       const marks = JSON.parse(marksArg.trim().startsWith("{") ? marksArg : readFileSync(marksArg, "utf8"));
-      writeFileSync(join(local, "intent.md"), applyMarks(intent, marks));
+      writeFileSync(join(local, "intent.md"), applyMarks(intent, marks, { local: true }));
       console.log(`marked ${Object.keys(marks).join(", ")} in ${join(local, "intent.md")}`);
       process.exit(0);
     }
