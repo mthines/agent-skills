@@ -25,7 +25,7 @@ This file does not restate those — it only names the buckets and says which ki
 
 - [The kinds](#the-kinds)
 - [The `review*` trio (the confusing one)](#the-review-trio-the-confusing-one)
-- [Master table — all 16 buckets](#master-table--all-16-buckets)
+- [Master table — all 17 buckets](#master-table--all-17-buckets)
 - [First-class properties in LoreKit (`kind` + `host`)](#first-class-properties-in-lorekit-kind--host)
 - [Why the tags are not kind-prefixed](#why-the-tags-are-not-kind-prefixed)
 - [See also](#see-also)
@@ -46,7 +46,7 @@ There are three **learned** kinds, plus **state records**, which are a different
 | **State record** | One current fact a host needs from its own last run, written mechanically. | Short TTL (~7d), refreshed on every write. | At the **start of every run**, and written back at the end. | **Yes — authoritatively.** It is parsed and branched on, not weighed. |
 
 Only the **Lessons** kind follows the `loop::<host>-lessons` convention.
-The two **Bus** buckets and the single **Signal** bucket are tagged `loop::…` too, but they are not lessons — that shared prefix is the main source of confusion.
+The three **Bus** buckets and the single **Signal** bucket are tagged `loop::…` too, but they are not lessons — that shared prefix is the main source of confusion.
 **State records are tagged `ci::…` and never `loop::…`**, precisely so nothing reads one as advice: the entrenchment guards that govern lessons do not apply to a record that contains no judgment, and the guards that *do* apply are different ones (bounded cardinality, no secrets, explicit TTL, never on the critical path). Their contract lives in the external `lorekit-setup` skill, `rules/ci-state-records.md` — read it before adding one.
 
 ---
@@ -71,7 +71,7 @@ reviewer-comment-relevance
 
 ---
 
-## Master table — all 16 buckets
+## Master table — all 17 buckets
 
 ### Lessons (`loop::<host>-lessons`, key `<host>-lessons::<slug>`)
 
@@ -104,6 +104,12 @@ hosts and silently halve every usage roll-up.
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Never |
 | --- | --- | --- | --- | --- |
 | `quality-finding-outcomes` | [`finding-outcomes.md`](../../../skills/workflow/autonomous-workflow/rules/finding-outcomes.md) | `scripts/finding-outcomes.mjs --record`, run at merge time by whoever merges → `finding-outcomes.mjs --precision` | 180d (`repo::{owner}/{repo}`) | **Never loaded into a run, and never gates yet.** `kind: bus`, `host: aw`, set explicitly; one event per quality-pass finding, outcome from human action only. |
+
+### Bus (`loop::atelier-decisions`, key `atelier-decisions::pr-<n>-<stage>-<decision>-<sha7>` and `atelier-decisions::pr-<n>-outcome`)
+
+| Bucket | Owner rule | Producer → Consumer | Lifetime | Never |
+| --- | --- | --- | --- | --- |
+| `atelier-decisions` | [`atelier/rules/decision-log.md`](../../../skills/workflow/atelier/rules/decision-log.md) | `atelier` (after every stage decision, and the outcome sweep at run start) → `atelier`'s own outcome sweep, and a later promotion step | 90d, scope `branch::{owner}/{repo}::{head-branch}`, `kind: bus` and `host: atelier` set explicitly | **Never read to decide a stage.** Outcomes are only human decisions, `decide.mjs` verdicts, and reverts or hotfixes. |
 
 ### Signal (`loop::reviewer-comment-relevance`, key `reviewer-comment-relevance::<category>:<claim-gist>`)
 
