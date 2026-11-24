@@ -11,7 +11,7 @@ license: MIT
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '0.2.0'
+  version: '0.3.0'
   workflow_type: orchestrator
   tags: [workflow, orchestrator, merge, gate, deployment-verify, lorekit, resumable]
 ---
@@ -38,7 +38,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `<request>` | Free text: start at Build. |
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
-| `--keep-draft` | Ready leaves the PR a draft; when the repo skips CI on drafts, Ready records `hold` (reason `CI not run: draft`). |
+| `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
 
 ## Step 0 — Setup
 
@@ -73,6 +73,7 @@ Run the stage `--next` named, then the ones after it, in order.
 After **every** stage decision, do both, in this order:
 
 1. Record it: `S="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs"; node "$S" --record --stage <s> --decision <d> --head <sha> --reason "<r>" --pr <pr-url> --body-file state.md > next.md && node "$S" --upsert --pr <pr-url> --body-file next.md && mv next.md state.md` ([`rules/state.md`](./rules/state.md)).
+   Ready `proceed` also takes `--ci-file ci.json`, the CI evidence below; `state.mjs` refuses Ready `proceed` without green evidence at `--head` (exit 2).
 2. Write one `bus` event ([`rules/decision-log.md`](./rules/decision-log.md)).
 
 A decision of `refuse`, `hold`, or `failed` ends the run at Step 4.
@@ -81,8 +82,8 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, the [sentinel](#after-build-returns) passes, and the early gate passes | `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
-| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")` | it printed `Already green` or fixed every PR it touched, and did not report `CI not run` | `CI not run (all checks skipped)` → `hold`, reason `CI not run: all checks skipped`; under `--keep-draft`, a draft with no checks or any `SKIPPED` check (`gh pr view <pr-url> --json isDraft,statusCheckRollup`) → `hold`, reason `CI not run: draft`; blocked → `failed`, reason = prepare's blocker line |
-| **merge** | gate first: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")`; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence) | prepare printed `Already green` or fixed every PR it touched, and `ci-ran.mjs` printed `CI: green` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → watch once more, then `hold`; `CI: red` or prepare blocked → `failed`, reason = that line |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` → record **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -92,8 +93,8 @@ Atelier merges this PR. A user-visible change must sit behind a feature flag (re
 
 Under `--unattended` add the line `No human is present: run interview with --non-interactive; a blocking question ends the run.`
 
-- Ready records the head it ran on; re-read the head before the gate, and a head that moved since Ready runs Ready again (`--next` returns `ready`).
-- Never record Ready `proceed` on skipped CI: a draft whose checks were skipped has proven nothing.
+- Ready records the head it ran on and the CI evidence; `--next` returns `ready` when the head moved, or when the Ready `proceed` carries no green evidence for this head (a comment written before evidence existed, or by hand).
+- The merge gate reads CI again at the head, right before the merge: a Ready `proceed` never stands in for CI that is not green now.
 - The gate judges one head, `GATED`; prepare can still push a fix before it merges.
   After the merge, read `gh pr view <pr-url> --json headRefOid -q .headRefOid`; when it differs from `GATED`, run the gate again on the merged PR, and a refusal goes into the merge reason and under `Needs you:` (`merged unchecked head <sha>: <MERGE_GATE line> — add the contract or revert`).
 - `--single` keeps atelier to its one PR; prepare's stack walk would merge PRs atelier never built.
@@ -109,11 +110,28 @@ Under `--unattended` add the line `No human is present: run interview with --non
 ✓ gh pr ready <pr-url> → prepare watches the real CI → proceed; under --keep-draft → hold "CI not run: draft"
 ```
 
+### CI evidence
+
+After `prepare` returns, re-read the head (`prepare` may have pushed a fix), read CI at that head with `prepare`'s own helper, and keep its output as the Ready evidence:
+
+```bash
+SHA=$(gh pr view <pr-url> --json headRefOid -q .headRefOid)
+node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-url> --head "$SHA" > ci.json; tail -1 ci.json
+```
+
+`CI: green` is the only line that allows Ready `proceed`, recorded with `--head "$SHA" --ci-file ci.json`.
+"CI ran" is the helper's rule, the same one `prepare` uses: a required check, or with none required a GitHub Actions check run, completed without being skipped; an external status (Vercel) counts only when the repo marks it required.
+
+```text
+✗ 16 checks SKIPPED, 2 Vercel statuses SUCCESS → prepare "Already green" → Ready proceed
+✓ ci-ran.mjs → CI: not-run — CI not run at b56dfb5: every required check skipped (4) → Ready hold
+```
+
 ### After undrafting
 
-Read `gh pr view <pr-url> --json statusCheckRollup` before `gh pr ready`.
-At least one check, and none concluded `SKIPPED` → CI already ran on the draft (and a workflow without a `ready_for_review` trigger will not run again): go straight to `prepare`.
-An empty rollup, or any `SKIPPED` check → CI has not run on this head: the checks listed right after `gh pr ready` are none or the draft's skipped ones, which `prepare` would read as green.
+Run the [CI evidence](#ci-evidence) command before `gh pr ready`.
+`CI: green`, `red`, or `pending` → CI already ran on the draft (and a workflow without a `ready_for_review` trigger will not run again): go straight to `prepare`.
+`CI: not-run` → CI has not run on this head: the checks listed right after `gh pr ready` are none or the draft's skipped ones, which `prepare` would read as green.
 Re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `gh pr checks <pr-url> --watch`, then call `prepare`.
 No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks started after undraft`.
 
@@ -144,7 +162,7 @@ No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks st
    | `CHECKS p/M FAIL: <ids>`, every listed id `unsatisfiable` in `--statuses` | continue; carry each id into the final `Needs you:` (`AC-4 unsatisfiable: <why>`) and into the Build reason |
    | any other `FAIL` | `failed`, reason = the sentinel line |
 
-3. **Early gate.** `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`.
+3. **Early gate.** `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url> --contract-only` — the contract half only, because CI on a fresh draft has not run yet.
    Exit 0 → continue.
    Exit 1 → send Build back once, for that fix only: `Skill("aw", "<pr-url>: make the merge gate pass — <MERGE_GATE line> <the gate's how-to lines> <build suffix>")` (one paragraph each), then run the gate again; a second exit 1 → Build `refuse`, reason = the `MERGE_GATE:` line.
    Exit 2 → Build `failed`, reason = its stderr.

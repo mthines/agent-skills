@@ -11,7 +11,7 @@ argument-hint: '[<pr-url>|#<n>] [--merge] [--single]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '1.1.0'
   workflow_type: orchestrator
   tags: [pr, stack, ci, conflicts, review-threads, merge, orchestrator, delivery]
 ---
@@ -50,11 +50,19 @@ gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$
 A PR needs work when `mergeable` is `CONFLICTING`, any check is failing, or any review thread is unresolved.
 
 A check still running is not green: `gh pr checks <n> --watch` first, then decide.
-A PR whose checks all concluded `SKIPPED` (a repo that skips CI on drafts) has not run CI: report it as `CI not run (all checks skipped)`, never as green, and do not merge it.
+Then classify the head's CI with the bundled helper; its last line is the answer, its exit code 0 only for `green`:
+
+```bash
+node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-url>   # CI: green|pending|red|not-run — <reason>
+```
+
+CI ran when at least one required check completed without being skipped, or, when the head reports no required check, at least one GitHub Actions check run did.
+External commit statuses and other apps' checks (Vercel, security scanners) never prove CI ran on their own, unless the repo marks one required.
+`CI: not-run` (a repo that skips CI on drafts) → report `CI not run (<its reason>)`, never green, and do not merge it.
 
 ```text
-✗ draft PR, every check SKIPPED, none failing → Already green
-✓ #41 CI not run (all checks skipped)
+✗ draft PR, 16 checks SKIPPED, 2 Vercel statuses SUCCESS, none failing → Already green
+✓ #41 CI not run (CI not run at b56dfb5: every required check skipped (4))
 ```
 
 If no PR needs work and every PR ran CI, print `Already green` (without `--merge`) and stop.
@@ -99,7 +107,7 @@ A PR that is not passing after the fixes is reported as blocked, with the reason
 One line per PR:
 
 ```text
-#1 already green · #2 fixed CI · #3 resolved conflicts · #4 CI not run (all checks skipped)
+#1 already green · #2 fixed CI · #3 resolved conflicts · #4 CI not run (every required check skipped)
 ```
 
 Say `Already green` only when every PR in scope is, and never for a PR whose CI did not run.

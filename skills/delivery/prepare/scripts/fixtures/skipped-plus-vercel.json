@@ -1,0 +1,238 @@
+{
+ "data": {
+  "repository": {
+   "pullRequest": {
+    "headRefOid": "b56dfb5d160f396ced864927a44d363265b1b537",
+    "commits": {
+     "nodes": [
+      {
+       "commit": {
+        "oid": "b56dfb5d160f396ced864927a44d363265b1b537",
+        "statusCheckRollup": {
+         "contexts": {
+          "pageInfo": {
+           "hasNextPage": false,
+           "endCursor": "MTg"
+          },
+          "nodes": [
+           {
+            "__typename": "CheckRun",
+            "name": "job-1",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "required-job-2",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-3",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-4",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-5",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-6",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-7",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-8",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-9",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-10",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-11",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-12",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "job-13",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "required-job-14",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "required-job-15",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "github-actions"
+             }
+            }
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "required-job-16",
+            "status": "COMPLETED",
+            "conclusion": "SKIPPED",
+            "isRequired": true,
+            "checkSuite": {
+             "app": {
+              "slug": "security-scanner"
+             }
+            }
+           },
+           {
+            "__typename": "StatusContext",
+            "context": "Vercel",
+            "state": "SUCCESS",
+            "isRequired": false
+           },
+           {
+            "__typename": "CheckRun",
+            "name": "Vercel Preview Comments",
+            "status": "COMPLETED",
+            "conclusion": "SUCCESS",
+            "isRequired": false,
+            "checkSuite": {
+             "app": {
+              "slug": "vercel"
+             }
+            }
+           }
+          ]
+         }
+        }
+       }
+      }
+     ]
+    }
+   }
+  }
+ }
+}

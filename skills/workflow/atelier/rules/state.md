@@ -13,7 +13,14 @@ The run's state is one PR comment that starts with `<!-- atelier:v1 -->`, edited
 ## Shape
 
 Per stage (`build`, `ready`, `merge`): `decision` (`proceed | skipped | refuse | hold | failed`), `at` (ISO 8601), `sha` (head the stage ran on), `reason`.
-At the top: the last stage recorded and, after a `refuse`, the refusal reason.
+A Ready `proceed` also carries `ci`: the `prepare` helper `ci-ran.mjs`'s verdict (`state`, `ran`, `head`, `reason`), passed as `--record … --ci-file ci.json`.
+`--record` refuses Ready `proceed` (exit 2) unless that verdict is `green` with `ran: true` at `--head`.
+At the top: the last stage recorded and, after a `refuse`, `hold`, or `failed`, its reason (`· refused: …`, `· held: …`, `· failed: …`).
+
+```text
+✗ node state.mjs --record --stage ready --decision proceed --head b56dfb5 --reason "16 checks skipped on draft"
+✓ node ci-ran.mjs --pr <pr-url> --head b56dfb5 > ci.json   # CI: not-run → record Ready hold instead
+```
 
 ## Resume
 
@@ -24,6 +31,7 @@ At the top: the last stage recorded and, after a `refuse`, the refusal reason.
 | no comment | `build` (or `ready` once Build is recorded `skipped` for an existing PR) |
 | a stage with no entry, or `refuse` / `hold` / `failed` | that stage |
 | Ready `proceed` on a head other than the current one, merge not done | `ready` |
+| Ready `proceed` with no `ci` evidence, or evidence that is not `green` on the current head | `ready` |
 | merge `proceed` | `stop` |
 
 ```text

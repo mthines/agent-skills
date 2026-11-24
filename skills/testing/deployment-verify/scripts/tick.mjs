@@ -172,23 +172,39 @@ export function draftContract(criteria, { flagKey = null } = {}) {
 	};
 }
 
-// The feature flags an /aw brief names in its `## Requirements` and `## Guardrails`: a backticked key in one of
-// three shapes — "`checkoutV2` feature flag" / "feature flag `checkoutV2`", "behind the `checkoutV2` flag", or
-// "flag key `checkoutV2`". A bare "`archived` flag" is a record field, not a feature flag, and never counts; nor
-// does a key with a dot, slash, or space. A guardrail names a flag the change must not touch ("Keep the `x` feature
-// flag on"), so `## Guardrails` counts only the "behind" shape. Returns the distinct keys in order; the caller
+// The feature flags an /aw brief names in its `## Requirements`, `## Acceptance Criteria`, and `## Guardrails`: a
+// backticked key in one of three shapes — "`checkoutV2` feature flag" / "feature flag `checkoutV2`", "behind the
+// `checkoutV2` flag", or "flag key `checkoutV2`". An acceptance criterion also names one as "`flag.key` is
+// `checkoutV2`", "the `checkoutV2` flag on/off", "with/when/if/the flag `checkoutV2`" (never the verb "shall flag `x`"),
+// or "read `checkoutV2`" on a line that says
+// "flag". A bare "`archived` flag" is a record field, not a feature flag, and never counts; nor does a key with a
+// dot, slash, or space. A guardrail names a flag the change must not touch ("Keep the `x` feature flag on"), so
+// `## Guardrails` counts only the "behind" shape, and not on a line that keeps, leaves, or forbids something
+// ("Leave the code behind the `legacyCart` flag untouched"). Returns the distinct keys in order; the caller
 // prefills only for one.
-const FLAG_AFTER = /(?:`([A-Za-z][\w-]*)`\s+feature[ -]flag\b|\bbehind\s+(?:the\s+)?`([A-Za-z][\w-]*)`\s+(?:feature[ -])?flag\b)/gi;
-const FLAG_BEFORE = /\b(?:feature[ -]flag|flag\s+key)\s*[:=]?\s*`([A-Za-z][\w-]*)`/gi;
-const FLAG_BEHIND = /\bbehind\s+(?:the\s+)?`([A-Za-z][\w-]*)`\s+(?:feature[ -])?flag\b/gi;
+const KEY = "`([A-Za-z][\\w-]*)`";
+const FLAG_AFTER = new RegExp(`(?:${KEY}\\s+feature[ -]flag\\b|\\bbehind\\s+(?:the\\s+)?${KEY}\\s+(?:feature[ -])?flag\\b)`, "gi");
+const FLAG_BEFORE = new RegExp(`\\b(?:feature[ -]flag|flag\\s+key)\\s*[:=]?\\s*${KEY}`, "gi");
+const FLAG_BEHIND = new RegExp(`\\bbehind\\s+(?:the\\s+)?${KEY}\\s+(?:feature[ -])?flag\\b`, "gi");
+const FLAG_AC = [
+	new RegExp(`\`?\\bflag\\.key\`?\\s+(?:is|=|:)\\s*${KEY}`, "gi"),
+	new RegExp(`${KEY}\\s+(?:feature[ -])?flag\\s+(?:is\\s+)?(?:on|off|enabled|disabled)\\b`, "gi"),
+	new RegExp(`\\b(?:with|when|if|while|unless|the|a|its)\\s+flag\\s+${KEY}`, "gi"),
+];
+const FLAG_AC_READ = new RegExp(`\\breads?\\s+(?:the\\s+)?${KEY}`, "gi");
+const GUARD_KEEP = /\b(?:keep|leave|never|not|untouched|unchanged|don't|unrelated)\b/i;
 export function planFlags(planMd) {
 	const lines = String(planMd || "").split("\n");
 	const keys = [];
 	let section = null;
 	for (const line of lines) {
-		if (/^##\s/.test(line)) { section = /^##\s+(Requirements|Guardrails)\b/i.exec(line)?.[1].toLowerCase() ?? null; continue; }
+		if (/^##\s/.test(line)) { section = /^##\s+(Requirements|Guardrails|Acceptance Criteria)\b/i.exec(line)?.[1].toLowerCase() ?? null; continue; }
 		if (!section) continue;
-		for (const re of section === "requirements" ? [FLAG_AFTER, FLAG_BEFORE] : [FLAG_BEHIND]) for (const m of line.matchAll(re)) { const k = m[1] || m[2]; if (!keys.includes(k)) keys.push(k); }
+		let res;
+		if (section === "requirements") res = [FLAG_AFTER, FLAG_BEFORE];
+		else if (section === "guardrails") res = GUARD_KEEP.test(line) ? [] : [FLAG_BEHIND];
+		else res = [FLAG_AFTER, FLAG_BEFORE, ...FLAG_AC, ...(/\bflag\b/i.test(line) ? [FLAG_AC_READ] : [])];
+		for (const re of res) for (const m of line.matchAll(re)) { const k = m[1] || m[2]; if (!keys.includes(k)) keys.push(k); }
 	}
 	return keys;
 }
@@ -1050,6 +1066,29 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} --draft-contract --from-plan drafts from the brief and prefills flag.key only for exactly one named flag${ok ? "" : ` (${ok1},${ok2},${ok3} ${r1.stderr}${r0.stderr})`}`);
 	}
+	// A flag named only in the acceptance criteria (the real #29652 brief), and a guardrail that leaves a flag alone.
+	{
+		const real = readFileSync(new URL("./fixtures/plan-ac-flag.md", import.meta.url), "utf8");
+		const ac = (lines) => `## Acceptance Criteria\n\n${lines}\n`;
+		const checks = [
+			["the real brief's AC-5/AC-6 name enableAutomationProposeFlow once", JSON.stringify(planFlags(real)) === '["enableAutomationProposeFlow"]', planFlags(real)],
+			["a guardrail that leaves the code behind a flag untouched names no flag", planFlags("## Guardrails\n\n- Leave the code behind the `legacyCart` flag untouched.\n").length === 0],
+			["a guardrail that ships behind a flag still names it", JSON.stringify(planFlags("## Guardrails\n\n- Ship only behind the `newCart` flag.\n")) === '["newCart"]'],
+			["AC shapes: flag.key is, `k` flag on/off, flag `k`", JSON.stringify(planFlags(ac("- [ ] AC-1 — `flag.key` is `a1`.\n- [ ] AC-2 — with the `b2` flag off, nothing renders.\n- [ ] AC-3 — with flag `c3` on, it renders."))) === '["a1","b2","c3"]'],
+			["'When flag `k` is on' names k", JSON.stringify(planFlags(ac("- [ ] AC-1 — When flag `checkoutV2` is on, it renders.\n- [ ] AC-2 — If flag `checkoutV2` is enabled, it saves."))) === '["checkoutV2"]'],
+			["'flag' used as a verb names no flag", planFlags(ac("- [ ] AC-1 — The linter shall flag `any` usages.\n- [ ] AC-2 — The linter does not flag `any` in tests.\n- [ ] AC-3 — It won't flag `any`; it cannot flag `any`; it doesn’t flag `any`.\n- [ ] AC-4 — Lint rules flag `any` usages.")).length === 0],
+			["an AC that reads a key on a line with no 'flag' names none", planFlags(ac("- [ ] AC-1 — The page shall read `userId` from the session.")).length === 0],
+			["a non-AC section is still not scanned", planFlags("## Notes\n\n- `flag.key` is `zz`.\n").length === 0],
+		];
+		const dir = mkdtempSync(join(tmpdir(), "dv-plan-"));
+		writeFileSync(join(dir, "plan.md"), real);
+		const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--draft-contract", "--from-plan", join(dir, "plan.md")], { cwd: dir, encoding: "utf8" });
+		checks.push(["the CLI prefills the real brief's flag", r.status === 0 && JSON.parse(r.stdout).flag?.key === "enableAutomationProposeFlow", r.stderr]);
+		for (const [name, ok, detail] of checks) {
+			if (!ok) failed++;
+			console.log(`${ok ? "ok  " : "FAIL"} --from-plan flags: ${name}${ok ? "" : ` (${JSON.stringify(detail ?? "")})`}`);
+		}
+	}
 	// No flag, before/after: old versions serve before the deploy, the new version after. Version filter splits them.
 	async function noFlagWorld({ afterErrorRate = 0, afterMs = 5, beforeN = 300 }) {
 		let clock = Date.parse("2026-11-11T10:00:00Z");
@@ -1100,7 +1139,7 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${err ? err.message : `${s.outcome} — ${s.reason}`}`);
 	}
-	const total = 28;
+	const total = 37;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
@@ -1126,7 +1165,7 @@ async function draftCommand(a) {
 	console.log(JSON.stringify(draftContract(criteria, { flagKey: flags.length === 1 ? flags[0] : null }), null, 2));
 	if (!planMd) console.error("flag: not read (no --from-plan) — add flag and cohort if the change ships behind one");
 	else if (flags.length === 1) console.error(`flag: ${flags[0]} (named in the brief) — fill flag.provider and cohort`);
-	else if (!flags.length) console.error("flag: none named in the brief's Requirements or Guardrails — left out; add flag and cohort if the change ships behind one");
+	else if (!flags.length) console.error("flag: none named in the brief's Requirements, Acceptance Criteria, or Guardrails — left out; add flag and cohort if the change ships behind one");
 	else console.error(`flag: ${flags.length} named in the brief (${flags.join(", ")}) — left out; add the one this change ships behind`);
 }
 

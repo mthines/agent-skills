@@ -6,7 +6,8 @@
 //
 //   node state.mjs --next   --head <sha> [--body-file <f>]   prints the stage to run: build|ready|merge|stop
 //   node state.mjs --record --stage <s> --decision <d> --head <sha> [--reason <r>] [--pr <n>] [--body-file <f>]
-//                                                          prints the re-rendered comment body
+//                  [--ci-file <f>]                         prints the re-rendered comment body; Ready `proceed`
+//                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
 //   node state.mjs --fetch  --pr <url|n>                    prints the existing comment body via gh (empty when none)
 //   node state.mjs --upsert --pr <url|n> --body-file <f>    edits the sticky comment in place, or creates it (gh)
@@ -39,7 +40,18 @@ export function parse(body) {
 	}
 }
 
-// The first stage that has not completed; a Ready completed on an older head runs again.
+// Is a Ready `proceed` backed by CI that ran green on `head`? The evidence is ci-ran.mjs's JSON
+// (prepare/scripts), stored on the entry; a proceed recorded without it (a legacy comment, a hand edit) is not.
+// Two shas name the same commit when one is a prefix of the other (a 7-char short sha against a full one).
+export const sameSha = (a, b) => !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 7 && (a.startsWith(b) || b.startsWith(a))));
+
+export function readyEvidenceOk(entry, head) {
+	const ci = entry?.ci;
+	if (!ci || ci.state !== "green" || ci.ran !== true || !ci.head) return false;
+	return sameSha(ci.head, entry.sha) && (!head || sameSha(ci.head, head));
+}
+
+// The first stage that has not completed. Ready counts as done only with green CI evidence on the current head.
 export function next(state, head) {
 	if (!state) return "build";
 	const st = state.stages;
@@ -47,20 +59,39 @@ export function next(state, head) {
 	for (const stage of STAGES) {
 		const e = st[stage];
 		if (!e || !DONE.has(e.decision)) return stage;
-		if (stage === "ready" && head && e.sha && e.sha !== head) return "ready";
+		if (stage === "ready" && head && e.sha && !sameSha(e.sha, head)) return "ready";
+		if (stage === "ready" && !readyEvidenceOk(e, head)) return "ready";
 	}
 	return "stop";
 }
 
-export function record(state, { stage, decision, head, reason = "", pr = null, at = new Date().toISOString() }) {
+export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, at = new Date().toISOString() }) {
 	if (!STAGES.includes(stage)) throw new Error(`unknown stage ${stage} (want ${STAGES.join("|")})`);
 	if (!DECISIONS.includes(decision)) throw new Error(`unknown decision ${decision} (want ${DECISIONS.join("|")})`);
 	const s = state ? structuredClone(state) : { v: 1, pr: null, stages: {} };
 	if (pr) s.pr = pr;
-	s.stages[stage] = { decision, at, sha: head || null, reason };
+	const entry = { decision, at, sha: head || null, reason };
+	if (ci) entry.ci = { state: ci.state, ran: ci.ran, head: ci.head, basis: ci.basis, ran_checks: (ci.ran_checks || []).slice(0, 5), reason: ci.reason };
+	// Skipped CI proves nothing: Ready `proceed` is written only with ci-ran.mjs evidence that is green on this head.
+	if (stage === "ready" && decision === "proceed" && !readyEvidenceOk(entry, head)) {
+		const got = ci ? `CI: ${ci.state} at ${String(ci.head || "?").slice(0, 7)} — ${ci.reason}` : "no --ci-file";
+		throw new Error(`Ready proceed needs green CI evidence at ${String(head || "?").slice(0, 7)} (prepare's ci-ran.mjs --pr <url> > ci.json; --ci-file ci.json); got ${got}`);
+	}
+	s.stages[stage] = entry;
 	s.stage = stage;
 	s.refusal = decision === "refuse" ? reason : null;
 	return s;
+}
+
+const HEADER_VERB = { refuse: "refused", hold: "held", failed: "failed" };
+
+// ` · refused|held|failed: <reason>` for the last recorded stage, so a human sees why the run stopped.
+function header(state) {
+	const e = state.stages?.[state.stage];
+	const verb = e && HEADER_VERB[e.decision];
+	if (!verb) return "";
+	const reason = (e.reason || state.refusal || "").replace(/\n/g, " ");
+	return reason ? ` · ${verb}: ${reason}` : ` · ${verb}`;
 }
 
 export function render(state) {
@@ -73,7 +104,7 @@ export function render(state) {
 		MARKER,
 		"### 🧑‍🎨 Atelier",
 		"",
-		`Stage reached: **${state.stage ?? "none"}**${state.refusal ? ` · refused: ${state.refusal}` : ""}`,
+		`Stage reached: **${state.stage ?? "none"}**${header(state)}`,
 		"",
 		"| Stage | Decision | Head | At | Reason |",
 		"| --- | --- | --- | --- | --- |",
@@ -155,9 +186,47 @@ function selfTest() {
 	t("a skipped build counts as done", next(s, "a1") === "ready");
 	s = record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" });
 	t("a failed ready runs ready again", next(s, "a1") === "ready");
-	s = record(s, { stage: "ready", decision: "proceed", head: "a1" });
+	const green = (head) => ({ state: "green", ran: true, head, basis: "actions", ran_checks: ["test"], reason: "1 GitHub Actions check run ran and passed" });
+	let threwNoCi = "";
+	try {
+		record(s, { stage: "ready", decision: "proceed", head: "a1" });
+	} catch (e) {
+		threwNoCi = e.message;
+	}
+	t("Ready proceed without CI evidence is refused", /needs green CI evidence/.test(threwNoCi), threwNoCi);
+	let threwSkipped = "";
+	try {
+		record(s, { stage: "ready", decision: "proceed", head: "a1", ci: { state: "not-run", ran: false, head: "a1", reason: "every required check skipped (4)" } });
+	} catch (e) {
+		threwSkipped = e.message;
+	}
+	t("Ready proceed on skipped CI is refused", /CI: not-run/.test(threwSkipped), threwSkipped);
+	let threwOther = false;
+	try {
+		record(s, { stage: "ready", decision: "proceed", head: "a1", ci: green("z9") });
+	} catch {
+		threwOther = true;
+	}
+	t("Ready proceed with evidence from another head is refused", threwOther);
+	s = record(s, { stage: "ready", decision: "proceed", head: "a1", ci: green("a1") });
 	t("after ready on the same head, merge is next", next(s, "a1") === "merge");
+	t("the CI evidence round-trips through the comment", parse(render(s)).stages.ready.ci.state === "green" && next(parse(render(s)), "a1") === "merge");
 	t("a moved head re-runs ready", next(s, "b2") === "ready");
+	const full = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+	const short = record(s, { stage: "ready", decision: "proceed", head: full.slice(0, 7), ci: green(full) });
+	t("a short --head with full-sha evidence records, and --next matches either form", next(short, full) === "merge" && next(short, full.slice(0, 7)) === "merge");
+	const legacy = structuredClone(s);
+	delete legacy.stages.ready.ci;
+	t("a legacy Ready proceed without evidence re-runs ready", next(legacy, "a1") === "ready");
+	const forged = structuredClone(s);
+	forged.stages.ready.ci = { state: "not-run", ran: false, head: "a1" };
+	t("a Ready proceed whose evidence is not green re-runs ready", next(forged, "a1") === "ready");
+	const tampered = structuredClone(s);
+	tampered.stages.ready.ci.head = "b2";
+	t("evidence from a head other than the entry's re-runs ready", next(tampered, "b2") === "ready");
+	t("a hold names its reason in the header", render(record(s, { stage: "ready", decision: "hold", head: "a1", reason: "CI not run: draft" })).includes("Stage reached: **ready** · held: CI not run: draft"));
+	t("a failure names its reason in the header", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("· failed: CI red"));
+	t("a proceed shows no reason in the header", /Stage reached: \*\*ready\*\*\n/.test(render(s)));
 	s = record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "user-visible diff | no flag" });
 	t("a refused merge resumes at merge", next(s, "a1") === "merge");
 	t("a refusal is surfaced", s.refusal === "user-visible diff | no flag");
@@ -193,7 +262,8 @@ function main() {
 		else if (a.parse) console.log(JSON.stringify(parse(readBody(a)), null, 2));
 		else if (a.next) console.log(next(parse(readBody(a)), a.head));
 		else if (a.record) {
-			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr });
+			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;
+			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci });
 			process.stdout.write(`${render(s)}\n`);
 		} else throw new Error("pass one of --next, --record, --parse, --fetch, --upsert, --self-test");
 	} catch (e) {
