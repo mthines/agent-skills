@@ -14,11 +14,11 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-export const RISK_CLASSES = ["data", "api", "config", "ui", "other"]; // highest risk first
+export const RISK_CLASSES = ["critical", "data", "api", "config", "ui", "other"]; // highest risk first
 export const DEFAULT_MAX_LEVEL = 1;
 
-// The change-shape detector pr-reviewer uses (single source of truth for migrations, API contracts,
-// infra, secrets). Loaded lazily: an install without it classifies nothing (`unknown` → HUMAN).
+// The change-shape detector pr-reviewer uses (single source of truth for auth, payments, secrets,
+// migrations, API contracts, infra). Loaded lazily: an install without it classifies nothing (`unknown` → HUMAN).
 let classifyShape = null;
 try {
 	({ classify: classifyShape } = await import("../../../../agents/pr-reviewer/scripts/classify-shape.mjs"));
@@ -41,9 +41,10 @@ export function riskClass(files, classify = classifyShape) {
 	const prod = (files || []).filter((f) => f?.filename && !TEST_RE.test(f.filename) && !DOCS_RE.test(f.filename));
 	if (!prod.length) return "other";
 	const shapes = new Set(classify(prod).shapes || []);
+	if (shapes.has("auth") || shapes.has("payments") || shapes.has("secrets")) return "critical";
 	if (shapes.has("schema-migration")) return "data";
 	if (shapes.has("api-contract")) return "api";
-	if (shapes.has("infra") || shapes.has("secrets") || prod.some((f) => CONFIG_RE.test(f.filename))) return "config";
+	if (shapes.has("infra") || prod.some((f) => CONFIG_RE.test(f.filename))) return "config";
 	if (prod.some((f) => UI_RE.test(f.filename))) return "ui";
 	return "other";
 }
@@ -89,7 +90,7 @@ function selfTest() {
 		["HUMAN: no signal yet", rule, { ...earned, signal: null }, "HUMAN"],
 	];
 	const fakeClassify = (files) => ({
-		shapes: files.flatMap((f) => (/migrations\//.test(f.filename) ? ["schema-migration"] : /openapi/.test(f.filename) ? ["api-contract"] : [])),
+		shapes: files.flatMap((f) => (/migrations\//.test(f.filename) ? ["schema-migration"] : /openapi/.test(f.filename) ? ["api-contract"] : /auth\//.test(f.filename) ? ["auth"] : [])),
 	});
 	const rcCases = [
 		["risk class: ui", [{ filename: "apps/web/src/components/Button.tsx" }], "ui"],
@@ -97,6 +98,7 @@ function selfTest() {
 		["risk class: data", [{ filename: "db/migrations/0042_add.sql" }, { filename: "api/openapi.yaml" }], "data"],
 		["risk class: config", [{ filename: ".github/workflows/ci.yml" }, { filename: "src/app/page.tsx" }], "config"],
 		["risk class: other", [{ filename: "src/lib/math.ts" }, { filename: "README.md" }], "other"],
+		["risk class: auth outranks a migration (critical)", [{ filename: "services/auth/session.ts" }, { filename: "db/migrations/0042_add.sql" }], "critical"],
 		["risk class: backend code under app/ is not ui", [{ filename: "app/models/user.rb" }, { filename: "src/app/api/users/route.ts" }, { filename: "backend/app/db/queries.py" }], "other"],
 		["risk class: tests and docs only are other", [{ filename: "src/x.test.ts" }, { filename: "docs/a.md" }], "other"],
 		["risk class: unknown without the detector", [{ filename: "src/x.ts" }], "unknown", null],
@@ -116,9 +118,9 @@ function selfTest() {
 	}
 	// The real detector, when installed: a migration path is data.
 	if (classifyShape) {
-		const ok = riskClass([{ filename: "db/migrations/0042_add.sql" }]) === "data";
+		const ok = riskClass([{ filename: "db/migrations/0042_add.sql" }]) === "data" && riskClass([{ filename: "src/payments/charge.ts" }]) === "critical";
 		if (!ok) failed++;
-		console.log(`${ok ? "ok  " : "FAIL"} risk class: pr-reviewer's classify-shape detects a migration`);
+		console.log(`${ok ? "ok  " : "FAIL"} risk class: pr-reviewer's classify-shape detects a migration and a payments path`);
 	}
 	const total = recCases.length + rcCases.length + (classifyShape ? 1 : 0);
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);

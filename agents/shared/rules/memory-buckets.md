@@ -111,7 +111,7 @@ hosts and silently halve every usage roll-up.
 | --- | --- | --- | --- | --- |
 | `deployment-verify-autonomy` | [`deployment-verify/rules/autonomy.md`](../../../skills/testing/deployment-verify/rules/autonomy.md) | `deployment-verify` `scripts/signal.mjs` (a human approve or override at a hold, a ROLLBACK verdict, a recorded revert) → `deployment-verify` `scripts/promote.mjs` at each hold | durable 60d, refreshed on write | At each hold, only when `release.yml` has a `promotion:` rule. |
 
-`kind: signal`, `host: deployment-verify`, set explicitly; scope `repo::{owner}/{repo}`, one record per risk class (`data`, `api`, `config`, `ui`, `other`), written with `expected_version`.
+`kind: signal`, `host: deployment-verify`, set explicitly; scope `repo::{owner}/{repo}`, one record per risk class (`critical`, `data`, `api`, `config`, `ui`, `other`), written with `expected_version`.
 It is advisory: it shapes an `AUTO` / `HUMAN` recommendation printed beside a hold, and nothing advances or flips a flag because of it.
 
 ### Knowledge (`codebase-knowledge`, keys `knowledge::<symbol>@<path>` and `hotspot::<path>`)

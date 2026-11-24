@@ -35,7 +35,7 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui, co
 | No `promotion:` rule, or `min_agree_streak` not a positive integer | `HUMAN` |
 | No evidence | `HUMAN` |
 | LoreKit not configured or unreachable (`available: false`) | `HUMAN` |
-| Risk class not one of `data`, `api`, `config`, `ui`, `other` | `HUMAN` |
+| Risk class not one of `critical`, `data`, `api`, `config`, `ui`, `other` | `HUMAN` |
 | Risk class not in `risk_classes` | `HUMAN` |
 | No signal yet for the risk class | `HUMAN` |
 | The contract's `model` differs from the signal's | `HUMAN` |
@@ -49,9 +49,10 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui, co
 
 | Class | When |
 | --- | --- |
+| `critical` | `auth`, `payments`, or `secrets` shape (pr-reviewer's high-stakes paths) |
 | `data` | `schema-migration` shape (a migration path, or `ALTER`/`CREATE`/`DROP TABLE`) |
 | `api` | `api-contract` shape (`.proto`, `.graphql`, OpenAPI, route handlers) |
-| `config` | `infra` or `secrets` shape, or a `.github/`, `config/`, `deploy/`, `.ya?ml`, `.toml`, `.env` path |
+| `config` | `infra` shape, or a `.github/`, `config/`, `deploy/`, `.ya?ml`, `.toml`, `.env` path |
 | `ui` | `.tsx`, `.jsx`, `.vue`, `.svelte`, a stylesheet, or a `components/`, `pages/`, `ui/` path |
 | `other` | anything else, and a tests-and-docs-only diff |
 
