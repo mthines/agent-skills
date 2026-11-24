@@ -43,7 +43,7 @@ A contract is the author's, so the cheapest place to fix a missing one is while 
 Atelier exists to merge, so Ready marks a draft ready for review before `prepare`: many repos skip most CI jobs on drafts, and a draft whose checks were skipped reads as green while proving nothing.
 `--keep-draft` is for a caller that must not undraft; it trades the merge for a `hold` that says why.
 "CI ran" is one rule in one script, `prepare`'s `ci-ran.mjs`, so `prepare` and atelier cannot disagree about it: a required check, or with none required a GitHub Actions check run, completed without being skipped.
-External statuses do not count because preview deployers such as Vercel report success on drafts whose real CI was skipped, so "any check passed" certifies nothing.
+An external status counts only when the repo marks it required, because preview deployers such as Vercel report success on drafts whose real CI was skipped, so "any check passed" certifies nothing.
 The helper lives with `prepare` because `prepare` must stand alone; atelier calls it by path.
 A Ready `proceed` stores the verdict it was based on, and the merge gate reads CI again at the head right before the merge, because a state comment is data anyone can edit and a comment written before the evidence existed must not be trusted on resume.
 
