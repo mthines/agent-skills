@@ -221,7 +221,7 @@ Intent source: /aw brief | PR + ticket | diff only
 <two sentences: what the feature does and for whom>
 
 ## Acceptance criteria
-- AC-1 [ui:/settings/notifications] …   (spec: specs.md Spec 1)   # the PR copy adds a leading ⬜ ✅ ❌ ⏭️
+- AC-1 [ui:/settings/notifications] …   (spec: specs.md Spec 1)   # `--marks --local` adds a leading ⬜ ✅ ❌ ⏭️ here at the end of the run, and the PR copy carries them too
 - AC-2 [api:PUT /api/notification-settings] …
 
 ## Guardrails
