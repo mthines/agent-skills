@@ -162,12 +162,15 @@ export function validateContract(contract, config) {
 		if (base === undefined) return `unknown threshold ${k}`;
 		if ((k.startsWith("max_") && v > base) || (k.startsWith("min_") && v < base)) return `contract loosens ${k} — thresholds may only tighten`;
 	}
-	// A configured hold the rollout cannot reach (contract steps, a boolean provider) would ship unheld: stop instead.
-	if (contract.flag && config.hold_after !== undefined && config.hold_after !== null) {
-		const steps = stepsFor(contract, config);
-		if (!steps.slice(0, -1).includes(config.hold_after)) return `hold_after: ${config.hold_after} is not a step before the last in this rollout's steps ${JSON.stringify(steps)}`;
-	}
 	return null;
+}
+
+// Before step 1 only: a configured hold the rollout cannot reach (contract steps, a boolean provider) would
+// ship unheld, so the rollout stops instead. A rollout already in flight is never stopped by a later config edit.
+export function checkHoldReachable(contract, config) {
+	if (!contract.flag || config.hold_after === undefined || config.hold_after === null) return null;
+	const steps = stepsFor(contract, config);
+	return steps.slice(0, -1).includes(config.hold_after) ? null : `hold_after: ${config.hold_after} is not a step before the last in this rollout's steps ${JSON.stringify(steps)}`;
 }
 
 function providerFor(contract, config) {
@@ -893,8 +896,9 @@ async function selfTest() {
 			const rolled = { ...ticked, phase: "done", outcome: "ROLLED_BACK", rollback_verdict: "error rate", ended_at: "T" };
 			report("hold: an approving tick that rolls back records approve, then rollback", JSON.stringify(signalEvents(s, rolled, {}).map((e) => e.type)) === '["approve","rollback"]');
 		}
-		report("hold: a contract whose steps skip hold_after stops before step 1", /hold_after: 10 is not a step/.test(validateContract({ ...contract, steps: [1, 25, 100] }, holdConfig) || "") && validateContract(contract, holdConfig) === null
-			&& /hold_after: 10 is not a step/.test(validateContract(contract, { ...holdConfig, flags: { providers: [{ name: "sim", rollout: "boolean" }] } }) || ""));
+		report("hold: a contract whose steps skip hold_after stops before step 1", /hold_after: 10 is not a step/.test(checkHoldReachable({ ...contract, steps: [1, 25, 100] }, holdConfig) || "") && checkHoldReachable(contract, holdConfig) === null
+			&& /hold_after: 10 is not a step/.test(checkHoldReachable(contract, { ...holdConfig, flags: { providers: [{ name: "sim", rollout: "boolean" }] } }) || "")
+			&& validateContract({ ...contract, steps: [1, 25, 100] }, holdConfig) === null);
 		report("hold: hold_after must be a step before the last", checkHoldAfter({ steps: [1, 10, 50, 100] }) === null && checkHoldAfter({ hold_after: 10 }) === null && /must be one of/.test(checkHoldAfter({ hold_after: 100 }) || "") && /must be one of/.test(checkHoldAfter({ hold_after: 5 }) || ""));
 	}
 	// Deploy detection: a later commit that contains the merge counts as live; an older one does not.
@@ -1074,9 +1078,10 @@ async function main() {
 	if (a.local) {
 		const contract = JSON.parse(readFileSync(a.contract, "utf8"));
 		const cfg = configFor(contract);
-		const err = validateContract(contract, cfg);
+		const local = localStore(a.local);
+		const err = validateContract(contract, cfg) || (local.read() ? null : checkHoldReachable(contract, cfg));
 		if (err) throw new Error(err);
-		const s = await runOne({ store: localStore(a.local), contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run, decision, slug });
+		const s = await runOne({ store: local, contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run, decision, slug });
 		console.log(renderReport(s, contract, null).split("\n").slice(2, -2).join("\n"));
 		return process.exit(exitFor(s));
 	}
@@ -1101,7 +1106,7 @@ async function main() {
 					invalid = e.message;
 				}
 			}
-			invalid ||= validateContract(contract, cfg);
+			invalid ||= validateContract(contract, cfg) || (store.read() ? null : checkHoldReachable(contract, cfg));
 			if (invalid) {
 				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: cfg.env, steps: [] };
 				store.write(renderReport(s, contract || {}, store.pr));
