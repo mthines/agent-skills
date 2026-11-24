@@ -1,10 +1,10 @@
 ---
-name: optimize-approach
+name: fit
 description: >
   Judges whether a change or plan takes the best approach for its intent
   (codebase-fit, simplicity, performance, robustness) and proposes at most two
   materially better ones; says nothing when the approach is already sound.
-  Slash-invoked: "/optimize-approach [<files>|<plan path>]".
+  Slash-invoked: "/fit [<files>|<plan path>]".
 disable-model-invocation: true
 argument-hint: '[<files> | <plan.md path>] [--base <ref>]'
 license: MIT

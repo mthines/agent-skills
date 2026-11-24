@@ -1,5 +1,5 @@
 ---
-description: branch-reviewer at deep tier must auto-load the built-in optimize-approach lens and flag a shared package that starts importing from an app.
+description: branch-reviewer at deep tier must auto-load the built-in fit lens and flag a shared package that starts importing from an app.
 tags: [review-lens]
 max_turns: 10
 timeout_seconds: 1500

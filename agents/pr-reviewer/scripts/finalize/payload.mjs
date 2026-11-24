@@ -287,7 +287,7 @@ const RENDER_EXTRAS = [
  * finalize-invented "Verdict: …" line the model never wrote; `verdict`/`analysis_confidence`
  * stay real schema fields used elsewhere (e.g. the inline-pointer gate,
  * `optimality-review.md § Inline pointer`), not rendering inputs.
- * `optimize-approach/templates/proposal.template.md`'s first line IS this exact heading (D6) —
+ * `fit/templates/proposal.template.md`'s first line IS this exact heading (D6) —
  * the lens's own template opens with it, so a model that echoes the template rather than starting
  * its content after it hands `card_body` back already carrying a first copy. Strip a LEADING
  * occurrence of the heading pattern (any `path:line`, not only this card's own anchor — a model

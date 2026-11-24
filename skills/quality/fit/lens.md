@@ -10,7 +10,7 @@ min-tier: deep
 
 ## Trigger
 
-Every `deep` review (large, risky, or `--effort high` PRs), on any file; name it with `--with optimize-approach` to run it on a smaller review.
+Every `deep` review (large, risky, or `--effort high` PRs), on any file; name it with `--with fit` to run it on a smaller review.
 It judges the shape of the solution against the codebase it lands in, not its lines.
 The always-on `quality` checklist already flags a duplicated helper, a pattern that differs from its neighbours, and a simpler approach in one hunk; this lens looks across the whole change.
 

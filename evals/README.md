@@ -83,6 +83,6 @@ A `tool_used: Skill` grader is a plugin-fired indicator in a two-arm run (`score
 | `review-lens-team-control` | `branch-reviewer` + `.agents/review/lenses/` | reviewer dispatched; findings never name it for a change outside `applies-to` |
 | `review-lens-builtin-tdd` | `branch-reviewer` + built-in `tdd` lens | reviewer dispatched; flags a test that mocks its own module and asserts call counts |
 | `review-lens-builtin-tdd-tautology` | `branch-reviewer` + built-in `tdd` lens | reviewer dispatched; flags tests that assert a mock's own return value or re-derive the expected value |
-| `review-lens-builtin-approach` | `branch-reviewer --effort high` + built-in `optimize-approach` lens | reviewer dispatched; flags a shared package importing from an app |
+| `review-lens-builtin-approach` | `branch-reviewer --effort high` + built-in `fit` lens | reviewer dispatched; flags a shared package importing from an app |
 | `trigger-critical`, `trigger-confidence`, `trigger-behavioral-design-1on1s` | each named skill | `Skill` fired |
 | `trigger-neg-aw-question`, `trigger-neg-aw-here` | `aw` | `aw` / `autonomous-workflow` not fired |
