@@ -217,6 +217,7 @@ export function renderPrecision(rows) {
     const status = r.eligible ? "eligible" : r.n < MIN_SAMPLE ? `insufficient (n<${MIN_SAMPLE})` : `below ${PRECISION_THRESHOLD}`;
     lines.push(`${r.type}\t${r.acted}/${r.n}\t${r.precision === null ? "-" : r.precision.toFixed(2)}\t${r.unknown}\t${status}`);
   }
+  if (!rows.length) lines.push("precision: 0 events read — check the LoreKit token, scope, and tag the events were listed with");
   lines.push(`precision: ${rows.length} types, ${rows.filter((r) => r.eligible).length} eligible (threshold ${PRECISION_THRESHOLD}, n >= ${MIN_SAMPLE})`);
   return lines.join("\n");
 }
@@ -316,6 +317,12 @@ function main(argv) {
     } else {
       if (!opts.findings || !opts.later) throw new Error("needs --findings <file> and --later <ref>");
       classified = classifyAll(parseFindings(readInput(opts.findings)), opts.later, opts.cwd || process.cwd(), opts.since || "");
+    }
+    // Recorded events from an earlier run must carry the window they were classified with.
+    const unwindowed = classified.filter((c) => !c.since).length;
+    if (opts.record && unwindowed) {
+      console.log(`Degraded: quality finding outcomes — not recorded (${unwindowed} of ${classified.length} events have no since: the PR's opening head is unknown)`);
+      return 0;
     }
     if (!opts.record) {
       console.log(JSON.stringify({ later: opts.later, outcomes: classified }, null, 2));
@@ -429,6 +436,12 @@ function selfTest() {
   eq("write failure degrades", bad.written === 0 && /^Degraded: /.test(bad.degraded || ""), true);
 
   const noSince = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--record", "--findings", "/dev/null", "--later", "HEAD", "--repo", "o/r", "--pr", "1"], { encoding: "utf8", env: { ...process.env, LOREKIT_API_KEY: "k" } });
+  const evDir = mkdtempSync(join(tmpdir(), "finding-outcomes-ev-"));
+  writeFileSync(join(evDir, "ev.json"), JSON.stringify({ outcomes: [{ fp: "a", type: "reuse", outcome: "acted", path: "x", head_sha: "h", later: "l" }] }));
+  const evNoSince = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--record", "--events-from", join(evDir, "ev.json"), "--repo", "o/r", "--pr", "1"], { encoding: "utf8", env: { ...process.env, LOREKIT_API_KEY: "k" } });
+  rmSync(evDir, { recursive: true, force: true });
+  eq("--events-from without since degrades", [evNoSince.status, /^Degraded: .*have no since/.test(evNoSince.stdout)], [0, true]);
+  eq("empty precision warns", /0 events read/.test(renderPrecision([])), true);
   eq("record without --since degrades", [noSince.status, /^Degraded: .*no --since/.test(noSince.stdout)], [0, true]);
 
   if (fails.length) { console.error(fails.map((f) => `✗ ${f}`).join("\n")); console.log("finding-outcomes self-test: FAIL"); return 1; }

@@ -65,7 +65,7 @@ fi
 
 1. The call never blocks a merge: run it after the merge, and print any `Degraded:` line it emits as the caller's own.
 2. Without `--record`, the script prints the classified JSON and writes nothing — use it to inspect a PR.
-3. `--events-from <file>` records an earlier run's printed JSON instead of classifying again.
+3. `--events-from <file>` records an earlier run's printed JSON instead of classifying again; every event must carry the `since` it was classified with, else nothing is recorded and a `Degraded:` line prints.
 
 ## The bus event
 
@@ -87,11 +87,14 @@ Read the events back, then summarize:
 ```bash
 AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"
 EVENTS=$(mktemp)
-npx --yes @lorekit/cli@1.78.0 list --scope "repo::acme/web" --tags "loop::quality-finding-outcomes" --json > "$EVENTS"
+# list reads only LOREKIT_TOKEN and LOREKIT_MCP_URL; map the recorder's LOREKIT_API_KEY onto them.
+LOREKIT_TOKEN="${LOREKIT_TOKEN:-$LOREKIT_API_KEY}" \
+LOREKIT_MCP_URL="${LOREKIT_MCP_URL:-https://pqokxlhvnosogizsjztg.supabase.co/functions/v1/mcp}" \
+  npx --yes @lorekit/cli@1.78.0 list --scope "repo::acme/web" --tags "loop::quality-finding-outcomes" --json > "$EVENTS"
 node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --precision "$EVENTS"
 ```
 
-The input is a JSON array of events, or any JSON holding `entries` arrays of LoreKit records whose `value` is an event (`lorekit list --json`, MCP `memory.list`); a finding recorded twice counts once, and `--json` prints rows instead of the table.
+The input is a JSON array of events, or any JSON holding `entries` arrays of LoreKit records whose `value` is an event (`lorekit list --json`, MCP `memory.list`); a finding recorded twice counts once, zero events prints a `0 events read` warning, and `--json` prints rows instead of the table.
 Each type prints `acted/(acted+dismissed)`, the precision, and its `unknown` count, and is `eligible` only at precision ≥ 0.6 **and** n ≥ 10 decided events (`PRECISION_THRESHOLD`, `MIN_SAMPLE` in the script).
 
 ```text
