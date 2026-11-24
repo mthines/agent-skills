@@ -111,7 +111,9 @@ function read(ref, env, run) {
 	try {
 		out = run(["show", "--scope", ref.scope, "--key", ref.key, "--json"], env);
 	} catch (err) {
+		// `show` exits 1 on a missing key with JSON on stdout; no stdout is a timeout, a missing npx, or a crash.
 		out = String(err.stdout || "");
+		if (!out.trim()) return { status: "unavailable", reason: `LoreKit CLI failed: ${String(err.code === "ETIMEDOUT" ? "timed out" : err.message || err).split("\n")[0]}` };
 	}
 	return parseShow(out);
 }
@@ -211,6 +213,7 @@ function selfTest() {
 		["conflict: second conflict is Degraded", (() => { const f = fakeLorekit({ stored: { ...EMPTY }, version: 3, conflicts: 2 }); const r = updateSignal({ repo: "a/b", risk: "ui", event: ap(90), rule, env, run: f.run }); return r.status === "degraded" && /conflicted twice/.test(r.line) && f.calls.length === 4; })()],
 		["io: unreachable LoreKit reads as available: false", (() => { const f = fakeLorekit({ available: false }); const r = readEvidence({ repo: "a/b", risk: "ui", env, run: f.run }); return r.evidence.available === false && /^Degraded:/.test(r.line); })()],
 		["io: no token is Degraded without a call", (() => { const f = fakeLorekit(); const r = updateSignal({ repo: "a/b", risk: "ui", event: ap(90), rule, env: null, run: f.run }); return r.status === "degraded" && f.calls.length === 0; })()],
+		["io: a CLI failure with no output names the failure", (() => { const r = readEvidence({ repo: "a/b", risk: "ui", env, run: () => { throw Object.assign(new Error("spawnSync npx ETIMEDOUT"), { code: "ETIMEDOUT" }); } }); return r.evidence.available === false && /timed out/.test(r.line); })()],
 		["io: a record without a version is never written blind", parseShow(JSON.stringify({ remote: { available: true, found: true, record: { value: "{}" } } })).status === "unavailable"],
 		["io: key is per repo × risk class, lower-cased", JSON.stringify(signalKey("Acme/Web", "data")) === '{"scope":"repo::acme/web","key":"deployment-verify-autonomy::data"}'],
 	];
