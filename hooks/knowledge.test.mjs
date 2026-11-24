@@ -23,7 +23,8 @@ import {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'knowledge-hooks-'));
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+// Detached prefetch workers may still be writing their cache entry when the suite ends.
+after(() => fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
 
 const REL = 'components/agents/src/workers/providers/docker/wrapper.ts';
 const entry = (key, value) => ({ key, value: typeof value === 'string' ? value : JSON.stringify(value) });

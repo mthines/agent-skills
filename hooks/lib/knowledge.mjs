@@ -226,10 +226,8 @@ const clip = (s, n) => (typeof s === 'string' && s.length > n ? `${s.slice(0, n 
 const SYMBOL = /^[#A-Za-z_$][\w$.#]*$/;
 
 function symbolsOf(value, key, rel) {
-  // The key ends in `@<rel>`; the path itself may contain `@` (`packages/@scope/x.ts`).
-  const fromKey = key.endsWith(`@${rel}`)
-    ? key.slice('knowledge::'.length, key.length - rel.length - 1)
-    : key.slice('knowledge::'.length, key.lastIndexOf('@'));
+  // The caller guarantees the key ends in `@<rel>`; the path itself may contain `@` (`packages/@scope/x.ts`).
+  const fromKey = key.slice('knowledge::'.length, key.length - rel.length - 1);
   const raw = typeof value.symbol === 'string' ? value.symbol : fromKey;
   return raw
     .split(/[\s/,]+/)
