@@ -53,7 +53,8 @@ memory.write {
 At the start of every run, before any stage:
 
 1. List merged atelier PRs: `memory.list { kind: "bus", host: "atelier", tags: ["loop::atelier-decisions"], limit: 100 }`, keep `event: decision`, `stage: merge`, `decision: proceed` rows of this repo that carry `merge_sha`.
-2. Drop each PR that already has a final outcome: `memory.read { refs: ["{scope}::atelier-decisions::pr-{n}-outcome"] }`.
+2. Read each PR's stored outcome: `memory.read { refs: ["{scope}::atelier-decisions::pr-{n}-outcome"] }`, keeping its `outcome` and `version`.
+   Drop only PRs whose stored outcome is `reverted`; a stored `clean` or `hotfixed` can still turn into `reverted`.
 3. Classify the rest in one call, on a fetched base:
 
    ```bash
@@ -61,21 +62,27 @@ At the start of every run, before any stage:
    node "${CLAUDE_SKILL_DIR}/scripts/outcomes.mjs" --merged '[{"pr":41,"sha":"<merge_sha>"}]' --base origin/<default-branch>
    ```
 
-4. For each result with `final: true`, write one event with `expected_version: 0`, so a second run cannot write it twice:
+4. For each result with `final: true` whose `outcome` differs from the stored one, write the event with `expected_version` set to the stored `version` (`0` when none), so two concurrent runs cannot both write it:
 
    ```text
-   memory.write { scope: <the PR's scope>, key: "atelier-decisions::pr-{n}-outcome", expected_version: 0,
+   memory.write { scope: <the PR's scope>, key: "atelier-decisions::pr-{n}-outcome", expected_version: <stored version | 0>,
                   kind: "bus", host: "atelier", tags: ["loop::atelier-decisions"], ttl_days: 90,
                   value: "<outcome + evidence commits as JSON>",
                   attributes: { event: "outcome", repo: "{owner}/{repo}", pr: {n}, outcome: "clean|reverted|hotfixed",
                                 merge_sha: "<sha>", evidence_shas: "<comma list>" } }
    ```
 
-5. A result with `final: false` (clean, window still open) writes nothing; a later run classifies it again.
+5. A result with `final: false` (clean, window still open), or with the stored outcome, writes nothing; a later run classifies it again.
+6. Classify only PRs whose merge event is still listed: the 90-day TTL bounds the sweep.
 
 ```text
 ✗ write "clean" the day after the merge                  # a hotfix on day 5 can no longer be recorded
 ✓ write only final results; clean becomes final after --days (default 14)
+```
+
+```text
+✗ skip a PR because a "clean" outcome is stored         # its revert on day 30 is never recorded
+✓ re-classify it; "clean" → "reverted" updates the record at its stored version
 ```
 
 ## When LoreKit is absent

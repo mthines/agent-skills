@@ -5,7 +5,8 @@
 //   reverted  a later commit reverts it ("This reverts commit <sha>", or a "Revert …(#<pr>)" subject), at any age
 //   hotfixed  a later commit within --days touches one of its files and its subject says fix, hotfix, or revert
 //   clean     neither
-// `final` is true once the outcome can no longer change: reverted or hotfixed, or clean with the window closed.
+// `final` is true once the outcome is worth recording: reverted or hotfixed, or clean with the window closed.
+// Only `reverted` never changes; a recorded clean or hotfixed PR can still be reverted later, so callers re-check it.
 //
 //   node outcomes.mjs --pr <n> --sha <squash sha> [--base origin/main] [--days 14] [--repo-dir .] [--now <ISO>]
 //   node outcomes.mjs --merged '[{"pr":12,"sha":"abc…"}]'   or   --input <file.json>   (same shape)
