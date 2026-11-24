@@ -73,9 +73,9 @@ The script also does what a region author must not do by hand:
 | --- | --- |
 | Replaces `{{UPDATED}}` with the write time (`YYYY-MM-DD HH:MM UTC`) | The time a reviewer sees matches **Previous runs** |
 | Adds the blank lines GitHub needs after `</summary>` and before `</details>` | Without them the reviewer sees raw Markdown |
-| Folds a `ui` or `telemetry` region on an older commit than the PR head (read from the PR; the region just written when it cannot be read) into one closed `Older run on <sha7>: <headline>` row, including a late run on an older commit. **The `aggregate` never folds**: on an older commit it stays open and gains one line, `Tested on <sha7>; the PR head is now <sha7>`, because a PR that holds only closed rows shows no verdict. Re-run on the head to clear the line |
-| Refuses (CLI) an `aggregate` whose text outside `<details>` is only its headline: the summary, what needs a human and the findings go in the open, above **Details**. The gate (`--check`) fails the same report |
-| Uploads every local image and recording the region names (`![alt](path)`, `<img src>`, or a bare `.mp4`, `.mov`, `.webm` line) to GitHub and swaps the path for its `user-attachments` URL, before the write. `--no-upload` turns it off. A file that is missing or over 10 MB stays a path, and the local-path refusal then names it | A stale ✅ never reads as the current verdict, and never takes space |
+| Folds a `ui` or `telemetry` region on an older commit than the PR head (read from the PR; the region just written when it cannot be read) into one closed `Older run on <sha7>: <headline>` row, including a late run on an older commit. **The `aggregate` never folds**: on an older commit it stays open and gains one line, `Tested on <sha7>; the PR head is now <sha7>`, because a PR that holds only closed rows shows no verdict. Re-run on the head to clear the line | A stale ✅ never reads as the current verdict, and the aggregate never hides |
+| Refuses (CLI) an `aggregate` whose text outside `<details>` is only its headline: the summary, what needs a human and the findings go in the open, above **Details**. The gate (`--check`) fails the same report | A reviewer who sees only closed rows learns nothing; the text must reach at least 40 characters outside `<details>` |
+| Uploads every local image and recording the region names (`![alt](path)`, `<img src>`, or a bare `.mp4`, `.mov`, `.webm` line) to GitHub and swaps the path for its `user-attachments` URL, before the write. `--no-upload` turns it off. A file that is missing or over 10 MB stays a path, and the local-path refusal then names it | A report never ships a path a reviewer cannot open. `--dry-run` and `--print` skip the upload and the refusal, so use them only to preview |
 | Posts one notice comment, `Verify re-ran on <sha7>: ✅ → ❌. See the report`, first line `<!-- verify:notice -->`, when a run changes the verdict glyph a reader last saw (the section's own, else the report's first region), also when the report lives in the body | Editing a comment or a description notifies nobody; a changed verdict must |
 
 ## When to post
@@ -324,7 +324,7 @@ node "$VC" --pr <pr-url> --section <aggregate|ui|telemetry> --file <run dir>/com
 | Exit | Meaning | Do |
 | --- | --- | --- |
 | `0` | Prints the PR URL (report in the description) or the comment URL | Report it |
-| `1` | Refused: a local path, a verify marker, or a screenshot or recording a reviewer must click to see | Replace the path with its uploaded URL or `not attached (<reason>)`; move media into the strip under the verdict (an impact-map `<picture>` in Details is allowed); then write once more |
+| `1` | Refused: a local path, a relative image or recording path, an aggregate that is only collapsed blocks, a verify marker, or a screenshot or recording a reviewer must click to see | Replace the path with its uploaded URL or `not attached (<reason>)`; move media into the strip under the verdict (an impact-map `<picture>` in Details is allowed); then write once more |
 | `2` | `gh` failed | `comment: failed (<stderr first line>)`; never retry in a loop |
 
 Pass `--to body` or `--to comment` only when the user asks for that place; the default picks it (§ Where the report lives).

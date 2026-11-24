@@ -106,6 +106,13 @@ export function visibleBody(region) {
   return open.join("\n").length >= 40;
 }
 
+// A markdown image, <img>/<video> src or bare recording line that is not an https URL: after the upload
+// step it can only be a relative path that did not upload, which GitHub renders as a broken image.
+export function relativeMediaLine(text) {
+  for (const m of text.matchAll(MEDIA_REF)) { const path = m[2] ?? m[6] ?? m[8]; if (path && !/^https?:/.test(path)) return path; }
+  return null;
+}
+
 export function localPathLine(text) {
   return text.split("\n").find((l) => LOCAL_PATH.test(l)) ?? null;
 }
@@ -410,7 +417,7 @@ export async function uploadMedia(content, { slug, baseDirs, log = (m) => consol
     const r = await fetch(`https://uploads.github.com/user-attachments/assets?name=${encodeURIComponent(basename(file))}&content_type=${encodeURIComponent(type)}&repository_id=${repoId}`, { method: "POST", headers: { ...auth, "Content-Type": "application/octet-stream" }, body: read(file) });
     const url = r.ok ? (await r.json()).url : null;
     if (!url) { log(`verify-comment: upload failed (${r.status}): ${path}`); continue; }
-    out = out.split(path).join(url);
+    out = out.replace(new RegExp(`(?<![\\w./-])${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g"), () => url);
     log(`verify-comment: uploaded ${basename(file)}`);
   }
   return out;
@@ -636,6 +643,7 @@ function selfTest() {
   assert(withUi.includes("Tested on `aaaaaaa`; the PR head is now `bbbbbbb`") && !withUi.includes("<summary>Older run on <code>aaaaaaa</code>") && parseRegions(withUi).get("aggregate") === "## ✅ Verified — x\n\n<sub>`aaaaaaa`</sub>", "an aggregate on an older commit stays open with a banner, never folds, and the banner never becomes part of the region");
   const uiOld = splice(splice("", "ui", "### ❌ y\n\n<sub>`aaaaaaa`</sub>", { now: t }), "aggregate", "## ✅ Verified — x\n\n<sub>`bbbbbbb`</sub>", { now: t });
   assert(uiOld.includes("<details><summary>Older run on <code>aaaaaaa</code>: ❌ y</summary>") && parseRegions(uiOld).get("ui") === "### ❌ y\n\n<sub>`aaaaaaa`</sub>", "a ui region on an older commit still folds to one closed line");
+  assert(relativeMediaLine("![a](shots/a.png)") === "shots/a.png" && relativeMediaLine("rec/x.mp4") === "rec/x.mp4" && relativeMediaLine(`![a](${url}) and ${url}`) === null, "a relative media path is found; an uploaded URL is not");
   assert(visibleBody("## ✅ x\n\n<details><summary>a</summary>\n\nlots of hidden words here, more than forty characters long\n\n</details>") === false && visibleBody("## ✅ x\n\nThe flow works on the preview and two findings need a human to look.") === true, "visibleBody ignores text inside <details>");
   assert(checkReport(withBlock("t", splice(splice("", "intent", "<details><summary>📋 Acceptance criteria — 1 criterion</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ✅&nbsp;AC‑1 | x | ui:/x · browser |\n\n</details>"), "aggregate", "## ✅ Verified — x\n\n<details><summary>Details</summary>\n\nlong hidden text that goes past forty characters easily\n\n</details>"))).some((p) => p.includes("only its headline")), "the gate fails an aggregate that is only collapsed blocks");
   const same = splice(agg1, "ui", "### ✅ y\n\n<sub>`aaaaaaa`</sub>", { now: t });
@@ -895,6 +903,8 @@ else if (isMain) {
         const slug = opt("--repo") || opt("--pr").match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
         content = await uploadMedia(content, { slug, baseDirs: [process.cwd(), ...(file && file !== "-" ? [dirname(resolve(file))] : [])] });
       }
+      const rel = content ? relativeMediaLine(content) : null;
+      if (rel) { console.error(`refused: ${rel} is a local media path that was not uploaded (missing file, over 10 MB, no token, or --no-upload). Upload it or say "not attached (<reason>)"`); process.exit(1); }
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll, to, marks }));
     }
   } catch (e) {
