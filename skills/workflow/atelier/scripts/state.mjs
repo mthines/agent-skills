@@ -110,10 +110,18 @@ function prNumber(pr) {
 	return m[1];
 }
 
+// Only this user's comment: another author's marked comment must not steer --next, and could not be edited anyway.
 function findComment(pr) {
+	const me = execFileSync("gh", ["api", "user", "--jq", ".login"], { encoding: "utf8" }).trim();
 	const out = execFileSync(
 		"gh",
-		["api", `repos/${repoSlug()}/issues/${prNumber(pr)}/comments`, "--paginate", "--jq", `.[] | select(.body | startswith("${MARKER}")) | {id, body}`],
+		[
+			"api",
+			`repos/${repoSlug()}/issues/${prNumber(pr)}/comments`,
+			"--paginate",
+			"--jq",
+			`.[] | select(.user.login == "${me}" and (.body | startswith("${MARKER}"))) | {id, body}`,
+		],
 		{ encoding: "utf8" },
 	);
 	const first = out.split("\n").find((l) => l.trim());

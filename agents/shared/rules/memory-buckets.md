@@ -103,7 +103,7 @@ hosts and silently halve every usage roll-up.
 
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Never |
 | --- | --- | --- | --- | --- |
-| `atelier-decisions` | [`atelier/rules/decision-log.md`](../../../skills/workflow/atelier/rules/decision-log.md) | `atelier` (after every stage decision, and the outcome sweep at run start) → a later promotion step; nothing reads it today | 90d, scope `branch::{owner}/{repo}::{head-branch}`, `kind: bus` and `host: atelier` set explicitly | **Never read to decide a stage.** Outcomes are only human decisions, `decide.mjs` verdicts, and reverts or hotfixes. |
+| `atelier-decisions` | [`atelier/rules/decision-log.md`](../../../skills/workflow/atelier/rules/decision-log.md) | `atelier` (after every stage decision, and the outcome sweep at run start) → `atelier`'s own outcome sweep, and a later promotion step | 90d, scope `branch::{owner}/{repo}::{head-branch}`, `kind: bus` and `host: atelier` set explicitly | **Never read to decide a stage.** Outcomes are only human decisions, `decide.mjs` verdicts, and reverts or hotfixes. |
 
 ### Signal (`loop::reviewer-comment-relevance`, key `reviewer-comment-relevance::<category>:<claim-gist>`)
 
