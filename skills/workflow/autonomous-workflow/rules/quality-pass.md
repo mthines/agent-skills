@@ -61,7 +61,7 @@ The file is what [`finding-outcomes.md`](./finding-outcomes.md) later scores aga
 
 | Field | Required | Value |
 | --- | --- | --- |
-| `fp` | yes | `node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --fp "<type>" "<path>" "<symbol>"` — the same finding gets the same `fp` on every run |
+| `fp` | yes | `node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --fp "<type>" "<path>" "<symbol>" "<line>"` (`""` for an absent symbol) — a symbol anchors it, else the line, so two UX findings of one rule in one file stay distinct |
 | `type` | yes | `reuse` or `extend` (the fit verdict), or `ux:<rubric rule id>`; a finding no rubric rule covers → `ux:<category>` (`a11y`, `copy`, `flow`, `visual`) |
 | `path` | yes | the repo-relative file the finding is anchored to — for `reuse`/`extend`, the new item's file, not the existing one |
 | `symbol` | when the row names one | the new export, component, or route name, exactly as the inventory printed it |
@@ -74,7 +74,7 @@ A row with neither `symbol` nor `line` scores `unknown`, so give every UX findin
 Write the lines with a JSON serializer (`node -e`, `jq -c`), never by hand-quoting.
 
 ```jsonl
-✗ Wrong — the fingerprint hashes the line and the wording, so the next run's fp differs; head_sha is a branch name
+✗ Wrong — a hand-made fp that hashes the wording, so the next run's fp differs; head_sha is a branch name
 {"fp":"reuse-src/SaveBar.tsx:12-duplicates ActionBar","type":"reuse","path":"src/SaveBar.tsx","head_sha":"feat/save","summary":"duplicates ActionBar"}
 
 ✓ Right — fp from --fp, a symbol and a line to score against, a commit sha

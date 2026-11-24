@@ -10,11 +10,17 @@ A finding the agent rated "High" that the reviewer ignored is `dismissed`; the r
 Self-assessed confidence is the signal this loop exists to replace: a pass that graded its own findings would measure how sure it sounds, not how often it is right.
 The merge is the human act being read: the reviewer chose to merge with or without a change to the flagged symbol or lines.
 
-The window is the finding's `head_sha` to the PR's final head, which holds the review's changes and the author's follow-ups.
-Agent commits made on a human's instruction (a review thread applied by `implement-suggestion`) count, because a human asked for them.
-The script cannot tell who typed a commit, so a change an agent made on its own to the same lines also reads as `acted`; that co-occurrence bias inflates precision, which is the safe direction for a threshold that later gates nothing but rebuilds.
+The window is the PR's opening head to its final head, which holds the review's changes and the author's follow-ups.
+It does not start at the finding's `head_sha`: on Lite the pass runs before `create-pr`'s local `review-loop` and `polish simplify`, which edit the same new files with no human involved.
+A finding those pre-PR edits already touched is `unknown`, because no human decided it; its lines are mapped through the pre-PR edits before the human window is read.
+Agent commits after the PR opened, made on a human's instruction (a review thread applied by `implement-suggestion`), count, because a human asked for them.
+The script cannot tell who typed a commit, so a change an agent made on its own after the PR opened also reads as `acted`; that bias raises precision, so it is the error to watch for when a type first turns `eligible`.
 
 ## Why the classification is structural
+
+The fingerprint hashes the type, the path, and the symbol, or the line when there is no symbol, so two UX findings of one rule in one file stay two events.
+A line-anchored fp moves when the line moves between runs; that splits one finding into two across runs, which is rarer and cheaper than merging two findings into one.
+
 
 `acted` needs the flagged symbol on a changed line, or a hunk within three lines of the flagged line.
 A looser rule ("the file changed") would count every unrelated edit to a busy file as agreement; a stricter one (an exact line match) would miss the usual fix, which rewrites the neighbourhood.

@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // finding-outcomes.mjs — what humans did with each quality-pass finding, and per-type precision.
 //
-//   node finding-outcomes.mjs --findings <quality-findings.jsonl> --later <ref> [--cwd <repo>]
+//   node finding-outcomes.mjs --findings <quality-findings.jsonl> --later <ref> [--since <ref>] [--cwd <repo>]
 //   node finding-outcomes.mjs --record --repo <owner/name> --pr <n> [--model <id>]
 //                             (--findings <file> --later <ref> | --events-from <classified.json>)
 //   node finding-outcomes.mjs --precision <events.json | -> [--json]
-//   node finding-outcomes.mjs --fp <type> <path> [<symbol>]
+//   node finding-outcomes.mjs --fp <type> <path> [<symbol>] [<line>]
 //   node finding-outcomes.mjs --self-test
 //
 // Classify: each finding is `acted` (the diff head_sha..later changes the flagged symbol or lines),
@@ -45,9 +45,13 @@ function git(args, cwd) {
 
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** A finding's fingerprint: stable across runs because it hashes only what names the finding, never its line or wording. */
-export function fingerprint(type, path, symbol = "") {
-  return createHash("sha256").update(`${type}\n${path}\n${symbol}`).digest("hex").slice(0, 16);
+/**
+ * A finding's fingerprint: hashes what names the finding, never its wording, so a re-run gets the same fp.
+ * Without a symbol the line anchors it, or two findings of one type in one file would share a key.
+ */
+export function fingerprint(type, path, symbol = "", line = "") {
+  const anchor = symbol || (line ? `L${line}` : "");
+  return createHash("sha256").update(`${type}\n${path}\n${anchor}`).digest("hex").slice(0, 16);
 }
 
 /** Parse quality-findings.jsonl; a malformed or incomplete line is an input error, never skipped. */
@@ -64,64 +68,101 @@ export function parseFindings(text) {
   return out;
 }
 
-/** Hunks of `git diff -U0` as old-side ranges plus every changed line's text. */
+/** Hunks of `git diff -U0` (old-side range plus line delta) and every changed line's text. */
 export function parseDiff(diff) {
   const hunks = [];
   const changed = [];
   for (const line of diff.split("\n")) {
-    const m = line.match(/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@/);
+    const m = line.match(/^@@ -(\d+)(?:,(\d+))? \+\d+(?:,(\d+))? @@/);
     if (m) {
       const start = Number(m[1]);
       const count = m[2] === undefined ? 1 : Number(m[2]);
+      const added = m[3] === undefined ? 1 : Number(m[3]);
       // A pure insertion (count 0) sits after `start`; treat it as touching that one line.
-      hunks.push({ start, end: count === 0 ? start + 1 : start + count - 1 });
+      hunks.push({ start, end: count === 0 ? start + 1 : start + count - 1, delta: added - count });
     } else if (/^[+-]/.test(line) && !/^(\+\+\+|---) /.test(line)) changed.push(line.slice(1));
   }
   return { hunks, changed };
 }
 
+/** Where `line` sits after the diff, given that no hunk touched it. */
+export function mapLine(hunks, line) {
+  return line + hunks.filter((h) => h.end < line).reduce((n, h) => n + h.delta, 0);
+}
+
+/** The path at `to`, following a rename; null when deleted. */
+function pathAt(from, to, path, cwd) {
+  for (const [code, a, b] of git(["diff", "--name-status", "-M", from, to], cwd).out.split("\n").map((r) => r.split("\t"))) {
+    if (a !== path) continue;
+    if (code === "D") return null;
+    if (code && code.startsWith("R")) return b;
+  }
+  return path;
+}
+
+/** Whether the diff from..to changes the symbol or a line within LINE_WINDOW of `line`. */
+function touched(from, to, path, toPath, symbol, line, cwd) {
+  const d = git(["diff", "-U0", "-M", from, to, "--", path, toPath], cwd);
+  if (!d.ok) return { error: d.err };
+  const { hunks, changed } = parseDiff(d.out);
+  if (symbol) {
+    const word = new RegExp(`(^|[^\\w$])${escapeRe(symbol)}([^\\w$]|$)`);
+    if (changed.some((l) => word.test(l))) return { hit: `a changed line names ${symbol}`, hunks };
+  }
+  if (line) {
+    const lo = line - LINE_WINDOW;
+    const hi = line + LINE_WINDOW;
+    if (hunks.some((h) => h.start <= hi && h.end >= lo)) return { hit: `a hunk touches lines ${Math.max(1, lo)}-${hi}`, hunks };
+  }
+  return { hunks };
+}
+
 /**
- * Classify one finding against `later`.
+ * Classify one finding: what changed between `since` (default: the finding's head_sha) and `later`.
+ * A change between head_sha and `since` was made before the PR opened — by the agent, not a human —
+ * so a finding touched there is `unknown`, never `acted`.
  * @returns {{ outcome: "acted"|"dismissed"|"unknown", reason: string, later_path?: string }}
  */
-export function classify(f, later, cwd) {
-  if (!git(["cat-file", "-e", `${f.head_sha}^{commit}`], cwd).ok) return { outcome: "unknown", reason: "head_sha not in repo" };
-  if (!git(["cat-file", "-e", `${later}^{commit}`], cwd).ok) return { outcome: "unknown", reason: "later ref not in repo" };
+export function classify(f, later, cwd, since = "") {
+  const has = (ref) => git(["cat-file", "-e", `${ref}^{commit}`], cwd).ok;
+  if (!has(f.head_sha)) return { outcome: "unknown", reason: "head_sha not in repo" };
+  if (!has(later)) return { outcome: "unknown", reason: "later ref not in repo" };
+  if (since && !has(since)) return { outcome: "unknown", reason: "since ref not in repo" };
   if (!git(["cat-file", "-e", `${f.head_sha}:${f.path}`], cwd).ok) return { outcome: "unknown", reason: "path not at head_sha" };
-  const hasLine = Number.isInteger(f.line) && f.line > 0;
-  if (!f.symbol && !hasLine) return { outcome: "unknown", reason: "finding names neither symbol nor line" };
+  let line = Number.isInteger(f.line) && f.line > 0 ? f.line : 0;
+  if (!f.symbol && !line) return { outcome: "unknown", reason: "finding names neither symbol nor line" };
+  if (f.symbol && !line) {
+    const word = new RegExp(`(^|[^\\w$])${escapeRe(f.symbol)}([^\\w$]|$)`);
+    if (!word.test(git(["show", `${f.head_sha}:${f.path}`], cwd).out)) return { outcome: "unknown", reason: "symbol not in path at head_sha" };
+  }
+
+  let from = f.head_sha;
+  let path = f.path;
+  if (since && since !== f.head_sha) {
+    const sincePath = pathAt(f.head_sha, since, path, cwd);
+    if (!sincePath) return { outcome: "unknown", reason: "path deleted before since" };
+    const pre = touched(f.head_sha, since, path, sincePath, f.symbol, line, cwd);
+    if (pre.error) return { outcome: "unknown", reason: `git diff failed: ${pre.error}` };
+    if (pre.hit) return { outcome: "unknown", reason: `changed before since (${pre.hit})` };
+    if (line) line = mapLine(pre.hunks, line);
+    from = since;
+    path = sincePath;
+  }
 
   // Follow a rename; a deleted path cannot say which way the reviewer went.
-  const status = git(["diff", "--name-status", "-M", f.head_sha, later], cwd).out.split("\n").map((r) => r.split("\t"));
-  let laterPath = f.path;
-  for (const [code, a, b] of status) {
-    if (a !== f.path) continue;
-    if (code === "D") return { outcome: "unknown", reason: "path deleted" };
-    if (code && code.startsWith("R")) laterPath = b;
-  }
-  const d = git(["diff", "-U0", "-M", f.head_sha, later, "--", f.path, laterPath], cwd);
-  if (!d.ok) return { outcome: "unknown", reason: `git diff failed: ${d.err}` };
-  const { hunks, changed } = parseDiff(d.out);
+  const laterPath = pathAt(from, later, path, cwd);
+  if (!laterPath) return { outcome: "unknown", reason: "path deleted" };
   const base = laterPath === f.path ? {} : { later_path: laterPath };
-
-  if (f.symbol) {
-    const word = new RegExp(`(^|[^\\w$])${escapeRe(f.symbol)}([^\\w$]|$)`);
-    if (changed.some((l) => word.test(l))) return { outcome: "acted", reason: `a changed line names ${f.symbol}`, ...base };
-    const atHead = git(["show", `${f.head_sha}:${f.path}`], cwd).out;
-    if (!hasLine && !word.test(atHead)) return { outcome: "unknown", reason: "symbol not in path at head_sha", ...base };
-  }
-  if (hasLine) {
-    const lo = f.line - LINE_WINDOW;
-    const hi = f.line + LINE_WINDOW;
-    if (hunks.some((h) => h.start <= hi && h.end >= lo)) return { outcome: "acted", reason: `a hunk touches lines ${Math.max(1, lo)}-${hi}`, ...base };
-  }
+  const t = touched(from, later, path, laterPath, f.symbol, line, cwd);
+  if (t.error) return { outcome: "unknown", reason: `git diff failed: ${t.error}` };
+  if (t.hit) return { outcome: "acted", reason: t.hit, ...base };
   return { outcome: "dismissed", reason: "the flagged symbol and lines are unchanged", ...base };
 }
 
-export function classifyAll(findings, later, cwd) {
+export function classifyAll(findings, later, cwd, since = "") {
   return findings.map((f) => {
-    const c = classify(f, later, cwd);
-    return { fp: f.fp, type: f.type, path: f.path, ...(f.symbol ? { symbol: f.symbol } : {}), ...(f.line ? { line: f.line } : {}), ...(f.model ? { model: f.model } : {}), head_sha: f.head_sha, later, ...c };
+    const c = classify(f, later, cwd, since);
+    return { fp: f.fp, type: f.type, path: f.path, ...(f.symbol ? { symbol: f.symbol } : {}), ...(f.line ? { line: f.line } : {}), ...(f.model ? { model: f.model } : {}), head_sha: f.head_sha, ...(since ? { since } : {}), later, ...c };
   });
 }
 
@@ -229,8 +270,8 @@ function readInput(p) { return p === "-" ? readFileSync(0, "utf8") : readFileSyn
 function main(argv) {
   if (argv.includes("--self-test")) return selfTest();
   if (argv[0] === "--fp") {
-    if (argv.length < 3) { console.error("finding-outcomes: --fp needs <type> <path> [<symbol>]"); return 2; }
-    console.log(fingerprint(argv[1], argv[2], argv[3] || ""));
+    if (argv.length < 3) { console.error("finding-outcomes: --fp needs <type> <path> [<symbol>] [<line>]"); return 2; }
+    console.log(fingerprint(argv[1], argv[2], argv[3] || "", argv[4] || ""));
     return 0;
   }
   const opts = {};
@@ -238,6 +279,7 @@ function main(argv) {
     const a = argv[i];
     if (a === "--findings") opts.findings = argv[++i];
     else if (a === "--later") opts.later = argv[++i];
+    else if (a === "--since") opts.since = argv[++i];
     else if (a === "--cwd") opts.cwd = argv[++i];
     else if (a === "--repo") opts.repo = argv[++i];
     else if (a === "--pr") opts.pr = argv[++i];
@@ -267,7 +309,7 @@ function main(argv) {
       classified = Array.isArray(parsed) ? parsed : parsed.outcomes || [];
     } else {
       if (!opts.findings || !opts.later) throw new Error("needs --findings <file> and --later <ref>");
-      classified = classifyAll(parseFindings(readInput(opts.findings)), opts.later, opts.cwd || process.cwd());
+      classified = classifyAll(parseFindings(readInput(opts.findings)), opts.later, opts.cwd || process.cwd(), opts.since || "");
     }
     if (!opts.record) {
       console.log(JSON.stringify({ later: opts.later, outcomes: classified }, null, 2));
@@ -326,8 +368,28 @@ function selfTest() {
     eq("later ref missing", classify(findings[0], "no-such-ref", dir).outcome, "unknown");
     eq("deterministic", classifyAll(findings, later, dir), classifyAll(findings, later, dir));
 
-    eq("fp stable and line-free", fingerprint("reuse", "lib.ts", "newHelper"), fingerprint("reuse", "lib.ts", "newHelper"));
+    eq("fp: no symbol → line anchors it", fingerprint("ux:copy", "a.tsx", "", 5) === fingerprint("ux:copy", "a.tsx", "", 9), false);
+    eq("fp: a symbol ignores the line", fingerprint("reuse", "lib.ts", "x", 5), fingerprint("reuse", "lib.ts", "x", 9));
+    eq("fp stable", fingerprint("reuse", "lib.ts", "newHelper"), fingerprint("reuse", "lib.ts", "newHelper"));
     eq("fp separates symbols", fingerprint("reuse", "lib.ts", "a") === fingerprint("reuse", "lib.ts", "b"), false);
+    // --since: an agent edit before the PR opened is not a human action; lines shift with it.
+    writeFileSync(join(dir, "pre.ts"), `export function agentTouched() { return 1; }\n${body(20)}\n`);
+    sh("add", "-A"); sh("commit", "-qm", "pre-head");
+    const h2 = sh("rev-parse", "HEAD");
+    writeFileSync(join(dir, "pre.ts"), `// added\n// added\nexport function agentTouched() { return 10; }\n${body(20)}\n`);
+    sh("add", "-A"); sh("commit", "-qm", "agent polish");
+    const opened = sh("rev-parse", "HEAD");
+    writeFileSync(join(dir, "pre.ts"), `// added\n// added\nexport function agentTouched() { return 10; }\n${body(20).replace("// filler 15\n", "// filler fifteen\n")}\n`);
+    sh("add", "-A"); sh("commit", "-qm", "human");
+    const merged = sh("rev-parse", "HEAD");
+    const pf = (o) => ({ head_sha: h2, summary: "s", path: "pre.ts", ...o });
+    eq("since: agent edit → unknown", classify(pf({ fp: "p1", type: "reuse", symbol: "agentTouched" }), merged, dir, opened).outcome, "unknown");
+    eq("no since: agent edit → acted", classify(pf({ fp: "p1", type: "reuse", symbol: "agentTouched" }), merged, dir).outcome, "acted");
+    eq("since: line 16 shifts to 18 and is acted", classify(pf({ fp: "p2", type: "ux:copy", line: 16 }), merged, dir, opened).outcome, "acted");
+    eq("since: line 8 untouched → dismissed", classify(pf({ fp: "p3", type: "ux:copy", line: 8 }), merged, dir, opened).outcome, "dismissed");
+    eq("since: line 21 maps to 23, clear of the human edit at 18", classify(pf({ fp: "p4", type: "ux:copy", line: 21 }), merged, dir, opened).outcome, "dismissed");
+    eq("mapLine", mapLine([{ start: 1, end: 1, delta: 2 }], 16), 18);
+
     let threw = false;
     try { parseFindings(`{"fp":"x","type":"reuse"}`); } catch { threw = true; }
     eq("incomplete line rejected", threw, true);

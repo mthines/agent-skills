@@ -25,9 +25,9 @@ It is measurement only: nothing reads `eligible` yet, and no gate, verdict, or l
 
 | Outcome | When |
 | --- | --- |
-| `acted` | a line changed between `head_sha` and the later ref names `symbol`, or a hunk falls within 3 lines of `line` |
+| `acted` | a line changed between `--since` (default `head_sha`) and the later ref names `symbol`, or a hunk falls within 3 lines of `line` (mapped through any edits before `--since`) |
 | `dismissed` | the path survives (a rename is followed) and neither the symbol nor the lines changed |
-| `unknown` | `head_sha` or the later ref is not in the repo, the path was absent at `head_sha` or deleted later, the symbol is not in the file at `head_sha`, or the finding names neither `symbol` nor `line` |
+| `unknown` | `head_sha`, `--since`, or the later ref is not in the repo; the path was absent at `head_sha` or deleted later; the finding names neither `symbol` nor `line`, or names only a symbol the file lacks at `head_sha`; or the symbol or lines changed between `head_sha` and `--since` |
 
 `unknown` counts toward neither side of precision.
 
@@ -35,20 +35,26 @@ It is measurement only: nothing reads `eligible` yet, and no gate, verdict, or l
 
 Run it once per merged PR, by whoever merges: `atelier`'s Merge stage after a squash-merge, or a person by hand.
 Pass the PR's **final head sha** as `--later`, never the squash commit: a squash commit on the base branch also carries other PRs' changes to the same file.
+Pass the PR's **opening head** as `--since`: edits between the quality pass and the PR opening (the local `review-loop`, `polish simplify`) are the agent's, not a human's.
 
 ```bash
 AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"
 BRANCH="feat/save-draft"; PR=342; REPO="acme/web"
 F=".agent/${BRANCH}/quality-findings.jsonl"
-HEAD_SHA=$(gh pr view "$PR" --json headRefOid -q .headRefOid)
+HEAD_SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)
+# The opening head: the last commit committed at or before the PR was created.
+OPENED_SHA=$(gh pr view "$PR" --repo "$REPO" --json createdAt,commits \
+  -q '.createdAt as $c | [.commits[] | select(.committedDate <= $c)] | last | .oid')
 git fetch -q origin "pull/${PR}/head"
-test -s "$F" && node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --record --findings "$F" --later "$HEAD_SHA" --repo "$REPO" --pr "$PR" --model "claude-opus-5-5"
+test -s "$F" && node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --record --findings "$F" \
+  --since "$OPENED_SHA" --later "$HEAD_SHA" --repo "$REPO" --pr "$PR" --model "claude-opus-5-5"
 ```
 
 | Input | Contract |
 | --- | --- |
 | `--findings` | the branch's `quality-findings.jsonl`, read before the worktree is removed; a missing or empty file → skip the call, print nothing |
 | `--later` | the PR's final head sha; fetch `pull/<n>/head` first so it exists after the branch is deleted |
+| `--since` | the PR's opening head; empty (no commit before `createdAt`) → omit it, and the window starts at `head_sha` |
 | `--repo`, `--pr` | `owner/name` and the PR number; they key the bus event |
 | `--model` | the model id that ran the quality pass; a line's own `model` field wins |
 | exit code | 0 whenever classification ran, including a `Degraded:` write; 2 only on a usage or malformed-findings error, which the caller prints as `Degraded: quality finding outcomes — not recorded (<stderr>)` |
