@@ -159,9 +159,9 @@ export function decideCi(ci) {
 	const at = ci.head ? ci.head.slice(0, 7) : "head";
 	const reason = ci.state === "not-run" ? ci.reason : `CI ${ci.state} at ${at}: ${ci.reason}`;
 	const how = {
-		"not-run": "Get CI to run on this head (undraft the PR, or push), then re-run /atelier <pr>: --next returns ready until Ready records green CI evidence.",
+		"not-run": "Record this on Ready (hold), get CI to run on this head (undraft the PR, or push), then re-run /atelier <pr>: --next returns ready until Ready records green CI evidence.",
 		pending: "Wait for the checks (gh pr checks <pr> --watch), then run the gate again.",
-		red: "Run /atelier <pr> again: Ready runs prepare, which fixes the failing CI.",
+		red: "Record this on Ready (failed), then run /atelier <pr> again: Ready runs prepare, which fixes the failing CI.",
 	}[ci.state];
 	return { decision: "refuse", reason, how };
 }

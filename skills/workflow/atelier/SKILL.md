@@ -83,7 +83,7 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, the [sentinel](#after-build-returns) passes, and the early gate passes | `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
 | **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence) | prepare printed `Already green` or fixed every PR it touched, and `ci-ran.mjs` printed `CI: green` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → watch once more, then `hold`; `CI: red` or prepare blocked → `failed`, reason = that line |
-| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 (no contract, or CI not green at the head) → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `ci.state` not `green` → record **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; any other gate exit 1 → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -112,13 +112,14 @@ Under `--unattended` add the line `No human is present: run interview with --non
 
 ### CI evidence
 
-After `prepare` returns, read CI at the head with `prepare`'s own helper, and keep its output as the Ready evidence:
+After `prepare` returns, re-read the head (`prepare` may have pushed a fix), read CI at that head with `prepare`'s own helper, and keep its output as the Ready evidence:
 
 ```bash
-node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-url> --head <sha> > ci.json; tail -1 ci.json
+SHA=$(gh pr view <pr-url> --json headRefOid -q .headRefOid)
+node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-url> --head "$SHA" > ci.json; tail -1 ci.json
 ```
 
-`CI: green` is the only line that allows Ready `proceed`, recorded with `--ci-file ci.json`.
+`CI: green` is the only line that allows Ready `proceed`, recorded with `--head "$SHA" --ci-file ci.json`.
 "CI ran" is the helper's rule, the same one `prepare` uses: a required check, or with none required a GitHub Actions check run, completed without being skipped; external statuses (Vercel) never count.
 
 ```text
