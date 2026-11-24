@@ -42,10 +42,13 @@ export function parse(body) {
 
 // Is a Ready `proceed` backed by CI that ran green on `head`? The evidence is ci-ran.mjs's JSON
 // (prepare/scripts), stored on the entry; a proceed recorded without it (a legacy comment, a hand edit) is not.
+// Two shas name the same commit when one is a prefix of the other (a 7-char short sha against a full one).
+export const sameSha = (a, b) => !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 7 && (a.startsWith(b) || b.startsWith(a))));
+
 export function readyEvidenceOk(entry, head) {
 	const ci = entry?.ci;
 	if (!ci || ci.state !== "green" || ci.ran !== true || !ci.head) return false;
-	return ci.head === entry.sha && (!head || ci.head === head);
+	return sameSha(ci.head, entry.sha) && (!head || sameSha(ci.head, head));
 }
 
 // The first stage that has not completed. Ready counts as done only with green CI evidence on the current head.
@@ -56,7 +59,7 @@ export function next(state, head) {
 	for (const stage of STAGES) {
 		const e = st[stage];
 		if (!e || !DONE.has(e.decision)) return stage;
-		if (stage === "ready" && head && e.sha && e.sha !== head) return "ready";
+		if (stage === "ready" && head && e.sha && !sameSha(e.sha, head)) return "ready";
 		if (stage === "ready" && !readyEvidenceOk(e, head)) return "ready";
 	}
 	return "stop";
@@ -209,6 +212,9 @@ function selfTest() {
 	t("after ready on the same head, merge is next", next(s, "a1") === "merge");
 	t("the CI evidence round-trips through the comment", parse(render(s)).stages.ready.ci.state === "green" && next(parse(render(s)), "a1") === "merge");
 	t("a moved head re-runs ready", next(s, "b2") === "ready");
+	const full = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678";
+	const short = record(s, { stage: "ready", decision: "proceed", head: full.slice(0, 7), ci: green(full) });
+	t("a short --head with full-sha evidence records, and --next matches either form", next(short, full) === "merge" && next(short, full.slice(0, 7)) === "merge");
 	const legacy = structuredClone(s);
 	delete legacy.stages.ready.ci;
 	t("a legacy Ready proceed without evidence re-runs ready", next(legacy, "a1") === "ready");

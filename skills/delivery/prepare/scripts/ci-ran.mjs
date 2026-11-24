@@ -3,7 +3,8 @@
 //
 // "CI ran" means: at least one required check completed with a conclusion other than SKIPPED/STALE, or,
 // when the head reports no required check, at least one GitHub Actions check run did. External commit
-// statuses and other apps' check runs (Vercel, security scanners) never prove CI ran on their own.
+// statuses and other apps' check runs (Vercel, security scanners) never prove CI ran on their own, unless the
+// repo marks one required.
 //
 //   node ci-ran.mjs --pr <url|n> [--head <sha>]     reads the head's check rollup via `gh api graphql`
 //   node ci-ran.mjs --rollup-file <json>             offline: a saved `gh api graphql` response of the same query
@@ -38,6 +39,9 @@ export function normalize(node) {
 	return { name: node.name, kind: "check", required: !!node.isRequired, actions, phase };
 }
 
+// Two shas name the same commit when one is a prefix of the other (a 7-char short sha against headRefOid).
+export const sameSha = (a, b) => !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 7 && (a.startsWith(b) || b.startsWith(a))));
+
 // The decision, from normalized contexts. When nothing in the basis ran or is still running, the answer is
 // not-run whatever an external status says; otherwise red > pending > green.
 export function classify(contexts, { head = null, expectedHead = null } = {}) {
@@ -50,7 +54,7 @@ export function classify(contexts, { head = null, expectedHead = null } = {}) {
 	const at = head ? head.slice(0, 7) : "head";
 	const names = (xs) => xs.slice(0, 5).map((c) => c.name).join(", ") + (xs.length > 5 ? ` (+${xs.length - 5})` : "");
 	const base = { head, ran: ran.length > 0, basis: required.length ? "required" : "actions", ran_checks: ran.map((c) => c.name).slice(0, 10), counts: { total: contexts.length, required: required.length, skipped: contexts.filter((c) => c.phase === "skipped").length } };
-	if (expectedHead && head && expectedHead !== head) return { ...base, state: "pending", reason: `head moved: expected ${expectedHead.slice(0, 7)}, PR is at ${head.slice(0, 7)}` };
+	if (expectedHead && head && !sameSha(expectedHead, head)) return { ...base, state: "pending", reason: `head moved: expected ${expectedHead.slice(0, 7)}, PR is at ${head.slice(0, 7)}` };
 	const basisPending = basis.some((c) => c.phase === "pending");
 	if (!ran.length && !basisPending) {
 		const why = !contexts.length ? "no checks reported" : basis.length ? `every ${what} skipped (${basis.length})` : `no ${what} reported; only ${names(contexts)}`;
@@ -130,6 +134,7 @@ function selfTest() {
 	t("a running check is pending", c([cr("test", null, { status: "IN_PROGRESS" }), cr("ok", "SUCCESS")]).state === "pending");
 	t("a pending status is pending", c([cr("ok", "SUCCESS"), sc("Vercel", "PENDING")]).state === "pending");
 	t("red wins over pending", c([cr("a", "FAILURE"), cr("b", null, { status: "QUEUED" })]).state === "red");
+	t("a short --head sha of the same commit is not a moved head", c([cr("ok", "SUCCESS")], { expectedHead: "abc1234" }).state === "green");
 	t("a moved head is pending", c([cr("ok", "SUCCESS")], { expectedHead: "fff0000" }).state === "pending");
 	t("skipped Actions + a pending external status is not-run, not pending", c([cr("test", "SKIPPED"), sc("Vercel", "PENDING")]).state === "not-run");
 	t("skipped Actions + a failing external status is not-run, not red", c([cr("test", "SKIPPED"), sc("Vercel", "FAILURE")]).state === "not-run");
