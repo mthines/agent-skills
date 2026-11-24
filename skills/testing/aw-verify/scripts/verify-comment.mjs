@@ -896,6 +896,7 @@ function selfTest() {
     assert(checkLocal({ intent, report: null }).some((p) => p.includes("no report.md")), "local gate: a missing report.md fails");
     assert(checkLocal({ intent: null, report }).some((p) => p.includes("no intent.md")), "local gate: a missing intent.md fails");
     assert(checkLocal({ intent: intent + "- ✅ AC-3 checked by hand, no tag\n", report }).some((p) => p.includes("AC-3") && p.includes("tag")), "local gate: an untagged AC is named, never skipped");
+    assert(checkLocal({ intent: intent + "- ✅ AC-3 telemetry: checkout.submit span has attribute plan\n", report }).some((p) => p.includes("AC-3") && p.includes("tag")) && !checkLocal({ intent: intent + "- ✅ AC-3 [telemetry:checkout.submit] span has attribute plan\n", report }).some((p) => p.includes("AC-3")), "local gate: an untagged telemetry: AC fails; tagged [telemetry:<span>] passes");
     assert(checkLocal({ intent, report }, { ui: true }).some((p) => p.includes("specs.md")) && checkLocal({ intent, report, specs: true }, { ui: true }).length === 0, "local gate: a UI diff needs specs.md");
     const uiSkip = intent.replace("- ✅ AC-1", "- ⏭️ AC-1");
     assert(checkLocal({ intent: uiSkip, report }).some((p) => p.includes("AC-1") && p.includes("caps the run")), "local gate: a ui: AC ⏭️ under ✅ fails");
