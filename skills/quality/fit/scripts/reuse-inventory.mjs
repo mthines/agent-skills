@@ -44,7 +44,8 @@ export function declarations(line, file) {
         if (/^[A-Za-z_$][\w$]*$/.test(name) && name !== "default") out.push({ kind: exportKind(name), name });
       }
     }
-    if ((m = line.match(new RegExp(`\\b(?:app|router|server|fastify|api|routes)\\.(${HTTP})\\(\\s*["'\`]([^"'\`]+)["'\`]`, "i")))) {
+    // A server registration starts the statement; a client call (`await api.get(…)`) or a string does not.
+    if ((m = line.match(new RegExp(`^\\s*(?:app|router|server|fastify|routes)\\.(${HTTP})\\(\\s*["'\`]([^"'\`]+)["'\`]`, "i")))) {
       out.push({ kind: "route", name: `${m[1].toUpperCase()} ${m[2]}` });
     }
   } else if (file.endsWith(".py")) {
@@ -116,6 +117,8 @@ function selfTest() {
   eq("python private skipped", declarations("def _helper():", "svc/main.py"), []);
   eq("go exported", declarations("func (s *Srv) Serve() error {", "srv.go"), [{ kind: "export", name: "Serve" }]);
   eq("plain line", declarations("const x = 1;", "src/a.ts"), []);
+  eq("client call is not a route", declarations("  const u = await api.get('/users/' + id);", "src/User.tsx"), []);
+  eq("route in a string is not a route", declarations('  eq("x", declarations("router.post(\'/a\')"));', "src/t.js"), []);
   // End to end on a throwaway repo.
   const dir = mkdtempSync(join(tmpdir(), "reuse-inventory-"));
   try {
