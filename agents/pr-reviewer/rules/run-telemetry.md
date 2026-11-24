@@ -183,7 +183,7 @@ A shipped lens and an installed lens of the same name never both load: the agent
 # correct: split by origin — a repo's own ux.md override lands in custom, and a new built-in lens needs no edit
 pr_review.lenses.custom contains "ux"
 # incorrect: a hard-coded built-in name list — the repo's ux.md override counts as built-in, and the list goes stale
-pr_review.lenses.names matches "^(ux|tdd|charting|ai-engineering|optimize-approach)"
+pr_review.lenses.names matches "^(ux|tdd|charting|ai-engineering|fit)"
 ```
 
 ```text

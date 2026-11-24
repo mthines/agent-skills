@@ -50,7 +50,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `confidence` (`auto`) — multi-signal confidence gate for `plan` / `code` / `analysis`; deterministic rule caps the LLM score at 89%
 - `critical` (`auto`) — adversarial pre-mortem with mandatory steelman alternative. Never iterates; `deep` runs 3–5 parallel persona lenses (found via `ideate`) and merges them
 - `measurable` (`auto`) — every delivery ships telemetry that proves impact and surfaces regressions; modes `guide` / `implement` / `audit` / `setup`
-- `optimize-approach` (`/`) — is this the best approach for the intent (codebase-fit, simplicity, performance, robustness); at most two material proposals, silent when sound. Report only
+- `fit` (`/`) — is this the best approach for the intent (codebase-fit, simplicity, performance, robustness); at most two material proposals, silent when sound. Report only
 - `polish` (`/`) — re-runnable pre-PR branch quality gate: review, then simplify the diff and prune restating or ticket comments, each change behind a test check
 - `review-loop` (`Skill()`) — bounded convergence loop, cap 5: `pr-reviewer` → `implement-suggestion --resolve-all` → `polish simplify` on a PR; with no PR, local mode over `.agent/{branch}/findings.jsonl`, zero GitHub calls; `--ui` adds a `ui-verify` lane. Run at the top level
 - `pr-review` (`/`) — one read-only `pr-reviewer` dispatch at one PR; nested `REVIEW.md` files, read from the base, brief every finder automatically; `.agents/review/lenses/*.md` team lenses load by path; `/pr-review remember <fact>` writes a maintainer relevance rule

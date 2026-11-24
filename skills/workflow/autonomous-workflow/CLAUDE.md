@@ -1308,11 +1308,11 @@ end-user-facing; this file is contributor-facing.
   documents the LoreKit backend (`rules/scaling-tiers.md`). The same migration was
   applied to every other loop in the repo (`fix-bug`, `batch-linear-tickets`,
   `implement-suggestion`, `ci-auto-fix`, `test-auto-fix`, `e2e-pr-stabilizer`,
-  `optimize-approach`, `ideate`, and the `reviewer` / `pr-reviewer` agents + the
+  `fit`, `ideate`, and the `reviewer` / `pr-reviewer` agents + the
   `review-outcomes` bus). LoreKit skips silently when its `memory.*` tools are not
   connected — the fast tier degrades to nothing and `diagnose` is unaffected.
 
-- **v3.16.0** — Plan-time optimality lens. Wired the `optimize-approach` skill's
+- **v3.16.0** — Plan-time optimality lens. Wired the `fit` skill's
   new `plan` mode into **Phase 1** as a default-on companion (Full Mode; quiet
   early-exit; `--no-optimize` to skip), running between the adversarial pre-mortem
   and `confidence(plan)`. It asks the one design-level question the other Phase 1
@@ -1331,8 +1331,8 @@ end-user-facing; this file is contributor-facing.
   `companion-skills.md` (registry row + disable link), `aw-planner.agent.md`
   (companion table), `diagnostic-surface.md` (Phase 1 guard row + typical gaps),
   `SKILL.md` (companion table + Phase 1 quick-ref + version 3.16.0), `README.md`
-  (companion table). The skill side adds `optimize-approach/rules/plan-mode.md`
-  plus mode-detection / surface / lessons updates. `optimize-approach` skips
+  (companion table). The skill side adds `fit/rules/plan-mode.md`
+  plus mode-detection / surface / lessons updates. `fit` skips
   silently if not installed — the lens degrades to nothing and the gate is
   unaffected. Root `CLAUDE.md` / `README.md` inventory updated.
 
