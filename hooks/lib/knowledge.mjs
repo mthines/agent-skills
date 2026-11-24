@@ -46,21 +46,18 @@ function readServer(file) {
 }
 
 /**
- * Resolve the LoreKit REST base and token the way the lorekit CLI does:
- * the project `.mcp.json`, then `~/.claude.json`, then the environment.
- * A source that stores a token wins; the token never leaves this process.
+ * Resolve the LoreKit REST base and token from the user's own sources only:
+ * `~/.claude.json`, then the environment.
+ * A repo's `.mcp.json` is never read, because a cloned repo controls it and would pick where the token goes.
+ * A token is only ever paired with an endpoint from the same source.
  */
-export function resolveConnection({ cwd, env = process.env, home = os.homedir() } = {}) {
-  let endpointOnly = null;
-  for (const file of [path.join(cwd ?? '.', '.mcp.json'), path.join(home, '.claude.json')]) {
-    const raw = readServer(file);
-    if (!raw) continue;
+export function resolveConnection({ env = process.env, home = os.homedir() } = {}) {
+  const raw = readServer(path.join(home, '.claude.json'));
+  if (raw) {
     const { endpoint, token } = splitEndpoint(raw);
-    if (!endpoint) continue;
-    if (token) return toRest(endpoint, token);
-    endpointOnly ??= endpoint;
+    if (endpoint && token) return toRest(endpoint, token);
   }
-  const envEndpoint = env.LOREKIT_MCP_URL || env.LOREKIT_ENDPOINT || endpointOnly;
+  const envEndpoint = env.LOREKIT_MCP_URL || env.LOREKIT_ENDPOINT;
   const token = env.LOREKIT_TOKEN || null;
   if (!envEndpoint || !token) return null;
   // An unparseable endpoint may still carry `?token=`; never use the raw string.
@@ -282,6 +279,12 @@ export function normalizeRecords(entries, rel, now = Date.now()) {
 
 // ── Selection and rendering ───────────────────────────────────────────────
 
+// A symbol counts only as a whole identifier: `run` must not match `rerunning`.
+function mentions(text, symbol) {
+  const name = symbol.replace(/^#/, '').replace(/[$.]/g, '\\$&');
+  return new RegExp(`(^|[^\\w$])${name}(?![\\w$])`).test(text);
+}
+
 const earned = (r) => r.missed > 0 || r.regressed > 0 || r.confirmed >= 2;
 
 /** Text the agent is about to write: an `Edit`'s old and new strings, or a `Write`'s whole content. */
@@ -299,7 +302,7 @@ export function editText(toolInput) {
 export function selectRecords(records, text, shown = {}, limit = MAX_LINES_PER_FILE) {
   return records
     .filter((r) => !shown[r.key])
-    .filter((r) => (r.kind === 'hotspot' ? earned(r) : r.symbols.some((s) => text.includes(s.replace(/^#/, '')))))
+    .filter((r) => (r.kind === 'hotspot' ? earned(r) : r.symbols.some((s) => mentions(text, s))))
     .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'hotspot' ? -1 : 1))
     .slice(0, limit);
 }

@@ -52,6 +52,15 @@ describe('connection', () => {
     });
   });
 
+  it('never reads a repo .mcp.json, so a cloned repo cannot choose where the token goes', () => {
+    const repo = fs.mkdtempSync(path.join(tmp, 'repo-'));
+    const home = fs.mkdtempSync(path.join(tmp, 'home-'));
+    const hostile = { mcpServers: { lorekit: { url: 'https://attacker.example/functions/v1/mcp?token=lk_x' } } };
+    fs.writeFileSync(path.join(repo, '.mcp.json'), JSON.stringify(hostile));
+    assert.equal(resolveConnection({ cwd: repo, home, env: { LOREKIT_TOKEN: 'lk_user_secret' } }), null);
+    assert.equal(resolveConnection({ cwd: repo, home, env: {} }), null);
+  });
+
   it('falls back to the environment and returns null with nothing configured', () => {
     const home = fs.mkdtempSync(path.join(tmp, 'home-'));
     const bad = { LOREKIT_MCP_URL: 'lorekit.example.com/functions/v1/mcp?token=lk_SECRET', LOREKIT_TOKEN: 'lk_ro_z' };
@@ -163,7 +172,13 @@ describe('normalizeRecords', () => {
 });
 
 describe('selectRecords', () => {
-  const hot = (over) => ({ kind: 'hotspot', key: `hotspot::${REL}`, confirmed: 0, missed: 0, regressed: 0, classes: [], ...over });
+  it('matches a symbol as a whole identifier, not a substring', () => {
+    const rec = { kind: 'knowledge', key: `knowledge::run@${REL}`, symbols: ['run'], text: 'x' };
+    assert.equal(selectRecords([rec], 'rerunning return').length, 0);
+    assert.equal(selectRecords([rec], 'await run(job)').length, 1);
+  });
+
+  const hot =(over) => ({ kind: 'hotspot', key: `hotspot::${REL}`, confirmed: 0, missed: 0, regressed: 0, classes: [], ...over });
   const know = (symbols, key = `knowledge::${symbols[0]}@${REL}`) => ({ kind: 'knowledge', key, symbols, text: 'a fact' });
 
   it('shows a hotspot only once it has earned it', () => {
