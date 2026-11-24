@@ -61,7 +61,8 @@ export function userVisible(files, { surfaceJson, surfaceFile } = {}) {
 }
 
 // deployment-verify's own parse and validation: a contract the gate passes is one /deployment-verify accepts.
-// Without release.yml the provider name cannot be checked, so any named provider stands in for it.
+// Without release.yml the provider name cannot be checked, so any named provider stands in for it;
+// a release.yml that exists but does not load refuses, because /deployment-verify would stop on it too.
 export async function flagContract(body, repoDir = process.cwd()) {
 	const { parseContract, loadConfig, validateContract } = await deploymentVerifyModule("tick.mjs");
 	const { contract, error } = parseContract(body || "");
@@ -70,9 +71,14 @@ export async function flagContract(body, repoDir = process.cwd()) {
 	const key = contract.flag?.key;
 	if (typeof key !== "string" || !key.trim()) return { has: false, missing: "flag", detail: "the contract names no flag" };
 	let config;
-	try {
-		config = loadConfig(contract.env || "production", { cwd: repoDir });
-	} catch {
+	const releaseDir = join(repoDir, ".agents", "aw");
+	if (existsSync(join(releaseDir, "release.yml")) || existsSync(join(releaseDir, "release.json"))) {
+		try {
+			config = loadConfig(contract.env || "production", { cwd: repoDir });
+		} catch (e) {
+			return { has: false, missing: "invalid", detail: e.message };
+		}
+	} else {
 		const { DEFAULT_THRESHOLDS } = await deploymentVerifyModule("decide.mjs");
 		config = { flags: { providers: contract.flag.provider ? [{ name: contract.flag.provider }] : [] }, thresholds: DEFAULT_THRESHOLDS };
 	}
@@ -158,6 +164,9 @@ async function selfTest() {
 	writeFileSync(join(withSurface, ".agents", "aw", "ui.yml"), "surface:\n  extensions: [\".ts\"]\n");
 	r = await gate({ files: ["server/x.ts"], body: "", repoDir: withSurface });
 	t("the repo's ui.yml surface is read when no surface flag is given", r.user_visible && r.decision === "refuse", JSON.stringify(r));
+	writeFileSync(join(withSurface, ".agents", "aw", "release.yml"), "environments:\n  staging:\n    url: x\n");
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: withSurface });
+	t("a release.yml that lacks the contract's environment refuses", r.decision === "refuse" && /production/.test(r.reason), r.reason);
 	rmSync(empty, { recursive: true, force: true });
 	rmSync(withSurface, { recursive: true, force: true });
 	return done();
