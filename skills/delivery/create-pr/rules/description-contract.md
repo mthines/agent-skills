@@ -38,6 +38,8 @@ If you can't fit the change inside this budget, the PR is probably too big — s
 
 **The media region is exempt too.** Everything between `<!-- attach-media:v1 -->` and `<!-- /attach-media:v1 -->` (see [Media](#media-screenshots-and-recordings)) is uploaded screenshots and recordings, not prose.
 
+**So is the quality-notes block.** When `.agent/{branch}/quality-notes.md` exists (`aw`'s report-only quality pass), the body ends with one closed block between `<!-- aw:quality-notes -->` and `<!-- /aw:quality-notes -->`; see [Quality notes](#quality-notes-optional).
+
 **So is the verify report.** On the author's own PR, `aw-verify` keeps its report at the end of the body, between `<!-- verify:report -->` and `<!-- /verify:report -->`; only its script writes that region (the `aw-verify` skill's `rules/pr-comment.md`).
 
 ## Core principles
@@ -129,8 +131,31 @@ When the diff touches the UI, the PR body can carry a **collapsed, machine-finda
 - **It is exempt from the length budget** (see above) and **preserved verbatim on refresh** (see Step 5 and the refresh note below).
 - Full contract: [`skills/testing/ui-verify/rules/spec-format.md`](../../../testing/ui-verify/rules/spec-format.md).
 
-**On refresh (the `review-loop` case):** carry the whole `attach-media:v1` region, the whole ui-verify region — whichever marker version it uses — and the whole `<!-- verify:report -->` … `<!-- /verify:report -->` region forward unchanged, markers included.
+**On refresh (the `review-loop` case):** carry the whole `attach-media:v1` region, the whole `aw:quality-notes` region, the whole ui-verify region — whichever marker version it uses — and the whole `<!-- verify:report -->` … `<!-- /verify:report -->` region forward unchanged, markers included.
 The refresh rewrites narrative sections only; re-authoring the spec is `ui-verify author`'s job, not the refresh's.
+
+## Quality notes (optional)
+
+Write this block only when `.agent/{branch}/quality-notes.md` exists; never author its rows yourself.
+
+- **One owned region**, at most once per PR, delimited by `<!-- aw:quality-notes -->` … `<!-- /aw:quality-notes -->`, holding a closed `<details>` block.
+- **At most 6 visible lines inside it:** the `<summary>` line with the counts, then up to 5 rows, `High` first, one line each; the rest is `+<n> more in walkthrough.md`.
+- **Exempt from the length budget** and **preserved verbatim on refresh**, like the media region.
+
+```markdown
+<!-- ❌ WRONG — an open table of every inventory row in the narrative -->
+## Reuse
+| Item | Verdict | … (14 rows)
+
+<!-- ✅ RIGHT — collapsed, counted, capped -->
+<!-- aw:quality-notes -->
+<details><summary>Quality notes — reuse: 1 reuse, 1 extend, 4 new · ux: 2 findings (rubric: .agents/aw/ux.md)</summary>
+
+- High · reuse · `component SaveBar` → `src/ui/ActionBar.tsx:8`
+- Medium · ux · delete uses `window.confirm()`, house rule is `ConfirmDialog` · `src/Projects/Row.tsx:41`
+</details>
+<!-- /aw:quality-notes -->
+```
 
 ## Media (screenshots and recordings)
 
@@ -161,7 +186,7 @@ Screenshots and recordings reach the body only through `Skill("attach-media", �
 
 ## Step 5: Length self-check (before writing the body)
 
-Count the rendered lines of the body, **skipping any `<!-- attach-media:v1 -->` region, any `<!-- verify:report -->` region (its `intent` criteria included, which review-loop's refresh keeps verbatim), and any ui-verify region (`<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->`, or its `v1` / `preview-spec:v1` pair)** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
+Count the rendered lines of the body, **skipping any `<!-- attach-media:v1 -->` region, any `<!-- aw:quality-notes -->` region, any `<!-- verify:report -->` region (its `intent` criteria included, which review-loop's refresh keeps verbatim), and any ui-verify region (`<!-- ui-verify:v2 -->` … `<!-- /ui-verify:v2 -->`, or its `v1` / `preview-spec:v1` pair)** — that block is exempt (see [UI verification spec](#ui-verification-spec-optional)). If the remaining body is over 25, cut. Common cuts:
 
 - **Collapse "Notes for reviewers"** unless it flags a real risk or judgment call. "We chose X because Y" usually belongs in a code comment.
 - **Drop "internal narration"** — explanations of memo deps, useEffect timing, and other implementation detail that a reviewer will read in the diff anyway.

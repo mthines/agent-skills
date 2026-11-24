@@ -43,6 +43,7 @@ git diff --stat "$BASE"...HEAD
 git diff --name-only "$BASE"...HEAD
 git log --oneline "$BASE"...HEAD
 cat ".agent/${BRANCH}/plan.md" 2>/dev/null
+cat ".agent/${BRANCH}/quality-notes.md" 2>/dev/null   # the quality pass's output, when it ran
 tail -n 1 ".agent/${BRANCH}/checks.run.log" 2>/dev/null   # last sentinel, when the executor teed it
 ```
 
@@ -121,6 +122,10 @@ request ──▶ authGuard ──▶ handler
 ## Decisions
 
 1. {decision — rationale} <!-- omit the section when plan.md had none -->
+
+## Quality notes
+
+{.agent/{branch}/quality-notes.md, verbatim below its heading} <!-- omit when the file does not exist -->
 ````
 
 Rules for the template:
@@ -132,6 +137,7 @@ Rules for the template:
 | Evidence → Checks | The sentinel line copied verbatim, never paraphrased |
 | Changes | One row per file in `git diff --name-only` — no file missing, none invented |
 | How to verify | Commands or clicks a reviewer can repeat |
+| Quality notes | Copied from `.agent/{branch}/quality-notes.md` (the report-only quality pass); never re-judged or trimmed here; omitted when the file is absent |
 
 ## Validation
 
