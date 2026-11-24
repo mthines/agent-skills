@@ -26,7 +26,8 @@ try {
 	classifyShape = null;
 }
 
-const UI_RE = /\.(tsx|jsx|vue|svelte|css|scss|sass|less|html)$|(^|\/)(components|pages|app\/\(?[^/]*\)?|ui|styles)\//i;
+// No bare `app/`: Rails, Next.js route handlers, and Python packages keep backend code there.
+const UI_RE = /\.(tsx|jsx|vue|svelte|css|scss|sass|less|html)$|(^|\/)(components|pages|ui|styles)\//i;
 const CONFIG_RE = /(^|\/)(\.github|\.agents|config|configs|deploy)\/|\.(ya?ml|toml|ini|env)$|(^|\/)(\.env[^/]*|Dockerfile[^/]*)$/i;
 const DOCS_RE = /\.(md|mdx|rst|txt)$|(^|\/)docs\//i;
 const TEST_RE = /(\.test\.|\.spec\.|_test\.|(^|\/)(test|tests|__tests__|spec|e2e)\/)/;
@@ -96,6 +97,7 @@ function selfTest() {
 		["risk class: data", [{ filename: "db/migrations/0042_add.sql" }, { filename: "api/openapi.yaml" }], "data"],
 		["risk class: config", [{ filename: ".github/workflows/ci.yml" }, { filename: "src/app/page.tsx" }], "config"],
 		["risk class: other", [{ filename: "src/lib/math.ts" }, { filename: "README.md" }], "other"],
+		["risk class: backend code under app/ is not ui", [{ filename: "app/models/user.rb" }, { filename: "src/app/api/users/route.ts" }, { filename: "backend/app/db/queries.py" }], "other"],
 		["risk class: tests and docs only are other", [{ filename: "src/x.test.ts" }, { filename: "docs/a.md" }], "other"],
 		["risk class: unknown without the detector", [{ filename: "src/x.ts" }], "unknown", null],
 	];
