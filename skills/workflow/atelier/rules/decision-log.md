@@ -72,7 +72,8 @@ At the start of every run, before any stage:
                                 merge_sha: "<sha>", evidence_shas: "<comma list>" } }
    ```
 
-5. A result with `final: false` (clean, window still open), or with the stored outcome, writes nothing; a later run classifies it again.
+5. A result with `final: false` (clean, window still open, or `unknown` because its sha could not be read), or with the stored outcome, writes nothing; a later run classifies it again.
+   Name each `unknown` once under `Degraded:` with its `error`; `outcomes.mjs` exiting 2 (a base it cannot read) is one `Degraded: outcome sweep failed — <stderr>` line, and the stages still run.
 6. Classify only PRs whose merge event is still listed: the 90-day TTL bounds the sweep.
 
 ```text

@@ -146,6 +146,7 @@ function main() {
 		const opts = { base: a.base || "origin/main", days: a.days ? Number(a.days) : 14 };
 		if (a.now) opts.now = Date.parse(a.now) / 1000;
 		const dir = a["repo-dir"] || process.cwd();
+		git(dir, ["rev-parse", "--verify", "--quiet", `${opts.base}^{commit}`]); // a bad base fails the run, never every PR
 		console.log(JSON.stringify(list.map((p) => classifyOne(dir, { ...opts, pr: p.pr, sha: p.sha })), null, 2));
 	} catch (e) {
 		console.error(`outcomes: ${e.message}`);
