@@ -8,7 +8,8 @@ tags:
 
 # aw Integration
 
-`aw` runs this skill on a Full-tier task only with `--interview` or when two or more `blocking` questions remain after its short Phase 0; `--interview` also forces it on Micro and Lite, and `--no-interview` skips it.
+`aw` runs this skill by default on Full and Lite tasks, and on Micro only with `--interview`; `--no-interview` skips it.
+The skill itself decides whether to ask: when the request or an existing spec already answers every `blocking` question, it asks nothing and writes the brief.
 
 ```text
 Skill("interview")   # writes .agent/{branch}/brief.md + a verdict

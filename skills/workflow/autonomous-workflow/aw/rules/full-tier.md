@@ -25,7 +25,7 @@ The brief says what done looks like and what must not change — never how to bu
 
 ## Step 1 — Brief (minutes)
 
-1. **Phase 0, short.** Restate the request in 3–5 lines; ask only a `blocking` question (missing information that changes what done means). `--no-confirm` proceeds without waiting. Run `Skill("interview")` only with `--interview` or when two or more `blocking` questions remain.
+1. **Phase 0, interview.** Run `Skill("interview")` unless `--no-interview` was passed; it reads the code, asks only `blocking` questions, writes `.agent/{branch}/brief.md`, and stays silent when the request or an existing spec already answers them. A `blocked` verdict halts, even under `--no-confirm`. Without the skill, or with `--no-interview`, restate the request in 3–5 lines and ask only a `blocking` question. `--no-confirm` proceeds without waiting.
 2. **Worktree.** Create it with the repo's worktree tool (`gw checkout <branch>` when `gw` exists, else `git worktree add`); never work on the default branch.
 3. **Read `corrections.md` (autonomous-workflow `rules/`)** in full — C1 shapes the brief; the rest shape the work.
 4. **Read only what the brief needs:** the ticket, the repo's `CLAUDE.md`, and enough code to name the test commands and the likely starting files — at most 10 tool calls, no sub-agents, no design.

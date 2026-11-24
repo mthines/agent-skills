@@ -87,7 +87,8 @@ MODE SELECTION:
 
 Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the local review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.
 
-`--interview`: run `Skill("interview")` before writing the brief, on any tier. Without it, the Full brief runs `interview` only when two or more `blocking` questions remain.
+`interview`: Full and Lite run `Skill("interview")` before writing the brief, by default; it asks nothing when the request and any existing spec already answer every `blocking` question.
+`--no-interview` skips it; `--interview` also runs it on Micro.
 
 ## Review
 

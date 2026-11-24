@@ -116,8 +116,8 @@ Default-on behavior by tier:
 
 | Tier         | Runs interview?                                                       |
 | ------------ | -------------------------------------------------------------------- |
-| Full         | Yes, by default. `--no-interview` skips it; `--interview` forces it. |
-| Lite / Micro | No by default (small, well-specified). `--interview` forces it.      |
+| Full / Lite  | Yes, by default. `--no-interview` skips it. The skill asks nothing when the request or an existing spec already answers every `blocking` question. |
+| Micro        | No by default (one file, nothing to reason about). `--interview` forces it. |
 
 Consume the result:
 
