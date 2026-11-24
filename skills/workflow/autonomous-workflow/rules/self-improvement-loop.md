@@ -272,9 +272,15 @@ Do this **once the plan's File Changes list is drafted** — not at the very sta
 of Phase 1, since you need the candidate paths first — and match narrowly:
 
 ```text
-# List the repo's codebase-knowledge signal (bounded per repo; tag-filtered).
-memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+# Hotspots for the planned files: one exact-key batch read (max 32 refs per call).
+memory.read   { refs: ["repo::{owner}/{repo}::hotspot::<path>", …] }
+# Knowledge for one planned file: a path search; keep keys ending `@<path>`.
+memory.search { q: "<path>", scopes: ["repo::{owner}/{repo}"], tags: ["codebase-knowledge"], limit: 10 }
 ```
+
+Never `memory.list` the bucket: a large repo holds over a thousand of these records and the page is the newest, not the ones for the planned files (`agents/shared/rules/codebase-knowledge.md`, section "Read side").
+This read is for the plan.
+While you implement, the on-touch hooks (`hooks/knowledge-prefetch.mjs` and `hooks/knowledge-inject.mjs`, shipped in the root plugin) add the matching records to context as each file is edited, so do not re-read the bucket per file.
 
 Keep only the records that match the plan:
 
@@ -309,7 +315,7 @@ when no record matches the plan — the common case on a greenfield path.
 Log:
 
 ```markdown
-- [TIMESTAMP] Phase 1: lorekit(memory.list repo::{owner}/{repo} codebase-knowledge) — K records matched planned paths, applied as planning inputs
+- [TIMESTAMP] Phase 1: lorekit(memory.read hotspot refs + memory.search paths, repo::{owner}/{repo}) — K records matched planned paths, applied as planning inputs
 - [TIMESTAMP] Phase 1: lorekit — no codebase-knowledge match for planned paths, continuing
 ```
 

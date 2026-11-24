@@ -45,13 +45,34 @@ Wire the read at the host's **plan/apply seam**: the moment it holds the concret
 file/symbol list it will change (a plan's File Changes list, an apply pack, a
 fix's target file). That is the moment the structural key becomes matchable.
 
+Address the records by **path**, never by listing the bucket:
+
 ```text
-memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
-# Keep only hotspot::<path> / knowledge::<symbol>@<path> whose <path> (and <symbol>)
-# this run will actually touch. Apply them as PLANNING INPUTS: raise coverage on a
-# hotspot, design around a known invariant / consumer count. They are advisory and
-# re-verified against the code — never a reason to skip a step or suppress a finding.
+# Hotspots: an exact-key batch read, one ref per file the run will touch (max 32 per call).
+memory.read   { refs: ["repo::{owner}/{repo}::hotspot::<path>", …] }     # unknown paths come back in `missing`
+
+# Knowledge: a full-text search on the path. Keep only keys that END with `@<path>`.
+memory.search { q: "<path>", scopes: ["repo::{owner}/{repo}"], tags: ["codebase-knowledge"], limit: 10 }
+
+# Apply what matched as PLANNING INPUTS: raise coverage on a hotspot, design around a
+# known invariant / consumer count. They are advisory and re-verified against the code —
+# never a reason to skip a step or suppress a finding.
 ```
+
+```text
+✗ memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }
+  # 1,200 records in a large repo; the page is the 100 newest, not the ones for your files
+```
+
+**The on-touch hooks are the standard consumer for any editing session.**
+[`hooks/knowledge-prefetch.mjs`](../../../hooks/knowledge-prefetch.mjs) runs the two reads above in the background when a file is read, and [`hooks/knowledge-inject.mjs`](../../../hooks/knowledge-inject.mjs) puts at most two one-line summaries in context before that file is edited.
+Their limits are the contract for what reaches an agent's context:
+
+- Per file at most 2 lines; per session at most 8 lines and 1,500 tokens; each record once.
+- A hotspot shows only once it has earned it (below), as counts and classes, never its `note`: a note describes one old finding and goes stale.
+- A knowledge record shows only when one of its symbols appears in the edit.
+- A hotspot's counters may be absent on older records: count its `confirmed_examples` / `missed_examples` / `regressed_examples` instead.
+- A fact carrying `superseded_at` is skipped.
 
 Four rules make the read safe, and they are non-negotiable:
 
