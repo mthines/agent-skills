@@ -8,14 +8,17 @@
 //
 //   node merge-gate.mjs --pr <n|url>                          files + body via gh
 //   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f>  offline
-//   add --surface-json '<json>' | --surface-file <path>       forwarded to is-ui-diff
+//   add --surface-json '<json>' | --surface-file <path>       forwarded to is-ui-diff; without either,
+//                                                             the surface in <repo-dir>/.agents/aw/ui.yml is used
+//   add --repo-dir <path>                                     where .agents/aw/ lives (default: cwd)
 //   node merge-gate.mjs --self-test
 //
 // Prints one JSON object, then a final line `MERGE_GATE: pass|refuse — <reason>`.
 // Exit: 0 pass, 1 refuse, 2 error.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -27,8 +30,17 @@ function uiVerifyScript() {
 	return join(skillDir("ui-verify", "testing", "UI_VERIFY_DIR"), "scripts", "is-ui-diff.mjs");
 }
 
-function tickScript() {
-	return join(skillDir("deployment-verify", "testing", "DEPLOYMENT_VERIFY_DIR"), "scripts", "tick.mjs");
+function deploymentVerifyModule(file) {
+	return import(pathToFileURL(join(skillDir("deployment-verify", "testing", "DEPLOYMENT_VERIFY_DIR"), "scripts", file)).href);
+}
+
+// The repo's learned UI surface, as is-ui-diff takes it; ui.yml is parsed with deployment-verify's YAML reader.
+export async function repoSurface(repoDir) {
+	const path = join(repoDir, ".agents", "aw", "ui.yml");
+	if (!existsSync(path)) return null;
+	const { parseYaml } = await deploymentVerifyModule("yaml-lite.mjs");
+	const surface = parseYaml(readFileSync(path, "utf8"))?.surface;
+	return surface ? JSON.stringify(surface) : null;
 }
 
 // Runs is-ui-diff by path; its `UI_DIFF:` line is the answer, never its exit code.
@@ -48,12 +60,24 @@ export function userVisible(files, { surfaceJson, surfaceFile } = {}) {
 	return { isUI: line[1] === "yes", matched };
 }
 
-export async function flagContract(body) {
-	const { parseContract } = await import(pathToFileURL(tickScript()).href);
+// deployment-verify's own parse and validation: a contract the gate passes is one /deployment-verify accepts.
+// Without release.yml the provider name cannot be checked, so any named provider stands in for it.
+export async function flagContract(body, repoDir = process.cwd()) {
+	const { parseContract, loadConfig, validateContract } = await deploymentVerifyModule("tick.mjs");
 	const { contract, error } = parseContract(body || "");
 	if (error) return { has: false, missing: error.startsWith("no contract") ? "contract" : "valid-json", detail: error };
+	if (!contract || typeof contract !== "object") return { has: false, missing: "valid-json", detail: "the contract is not a JSON object" };
 	const key = contract.flag?.key;
 	if (typeof key !== "string" || !key.trim()) return { has: false, missing: "flag", detail: "the contract names no flag" };
+	let config;
+	try {
+		config = loadConfig(contract.env || "production", { cwd: repoDir });
+	} catch {
+		const { DEFAULT_THRESHOLDS } = await deploymentVerifyModule("decide.mjs");
+		config = { flags: { providers: contract.flag.provider ? [{ name: contract.flag.provider }] : [] }, thresholds: DEFAULT_THRESHOLDS };
+	}
+	const invalid = validateContract(contract, config);
+	if (invalid) return { has: false, missing: "invalid", detail: invalid };
 	return { has: true, flag: key };
 }
 
@@ -64,6 +88,7 @@ export function decide({ isUI, contract }) {
 		contract: "no <!-- deployment-verify:v1 --> contract in the PR body",
 		"valid-json": `the deployment-verify:v1 contract does not parse (${contract.detail})`,
 		flag: "the deployment-verify:v1 contract names no flag",
+		invalid: `deployment-verify would refuse the contract (${contract.detail})`,
 	}[contract.missing];
 	return {
 		decision: "refuse",
@@ -77,9 +102,10 @@ export function decide({ isUI, contract }) {
 	};
 }
 
-export async function gate({ files, body, surfaceJson, surfaceFile }) {
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd() }) {
+	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
-	const contract = await flagContract(body);
+	const contract = await flagContract(body, repoDir);
 	const d = decide({ isUI: ui.isUI, contract });
 	return { ...d, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, ui_files: ui.matched };
 }
@@ -105,7 +131,8 @@ const NOFLAG_BODY = FLAG_BODY.replace(/"flag": \{[^}]*\}, "cohort": \{[^}]*\}, /
 
 async function selfTest() {
 	const { t, done } = makeTester("merge-gate");
-	const run = (files, body) => gate({ files, body });
+	const empty = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	const run = (files, body) => gate({ files, body, repoDir: empty });
 	let r = await run(["src/components/Header.tsx"], "no contract");
 	t("UI diff without a contract refuses", r.decision === "refuse" && !r.has_flag_contract && r.user_visible);
 	t("refusal names the marker", /deployment-verify:v1/.test(r.reason));
@@ -120,8 +147,19 @@ async function selfTest() {
 	t("docs-only diff passes without a contract", r.decision === "pass" && !r.user_visible);
 	r = await run(["scripts/build.mjs", "src/components/Header.test.tsx"], "");
 	t("tooling and tests pass without a contract", r.decision === "pass" && !r.user_visible);
-	r = await gate({ files: ["server/x.ts"], body: "", surfaceJson: '{"extensions":[".ts"]}' });
+	r = await gate({ files: ["server/x.ts"], body: "", surfaceJson: '{"extensions":[".ts"]}', repoDir: empty });
 	t("the surface is forwarded to is-ui-diff", r.user_visible && r.decision === "refuse");
+	r = await run(["src/components/Header.tsx"], FLAG_BODY.replace(/"service": "ui", "root_spans": \["GET \/x"\], /, ""));
+	t("a flag contract deployment-verify would refuse is refused", r.decision === "refuse" && /missing "service"/.test(r.reason), r.reason);
+	r = await run(["src/components/Header.tsx"], FLAG_BODY.replace(/\{ "service"[\s\S]*?"flag" \}/, "null"));
+	t("a null contract refuses", r.decision === "refuse" && /not a JSON object/.test(r.reason), r.reason);
+	const withSurface = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	mkdirSync(join(withSurface, ".agents", "aw"), { recursive: true });
+	writeFileSync(join(withSurface, ".agents", "aw", "ui.yml"), "surface:\n  extensions: [\".ts\"]\n");
+	r = await gate({ files: ["server/x.ts"], body: "", repoDir: withSurface });
+	t("the repo's ui.yml surface is read when no surface flag is given", r.user_visible && r.decision === "refuse", JSON.stringify(r));
+	rmSync(empty, { recursive: true, force: true });
+	rmSync(withSurface, { recursive: true, force: true });
 	return done();
 }
 
@@ -136,7 +174,7 @@ async function main() {
 			files = String(a.files).split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 			body = readFileSync(a["body-file"], "utf8");
 		} else throw new Error("pass --pr <n>, or --files <list> --body-file <path>");
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"] });
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd() });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		console.log(`MERGE_GATE: ${r.decision} — ${r.reason}`);
