@@ -116,8 +116,8 @@ Default-on behavior by tier:
 
 | Tier         | Runs interview?                                                       |
 | ------------ | -------------------------------------------------------------------- |
-| Full         | Yes, by default. `--no-interview` skips it; `--interview` forces it. |
-| Lite / Micro | No by default (small, well-specified). `--interview` forces it.      |
+| Full / Lite  | Yes, by default. `--no-interview` skips it. The skill asks nothing when the request or an existing spec already answers every `blocking` question. |
+| Micro        | No by default (one file, nothing to reason about). `--interview` forces it. |
 
 Consume the result:
 
@@ -282,9 +282,10 @@ MODE SELECTION:
 - Lessons applied: [N matched, or none]
 ```
 
-> **Do NOT create artifact files in Phase 0.** Artifacts (`plan.md`,
-> `walkthrough.md`) are written inside the worktree after Phase 2. Phase 1
-> planning is in-conversation only.
+> **Write no artifact outside the task worktree.** When the interview runs
+> (Full, Lite, or Micro with `--interview`), Phase 0 creates the worktree first
+> and the interview writes `brief.md` inside it; `plan.md` and `walkthrough.md`
+> follow later in the same worktree. Otherwise Phase 0 writes nothing.
 
 **DO NOT proceed to Phase 1 until Step 6 is complete.**
 
@@ -330,7 +331,7 @@ MODE SELECTION:
 Before leaving Phase 0:
 
 - [ ] User request fully understood
-- [ ] Scope alignment: `interview` companion ran (Full tier default, unless `--no-interview`) with a non-`blocked` verdict, OR inline Step 3b/3c used and the fallback logged (anchor: `scope-alignment`)
+- [ ] Scope alignment: `interview` companion ran (Full and Lite default, unless `--no-interview`) with a non-`blocked` verdict, OR inline Step 3b/3c used and the fallback logged (anchor: `scope-alignment`)
 - [ ] Requirements restated in own words and diffed against the user's words; every delta surfaced (anchor: `restate-and-diff`)
 - [ ] Missing information enumerated and classified `blocking` / `advisory`; no unresolved `blocking` item — even under `--no-confirm` (anchor: `missing-information-gate`)
 - [ ] All ambiguities clarified
@@ -339,7 +340,7 @@ Before leaving Phase 0:
 - [ ] Technical approach validated
 - [ ] User gave explicit "proceed" signal
 - [ ] **MODE SELECTION block emitted (Micro, Lite, or Full)**
-- [ ] Branch name decided (artifact creation deferred to Phase 2)
+- [ ] Branch name decided; worktree created before the interview when it ran, else deferred to Phase 2
 
 **If any checkbox is unchecked, DO NOT proceed to Phase 1.**
 

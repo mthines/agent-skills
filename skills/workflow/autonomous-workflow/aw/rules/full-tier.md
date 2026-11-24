@@ -25,11 +25,11 @@ The brief says what done looks like and what must not change — never how to bu
 
 ## Step 1 — Brief (minutes)
 
-1. **Phase 0, short.** Restate the request in 3–5 lines; ask only a `blocking` question (missing information that changes what done means). `--no-confirm` proceeds without waiting. Run `Skill("interview")` only with `--interview` or when two or more `blocking` questions remain.
-2. **Worktree.** Create it with the repo's worktree tool (`gw checkout <branch>` when `gw` exists, else `git worktree add`); never work on the default branch.
+1. **Worktree.** Create it with the repo's worktree tool (`gw checkout <branch>` when `gw` exists, else `git worktree add`); never work on the default branch.
+2. **Phase 0, interview, inside the worktree.** Run `Skill("interview")` unless `--no-interview` was passed; it reads the code, asks only `blocking` questions, writes `.agent/{branch}/brief.md`, and stays silent when the request or an existing spec already answers them. A `blocked` verdict halts, even under `--no-confirm`. Without the skill, or with `--no-interview`, restate the request in 3–5 lines and ask only a `blocking` question. `--no-confirm` proceeds without waiting.
 3. **Read `corrections.md` (autonomous-workflow `rules/`)** in full — C1 shapes the brief; the rest shape the work.
 4. **Read only what the brief needs:** the ticket, the repo's `CLAUDE.md`, and enough code to name the test commands and the likely starting files — at most 10 tool calls, no sub-agents, no design.
-5. **Write the brief and checks:** `Skill("aw-create-plan")`. Requirements come from the user and the ticket; Guardrails come from the user, the ticket, and the repo's docs — never from a design you guessed.
+5. **Write the brief and checks:** `Skill("aw-create-plan")`. Requirements come from `brief.md` when step 2 wrote one (its restatement, `Out of scope (non-goals)` as Guardrails, `Success criteria` as acceptance criteria, `Constraints`), else from the user and the ticket; Guardrails come from the user, the ticket, and the repo's docs — never from a design you guessed.
    When the task adds or changes a span, metric, log, or web event, add one acceptance criterion prefixed `telemetry:` that names the signal and the attributes that prove the behaviour — `AC-4 telemetry: checkout.submit span with order.id; ERROR status on decline`. `aw-create-plan` seals it as a `kind: judge` check, which Step 4 grades.
 6. **Validate deterministically:**
 

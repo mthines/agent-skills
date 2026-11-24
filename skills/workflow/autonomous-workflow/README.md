@@ -174,7 +174,7 @@ trigger registry is in
 
 | Phase | Companion              | Required? | What it does                                  |
 | ----- | ---------------------- | --------- | --------------------------------------------- |
-| 0     | `interview`            | Optional  | Default-on scope alignment in Full Mode (adaptive — silent on a crisp request; `--no-interview` skips, `--interview` forces). Restate-and-diff + missing-information gate; writes `brief.md` |
+| 0     | `interview`            | Optional  | Default-on scope alignment on Full and Lite (adaptive — silent when the request or an existing spec is already clear; `--no-interview` skips, `--interview` adds Micro). Restate-and-diff + missing-information gate; writes `brief.md` |
 | 1     | `lorekit-memory`       | Optional  | Reads `loop::aw-lessons` — applies prior workflow lessons as plan constraints (fast-tier self-improvement) |
 | 1     | `confidence`           | **Required** | Plan gate (>= 90% to proceed)              |
 | 2     | `aw-create-plan`       | Optional  | Writes `.agent/{branch}/plan.md`              |
