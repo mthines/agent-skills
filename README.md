@@ -247,6 +247,11 @@ No clone? `npx skills add https://github.com/mthines/agent-skills --all --agent 
 
 Forks, other tools, the VS Code extension, and per-project plug-ins: [`docs/setup.md`](./docs/setup.md).
 
+**What earlier reviews learned about a file, while you edit it.**
+Installed as the Claude Code plugin (`/plugin install mthines-agent-skills@mthines`, see [`docs/setup.md`](./docs/setup.md)), the root plugin also ships two hooks.
+When you read a file they fetch its `codebase-knowledge` records from LoreKit in the background, and before you edit it they add at most two one-line summaries to context, capped at eight lines per session.
+They need a LoreKit connection and do nothing without one; details in [`docs/development.md`](./docs/development.md#root-plugin-hooks).
+
 ## Contributing
 
 PRs welcome. Start with [`docs/development.md`](./docs/development.md) and the conventions in [`CLAUDE.md`](./CLAUDE.md).

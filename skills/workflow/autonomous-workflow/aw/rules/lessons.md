@@ -33,6 +33,30 @@ memory.search { q: "<3–6 keywords from the task: area, component, verb, joined
 memory.search { q: "<the same keywords>", scopes: ["repo::{owner}/{repo}", "global"], tags: ["criterion-quality"], limit: 3 }
 ```
 
+## Knowledge read
+
+Past reviews recorded what they learned about specific files in the shared `codebase-knowledge` bucket.
+Lite and Full read it once, **after the brief's File Changes list is drafted**, because the key is the file path.
+Micro skips it.
+
+```text
+memory.read   { refs: ["repo::{owner}/{repo}::hotspot::<path>", …] }    # one ref per File Changes path, max 32
+```
+
+1. Keep a hotspot only when it has earned it: `confirmed >= 2`, or `missed > 0`, or `regressed > 0`. Older records carry no counters; count their `confirmed_examples`, `missed_examples`, and `regressed_examples`.
+2. On Full, a kept hotspot with `missed > 0` or `regressed > 0` becomes an acceptance criterion (`AC-n`) in `checks.yaml` before it is sealed. A check added after the seal does not count.
+3. Record each applied record in `plan.md` under `## Lessons applied`, marked `(codebase-knowledge)`.
+4. Skip silently when `memory.*` is not connected or there is no git remote.
+
+```text
+✗ memory.list { scope: "repo::{owner}/{repo}", tags: ["codebase-knowledge"], limit: 100 }    # the newest 100, not yours
+✓ memory.read { refs: ["repo::acme/web::hotspot::src/api/client.ts"] }                       # exactly the planned files
+```
+
+While you implement, the on-touch hooks add the matching records to context as each file is edited, at most two lines per file.
+Do not search for them yourself, and treat what they show as advisory: re-check it against the code before relying on it.
+The full contract is `rules/self-improvement-loop.md`, section "Fast tier — read the repo's codebase-knowledge".
+
 ## Exit write
 
 After the run (PR opened or work handed back), list friction, surprises, near-misses, and companions that should have fired; classify each universal or project-bound; dedup; then write:

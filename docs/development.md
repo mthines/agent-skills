@@ -92,6 +92,20 @@ They are distributed through `.claude-plugin/marketplace.json`; the marketplace 
 The repo root is itself a plugin (`.claude-plugin/plugin.json`), and Claude Code puts its `bin/` on `PATH`.
 `bin/agent-skills-root` prints that root, so `pr-reviewer` and `branch-reviewer` loaded from the plugin find their support tree when `~/.claude/agents` holds no copy.
 
+### Root-plugin hooks
+
+`hooks/hooks.json` registers two hooks in the root plugin; Claude Code finds it by convention, so `plugin.json` has no `hooks` key.
+They exist only in the plugin install: `sync-symlinks.sh` wires skills and agents, not hooks.
+
+| Hook | Script | Does |
+| --- | --- | --- |
+| `PostToolUse` on `Read` | `hooks/knowledge-prefetch.mjs` | Spawns a detached worker that reads the file's `hotspot::<path>` by exact key and searches `codebase-knowledge` for the path, then writes `~/.cache/agent-skills/knowledge/<session>/`. Returns at once |
+| `PreToolUse` on `Edit`, `Write` | `hooks/knowledge-inject.mjs` | Reads only that cache and adds `additionalContext`: at most 2 lines per file, 8 lines and 1,500 tokens per session, each record once. Silent on a miss |
+
+- Both scripts exit 0 on every path and never write the LoreKit token anywhere. The connection resolves like the `lorekit` CLI's: project `.mcp.json`, then `~/.claude.json`, then `LOREKIT_MCP_URL` and `LOREKIT_TOKEN`.
+- Selection rules (earned hotspots, symbol in the edit, superseded facts) are in [`codebase-knowledge.md`](../agents/shared/rules/codebase-knowledge.md).
+- Test with `node --test hooks/knowledge.test.mjs`.
+
 ### `agent-tasks-hooks`
 
 Claude Code lifecycle hook plugin for the Agent Tasks VS Code extension; details in [`plugins/agent-tasks-hooks/README.md`](../plugins/agent-tasks-hooks/README.md).
