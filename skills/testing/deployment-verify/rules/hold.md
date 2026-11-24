@@ -8,7 +8,8 @@ tags: [deployment-verify, hold, approval, human-in-the-loop, rollout]
 
 `release.yml` → `hold_after: <percent>` stops a passing rollout at that step until a human decides.
 Absent, the rollout never holds: every existing config behaves as before.
-A **hold** is a human gate; a `HOLD` verdict from `decide.mjs` is thin traffic and extends the same step ([`loop.md`](./loop.md#each-step)). Never confuse the two.
+A **hold** is a human gate; a `HOLD` verdict from `decide.mjs` is thin traffic and extends the same step ([`loop.md`](./loop.md#each-step)).
+Never confuse the two.
 **Why:** [`../references/design.md § A human hold`](../references/design.md#a-human-hold-and-an-earned-recommendation).
 
 ## Enter
