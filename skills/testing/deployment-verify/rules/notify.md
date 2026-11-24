@@ -7,7 +7,7 @@ tags: [deployment-verify, notify, slack, linear, escalation]
 # Notify
 
 The PR comment holds the evidence, but nobody watches a merged PR.
-Every terminal outcome, and every ESCALATE, goes where `release.yml` → `notify` routes it.
+Every terminal outcome, every ESCALATE, and every `AWAITING_APPROVAL` goes where `release.yml` → `notify` routes it.
 
 ## Outcomes
 
@@ -17,6 +17,8 @@ Every terminal outcome, and every ESCALATE, goes where `release.yml` → `notify
 | `ROLLED_BACK` | A ROLLBACK verdict, the reversal applied, recovery proven | Slack with mentions, plus a ticket |
 | `INCONCLUSIVE` | Not enough traffic or the step was never live; flag returned to the last passed step | Slack, no mentions |
 | `ESCALATE` | A human is needed now: the rollback did not take effect, errors persist after it, or the change cannot be rolled back unattended | Slack with mentions, plus the `run` hook |
+| `AWAITING_APPROVAL` | Not terminal: the rollout reached `hold_after` with a PASS and waits for a human ([`hold.md`](./hold.md)) | Slack, mentioning `pr_author` |
+| `OVERRIDDEN` | A human overrode a hold; flag set off | PR comment only |
 | `STOPPED` | Nothing was changed: no contract, deploy never detected, a provider failed before the first step | PR comment only |
 
 ## Config
@@ -27,6 +29,8 @@ notify:
     slack: { channel: "#deploys", mention: [pr_author, codeowners] }
   - on: [INCONCLUSIVE]
     slack: { channel: "#deploys" }
+  - on: [AWAITING_APPROVAL]
+    slack: { channel: "#deploys", mention: [pr_author] }
   - on: [ROLLED_BACK]
     linear: { team: ENG, labels: [rollback] }
   - on: [ESCALATE]

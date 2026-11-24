@@ -77,6 +77,23 @@ detect: { attribute: vercel.sha, equals: merge_sha }
 A provider that needs a redeploy to change a value (an environment variable read at start) is `rollout: boolean` with `propagation_seconds` set to a deploy's length.
 Never call a provider's API directly from the skill; only through `set`.
 
+## Hold and promotion
+
+Both are optional and off when absent; an existing `release.yml` behaves as before.
+
+| Field | Meaning |
+| --- | --- |
+| `hold_after` | A step value other than the last; the rollout waits there after a PASS for a human `approve` or `override` ([`hold.md`](./hold.md)) |
+| `promotion` | The committed earned-autonomy rule: `min_agree_streak`, `min_review_seconds`, `risk_classes`, `max_level` ([`autonomy.md`](./autonomy.md)). It only shapes the recommendation printed at a hold |
+
+```yaml
+# ✗ Wrong — a hold at the last step has nothing left to approve; the config fails to load
+hold_after: 100
+# ✓ Right
+hold_after: 10
+promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui], max_level: 1 }
+```
+
 ## Notify
 
 `notify`, `people`, and `posting.forbidden` route outcomes to Slack, Linear, or a command: [`notify.md`](./notify.md).
@@ -89,4 +106,5 @@ Never call a provider's API directly from the skill; only through `set`.
 2. Detect flag systems: OpenFeature (`@openfeature/`, `open-feature/go-sdk`), the Vercel Flags SDK (`flags/next`, `@vercel/flags`), PostHog (`posthog-node`, `posthog-js`), LaunchDarkly, Unleash, a repo-local registry. Write one provider per system and ask for its `set` command; never invent one.
 3. Find the deploy attribute: query one recent production span of each service and offer the attribute whose value matches a recent `main` commit.
 4. Ask for `traffic` for `local` and `preview`; production is `real`.
-5. Validate: every `set` path exists and is executable; `dataset` is readable.
+5. Leave `hold_after` and `promotion` commented out, as the template has them; uncomment one only when the user asks for a human hold ([`hold.md`](./hold.md)).
+6. Validate: every `set` path exists and is executable; `dataset` is readable; `tick.mjs --check-config` prints `release.yml ok`.

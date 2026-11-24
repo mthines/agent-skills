@@ -11,8 +11,11 @@
 //   node tick.mjs --check-config              validate .agents/aw/release.yml and exit
 //   node tick.mjs --self-test                 simulated rollouts, no network
 //
-// Exit: 0 in progress or PASS/STOPPED, 3 an exception outcome (ROLLED_BACK, ESCALATE, INCONCLUSIVE), 1 error.
-// Rules this implements: rules/state.md, rules/loop.md, rules/rollback.md, rules/telemetry.md.
+//   node tick.mjs --pr <n> --approve | --override   a human's decision at a hold (rules/hold.md); refused unattended
+//
+// Exit: 0 in progress or PASS/STOPPED/OVERRIDDEN, 3 an exception outcome (ROLLED_BACK, ESCALATE, INCONCLUSIVE)
+// or a rollout that just reached a hold (AWAITING_APPROVAL), 1 error.
+// Rules this implements: rules/state.md, rules/loop.md, rules/hold.md, rules/rollback.md, rules/telemetry.md.
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, mkdtempSync } from "node:fs";
@@ -22,6 +25,8 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { decide, DEFAULT_THRESHOLDS } from "./decide.mjs";
+import { recommend, riskClass } from "./promote.mjs";
+import { readEvidence, updateSignal } from "./signal.mjs";
 import { parseYaml } from "./yaml-lite.mjs";
 
 const REPORT_MARKER = "<!-- deployment-verify:v1:report -->";
@@ -35,6 +40,7 @@ const CRITERION_RE = /^- (?:(⬜|✅|❌|⏭️) )?(?:(🚀) )?((?:AC|G)-\d+) \[
 // The table form of the same region: `| ✅&nbsp;AC‑1 | text | api:PUT /x · w1 · [link] |` (ID with a non-breaking hyphen).
 const ROW_RE = /^\|\s*(?:(⬜|✅|❌|⏭️)(?:&nbsp;| ))?(?:(🚀)(?:&nbsp;| ))?(?:🛡️(?:&nbsp;| ))?((?:AC|G)[-\u2011]\d+)\s*\|\s*((?:\\\||\\(?!\|)|[^|\\])+?)\s*\|\s*((?:\\\||\\(?!\|)|[^|\\])*?)\s*\|$/;
 const EXCEPTION_OUTCOMES = ["ROLLED_BACK", "ESCALATE", "INCONCLUSIVE"];
+const HOLD_EVENT = "AWAITING_APPROVAL";
 const LABEL = "deployment-verify";
 const LEASE_MS = 15 * 60 * 1000;
 
@@ -55,7 +61,17 @@ export function loadConfig(env, { cwd = process.cwd(), slug = null } = {}) {
 	const environment = merged.environments?.[env];
 	if (!environment) throw new Error(`release.yml has no environment "${env}"`);
 	const policies = { ...(overlay.policies || {}), ...(repo.policies || {}) };
+	const holdError = checkHoldAfter(merged);
+	if (holdError) throw new Error(holdError);
 	return { ...merged, env, environment, policies, thresholds: { ...DEFAULT_THRESHOLDS, ...(merged.thresholds || {}) } };
+}
+
+// `hold_after` is absent (no hold), or a step value other than the last: a hold at 100 % has nothing left to approve.
+export function checkHoldAfter(config) {
+	if (config.hold_after === undefined || config.hold_after === null) return null;
+	const steps = config.steps || [1, 10, 50, 100];
+	if (!steps.slice(0, -1).includes(config.hold_after)) return `release.yml hold_after: ${config.hold_after} must be one of steps ${JSON.stringify(steps.slice(0, -1))}`;
+	return null;
 }
 
 function deepMerge(a, b) {
@@ -291,10 +307,11 @@ const iso = (ms) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, "Z");
 /**
  * One tick for one rollout. Pure apart from `io`:
  *   io.now() ms · io.sql(query, {dataset, from, to}) rows · io.setFlag(value) · io.sendTraffic(n)
- *   io.sleep(ms) · io.platformRollback() bool · io.log(msg)
+ *   io.sleep(ms) · io.platformRollback() bool · io.log(msg) · io.recommend?() {recommendation, reason, risk_class}
+ * `decision` = { action: "approve" | "override", at, by } — a human's answer at a hold; never passed unattended.
  * Returns the new state. A terminal state has phase "done" and an `outcome`.
  */
-export async function tick(state, { contract, config, sha, mergedAt, deployedAt, io }) {
+export async function tick(state, { contract, config, sha, mergedAt, deployedAt, io, decision = null }) {
 	const s = structuredClone(state || {});
 	const env = config.environment;
 	const t = { ...config.thresholds, ...(contract.thresholds || {}) };
@@ -313,6 +330,7 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 	const offValue = providerFor(contract, config)?.rollout === "boolean" ? false : 0;
 	const valueFor = (pct) => (providerFor(contract, config)?.rollout === "boolean" ? pct > 0 : pct);
 	const trafficFor = (pct) => Math.max(200, Math.ceil((t.min_test_requests / (pct / 100)) * 1.5));
+	const holdAfter = Number.isFinite(config.hold_after) ? config.hold_after : null;
 
 	// Send traffic (synthetic environments) or let the window elapse (real traffic); return the window.
 	async function produceWindow(pct, startMs) {
@@ -427,6 +445,14 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 				s.last_passed_value = pct;
 				if (s.step_index + 1 >= steps.length) return end("PASS", contract.flag ? `${pct}% passed; flag left on` : "after window held against the before window");
 				Object.assign(s, { step_index: s.step_index + 1, window: null, hold_since: null, holds: 0, not_live_once: false });
+				if (contract.flag && pct === holdAfter) {
+					// A human hold: the flag stays at this step until approve or override (rules/hold.md).
+					const rec = io.recommend ? await io.recommend() : null;
+					s.hold = { at: pct, since: iso(io.now()), recommendation: rec?.recommendation || "HUMAN", reason: rec?.reason || "no recommender", risk_class: rec?.risk_class || null, degraded: rec?.degraded || null, decision: null };
+					s.phase = "hold";
+					io.log(`hold at ${pct}%: waiting for approve or override — recommendation ${s.hold.recommendation} (${s.hold.reason})`);
+					return s;
+				}
 				continue;
 			}
 			if (verdict.verdict === "HOLD") {
@@ -456,6 +482,24 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 				continue;
 			}
 			return end("ESCALATE", `ROLLBACK verdict (${verdict.reason}); rollback needs a human (reversibility: ${contract.reversibility || "none"})`);
+		}
+
+		if (s.phase === "hold") {
+			// Nothing is due at a hold: only a human decision moves it. An unattended tick changes nothing.
+			if (!decision) return s;
+			const at = decision.at || iso(io.now());
+			s.hold.decision = { action: decision.action, at, by: decision.by || null, seconds: Math.round((Date.parse(at) - Date.parse(s.hold.since)) / 1000) };
+			if (decision.action === "approve") {
+				decision = null;
+				s.phase = "step";
+				io.log(`hold at ${s.hold.at}%: approved after ${s.hold.decision.seconds} s`);
+				continue;
+			}
+			if (decision.action === "override") {
+				await io.setFlag(offValue);
+				return end("OVERRIDDEN", `human override at the ${s.hold.at}% hold — flag returned to off`);
+			}
+			throw new Error(`unknown hold decision ${decision.action}`);
 		}
 
 		if (s.phase === "rollback") {
@@ -499,6 +543,14 @@ export function renderReport(s, contract, pr) {
 		...rows,
 	];
 	lines.push(...criteriaLines(pr?.criteria, contract));
+	if (s.hold) {
+		const d = s.hold.decision;
+		lines.push(d ? `hold:     ${s.hold.at} % — ${d.action === "approve" ? "approved" : "overridden"}${d.by ? ` by ${d.by}` : ""} after ${d.seconds} s`
+			: `hold:     ${s.hold.at} % since ${s.hold.since} — waiting: /deployment-verify approve|override ${pr?.number ?? "<pr>"}`);
+		lines.push(`recommend: ${s.hold.recommendation} — ${s.hold.reason}${s.hold.risk_class ? ` (risk class ${s.hold.risk_class})` : ""}; advisory only`);
+		if (s.hold.degraded) lines.push(s.hold.degraded);
+	}
+	if (s.signal_note) lines.push(`signal:   ${s.signal_note}`);
 	if (s.phase === "rollback" || s.recovery) lines.push(`action:   flag off at ${s.rollback_at}${s.recovery ? `; RECOVERED in ${s.recovery.seconds} s` : ""}`);
 	if (s.phase === "done") lines.push(`result:   ${s.reason}`);
 	if (s.outcome === "ROLLED_BACK") lines.push(`next:     /fix-bug ${pr?.url || "<PR URL>"} — failing window ${s.steps.at(-1)?.from}..${s.steps.at(-1)?.to}`);
@@ -549,7 +601,18 @@ function localStore(path) {
 
 // ───────────────────────────── real io ────────────────────────────
 
-function realIo({ config, contract }) {
+// The PR's risk class from its diff (promote.mjs → pr-reviewer's classify-shape); `unknown` when unreadable.
+function prRiskClass(number) {
+	if (!number) return "unknown";
+	try {
+		const files = JSON.parse(gh(["api", `repos/{owner}/{repo}/pulls/${number}/files`, "--paginate"]).replace(/\]\s*\[/g, ","));
+		return riskClass(files);
+	} catch {
+		return "unknown";
+	}
+}
+
+function realIo({ config, contract, pr = null, slug = null }) {
 	const env = config.environment;
 	const tel = config.telemetry || {};
 	const backend =
@@ -584,8 +647,28 @@ function realIo({ config, contract }) {
 			return false;
 		},
 		log: (m) => console.error(`[deployment-verify] ${m}`),
+		// Advisory only: printed beside the hold, never acted on (rules/autonomy.md). No promotion rule → no LoreKit call.
+		recommend: async () => {
+			if (!config.promotion) return { ...recommend(null, null), risk_class: null };
+			const risk = prRiskClass(pr?.number);
+			const ev = readEvidence({ repo: slug, risk, model: contract.model || null });
+			return { ...recommend(config.promotion, ev.evidence), risk_class: risk, degraded: ev.line || null };
+		},
 	};
 }
+
+// The signal event a tick produced, if any: a human decision at a hold, or a rollback verdict.
+export function signalEvent(prev, next, contract) {
+	const model = contract.model || null;
+	const d = next.hold?.decision;
+	if (prev?.phase === "hold" && d && !prev.hold?.decision) return { type: d.action, seconds: d.seconds, model, at: d.at };
+	if (prev?.phase !== "done" && next.phase === "done" && next.rollback_verdict && ["ROLLED_BACK", "ESCALATE"].includes(next.outcome)) {
+		return { type: "rollback", model, at: next.ended_at };
+	}
+	return null;
+}
+
+const JUST_HELD = new WeakSet();
 
 function fail(msg) {
 	throw new Error(msg);
@@ -600,11 +683,13 @@ function exception(config, event) {
 	if (r.status !== 0) console.error(`[deployment-verify] on_exception failed (${r.status}); the PR comment still holds the outcome`);
 }
 
-async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop }) {
-	const io = realIo({ config, contract });
+async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop, decision = null, slug = null }) {
+	const io = realIo({ config, contract, pr: store.pr, slug });
 	const holder = `${process.env.GITHUB_RUN_ID || process.pid}-${Date.now()}`;
 	for (;;) {
 		let state = store.read();
+		// A hold with no decision has nothing due: leave the comment untouched (no lease churn every tick).
+		if (state?.phase === "hold" && !decision) return state;
 		if (state?.lease && Date.parse(state.lease.until) > Date.now() && state.lease.holder !== holder) {
 			io.log(`lease held by ${state.lease.holder}; skipping`);
 			return state;
@@ -613,9 +698,25 @@ async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop
 		store.write(renderReport(state, contract, store.pr));
 		store.reread();
 		if (store.read()?.lease?.holder !== holder) return state;
-		const next = await tick(state, { contract, config, sha, mergedAt, deployedAt, io });
+		if (decision && state.phase !== "hold") throw new Error(`not at a hold (phase ${state.phase || "none"}) — nothing to ${decision.action}`);
+		const next = await tick(state, { contract, config, sha, mergedAt, deployedAt, io, decision });
+		decision = null;
 		next.lease = null;
+		const event = config.promotion ? signalEvent(state, next, contract) : null;
+		if (event) {
+			const risk = next.hold?.risk_class || next.risk_class || (next.risk_class = prRiskClass(store.pr?.number));
+			const r = updateSignal({ repo: slug, risk, event, rule: config.promotion });
+			next.signal_note = r.status === "ok" ? `${risk}: ${r.note}` : r.line;
+			io.log(next.signal_note);
+		}
+		const heldNow = next.phase === "hold" && !next.hold?.decision && !(next.notified || []).includes(HOLD_EVENT);
+		if (heldNow) next.notified = [...(next.notified || []), HOLD_EVENT];
 		store.write(renderReport(next, contract, store.pr));
+		if (heldNow) {
+			exception(config, { outcome: HOLD_EVENT, reason: `hold at ${next.hold.at}%: recommendation ${next.hold.recommendation} (${next.hold.reason})`, pr: store.pr?.url || null, contract, state: next });
+			JUST_HELD.add(next);
+		}
+		if (next.phase === "hold") return next;
 		if (next.phase === "done") {
 			if (next.outcome === "PASS" && store.pr?.number) {
 				const marked = markProduction(store.pr.number, prodMarks(store.pr.criteria, contract));
@@ -731,6 +832,48 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} rollback policy never escalates without acting: ${s.outcome}`);
 	}
+	// Hold step (rules/hold.md): hold_after stops a passing rollout until a human decides; an unattended tick never moves it.
+	{
+		const holdConfig = { ...base, hold_after: 10 };
+		const hold = async (rec) => {
+			const w = world({ fault: "none" });
+			if (rec) w.io.recommend = async () => rec;
+			return { w, s: await rollout(w, holdConfig) };
+		};
+		const report = (name, ok, detail = "") => {
+			if (!ok) failed++;
+			console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? `: ${detail}` : ""}`);
+		};
+		{
+			const { w, s } = await hold();
+			report("hold: stops at the hold step with the flag left there", s.phase === "hold" && s.hold.at === 10 && s.steps.length === 2 && w.log.at(-1) === "set 10" && s.hold.recommendation === "HUMAN", `${s.phase} at ${s.hold?.at}%`);
+			const before = JSON.stringify(s);
+			const calls = w.log.length;
+			const again = await tick(s, { contract, config: holdConfig, io: w.io });
+			report("hold: an unattended tick never advances", JSON.stringify(again) === before && w.log.length === calls);
+			await w.io.sleep(120_000);
+			let a = await tick(s, { contract, config: holdConfig, io: w.io, decision: { action: "approve", at: iso(w.io.now()), by: "octocat" } });
+			const ev = signalEvent(s, a, { model: "m1" });
+			for (let i = 0; i < 50 && a.phase !== "done"; i++) a = await tick(a, { contract, config: holdConfig, io: w.io });
+			report("hold: approve advances to the next step and the rollout passes", a.outcome === "PASS" && a.steps.length === 4 && a.hold.decision.seconds === 120 && w.log.at(-1) === "set 100", `${a.outcome}, approved after ${a.hold.decision.seconds} s`);
+			report("hold: approve yields one approve signal event with time-to-approve", ev?.type === "approve" && ev.seconds === 120 && ev.model === "m1" && signalEvent(a, a, {}) === null);
+		}
+		{
+			const { w, s } = await hold();
+			const o = await tick(s, { contract, config: holdConfig, io: w.io, decision: { action: "override", at: iso(w.io.now()) } });
+			report("hold: override returns the flag to off and ends OVERRIDDEN", o.outcome === "OVERRIDDEN" && w.log.at(-1) === "set 0" && signalEvent(s, o, {})?.type === "override", o.outcome);
+		}
+		{
+			const { s } = await hold({ recommendation: "AUTO", reason: "earned", risk_class: "ui" });
+			report("hold: an AUTO recommendation is printed but still waits for a human", s.phase === "hold" && s.hold.recommendation === "AUTO" && /recommend: AUTO — earned \(risk class ui\); advisory only/.test(renderReport(s, contract, null)));
+		}
+		{
+			const w = world({ fault: "errors" });
+			const s = await rollout(w);
+			report("hold: a rollback verdict yields a rollback signal event", signalEvent({ phase: "rollback" }, s, {})?.type === "rollback" && s.outcome === "ROLLED_BACK");
+		}
+		report("hold: hold_after must be a step before the last", checkHoldAfter({ steps: [1, 10, 50, 100] }) === null && checkHoldAfter({ hold_after: 10 }) === null && /must be one of/.test(checkHoldAfter({ hold_after: 100 }) || "") && /must be one of/.test(checkHoldAfter({ hold_after: 5 }) || ""));
+	}
 	// Deploy detection: a later commit that contains the merge counts as live; an older one does not.
 	{
 		const detect = { attribute: "vercel.sha", equals: "merge_sha" };
@@ -838,7 +981,7 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${err ? err.message : `${s.outcome} — ${s.reason}`}`);
 	}
-	const total = 15;
+	const total = 23;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
@@ -886,18 +1029,33 @@ async function main() {
 		return;
 	}
 	if (a["check-config"]) {
-		console.log(`release.yml ok: environment ${config.env}, ${config.flags?.providers?.length || 0} provider(s), steps ${JSON.stringify(config.steps)}`);
+		console.log(`release.yml ok: environment ${config.env}, ${config.flags?.providers?.length || 0} provider(s), steps ${JSON.stringify(config.steps)}${config.hold_after !== undefined ? `, hold after ${config.hold_after}%` : ""}${config.promotion ? ", promotion rule set" : ""}`);
 		return;
 	}
+	let decision = null;
+	if (a.approve || a.override) {
+		if (a.approve && a.override) throw new Error("pass --approve or --override, not both");
+		if (a.all) throw new Error("a hold decision names one rollout: --pr <n> or --local, never --all");
+		if (a.unattended || existsSync("/tmp/workspace/agent-skills/env.sh")) throw new Error("a hold decision is a human's: refused in an unattended run");
+		const by = (() => {
+			try {
+				return execFileSync("gh", ["api", "user", "--jq", ".login"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+			} catch {
+				return null;
+			}
+		})();
+		decision = { action: a.approve ? "approve" : "override", at: iso(Date.now()), by };
+	}
+	const exitFor = (s) => (JUST_HELD.has(s) || (s.phase === "done" && EXCEPTION_OUTCOMES.includes(s.outcome)) ? 3 : 0);
 	let worst = 0;
 	if (a.local) {
 		const contract = JSON.parse(readFileSync(a.contract, "utf8"));
 		const cfg = configFor(contract);
 		const err = validateContract(contract, cfg);
 		if (err) throw new Error(err);
-		const s = await runOne({ store: localStore(a.local), contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run });
+		const s = await runOne({ store: localStore(a.local), contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run, decision, slug });
 		console.log(renderReport(s, contract, null).split("\n").slice(2, -2).join("\n"));
-		return process.exit(s.phase === "done" && EXCEPTION_OUTCOMES.includes(s.outcome) ? 3 : 0);
+		return process.exit(exitFor(s));
 	}
 	const numbers = a.all
 		? JSON.parse(gh(["pr", "list", "--state", "merged", "--label", LABEL, "--json", "number", "--limit", "100"])).map((p) => p.number)
@@ -927,8 +1085,8 @@ async function main() {
 				store.finish();
 				continue;
 			}
-			const s = await runOne({ store, contract, config: cfg, sha: store.pr.mergeCommit?.oid, mergedAt: store.pr.mergedAt, deployedAt: a["deployed-at"], loop: !!a.run });
-			if (s.phase === "done" && EXCEPTION_OUTCOMES.includes(s.outcome)) worst = 3;
+			const s = await runOne({ store, contract, config: cfg, sha: store.pr.mergeCommit?.oid, mergedAt: store.pr.mergedAt, deployedAt: a["deployed-at"], loop: !!a.run, decision, slug });
+			if (exitFor(s) === 3) worst = Math.max(worst, 3);
 		} catch (e) {
 			console.error(`#${n}: ${e.message}`);
 			worst = Math.max(worst, 1);

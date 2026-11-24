@@ -25,7 +25,7 @@ This file does not restate those — it only names the buckets and says which ki
 
 - [The kinds](#the-kinds)
 - [The `review*` trio (the confusing one)](#the-review-trio-the-confusing-one)
-- [Master table — all 15 buckets](#master-table--all-15-buckets)
+- [Master table — all 16 buckets](#master-table--all-16-buckets)
 - [First-class properties in LoreKit (`kind` + `host`)](#first-class-properties-in-lorekit-kind--host)
 - [Why the tags are not kind-prefixed](#why-the-tags-are-not-kind-prefixed)
 - [See also](#see-also)
@@ -71,7 +71,7 @@ reviewer-comment-relevance
 
 ---
 
-## Master table — all 15 buckets
+## Master table — all 16 buckets
 
 ### Lessons (`loop::<host>-lessons`, key `<host>-lessons::<slug>`)
 
@@ -104,6 +104,15 @@ hosts and silently halve every usage roll-up.
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
 | --- | --- | --- | --- | --- |
 | `reviewer-comment-relevance` | [`comment-relevance-memory.md`](./comment-relevance-memory.md) | GH Action `reviewer-comment-relevance.yml` (committed — see below) + `implement-suggestion` + `reviewer`/`pr-reviewer` post-merge fallback → `reviewer`/`pr-reviewer` | durable 60d | Every review run (`reviewer` Step 0.7 / `pr-reviewer` Step 1.0); applied **after** verification. |
+
+### Signal (`deployment-verify-autonomy`, key `deployment-verify-autonomy::<risk class>`)
+
+| Bucket | Owner rule | Producer → Consumer | Lifetime | Read |
+| --- | --- | --- | --- | --- |
+| `deployment-verify-autonomy` | [`deployment-verify/rules/autonomy.md`](../../../skills/testing/deployment-verify/rules/autonomy.md) | `deployment-verify` `scripts/signal.mjs` (a human approve or override at a hold, a ROLLBACK verdict, a recorded revert) → `deployment-verify` `scripts/promote.mjs` at each hold | durable 60d, refreshed on write | At each hold, only when `release.yml` has a `promotion:` rule. |
+
+`kind: signal`, `host: deployment-verify`, set explicitly; scope `repo::{owner}/{repo}`, one record per risk class (`data`, `api`, `config`, `ui`, `other`), written with `expected_version`.
+It is advisory: it shapes an `AUTO` / `HUMAN` recommendation printed beside a hold, and nothing advances or flips a flag because of it.
 
 ### Knowledge (`codebase-knowledge`, keys `knowledge::<symbol>@<path>` and `hotspot::<path>`)
 

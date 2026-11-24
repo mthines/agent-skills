@@ -38,6 +38,12 @@ rollback:
 steps: [1, 10, 50, 100]                 # rollout percentages
 step_window_minutes: 10                 # production: how long each step is watched before measuring
 max_hold_minutes: 30                   # per step; then return to the last passed step and stop
+# A human hold (rules/hold.md): after this step passes, wait for `tick.mjs --pr <n> --approve | --override`.
+# Off when absent. Must be a step value other than the last.
+# hold_after: 10
+# Earned-autonomy rule (rules/autonomy.md): only shapes the AUTO/HUMAN recommendation printed at a hold;
+# nothing advances or flips a flag because of it. Off when absent (every recommendation is HUMAN).
+# promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui, config], max_level: 1 }
 thresholds:                             # defaults; a PR contract may tighten them
   min_test_requests: 20
   min_reference_requests: 20
