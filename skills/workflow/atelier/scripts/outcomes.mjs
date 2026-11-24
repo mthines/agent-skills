@@ -12,7 +12,8 @@
 //   node outcomes.mjs --merged '[{"pr":12,"sha":"abc…"}]'   or   --input <file.json>   (same shape)
 //   node outcomes.mjs --self-test                           builds its own temp git repo
 //
-// Prints a JSON array, one { pr, sha, outcome, final, evidence: [{ sha, subject, at, files, why }] } per PR.
+// Prints a JSON array, one { pr, sha, outcome, final, evidence: [{ sha, subject, at, files, why }] } per PR;
+// a PR whose sha cannot be read is { outcome: "unknown", final: false, error }, and the others still classify.
 // Exit: 0 ok, 2 error.
 
 import { execFileSync } from "node:child_process";
@@ -68,6 +69,15 @@ export function classify(dir, { pr, sha, base = "origin/main", days = 14, now = 
 	return { pr, sha: full, outcome, final, evidence };
 }
 
+// One PR whose sha cannot be read must not cost the sweep every other PR's outcome.
+export function classifyOne(dir, opts) {
+	try {
+		return classify(dir, opts);
+	} catch (e) {
+		return { pr: opts.pr, sha: opts.sha, outcome: "unknown", final: false, evidence: [], error: e.message.split("\n")[0] };
+	}
+}
+
 function selfTest() {
 	const { t, done } = makeTester("outcomes");
 	const dir = mkdtempSync(join(tmpdir(), "atelier-outcomes-"));
@@ -113,6 +123,8 @@ function selfTest() {
 		t("clean with the window closed is final", run(3, p3).final);
 		t("clean inside the window is not final", !run(3, p3, { now: T0 + 2 * DAY }).final);
 		t("a short sha resolves to the full sha", run(2, p2.slice(0, 8)).sha === p2);
+		const bad = classifyOne(dir, { pr: 9, sha: "deadbeef", base: "main", now });
+		t("an unknown sha is 'unknown', not a crash", bad.outcome === "unknown" && !bad.final && bad.error);
 	} catch (e) {
 		crashed = e.message.split("\n")[0];
 	} finally {
@@ -134,7 +146,7 @@ function main() {
 		const opts = { base: a.base || "origin/main", days: a.days ? Number(a.days) : 14 };
 		if (a.now) opts.now = Date.parse(a.now) / 1000;
 		const dir = a["repo-dir"] || process.cwd();
-		console.log(JSON.stringify(list.map((p) => classify(dir, { ...opts, pr: p.pr, sha: p.sha })), null, 2));
+		console.log(JSON.stringify(list.map((p) => classifyOne(dir, { ...opts, pr: p.pr, sha: p.sha })), null, 2));
 	} catch (e) {
 		console.error(`outcomes: ${e.message}`);
 		process.exit(2);
