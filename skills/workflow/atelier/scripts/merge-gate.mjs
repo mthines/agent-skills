@@ -188,16 +188,8 @@ async function fromGh(pr, { contractOnly }) {
 	return { files, body, ci };
 }
 
-const FLAG_BODY = `x
-<!-- deployment-verify:v1 -->
-<details><summary>🚦 Deployment contract</summary>
-
-\`\`\`json
-{ "service": "ui", "root_spans": ["GET /x"], "flag": { "key": "newHeader", "provider": "posthog" }, "cohort": { "attribute": "a", "test": "true", "control": "false", "on": "root" }, "reversibility": "flag" }
-\`\`\`
-
-</details>
-<!-- /deployment-verify:v1 -->`;
+// A valid flag contract body; the CLI check `--files … --body-file fixtures/flag-body.md` reads the same file.
+const FLAG_BODY = readFileSync(new URL("./fixtures/flag-body.md", import.meta.url), "utf8");
 const NOFLAG_BODY = FLAG_BODY.replace(/"flag": \{[^}]*\}, "cohort": \{[^}]*\}, /, "");
 
 async function selfTest() {
