@@ -8,7 +8,7 @@ description: >
   commit per finding, and reports with real screenshots. `setup` writes the committed `.agents/aw/` config every
   suite skill reads. Triggers on "/aw-verify".
 disable-model-invocation: false
-argument-hint: '[run [local|preview]|setup|report] [<pr-url>|<pr-number>|<ticket-id>] [--no-fix] [--no-push] [--no-comment] [--loops <n>] [--keep-stack] [--foreign-stack teardown|ask|abort]'
+argument-hint: '[run [local|preview]|setup|report] [<pr-url>|<pr-number>|<ticket-id>] [--no-fix] [--no-push] [--no-comment] [--loops <n>] [--as <role>] [--keep-stack] [--foreign-stack teardown|ask|abort]'
 license: MIT
 metadata:
   author: mthines
