@@ -12,7 +12,7 @@ tags:
 
 Runs once on Lite (Phase 4b) and Full (Step 4.2), after verification and before the walkthrough and the PR — on Lite also before `create-pr`'s local `review-loop`; never on Micro.
 It is report-only: it never fails the run, never edits code, never iterates, and never re-enters Phase 3 or Step 2.
-Its output is `.agent/{branch}/quality-notes.md`, which the walkthrough and the PR body copy.
+Its output is `.agent/{branch}/quality-notes.md`, which the walkthrough and the PR body copy, and `.agent/{branch}/quality-findings.jsonl`, which later measures each finding type against what humans did.
 **Why:** [`../references/quality-pass.md`](../references/quality-pass.md).
 
 ```text
@@ -52,3 +52,32 @@ Run both lanes; each is one call and runs at most once.
 - Copy the lanes' rows verbatim; never re-judge them here.
 - Write the file even when both lanes were skipped: the reviewer reads why.
 - `aw-create-walkthrough` copies the file into `## Quality notes`; `create-pr` writes the `aw:quality-notes` PR-body block from it (the `create-pr` skill's `rules/description-contract.md`).
+
+## Findings file — `.agent/{branch}/quality-findings.jsonl`
+
+Write one JSON line per reuse, extend, or UX row the notes report, in the same step that writes `quality-notes.md`.
+`new` rows, skipped lanes, and `Degraded:` lanes write no line; no finding → an empty file.
+The file is what [`finding-outcomes.md`](./finding-outcomes.md) later scores against what a human did, so it records findings, never verdicts on them.
+
+| Field | Required | Value |
+| --- | --- | --- |
+| `fp` | yes | `node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --fp "<type>" "<path>" "<symbol>" "<line>"` (`""` for an absent symbol) — a symbol anchors it, else the line, so two UX findings of one rule in one file stay distinct |
+| `type` | yes | `reuse` or `extend` (the fit verdict), or `ux:<rubric rule id>`; a finding no rubric rule covers → `ux:<category>` (`a11y`, `copy`, `flow`, `visual`) |
+| `path` | yes | the repo-relative file the finding is anchored to — for `reuse`/`extend`, the new item's file, not the existing one |
+| `symbol` | when the row names one | the new export, component, or route name, exactly as the inventory printed it |
+| `line` | when the row has `file:line` | the integer line at `head_sha` |
+| `head_sha` | yes | `git rev-parse HEAD` when the pass ran |
+| `summary` | yes | the row's one-line text |
+| `model` | optional | the model id that produced the finding |
+
+A row with neither `symbol` nor `line` scores `unknown`, so give every UX finding its `file:line`.
+Write the lines with a JSON serializer (`node -e`, `jq -c`), never by hand-quoting.
+
+```jsonl
+✗ Wrong — a hand-made fp that hashes the wording, so the next run's fp differs; head_sha is a branch name
+{"fp":"reuse-src/SaveBar.tsx:12-duplicates ActionBar","type":"reuse","path":"src/SaveBar.tsx","head_sha":"feat/save","summary":"duplicates ActionBar"}
+
+✓ Right — fp from --fp, a symbol and a line to score against, a commit sha
+{"fp":"8d1f0c2a9b3e4f17","type":"reuse","path":"src/SaveBar.tsx","symbol":"SaveBar","line":12,"head_sha":"3f9c1e7a2b8d4c6e0f1a5b9c7d3e2f4a6b8c0d1e","summary":"SaveBar duplicates ActionBar (src/ui/ActionBar.tsx:8)"}
+{"fp":"c04e2b7d91a3f655","type":"ux:focus-visible","path":"src/SaveBar.tsx","line":31,"head_sha":"3f9c1e7a2b8d4c6e0f1a5b9c7d3e2f4a6b8c0d1e","summary":"Save button has no visible focus ring"}
+```
