@@ -69,6 +69,7 @@ That silence is the skill working.
 ### 3. Ask once
 
 1. Put every `blocking` question into one `AskUserQuestion` call (≤ 4 questions, 2–4 options each).
+   More than four: ask the four whose wrong guess costs most, list the rest under `## Open questions`, and return `blocked`.
 2. Each option is a concrete choice found in the code, with its trade-off; the one you would pick goes first, labelled `(Recommended)`.
 3. A second round is allowed only when a first-round answer exposes a new `blocking` unknown.
 4. Never a third round: list the remaining `blocking` unknowns under `## Open questions`, return `blocked`, and recommend `/ideate` (options) or a spike (evidence).
