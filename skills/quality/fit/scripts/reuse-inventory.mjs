@@ -67,27 +67,30 @@ function nextRoute(file) {
 export function inventory({ base, head = "HEAD", cwd = process.cwd() }) {
   const range = `${base}...${head}`;
   const items = [];
-  const status = git(["diff", "--name-status", "--no-renames", range], cwd).trim().split("\n").filter(Boolean);
-  for (const row of status) {
-    const [code, file] = row.split("\t");
+  // Renames are detected, so a moved file is not reported as a new one.
+  const status = git(["diff", "--name-status", "-M", range], cwd).trim().split("\n").filter(Boolean).map((r) => r.split("\t"));
+  for (const [code, file] of status) {
     if (code === "A" && !SKIP.test(file)) items.push({ kind: "file", name: file, file, line: 1 });
   }
-  const changed = status.map((r) => r.split("\t")).filter(([c, f]) => c !== "D" && SOURCE.test(f) && !SKIP.test(f)).map(([, f]) => f);
-  for (const file of changed) {
-    const diff = git(["diff", "-U0", "--no-renames", range, "--", file], cwd).split("\n");
-    const removed = new Set();
-    const added = [];
+  const files = status.filter(([c]) => c !== "D").map((r) => r[r.length - 1]);
+  const old = status.filter(([c]) => c === "D" || c.startsWith("R")).map((r) => r[1]);
+  const removed = new Set();
+  const added = [];
+  for (const file of [...new Set([...files, ...old])].filter((f) => SOURCE.test(f) && !SKIP.test(f))) {
+    const diff = git(["diff", "-U0", "-M", range, "--", file], cwd).split("\n");
     let n = 0;
+    let inHunk = false;
     for (const l of diff) {
       const h = l.match(/^@@ -\d+(?:,\d+)? \+(\d+)/);
-      if (h) { n = Number(h[1]); continue; }
-      if (l.startsWith("+++") || l.startsWith("---")) continue;
+      if (h) { n = Number(h[1]); inHunk = true; continue; }
+      if (l.startsWith("diff --git")) { inHunk = false; continue; }
+      if (!inHunk) continue;   // file headers (---/+++) sit before the first @@ only
       if (l.startsWith("-")) for (const d of declarations(l.slice(1), file)) removed.add(`${d.kind}\t${d.name}`);
       else if (l.startsWith("+")) { for (const d of declarations(l.slice(1), file)) added.push({ ...d, file, line: n }); n++; }
     }
-    // A declaration that only moved or changed its body inside the file is not new.
-    for (const d of added) if (!removed.has(`${d.kind}\t${d.name}`)) items.push(d);
   }
+  // A declaration removed anywhere in the range (moved, or its body changed) is not new.
+  for (const d of added) if (!removed.has(`${d.kind}\t${d.name}`)) items.push(d);
   return items;
 }
 
@@ -119,11 +122,13 @@ function selfTest() {
     const put = (f, s) => { mkdirSync(dirname(join(dir, f)), { recursive: true }); writeFileSync(join(dir, f), s); };
     g("init", "-q", "-b", "main");
     put("src/lib.ts", "export function oldHelper() {\n  return 1;\n}\n");
+    put("src/moved.ts", "export const kept = 1;\nexport const also = 2;\n");
     g("add", "."); g("commit", "-qm", "base");
     put("src/lib.ts", "export function oldHelper() {\n  return 2;\n}\nexport function newHelper() {}\n");
     put("src/Card.tsx", "export function Card() {\n  return null;\n}\n");
     put("src/Card.test.tsx", "export function fixture() {}\n");
-    put("src/server.js", "app.get('/health', ok);\n");
+    put("src/server.js", "let i = 0;\n++i;\napp.get('/health', ok);\n");   // ++i must not shift the line count
+    g("mv", "src/moved.ts", "src/renamed.ts");                                   // a pure move adds nothing
     g("add", "."); g("commit", "-qm", "change");
     const items = inventory({ base: "HEAD~1", cwd: dir });
     const keys = items.map((i) => `${i.kind} ${i.name} ${i.file}:${i.line}`).sort();
@@ -132,7 +137,7 @@ function selfTest() {
       "export newHelper src/lib.ts:4",
       "file src/Card.tsx src/Card.tsx:1",
       "file src/server.js src/server.js:1",
-      "route GET /health src/server.js:1",
+      "route GET /health src/server.js:3",
     ]);
     eq("e2e summary", render(items).split("\n").pop(), "inventory: 5 items (files 2, exports 1, components 1, routes 1)");
   } finally { rmSync(dir, { recursive: true, force: true }); }
