@@ -71,7 +71,7 @@ That silence is the skill working.
 1. Put every `blocking` question into one `AskUserQuestion` call (≤ 4 questions, 2–4 options each).
 2. Each option is a concrete choice found in the code, with its trade-off; the one you would pick goes first, labelled `(Recommended)`.
 3. A second round is allowed only when a first-round answer exposes a new `blocking` unknown.
-4. Never a third round: say the request is not interview-shaped and recommend `/ideate` (options) or a spike (evidence).
+4. Never a third round: list the remaining `blocking` unknowns under `## Open questions`, return `blocked`, and recommend `/ideate` (options) or a spike (evidence).
 
 ```text
 Good: one call — { PR states: [open+merged+ci-failing (Recommended), open+merged, all four] },
@@ -90,7 +90,7 @@ Set exactly one verdict:
 | ------------------------ | -------------------------------------------------------------------- |
 | `ready`                  | No `blocking` unknown left and no unconfirmed assumption.            |
 | `ready-with-assumptions` | No `blocking` unknown left; at least one advisory or spike assumption. |
-| `blocked`                | A `blocking` unknown is unanswered (user unavailable or `--non-interactive`). |
+| `blocked`                | A `blocking` unknown is unanswered (user unavailable, `--non-interactive`, or the two-round cap). |
 
 End with one line: the verdict and the brief path.
 
