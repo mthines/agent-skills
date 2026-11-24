@@ -27,6 +27,9 @@
 //   node verify-comment.mjs --pr <n|url> --from-plan <plan.md> [--statuses <json|file>]
 //     publishes an `/aw` brief's criteria as the intent region (rows ⬜, or ticked from run-checks.mjs --statuses);
 //     --print renders it and exits with no GitHub call; exit 3 = the brief has no AC (nothing to publish)
+//   node verify-comment.mjs --check --local <run-dir> [--ui]   the same gate before a PR exists, over <run-dir>/intent.md
+//     and report.md (with --ui, ../specs.md too); exit 1 lists every unmarked or untagged AC and report problem
+//   node verify-comment.mjs --local <run-dir> --marks '{"AC-1":{"status":"✅"}}'   marks intent.md's AC lines in place
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
@@ -536,27 +539,61 @@ function writeBody({ slug, prNumber, prUrl, prBody, bodyReport, found, section, 
 // `prBody` is the PR description, `comments` the verify comment bodies (newest first); `ui` is true for a UI diff.
 const VERDICT_HEADLINE = /^##\s+(?:✅ Verified|⚠️ Verified with open items|❌ Not verified|⛔ Blocked) — \S/;
 export function checkReport(prBody, comments = [], { ui = false } = {}) {
-  const problems = [];
   const source = bodyBlock(prBody) || comments.find((c) => c.startsWith(MARKER)) || "";
   const regions = parseRegions(source);
   const intent = regions.get("intent");
-  if (!intent) problems.push("no intent region: publish the criteria (intent.md § Step 6)");
+  const problems = checkCompleteness(intent ? parseIntent(intent) : null, regions.get("aggregate") || null, {
+    noIntent: "no intent region: publish the criteria (intent.md § Step 6)",
+    noReport: "no aggregate region: post the report (report.md)",
+    setMarks: "set them with --marks",
+  });
+  if (ui && !/<!-- (?:ui-verify:v2|ui-verify:v1|preview-spec:v1) -->/.test(prBody || "")) problems.push("no ui-verify spec block in the PR description (ui-verify author, or lift specs.md)");
+  return problems;
+}
+
+// The rules both gates share. `rows` are the parsed criteria (null: none published), `report` the rendered
+// report (null: none). Every AC has a final status and a proof kind; a `ui:` AC is never ⏭️ under a ✅ verdict
+// (a criterion with no UI path is tagged api:, worker:, or left untagged, never ui:); the report opens with a
+// verdict headline and keeps a closed Details block. `unmarked: "open"` counts an AC with no mark as not run.
+function checkCompleteness(rows, report, { noIntent, noReport, setMarks, unmarked = "ignore" }) {
+  const problems = [];
+  const acs = (rows || []).filter((c) => c.id.startsWith("AC-"));
+  if (!rows) problems.push(noIntent);
   else {
-    const rows = parseIntent(intent);
-    const open = rows.filter((c) => c.id.startsWith("AC-") && c.status === "⬜").map((c) => c.id);
-    if (open.length) problems.push(`criteria still ⬜ after the run: ${open.join(", ")} (set them with --marks)`);
-    const noProof = rows.filter((c) => c.id.startsWith("AC-") && !c.kind).map((c) => c.id);
+    const open = acs.filter((c) => c.status === "⬜" || (unmarked === "open" && !c.status)).map((c) => c.id);
+    if (open.length) problems.push(`criteria still ⬜ after the run: ${open.join(", ")} (${setMarks})`);
+    const noProof = acs.filter((c) => !c.kind).map((c) => c.id);
     if (noProof.length) problems.push(`criteria without a proof cell: ${noProof.join(", ")}`);
   }
-  const aggregate = regions.get("aggregate");
-  if (!aggregate) problems.push("no aggregate region: post the report (report.md)");
-  else {
-    const first = aggregate.split("\n").find((l) => l.trim()) || "";
-    if (!VERDICT_HEADLINE.test(first)) problems.push(`the report must open with "## <✅ Verified | ⚠️ Verified with open items | ❌ Not verified | ⛔ Blocked> — <headline>" (report.md.template), not "${first.slice(0, 60)}"`);
-    if (!visibleBody(aggregate)) problems.push("the report shows only its headline and collapsed blocks; put the summary, what needs a human and the findings in the open above Details");
-    if (!/<details>\s*<summary>Details<\/summary>/.test(aggregate)) problems.push('the report has no closed <details><summary>Details</summary> block (report.md.template)');
+  if (report === null) { problems.push(noReport); return problems; }
+  const first = report.split("\n").find((l) => l.trim()) || "";
+  if (!VERDICT_HEADLINE.test(first)) problems.push(`the report must open with "## <✅ Verified | ⚠️ Verified with open items | ❌ Not verified | ⛔ Blocked> — <headline>" (report.md.template), not "${first.slice(0, 60)}"`);
+  if (!visibleBody(report)) problems.push("the report shows only its headline and collapsed blocks; put the summary, what needs a human and the findings in the open above Details");
+  if (!/<details>\s*<summary>Details<\/summary>/.test(report)) problems.push('the report has no closed <details><summary>Details</summary> block (report.md.template)');
+  const uiSkipped = acs.filter((c) => c.kind === "ui" && c.status === "⏭️").map((c) => c.id);
+  if (/^##\s+✅/.test(first) && uiSkipped.length) problems.push(`ui: criteria not verified on their target under a ✅ verdict: ${uiSkipped.join(", ")} — a ui: criterion proved only by tests caps the run at ⚠️ (report.md § Tests-only criteria)`);
+  return problems;
+}
+
+// The gate for a run with no PR yet, over its run directory (`.agent/<branch>/verify/`): `intent.md` (its
+// `- <mark> AC-n [kind:target] text` lines, marked with --marks --local), `report.md`, and with `ui` the brief's
+// `specs.md` one level up. An AC line with no [kind:target] tag is a problem, never skipped: an unparsed
+// criterion is one the count would miss.
+export function checkLocal({ intent = null, report = null, specs = false } = {}, { ui = false } = {}) {
+  const rows = intent === null ? null : parseIntent(intent);
+  const problems = checkCompleteness(rows, report, {
+    noIntent: "no intent.md in the run directory: write it first (intent.md)",
+    noReport: "no report.md in the run directory: render it (report.md)",
+    setMarks: "set them with --marks --local",
+    unmarked: "open",
+  });
+  if (rows) {
+    const parsed = new Set(rows.map((c) => c.id));
+    const untagged = (intent.match(/^- (?:(?:⬜|✅|❌|⏭️) )?(?:🚀 )?AC-\d+\b/gm) || []).map((l) => l.match(/AC-\d+/)[0]).filter((id) => !parsed.has(id));
+    if (untagged.length) problems.push(`criteria without a [kind:target] tag in intent.md: ${untagged.join(", ")} (intent.md § Step 3)`);
+    if (!rows.some((c) => c.id.startsWith("AC-")) && !untagged.length) problems.push("intent.md lists no criterion (`- AC-n [kind:target] text`)");
   }
-  if (ui && !/<!-- (?:ui-verify:v2|ui-verify:v1|preview-spec:v1) -->/.test(prBody || "")) problems.push("no ui-verify spec block in the PR description (ui-verify author, or lift specs.md)");
+  if (ui && !specs) problems.push("no specs.md beside the run directory for a UI diff (ui-verify author)");
   return problems;
 }
 
@@ -837,12 +874,32 @@ function selfTest() {
   assert(cli("--from-plan", tmpPlan, "--bogus", "--print").status === 1 && cli("--from-plan", tmpPlan, "--section", "ui", "--print").status === 1, "an unknown flag, or --from-plan on another section, exits 1");
   writeFileSync(tmpPlan, "## Acceptance Criteria\n\nnone\n");
   assert(cli("--from-plan", tmpPlan, "--print").status === 3, "the CLI exits 3 for a brief with no AC");
+  {
+    // local gate: the run directory before a PR exists
+    const fx = (d, f) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), "fixtures", "local", d, f), "utf8");
+    const intent = fx("complete", "intent.md"), report = fx("complete", "report.md");
+    assert(checkLocal({ intent, report }).length === 0, "local gate: a complete run directory passes");
+    assert(checkLocal({ intent: fx("open", "intent.md"), report }).some((p) => p.includes("still ⬜") && p.includes("AC-2")), "local gate: an AC with no mark is open and named");
+    assert(checkLocal({ intent, report: null }).some((p) => p.includes("no report.md")), "local gate: a missing report.md fails");
+    assert(checkLocal({ intent: null, report }).some((p) => p.includes("no intent.md")), "local gate: a missing intent.md fails");
+    assert(checkLocal({ intent: intent + "- ✅ AC-3 checked by hand, no tag\n", report }).some((p) => p.includes("AC-3") && p.includes("tag")), "local gate: an untagged AC is named, never skipped");
+    assert(checkLocal({ intent, report }, { ui: true }).some((p) => p.includes("specs.md")) && checkLocal({ intent, report, specs: true }, { ui: true }).length === 0, "local gate: a UI diff needs specs.md");
+    const uiSkip = intent.replace("- ✅ AC-1", "- ⏭️ AC-1");
+    assert(checkLocal({ intent: uiSkip, report }).some((p) => p.includes("AC-1") && p.includes("caps the run")), "local gate: a ui: AC ⏭️ under ✅ fails");
+    assert(checkLocal({ intent: uiSkip, report: report.replace("## ✅ Verified", "## ⚠️ Verified with open items") }).length === 0, "local gate: a ui: AC ⏭️ under ⚠️ passes");
+    assert(!checkLocal({ intent, report }).some((p) => p.includes("AC-2")), "local gate: an api: AC ⏭️ (tests-only) under ✅ stays allowed");
+    const marked = applyMarks(fx("open", "intent.md"), { "AC-2": { status: "✅" } });
+    assert(marked.includes("- ✅ AC-2 [api:PUT /api/notification-settings] An empty") && marked.split("\n").length === fx("open", "intent.md").split("\n").length, "local gate: --marks --local sets only the leading mark");
+    const intentUi = "<details><summary>📋 Acceptance criteria — 1 criterion</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ⏭️&nbsp;AC‑1 | does x | ui:/x · tests |\n\n</details>";
+    const agg = "## ✅ Verified — does x\n\nWorks.\n\n<details><summary>Details</summary>\n\nmore\n\n</details>";
+    assert(checkReport(withBlock("t", splice(splice("", "intent", intentUi), "aggregate", agg))).some((p) => p.includes("caps the run")), "PR gate: a ui: AC ⏭️ under ✅ fails");
+  }
   console.log(`verify-comment self-test: ${n} assertions passed`);
 }
 
 // Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
 export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
-  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload"];
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -853,6 +910,24 @@ else if (isMain) {
   try {
     const unknown = args.find((a) => a.startsWith("--") && !FLAGS.includes(a));
     if (unknown) throw new Error(`unknown flag ${unknown}`);
+    const local = opt("--local");
+    if (local) {
+      const read = (f) => { try { return readFileSync(join(local, f), "utf8"); } catch (e) { if (e.code === "ENOENT") return null; throw e; } };
+      const marksArg = opt("--marks");
+      if (has("--check")) {
+        const problems = checkLocal({ intent: read("intent.md"), report: read("report.md"), specs: read("../specs.md") !== null }, { ui: has("--ui") });
+        if (problems.length) { console.error(`verify-comment: the local run is incomplete (${local}):\n${problems.map((p) => `  - ${p}`).join("\n")}`); process.exit(1); }
+        console.log("local report complete: every criterion marked, report in the template shape" + (has("--ui") ? ", specs.md present" : ""));
+        process.exit(0);
+      }
+      if (!marksArg) throw new Error("--local takes --check or --marks");
+      const intent = read("intent.md");
+      if (intent === null) throw new Error(`no intent.md in ${local}`);
+      const marks = JSON.parse(marksArg.trim().startsWith("{") ? marksArg : readFileSync(marksArg, "utf8"));
+      writeFileSync(join(local, "intent.md"), applyMarks(intent, marks));
+      console.log(`marked ${Object.keys(marks).join(", ")} in ${join(local, "intent.md")}`);
+      process.exit(0);
+    }
     if (has("--check")) {
       if (!opt("--pr")) throw new Error("--check needs --pr");
       const checkPr = String(opt("--pr"));

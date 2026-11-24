@@ -201,6 +201,7 @@ node "$VC" --pr <pr-url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-
 `--marks` changes only the leading marks of existing rows, never their text, and refreshes the counts in the summary (`18 criteria · 15 ✅ · 3 ⏭️ · 3 guardrails`); an unknown ID or status exits `1`.
 The older line form (`- ⬜ AC-1 [ui:/x] text`) is still read and marked, so a PR written by an earlier version keeps working.
 A merged PR freezes the criteria text and still takes marks.
+With no PR yet, mark the run directory's `intent.md` the same way, `node "$VC" --local .agent/<branch>/verify --marks '<json>'`, before `--check --local` ([run card Step 7](../SKILL.md#run-card)); an AC line there with no mark counts as not run.
 
 ```text
 ✗ rewrite the whole intent region to tick a box, and reword AC-2 on the way

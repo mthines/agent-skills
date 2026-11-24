@@ -97,6 +97,7 @@ A follow-up on an open PR runs this step again before pushing; only with `--pr-r
 
 1. **Verify (C5).** When the diff touches UI files, write `specs.md` against the built UI first.
    - `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`. It starts the stack without touching another checkout's ([Shared machines](#shared-machines)), runs the specs through `ui-verify` and each window through `telemetry-verify`, fixes what it finds as separate commits, and writes `.agent/<branch>/verify/report.md`.
+   - Continue only after `node "$AW_VERIFY_DIR/scripts/verify-comment.mjs" --check --local .agent/<branch>/verify` prints `local report complete` (`AW_VERIFY_DIR` is the directory `aw-verify` loaded from); a criterion it names as unmarked re-enters `aw-verify`, never Step 4.2.
    - For each `telemetry:` judge check, read its `AC-<n>` line in the TELEMETRY blocks in `.agent/<branch>/verify/telemetry.md`: `confirms` → set its `status: pass` in `checks.yaml`; anything else → leave it and log the line. Re-run run-checks.
    - A `telemetry:` check that is `contradicts`, or a failed `ui:` criterion, re-enters Step 2 under the same turn cap; then run Step 4.1 again.
    - No `.agents/aw/environments.yml` → `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
