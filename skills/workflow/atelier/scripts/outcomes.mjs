@@ -3,7 +3,7 @@
 //
 // For each merged PR, reads the base branch's history after its squash commit:
 //   reverted  a later commit reverts it ("This reverts commit <sha>", or a "Revert …(#<pr>)" subject), at any age
-//   hotfixed  a later commit within --days touches one of its files and its message says fix, hotfix, or revert
+//   hotfixed  a later commit within --days touches one of its files and its subject says fix, hotfix, or revert
 //   clean     neither
 // `final` is true once the outcome can no longer change: reverted or hotfixed, or clean with the window closed.
 //
@@ -57,7 +57,8 @@ export function classify(dir, { pr, sha, base = "origin/main", days = 14, now = 
 			continue;
 		}
 		const shared = c.files.filter((f) => own.has(f));
-		if (c.ct - t0 <= days * DAY && shared.length && FIX_RE.test(c.message)) {
+		// The subject only: a feat squash whose body lists "fix typo" is not a hotfix.
+		if (c.ct - t0 <= days * DAY && shared.length && FIX_RE.test(subject)) {
 			evidence.push({ sha: c.sha, subject, at, files: shared, why: "fix touching the same files" });
 		}
 	}
@@ -93,6 +94,7 @@ function selfTest() {
 		execFileSync("git", ["revert", "--no-edit", p1], { cwd: dir, env: { ...process.env, GIT_AUTHOR_DATE: d, GIT_COMMITTER_DATE: d }, stdio: "ignore" });
 		commit("fix: b edge case (#6)", "b.txt", 4, "b2");
 		commit("tidy c", "c.txt", 5, "c2");
+		commit("feat: more c (#8)\n\n* fix typo in c", "c.txt", 6, "c3");
 		commit("fix: d late (#7)", "d.txt", 30, "d2");
 		commit('Revert "Add e (#5)"', "e.txt", 40, "");
 		const now = T0 + 60 * DAY;
@@ -103,6 +105,7 @@ function selfTest() {
 		t("a fix touching the same file in the window is hotfixed", r2.outcome === "hotfixed" && r2.evidence[0].files[0] === "b.txt", JSON.stringify(r2));
 		t("hotfixed is final", r2.final);
 		t("a later non-fix commit on the same file stays clean", run(3, p3).outcome === "clean");
+		t("'fix' in a feat commit's body is not a hotfix", run(3, p3).outcome === "clean");
 		t("a fix after the window stays clean", run(4, p4).outcome === "clean");
 		t("--days widens the window", run(4, p4, { days: 45 }).outcome === "hotfixed");
 		t("a 'Revert …(#n)' subject is reverted at any age", run(5, p5).outcome === "reverted");
