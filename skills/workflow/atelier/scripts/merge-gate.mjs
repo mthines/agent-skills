@@ -160,7 +160,7 @@ export function decideCi(ci) {
 	const reason = ci.state === "not-run" ? ci.reason : `CI ${ci.state} at ${at}: ${ci.reason}`;
 	const how = {
 		"not-run": "Record this on Ready (hold), get CI to run on this head (undraft the PR, or push), then re-run /atelier <pr>: --next returns ready until Ready records green CI evidence.",
-		pending: "Wait for the checks (gh pr checks <pr> --watch), then run the gate again.",
+		pending: "Record this on Ready (hold), wait for the checks (gh pr checks <pr> --watch), then re-run /atelier <pr>.",
 		red: "Record this on Ready (failed), then run /atelier <pr> again: Ready runs prepare, which fixes the failing CI.",
 	}[ci.state];
 	return { decision: "refuse", reason, how };
@@ -172,9 +172,11 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
 	let d = decide({ isUI: ui.isUI, contract });
-	if (d.decision === "pass" && ci) d = decideCi(ci) ?? d;
+	let refusedBy = d.decision === "refuse" ? "contract" : null;
+	const ciRefusal = d.decision === "pass" && ci ? decideCi(ci) : null;
+	if (ciRefusal) [d, refusedBy] = [ciRefusal, "ci"];
 	const ciOut = ci ? { state: ci.state, head: ci.head, reason: ci.reason } : "not checked (--contract-only)";
-	return { ...d, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut };
+	return { ...d, refused_by: refusedBy, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut };
 }
 
 async function fromGh(pr, { contractOnly }) {
@@ -280,7 +282,12 @@ async function selfTest() {
 	r = await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci: red });
 	t("red CI refuses", r.decision === "refuse" && /^CI red/.test(r.reason), r.reason);
 	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: empty, ci: green });
-	t("a contract refusal still wins with green CI", r.decision === "refuse" && /deployment-verify:v1/.test(r.reason));
+	t("a contract refusal still wins with green CI", r.decision === "refuse" && /deployment-verify:v1/.test(r.reason) && r.refused_by === "contract");
+	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: empty, ci });
+	t("a contract refusal on skipped CI is refused_by contract, not ci", r.decision === "refuse" && r.refused_by === "contract" && /deployment-verify:v1/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci });
+	t("a CI refusal is refused_by ci", r.refused_by === "ci");
+	t("a pass has no refused_by", (await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci: green })).refused_by === null);
 	const real = await ciFromRollup(JSON.parse(readFileSync(join(skillDir("prepare", "delivery", "PREPARE_DIR"), "scripts", "fixtures", "skipped-plus-vercel.json"), "utf8")));
 	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: empty, ci: real });
 	t("PR #29652's real rollup (16 skipped + Vercel) refuses", r.decision === "refuse" && /CI not run/.test(r.reason), r.reason);
