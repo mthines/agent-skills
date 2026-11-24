@@ -94,6 +94,7 @@ environments:
 
 `auth` fields: [`auth.md`](./auth.md). `auth` and `fixtures` keep the field meanings `aw-tester` reads.
 At run time the caller writes `aw-tester`'s target file from one environment to `.agent/{branch}/aw-target.<env>.yml` (`name: <env>`, `base_url: <resolved url>`, plus that environment's `auth`, `fixtures`, and `ui.yml`'s `constraints`); that file is never committed.
+With `--as <role>` the file is `.agent/{branch}/aw-target.<env>.<role>.yml` and its `auth` is the environment's `auth` with `identities.<role>` merged over it, `identities` dropped ([`auth.md § Several identities`](./auth.md#several-identities)); `aw-tester` always reads a flat `auth`.
 
 ### `flags`
 
