@@ -38,7 +38,8 @@ export function normalize(node) {
 	return { name: node.name, kind: "check", required: !!node.isRequired, actions, phase };
 }
 
-// The decision, from normalized contexts. Order: red > pending > not-run > green.
+// The decision, from normalized contexts. When nothing in the basis ran or is still running, the answer is
+// not-run whatever an external status says; otherwise red > pending > green.
 export function classify(contexts, { head = null, expectedHead = null } = {}) {
 	const required = contexts.filter((c) => c.required);
 	const basis = required.length ? required : contexts.filter((c) => c.actions);
@@ -49,12 +50,13 @@ export function classify(contexts, { head = null, expectedHead = null } = {}) {
 	const names = (xs) => xs.slice(0, 5).map((c) => c.name).join(", ") + (xs.length > 5 ? ` (+${xs.length - 5})` : "");
 	const base = { head, ran: ran.length > 0, basis: required.length ? "required" : "actions", ran_checks: ran.map((c) => c.name).slice(0, 10), counts: { total: contexts.length, required: required.length, skipped: contexts.filter((c) => c.phase === "skipped").length } };
 	if (expectedHead && head && expectedHead !== head) return { ...base, state: "pending", reason: `head moved: expected ${expectedHead.slice(0, 7)}, PR is at ${head.slice(0, 7)}` };
-	if (failed.length) return { ...base, state: "red", reason: `${failed.length} failing: ${names(failed)}` };
-	if (pending.length) return { ...base, state: "pending", reason: `${pending.length} still running: ${names(pending)}` };
-	if (!ran.length) {
+	const basisPending = basis.some((c) => c.phase === "pending");
+	if (!ran.length && !basisPending) {
 		const why = !contexts.length ? "no checks reported" : basis.length ? `every ${what} skipped (${basis.length})` : `no ${what} reported; only ${names(contexts)}`;
 		return { ...base, state: "not-run", reason: `CI not run at ${head ? head.slice(0, 7) : "head"}: ${why}` };
 	}
+	if (failed.length) return { ...base, state: "red", reason: `${failed.length} failing: ${names(failed)}` };
+	if (pending.length) return { ...base, state: "pending", reason: `${pending.length} still running: ${names(pending)}` };
 	return { ...base, state: "green", reason: `${ran.length} ${what}${ran.length === 1 ? "" : "s"} ran and passed at ${head ? head.slice(0, 7) : "head"}` };
 }
 
@@ -128,6 +130,9 @@ function selfTest() {
 	t("a pending status is pending", c([cr("ok", "SUCCESS"), sc("Vercel", "PENDING")]).state === "pending");
 	t("red wins over pending", c([cr("a", "FAILURE"), cr("b", null, { status: "QUEUED" })]).state === "red");
 	t("a moved head is pending", c([cr("ok", "SUCCESS")], { expectedHead: "fff0000" }).state === "pending");
+	t("skipped Actions + a pending external status is not-run, not pending", c([cr("test", "SKIPPED"), sc("Vercel", "PENDING")]).state === "not-run");
+	t("skipped Actions + a failing external status is not-run, not red", c([cr("test", "SKIPPED"), sc("Vercel", "FAILURE")]).state === "not-run");
+	t("a queued Actions run with nothing else ran is pending", c([cr("test", null, { status: "QUEUED" }), cr("e2e", "SKIPPED")]).state === "pending");
 	t("a stale run does not count", c([cr("ok", "STALE")]).state === "not-run");
 	// fetchRollup with an injected runner: pagination and owner/repo from the URL.
 	const calls = [];
