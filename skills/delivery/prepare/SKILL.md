@@ -57,7 +57,7 @@ node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr
 ```
 
 CI ran when at least one required check completed without being skipped, or, when the head reports no required check, at least one GitHub Actions check run did.
-External commit statuses and other apps' checks (Vercel, security scanners) never prove CI ran on their own.
+External commit statuses and other apps' checks (Vercel, security scanners) never prove CI ran on their own, unless the repo marks one required.
 `CI: not-run` (a repo that skips CI on drafts) → report `CI not run (<its reason>)`, never green, and do not merge it.
 
 ```text
