@@ -11,11 +11,11 @@
 //   node state.mjs --fetch  --pr <n>                        prints the existing comment body via gh (empty when none)
 //   node state.mjs --upsert --pr <n> --body-file <f>        edits the sticky comment in place, or creates it (gh)
 //   node state.mjs --self-test
-// --body-file defaults to stdin; an empty body means no state yet.
+// --body-file defaults to stdin; an empty body or a missing file means no state yet.
 // Exit: 0 ok, 2 error.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { isMain, makeTester, parseArgs } from "./lib.mjs";
 
@@ -86,7 +86,8 @@ export function render(state) {
 }
 
 function readBody(a) {
-	if (a["body-file"]) return readFileSync(a["body-file"], "utf8");
+	// A missing file is no state yet: a run from a request has no comment to read.
+	if (a["body-file"]) return existsSync(a["body-file"]) ? readFileSync(a["body-file"], "utf8") : "";
 	if (process.stdin.isTTY) return "";
 	try {
 		return readFileSync(0, "utf8");

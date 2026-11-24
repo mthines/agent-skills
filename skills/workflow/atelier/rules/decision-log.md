@@ -52,7 +52,7 @@ memory.write {
 
 At the start of every run, before any stage:
 
-1. List merged atelier PRs: `memory.list { kind: "bus", host: "atelier", tags: ["loop::atelier-decisions"], limit: 100 }`, keep `event: decision`, `stage: merge`, `decision: proceed` rows of this repo that carry `merge_sha`.
+1. List merged atelier PRs: `memory.list { kind: "bus", host: "atelier", tags: ["loop::atelier-decisions"], limit: 100 }`, passing each `nextCursor` back as `cursor` until it is null, and keep `event: decision`, `stage: merge`, `decision: proceed` rows of this repo that carry `merge_sha`.
 2. Read each PR's stored outcome: `memory.read { refs: ["{scope}::atelier-decisions::pr-{n}-outcome"] }`, keeping its `outcome` and `version`.
    Drop only PRs whose stored outcome is `reverted`; a stored `clean` or `hotfixed` can still turn into `reverted`.
 3. Classify the rest in one call, on a fetched base:
@@ -78,6 +78,11 @@ At the start of every run, before any stage:
 ```text
 ✗ write "clean" the day after the merge                  # a hotfix on day 5 can no longer be recorded
 ✓ write only final results; clean becomes final after --days (default 14)
+```
+
+```text
+✗ read one page of 100 rows                              # a busy repo's older merges drop out unclassified
+✓ follow nextCursor until it is null
 ```
 
 ```text

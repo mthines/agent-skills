@@ -58,6 +58,7 @@ After **every** stage decision, do both, in this order:
 2. Write one `bus` event ([`rules/decision-log.md`](./rules/decision-log.md)).
 
 A decision of `refuse`, `hold`, or `failed` ends the run at Step 4.
+A Build that fails before a PR exists has nowhere to record: skip step 1, write the bus event, and stop.
 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
