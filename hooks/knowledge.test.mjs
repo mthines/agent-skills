@@ -7,6 +7,7 @@ import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   MAX_LINES,
+  MAX_TOKENS,
   cacheFile,
   editText,
   fetchEntries,
@@ -279,6 +280,18 @@ describe('hook scripts', () => {
     assert.equal(run('knowledge-inject.mjs', edit('s3'), env(cache)).stdout, '');
   });
 
+  it('charges the injection header against the session token budget', () => {
+    const cache = fs.mkdtempSync(path.join(tmp, 'cache-'));
+    seed(cache, 's6', FILE, [hotspot]);
+    const state = path.join(sessionDir('s6', { XDG_CACHE_HOME: cache }), 'state.json');
+    // The record line is ~29 tokens and the header ~37: 40 left fits the line alone, not line plus header.
+    writeJson(state, { shown: {}, perFile: {}, lines: 0, tokens: MAX_TOKENS - 40 });
+    assert.equal(run('knowledge-inject.mjs', edit('s6'), env(cache)).stdout, '');
+    writeJson(state, { shown: {}, perFile: {}, lines: 0, tokens: 0 });
+    assert.ok(run('knowledge-inject.mjs', edit('s6'), env(cache)).stdout.includes('hotspot'));
+    assert.ok(JSON.parse(fs.readFileSync(state, 'utf8')).tokens > 60,'the header is counted, not only the lines');
+  });
+
   it('caps one file at two lines across repeated edits', () => {
     const cache = fs.mkdtempSync(path.join(tmp, 'cache-'));
     const more = ['aaa1', 'bbb2'].map((s) => ({ kind: 'knowledge', key: `knowledge::${s}@${REL}`, symbols: [s], text: `fact ${s}` }));
@@ -337,5 +350,15 @@ describe('hook scripts', () => {
     assert.equal(res.status, 0);
     assert.ok(Date.now() - started < 1500, 'the hook returns without waiting for the worker');
     assert.ok(fs.existsSync(cacheFile(sessionDir('r1', { XDG_CACHE_HOME: cache }), FILE)));
+  });
+
+  it('prefetch leaves a finished fetch alone for the rest of the session', () => {
+    const cache = fs.mkdtempSync(path.join(tmp, 'cache-'));
+    const target = cacheFile(sessionDir('r3', { XDG_CACHE_HOME: cache }), FILE);
+    const old = { status: 'ok', rel: REL, records: [], at: Date.now() - 3 * 60 * 60_000 };
+    writeJson(target, old);
+    const res = run('knowledge-prefetch.mjs', { session_id: 'r3', cwd: tmp, tool_name: 'Read', tool_input: { file_path: FILE } }, env(cache));
+    assert.equal(res.status, 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(target, 'utf8')), old, 'a three-hour-old ok entry is not re-marked pending');
   });
 });
