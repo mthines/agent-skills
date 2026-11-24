@@ -34,3 +34,14 @@ A public skill cannot carry one company's component map, ports, login flow, or d
 `/aw` opens the PR before `aw-verify` can post, so both publish the same `intent` region: `/aw` from the brief (`--from-plan`, statuses from `run-checks.mjs`), `aw-verify` from what it observed (surfaces, Proof, final statuses).
 One renderer for a brief means the text is byte-identical whoever publishes it, and a status means "as of the last run": a run starts by republishing `⬜` and ends by ticking every row, so a crash never leaves a tick from an older head.
 A criterion with no surface of its own (a CLI exit code, an internal rule) is `check`, which production verification reports as not watched instead of inventing a route.
+
+## A ui: criterion needs the browser
+
+A `ui:` criterion promises something the user sees, so a unit or component test is a stand-in for it, not proof; letting such a criterion stay `⏭️` under a `✅` verdict let a run check some criteria in the browser and wave the rest through on tests.
+An `api:` or `worker:` criterion has no surface a reviewer would look at, so committed tests remain enough there, listed under **Worth a look in the preview**.
+
+## The gate runs before the PR too
+
+`/aw` runs `aw-verify` with `--no-comment` before the PR exists, and that is where the fix loop decides whether to continue.
+A gate that reads only the PR therefore ran after every decision it should have bounded, so `--check --local` applies the same rules to the run directory.
+Agents claim completion far more often than they finish, and an instruction does not change that; a deterministic count of criteria with a final mark does ([arXiv 2611.10063](https://arxiv.org/pdf/2611.10063), [MAST, arXiv 2503.13657](https://arxiv.org/pdf/2503.13657v3)).
