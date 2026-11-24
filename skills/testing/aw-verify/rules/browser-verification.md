@@ -37,7 +37,7 @@ Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> [--as <
 
 - Always pass `--url`: on `local` it is the stack's `url`, so `ui-verify` never falls through to the deployed preview; on `preview` it is the URL Phase 2 resolved.
 - `--as <role>` is forwarded unchanged when the run has it; without it `ui-verify` signs in as the default identity.
-- `--env` picks the login and fixtures from `.agents/aw/environments.yml` via `.agent/{branch}/aw-target.<env>.yml`.
+- `--env` picks the login and fixtures from `.agents/aw/environments.yml` via `.agent/{branch}/aw-target.<env>.yml` (`aw-target.<env>.<role>.yml` under `--as`).
 - Keep the adversarial pass on for the acceptance run: hostile input, double submit, failed requests, keyboard-only, small viewports.
 - Login fails → run `/aw-verify setup` once and retry; never hand-roll a login. `.agents/aw/notes.md` names any repo-specific login step.
 - Wait for a page-specific element, never `networkidle`: RUM beacons and background refetches keep the network busy. An `ERR_ABORTED` on a superseded request is not a defect.

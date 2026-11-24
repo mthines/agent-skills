@@ -77,11 +77,15 @@ Write two git-ignored files (the branch is the PR's head ref):
    Never touch `.agent/{branch}/.aw-tester/routes/`: it is the runners' route cache for intent specs (spec-run contract § 6.6), and a later run in this worktree replays from it.
 2. **`.agent/{branch}/aw-target.<ENV>.yml`** — `aw-tester`'s target: `name: <ENV>`, `base_url:` the resolved URL (no trailing slash), then `environments.<ENV>.auth` (with `identities` dropped) and `.fixtures` verbatim, `ui.yml`'s `constraints`, and `ui.yml`'s `adversarial.allowed_origins` (as `adversarial.allowed_origins`).
 
-**With `--as <role>`** (set by `aw-verify`), write `.agent/{branch}/aw-target.<ENV>.<role>.yml` instead, with `auth` = `environments.<ENV>.auth` overlaid by `identities.<role>` and `identities` dropped, and pass that path as `Aw-Target file:`. `--as default` (or no `--as`) uses the top-level `auth` unchanged. A role with no `identities` entry stops the run: `blocked (auth: no identity "<role>" in environments.<ENV>)`; never fall back to the default user (the `aw-verify` skill's `rules/auth.md § Several identities`).
+`<TARGET>` is that file's path, and every dispatch below passes it as `Aw-Target file:`.
+
+**With `--as <role>`** (set by `aw-verify`), `<TARGET>` is `.agent/{branch}/aw-target.<ENV>.<role>.yml`, with `auth` = `environments.<ENV>.auth` overlaid by `identities.<role>` and `identities` dropped.
+Without it, or with `--as default`, `<TARGET>` is `.agent/{branch}/aw-target.<ENV>.yml` and the top-level `auth` is used unchanged.
+A role with no `identities` entry stops the run: `blocked (auth: no identity "<role>" in environments.<ENV>)`; never fall back to the default user (the `aw-verify` skill's `rules/auth.md § Several identities`).
 
 **Auth runs here, before the spec run, and is env-var-driven** (full flow: the `aw-verify` skill's `rules/auth.md`):
 
-- Export `PREVIEW_URL` (the resolved URL) for the auth commands to read.
+- Export `PREVIEW_URL` (the resolved URL) and, when `~/.agents/aw/config.yml` sets `credentials.provider`, `AUTH_CREDENTIALS_PROVIDER` for the auth commands to read.
 - When `auth.refresh` is set and `when: always`, or the `storage_state` file is missing or stale, run `refresh.command`. It reads the credentials named in `refresh.env` from the environment and writes the gitignored `storage_state`. An unset variable fails the command loudly, and the authed specs report `skipped`, never a false pass.
 - Carry `auth.bypass_header` (name plus env-var name) verbatim; `aw-tester` reads the variable and applies the header at launch, so the value never enters this runner's scope or logs.
 
@@ -122,7 +126,7 @@ The Chrome runner is in-session and needs the browser extension; the Playwright 
 ```text
 Skill("aw-tester-chrome", "
   Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target '<ENV>'.
-  Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
+  Aw-Target file: <TARGET>
   Specs file: .agent/{branch}/.ui-verify/specs.md
   Mode: --all --auto-capture --record-video [--unattended]
 ")
@@ -139,7 +143,7 @@ Task(
   description: "Run ui-verify against PR preview",
   prompt: |
     Run the specs at .agent/{branch}/.ui-verify/specs.md against aw-target "<ENV>".
-    Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
+    Aw-Target file: <TARGET>
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Mode: --all --auto-capture --record-video
 )
@@ -205,7 +209,7 @@ Task(
   prompt: |
     Try to break the change these specs describe on the live preview, and document every probe with screenshots.
     Your procedure is <absolute path of this skill>/rules/adversarial.md — read it and follow it.
-    Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
+    Aw-Target file: <TARGET>
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Probe specs: <ids of the specs whose result was pass>
     Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
@@ -265,7 +269,7 @@ Task(
     Profile the animations this change adds on the live preview.
     Your procedure is <absolute path of this skill>/rules/motion-profile.md — read it and follow it.
     Motion files: <the detector's files array, JSON>
-    Aw-Target file: .agent/{branch}/aw-target.<ENV>.yml
+    Aw-Target file: <TARGET>
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Profile specs: <ids of the specs whose result was pass>
     Playwright bin: .agent/{branch}/.aw-tester/playwright-bin
