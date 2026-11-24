@@ -662,15 +662,17 @@ function realIo({ config, contract, pr = null, slug = null }) {
 	};
 }
 
-// The signal event a tick produced, if any: a human decision at a hold, or a rollback verdict.
-export function signalEvent(prev, next, contract) {
+// The signal events a tick produced, in order: a human decision at a hold, then a rollback verdict.
+// One tick can produce both (synthetic traffic runs the next step inside the approving tick).
+export function signalEvents(prev, next, contract) {
 	const model = contract.model || null;
+	const events = [];
 	const d = next.hold?.decision;
-	if (prev?.phase === "hold" && d && !prev.hold?.decision) return { type: d.action, seconds: d.seconds, model, at: d.at };
+	if (prev?.phase === "hold" && d && !prev.hold?.decision) events.push({ type: d.action, seconds: d.seconds, model, at: d.at });
 	if (prev?.phase !== "done" && next.phase === "done" && next.rollback_verdict && ["ROLLED_BACK", "ESCALATE"].includes(next.outcome)) {
-		return { type: "rollback", model, at: next.ended_at };
+		events.push({ type: "rollback", model, at: next.ended_at });
 	}
-	return null;
+	return events;
 }
 
 const JUST_HELD = new WeakSet();
@@ -707,13 +709,17 @@ async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop
 		const next = await tick(state, { contract, config, sha, mergedAt, deployedAt, io, decision });
 		decision = null;
 		next.lease = null;
-		const event = config.promotion ? signalEvent(state, next, contract) : null;
-		if (event) {
+		const events = config.promotion ? signalEvents(state, next, contract) : [];
+		const notes = [];
+		for (const event of events) {
 			const risk = next.hold?.risk_class || next.risk_class || (next.risk_class = prRiskClass(store.pr?.number));
 			// A class no recommendation reads (`unknown`: no PR, or its files unreadable) is never written.
 			const r = RISK_CLASSES.includes(risk) ? updateSignal({ repo: slug, risk, event, rule: config.promotion })
 				: { status: "degraded", line: `Degraded: earned-autonomy signal not updated — risk class ${risk}` };
-			next.signal_note = r.status === "ok" ? `${risk}: ${r.note}` : r.line;
+			notes.push(r.status === "ok" ? `${risk}: ${event.type} — ${r.note}` : r.line);
+		}
+		if (notes.length) {
+			next.signal_note = notes.join("; ");
 			io.log(next.signal_note);
 		}
 		const heldNow = next.phase === "hold" && !next.hold?.decision && !(next.notified || []).includes(HOLD_EVENT);
@@ -860,15 +866,15 @@ async function selfTest() {
 			report("hold: an unattended tick never advances", JSON.stringify(again) === before && w.log.length === calls);
 			await w.io.sleep(120_000);
 			let a = await tick(s, { contract, config: holdConfig, io: w.io, decision: { action: "approve", at: iso(w.io.now()), by: "octocat" } });
-			const ev = signalEvent(s, a, { model: "m1" });
+			const ev = signalEvents(s, a, { model: "m1" })[0];
 			for (let i = 0; i < 50 && a.phase !== "done"; i++) a = await tick(a, { contract, config: holdConfig, io: w.io });
 			report("hold: approve advances to the next step and the rollout passes", a.outcome === "PASS" && a.steps.length === 4 && a.hold.decision.seconds === 120 && w.log.at(-1) === "set 100", `${a.outcome}, approved after ${a.hold.decision.seconds} s`);
-			report("hold: approve yields one approve signal event with time-to-approve", ev?.type === "approve" && ev.seconds === 120 && ev.model === "m1" && signalEvent(a, a, {}) === null);
+			report("hold: approve yields one approve signal event with time-to-approve", ev?.type === "approve" && ev.seconds === 120 && ev.model === "m1" && signalEvents(a, a, {}).length === 0);
 		}
 		{
 			const { w, s } = await hold();
 			const o = await tick(s, { contract, config: holdConfig, io: w.io, decision: { action: "override", at: iso(w.io.now()) } });
-			report("hold: override returns the flag to off and ends OVERRIDDEN", o.outcome === "OVERRIDDEN" && w.log.at(-1) === "set 0" && signalEvent(s, o, {})?.type === "override", o.outcome);
+			report("hold: override returns the flag to off and ends OVERRIDDEN", o.outcome === "OVERRIDDEN" && w.log.at(-1) === "set 0" && signalEvents(s, o, {})[0]?.type === "override", o.outcome);
 		}
 		{
 			const { s } = await hold({ recommendation: "AUTO", reason: "earned", risk_class: "ui" });
@@ -877,7 +883,14 @@ async function selfTest() {
 		{
 			const w = world({ fault: "errors" });
 			const s = await rollout(w);
-			report("hold: a rollback verdict yields a rollback signal event", signalEvent({ phase: "rollback" }, s, {})?.type === "rollback" && s.outcome === "ROLLED_BACK");
+			report("hold: a rollback verdict yields a rollback signal event", signalEvents({ phase: "rollback" }, s, {})[0]?.type === "rollback" && s.outcome === "ROLLED_BACK");
+		}
+		{
+			const { w, s } = await hold();
+			const ticked = await tick(s, { contract: { ...contract, steps: [1, 10, 100] }, config: { ...holdConfig, steps: [1, 10, 100] }, io: w.io, decision: { action: "approve", at: iso(w.io.now()) } });
+			report("hold: an approving tick that completes the rollout records only approve", ticked.outcome === "PASS" && JSON.stringify(signalEvents(s, ticked, {}).map((e) => e.type)) === '["approve"]', ticked.outcome);
+			const rolled = { ...ticked, phase: "done", outcome: "ROLLED_BACK", rollback_verdict: "error rate", ended_at: "T" };
+			report("hold: an approving tick that rolls back records approve, then rollback", JSON.stringify(signalEvents(s, rolled, {}).map((e) => e.type)) === '["approve","rollback"]');
 		}
 		report("hold: a contract whose steps skip hold_after stops before step 1", /hold_after: 10 is not a step/.test(validateContract({ ...contract, steps: [1, 25, 100] }, holdConfig) || "") && validateContract(contract, holdConfig) === null
 			&& /hold_after: 10 is not a step/.test(validateContract(contract, { ...holdConfig, flags: { providers: [{ name: "sim", rollout: "boolean" }] } }) || ""));
@@ -990,7 +1003,7 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${err ? err.message : `${s.outcome} — ${s.reason}`}`);
 	}
-	const total = 24;
+	const total = 26;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
