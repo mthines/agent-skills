@@ -113,7 +113,8 @@ function prNumber(pr) {
 
 // Only this user's comment: another author's marked comment must not steer --next, and could not be edited anyway.
 function findComment(pr) {
-	const me = execFileSync("gh", ["api", "user", "--jq", ".login"], { encoding: "utf8" }).trim();
+	// GraphQL `viewer`, not REST `/user`: `/user` is 401 under a GitHub App token (github-access.md).
+	const me = execFileSync("gh", ["api", "graphql", "-f", "query={viewer{login}}", "--jq", ".data.viewer.login"], { encoding: "utf8" }).trim();
 	const out = execFileSync(
 		"gh",
 		[
