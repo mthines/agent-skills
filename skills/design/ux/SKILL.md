@@ -35,7 +35,7 @@ Read every target file completely before reporting on it.
 1. Resolve the target: the user's named files, else the changed UI files (`git diff --name-only <base>...HEAD`), else the current file.
 2. Detect the platform: web (`<div>`, CSS, Tailwind), React Native (`View`, `Pressable`, `expo-router`), or both. Ask when ambiguous.
 3. Read the target files, then the handlers, hooks, stores, routes, and API calls they reach — Pass 1 depends on them.
-4. `.agents/aw/ux.md` exists → grade against it first, per [`rules/house-rubric.md`](./rules/house-rubric.md); it also defines that file's format (why: [`references/house-rubric.md`](./references/house-rubric.md)).
+4. In `audit` mode, `.agents/aw/ux.md` exists → grade against it first, per [`rules/house-rubric.md`](./rules/house-rubric.md); it also defines that file's format (why: [`references/house-rubric.md`](./references/house-rubric.md)).
 5. The caller passes screenshot paths (`--screenshots <file|dir>…`, e.g. `aw-verify`'s captures) → read those images as the rendered evidence instead of driving a browser.
 
 ## Pass 1 — The user's path (first, always)

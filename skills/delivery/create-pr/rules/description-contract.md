@@ -139,7 +139,7 @@ The refresh rewrites narrative sections only; re-authoring the spec is `ui-verif
 Write this block only when `.agent/{branch}/quality-notes.md` exists; never author its rows yourself.
 
 - **One owned region**, at most once per PR, delimited by `<!-- aw:quality-notes -->` … `<!-- /aw:quality-notes -->`, holding a closed `<details>` block.
-- **At most 6 visible lines inside it:** the `<summary>` line with the counts, then up to 5 rows, `High` first, one line each; the rest is `+<n> more in walkthrough.md`.
+- **At most 6 visible lines inside it:** the `<summary>` line with the counts, then up to 5 rows, `High` first, one line each; the rest is `+<n> more in walkthrough.md` on Full, and on Lite, which writes no walkthrough, `+<n> more — rerun /fit --inventory`.
 - **Exempt from the length budget** and **preserved verbatim on refresh**, like the media region.
 
 ```markdown
