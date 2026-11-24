@@ -49,21 +49,23 @@ function run() {
     const room = Math.min(MAX_LINES_PER_FILE - (state.perFile[cached.rel] ?? 0), MAX_LINES - state.lines);
     if (room <= 0 || state.tokens >= MAX_TOKENS) return null;
 
+    const header = `codebase-knowledge for ${cached.rel} (earlier reviews; re-verify against the code before relying on it):`;
     const picked = selectRecords(cached.records, editText(input.tool_input), state.shown, room);
     const lines = [];
+    let spent = tokensOf(header);
     for (const record of picked) {
       const line = renderLine(record, cached.rel);
-      if (state.tokens + tokensOf(line) > MAX_TOKENS) break;
+      if (state.tokens + spent + tokensOf(line) > MAX_TOKENS) break;
       lines.push(line);
       state.shown[record.key] = true;
       state.lines += 1;
       state.perFile[cached.rel] = (state.perFile[cached.rel] ?? 0) + 1;
-      state.tokens += tokensOf(line);
+      spent += tokensOf(line);
     }
     if (!lines.length) return null;
 
+    state.tokens += spent;
     writeJson(statePath, state);
-    const header = `codebase-knowledge for ${cached.rel} (earlier reviews; re-verify against the code before relying on it):`;
     return JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: [header, ...lines].join('\n') } });
   });
   if (output) process.stdout.write(output);

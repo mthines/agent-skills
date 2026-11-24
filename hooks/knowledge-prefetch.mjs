@@ -32,7 +32,7 @@ async function worker({ sessionId, cwd, file }) {
   try {
     const repo = resolveRepo(cwd);
     const rel = repo && relativePath(repo.root, file);
-    const conn = resolveConnection({ cwd });
+    const conn = resolveConnection();
     if (!rel || !conn) return writeJson(target, { status: 'none', at: Date.now() });
     const entries = await fetchEntries({ conn, scope: repo.scope, rel });
     writeJson(target, { status: 'ok', rel, records: normalizeRecords(entries, rel), at: Date.now() });
