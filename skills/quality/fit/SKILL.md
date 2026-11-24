@@ -4,9 +4,10 @@ description: >
   Judges whether a change or plan takes the best approach for its intent
   (codebase-fit, simplicity, performance, robustness) and proposes at most two
   materially better ones; says nothing when the approach is already sound.
-  Slash-invoked: "/fit [<files>|<plan path>]".
-disable-model-invocation: true
-argument-hint: '[<files> | <plan.md path>] [--base <ref>]'
+  `--inventory` judges every symbol, route, component, and file the diff adds:
+  reuse, extend, or new. Slash-invoked: "/fit [<files>|<plan path>] [--inventory]".
+disable-model-invocation: false
+argument-hint: '[<files> | <plan.md path>] [--base <ref>] [--inventory]'
 license: MIT
 metadata:
   author: mthines
@@ -22,6 +23,11 @@ Judge the shape of the solution, not its lines.
 Report only; never edit files.
 
 Lens-eligible for the `pr-reviewer` agent: [`lens.md`](./lens.md) auto-loads on `deep` reviews.
+
+| Args | Mode | Output |
+| --- | --- | --- |
+| files, a `plan.md` path, or none | approach (default) | Steps 0–3 below: at most two proposals, or one `optimal` line |
+| `--inventory [--base <ref>]` | inventory | One verdict per item `node "${CLAUDE_SKILL_DIR}/scripts/reuse-inventory.mjs" --base <ref>` lists — [`rules/reuse-inventory.md`](./rules/reuse-inventory.md) (why: [`references/reuse-inventory.md`](./references/reuse-inventory.md)); `aw`'s post-build quality pass calls this mode |
 
 ## Step 0 — Scope
 

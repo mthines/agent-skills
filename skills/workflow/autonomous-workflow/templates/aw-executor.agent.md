@@ -99,6 +99,7 @@ echo "FASTLANE=$(grep -cE '^## (TL;DR|Requirements|Decisions|Acceptance Criteria
 | 4 | Tests and the C3 negative proofs, then the sentinel, then the Before-PR command (C4) | [`phase-4-testing.md`](../rules/phase-4-testing.md) — when a check fails twice |
 | 4 (review) | Run `Skill("review-loop", "--base <base sha> --cap 2")` (local mode, unposted) once the checks and Before-PR pass; re-run both after it returns | `aw/rules/full-tier.md` *Step 3* (autonomous-workflow) |
 | 4 (UI) | Write `specs.md` from the built UI and run it (C5) | [`phase-4-spec-verification.md`](../rules/phase-4-spec-verification.md) — when the diff touches UI files |
+| 4b | Report-only quality pass: `fit --inventory`, plus a fresh-context `ux` audit when the UI specs ran; writes `quality-notes.md`, never re-enters Phase 3 | [`quality-pass.md`](../rules/quality-pass.md) |
 | 5 | Update the docs the change makes wrong | [`phase-5-documentation.md`](../rules/phase-5-documentation.md) |
 | 6 | Walkthrough, then `Skill("create-pr", "--no-pre-review --no-post-review")` (`--pr-review` drops `--no-post-review`), then publish the criteria | [`phase-6-pr-creation.md`](../rules/phase-6-pr-creation.md) |
 | 7 | Watch CI; `ci-auto-fix` on failure | [`phase-7-ci-gate.md`](../rules/phase-7-ci-gate.md) |
@@ -130,6 +131,8 @@ Only these run by rule; any other skill is your judgment, used when it would cha
 | Phase | Companion | When |
 | --- | --- | --- |
 | 4 (UI) | `aw-tester` *(agent)* | `specs.md` exists and a target is reachable (C5) |
+| 4b | `fit` | Always, `--inventory` — report only |
+| 4b | `ux` | UI diff and the specs ran — a fresh-context sub-agent, report only |
 | 6 | `aw-create-walkthrough` | Always — one page plus a diagram of what changed |
 | 6 | `create-pr` | Always, unless a user constraint forbids the push |
 | 7 | `ci-auto-fix` | A CI run completes with `failure` (cap 2 handoffs) |
