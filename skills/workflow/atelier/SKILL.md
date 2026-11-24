@@ -47,6 +47,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
    Absent or failing → one line `Degraded: lorekit unreachable — decision log and outcomes skipped`, and every LoreKit step below is a no-op; no stage waits on it.
 3. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
 4. With a PR: read its state (`node "${CLAUDE_SKILL_DIR}/scripts/state.mjs" --fetch --pr <n> > state.md`) and its head (`gh pr view <n> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
+   No atelier comment yet: record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
    With a request: the stage is `build`.
 
 ## Stages
@@ -67,6 +68,8 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | **merge** | gate first: `node "${CLAUDE_SKILL_DIR}/scripts/merge-gate.mjs" --pr <n>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` | the PR state is `MERGED`; reason = `merged <squash sha>` | gate exit 1 → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
 
 - Ready records the head it ran on; re-read the head before the gate, and a head that moved since Ready runs Ready again (`--next` returns `ready`).
+- The gate judges one head, `GATED`; prepare can still push a fix before it merges.
+  After the merge, read `gh pr view <n> --json headRefOid -q .headRefOid`; when it differs from `GATED`, run the gate again on the merged PR, and a refusal goes into the merge reason and under `Needs you:` (`merged unchecked head <sha>: <MERGE_GATE line> — add the contract or revert`).
 - `--single` keeps atelier to its one PR; prepare's stack walk would merge PRs atelier never built.
 - Never run the merge with a gate that exited 1 or 2, and never edit the PR body to make the gate pass: the contract is the author's ([`rules/merge-gate.md`](./rules/merge-gate.md)).
 
