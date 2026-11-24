@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // run-checks.mjs — deterministic runner for `.agent/<branch>/checks.yaml`.
 //
-//   node run-checks.mjs [checks.yaml] [--cwd <dir>] [--timeout <s>] [--no-write]
+//   node run-checks.mjs [checks.yaml|<dir>] [--cwd <dir>] [--timeout <s>] [--no-write]
+//   (a directory argument resolves to <dir>/checks.yaml, e.g. `.agent/<branch>`)
 //   node run-checks.mjs [checks.yaml] --seal      # record the immutable fields
 //   node run-checks.mjs [checks.yaml] --statuses  # print {"AC-1":"pass",…} from the file; runs nothing
 //   node run-checks.mjs --self-test
@@ -23,7 +24,7 @@
 // aw-create-plan always seals, so an unsealed checks.yaml is never a valid run.
 
 import { spawnSync, execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, realpathSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
@@ -124,6 +125,10 @@ function defaultPath(cwd) {
     const branch = execFileSync("git", ["branch", "--show-current"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
     return join(cwd, ".agent", branch, "checks.yaml");
   } catch { return join(cwd, "checks.yaml"); }
+}
+
+function isDir(p) {
+  try { return statSync(p).isDirectory(); } catch { return false; }
 }
 
 export function runChecks({ file, cwd, timeoutMs = 300_000, write = true, log = console.log }) {
@@ -379,6 +384,15 @@ function selfTest() {
     expectEq("invalid regex: sentinel", last(r.stdout), "CHECKS 0/1 FAIL: AC-1");
     expectEq("invalid regex: reason", /AC-1 fail — invalid regex in expect: /.test(r.stdout), true);
 
+    // A directory argument resolves to the checks.yaml inside it (no EISDIR stack trace).
+    mkdirSync(join(dir, "brief"));
+    writeFileSync(join(dir, "brief", "checks.yaml"), readFileSync(join(dir, "checks.yaml"), "utf8"));
+    expectEq("dir arg: seals checks.yaml inside", /→ .*brief\/checks\.lock$/.test(cli(["brief", "--seal"]).stdout.trim()), true);
+    const viaDir = cli(["brief", "--no-write"]);
+    expectEq("dir arg: no stack trace", viaDir.stderr.includes("EISDIR"), false);
+    expectEq("dir arg: same sentinel as the file", last(viaDir.stdout), last(cli(["brief/checks.yaml", "--no-write"]).stdout));
+    expectEq("dir arg: --statuses", cli(["brief", "--statuses"]).status, 0);
+
     // Exactly one sentinel line per run.
     cli(["checks.yaml", "--seal"]);
     const sentinels = cli(["checks.yaml", "--no-write"]).stdout.split("\n").filter((l) => /^CHECKS /.test(l));
@@ -407,6 +421,7 @@ function main(argv) {
     else file = resolve(cwd, a);
   }
   file ??= defaultPath(cwd);
+  if (isDir(file)) file = join(file, "checks.yaml");
   if (onlyStatuses) {
     if (!existsSync(file)) { console.error(`no such file: ${file}`); return 2; }
     console.log(JSON.stringify(Object.fromEntries(parseChecks(readFileSync(file, "utf8")).map((c) => [c.id, c.status]))));

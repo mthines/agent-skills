@@ -59,8 +59,20 @@ A second login location drifts from the one the repo maintains. Probe in order; 
 
 1. A captured state file: `.browser/auth-state*.json`, else `.auth/*.json`.
 2. A login script: `.agents/aw/scripts/auth/*.mjs`, `.browser/refresh-auth*.mjs`, `scripts/*login*.mjs` or `scripts/*auth*.mjs`.
+3. A repo-provided credentials file that the repo's own authed Playwright tooling reads, such as `.browser/credentials.json`.
+   Use it only when `git check-ignore -q <file>` exits 0 (gitignored); a tracked credentials file is a finding, never a login source.
+   Pass its fields to the login script as `E2E_EMAIL` and `E2E_PASSWORD` in that command's environment only; never print, log, echo, or copy the file or a value from it.
 
 Scaffold only when nothing is found.
+
+```bash
+# ✓ The values go straight into the login command's environment; nothing is printed
+git check-ignore -q .browser/credentials.json && \
+  E2E_EMAIL="$(jq -r .email .browser/credentials.json)" E2E_PASSWORD="$(jq -r .password .browser/credentials.json)" \
+  AUTH_STORAGE_STATE=.auth/local.json node .agents/aw/scripts/auth/login-credentials.mjs
+# ✗ Wrong — prints the secret into the transcript
+cat .browser/credentials.json
+```
 
 ## Pick the login script
 
@@ -135,7 +147,7 @@ No stable element → omit it; the run falls back to "URL is not the login page"
 
 ## The agent reads a session; it does not type the login
 
-The fixture test user's login is run by the user (`!` command) or a scheduler, never by the agent. A missing or expired state file → `blocked (auth: <state_file> expired)` plus the command below; after the user runs it, check the file's modified time changed and `authed_check` is visible.
+The fixture test user's login is run by the user (`!` command) or a scheduler, never by the agent, unless the personal config sets `sign_in_host` for that environment ([below](#pre-authorized-sign-in)). A missing or expired state file → `blocked (auth: <state_file> expired)` plus the command below; after the user runs it, check the file's modified time changed and `authed_check` is visible.
 
 ```text
 ! cd <repo> && AUTH_CREDENTIALS_PROVIDER=<provider> AUTH_CREDENTIALS_ITEM="<item>" AUTH_LOGIN_URL="<login_url>" AUTH_STORAGE_STATE=<state_file> AUTH_POST_LOGIN_URL_PATTERN='^(?!.*/sign-in)' node .agents/aw/scripts/auth/login-credentials.mjs
@@ -148,3 +160,31 @@ The fixture test user's login is run by the user (`!` command) or a scheduler, n
 
 **Google SSO:** scripted Google logins are blocked. Use a password-capable test account against the app's own form, or a pre-captured state a human refreshes on a schedule; with neither, authed specs are `skipped` with the reason — never a faked pass.
 Never put a real person's credentials in CI.
+
+## Pre-authorized sign-in
+
+`auth.sign_in_host` is personal: it is read only from `~/.agents/aw/config.yml` → `repos.<slug>.environments.environments.<env>.auth.sign_in_host` ([`config.md § Personal keys`](./config.md#personal-keys)); the same key in the committed `environments.yml` is ignored.
+When it is set for the environment being run, the agent may sign in itself, in the browser or with the login script, as the repo's fixture or e2e test user.
+
+| Rule | Detail |
+| --- | --- |
+| Identity | Only the fixture or e2e test user the repo already provides: `auth.credentials.item`, the env vars `refresh.env` names, or a gitignored credentials file found by [Reuse before you scaffold](#reuse-before-you-scaffold). Never a real person's account |
+| Host | Type the credentials only on a page whose host equals `sign_in_host` exactly (no subdomain, no lookalike). A redirect to any other host → stop and report `blocked (auth: sign-in left <sign_in_host> for <host>)` |
+| Accounts | Never create, register, invite, or reset an account, and never change a password or MFA setting |
+| Secrets | Never print, log, screenshot, or write a credential; a screenshot of the sign-in form is taken before typing or after submitting, never with a field filled |
+| Afterwards | Save the session to the environment's `storage_state` and confirm `authed_check`, the same as a user-run login |
+
+No `sign_in_host` for the environment, or a host that does not match → the rule above stands: `blocked (auth: <state_file> expired)` plus the `!` command for the user.
+**Why:** the user granted a sign-in on one host for one test user; anything wider is a credential the agent was never given ([`references/design.md § The agent signs in only where the user said`](../references/design.md#the-agent-signs-in-only-where-the-user-said)).
+
+```yaml
+# ✓ ~/.agents/aw/config.yml — personal, never committed
+repos:
+  acme/shop:
+    environments:
+      environments:
+        local: { auth: { sign_in_host: shop-test.accounts.dev } }
+# ✗ Wrong — committed .agents/aw/environments.yml: grants every clone's agent a sign-in the user never gave
+environments:
+  local: { auth: { sign_in_host: shop-test.accounts.dev } }
+```

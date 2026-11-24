@@ -246,7 +246,7 @@ export const CHECK_MARKS = { pass: "✅", fail: "❌", pending: "⬜", unsatisfi
 
 // An `/aw` brief's criteria. ACs: the `- [ ] AC-n (covers: Rm) [kind:target] — text` lines of its
 // `## Acceptance Criteria` section (the tag is optional); a `telemetry:` AC is kind `telemetry` with the span as
-// its target, any other untagged AC is kind `check`. Guardrails: the `- ` lines of `## Guardrails`, numbered
+// its target (a `(covers: …)` group on either side of `telemetry:` is skipped), any other untagged AC is kind `check`. Guardrails: the `- ` lines of `## Guardrails`, numbered
 // G-1… by position. Text is copied verbatim.
 const PLAN_AC = /^- (?:\[[ xX]\] )?(AC-\d+)(?: \(covers: [^)]*\))?(?: \[(ui|api|worker)(?::([^\]]+))?\])?(?: —| -|:)? (.+)$/;
 const sectionOf = (md, heading) => {
@@ -258,7 +258,8 @@ const sectionOf = (md, heading) => {
 };
 export function planCriteria(planMd) {
   const acs = sectionOf(planMd, "Acceptance Criteria").map((l) => PLAN_AC.exec(l.trim())).filter(Boolean).map(([, id, tag, target = "", text]) => {
-    const tele = /^telemetry:\s*(\S+)/.exec(text);
+    // A `(covers: …)` group may sit before or after `telemetry:` in the text; it is never the target.
+    const tele = /^telemetry:\s*(\S+)/.exec(text.replace(/\(covers:[^)]*\)\s*/g, "").trim());
     return { id, kind: tag || (tele ? "telemetry" : "check"), target: tag ? target : tele ? tele[1] : "", text };
   });
   const guardrails = sectionOf(planMd, "Guardrails").map((l) => /^- (.+)$/.exec(l.trim())).filter(Boolean).map((m) => m[1]);
@@ -876,6 +877,8 @@ function selfTest() {
   assert(fpc[0].status === "✅" && fpc[1].status === "❌" && fpc[2].status === "⬜" && fpc[3].status === "⬜" && fpc[5].kind === "guardrail", "run-checks statuses become marks; others start ⬜; an unknown id is ignored");
   assert(fpc[6].text.includes("weaken a test | skip one") && fpc[1].target === "PUT /api/x" && fpc[3].target === "checkout.submit", "a pipe in a cell survives, and targets reach the Proof cell");
   assert(fp.includes("5 criteria · 1 ✅ · 1 ❌ · 3 ⬜ · 2 guardrails") && intentFrom(splice("", "intent", fp)).length === 7 && intentFromPlan(plan) === intentFromPlan(plan), "the summary counts the marks, splice accepts the region, and rendering is stable");
+  const covers = planCriteria("## Acceptance Criteria\n\n- [ ] AC-4 — telemetry: (covers: R3) checkout.submit span with order.id\n- [ ] AC-5 — (covers: R3) telemetry: checkout.pay span\n- [ ] AC-6 (covers: R3) telemetry: checkout.done span\n").acs;
+  assert(covers.map((c) => `${c.kind}:${c.target}`).join() === "telemetry:checkout.submit,telemetry:checkout.pay,telemetry:checkout.done", `a (covers: …) group on either side of telemetry: never becomes the target: ${covers.map((c) => `${c.kind}:${c.target}`)}`);
   let noAc = null; try { intentFromPlan("## Acceptance Criteria\n\nnothing\n"); } catch (e) { noAc = e.code; }
   assert(noAc === 3, "a brief with no AC exits 3, not 1");
   const afterAw = splice(splice("", "intent", intentFromPlan(plan), { now: t }), "intent", "", { marks: { "AC-3": { status: "✅" } }, now: t });

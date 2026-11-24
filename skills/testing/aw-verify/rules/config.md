@@ -17,7 +17,7 @@ It is committed, so a teammate who clones the repo runs `/aw-verify` with no set
 
 ## Contents
 
-[Files](#files) · [Resolve](#resolve-the-config-every-skill-before-any-other-step) · [`environments.yml`](#environmentsyml) · [`flags`](#flags) · [`ui.yml`](#uiyml) · [`telemetry.yml`](#telemetryyml) · [Rules](#rules)
+[Files](#files) · [Resolve](#resolve-the-config-every-skill-before-any-other-step) · [Personal keys](#personal-keys) · [`environments.yml`](#environmentsyml) · [`flags`](#flags) · [`ui.yml`](#uiyml) · [`telemetry.yml`](#telemetryyml) · [Rules](#rules)
 
 ## Files
 
@@ -59,6 +59,28 @@ repos:
     telemetry:
       mcp_server: dash0-dev
       environments: { local: { dataset: alice-local } }
+```
+
+## Personal keys
+
+Some keys are read only from `~/.agents/aw/config.yml`; the same key in a committed file is ignored, because it grants something to whoever runs the agent.
+Under `repos.<slug>`, a key keeps its committed path, so an `environments.yml` key sits under `environments.environments.<env>` (the file stem, then the file's own top-level `environments`).
+
+| Key | Path in `~/.agents/aw/config.yml` | Meaning |
+| --- | --- | --- |
+| `credentials.provider` | `credentials.provider` | Where the fixture test user's login is read from: `env`, `bitwarden`, or `1password` ([`auth.md`](./auth.md#the-agent-reads-a-session-it-does-not-type-the-login)) |
+| `sign_in_host` | `repos.<slug>.environments.environments.<env>.auth.sign_in_host` | The one host on which the agent may sign in itself as the repo's test user ([`auth.md § Pre-authorized sign-in`](./auth.md#pre-authorized-sign-in)) |
+| `policies.*` | `policies`, `repos.<slug>.policies` | Run policies ([Resolve](#resolve-the-config-every-skill-before-any-other-step)) |
+
+```yaml
+# ✓ ~/.agents/aw/config.yml
+repos:
+  acme/shop:
+    environments:
+      environments:
+        local: { auth: { sign_in_host: shop-test.accounts.dev } }
+# ✗ Wrong — one level short: `environments.local` is not a key of environments.yml, so nothing merges
+repos: { acme/shop: { environments: { local: { auth: { sign_in_host: shop-test.accounts.dev } } } } }
 ```
 
 ## `environments.yml`

@@ -35,7 +35,12 @@ A `.env*` file is never read, grepped, or edited by the run, whatever the config
 
 Run per flag, from the PR's checkout, on `local` only.
 
+0. **Restore what an earlier run left set**, at run start, before the stack step, whether or not this run needs the flag.
+   A pending restore is a service folder under `.agent/{branch}/verify/flags/` that still holds a saved original: an earlier run crashed or was killed before step 6.
+   For each one, run that service's `restore` for every key `flags.json` names for it, then its `apply` commands, and append a `restore` entry (below).
+
 1. **Record** the service, the flag, the value needed, and the criterion it serves, appended to `.agent/{branch}/verify/flags.json` (append-only, never rewritten).
+   The saved original under `{backup_dir}` is the pending-restore record: it exists from `set` until a successful `restore` deletes it.
    Use `.agent/{branch}/verify/flags/<service>/` as that service's `{backup_dir}`.
    A service folder that still holds a saved original means an earlier run did not restore: for each `flags.json` entry of that service, run its `restore` and `apply` commands first, then continue.
    A `restore` with nothing saved for the key does nothing and exits 0, so replaying an entry that was already restored changes no value.
@@ -52,6 +57,28 @@ Run per flag, from the PR's checkout, on `local` only.
    `restore` deletes the key's saved original, so the next run never restores a value older than the developer's own edits.
    Restore even when `policies.cleanup: leave`; a flag is state the developer did not ask for.
    `--keep-stack` keeps the stack, never the flipped flag.
+   Append `{"service": "<service>", "key": "<key>", "restore": "ok" | "failed" | "skipped"}` to `flags.json` for every restore, including step 0's.
+
+### `shared: true` — restore on every exit
+
+A `shared` service's file is read by every checkout on the machine, so a flag left set changes the user's other stacks.
+For a `shared` service, step 6 is not optional on any exit path:
+
+| Exit | Restore runs |
+| --- | --- |
+| `✅` pass, `❌` fail, `⚠️` partial | After the last probe, before the report is rendered |
+| `blocked (…)`, `--loops` cap, an abort, a refused step | Before the run prints its blocked or final line |
+| A crash or a killed session | At the next run's step 0, in the same checkout |
+
+A restore whose command exits non-zero, whose `verify` does not show the original value, or that never ran is one line at the end of the run's output, which `aw` copies into its own `Degraded:`:
+
+```text
+✓ Degraded: flag USE_SANDBOX not restored (web, shared: true) — run: AW_FLAGS_BACKUP_DIR=.agent/feat-x/verify/flags/web .agents/aw/scripts/flags/flags.sh web restore USE_SANDBOX
+✗ Notes: flags restored        # a failed restore hidden in a success line, the other checkouts still see the flipped value
+```
+
+The same item is a bullet in the report's attention section ([Report](#report)).
+**Why:** a flag set for one worktree that outlives the run silently changes the user's other stacks ([`config.md § flags`](./config.md#flags)).
 
 A flag state that differs between two criteria is two runs of steps 2–6, in the order that minimises restarts.
 When one criterion needs a flag on and the next off, probe all the "on" criteria, then flip once.

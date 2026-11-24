@@ -45,3 +45,11 @@ An `api:` or `worker:` criterion has no surface a reviewer would look at, so com
 `/aw` runs `aw-verify` with `--no-comment` before the PR exists, and that is where the fix loop decides whether to continue.
 A gate that reads only the PR therefore ran after every decision it should have bounded, so `--check --local` applies the same rules to the run directory.
 Agents claim completion far more often than they finish, and an instruction does not change that; a deterministic count of criteria with a final mark does ([arXiv 2611.10063](https://arxiv.org/pdf/2611.10063), [MAST, arXiv 2503.13657](https://arxiv.org/pdf/2503.13657v3)).
+
+## The agent signs in only where the user said
+
+The fixture login is run by the user or a scheduler by default, because a credential typed by the agent is a credential the agent holds.
+`sign_in_host` lets the user lift that for one host and one test user, from the personal config only, so an unattended run on their own machine can refresh an expired session instead of stopping at `blocked (auth: … expired)`.
+It is personal, not committed, because a committed key would grant the same sign-in to every agent that clones the repo.
+The exact-host match and the never-create-accounts rule keep a redirect or a sign-up page from widening that grant.
+
