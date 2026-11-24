@@ -96,7 +96,9 @@ Ask only what Phase A did not settle; pre-fill the detected value as the first o
 
 1. **Local stack** — driver, commands, URL (only when A2 was ambiguous or empty). Also the flag mechanism per service when A8 found none or several.
 2. **Login per environment** — strategy from [`auth.md`](./auth.md); the sign-in URL with the org param (`auth.login_url`); for the preview, whether it sits behind deployment protection.
-3. **Test user** — email and role (the smoke spec and `E2E_EMAIL` default). Then ask once: "Any other role to verify as (member, viewer)?" Each answer becomes an `auth.identities.<role>` entry with its own `storage_state` and `credentials.item` ([`auth.md § Several identities`](./auth.md#several-identities)).
+3. **Test user** — email and role (the smoke spec and `E2E_EMAIL` default).
+   Then ask once: "Any other role to verify as (member, viewer)?"
+   Each answer becomes an `auth.identities.<role>` entry with its own `storage_state` and `credentials.item` ([`auth.md § Several identities`](./auth.md#several-identities)).
 4. **Telemetry** — dataset per environment for a `dash0-mcp` candidate, or `logs`.
 5. **Repo facts** — "Anything a new developer must know to run and test this repo (login, seed data, tenant, test commands, commit format)?" → `notes.md`. Skip when it exists.
 6. **Credential source** (personal; skip when `~/.agents/aw/config.yml` has `credentials.provider`) — where the fixture test user's login comes from: `bitwarden`, `1password`, or `env` (`E2E_EMAIL` / `E2E_PASSWORD`). For a manager, also ask the item name, shared in `auth.credentials.item`. Never ask for the password itself.
