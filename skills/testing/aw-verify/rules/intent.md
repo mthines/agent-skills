@@ -203,7 +203,7 @@ The older line form (`- ⬜ AC-1 [ui:/x] text`) is still read and marked, so a P
 A merged PR freezes the criteria text and still takes marks.
 With no PR yet, mark the run directory's `intent.md` the same way, `node "$VC" --local .agent/<branch>/verify --marks '<json>'`, before `--check --local` ([run card Step 7](../SKILL.md#run-card)); an AC line there with no mark counts as not run.
 That `intent.md` also reads the `/aw` brief's AC line copied verbatim (`- [ ] AC-1 (covers: R1) [ui:/x] — text`), and the mark goes after the checkbox.
-Every list item whose first word is an `AC-n` is counted, and one with no `[kind:target]` tag fails the gate as untagged.
+Every list item whose first word is an `AC-n` is counted, and one that does not parse (no `[kind:target]` tag, a numbered or bold item, or an upper-case kind) fails the gate by name.
 
 ```text
 ✗ rewrite the whole intent region to tick a box, and reword AC-2 on the way
