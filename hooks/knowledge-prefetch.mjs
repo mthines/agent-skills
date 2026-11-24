@@ -18,6 +18,7 @@ import {
   relativePath,
   resolveConnection,
   resolveRepo,
+  SKIP_EXT,
   sessionDir,
   writeJson,
 } from './lib/knowledge.mjs';
@@ -51,7 +52,8 @@ function hook() {
   if (input?.tool_name !== 'Read' || typeof file !== 'string' || !input.session_id) return;
   // Cheap skips before any process is spawned: already cached (or in flight), or
   // a path no record could exist for.
-  if (relativePath('/', file) === null) return;
+  // Extension only: folder-name skips need the repo root, which only the worker has.
+  if (SKIP_EXT.test(file)) return;
   const existing = readJson(cacheFile(sessionDir(input.session_id), file));
   if (existing) {
     const age = Date.now() - (existing.at ?? 0);

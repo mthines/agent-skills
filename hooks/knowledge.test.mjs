@@ -99,6 +99,12 @@ describe('normalizeRecords', () => {
     assert.equal(r.confirmed, 2);
   });
 
+  it('takes the symbol from the key when the path contains an @', () => {
+    const scoped = 'packages/@scope/x.ts';
+    const [r] = normalizeRecords([entry(`knowledge::drainAndWait@${scoped}`, { facts: [{ claim: 'bounded' }] })], scoped);
+    assert.deepEqual(r?.symbols, ['drainAndWait']);
+  });
+
   it('keeps one record when the read and the search both return it', () => {
     const e = entry(`hotspot::${REL}`, { confirmed: 2 });
     assert.equal(normalizeRecords([e, e], REL).length, 1);
@@ -255,6 +261,16 @@ describe('hook scripts', () => {
     assert.equal(run('knowledge-inject.mjs', edit('s3'), env(cache)).stdout, '');
   });
 
+  it('caps one file at two lines across repeated edits', () => {
+    const cache = fs.mkdtempSync(path.join(tmp, 'cache-'));
+    const more = ['aaa1', 'bbb2'].map((s) => ({ kind: 'knowledge', key: `knowledge::${s}@${REL}`, symbols: [s], text: `fact ${s}` }));
+    seed(cache, 's5', FILE, [hotspot, knowledge, ...more]);
+    const text = { file_path: FILE, old_string: 'drainAndWait aaa1 bbb2', new_string: 'x' };
+    const lines = (out) => (out ? JSON.parse(out).hookSpecificOutput.additionalContext.split('\n').length - 1 : 0);
+    assert.equal(lines(run('knowledge-inject.mjs', { ...edit('s5'), tool_input: text }, env(cache)).stdout), 2);
+    assert.equal(run('knowledge-inject.mjs', { ...edit('s5'), tool_input: text }, env(cache)).stdout, '', 'second edit of the same file adds nothing');
+  });
+
   it('stays silent when the symbol is not in the edit and the hotspot has not earned a line', () => {
     const cache = fs.mkdtempSync(path.join(tmp, 'cache-'));
     seed(cache, 's4', FILE, [{ ...hotspot, confirmed: 1, regressed: 0 }, knowledge]);
@@ -290,8 +306,13 @@ describe('hook scripts', () => {
     const cache = fs.mkdtempSync(path.join(tmp, 'cache-'));
     const read = (file, sessionId = 'r1') => ({ session_id: sessionId, cwd: tmp, tool_name: 'Read', tool_input: { file_path: file } });
     assert.equal(run('knowledge-prefetch.mjs', { ...read(FILE), tool_name: 'Edit' }, env(cache)).status, 0);
-    assert.equal(run('knowledge-prefetch.mjs', read('/repo/node_modules/a/b.ts'), env(cache)).status, 0);
+    assert.equal(run('knowledge-prefetch.mjs', read('/repo/assets/logo.png'), env(cache)).status, 0);
     assert.equal(fs.existsSync(path.join(cache, 'agent-skills')), false);
+
+    // A repo cloned under `build/` is still prefetched: folder skips are repo-relative, so the worker decides.
+    const underBuild = '/home/u/build/myrepo/src/a.ts';
+    assert.equal(run('knowledge-prefetch.mjs', read(underBuild, 'r2'), env(cache)).status, 0);
+    assert.ok(fs.existsSync(cacheFile(sessionDir('r2', { XDG_CACHE_HOME: cache }), underBuild)));
 
     const started = Date.now();
     const res = run('knowledge-prefetch.mjs', read(FILE), env(cache));

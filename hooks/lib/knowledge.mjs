@@ -94,7 +94,7 @@ export function resolveRepo(cwd) {
 }
 
 const SKIP_SEGMENT = /(^|\/)(node_modules|\.git|\.agent|dist|build|coverage)\//;
-const SKIP_EXT = /\.(png|jpe?g|gif|webp|ico|svg|mp4|mov|woff2?|ttf|lock|map)$/i;
+export const SKIP_EXT = /\.(png|jpe?g|gif|webp|ico|svg|mp4|mov|woff2?|ttf|lock|map)$/i;
 
 /** `fs.realpathSync`, or the input when the path does not exist (a file about to be created). */
 export function realPath(file) {
@@ -225,8 +225,11 @@ const clip = (s, n) => (typeof s === 'string' && s.length > n ? `${s.slice(0, n 
 // A real code symbol, not a prose slug: `drainAndWait`, `Foo.bar`, `#baz`.
 const SYMBOL = /^[#A-Za-z_$][\w$.#]*$/;
 
-function symbolsOf(value, key) {
-  const fromKey = key.slice('knowledge::'.length, key.lastIndexOf('@'));
+function symbolsOf(value, key, rel) {
+  // The key ends in `@<rel>`; the path itself may contain `@` (`packages/@scope/x.ts`).
+  const fromKey = key.endsWith(`@${rel}`)
+    ? key.slice('knowledge::'.length, key.length - rel.length - 1)
+    : key.slice('knowledge::'.length, key.lastIndexOf('@'));
   const raw = typeof value.symbol === 'string' ? value.symbol : fromKey;
   return raw
     .split(/[\s/,]+/)
@@ -270,7 +273,7 @@ export function normalizeRecords(entries, rel, now = Date.now()) {
         .filter((f) => f && typeof f.claim === 'string' && !f.superseded_at)
         .map((f) => clip(f.claim, LINE_MAX_CHARS));
       const note = clip(value.note, LINE_MAX_CHARS);
-      const symbols = symbolsOf(value, key);
+      const symbols = symbolsOf(value, key, rel);
       if (symbols.length && (facts.length || note)) out.push({ kind: 'knowledge', key, symbols, text: facts[0] ?? note });
     }
   }

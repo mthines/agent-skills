@@ -45,7 +45,8 @@ function run() {
   const statePath = path.join(dir, 'state.json');
   const output = withLock(path.join(dir, 'state.lock'), () => {
     const state = readJson(statePath) ?? { shown: {}, lines: 0, tokens: 0 };
-    const room = Math.min(MAX_LINES_PER_FILE, MAX_LINES - state.lines);
+    state.perFile ??= {};
+    const room = Math.min(MAX_LINES_PER_FILE - (state.perFile[cached.rel] ?? 0), MAX_LINES - state.lines);
     if (room <= 0 || state.tokens >= MAX_TOKENS) return null;
 
     const picked = selectRecords(cached.records, editText(input.tool_input), state.shown, room);
@@ -56,6 +57,7 @@ function run() {
       lines.push(line);
       state.shown[record.key] = true;
       state.lines += 1;
+      state.perFile[cached.rel] = (state.perFile[cached.rel] ?? 0) + 1;
       state.tokens += tokensOf(line);
     }
     if (!lines.length) return null;
