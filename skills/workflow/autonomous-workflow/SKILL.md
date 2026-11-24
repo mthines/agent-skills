@@ -165,9 +165,9 @@ Never write `checks.yaml` or `checks.lock` on Lite: `checks.lock` is what marks 
 | Phase | Lite | Micro |
 | ----- | ---- | ----- |
 | Setup | MODE SELECTION | MODE SELECTION |
-| 0 | `gw add <branch>`, then `Skill("interview")` inside the new worktree, silent when the request is already clear (`--no-interview` skips it; fallback: quick clarification) | Quick confirm (`--interview` runs the interview) |
+| 0 | `gw add <branch>`, then `Skill("interview")` inside the new worktree, silent when the request is already clear (`--no-interview` skips it; fallback: quick clarification) | Quick confirm; with `--interview`, `gw add <branch>` first, then the interview inside the worktree |
 | 1 | Brief (Task, Guardrails, `AC-{n}`, Before-PR command, Turn Cap 12, files) seeded from the interview's restatement, non-goals, and success criteria, printed, + `/goal` line | In-conversation brief (Task, Guardrails, verify command, files), Turn Cap 5, no companions |
-| 2 | Write the brief to `.agent/{branch}/plan.md` inside the worktree, beside the interview's `brief.md` | `gw add <branch>` |
+| 2 | Write the brief to `.agent/{branch}/plan.md` inside the worktree, beside the interview's `brief.md` | `gw add <branch>` (already done under `--interview`) |
 | 3 | Code, commit; touch only the brief's files | Edit, fast check |
 | 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>`. Diff touches UI files → [Lite verify](#lite-verify) | Fast check |
 | 5 | `Skill("docs", "update --auto")` | Only on doc drift |
