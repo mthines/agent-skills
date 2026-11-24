@@ -29,7 +29,7 @@ Review it, fill the placeholders, add `flag` and `cohort` when a flag exists, an
 
 Before the criteria are on the PR, draft from the `/aw` brief: `--draft-contract --from-plan .agent/<branch>/plan.md` (add `--pr <n>` to prefer the PR's criteria and keep the merged-PR refusal).
 It reads the brief's `[api:…]` criteria, and prefills `flag.key` only when the brief's `## Requirements` and `## Guardrails` name exactly one flag as a backticked key in one of three shapes: `` `checkoutV2` feature flag `` (or `` feature flag `checkoutV2` ``), `` behind the `checkoutV2` flag ``, or `` flag key `checkoutV2` ``.
-A bare `` the `archived` flag `` is a record field and never counts, nor does a key with a dot, slash, or space.
+A bare `` the `archived` flag `` is a record field and never counts, nor does a key with a dot, slash, or space; in `## Guardrails`, which name flags the change must not touch, only the "behind" shape counts.
 Zero or several such keys → no `flag`, and stderr says which; a prefilled flag still needs `flag.provider` and `cohort` filled.
 
 ```text

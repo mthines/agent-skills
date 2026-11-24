@@ -175,17 +175,20 @@ export function draftContract(criteria, { flagKey = null } = {}) {
 // The feature flags an /aw brief names in its `## Requirements` and `## Guardrails`: a backticked key in one of
 // three shapes — "`checkoutV2` feature flag" / "feature flag `checkoutV2`", "behind the `checkoutV2` flag", or
 // "flag key `checkoutV2`". A bare "`archived` flag" is a record field, not a feature flag, and never counts; nor
-// does a key with a dot, slash, or space. Returns the distinct keys in order; the caller prefills only for one.
+// does a key with a dot, slash, or space. A guardrail names a flag the change must not touch ("Keep the `x` feature
+// flag on"), so `## Guardrails` counts only the "behind" shape. Returns the distinct keys in order; the caller
+// prefills only for one.
 const FLAG_AFTER = /(?:`([A-Za-z][\w-]*)`\s+feature[ -]flag\b|\bbehind\s+(?:the\s+)?`([A-Za-z][\w-]*)`\s+(?:feature[ -])?flag\b)/gi;
 const FLAG_BEFORE = /\b(?:feature[ -]flag|flag\s+key)\s*[:=]?\s*`([A-Za-z][\w-]*)`/gi;
+const FLAG_BEHIND = /\bbehind\s+(?:the\s+)?`([A-Za-z][\w-]*)`\s+(?:feature[ -])?flag\b/gi;
 export function planFlags(planMd) {
 	const lines = String(planMd || "").split("\n");
 	const keys = [];
-	let inSection = false;
+	let section = null;
 	for (const line of lines) {
-		if (/^##\s/.test(line)) { inSection = /^##\s+(Requirements|Guardrails)\b/i.test(line); continue; }
-		if (!inSection) continue;
-		for (const re of [FLAG_AFTER, FLAG_BEFORE]) for (const m of line.matchAll(re)) { const k = m[1] || m[2]; if (!keys.includes(k)) keys.push(k); }
+		if (/^##\s/.test(line)) { section = /^##\s+(Requirements|Guardrails)\b/i.exec(line)?.[1].toLowerCase() ?? null; continue; }
+		if (!section) continue;
+		for (const re of section === "requirements" ? [FLAG_AFTER, FLAG_BEFORE] : [FLAG_BEHIND]) for (const m of line.matchAll(re)) { const k = m[1] || m[2]; if (!keys.includes(k)) keys.push(k); }
 	}
 	return keys;
 }
@@ -1029,8 +1032,9 @@ async function selfTest() {
 		const plan = (req, guard = "- Keep the API shape.") => `# Plan\n\n## Task\n\nx\n\n## Requirements\n\n${req}\n\n## Guardrails\n\n${guard}\n\n## Acceptance Criteria\n\n- [ ] AC-1 (covers: R1) [api:PUT /api/x] — 400 for an empty name.\n- [ ] AC-2 [ui:/settings] — a toast.\n\n## Notes\n\nThe \`legacyMode\` flag is unrelated.\n`;
 		const one = plan("- R1: Ship it behind the `checkoutV2` feature flag.", "- Never flip flag `checkoutV2` in production by hand.");
 		const none = plan("- R1: Validate the name. Do not edit `src/flags/registry.ts`.");
-		const two = plan("- R1: Behind the `checkoutV2` flag.", "- Keep the `legacyCart` feature flag on.");
-		const ok1 = JSON.stringify(planFlags(one)) === '["checkoutV2"]' && planFlags(none).length === 0 && JSON.stringify(planFlags(two)) === '["checkoutV2","legacyCart"]'
+		const two = plan("- R1: Behind the `checkoutV2` flag.\n- R2: Add the `legacyCart` feature flag.");
+		const guardOnly = plan("- R1: Validate the name.", "- Keep the `legacyCart` feature flag on.\n- Ship only behind the `newCart` flag.");
+		const ok1 = JSON.stringify(planFlags(one)) === '["checkoutV2"]' && planFlags(none).length === 0 && JSON.stringify(planFlags(two)) === '["checkoutV2","legacyCart"]' && JSON.stringify(planFlags(guardOnly)) === '["newCart"]'
 			&& JSON.stringify(planFlags("## Requirements\n\n- feature flag: `a-b_c`\n- `x.y` feature flag\n- the feature flag `src/a.ts`\n- Set the `archived` flag on the record.\n- Keep the admin page behind `requireAuth`.\n- flag key `k2`")) === '["a-b_c","k2"]';
 		const crit = await planCriteriaOf(one);
 		const flagged = draftContract(crit, { flagKey: "checkoutV2" });

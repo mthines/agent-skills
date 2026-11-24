@@ -70,7 +70,7 @@ For a `shared` service, step 6 is not optional on any exit path:
 | `blocked (…)`, `--loops` cap, an abort, a refused step | Before the run prints its blocked or final line |
 | A crash or a killed session | At the next run's step 0, in the same checkout |
 
-A restore whose command exits non-zero, whose `verify` does not show the original value, or that never ran is one line at the end of the run's output, which `aw` copies into its own `Degraded:` (Full Step 4.1 and Lite verify):
+On any service, `shared` or not, a restore whose command exits non-zero, whose `verify` does not show the original value, or that never ran is one line at the end of the run's output, which `aw` copies into its own `Degraded:` (Full Step 4.1 and Lite verify):
 
 ```text
 ✓ Degraded: flag USE_SANDBOX not restored (web, shared: true) — run: AW_FLAGS_BACKUP_DIR=.agent/feat-x/verify/flags/web .agents/aw/scripts/flags/flags.sh web restore USE_SANDBOX
