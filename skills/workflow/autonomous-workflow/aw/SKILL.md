@@ -81,7 +81,7 @@ MODE SELECTION:
 
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
-| **Micro** | You, single-pass: Phase 0 quick confirm → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) | in-conversation brief | none (docs if needed) |
+| **Micro** | You, single-pass: Phase 0 quick confirm (with `--interview`: worktree first, then the interview inside it) → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) | in-conversation brief | none (docs if needed) |
 | **Lite** | You, single-pass: the Lite path from `SKILL.md` | short `plan.md` brief, no `checks.yaml` | per signal; `aw-verify` on a UI diff; Phase 5 docs and Phase 6 `create-pr` always |
 | **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a local `review-loop` converges the diff | `plan.md` + `checks.yaml` | `review-loop` (local), `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
 
