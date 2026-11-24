@@ -20,7 +20,7 @@ Never confuse the two.
 2. The step whose value equals `hold_after` got a `PASS` verdict.
 3. It is not the last step; `hold_after` must be one of `steps` except the last, else the config fails to load with `release.yml hold_after: <n> must be one of steps [...]`.
    A new rollout whose contract `steps`, or whose `rollout: boolean` provider, leaves no such step stops before step 1: `hold_after: <n> is not a step before the last in this rollout's steps [...]`, never an unheld rollout.
-   A rollout already in progress when `hold_after` is added is never stopped by it.
+   A rollout still in `deploy` or `baseline` counts as new (its flag has never been on); one already at a step is never stopped by a later `hold_after`.
 
 On entering it:
 
