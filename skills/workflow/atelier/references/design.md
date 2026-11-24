@@ -9,6 +9,7 @@ tags: [atelier, design, rationale]
 
 - [Sequence, never re-implement](#sequence-never-re-implement)
 - [The merge gate](#the-merge-gate)
+- [Ready on real CI](#ready-on-real-ci)
 - [State in the PR](#state-in-the-pr)
 - [Ground truth](#ground-truth)
 - [Out of scope](#out-of-scope)
@@ -18,7 +19,8 @@ tags: [atelier, design, rationale]
 `aw` builds and reviews, `prepare` resolves conflicts, CI, and threads and squash-merges, and `deployment-verify` rolls a flag out.
 Atelier is the thread between them, so a fix to any stage lands in the skill that owns it and every caller gets it.
 A second copy of any of that logic inside atelier would drift from the owner the first time the owner changed.
-`aw` runs unchanged under atelier: atelier passes it the request and reads its printed PR URL.
+`aw` runs unchanged under atelier: atelier passes it the request plus a fixed suffix asking for a flag and a contract, and reads its `AW RUN COMPLETE` block and the sealed checks' sentinel.
+A Build that ends on `unsatisfiable` checks alone proceeds, because only a human can satisfy them, and they ride to the final `Needs you:` line instead of being lost.
 
 ## The merge gate
 
@@ -27,6 +29,19 @@ A merged change that users can see reaches them on the next deploy, and the only
 A change no user can see (docs, internal tooling, tests) has nothing to roll out, so the gate lets it through without a contract.
 The gate reuses `ui-verify`'s `is-ui-diff.mjs` and `deployment-verify`'s `parseContract()` by path instead of copying them: the classifier and the contract parser each have one owner, and the gate agrees with them by construction.
 It is a script with a self-test because a merge is the one step atelier cannot take back.
+
+The gate's question is "does a user-visible change ship behind a flag a human can turn off", not "can `/deployment-verify` step this flag".
+A repo can declare `flags.providers: []` on purpose, when its flag evaluations are logs rather than span attributes and no cohort exists to compare.
+Refusing there would block every user-visible change in that repo and send the author after a provider that does not exist, so a contract with `flag.key` and no matching provider passes with a warning, and the warning travels into the reason and the human's next step.
+Every other contract defect `validateContract()` finds still refuses, and `cohort` is waived only there, because only a provider splits traffic on it.
+
+The gate runs right after Build as well as before the merge.
+A contract is the author's, so the cheapest place to fix a missing one is while `aw` still holds the branch; one fix round bounds the cost, and a second refusal is a human's call.
+
+## Ready on real CI
+
+Atelier exists to merge, so Ready marks a draft ready for review before `prepare`: many repos skip most CI jobs on drafts, and a draft whose checks were skipped reads as green while proving nothing.
+`--keep-draft` is for a caller that must not undraft; it trades the merge for a `hold` that says why.
 
 ## State in the PR
 
