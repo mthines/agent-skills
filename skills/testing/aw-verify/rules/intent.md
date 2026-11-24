@@ -80,6 +80,12 @@ One line per user-visible or API-visible behavior, each testable by an observer,
 When the PR and ticket disagree, the ticket wins; record the mismatch as `spec-drift`.
 
 Tag every criterion, from every source, with its surface: `ui:<route>`, `api:<METHOD path>`, or `worker:<component>` (an `/aw` brief may already carry the tag, or read `check` for a criterion with no surface of its own).
+A brief's untagged `telemetry: <span> …` criterion is written to `intent.md` as `[telemetry:<span>]`; the no-PR gate rejects any criterion left untagged there.
+
+```text
+✗ - ⬜ AC-4 telemetry: checkout.submit span has attribute plan
+✓ - ⬜ AC-4 [telemetry:checkout.submit] checkout.submit span has attribute plan
+```
 
 ## Step 3b — Lint every criterion and map the surfaces
 
