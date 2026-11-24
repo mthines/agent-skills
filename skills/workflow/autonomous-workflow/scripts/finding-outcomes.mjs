@@ -8,9 +8,10 @@
 //   node finding-outcomes.mjs --fp <type> <path> [<symbol>] [<line>]
 //   node finding-outcomes.mjs --self-test
 //
-// Classify: each finding is `acted` (the diff head_sha..later changes the flagged symbol or lines),
-// `dismissed` (the path survives and the diff does not touch them), or `unknown` (head_sha, the
-// later ref, or the path is missing, or the finding names neither a symbol nor a line).
+// Classify: each finding is `acted` (the diff since..later changes the flagged symbol or lines; since
+// is the PR's opening head, default head_sha), `dismissed` (the path survives and the diff does not
+// touch them), or `unknown` (a ref or the path is missing, the finding names neither a symbol nor a
+// line, or the agent already changed it between head_sha and since). `--record` requires `--since`.
 // Deterministic: reads only git; never asks a model, never reads a confidence or severity.
 // Record: one LoreKit bus memory per classified finding; no credentials or a failed write prints a
 // `Degraded:` line and still exits 0. Precision: acted / (acted + dismissed) per type.
@@ -298,6 +299,11 @@ function main(argv) {
       return 0;
     }
     if (opts.record && (!opts.repo || !opts.pr)) throw new Error("--record needs --repo and --pr");
+    // Without the PR's opening head the window would count the agent's pre-PR edits as human: record nothing.
+    if (opts.record && !opts.eventsFrom && !opts.since) {
+      console.log("Degraded: quality finding outcomes — not recorded (no --since: the PR's opening head is unknown)");
+      return 0;
+    }
     if (opts.record && !lorekitEnv()) {
       console.log("Degraded: quality finding outcomes — not recorded (LOREKIT_API_KEY not set)");
       return 0;
@@ -421,6 +427,9 @@ function selfTest() {
   eq("attributes", JSON.parse(a[a.indexOf("--attributes") + 1] || "{}"), { repo: "o/r", pr: 7, type: "reuse", outcome: "acted", model: "m1" });
   const bad = record([c], { repo: "o/r", pr: "7" }, { env: { LOREKIT_API_KEY: "k" }, run: () => { throw new Error("boom"); } });
   eq("write failure degrades", bad.written === 0 && /^Degraded: /.test(bad.degraded || ""), true);
+
+  const noSince = spawnSync(process.execPath, [fileURLToPath(import.meta.url), "--record", "--findings", "/dev/null", "--later", "HEAD", "--repo", "o/r", "--pr", "1"], { encoding: "utf8", env: { ...process.env, LOREKIT_API_KEY: "k" } });
+  eq("record without --since degrades", [noSince.status, /^Degraded: .*no --since/.test(noSince.stdout)], [0, true]);
 
   if (fails.length) { console.error(fails.map((f) => `✗ ${f}`).join("\n")); console.log("finding-outcomes self-test: FAIL"); return 1; }
   console.log("finding-outcomes self-test: PASS");

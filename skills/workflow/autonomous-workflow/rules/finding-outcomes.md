@@ -16,7 +16,7 @@ It is measurement only: nothing reads `eligible` yet, and no gate, verdict, or l
 
 ```text
 ✗ Wrong — the quality pass rates its own reuse finding "high confidence" and records it as acted
-✓ Right — the outcome comes only from the diff between the finding's head_sha and the PR's final head
+✓ Right — the outcome comes only from the diff between the PR's opening head and its final head
 ```
 
 ## Outcomes
@@ -46,15 +46,19 @@ HEAD_SHA=$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)
 OPENED_SHA=$(gh pr view "$PR" --repo "$REPO" --json createdAt,commits \
   -q '.createdAt as $c | [.commits[] | select(.committedDate <= $c)] | last | .oid')
 git fetch -q origin "pull/${PR}/head"
-test -s "$F" && node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --record --findings "$F" \
-  --since "$OPENED_SHA" --later "$HEAD_SHA" --repo "$REPO" --pr "$PR" --model "claude-opus-5-5"
+if [ -z "$OPENED_SHA" ] || [ "$OPENED_SHA" = null ]; then
+  echo "Degraded: quality finding outcomes — not recorded (opening head not found: PR rebased)"
+elif test -s "$F"; then
+  node "$AW_SKILL_DIR/scripts/finding-outcomes.mjs" --record --findings "$F" \
+    --since "$OPENED_SHA" --later "$HEAD_SHA" --repo "$REPO" --pr "$PR" --model "claude-opus-5-5"
+fi
 ```
 
 | Input | Contract |
 | --- | --- |
 | `--findings` | the branch's `quality-findings.jsonl`, read before the worktree is removed; a missing or empty file → skip the call, print nothing |
 | `--later` | the PR's final head sha; fetch `pull/<n>/head` first so it exists after the branch is deleted |
-| `--since` | the PR's opening head; empty (no commit before `createdAt`) → omit it, and the window starts at `head_sha` |
+| `--since` | the PR's opening head; required with `--record`. The query prints `null` when a rebase rewrote every commit date: then skip the call and print `Degraded: quality finding outcomes — not recorded (opening head not found: PR rebased)` — losing one PR's events beats recording the agent's own edits as human ones |
 | `--repo`, `--pr` | `owner/name` and the PR number; they key the bus event |
 | `--model` | the model id that ran the quality pass; a line's own `model` field wins |
 | exit code | 0 whenever classification ran, including a `Degraded:` write; 2 only on a usage or malformed-findings error, which the caller prints as `Degraded: quality finding outcomes — not recorded (<stderr>)` |
