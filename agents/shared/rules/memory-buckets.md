@@ -25,7 +25,7 @@ This file does not restate those — it only names the buckets and says which ki
 
 - [The kinds](#the-kinds)
 - [The `review*` trio (the confusing one)](#the-review-trio-the-confusing-one)
-- [Master table — all 15 buckets](#master-table--all-15-buckets)
+- [Master table — all 16 buckets](#master-table--all-16-buckets)
 - [First-class properties in LoreKit (`kind` + `host`)](#first-class-properties-in-lorekit-kind--host)
 - [Why the tags are not kind-prefixed](#why-the-tags-are-not-kind-prefixed)
 - [See also](#see-also)
@@ -71,7 +71,7 @@ reviewer-comment-relevance
 
 ---
 
-## Master table — all 15 buckets
+## Master table — all 16 buckets
 
 ### Lessons (`loop::<host>-lessons`, key `<host>-lessons::<slug>`)
 
@@ -98,6 +98,12 @@ hosts and silently halve every usage roll-up.
 | Bucket | Owner rule | Producer → Consumer | Lifetime | Never |
 | --- | --- | --- | --- | --- |
 | `review-outcomes` | [`review-outcomes.md`](./review-outcomes.md) | `implement-suggestion` (Phase 7 + `--watch`) → promotion in [`outcome-learning.md`](./outcome-learning.md) | volatile 30d (`.agents/review/config.yaml` `outcome-ttl`) | **Never loaded into a per-review run.** Fingerprint = `category:claim-gist:code-pattern`, reused from `prior-comment-awareness.md` 2.5b. |
+
+### Bus (`loop::atelier-decisions`, key `atelier-decisions::pr-<n>-<stage>-<decision>-<sha7>` and `atelier-decisions::pr-<n>-outcome`)
+
+| Bucket | Owner rule | Producer → Consumer | Lifetime | Never |
+| --- | --- | --- | --- | --- |
+| `atelier-decisions` | [`atelier/rules/decision-log.md`](../../../skills/workflow/atelier/rules/decision-log.md) | `atelier` (after every stage decision, and the outcome sweep at run start) → a later promotion step; nothing reads it today | 90d, scope `branch::{owner}/{repo}::{head-branch}`, `kind: bus` and `host: atelier` set explicitly | **Never read to decide a stage.** Outcomes are only human decisions, `decide.mjs` verdicts, and reverts or hotfixes. |
 
 ### Signal (`loop::reviewer-comment-relevance`, key `reviewer-comment-relevance::<category>:<claim-gist>`)
 

@@ -148,6 +148,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 | ----- | ------------ |
 | **`workflow/`** | *End-to-end orchestrators* |
 | [`aw`](./skills/workflow/autonomous-workflow/aw/SKILL.md) | Ships a task end to end: brief, build until green, fresh-eyes review, draft PR. |
+| [`/atelier`](./skills/workflow/atelier/SKILL.md) | Takes a request or a PR to a merged PR — build, get green, merge — and refuses to merge a user-visible change that has no feature-flag contract. Stops after the merge and tells you how to roll it out. |
 | [`/fix-bug`](./skills/workflow/fix-bug/SKILL.md) | Fixes one bug from a stack trace, span, recording, or ticket, behind a failing test. |
 | [`/implement-suggestion`](./skills/workflow/implement-suggestion/SKILL.md) | Applies PR review comments, one commit each, and resolves the threads. |
 | **`quality/`** | *Code, tests, plans, AI apps* |
