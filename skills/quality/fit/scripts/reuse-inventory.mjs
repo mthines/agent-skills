@@ -11,9 +11,10 @@
 // Exit 0 on success (an empty inventory included), 2 on a git or usage error.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const SOURCE = /\.(m?[jt]sx?|cjs|py|go)$/;
 const SKIP = /(^|\/)(node_modules|dist|build|\.agent|__tests__|__snapshots__)\/|\.(test|spec)\.[^/]+$|(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$/;
@@ -162,4 +163,7 @@ function main(argv) {
   }
 }
 
-process.exitCode = main(process.argv.slice(2));
+// Run only when executed directly, so importing the exported functions has no side effects.
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exitCode = main(process.argv.slice(2));
+}
