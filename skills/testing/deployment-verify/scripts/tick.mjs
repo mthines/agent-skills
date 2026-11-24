@@ -176,7 +176,7 @@ export function draftContract(criteria, { flagKey = null } = {}) {
 // three shapes — "`checkoutV2` feature flag" / "feature flag `checkoutV2`", "behind the `checkoutV2` flag", or
 // "flag key `checkoutV2`". A bare "`archived` flag" is a record field, not a feature flag, and never counts; nor
 // does a key with a dot, slash, or space. Returns the distinct keys in order; the caller prefills only for one.
-const FLAG_AFTER = /(?:`([A-Za-z][\w-]*)`\s+feature[ -]flag\b|\bbehind\s+(?:the\s+)?`([A-Za-z][\w-]*)`)/gi;
+const FLAG_AFTER = /(?:`([A-Za-z][\w-]*)`\s+feature[ -]flag\b|\bbehind\s+(?:the\s+)?`([A-Za-z][\w-]*)`\s+(?:feature[ -])?flag\b)/gi;
 const FLAG_BEFORE = /\b(?:feature[ -]flag|flag\s+key)\s*[:=]?\s*`([A-Za-z][\w-]*)`/gi;
 export function planFlags(planMd) {
 	const lines = String(planMd || "").split("\n");
@@ -1031,7 +1031,7 @@ async function selfTest() {
 		const none = plan("- R1: Validate the name. Do not edit `src/flags/registry.ts`.");
 		const two = plan("- R1: Behind the `checkoutV2` flag.", "- Keep the `legacyCart` feature flag on.");
 		const ok1 = JSON.stringify(planFlags(one)) === '["checkoutV2"]' && planFlags(none).length === 0 && JSON.stringify(planFlags(two)) === '["checkoutV2","legacyCart"]'
-			&& JSON.stringify(planFlags("## Requirements\n\n- feature flag: `a-b_c`\n- `x.y` feature flag\n- the feature flag `src/a.ts`\n- Set the `archived` flag on the record.\n- flag key `k2`")) === '["a-b_c","k2"]';
+			&& JSON.stringify(planFlags("## Requirements\n\n- feature flag: `a-b_c`\n- `x.y` feature flag\n- the feature flag `src/a.ts`\n- Set the `archived` flag on the record.\n- Keep the admin page behind `requireAuth`.\n- flag key `k2`")) === '["a-b_c","k2"]';
 		const crit = await planCriteriaOf(one);
 		const flagged = draftContract(crit, { flagKey: "checkoutV2" });
 		const ok2 = JSON.stringify(flagged.root_spans) === '["PUT /api/x"]' && flagged.flag?.key === "checkoutV2" && flagged.reversibility === "flag" && flagged.cohort?.on === "root"

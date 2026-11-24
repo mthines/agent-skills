@@ -80,7 +80,7 @@ Take the first row that fails; print its line and stop without touching the flag
 | Check | Stop line |
 | --- | --- |
 | No region in the PR body | `no contract — add a <!-- deployment-verify:v1 --> block to the PR body` |
-| The start marker is there, but prose or a second fence sits between the markers | `contract block malformed: only one ```json fence may sit between the markers` — move the extra line below the end marker; never add a second block |
+| Both markers are there, but prose or a second fence sits between them | `contract block malformed: only one ```json fence may sit between the markers` — move the extra line below the end marker; never add a second block |
 | `flag.provider` names no `release.yml` provider | `unknown provider <name>` |
 | `cohort.attribute` is `feature_flag.*` read from span **events** only | `cohort attribute must be a span attribute — span events are not queryable` |
 | A `thresholds` key loosens `release.yml` (higher `max_*`, lower `min_*`) | `contract loosens <key> — thresholds may only tighten` |

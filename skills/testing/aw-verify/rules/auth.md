@@ -62,14 +62,14 @@ A second login location drifts from the one the repo maintains. Probe in order; 
 3. A repo-provided credentials file that the repo's own authed Playwright tooling reads, such as `.browser/credentials.json`.
    Use it only when `git check-ignore -q <file>` exits 0 (gitignored); a tracked credentials file is a finding, never a login source.
    Reference it in `refresh.command`, which passes its fields to the login script as `E2E_EMAIL` and `E2E_PASSWORD` in that command's environment only; never print, log, echo, or copy the file or a value from it.
-   Who runs that command follows [The agent reads a session](#the-agent-reads-a-session-it-does-not-type-the-login): the user or a scheduler, or the agent only under [Pre-authorized sign-in](#pre-authorized-sign-in).
+   Such a `refresh.command` is run by the user or a scheduler; the agent, `ui-verify`'s runner, and `aw-tester` run it only under [Pre-authorized sign-in](#pre-authorized-sign-in), and otherwise stop at `blocked (auth: <state_file> expired)`.
 
 Scaffold only when nothing is found.
 
 ```bash
 # ✓ refresh.command — the values go straight into the login command's environment; nothing is printed
 git check-ignore -q .browser/credentials.json && \
-  E2E_EMAIL="$(jq -r .email .browser/credentials.json)" E2E_PASSWORD="$(jq -r .password .browser/credentials.json)" \
+  E2E_EMAIL="$(jq -r '.email // empty' .browser/credentials.json)" E2E_PASSWORD="$(jq -r '.password // empty' .browser/credentials.json)" \
   AUTH_LOGIN_URL="<login_url>" AUTH_POST_LOGIN_URL_PATTERN='^(?!.*/sign-in)' AUTH_STORAGE_STATE=.auth/local.json \
   node .agents/aw/scripts/auth/login-credentials.mjs
 # ✗ Wrong — prints the secret into the transcript
@@ -171,7 +171,7 @@ When it is set for the environment being run, the agent may sign in itself, in t
 | Rule | Detail |
 | --- | --- |
 | Identity | Only the fixture or e2e test user the repo already provides: `auth.credentials.item`, the env vars `refresh.env` names, or a gitignored credentials file found by [Reuse before you scaffold](#reuse-before-you-scaffold). Never a real person's account |
-| Host | Type the credentials only on a page whose host equals `sign_in_host` exactly (no subdomain, no lookalike). A redirect to any other host → stop and report `blocked (auth: sign-in left <sign_in_host> for <host>)` |
+| Host | Type the credentials only on a page whose host equals `sign_in_host` exactly (no subdomain, no lookalike); with the login script, the host of `AUTH_LOGIN_URL` (or of the page it redirects to) must equal it too. A redirect to any other host → stop and report `blocked (auth: sign-in left <sign_in_host> for <host>)` |
 | Accounts | Never create, register, invite, or reset an account, and never change a password or MFA setting |
 | Secrets | Never print, log, screenshot, or write a credential; a screenshot of the sign-in form is taken before typing or after submitting, never with a field filled |
 | Afterwards | Save the session to the environment's `storage_state` and confirm `authed_check`, the same as a user-run login |
