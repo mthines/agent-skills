@@ -88,6 +88,8 @@ A project that has its own Playwright installed keeps rung 1, as it would anywhe
 
 In place of the `Task(subagent_type: "aw-tester", …)` block in [`runner.md § Step 4`](./runner.md#step-4-select-the-driver-and-run):
 
+`<TARGET>` is the file [`runner.md § Step 3`](./runner.md#step-3-materialize-the-ephemeral-files) wrote: `aw-target.preview.yml`, or `aw-target.preview.<role>.yml` under `--as`.
+
 ```text
 <dispatch>(
   subagent_type: "general",
@@ -97,7 +99,7 @@ In place of the `Task(subagent_type: "aw-tester", …)` block in [`runner.md § 
     Your procedure is /tmp/workspace/pr-reviewer/skills/autonomous-workflow/templates/aw-tester.agent.md — read it and follow it.
     Run `. /tmp/workspace/agent-skills/env.sh` at the start of every Bash call.
     Work in <the checkout directory>.
-    Aw-Target file: .agent/{branch}/aw-target.preview.yml
+    Aw-Target file: <TARGET>
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Mode: --all --auto-capture --record-video
 )
@@ -122,7 +124,7 @@ In place of the `Task(subagent_type: "general-purpose", …)` block in [`runner.
     Your procedure is /tmp/workspace/pr-reviewer/skills/ui-verify/rules/adversarial.md — read it and follow it.
     Run `. /tmp/workspace/agent-skills/env.sh` at the start of every Bash call.
     Work in <the checkout directory>.
-    Aw-Target file: .agent/{branch}/aw-target.preview.yml
+    Aw-Target file: <TARGET>
     Specs file: .agent/{branch}/.ui-verify/specs.md
     Probe specs: <ids of the specs whose result was pass>
     Playwright bin: .agent/{branch}/.aw-tester/playwright-bin

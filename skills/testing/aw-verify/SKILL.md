@@ -8,7 +8,7 @@ description: >
   commit per finding, and reports with real screenshots. `setup` writes the committed `.agents/aw/` config every
   suite skill reads. Triggers on "/aw-verify".
 disable-model-invocation: false
-argument-hint: '[run [local|preview]|setup|report] [<pr-url>|<pr-number>|<ticket-id>] [--no-fix] [--no-push] [--no-comment] [--loops <n>] [--keep-stack] [--foreign-stack teardown|ask|abort]'
+argument-hint: '[run [local|preview]|setup|report] [<pr-url>|<pr-number>|<ticket-id>] [--no-fix] [--no-push] [--no-comment] [--loops <n>] [--as <role>] [--keep-stack] [--foreign-stack teardown|ask|abort]'
 license: MIT
 metadata:
   author: mthines
@@ -36,6 +36,7 @@ Every run with a PR ends by rendering its proof and, on trusted PRs, posting it 
 | `--no-fix` | Report findings, change no code |
 | `--no-push` / `--no-comment` | Commit fixes but do not push / defer the PR comment — only for a caller that runs `report <pr-url>` itself afterwards (`aw`) |
 | `--loops <n>` | Fix-and-reverify iterations (default and max `3`; `telemetry.yml` `loops` may lower it) |
+| `--as <role>` | Run as `auth.identities.<role>` instead of the default identity ([`rules/auth.md § Several identities`](./rules/auth.md#several-identities)) |
 | `--keep-stack` | Never tear the local stack down |
 | `--foreign-stack <teardown\|ask\|abort>` | Overrides `policies.foreign_stack`; `aw` passes `abort` |
 

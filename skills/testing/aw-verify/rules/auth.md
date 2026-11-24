@@ -81,6 +81,40 @@ The repo already has a login command                          → reference it i
 Show the user the script's `CUSTOMIZE` / `SELECTORS` block before writing; a locator mismatch there is the most common failure.
 The scripts import `playwright`; `aw-tester`'s pinned resolution provides it when the project has none.
 
+## Several identities
+
+Test one environment as more than one user (admin vs member) with `auth.identities`, a map keyed by role; the environment's URL, stack, and `bypass_header` stay shared.
+The top-level `auth` fields are the default identity; each `identities.<role>` entry overrides only `storage_state`, `identity`, `credentials`, and `refresh`.
+
+```yaml
+# ✓ One environment, two roles — each role has its own state file and vault item
+auth:
+  strategy: storage-state
+  storage_state: .auth/local-admin.json
+  authed_check: '{role: "button", name: "Account menu"}'
+  refresh: { when: missing-or-expired, command: node .agents/aw/scripts/auth/login-credentials.mjs, env: [E2E_EMAIL, E2E_PASSWORD] }
+  identity: { email: test+admin@example.com, role: admin }
+  credentials: { item: "aw admin" }
+  identities:
+    member:
+      storage_state: .auth/local-member.json
+      identity: { email: test+member@example.com, role: member }
+      credentials: { item: "aw member" }
+      refresh: { when: missing-or-expired, command: E2E_EMAIL= E2E_PASSWORD= AUTH_CREDENTIALS_ITEM="aw member" AUTH_STORAGE_STATE=.auth/local-member.json node .agents/aw/scripts/auth/login-credentials.mjs, env: [] }
+# ✗ Wrong — a second environment named local-member: `run` accepts only local|preview and the stack is read from environments.local
+environments:
+  local-member: { url: http://localhost:5173, auth: { ... } }
+```
+
+| Rule | Detail |
+| --- | --- |
+| Selecting | `--as <role>` picks `identities.<role>`; no flag, or `--as default`, uses the top-level `auth` |
+| Unknown role | `blocked (auth: no identity "<role>" in environments.<env>)`; never fall back to the default |
+| Login | Per identity, the command in [the section below](#the-agent-reads-a-session-it-does-not-type-the-login) with that identity's `credentials.item` and `storage_state` |
+| `refresh` | Every identity sets its own `refresh.command` that names its own `AUTH_STORAGE_STATE` and `AUTH_CREDENTIALS_ITEM`, never `AUTH_CREDENTIALS_PROVIDER` (the runner exports it from the personal `credentials.provider`, like `PREVIEW_URL`), and blanks `E2E_EMAIL=` and `E2E_PASSWORD=` (the login script uses the vault item only when both are unset or empty); never inherit one that reads `E2E_EMAIL` / `E2E_PASSWORD`, which would sign in as the default user while `authed_check` still passes |
+| Reporting | Two roles are two runs, each judged on its own criteria, e.g. "member does not see the Delete button". Each run rewrites the PR's `aggregate` region, so the earlier role's proof collapses into a Previous runs entry and a differing verdict can post a regression notice: read it as a role change. Name the role in each run's summary line |
+| Seed data | `fixtures.seed` must create every user an identity names |
+
 ## Confirm a session — `authed_check`
 
 A state file existing does not prove a valid session: a stale one renders the login page on a `200`.
