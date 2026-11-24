@@ -282,9 +282,10 @@ MODE SELECTION:
 - Lessons applied: [N matched, or none]
 ```
 
-> **Do NOT create artifact files in Phase 0.** Artifacts (`plan.md`,
-> `walkthrough.md`) are written inside the worktree after Phase 2. Phase 1
-> planning is in-conversation only.
+> **Write no artifact outside the task worktree.** When the interview runs
+> (Full, Lite, or Micro with `--interview`), Phase 0 creates the worktree first
+> and the interview writes `brief.md` inside it; `plan.md` and `walkthrough.md`
+> follow later in the same worktree. Otherwise Phase 0 writes nothing.
 
 **DO NOT proceed to Phase 1 until Step 6 is complete.**
 
@@ -339,7 +340,7 @@ Before leaving Phase 0:
 - [ ] Technical approach validated
 - [ ] User gave explicit "proceed" signal
 - [ ] **MODE SELECTION block emitted (Micro, Lite, or Full)**
-- [ ] Branch name decided (artifact creation deferred to Phase 2)
+- [ ] Branch name decided; worktree created before the interview when it ran, else deferred to Phase 2
 
 **If any checkbox is unchecked, DO NOT proceed to Phase 1.**
 
