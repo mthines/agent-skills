@@ -1,118 +1,102 @@
 ---
 name: interview
 description: >
-  Aligns on a request's scope before planning — researches the codebase,
-  surfaces unknowns, non-goals, and success criteria, asks batched clarifying
-  questions only when research cannot resolve them, and writes a confirmed
-  `brief.md`. Triggers on "align on scope", "interview me", "clarify the
-  request", "/interview".
+  Turns an underspecified request into a short spec before planning — reads
+  the code first, asks only the questions that change what gets built, in one
+  batched round, and writes `brief.md`. Stays silent on a clear request.
+  Triggers on "align on scope", "interview me", "clarify the request",
+  "/interview".
 disable-model-invocation: false
 argument-hint: '[<request>] [--non-interactive]'
 license: MIT
 metadata:
   author: mthines
-  version: '1.0.0'
+  version: '2.0.0'
   workflow_type: advisory
   tags:
     - requirements
     - scope-alignment
-    - elicitation
     - clarifying-questions
     - interview
-    - discovery
     - pre-planning
-    - non-goals
-    - readiness-gate
     - brief-artifact
 ---
 
 # Interview
 
-Turns an underspecified request into a confirmed, thought-through scope before a single line is planned or written.
-It restates and diffs the request, researches the code so its questions are specific, surfaces the unknowns and non-goals, interviews the user only where research falls short, and emits a `brief.md` that planning consumes.
+Turns an unclear request into a spec a fresh session can build and verify from: `.agent/{branch}/brief.md`.
+It asks the user only what the code cannot answer and what would change the implementation.
+Why it is this small: [`references/design.md`](./references/design.md).
 
-> **This `SKILL.md` is a thin index.** Phase procedures live in `rules/*.md` and load on demand.
-> A full worked run lives in [`references/interview-example.md`](./references/interview-example.md).
+## Input
 
-## Contents
+`$ARGUMENTS` is the request.
+If empty, use the conversation's active request; if there is none, ask what to scope.
 
-- [When it runs](#when-it-runs)
-- [Workflow](#workflow)
-- [Required reading by phase](#required-reading-by-phase)
-- [Core principles](#core-principles)
-- [Anti-patterns](#anti-patterns)
-- [Definition of done](#definition-of-done)
+| Flag                | Meaning                                                                                                   |
+| ------------------- | --------------------------------------------------------------------------------------------------------- |
+| `--non-interactive` | Never prompt. Write blocking unknowns under `## Open questions` and return `blocked`. For headless callers. |
 
----
+Inside `aw`, this skill runs on demand from Phase 0; do not also run it standalone. Contract: [`rules/aw-integration.md`](./rules/aw-integration.md).
 
-## When it runs
+## Procedure
 
-`$ARGUMENTS` is the request to align on (free text).
-If `$ARGUMENTS` is empty, use the current conversation's active request; if there is none, ask what to scope — never interview against a guessed request.
+### 1. Restate and read the code
 
-| Flag                | Default | Meaning                                                                                                                                    |
-| ------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--non-interactive` | off     | Do not prompt the user. Surface the questions inside `brief.md` under `Open questions`, proceed on stated assumptions, and set the readiness verdict. For headless callers that cannot prompt. |
+1. Restate the request in one paragraph plus requirement bullets, each tagged `[user-stated]` or `[inferred]`.
+2. Read the affected code (`Grep` / `Glob` / `Read`; an `Explore` agent only for a broad sweep): where it lives, what already exists to reuse, the repo's conventions, and governing docs (`CLAUDE.md`, `.claude/rules/`).
+3. Delete every candidate question the code answers.
 
-This skill is **adaptive**.
-When the request is already crisp and research answers the open questions, it asks nothing, writes a one-line pass note plus the brief, and returns `ready`.
-It interrupts only for a genuine, load-bearing unknown — see [`rules/readiness-gate.md`](./rules/readiness-gate.md).
+```text
+Good: "src/lib/pr-status-cache.ts already caches per-branch status → reuse it."
+Bad:  asking the user "Should we cache the result?"
+```
 
-### Relation to `aw` and `ideate` (precedence)
+### 2. Classify what is still unknown
 
-- **Autonomous-implementation asks** ("implement X autonomously", "ship this", `/aw`) are owned by `aw`, which runs this interview *inside* its Phase 0 (on demand for Full tier — see [`rules/aw-integration.md`](./rules/aw-integration.md)) — do not also fire standalone; let `aw` drive.
-- **Standalone `/interview`** is for the explicit "help me scope this first" moment on non-`aw` or ambiguous work.
-- **For solution *options*, not scope**, use `/ideate` — it diverges and scores; this skill converges on the one scope.
+List what remains open about intent, **non-goals**, and **success criteria**, plus every surviving `[inferred]` bullet.
+Non-goals and success criteria are always resolved: answered by the request, confirmed in the round, or recorded as an assumption.
 
-## Workflow
+| Class      | Test                                                                                    | Action                                     |
+| ---------- | --------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `blocking` | A wrong guess changes the approach, or the change is hard to reverse (data, API, migration). | Ask.                                       |
+| `advisory` | A sensible default exists and a wrong guess is cheap to fix later.                      | Don't ask. Record the default in `## Assumptions (advisory)`. |
+| `spike`    | Only seeing it work settles it (feel, performance, a third-party API's real behavior).  | Don't ask. Record `settle by spike: <what>` in `## Assumptions (advisory)`. |
 
-Five phases, each with a gate. Do not advance until the gate passes.
+Zero `blocking` unknowns → ask nothing, write the brief, return `ready`.
+That silence is the skill working.
 
-| Phase | Name                    | Rule file                                                                     | Gate                                                                        |
-| ----- | ----------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| 0     | Restate & diff          | [`rules/research-grounding.md`](./rules/research-grounding.md)                 | Request restated in own words; every delta from the user's words surfaced.  |
-| 1     | Research the ground     | [`rules/research-grounding.md`](./rules/research-grounding.md)                 | Affected areas, prior art, patterns, and constraints located in the code.   |
-| 2     | Surface unknowns (gate) | [`rules/readiness-gate.md`](./rules/readiness-gate.md), [`rules/consultative-completeness.md`](./rules/consultative-completeness.md) | Every unknown enumerated and classified `blocking` vs `advisory`; interview-or-pass decided. |
-| 3     | Interview               | [`rules/question-design.md`](./rules/question-design.md)                       | Blocking + high-value unknowns asked in ≤ 2 batched rounds, or skipped (adaptive pass). |
-| 4     | Confirm & brief         | [`rules/brief-artifact.md`](./rules/brief-artifact.md)                         | Understanding confirmed; `brief.md` written; readiness verdict set.         |
+### 3. Ask once
 
-## Required reading by phase
+1. Put every `blocking` question into one `AskUserQuestion` call (≤ 4 questions, 2–4 options each).
+2. Each option is a concrete choice found in the code, with its trade-off; the one you would pick goes first, labelled `(Recommended)`.
+3. A second round is allowed only when a first-round answer exposes a new `blocking` unknown.
+4. Never a third round: say the request is not interview-shaped and recommend `/ideate` (options) or a spike (evidence).
 
-Load on demand — do not preload.
+```text
+Good: one call — { PR states: [open+merged+ci-failing (Recommended), open+merged, all four] },
+                 { Poll source: [reuse PrPoller's 90s (Recommended), new interval] }
+Bad:  "Which states?" → wait → "What cadence?" → wait → "Should it cache?"
+```
 
-| Phase | Files                                                                                                          |
-| ----- | ------------------------------------------------------------------------------------------------------------- |
-| 0–1   | [`rules/research-grounding.md`](./rules/research-grounding.md)                                                 |
-| 2     | [`rules/readiness-gate.md`](./rules/readiness-gate.md), [`rules/consultative-completeness.md`](./rules/consultative-completeness.md) |
-| 3     | [`rules/question-design.md`](./rules/question-design.md)                                                       |
-| 4     | [`rules/brief-artifact.md`](./rules/brief-artifact.md)                                                         |
-| aw    | [`rules/aw-integration.md`](./rules/aw-integration.md) — how `aw` delegates to this skill.       |
+### 4. Write the brief
 
-## Core principles
+Write [`templates/brief.md`](./templates/brief.md) to `.agent/{branch}/brief.md` (`.agent/interview/brief.md` on `main`), updating it in place on a re-run.
+Keep every heading; write `None.` under an empty one.
+Never put a plan, a diff, or code in it.
+Set exactly one verdict:
 
-1. **Research before asking.** A question the codebase already answers is noise. Ground every question in what the code shows so it is specific ("reuse `PrStatusCache` or add a cache?"), not generic ("what do you want?"). See [`rules/research-grounding.md`](./rules/research-grounding.md).
-2. **Interrupt only for load-bearing unknowns.** Classify each unknown `blocking` vs `advisory`. Ask about blocking ones; proceed on advisory ones and record the assumption. Silence is the correct output for a crisp request. See [`rules/readiness-gate.md`](./rules/readiness-gate.md).
-3. **Batch the questions.** One prioritized round via `AskUserQuestion`, two at most. Never drip questions one at a time. See [`rules/question-design.md`](./rules/question-design.md).
-4. **Consultative, not stenographic.** Capture intent *and* pressure-test completeness: non-goals, edge cases, success criteria, constraints. This is the "is it thought-through" half. See [`rules/consultative-completeness.md`](./rules/consultative-completeness.md).
-5. **Converge, don't diverge.** This skill pins down the *one* thing to build. It hands divergent option-generation to `/ideate`, adversarial plan review to `/critical`, and readiness scoring to `/confidence`. Do not duplicate them.
-6. **The brief is the deliverable.** A confirmed, self-contained `brief.md` plus a readiness verdict — nothing more. It writes no product code. See [`rules/brief-artifact.md`](./rules/brief-artifact.md).
+| Verdict                  | When                                                                 |
+| ------------------------ | -------------------------------------------------------------------- |
+| `ready`                  | No `blocking` unknown left and no unconfirmed assumption.            |
+| `ready-with-assumptions` | No `blocking` unknown left; at least one advisory or spike assumption. |
+| `blocked`                | A `blocking` unknown is unanswered (user unavailable or `--non-interactive`). |
 
-## Anti-patterns
+End with one line: the verdict and the brief path.
 
-- Asking a question the code answers. **Fix:** research first (Phase 1).
-- Dripping questions one at a time across turns. **Fix:** batch into one `AskUserQuestion` round.
-- Interviewing a request that is already crisp. **Fix:** honor the adaptive pass — write the brief, return `ready`, ask nothing.
-- Generating solution options. **Fix:** that is `/ideate`; this skill converges on scope.
-- Adversarially red-teaming an implementation plan. **Fix:** that is `/critical`; run it after a plan exists.
-- Producing a scored gate verdict. **Fix:** that is `/confidence`; this skill elicits the inputs a score needs.
-- Writing product code or a plan. **Fix:** stop at `brief.md`; hand off to planning.
+## Out of scope
 
-## Definition of done
-
-- [ ] Request restated in own words; every delta from the user's words surfaced (Phase 0).
-- [ ] Affected code areas, prior art, and constraints located (Phase 1).
-- [ ] Every unknown enumerated and classified `blocking` vs `advisory` (Phase 2).
-- [ ] Blocking + high-value unknowns resolved via ≤ 2 batched rounds, or a clean adaptive pass logged (Phase 3).
-- [ ] `brief.md` written to `.agent/{branch}/brief.md` (re-run updates it in place).
-- [ ] Readiness verdict set: `ready` | `ready-with-assumptions` | `blocked`.
-- [ ] One-line summary delivered naming the verdict and pointing at the brief.
+- Generating solution options → `/ideate`.
+- Red-teaming a plan → `/critical`.
+- Scoring readiness → `/confidence`.
+- Writing the plan or code → the caller.
