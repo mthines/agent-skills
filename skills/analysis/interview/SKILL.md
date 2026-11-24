@@ -54,7 +54,8 @@ Bad:  asking the user "Should we cache the result?"
 
 ### 2. Classify what is still unknown
 
-List what remains open about intent, **non-goals**, and **success criteria**, plus every surviving `[inferred]` bullet.
+List what remains open about intent, **non-goals**, **success criteria**, edge cases visible in the code, and constraints, plus every surviving `[inferred]` bullet.
+Record each constraint found in step 1 (a governing-doc rule, compatibility, performance) under `## Constraints`.
 Non-goals and success criteria are always resolved: answered by the request, confirmed in the round, or recorded as an assumption.
 
 | Class      | Test                                                                                    | Action                                     |

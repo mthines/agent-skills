@@ -21,6 +21,10 @@
 
 - <observably true when done, ideally a command or check>
 
+## Constraints
+
+- <governing-doc rule, compatibility, or performance limit the work must honor>
+
 ## Decisions
 
 - Q: <blocking unknown> → A: <the user's answer>
