@@ -40,7 +40,7 @@
 
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -91,6 +91,20 @@ const LOCAL_PATH = new RegExp([
   `${B}~\\/`,
   "[A-Z]:\\\\",
 ].join("|"), "m");
+
+// The text of a region outside every <details> block and apart from its headline, the <sub> line and
+// blank lines. An aggregate with none of it opens to nothing but closed rows.
+export function visibleBody(region) {
+  let depth = 0;
+  const open = [];
+  for (const line of region.split("\n")) {
+    const t = line.trim();
+    const opens = (t.match(/<details\b/gi) || []).length, closes = (t.match(/<\/details>/gi) || []).length;
+    if (depth === 0 && opens === 0 && t && !/^#{1,6}\s/.test(t) && !/^<sub>/.test(t) && !t.includes(STALE)) open.push(t);
+    depth = Math.max(0, depth + opens - closes);
+  }
+  return open.join("\n").length >= 40;
+}
 
 export function localPathLine(text) {
   return text.split("\n").find((l) => LOCAL_PATH.test(l)) ?? null;
@@ -313,6 +327,9 @@ export function splice(existing, section, content, { replaceAll = false, now = n
   const parts = SECTIONS.filter((s) => regions.has(s)).map((s) => {
     const r = regions.get(s);
     const stale = s !== "intent" && newest && shaOf(r) && shaOf(r) !== newest && (head || s !== section);
+    // The aggregate is the report a reviewer reads: it never folds, because a PR holding only closed
+    // sections shows no verdict. On an older commit it keeps its text and gains one visible line.
+    if (stale && s === "aggregate") return `${open(s)}\n> ⚠️ Tested on \`${shaOf(r)}\`; the PR head is now \`${newest}\`. Check the open findings against the newer commits. ${STALE}\n\n${r}\n${close(s)}`;
     if (!stale) return `${open(s)}\n${r}\n${close(s)}`;
     // The wrapper lines carry STALE, so parseRegions drops them on the next read.
     const headline = headlineOf(r).replace(/^#+\s*/, "").replace(/<[^>]+>/g, "").replace(/`([^`]*)`/g, "<code>$1</code>");
@@ -366,6 +383,37 @@ export function flipNotice(existing, section, written, url, head = null) {
   const is = now && verdictOf(now);
   if (!was || !is || was === is) return null;
   return `${NOTICE}\nVerify re-ran on \`${shaOf(now) ?? "?"}\`: ${was} → ${is}. [See the report](${url})`;
+}
+
+// Every local image or recording a region names is uploaded to GitHub and replaced by its
+// user-attachments URL, so a report never ships a path a reviewer cannot open. The endpoint is the one
+// `gh pr edit --attach` calls (attach-media's rung 2). A file that is missing, over 10 MB or of an
+// unknown type is left in place, and the local-path refusal then names it.
+const MEDIA_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm" };
+const MEDIA_REF = /(!\[[^\]]*\]\()([^)\s]+\.(?:png|jpe?g|gif|webp|svg|mp4|mov|webm))(\))|(^|\n)(\s*)((?:\.{0,2}\/|~\/|\/)?[^\s()<>`|]+\.(?:mp4|mov|webm))(?=\s*(?:\n|$))|(<(?:img|video)\b[^>]*\bsrc=")([^"]+\.(?:png|jpe?g|gif|webp|svg|mp4|mov|webm))(")/g;
+export async function uploadMedia(content, { slug, baseDirs, log = (m) => console.error(m) }) {
+  const found = new Set();
+  for (const m of content.matchAll(MEDIA_REF)) { const path = m[2] ?? m[6] ?? m[8]; if (path && !/^https?:/.test(path)) found.add(path); }
+  if (!found.size) return content;
+  const token = (process.env.GH_TOKEN || process.env.GITHUB_TOKEN || spawnSync("gh", ["auth", "token"], { encoding: "utf8" }).stdout || "").trim();
+  if (!token) { log("verify-comment: no GitHub token, so local media was not uploaded"); return content; }
+  const { readFileSync: read, existsSync, statSync } = await import("node:fs");
+  const { resolve: res, basename } = await import("node:path");
+  const auth = { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" };
+  const repoId = (await (await fetch(`https://api.github.com/repos/${slug}`, { headers: auth })).json()).id;
+  let out = content;
+  for (const path of found) {
+    const file = [path.replace(/^~\//, `${process.env.HOME}/`), ...baseDirs.map((d) => res(d, path))].find((f) => f.startsWith("/") ? existsSync(f) : false) || (existsSync(path) ? res(path) : null);
+    const type = MEDIA_TYPES[path.split(".").pop().toLowerCase()];
+    if (!file || !type) { log(`verify-comment: not uploaded (missing or unknown type): ${path}`); continue; }
+    if (statSync(file).size > 10 * 1024 * 1024) { log(`verify-comment: not uploaded (over 10 MB): ${path}`); continue; }
+    const r = await fetch(`https://uploads.github.com/user-attachments/assets?name=${encodeURIComponent(basename(file))}&content_type=${encodeURIComponent(type)}&repository_id=${repoId}`, { method: "POST", headers: { ...auth, "Content-Type": "application/octet-stream" }, body: read(file) });
+    const url = r.ok ? (await r.json()).url : null;
+    if (!url) { log(`verify-comment: upload failed (${r.status}): ${path}`); continue; }
+    out = out.split(path).join(url);
+    log(`verify-comment: uploaded ${basename(file)}`);
+  }
+  return out;
 }
 
 function gh(args, input) {
@@ -498,6 +546,7 @@ export function checkReport(prBody, comments = [], { ui = false } = {}) {
   else {
     const first = aggregate.split("\n").find((l) => l.trim()) || "";
     if (!VERDICT_HEADLINE.test(first)) problems.push(`the report must open with "## <✅ Verified | ⚠️ Verified with open items | ❌ Not verified | ⛔ Blocked> — <headline>" (report.md.template), not "${first.slice(0, 60)}"`);
+    if (!visibleBody(aggregate)) problems.push("the report shows only its headline and collapsed blocks; put the summary, what needs a human and the findings in the open above Details");
     if (!/<details>\s*<summary>Details<\/summary>/.test(aggregate)) problems.push('the report has no closed <details><summary>Details</summary> block (report.md.template)');
   }
   if (ui && !/<!-- (?:ui-verify:v2|ui-verify:v1|preview-spec:v1) -->/.test(prBody || "")) problems.push("no ui-verify spec block in the PR description (ui-verify author, or lift specs.md)");
@@ -510,7 +559,7 @@ function selfTest() {
   const url = "https://github.com/user-attachments/assets/aaaa";
   {
     const intentOk = "<details><summary>📋 Acceptance criteria — 1 criterion</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ✅&nbsp;AC‑1 | does x | ui:/x · browser |\n\n</details>";
-    const aggOk = "## ✅ Verified — does x\n\nbody\n\n<details><summary>Details</summary>\n\nmore\n\n</details>";
+    const aggOk = "## ✅ Verified — does x\n\nThe checkout flow works end to end on the preview.\n\n<details><summary>Details</summary>\n\nmore\n\n</details>";
     const full = withBlock("text", splice(splice("", "intent", intentOk), "aggregate", aggOk));
     const spec = "<!-- ui-verify:v2 -->\n<details><summary>s</summary>\n</details>\n<!-- /ui-verify:v2 -->\n";
     assert(checkReport(full + spec, [], { ui: true }).length === 0, "a complete report passes the gate");
@@ -584,7 +633,11 @@ function selfTest() {
   assert(parseRegions(splice("", "ui", "updated {{UPDATED}}", { now: t })).get("ui") === "updated 2026-03-01 10:00 UTC", "the script stamps {{UPDATED}}");
   const agg1 = splice("", "aggregate", "## ✅ Verified — x\n\n<sub>`aaaaaaa`</sub>", { now: t });
   const withUi = splice(agg1, "ui", "### ❌ Not verified — y\n\n<sub>`bbbbbbb`</sub>", { now: t });
-  assert(withUi.includes("<details><summary>Older run on <code>aaaaaaa</code>: ✅ Verified — x</summary>") && parseRegions(withUi).get("aggregate") === "## ✅ Verified — x\n\n<sub>`aaaaaaa`</sub>", "a region on an older commit folds to one closed line, and the fold never becomes part of the region");
+  assert(withUi.includes("Tested on `aaaaaaa`; the PR head is now `bbbbbbb`") && !withUi.includes("<summary>Older run on <code>aaaaaaa</code>") && parseRegions(withUi).get("aggregate") === "## ✅ Verified — x\n\n<sub>`aaaaaaa`</sub>", "an aggregate on an older commit stays open with a banner, never folds, and the banner never becomes part of the region");
+  const uiOld = splice(splice("", "ui", "### ❌ y\n\n<sub>`aaaaaaa`</sub>", { now: t }), "aggregate", "## ✅ Verified — x\n\n<sub>`bbbbbbb`</sub>", { now: t });
+  assert(uiOld.includes("<details><summary>Older run on <code>aaaaaaa</code>: ❌ y</summary>") && parseRegions(uiOld).get("ui") === "### ❌ y\n\n<sub>`aaaaaaa`</sub>", "a ui region on an older commit still folds to one closed line");
+  assert(visibleBody("## ✅ x\n\n<details><summary>a</summary>\n\nlots of hidden words here, more than forty characters long\n\n</details>") === false && visibleBody("## ✅ x\n\nThe flow works on the preview and two findings need a human to look.") === true, "visibleBody ignores text inside <details>");
+  assert(checkReport(withBlock("t", splice(splice("", "intent", "<details><summary>📋 Acceptance criteria — 1 criterion</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n| ✅&nbsp;AC‑1 | x | ui:/x · browser |\n\n</details>"), "aggregate", "## ✅ Verified — x\n\n<details><summary>Details</summary>\n\nlong hidden text that goes past forty characters easily\n\n</details>"))).some((p) => p.includes("only its headline")), "the gate fails an aggregate that is only collapsed blocks");
   const same = splice(agg1, "ui", "### ✅ y\n\n<sub>`aaaaaaa`</sub>", { now: t });
   assert(!same.includes("Older run"), "regions on the same commit are not marked");
   assert(!splice(withUi, "aggregate", "## ✅ again `bbbbbbb`", { replaceAll: true }).includes("Older run"), "an aggregate rewrite clears the mark");
@@ -781,7 +834,7 @@ function selfTest() {
 
 // Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
 export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
-  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui"];
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -815,7 +868,7 @@ else if (isMain) {
     const statuses = statusArg && statusArg.trim() ? JSON.parse(statusArg.trim().startsWith("{") ? statusArg : readFileSync(statusArg, "utf8")) : null;
     if (fromPlan && section !== "intent") throw new Error("--from-plan writes the intent section only");
     const planText = (p) => { try { return readFileSync(p, "utf8"); } catch (e) { if (e.code === "ENOENT") { const n = new Error(`no brief at ${p}`); n.code = 3; throw n; } throw e; } };
-    const content = marks ? "" : fromPlan ? intentFromPlan(planText(fromPlan), { statuses }) : readFileSync(file === "-" ? 0 : file, "utf8");
+    let content = marks ? "" : fromPlan ? intentFromPlan(planText(fromPlan), { statuses }) : readFileSync(file === "-" ? 0 : file, "utf8");
     if (has("--print")) { process.stdout.write(content + "\n"); process.exit(0); }
     const replaceAll = has("--replace-all");
     const to = opt("--to") ?? "auto";
@@ -837,6 +890,11 @@ else if (isMain) {
       process.stdout.write(to === "body" ? withBlock(prBody, block) : block);
     } else {
       if (!opt("--pr")) throw new Error("--pr is required unless --dry-run");
+      if (section === "aggregate" && content && !marks && !visibleBody(content)) { console.error("refused: the aggregate shows only its headline and collapsed blocks. Put the verdict summary, what needs a human and the findings in the open, above Details (report.md.template); a reviewer who sees only closed sections learns nothing"); process.exit(1); }
+      if (!has("--no-upload") && content) {
+        const slug = opt("--repo") || opt("--pr").match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
+        content = await uploadMedia(content, { slug, baseDirs: [process.cwd(), ...(file && file !== "-" ? [dirname(resolve(file))] : [])] });
+      }
       console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section, content, replaceAll, to, marks }));
     }
   } catch (e) {
