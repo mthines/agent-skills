@@ -175,7 +175,7 @@ export function draftContract(criteria, { flagKey = null } = {}) {
 // The feature flags an /aw brief names in its `## Requirements`, `## Acceptance Criteria`, and `## Guardrails`: a
 // backticked key in one of three shapes — "`checkoutV2` feature flag" / "feature flag `checkoutV2`", "behind the
 // `checkoutV2` flag", or "flag key `checkoutV2`". An acceptance criterion also names one as "`flag.key` is
-// `checkoutV2`", "the `checkoutV2` flag on/off", "flag `checkoutV2`" (never the verb "shall flag `x`"),
+// `checkoutV2`", "the `checkoutV2` flag on/off", "with/when/if/the flag `checkoutV2`" (never the verb "shall flag `x`"),
 // or "read `checkoutV2`" on a line that says
 // "flag". A bare "`archived` flag" is a record field, not a feature flag, and never counts; nor does a key with a
 // dot, slash, or space. A guardrail names a flag the change must not touch ("Keep the `x` feature flag on"), so
@@ -189,7 +189,7 @@ const FLAG_BEHIND = new RegExp(`\\bbehind\\s+(?:the\\s+)?${KEY}\\s+(?:feature[ -
 const FLAG_AC = [
 	new RegExp(`\`?\\bflag\\.key\`?\\s+(?:is|=|:)\\s*${KEY}`, "gi"),
 	new RegExp(`${KEY}\\s+(?:feature[ -])?flag\\s+(?:is\\s+)?(?:on|off|enabled|disabled)\\b`, "gi"),
-	new RegExp(`(?<!\\b(?:shall|will|must|should|may|can|to|not|never|don't|doesn't)\\s+)\\bflag\\s+${KEY}`, "gi"),
+	new RegExp(`\\b(?:with|when|if|while|unless|the|a|its)\\s+flag\\s+${KEY}`, "gi"),
 ];
 const FLAG_AC_READ = new RegExp(`\\breads?\\s+(?:the\\s+)?${KEY}`, "gi");
 const GUARD_KEEP = /\b(?:keep|leave|never|not|untouched|unchanged|don't|unrelated)\b/i;
@@ -1076,7 +1076,7 @@ async function selfTest() {
 			["a guardrail that ships behind a flag still names it", JSON.stringify(planFlags("## Guardrails\n\n- Ship only behind the `newCart` flag.\n")) === '["newCart"]'],
 			["AC shapes: flag.key is, `k` flag on/off, flag `k`", JSON.stringify(planFlags(ac("- [ ] AC-1 — `flag.key` is `a1`.\n- [ ] AC-2 — with the `b2` flag off, nothing renders.\n- [ ] AC-3 — with flag `c3` on, it renders."))) === '["a1","b2","c3"]'],
 			["'When flag `k` is on' names k", JSON.stringify(planFlags(ac("- [ ] AC-1 — When flag `checkoutV2` is on, it renders.\n- [ ] AC-2 — If flag `checkoutV2` is enabled, it saves."))) === '["checkoutV2"]'],
-			["'flag' used as a verb names no flag", planFlags(ac("- [ ] AC-1 — The linter shall flag `any` usages.\n- [ ] AC-2 — The linter does not flag `any` in tests.")).length === 0],
+			["'flag' used as a verb names no flag", planFlags(ac("- [ ] AC-1 — The linter shall flag `any` usages.\n- [ ] AC-2 — The linter does not flag `any` in tests.\n- [ ] AC-3 — It won't flag `any`; it cannot flag `any`; it doesn’t flag `any`.\n- [ ] AC-4 — Lint rules flag `any` usages.")).length === 0],
 			["an AC that reads a key on a line with no 'flag' names none", planFlags(ac("- [ ] AC-1 — The page shall read `userId` from the session.")).length === 0],
 			["a non-AC section is still not scanned", planFlags("## Notes\n\n- `flag.key` is `zz`.\n").length === 0],
 		];
