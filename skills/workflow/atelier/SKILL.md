@@ -111,8 +111,10 @@ Under `--unattended` add the line `No human is present: run interview with --non
 
 ### After undrafting
 
-The checks listed right after `gh pr ready` are still the draft's (most of them `SKIPPED`), so `prepare` would read them as green.
-Before calling `prepare`, re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `gh pr checks <pr-url> --watch`.
+Read `gh pr view <pr-url> --json statusCheckRollup` before `gh pr ready`.
+No check in it concluded `SKIPPED` → CI already ran on the draft (and a workflow without a `ready_for_review` trigger will not run again): go straight to `prepare`.
+Otherwise the checks listed right after `gh pr ready` are still the draft's skipped ones, which `prepare` would read as green.
+Re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `gh pr checks <pr-url> --watch`, then call `prepare`.
 No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks started after undraft`.
 
 ```text
