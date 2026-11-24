@@ -86,7 +86,11 @@ A role with no `identities` entry stops the run: `blocked (auth: no identity "<r
 **Auth runs here, before the spec run, and is env-var-driven** (full flow: the `aw-verify` skill's `rules/auth.md`):
 
 - Export `PREVIEW_URL` (the resolved URL) and, when `~/.agents/aw/config.yml` sets `credentials.provider`, `AUTH_CREDENTIALS_PROVIDER` for the auth commands to read.
-- When `auth.refresh` is set and `when: always`, or the `storage_state` file is missing or stale, run `refresh.command`. It reads the credentials named in `refresh.env` from the environment and writes the gitignored `storage_state`. An unset variable fails the command loudly, and the authed specs report `skipped`, never a false pass.
+- When `auth.refresh` is set and `when: always`, or the `storage_state` file is missing or stale, run `refresh.command`.
+  It reads the credentials named in `refresh.env` from the environment and writes the gitignored `storage_state`.
+  A `refresh.command` that reads a repo credentials file (`.browser/credentials.json`) is the agent typing the test user's login: run it only under the next bullet's `sign_in_host` condition, else report `blocked (auth: <state_file> expired)`.
+  An unset variable fails the command loudly, and the authed specs report `skipped`, never a false pass.
+- Never type the test user's login yourself unless the personal config sets `auth.sign_in_host` for `<ENV>`, and then only on that exact host, as the `aw-verify` skill's `rules/auth.md § Pre-authorized sign-in` says; otherwise a missing or expired session is `blocked (auth: <state_file> expired)`.
 - Carry `auth.bypass_header` (name plus env-var name) verbatim; `aw-tester` reads the variable and applies the header at launch, so the value never enters this runner's scope or logs.
 
 A credential is only ever a **reference** (an env-var name) in either file, never a value, and the resolved URL is never written to `.agents/aw/`.

@@ -54,7 +54,12 @@ If the file does not exist, or `auth.authed_check` is absent from the first auth
 page (or, without it, the page returns HTTP 401):
 1. Read `auth.refresh.command` from the aw-target.
 2. Run it with `auth.refresh.timeout_seconds` as the timeout (it reads its
-   credentials from the env vars named in `auth.refresh.env`, never from a file).
+   credentials from the env vars named in `auth.refresh.env`).
+   A command that reads a repo credentials file (`.browser/credentials.json`) runs
+   only when the aw-target's `auth.sign_in_host` is set and equals the host of the
+   command's `AUTH_LOGIN_URL` exactly (the `aw-verify` skill's `rules/auth.md`
+   § Pre-authorized sign-in); otherwise mark the spec `skipped`
+   with reason `auth-refresh-not-authorized` and do not run it.
 3. Retry the failed spec once — re-checking `auth.authed_check` if configured.
 4. If the session is still invalid, mark the spec `skipped` with reason
    `auth-refresh-failed` and continue (do not block the whole run).
