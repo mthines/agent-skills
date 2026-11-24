@@ -63,7 +63,7 @@ export function userVisible(files, { surfaceJson, surfaceFile } = {}) {
 // deployment-verify's own parse and validation: a contract the gate passes is one /deployment-verify accepts,
 // except for the flag's provider. The gate asks "behind a flag a human can turn off", not "can
 // /deployment-verify step it": with no matching provider in release.yml (or no release.yml, or
-// `providers: []`), the contract passes with NO_PROVIDER_WARNING and the cohort, which only a provider
+// `providers: []`), or a contract that names no provider, passes with NO_PROVIDER_WARNING and the cohort, which only a provider
 // can split on, is not required. Every other validateContract() failure still refuses.
 // A release.yml that exists but does not load refuses, because /deployment-verify would stop on it too.
 export const NO_PROVIDER_WARNING = "deployment-verify cannot step this flag here: no provider; a human flips it";
@@ -91,6 +91,11 @@ export async function flagContract(body, repoDir = process.cwd()) {
 	const key = contract.flag?.key;
 	if (typeof key !== "string" || !key.trim()) return { has: false, missing: "flag", detail: "the contract names no flag", providers };
 	const steppable = providers.includes(contract.flag.provider);
+	// A provider name release.yml does not declare, in a repo that declares some, is a typo, not "no provider":
+	// passing it would silently drop the stepped rollout the author asked for.
+	if (!steppable && providers.length && contract.flag.provider) {
+		return { has: false, missing: "invalid", detail: `unknown provider ${contract.flag.provider} (release.yml declares ${providers.join(", ")})`, providers };
+	}
 	// No provider to step it: validate the rest against a stand-in provider, and a cohort nobody can split on is not asked for.
 	const checked = steppable ? contract : { ...contract, cohort: contract.cohort ?? { unused: "no provider" } };
 	const checkedConfig = steppable ? config : { ...config, flags: { ...config.flags, providers: [{ name: contract.flag.provider }] } };
@@ -211,6 +216,10 @@ async function selfTest() {
 	t("a declared matching provider passes with no warning", r.decision === "pass" && r.warning === null, JSON.stringify(r));
 	r = await gate({ files: ["src/components/Header.tsx"], body: NOCOHORT_BODY.replace('"newHeader"', '"newHeader", "provider": "posthog"'), repoDir: withProv });
 	t("a steppable flag still needs its cohort", r.decision === "refuse" && /missing "cohort"/.test(r.reason), r.reason);
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY.replace('"posthog"', '"postHog"'), repoDir: withProv });
+	t("a provider name release.yml does not declare refuses as a typo", r.decision === "refuse" && /unknown provider postHog \(release.yml declares posthog\)/.test(r.reason), r.reason);
+	r = await gate({ files: ["src/components/Header.tsx"], body: NOCOHORT_BODY, repoDir: withProv });
+	t("a contract naming no provider passes with the warning where providers exist", r.decision === "pass" && r.warning === NO_PROVIDER_WARNING, JSON.stringify(r));
 	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: withProv });
 	t("with a provider declared, the refusal names it", /"provider": "posthog"/.test(r.how), r.how);
 	for (const d of [noProv, withProv]) rmSync(d, { recursive: true, force: true });

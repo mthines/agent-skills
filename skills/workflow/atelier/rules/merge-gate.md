@@ -13,8 +13,8 @@ Run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.
 | --- | --- | --- | --- |
 | not user-visible (docs, tooling, tests) | anything | 0 | `pass` |
 | user-visible | a valid `deployment-verify:v1` contract with `flag.key` whose `flag.provider` `release.yml` declares | 0 | `pass` |
-| user-visible | a contract with `flag.key` and no matching provider (no `release.yml`, `providers: []`, or another name) | 0 | `pass` + `warning: deployment-verify cannot step this flag here: no provider; a human flips it` |
-| user-visible | no contract, a contract that does not parse, one with no `flag`, or one `deployment-verify` would refuse for any reason but the provider | 1 | `refuse` |
+| user-visible | a contract with `flag.key` and no provider to step it (no `release.yml`, `providers: []`, or no `flag.provider`) | 0 | `pass` + `warning: deployment-verify cannot step this flag here: no provider; a human flips it` |
+| user-visible | no contract, a contract that does not parse, one with no `flag`, a `flag.provider` that a non-empty `providers` list lacks (a typo), or any other `deployment-verify` refusal | 1 | `refuse` |
 | — | — | 2 | error: record `failed`, never merge |
 
 1. **User-visible** is `ui-verify`'s `scripts/is-ui-diff.mjs` answer, run by path, with the `surface` from the repo's `.agents/aw/ui.yml` when it has one (the gate reads it; run the gate from the repo root or pass `--repo-dir`).

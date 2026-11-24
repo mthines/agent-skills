@@ -81,7 +81,7 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, the [sentinel](#after-build-returns) passes, and the early gate passes | `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
-| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft; then `Skill("prepare", "<pr-url> --single")` | it printed `Already green` or fixed every PR it touched, and did not report `CI not run` | `CI not run (all checks skipped)` → `hold`, reason `CI not run: all checks skipped`; under `--keep-draft`, a draft with any `SKIPPED` check (`gh pr view <pr-url> --json isDraft,statusCheckRollup`) → `hold`, reason `CI not run: draft`; blocked → `failed`, reason = prepare's blocker line |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")` | it printed `Already green` or fixed every PR it touched, and did not report `CI not run` | `CI not run (all checks skipped)` → `hold`, reason `CI not run: all checks skipped`; under `--keep-draft`, a draft with any `SKIPPED` check (`gh pr view <pr-url> --json isDraft,statusCheckRollup`) → `hold`, reason `CI not run: draft`; blocked → `failed`, reason = prepare's blocker line |
 | **merge** | gate first: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")`; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
@@ -107,6 +107,17 @@ Under `--unattended` add the line `No human is present: run interview with --non
 ```text
 ✗ prepare: Already green (draft, 16 of 18 checks skipped) → record ready proceed
 ✓ gh pr ready <pr-url> → prepare watches the real CI → proceed; under --keep-draft → hold "CI not run: draft"
+```
+
+### After undrafting
+
+The checks listed right after `gh pr ready` are still the draft's (most of them `SKIPPED`), so `prepare` would read them as green.
+Before calling `prepare`, re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `gh pr checks <pr-url> --watch`.
+No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks started after undraft`.
+
+```text
+✗ gh pr ready <pr-url>; Skill("prepare", …)                 # reads 2 passed + 16 skipped from the draft → Already green
+✓ gh pr ready <pr-url>; a check started after the undraft; gh pr checks --watch; Skill("prepare", …)
 ```
 
 ### After Build returns

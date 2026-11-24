@@ -32,7 +32,7 @@ memory.write {
 }
 ```
 
-1. `user_visible` and `has_flag_contract` come from the last `merge-gate.mjs` JSON on this head (Build's early gate fills them).
+1. `user_visible` and `has_flag_contract` come from the last `merge-gate.mjs` JSON on this head (Build's early gate fills them); when the gate has not run on this head (a run started from an existing PR, or a head that moved), run it once with `--pr <pr-url>` to fill them (it decides nothing at that point).
    When that JSON carries a `warning` (no flag provider), `has_flag_contract` is `true` and the `reason` ends with the warning.
 2. A merge `proceed` also carries `merge_sha`, the squash commit; the outcome sweep reads it.
 3. A Build that failed before a PR exists uses the worktree's branch for the scope, `pr: 0`, and `failed-{ISO timestamp}` in place of `{decision}-{sha7}`.
