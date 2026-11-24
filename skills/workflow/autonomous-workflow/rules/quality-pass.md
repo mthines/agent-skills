@@ -27,12 +27,12 @@ Run both lanes; each is one call and runs at most once.
 | Lane | Trigger | Call | Missing → |
 | --- | --- | --- | --- |
 | Reuse | always | `Skill("fit", "--inventory --base <base sha>")` — the inventory script lives in `fit`'s `scripts/reuse-inventory.mjs` | `Degraded: quality reuse — not run (<reason>)` |
-| UX | the diff touches UI files **and** `aw-verify` ran in this run | one fresh-context sub-agent: `Agent(prompt="Skill(\"ux\", \"audit <changed UI files> --screenshots <aw-verify image paths>\") — report only, at most 6 findings")` | `Degraded: quality ux — not run (<reason>)` |
+| UX | the diff touches UI files **and** `aw-verify` (or, on the `aw-executor` route, the `aw-tester` specs) ran in this run | one fresh-context sub-agent: `Agent(prompt="Skill(\"ux\", \"audit <changed UI files> --screenshots <aw-verify image paths>\") — report only, at most 6 findings")` | `Degraded: quality ux — not run (<reason>)` |
 
 1. The UX lane runs in a dispatched sub-agent, never in this context: the builder grading its own UI is the bias the lane exists to remove. No dispatch tool → `Degraded: quality ux — not run (sub-agent dispatch unavailable)`.
 2. Pass the screenshot paths `aw-verify` already captured — the image paths listed in `.agent/{branch}/verify/findings.jsonl` `evidence` and `.agent/{branch}/verify/probes.jsonl` `screenshots` (on the `aw-executor` route, the `aw-tester` capture paths); never start a browser or a stack for this lane.
 3. `ux` grades against `.agents/aw/ux.md` when the repo has one (format: the `ux` skill's `rules/house-rubric.md`), else with its own defaults.
-4. A UI diff where `aw-verify` did not run → `quality ux — skipped (trigger not met: aw-verify did not run)`; no UI file → `skipped (trigger not met: no UI file)`.
+4. A UI diff where neither ran → `quality ux — skipped (trigger not met: aw-verify did not run)`; no UI file → `skipped (trigger not met: no UI file)`.
 5. Each lane's result is a `companion:` line ([`companion-skills.md` § The companion report](./companion-skills.md#the-companion-report)); a failed lane is a `Degraded:` line, never a stop.
 
 ## Output — `.agent/{branch}/quality-notes.md`

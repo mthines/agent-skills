@@ -20,7 +20,7 @@ const SKIP = /(^|\/)(node_modules|dist|build|\.agent|__tests__|__snapshots__)\/|
 const HTTP = "get|post|put|patch|delete|head|options|all";
 
 function git(args, cwd) {
-  const r = spawnSync("git", args, { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync("git", ["-c", "core.quotePath=false", ...args], { cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${(r.stderr || "").trim()}`);
   return r.stdout;
 }
