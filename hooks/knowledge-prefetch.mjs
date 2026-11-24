@@ -23,8 +23,7 @@ import {
   writeJson,
 } from './lib/knowledge.mjs';
 
-const RETRY_ERROR_MS = 60_000;
-const FRESH_MS = 10 * 60_000;
+const RETRY_MS = 60_000;
 
 async function worker({ sessionId, cwd, file }) {
   const dir = sessionDir(sessionId);
@@ -56,10 +55,8 @@ function hook() {
   // Extension only: folder-name skips need the repo root, which only the worker has.
   if (SKIP_EXT.test(file)) return;
   const existing = readJson(cacheFile(sessionDir(input.session_id), file));
-  if (existing) {
-    const age = Date.now() - (existing.at ?? 0);
-    if (existing.status === 'ok' || existing.status === 'none' ? age < FRESH_MS : age < RETRY_ERROR_MS) return;
-  }
+  // A finished fetch is final for the session; an in-flight or failed one is retried after a minute.
+  if (existing && (existing.status === 'ok' || existing.status === 'none' || Date.now() - (existing.at ?? 0) < RETRY_MS)) return;
   writeJson(cacheFile(sessionDir(input.session_id), file), { status: 'pending', at: Date.now() });
   pruneOldSessions();
   const payload = JSON.stringify({ sessionId: input.session_id, cwd: input.cwd ?? process.cwd(), file });
