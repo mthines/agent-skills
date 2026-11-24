@@ -55,6 +55,8 @@ notify:                                 # rules/notify.md; the PR comment is alw
     slack: { channel: "#deploys", mention: [pr_author, codeowners] }
   - on: [INCONCLUSIVE]
     slack: { channel: "#deploys" }
+  - on: [AWAITING_APPROVAL]              # fires only with hold_after set
+    slack: { channel: "#deploys", mention: [pr_author] }
   # - on: [ROLLED_BACK]
   #   linear: { team: ENG, labels: [rollback] }
   # - on: [ESCALATE]
