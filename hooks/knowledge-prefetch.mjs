@@ -37,7 +37,8 @@ async function worker({ sessionId, cwd, file }) {
     const entries = await fetchEntries({ conn, scope: repo.scope, rel });
     writeJson(target, { status: 'ok', rel, records: normalizeRecords(entries, rel), at: Date.now() });
   } catch (error) {
-    writeJson(target, { status: 'error', at: Date.now(), message: String(error?.message ?? error).slice(0, 200) });
+    // Error text can embed the request URL, and so the token: record the class only.
+    writeJson(target, { status: 'error', at: Date.now(), kind: String(error?.name ?? 'Error').slice(0, 40) });
   }
 }
 

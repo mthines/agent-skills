@@ -63,7 +63,9 @@ export function resolveConnection({ cwd, env = process.env, home = os.homedir() 
   const envEndpoint = env.LOREKIT_MCP_URL || env.LOREKIT_ENDPOINT || endpointOnly;
   const token = env.LOREKIT_TOKEN || null;
   if (!envEndpoint || !token) return null;
-  return toRest(splitEndpoint(envEndpoint).endpoint ?? envEndpoint, token);
+  // An unparseable endpoint may still carry `?token=`; never use the raw string.
+  const { endpoint } = splitEndpoint(envEndpoint);
+  return endpoint ? toRest(endpoint, token) : null;
 }
 
 function toRest(endpoint, token) {

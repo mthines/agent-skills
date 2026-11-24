@@ -54,6 +54,8 @@ describe('connection', () => {
 
   it('falls back to the environment and returns null with nothing configured', () => {
     const home = fs.mkdtempSync(path.join(tmp, 'home-'));
+    const bad = { LOREKIT_MCP_URL: 'lorekit.example.com/functions/v1/mcp?token=lk_SECRET', LOREKIT_TOKEN: 'lk_ro_z' };
+    assert.equal(resolveConnection({ cwd: tmp, env: bad, home: tmp }), null, 'an unparseable endpoint is never used raw');
     const env = { LOREKIT_MCP_URL: 'https://y.supabase.co/functions/v1/mcp', LOREKIT_TOKEN: 'lk_ro_z' };
     assert.equal(resolveConnection({ cwd: home, home, env }).token, 'lk_ro_z');
     assert.equal(resolveConnection({ cwd: home, home, env: {} }), null);
