@@ -69,7 +69,8 @@ Anything else is `⏭️ not verified on target (<what ran instead>)`:
 | A witness with no answer | The receipt's `[receipt] verdict:` is `ambiguous` or `null`, or the line is absent, for a `telemetry:` AC |
 
 **Tests-only criteria.** An `api:`, `worker:`, or `check` AC proved only by committed unit or component tests, with no stand-in from another row, stays `⏭️` and is listed under **Worth a look in the preview**, but does not cap the verdict: the run says plainly what a reviewer can still look at, and the test link in the criteria table is its proof.
-A `ui:` AC proved only by tests caps the run at `⚠️`, like every other stand-in: its promise is what the user sees, and a test does not see it. The gate (`verify-comment.mjs --check`, with or without `--local`) fails a `ui:` AC left `⏭️` under a `✅` verdict.
+A `ui:` AC proved only by tests caps the run at `⚠️`, like every other stand-in: its promise is what the user sees, and a test does not see it.
+The gate (`verify-comment.mjs --check`, with or without `--local`) fails a `ui:` AC left `⏭️` under a `✅` verdict.
 A criterion with no UI path is tagged `api:`, `worker:`, or `check` at intent time, never `ui:`.
 **Why:** [`../references/design.md § A ui: criterion needs the browser`](../references/design.md#a-ui-criterion-needs-the-browser).
 
