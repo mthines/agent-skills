@@ -16,6 +16,7 @@ Unattended runs always tick ([`state.md`](./state.md)) and never ask a question.
 | Roll back? (`rollback: ask`) | `reversibility: flag` → yes, act. Anything else → do not act, outcome `ESCALATE` with `rollback needs a human (reversibility: <value>)` |
 | Which provider? Which dataset? (`setup`) | Never run `setup` unattended; stop: `STOPPED — run /deployment-verify setup interactively` |
 | Contract missing or invalid | `STOPPED`, comment on the PR, remove the label |
+| Approve or override a hold? | Never: tick and leave the hold as it is, whatever the recommendation; `--approve` and `--override` are refused unattended ([`hold.md`](./hold.md)) |
 
 `rollback: never` still wins: report only.
 

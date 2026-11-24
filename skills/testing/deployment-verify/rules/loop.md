@@ -35,7 +35,7 @@ For each value in `steps` (`[100]` for a `rollout: boolean` provider or a change
 
 | Verdict | Act |
 | --- | --- |
-| PASS | Record the step as passed; next step |
+| PASS | Record the step as passed; next step, or wait for a human when the step is `hold_after` ([`hold.md`](./hold.md)) |
 | HOLD | Extend: production waits another `step_window_minutes`, local and preview send `traffic` again; re-measure the whole step window. Past `max_hold_minutes` on this step → set the last passed step's value (`0` before the first), end with `INCONCLUSIVE` |
 | ROLLBACK | [`rollback.md`](./rollback.md) |
 

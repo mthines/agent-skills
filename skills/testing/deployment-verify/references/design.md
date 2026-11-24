@@ -69,6 +69,22 @@ A merged PR's comments are read by nobody at 3 a.m.
 Each outcome goes where someone acts on it: a rollback to the team channel and a ticket, an escalation to whatever pages a person, a pass only to the PR, because a channel that announces every success stops being read.
 A notification that fails is written into the PR comment, so a silent channel never reads as a quiet night.
 
+## A human hold, and an earned recommendation
+
+A rollout that passes every gate can still need a person: the gates measure errors and latency, not whether the feature is the one the team wanted at 50 % of traffic.
+`hold_after` puts that person at one committed step, and the default is no hold, so a repository opts in by editing a reviewed file.
+The hold has no timeout because a hold that resolves itself is a delay, not a gate.
+
+Published thresholds for when an agent has earned autonomy are opinion, not measurement, so this skill ships no default that grants it.
+The policy is a committed `promotion:` block a human owns; the loop only counts evidence against it and never edits it.
+The evidence is agreement: a human approving the controller's PASS at a hold, slowly enough to have read it, counts one; a fast approval is a rubber stamp and counts neither way, because counting it would let the streak measure attention instead of correctness.
+Disagreement is cheaper to learn from than agreement, so any override, rollback, revert, or change of model resets the streak and drops a level at once.
+The streak is kept per repository and risk class because a team that trusts UI changes has said nothing about migrations.
+The recommendation is printed beside the hold and nothing acts on it yet: a recommendation that has been right for months is the evidence a team needs before letting it act.
+
+Guarded rollouts hold on insufficient sample and never pass on it; the earned-autonomy signal follows the same rule, so missing evidence of any kind recommends `HUMAN`.
+The signal is written with `expected_version`, because two ticks or a tick and a person can update it at once, and a lost reset is the one write that must never be overwritten by a stale increment.
+
 ## Telemetry constraints this design follows
 
 - Flag SDK hooks commonly record evaluations as span events; Dash0's D0QL `spans` table has no events column, so the cohort must be a span attribute.
@@ -80,3 +96,4 @@ A notification that fails is written into the PR comment, so a silent channel ne
 
 - A soak window after 100 %: the rollout ends at 100 % PASS and says so.
 - Choosing the flag and writing the contract: that belongs to the planning step (`aw`), before the merge.
+- Acting on an `AUTO` recommendation, or detecting a revert PR: a hold advances only on a human `approve`, and whoever opens a revert records the `revert` event.

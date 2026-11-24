@@ -65,6 +65,7 @@ One fenced JSON block between the markers, anywhere in the PR body, inside the `
 | `reversibility` | `flag`, `redeploy`, or `irreversible` |
 | `thresholds` | Optional; may only tighten `release.yml` thresholds |
 | `steps` | Optional; overrides `release.yml` → `steps` for this change |
+| `model` | Optional; the model that wrote the change (`claude-opus-5-5`). The earned-autonomy signal resets when it changes ([`autonomy.md`](./autonomy.md)) |
 
 ## Validate before step 1
 

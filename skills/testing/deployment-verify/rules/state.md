@@ -26,7 +26,7 @@ Edit it in place with `gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id>
 
 ```json
 {
-  "phase": "deploy | baseline | step | rollback | done",
+  "phase": "deploy | baseline | step | hold | rollback | done",
   "env": "production",
   "deploy_live_at": "2026-11-11T08:38:38Z",
   "baseline": { "n": 575, "errors": 0, "avg_ms": 5.2, "from": "…Z", "to": "…Z" },
@@ -35,6 +35,7 @@ Edit it in place with `gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id>
   "last_passed_value": 1,
   "step_set_at": "…Z",
   "hold_since": null,
+  "hold": { "at": 10, "since": "…Z", "recommendation": "HUMAN", "reason": "…", "risk_class": "ui", "degraded": null, "decision": null },
   "steps": [{ "value": 1, "from": "…Z", "to": "…Z", "test": {}, "control": {}, "verdict": "PASS", "reason": "…" }],
   "outcome": null,
   "notified": ["ROLLED_BACK"],
@@ -55,6 +56,7 @@ Edit it in place with `gh api -X PATCH repos/{owner}/{repo}/issues/comments/<id>
 | `baseline` | `step_window_minutes` after `deploy_live_at` | Measure the baseline ([`loop.md`](./loop.md#baseline)); enough → `phase: step`, `step_index: 0` |
 | `step`, flag not yet set | always | Set the step's value, record `step_set_at` |
 | `step`, flag set | `propagation_seconds + step_window_minutes` after `step_set_at`, plus the ingest wait | Measure, confirm live, decide, act ([`loop.md`](./loop.md#each-step)) |
+| `hold` | never — only a human `--approve` or `--override` | Apply the decision ([`hold.md`](./hold.md)); without one, write nothing and take no lease |
 | `rollback` | the ingest wait after the rollback | Prove recovery ([`rollback.md`](./rollback.md#prove-recovery)) |
 | `done` | never | Nothing |
 
