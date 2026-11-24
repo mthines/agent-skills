@@ -279,7 +279,8 @@ memory.search { q: "<path>", scopes: ["repo::{owner}/{repo}"], tags: ["codebase-
 ```
 
 Never `memory.list` the bucket: a large repo holds over a thousand of these records and the page is the newest, not the ones for the planned files (`agents/shared/rules/codebase-knowledge.md`, section "Read side").
-This read is for the plan. While you implement, the on-touch hooks (`hooks/knowledge-prefetch.mjs` and `hooks/knowledge-inject.mjs`, shipped in the root plugin) add the matching records to context as each file is edited, so do not re-read the bucket per file.
+This read is for the plan.
+While you implement, the on-touch hooks (`hooks/knowledge-prefetch.mjs` and `hooks/knowledge-inject.mjs`, shipped in the root plugin) add the matching records to context as each file is edited, so do not re-read the bucket per file.
 
 Keep only the records that match the plan:
 

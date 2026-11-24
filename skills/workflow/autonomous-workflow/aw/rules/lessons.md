@@ -43,8 +43,10 @@ Micro skips it.
 memory.read   { refs: ["repo::{owner}/{repo}::hotspot::<path>", …] }    # one ref per File Changes path, max 32
 ```
 
-1. Keep a hotspot only when it has earned it: `confirmed >= 2`, or `missed > 0`, or `regressed > 0`. Older records carry no counters; count their `confirmed_examples`, `missed_examples`, and `regressed_examples`.
-2. On Full, a kept hotspot with `missed > 0` or `regressed > 0` becomes an acceptance criterion (`AC-n`) in `checks.yaml` before it is sealed. A check added after the seal does not count.
+1. Keep a hotspot only when it has earned it: `confirmed >= 2`, or `missed > 0`, or `regressed > 0`.
+   Older records carry no counters; count their `confirmed_examples`, `missed_examples`, and `regressed_examples`.
+2. On Full, a kept hotspot with `missed > 0` or `regressed > 0` becomes an acceptance criterion (`AC-n`) in `checks.yaml` before it is sealed.
+   A check added after the seal does not count.
 3. Record each applied record in `plan.md` under `## Lessons applied`, marked `(codebase-knowledge)`.
 4. Skip silently when `memory.*` is not connected or there is no git remote.
 
