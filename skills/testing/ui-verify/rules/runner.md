@@ -75,7 +75,9 @@ Write two git-ignored files (the branch is the PR's head ref):
 
 1. **`.agent/{branch}/.ui-verify/specs.md`** — the extracted spec body from Step 1, verbatim — plus a `Format: intent` header line when Step 1 found a v2 region without one.
    Never touch `.agent/{branch}/.aw-tester/routes/`: it is the runners' route cache for intent specs (spec-run contract § 6.6), and a later run in this worktree replays from it.
-2. **`.agent/{branch}/aw-target.<ENV>.yml`** — `aw-tester`'s target: `name: <ENV>`, `base_url:` the resolved URL (no trailing slash), then `environments.<ENV>.auth` and `.fixtures` verbatim, `ui.yml`'s `constraints`, and `ui.yml`'s `adversarial.allowed_origins` (as `adversarial.allowed_origins`).
+2. **`.agent/{branch}/aw-target.<ENV>.yml`** — `aw-tester`'s target: `name: <ENV>`, `base_url:` the resolved URL (no trailing slash), then `environments.<ENV>.auth` (with `identities` dropped) and `.fixtures` verbatim, `ui.yml`'s `constraints`, and `ui.yml`'s `adversarial.allowed_origins` (as `adversarial.allowed_origins`).
+
+**With `--as <role>`** (set by `aw-verify`), write `.agent/{branch}/aw-target.<ENV>.<role>.yml` instead, with `auth` = `environments.<ENV>.auth` overlaid by `identities.<role>` and `identities` dropped, and pass that path as `Aw-Target file:`. `--as default` (or no `--as`) uses the top-level `auth` unchanged. A role with no `identities` entry stops the run: `blocked (auth: no identity "<role>" in environments.<ENV>)`; never fall back to the default user (the `aw-verify` skill's `rules/auth.md § Several identities`).
 
 **Auth runs here, before the spec run, and is env-var-driven** (full flow: the `aw-verify` skill's `rules/auth.md`):
 

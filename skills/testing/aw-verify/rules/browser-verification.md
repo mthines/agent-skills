@@ -31,11 +31,12 @@ Record `window_start` (UTC ISO-8601) before and `window_end` after each invocati
 Under the `command` stack driver, also record each process log's byte size before and after as `log_offsets` ([`stack/command.md § Logs`](./stack/command.md#logs-for-the-logs-telemetry-backend)); `telemetry-verify`'s `logs` backend reads that byte range.
 
 ```text
-Skill("ui-verify", "run .agent/<branch>/specs.md --env <env> --url <url> --no-telemetry --no-comment")                         # acceptance specs
-Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> --url <url> --no-adversarial --no-telemetry --no-comment")   # edge specs, local only
+Skill("ui-verify", "run .agent/<branch>/specs.md --env <env> [--as <role>] --url <url> --no-telemetry --no-comment")                         # acceptance specs
+Skill("ui-verify", "run .agent/<branch>/verify/edge-specs.md --env <env> [--as <role>] --url <url> --no-adversarial --no-telemetry --no-comment")   # edge specs, local only
 ```
 
 - Always pass `--url`: on `local` it is the stack's `url`, so `ui-verify` never falls through to the deployed preview; on `preview` it is the URL Phase 2 resolved.
+- `--as <role>` is forwarded unchanged when the run has it; without it `ui-verify` signs in as the default identity.
 - `--env` picks the login and fixtures from `.agents/aw/environments.yml` via `.agent/{branch}/aw-target.<env>.yml`.
 - Keep the adversarial pass on for the acceptance run: hostile input, double submit, failed requests, keyboard-only, small viewports.
 - Login fails → run `/aw-verify setup` once and retry; never hand-roll a login. `.agents/aw/notes.md` names any repo-specific login step.

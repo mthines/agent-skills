@@ -9,7 +9,7 @@ description: >
   Web only; triggers on "write a preview spec", "verify this PR's preview", "try
   to break this PR's preview", "/ui-verify".
 disable-model-invocation: false
-argument-hint: '[author|run|verify] [pr-url|pr-number|specs-path] [--env preview|local] [--url <url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--no-motion] [--post-findings] [--no-comment] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
+argument-hint: '[author|run|verify] [pr-url|pr-number|specs-path] [--env preview|local] [--as <role>] [--url <url>] [--driver auto|chrome|playwright] [--no-screenshots] [--no-recording] [--no-adversarial] [--no-telemetry] [--no-motion] [--post-findings] [--no-comment] [--wait-preview <min>] [--no-brainstorm|--brainstorm deep] [--unattended]'
 license: MIT
 allowed-tools: Bash(gh *) Bash(git *) Bash(jq *) Bash(node *) Read Edit Write Grep Glob Skill Task Agent AskUserQuestion mcp__github__pull_request_read mcp__github__update_pull_request mcp__github__pull_request_review_write mcp__github__add_comment_to_pending_review mcp__github__issue_read mcp__github__add_issue_comment mcp__github__update_issue_comment mcp__Dash0__getWebEvents mcp__Dash0__getAttributeKeys mcp__Dash0__generateDash0Url mcp__lorekit__memory_list mcp__lorekit__memory_search mcp__lorekit__memory_read mcp__lorekit__memory_write
 metadata:
@@ -264,7 +264,7 @@ Follow [`rules/runner.md`](./rules/runner.md). In outline:
 
 1. **Author only when no block exists.** If the PR body carries `<!-- ui-verify:v2 -->`, `<!-- ui-verify:v1 -->`, or the legacy `<!-- preview-spec:v1 -->`, keep it verbatim. Otherwise run Operation `author`, honouring
    `--no-brainstorm` and `--brainstorm deep` exactly as `author` does; a gate `no` ends with `not verified (no UI files in diff)`, and `author`'s `failed (no GitHub access path)` ends `verify` with that reason.
-2. **Run** Operation `run`, honouring `--env`, `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--no-motion`, `--post-findings`, `--no-comment`, `--wait-preview`, and `--unattended` exactly as `run` does. On the `mcp` path or with a local `specs-path`, no `--url` → `inconclusive: no access path for deployment lookup (pass --url)`.
+2. **Run** Operation `run`, honouring `--env`, `--as`, `--url`, `--driver`, `--no-adversarial`, `--no-recording`, `--no-telemetry`, `--no-motion`, `--post-findings`, `--no-comment`, `--wait-preview`, and `--unattended` exactly as `run` does. On the `mcp` path or with a local `specs-path`, no `--url` → `inconclusive: no access path for deployment lookup (pass --url)`.
 3. **Report one combined verdict**: spec authored fresh or reused, the `run` verdict per spec, then the adversarial, telemetry, and motion lines. A red verdict is a finding about the PR.
 
 ## Hard rules
