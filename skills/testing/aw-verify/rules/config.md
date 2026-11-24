@@ -38,7 +38,7 @@ A missing file means its defaults; a missing `environments.yml` means the suite 
 ## Resolve the config (every skill, before any other step)
 
 1. Slug: `git remote get-url origin` → `<owner>/<name>` (no `origin` → `local/<checkout dir name>`).
-2. Read the committed file the skill needs, then deep-merge `~/.agents/aw/config.yml` → `repos.<slug>.<file stem>` over it (`environments`, `ui`, or `telemetry`).
+2. Read the committed file the skill needs, drop every [personal key](#personal-keys) from it, then deep-merge `~/.agents/aw/config.yml` → `repos.<slug>.<file stem>` over it (`environments`, `ui`, or `telemetry`).
    Maps merge key by key; a list or a scalar replaces.
 3. Policies come from `~/.agents/aw/config.yml` → `policies`, overridden by `repos.<slug>.policies`.
 4. Read `notes.md` when it exists.

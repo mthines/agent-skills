@@ -36,6 +36,7 @@ const REPORT_MARKER = "<!-- deployment-verify:v1:report -->";
 const STATE_RE = /<!-- deployment-verify:v1:state (\{.*?\}) -->/s;
 // The JSON fence may sit bare (older PRs) or inside a visible, closed <details> (rules/contract.md § Visible).
 const CONTRACT_START = "<!-- deployment-verify:v1 -->";
+const CONTRACT_END = "<!-- /deployment-verify:v1 -->";
 const MALFORMED = "contract block malformed: only one ```json fence may sit between the markers";
 const CONTRACT_RE = /<!-- deployment-verify:v1 -->\s*(?:<details>[\s\S]*?<\/summary>\s*)?```json\s*([\s\S]*?)```\s*(?:<\/details>\s*)?<!-- \/deployment-verify:v1 -->/;
 // aw-verify's `intent` region of the PR's verify report (its writer is aw-verify/scripts/verify-comment.mjs;
@@ -90,9 +91,9 @@ function deepMerge(a, b) {
 
 export function parseContract(body) {
 	const m = body?.match(CONTRACT_RE);
-	// The start marker without a match is a block with something besides the fence between the markers
+	// Both markers without a match is a block with something besides the fence between the markers
 	// (a prose line, a second fence): say so, or an author re-adds the contract and duplicates the markers.
-	if (!m && body?.includes(CONTRACT_START)) return { error: MALFORMED };
+	if (!m && body?.includes(CONTRACT_START) && body.indexOf(CONTRACT_END) > body.indexOf(CONTRACT_START)) return { error: MALFORMED };
 	if (!m) return { error: "no contract — add a <!-- deployment-verify:v1 --> ```json block to the PR body" };
 	// A second fence matches as one capture that spans both: the same malformed block, not bad JSON.
 	if (m[1].includes("```")) return { error: MALFORMED };
@@ -171,12 +172,12 @@ export function draftContract(criteria, { flagKey = null } = {}) {
 	};
 }
 
-// The feature flags an /aw brief names in its `## Requirements` and `## Guardrails`: a backticked key directly
-// beside the word flag — "behind the `checkoutV2` flag", "`checkoutV2` feature flag", "flag `checkoutV2`",
-// "flag: `checkoutV2`". The key has no dot, slash, or space, so a file path or a sentence is never taken for one.
-// Returns the distinct keys in order; the caller prefills only when there is exactly one.
-const FLAG_AFTER = /`([A-Za-z][\w-]*)`\s+(?:feature[ -])?flag\b/gi;
-const FLAG_BEFORE = /\b(?:feature[ -])?flag(?:\s+key)?\s*[:=]?\s*`([A-Za-z][\w-]*)`/gi;
+// The feature flags an /aw brief names in its `## Requirements` and `## Guardrails`: a backticked key in one of
+// three shapes — "`checkoutV2` feature flag" / "feature flag `checkoutV2`", "behind the `checkoutV2` flag", or
+// "flag key `checkoutV2`". A bare "`archived` flag" is a record field, not a feature flag, and never counts; nor
+// does a key with a dot, slash, or space. Returns the distinct keys in order; the caller prefills only for one.
+const FLAG_AFTER = /(?:`([A-Za-z][\w-]*)`\s+feature[ -]flag\b|\bbehind\s+(?:the\s+)?`([A-Za-z][\w-]*)`)/gi;
+const FLAG_BEFORE = /\b(?:feature[ -]flag|flag\s+key)\s*[:=]?\s*`([A-Za-z][\w-]*)`/gi;
 export function planFlags(planMd) {
 	const lines = String(planMd || "").split("\n");
 	const keys = [];
@@ -184,7 +185,7 @@ export function planFlags(planMd) {
 	for (const line of lines) {
 		if (/^##\s/.test(line)) { inSection = /^##\s+(Requirements|Guardrails)\b/i.test(line); continue; }
 		if (!inSection) continue;
-		for (const re of [FLAG_AFTER, FLAG_BEFORE]) for (const m of line.matchAll(re)) if (!keys.includes(m[1])) keys.push(m[1]);
+		for (const re of [FLAG_AFTER, FLAG_BEFORE]) for (const m of line.matchAll(re)) { const k = m[1] || m[2]; if (!keys.includes(k)) keys.push(k); }
 	}
 	return keys;
 }
@@ -1018,6 +1019,7 @@ async function selfTest() {
 		const malformed = "contract block malformed: only one ```json fence may sit between the markers";
 		const ok = parseContract(prose).error === malformed && parseContract(twoFences).error === malformed
 			&& parseContract("No block here.").error?.startsWith("no contract") && parseContract("").error?.startsWith("no contract")
+			&& parseContract("Add a `<!-- deployment-verify:v1 -->` block before the merge.").error?.startsWith("no contract")
 			&& parseContract(`<!-- deployment-verify:v1 -->\n${json}\n<!-- /deployment-verify:v1 -->`).contract?.service === "api";
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} a block with prose or a second fence between the markers is "malformed", a missing one "no contract"`);
@@ -1027,9 +1029,9 @@ async function selfTest() {
 		const plan = (req, guard = "- Keep the API shape.") => `# Plan\n\n## Task\n\nx\n\n## Requirements\n\n${req}\n\n## Guardrails\n\n${guard}\n\n## Acceptance Criteria\n\n- [ ] AC-1 (covers: R1) [api:PUT /api/x] — 400 for an empty name.\n- [ ] AC-2 [ui:/settings] — a toast.\n\n## Notes\n\nThe \`legacyMode\` flag is unrelated.\n`;
 		const one = plan("- R1: Ship it behind the `checkoutV2` feature flag.", "- Never flip flag `checkoutV2` in production by hand.");
 		const none = plan("- R1: Validate the name. Do not edit `src/flags/registry.ts`.");
-		const two = plan("- R1: Behind the `checkoutV2` flag.", "- Keep the `legacyCart` flag on.");
+		const two = plan("- R1: Behind the `checkoutV2` flag.", "- Keep the `legacyCart` feature flag on.");
 		const ok1 = JSON.stringify(planFlags(one)) === '["checkoutV2"]' && planFlags(none).length === 0 && JSON.stringify(planFlags(two)) === '["checkoutV2","legacyCart"]'
-			&& JSON.stringify(planFlags("## Requirements\n\n- flag: `a-b_c`\n- `x.y` flag\n- the flag `src/a.ts`")) === '["a-b_c"]';
+			&& JSON.stringify(planFlags("## Requirements\n\n- feature flag: `a-b_c`\n- `x.y` feature flag\n- the feature flag `src/a.ts`\n- Set the `archived` flag on the record.\n- flag key `k2`")) === '["a-b_c","k2"]';
 		const crit = await planCriteriaOf(one);
 		const flagged = draftContract(crit, { flagKey: "checkoutV2" });
 		const ok2 = JSON.stringify(flagged.root_spans) === '["PUT /api/x"]' && flagged.flag?.key === "checkoutV2" && flagged.reversibility === "flag" && flagged.cohort?.on === "root"

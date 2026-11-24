@@ -42,8 +42,7 @@ Run per flag, from the PR's checkout, on `local` only.
 1. **Record** the service, the flag, the value needed, and the criterion it serves, appended to `.agent/{branch}/verify/flags.json` (append-only, never rewritten).
    The saved original under `{backup_dir}` is the pending-restore record: it exists from `set` until a successful `restore` deletes it.
    Use `.agent/{branch}/verify/flags/<service>/` as that service's `{backup_dir}`.
-   A service folder that still holds a saved original means an earlier run did not restore: for each `flags.json` entry of that service, run its `restore` and `apply` commands first, then continue.
-   A `restore` with nothing saved for the key does nothing and exits 0, so replaying an entry that was already restored changes no value.
+   Step 0 has already replayed any restore an earlier run left; a `restore` with nothing saved for the key does nothing and exits 0, so replaying an entry that was already restored changes no value.
 2. **Set**: run the service's `set` command.
    It must save the original value under `{backup_dir}` before it changes anything; a second `set` of the same key must not overwrite that original.
 3. **Apply**: run each `apply` command in order.
@@ -70,7 +69,7 @@ For a `shared` service, step 6 is not optional on any exit path:
 | `blocked (…)`, `--loops` cap, an abort, a refused step | Before the run prints its blocked or final line |
 | A crash or a killed session | At the next run's step 0, in the same checkout |
 
-A restore whose command exits non-zero, whose `verify` does not show the original value, or that never ran is one line at the end of the run's output, which `aw` copies into its own `Degraded:`:
+A restore whose command exits non-zero, whose `verify` does not show the original value, or that never ran is one line at the end of the run's output, which `aw` copies into its own `Degraded:` (its `rules/full-tier.md` Step 4.1):
 
 ```text
 ✓ Degraded: flag USE_SANDBOX not restored (web, shared: true) — run: AW_FLAGS_BACKUP_DIR=.agent/feat-x/verify/flags/web .agents/aw/scripts/flags/flags.sh web restore USE_SANDBOX

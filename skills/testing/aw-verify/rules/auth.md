@@ -61,15 +61,17 @@ A second login location drifts from the one the repo maintains. Probe in order; 
 2. A login script: `.agents/aw/scripts/auth/*.mjs`, `.browser/refresh-auth*.mjs`, `scripts/*login*.mjs` or `scripts/*auth*.mjs`.
 3. A repo-provided credentials file that the repo's own authed Playwright tooling reads, such as `.browser/credentials.json`.
    Use it only when `git check-ignore -q <file>` exits 0 (gitignored); a tracked credentials file is a finding, never a login source.
-   Pass its fields to the login script as `E2E_EMAIL` and `E2E_PASSWORD` in that command's environment only; never print, log, echo, or copy the file or a value from it.
+   Reference it in `refresh.command`, which passes its fields to the login script as `E2E_EMAIL` and `E2E_PASSWORD` in that command's environment only; never print, log, echo, or copy the file or a value from it.
+   Who runs that command follows [The agent reads a session](#the-agent-reads-a-session-it-does-not-type-the-login): the user or a scheduler, or the agent only under [Pre-authorized sign-in](#pre-authorized-sign-in).
 
 Scaffold only when nothing is found.
 
 ```bash
-# ✓ The values go straight into the login command's environment; nothing is printed
+# ✓ refresh.command — the values go straight into the login command's environment; nothing is printed
 git check-ignore -q .browser/credentials.json && \
   E2E_EMAIL="$(jq -r .email .browser/credentials.json)" E2E_PASSWORD="$(jq -r .password .browser/credentials.json)" \
-  AUTH_STORAGE_STATE=.auth/local.json node .agents/aw/scripts/auth/login-credentials.mjs
+  AUTH_LOGIN_URL="<login_url>" AUTH_POST_LOGIN_URL_PATTERN='^(?!.*/sign-in)' AUTH_STORAGE_STATE=.auth/local.json \
+  node .agents/aw/scripts/auth/login-credentials.mjs
 # ✗ Wrong — prints the secret into the transcript
 cat .browser/credentials.json
 ```
