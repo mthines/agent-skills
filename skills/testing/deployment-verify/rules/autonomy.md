@@ -55,7 +55,7 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui, co
 | `ui` | `.tsx`, `.jsx`, `.vue`, `.svelte`, a stylesheet, or a `components/`, `pages/`, `ui/` path |
 | `other` | anything else, and a tests-and-docs-only diff |
 
-The detector missing, or the files unreadable → `unknown` → `HUMAN`.
+The detector missing, or the files unreadable → `unknown` → `HUMAN`, and no signal is written for it (`Degraded: earned-autonomy signal not updated — risk class unknown`).
 
 ## The signal
 

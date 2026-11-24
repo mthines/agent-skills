@@ -18,6 +18,7 @@ A **hold** is a human gate; a `HOLD` verdict from `decide.mjs` is thin traffic a
 1. The contract has a `flag` (a no-flag change has one step, so nothing to hold before).
 2. The step whose value equals `hold_after` got a `PASS` verdict.
 3. It is not the last step; `hold_after` must be one of `steps` except the last, else the config fails to load with `release.yml hold_after: <n> must be one of steps [...]`.
+   A contract whose own `steps`, or whose `rollout: boolean` provider, leaves no such step stops before step 1: `hold_after: <n> is not a step before the last in this rollout's steps [...]`, never an unheld rollout.
 
 On entering it:
 

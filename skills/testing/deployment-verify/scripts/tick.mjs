@@ -25,7 +25,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { decide, DEFAULT_THRESHOLDS } from "./decide.mjs";
-import { recommend, riskClass } from "./promote.mjs";
+import { recommend, riskClass, RISK_CLASSES } from "./promote.mjs";
 import { readEvidence, updateSignal } from "./signal.mjs";
 import { parseYaml } from "./yaml-lite.mjs";
 
@@ -161,6 +161,11 @@ export function validateContract(contract, config) {
 		const base = config.thresholds[k];
 		if (base === undefined) return `unknown threshold ${k}`;
 		if ((k.startsWith("max_") && v > base) || (k.startsWith("min_") && v < base)) return `contract loosens ${k} — thresholds may only tighten`;
+	}
+	// A configured hold the rollout cannot reach (contract steps, a boolean provider) would ship unheld: stop instead.
+	if (contract.flag && config.hold_after !== undefined && config.hold_after !== null) {
+		const steps = stepsFor(contract, config);
+		if (!steps.slice(0, -1).includes(config.hold_after)) return `hold_after: ${config.hold_after} is not a step before the last in this rollout's steps ${JSON.stringify(steps)}`;
 	}
 	return null;
 }
@@ -705,7 +710,9 @@ async function runOne({ store, contract, config, sha, mergedAt, deployedAt, loop
 		const event = config.promotion ? signalEvent(state, next, contract) : null;
 		if (event) {
 			const risk = next.hold?.risk_class || next.risk_class || (next.risk_class = prRiskClass(store.pr?.number));
-			const r = updateSignal({ repo: slug, risk, event, rule: config.promotion });
+			// A class no recommendation reads (`unknown`: no PR, or its files unreadable) is never written.
+			const r = RISK_CLASSES.includes(risk) ? updateSignal({ repo: slug, risk, event, rule: config.promotion })
+				: { status: "degraded", line: `Degraded: earned-autonomy signal not updated — risk class ${risk}` };
 			next.signal_note = r.status === "ok" ? `${risk}: ${r.note}` : r.line;
 			io.log(next.signal_note);
 		}
@@ -872,6 +879,8 @@ async function selfTest() {
 			const s = await rollout(w);
 			report("hold: a rollback verdict yields a rollback signal event", signalEvent({ phase: "rollback" }, s, {})?.type === "rollback" && s.outcome === "ROLLED_BACK");
 		}
+		report("hold: a contract whose steps skip hold_after stops before step 1", /hold_after: 10 is not a step/.test(validateContract({ ...contract, steps: [1, 25, 100] }, holdConfig) || "") && validateContract(contract, holdConfig) === null
+			&& /hold_after: 10 is not a step/.test(validateContract(contract, { ...holdConfig, flags: { providers: [{ name: "sim", rollout: "boolean" }] } }) || ""));
 		report("hold: hold_after must be a step before the last", checkHoldAfter({ steps: [1, 10, 50, 100] }) === null && checkHoldAfter({ hold_after: 10 }) === null && /must be one of/.test(checkHoldAfter({ hold_after: 100 }) || "") && /must be one of/.test(checkHoldAfter({ hold_after: 5 }) || ""));
 	}
 	// Deploy detection: a later commit that contains the merge counts as live; an older one does not.
@@ -981,7 +990,7 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${err ? err.message : `${s.outcome} — ${s.reason}`}`);
 	}
-	const total = 23;
+	const total = 24;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }

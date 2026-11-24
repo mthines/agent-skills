@@ -85,7 +85,7 @@ Woken by any other event, or by exit `3`:
 
 1. Read the report comment and the state line on the PR.
 2. Find the cause ([`rules/rollback.md § Hand off the cause`](./rules/rollback.md#hand-off-the-cause)).
-3. `ESCALATE` with `rollback needs a human` and no platform rollback → open the revert PR ([`rules/rollback.md § Act`](./rules/rollback.md#act)); with a `promotion:` rule, record it: `node ${CLAUDE_SKILL_DIR}/scripts/signal.mjs --event revert --repo <owner/name> --risk-class <class>` ([`rules/autonomy.md`](./rules/autonomy.md)).
+3. `ESCALATE` with `rollback needs a human` and no platform rollback → open the revert PR ([`rules/rollback.md § Act`](./rules/rollback.md#act)); with a `promotion:` rule, record it only when the report has no `signal:` line (the controller already recorded this rollback): `node ${CLAUDE_SKILL_DIR}/scripts/signal.mjs --event revert --repo <owner/name> --risk-class <class>` ([`rules/autonomy.md`](./rules/autonomy.md)).
 4. Notify ([`rules/notify.md`](./rules/notify.md)) and add the cause and the `notify:` line to the report comment.
 
 `PASS`, `OVERRIDDEN`, and `STOPPED` need no agent; the controller's PR comment is the whole report.
