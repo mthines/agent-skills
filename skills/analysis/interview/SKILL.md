@@ -63,7 +63,7 @@ Non-goals and success criteria are always resolved: answered by the request, con
 | `advisory` | A sensible default exists and a wrong guess is cheap to fix later.                      | Don't ask. Record the default in `## Assumptions (advisory)`. |
 | `spike`    | Only seeing it work settles it (feel, performance, a third-party API's real behavior).  | Don't ask. Record `settle by spike: <what>` in `## Assumptions (advisory)`. |
 
-Zero `blocking` unknowns → ask nothing, write the brief, return `ready`.
+Zero `blocking` unknowns → ask nothing, write the brief, and set the verdict per step 4.
 That silence is the skill working.
 
 ### 3. Ask once
