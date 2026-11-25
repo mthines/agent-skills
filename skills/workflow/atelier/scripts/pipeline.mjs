@@ -25,6 +25,13 @@ const BAD = new Set(["failure", "cancelled", "timed_out", "startup_failure", "ac
 // Pure. `runs`: [{ id, workflow, url, status, conclusion, jobs: [{ name, status, conclusion, steps: [{ name, conclusion }] }] }].
 // `required`: job names that must conclude `success` (a skipped required job is a failure: the release job
 // skipping is how a broken version step looks from outside). `workflow`: only runs of that workflow count.
+// A required name matches a job's name exactly, as a matrix job (`test (ubuntu-latest)`), or as a job of a
+// called workflow (`ci / test`, `ci / test (node 20)`).
+export function jobMatches(jobName, required) {
+	const base = String(jobName).split(" / ").pop().replace(/ \(.*\)$/, "");
+	return jobName === required || base === required;
+}
+
 export function classify(runs, { required = [], workflow = "" } = {}) {
 	const mine = runs.filter((r) => !workflow || r.workflow === workflow);
 	if (!mine.length) return { state: "none", reason: "no workflow run started for the merge commit", failures: [] };
@@ -42,8 +49,9 @@ export function classify(runs, { required = [], workflow = "" } = {}) {
 	}
 	const jobs = mine.flatMap((r) => (r.jobs ?? []).map((j) => ({ ...j, run: r.url, workflow: r.workflow })));
 	for (const name of required) {
-		const j = jobs.find((x) => x.name === name);
-		if (!j) failures.push({ workflow: workflow || null, job: name, step: null, conclusion: "missing", run: mine[0].url });
+		const j = jobs.find((x) => jobMatches(x.name, name));
+		// A job that has not appeared yet is missing only once every run is done: a queued run lists no jobs.
+		if (!j) { if (mine.every((r) => r.status === "completed")) failures.push({ workflow: workflow || null, job: name, step: null, conclusion: "missing", run: mine[0].url }); }
 		else if (j.status === "completed" && j.conclusion !== "success" && !BAD.has(j.conclusion)) {
 			failures.push({ workflow: j.workflow, job: name, step: null, conclusion: j.conclusion, run: j.run });
 		}
@@ -99,7 +107,9 @@ async function selfTest() {
 	t("a failed job is red and names the step", bad.state === "red" && bad.failures[0].job === "version" && bad.failures[0].step === "Create tag", JSON.stringify(bad));
 	t("a skipped required job is red", classify([run("CI", [job("test", "success"), job("release-macos", "skipped")])], { required: ["release-macos"] }).state === "red");
 	t("a skipped job that is not required is fine", classify([run("CI", [job("test", "success"), job("release-macos", "skipped")])], { required: ["test"] }).state === "green");
-	t("a missing required job is red", classify([run("CI", [job("test", "success")])], { required: ["version"] }).failures[0].conclusion === "missing");
+	t("a missing required job is red once every run is done", classify([run("CI", [job("test", "success")])], { required: ["version"] }).failures[0].conclusion === "missing");
+	t("a required job not listed yet is pending while its run is in flight", classify([run("CI", [], "in_progress", null)], { required: ["test"] }).state === "pending");
+	t("a matrix or called-workflow job matches its base name", classify([run("CI", [job("test (ubuntu-latest)", "success"), job("ci / release", "success")])], { required: ["test", "release"] }).state === "green");
 	t("in progress is pending", classify([run("CI", [job("test", "in_progress", [], "in_progress")], "in_progress", null)]).state === "pending");
 	t("a failure beats pending", classify([run("CI", [job("a", "failure"), job("b", null, [], "in_progress")], "in_progress", null)]).state === "red");
 	t("--workflow ignores other workflows' failures", classify([run("Docs", [job("lint", "failure")], "completed", "failure"), run("CI", [job("test", "success")])], { workflow: "CI" }).state === "green");
