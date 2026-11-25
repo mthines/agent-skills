@@ -11,7 +11,7 @@ After Build, run it with `--contract-only`: CI on a fresh draft has not run, so 
 **Why:** [`../references/design.md` § The merge gate](../references/design.md#the-merge-gate).
 
 Once the contract half passes, CI decides: unless `--contract-only`, the gate reads the head's checks through `prepare`'s `scripts/ci-ran.mjs` and refuses (exit 1) on anything but `CI: green` — `not-run` (every required check, or with none required every GitHub Actions run, skipped or absent; an external status counts only when required), `pending`, or `red`.
-The JSON's `refused_by` names which half refused (`contract` or `ci`); a `ci` refusal is recorded on Ready, not Merge (`hold` for `not-run` or `pending`, `failed` for `red`), so the next run re-runs Ready and `prepare` instead of refusing at Merge again.
+The JSON's `refused_by` names which half refused (`contract` or `ci`); a `pending` refusal is first waited out with `scripts/ci-wait.mjs` (SKILL.md, *Waiting for CI*) and the gate runs again once; every other `ci` refusal, and a wait that ends `pending`, is recorded on Ready, not Merge (`hold` for `not-run` or `pending`, `failed` for `red`), so the next run re-runs Ready and `prepare` instead of refusing at Merge again.
 Offline (`--files … --body-file …`) it needs `--rollup-file <json>` (a saved response of `ci-ran.mjs`'s query) or `--contract-only`.
 
 ```text

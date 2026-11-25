@@ -39,6 +39,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
+| `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci) lasts (default 30). `0` never waits: pending CI records a `hold`, as before. |
 | `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, and the revert). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
@@ -117,8 +118,8 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, every required companion ran (or the user accepted its skip), the [sentinel](#after-build-returns) passes, and the early gate passes | `hold` (reason `skipped: <companions>`), `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
-| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence) | prepare printed `Already green` or fixed every PR it touched, and `ci-ran.mjs` printed `CI: green` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → watch once more, then `hold`; `CI: red` or prepare blocked → `failed`, reason = that line |
-| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` → record **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence) | prepare printed `Already green` or fixed every PR it touched, and `ci-ran.mjs` printed `CI: green` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -154,6 +155,8 @@ SHA=$(gh pr view <pr-url> --json headRefOid -q .headRefOid)
 node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-url> --head "$SHA" > ci.json; tail -1 ci.json
 ```
 
+`CI: pending` here goes to [Waiting for CI](#waiting-for-ci), which rewrites `ci.json` when the wait ends.
+
 `CI: green` is the only line that allows Ready `proceed`, recorded with `--head "$SHA" --ci-file ci.json`.
 "CI ran" is the helper's rule, the same one `prepare` uses: a required check, or with none required a GitHub Actions check run, completed without being skipped; an external status (Vercel) counts only when the repo marks it required.
 
@@ -167,13 +170,36 @@ node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-
 Run the [CI evidence](#ci-evidence) command before `gh pr ready`.
 `CI: green`, `red`, or `pending` → CI already ran on the draft (and a workflow without a `ready_for_review` trigger will not run again): go straight to `prepare`.
 `CI: not-run` → CI has not run on this head: the checks listed right after `gh pr ready` are none or the draft's skipped ones, which `prepare` would read as green.
-Re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `node "$T" wait ci -- gh pr checks <pr-url> --watch` (`T` = this skill's `scripts/telemetry.mjs`, so the trace books the wait as waiting, not work), then call `prepare`.
+Re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then [wait for CI](#waiting-for-ci), then call `prepare`.
 No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks started after undraft`.
 
 ```text
 ✗ gh pr ready <pr-url>; Skill("prepare", …)                 # reads 2 passed + 16 skipped from the draft → Already green
-✓ gh pr ready <pr-url>; a check started after the undraft; telemetry.mjs wait ci -- gh pr checks --watch; Skill("prepare", …)
+✓ gh pr ready <pr-url>; a check started after the undraft; wait for CI; Skill("prepare", …)
 ```
+
+### Waiting for CI
+
+A run that stops at `CI: pending` leaves the user to resume it, so atelier waits for the checks itself, up to `--max-wait` minutes per wait, and carries on.
+`ci-wait.mjs` polls `ci-ran.mjs` (the same "CI ran" rule as everywhere else) every 30 seconds; run it through the telemetry wrapper so the trace books the time as waiting:
+
+```bash
+T="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs"
+W="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/ci-wait.mjs"
+node "$T" wait ci -- node "$W" --pr <pr-url> --head "$SHA" --max-wait <minutes> --out ci.json; tail -1 ci.json
+```
+
+| Exit | Last line | Do |
+| --- | --- | --- |
+| 0 | `CI_WAIT: green` | carry on: Ready `proceed` with `--ci-file ci.json`, or the gate again before a merge |
+| 1 | `CI_WAIT: red` | Ready `failed`, reason = that line; `prepare` fixes it on the next Ready |
+| 1 | `CI_WAIT: not-run` | no check started within 5 minutes: Ready `hold`, reason = its `CI not run …` text |
+| 3 | `CI_WAIT: pending` | still running after `--max-wait`: Ready `hold`, reason = that line, `Needs you: re-run /atelier <pr-url> when CI finishes` |
+| 4 | `CI_WAIT: moved` | the head changed while waiting: read it again, then re-run the stage on the new head |
+| 2 | stderr | `failed`, reason = stderr |
+
+`--head` is the sha the evidence is for, so a push during the wait is never mistaken for green.
+Deliver has its own bounded wait (`pipeline.mjs --wait`); this one covers PR CI.
 
 ### After Build returns
 
