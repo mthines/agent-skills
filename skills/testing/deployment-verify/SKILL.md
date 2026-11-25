@@ -13,7 +13,7 @@ argument-hint: '[run|tick|approve|override|setup] [<pr-url|pr-number>|--all] [--
 license: MIT
 metadata:
   author: mthines
-  version: '0.3.0'
+  version: '0.4.0'
   workflow_type: orchestrator
   tags: [deployment, rollout, feature-flags, rollback, telemetry, verification, production, automation, notify]
 ---
