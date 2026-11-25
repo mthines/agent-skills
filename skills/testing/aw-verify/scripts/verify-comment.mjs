@@ -30,6 +30,9 @@
 //   node verify-comment.mjs --check --local <run-dir> [--ui]   the same gate before a PR exists, over <run-dir>/intent.md
 //     and report.md (with --ui, ../specs.md too); exit 1 lists every unmarked or untagged AC and report problem
 //   node verify-comment.mjs --local <run-dir> --marks '{"AC-1":{"status":"✅"}}'   marks intent.md's AC lines in place
+//   node verify-comment.mjs --checks <runs.json|json> --from-plan <plan.md> (--pr <n|url> | --local <run-dir> | --print) [--head <sha>]
+//     checks-only proof (rules/checks-mode.md): the brief's criteria ticked from recorded command runs, plus an aggregate
+//     in report.md.template's shape; --pr upserts both regions, --local writes intent.md + report.md for --check --local
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
@@ -279,6 +282,67 @@ export function intentFromPlan(planMd, { statuses = null } = {}) {
   ];
   const region = `<details><summary>📋 Acceptance criteria</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n${rows.join("\n")}\n\n</details>`;
   return refreshSummary(region);
+}
+
+// Checks-only proof (rules/checks-mode.md): a non-UI diff's criteria proven by recorded command runs, rendered as
+// the same intent region and an aggregate in report.md.template's shape, so `--check` judges it like any other run.
+// `runs` is { "AC-1": { after: "pass"|"fail"|"unsatisfiable", before?: "fail"|"pass"|"n/a", command?, evidence? } };
+// a bare string is `after` alone (run-checks.mjs --statuses). An AC with no run stays ⬜ and blocks the verdict.
+const RUN_MARK = { pass: "✅ pass", fail: "❌ fail", unsatisfiable: "⏭️ not run" };
+const BEFORE_MARK = { fail: "fails (catches it)", pass: "⚠️ passes (does not catch it)", "n/a": "n/a" };
+export function checksReport(planMd, runs, { head = null, updated = "{{UPDATED}}" } = {}) {
+  const { acs } = planCriteria(planMd);
+  if (!acs.length) throw Object.assign(new Error("no AC in the brief"), { code: 3 });
+  const norm = Object.fromEntries(Object.entries(runs || {}).map(([id, r]) => [id, typeof r === "string" ? { after: r } : r || {}]));
+  for (const [id, r] of Object.entries(norm)) {
+    if (!acs.some((c) => c.id === id)) throw new Error(`refused: the brief has no criterion ${id}`);
+    if (!["pass", "fail", "unsatisfiable"].includes(r.after)) throw new Error(`refused: ${id} needs "after": pass | fail | unsatisfiable, got ${JSON.stringify(r.after)}`);
+  }
+  const statuses = Object.fromEntries(acs.filter((c) => norm[c.id]).map((c) => [c.id, norm[c.id].after]));
+  const ids = (pred) => acs.filter((c) => pred(norm[c.id])).map((c) => c.id);
+  const failed = ids((r) => r?.after === "fail");
+  const missing = ids((r) => !r);
+  const skipped = ids((r) => r?.after === "unsatisfiable");
+  // A test that already passed on the base does not show the change made it pass.
+  const blind = ids((r) => r?.after === "pass" && r.before === "pass");
+  const proven = acs.length - failed.length - missing.length - skipped.length;
+  const [verdict, headline] = failed.length ? ["❌ Not verified", `${failed.length} of ${acs.length} criteria failed their recorded run`]
+    : missing.length ? ["⛔ Blocked", `${missing.length} of ${acs.length} criteria have no recorded run`]
+    : skipped.length || blind.length ? ["⚠️ Verified with open items", `${proven} of ${acs.length} criteria proven by recorded test runs`]
+    : ["✅ Verified", `${acs.length} of ${acs.length} criteria proven by recorded test runs`];
+  const attention = [
+    failed.length && `Failed: ${failed.join(", ")}.`,
+    missing.length && `No run recorded: ${missing.join(", ")}.`,
+    skipped.length && `Not run on this machine: ${skipped.join(", ")}.`,
+    blind.length && `Passes on the base too, so the run does not show the change: ${blind.join(", ")}.`,
+  ].filter(Boolean).join(" ") || "Nothing needs a human.";
+  const cell = (t) => String(t ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const rows = acs.map((c) => {
+    const r = norm[c.id];
+    const id = c.id.replace("-", "‑");
+    if (!r) return `| ${id} | — | — | ⬜ no run | — |`;
+    return `| ${id} | ${r.command ? `\`${cell(r.command)}\`` : "—"} | ${BEFORE_MARK[r.before] ?? "—"} | ${RUN_MARK[r.after]} | ${cell(r.evidence) || "—"} |`;
+  });
+  const report = [
+    `## ${verdict} — ${headline}`,
+    "",
+    `Checks-only run: each criterion is a command run on this branch, and on the base first where it can run there. ${attention}`,
+    "",
+    `<sub>${head ? `\`${head.slice(0, 7)}\` · ` : ""}checks-only · ${failed.length} ${failed.length === 1 ? "finding" : "findings"} · updated ${updated}</sub>`,
+    "",
+    "<details><summary>Details</summary>",
+    "",
+    "**How I tested it.** No UI file in the diff, so no browser or environment ran. A criterion is ✅ only when its command passed on the branch; the Before column is the same command on the base, where a fail shows the test catches the change.",
+    "",
+    "| AC | Command | Before (base) | After (branch) | Evidence |",
+    "| --- | --- | --- | --- | --- |",
+    ...rows,
+    "",
+    "Re-run: `/aw-verify run checks`",
+    "",
+    "</details>",
+  ].join("\n");
+  return { intent: intentFromPlan(planMd, { statuses }), report, verdict };
 }
 
 // Regions in the existing body, in order. A body with the marker but no regions is a
@@ -908,6 +972,33 @@ function selfTest() {
     const uiSkip = intent.replace("- ✅ AC-1", "- ⏭️ AC-1");
     assert(checkLocal({ intent: uiSkip, report }).some((p) => p.includes("AC-1") && p.includes("caps the run")), "local gate: a ui: AC ⏭️ under ✅ fails");
     assert(checkLocal({ intent: uiSkip, report: report.replace("## ✅ Verified", "## ⚠️ Verified with open items") }).length === 0, "local gate: a ui: AC ⏭️ under ⚠️ passes");
+    {
+    // Checks-only proof: the same regions and the same gates, with no browser.
+    const plan = readFileSync(new URL("./fixtures/checks/plan.md", import.meta.url), "utf8");
+    const runsOf = (f) => JSON.parse(readFileSync(new URL(`./fixtures/checks/${f}`, import.meta.url), "utf8"));
+    const ok = checksReport(plan, runsOf("runs-pass.json"), { head: "abcdef1234" });
+    assert(ok.verdict === "✅ Verified" && /^## ✅ Verified — 2 of 2/.test(ok.report), "checks-only: every AC passing is ✅ Verified");
+    assert(checkLocal({ intent: ok.intent, report: ok.report }).length === 0, "checks-only: a passing run passes the local gate");
+    assert(checkReport(withBlock("t", splice(splice("", "intent", ok.intent), "aggregate", ok.report))).length === 0, "checks-only: a passing run passes the PR gate");
+    assert(parseIntent(ok.intent).every((c) => c.kind === "check" || c.kind === "guardrail"), "checks-only: an untagged AC's proof kind is check");
+    const bad = checksReport(plan, runsOf("runs-fail.json"));
+    assert(bad.verdict === "❌ Not verified" && parseIntent(bad.intent).find((c) => c.id === "AC-2").status === "❌", "checks-only: a failed run is ❌ on the AC and the verdict");
+    const part = checksReport(plan, runsOf("runs-partial.json"));
+    assert(part.verdict === "⛔ Blocked" && checkLocal({ intent: part.intent, report: part.report }).some((p) => p.includes("still ⬜") && p.includes("AC-2")), "checks-only: an AC with no run stays ⬜ and fails the gate");
+    const blind = checksReport(plan, { "AC-1": { after: "pass", before: "pass" }, "AC-2": "pass" });
+    assert(blind.verdict === "⚠️ Verified with open items" && /does not show the change: AC-1/.test(blind.report), "checks-only: a run that passes on the base too caps the verdict at ⚠️");
+    const skip = checksReport(plan, { "AC-1": "pass", "AC-2": "unsatisfiable" });
+    assert(skip.verdict === "⚠️ Verified with open items" && checkLocal({ intent: skip.intent, report: skip.report }).length === 0, "checks-only: a ⏭️ check AC is ⚠️ and passes the gate");
+    let threw = "";
+    try { checksReport(plan, { "AC-9": "pass" }); } catch (e) { threw = e.message; }
+    assert(/no criterion AC-9/.test(threw), "checks-only: a run for an unknown AC is refused");
+    threw = "";
+    try { checksReport(plan, { "AC-1": { after: "green" } }); } catch (e) { threw = e.message; }
+    assert(/needs "after"/.test(threw), "checks-only: an unknown after value is refused");
+    threw = "";
+    try { checksReport("## Task\nnothing", {}); } catch (e) { threw = String(e.code); }
+    assert(threw === "3", "checks-only: a brief with no AC exits 3");
+    }
     assert(!checkLocal({ intent, report }).some((p) => p.includes("AC-2")), "local gate: an api: AC ⏭️ (tests-only) under ✅ stays allowed");
     const marked = applyMarks(fx("open", "intent.md"), { "AC-2": { status: "✅" } });
     assert(marked.includes("- ✅ AC-2 [api:PUT /api/notification-settings] An empty") && marked.split("\n").length === fx("open", "intent.md").split("\n").length, "local gate: --marks --local sets only the leading mark");
@@ -943,7 +1034,7 @@ function selfTest() {
 
 // Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
 export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
-  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local"];
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local", "--checks"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -954,6 +1045,25 @@ else if (isMain) {
   try {
     const unknown = args.find((a) => a.startsWith("--") && !FLAGS.includes(a));
     if (unknown) throw new Error(`unknown flag ${unknown}`);
+    const checksArg = opt("--checks");
+    if (checksArg) {
+      if (!opt("--from-plan")) throw new Error("--checks needs --from-plan <plan.md>");
+      const planMd = (() => { try { return readFileSync(opt("--from-plan"), "utf8"); } catch (e) { if (e.code === "ENOENT") throw Object.assign(new Error(`no brief at ${opt("--from-plan")}`), { code: 3 }); throw e; } })();
+      const runs = JSON.parse(checksArg.trim().startsWith("{") ? checksArg : readFileSync(checksArg, "utf8"));
+      const out = opt("--local");
+      const { intent, report, verdict } = checksReport(planMd, runs, { head: opt("--head") ?? null, updated: out || has("--print") ? new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC" : "{{UPDATED}}" });
+      if (has("--print")) { process.stdout.write(`${intent}\n\n${report}\n`); process.exit(0); }
+      if (out) {
+        writeFileSync(join(out, "intent.md"), intent + "\n");
+        writeFileSync(join(out, "report.md"), report + "\n");
+        console.log(`wrote ${join(out, "intent.md")} and ${join(out, "report.md")} — ${verdict}`);
+        process.exit(0);
+      }
+      if (!opt("--pr")) throw new Error("--checks needs --pr, --local <dir>, or --print");
+      console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section: "intent", content: intent, replaceAll: false, to: opt("--to") ?? "auto" }));
+      console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section: "aggregate", content: report, replaceAll: true, to: opt("--to") ?? "auto" }));
+      process.exit(0);
+    }
     const local = opt("--local");
     if (local) {
       const read = (f) => { try { return readFileSync(join(local, f), "utf8"); } catch (e) { if (e.code === "ENOENT") return null; throw e; } };
