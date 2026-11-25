@@ -158,12 +158,14 @@ AW RUN COMPLETE
 - Verified: [green | red (<check>: <reason>) | not run (<reason>)]   # Full only
 - Degraded: [companions/agents skipped and why, or "none"]
 - Needs you: [blockers or decisions, or "nothing"]
+- Not checked: [what was skipped or not verified, and the risk it leaves — 1–2 lines, or "nothing"]
 ```
 
-Micro and Lite may collapse it to one line, keeping `Degraded:`: `AW RUN COMPLETE — Micro, PR <url>, Degraded: none, Needs you: nothing`.
+Micro and Lite may collapse it to one line, keeping `Degraded:` and `Not checked:`: `AW RUN COMPLETE — Micro, PR <url>, Degraded: none, Needs you: nothing, Not checked: nothing`.
 
 - Every companion or agent that did not run is named in `Degraded:` with its reason; a skipped local `review-loop` means the change was not reviewed.
 - "PR opened" means you hold the URL; a step that could not complete goes in `Needs you:`.
+- `Not checked:` stays the last field, after `Needs you:` (atelier reads `Degraded:` up to the next field), and names a concrete gap: a path, input, or platform you did not exercise, and what could go wrong there.
 - Run the exit write of [`rules/lessons.md`](rules/lessons.md) before emitting the block.
 
 ## Hard rules

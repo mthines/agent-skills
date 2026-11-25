@@ -95,6 +95,7 @@ If the worktree was not created, **STOP and return to Phase 2.**
 
 | Principle                              | What it means                                    |
 | -------------------------------------- | ------------------------------------------------ |
+| Reach before write, then the ladder    | List every caller, test, fixture, config, and export the change reaches; take the smallest rung that holds — [`smallest-change.md`](./smallest-change.md) |
 | Follow existing patterns               | Consistency with codebase                        |
 | Implement incrementally                | Small, focused changes — one concern per edit    |
 | Verify after every edit                | Fast type-check / compile before moving on       |

@@ -46,6 +46,9 @@ Never guess or fabricate a root cause.
 4. List **at least 2 alternative causes** and, for each, the concrete evidence that rules it in or out (`file:line`, test output, `git blame`).
 5. Separate root cause from symptom: the root cause is the earliest hop whose fix makes the symptom impossible, not the hop where it surfaces.
    A fix at the symptom hop alone (a catch, a default, a retry) is a symptom patch — say so.
+6. List every caller of the function or export the fix direction will change: `git grep -n '\b<name>\b'`.
+   Mark each `affected` (it reaches the broken path) or `unaffected (<reason>)`, from the code you read.
+   The fix direction names the shared function every affected caller goes through; a fix in one caller while the shared function stays broken leaves the others broken.
 
 ```text
 ✗ Root cause: `total.ts:42` renders "NaN".            (the symptom hop)
@@ -95,6 +98,11 @@ Falsifiable prediction: <what the repro shows once the root cause is fixed>
 | Hypothesis | Why rejected |
 |------------|--------------|
 | ...        | ...          |
+
+### Callers
+| Caller (file:line) | Status |
+|--------------------|--------|
+| ...                | affected / unaffected (<reason>) |
 
 ### Proposed fix direction
 <what must change and where — not a diff>

@@ -44,6 +44,8 @@ These items are mechanical: apply them, do not propose them.
    Keep a WHY comment (constraint, invariant, workaround, surprising choice), cut to at most 3 lines.
    Delete every internal ticket or task reference (`ENG-1234`, `LIN-482`, `TODO(AI-12)`, "added for …", "fixes PR …"); delete the comment when nothing else is left.
    An upstream vendor or library issue link on a workaround stays.
+   A `shortcut: <the limit>, <when to upgrade>` marker stays verbatim: it is a WHY comment that `polish debt` and reviewers read (convention: `agents/shared/rules/shortcut-markers.md`).
+   Convert a `TODO` that names a ceiling into that form only when it already states both the limit and the trigger; otherwise apply the ticket rule above.
 2. **Docstrings** (JSDoc, TSDoc, Python docstrings) on functions, classes, types, and exported constants.
    Never delete the block.
    Trim it to a one-sentence summary plus the contract tags: `@param`, `@returns`, `@throws`, `@deprecated`, `@since`, `@example`, `@see`, `@internal`, `@experimental`.

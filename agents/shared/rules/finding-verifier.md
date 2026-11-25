@@ -81,9 +81,17 @@ A behavioral `issue:` on a risky shape needs a Tier-2 receipt where one is obtai
 | Verdict | Meaning | Consequence |
 | --- | --- | --- |
 | `confirmed` | the bad outcome is reachable and the receipt supports it | score it |
-| `contradicted` | a guard, a type, or a test makes the claim false | **drop**, and log the contradicting evidence |
+| `contradicted` | a guard, a type, or a test makes the claim false, or a `shortcut:` marker on the line names the ceiling the claim is about and no source puts the load past it | **drop**, and log the contradicting evidence |
 | `ambiguous` | the receipt was inconclusive and the code does not settle it | score it, with the Reproducible dimension capped |
 | `unobtainable` | the check could not run at all — upstream unreachable, no toolchain, no workspace, binary file | **not a drop**, see below |
+
+A `shortcut: <the limit>, <when to upgrade>` marker records a ceiling the author chose, so a claim that only restates that ceiling is `contradicted` by the marker.
+The claim stands when the PR description, a linked ticket, a governing doc, or deploy config puts the expected load past the ceiling, when the marker has no trigger, when the marker covers trust-boundary validation, data-loss handling, security, or accessibility, or when the code is wrong even below the ceiling: [`shortcut-markers.md`](./shortcut-markers.md#when-reviewing-code).
+
+```text
+✗ confirmed: "load_all holds the whole file in memory"   (the line says `shortcut: whole file in memory, stream it once inputs pass 50 MB`, and nothing says inputs pass 50 MB)
+✓ confirmed: "the description says imports reach 2 GB; the marker's 50 MB ceiling is already crossed"
+```
 
 `unobtainable` is the verdict that changed.
 Previously an unverifiable claim was dropped, which meant the highest-value findings — the ones whose truth lives upstream, in a changelog or in a service this repo calls — were the ones most likely to vanish.

@@ -4,11 +4,12 @@ description: >
   Re-runnable pre-PR quality gate for the branch: a read-only pr-reviewer
   pass via the open PR, then a simplify pass that simplifies the changed code
   and prunes restating or ticket comments behind a test check; scope with
-  review, simplify, or quick. Triggers on "polish my branch",
+  review, simplify, or quick; `debt` lists every `shortcut:` marker in the
+  repo as a read-only ledger. Triggers on "polish my branch",
   "clean this up before the PR", "review and simplify", "tidy up",
-  "prep my branch", "/polish".
+  "prep my branch", "list the shortcuts", "/polish".
 disable-model-invocation: false
-argument-hint: '[review|simplify [dry-run|<path>]|quick] [--no-commit] [--critical]'
+argument-hint: '[review|simplify [dry-run|<path>]|quick|debt [--marker <word>]] [--no-commit] [--critical]'
 license: MIT
 metadata:
   author: mthines
@@ -35,6 +36,7 @@ Parse the **first token** of `$ARGUMENTS`. Everything else is a flag.
 | `review` | First token `review` | Pass A only. |
 | `simplify` | First token `simplify` | Pass B only. `simplify dry-run` reports without writing; `simplify <path>` scopes to a path. |
 | `quick` | First token `quick` | Pass C only — light mechanical pass (comments, docstrings, `else` after `return`, local names); no pr-reviewer pass, no structural refactors. |
+| `debt` | First token `debt` | Run `node "${CLAUDE_SKILL_DIR}/scripts/shortcut-ledger.mjs"` per [`rules/debt.md`](./rules/debt.md), then stop: it scans the whole repo, not the branch diff, so Steps 0–4 do not run, and it works on `main`. Read-only. |
 
 | Flag | Effect |
 | --- | --- |
@@ -75,7 +77,7 @@ Resolve the PR with `PR_URL=$(gh pr view --json url -q .url 2>/dev/null)`.
 If no PR is open, skip Pass A and tell the user to open a draft PR (via `/create-pr`) and re-run `polish` — `pr-reviewer` has no PR-less mode.
 Otherwise dispatch the agent with the Task tool — `pr-reviewer` is an agent, and `Skill("pr-reviewer")` errors with `Unknown skill`:
 
-```
+```text
 Task(subagent_type="pr-reviewer", prompt="<PR-URL-or-number> [--critical if user passed it]")
 ```
 
@@ -109,7 +111,7 @@ With `--no-commit`, stage nothing.
 
 ## Step 4: Report
 
-```
+```text
 Polish (<mode>) on <branch>
 
 Review pass (pr-reviewer):
