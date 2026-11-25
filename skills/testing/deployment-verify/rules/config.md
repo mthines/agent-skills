@@ -32,6 +32,9 @@ Check the file with `node ${CLAUDE_SKILL_DIR}/scripts/tick.mjs --check-config`.
 | `auto` | Act at once, only when the contract says `reversibility: flag`; otherwise behave as `ask` |
 | `never` | Report only |
 
+atelier's Deliver step reads the same value for a code revert, the revert PR it opens when the merged change keeps the default-branch pipeline red ([§ Pipeline](#pipeline), `on_red`).
+There `auto` reverts without asking, because the revert goes through a PR with the same gates and is undone by a revert of the revert; `ask` and `never` mean what they mean above.
+
 ## Deploy detection
 
 The flag must not move until the merged code is serving.

@@ -89,7 +89,7 @@ It is scoped `branch::{owner}/{repo}::{head-branch}`, like `pr-review-state`, so
 ## Delivery
 
 A merge is not the end of the change: the default-branch pipeline versions, builds, and releases it, and it can fail where PR CI passed (a release job that runs only on `main`; a missing tag on a version step).
-Deliver reads that run with a script (`pipeline.mjs`), treats a skipped required job as red, and starts one fix PR when the merged change caused the failure.
+Deliver reads that run with a script (`pipeline.mjs`), treats a skipped required job as red, and starts one fix PR when the merged change caused the failure; when the fix is red too, it reverts through a PR, as `policies.rollback` allows (`pipeline.on_red: revert-first` swaps the order).
 Tags, force pushes, and release re-runs stay with the user, because they change shared release state and a wrong one is hard to undo.
 It is a step, not a recorded stage, so the PR state comment and the run trace keep their three-stage shape.
 

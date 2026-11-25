@@ -48,26 +48,27 @@ The lane exists because the pipeline broke after review, so the fix gets its own
    | The pipeline's own state: a missing tag, a version already bumped, a protected-branch push, a release that needs credentials | no fix: `hold`, `Needs you:` carries the exact command, never run by atelier |
 
 2. Fix lane: a new branch from the updated default branch, `Skill("aw", "fix the default-branch pipeline failure of <pr-url>: <failing job and step, log excerpt> <build suffix>")`, which opens its own PR.
+   After a `revert-first` revert, the default branch no longer holds the change, so the request reads `re-apply the change <pr-url> reverted in <revert PR url>, with a fix for <failing job and step, log excerpt> <build suffix>`.
    Take that PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); then run `pipeline.mjs` against the fix PR.
-3. A second red result goes to the [revert lane](#revert-lane) under `fix-first`, or ends the run as `failed` under `revert-first` (reason = the `PIPELINE:` line); there is no second fix round.
+3. A second red result goes to the [revert lane](#revert-lane), as [Order](#order) says; there is no second fix round.
 
 ## Order
 
 `.agents/aw/release.yml` → `pipeline.on_red` sets the order of the two lanes; only the cause class "the merged change broke it" reaches either.
 
-| `on_red` | First red (the merged PR) | Second red (the first lane's PR) |
+| `on_red` | First red (the merged PR) | Second red |
 | --- | --- | --- |
-| `fix-first` (default) | fix lane | revert lane |
-| `revert-first` | revert lane; once its PR is green, the fix lane re-applies the change with the fix | `failed`: the revert already holds the default branch green |
+| `fix-first` (default) | fix lane | the fix PR is red: revert lane, reverting the fix PR and the merged PR together |
+| `revert-first` | revert lane; once its PR is green, the fix lane re-applies the change with the fix. A revert the policy blocks (`never`, a declined or unattended `ask`) goes straight to the fix lane, as under `fix-first` | the re-apply PR is red: revert lane on the re-apply PR alone. The revert PR is red: `failed` |
 
 `revert-first` suits a repo where a red default branch blocks other people's merges or releases; `fix-first` keeps the change live when a small fix is likely.
 
 ## Revert lane
 
-One revert, never more: it backs out the merged change through a PR with the same gates, never a push to the default branch.
+One revert per Deliver run, never a revert of a revert: it backs out the merged change through a PR with the same gates, never a push to the default branch.
 Atelier never runs `deployment-verify` and never flips a flag: a flag or platform rollback of a rolled-out change stays with `deployment-verify`, and a code revert stays here.
 
-The rollback policy decides whether the lane acts: `~/.agents/aw/config.yml` → `policies.rollback`, overridden by `repos.<slug>.policies.rollback` (the same setting `deployment-verify` reads; its `rules/config.md`, § Policy).
+The rollback policy decides whether the lane acts: `~/.agents/aw/config.yml` → `policies.rollback`, overridden by `repos.<slug>.policies.rollback` (the same setting `deployment-verify` reads; its `rules/config.md`, § Policy, which spells out what `auto` means for a code revert).
 
 | `policies.rollback` | Do |
 | --- | --- |
@@ -81,14 +82,14 @@ When the policy allows it:
 
    ```bash
    git fetch origin <base> && git switch -c revert/<pr-number> origin/<base>
-   git revert --no-edit <squash sha>          # the merge reason's sha; -m 1 when the PR was merged with a merge commit
+   git revert --no-edit <lane PR sha> <squash sha>   # newest first: every lane PR merged since, then the merge reason's sha; -m 1 for a merge commit
    git push -u origin revert/<pr-number>
    gh pr create --base <base> --title "Revert \"<pr title>\"" --body-file revert-body.md   # "Reverts #<pr-number>: <PIPELINE line>" + the merged PR's contract block
    ```
 
    A conflict in `git revert` means later merges touched the same lines: abort (`git revert --abort`), `hold`, and put the revert command under `Needs you:`.
 2. Take the revert PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); a revert of a user-visible change touches the same UI files, so `revert-body.md` copies the merged PR's `deployment-verify:v1` contract block when it has one, and a gate refusal is a `hold` with the `MERGE_GATE:` line, never a body edit.
-   Then run `pipeline.mjs` against the revert PR: green records `proceed`, reason `reverted <revert PR url>`; red ends the run as `failed`, because the failure predates the change.
+   Then run `pipeline.mjs` against the revert PR: green records `proceed`, reason `reverted <revert PR url>`; red ends the run as `failed`: once every merged lane PR is reverted, a pipeline that is still red failed for a reason the change did not cause.
 
 ```text
 ✗ fix PR red again → git revert on main and git push origin main
