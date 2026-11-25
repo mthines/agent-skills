@@ -21,10 +21,10 @@ import { fileURLToPath } from "node:url";
 const COMMENT = "(#|//|/\\*|--|<!--|;)";
 const SKIP_FILE = /\.(md|mdx|markdown|json|jsonl)$/i;
 const WHAT_MAX = 80;
+const marker = (word) => `${COMMENT} ?${word}:`;
 
 function grep(word, cwd) {
-	const pattern = `${COMMENT} ?${word}:`;
-	const r = spawnSync("git", ["-c", "core.quotePath=false", "grep", "--no-index", "--exclude-standard", "-I", "-n", "-E", pattern],
+	const r = spawnSync("git", ["-c", "core.quotePath=false", "grep", "--no-index", "--exclude-standard", "-I", "-n", "-E", marker(word)],
 		{ cwd, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
 	if (r.status === 1) return "";
 	if (r.status !== 0) throw new Error(`git grep: ${(r.stderr || "").trim()}`);
@@ -39,8 +39,8 @@ export function parseHit(hit, word, lines) {
 	if (!m) return null;
 	const [, file, n, text] = m;
 	if (SKIP_FILE.test(file)) return null;
-	const at = text.search(new RegExp(`${COMMENT} ?${word}:`));
-	const body = text.slice(at).replace(new RegExp(`^${COMMENT} ?${word}:`), "");
+	const at = text.search(new RegExp(marker(word)));
+	const body = text.slice(at).replace(new RegExp(`^${marker(word)}`), "");
 	const comma = body.indexOf(",");
 	const ceiling = clean(comma < 0 ? body : body.slice(0, comma));
 	const upgrade = comma < 0 ? "" : clean(body.slice(comma + 1));
