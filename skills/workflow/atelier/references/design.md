@@ -10,6 +10,7 @@ tags: [atelier, design, rationale]
 - [Sequence, never re-implement](#sequence-never-re-implement)
 - [The merge gate](#the-merge-gate)
 - [Ready on real CI](#ready-on-real-ci)
+- [Approval is the repo's choice](#approval-is-the-repos-choice)
 - [Preflight](#preflight)
 - [A skipped companion holds Build](#a-skipped-companion-holds-build)
 - [State in the PR](#state-in-the-pr)
@@ -48,6 +49,17 @@ Atelier exists to merge, so Ready marks a draft ready for review before `prepare
 An external status counts only when the repo marks it required, because preview deployers such as Vercel report success on drafts whose real CI was skipped, so "any check passed" certifies nothing.
 The helper lives with `prepare` because `prepare` must stand alone; atelier calls it by path.
 A Ready `proceed` stores the verdict it was based on, and the merge gate reads CI again at the head right before the merge, because a state comment is data anyone can edit and a comment written before the evidence existed must not be trusted on resume.
+
+## Approval is the repo's choice
+
+A passing merge gate is not a review.
+Some repos block the merge on a required review that an automatic check gives, such as an auto-approval app or a policy check; that check is usually not a required status, so CI never waits for it, and a merge attempted right after the gate meets `REVIEW_REQUIRED`.
+Atelier waits for it before merging and holds for a person when it does not approve, because the alternative is a bypass (`--admin`) or a run that ends at a hold the user must resume for a verdict that arrives in minutes.
+Which check approves is the repo's fact, so it lives in `.agents/aw/merge.yml` (`approval.wait_for`, regexes on check names), with `--check` as a one-run override; atelier names no vendor, and a required review with nothing configured is a person's job at once, with no wait.
+A check that passes is not the review: a bot can finish its check before its review lands, and the merge is refused until the review decision is `APPROVED`, so the wait ends only on that decision.
+A named check that finished without approving (neutral, skipped, failed) ends the wait immediately: its verdict will not change, so waiting out `--max-wait` would only delay the hold.
+An approval of an older head proves nothing about the one being merged, so the wait takes `--head` and ends as `moved` when the PR's head differs.
+The wait lives in its own script, `approval-wait.mjs`, because its states (approved, manual, pending) differ from CI's (green, red, not-run); it shares the loop's shape with `ci-wait.mjs`, not its code.
 
 ## Preflight
 
