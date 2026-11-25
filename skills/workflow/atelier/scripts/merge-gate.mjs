@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 // merge-gate.mjs — atelier's deterministic merge gate (rules/merge-gate.md).
 //
-// Refuses a merge when CI did not run green on the PR's current head, or when the diff is
-// user-visible and the PR body has no deployment-verify contract that names a flag.
+// Refuses a merge when CI did not run green on the PR's current head, when the diff is user-visible
+// and the PR body has no deployment-verify contract that names a flag, or when the PR's verify report
+// does not show every acceptance criterion proven (the proof half).
 // Owns no detector of its own:
 //   CI ran green  = prepare's scripts/ci-ran.mjs (ciStatus/classify), read at the head right now
 //   user-visible  = ui-verify's scripts/is-ui-diff.mjs, run by path
 //   flag contract = deployment-verify's parseContract() from scripts/tick.mjs
+//   proof         = aw-verify's checkReport() from scripts/verify-comment.mjs (the `--check` gate)
 //
 //   node merge-gate.mjs --pr <n|url>                          files, body, and CI via gh
-//   node merge-gate.mjs --pr <n|url> --contract-only          skip the CI check (atelier's early gate after Build only)
-//   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f> (--rollup-file <json> | --contract-only)   offline
+//   node merge-gate.mjs --pr <n|url> --contract-only          skip the CI and proof checks (atelier's early gate after Build only)
+//   node merge-gate.mjs --files "a.tsx,b.md" --body-file <f> (--rollup-file <json> | --contract-only)   offline;
+//                                                             add --comments-file <json array of bodies> for a report in a comment
 //   add --surface-json '<json>' | --surface-file <path>       forwarded to is-ui-diff; without either,
 //                                                             the surface in <repo-dir>/.agents/aw/ui.yml is used
 //   add --repo-dir <path>                                     where .agents/aw/ lives (default: cwd)
@@ -49,6 +52,29 @@ export async function ciFromRollup(json) {
 	const { classify, fromResponses, normalize } = await prepareModule("ci-ran.mjs");
 	const { head, nodes } = fromResponses([json]);
 	return classify(nodes.map(normalize), { head });
+}
+
+// The proof half: aw-verify's own end-of-run gate over the PR body and its comments (newest first).
+// Returns the problems `verify-comment.mjs --check` would print; [] means `report complete`.
+export async function proofCheck({ body, comments = [], ui = false }) {
+	const { checkReport } = await import(pathToFileURL(join(skillDir("aw-verify", "testing", "AW_VERIFY_DIR"), "scripts", "verify-comment.mjs")).href);
+	return checkReport(body, comments, { ui });
+}
+
+// A merge needs proof that every acceptance criterion holds: the PR's verify report, ticked, in the template shape.
+export function decideProof(problems, { ui = false } = {}) {
+	if (!problems?.length) return null;
+	const more = problems.length > 1 ? ` (+${problems.length - 1} more)` : "";
+	return {
+		decision: "refuse",
+		reason: `no proof the criteria hold: ${problems[0]}${more}`,
+		how: [
+			`Record this on Ready (failed), then run /aw-verify on <pr> (${ui ? "/aw-verify run preview <pr>: a UI diff" : "/aw-verify run checks <pr>: no UI file, so recorded test runs prove each criterion"}),`,
+			`until verify-comment.mjs --pr <pr> --check${ui ? " --ui" : ""} prints \`report complete\`, then re-run /atelier <pr>. What the report lacks:`,
+			...problems.map((p) => `  - ${p}`),
+		].join("\n"),
+		proof: problems,
+	};
 }
 
 function deploymentVerifyModule(file) {
@@ -167,8 +193,9 @@ export function decideCi(ci) {
 	return { decision: "refuse", reason, how };
 }
 
-// `ci` is ci-ran.mjs's result for the head; `null` only for the contract-only early gate.
-export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null }) {
+// `ci` is ci-ran.mjs's result for the head and `comments` the PR's comment bodies (newest first) the proof
+// half reads with the body; both `null` only for the contract-only early gate. Halves decide in order: contract, CI, proof.
+export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = process.cwd(), ci = null, comments = null }) {
 	if (!surfaceJson && !surfaceFile) surfaceJson = await repoSurface(repoDir);
 	const ui = userVisible(files, { surfaceJson, surfaceFile });
 	const contract = await flagContract(body, repoDir);
@@ -176,18 +203,31 @@ export async function gate({ files, body, surfaceJson, surfaceFile, repoDir = pr
 	let refusedBy = d.decision === "refuse" ? "contract" : null;
 	const ciRefusal = d.decision === "pass" && ci ? decideCi(ci) : null;
 	if (ciRefusal) [d, refusedBy] = [ciRefusal, "ci"];
+	const proof = comments ? await proofCheck({ body, comments, ui: ui.isUI }) : null;
+	const proofRefusal = d.decision === "pass" && proof ? decideProof(proof, { ui: ui.isUI }) : null;
+	if (proofRefusal) [d, refusedBy] = [proofRefusal, "proof"];
+	else if (proof && d.decision === "pass") d = { ...d, reason: `${d.reason}; every criterion proven (verify report complete)` };
 	const ciOut = ci ? { state: ci.state, head: ci.head, reason: ci.reason } : "not checked (--contract-only)";
-	return { ...d, refused_by: refusedBy, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut };
+	const proofOut = proof ? (proof.length ? proof : "report complete") : "not checked (--contract-only)";
+	const { proof: _, ...rest } = d;
+	return { ...rest, refused_by: refusedBy, user_visible: ui.isUI, has_flag_contract: contract.has, flag: contract.flag ?? null, warning: d.warning ?? null, ui_files: ui.matched, ci: ciOut, proof: proofOut };
 }
 
 async function fromGh(pr, { contractOnly }) {
 	const gh = (args) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 	const files = gh(["pr", "diff", String(pr), "--name-only"]).split("\n").filter(Boolean);
-	const body = gh(["pr", "view", String(pr), "--json", "body", "-q", ".body"]);
+	const view = JSON.parse(gh(["pr", "view", String(pr), "--json", "body,comments"]));
+	const body = view.body || "";
+	// Newest first, as verify-comment.mjs --check reads them.
+	const comments = (view.comments || []).map((c) => c.body || "").reverse();
 	// Read last, so the CI answer is about the head as it is right before the merge.
 	const ci = contractOnly ? null : await ciCheck(pr);
-	return { files, body, ci };
+	return { files, body, comments, ci };
 }
+
+// A complete checks-only verify report (aw-verify's checksReport over its fixtures), and a green CI rollup.
+const PROOF_BODY = readFileSync(new URL("./fixtures/proof-body.md", import.meta.url), "utf8");
+const GREEN_ROLLUP = JSON.parse(readFileSync(new URL("./fixtures/green-rollup.json", import.meta.url), "utf8"));
 
 // A valid flag contract body; the CLI check `--files … --body-file fixtures/flag-body.md` reads the same file.
 const FLAG_BODY = readFileSync(new URL("./fixtures/flag-body.md", import.meta.url), "utf8");
@@ -281,6 +321,24 @@ async function selfTest() {
 	r = await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci });
 	t("a CI refusal is refused_by ci", r.refused_by === "ci");
 	t("a pass has no refused_by", (await gate({ files: ["docs/guide.md"], body: "", repoDir: empty, ci: green })).refused_by === null);
+	// The proof half (aw-verify's --check): a merge needs every criterion proven in the PR's verify report.
+	const greenCi = await ciFromRollup(GREEN_ROLLUP);
+	r = await gate({ files: ["docs/guide.md"], body: "no report", repoDir: empty, ci: greenCi, comments: [] });
+	t("green CI with no verify report refuses on proof", r.decision === "refuse" && r.refused_by === "proof" && /no intent region/.test(r.reason) && /\/aw-verify run checks/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY, repoDir: empty, ci: greenCi, comments: [] });
+	t("green CI with a complete checks-only report passes", r.decision === "pass" && r.refused_by === null && r.proof === "report complete" && /every criterion proven/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "see the comment", repoDir: empty, ci: greenCi, comments: ["unrelated", PROOF_BODY.slice(PROOF_BODY.indexOf("<!-- verify:report -->"))] });
+	t("a verify report in a comment counts", r.decision === "pass", JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY.replace(/✅&nbsp;AC‑2/, "⬜&nbsp;AC‑2"), repoDir: empty, ci: greenCi, comments: [] });
+	t("a criterion left ⬜ refuses on proof, naming it", r.refused_by === "proof" && /AC-2/.test(r.reason), JSON.stringify(r));
+	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY + PROOF_BODY, repoDir: empty, ci: greenCi, comments: [] });
+	t("a UI diff also needs its ui-verify spec block, and the how names run preview", r.refused_by === "proof" && /ui-verify spec/.test(r.how) && /run preview/.test(r.how), JSON.stringify(r));
+	r = await gate({ files: ["docs/guide.md"], body: "no report", repoDir: empty, ci: red, comments: [] });
+	t("red CI still refuses on ci before proof", r.refused_by === "ci", JSON.stringify(r));
+	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: empty, ci: greenCi, comments: [] });
+	t("a contract refusal still wins over proof", r.refused_by === "contract");
+	r = await gate({ files: ["docs/guide.md"], body: "no report", repoDir: empty });
+	t("the contract-only gate never checks proof", r.decision === "pass" && r.proof === "not checked (--contract-only)", JSON.stringify(r));
 	const real = await ciFromRollup(JSON.parse(readFileSync(join(skillDir("prepare", "delivery", "PREPARE_DIR"), "scripts", "fixtures", "skipped-plus-vercel.json"), "utf8")));
 	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY, repoDir: empty, ci: real });
 	t("PR #29652's real rollup (16 skipped + Vercel) refuses", r.decision === "refuse" && /CI not run/.test(r.reason), r.reason);
@@ -297,15 +355,17 @@ async function main() {
 		let files;
 		let body;
 		let ci = null;
+		let comments = [];
 		const contractOnly = !!a["contract-only"];
-		if (a.pr) ({ files, body, ci } = await fromGh(a.pr, { contractOnly }));
+		if (a.pr) ({ files, body, comments, ci } = await fromGh(a.pr, { contractOnly }));
 		else if (a.files && a["body-file"]) {
 			files = String(a.files).split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 			body = readFileSync(a["body-file"], "utf8");
 			if (typeof a["rollup-file"] === "string") ci = await ciFromRollup(JSON.parse(readFileSync(a["rollup-file"], "utf8")));
 			else if (!contractOnly) throw new Error("offline mode needs --rollup-file <json> (ci-ran.mjs's query) or --contract-only");
+			if (typeof a["comments-file"] === "string") comments = JSON.parse(readFileSync(a["comments-file"], "utf8"));
 		} else throw new Error("pass --pr <n>, or --files <list> --body-file <path>");
-		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd(), ci });
+		const r = await gate({ files, body, surfaceJson: a["surface-json"], surfaceFile: a["surface-file"], repoDir: a["repo-dir"] || process.cwd(), ci, comments: contractOnly ? null : comments });
 		console.log(JSON.stringify(r, null, 2));
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);

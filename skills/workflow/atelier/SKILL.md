@@ -117,8 +117,8 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, every required companion ran (or the user accepted its skip), the [sentinel](#after-build-returns) passes, and the early gate passes | `hold` (reason `skipped: <companions>`), `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
-| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence) | prepare printed `Already green` or fixed every PR it touched, and `ci-ran.mjs` printed `CI: green` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → watch once more, then `hold`; `CI: red` or prepare blocked → `failed`, reason = that line |
-| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` → record **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, and `verify-comment.mjs --check` printed `report complete` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → watch once more, then `hold`; `CI: red` or prepare blocked → `failed`, reason = that line; proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` → record **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -143,6 +143,25 @@ Under `--unattended` add the line `No human is present: run interview with --non
 ```text
 ✗ prepare: Already green (draft, 16 of 18 checks skipped) → record ready proceed
 ✓ gh pr ready <pr-url> → prepare watches the real CI → proceed; under --keep-draft → hold "CI not run: draft"
+```
+
+### Proof
+
+We no longer read every line of an autonomous PR; we read what it claims and the proof that the claim holds.
+So a PR merges only when its verify report lists every acceptance criterion with a final status and proof (`aw-verify`'s `--check` gate, also the merge gate's proof half):
+
+```bash
+VC="${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-comment.mjs"
+node "$VC" --pr <pr-url> --check [--ui]      # --ui when the gate's user_visible is true; last line: report complete
+```
+
+Exit 0 → Ready continues.
+Exit 1 → run `Skill("aw-verify", "run checks <pr-url>")` for a non-UI diff (recorded test runs prove each criterion; no browser) or `Skill("aw-verify", "run preview <pr-url>")` for a UI diff, then check again; still exit 1 → Ready `failed`, reason `proof: <first problem it printed>`.
+Never write the report or tick a criterion by hand to pass it: only `verify-comment.mjs` writes the regions, from a run.
+
+```text
+✗ Windows-only fix, tests green, no verify report → Ready proceed → merge
+✓ verify-comment --check → "no intent region" → aw-verify run checks <pr> → report complete → Ready proceed
 ```
 
 ### CI evidence
@@ -191,7 +210,7 @@ No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks st
    ```
 
    `COMPANIONS: proceed` → continue; `COMPANIONS: hold — skipped: <names>` → Build `hold` with that reason, and `Needs you: run <names> on <pr-url>, or re-run /atelier <pr-url> --accept-skip <names>`.
-   Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on a Lite or Full UI diff.
+   Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on every Lite or Full diff (browser on a UI diff, checks-only otherwise).
 
    ```text
    ✗ Degraded: review-loop skipped (context budget) → Build proceed     # an unreviewed PR walks to the merge

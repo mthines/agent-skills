@@ -272,8 +272,8 @@ function selfTest() {
 	t("a non-companion degradation does not hold", companionDecision(block("lorekit unreachable — lessons skipped")).decision === "proceed");
 	t("the one-line Micro form parses", companionDecision("AW RUN COMPLETE — Micro, PR https://x/pull/2, Degraded: none, Needs you: nothing").decision === "proceed");
 	t("Micro requires no quality pass", companionDecision("AW RUN COMPLETE — Micro, PR https://x/pull/2, Degraded: fit skipped, Needs you: nothing").decision === "proceed");
-	t("aw-verify is required only on a UI diff", companionDecision(block("aw-verify skipped (no browser)")).decision === "proceed" && companionDecision(block("aw-verify skipped (no browser)"), { uiDiff: true }).decision === "hold");
-	t("required companions by tier", requiredCompanions({ tier: "Micro", uiDiff: true }).join() === "review-loop,create-pr" && requiredCompanions({ tier: "Lite", uiDiff: true }).join() === "review-loop,create-pr,quality-pass,aw-verify");
+	t("aw-verify is required on a UI and a non-UI diff alike", companionDecision(block("aw-verify skipped (no browser)")).decision === "hold" && companionDecision(block("aw-verify skipped (no browser)"), { uiDiff: true }).decision === "hold");
+	t("required companions by tier", requiredCompanions({ tier: "Micro", uiDiff: true }).join() === "review-loop,create-pr" && requiredCompanions({ tier: "Lite", uiDiff: true }).join() === "review-loop,create-pr,quality-pass,aw-verify" && requiredCompanions({ tier: "Lite", uiDiff: false }).join() === "review-loop,create-pr,quality-pass,aw-verify");
 	const acc = companionDecision(block("review-loop skipped (context budget)"), { accept: ["review-loop"] });
 	t("--accept-skip from the user proceeds and says so", acc.decision === "proceed" && acc.reason === "accepted skip: review-loop (user)");
 	t("no Degraded: line holds", companionDecision("AW RUN COMPLETE\n- Tier: Full").decision === "hold");
