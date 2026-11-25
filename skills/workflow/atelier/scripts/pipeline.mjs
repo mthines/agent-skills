@@ -5,7 +5,7 @@
 // pipeline that builds and releases the change went green: no required job failed, none was skipped
 // when it had to run, and nothing is still running. Owns no fixer; it names the failing job and step.
 //
-//   node pipeline.mjs --pr <url|n> [--wait <minutes>] [--repo-dir <path>]   merge commit and branch from the PR
+//   node pipeline.mjs --pr <url|n> [--wait <minutes>] [--repo-dir <path>]   merge commit and branch from the PR (a bare n needs --repo)
 //   node pipeline.mjs --repo <owner/name> --sha <sha> --branch <b> [--wait <m>]
 //   add --workflow <name> --required <job,job>                              override .agents/aw/release.yml → pipeline
 //   node pipeline.mjs --self-test
@@ -151,7 +151,7 @@ async function main() {
 		const cfg = await loadConfig(a["repo-dir"] ?? process.cwd());
 		const workflow = a.workflow ?? cfg.workflow ?? "";
 		const required = (typeof a.required === "string" ? a.required.split(",") : cfg.required_jobs ?? []).map((s) => String(s).trim()).filter(Boolean);
-		const wait = Number(a.wait ?? cfg.timeout_minutes ?? 0);
+		const wait = Number(a.wait ?? cfg.timeout_minutes ?? 20);
 		const deadline = Date.now() + wait * 60_000;
 		let result;
 		const cache = new Map();

@@ -15,11 +15,11 @@ Deliver runs after the merge, reads that pipeline with `scripts/pipeline.mjs`, a
 
 ```bash
 P="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/pipeline.mjs"
-node "$P" --pr <pr-url> --wait 20      # PIPELINE: green|pending|red|none — <reason>
+node "$P" --pr <pr-url>               # PIPELINE: green|pending|red|none — <reason>
 ```
 
 `--pr` resolves the merge commit and base branch from the merged PR; the config comes from `.agents/aw/release.yml` → `pipeline:` ([`deployment-verify` `rules/config.md`](../../../testing/deployment-verify/rules/config.md#pipeline)).
-`--wait` polls for that many minutes; `none` right after a merge also waits, because GitHub registers the run a few seconds late.
+The wait is `pipeline.timeout_minutes` (default 20; `--wait <minutes>` overrides it), polled every 30 seconds; `none` right after a merge also waits, because GitHub registers the run a few seconds late.
 
 | Exit | Line | Deliver decision |
 | --- | --- | --- |

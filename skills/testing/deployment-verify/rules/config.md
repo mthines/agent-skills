@@ -86,7 +86,7 @@ Optional; absent, Deliver reads every run of the merge commit and requires no jo
 | --- | --- |
 | `workflow` | The workflow's `name:`; only its runs count. Empty reads every run started for the merge commit |
 | `required_jobs` | Job names that must conclude `success`. A required job that is skipped or missing is red: a skipped release job means the step before it failed |
-| `timeout_minutes` | How long Deliver waits for the run to finish (default 0 = read once) |
+| `timeout_minutes` | How long Deliver waits for the run to finish (default 20; 0 reads once) |
 
 ```yaml
 # ✗ Wrong — release is skipped on a failed version step, and nothing names it, so the run reads green
