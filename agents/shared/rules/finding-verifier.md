@@ -86,7 +86,8 @@ A behavioral `issue:` on a risky shape needs a Tier-2 receipt where one is obtai
 | `unobtainable` | the check could not run at all — upstream unreachable, no toolchain, no workspace, binary file | **not a drop**, see below |
 
 A `shortcut: <the limit>, <when to upgrade>` marker records a ceiling the author chose, so a claim that only restates that ceiling is `contradicted` by the marker.
-The claim stands when the PR description, a linked ticket, a governing doc, or deploy config puts the expected load past the ceiling, when the marker has no trigger, when the marker covers trust-boundary validation, data-loss handling, security, or accessibility, or when the code is wrong even below the ceiling: [`shortcut-markers.md`](./shortcut-markers.md#when-reviewing-code).
+The claim stands when the PR description, a linked ticket, a governing doc, or deploy config puts the expected load past the ceiling, when the marker covers trust-boundary validation, data-loss handling, security, or accessibility, or when the code is wrong even below the ceiling: [`shortcut-markers.md`](./shortcut-markers.md#when-reviewing-code).
+A marker with no trigger keeps the claim as a `quality` finding that asks for the trigger.
 
 ```text
 ✗ confirmed: "load_all holds the whole file in memory"   (the line says `shortcut: whole file in memory, stream it once inputs pass 50 MB`, and nothing says inputs pass 50 MB)
