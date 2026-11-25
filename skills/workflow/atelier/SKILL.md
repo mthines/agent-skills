@@ -68,7 +68,7 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
 
    `GH_OK` → `ACCESS_PATH=gh`; no output with `mcp__github__*` tools present → `mcp`: read the PR and comments with the MCP tools, then pass files and bodies to the scripts' offline flags; neither → `none`: print the terminal contract with `Needs you: GitHub access` and stop.
    The scripts' `--pr`, `--fetch`, and `--upsert` modes need `gh`.
-3. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs" --model "<your model id>"` (add `--pr <pr-url>` when resuming a PR), print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
+3. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs" --model "<your model id>" --ticket "<ticket id or URL>" --task "<request title, ≤ 120 chars>"` (add `--pr <pr-url>` when resuming a PR; pass `--ticket` only when the request names a ticket, for example `/atelier AI-3112` or its URL), print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
    When the `telemetry` row is `ok`, call the telemetry tool it names once (a cheap list or query); no tool or an error makes `telemetry` a gap, added to the line.
    Then decide with the [preflight table](#preflight).
    Preflight also starts the run's trace; the scripts below record every stage, and [`rules/telemetry.md`](./rules/telemetry.md) lists the three things you add (**Why:** [`references/telemetry.md`](./references/telemetry.md)).
@@ -91,6 +91,7 @@ Preflight never blocks on its own; a gap blocks only when it leaves a criterion 
 | `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix>, or re-run with --accept-gaps` |
 | `limited` | yes | yes | run Build; the gap goes into the Build reason and `Needs you:` |
 
+A row whose value reads `unknown (could not parse …)` is not a gap and decides nothing.
 `ci-on-draft: no` decides nothing here: Ready undrafts to get CI (that notifies reviewers), and under `--keep-draft` Ready holds.
 
 ```text

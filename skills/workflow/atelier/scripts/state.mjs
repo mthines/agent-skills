@@ -13,6 +13,7 @@
 // --next, --companions, and --record also mark the run's telemetry (telemetry.mjs): the stage that opens,
 // the companions check, and the decision; a decision that ends the run exports it. Telemetry writes go
 // to the ledger and stderr only, never to stdout, and never change the exit code.
+// A --pr on --next or --companions (a URL, or a number resolved against the run's repo) sets the run's PR facts.
 //   node state.mjs --companions --aw-file <f> [--ui-diff yes|no|true|false] [--accept-skip a,b]
 //                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
@@ -296,14 +297,14 @@ async function main() {
 			const state = parse(readBody(a));
 			const stage = next(state, a.head);
 			console.log(stage);
-			if (state) await markNext({ stage, state });
+			if (state) await markNext({ stage, state, pr: typeof a.pr === "string" ? a.pr : null });
 		}
 		else if (a.companions) {
 			const accept = typeof a["accept-skip"] === "string" ? a["accept-skip"].split(",").map((x) => x.trim()) : [];
 			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { uiDiff: [true, "yes", "true"].includes(a["ui-diff"]), accept });
 			console.log(`COMPANIONS: ${d.decision}${d.reason ? ` — ${d.reason}` : ""}`);
 			const aw = parseDegraded(readFileSync(a["aw-file"], "utf8"));
-			await markCompanions({ decision: d.decision, tier: aw.tier, skipped: d.missing, accepted: d.accepted });
+			await markCompanions({ decision: d.decision, tier: aw.tier, skipped: d.missing, accepted: d.accepted, pr: typeof a.pr === "string" ? a.pr : null });
 		}
 		else if (a.record) {
 			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;

@@ -141,7 +141,7 @@
         "spec": {
           "display": {
             "name": "Runs per day by outcome",
-            "description": "merged \u00b7 held \u00b7 refused \u00b7 failed \u00b7 stopped (preflight stop) \u00b7 abandoned (session ended with no record)."
+            "description": "merged · held · refused · failed · stopped (preflight stop) · abandoned (session ended with no record)."
           },
           "plugin": {
             "kind": "TimeSeriesChart",
@@ -211,7 +211,7 @@
         "spec": {
           "display": {
             "name": "Where runs stop",
-            "description": "Runs by the stage they ended in and how they ended \u2014 the stuck point."
+            "description": "Runs by the stage they ended in and how they ended — the stuck point."
           },
           "plugin": {
             "kind": "BarChart",
@@ -231,7 +231,7 @@
                   "kind": "PrometheusTimeSeriesQuery",
                   "spec": {
                     "query": "sum by (atelier_stage_reached, atelier_run_outcome) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=\"atelier.run\", atelier_smoke=\"\"}[$__range]))",
-                    "seriesNameFormat": "{{atelier_stage_reached}} \u00b7 {{atelier_run_outcome}}"
+                    "seriesNameFormat": "{{atelier_stage_reached}} · {{atelier_run_outcome}}"
                   }
                 }
               }
@@ -244,7 +244,7 @@
         "spec": {
           "display": {
             "name": "Stage duration p50",
-            "description": "p50 wall time per stage span (build = aw; ready includes CI waits)."
+            "description": "p50 wall time per stage, from the atelier.stage.duration histogram (build = aw; ready includes CI waits)."
           },
           "plugin": {
             "kind": "BarChart",
@@ -263,7 +263,7 @@
                 "plugin": {
                   "kind": "PrometheusTimeSeriesQuery",
                   "spec": {
-                    "query": "histogram_quantile(0.5, sum by (atelier_stage_name) (increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range])))",
+                    "query": "histogram_quantile(0.5, sum by (atelier_stage_name) (increase({otel_metric_name=\"atelier.stage.duration\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range])))",
                     "seriesNameFormat": "{{atelier_stage_name}}"
                   }
                 }
@@ -277,7 +277,7 @@
         "spec": {
           "display": {
             "name": "Stage duration p90",
-            "description": "p90 wall time per stage span (build = aw; ready includes CI waits)."
+            "description": "p90 wall time per stage, from the atelier.stage.duration histogram (build = aw; ready includes CI waits)."
           },
           "plugin": {
             "kind": "BarChart",
@@ -296,7 +296,7 @@
                 "plugin": {
                   "kind": "PrometheusTimeSeriesQuery",
                   "spec": {
-                    "query": "histogram_quantile(0.9, sum by (atelier_stage_name) (increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range])))",
+                    "query": "histogram_quantile(0.9, sum by (atelier_stage_name) (increase({otel_metric_name=\"atelier.stage.duration\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range])))",
                     "seriesNameFormat": "{{atelier_stage_name}}"
                   }
                 }
@@ -329,7 +329,7 @@
                 "plugin": {
                   "kind": "PrometheusTimeSeriesQuery",
                   "spec": {
-                    "query": "histogram_sum(sum by (atelier_stage_name) (increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range])))",
+                    "query": "histogram_sum(sum by (atelier_stage_name) (increase({otel_metric_name=\"atelier.stage.duration\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range])))",
                     "seriesNameFormat": "{{atelier_stage_name}}"
                   }
                 }
@@ -395,7 +395,7 @@
                 "plugin": {
                   "kind": "PrometheusTimeSeriesQuery",
                   "spec": {
-                    "query": "histogram_sum(sum(increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range]))) - histogram_sum(sum(increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.wait .*\", atelier_smoke=\"\"}[$__range])))",
+                    "query": "histogram_sum(sum(increase({otel_metric_name=\"atelier.stage.duration\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range]))) - histogram_sum(sum(increase({otel_metric_name=\"atelier.wait.duration\", service_name=\"atelier\", atelier_wait_kind!=\"human\", atelier_smoke=\"\"}[$__range])))",
                     "seriesNameFormat": "active"
                   }
                 }
@@ -407,7 +407,7 @@
                 "plugin": {
                   "kind": "PrometheusTimeSeriesQuery",
                   "spec": {
-                    "query": "histogram_sum(sum(increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.wait .*\", atelier_smoke=\"\"}[$__range])))",
+                    "query": "histogram_sum(sum(increase({otel_metric_name=\"atelier.wait.duration\", service_name=\"atelier\", atelier_wait_kind!=\"human\", atelier_smoke=\"\"}[$__range])))",
                     "seriesNameFormat": "waiting in run"
                   }
                 }
@@ -453,7 +453,7 @@
                   "kind": "PrometheusTimeSeriesQuery",
                   "spec": {
                     "query": "sum by (atelier_stage_name, atelier_stage_decision, atelier_stage_reason_bucket) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_stage_decision=~\"hold|refuse|failed\", atelier_smoke=\"\"}[$__range]))",
-                    "seriesNameFormat": "{{atelier_stage_name}} {{atelier_stage_decision}} \u00b7 {{atelier_stage_reason_bucket}}"
+                    "seriesNameFormat": "{{atelier_stage_name}} {{atelier_stage_decision}} · {{atelier_stage_reason_bucket}}"
                   }
                 }
               }
@@ -532,7 +532,7 @@
         "spec": {
           "display": {
             "name": "Merged PR outcomes",
-            "description": "Transitions outcomes.mjs recorded: clean \u00b7 reverted \u00b7 hotfixed."
+            "description": "Transitions outcomes.mjs recorded: clean · reverted · hotfixed."
           },
           "plugin": {
             "kind": "BarChart",

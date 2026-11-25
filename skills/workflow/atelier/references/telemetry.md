@@ -40,6 +40,20 @@ Durations stay on histograms and on Dash0's span metrics, and every metric attri
 `outcomes.mjs` re-classifies every merged PR on every run, so emitting each result would count one PR dozens of times.
 It emits only a final outcome that differs from the one LoreKit already stores, which the caller passes as `stored`, so each change is counted once; a sweep that exports and then loses its LoreKit write (a failure, or a concurrent run) exports that change again, and a clean PR that is later reverted is counted in both, and the dashboard's rate says so.
 
+## Why `atelier.work.ref` and the ticket
+
+A run that stops at preflight or in Build has no PR, so a table keyed on `atelier.pr.url` shows a blank row nobody can attribute.
+Preflight is the first command of every run and already knows the request, the branch, and the repo, so it records them; `atelier.work.ref` folds them into one column that is filled on every run and upgrades to the PR URL once a command names it.
+
+## Why smoke runs are marked by the environment and the remote
+
+The trace a test exports is indistinguishable from a real one, so the test says so with `ATELIER_SMOKE`; a repo without `origin` cannot hold a PR atelier could merge, so its runs are scratch runs.
+A repo with a remote is never guessed to be a test: the runs that once looked like tests came from a real session in another repo.
+
+## Why stage percentiles use atelier's histogram
+
+Panels over Dash0's derived `dash0.spans.duration`, grouped by `atelier_stage_name`, returned no value for real atelier stage spans; `atelier.stage.duration` is emitted by atelier itself with both `atelier.stage.name` and `atelier.smoke`, so its labels do not depend on how a backend derives span metrics.
+
 ## Why one exporter
 
 The OTLP encoder is pr-reviewer's `otlp.mjs`, resolved by path like `merge-gate.mjs` resolves `prepare` and `deployment-verify`.
