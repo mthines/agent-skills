@@ -52,38 +52,52 @@ Gate: walkthrough shown in chat, draft PR opened, CI watch started.
 | 1    | Pre-flight checks (clean tree, build, lint, test)                             | Full + Lite     |
 | 2    | `Skill("aw-create-walkthrough")` → `.agent/{branch}/walkthrough.md`           | **Full only**   |
 | 3    | `Skill("create-pr", <the tier's flags>)` ([PR Creation](#pr-creation)) → local review-loop (Lite), push, open draft PR, watch initial CI | Full + Lite     |
-| 3b   | Publish the criteria on the PR ([below](#publish-the-criteria))               | Full + Lite     |
-| 4    | `Skill("aw-verify", "report <pr-url>")` when `aw-verify` ran before the PR   | Full + Lite     |
+| 3b   | Publish the criteria and their proof on the PR ([below](#publish-the-criteria)) | Every tier    |
+| 4    | Gate: `verify-comment.mjs --pr <pr-url> --check [--ui]` prints `report complete` | Every tier    |
 | 5    | Show `walkthrough.md` content inline in conversation                          | **Full only**   |
 | 6    | Report PR URL + summary, log Progress                                         | Full + Lite     |
 
 ### Publish the criteria
 
-Once `create-pr` returns the PR URL, put the brief's acceptance criteria on the PR as the `intent` region of its verify report, ticked from the sealed checks, so `aw-verify` and `deployment-verify` later read and update the same list.
-One call, run before `aw-verify report`; a follow-up that re-runs Step 4 runs it again.
+Nobody reads every line of an autonomous PR; a reviewer reads what it claims and the proof that it holds.
+So every tier, Micro included, ends with the brief's acceptance criteria on the PR, each with a final status and its proof, in the one format `aw-verify` owns: the `intent` and `aggregate` regions of the PR's verify report.
+Run it once `create-pr` returns the PR URL; a follow-up that pushes again runs it again.
 
 ```bash
 AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"
 VC="${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-comment.mjs"
 D=".agent/$(git branch --show-current)"
-ST=""; [ -f "$D/checks.yaml" ] && ST=$(node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --statuses)
-node "$VC" --pr "$PR_URL" --section intent --from-plan "$D/plan.md" --statuses "$ST"
 ```
+
+| What proved the criteria | Publish |
+| --- | --- |
+| `aw-verify run local` (a UI diff, Lite or Full) | `node "$VC" --pr "$PR_URL" --section intent --from-plan "$D/plan.md"`, then `Skill("aw-verify", "report <pr-url>")` |
+| Checks mode (`aw-verify run checks`, any diff with no UI file, and every Micro run) | `node "$VC" --checks "$D/verify/runs.json" --from-plan "$D/plan.md" --pr "$PR_URL" --head "$(git rev-parse HEAD)"` |
+| Full's sealed checks, no UI file | the checks-mode row, with the `runs.json` that `--run` recorded in Step 4, or `--checks "$(node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --statuses)"` when a check's `expect` is not an exit code (the report labels those `run-checks`) |
+
+Then gate, with `--ui` on a UI diff:
+
+```bash
+node "$VC" --pr "$PR_URL" --check      # last line must be: report complete
+```
+
+Exit `1` lists what the report lacks: re-run the proof (`aw-verify`) or re-publish, never edit the regions by hand.
+The run is not done until it prints `report complete`; `AW RUN COMPLETE` names the PR only after it does ([`aw` § Terminal contract](../aw/SKILL.md#terminal-contract)).
 
 | Result | Receipt line |
 | --- | --- |
-| Exit `0` | `criteria: posted <url>` |
-| Exit `3` (no `AC-{n}` in the brief, or no `plan.md`) | `criteria: n/a (no AC in the brief)` |
-| `$VC` missing | `criteria: not posted (aw-verify not installed)`, and `Degraded:` |
-| Any other exit | `criteria: not posted (<first stderr line without "verify-comment: ">)`, and `Degraded:` |
+| `report complete` | `criteria: report complete <url>` |
+| Exit `3` (no `AC-{n}` in the brief, or no `plan.md`) | write the criteria into `plan.md` first; a run with no criteria has nothing to prove |
+| `$VC` missing | `criteria: incomplete (aw-verify not installed)`, `Degraded:`, and `Needs you: install aw-verify` |
+| Any other exit | fix and re-run; still failing after one retry → `criteria: incomplete (<first problem>)` and `Needs you: proof — <first problem>` |
 
-Pass `--statuses` as one quoted argument; the user's shell is zsh, which does not word-split an unquoted variable.
-Lite has no `checks.yaml`, so `ST` is empty and every row starts `⬜`; `aw-verify report` ticks them when Lite verify ran, and a suite exit code is never turned into a per-criterion `✅`.
-Publishing never blocks the PR, and Micro has no brief, so it publishes nothing.
+Pass `--statuses` and `--checks` as one quoted argument; the user's shell is zsh, which does not word-split an unquoted variable.
+A suite exit code is never turned into a per-criterion `✅`: each criterion's mark comes from a command that tested it.
+Micro writes a three-line `plan.md` (`## Acceptance Criteria` with at least one `- [ ] AC-1 — …`) so the same call works.
 
 ```text
-✗ gh pr edit --body with a hand-written criteria list      # a second format that nothing reads
-✓ node "$VC" --pr "$PR_URL" --section intent --from-plan "$D/plan.md" --statuses "$ST"
+✗ gh pr edit --body with a hand-written evidence section      # a second format that nothing reads, and the gate refuses it
+✓ node "$VC" --checks "$D/verify/runs.json" --from-plan "$D/plan.md" --pr "$PR_URL" → node "$VC" --pr "$PR_URL" --check → report complete
 ```
 
 ### Step 1: Pre-Flight Validation
@@ -224,7 +238,7 @@ Then emit, inline, a `### Phase 6 Delivery Receipt` block with one line per requ
 - local review-loop (branch-reviewer pass; create-pr Step 5.5 on Lite, Step 3 on Full): <N iterations, M findings, B open | skipped (<reason>)>
 - local review-loop (apply): <N findings applied, D declined | skipped (<reason>)>
 - local review-loop (polish simplify): <recipe IDs applied | none | skipped (<reason>)>
-- criteria: <posted <url> | not posted (<reason>) | n/a (no AC in the brief)>
+- criteria: <report complete <url> | incomplete (<first problem>) | n/a (no PR)>
 - aw-verify report: <posted <comment URL> | not posted — <aw-verify's reason> | n/a (aw-verify did not run: <no UI diff | not configured>)>
 ```
 

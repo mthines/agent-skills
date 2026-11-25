@@ -6,12 +6,12 @@ description: >
   the squash-merge only when a user-visible diff ships behind a
   deployment-verify flag contract — then reads the default-branch pipeline and fixes a red one once, and says
   what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
-argument-hint: '<request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
+argument-hint: 'setup | <request> | <pr-url|#n> [--ticket <id|url>] [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
 license: MIT
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '0.5.0'
+  version: '0.7.0'
   workflow_type: orchestrator
   tags: [workflow, orchestrator, merge, gate, deployment-verify, lorekit, resumable, telemetry]
 ---
@@ -25,6 +25,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 ## Contents
 
 - [Arguments](#arguments)
+- [`setup`](#setup)
 - [Step 0 — Setup](#step-0--setup)
 - [Stages](#stages)
 - [Step 4 — Stop](#step-4--stop)
@@ -35,14 +36,63 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 
 | Argument | Effect |
 | --- | --- |
+| `setup` | Only as the sole argument (`/atelier setup SSO for admins` is a request). Ready the repo for runs: preflight, then each gap handed to the skill that fixes it, then a before/after table ([`setup`](#setup)). Runs no stage. |
 | `<request>` | Free text: start at Build. |
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
+| `--ticket <id\|url>` | The ticket this work belongs to; [Step 0](#step-0--setup) links it instead of asking. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
 | `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci) lasts (default 30). `0` never waits: pending CI records a `hold`, as before. |
 | `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, and the revert). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
+
+## `setup`
+
+`/atelier setup` readies a repo for atelier runs: it reads preflight, hands each gap to the skill that owns the fix, and shows what changed.
+It writes no config itself, records no stage, and starts no trace.
+The setup skills it calls ask the user questions, so it runs interactively only: under `--unattended`, print `Needs you: run /atelier setup interactively` and stop.
+`preflight.mjs --setup` prints the plan from this table, in this order (`deployment-verify`'s setup reads the `telemetry.yml` that `aw-verify`'s writes):
+
+| Gap | `--setup` prints |
+| --- | --- |
+| `sign-in`, `telemetry` | `SETUP: Skill("aw-verify", "setup") — fixes <gaps>` (one call for both) |
+| `flag-provider`, or `release.yml` without `pipeline:` | `SETUP: Skill("deployment-verify", "setup") — fixes <what is missing>` (one call for both) |
+| no `memory/observability-profile/INDEX.md` | `SETUP: Skill("measurable", "setup") — fixes observability-profile (…)`; with `telemetry.yml` → `backend: logs` or `none`, `DECIDED: observability-profile — …` instead (no OpenTelemetry to profile) |
+| no `.agents/aw/tracker.yml` | `SETUP: Skill("ticket", "setup") — fixes tracker (…)` |
+| `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
+| `flag-provider` with `release.yml` → `providers: []` | `DECIDED: flag-provider — …`: an answer, not missing setup; never delegated, never under `Needs you:` |
+
+```text
+✗ release.yml declares providers: [] → Skill("deployment-verify", "setup") on every /atelier setup   # it cannot invent a provider
+✓ release.yml declares providers: [] → DECIDED: flag-provider — …                                     # printed, not re-asked
+```
+
+1. Resolve script paths and probe GitHub as [Step 0](#step-0--setup) items 1–2, with `A="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts"`.
+   `ACCESS_PATH` is `mcp` or `none` → keep `MANUAL: github — run gh auth login for <owner/repo>; the scripts' --pr, --fetch, and --upsert modes need gh` for the end, and continue: setup itself needs no GitHub.
+2. Before: run `node "$A/preflight.mjs" --setup --json > setup-before.json`, then `node "$A/preflight.mjs" --setup`, and print its table and lines.
+3. Run each `SETUP:` line's call, one at a time, in the printed order, at the top level of this session.
+   The called skill owns its questions, its files, and its validation; never write `.agents/aw/*` or the observability profile yourself, and never answer its questions for the user.
+   A call that stops or that the user declines → note it for `Ran:` and run the next one.
+4. Print every `MANUAL:` line, with the GitHub one from step 1, for `Needs you:`; never edit `.github/workflows/` here.
+5. After: run `node "$A/preflight.mjs" --compare setup-before.json` and print its table, adding its `MANUAL: pipeline` line, when printed, to `Needs you:`; when the `telemetry` row is `ok`, call the tool it names once, as Step 0 item 4 does.
+6. Commit nothing: pass on the paths the setup skills printed for the user to review and commit.
+
+```text
+✗ telemetry gap → write .agents/aw/telemetry.yml with backend: dash0-mcp      # re-implements aw-verify setup and skips its smoke probe
+✓ telemetry gap → Skill("aw-verify", "setup") → its Phase E smoke validates what it wrote
+```
+
+Emit this block on every exit of `setup`, in place of the run's terminal contract:
+
+```text
+ATELIER SETUP
+- Before: [the PREFLIGHT line from step 2]
+- After: [the PREFLIGHT line from step 5] · [its SETUP: <n> fixed, <m> remaining line]
+- Ran: [each Skill call: done | stopped: <reason> | declined, or "nothing to delegate"]
+- Files to review and commit: [the paths the setup skills printed, or "none"]
+- Needs you: [the MANUAL: lines and each remaining gap with its fix, or "nothing"]
+```
 
 ## Step 0 — Setup
 
@@ -70,14 +120,29 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
 
    `GH_OK` → `ACCESS_PATH=gh`; no output with `mcp__github__*` tools present → `mcp`: read the PR and comments with the MCP tools, then pass files and bodies to the scripts' offline flags; neither → `none`: print the terminal contract with `Needs you: GitHub access` and stop.
    The scripts' `--pr`, `--fetch`, and `--upsert` modes need `gh`.
-3. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs" --model "<your model id>" --ticket "<ticket id or URL>" --task "<request title, ≤ 120 chars>"` (add `--pr <pr-url>` when resuming a PR; pass `--ticket` only when the request names a ticket, for example `/atelier AI-3112` or its URL), print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
+3. **Ticket.** Decide the run's ticket with the `ticket` skill's `ticket.mjs --decide`, from the target repo's checkout (no `tracker.yml` → it only links a named ticket):
+
+   ```bash
+   TK="${TICKET_DIR:-$HOME/.claude/skills/ticket}/scripts/ticket.mjs"
+   node "$TK" --decide --request "<the request>" [--ticket <id|url the user passed>] [--unattended under --unattended]
+   ```
+
+   | Prints | Do |
+   | --- | --- |
+   | `TICKET: link <id>` | `TICKET=<id>` |
+   | `TICKET: ask` | Ask once: "Create a ticket for this?" — yes → `Skill("ticket", "create \"<request>\"")`, `TICKET=` its id; no → `TICKET=none` |
+   | `TICKET: create` | `Skill("ticket", "create \"<request>\"")`, `TICKET=` its id |
+   | `TICKET: skip — <why>` | `TICKET=none`; a `require: ask` skip goes under `Needs you:` (`no ticket — <why>`) |
+
+   A resumed PR keeps the ticket its PR body links; the script is absent or exits 1 → `TICKET=none` and `Degraded: ticket — <reason>`.
+4. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs" --model "<your model id>" --ticket "$TICKET" --task "<request title, ≤ 120 chars>"` (add `--pr <pr-url>` when resuming a PR; drop `--ticket` when `TICKET=none`), print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
    When the `telemetry` row is `ok`, call the telemetry tool it names once (a cheap list or query); no tool or an error makes `telemetry` a gap, added to the line.
    Then decide with the [preflight table](#preflight).
    Preflight also starts the run's trace; the scripts below record every stage, and [`rules/telemetry.md`](./rules/telemetry.md) lists the three things you add (**Why:** [`references/telemetry.md`](./references/telemetry.md)).
-4. Probe LoreKit: `memory.*` tools present and one call answers.
+5. Probe LoreKit: `memory.*` tools present and one call answers.
    Absent or failing → one line `Degraded: lorekit unreachable — decision log and outcomes skipped`, and every LoreKit step below is a no-op; no stage waits on it.
-5. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
-6. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
+6. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
+7. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
    A merged PR makes `--next` print `stop`: run [Deliver](#after-the-merge) on it unless `--no-deliver`, so a session that died during the pipeline wait resumes there.
    Pass the PR URL, not a bare number: `state.mjs` takes owner/repo from the URL, and from cwd's `origin` only for a number.
    No atelier comment yet: record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
@@ -91,7 +156,7 @@ Preflight never blocks on its own; a gap blocks only when it leaves a criterion 
 | --- | --- | --- | --- |
 | `ok` | — | — | run Build |
 | `limited` | no | — | run Build; name each gap once under `Degraded:` |
-| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix>, or re-run with --accept-gaps` |
+| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix> (/atelier setup runs it), or re-run with --accept-gaps` |
 | `limited` | yes | yes | run Build; the gap goes into the Build reason and `Needs you:` |
 
 A row whose value reads `unknown (could not parse …)` is not a gap and decides nothing.
@@ -111,6 +176,7 @@ After **every** stage decision, do both, in this order:
    Build's record also takes `--memory "lorekit=<ok|unreachable>,lessons_used=<n>"` ([`rules/telemetry.md` § What you add](./rules/telemetry.md#what-you-add)).
    Ready `proceed` also takes `--ci-file ci.json`, the CI evidence below; `state.mjs` refuses Ready `proceed` without green evidence at `--head` (exit 2).
 2. Write one `bus` event ([`rules/decision-log.md`](./rules/decision-log.md)).
+3. On a `proceed` with a ticket: `Skill("ticket", "move <TICKET> <stage>")`; on Build also `Skill("ticket", "link <TICKET> <pr-url>")`. A tracker failure is one `Degraded:` line, never a stage outcome.
 
 A decision of `refuse`, `hold`, or `failed` ends the run at Step 4.
 A Build that fails before a PR exists has nowhere to record: skip step 1, write the bus event, end the trace (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --stage build --decision failed --reason "<r>"`), and stop.
@@ -118,8 +184,8 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, every required companion ran (or the user accepted its skip), the [sentinel](#after-build-returns) passes, and the early gate passes | `hold` (reason `skipped: <companions>`), `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
-| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence) | prepare printed `Already green` or fixed every PR it touched, and `ci-ran.mjs` printed `CI: green` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line |
-| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+| **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, and `verify-comment.mjs --check --proven` printed `report complete` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line; proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -128,6 +194,7 @@ Atelier merges this PR. A user-visible change must sit behind a feature flag (re
 ```
 
 Under `--unattended` add the line `No human is present: run interview with --non-interactive; a blocking question ends the run.`
+With a ticket, add the line `Link ticket <TICKET>: put "<node "$TK" --pr-line --ticket <TICKET>>" in the PR body.`
 
 - Ready records the head it ran on and the CI evidence; `--next` returns `ready` when the head moved, or when the Ready `proceed` carries no green evidence for this head (a comment written before evidence existed, or by hand).
 - The merge gate reads CI again at the head, right before the merge: a Ready `proceed` never stands in for CI that is not green now.
@@ -144,6 +211,25 @@ Under `--unattended` add the line `No human is present: run interview with --non
 ```text
 ✗ prepare: Already green (draft, 16 of 18 checks skipped) → record ready proceed
 ✓ gh pr ready <pr-url> → prepare watches the real CI → proceed; under --keep-draft → hold "CI not run: draft"
+```
+
+### Proof
+
+We no longer read every line of an autonomous PR; we read what it claims and the proof that the claim holds.
+So a PR merges only when its verify report lists every acceptance criterion with a final status and proof, none failed, under a `✅` or `⚠️` verdict (`aw-verify`'s `--check --proven` gate, also the merge gate's proof half; `--proven` refuses the `❌ Not verified` or `⛔ Blocked` report plain `--check` accepts as complete):
+
+```bash
+VC="${AW_VERIFY_DIR:-$HOME/.claude/skills/aw-verify}/scripts/verify-comment.mjs"
+node "$VC" --pr <pr-url> --check --proven [--ui]   # --ui when the gate's user_visible is true; last line: report complete
+```
+
+Exit 0 → Ready continues.
+Exit 1 → run `Skill("aw-verify", "run checks <pr-url>")` for a non-UI diff (recorded test runs prove each criterion; no browser) or `Skill("aw-verify", "run preview <pr-url>")` for a UI diff, then check again; still exit 1 → Ready `failed`, reason `proof: <first problem it printed>`.
+Never write the report or tick a criterion by hand to pass it: only `verify-comment.mjs` writes the regions, from a run.
+
+```text
+✗ Windows-only fix, tests green, no verify report → Ready proceed → merge
+✓ verify-comment --check → "no intent region" → aw-verify run checks <pr> → report complete → Ready proceed
 ```
 
 ### CI evidence
@@ -208,16 +294,16 @@ Deliver has its own bounded wait (`pipeline.mjs --wait`); this one covers PR CI.
 1. **Hand-back.** Find aw's terminal block, the hand-back marker `AW RUN COMPLETE`.
    Take the PR URL from the block's `Delivered:` line, or from the one-line form Micro and Lite may print (`AW RUN COMPLETE — Lite, PR <url>, …`).
    No block, or no PR URL in either form → Build `failed`, reason = its `Needs you:` line (or `no AW RUN COMPLETE block`); bind `PR` and its head sha otherwise.
-2. **Companions.** Save aw's hand-back block to `aw.txt`, run the contract half of the gate once (step 4 judges the same output and exit code; exit 2 there leaves no `user_visible`, so pass `--ui-diff yes`), then check the companions:
+2. **Companions.** Save aw's hand-back block to `aw.txt`, run the contract half of the gate once (step 4 judges the same output and exit code), then check the companions:
 
    ```bash
    A="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts"
    node "$A/merge-gate.mjs" --pr <pr-url> --contract-only > gate.json; echo $? > gate.exit
-   node "$A/state.mjs" --companions --aw-file aw.txt --ui-diff <gate.json's user_visible: yes|no> [--accept-skip <the user's names>]
+   node "$A/state.mjs" --companions --aw-file aw.txt [--accept-skip <the user's names>]
    ```
 
    `COMPANIONS: proceed` → continue; `COMPANIONS: hold — skipped: <names>` → Build `hold` with that reason, and `Needs you: run <names> on <pr-url>, or re-run /atelier <pr-url> --accept-skip <names>`.
-   Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on a Lite or Full UI diff.
+   Required: `review-loop` and `create-pr` on every tier, plus `quality-pass` on Lite and Full, plus `aw-verify` on every Lite or Full diff (browser on a UI diff, checks-only otherwise).
 
    ```text
    ✗ Degraded: review-loop skipped (context budget) → Build proceed     # an unreviewed PR walks to the merge
@@ -293,6 +379,7 @@ Emit this block on every exit:
 ATELIER RUN
 - Stage reached: [build | ready | merge | stop]
 - PR: [URL | none]
+- Ticket: [<id> | none — <why>]
 - Merge: [merged <sha> | refused: <reason> | not reached]
 - Deliver: [green <run url> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]
 - Degraded: [steps skipped and why, or "none"]

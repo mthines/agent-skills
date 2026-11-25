@@ -1,0 +1,4 @@
+{
+  "AC-1": { "command": "pnpm vitest run render-lib -t 'TEMP'", "before": "fail", "after": "pass", "evidence": "1 failed → 1 passed" },
+  "AC-2": { "command": "pnpm vitest run render-lib -t 'TMP'", "before": "fail", "after": "pass", "evidence": "1 failed → 1 passed" }
+}

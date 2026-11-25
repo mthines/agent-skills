@@ -8,7 +8,7 @@ description: >
   commit per finding, and reports with real screenshots. `setup` writes the committed `.agents/aw/` config every
   suite skill reads. Triggers on "/aw-verify".
 disable-model-invocation: false
-argument-hint: '[run [local|preview]|setup|report] [<pr-url>|<pr-number>|<ticket-id>] [--no-fix] [--no-push] [--no-comment] [--loops <n>] [--as <role>] [--keep-stack] [--foreign-stack teardown|ask|abort]'
+argument-hint: '[run [local|preview|checks]|setup|report] [<pr-url>|<pr-number>|<ticket-id>] [--no-fix] [--no-push] [--no-comment] [--loops <n>] [--as <role>] [--keep-stack] [--foreign-stack teardown|ask|abort]'
 license: MIT
 metadata:
   author: mthines
@@ -27,6 +27,7 @@ Who owns what, the spec contract, and the anti-patterns: [`rules/delegation.md`]
 ## Modes and flags
 
 `run [local|preview] [<pr>|<ticket>]` is the default (no reference → the branch's PR, else its `plan.md`).
+`run checks` proves a diff with no UI file by recorded test runs, before on the base and after on the branch: no stack, browser, or `environments.yml`, the same regions and the same gate ([`rules/checks-mode.md`](./rules/checks-mode.md)). A `run` on a diff with no UI file takes this path too.
 `setup` writes `.agents/aw/` ([`rules/setup.md`](./rules/setup.md)); `report` re-renders the last report and re-upserts the PR's verify report, with no stack, browser, or telemetry calls.
 Every run with a PR ends by rendering its proof and, on trusted PRs, posting it — what was tested, why, the result, and uploaded screenshots and recordings — as the `aggregate` region of the PR's one verify report — on your own PR a region of the PR description, on anyone else's a comment — which a re-run from any account updates in place ([`rules/pr-comment.md`](./rules/pr-comment.md)): the verdict, what needs a human, the criteria once in a collapsed table above it, what is worth a look in the preview, and a media strip (one recording, then up to two screenshot thumbnails), everything else collapsed; whatever `policies.pr_comment` says. It posts without asking on your own PRs and on PRs opened by a bot in `policies.trusted_bots`; on anyone else's PR it renders the report, prints `comment: not posted (not your PR — ask)`, and asks once ([`rules/pr-comment.md § Whose PR posts automatically`](./rules/pr-comment.md#whose-pr-posts-automatically)). The comment is always written by `verify-comment.mjs` from `report.md`, never by hand. The script uploads every local screenshot and recording the report names (`--no-upload` skips that), never folds the aggregate (an older commit gets a visible banner), and refuses an aggregate that is only collapsed blocks.
 **Your own PR:** fix, push, and re-verify until the verdict is `✅ verified`, at most 3 iterations — on `local` and `preview` alike — then post ([`rules/fix-loop.md § Own PR`](./rules/fix-loop.md#own-pr-fix-until-verified)). Someone else's PR: report only.
@@ -46,6 +47,8 @@ Someone else's PR is never fixed, on `local` or `preview`: its blocking findings
 
 Do these in order; `Read` a step's rule before its first action when it is not already in context.
 Everything this run writes goes under `.agent/{branch}/verify/`, never `/tmp`, where another run uses the same names.
+
+Checks mode ([`rules/checks-mode.md`](./rules/checks-mode.md)) replaces steps 0–6 with its own seven steps and ends at step 7 without `--ui`.
 
 0. **Config** ([`rules/config.md § Resolve`](./rules/config.md#resolve-the-config-every-skill-before-any-other-step)). No `.agents/aw/environments.yml`, or no entry for the environment → run `setup` first; never guess a URL, dataset, or start command. Read lessons ([`rules/lessons.md § Read`](./rules/lessons.md#read-step)).
 1. **Intent** ([`rules/intent.md`](./rules/intent.md)). Write `intent.md`: the brief's `AC-n` verbatim, each tagged `ui:` / `api:` / `worker:`, every criterion linted ([`§ Step 3b`](./rules/intent.md#step-3b--lint-every-criterion-and-map-the-surfaces)), the changed surfaces mapped to criteria, and the edge-case matrix.
@@ -90,8 +93,8 @@ Agent(subagent_type="general-purpose",
 ## Definition of done
 
 - [ ] `verify-comment.mjs --check [--ui]` printed `report complete` after the last post, or, with no PR, `--check --local` printed `local report complete`: it is the proof of the next four items on the PR, so a run that skipped any of them cannot pass it.
-- [ ] The `intent` region on the PR (visible, collapsed), or `criteria: not posted (<reason>)`; never skipped for a non-UI diff. A collapsed table (`| status AC‑n | criterion | proof |`) with every Proof cell filled. Its statuses (`⬜ ✅ ❌ ⏭️`) match the final results, written with `--marks` after the report and after every fix-loop re-verify.
-- [ ] `intent.md`, `probes.jsonl`, `findings.jsonl`, and `report.md` under `.agent/{branch}/verify/`; `specs.md` for a UI change.
+- [ ] The `intent` region on the PR (visible, collapsed), never skipped for a non-UI diff (checks mode proves it). A collapsed table (`| status AC‑n | criterion | proof |`) with every Proof cell filled. Its statuses (`⬜ ✅ ❌ ⏭️`) match the final results, written with `--marks` after the report and after every fix-loop re-verify.
+- [ ] `intent.md`, `probes.jsonl`, `findings.jsonl`, and `report.md` under `.agent/{branch}/verify/`; `specs.md` for a UI change. Checks mode: `runs.json`, `intent.md`, and `report.md`.
 - [ ] Every AC and guardrail: `pass`, `fixed → pass`, `fail`, or `⏭️ not verified on target (<what ran instead>)`, with evidence; every edge row probed or `n/a` with a reason; every changed surface in the Coverage table.
 - [ ] A `TELEMETRY` block covering every window, or `telemetry: skipped (<reason>)`. Never leave it out: the report is incomplete without one of the two, and a connected Dash0 MCP server is never a valid skip reason.
 - [ ] Each fix its own commit, pushed per policy; stack left per policy.

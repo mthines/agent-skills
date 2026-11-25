@@ -23,13 +23,19 @@
 //     [--to body [--seed <comment.md>]] [--notice-out <file> --comment-url <url>]
 //   node verify-comment.mjs --pr <n|url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-2":{"prod":true}}'
 //     changes only the leading status / 🚀 of existing criteria lines (a JSON string or a file); never their text
-//   node verify-comment.mjs --pr <n|url> --check [--ui]   the end-of-run gate: exit 1 lists what the PR report lacks (intent ticked, aggregate in the template shape, ui spec block)
+//   node verify-comment.mjs --pr <n|url> --check [--ui] [--proven]   (--proven, the merge's gate: also refuse a ❌ criterion or a ❌/⛔ verdict)
+//   the end-of-run gate: exit 1 lists what the PR report lacks (intent ticked, aggregate in the template shape, ui spec block)
 //   node verify-comment.mjs --pr <n|url> --from-plan <plan.md> [--statuses <json|file>]
 //     publishes an `/aw` brief's criteria as the intent region (rows ⬜, or ticked from run-checks.mjs --statuses);
 //     --print renders it and exits with no GitHub call; exit 3 = the brief has no AC (nothing to publish)
 //   node verify-comment.mjs --check --local <run-dir> [--ui]   the same gate before a PR exists, over <run-dir>/intent.md
 //     and report.md (with --ui, ../specs.md too); exit 1 lists every unmarked or untagged AC and report problem
 //   node verify-comment.mjs --local <run-dir> --marks '{"AC-1":{"status":"✅"}}'   marks intent.md's AC lines in place
+//   node verify-comment.mjs --checks <runs.json|json> --from-plan <plan.md> (--pr <n|url> | --local <run-dir> | --print) [--head <sha>]
+//     checks-only proof (rules/checks-mode.md): the brief's criteria ticked from recorded command runs, plus an aggregate
+//     in report.md.template's shape; --pr upserts both regions, --local writes intent.md + report.md for --check --local
+//     add --run [--base <ref>] [--test-files a,b] [--out <runs.json>]: <runs.json> maps each AC to its command, and the
+//     script runs it at the head and, with --base, in a worktree at the merge base with the branch's test files over it
 //   node verify-comment.mjs --self-test
 //
 // --replace-all drops every other region (aw-verify's aggregate rewrite).
@@ -41,7 +47,7 @@
 // one, and removes a stale <file> when there is none; the MCP access path posts it itself.
 // Exit codes: 0 written or printed; 1 refused (local path, a verify marker, media a reviewer cannot see, or bad input); 2 GitHub call failed.
 
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -279,6 +285,132 @@ export function intentFromPlan(planMd, { statuses = null } = {}) {
   ];
   const region = `<details><summary>📋 Acceptance criteria</summary>\n\n| | Criterion | Proof |\n| :-- | :-- | :-- |\n${rows.join("\n")}\n\n</details>`;
   return refreshSummary(region);
+}
+
+// Checks-only proof (rules/checks-mode.md): a non-UI diff's criteria proven by recorded command runs, rendered as
+// the same intent region and an aggregate in report.md.template's shape, so `--check` judges it like any other run.
+// `runs` is { "AC-1": { after: "pass"|"fail"|"unsatisfiable", before?: "fail"|"pass"|"n/a", command?, evidence? } };
+// a bare string is `after` alone (run-checks.mjs --statuses). An AC with no run stays ⬜ and blocks the verdict.
+const RUN_MARK = { pass: "✅ pass", fail: "❌ fail", unsatisfiable: "⏭️ not run" };
+const BEFORE_MARK = { fail: "fails (catches it)", pass: "⚠️ passes (does not catch it)", "n/a": "n/a" };
+export function checksReport(planMd, runs, { head = null, updated = "{{UPDATED}}" } = {}) {
+  const { acs } = planCriteria(planMd);
+  if (!acs.length) throw Object.assign(new Error("no AC in the brief"), { code: 3 });
+  // `pending` (run-checks.mjs --statuses for a check not yet run) is no run: the criterion stays ⬜.
+  const norm = Object.fromEntries(Object.entries(runs || {}).map(([id, r]) => [id, typeof r === "string" ? { after: r, __bare: true } : r || {}]).filter(([, r]) => r.after !== "pending"));
+  for (const [id, r] of Object.entries(norm)) {
+    if (!acs.some((c) => c.id === id)) throw new Error(`refused: the brief has no criterion ${id}`);
+    if (!["pass", "fail", "unsatisfiable"].includes(r.after)) throw new Error(`refused: ${id} needs "after": pass | fail | unsatisfiable | pending, got ${JSON.stringify(r.after)}`);
+    const local = localPathLine(String(r.evidence ?? "")) || localPathLine(String(r.command ?? ""));
+    if (local) throw new Error(`refused: ${id}'s evidence or command names a local path (${local}); quote the result, not where it ran`);
+  }
+  const statuses = Object.fromEntries(acs.filter((c) => norm[c.id]).map((c) => [c.id, norm[c.id].after]));
+  const ids = (pred) => acs.filter((c) => pred(norm[c.id])).map((c) => c.id);
+  const failed = ids((r) => r?.after === "fail");
+  const missing = ids((r) => !r);
+  const skipped = ids((r) => r?.after === "unsatisfiable");
+  // A test that already passed on the base does not show the change made it pass.
+  const blind = ids((r) => r?.after === "pass" && r.before === "pass");
+  // Who recorded each run: `run` (--run executed it), `run-checks` (a run-checks.mjs status), else `hand`.
+  const byOf = (r) => r.by || (r.__bare ? "run-checks" : "hand");
+  const byHand = ids((r) => r && byOf(r) === "hand");
+  const proven = acs.length - failed.length - missing.length - skipped.length;
+  const [verdict, headline] = failed.length ? ["❌ Not verified", `${failed.length} of ${acs.length} criteria failed their recorded run`]
+    : missing.length ? ["⛔ Blocked", `${missing.length} of ${acs.length} criteria have no recorded run`]
+    : skipped.length || blind.length ? ["⚠️ Verified with open items", `${proven} of ${acs.length} criteria proven by recorded test runs`]
+    : ["✅ Verified", `${acs.length} of ${acs.length} criteria proven by recorded test runs`];
+  const attention = [
+    failed.length && `Failed: ${failed.join(", ")}.`,
+    missing.length && `No run recorded: ${missing.join(", ")}.`,
+    skipped.length && `Not run on this machine: ${skipped.join(", ")}.`,
+    blind.length && `Passes on the base too, so the run does not show the change: ${blind.join(", ")}.`,
+    byHand.length && `Recorded by hand, not run by the script: ${byHand.join(", ")}.`,
+  ].filter(Boolean).join(" ") || "Nothing needs a human.";
+  const cell = (t) => String(t ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+  const rows = acs.map((c) => {
+    const r = norm[c.id];
+    const id = c.id.replace("-", "‑");
+    if (!r) return `| ${id} | — | — | ⬜ no run | — | — |`;
+    return `| ${id} | ${r.command ? `\`${cell(r.command)}\`` : "—"} | ${BEFORE_MARK[r.before] ?? "—"} | ${RUN_MARK[r.after]} | ${cell(r.evidence) || "—"} | ${byOf(r)} |`;
+  });
+  const report = [
+    `## ${verdict} — ${headline}`,
+    "",
+    `Checks-only run: each criterion is a command run on this branch, and on the base first where it can run there. ${attention}`,
+    "",
+    `<sub>${head ? `\`${head.slice(0, 7)}\` · ` : ""}checks-only · ${failed.length} ${failed.length === 1 ? "finding" : "findings"} · updated ${updated}</sub>`,
+    "",
+    "<details><summary>Details</summary>",
+    "",
+    "**How I tested it.** No UI file in the diff, so no browser or environment ran. A criterion is ✅ only when its command passed on the branch; the Before column is the same command on the base, where a fail shows the test catches the change. `run` in Recorded by means `verify-comment.mjs --run` executed the command and read its exit code; `hand` means the agent typed the result.",
+    "",
+    "| AC | Command | Before (base) | After (branch) | Evidence | Recorded by |",
+    "| --- | --- | --- | --- | --- | --- |",
+    ...rows,
+    "",
+    "Re-run: `/aw-verify run checks`",
+    "",
+    "</details>",
+  ].join("\n");
+  return { intent: intentFromPlan(planMd, { statuses }), report, verdict };
+}
+
+// --run: execute each criterion's command instead of trusting a typed result. After runs at the checkout (the head);
+// before runs in a detached worktree at merge-base(HEAD, base) with the branch's changed test files laid over it, so
+// the new test meets the old code. Exit 0 → pass, anything else → fail; evidence is the output's last line that names
+// no local path. Every run is `by: "run"`. `exec(cmd, cwd)` and `git(args, cwd)` are injectable for the self-test.
+const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|_test\.(go|py|rs)$|(^|\/)test_[^/]+\.py$/;
+const ANSI = /\x1b\[[0-9;]*[A-Za-z]/g;
+function shRun(cmd, cwd, timeoutMs = 600_000) {
+  const r = spawnSync("bash", ["-c", cmd], { cwd, encoding: "utf8", timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 });
+  return { code: r.status ?? 124, out: `${r.stdout || ""}\n${r.stderr || ""}` };
+}
+function gitRun(args, cwd) {
+  const r = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${(r.stderr || "").trim()}`);
+  return r.stdout.trim();
+}
+// The runner's summary line when it printed one (`Tests  1 failed | 45 passed`, `3 passed in 0.2s`), else the
+// last line with a word in it; never a local path, a timing line, or a rule of box-drawing characters.
+const COUNTS = /\b\d+\s+(?:passed|failed|failing|passing|errors?)\b/i;
+const VERDICT = /^(?:ok|FAIL|PASS)\b/;
+export function evidenceOf(out, code) {
+  const lines = String(out).replace(ANSI, "").split("\n").map((l) => l.trim().replace(/\s+/g, " ")).filter((l) => /[A-Za-z0-9]/.test(l) && !localPathLine(l));
+  const last = (re) => [...lines].reverse().find((l) => re.test(l));
+  return (last(COUNTS) || last(VERDICT) || lines.filter((l) => !/^Duration\b/.test(l)).at(-1) || `exit ${code}`).slice(0, 120);
+}
+// Every node_modules under the checkout (not inside another one), so a JS base worktree can run its tests.
+function linkDeps(from, to, exec) {
+  const found = exec("find . -maxdepth 4 -name node_modules -prune", from).out.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("./"));
+  for (const rel of found) {
+    const parent = join(to, rel, "..");
+    if (existsSync(parent) && !existsSync(join(to, rel))) symlinkSync(resolve(from, rel), join(to, rel));
+  }
+}
+export function recordRuns(commands, { cwd = process.cwd(), base = null, testFiles = null, exec = shRun, git = gitRun } = {}) {
+  const runs = {};
+  for (const [id, cmd] of Object.entries(commands)) {
+    const a = exec(cmd, cwd);
+    runs[id] = { command: cmd, after: a.code === 0 ? "pass" : "fail", evidence: evidenceOf(a.out, a.code), by: "run" };
+  }
+  if (!base) return runs;
+  const head = git(["rev-parse", "HEAD"], cwd);
+  const mb = git(["merge-base", "HEAD", base], cwd);
+  const files = testFiles ?? git(["diff", "--name-only", "--diff-filter=d", `${mb}..HEAD`], cwd).split("\n").filter((f) => f && TEST_FILE.test(f));
+  const dir = mkdtempSync(join(tmpdir(), "aw-checks-base-"));
+  try {
+    git(["worktree", "add", "--detach", dir, mb], cwd);
+    if (files.length) git(["checkout", head, "--", ...files], dir);
+    linkDeps(cwd, dir, exec);
+    for (const [id, cmd] of Object.entries(commands)) {
+      const b = exec(cmd, dir);
+      runs[id].before = b.code === 0 ? "pass" : "fail";
+      runs[id].evidence = `base: ${evidenceOf(b.out, b.code)} → head: ${runs[id].evidence}`.slice(0, 200);
+    }
+  } finally {
+    try { git(["worktree", "remove", "--force", dir], cwd); } catch { rmSync(dir, { recursive: true, force: true }); }
+  }
+  return runs;
 }
 
 // Regions in the existing body, in order. A body with the marker but no regions is a
@@ -564,6 +696,24 @@ export function checkReport(prBody, comments = [], { ui = false } = {}) {
     setMarks: "set them with --marks",
   });
   if (ui && !/<!-- (?:ui-verify:v2|ui-verify:v1|preview-spec:v1) -->/.test(prBody || "")) problems.push("no ui-verify spec block in the PR description (ui-verify author, or lift specs.md)");
+  return problems;
+}
+
+// The merge's question, stricter than a complete report: every AC holds. A complete report can still say
+// `❌ Not verified` or `⛔ Blocked`, which `--check` accepts (the run finished) and a merge must not.
+// With `head` (the PR's live head), a report run on another commit is not proof of this one.
+export function provenProblems(prBody, comments = [], { head = null } = {}) {
+  const regions = parseRegions(bodyBlock(prBody) || comments.find((c) => c.startsWith(MARKER)) || "");
+  const failed = parseIntent(regions.get("intent") || "").filter((c) => c.id.startsWith("AC-") && c.status === "❌").map((c) => c.id);
+  const first = (regions.get("aggregate") || "").split("\n").find((l) => l.trim()) || "";
+  const problems = [];
+  if (failed.length) problems.push(`criteria failed their proof: ${failed.join(", ")}`);
+  if (/^##\s+(?:❌|⛔)/.test(first)) problems.push(`the verdict is "${first.replace(/^##\s+/, "").slice(0, 60)}"; a merge needs ✅ Verified or ⚠️ Verified with open items`);
+  if (head && head.length >= 7 && regions.get("aggregate")) {
+    const sha = shaOf(regions.get("aggregate"));
+    if (!sha) problems.push("the report names no commit, so it cannot be tied to the PR head: re-run the proof");
+    else if (sha !== head.slice(0, 7)) problems.push(`the report was run on ${sha}; the PR head is ${head.slice(0, 7)}: re-run the proof on the head`);
+  }
   return problems;
 }
 
@@ -908,6 +1058,69 @@ function selfTest() {
     const uiSkip = intent.replace("- ✅ AC-1", "- ⏭️ AC-1");
     assert(checkLocal({ intent: uiSkip, report }).some((p) => p.includes("AC-1") && p.includes("caps the run")), "local gate: a ui: AC ⏭️ under ✅ fails");
     assert(checkLocal({ intent: uiSkip, report: report.replace("## ✅ Verified", "## ⚠️ Verified with open items") }).length === 0, "local gate: a ui: AC ⏭️ under ⚠️ passes");
+    {
+    // Checks-only proof: the same regions and the same gates, with no browser.
+    const plan = readFileSync(new URL("./fixtures/checks/plan.md", import.meta.url), "utf8");
+    const runsOf = (f) => JSON.parse(readFileSync(new URL(`./fixtures/checks/${f}`, import.meta.url), "utf8"));
+    const ok = checksReport(plan, runsOf("runs-pass.json"), { head: "abcdef1234" });
+    assert(ok.verdict === "✅ Verified" && /^## ✅ Verified — 2 of 2/.test(ok.report), "checks-only: every AC passing is ✅ Verified");
+    assert(checkLocal({ intent: ok.intent, report: ok.report }).length === 0, "checks-only: a passing run passes the local gate");
+    assert(checkReport(withBlock("t", splice(splice("", "intent", ok.intent), "aggregate", ok.report))).length === 0, "checks-only: a passing run passes the PR gate");
+    assert(parseIntent(ok.intent).every((c) => c.kind === "check" || c.kind === "guardrail"), "checks-only: an untagged AC's proof kind is check");
+    const bad = checksReport(plan, runsOf("runs-fail.json"));
+    assert(bad.verdict === "❌ Not verified" && parseIntent(bad.intent).find((c) => c.id === "AC-2").status === "❌", "checks-only: a failed run is ❌ on the AC and the verdict");
+    const part = checksReport(plan, runsOf("runs-partial.json"));
+    assert(part.verdict === "⛔ Blocked" && checkLocal({ intent: part.intent, report: part.report }).some((p) => p.includes("still ⬜") && p.includes("AC-2")), "checks-only: an AC with no run stays ⬜ and fails the gate");
+    const blind = checksReport(plan, { "AC-1": { after: "pass", before: "pass" }, "AC-2": "pass" });
+    assert(blind.verdict === "⚠️ Verified with open items" && /does not show the change: AC-1/.test(blind.report), "checks-only: a run that passes on the base too caps the verdict at ⚠️");
+    const skip = checksReport(plan, { "AC-1": "pass", "AC-2": "unsatisfiable" });
+    assert(skip.verdict === "⚠️ Verified with open items" && checkLocal({ intent: skip.intent, report: skip.report }).length === 0, "checks-only: a ⏭️ check AC is ⚠️ and passes the gate");
+    let threw = "";
+    try { checksReport(plan, { "AC-9": "pass" }); } catch (e) { threw = e.message; }
+    assert(/no criterion AC-9/.test(threw), "checks-only: a run for an unknown AC is refused");
+    threw = "";
+    try { checksReport(plan, { "AC-1": { after: "green" } }); } catch (e) { threw = e.message; }
+    assert(/needs "after"/.test(threw), "checks-only: an unknown after value is refused");
+    threw = "";
+    try { checksReport("## Task\nnothing", {}); } catch (e) { threw = String(e.code); }
+    assert(threw === "3", "checks-only: a brief with no AC exits 3");
+    const pend = checksReport(plan, { "AC-1": "pass", "AC-2": "pending" });
+    assert(pend.verdict === "⛔ Blocked" && parseIntent(pend.intent).find((c) => c.id === "AC-2").status === "⬜", "checks-only: run-checks' pending is no run (⬜, ⛔)");
+    threw = "";
+    try { checksReport(plan, { "AC-1": { after: "fail", evidence: "wrote /tmp/out.wav" } }); } catch (e) { threw = e.message; }
+    assert(/local path/.test(threw), "checks-only: evidence naming a local path is refused before anything is posted");
+    const body = (r) => withBlock("t", splice(splice("", "intent", r.intent), "aggregate", r.report));
+    assert(checkReport(body(bad)).length === 0 && provenProblems(body(bad)).some((p) => p.includes("AC-2")) && provenProblems(body(bad)).some((p) => p.includes("Not verified")), "proven: a complete ❌ report passes --check but not --proven");
+    assert(provenProblems(body(part)).some((p) => p.includes("Blocked")), "proven: a ⛔ verdict is not proven");
+    assert(provenProblems(body(ok)).length === 0 && provenProblems(body(skip)).length === 0, "proven: ✅ and ⚠️ are proven");
+    assert(provenProblems(body(ok), [], { head: "abcdef1999" }).length === 0, "proven: a report on the live head is proven");
+    assert(provenProblems(body(ok), [], { head: "1234567aaa" }).some((p) => p.includes("abcdef1") && p.includes("1234567")), "proven: a report on an older commit is not proof of the head");
+    assert(provenProblems(body(skip), [], { head: "1234567aaa" }).some((p) => p.includes("names no commit")), "proven: a report with no commit cannot be tied to the head");
+    // --run: provenance shows in the report; the runner reads real exit codes in a real repo.
+    assert(/\| hand \|/.test(ok.report) && /Recorded by hand, not run by the script: AC-1, AC-2/.test(ok.report), "checks-only: a typed result is labelled hand and listed for a human");
+    assert(/\| run-checks \|/.test(skip.report) && !/Recorded by hand/.test(skip.report), "checks-only: a run-checks status is labelled run-checks");
+    assert(evidenceOf("\x1b[32m 3 passed\x1b[0m\n", 0) === "3 passed" && evidenceOf("ok\nwrote /tmp/x.log\n", 0) === "ok" && evidenceOf("", 2) === "exit 2" && evidenceOf(" Tests  1 failed | 45 passed (46)\n ⎯⎯⎯⎯[2/2]⎯\n Duration  443ms\n", 1) === "Tests 1 failed | 45 passed (46)" && evidenceOf("FAIL a > b\nTests 1 failed (1)\nFAIL x\n", 1) === "Tests 1 failed (1)", "run: evidence is the runner's summary line, else the last clean line, never a local path");
+    const repo = mkdtempSync(join(tmpdir(), "vc-run-"));
+    const g = (...a) => { const r = spawnSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...a], { cwd: repo, encoding: "utf8" }); if (r.status) throw new Error(r.stderr); };
+    try {
+      g("init", "-q", "-b", "main");
+      writeFileSync(join(repo, "lib.js"), "module.exports = () => 'tmp';\n");
+      g("add", "."); g("commit", "-qm", "base");
+      g("switch", "-qc", "fix");
+      writeFileSync(join(repo, "lib.js"), "module.exports = () => process.env.TEMP || 'tmp';\n");
+      writeFileSync(join(repo, "lib.test.js"), "process.env.TEMP = 'T';\nif (require('./lib')() !== 'T') { console.log('1 failed'); process.exit(1); }\nconsole.log('1 passed');\n");
+      g("add", "."); g("commit", "-qm", "fix");
+      const runs = recordRuns({ "AC-1": "node lib.test.js", "AC-2": "node -e 'process.exit(3)'" }, { cwd: repo, base: "main" });
+      assert(runs["AC-1"].before === "fail" && runs["AC-1"].after === "pass" && runs["AC-1"].by === "run" && /base: 1 failed → head: 1 passed/.test(runs["AC-1"].evidence), `run: the new test fails on the base and passes on the head (${JSON.stringify(runs["AC-1"])})`);
+      assert(runs["AC-2"].after === "fail" && runs["AC-2"].evidence.includes("exit 3"), "run: a non-zero exit is a fail");
+      const rep = checksReport(plan, runs);
+      assert(rep.verdict === "❌ Not verified" && /\| run \|/.test(rep.report) && !/Recorded by hand/.test(rep.report), "run: script-recorded runs are labelled run");
+      const after = recordRuns({ "AC-1": "node lib.test.js" }, { cwd: repo });
+      assert(after["AC-1"].after === "pass" && after["AC-1"].before === undefined, "run: without --base only the head runs");
+      const list = spawnSync("git", ["worktree", "list"], { cwd: repo, encoding: "utf8" }).stdout.trim().split("\n");
+      assert(list.length === 1, "run: the base worktree is removed afterwards");
+    } finally { rmSync(repo, { recursive: true, force: true }); }
+    }
     assert(!checkLocal({ intent, report }).some((p) => p.includes("AC-2")), "local gate: an api: AC ⏭️ (tests-only) under ✅ stays allowed");
     const marked = applyMarks(fx("open", "intent.md"), { "AC-2": { status: "✅" } });
     assert(marked.includes("- ✅ AC-2 [api:PUT /api/notification-settings] An empty") && marked.split("\n").length === fx("open", "intent.md").split("\n").length, "local gate: --marks --local sets only the leading mark");
@@ -943,7 +1156,7 @@ function selfTest() {
 
 // Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
 export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
-  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local"];
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local", "--checks", "--proven", "--run", "--base", "--test-files", "--out"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -954,6 +1167,36 @@ else if (isMain) {
   try {
     const unknown = args.find((a) => a.startsWith("--") && !FLAGS.includes(a));
     if (unknown) throw new Error(`unknown flag ${unknown}`);
+    const checksArg = opt("--checks");
+    if (checksArg) {
+      if (!opt("--from-plan")) throw new Error("--checks needs --from-plan <plan.md>");
+      const planMd = (() => { try { return readFileSync(opt("--from-plan"), "utf8"); } catch (e) { if (e.code === "ENOENT") throw Object.assign(new Error(`no brief at ${opt("--from-plan")}`), { code: 3 }); throw e; } })();
+      let runs = JSON.parse(checksArg.trim().startsWith("{") ? checksArg : readFileSync(checksArg, "utf8"));
+      if (has("--run")) {
+        const commands = Object.fromEntries(Object.entries(runs).map(([id, r]) => [id, typeof r === "string" ? r : r?.command]));
+        const missing = Object.entries(commands).filter(([, c]) => !c).map(([id]) => id);
+        if (missing.length) throw new Error(`--run needs a command for ${missing.join(", ")} ({"AC-1": "<command>"})`);
+        const tf = opt("--test-files");
+        runs = recordRuns(commands, { base: opt("--base") ?? null, testFiles: tf ? tf.split(",").map((s) => s.trim()).filter(Boolean) : null });
+        const dest = opt("--out") ?? (opt("--local") ? join(opt("--local"), "runs.json") : null);
+        if (dest) writeFileSync(dest, JSON.stringify(runs, null, 2) + "\n");
+        for (const [id, r] of Object.entries(runs)) console.error(`${id}: before ${r.before ?? "n/a"} · after ${r.after} — ${r.evidence}`);
+      }
+      const out = opt("--local");
+      const { intent, report, verdict } = checksReport(planMd, runs, { head: opt("--head") ?? null, updated: out || has("--print") ? new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC" : "{{UPDATED}}" });
+      if (has("--print")) { process.stdout.write(`${intent}\n\n${report}\n`); process.exit(0); }
+      if (out) {
+        writeFileSync(join(out, "intent.md"), intent + "\n");
+        writeFileSync(join(out, "report.md"), report + "\n");
+        console.log(`wrote ${join(out, "intent.md")} and ${join(out, "report.md")} — ${verdict}`);
+        process.exit(0);
+      }
+      if (!opt("--pr")) throw new Error("--checks needs --pr, --local <dir>, or --print");
+      if (!opt("--head")) throw new Error("--checks --pr needs --head <sha>: the commit the runs were recorded on, which the merge gate compares with the PR head");
+      console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section: "intent", content: intent, replaceAll: false, to: opt("--to") ?? "auto" }));
+      console.log(upsert({ pr: opt("--pr"), repo: opt("--repo"), section: "aggregate", content: report, replaceAll: true, to: opt("--to") ?? "auto" }));
+      process.exit(0);
+    }
     const local = opt("--local");
     if (local) {
       const read = (f) => { try { return readFileSync(join(local, f), "utf8"); } catch (e) { if (e.code === "ENOENT") return null; throw e; } };
@@ -980,9 +1223,10 @@ else if (isMain) {
       const slug = opt("--repo") || checkPr.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
       const body = Buffer.from(gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".body // \"\" | @base64"]).trim(), "base64").toString("utf8");
       const comments = gh(["api", `repos/${slug}/issues/${num}/comments`, "--paginate", "--jq", ".[] | (.body | @base64)"]).split("\n").filter(Boolean).map((b) => Buffer.from(b, "base64").toString("utf8")).reverse();
-      const problems = checkReport(body, comments, { ui: has("--ui") });
+      const liveHead = has("--proven") ? gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".head.sha"]).trim() : null;
+      const problems = [...checkReport(body, comments, { ui: has("--ui") }), ...(has("--proven") ? provenProblems(body, comments, { head: liveHead }) : [])];
       if (problems.length) { console.error(`verify-comment: the PR's report is incomplete:\n${problems.map((p) => `  - ${p}`).join("\n")}`); process.exit(1); }
-      console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : ""));
+      console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : "") + (has("--proven") ? ", every criterion proven" : ""));
       process.exit(0);
     }
     const fromPlan = opt("--from-plan");

@@ -49,7 +49,7 @@ The lane exists because the pipeline broke after review, so the fix gets its own
 
 2. Fix lane: a new branch from the updated default branch, `Skill("aw", "fix the default-branch pipeline failure of <pr-url>: <failing job and step, log excerpt> <build suffix>")`, which opens its own PR.
    After a `revert-first` revert, the default branch no longer holds the change, so the request reads `re-apply the change <pr-url> reverted in <revert PR url>, with a fix for <failing job and step, log excerpt> <build suffix>`.
-   Take that PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); then run `pipeline.mjs` against the fix PR.
+   Take that PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, the Ready [proof](../SKILL.md#proof) step, `merge-gate.mjs`); then run `pipeline.mjs` against the fix PR.
 3. A second red result goes to the [revert lane](#revert-lane), as [Order](#order) says; there is no second fix round.
 
 ## Order
@@ -86,11 +86,12 @@ When the policy allows it:
    git fetch origin <base> && git switch -c revert/<newest reverted pr-number> origin/<base>
    git revert --no-edit <sha> …   # the squash shas the Order row names, newest first; -m 1 for a merge commit
    git push -u origin revert/<newest reverted pr-number>
-   gh pr create --base <base> --title "Revert \"<pr title>\"" --body-file revert-body.md   # "Reverts #<pr-number>: <PIPELINE line>" + the merged PR's contract block
+   gh pr create --base <base> --title "Revert \"<pr title>\"" --body-file revert-body.md   # "Reverts #<pr-number>: <PIPELINE line>" + the merged PR's contract and ui-verify spec blocks
    ```
 
    A conflict in `git revert` means later merges touched the same lines: abort (`git revert --abort`), `hold`, and put the revert command under `Needs you:`.
-2. Take the revert PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); a revert of a user-visible change touches the same UI files, so `revert-body.md` copies the merged PR's `deployment-verify:v1` contract block when it has one, and a gate refusal is a `hold` with the `MERGE_GATE:` line, never a body edit.
+2. Take the revert PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); a revert of a user-visible change touches the same UI files, so `revert-body.md` copies the merged PR's `deployment-verify:v1` contract block and its `ui-verify` spec block when it has them (the proof half asks a UI diff for the spec block), and a gate refusal is a `hold` with the `MERGE_GATE:` line, never a body edit.
+   The proof half needs the revert's one criterion proven: write `.agent/revert-<n>/plan.md` with `## Acceptance Criteria` and `- [ ] AC-1 — The revert commit shall undo exactly the change <squash sha> made.`, run `diff <(git diff <squash sha> <squash sha>^) <(git diff <revert sha>^ <revert sha>)` on the revert branch (exit 0; it compares the two changes, so a later merge to the same files does not break it), and publish it with aw-verify's `verify-comment.mjs --checks '{"AC-1":{"command":"diff <(git diff <squash> <squash>^) <(git diff <revert>^ <revert>)","before":"n/a","after":"pass","evidence":"inverse diff identical"}}' --from-plan .agent/revert-<n>/plan.md --pr <revert PR url> --head <revert sha>`.
    Then run `pipeline.mjs` against the revert PR: green records `proceed`, reason `reverted <revert PR url>`; red ends the run as `failed`: once every merged lane PR is reverted, a pipeline that is still red failed for a reason the change did not cause.
 
 ```text

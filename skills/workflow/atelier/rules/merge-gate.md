@@ -1,5 +1,5 @@
 ---
-title: Merge gate — a user-visible diff merges only behind a deployment-verify flag contract
+title: Merge gate — green CI, proven criteria, and a flag contract for a user-visible diff
 impact: HIGH
 tags: [atelier, merge, gate, deployment-verify, ui]
 ---
@@ -7,16 +7,22 @@ tags: [atelier, merge, gate, deployment-verify, ui]
 # Merge gate
 
 Run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>` in the merge stage, on the current head, immediately before `prepare --merge`; its exit code is the decision.
-After Build, run it with `--contract-only`: CI on a fresh draft has not run, so only the contract half is judged there.
+After Build, run it with `--contract-only`: CI on a fresh draft has not run and the report is not posted yet, so only the contract half is judged there.
 **Why:** [`../references/design.md` § The merge gate](../references/design.md#the-merge-gate).
 
 Once the contract half passes, CI decides: unless `--contract-only`, the gate reads the head's checks through `prepare`'s `scripts/ci-ran.mjs` and refuses (exit 1) on anything but `CI: green` — `not-run` (every required check, or with none required every GitHub Actions run, skipped or absent; an external status counts only when required), `pending`, or `red`.
-The JSON's `refused_by` names which half refused (`contract` or `ci`); a `pending` refusal is first waited out with `scripts/ci-wait.mjs` (SKILL.md, *Waiting for CI*) and the gate runs again once; every other `ci` refusal, and a wait that ends `pending`, is recorded on Ready, not Merge (`hold` for `not-run` or `pending`, `failed` for `red`), so the next run re-runs Ready and `prepare` instead of refusing at Merge again.
-Offline (`--files … --body-file …`) it needs `--rollup-file <json>` (a saved response of `ci-ran.mjs`'s query) or `--contract-only`.
+Once CI is green, proof decides: unless `--contract-only`, the gate runs `aw-verify`'s own end-of-run gate (`checkReport()` and `provenProblems()` from `scripts/verify-comment.mjs`, what `verify-comment.mjs --pr <pr> --check --proven` prints) over the PR body and comments, with `--ui` when the diff is user-visible, and refuses on any problem: no `intent` region, a criterion still `⬜` or without a Proof cell, no `aggregate` in `report.md.template`'s shape, a UI diff with no `ui-verify` spec block, a criterion marked `❌`, or a `❌ Not verified` / `⛔ Blocked` verdict.
+The JSON's `refused_by` names which half refused (`contract`, `ci`, or `proof`); a `pending` refusal is first waited out with `scripts/ci-wait.mjs` (SKILL.md, *Waiting for CI*) and the gate runs again once; every other `ci` refusal, and a wait that ends `pending`, is recorded on Ready, not Merge (`hold` for `not-run` or `pending`, `failed` for `red`), and so is a `proof` refusal (`failed`), so the next run re-runs Ready (`prepare`, then the proof step's `aw-verify`) instead of refusing at Merge again.
+Offline (`--files … --body-file …`) it needs `--rollup-file <json>` (a saved response of `ci-ran.mjs`'s query) or `--contract-only`; the proof half reads the body file, plus `--comments-file <json array of bodies>` when the report is a comment.
 
 ```text
 ✗ Ready proceed in the state comment → skip the CI read → prepare --merge on a head whose checks all skipped
 ✓ MERGE_GATE: refuse — CI not run at b56dfb5: every required check skipped (4)
+```
+
+```text
+✗ docs-only diff, CI green, no verify report → merge                 # nothing shows the criteria hold
+✓ MERGE_GATE: refuse — no proof the criteria hold: no intent region: publish the criteria (intent.md § Step 6) (+1 more)
 ```
 
 The diff and the body decide the contract half:

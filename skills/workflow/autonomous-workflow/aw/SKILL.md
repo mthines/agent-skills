@@ -81,8 +81,8 @@ MODE SELECTION:
 
 | Tier | Who runs it | Plan artifact | Companions |
 | ---- | ----------- | ------------- | ---------- |
-| **Micro** | You, single-pass: Phase 0 quick confirm (with `--interview`: worktree first, then the interview inside it) → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) | in-conversation brief | none (docs if needed) |
-| **Lite** | You, single-pass: the Lite path from `SKILL.md` | short `plan.md` brief, no `checks.yaml` | per signal; `aw-verify` on a UI diff; Phase 5 docs and Phase 6 `create-pr` always |
+| **Micro** | You, single-pass: Phase 0 quick confirm (with `--interview`: worktree first, then the interview inside it) → Phase 2 worktree → edit → fast check → `docs update` only on drift → `create-pr --no-post-review` ([Review](#review)) → publish ≥ 1 AC and its proof | in-conversation brief + `plan.md` holding ≥ 1 `AC-{n}` | `aw-verify` checks mode; docs if needed |
+| **Lite** | You, single-pass: the Lite path from `SKILL.md` | short `plan.md` brief, no `checks.yaml` | per signal; `aw-verify` on every diff (browser on a UI diff, checks mode otherwise); Phase 5 docs and Phase 6 `create-pr` always |
 | **Full** | You write a short brief + sealed `checks.yaml`, work to them here, then a local `review-loop` converges the diff | `plan.md` + `checks.yaml` | `review-loop` (local), `create-pr`, `aw-tester` on UI, `ci-auto-fix`; the rest at your judgment |
 
 Full tier: [`rules/full-tier.md`](rules/full-tier.md) — read when the tier is Full. It holds the brief, the work loop, the local review, the `feature-pr-verifier` dispatch at PR open, and the no-dispatch fallback.
@@ -165,6 +165,7 @@ Micro and Lite may collapse it to one line, keeping `Degraded:` and `Not checked
 
 - Every companion or agent that did not run is named in `Degraded:` with its reason; a skipped local `review-loop` means the change was not reviewed.
 - "PR opened" means you hold the URL; a step that could not complete goes in `Needs you:`.
+- Every tier, Micro included: `Delivered:` names a PR only after `verify-comment.mjs --pr <url> --check [--ui]` printed `report complete`, so the PR carries its acceptance criteria and the proof each one holds (the workflow's `rules/phase-6-pr-creation.md` § Publish the criteria). Until then the PR goes under `Needs you: proof — <first problem>`, never as delivered.
 - `Not checked:` stays the last field, after `Needs you:` (atelier reads `Degraded:` up to the next field), and names a concrete gap: a path, input, or platform you did not exercise, and what could go wrong there.
 - Run the exit write of [`rules/lessons.md`](rules/lessons.md) before emitting the block.
 

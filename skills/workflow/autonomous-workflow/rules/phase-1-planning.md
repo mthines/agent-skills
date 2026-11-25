@@ -54,7 +54,7 @@ block must already be emitted and the user must have said "proceed".
 
 The remainder of this rule covers Full Mode.
 Lite and Micro skip to Phase 2; Lite writes its short brief there (the *Lite and Micro path* in `SKILL.md`), Micro keeps its brief in the conversation.
-Brief validation runs in **Full Mode only**, because its checks need a sealed `checks.yaml`; Lite has none and Micro has no brief on disk.
+Brief validation runs in **Full Mode only**, because its checks need a sealed `checks.yaml`; Lite and Micro have none (Micro's `plan.md` holds only its criteria).
 
 ---
 
@@ -548,7 +548,7 @@ Disable by removing the invocation here (see
 
 **Anchor:** `brief-validation`
 
-**Full Mode only.** Lite's brief has no `checks.yaml` to validate and Micro has no brief on disk.
+**Full Mode only.** Lite's and Micro's briefs have no `checks.yaml` to validate.
 There is no LLM confidence score on the brief: the brief writer validates it deterministically, then hands it to one `aw-executor`.
 
 Run the validation in [`aw/rules/full-tier.md`](../aw/rules/full-tier.md#step-1--brief-minutes) step 6 — six Core headings, the `AC-{n}` count equal to the `checks.yaml` count, `checks.lock` present, every `[user-stated]` requirement covered, no placeholder commands.
