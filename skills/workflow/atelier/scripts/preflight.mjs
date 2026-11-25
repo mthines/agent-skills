@@ -30,12 +30,20 @@ function deploymentVerifyModule(file) {
 
 // Each check returns { name, ok, value, cannot }: `cannot` is what this run cannot prove when the check is a gap.
 
+// `providers: []` is an answer someone gave (the repo has no flag system), not missing setup.
+export const DECLARED_NONE = "none (release.yml declares no provider)";
+const isDecided = (c) => c?.name === "flag-provider" && c.value === DECLARED_NONE;
+
 export function flagCheck({ present, config = null, error = null }) {
 	const name = "flag-provider";
 	if (!present) return { name, ok: false, value: "none (no .agents/aw/release.yml)", cannot: "a human flips the flag; post-merge rollout not testable" };
+	// A flag contract with no `env` loads `production` (merge-gate.mjs, tick.mjs): without it, the merge gate refuses every flagged change.
+	if (/no environment "production"/.test(error ?? "")) {
+		return { name, ok: false, value: "release.yml has no production environment", cannot: "the merge gate refuses every flag contract until release.yml has production (deploy: { detect: manual } when nothing is hosted)" };
+	}
 	if (error) return { name, ok: false, value: `release.yml does not load: ${error}`, cannot: "post-merge rollout not testable until release.yml loads" };
 	const providers = (config?.flags?.providers || []).map((p) => p?.name).filter(Boolean);
-	if (!providers.length) return { name, ok: false, value: "none (release.yml declares no provider)", cannot: "a human flips the flag; post-merge rollout not testable" };
+	if (!providers.length) return { name, ok: false, value: DECLARED_NONE, cannot: "a human flips the flag; post-merge rollout not testable" };
 	return { name, ok: true, value: providers.join(", "), cannot: "" };
 }
 
@@ -107,8 +115,12 @@ export const PROFILE = join("memory", "observability-profile", "INDEX.md");
 
 // `pipeline: false` = release.yml has no `pipeline:` block (absent file included); Deliver reads that block.
 export function setupPlan(checks, { profile = true, pipeline = true } = {}) {
-	const gap = new Set(checks.filter((c) => !c.ok).map((c) => c.name));
-	const steps = [];
+	const gap = new Set(checks.filter((c) => !c.ok && !isDecided(c)).map((c) => c.name));
+	const steps = checks.filter(isDecided).map(() => ({
+		kind: "decided",
+		name: "flag-provider",
+		note: "release.yml declares providers: [], so a human flips flags; add a provider there to let /deployment-verify step them",
+	}));
 	const awVerifyFixes = ["sign-in", "telemetry"].filter((n) => gap.has(n));
 	if (awVerifyFixes.length) steps.push({ kind: "skill", call: 'Skill("aw-verify", "setup")', fixes: awVerifyFixes });
 	const deployFixes = [...(gap.has("flag-provider") ? ["flag-provider"] : []), ...(pipeline ? [] : ["pipeline (no release.yml pipeline:)"])];
@@ -126,8 +138,9 @@ export function setupPlan(checks, { profile = true, pipeline = true } = {}) {
 }
 
 export function planLines(steps) {
-	if (!steps.length) return ["SETUP: nothing to delegate — 0 gaps"];
-	return steps.map((s) => (s.kind === "skill" ? `SETUP: ${s.call} — fixes ${s.fixes.join(", ")}` : `MANUAL: ${s.name} — ${s.fix}`));
+	const line = { skill: (s) => `SETUP: ${s.call} — fixes ${s.fixes.join(", ")}`, manual: (s) => `MANUAL: ${s.name} — ${s.fix}`, decided: (s) => `DECIDED: ${s.name} — ${s.note}` };
+	const lines = steps.map((s) => line[s.kind](s));
+	return steps.some((s) => s.kind !== "decided") ? lines : ["SETUP: nothing to delegate", ...lines];
 }
 
 // A release.yml the reader cannot parse is not judged here: the flag-provider row already reports it.
@@ -140,15 +153,29 @@ export const PIPELINE_MANUAL = "MANUAL: pipeline — release.yml has no pipeline
 
 // Before/after of the preflight checks only: the profile is reported by measurable's own setup, and a missing
 // pipeline: block by the PIPELINE_MANUAL line, so neither is counted here.
-export function compareTable(before, after) {
+// What setup writes that no preflight row reads: shown as rows and named after the count, never counted in it.
+const SETUP_FILES = { pipeline: "release.yml pipeline:", profile: "observability profile" };
+
+export async function setupState(repo) {
+	return { pipeline: await hasPipeline(repo), profile: existsSync(join(repo, PROFILE)) };
+}
+
+export function compareTable(before, after, { was: wasFiles = null, now: nowFiles = null } = {}) {
 	const was = Object.fromEntries(before.map((c) => [c.name, c]));
 	const now = Object.fromEntries(after.map((c) => [c.name, c]));
 	const names = [...new Set([...before.map((c) => c.name), ...after.map((c) => c.name)])];
 	const cell = (c) => (!c ? "—" : c.ok ? "ok" : "gap");
 	const rows = names.map((n) => `| ${n} | ${cell(was[n])} | ${cell(now[n])} | ${(now[n]?.value ?? "").replace(/\|/g, "\\|")} |`);
 	const fixed = names.filter((n) => was[n] && !was[n].ok && now[n]?.ok);
-	const remaining = names.filter((n) => now[n] && !now[n].ok);
-	const line = `SETUP: ${fixed.length} fixed, ${remaining.length} remaining${remaining.length ? ` (${remaining.join(", ")})` : ""}`;
+	const remaining = names.filter((n) => now[n] && !now[n].ok).map((n) => (isDecided(now[n]) ? `${n}: declared none` : n));
+	let line = `SETUP: ${fixed.length} fixed, ${remaining.length} remaining${remaining.length ? ` (${remaining.join(", ")})` : ""}`;
+	if (nowFiles) {
+		const has = (v) => (v === undefined || v === null ? "—" : v ? "present" : "missing");
+		const files = Object.entries(SETUP_FILES).map(([k, label]) => ({ label, was: wasFiles?.[k], now: nowFiles[k] }));
+		rows.push(...files.map((f) => `| ${f.label} | ${has(f.was)} | ${has(f.now)} | — |`));
+		const notes = files.map((f) => (f.now ? (f.was === false ? `${f.label} added` : null) : `${f.label} missing`)).filter(Boolean);
+		if (notes.length) line += `; ${notes.join(", ")}`;
+	}
 	return { text: ["| Capability | Before | After | Value now |", "| --- | --- | --- | --- |", ...rows].join("\n"), line };
 }
 
@@ -311,7 +338,15 @@ async function selfTest() {
 	} finally {
 		rmSync(noPipe, { recursive: true, force: true });
 	}
-	t("setup: no gaps and a profile → nothing to delegate", planLines(setupPlan([telemetryCheck({ backend: "logs" })])).join() === "SETUP: nothing to delegate — 0 gaps");
+	t("setup: no gaps and a profile → nothing to delegate", planLines(setupPlan([telemetryCheck({ backend: "logs" })])).join() === "SETUP: nothing to delegate");
+	const declared = flagCheck({ present: true, config: { flags: { providers: [] } } });
+	const decidedPlan = planLines(setupPlan([declared]));
+	t("✗ providers: [] is not sent back to deployment-verify setup on every run", !decidedPlan.some((l) => /^SETUP: Skill/.test(l)) && decidedPlan[0] === "SETUP: nothing to delegate" && /^DECIDED: flag-provider — /.test(decidedPlan[1]), decidedPlan.join(" / "));
+	const withFiles = compareTable([declared], [declared], { was: { pipeline: false, profile: false }, now: { pipeline: true, profile: false } });
+	t("compare: setup files are rows and named after the count, not counted", withFiles.line === "SETUP: 0 fixed, 1 remaining (flag-provider: declared none); release.yml pipeline: added, observability profile missing" && withFiles.text.includes("| release.yml pipeline: | missing | present | — |"), withFiles.line);
+	t("compare: a declared-none provider is named as such", compareTable([flagCheck({ present: false })], [declared]).line === "SETUP: 0 fixed, 1 remaining (flag-provider: declared none)");
+	const noProd = flagCheck({ present: true, error: 'release.yml has no environment "production"' });
+	t("✓ a release.yml with no production environment names the merge-gate consequence", noProd.value === "release.yml has no production environment" && /merge gate refuses/.test(noProd.cannot) && planLines(setupPlan([noProd])).some((l) => /deployment-verify.*flag-provider/.test(l)), noProd.value);
 	const cmp = compareTable(bare, [flagCheck({ present: false }), telemetryCheck({ backend: "logs" }), signInCheck(null), ciDraftCheck([])]);
 	t("compare: counts fixed and names the remaining gaps", cmp.line === "SETUP: 1 fixed, 2 remaining (flag-provider, sign-in)", cmp.line);
 	t("compare: one row per capability with before and after", cmp.text.includes("| telemetry | gap | ok |") && cmp.text.startsWith("| Capability | Before | After |"), cmp.text);
@@ -328,15 +363,17 @@ async function main() {
 		const { gaps, line } = summarize(checks);
 		// Setup modes start no trace: they are not a run.
 		if (a.setup) {
-			const steps = setupPlan(checks, { profile: existsSync(join(repo, PROFILE)), pipeline: await hasPipeline(repo) });
-			if (a.json) console.log(JSON.stringify({ checks, gaps, steps }, null, 2));
+			const files = await setupState(repo);
+			const steps = setupPlan(checks, files);
+			if (a.json) console.log(JSON.stringify({ checks, gaps, steps, files }, null, 2));
 			else console.log([table(checks), line, ...planLines(steps)].join("\n"));
 			return;
 		}
 		if (typeof a.compare === "string") {
-			const before = JSON.parse(readFileSync(a.compare, "utf8")).checks;
-			const { text, line: setupLine } = compareTable(before, checks);
-			console.log([text, line, setupLine, ...((await hasPipeline(repo)) ? [] : [PIPELINE_MANUAL])].join("\n"));
+			const before = JSON.parse(readFileSync(a.compare, "utf8"));
+			const files = await setupState(repo);
+			const { text, line: setupLine } = compareTable(before.checks, checks, { was: before.files, now: files });
+			console.log([text, line, setupLine, ...(files.pipeline ? [] : [PIPELINE_MANUAL])].join("\n"));
 			return;
 		}
 		if (a.json) console.log(JSON.stringify({ checks, gaps }, null, 2));

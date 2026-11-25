@@ -58,6 +58,12 @@ The setup skills it calls ask the user questions, so it runs interactively only:
 | `flag-provider`, or `release.yml` without `pipeline:` | `SETUP: Skill("deployment-verify", "setup") — fixes <what is missing>` (one call for both) |
 | no `memory/observability-profile/INDEX.md` | `SETUP: Skill("measurable", "setup") — fixes observability-profile (…)` |
 | `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
+| `flag-provider` with `release.yml` → `providers: []` | `DECIDED: flag-provider — …`: an answer, not missing setup; never delegated, never under `Needs you:` |
+
+```text
+✗ release.yml declares providers: [] → Skill("deployment-verify", "setup") on every /atelier setup   # it cannot invent a provider
+✓ release.yml declares providers: [] → DECIDED: flag-provider — …                                     # printed, not re-asked
+```
 
 1. Resolve script paths and probe GitHub as [Step 0](#step-0--setup) items 1–2, with `A="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts"`.
    `ACCESS_PATH` is `mcp` or `none` → keep `MANUAL: github — run gh auth login for <owner/repo>; the scripts' --pr, --fetch, and --upsert modes need gh` for the end, and continue: setup itself needs no GitHub.
