@@ -127,3 +127,10 @@ Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and 
 A `hold` or `failed` result also goes under `Needs you:`.
 Re-running `/atelier <merged-pr-url>` runs Deliver on the merge commit, which is how a session that died mid-wait resumes.
 Skip Deliver, printing `skipped: <reason>`, when the merge was refused or held, when the PR has no merge commit, or when the user passes `--no-deliver`.
+Record that skip on the comment only after a merge recorded `proceed` (`--no-deliver`, or no merge commit): `record()` refuses Deliver before a merge, and an unrecorded Deliver after a merge leaves the card on "Delivering…".
+After a refused or held merge, record nothing for Deliver; the comment already shows the merge's own result.
+
+```text
+✗ merge refused → state.mjs --record --stage deliver --decision skipped   # exit 2: deliver needs a merge recorded proceed first
+✓ merged, --no-deliver → state.mjs --record --stage deliver --decision skipped --head <merge sha> --reason "--no-deliver"
+```

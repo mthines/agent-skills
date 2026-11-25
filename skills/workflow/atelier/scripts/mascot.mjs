@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // mascot.mjs — atelier's mascot: a painter in a beret, ink-on-paper sticker style, holding a small brush
-// dipped in the mood's colour. card.mjs draws him on the status card; the SVGs are reusable on their own.
+// dipped in the mood's colour. render-cards.mjs renders each mood to assets/mascot/<mood>.png, the face in the
+// state comment's footer (state.mjs); the SVGs are reusable on their own.
 //
 //   node mascot.mjs <outdir>   writes <mood>.svg for every mood
 //   node mascot.mjs --self-test
