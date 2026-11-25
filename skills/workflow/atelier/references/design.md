@@ -89,7 +89,6 @@ It is scoped `branch::{owner}/{repo}::{head-branch}`, like `pr-review-state`, so
 ## Delivery
 
 A merge is not the end of the change: the default-branch pipeline versions, builds, and releases it, and it can fail where PR CI passed (a release job that runs only on `main`; a missing tag on a version step).
-The mainline v1.108.0 merge showed it: PR CI was green, the `version` job failed on `main`, and `release-macos` skipped, so nothing shipped while atelier reported a merge.
 Deliver reads that run with a script (`pipeline.mjs`), treats a skipped required job as red, and starts one fix PR when the merged change caused the failure.
 Tags, force pushes, and release re-runs stay with the user, because they change shared release state and a wrong one is hard to undo.
 It is a step, not a recorded stage, so the PR state comment and the run trace keep their three-stage shape.

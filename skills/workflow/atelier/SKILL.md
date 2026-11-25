@@ -18,7 +18,7 @@ metadata:
 
 # Atelier
 
-Sequences existing skills from a request to a merged PR, then stops.
+Sequences existing skills from a request to a merged PR, checks the default-branch pipeline it started, then stops.
 It owns no build, review, verify, or deploy logic: each stage is one delegation, and every decision between stages is a script.
 **Why:** [`references/design.md`](./references/design.md).
 
@@ -77,6 +77,7 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
    Absent or failing → one line `Degraded: lorekit unreachable — decision log and outcomes skipped`, and every LoreKit step below is a no-op; no stage waits on it.
 5. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
 6. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
+   A merged PR makes `--next` print `stop`: run [Deliver](#after-the-merge) on it unless `--no-deliver`, so a session that died during the pipeline wait resumes there.
    Pass the PR URL, not a bare number: `state.mjs` takes owner/repo from the URL, and from cwd's `origin` only for a number.
    No atelier comment yet: record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
    With a request: the stage is `build`.

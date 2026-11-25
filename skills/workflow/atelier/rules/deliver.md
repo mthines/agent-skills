@@ -68,4 +68,5 @@ These change shared release state and stay with the user, each as an exact comma
 Deliver is not a stage in the state comment (`state.mjs` knows `build|ready|merge`, and recording another throws).
 Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and print the terminal contract's `- Deliver: [green <run url> | red: <reason> | fix PR <url> | skipped: <reason> | not reached]` line.
 A `hold` or `failed` result also goes under `Needs you:`.
+Re-running `/atelier <merged-pr-url>` runs Deliver on the merge commit, which is how a session that died mid-wait resumes.
 Skip Deliver, printing `skipped: <reason>`, when the merge was refused or held, when the PR has no merge commit, or when the user passes `--no-deliver`.

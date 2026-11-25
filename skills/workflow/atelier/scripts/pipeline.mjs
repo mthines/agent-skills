@@ -20,6 +20,7 @@ import { pathToFileURL } from "node:url";
 
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
 
+const NONE_WAIT_MINUTES = 3;
 const BAD = new Set(["failure", "cancelled", "timed_out", "startup_failure", "action_required"]);
 
 // Pure. `runs`: [{ id, workflow, url, status, conclusion, jobs: [{ name, status, conclusion, steps: [{ name, conclusion }] }] }].
@@ -152,15 +153,20 @@ async function main() {
 		const cfg = await loadConfig(a["repo-dir"] ?? process.cwd());
 		const workflow = a.workflow ?? cfg.workflow ?? "";
 		const required = (typeof a.required === "string" ? a.required.split(",") : cfg.required_jobs ?? []).map((s) => String(s).trim()).filter(Boolean);
-		const wait = Number(a.wait ?? cfg.timeout_minutes ?? 20);
-		if (!Number.isFinite(wait) || wait < 0) throw new Error(`--wait must be a number of minutes, got ${wait}`);
-		const deadline = Date.now() + wait * 60_000;
+		const rawWait = a.wait ?? cfg.timeout_minutes ?? 20;
+		const wait = typeof rawWait === "boolean" ? NaN : Number(rawWait);
+		if (!Number.isFinite(wait) || wait < 0) throw new Error(`the wait must be a number of minutes (--wait or pipeline.timeout_minutes), got ${rawWait}`);
+		const start = Date.now();
+		const deadline = start + wait * 60_000;
+		// GitHub registers a merge's run within seconds, so `none` gets a short cap of its own: a repo with no
+		// push workflow, or a misspelled `workflow:`, holds after a few minutes instead of the full wait.
+		const noneDeadline = start + Math.min(wait, NONE_WAIT_MINUTES) * 60_000;
 		let result;
 		const cache = new Map();
 		for (;;) {
 			result = classify(fetchRuns({ repo, sha, branch }, execFileSync, cache), { required, workflow });
 			// `none` right after a merge is GitHub not having registered the run yet, so it waits too.
-			if ((result.state !== "pending" && result.state !== "none") || Date.now() >= deadline) break;
+			if (result.state === "none" ? Date.now() >= noneDeadline : result.state !== "pending" || Date.now() >= deadline) break;
 			await sleep(30_000);
 		}
 		console.log(JSON.stringify({ repo, sha, branch, workflow: workflow || null, required, ...result }, null, 2));
