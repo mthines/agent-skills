@@ -77,6 +77,24 @@ detect: { attribute: vercel.sha, equals: merge_sha }
 A provider that needs a redeploy to change a value (an environment variable read at start) is `rollout: boolean` with `propagation_seconds` set to a deploy's length.
 Never call a provider's API directly from the skill; only through `set`.
 
+## Pipeline
+
+`pipeline` describes the default-branch workflow that builds and releases a merge; atelier's Deliver stage reads it ([`atelier/rules/deliver.md`](../../../workflow/atelier/rules/deliver.md)), and `deployment-verify` itself ignores it.
+Optional; absent, Deliver reads every run of the merge commit and requires no job by name.
+
+| Field | Meaning |
+| --- | --- |
+| `workflow` | The workflow's `name:`; only its runs count. Empty reads every run started for the merge commit |
+| `required_jobs` | Job names that must conclude `success`. A required job that is skipped or missing is red: a skipped release job means the step before it failed |
+| `timeout_minutes` | How long Deliver waits for the run to finish (default 0 = read once) |
+
+```yaml
+# ✗ Wrong — release is skipped on a failed version step, and nothing names it, so the run reads green
+pipeline: { workflow: CI }
+# ✓ Right — the jobs that must run on main are named
+pipeline: { workflow: CI, required_jobs: [test, version, release-macos], timeout_minutes: 30 }
+```
+
 ## Hold and promotion
 
 Both are optional and off when absent; an existing `release.yml` behaves as before.
@@ -107,4 +125,5 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui], m
 3. Find the deploy attribute: query one recent production span of each service and offer the attribute whose value matches a recent `main` commit.
 4. Ask for `traffic` for `local` and `preview`; production is `real`.
 5. Leave `hold_after` and `promotion` commented out, as the template has them; uncomment one only when the user asks for a human hold ([`hold.md`](./hold.md)).
-6. Validate: every `set` path exists and is executable; `dataset` is readable; `tick.mjs --check-config` prints `release.yml ok`.
+6. Find the default-branch workflow (`.github/workflows/*.yml` with `on: push` to the default branch) and write `pipeline:` with its name and the jobs that must run on a merge; leave `required_jobs` empty when unsure.
+7. Validate: every `set` path exists and is executable; `dataset` is readable; `tick.mjs --check-config` prints `release.yml ok`.

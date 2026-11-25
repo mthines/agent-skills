@@ -39,6 +39,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
+| `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read and its one fix). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
 
@@ -243,6 +244,9 @@ fi
 2. Exit 2, or no LoreKit → `Degraded: quality finding outcomes — not recorded (<stderr or lorekit unreachable>)`; the merge decision stands.
 3. Never run it on a merge that did not happen: a refused or held merge scores nothing.
 
+Then run Deliver ([`rules/deliver.md`](./rules/deliver.md)) unless `--no-deliver`: the merge is not the end while the default-branch pipeline is red.
+Deliver is not a recorded stage (`state.mjs` knows `build|ready|merge`); it reports through a `bus` event and the terminal contract's `Deliver:` line.
+
 ## Step 4 — Stop
 
 Atelier never flips a flag and never runs `deployment-verify`.
@@ -263,6 +267,7 @@ ATELIER RUN
 - Stage reached: [build | ready | merge | stop]
 - PR: [URL | none]
 - Merge: [merged <sha> | refused: <reason> | not reached]
+- Deliver: [green <run url> | red: <reason> | fix PR <url> | skipped: <reason> | not reached]
 - Degraded: [steps skipped and why, or "none"]
 - Needs you: [the next human step, or "nothing"]
 ```
