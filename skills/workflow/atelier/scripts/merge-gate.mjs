@@ -188,7 +188,7 @@ export function decideCi(ci) {
 	const reason = ci.state === "not-run" ? ci.reason : `CI ${ci.state} at ${at}: ${ci.reason}`;
 	const how = {
 		"not-run": "Record this on Ready (hold), get CI to run on this head (undraft the PR, or push), then re-run /atelier <pr>: --next returns ready until Ready records green CI evidence.",
-		pending: "Record this on Ready (hold), wait for the checks (gh pr checks <pr> --watch), then re-run /atelier <pr>.",
+		pending: "Wait for the checks with ci-wait.mjs (SKILL.md, Waiting for CI) and run the gate again; if the wait ends still pending, record this on Ready (hold), then re-run /atelier <pr>.",
 		red: "Record this on Ready (failed), then run /atelier <pr> again: Ready runs prepare, which fixes the failing CI.",
 	}[ci.state];
 	return { decision: "refuse", reason, how };

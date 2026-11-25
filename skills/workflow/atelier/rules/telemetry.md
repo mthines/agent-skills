@@ -42,10 +42,10 @@ Three things, each riding on a command you already run; never spend a tool call 
 
    ```text
    ✗ node "$T" wait ci; gh pr checks <pr-url> --watch          # no command after --: a zero-length wait, the CI time booked as active
-   ✓ node "$T" wait ci -- gh pr checks <pr-url> --watch        # T="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs"
+   ✓ node "$T" wait ci -- node ci-wait.mjs --pr <pr-url>       # T="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs"
    ```
 
-   Kinds: `ci` (checks, `--watch`, the undraft poll), `review`, `human`, `other`.
+   Kinds: `ci` (checks, `ci-wait.mjs`, the undraft poll), `review`, `human`, `other`.
 2. **Memory.** On Build's `--record`, pass `--memory "lorekit=<ok|unreachable>,lessons_used=<n>"`: Step 0's LoreKit probe and the number of `aw` lessons Build applied (`0` when none).
    On any later `--record` after a bus write failed, pass `--memory "bus_failed=<n>"`.
    Unknown keys and values are dropped.
