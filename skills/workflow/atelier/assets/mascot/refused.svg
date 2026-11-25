@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-16 -8 288 288" width="288" height="288" role="img" aria-label="Atelier mascot, refused">
+<title>Atelier — refused</title>
+<defs>
+  <filter id="ink" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.045" numOctaves="2" seed="7"/>
+    <feDisplacementMap in="SourceGraphic" scale="3.2"/>
+  </filter>
+  <style>.line{fill:none;stroke:#111111;stroke-width:6;stroke-linecap:round;stroke-linejoin:round}</style>
+</defs>
+<g filter="url(#ink)">
+  <g stroke="#ffffff" stroke-width="26" stroke-linejoin="round" stroke-linecap="round" fill="#ffffff">
+    <path d="M62 146 C58 100 92 78 130 78 C176 78 204 108 202 152 C200 204 168 236 128 236 C88 236 64 204 62 146 Z"/><path d="M48 112 C34 82 86 44 146 46 C200 48 228 74 210 102 C196 116 156 106 124 108 C94 110 60 128 48 112 Z"/><path d="M200 142 C214 134 222 152 214 166 C210 174 202 172 199 168"/>
+    <path d="M140 46 Q144 30 156 28" stroke-width="30"/>
+    <path d="M150 262 L226 186" stroke-width="30"/>
+  </g>
+  <path d="M62 146 C58 100 92 78 130 78 C176 78 204 108 202 152 C200 204 168 236 128 236 C88 236 64 204 62 146 Z" fill="#ffffff" stroke="#111111" stroke-width="8"/>
+  <path d="M200 142 C214 134 222 152 214 166 C210 174 202 172 199 168" fill="#ffffff" stroke="#111111" stroke-width="7" stroke-linecap="round"/>
+  <path d="M140 48 Q144 32 156 30" stroke="#111111" stroke-width="9" stroke-linecap="round" fill="none"/>
+  <path d="M48 112 C34 82 86 44 146 46 C200 48 228 74 210 102 C196 116 156 106 124 108 C94 110 60 128 48 112 Z" fill="#111111"/>
+  <path d="M90 120 L116 132 M142 132 L168 120" class="line" stroke-width="7"/>
+  <ellipse cx="104" cy="146" rx="5.5" ry="7" fill="#111111"/><ellipse cx="154" cy="146" rx="5.5" ry="7" fill="#111111"/>
+  <path d="M130 148 Q120 170 128 176 Q134 178 138 174" class="line" stroke-width="5"/>
+  <path d="M128 184 C114 176 98 180 92 190 C88 197 79 194 82 186" class="line" stroke-width="9"/>
+  <path d="M128 184 C142 176 158 180 164 190 C168 197 177 194 174 186" class="line" stroke-width="9"/>
+  <path d="M110 210 Q128 196 146 210" class="line"/>
+  <g stroke="#111111" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 260 L194 218" stroke-width="10"/>
+    <path d="M192 220 L202 210" stroke="#ffffff" stroke-width="12"/>
+    <path d="M198 204 C204 194 216 184 232 176 C226 192 216 204 206 214 Z" fill="#bc4c00" stroke-width="4.5"/>
+  </g>
+  
+</g>
+</svg>

@@ -142,13 +142,38 @@ Refactor the API client to use retry logic — handle it in isolation
 Every run prints a paste-ready `/goal` line to let the session drive itself to done, and records what it learned for the next run.
 How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/rules/full-tier.md) · [design notes](./skills/workflow/autonomous-workflow/CLAUDE.md).
 
+## Featured: atelier <sup>experimental</sup>
+
+<img src="./skills/workflow/atelier/assets/mascot/shipped.png" width="64" align="right" alt="atelier's mascot, a painter in a beret">
+
+> [!WARNING]
+> Experimental: the stages, the state comment, and the merge gate may change between versions.
+
+[`/atelier`](./skills/workflow/atelier/SKILL.md) takes a request, or a PR that already exists, all the way to a merged PR, then checks `main`'s pipeline for the merge commit.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="./skills/workflow/atelier/assets/cards/done-done-done-done-dark.png"><img src="./skills/workflow/atelier/assets/cards/done-done-done-done-light.png" width="700" alt="Atelier pipeline: Build, Ready, Merge, and Deliver, all done."></picture>
+
+```text
+/atelier Add a CSV export to the reports page
+/atelier https://github.com/owner/repo/pull/123
+/atelier setup
+```
+
+1. **Build.** Runs [`aw`](#featured-autonomous-workflow) and holds when a required companion (review, PR, quality pass, verification) did not run.
+2. **Ready.** Undrafts the PR, waits for real CI, gets it green with [`prepare`](./skills/delivery/prepare/SKILL.md), and requires a verify report that proves every acceptance criterion.
+3. **Merge.** A script gate refuses a user-visible change without a feature-flag contract, then squash-merges.
+4. **Deliver.** Reads `main`'s pipeline for the merge commit, fixes a red one once, and reverts the merge when the fix stays red.
+
+One sticky comment on the PR shows where the run is, with a status card for every state ([gallery](./skills/workflow/atelier/scripts/fixtures/comments/README.md)); re-running `/atelier <pr>` resumes at the first incomplete stage.
+It never flips a flag or deploys: after the merge it tells you how to roll the change out.
+
 ## Skills
 
 | Skill | What it does |
 | ----- | ------------ |
 | **`workflow/`** | *End-to-end orchestrators* |
 | [`aw`](./skills/workflow/autonomous-workflow/aw/SKILL.md) | Ships a task end to end: brief, build until green, fresh-eyes review, draft PR. |
-| [`/atelier`](./skills/workflow/atelier/SKILL.md) | Takes a request or a PR to a merged PR — build, get green, merge — and refuses to merge a user-visible change that has no feature-flag contract. Stops after the merge and tells you how to roll it out. `/atelier setup` runs preflight and hands each gap to the setup skill that fixes it; with a `tracker.yml`, each run links or creates its ticket. |
+| [`/atelier`](./skills/workflow/atelier/SKILL.md) | Takes a request or a PR to a merged PR — build, get green, merge — and refuses to merge a user-visible change that has no feature-flag contract. After the merge, checks `main`'s pipeline and tells you how to roll it out. Experimental. `/atelier setup` runs preflight and hands each gap to the setup skill that fixes it; with a `tracker.yml`, each run links or creates its ticket. |
 | [`/fix-bug`](./skills/workflow/fix-bug/SKILL.md) | Fixes one bug from a stack trace, span, recording, or ticket, behind a failing test. |
 | [`/implement-suggestion`](./skills/workflow/implement-suggestion/SKILL.md) | Applies PR review comments, one commit each, and resolves the threads. |
 | **`quality/`** | *Code, tests, plans, AI apps* |

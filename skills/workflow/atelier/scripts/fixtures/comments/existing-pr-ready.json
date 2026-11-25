@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "pr": "https://github.com/mthines/reaper-mcp/pull/195",
+  "stages": {
+    "build": {
+      "decision": "skipped",
+      "at": "2026-11-25T13:27:26.793Z",
+      "sha": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+      "reason": "existing PR"
+    },
+    "ready": {
+      "decision": "proceed",
+      "at": "2026-11-25T13:27:43.081Z",
+      "sha": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+      "reason": "reviewed (WARN, no findings); mergeable, no open threads; CI green at head",
+      "ci": {
+        "state": "green",
+        "ran": true,
+        "head": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+        "basis": "required",
+        "ran_checks": [
+          "test"
+        ],
+        "reason": "1 required check ran and passed at 8e0b152"
+      }
+    }
+  },
+  "preflight": "PREFLIGHT: limited — 1 gap (flag-provider)",
+  "stage": "ready",
+  "refusal": null
+}

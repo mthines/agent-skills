@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "pr": "https://github.com/mthines/reaper-mcp/pull/195",
+  "stages": {
+    "build": {
+      "decision": "proceed",
+      "at": "2026-11-25T13:02:10.000Z",
+      "sha": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+      "reason": "aw Full: draft PR, review-loop converged"
+    },
+    "ready": {
+      "decision": "failed",
+      "at": "2026-11-25T13:20:00.000Z",
+      "sha": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+      "reason": "CI red at 8e0b152: test failed after one fix attempt"
+    }
+  },
+  "preflight": "PREFLIGHT: ok — 0 gaps",
+  "stage": "ready",
+  "refusal": null
+}
