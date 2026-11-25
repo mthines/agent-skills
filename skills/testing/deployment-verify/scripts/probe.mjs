@@ -158,7 +158,14 @@ function jsonPathHas(obj, path) {
 async function one(req, { send, headers, vars, base }) {
 	const kind = KINDS.find((k) => req[k]);
 	const spec = fill(req[kind], vars);
-	const res = await send({ kind, spec, headers, base });
+	// A refused, reset or timed-out request is an error sample: a deploy that takes the service down must read as errors.
+	const t0 = performance.now();
+	let res;
+	try {
+		res = await send({ kind, spec, headers, base });
+	} catch {
+		return { ok: false, auth: false, ms: performance.now() - t0 };
+	}
 	if (kind !== "command" && (res.status === 401 || res.status === 403)) return { ok: false, auth: true, ms: res.ms };
 	const e = req.expect || {};
 	let ok;
@@ -241,6 +248,7 @@ export async function realSend({ kind, spec, headers, base }) {
 		method: isMcp ? "POST" : spec.method || "GET",
 		headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(isMcp ? { Accept: "application/json, text/event-stream" } : {}), ...(spec.headers || {}), ...headers },
 		body,
+		signal: AbortSignal.timeout(Number(base.timeout_ms) || 15_000),
 	});
 	const text = await res.text();
 	const ms = performance.now() - t0;
@@ -279,7 +287,7 @@ export function probeRunner({ env, rootSpans, only = null, cwd = process.cwd(), 
 	const identity = defaults.identity ? identityFor(environments, env, defaults.identity) : null;
 	const tokens = identity ? makeTokenSource(identity, { cwd }) : null;
 	const bypass = identity?.bypass?.env && process.env[identity.bypass.env] ? { [identity.bypass.name]: process.env[identity.bypass.env] } : {};
-	const base = { url: e.url, mcp_url: e.mcp_url || `${e.url.replace(/\/$/, "")}${defaults.mcp_path || DEFAULTS.mcp_path}`, bypass };
+	const base = { url: e.url, mcp_url: e.mcp_url || `${e.url.replace(/\/$/, "")}${defaults.mcp_path || DEFAULTS.mcp_path}`, bypass, timeout_ms: defaults.timeout_ms };
 	return {
 		names: picked.map((p) => p.name),
 		spanFilter: defaults.tag?.span_filter || null,
@@ -393,6 +401,8 @@ async function selfTest() {
 		authErr = e;
 	}
 	check("a 401 preflight refreshes once, then throws ProbeAuthError with no token in its message", authErr instanceof ProbeAuthError && mints === 1 && !/tok_/.test(authErr.message), authErr?.message);
+	const down = await runProbe({ probe: { requests: [{ name: "a", route: "/a", http: { path: "/a" } }] }, defaults: { rounds: 3, warmup: { requests: 0 } }, send: async () => { throw new TypeError("fetch failed"); }, sleep: async () => {} });
+	check("an unreachable service is error samples, not a thrown window", down.routes["/a"]?.n === 3 && down.routes["/a"].errors === 3, JSON.stringify(down.routes));
 	check("redact removes every secret it is given", redact("x Bearer tok_abc y tok_abc", ["tok_abc"]) === "x Bearer «redacted» y «redacted»");
 
 	// Token source: env, and a minted token cached until its ttl.

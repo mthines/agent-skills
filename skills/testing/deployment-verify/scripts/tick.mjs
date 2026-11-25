@@ -303,15 +303,15 @@ export function windowQuery(contract, { attribute, versions = [], mode }) {
 	return `SELECT count() AS n, countIf(status_code = 'ERROR') AS errors, round(avg(duration) / 1000000, 1) AS avg_ms FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND kind = 'SERVER' AND name IN (${spans})${filter}`;
 }
 
-// The values of the detect attribute currently serving, most traffic first.
 // Probe mode: which version answered the probe window — its tagged root spans, split by the deploy attribute.
 export function probeVersionQuery(contract, { attribute, versions, spanFilter }) {
 	const k = `resource_attributes[${q(attribute)}]`;
 	const list = versions.map(q).join(", ");
 	const tag = Object.entries(spanFilter).map(([key, v]) => ` AND (resource_attributes[${q(key)}] = ${q(v)} OR span_attributes[${q(key)}] = ${q(v)})`).join("");
-	return `SELECT countIf(${k} IN (${list})) AS fresh, countIf(${k} NOT IN (${list})) AS stale FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND kind = 'SERVER' AND name IN (${contract.root_spans.map(q).join(", ")})${tag}`;
+	return `SELECT countIf(${k} IN (${list})) AS fresh, countIf(${k} != '' AND ${k} NOT IN (${list})) AS stale FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND kind = 'SERVER' AND name IN (${contract.root_spans.map(q).join(", ")})${tag}`;
 }
 
+// The values of the detect attribute currently serving, most traffic first.
 export function deployQuery(contract, detect) {
 	const k = q(detect.attribute);
 	return `SELECT resource_attributes[${k}] AS live, count() AS n FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND resource_attributes[${k}] != '' GROUP BY live ORDER BY n DESC LIMIT 5`;
@@ -507,8 +507,15 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 					if (probing && !s.probe_before) {
 						const r = await probeOnce();
 						if (r.auth) return authStop(r.auth);
-						s.probe_before = { routes: r.routes, at: iso(io.now()), source: "live" };
-						io.log(`probe before (live, old version): ${Object.keys(r.routes).length} route(s)`);
+						// The new version may have started serving during the probe, before its spans were ingested:
+						// look again once they could be, and keep the window only if it is still not live.
+						await io.sleep(ingest);
+						const again = await liveValues(await io.sql(deployQuery(contract, env.deploy.detect), { dataset: env.dataset, from: iso(io.now() - 15 * 60_000), to: iso(io.now()) }), env.deploy.detect, sha, io.contains);
+						if (again.length) io.log("probe before discarded: the new version went live during it");
+						else {
+							s.probe_before = { routes: r.routes, at: iso(io.now()), source: "live" };
+							io.log(`probe before (live, old version): ${Object.keys(r.routes).length} route(s)`);
+						}
 					}
 					const minutes = env.deploy.timeout_minutes ?? 60;
 					if (mergedAt && now - Date.parse(mergedAt) > minutes * 60_000) return end("STOPPED", `deploy not detected in ${minutes} min — nothing changed`);
@@ -1487,7 +1494,16 @@ async function selfTest() {
 		s = await drive(probeWorld({ after: ROLLED, canRollback: true }));
 		line("probe recovery: after a platform rollback the same probes prove recovery", s.outcome === "ROLLED_BACK" && s.recovery?.n === 80, s);
 
-		const st = statusLine(s, { number: 758 });
+		let wl = null;
+		wl = probeWorld({ liveAt: T0 + 30_000, run: async () => {
+			const routes = structuredClone(wl.io.now() < T0 + 30_000 ? BEFORE : MIX);
+			await wl.io.sleep(60_000); // the deploy goes live while the probe runs
+			return { routes };
+		} });
+		s = await drive(wl);
+		line("probe before: a window the new version may have answered is discarded, never used", !s.probe_before && s.outcome === "INCONCLUSIVE" && wl.logs.some((m) => /discarded/.test(m)), s);
+
+		const st = statusLine({ phase: "done", outcome: "ROLLED_BACK", reason: "/memories: latency x5.6 (+4100 ms) vs baseline; RECOVERED in 60 s" }, { number: 758 });
 		const running = statusLine({ phase: "deploy" }, null);
 		line("AC-7 every tick prints a status line to stdout", st.startsWith("deployment-verify #758: ROLLED_BACK — /memories: latency") && running === "deployment-verify local: IN PROGRESS (deploy) — waiting for the deploy", null);
 
@@ -1499,7 +1515,7 @@ async function selfTest() {
 		const ok = parseHistory(hist, "production", "z")?.version === "b" && parseHistory(hist, "production", "b")?.version === "a" && parseHistory([], "production", "b") === null;
 		line("probe history: latest record on another version in the same environment", ok, null);
 	}
-	const total = 54;
+	const total = 55;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
