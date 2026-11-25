@@ -52,9 +52,9 @@ export function telemetryCheck(config) {
 	if (!config) return { name, ok: false, value: "none (no .agents/aw/telemetry.yml)", cannot: "telemetry: criteria are unprovable" };
 	if (config.unknown) return { name, ok: true, value: `unknown (could not parse telemetry.yml: ${config.unknown})`, cannot: "" };
 	if (config.error) return { name, ok: false, value: `telemetry.yml does not parse: ${config.error}`, cannot: "telemetry: criteria are unprovable" };
-	if (!config.backend || config.backend === "none") return { name, ok: false, value: "backend: none", cannot: "telemetry: criteria are unprovable" };
+	if (!config.backend || config.backend === "none") return { name, ok: false, backend: "none", value: "backend: none", cannot: "telemetry: criteria are unprovable" };
 	const tool = config.mcp_server ? `${config.backend} (${config.mcp_server})` : config.backend;
-	return { name, ok: true, value: `${tool} — the agent confirms its tool is callable`, cannot: "" };
+	return { name, ok: true, backend: config.backend, value: `${tool} — the agent confirms its tool is callable`, cannot: "" };
 }
 
 // A sign-in strategy per environment; `none` is a valid answer (no login needed), a missing one is not.
@@ -116,6 +116,11 @@ export const PROFILE = join("memory", "observability-profile", "INDEX.md");
 // `pipeline: false` = release.yml has no `pipeline:` block (absent file included); Deliver reads that block.
 export const TRACKER = join(".agents", "aw", "tracker.yml");
 
+// An observability profile maps traces and metrics; a repo whose telemetry.yml reads process logs (or none) has neither,
+// so measurable's setup is not offered until it emits OpenTelemetry. No telemetry.yml yet: aw-verify setup decides first.
+const NO_OTEL = new Set(["logs", "none"]);
+export const noOtel = (checks) => NO_OTEL.has(checks.find((c) => c.name === "telemetry")?.backend);
+
 export function setupPlan(checks, { profile = true, pipeline = true, tracker = true } = {}) {
 	const gap = new Set(checks.filter((c) => !c.ok && !isDecided(c)).map((c) => c.name));
 	const steps = checks.filter(isDecided).map(() => ({
@@ -127,7 +132,10 @@ export function setupPlan(checks, { profile = true, pipeline = true, tracker = t
 	if (awVerifyFixes.length) steps.push({ kind: "skill", call: 'Skill("aw-verify", "setup")', fixes: awVerifyFixes });
 	const deployFixes = [...(gap.has("flag-provider") ? ["flag-provider"] : []), ...(pipeline ? [] : ["pipeline (no release.yml pipeline:)"])];
 	if (deployFixes.length) steps.push({ kind: "skill", call: 'Skill("deployment-verify", "setup")', fixes: deployFixes });
-	if (!profile) steps.push({ kind: "skill", call: 'Skill("measurable", "setup")', fixes: [`observability-profile (no ${PROFILE})`] });
+	if (!profile && noOtel(checks)) {
+		const backend = checks.find((c) => c.name === "telemetry").backend;
+		steps.push({ kind: "decided", name: "observability-profile", note: `telemetry.yml backend: ${backend} — no OpenTelemetry to profile; run /measurable setup once the app emits traces or metrics` });
+	} else if (!profile) steps.push({ kind: "skill", call: 'Skill("measurable", "setup")', fixes: [`observability-profile (no ${PROFILE})`] });
 	if (!tracker) steps.push({ kind: "skill", call: 'Skill("ticket", "setup")', fixes: [`tracker (no ${TRACKER})`] });
 	const ci = checks.find((c) => c.name === "ci-on-draft" && !c.ok);
 	if (ci) {
@@ -183,7 +191,10 @@ export function compareTable(before, after, { was: wasFiles = null, now: nowFile
 	let line = `SETUP: ${fixed.length} fixed, ${remaining.length} remaining${remaining.length ? ` (${remaining.join(", ")})` : ""}`;
 	if (nowFiles) {
 		const has = (v) => (v === undefined || v === null ? "—" : v ? "present" : "missing");
-		const files = Object.entries(SETUP_FILES).filter(([k]) => k in nowFiles).map(([k, label]) => ({ label, was: wasFiles?.[k], now: nowFiles[k] }));
+		const moot = noOtel(after) && nowFiles.profile === false;
+		const files = Object.entries(SETUP_FILES)
+			.filter(([k]) => k in nowFiles && !(k === "profile" && moot))
+			.map(([k, label]) => ({ label, was: wasFiles?.[k], now: nowFiles[k] }));
 		rows.push(...files.map((f) => `| ${f.label} | ${has(f.was)} | ${has(f.now)} | — |`));
 		const notes = files.map((f) => (f.now ? (f.was === false ? `${f.label} added` : null) : `${f.label} missing`)).filter(Boolean);
 		if (notes.length) line += `; ${notes.join(", ")}`;
@@ -338,6 +349,9 @@ async function selfTest() {
 	t("setup: sign-in and telemetry go to one aw-verify setup, before deployment-verify", plan[0] === 'SETUP: Skill("aw-verify", "setup") — fixes sign-in, telemetry' && /deployment-verify.*flag-provider/.test(plan[1]), plan.join(" / "));
 	t("setup: a missing tracker.yml adds ticket setup, last", planLines(setupPlan(bare, { tracker: false })).at(-1) === 'SETUP: Skill("ticket", "setup") — fixes tracker (no .agents/aw/tracker.yml)');
 	t("setup: a missing profile adds measurable setup; a present one does not", plan.some((l) => /measurable/.test(l)) && !planLines(setupPlan(bare)).some((l) => /measurable/.test(l)));
+	const logs = [telemetryCheck({ backend: "logs" })];
+	t("setup: a logs backend decides the profile instead of calling measurable", planLines(setupPlan(logs, { profile: false })).join() === "SETUP: nothing to delegate,DECIDED: observability-profile — telemetry.yml backend: logs — no OpenTelemetry to profile; run /measurable setup once the app emits traces or metrics" && planLines(setupPlan([telemetryCheck({ backend: "dash0-mcp" })], { profile: false })).some((l) => /measurable/.test(l)));
+	t("compare: a logs backend shows no missing profile", !/observability profile/.test(compareTable(logs, logs, { was: { profile: false }, now: { profile: false } }).text + compareTable(logs, logs, { was: { profile: false }, now: { profile: false } }).line));
 	const manual = planLines(setupPlan([ci]));
 	t("setup: ci-on-draft is one manual line naming the workflow", manual.length === 1 && /^MANUAL: ci-on-draft — no — 1 of 2 skip drafts \(ci\.yml\)/.test(manual[0]), manual.join(" / "));
 	t("setup: a provider but no pipeline: block still calls deployment-verify setup", planLines(setupPlan([flagCheck({ present: true, config: { flags: { providers: [{ name: "posthog" }] } } })], { pipeline: false })).join() === 'SETUP: Skill("deployment-verify", "setup") — fixes pipeline (no release.yml pipeline:)');

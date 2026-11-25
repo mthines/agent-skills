@@ -57,7 +57,7 @@ The setup skills it calls ask the user questions, so it runs interactively only:
 | --- | --- |
 | `sign-in`, `telemetry` | `SETUP: Skill("aw-verify", "setup") — fixes <gaps>` (one call for both) |
 | `flag-provider`, or `release.yml` without `pipeline:` | `SETUP: Skill("deployment-verify", "setup") — fixes <what is missing>` (one call for both) |
-| no `memory/observability-profile/INDEX.md` | `SETUP: Skill("measurable", "setup") — fixes observability-profile (…)` |
+| no `memory/observability-profile/INDEX.md` | `SETUP: Skill("measurable", "setup") — fixes observability-profile (…)`; with `telemetry.yml` → `backend: logs` or `none`, `DECIDED: observability-profile — …` instead (no OpenTelemetry to profile) |
 | no `.agents/aw/tracker.yml` | `SETUP: Skill("ticket", "setup") — fixes tracker (…)` |
 | `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
 | `flag-provider` with `release.yml` → `providers: []` | `DECIDED: flag-provider — …`: an answer, not missing setup; never delegated, never under `Needs you:` |
