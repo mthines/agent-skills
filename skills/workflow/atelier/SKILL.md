@@ -358,7 +358,7 @@ fi
 3. Never run it on a merge that did not happen: a refused or held merge scores nothing.
 
 Then run Deliver ([`rules/deliver.md`](./rules/deliver.md)) unless `--no-deliver`: the merge is not the end while the default-branch pipeline is red.
-Under `--no-deliver`, still record Deliver `skipped` (reason `--no-deliver`) on a merged PR, so the comment does not stay on "Delivering…".
+Under `--no-deliver`, still record Deliver `skipped` (reason `--no-deliver`) on a merged PR, so the comment does not stay on "Next: Deliver checks…".
 Record Deliver's result on the state comment with `--record --stage deliver` (same command as [Stages](#stages) step 1, `--head` the merge commit): `proceed` for green, `hold` while a fix PR is open, `failed` for red or reverted, `skipped` with its reason.
 It is display-only: `--next` stops at the merge, so Deliver also reports through a `bus` event and the terminal contract's `Deliver:` line.
 

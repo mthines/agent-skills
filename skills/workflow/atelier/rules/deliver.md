@@ -119,7 +119,7 @@ Record the result on the state comment: `state.mjs --record --stage deliver --de
 It is display-only: `--next` never reads it, and it writes no telemetry span.
 
 ```text
-✗ main red, revert PR merged, comment still reads "Merged. Delivering…"
+✗ main red, revert PR merged, comment still reads "Next: Deliver checks `main`'s pipeline"
 ✓ state.mjs --record --stage deliver --decision failed --head 4f1c2d9 --reason "main red after one fix; reverted by #202"
 ```
 
@@ -127,7 +127,7 @@ Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and 
 A `hold` or `failed` result also goes under `Needs you:`.
 Re-running `/atelier <merged-pr-url>` runs Deliver on the merge commit, which is how a session that died mid-wait resumes.
 Skip Deliver, printing `skipped: <reason>`, when the merge was refused or held, when the PR has no merge commit, or when the user passes `--no-deliver`.
-Record that skip on the comment only after a merge recorded `proceed` (`--no-deliver`, or no merge commit): `record()` refuses Deliver before a merge, and an unrecorded Deliver after a merge leaves the card on "Delivering…".
+Record that skip on the comment only after a merge recorded `proceed` (`--no-deliver`, or no merge commit): `record()` refuses Deliver before a merge, and an unrecorded Deliver after a merge leaves the comment on "Next: Deliver checks `main`'s pipeline".
 After a refused or held merge, record nothing for Deliver; the comment already shows the merge's own result.
 
 ```text

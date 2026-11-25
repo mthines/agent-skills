@@ -33,6 +33,7 @@ A Build `hold` for companions that did not run carries reason `skipped: <names>`
 `render()` writes, in order:
 
 1. The status card: `assets/cards/<build>-<ready>-<merge>-<deliver>-<light|dark>.png` in a `<picture>`, picked by `card.mjs` from the last recorded stage (`state.stage`), linked from `main` on `raw.githubusercontent.com`.
+   The card is the pipeline alone on a transparent background: one node per stage with its icon, a status badge, the stage name, and a status word, so the state never rests on colour alone.
 2. `**Needs you:** <reason>` after a `hold`, `failed`, or `refuse`; else `**Next:** …` from `--next`, or `**Done:** …` once Deliver is recorded.
 3. `**Heads-up:**` when preflight is not `ok`.
 4. A footer: the mascot's face in the state's mood (`assets/mascot/<mood>.png`), the head, and `<relative-time>`, which GitHub shows as "2 minutes ago".

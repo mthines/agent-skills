@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { allKeys, card } from "./card.mjs";
+import { CARD_SIZE, allKeys, card } from "./card.mjs";
 import { isMain } from "./lib.mjs";
 import { MOODS, svg } from "./mascot.mjs";
 
@@ -60,7 +60,7 @@ function render() {
 		for (const theme of THEMES) {
 			const html = join(tmp, `${key}-${theme}.html`);
 			writeFileSync(html, card(key.split("-"), theme));
-			shoot(bin, html, join(CARDS_DIR, `${key}-${theme}.png`), "1400,330");
+			shoot(bin, html, join(CARDS_DIR, `${key}-${theme}.png`), CARD_SIZE.join(","));
 		}
 	console.log(`rendered ${allKeys().length * THEMES.length} cards to ${CARDS_DIR}`);
 }
