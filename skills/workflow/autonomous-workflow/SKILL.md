@@ -140,7 +140,8 @@ Artifact details: [`rules/artifacts-overview.md`](./rules/artifacts-overview.md)
 ## Lite and Micro path
 
 Single-pass in the caller's context; no `checks.yaml`, no `confidence(plan)`.
-Lite writes its brief to `.agent/{branch}/plan.md` inside the worktree Phase 0 creates, so `aw-verify` and `telemetry-verify` read stated criteria instead of guessing them from the diff; Micro keeps its brief in the conversation.
+Lite writes its brief to `.agent/{branch}/plan.md` inside the worktree Phase 0 creates, so `aw-verify` and `telemetry-verify` read stated criteria instead of guessing them from the diff.
+Micro keeps its brief in the conversation but writes its criteria to the same file, `## Acceptance Criteria` with at least one `- [ ] AC-1 — …`, because every tier publishes its criteria and their proof on the PR.
 
 ```markdown
 ---
@@ -167,26 +168,28 @@ Never write `checks.yaml` or `checks.lock` on Lite: `checks.lock` is what marks 
 | Setup | MODE SELECTION | MODE SELECTION |
 | 0 | `gw add <branch>`, then `Skill("interview")` inside the new worktree, silent when the request is already clear (`--no-interview` skips it; fallback: quick clarification) | Quick confirm; with `--interview`, `gw add <branch>` first, then the interview inside the worktree |
 | 1 | Brief (Task, Guardrails, `AC-{n}`, Before-PR command, Turn Cap 12, files) seeded from the interview's restatement, non-goals, and success criteria, printed, + `/goal` line | In-conversation brief (Task, Guardrails, verify command, files), Turn Cap 5, no companions |
-| 2 | Write the brief to `.agent/{branch}/plan.md` inside the worktree, beside the interview's `brief.md` | `gw add <branch>` (already done under `--interview`) |
+| 2 | Write the brief to `.agent/{branch}/plan.md` inside the worktree, beside the interview's `brief.md` | `gw add <branch>` (already done under `--interview`); write `.agent/{branch}/plan.md` with at least one `AC-{n}` |
 | 3 | Code, commit; touch only the brief's files | Edit, fast check |
-| 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>`. Diff touches UI files → [Lite verify](#lite-verify) | Fast check |
+| 4 | Test, fix failures (3-iteration cap); print the verify command with `exit=<code>`; then [Lite verify](#lite-verify), on every diff | Fast check; then record each AC's run in `.agent/{branch}/verify/runs.json` per `aw-verify`'s checks mode |
 | 4b | Report-only quality pass ([`rules/quality-pass.md`](./rules/quality-pass.md); why: [`references/quality-pass.md`](./references/quality-pass.md)): `fit --inventory`, plus a fresh-context `ux` audit when `aw-verify` ran; writes `quality-notes.md` and `quality-findings.jsonl`, never re-enters Phase 3; after the merge, [`rules/finding-outcomes.md`](./rules/finding-outcomes.md) scores each finding by what a human did | — |
 | 5 | `Skill("docs", "update --auto")` | Only on doc drift |
-| 6 | `Skill("create-pr", "--no-post-review")` (its Step 5.5 is the local review; see [`aw` § Review](./aw/SKILL.md#review)); then publish the criteria ([`phase-6-pr-creation.md` § Publish the criteria](./rules/phase-6-pr-creation.md#publish-the-criteria)); when Phase 4 ran `aw-verify`, then `Skill("aw-verify", "report <pr-url>")`; then the `AW EVIDENCE` block | `Skill("create-pr", "--no-post-review")`, publish the criteria, then the `AW EVIDENCE` block |
+| 6 | `Skill("create-pr", "--no-post-review")` (its Step 5.5 is the local review; see [`aw` § Review](./aw/SKILL.md#review)); then publish the criteria and their proof, and gate until `verify-comment.mjs --check` prints `report complete` ([`phase-6-pr-creation.md` § Publish the criteria](./rules/phase-6-pr-creation.md#publish-the-criteria)); then the `AW EVIDENCE` block | `Skill("create-pr", "--no-post-review")`, publish the criteria and their proof, the same gate, then the `AW EVIDENCE` block |
 | 7 | Watch CI, `ci-auto-fix` if needed | Watch CI |
 
 ### Lite verify
 
-Lite proves a UI change in the browser before the PR, the same way Full Step 4.1 does; Micro never runs it.
+Lite proves every change before the PR: a UI change in the browser, the same way Full Step 4.1 does, and any other change by recorded test runs.
 
-1. `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`.
+0. No UI file in the diff (`ui-verify`'s `is-ui-diff.mjs` prints `UI_DIFF: no`) → `Skill("aw-verify", "run checks --no-push --no-comment")` (aw-verify's `rules/checks-mode.md`): each AC's command before on the base and after on the branch, rendered into `.agent/<branch>/verify/`.
+   Continue only after `verify-comment.mjs --check --local .agent/<branch>/verify` prints `local report complete`; a failed criterion re-enters Phase 3 under the same turn cap.
+1. A UI diff and `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`.
    It copies the `AC-{n}` criteria from the Lite `plan.md`, writes the specs, runs them through `ui-verify`, fixes what it finds as separate commits, and leaves its screenshots and recordings where `create-pr` Step 6.2 picks them up.
    Continue only after `verify-comment.mjs --check --local .agent/<branch>/verify --ui` (in `aw-verify`'s `scripts/`) prints `local report complete`; `--ui` checks `specs.md` too, since this path runs only on a UI diff.
    Any line the gate prints re-enters `aw-verify` (mark the criteria, re-render `report.md`, or tag the AC), never Lite step 5.
    Copy every `Degraded: flag <key> not restored …` line `aw-verify` printed into the run's `Degraded:` verbatim, and its restore command into `Needs you:`.
 2. A failed `ui:` criterion, a `❌ not verified` verdict, or a `telemetry:` AC whose receipt is `contradicts` re-enters Phase 3 under the same turn cap.
    Any other `telemetry:` receipt that is not `confirms` goes under `Degraded:`, as Full Step 4.1 leaves it unpassed.
-3. No `.agents/aw/environments.yml` → `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; never block on setup.
+3. A UI diff and no `.agents/aw/environments.yml` → checks mode as in step 0, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`), `verify run: not configured` under `Degraded:`, and `run /aw-verify setup` under `Needs you:`; never block on setup.
 4. Print the `verify run:` line from Full's `AW EVIDENCE` block ([`aw/rules/full-tier.md` § Step 4](./aw/rules/full-tier.md#step-4--verify-walkthrough-pr-evidence)) in Lite's `AW EVIDENCE` block.
 
 ```text

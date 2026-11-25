@@ -96,20 +96,21 @@ A follow-up on an open PR runs this step again before pushing; only with `--pr-r
 
 ## Step 4 — Verify, walkthrough, PR, evidence
 
-1. **Verify (C5).** When the diff touches UI files, write `specs.md` against the built UI first.
+1. **Verify (C5).** Every diff is verified. No UI file in the diff → `Skill("aw-verify", "run checks --no-push --no-comment")` (aw-verify's `rules/checks-mode.md`): each AC's sealed command before on the base and after on the branch, rendered into `.agent/<branch>/verify/`; continue only after `--check --local .agent/<branch>/verify` prints `local report complete`, and skip to Step 4.2.
+   When the diff touches UI files, write `specs.md` against the built UI first.
    - `.agents/aw/environments.yml` exists → `Skill("aw-verify", "run local --no-push --no-comment --foreign-stack abort")`. It starts the stack without touching another checkout's ([Shared machines](#shared-machines)), runs the specs through `ui-verify` and each window through `telemetry-verify`, fixes what it finds as separate commits, and writes `.agent/<branch>/verify/report.md`.
    - Continue only after `node "$AW_VERIFY_DIR/scripts/verify-comment.mjs" --check --local .agent/<branch>/verify [--ui]` prints `local report complete` (`AW_VERIFY_DIR` is the directory `aw-verify` loaded from; pass `--ui` on a UI diff so `specs.md` is checked too).
      Any line the gate prints re-enters `aw-verify` (mark the criteria, re-render `report.md`, or tag the AC), never Step 4.2.
    - Copy every `Degraded: flag <key> not restored …` line `aw-verify` printed into this run's `Degraded:` verbatim, and its restore command into `Needs you:`; a flag left set on a `shared: true` service changes the user's other checkouts.
    - For each `telemetry:` judge check, read its `AC-<n>` line in the TELEMETRY blocks in `.agent/<branch>/verify/telemetry.md`: `confirms` → set its `status: pass` in `checks.yaml`; anything else → leave it and log the line. Re-run run-checks.
    - A `telemetry:` check that is `contradicts`, or a failed `ui:` criterion, re-enters Step 2 under the same turn cap; then run Step 4.1 again.
-   - No `.agents/aw/environments.yml` → `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
+   - No `.agents/aw/environments.yml` → checks mode as above for the criteria a command proves, each `ui:` AC no test reaches recorded `unsatisfiable` (the verdict caps at `⚠️`); `verify run: not configured` under `Degraded:` and `run /aw-verify setup` under `Needs you:`; a `specs.md` is `written, not run`, and `telemetry:` checks stay unpassed.
 2. **Quality pass, then walkthrough.** Run the report-only quality pass in `quality-pass.md` (autonomous-workflow `rules/`): `fit --inventory` on the diff, and a fresh-context `ux` audit when Step 4.1 ran `aw-verify` on a UI diff; it writes `.agent/<branch>/quality-notes.md` and `quality-findings.jsonl` and never re-enters Step 2.
    Then `Skill("aw-create-walkthrough")` — one page of what changed, what you assumed, and the quality notes.
 3. **PR:** `Skill("create-pr", "--no-pre-review --no-post-review")` unless a user constraint forbids the push — Step 3 already reviewed the diff, and `--pr-review` drops `--no-post-review` ([`aw` § Review](../SKILL.md#review)). No PR → `Verified: not run (no PR)`, `criteria: n/a (no PR)`; Step 3 already covered the local diff.
    Once you hold the PR URL, do these in order, and run (a) before you dispatch anything or wait on anything:
-   - **(a) Publish the criteria** (`autonomous-workflow`'s `rules/phase-6-pr-creation.md § Publish the criteria`): one `verify-comment.mjs --from-plan` call that puts the brief's `AC-{n}` rows on the PR ticked from `run-checks.mjs --statuses`. A failure is `criteria: not posted (<reason>)` under `Degraded:`, never a blocker. **Why first:** the next sub-step ends with a background wait, and a run that resumes from a notification has ended before reaching a step queued behind it.
-   - **(b) When Step 4.1 ran `aw-verify`,** run `Skill("aw-verify", "report <pr-url>")`: it attaches the verify screenshots and upserts the report comment, with no stack or browser calls.
+   - **(a) Publish the criteria and their proof** (`autonomous-workflow`'s `rules/phase-6-pr-creation.md § Publish the criteria`): checks mode → one `verify-comment.mjs --checks .agent/<branch>/verify/runs.json --from-plan` call writes both regions; a browser run → the `--from-plan` intent call, then `Skill("aw-verify", "report <pr-url>")`, which attaches the screenshots and upserts the report. **Why first:** the next sub-step ends with a background wait, and a run that resumes from a notification has ended before reaching a step queued behind it.
+   - **(b) Gate:** `verify-comment.mjs --pr <pr-url> --check [--ui]` until it prints `report complete`. A line it prints re-enters (a): re-publish, or re-run `aw-verify`; never edit the regions by hand. Still failing after one retry → `Needs you: proof — <first problem>`, and the run is not verified.
    - **(c) Dispatch `feature-pr-verifier` once** with the plan, walkthrough, head and base SHAs, and the Before-PR command, and watch CI (`ci-auto-fix` on failure, cap 2).
    - When the verifier's hand-back arrives, go to Step 4.4 and 4.5; the hand-back is not the end of the run.
 4. **Lessons:** the exit write in [`lessons.md`](lessons.md), unless a user constraint forbids LoreKit writes.
@@ -120,7 +121,7 @@ A follow-up on an open PR runs this step again before pushing; only with `--pr-r
    <the run-checks sentinel line> | verify: <Before-PR command> exit=<code>
    review: <N> findings — <F> fixed, <R> rejected, <G> flagged | not run (<reason>)
    PR: <draft PR URL | none — <the user constraint>>
-   criteria: <posted <url> | not posted (<reason>) | n/a (no AC in the brief) | n/a (no PR)>
+   criteria: <report complete <url> | incomplete (<first problem>) | n/a (no PR)>
    Changed files (git diff --name-only <base>...HEAD):
    <one path per line>
    verify run: .agent/<branch>/verify/report.md — browser <green|red|not run (<reason>)>, telemetry <confirms|contradicts|ambiguous|null|not run (<reason>)> · preview: /ui-verify run <pr-url>

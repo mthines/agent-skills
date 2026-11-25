@@ -1866,7 +1866,7 @@ for (const f of [".github/workflows/pr-relevance-memory.yml", "plugins/pr-releva
 {
   const FT = readOr("skills/workflow/autonomous-workflow/aw/rules/full-tier.md");
   const GE = readOr("skills/workflow/autonomous-workflow/rules/goal-emission.md");
-  const slot = (md) => /AW EVIDENCE\n[\s\S]*?\n\s*criteria: <posted/.test(md);
+  const slot = (md) => /AW EVIDENCE\n[\s\S]*?\n\s*criteria: <report complete/.test(md);
   const pub = FT.indexOf("(a) Publish the criteria");
   const ver = FT.indexOf("(c) Dispatch `feature-pr-verifier`");
   s.check("G134 both AW EVIDENCE templates carry a criteria: line, and full-tier.md publishes the criteria (a) before it dispatches the verifier (c)",
