@@ -139,11 +139,12 @@ async function main() {
 		if (a.pr) {
 			const url = String(a.pr);
 			const m = url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/\d+/);
-			const args = ["pr", "view", url, "--json", "mergeCommit,baseRefName,state"];
+			const args = ["pr", "view", url, "--json", "mergeCommit,baseRefName,state,url"];
 			if (m) repo = m[1];
 			else if (repo) args.push("-R", repo);
 			const pr = JSON.parse(gh(args));
 			if (pr.state !== "MERGED" || !pr.mergeCommit?.oid) throw new Error("the PR is not merged yet");
+			repo = repo ?? pr.url?.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1];
 			sha = pr.mergeCommit.oid;
 			branch = pr.baseRefName;
 		}
