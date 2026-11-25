@@ -61,7 +61,7 @@ probes:
 | --- | --- |
 | request kind | Exactly one of `http` (`method`, `path`, `headers`, `body`), `mcp` (`tool`, `args`: a JSON-RPC `tools/call` POST), `command` (`run`: exit 0 is ok) |
 | `route` | Required. The `http.route` its span reports; routes are compared one by one, never pooled |
-| `expect` | `http`: `status` (default 2xx) and `json` (a `$.a.b` path that must exist). `mcp`: `isError` (default `false`). A miss is an error sample |
+| `expect` | `http`: `status` (default 2xx) and `json` (a `$.a.b` path that must exist). `mcp`: `isError` (default `false`). A miss is an error sample, and so is a refused, reset or timed-out request (`defaults.timeout_ms`, default 15000) |
 | `{fixture.<k>}` | Filled from the `fixtures.setup` command's JSON stdout. Setup is idempotent and has no teardown, so every version reads the same data |
 | `rounds` | Size it so each route's n is at least `thresholds.min_test_requests`; a smaller window ends `INCONCLUSIVE`, never `PASS` |
 
@@ -101,7 +101,7 @@ token: { env: EXAMPLE_PROBE_TOKEN }
 
 Take the first that exists:
 
-1. **Live.** A run that starts before the new version serves probes the old version during the `deploy` phase, once. Report: `probe: before live at <time>`.
+1. **Live.** A run that starts before the new version serves probes the old version during the `deploy` phase, once. After the ingest wait it checks the deploy again: the new version live by then may have answered the probe, so the window is discarded. Report: `probe: before live at <time>`.
 2. **History.** With `history: issue`, an after-probe that passed, or the first one recorded with no before side, is recorded as one comment on the repo's `deployment-verify baselines` issue, keyed by environment and version. A run that starts after the deploy uses the latest record on another version in the same environment. Report: `probe: before history <version>`.
 3. **Neither.** The after-probe is recorded and the run ends `INCONCLUSIVE — no before-side probe … baseline recorded for <version>`. The next deploy has a before side.
 
