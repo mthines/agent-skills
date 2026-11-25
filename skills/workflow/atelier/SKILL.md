@@ -208,7 +208,7 @@ No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks st
    | `CHECKS p/M FAIL: <ids>`, every listed id `unsatisfiable` in `--statuses` | continue; carry each id into the final `Needs you:` (`AC-4 unsatisfiable: <why>`) and into the Build reason |
    | any other `FAIL` | `failed`, reason = the sentinel line |
 
-4. **Early gate.** Judge step 2's `merge-gate.mjs --contract-only` result — the contract half only, because CI on a fresh draft has not run yet.
+4. **Early gate.** Judge step 2's `merge-gate.mjs --contract-only` result — the contract half only, because CI on a fresh draft has not run yet; on a resumed Build, or when the head moved since step 2, run that gate command again first.
    Exit 0 → continue.
    Exit 1 → send Build back once, for that fix only: `Skill("aw", "<pr-url>: make the merge gate pass — <MERGE_GATE line> <the gate's how-to lines> <build suffix>")` (one paragraph each), then run the gate again; a second exit 1 → Build `refuse`, reason = the `MERGE_GATE:` line.
    Exit 2 → Build `failed`, reason = its stderr.

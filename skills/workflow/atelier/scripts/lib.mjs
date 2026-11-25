@@ -72,9 +72,10 @@ export function makeTester(label) {
 
 // Each companion atelier requires of a Build, and the words aw's `Degraded:` line uses for it.
 const COMPANION_ALIASES = {
-	"review-loop": /\b(review-loop|branch-reviewer|pr-reviewer|local review|review)\b/i,
+	"review-loop": /\b(review-loop|branch-reviewer|pr-reviewer|local review)\b/i,
 	"create-pr": /\bcreate-pr\b/i,
-	"quality-pass": /\b(quality[ -]pass|fit|reuse|ux|polish)\b/i,
+	// Not bare `ux`: the quality pass skips its UX lane by design on a diff with no UI.
+	"quality-pass": /\b(quality[ -]pass|fit|reuse)\b/i,
 	"aw-verify": /\b(aw-verify|ui-verify|aw-tester)\b/i,
 };
 
@@ -94,9 +95,15 @@ export function parseDegraded(text) {
 	const at = s.lastIndexOf("AW RUN COMPLETE");
 	const tail = at >= 0 ? s.slice(at) : s;
 	const tier = tail.match(/\b(Micro|Lite|Full)\b/)?.[1] ?? null;
-	const m = tail.match(/Degraded:\s*(.*?)(?:,\s*Needs you:|\n|$)/);
+	const m = tail.match(/Degraded:[ \t]*(.*?)(?:,[ \t]*Needs you:|\n|$)/);
 	if (!m) return { found: false, tier, none: false, items: [], skipped: [] };
-	const value = m[1].trim().replace(/^\[|\]$/g, "");
+	// A list form: `- Degraded:` followed by indented bullets, up to the next `- <Field>:` line.
+	const bullets = [];
+	for (const line of tail.slice(m.index + m[0].length).split("\n")) {
+		if (!/^[ \t]+[-*][ \t]+\S/.test(line) || /^[ \t]*-[ \t]+[A-Z][\w ]*:/.test(line)) break;
+		bullets.push(line.replace(/^[ \t]+[-*][ \t]+/, "").trim());
+	}
+	const value = [m[1].trim().replace(/^\[|\]$/g, ""), ...bullets].filter(Boolean).join("; ");
 	if (/^"?none"?\.?$/i.test(value) || value === "") return { found: true, tier, none: true, items: [], skipped: [] };
 	// Split on `;` and on commas outside parentheses: `review-loop skipped (budget, time), create-pr skipped`.
 	const items = [];

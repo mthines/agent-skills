@@ -9,7 +9,7 @@
 //                  [--ci-file <f>] [--preflight <line>]    prints the re-rendered comment body; Ready `proceed`
 //                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head;
 //                                                          --preflight stores preflight.mjs's `PREFLIGHT:` line once
-//   node state.mjs --companions --aw-file <f> [--ui-diff] [--accept-skip a,b]
+//   node state.mjs --companions --aw-file <f> [--ui-diff yes|no|true|false] [--accept-skip a,b]
 //                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
 //   node state.mjs --fetch  --pr <url|n>                    prints the existing comment body via gh (empty when none)
@@ -271,6 +271,10 @@ function selfTest() {
 	const acc = companionDecision(block("review-loop skipped (context budget)"), { accept: ["review-loop"] });
 	t("--accept-skip from the user proceeds and says so", acc.decision === "proceed" && acc.reason === "accepted skip: review-loop (user)");
 	t("no Degraded: line holds", companionDecision("AW RUN COMPLETE\n- Tier: Full").decision === "hold");
+	const list = "AW RUN COMPLETE\n- Tier: Full\n- Degraded:\n  - lorekit unreachable\n  - review-loop skipped\n- Needs you: nothing";
+	t("a bulleted Degraded: list is read to its end", companionDecision(list).reason === "skipped: review-loop", JSON.stringify(companionDecision(list)));
+	t("an empty Degraded: does not swallow Needs you:", parseDegraded("AW RUN COMPLETE\n- Tier: Full\n- Degraded:\n- Needs you: review-loop it").skipped.length === 0);
+	t("docs review / ux skipped are not companion skips", companionDecision(block("docs review skipped (no drift), ux skipped (not a UI diff)"), { uiDiff: false }).decision === "proceed");
 	return done();
 }
 
@@ -286,7 +290,7 @@ function main() {
 		else if (a.next) console.log(next(parse(readBody(a)), a.head));
 		else if (a.companions) {
 			const accept = typeof a["accept-skip"] === "string" ? a["accept-skip"].split(",").map((x) => x.trim()) : [];
-			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { uiDiff: a["ui-diff"] === true || a["ui-diff"] === "yes", accept });
+			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { uiDiff: [true, "yes", "true"].includes(a["ui-diff"]), accept });
 			console.log(`COMPANIONS: ${d.decision}${d.reason ? ` — ${d.reason}` : ""}`);
 		}
 		else if (a.record) {

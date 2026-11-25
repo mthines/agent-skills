@@ -55,7 +55,7 @@ export function signInCheck(config, envs = ["local", "preview"]) {
 // or that only listens for ready_for_review, skips drafts. Read as text: workflows use YAML block scalars.
 export function draftGuarded(text) {
 	if (!/^\s*(on:|"on":|'on':)/m.test(text) || !/\bpull_request(_target)?\b/.test(text)) return null;
-	const guard = /github\.event\.pull_request\.draft|draft\s*==\s*false|!\s*github\.event\.pull_request\.draft/.test(text);
+	const guard = /pull_request\.draft\s*(==\s*false|!=\s*true)|!\s*github\.event\.pull_request\.draft/.test(text);
 	const types = text.match(/\bpull_request(?:_target)?\s*:\s*\n?\s*types\s*:\s*\[([^\]]*)\]/);
 	const onlyReady = !!types && /ready_for_review/.test(types[1]) && !/\b(opened|synchronize|reopened)\b/.test(types[1]);
 	return guard || onlyReady;
@@ -136,6 +136,7 @@ function selfTest() {
 	t("✗ a plain pull_request workflow runs on drafts", draftGuarded(wf("  pull_request:")) === false);
 	t("✓ an if: draft == false guard skips drafts", draftGuarded(`${wf("  pull_request:")}    if: github.event.pull_request.draft == false\n`) === true);
 	t("✓ a !github.event.pull_request.draft guard skips drafts", draftGuarded(`${wf("  pull_request:")}    if: \${{ !github.event.pull_request.draft }}\n`) === true);
+	t("a draft == true condition is not a skip-drafts guard", draftGuarded(`${wf("  pull_request:")}    if: github.event.pull_request.draft == true\n`) === false);
 	t("✓ types: [ready_for_review] alone skips drafts", draftGuarded(wf("  pull_request:\n    types: [ready_for_review]")) === true);
 	t("types with synchronize still runs on drafts", draftGuarded(wf("  pull_request:\n    types: [opened, synchronize, ready_for_review]")) === false);
 	t("a push-only workflow is not a PR workflow", draftGuarded("on:\n  push:\n    branches: [main]\n") === null);
