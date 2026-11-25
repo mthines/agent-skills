@@ -17,7 +17,7 @@ Mark it with one comment on the line, or the line above, in this exact form:
 shortcut: <the limit>, <when to upgrade>
 ```
 
-The text before the first comma is the ceiling; the text after it is the trigger that says when to revisit.
+The text before the first comma followed by a space is the ceiling, so `10,000 rows` stays whole; the text after it is the trigger that says when to revisit.
 Rationale: [`../references/shortcut-markers.md`](../references/shortcut-markers.md).
 
 ## When writing code

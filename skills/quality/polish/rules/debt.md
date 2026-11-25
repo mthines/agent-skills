@@ -20,7 +20,7 @@ node "${CLAUDE_SKILL_DIR}/scripts/shortcut-ledger.mjs"                 # default
 node "${CLAUDE_SKILL_DIR}/scripts/shortcut-ledger.mjs" --marker HACK    # when the user names another word
 ```
 
-It greps comment prefixes (`#`, `//`, `/*`, `--`, `<!--`, `;`) followed by the marker word and a colon, honours `.gitignore`, and skips Markdown and JSON files.
+It greps comment prefixes (`#`, `//`, `/*`, a ` * ` block-comment body line, `--`, `<!--`, `;`) followed by the marker word and a colon, honours `.gitignore`, and skips Markdown and JSON files.
 Each row reads `<file>:<line>, <what>. ceiling: <limit>. upgrade: <trigger>.`; a marker with no trigger reads `upgrade: none. [no-trigger]`.
 The last line is `<N> markers, <M> with no trigger.`, or `No shortcut debt. Clean ledger.`
 

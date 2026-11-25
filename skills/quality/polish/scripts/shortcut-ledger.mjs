@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const COMMENT = "(#|//|/\\*|--|<!--|;)";
+const COMMENT = "(#|//|/\\*|\\*|--|<!--|;)";
 const SKIP_FILE = /\.(md|mdx|markdown|json|jsonl)$/i;
 const WHAT_MAX = 80;
 const marker = (word) => `${COMMENT} ?${word}:`;
@@ -41,7 +41,8 @@ export function parseHit(hit, word, lines) {
 	if (SKIP_FILE.test(file)) return null;
 	const at = text.search(new RegExp(marker(word)));
 	const body = text.slice(at).replace(new RegExp(`^${marker(word)}`), "");
-	const comma = body.indexOf(",");
+	// A comma then whitespace separates ceiling from trigger, so "10,000 rows" stays whole.
+	const comma = body.search(/,\s/);
 	const ceiling = clean(comma < 0 ? body : body.slice(0, comma));
 	const upgrade = comma < 0 ? "" : clean(body.slice(comma + 1));
 	let what = text.slice(0, at).trim();
@@ -84,6 +85,7 @@ function selfTest() {
 		spawnSync("git", ["init", "-q"], { cwd: dir });
 		writeFileSync(join(dir, "a.py"), `rows = load_all()  # ${M} whole file in memory, stream it past 50 MB\nn = 1  # ${M} no retry\n`);
 		writeFileSync(join(dir, "b.ts"), `// ${M} single process only, move to Redis at 2 replicas\nconst cache = new Map();\n/* ${M} O(n^2) diff, switch to Myers past 10k lines */\nx();\n`);
+		writeFileSync(join(dir, "e.ts"), `/**\n * ${M} 10,000 rows in memory, paginate past that\n */\nload();\n`);
 		writeFileSync(join(dir, "c.sql"), `SELECT * FROM t; -- ${M} no index, add one past 1M rows\n`);
 		writeFileSync(join(dir, "README.md"), `\`# ${M} an example, never\`\n`);
 		writeFileSync(join(dir, "golden.jsonl"), `{"diff":"+  # ${M} data, never"}\n`);
@@ -100,8 +102,9 @@ function selfTest() {
 		t("own-line comment: what is the next code line", out[2] === "b.ts:1, const cache = new Map(). ceiling: single process only. upgrade: move to Redis at 2 replicas.", out[2]);
 		t("block-comment closer stripped", out[3]?.endsWith("ceiling: O(n^2) diff. upgrade: switch to Myers past 10k lines."), out[3]);
 		t("SQL -- comment found", out[4]?.startsWith("c.sql:1, SELECT * FROM t. ceiling: no index"), out[4]);
-		t("markdown, JSON, gitignored files, and prose without the marker are skipped", rows.length === 5, rows.map((r) => r.file));
-		t("summary line", out.at(-1) === "5 markers, 1 with no trigger.", out.at(-1));
+		t("markdown, JSON, gitignored files, and prose without the marker are skipped", rows.length === 6, rows.map((r) => r.file));
+		t("summary line", out.at(-1) === "6 markers, 1 with no trigger.", out.at(-1));
+		t("block-comment body line, and a thousands separator stays in the ceiling", out.includes("e.ts:2, load(). ceiling: 10,000 rows in memory. upgrade: paginate past that."), out);
 		t("custom marker word", ledger(dir, "HACK").length === 1 && ledger(dir, "keyboard").length === 0, ledger(dir, "HACK"));
 		t("empty ledger line", render([]) === "No shortcut debt. Clean ledger.", render([]));
 	} finally {
