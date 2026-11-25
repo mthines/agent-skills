@@ -18,7 +18,7 @@ Check the file with `node ${CLAUDE_SKILL_DIR}/scripts/tick.mjs --check-config`.
 
 | Field | Meaning |
 | --- | --- |
-| `telemetry.kind: dash0-mcp` | The controller calls the Dash0 MCP server's `sql` tool over HTTP; `url` is the server, `token_env` names the variable holding a read-only auth token (default `DASH0_AUTH_TOKEN`) |
+| `telemetry.kind: dash0-mcp` | The controller calls the Dash0 MCP server's `sql` tool over HTTP. `mcp_server` names an MCP server in the project's `.mcp.json` (else `~/.claude.json`), and its `url` and `Authorization: Bearer` header are used, so the controller reuses the agent's connection with no extra secret. `url` overrides the server's URL; `token_env` (default `DASH0_AUTH_TOKEN`) names a variable whose token, when set, wins over the server's header |
 | `telemetry.kind: command` | `run` gets the SQL on stdin and `FROM`, `TO`, `DATASET` in the environment, and prints JSON rows: any other backend |
 | `on_exception` | Command run once when a rollout ends `ROLLED_BACK`, `ESCALATE`, or `INCONCLUSIVE`; `{event}` is a JSON file with the outcome, reason, PR, contract, and state. Point it at an agent (an Agent0 webhook) |
 

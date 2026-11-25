@@ -690,13 +690,44 @@ function prRiskClass(number) {
 	}
 }
 
+// The MCP server named by `telemetry.mcp_server`, from the agent's own MCP config: the project's
+// `.mcp.json`, then `~/.claude.json` (this project's entry, then the user-wide one). Returns
+// { url, token } from its `url` and `Authorization: Bearer …` header, or null when not found.
+export function mcpServerAuth(name, { cwd = process.cwd(), home = homedir() } = {}) {
+	if (!name) return null;
+	const read = (p) => {
+		try {
+			return JSON.parse(readFileSync(p, "utf8"));
+		} catch {
+			return null;
+		}
+	};
+	const user = read(join(home, ".claude.json"));
+	const candidates = [read(join(cwd, ".mcp.json"))?.mcpServers?.[name], user?.projects?.[cwd]?.mcpServers?.[name], user?.mcpServers?.[name]];
+	for (const s of candidates) {
+		if (!s?.url) continue;
+		const auth = Object.entries(s.headers || {}).find(([k]) => k.toLowerCase() === "authorization")?.[1] || "";
+		const token = auth.replace(/^Bearer\s+/i, "").trim();
+		return { url: s.url, token: token || null };
+	}
+	return null;
+}
+
+// Dash0 MCP endpoint and token: `token_env` when that variable is set, else the server named by
+// `telemetry.mcp_server`, so the controller reuses the agent's MCP connection with no extra secret.
+export function dash0Auth(tel, { env = process.env, cwd, home } = {}) {
+	const tokenEnv = tel.token_env || "DASH0_AUTH_TOKEN";
+	const server = mcpServerAuth(tel.mcp_server, { cwd, home });
+	if (tel.mcp_server && !server) fail(`telemetry.mcp_server "${tel.mcp_server}" not found in .mcp.json or ~/.claude.json`);
+	const url = tel.url || server?.url || fail("release.yml telemetry needs url or mcp_server");
+	const token = env[tokenEnv] || server?.token || fail(`set ${tokenEnv} to a Dash0 auth token with read access${tel.mcp_server ? `, or give MCP server "${tel.mcp_server}" an Authorization header` : ", or set telemetry.mcp_server"}`);
+	return { url, token };
+}
+
 function realIo({ config, contract, pr = null, slug = null }) {
 	const env = config.environment;
 	const tel = config.telemetry || {};
-	const backend =
-		tel.kind === "command"
-			? commandBackend(tel.run)
-			: dash0Mcp({ url: tel.url, token: process.env[tel.token_env || "DASH0_AUTH_TOKEN"] || fail(`set ${tel.token_env || "DASH0_AUTH_TOKEN"} to a Dash0 auth token with read access`) });
+	const backend = tel.kind === "command" ? commandBackend(tel.run) : dash0Mcp(dash0Auth(tel));
 	const provider = providerFor(contract, config);
 	const fill = (cmd, vars) => cmd.replace(/\{(\w+)\}/g, (_, k) => (vars[k] === undefined ? `{${k}}` : String(vars[k])));
 	const sh = (cmd) => {
@@ -1139,7 +1170,24 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} ${name}: ${err ? err.message : `${s.outcome} — ${s.reason}`}`);
 	}
-	const total = 37;
+	// Dash0 auth: an MCP server in .mcp.json supplies url + token; an env token overrides; a missing server fails loud.
+	{
+		const dir = mkdtempSync(join(tmpdir(), "dv-auth-"));
+		writeFileSync(join(dir, ".mcp.json"), JSON.stringify({ mcpServers: { d0: { type: "http", url: "https://mcp.example/mcp", headers: { Authorization: "Bearer tok_file" } } } }));
+		const opts = { cwd: dir, home: dir };
+		const a1 = dash0Auth({ mcp_server: "d0" }, { ...opts, env: {} });
+		const a2 = dash0Auth({ mcp_server: "d0", url: "https://other/mcp" }, { ...opts, env: { DASH0_AUTH_TOKEN: "tok_env" } });
+		let missing = null;
+		try {
+			dash0Auth({ mcp_server: "nope" }, { ...opts, env: {} });
+		} catch (e) {
+			missing = e.message;
+		}
+		const ok = a1.url === "https://mcp.example/mcp" && a1.token === "tok_file" && a2.url === "https://other/mcp" && a2.token === "tok_env" && /not found/.test(missing || "");
+		if (!ok) failed++;
+		console.log(`${ok ? "ok  " : "FAIL"} dash0 auth from telemetry.mcp_server, env override, missing server`);
+	}
+	const total = 38;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
@@ -1203,7 +1251,14 @@ async function main() {
 		return configs.get(name);
 	};
 	if (a["check-config"]) {
-		console.log(`release.yml ok: environment ${config.env}, ${config.flags?.providers?.length || 0} provider(s), steps ${JSON.stringify(config.steps)}${config.hold_after !== undefined ? `, hold after ${config.hold_after}%` : ""}${config.promotion ? ", promotion rule set" : ""}`);
+		const tel = config.telemetry || {};
+		const telemetry = (() => {
+			if (tel.kind === "command") return "telemetry command";
+			const { url } = dash0Auth(tel);
+			const via = process.env[tel.token_env || "DASH0_AUTH_TOKEN"] ? tel.token_env || "DASH0_AUTH_TOKEN" : `MCP server ${tel.mcp_server}`;
+			return `telemetry ${url} (token from ${via})`;
+		})();
+		console.log(`release.yml ok: environment ${config.env}, ${config.flags?.providers?.length || 0} provider(s), steps ${JSON.stringify(config.steps)}${config.hold_after !== undefined ? `, hold after ${config.hold_after}%` : ""}${config.promotion ? ", promotion rule set" : ""}, ${telemetry}`);
 		return;
 	}
 	let decision = null;
