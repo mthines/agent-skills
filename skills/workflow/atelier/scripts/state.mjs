@@ -134,7 +134,11 @@ const problems = (reason) => {
 	return (/^[A-Z][A-Z_]+: /.test(r) ? [r] : r.split(/;\s+/)).map(sentence).filter(Boolean);
 };
 // The command the reader copies: the PR's own URL when the state has it, so nothing needs filling in.
-const rerun = (state) => `/atelier ${/^https:\/\//.test(String(state.pr || "")) ? state.pr : state.pr ? `#${String(state.pr).replace(/^#/, "")}` : "<this PR>"}`;
+const rerun = ({ pr }) => {
+	const ref = String(pr ?? "");
+	if (/^https:\/\//.test(ref)) return `/atelier ${ref}`;
+	return `/atelier ${ref ? `#${ref.replace(/^#/, "")}` : "<this PR>"}`;
+};
 const command = (state) => ["```text", rerun(state), "```"];
 
 // The block under the card: one GitHub alert whose type is the state, a bold line saying what to do,
@@ -150,20 +154,19 @@ function actionBlock(state) {
 		const list = problems(e.reason || state.refusal);
 		body = list.length > 1
 			? [`**${head}: fix ${list.length} things, then re-run.**`, "", ...list.map((p, i) => `${i + 1}. ${p}`), "", ...command(state)]
-			: [`**${head}${list.length ? `: ${oneLine(e.reason || state.refusal).replace(/[.;\s]+$/, "")}` : ""}.**`, "", "Then re-run:", "", ...command(state)];
+			: [`**${head}${list.length ? `: ${list[0].slice(0, -1)}` : ""}.**`, "", "Then re-run:", "", ...command(state)];
 	} else if (st.deliver) {
 		body = [st.deliver.decision === "skipped"
 			? `**Done: merged; Deliver skipped${st.deliver.reason ? ` (${oneLine(st.deliver.reason)})` : ""}.**`
 			: "**Done: merged, and `main`'s pipeline is green for the merge commit.**"];
 	} else {
-		const n = next(state, null);
-		const what = {
+		const NEXT = {
 			stop: "**Next: Deliver** checks `main`'s pipeline for the merge commit.",
 			ready: "**Next: Ready** gets the PR green: review, threads, and CI.",
 			merge: "**Next: Merge** runs the merge gate, then squash-merges.",
 			build: "**Next: Build** finishes the PR.",
-		}[n] || "**Next: Build** finishes the PR.";
-		body = [what, "", "Atelier carries on by itself; if this run stopped, re-run:", "", ...command(state)];
+		};
+		body = [NEXT[next(state, null)] ?? NEXT.build, "", "Atelier carries on by itself; if this run stopped, re-run:", "", ...command(state)];
 	}
 	return [`> [!${type}]`, ...body.map((l) => (l ? `> ${l}` : ">"))].join("\n");
 }
