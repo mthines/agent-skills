@@ -135,3 +135,26 @@ export function companionDecision(text, { uiDiff = false, accept = [] } = {}) {
 	if (open.length) return { decision: "hold", reason: `skipped: ${open.join(", ")}`, missing: open, accepted };
 	return { decision: "proceed", reason: accepted.length ? `accepted skip: ${accepted.join(", ")} (user)` : "", missing: [], accepted };
 }
+
+// A script shipped with an agent (agents/<name>/scripts/<file>): an explicit env override, then this
+// checkout, then the installed agent's real path (~/.claude/agents/<name>.md is a symlink into a
+// checkout), then the Agent0 install. Used to share pr-reviewer's otlp.mjs instead of copying it.
+export function agentScript(name, file, envVar, env = process.env) {
+	const here = dirname(realpathSync(fileURLToPath(import.meta.url)));
+	const installed = (() => {
+		try {
+			return join(dirname(realpathSync(join(homedir(), ".claude", "agents", `${name}.md`))), name, "scripts", file);
+		} catch {
+			return null;
+		}
+	})();
+	const candidates = [
+		env[envVar],
+		join(here, "..", "..", "..", "..", "agents", name, "scripts", file),
+		installed,
+		join("/tmp/workspace/agent-skills/agents", name, "scripts", file),
+	].filter(Boolean);
+	const hit = candidates.find((p) => existsSync(p));
+	if (!hit) throw new Error(`cannot find ${name}/scripts/${file} (set ${envVar}, tried ${candidates.join(", ")})`);
+	return hit;
+}

@@ -57,11 +57,11 @@ At the start of every run, before any stage:
 1. List merged atelier PRs: `memory.list { kind: "bus", host: "atelier", tags: ["loop::atelier-decisions"], limit: 100 }`, passing each `nextCursor` back as `cursor` until it is null, and keep `event: decision`, `stage: merge`, `decision: proceed` rows of this repo that carry `merge_sha`.
 2. Read each PR's stored outcome: `memory.read { refs: ["{scope}::atelier-decisions::pr-{n}-outcome"] }`, keeping its `outcome` and `version`.
    Drop only PRs whose stored outcome is `reverted`; a stored `clean` or `hotfixed` can still turn into `reverted`.
-3. Classify the rest in one call, on a fetched base:
+3. Classify the rest in one call, on a fetched base, passing each PR's stored outcome (`null` when none) as `stored`, so a changed outcome is exported once ([`telemetry.md`](./telemetry.md)):
 
    ```bash
    git fetch -q origin
-   node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/outcomes.mjs" --merged '[{"pr":41,"sha":"<merge_sha>"}]' --base origin/<default-branch>
+   node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/outcomes.mjs" --merged '[{"pr":41,"sha":"<merge_sha>","stored":"clean"}]' --base origin/<default-branch>
    ```
 
 4. For each result with `final: true` whose `outcome` differs from the stored one, write the event with `expected_version` set to the stored `version` (`0` when none), so two concurrent runs cannot both write it:

@@ -8,7 +8,11 @@
 //   node state.mjs --record --stage <s> --decision <d> --head <sha> [--reason <r>] [--pr <n>] [--body-file <f>]
 //                  [--ci-file <f>] [--preflight <line>]    prints the re-rendered comment body; Ready `proceed`
 //                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head;
-//                                                          --preflight stores preflight.mjs's `PREFLIGHT:` line once
+//                                                          --preflight stores preflight.mjs's `PREFLIGHT:` line once;
+//                  [--memory "lorekit=ok,lessons_used=2,bus_failed=0"]   memory counts for the run's trace
+// --next, --companions, and --record also mark the run's telemetry (telemetry.mjs): the stage that opens,
+// the companions check, and the decision; a decision that ends the run exports it. Telemetry writes go
+// to the ledger and stderr only, never to stdout, and never change the exit code.
 //   node state.mjs --companions --aw-file <f> [--ui-diff yes|no|true|false] [--accept-skip a,b]
 //                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
@@ -24,6 +28,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
 import { companionDecision, isMain, makeTester, parseArgs, parseDegraded, requiredCompanions } from "./lib.mjs";
+import { markCompanions, markDecision, markNext, parseMemory } from "./telemetry.mjs";
 
 export const MARKER = "<!-- atelier:v1 -->";
 const STATE_RE = /<!-- atelier:v1:state (\{.*?\}) -->/s;
@@ -278,7 +283,7 @@ function selfTest() {
 	return done();
 }
 
-function main() {
+async function main() {
 	const a = parseArgs(process.argv.slice(2));
 	if (a["self-test"]) process.exit(selfTest());
 	try {
@@ -287,16 +292,27 @@ function main() {
 			process.stdout.write(c ? c.body : "");
 		} else if (a.upsert) upsert(a.pr, a["body-file"]);
 		else if (a.parse) console.log(JSON.stringify(parse(readBody(a)), null, 2));
-		else if (a.next) console.log(next(parse(readBody(a)), a.head));
+		else if (a.next) {
+			const state = parse(readBody(a));
+			const stage = next(state, a.head);
+			console.log(stage);
+			if (state) await markNext({ stage, state });
+		}
 		else if (a.companions) {
 			const accept = typeof a["accept-skip"] === "string" ? a["accept-skip"].split(",").map((x) => x.trim()) : [];
 			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { uiDiff: [true, "yes", "true"].includes(a["ui-diff"]), accept });
 			console.log(`COMPANIONS: ${d.decision}${d.reason ? ` — ${d.reason}` : ""}`);
+			const aw = parseDegraded(readFileSync(a["aw-file"], "utf8"));
+			await markCompanions({ decision: d.decision, tier: aw.tier, skipped: d.missing, accepted: d.accepted });
 		}
 		else if (a.record) {
 			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;
 			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null });
 			process.stdout.write(`${render(s)}\n`);
+			await markDecision({
+				stage: a.stage, decision: a.decision, reason: a.reason === true ? "" : a.reason || "", head: a.head || null,
+				pr: typeof a.pr === "string" ? a.pr : s.pr, memory: typeof a.memory === "string" ? parseMemory(a.memory) : null,
+			});
 		} else throw new Error("pass one of --next, --record, --companions, --parse, --fetch, --upsert, --self-test");
 	} catch (e) {
 		console.error(`state: ${e.message}`);
@@ -304,4 +320,4 @@ function main() {
 	}
 }
 
-if (isMain(import.meta.url)) main();
+if (isMain(import.meta.url)) await main();

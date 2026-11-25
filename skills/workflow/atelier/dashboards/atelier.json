@@ -1,0 +1,817 @@
+{
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "atelier",
+    "project": "agent-skills"
+  },
+  "spec": {
+    "display": {
+      "name": "atelier",
+      "description": "How many changes atelier ships, where each run spends its time, where it gets stuck, and whether its merges stay merged. Subject: service_name=\"atelier\" (namespace agent-skills); a run is one atelier.run span. Schema: skills/workflow/atelier/rules/telemetry.md."
+    },
+    "duration": "30d",
+    "variables": [],
+    "panels": {
+      "runs_total": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Runs",
+            "description": "atelier runs that ended in the range (one per /atelier invocation; a resume is a new run). Smoke runs excluded."
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum(increase({otel_metric_name=\"atelier.runs\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range] anchored))"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "merged_total": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "PRs merged",
+            "description": "PRs atelier squash-merged in the range."
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum(increase({otel_metric_name=\"atelier.prs.merged\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range] anchored))"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "merge_rate": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Merge rate",
+            "description": "Share of runs that ended merged."
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "percentunit"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum(increase({otel_metric_name=\"atelier.prs.merged\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range] anchored)) / sum(increase({otel_metric_name=\"atelier.runs\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range] anchored))"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "revert_rate": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Revert rate",
+            "description": "Merged PRs outcomes.mjs later classified reverted, over all classified PRs (outcome transitions; a clean PR later reverted counts in both)."
+          },
+          "plugin": {
+            "kind": "StatChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "percentunit"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum(increase({otel_metric_name=\"atelier.outcomes\", service_name=\"atelier\", atelier_smoke=\"\", atelier_outcome=\"reverted\"}[$__range] anchored)) / sum(increase({otel_metric_name=\"atelier.outcomes\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range] anchored))"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "runs_by_outcome": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Runs per day by outcome",
+            "description": "merged \u00b7 held \u00b7 refused \u00b7 failed \u00b7 stopped (preflight stop) \u00b7 abandoned (session ended with no record)."
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "visual": {
+                "display": "bar",
+                "stack": "all"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_run_outcome) (increase({otel_metric_name=\"atelier.runs\", service_name=\"atelier\", atelier_smoke=\"\"}[1d] anchored))",
+                    "seriesNameFormat": "{{atelier_run_outcome}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "merged_per_week": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "PRs merged per week",
+            "description": ""
+          },
+          "plugin": {
+            "kind": "TimeSeriesChart",
+            "spec": {
+              "legend": {
+                "position": "bottom"
+              },
+              "visual": {
+                "display": "bar",
+                "stack": "all"
+              }
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum(increase({otel_metric_name=\"atelier.prs.merged\", service_name=\"atelier\", atelier_smoke=\"\"}[7d] anchored))",
+                    "seriesNameFormat": "merged"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "where_runs_stop": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Where runs stop",
+            "description": "Runs by the stage they ended in and how they ended \u2014 the stuck point."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_stage_reached, atelier_run_outcome) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=\"atelier.run\", atelier_smoke=\"\"}[$__range]))",
+                    "seriesNameFormat": "{{atelier_stage_reached}} \u00b7 {{atelier_run_outcome}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "stage_p50": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Stage duration p50",
+            "description": "p50 wall time per stage span (build = aw; ready includes CI waits)."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "seconds"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "histogram_quantile(0.5, sum by (atelier_stage_name) (increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range])))",
+                    "seriesNameFormat": "{{atelier_stage_name}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "stage_p90": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Stage duration p90",
+            "description": "p90 wall time per stage span (build = aw; ready includes CI waits)."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "seconds"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "histogram_quantile(0.9, sum by (atelier_stage_name) (increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range])))",
+                    "seriesNameFormat": "{{atelier_stage_name}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "stage_total": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Total time per stage",
+            "description": "Where all runs' wall time went, summed per stage."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "seconds"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "histogram_sum(sum by (atelier_stage_name) (increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range])))",
+                    "seriesNameFormat": "{{atelier_stage_name}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "waiting": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Waiting time by kind",
+            "description": "ci / review / other: commands run through telemetry.mjs wait; human: idle time between a hold and the resume."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "seconds"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "histogram_sum(sum by (atelier_wait_kind) (increase({otel_metric_name=\"atelier.wait.duration\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range])))",
+                    "seriesNameFormat": "{{atelier_wait_kind}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "active_vs_wait": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Active vs waiting",
+            "description": "Stage time minus in-run waits is agent-active time."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "seconds"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "histogram_sum(sum(increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_smoke=\"\"}[$__range]))) - histogram_sum(sum(increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.wait .*\", atelier_smoke=\"\"}[$__range])))",
+                    "seriesNameFormat": "active"
+                  }
+                }
+              }
+            },
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "histogram_sum(sum(increase({otel_metric_name=\"dash0.spans.duration\", service_name=\"atelier\", otel_span_name=~\"atelier.wait .*\", atelier_smoke=\"\"}[$__range])))",
+                    "seriesNameFormat": "waiting in run"
+                  }
+                }
+              }
+            },
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "histogram_sum(sum(increase({otel_metric_name=\"atelier.wait.duration\", service_name=\"atelier\", atelier_wait_kind=\"human\", atelier_smoke=\"\"}[$__range])))",
+                    "seriesNameFormat": "waiting on a human"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "holds": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Holds, refusals, failures by reason",
+            "description": "Bounded reason buckets per stage (atelier.stage.reason_bucket)."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_stage_name, atelier_stage_decision, atelier_stage_reason_bucket) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=~\"atelier.stage .*\", atelier_stage_decision=~\"hold|refuse|failed\", atelier_smoke=\"\"}[$__range]))",
+                    "seriesNameFormat": "{{atelier_stage_name}} {{atelier_stage_decision}} \u00b7 {{atelier_stage_reason_bucket}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "companions": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Companions skipped",
+            "description": "Runs whose Build hand-back skipped a required companion, by the skipped set."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_companions_skipped) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=\"atelier.run\", atelier_companions_skipped!=\"\", atelier_smoke=\"\"}[$__range]))",
+                    "seriesNameFormat": "{{atelier_companions_skipped}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "preflight": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Preflight gaps",
+            "description": "Runs by the preflight gap set."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_preflight_gaps) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=\"atelier.run\", atelier_preflight_gaps!=\"\", atelier_smoke=\"\"}[$__range]))",
+                    "seriesNameFormat": "{{atelier_preflight_gaps}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "outcomes": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "Merged PR outcomes",
+            "description": "Transitions outcomes.mjs recorded: clean \u00b7 reverted \u00b7 hotfixed."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_outcome) (increase({otel_metric_name=\"atelier.outcomes\", service_name=\"atelier\", atelier_smoke=\"\"}[$__range] anchored))",
+                    "seriesNameFormat": "{{atelier_outcome}}"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "memory": {
+        "kind": "Panel",
+        "spec": {
+          "display": {
+            "name": "LoreKit per run",
+            "description": "Runs by LoreKit status and by how many aw lessons the Build applied."
+          },
+          "plugin": {
+            "kind": "BarChart",
+            "spec": {
+              "calculation": "last-number",
+              "format": {
+                "unit": "decimal"
+              },
+              "sort": "desc"
+            }
+          },
+          "queries": [
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_memory_lorekit) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=\"atelier.run\", atelier_smoke=\"\"}[$__range]))",
+                    "seriesNameFormat": "lorekit {{atelier_memory_lorekit}}"
+                  }
+                }
+              }
+            },
+            {
+              "kind": "TimeSeriesQuery",
+              "spec": {
+                "plugin": {
+                  "kind": "PrometheusTimeSeriesQuery",
+                  "spec": {
+                    "query": "sum by (atelier_memory_lessons_used) (increase({otel_metric_name=\"dash0.spans\", service_name=\"atelier\", otel_span_name=\"atelier.run\", atelier_memory_lessons_used!=\"\", atelier_smoke=\"\"}[$__range]))",
+                    "seriesNameFormat": "{{atelier_memory_lessons_used}} lessons"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "layouts": [
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Throughput",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 6,
+              "height": 4,
+              "content": {
+                "$ref": "#/spec/panels/runs_total"
+              }
+            },
+            {
+              "x": 6,
+              "y": 0,
+              "width": 6,
+              "height": 4,
+              "content": {
+                "$ref": "#/spec/panels/merged_total"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 6,
+              "height": 4,
+              "content": {
+                "$ref": "#/spec/panels/merge_rate"
+              }
+            },
+            {
+              "x": 18,
+              "y": 0,
+              "width": 6,
+              "height": 4,
+              "content": {
+                "$ref": "#/spec/panels/revert_rate"
+              }
+            },
+            {
+              "x": 0,
+              "y": 4,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/runs_by_outcome"
+              }
+            },
+            {
+              "x": 12,
+              "y": 4,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/merged_per_week"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Bottlenecks",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/where_runs_stop"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/stage_total"
+              }
+            },
+            {
+              "x": 0,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/stage_p50"
+              }
+            },
+            {
+              "x": 12,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/stage_p90"
+              }
+            },
+            {
+              "x": 0,
+              "y": 16,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/active_vs_wait"
+              }
+            },
+            {
+              "x": 12,
+              "y": 16,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/waiting"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Why runs stop",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/holds"
+              }
+            },
+            {
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/companions"
+              }
+            },
+            {
+              "x": 0,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/preflight"
+              }
+            },
+            {
+              "x": 12,
+              "y": 8,
+              "width": 12,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/outcomes"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "kind": "Grid",
+        "spec": {
+          "display": {
+            "title": "Memory",
+            "collapse": {
+              "open": true
+            }
+          },
+          "items": [
+            {
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 8,
+              "content": {
+                "$ref": "#/spec/panels/memory"
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

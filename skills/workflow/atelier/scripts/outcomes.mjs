@@ -14,6 +14,9 @@
 //
 // Prints a JSON array, one { pr, sha, outcome, final, evidence: [{ sha, subject, at, files, why }] } per PR;
 // a PR whose sha cannot be read is { outcome: "unknown", final: false, error }, and the others still classify.
+// An entry may carry `"stored": "<outcome>|null"`, the outcome LoreKit already holds; each final result that differs
+// from it is exported as one `atelier.outcome` span and an `atelier.outcomes` point (telemetry.mjs), so a dashboard
+// counts every transition once. Entries without `stored` export nothing.
 // Exit: 0 ok, 2 error.
 
 import { execFileSync } from "node:child_process";
@@ -22,6 +25,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { isMain, makeTester, parseArgs } from "./lib.mjs";
+import { emitOutcomes, markSweep } from "./telemetry.mjs";
 
 const FIX_RE = /\b(hot-?fix(es|ed)?|fix(es|ed)?|revert(s|ed)?)\b/i;
 const DAY = 86400;
@@ -131,10 +135,23 @@ function selfTest() {
 		rmSync(dir, { recursive: true, force: true });
 	}
 	t("the temp repo builds", !crashed, crashed);
+	const tr = transitions(
+		[{ pr: 1, stored: "clean" }, { pr: 2, stored: "reverted" }, { pr: 3 }, { pr: 4, stored: null }, { pr: 5, stored: null }],
+		[{ pr: 1, outcome: "reverted", final: true }, { pr: 2, outcome: "reverted", final: true }, { pr: 3, outcome: "clean", final: true }, { pr: 4, outcome: "clean", final: false }, { pr: 5, outcome: "hotfixed", final: true }],
+	);
+	t("only a final outcome that differs from a given stored one is a transition", tr.map((x) => `${x.pr}:${x.stored}`).join() === "1:clean,5:null", JSON.stringify(tr));
 	return done();
 }
 
-function main() {
+// Final results whose outcome differs from the stored one: the transitions worth exporting.
+export function transitions(list, results) {
+	return results.flatMap((r, i) => {
+		const entry = list[i];
+		return r.final && entry && "stored" in entry && entry.stored !== r.outcome ? [{ ...r, stored: entry.stored ?? null }] : [];
+	});
+}
+
+async function main() {
 	const a = parseArgs(process.argv.slice(2));
 	if (a["self-test"]) process.exit(selfTest());
 	try {
@@ -147,11 +164,23 @@ function main() {
 		if (a.now) opts.now = Date.parse(a.now) / 1000;
 		const dir = a["repo-dir"] || process.cwd();
 		git(dir, ["rev-parse", "--verify", "--quiet", `${opts.base}^{commit}`]); // a bad base fails the run, never every PR
-		console.log(JSON.stringify(list.map((p) => classifyOne(dir, { ...opts, pr: p.pr, sha: p.sha })), null, 2));
+		const results = list.map((p) => classifyOne(dir, { ...opts, pr: p.pr, sha: p.sha }));
+		console.log(JSON.stringify(results, null, 2));
+		const changed = transitions(list, results);
+		await markSweep({ listed: list.length, final: results.filter((r) => r.final).length, changed: changed.length });
+		if (changed.length) await emitOutcomes({ results: changed, repo: originSlug(dir) });
 	} catch (e) {
 		console.error(`outcomes: ${e.message}`);
 		process.exit(2);
 	}
 }
 
-if (isMain(import.meta.url)) main();
+function originSlug(dir) {
+	try {
+		return git(dir, ["remote", "get-url", "origin"]).trim().replace(/\.git$/, "").split(/[/:]/).slice(-2).join("/");
+	} catch {
+		return null;
+	}
+}
+
+if (isMain(import.meta.url)) await main();

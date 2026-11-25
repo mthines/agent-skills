@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 // preflight.mjs — what this repo lets an atelier run prove, checked before Build (SKILL.md Step 0).
 //
-//   node preflight.mjs [--repo <dir>] [--json]   prints a capability table, then `PREFLIGHT: ok|limited — <n> gaps (<names>)`
+//   node preflight.mjs [--repo <dir>] [--json] [--pr <url>] [--model <id>]
+//        prints a capability table, then `PREFLIGHT: ok|limited — <n> gaps (<names>)`; begins the run's telemetry
+//        (telemetry.mjs) — `--pr` marks a resumed run, `--model` names the model on the trace
 //   node preflight.mjs --self-test
 // Reads only committed config: .agents/aw/release.yml (through deployment-verify's loadConfig), telemetry.yml,
 // environments.yml (through deployment-verify's YAML reader), and .github/workflows/*.yml (as text).
@@ -13,6 +15,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
+import { markPreflight } from "./telemetry.mjs";
 
 function deploymentVerifyModule(file) {
 	return import(pathToFileURL(join(skillDir("deployment-verify", "testing", "DEPLOYMENT_VERIFY_DIR"), "scripts", file)).href);
@@ -156,12 +159,17 @@ function selfTest() {
 async function main() {
 	const a = parseArgs(process.argv.slice(2));
 	if (a["self-test"]) process.exit(selfTest());
+	const startNs = BigInt(Date.now()) * 1_000_000n;
 	try {
 		const checks = await gather(typeof a.repo === "string" ? a.repo : process.cwd());
 		const { gaps, line } = summarize(checks);
 		if (a.json) console.log(JSON.stringify({ checks, gaps }, null, 2));
 		else console.log(table(checks));
 		console.log(line);
+		await markPreflight({
+			startNs, status: gaps.length ? "limited" : "ok", gaps,
+			pr: typeof a.pr === "string" ? a.pr : null, model: typeof a.model === "string" ? a.model : null,
+		});
 	} catch (e) {
 		console.error(`preflight: ${e.message}`);
 		process.exit(2);
