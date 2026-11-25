@@ -6,12 +6,12 @@ description: >
   the squash-merge only when a user-visible diff ships behind a
   deployment-verify flag contract — then reads the default-branch pipeline and fixes a red one once, and says
   what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
-argument-hint: '<request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
+argument-hint: 'setup | <request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
 license: MIT
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '0.5.0'
+  version: '0.6.0'
   workflow_type: orchestrator
   tags: [workflow, orchestrator, merge, gate, deployment-verify, lorekit, resumable, telemetry]
 ---
@@ -25,6 +25,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 ## Contents
 
 - [Arguments](#arguments)
+- [`setup`](#setup)
 - [Step 0 — Setup](#step-0--setup)
 - [Stages](#stages)
 - [Step 4 — Stop](#step-4--stop)
@@ -35,6 +36,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 
 | Argument | Effect |
 | --- | --- |
+| `setup` | Ready the repo for runs: preflight, then each gap handed to the skill that fixes it, then a before/after table ([`setup`](#setup)). Runs no stage. |
 | `<request>` | Free text: start at Build. |
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
@@ -42,6 +44,46 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, and the revert). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
+
+## `setup`
+
+`/atelier setup` readies a repo for atelier runs: it reads preflight, hands each gap to the skill that owns the fix, and shows what changed.
+It writes no config itself, records no stage, and starts no trace.
+The setup skills it calls ask the user questions, so it runs interactively only: under `--unattended`, print `Needs you: run /atelier setup interactively` and stop.
+`preflight.mjs --setup` prints the plan from this table, in this order (`deployment-verify`'s setup reads the `telemetry.yml` that `aw-verify`'s writes):
+
+| Gap | `--setup` prints |
+| --- | --- |
+| `sign-in`, `telemetry` | `SETUP: Skill("aw-verify", "setup") — fixes <gaps>` (one call for both) |
+| `flag-provider` | `SETUP: Skill("deployment-verify", "setup") — fixes flag-provider` |
+| no `memory/observability-profile/INDEX.md` | `SETUP: Skill("measurable", "setup") — fixes observability-profile (…)` |
+| `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
+
+1. Resolve script paths and probe GitHub as [Step 0](#step-0--setup) items 1–2, with `A="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts"`.
+   `ACCESS_PATH` is `mcp` or `none` → keep `MANUAL: github — run gh auth login for <owner/repo>; the scripts' --pr, --fetch, and --upsert modes need gh` for the end, and continue: setup itself needs no GitHub.
+2. Before: run `node "$A/preflight.mjs" --setup --json > setup-before.json`, then `node "$A/preflight.mjs" --setup`, and print its table and lines.
+3. Run each `SETUP:` line's call, one at a time, in the printed order, at the top level of this session.
+   The called skill owns its questions, its files, and its validation; never write `.agents/aw/*` or the observability profile yourself, and never answer its questions for the user.
+   A call that stops or that the user declines → note it for `Ran:` and run the next one.
+4. Print every `MANUAL:` line, with the GitHub one from step 1, for `Needs you:`; never edit `.github/workflows/` here.
+5. After: run `node "$A/preflight.mjs" --compare setup-before.json` and print its table; when the `telemetry` row is `ok`, call the tool it names once, as Step 0 item 3 does.
+6. Commit nothing: pass on the paths the setup skills printed for the user to review and commit.
+
+```text
+✗ telemetry gap → write .agents/aw/telemetry.yml with backend: dash0-mcp      # re-implements aw-verify setup and skips its smoke probe
+✓ telemetry gap → Skill("aw-verify", "setup") → its Phase E smoke validates what it wrote
+```
+
+Emit this block on every exit of `setup`, in place of the run's terminal contract:
+
+```text
+ATELIER SETUP
+- Before: [the PREFLIGHT line from step 2]
+- After: [the PREFLIGHT line from step 5] · [its SETUP: <n> fixed, <m> remaining line]
+- Ran: [each Skill call: done | stopped: <reason> | declined, or "nothing to delegate"]
+- Files to review and commit: [the paths the setup skills printed, or "none"]
+- Needs you: [the MANUAL: lines and each remaining gap with its fix, or "nothing"]
+```
 
 ## Step 0 — Setup
 
@@ -90,7 +132,7 @@ Preflight never blocks on its own; a gap blocks only when it leaves a criterion 
 | --- | --- | --- | --- |
 | `ok` | — | — | run Build |
 | `limited` | no | — | run Build; name each gap once under `Degraded:` |
-| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix>, or re-run with --accept-gaps` |
+| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix> (/atelier setup runs it), or re-run with --accept-gaps` |
 | `limited` | yes | yes | run Build; the gap goes into the Build reason and `Needs you:` |
 
 A row whose value reads `unknown (could not parse …)` is not a gap and decides nothing.

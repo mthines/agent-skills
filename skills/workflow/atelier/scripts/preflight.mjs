@@ -5,6 +5,10 @@
 //        prints a capability table, then `PREFLIGHT: ok|limited — <n> gaps (<names>)`; begins the run's telemetry
 //        (telemetry.mjs) — `--pr` marks a resumed run, `--model` names the model on the trace, `--ticket` and
 //        `--task` name the work; with no `--pr`, the branch's open PR (gh, best effort) is recorded
+//   node preflight.mjs --setup [--json] [--repo <dir>]
+//        the same table, then one `SETUP: Skill(…) — fixes <gaps>` or `MANUAL: <check> — <fix>` line per step; no trace
+//   node preflight.mjs --compare <before.json> [--repo <dir>]
+//        `--setup --json`'s checks against a fresh read: a Before/After table, the PREFLIGHT line, `SETUP: <n> fixed, <m> remaining`
 //   node preflight.mjs --self-test
 // Reads only committed config: .agents/aw/release.yml (through deployment-verify's loadConfig), telemetry.yml,
 // environments.yml (through deployment-verify's YAML subset reader, else a line scan for the keys it needs),
@@ -95,6 +99,46 @@ export function table(checks) {
 		"| --- | --- | --- | --- |",
 		...checks.map((c) => `| ${c.name} | ${c.ok ? "ok" : "gap"} | ${c.value.replace(/\|/g, "\\|")} | ${c.cannot || "—"} |`),
 	].join("\n");
+}
+
+// `/atelier setup` (SKILL.md § `setup`): which skill fixes each gap. The agent makes the calls; this only decides them.
+// aw-verify runs first: deployment-verify's setup reads the telemetry.yml it writes.
+export const PROFILE = join("memory", "observability-profile", "INDEX.md");
+
+export function setupPlan(checks, { profile = true } = {}) {
+	const gap = new Set(checks.filter((c) => !c.ok).map((c) => c.name));
+	const steps = [];
+	const aw = ["sign-in", "telemetry"].filter((n) => gap.has(n));
+	if (aw.length) steps.push({ kind: "skill", call: 'Skill("aw-verify", "setup")', fixes: aw });
+	if (gap.has("flag-provider")) steps.push({ kind: "skill", call: 'Skill("deployment-verify", "setup")', fixes: ["flag-provider"] });
+	if (!profile) steps.push({ kind: "skill", call: 'Skill("measurable", "setup")', fixes: [`observability-profile (no ${PROFILE})`] });
+	const ci = checks.find((c) => c.name === "ci-on-draft" && !c.ok);
+	if (ci) {
+		steps.push({
+			kind: "manual",
+			name: "ci-on-draft",
+			fix: `${ci.value} — remove the draft guard, or list opened, synchronize, reopened in the pull_request types; until then Ready undrafts to get CI`,
+		});
+	}
+	return steps;
+}
+
+export function planLines(steps) {
+	if (!steps.length) return ["SETUP: nothing to delegate — 0 gaps"];
+	return steps.map((s) => (s.kind === "skill" ? `SETUP: ${s.call} — fixes ${s.fixes.join(", ")}` : `MANUAL: ${s.name} — ${s.fix}`));
+}
+
+// Before/after of the preflight checks; the profile is reported by measurable's own setup, not counted here.
+export function compareTable(before, after) {
+	const was = Object.fromEntries(before.map((c) => [c.name, c]));
+	const now = Object.fromEntries(after.map((c) => [c.name, c]));
+	const names = [...new Set([...before.map((c) => c.name), ...after.map((c) => c.name)])];
+	const cell = (c) => (!c ? "—" : c.ok ? "ok" : "gap");
+	const rows = names.map((n) => `| ${n} | ${cell(was[n])} | ${cell(now[n])} | ${(now[n]?.value ?? "").replace(/\|/g, "\\|")} |`);
+	const fixed = names.filter((n) => was[n] && !was[n].ok && now[n]?.ok);
+	const remaining = names.filter((n) => now[n] && !now[n].ok);
+	const line = `SETUP: ${fixed.length} fixed, ${remaining.length} remaining${remaining.length ? ` (${remaining.join(", ")})` : ""}`;
+	return { text: ["| Capability | Before | After | Value now |", "| --- | --- | --- | --- |", ...rows].join("\n"), fixed, remaining, line };
 }
 
 const scalar = (v) => String(v ?? "").replace(/\s+#.*$/, "").trim().replace(/^(['"])(.*)\1$/, "$2");
@@ -239,6 +283,16 @@ async function selfTest() {
 	}
 	t("a file nothing can read is unknown, not a gap", telemetryCheck({ unknown: "boom" }).ok && /unknown/.test(signInCheck({ unknown: "boom" }).value) && signInCheck({ unknown: "boom" }).ok);
 	t("the table escapes pipes", table([{ name: "x", ok: false, value: "a|b", cannot: "c" }]).includes("a\\|b"));
+	const bare = [flagCheck({ present: false }), telemetryCheck(null), signInCheck(null), ciDraftCheck([])];
+	const plan = planLines(setupPlan(bare, { profile: false }));
+	t("setup: sign-in and telemetry go to one aw-verify setup, before deployment-verify", plan[0] === 'SETUP: Skill("aw-verify", "setup") — fixes sign-in, telemetry' && /deployment-verify.*flag-provider/.test(plan[1]), plan.join(" / "));
+	t("setup: a missing profile adds measurable setup; a present one does not", plan.some((l) => /measurable/.test(l)) && !planLines(setupPlan(bare)).some((l) => /measurable/.test(l)));
+	const manual = planLines(setupPlan([ci]));
+	t("setup: ci-on-draft is one manual line naming the workflow", manual.length === 1 && /^MANUAL: ci-on-draft — no — 1 of 2 skip drafts \(ci\.yml\)/.test(manual[0]), manual.join(" / "));
+	t("setup: no gaps and a profile → nothing to delegate", planLines(setupPlan([telemetryCheck({ backend: "logs" })])).join() === "SETUP: nothing to delegate — 0 gaps");
+	const cmp = compareTable(bare, [flagCheck({ present: false }), telemetryCheck({ backend: "logs" }), signInCheck(null), ciDraftCheck([])]);
+	t("compare: counts fixed and names the remaining gaps", cmp.line === "SETUP: 1 fixed, 2 remaining (flag-provider, sign-in)", cmp.line);
+	t("compare: one row per capability with before and after", cmp.text.includes("| telemetry | gap | ok |") && cmp.text.startsWith("| Capability | Before | After |"), cmp.text);
 	return done();
 }
 
@@ -250,6 +304,19 @@ async function main() {
 		const repo = typeof a.repo === "string" ? a.repo : process.cwd();
 		const checks = await gather(repo);
 		const { gaps, line } = summarize(checks);
+		// Setup modes start no trace: they are not a run.
+		if (a.setup) {
+			const steps = setupPlan(checks, { profile: existsSync(join(repo, PROFILE)) });
+			if (a.json) console.log(JSON.stringify({ checks, gaps, steps }, null, 2));
+			else console.log([table(checks), line, ...planLines(steps)].join("\n"));
+			return;
+		}
+		if (typeof a.compare === "string") {
+			const before = JSON.parse(readFileSync(a.compare, "utf8")).checks;
+			const { text, line: setupLine } = compareTable(before, checks);
+			console.log([text, line, setupLine].join("\n"));
+			return;
+		}
 		if (a.json) console.log(JSON.stringify({ checks, gaps }, null, 2));
 		else console.log(table(checks));
 		console.log(line);

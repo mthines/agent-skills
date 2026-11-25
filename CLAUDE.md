@@ -41,7 +41,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `autonomous-workflow` (`/`) — phase machinery behind `aw`; `plan.md` is a six-heading brief gated on `run-checks.mjs` printing `CHECKS M/M PASS`, ending in a paste-ready `/goal`. `aw` (`auto`) is the sole entry and owns tiers. Design: [`CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md)
 - `aw-create-plan` (`Skill()`) — writes the `plan.md` brief (Task, Requirements, Guardrails, Definition of Done, Turn Cap, File Changes) + sealed `checks.yaml`. `aw-create-walkthrough` (`Skill()`) — writes `walkthrough.md`, led by a one-page review summary
-- `atelier` (`/`) — sequences `aw` → `prepare` → `prepare --merge`, then checks `main`'s pipeline; preflight names gaps; a skipped companion holds Build; `merge-gate.mjs` refuses a user-visible diff without a flag contract; resumes from a PR comment; logs to LoreKit and OTLP
+- `atelier` (`/`) — sequences `aw` → `prepare` → `prepare --merge`, then checks `main`'s CI; `setup` hands each preflight gap to its setup skill; a skipped companion holds Build; `merge-gate.mjs` refuses a user-visible diff without a flag contract; resumes from a PR comment; logs to LoreKit and OTLP
 - `fix-bug` (`/`) — single-bug pipeline, phases 0–8
 - `implement-suggestion` (`/`) — apply reviewer suggestions across PRs; `--watch` loops one PR, `--resolve-all` closes non-fix threads. Never fixes CI
 

@@ -129,5 +129,7 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui], m
 3. Find the deploy attribute: query one recent production span of each service and offer the attribute whose value matches a recent `main` commit.
 4. Ask for `traffic` for `local` and `preview`; production is `real`.
 5. Leave `hold_after` and `promotion` commented out, as the template has them; uncomment one only when the user asks for a human hold ([`hold.md`](./hold.md)).
-6. Find the default-branch workflow (`.github/workflows/*.yml` with `on: push` to the default branch) and write `pipeline:` with its name and the jobs that must run on a merge; leave `required_jobs` empty when unsure.
+6. Find the default-branch workflow (`.github/workflows/*.yml` with `on: push` to the default branch) that builds or releases, and write `pipeline:` (`workflow`, `required_jobs`, `timeout_minutes`) from it.
+   A job that runs on every merge (the tests, a build) goes in `required_jobs`; leave out a job gated on `needs.<x>.outputs…` or a release condition (`release_created`, a tag check), since it skips when nothing is due and would read red on every merge that releases nothing.
+   Several candidates, or none that builds: write no `pipeline:` and say so; leave `required_jobs` empty when unsure.
 7. Validate: every `set` path exists and is executable; `dataset` is readable; `tick.mjs --check-config` prints `release.yml ok`.
