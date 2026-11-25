@@ -17,7 +17,8 @@ import { render } from "./state.mjs";
 
 const DIR = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "comments");
 const OUT = join(DIR, "README.md");
-const CARDS = "../../../assets/cards";
+const ASSETS = "../../../assets";
+const CARDS = `${ASSETS}/cards`;
 const MASCOT = "../../../assets/mascot";
 
 // Gallery order and what each state shows. Each name is a `<name>.json` state in this folder.
@@ -25,6 +26,7 @@ const STATES = [
 	["built", "Built", "aw opened the draft PR and its companions ran; Ready runs next."],
 	["existing-pr-ready", "Ready (existing PR, limited preflight)", "Build skipped for an existing PR, Ready passed with green CI evidence, and a preflight gap shows as a heads-up."],
 	["build-held", "Held at Build", "A required companion did not run, so Build holds and names it."],
+	["build-refused", "Build refused", "The early merge gate refused twice, so Build records `refuse` and names the gate's line."],
 	["ready-held", "Held at Ready", "CI never ran on the draft, so Ready holds instead of passing on skipped checks."],
 	["ready-failed", "Ready failed", "CI stayed red after the one fix attempt."],
 	["merge-refused", "Merge refused", "The merge gate refused a user-visible diff without a flag contract."],
@@ -61,7 +63,7 @@ export function build() {
 	];
 	for (const [name, title, what] of STATES) {
 		const state = JSON.parse(readFileSync(join(DIR, `${name}.json`), "utf8"));
-		const body = render(state, { cardBase: CARDS });
+		const body = render(state, { assetBase: ASSETS });
 		parts.push(`## ${title}`, "", what, "", `State: [\`${name}.json\`](${name}.json)`, "", "> [!NOTE]", "> Rendered as GitHub shows it; times read as a fixed date here and as \"2 minutes ago\" on a PR.", "", body, "", "<details>", "<summary>Markdown source</summary>", "", "````markdown", render(state), "````", "", "</details>", "");
 	}
 	parts.push("## Every card", "", `All ${allKeys().length} reachable states; the file name is \`<build>-<ready>-<merge>-<deliver>-<theme>.png\`.`, "");

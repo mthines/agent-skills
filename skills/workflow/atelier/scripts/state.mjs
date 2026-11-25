@@ -29,7 +29,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-import { altText, cardKey, outcomes } from "./card.mjs";
+import { ENDINGS, altText, cardKey, outcomeOf, outcomes, verdict } from "./card.mjs";
 import { companionDecision, isMain, makeTester, parseArgs, parseDegraded, requiredCompanions } from "./lib.mjs";
 import { markCompanions, markDecision, markNext, parseMemory } from "./telemetry.mjs";
 
@@ -39,7 +39,7 @@ export const STAGES = ["build", "ready", "merge"];
 // Deliver is recorded for the comment only: the stage machine (`next`) stops at the merge.
 export const RECORDABLE = [...STAGES, "deliver"];
 // The pre-rendered cards (render-cards.mjs). Pinned to main so an old comment keeps resolving.
-export const CARD_BASE = "https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards";
+export const ASSET_BASE = "https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets";
 export const DECISIONS = ["proceed", "skipped", "refuse", "hold", "failed"];
 const DONE = new Set(["proceed", "skipped"]);
 
@@ -83,6 +83,9 @@ export function next(state, head) {
 export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, at = new Date().toISOString() }) {
 	if (!RECORDABLE.includes(stage)) throw new Error(`unknown stage ${stage} (want ${RECORDABLE.join("|")})`);
 	if (!DECISIONS.includes(decision)) throw new Error(`unknown decision ${decision} (want ${DECISIONS.join("|")})`);
+	// Every recorded pair has a pre-rendered card (card.mjs ENDINGS); any other would link a missing image.
+	if (!ENDINGS[stage].includes(outcomeOf(decision))) throw new Error(`${stage} cannot be ${decision} (want ${DECISIONS.filter((d) => ENDINGS[stage].includes(outcomeOf(d))).join("|")})`);
+	if (stage === "deliver" && state?.stages?.merge?.decision !== "proceed") throw new Error("deliver needs a merge recorded proceed first");
 	const s = state ? structuredClone(state) : { v: 1, pr: null, stages: {} };
 	if (pr) s.pr = pr;
 	if (preflight) s.preflight = preflight;
@@ -135,8 +138,8 @@ function nextLine(state) {
 	return "**Next:** re-run `/atelier <this PR>` to finish Build.";
 }
 
-/** The sticky comment: status card, the next step, a footer, and the run details. `cardBase` repoints the image (the gallery). */
-export function render(state, { cardBase = CARD_BASE } = {}) {
+/** The sticky comment: status card, the next step, a footer, and the run details. `assetBase` repoints the images (the gallery). */
+export function render(state, { assetBase = ASSET_BASE } = {}) {
 	const o = outcomes(state);
 	const key = cardKey(o);
 	const last = state.stages[state.stage];
@@ -151,12 +154,12 @@ export function render(state, { cardBase = CARD_BASE } = {}) {
 	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
 	const lines = [
 		MARKER,
-		`<picture><source media="(prefers-color-scheme: dark)" srcset="${cardBase}/${key}-dark.png"><img src="${cardBase}/${key}-light.png" width="700" alt="${altText(o)}"></picture>`,
+		`<picture><source media="(prefers-color-scheme: dark)" srcset="${assetBase}/cards/${key}-dark.png"><img src="${assetBase}/cards/${key}-light.png" width="700" alt="${altText(o)}"></picture>`,
 		"",
 		nextLine(state),
 		...(preflight && !preflight.startsWith("ok") ? [`**Heads-up:** preflight is ${preflight}.`] : []),
 		"",
-		`<sub>🧑‍🎨 Atelier${last?.sha ? ` · head <code>${last.sha.slice(0, 7)}</code>` : ""}${latest ? ` · updated ${when(latest)}` : ""}</sub>`,
+		`<sub><img src="${assetBase}/mascot/${verdict(o).mood}.png" width="20" height="20" alt=""> Atelier${last?.sha ? ` · head <code>${last.sha.slice(0, 7)}</code>` : ""}${latest ? ` · updated ${when(latest)}` : ""}</sub>`,
 		"",
 		"<details>",
 		"<summary>Run details</summary>",
@@ -286,11 +289,12 @@ function selfTest() {
 	t("evidence from a head other than the entry's re-runs ready", next(tampered, "b2") === "ready");
 	const heldBody = render(record(s, { stage: "ready", decision: "hold", head: "a1", reason: "CI not run: draft" }));
 	t("a hold names its reason under the card", heldBody.includes("**Needs you:** CI not run: draft. Then re-run `/atelier <this PR>` to resume at Ready."));
-	t("a hold picks the held card for both themes", heldBody.includes(`${CARD_BASE}/skipped-hold-pending-pending-dark.png`) && heldBody.includes(`${CARD_BASE}/skipped-hold-pending-pending-light.png`));
+	t("a hold picks the held card for both themes", heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-dark.png`) && heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-light.png`));
+	t("the footer shows the mascot in the state's mood", heldBody.includes(`${ASSET_BASE}/mascot/held.png`));
 	t("a failure names its reason under the card", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("**Needs you:** CI red."));
 	t("a proceed names the next stage, not a reason", render(s).includes("**Next:** re-run `/atelier <this PR>` to run the merge gate.") && !render(s).includes("Needs you"));
 	t("times render as GitHub relative-time", render(s).includes('<relative-time datetime="'));
-	t("the card base can be pointed elsewhere", render(s, { cardBase: "../assets/cards" }).includes('srcset="../assets/cards/'));
+	t("the asset base can be pointed elsewhere", render(s, { assetBase: "../assets" }).includes('srcset="../assets/cards/'));
 	s = record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "user-visible diff | no flag" });
 	t("a refused merge resumes at merge", next(s, "a1") === "merge");
 	t("a refusal is surfaced", s.refusal === "user-visible diff | no flag");
@@ -310,6 +314,9 @@ function selfTest() {
 		threw = true;
 	}
 	t("an unknown stage is rejected", threw);
+	const throws = (f) => { try { f(); return false; } catch { return true; } };
+	t("a pair with no card is rejected", throws(() => record(null, { stage: "ready", decision: "skipped", head: "a1" })) && !throws(() => record(null, { stage: "build", decision: "refuse", head: "a1" })));
+	t("Deliver before a merge is rejected", throws(() => record(record(null, { stage: "merge", decision: "refuse", head: "a1" }), { stage: "deliver", decision: "skipped", head: "a1" })));
 	t("a reason holding '-->' cannot end the state line early", parse(render(record(null, { stage: "build", decision: "failed", reason: "a} --> b" }))).stages.build.reason === "a} --> b");
 	const origin = () => "git@github.com:other/checkout.git";
 	t("a PR URL's owner/repo wins over cwd origin", repoSlug("https://github.com/acme/web/pull/41", origin) === "acme/web");

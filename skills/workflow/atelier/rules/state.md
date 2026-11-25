@@ -32,12 +32,13 @@ A Build `hold` for companions that did not run carries reason `skipped: <names>`
 
 `render()` writes, in order:
 
-1. The status card: `assets/cards/<build>-<ready>-<merge>-<deliver>-<light|dark>.png` in a `<picture>`, picked by `card.mjs`'s `cardKey`, linked from `main` on `raw.githubusercontent.com`.
+1. The status card: `assets/cards/<build>-<ready>-<merge>-<deliver>-<light|dark>.png` in a `<picture>`, picked by `card.mjs` from the last recorded stage (`state.stage`), linked from `main` on `raw.githubusercontent.com`.
 2. `**Needs you:** <reason>` after a `hold`, `failed`, or `refuse`; else `**Next:** …` from `--next`, or `**Done:** …` once Deliver is recorded.
 3. `**Heads-up:**` when preflight is not `ok`.
-4. A footer with the head and `<relative-time>`, which GitHub shows as "2 minutes ago".
+4. A footer: the mascot's face in the state's mood (`assets/mascot/<mood>.png`), the head, and `<relative-time>`, which GitHub shows as "2 minutes ago".
 5. `Run details`, collapsed: one row per stage with `<relative-time>`, the CI evidence, and the preflight line.
 
+`--record` refuses a stage and decision pair `card.mjs` has no card for (`ENDINGS`), and `--stage deliver` before a merge recorded `proceed`.
 A change to `card.mjs` or `mascot.mjs` re-renders the cards (`render-cards.mjs`, needs Chrome) and the [gallery](../scripts/fixtures/comments/README.md) (`gallery.mjs`) in the same commit.
 
 ```text

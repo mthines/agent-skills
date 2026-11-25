@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "pr": "https://github.com/mthines/reaper-mcp/pull/195",
+  "stages": {
+    "build": {
+      "decision": "refuse",
+      "at": "2026-11-25T13:12:00.000Z",
+      "sha": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+      "reason": "MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry)"
+    }
+  },
+  "preflight": "PREFLIGHT: ok — 0 gaps",
+  "stage": "build",
+  "refusal": "MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry)"
+}

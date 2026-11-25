@@ -6,24 +6,31 @@
 //   node card.mjs --self-test
 
 import { isMain, makeTester } from "./lib.mjs";
-import { svg as mascot } from "./mascot.mjs";
 
 export const CARD_STAGES = ["build", "ready", "merge", "deliver"];
 const OUTCOME = { proceed: "done", skipped: "skipped", hold: "hold", failed: "failed", refuse: "refuse" };
-// What each stage can end in, so every reachable state has a pre-rendered card.
-const ENDINGS = {
-	build: ["done", "skipped", "hold", "failed"],
+// What each stage can end in, so every reachable state has a pre-rendered card; state.mjs refuses
+// to record any other stage and decision pair.
+export const ENDINGS = {
+	build: ["done", "skipped", "hold", "failed", "refuse"],
 	ready: ["done", "hold", "failed"],
 	merge: ["done", "hold", "failed", "refuse"],
 	deliver: ["done", "skipped", "hold", "failed"],
 };
 
+export const outcomeOf = (decision) => OUTCOME[decision];
+
 /** The four card outcomes (done|skipped|hold|failed|refuse|pending) for a parsed state. */
 export function outcomes(state) {
-	const o = CARD_STAGES.map((s) => OUTCOME[state?.stages?.[s]?.decision] ?? "pending");
-	// A stage before the furthest recorded one has completed, whatever an older entry said.
-	const cur = o.findLastIndex((x) => x !== "pending");
-	return o.map((x, i) => (i < cur && x !== "done" && x !== "skipped" ? "done" : i > cur ? "pending" : x));
+	// The current stage is the last one recorded (`state.stage`), not the furthest: a re-run of Ready
+	// after a refused merge leaves the merge entry behind, and it must not decide the card.
+	const cur = CARD_STAGES.indexOf(state?.stage);
+	return CARD_STAGES.map((s, i) => {
+		if (i > cur) return "pending";
+		const x = OUTCOME[state.stages?.[s]?.decision];
+		if (i === cur) return x ?? "pending";
+		return x === "skipped" ? "skipped" : "done";
+	});
 }
 
 export const cardKey = (o) => o.join("-");
@@ -42,14 +49,14 @@ export function allKeys() {
 	return keys;
 }
 
-/** The headline and mascot mood for a state; colours are picked per theme by `tone`. */
+/** The headline and mascot mood (the comment's footer face) for a state; colours are picked per theme by `tone`. */
 export function verdict(o) {
 	const cur = Math.max(0, o.findLastIndex((x) => x !== "pending"));
 	const at = CARD_STAGES[cur][0].toUpperCase() + CARD_STAGES[cur].slice(1);
 	const end = o[cur];
 	if (end === "hold") return { mood: "held", tone: "amber", lead: `Held at ${at}.`, tail: "Needs you." };
 	if (end === "failed") return { mood: "failed", tone: "red", lead: `${at} failed.`, tail: "Needs a fix." };
-	if (end === "refuse") return { mood: "refused", tone: "coral", lead: "Merge refused.", tail: "The gate said no." };
+	if (end === "refuse") return { mood: "refused", tone: "coral", lead: `${at} refused.`, tail: "The gate said no." };
 	if (cur === 3) return end === "skipped"
 		? { mood: "ready", tone: "sky", lead: "Merged.", tail: "Delivery skipped." }
 		: { mood: "shipped", tone: "green", lead: "Merged.", tail: "And delivered." };
@@ -114,11 +121,9 @@ export function card(o, theme = "dark") {
 html{background:transparent}
 body{width:1400px;height:330px;border-radius:18px;background:var(--bg);box-shadow:inset 0 0 0 1px var(--line);color:var(--text);overflow:hidden;position:relative;font-family:"Geist",-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
 body::before{content:"";position:absolute;inset:0;background-image:radial-gradient(var(--dotc) 1px,transparent 1.2px);background-size:22px 22px;-webkit-mask-image:radial-gradient(900px 380px at 62% 60%,#000 20%,transparent 75%)}
-body::after{content:"";position:absolute;left:${410 + pct(cur) * 9.6}px;top:200px;width:520px;height:220px;transform:translate(-50%,-50%);background:radial-gradient(closest-side,${g0}22,${g1}10 55%,transparent);filter:blur(10px)}
+body::after{content:"";position:absolute;left:${72 + pct(cur) * 12.56}px;top:200px;width:520px;height:220px;transform:translate(-50%,-50%);background:radial-gradient(closest-side,${g0}22,${g1}10 55%,transparent);filter:blur(10px)}
 .mono{font-family:"Geist Mono",ui-monospace,monospace}
-.wrap{position:relative;z-index:1;display:flex;height:100%;padding:40px 56px 0 40px;gap:28px}
-.hero{width:280px;flex:none;display:flex;align-items:center;justify-content:center;margin-top:-40px}
-.hero svg{width:190px;height:190px}
+.wrap{position:relative;z-index:1;height:100%;padding:40px 72px 0}
 .eyebrow{font-size:14px;color:var(--faint);letter-spacing:.02em}.eyebrow b{color:var(--dim);font-weight:500}
 .main{flex:1;min-width:0}
 h1{font-size:44px;font-weight:600;letter-spacing:-.035em;line-height:1.05;margin-top:12px}
@@ -143,7 +148,6 @@ h1 span{background:linear-gradient(90deg,${g0},${g1});-webkit-background-clip:te
 .node.pending p{color:var(--faint)}
 .chip{font-size:12.5px;border-radius:6px;padding:4px 8px;margin-top:12px;color:var(--c);background:color-mix(in srgb,var(--c) 8%,transparent);border:1px solid color-mix(in srgb,var(--c) 25%,transparent)}
 </style></head><body><div class="wrap">
-<div class="hero">${mascot(v.mood)}</div>
 <div class="main">
   <div class="eyebrow mono"><b>atelier</b> · build → ready → merge → deliver</div>
   <h1>${v.lead} <span>${v.tail}</span></h1>
@@ -154,14 +158,18 @@ h1 span{background:linear-gradient(90deg,${g0},${g1});-webkit-background-clip:te
 function selfTest() {
 	const { t, done } = makeTester("card");
 	const keys = allKeys();
-	t("26 reachable states", keys.length === 26, String(keys.length));
+	t("27 reachable states", keys.length === 27, String(keys.length));
 	t("keys are unique", new Set(keys).size === keys.length);
 	t("no state → build pending", cardKey(outcomes(null)) === "pending-pending-pending-pending");
-	const s = { stages: { build: { decision: "skipped" }, ready: { decision: "proceed" } } };
+	const s = { stage: "ready", stages: { build: { decision: "skipped" }, ready: { decision: "proceed" } } };
 	t("an existing PR at Ready", cardKey(outcomes(s)) === "skipped-done-pending-pending" && keys.includes("skipped-done-pending-pending"));
-	const stale = { stages: { build: { decision: "proceed" }, ready: { decision: "hold" }, merge: { decision: "proceed" } } };
-	t("a stage before the furthest one counts as done", cardKey(outcomes(stale)) === "done-done-done-pending");
-	t("every reachable outcome set maps back to a known key", keys.every((k) => keys.includes(cardKey(outcomes({ stages: Object.fromEntries(k.split("-").map((x, i) => [CARD_STAGES[i], x === "pending" ? undefined : { decision: { done: "proceed", skipped: "skipped", hold: "hold", failed: "failed", refuse: "refuse" }[x] }])) })))));
+	const rerun = { stage: "ready", stages: { build: { decision: "proceed" }, ready: { decision: "hold" }, merge: { decision: "refuse" } } };
+	t("the last recorded stage decides, not the furthest", cardKey(outcomes(rerun)) === "done-hold-pending-pending");
+	t("a stage before the current one counts as done", cardKey(outcomes({ stage: "merge", stages: { build: { decision: "hold" }, merge: { decision: "proceed" } } })) === "done-done-done-pending");
+	t("a refused Build has a card and names its stage", keys.includes("refuse-pending-pending-pending") && verdict(["refuse", "pending", "pending", "pending"]).lead === "Build refused.");
+	const decisionOf = { done: "proceed", skipped: "skipped", hold: "hold", failed: "failed", refuse: "refuse" };
+	const stateOf = (k) => { const o = k.split("-"); return { stage: CARD_STAGES[o.findLastIndex((x) => x !== "pending")], stages: Object.fromEntries(o.map((x, i) => [CARD_STAGES[i], x === "pending" ? undefined : { decision: decisionOf[x] }])) }; };
+	t("every reachable state round-trips to its own key", keys.every((k) => cardKey(outcomes(stateOf(k))) === k));
 	t("a refused merge reads as refused", verdict(["done", "done", "refuse", "pending"]).lead === "Merge refused.");
 	t("alt text names every stage", altText(["skipped", "done", "pending", "pending"]) === "Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached.");
 	for (const theme of Object.keys(THEMES)) t(`${theme} card renders`, card(["done", "hold", "pending", "pending"], theme).includes("Held at Ready."));

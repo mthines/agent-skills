@@ -61,7 +61,7 @@ Its line rides in the state comment so a reviewer reading the PR sees what the r
 ## A skipped companion holds Build
 
 `aw` names every companion it did not run in its `Degraded:` line, but a line in a long terminal block is easy to miss, and a nested sub-agent that runs short skips the review, `create-pr`, and the quality pass to save context.
-Atelier merges, so a review that did not happen must stop the run where a human sees it: a Build `hold` with `skipped: <names>` shows in the state comment's header.
+Atelier merges, so a review that did not happen must stop the run where a human sees it: a Build `hold` with `skipped: <names>` shows on the state comment's status card and its `Needs you:` line.
 The waiver is the user's alone (`--accept-skip`), recorded in the decision log, because an agent that could waive its own skipped review would learn to.
 Running `/atelier` at the top level prevents most skips: the nested context is what runs short.
 
@@ -69,7 +69,8 @@ Running `/atelier` at the top level prevents most skips: the nested context is w
 
 The PR outlives the session, the worktree, and the machine that started the run.
 A sticky comment marked `<!-- atelier:v1 -->` lets any later `/atelier <pr>` resume where the last one stopped, and shows a reviewer the same table the machine reads.
-The comment leads with a pre-rendered status card because GitHub cannot draw an image per comment, and a fixed set of 26 states × 2 themes keeps every run's comment identical in shape; the table stays, collapsed, for the details.
+The comment leads with a pre-rendered status card because GitHub cannot draw an image per comment, and a fixed set of 27 states × 2 themes keeps every run's comment identical in shape; the table stays, collapsed, for the details.
+The card follows the last recorded stage, not the furthest, because a re-run (Ready after a refused merge) leaves later entries behind; `record()` refuses a stage and decision pair with no card, and a Deliver before a merge.
 Ready is re-run when the head moved because a pushed fix can turn CI red or open a thread; a green result on an older head says nothing about the new one.
 
 ## Ground truth
@@ -92,7 +93,7 @@ It is scoped `branch::{owner}/{repo}::{head-branch}`, like `pr-review-state`, so
 A merge is not the end of the change: the default-branch pipeline versions, builds, and releases it, and it can fail where PR CI passed (a release job that runs only on `main`; a missing tag on a version step).
 Deliver reads that run with a script (`pipeline.mjs`), treats a skipped required job as red, and starts one fix PR when the merged change caused the failure; when the fix is red too, it reverts through a PR, as `policies.rollback` allows (`pipeline.on_red: revert-first` swaps the order).
 Tags, force pushes, and release re-runs stay with the user, because they change shared release state and a wrong one is hard to undo.
-It is a step, not a recorded stage, so the PR state comment and the run trace keep their three-stage shape.
+It is a step, not a stage the machine resumes: its result is recorded on the PR state comment for display (`--stage deliver`), while `--next` and the run trace keep their three-stage shape.
 
 ## Out of scope
 
