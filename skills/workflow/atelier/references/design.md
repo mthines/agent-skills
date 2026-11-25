@@ -86,9 +86,16 @@ A `fix` commit on the same files within the window is a weak signal (it may fix 
 The decision log is `bus` kind with a 90-day TTL, longer than the 30-day `review-outcomes` bus, because an outcome only becomes final 14 days after its merge and a policy needs several merges per repo.
 It is scoped `branch::{owner}/{repo}::{head-branch}`, like `pr-review-state`, so per-PR rows never crowd the lessons a `repo::` read injects; readers list it across scopes by `kind: bus` and `host: atelier`.
 
+## Delivery
+
+A merge is not the end of the change: the default-branch pipeline versions, builds, and releases it, and it can fail where PR CI passed (a release job that runs only on `main`; a missing tag on a version step).
+Deliver reads that run with a script (`pipeline.mjs`), treats a skipped required job as red, and starts one fix PR when the merged change caused the failure.
+Tags, force pushes, and release re-runs stay with the user, because they change shared release state and a wrong one is hard to undo.
+It is a step, not a recorded stage, so the PR state comment and the run trace keep their three-stage shape.
+
 ## Out of scope
 
-This skeleton records evidence and stops after the merge.
+This skeleton records evidence and stops after the merge and its pipeline.
 These later steps will read the decision log and are not built here:
 
 - Earned autonomy: atelier flipping the flag itself once a repo's record of clean outcomes earns it.

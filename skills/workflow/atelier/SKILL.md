@@ -4,9 +4,9 @@ description: >
   Takes one change from request to merged PR by sequencing existing skills —
   aw builds the draft PR, prepare gets it green, a deterministic gate allows
   the squash-merge only when a user-visible diff ships behind a
-  deployment-verify flag contract — then stops and says what a human does
-  next. Resumable from a sticky PR comment; invoke with /atelier.
-argument-hint: '<request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>]'
+  deployment-verify flag contract — then reads the default-branch pipeline and fixes a red one once, and says
+  what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
+argument-hint: '<request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
 license: MIT
 disable-model-invocation: true
 metadata:
@@ -18,7 +18,7 @@ metadata:
 
 # Atelier
 
-Sequences existing skills from a request to a merged PR, then stops.
+Sequences existing skills from a request to a merged PR, checks the default-branch pipeline it started, then stops.
 It owns no build, review, verify, or deploy logic: each stage is one delegation, and every decision between stages is a script.
 **Why:** [`references/design.md`](./references/design.md).
 
@@ -39,6 +39,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
+| `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read and its one fix). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
 
@@ -76,6 +77,7 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
    Absent or failing → one line `Degraded: lorekit unreachable — decision log and outcomes skipped`, and every LoreKit step below is a no-op; no stage waits on it.
 5. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
 6. With a PR: read its state (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --fetch --pr <pr-url> > state.md`) and its head (`gh pr view <pr-url> --json headRefOid -q .headRefOid`), then `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs" --next --head <sha> --body-file state.md` names the stage to run.
+   A merged PR makes `--next` print `stop`: run [Deliver](#after-the-merge) on it unless `--no-deliver`, so a session that died during the pipeline wait resumes there.
    Pass the PR URL, not a bare number: `state.mjs` takes owner/repo from the URL, and from cwd's `origin` only for a number.
    No atelier comment yet: record Build as `skipped` (reason `existing PR`) before `--next`, so it returns `ready` and `aw` never runs on a PR that exists.
    With a request: the stage is `build`.
@@ -243,6 +245,9 @@ fi
 2. Exit 2, or no LoreKit → `Degraded: quality finding outcomes — not recorded (<stderr or lorekit unreachable>)`; the merge decision stands.
 3. Never run it on a merge that did not happen: a refused or held merge scores nothing.
 
+Then run Deliver ([`rules/deliver.md`](./rules/deliver.md)) unless `--no-deliver`: the merge is not the end while the default-branch pipeline is red.
+Deliver is not a recorded stage (`state.mjs` knows `build|ready|merge`); it reports through a `bus` event and the terminal contract's `Deliver:` line.
+
 ## Step 4 — Stop
 
 Atelier never flips a flag and never runs `deployment-verify`.
@@ -263,6 +268,7 @@ ATELIER RUN
 - Stage reached: [build | ready | merge | stop]
 - PR: [URL | none]
 - Merge: [merged <sha> | refused: <reason> | not reached]
+- Deliver: [green <run url> | red: <reason> | fix PR <url> | skipped: <reason> | not reached]
 - Degraded: [steps skipped and why, or "none"]
 - Needs you: [the next human step, or "nothing"]
 ```

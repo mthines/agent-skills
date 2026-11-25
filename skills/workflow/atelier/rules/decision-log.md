@@ -26,7 +26,7 @@ memory.write {
   key: "atelier-decisions::pr-{n}-{stage}-{decision}-{sha7}",
   kind: "bus", host: "atelier", tags: ["loop::atelier-decisions"], ttl_days: 90,
   value: "<one line: stage, decision, reason>",
-  attributes: { event: "decision", repo: "{owner}/{repo}", pr: {n}, stage: "build|ready|merge",
+  attributes: { event: "decision", repo: "{owner}/{repo}", pr: {n}, stage: "build|ready|merge|deliver",
                 decision: "proceed|refuse|hold|failed", reason: "<r>", user_visible: <bool>,
                 has_flag_contract: <bool>, model: "<your model id>", head_sha: "<sha>" }
 }
@@ -37,8 +37,9 @@ memory.write {
 2. A merge `proceed` also carries `merge_sha`, the squash commit; the outcome sweep reads it.
 3. A Build `proceed` or `hold` also carries `preflight` (the `PREFLIGHT:` line), and `accepted_skip` / `accepted_gaps` (comma lists) only when the user passed `--accept-skip` / `--accept-gaps`, so a waiver is always attributable to the user.
 4. A Build that failed before a PR exists uses the worktree's branch for the scope, `pr: 0`, and `failed-{ISO timestamp}` in place of `{decision}-{sha7}`.
-5. A `skipped` Build is not a decision and writes no event.
-6. `kind` and `host` are set explicitly: LoreKit infers them only from `loop::<x>-lessons` tags.
+5. A Deliver event (`stage: deliver`, [`deliver.md`](./deliver.md)) is never read by the outcome sweep, which keys on `stage: merge`.
+6. A `skipped` Build is not a decision and writes no event.
+7. `kind` and `host` are set explicitly: LoreKit infers them only from `loop::<x>-lessons` tags.
 
 ```text
 ✗ key: "atelier-decisions::pr-41-merge"                  # a proceed after a refusal on the same head overwrites the refusal
