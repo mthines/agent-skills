@@ -56,8 +56,10 @@ export function validateProbes(cfg) {
 		if (!Array.isArray(p?.requests) || !p.requests.length) problems.push(`probes.${name}.requests: needs at least one request`);
 		for (const [i, r] of (p?.requests || []).entries()) {
 			const at = `probes.${name}.requests[${i}]`;
-			const kind = KINDS.find((k) => r && r[k]);
+			const kinds = KINDS.filter((k) => r && r[k]);
+			const kind = kinds[0];
 			if (!kind) problems.push(`${at}: unknown request kind — use one of ${KINDS.join(", ")}`);
+			if (kinds.length > 1) problems.push(`${at}: one request kind only — found ${kinds.join(" and ")}`);
 			if (!r?.name) problems.push(`${at}.name: required`);
 			if (!r?.route) problems.push(`${at}.route: required — the http.route its span reports, so it is compared per route`);
 			if (kind === "http" && !r.http.path) problems.push(`${at}.http.path: required`);
@@ -216,7 +218,7 @@ export async function runProbe({ probe, defaults = {}, identity = null, tokens =
 	const warm = d.warmup.discard === false ? 0 : Number(d.warmup.requests) || 0;
 	for (let i = 0; i < warm; i++) await pass(false);
 	for (let i = 0; i < Number(d.rounds); i++) await pass(true);
-	return { routes: summarize(samples), sent, discarded };
+	return { routes: summarize(samples), samples, sent, discarded };
 }
 
 // Real I/O: fetch for http and mcp (JSON-RPC tools/call, JSON or SSE reply), sh for command.
@@ -263,12 +265,12 @@ export function runFixtures(probe, exec = shOut) {
 }
 
 // Everything tick.mjs needs for one environment, or null when the repo has no probes.yml.
-export function probeRunner({ env, rootSpans, cwd = process.cwd(), send = realSend, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+export function probeRunner({ env, rootSpans, only = null, cwd = process.cwd(), send = realSend, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
 	const cfg = loadProbes(cwd);
 	if (!cfg) return null;
 	const problems = validateProbes(cfg);
 	if (problems.length) throw new Error(`probes.yml: ${problems[0]}${problems.length > 1 ? ` (+${problems.length - 1} more)` : ""}`);
-	const picked = probesFor(cfg, rootSpans);
+	const picked = probesFor(cfg, rootSpans).filter((p) => !only || p.name === only);
 	if (!picked.length) return null;
 	const environments = loadEnvironments(cwd);
 	const e = environments?.environments?.[env];
@@ -283,15 +285,16 @@ export function probeRunner({ env, rootSpans, cwd = process.cwd(), send = realSe
 		spanFilter: defaults.tag?.span_filter || null,
 		history: defaults.history || null,
 		async run() {
-			const merged = {};
+			// Pool every probe's samples, then summarize once: two probes on one route are one route.
+			const samples = [];
 			let sent = 0;
 			for (const { probe } of picked) {
 				const vars = runFixtures(probe);
 				const r = await runProbe({ probe, defaults, identity, tokens, send, sleep, vars, base });
-				Object.assign(merged, r.routes);
+				samples.push(...r.samples);
 				sent += r.sent;
 			}
-			return { routes: merged, sent };
+			return { routes: summarize(samples), sent };
 		},
 	};
 }
@@ -351,6 +354,10 @@ async function selfTest() {
 	check("AC-1 a request with no route is rejected and named", r.some((p) => /requests\[1\]\.route: required/.test(p)), r.join("; "));
 	const s = bad((c) => (c.probes.read.requests[0].http.headers = { Authorization: "Bearer lk_ro_abcdefghijklmnop" }));
 	check("AC-1 a literal token is rejected and named", s.some((p) => /requests\[0\]\.http\.headers\.Authorization: looks like a credential/.test(p)), s.join("; "));
+	const two = bad((c) => (c.probes.read.requests[0].mcp = { tool: "x" }));
+	check("AC-1 a request with two kinds is rejected and named", two.some((p) => /requests\[0\]: one request kind only/.test(p)), two.join("; "));
+	const pooled = summarize([...[10, 10].map((ms) => ({ route: "/mcp", ok: true, ms })), { route: "/mcp", ok: false, ms: 30 }]);
+	check("two probes on one route pool their samples", pooled["/mcp"].n === 3 && pooled["/mcp"].errors === 1, JSON.stringify(pooled));
 	let idErr = null;
 	try {
 		identityFor({ environments: { production: { auth: { identities: { probe: { strategy: "bearer", token: "lk_ro_abcdefghijk" } } } } } }, "production", "probe");
@@ -444,7 +451,7 @@ async function main() {
 	if (typeof a.run === "string") {
 		const p = cfg.probes?.[a.run];
 		if (!p) throw new Error(`no probe ${a.run}`);
-		const runner = probeRunner({ env, rootSpans: p.covers });
+		const runner = probeRunner({ env, rootSpans: p.covers, only: a.run });
 		console.log(JSON.stringify(await runner.run(), null, 2));
 		return;
 	}
