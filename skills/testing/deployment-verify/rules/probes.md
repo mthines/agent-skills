@@ -35,7 +35,7 @@ defaults:
   identity: probe                        # environments.<env>.auth.identities.probe
   tag:
     header: { X-Deployment-Verify: probe }                  # sent on every request
-    span_filter: { deployment.environment.name: test }      # how to find probe spans in telemetry
+    span_filter: { deployment.environment.name: test }      # finds the probe's own spans, to confirm which version answered
   warmup: { requests: 3, discard: true }  # passes sent and thrown away first
   budget: { max_rpm: 60 }                 # requests are paced under this
   rounds: 20                              # measured passes: per-route n = rounds × requests on that route
@@ -102,21 +102,23 @@ token: { env: EXAMPLE_PROBE_TOKEN }
 Take the first that exists:
 
 1. **Live.** A run that starts before the new version serves probes the old version during the `deploy` phase, once. Report: `probe: before live at <time>`.
-2. **History.** With `history: issue`, every after-probe is recorded as one comment on the repo's `deployment-verify baselines` issue, keyed by environment and version. A run that starts after the deploy uses the latest record on another version in the same environment. Report: `probe: before history <version>`.
+2. **History.** With `history: issue`, an after-probe that passed, or the first one recorded with no before side, is recorded as one comment on the repo's `deployment-verify baselines` issue, keyed by environment and version. A run that starts after the deploy uses the latest record on another version in the same environment. Report: `probe: before history <version>`.
 3. **Neither.** The after-probe is recorded and the run ends `INCONCLUSIVE — no before-side probe … baseline recorded for <version>`. The next deploy has a before side.
 
 Never end `PASS` with no before side: an after window alone proves nothing changed for the better or the worse.
+Never record a regressed window: the next deploy would be judged against it, and a fix that is still slow would pass.
 
 ## Verdict
 
-After the deploy is live, one probe window is the after side. For each route probed on both sides, `decide.mjs` gets `test` = after, `control.n = 0`, `baseline` = before, with the contract's thresholds.
+After the deploy is live, one probe window is the after side.
+**Confirm who answered.** With `tag.span_filter` and a `detect.attribute`, the controller waits the ingest delay and counts the window's tagged root spans by version. Any answered by an old version (a rolling deploy still in progress) → probe again on the next tick; still stale → `INCONCLUSIVE`, never a verdict. With no `span_filter` the report says `served by not confirmed`. For each route probed on both sides, `decide.mjs` gets `test` = after, `control.n = 0`, `baseline` = before, with the contract's thresholds.
 The worst route decides: ROLLBACK over HOLD over PASS, with the route named in the reason.
 
 | Worst route | Outcome |
 | --- | --- |
 | PASS | `PASS — every probed route held against its own before side` |
 | HOLD | `INCONCLUSIVE — probe window too small …`: raise `rounds` |
-| ROLLBACK | `release.yml` → `rollback` `kind: platform`, else `ESCALATE — rollback needs a human` ([`rollback.md`](./rollback.md)) |
+| ROLLBACK | `release.yml` → `rollback` `kind: platform`, else `ESCALATE — rollback needs a human` ([`rollback.md`](./rollback.md)). After a platform rollback, the same probes prove recovery against the same before side; a route still regressed → `ESCALATE` |
 
 No route probed on both sides → `INCONCLUSIVE`. The report adds one row per route: `before n/err/avg/p95`, `after n/err/avg/p95`, verdict.
 
@@ -129,4 +131,4 @@ No route probed on both sides → `INCONCLUSIVE`. The report adds one row per ro
 
 - Pace every request under `budget.max_rpm`, and keep the total under the service's own rate limit for the probe account.
 - Probe traffic is real traffic to the service: reads may bump counters, and writes leave rows. Use a dedicated probe account and scope, and prefer read-only requests.
-- The verdict reads client timings. `tag.span_filter` names how to find the probe's spans in telemetry, for a human or `telemetry-verify` checking a run; the controller does not query it.
+- The verdict reads client timings; telemetry only confirms which version answered. Send the tag on every request so `span_filter` can find it.

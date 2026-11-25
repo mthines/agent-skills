@@ -304,6 +304,14 @@ export function windowQuery(contract, { attribute, versions = [], mode }) {
 }
 
 // The values of the detect attribute currently serving, most traffic first.
+// Probe mode: which version answered the probe window — its tagged root spans, split by the deploy attribute.
+export function probeVersionQuery(contract, { attribute, versions, spanFilter }) {
+	const k = `resource_attributes[${q(attribute)}]`;
+	const list = versions.map(q).join(", ");
+	const tag = Object.entries(spanFilter).map(([key, v]) => ` AND (resource_attributes[${q(key)}] = ${q(v)} OR span_attributes[${q(key)}] = ${q(v)})`).join("");
+	return `SELECT countIf(${k} IN (${list})) AS fresh, countIf(${k} NOT IN (${list})) AS stale FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND kind = 'SERVER' AND name IN (${contract.root_spans.map(q).join(", ")})${tag}`;
+}
+
 export function deployQuery(contract, detect) {
 	const k = q(detect.attribute);
 	return `SELECT resource_attributes[${k}] AS live, count() AS n FROM spans WHERE resource_attributes['service.name'] = ${q(contract.service)} AND resource_attributes[${k}] != '' GROUP BY live ORDER BY n DESC LIMIT 5`;
@@ -516,7 +524,12 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 		if (s.phase === "baseline" && probing) {
 			// Started after the deploy: the before side is the last probe recorded on another version.
 			if (!s.probe_before && io.history) {
-				const prev = await io.history.previous(versionOf());
+				let prev = null;
+				try {
+					prev = await io.history.previous(versionOf());
+				} catch (e) {
+					io.log(`probe history not read: ${e.message}`);
+				}
 				if (prev) s.probe_before = { routes: prev.routes, at: prev.at, source: `history ${String(prev.version).slice(0, 12)}` };
 			}
 			Object.assign(s, { phase: "step", step_index: 0, last_passed_value: 0, window: null, hold_since: null });
@@ -524,26 +537,50 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 		}
 
 		if (s.phase === "step" && probing) {
+			const from = io.now();
 			const r = await probeOnce();
 			if (r.auth) return authStop(r.auth);
 			const version = versionOf();
-			s.probe_after = { routes: r.routes, at: iso(io.now()), version };
-			if (io.history) {
+			s.probe_after = { routes: r.routes, at: iso(io.now()), version, served_by: "not confirmed (no tag.span_filter or detect attribute)" };
+			// Confirm the new version answered: during a rolling deploy, old instances can serve part of the window.
+			const spanFilter = io.probe.spanFilter;
+			if (spanFilter && detectAttr && s.live_values?.length) {
+				const to = io.now();
+				await io.sleep(ingest);
+				const [row] = await io.sql(probeVersionQuery(contract, { attribute: detectAttr, versions: s.live_values, spanFilter }), { dataset: env.dataset, from: iso(from), to: iso(to + 1000) });
+				const fresh = Number(row?.fresh || 0), stale = Number(row?.stale || 0);
+				if (stale > 0) {
+					if (s.probe_stale_once) return end("INCONCLUSIVE", `old version still answered ${stale} probe request(s) twice — the deploy has not finished rolling out`);
+					s.probe_stale_once = true;
+					io.log(`probe after: ${stale} request(s) answered by the old version; probing again next tick`);
+					s.probe_after = null;
+					return s;
+				}
+				s.probe_after.served_by = fresh ? `new version (${fresh} tagged spans)` : "not confirmed (no tagged spans found)";
+			}
+			// Only a window that is a fair reference goes to history: the first baseline, or a PASS — never a regression.
+			const remember = async () => {
+				if (!io.history) return;
 				try {
 					await io.history.record(version, r.routes, s.probe_after.at);
 				} catch (e) {
 					io.log(`probe history not written: ${e.message}`);
 				}
+			};
+			if (!s.probe_before) {
+				await remember();
+				return end("INCONCLUSIVE", `no before-side probe (deploy already live, no history) — baseline recorded for ${version.slice(0, 12)}`);
 			}
-			if (!s.probe_before) return end("INCONCLUSIVE", `no before-side probe (deploy already live, no history) — baseline recorded for ${version.slice(0, 12)}`);
 			s.routes = compareRoutes(s.probe_before.routes, r.routes, t);
 			if (!s.routes.length) return end("INCONCLUSIVE", "no route probed on both sides — check each request's route in probes.yml");
 			const worst = s.routes.reduce((a, x) => (SEVERITY[x.verdict] > SEVERITY[a.verdict] ? x : a));
 			const verdict = { verdict: worst.verdict, reason: `${worst.route}: ${worst.reason}` };
-			s.baseline = sumRoutes(s.probe_before.routes);
 			s.steps = [{ value: 100, from: s.probe_after.at, to: s.probe_after.at, test: sumRoutes(r.routes), control: NO_CONTROL, verdict: verdict.verdict, reason: verdict.reason }];
 			io.log(`probe after (${version.slice(0, 12)}): ${verdict.verdict} — ${verdict.reason}`);
-			if (verdict.verdict === "PASS") return end("PASS", `every probed route held against its own before side (${s.probe_before.source})`);
+			if (verdict.verdict === "PASS") {
+				await remember();
+				return end("PASS", `every probed route held against its own before side (${s.probe_before.source})`);
+			}
 			if (verdict.verdict === "HOLD") return end("INCONCLUSIVE", `probe window too small: ${verdict.reason} — raise rounds in probes.yml`);
 			s.rollback_verdict = verdict.reason;
 			s.rollback_at = iso(io.now());
@@ -687,6 +724,16 @@ export async function tick(state, { contract, config, sha, mergedAt, deployedAt,
 				s.recovery_window = { from: iso(w.from), to: iso(w.to), due: iso(w.due) };
 			}
 			if (io.now() < Date.parse(s.recovery_window.due)) return s;
+			if (probing) {
+				// Recovery is judged the way the regression was: the same probes against the same before side.
+				const r = await probeOnce();
+				if (r.auth) return authStop(r.auth);
+				const secs = Math.round((io.now() - Date.parse(s.rollback_at)) / 1000);
+				const still = compareRoutes(s.probe_before.routes, r.routes, t).filter((x) => x.verdict === "ROLLBACK");
+				if (still.length) return end("ESCALATE", `${still[0].route} still regressed after rollback; likely not this change`);
+				s.recovery = { ...sumRoutes(r.routes), seconds: secs };
+				return end("ROLLED_BACK", `${s.rollback_verdict}; RECOVERED in ${secs} s`);
+			}
 			const st = await measure(Date.parse(s.recovery_window.from), Date.parse(s.recovery_window.to), contract.flag ? undefined : "any");
 			const rate = (x) => (x.n ? (100 * x.errors) / x.n : 0);
 			const secs = Math.round((io.now() - Date.parse(s.rollback_at)) / 1000);
@@ -715,7 +762,7 @@ export function renderReport(s, contract, pr) {
 		`change:   ${pr?.title ? `${pr.title} (#${pr.number})` : "local run"} · flag ${contract.flag?.key || "none"}${contract.flag ? ` via ${contract.flag.provider}` : ""} · ${s.env}`,
 		...(contract.flag ? [] : [s.probe_before || s.probe_after ? "mode:     no flag — synthetic probes, judged per route" : "mode:     no flag — before/after only, attribution weaker"]),
 		`deploy:   ${s.deploy_live_at ? `live at ${s.deploy_live_at}` : "waiting"}`,
-		`baseline: ${s.baseline ? `${s.baseline.n} requests, ${s.baseline.errors} errors, ${s.baseline.avg_ms} ms` : "pending"}`,
+		`baseline: ${s.baseline ? `${s.baseline.n} requests, ${s.baseline.errors} errors, ${s.baseline.avg_ms} ms` : s.probe_before ? "per route — the probe rows below" : "pending"}`,
 		`step   test n/err/ms    control n/err/ms   verdict`,
 		...rows,
 	];
@@ -741,7 +788,7 @@ export function probeLines(s) {
 	if (!s.probe_before && !s.probe_after) return [];
 	const f = (x) => `${x.n}/${x.errors}/${x.avg_ms}/${x.p95 ?? "-"}`;
 	return [
-		`probe:    before ${s.probe_before ? `${s.probe_before.source} at ${s.probe_before.at}` : "none"} · after ${s.probe_after ? `${s.probe_after.version.slice(0, 12)} at ${s.probe_after.at}` : "pending"}`,
+		`probe:    before ${s.probe_before ? `${s.probe_before.source} at ${s.probe_before.at}` : "none"} · after ${s.probe_after ? `${s.probe_after.version.slice(0, 12)} at ${s.probe_after.at}, served by ${s.probe_after.served_by}` : "pending"}`,
 		...(s.routes?.length ? ["route                    before n/err/avg/p95   after n/err/avg/p95   verdict", ...s.routes.map((r) => `${r.route.padEnd(25)}${f(r.before).padEnd(23)}${f(r.after).padEnd(22)}${r.verdict} ${r.reason}`)] : []),
 	];
 }
@@ -1349,23 +1396,31 @@ async function selfTest() {
 		const T0 = Date.parse("2026-11-11T10:00:00Z");
 		const BEFORE = { "/mcp": { n: 60, errors: 0, avg_ms: 10, p95: 14 }, "/memories": { n: 20, errors: 0, avg_ms: 900, p95: 1200 } };
 		const MIX = { "/mcp": { n: 20, errors: 0, avg_ms: 10, p95: 14 }, "/memories": { n: 60, errors: 0, avg_ms: 950, p95: 1250 } };
-		function probeWorld({ liveAt = T0 + 120_000, before = BEFORE, after = MIX, history = null, run = null } = {}) {
+		function probeWorld({ liveAt = T0 + 120_000, before = BEFORE, after = MIX, history = null, run = null, spanFilter = null, stale = [], canRollback = false, historyThrows = false } = {}) {
 			let clock = T0;
+			let rolledBack = false;
 			const queries = [], logs = [], recorded = [];
 			const io = {
 				now: () => clock,
 				sleep: async (ms) => void (clock += ms),
 				setFlag: async () => assertNever(),
 				sendTraffic: async () => {},
-				platformRollback: async () => false,
+				platformRollback: async () => (rolledBack = canRollback),
 				contains: async () => true,
 				sql: async (query) => {
 					queries.push(query);
 					if (/GROUP BY live/.test(query)) return clock >= liveAt ? [{ live: "v2.0.9", n: 50 }] : [];
+					if (/AS stale/.test(query)) return [{ fresh: 40, stale: stale.shift() ?? 0 }];
 					return [{ n: 200, errors: 0, avg_ms: 5 }];
 				},
-				probe: { run: run || (async () => ({ routes: structuredClone(clock < liveAt ? before : after) })) },
-				history: { previous: async (v) => (history && history.version !== v ? history : null), record: async (version, routes) => void recorded.push({ version, routes }) },
+				probe: { spanFilter, run: run || (async () => ({ routes: structuredClone(clock < liveAt || rolledBack ? before : after) })) },
+				history: {
+					previous: async (v) => {
+						if (historyThrows) throw new Error("gh: HTTP 403");
+						return history && history.version !== v ? history : null;
+					},
+					record: async (version, routes) => void recorded.push({ version, routes }),
+				},
 				log: (m) => logs.push(m),
 			};
 			return { io, queries, logs, recorded };
@@ -1415,9 +1470,26 @@ async function selfTest() {
 		s = await drive(w6);
 		line("AC-6 no live baseline and no history: INCONCLUSIVE, baseline recorded", s.outcome === "INCONCLUSIVE" && /baseline recorded/.test(s.reason) && w6.recorded.length === 1 && w6.recorded[0].version === "v2.0.9", s);
 
+		const ROLLED = { ...MIX, "/memories": { n: 60, errors: 0, avg_ms: 5000, p95: 6000 } };
+		const wr = probeWorld({ after: ROLLED });
+		s = await drive(wr);
+		line("probe history: a regressed window is never recorded as the next baseline", s.steps[0]?.verdict === "ROLLBACK" && wr.recorded.length === 0, s);
+		const wp = probeWorld();
+		s = await drive(wp);
+		line("probe history: a PASS window is recorded", s.outcome === "PASS" && wp.recorded.length === 1, s);
+		s = await drive(probeWorld({ liveAt: T0, historyThrows: true }));
+		line("probe history: an unreadable store ends INCONCLUSIVE, never a crash", s.outcome === "INCONCLUSIVE" && /no before-side probe/.test(s.reason), s);
+		const SF = { "deployment.environment.name": "test" };
+		s = await drive(probeWorld({ spanFilter: SF, stale: [3] }));
+		line("probe version: old instances answering once re-probes, then judges the new version", s.outcome === "PASS" && /^new version/.test(s.probe_after.served_by), s);
+		s = await drive(probeWorld({ spanFilter: SF, stale: [3, 2] }));
+		line("probe version: old instances answering twice ends INCONCLUSIVE, never PASS", s.outcome === "INCONCLUSIVE" && /old version still answered/.test(s.reason), s);
+		s = await drive(probeWorld({ after: ROLLED, canRollback: true }));
+		line("probe recovery: after a platform rollback the same probes prove recovery", s.outcome === "ROLLED_BACK" && s.recovery?.n === 80, s);
+
 		const st = statusLine(s, { number: 758 });
 		const running = statusLine({ phase: "deploy" }, null);
-		line("AC-7 every tick prints a status line to stdout", st.startsWith("deployment-verify #758: INCONCLUSIVE — no before-side probe") && running === "deployment-verify local: IN PROGRESS (deploy) — waiting for the deploy", null);
+		line("AC-7 every tick prints a status line to stdout", st.startsWith("deployment-verify #758: ROLLED_BACK — /memories: latency") && running === "deployment-verify local: IN PROGRESS (deploy) — waiting for the deploy", null);
 
 		const hist = [
 			"x <!-- deployment-verify:v1:baseline {\"env\":\"production\",\"version\":\"a\",\"at\":\"2026-11-01T00:00:00Z\",\"routes\":{}} -->",
@@ -1427,7 +1499,7 @@ async function selfTest() {
 		const ok = parseHistory(hist, "production", "z")?.version === "b" && parseHistory(hist, "production", "b")?.version === "a" && parseHistory([], "production", "b") === null;
 		line("probe history: latest record on another version in the same environment", ok, null);
 	}
-	const total = 48;
+	const total = 54;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
