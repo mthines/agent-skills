@@ -105,12 +105,14 @@ export function table(checks) {
 // aw-verify runs first: deployment-verify's setup reads the telemetry.yml it writes.
 export const PROFILE = join("memory", "observability-profile", "INDEX.md");
 
-export function setupPlan(checks, { profile = true } = {}) {
+// `pipeline: false` = release.yml has no `pipeline:` block (absent file included); Deliver reads that block.
+export function setupPlan(checks, { profile = true, pipeline = true } = {}) {
 	const gap = new Set(checks.filter((c) => !c.ok).map((c) => c.name));
 	const steps = [];
 	const aw = ["sign-in", "telemetry"].filter((n) => gap.has(n));
 	if (aw.length) steps.push({ kind: "skill", call: 'Skill("aw-verify", "setup")', fixes: aw });
-	if (gap.has("flag-provider")) steps.push({ kind: "skill", call: 'Skill("deployment-verify", "setup")', fixes: ["flag-provider"] });
+	const dv = [...(gap.has("flag-provider") ? ["flag-provider"] : []), ...(pipeline ? [] : ["pipeline (no release.yml pipeline:)"])];
+	if (dv.length) steps.push({ kind: "skill", call: 'Skill("deployment-verify", "setup")', fixes: dv });
 	if (!profile) steps.push({ kind: "skill", call: 'Skill("measurable", "setup")', fixes: [`observability-profile (no ${PROFILE})`] });
 	const ci = checks.find((c) => c.name === "ci-on-draft" && !c.ok);
 	if (ci) {
@@ -289,6 +291,7 @@ async function selfTest() {
 	t("setup: a missing profile adds measurable setup; a present one does not", plan.some((l) => /measurable/.test(l)) && !planLines(setupPlan(bare)).some((l) => /measurable/.test(l)));
 	const manual = planLines(setupPlan([ci]));
 	t("setup: ci-on-draft is one manual line naming the workflow", manual.length === 1 && /^MANUAL: ci-on-draft — no — 1 of 2 skip drafts \(ci\.yml\)/.test(manual[0]), manual.join(" / "));
+	t("setup: a provider but no pipeline: block still calls deployment-verify setup", planLines(setupPlan([flagCheck({ present: true, config: { flags: { providers: [{ name: "posthog" }] } } })], { pipeline: false })).join() === 'SETUP: Skill("deployment-verify", "setup") — fixes pipeline (no release.yml pipeline:)');
 	t("setup: no gaps and a profile → nothing to delegate", planLines(setupPlan([telemetryCheck({ backend: "logs" })])).join() === "SETUP: nothing to delegate — 0 gaps");
 	const cmp = compareTable(bare, [flagCheck({ present: false }), telemetryCheck({ backend: "logs" }), signInCheck(null), ciDraftCheck([])]);
 	t("compare: counts fixed and names the remaining gaps", cmp.line === "SETUP: 1 fixed, 2 remaining (flag-provider, sign-in)", cmp.line);
@@ -306,7 +309,10 @@ async function main() {
 		const { gaps, line } = summarize(checks);
 		// Setup modes start no trace: they are not a run.
 		if (a.setup) {
-			const steps = setupPlan(checks, { profile: existsSync(join(repo, PROFILE)) });
+			const release = await readYaml(join(repo, ".agents", "aw", "release.yml"));
+			// A release.yml the reader cannot parse is not judged here: the flag-provider row already reports it.
+			const pipeline = !!release?.unknown || !!release?.pipeline;
+			const steps = setupPlan(checks, { profile: existsSync(join(repo, PROFILE)), pipeline });
 			if (a.json) console.log(JSON.stringify({ checks, gaps, steps }, null, 2));
 			else console.log([table(checks), line, ...planLines(steps)].join("\n"));
 			return;

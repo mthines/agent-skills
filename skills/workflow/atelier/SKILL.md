@@ -36,7 +36,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 
 | Argument | Effect |
 | --- | --- |
-| `setup` | Ready the repo for runs: preflight, then each gap handed to the skill that fixes it, then a before/after table ([`setup`](#setup)). Runs no stage. |
+| `setup` | Only as the sole argument (`/atelier setup SSO for admins` is a request). Ready the repo for runs: preflight, then each gap handed to the skill that fixes it, then a before/after table ([`setup`](#setup)). Runs no stage. |
 | `<request>` | Free text: start at Build. |
 | `<pr-url\|#n>` | An existing PR: skip Build (`skipped`, reason `existing PR`) and resume from its state comment. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
@@ -55,7 +55,7 @@ The setup skills it calls ask the user questions, so it runs interactively only:
 | Gap | `--setup` prints |
 | --- | --- |
 | `sign-in`, `telemetry` | `SETUP: Skill("aw-verify", "setup") — fixes <gaps>` (one call for both) |
-| `flag-provider` | `SETUP: Skill("deployment-verify", "setup") — fixes flag-provider` |
+| `flag-provider`, or `release.yml` without `pipeline:` | `SETUP: Skill("deployment-verify", "setup") — fixes <what is missing>` (one call for both) |
 | no `memory/observability-profile/INDEX.md` | `SETUP: Skill("measurable", "setup") — fixes observability-profile (…)` |
 | `ci-on-draft` | `MANUAL: ci-on-draft — <the workflows that skip drafts> — <the fix>` |
 

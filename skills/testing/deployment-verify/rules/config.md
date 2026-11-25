@@ -122,7 +122,7 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui], m
 
 ## `setup`
 
-`/deployment-verify setup` writes `release.yml` once and validates it on re-runs:
+`/deployment-verify setup` writes `release.yml` once; a re-run fills a missing `pipeline:` block (step 6) and validates the rest (step 7):
 
 1. Copy the template when the file is absent.
 2. Detect flag systems: OpenFeature (`@openfeature/`, `open-feature/go-sdk`), the Vercel Flags SDK (`flags/next`, `@vercel/flags`), PostHog (`posthog-node`, `posthog-js`), LaunchDarkly, Unleash, a repo-local registry. Write one provider per system and ask for its `set` command; never invent one.
