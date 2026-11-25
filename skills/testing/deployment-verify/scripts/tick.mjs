@@ -67,8 +67,8 @@ export function loadConfig(env, { cwd = process.cwd(), slug = null } = {}) {
 	const environment = merged.environments?.[env];
 	if (!environment) throw new Error(`release.yml has no environment "${env}"`);
 	const policies = { ...(overlay.policies || {}), ...(repo.policies || {}) };
-	const holdError = checkHoldAfter(merged) || checkProviders(merged);
-	if (holdError) throw new Error(holdError);
+	const configError = checkHoldAfter(merged) || checkProviders(merged);
+	if (configError) throw new Error(configError);
 	return { ...merged, env, environment, policies, thresholds: { ...DEFAULT_THRESHOLDS, ...(merged.thresholds || {}) } };
 }
 
