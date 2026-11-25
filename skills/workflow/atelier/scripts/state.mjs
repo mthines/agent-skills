@@ -14,7 +14,7 @@
 // the companions check, and the decision; a decision that ends the run exports it. Telemetry writes go
 // to the ledger and stderr only, never to stdout, and never change the exit code.
 // A --pr on --next or --companions (a URL, or a number resolved against the run's repo) sets the run's PR facts.
-//   node state.mjs --companions --aw-file <f> [--ui-diff yes|no|true|false] [--accept-skip a,b]
+//   node state.mjs --companions --aw-file <f> [--accept-skip a,b]
 //                                                          prints `COMPANIONS: proceed|hold — <reason>` for aw's hand-back
 //   node state.mjs --parse  [--body-file <f>]               prints the state JSON, or null
 //   node state.mjs --fetch  --pr <url|n>                    prints the existing comment body via gh (empty when none)
@@ -272,8 +272,8 @@ function selfTest() {
 	t("a non-companion degradation does not hold", companionDecision(block("lorekit unreachable — lessons skipped")).decision === "proceed");
 	t("the one-line Micro form parses", companionDecision("AW RUN COMPLETE — Micro, PR https://x/pull/2, Degraded: none, Needs you: nothing").decision === "proceed");
 	t("Micro requires no quality pass", companionDecision("AW RUN COMPLETE — Micro, PR https://x/pull/2, Degraded: fit skipped, Needs you: nothing").decision === "proceed");
-	t("aw-verify is required only on a UI diff", companionDecision(block("aw-verify skipped (no browser)")).decision === "proceed" && companionDecision(block("aw-verify skipped (no browser)"), { uiDiff: true }).decision === "hold");
-	t("required companions by tier", requiredCompanions({ tier: "Micro", uiDiff: true }).join() === "review-loop,create-pr" && requiredCompanions({ tier: "Lite", uiDiff: true }).join() === "review-loop,create-pr,quality-pass,aw-verify");
+	t("aw-verify is required on a UI and a non-UI diff alike", companionDecision(block("aw-verify skipped (no browser)")).decision === "hold" && companionDecision(block("aw-verify skipped (no browser)"), { uiDiff: true }).decision === "hold");
+	t("required companions by tier", requiredCompanions({ tier: "Micro", uiDiff: true }).join() === "review-loop,create-pr" && requiredCompanions({ tier: "Lite", uiDiff: true }).join() === "review-loop,create-pr,quality-pass,aw-verify" && requiredCompanions({ tier: "Lite", uiDiff: false }).join() === "review-loop,create-pr,quality-pass,aw-verify");
 	const acc = companionDecision(block("review-loop skipped (context budget)"), { accept: ["review-loop"] });
 	t("--accept-skip from the user proceeds and says so", acc.decision === "proceed" && acc.reason === "accepted skip: review-loop (user)");
 	t("no Degraded: line holds", companionDecision("AW RUN COMPLETE\n- Tier: Full").decision === "hold");
@@ -301,7 +301,7 @@ async function main() {
 		}
 		else if (a.companions) {
 			const accept = typeof a["accept-skip"] === "string" ? a["accept-skip"].split(",").map((x) => x.trim()) : [];
-			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { uiDiff: [true, "yes", "true"].includes(a["ui-diff"]), accept });
+			const d = companionDecision(readFileSync(a["aw-file"], "utf8"), { accept });
 			console.log(`COMPANIONS: ${d.decision}${d.reason ? ` — ${d.reason}` : ""}`);
 			const aw = parseDegraded(readFileSync(a["aw-file"], "utf8"));
 			await markCompanions({ decision: d.decision, tier: aw.tier, skipped: d.missing, accepted: d.accepted, pr: typeof a.pr === "string" ? a.pr : null });

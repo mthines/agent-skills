@@ -81,10 +81,11 @@ const COMPANION_ALIASES = {
 
 // The companions a Build must have run: every tier opens its PR through create-pr, whose local
 // review-loop reviews it; Lite and Full add the quality pass, and aw-verify on a user-visible diff.
-export function requiredCompanions({ uiDiff = false, tier = "Full" } = {}) {
+export function requiredCompanions({ tier = "Full" } = {}) {
 	const out = ["review-loop", "create-pr"];
 	if (tier !== "Micro") out.push("quality-pass");
-	if (uiDiff && tier !== "Micro") out.push("aw-verify");
+	// Every Lite/Full PR proves its criteria: aw-verify in the browser on a UI diff, checks-only otherwise.
+	if (tier !== "Micro") out.push("aw-verify");
 	return out;
 }
 
@@ -125,9 +126,9 @@ export function parseDegraded(text) {
 // The Build decision for companions: `hold` with `skipped: <names>` when a required one did not run
 // and the user did not accept that skip (`--accept-skip <name>[,<name>]`); `proceed` otherwise.
 // No `Degraded:` line at all is a hold too: a hand-back that hides what ran proves nothing ran.
-export function companionDecision(text, { uiDiff = false, accept = [] } = {}) {
+export function companionDecision(text, { accept = [] } = {}) {
 	const d = parseDegraded(text);
-	const required = requiredCompanions({ uiDiff, tier: d.tier ?? "Full" });
+	const required = requiredCompanions({ tier: d.tier ?? "Full" });
 	if (!d.found) return { decision: "hold", reason: "skipped: unknown — no Degraded: line in aw's hand-back", missing: required, accepted: [] };
 	const missing = d.skipped.filter((n) => required.includes(n));
 	const accepted = missing.filter((n) => accept.includes(n));

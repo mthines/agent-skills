@@ -199,7 +199,7 @@ export function hostFacts(env = process.env, cwd = process.cwd()) {
 // A stage reason is free text; metrics and dashboards group by this bounded enum instead.
 export const REASON_BUCKETS = Object.freeze([
 	"none", "merged", "existing_pr", "accepted_skip", "companions_skipped", "ci_not_run_draft", "ci_not_run", "ci_pending",
-	"ci_red", "gate_contract", "gate_ci", "checks_failed", "no_handback", "prepare_blocked", "preflight_gap", "other",
+	"ci_red", "gate_contract", "gate_ci", "gate_proof", "proof_missing", "checks_failed", "no_handback", "prepare_blocked", "preflight_gap", "other",
 ]);
 
 export function reasonBucket(reason) {
@@ -209,7 +209,8 @@ export function reasonBucket(reason) {
 	if (/existing PR/i.test(r)) return "existing_pr";
 	if (/^accepted skip/i.test(r)) return "accepted_skip";
 	if (/^skipped:/i.test(r)) return "companions_skipped";
-	if (/MERGE_GATE/.test(r)) return /contract|flag|deployment-verify/i.test(r) ? "gate_contract" : "gate_ci";
+	if (/MERGE_GATE/.test(r)) return /no proof the criteria hold/.test(r) ? "gate_proof" : /contract|flag|deployment-verify/i.test(r) ? "gate_contract" : "gate_ci";
+	if (/^proof:/i.test(r)) return "proof_missing";
 	if (/CI not run: draft/i.test(r)) return "ci_not_run_draft";
 	if (/CI not run|not-run/i.test(r)) return "ci_not_run";
 	if (/CI: pending|\bpending\b/i.test(r)) return "ci_pending";
@@ -824,6 +825,7 @@ async function selfTest() {
 	t("PR facts come from the decision's URL", run.facts.pr_number === 41 && run.facts.pr_url === pr && run.facts.head_sha === "abc1234");
 	t("reason buckets are bounded", ["CI not run: draft — x", "skipped: review-loop", "MERGE_GATE: refuse — user-visible diff without a deployment-verify:v1 contract", "MERGE_GATE: refuse — CI not green", "merged abc", "", "lunch"]
 		.map(reasonBucket).join() === "ci_not_run_draft,companions_skipped,gate_contract,gate_ci,merged,none,other");
+	t("a proof refusal buckets as proof, at Merge and at Ready", reasonBucket("MERGE_GATE: refuse — no proof the criteria hold: criteria still ⬜ after the run: AC-2 (set them with --marks)") === "gate_proof" && reasonBucket("proof: no intent region") === "proof_missing");
 	t("every bucket is in the enum", ["x", "CHECKS 3/5 FAIL: AC-1", "no AW RUN COMPLETE block", "prepare blocked"].every((r) => REASON_BUCKETS.includes(reasonBucket(r))));
 	t("--memory keeps only known keys and shapes", JSON.stringify(parseMemory("lorekit=ok,lessons_used=3,bus_failed=x,secret=1")) === '{"lorekit":"ok","lessons_used":3}');
 	t("outcomes: merge proceed → merged, refuse → refused, none → stopped", outcomeOf({ stage: "merge", decision: "proceed" }) === "merged" && outcomeOf({ stage: "merge", decision: "refuse" }) === "refused" && outcomeOf(null) === "stopped");
