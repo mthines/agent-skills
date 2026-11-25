@@ -147,7 +147,16 @@ export function planLines(steps) {
 }
 
 // A release.yml the reader cannot parse is not judged here: the flag-provider row already reports it.
+// release.json wins when present, as in deployment-verify's loadConfig.
 async function hasPipeline(repo) {
+	const json = join(repo, ".agents", "aw", "release.json");
+	if (existsSync(json)) {
+		try {
+			return !!JSON.parse(readFileSync(json, "utf8")).pipeline;
+		} catch {
+			return true;
+		}
+	}
 	const release = await readYaml(join(repo, ".agents", "aw", "release.yml"));
 	return !!release?.unknown || !!release?.pipeline;
 }
@@ -339,6 +348,8 @@ async function selfTest() {
 		const before = await hasPipeline(noPipe);
 		writeFileSync(join(noPipe, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\npipeline:\n  workflow: CI\n");
 		t("compare: a release.yml without pipeline: is reported, one with it is not", before === false && (await hasPipeline(noPipe)) === true && /^MANUAL: pipeline — /.test(PIPELINE_MANUAL));
+		writeFileSync(join(noPipe, ".agents", "aw", "release.json"), JSON.stringify({ environments: {} }));
+		t("a release.json wins over release.yml, as loadConfig reads it", (await hasPipeline(noPipe)) === false);
 	} finally {
 		rmSync(noPipe, { recursive: true, force: true });
 	}

@@ -48,6 +48,13 @@ A repo without `tracker.yml` never gets a ticket created: the script links a tic
 ✓ no tracker.yml, "add a dark-mode toggle" → TICKET: skip — no .agents/aw/tracker.yml; /atelier setup configures a tracker
 ```
 
+A request names a ticket by a Linear or GitHub issue URL, by `#n` under `provider: github`, or by a bare key only under the configured `linear.team`; `--ticket` links any key.
+
+```text
+✗ no tracker.yml, "add SHA-256 checksums" → TICKET: link SHA-256
+✓ no tracker.yml, "add SHA-256 checksums" → TICKET: skip; team AI, "fix AI-3112" → TICKET: link AI-3112
+```
+
 ## Modes
 
 ### `setup`

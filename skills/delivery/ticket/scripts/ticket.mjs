@@ -30,7 +30,7 @@ export function parseYaml(text) {
 	const stack = [{ indent: -1, node: root }];
 	let pendingList = null;
 	const scalar = (raw) => {
-		const v = raw.replace(/\s+#.*$/, "").trim();
+		const v = raw.replace(/(^|\s+)#.*$/, "").trim();
 		if (/^\[.*\]$/.test(v)) return v.slice(1, -1).split(",").map((x) => scalar(x)).filter((x) => x !== "");
 		const q = v.match(/^(['"])(.*)\1$/);
 		if (q) return q[2];
@@ -52,7 +52,7 @@ export function parseYaml(text) {
 		const m = line.match(/^(['"]?)([^'":]+)\1:\s*(.*)$/);
 		if (!m) throw new Error(`unsupported YAML at: ${line}`);
 		const [, , key, rest] = m;
-		if (rest.replace(/\s+#.*$/, "").trim() === "") {
+		if (rest.replace(/(^|\s+)#.*$/, "").trim() === "") {
 			const child = {};
 			parent[key] = child;
 			stack.push({ indent, node: child, key, parent });
@@ -142,13 +142,15 @@ export function loadTracker(repo, { home = homedir(), slug = repoSlug(repo) } = 
 	return { ...cfg, provider, require, states: { ...DEFAULT_STATES[provider], ...(cfg.states || {}) } };
 }
 
-// A Linear key (AI-3112) or URL, a GitHub issue URL, or `#12` when the provider is github.
+// A Linear URL, a GitHub issue URL, `#12` when the provider is github, or a bare key only under the configured
+// linear.team: SHA-256, UTF-8, and ES-2022 have a Linear key's shape, so a bare key with no team is never a ticket.
 // An issue in the repo's own `origin` (`slug`) is `#n`, so its PR line closes it without naming the repo.
-export function findTicket(text, provider = null, slug = null) {
+export function findTicket(text, provider = null, slug = null, team = null) {
 	const s = String(text ?? "");
 	const gh = s.match(/github\.com\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)/);
 	if (gh) return gh[1].toLowerCase() === slug?.toLowerCase() ? `#${gh[2]}` : `${gh[1]}#${gh[2]}`;
-	const linear = s.match(/linear\.app\/[^\s]*?\/issue\/([A-Z][A-Z0-9]{1,9}-\d+)/) || s.match(/\b([A-Z][A-Z0-9]{1,9}-\d+)\b/);
+	const bare = team && /^[A-Z][A-Z0-9]{0,9}$/.test(team) ? s.match(new RegExp(`\\b(${team}-\\d+)\\b`)) : null;
+	const linear = s.match(/linear\.app\/[^\s]*?\/issue\/([A-Z][A-Z0-9]{1,9}-\d+)/) || bare;
 	if (linear && provider !== "github") return linear[1];
 	const hash = s.match(/(?:^|\s)#(\d+)\b/);
 	if (hash && provider === "github") return `#${hash[1]}`;
@@ -156,7 +158,10 @@ export function findTicket(text, provider = null, slug = null) {
 }
 
 export function decide({ request = "", ticket = null, unattended = false, config = null, slug = null }) {
-	const id = findTicket(ticket || "", config?.provider, slug) || findTicket(request, config?.provider, slug);
+	// --ticket is the user naming the ticket outright, so a bare key there links whatever its prefix.
+	const named = /^[A-Z][A-Z0-9]{1,9}-\d+$/.test(String(ticket ?? "").trim()) ? String(ticket).trim() : null;
+	const team = config?.linear?.team;
+	const id = named || findTicket(ticket || "", config?.provider, slug, team) || findTicket(request, config?.provider, slug, team);
 	if (id) return `TICKET: link ${id}`;
 	if (!config) return "TICKET: skip — no .agents/aw/tracker.yml; /atelier setup configures a tracker";
 	if (config.provider === "none") return "TICKET: skip — tracker.yml provider: none";
@@ -182,7 +187,10 @@ function selfTest() {
 			console.error(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`);
 		}
 	};
-	t("a Linear key in the request links", decide({ request: "fix AI-3112 crash" }) === "TICKET: link AI-3112");
+	t("a key under linear.team in the request links", decide({ request: "fix AI-3112 crash", config: { provider: "linear", require: "ask", linear: { team: "AI" } } }) === "TICKET: link AI-3112");
+	t("✗ SHA-256, UTF-8, ES-2022 are not tickets", ["add SHA-256 checksums", "fix UTF-8 decoding", "target ES-2022"].every((r) => /^TICKET: skip/.test(decide({ request: r }))) && decide({ request: "add SHA-256", config: { provider: "linear", require: "ask", linear: { team: "AI" } } }) === "TICKET: ask");
+	t("--ticket links a bare key with no tracker.yml", decide({ request: "x", ticket: "ENG-5" }) === "TICKET: link ENG-5");
+	t("a comment on a map-key line keeps its children", parseYaml("states:   # stage to state\n  merge: Shipped\n").states?.merge === "Shipped");
 	t("a Linear URL links its key", findTicket("see https://linear.app/dash0/issue/AI-42/some-title") === "AI-42");
 	t("a GitHub issue URL links as owner/repo#n", findTicket("https://github.com/acme/web/issues/7") === "acme/web#7");
 	t("an issue in the repo's own origin links as #n", findTicket("https://github.com/Acme/Web/issues/7", "github", "acme/web") === "#7");
