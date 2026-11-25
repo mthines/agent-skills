@@ -175,7 +175,7 @@ function statusLine(state) {
 	return `**Next:** ${NEXT[next(state, null)] ?? NEXT.build} Atelier carries on by itself.`;
 }
 
-/** The sticky comment: status card, the next step, a footer, and the run details. `assetBase` repoints the images (the gallery). */
+/** The sticky comment: a title line, the status card, the action when one is needed, a footer, and the run details. `assetBase` repoints the images (the gallery). */
 export function render(state, { assetBase = ASSET_BASE } = {}) {
 	const o = outcomes(state);
 	const key = cardKey(o);
@@ -189,15 +189,18 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 	});
 	const ci = state.stages.ready?.ci;
 	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
+	const v = verdict(o);
+	const meta = [last?.sha && `head <code>${last.sha.slice(0, 7)}</code>`, latest && `updated ${when(latest)}`].filter(Boolean);
 	const action = actionBlock(state);
 	const status = statusLine(state);
 	const lines = [
 		MARKER,
-		`<picture><source media="(prefers-color-scheme: dark)" srcset="${assetBase}/cards/${key}-dark.png"><img src="${assetBase}/cards/${key}-light.png" width="700" alt="${altText(o)}"></picture>`,
+		`<img src="${assetBase}/mascot/${v.mood}.png" width="20" height="20" alt=""> **<a href="${README_URL}">Atelier</a>** · ${v.title}`,
+		"",
+		`<picture><source media="(prefers-color-scheme: dark)" srcset="${assetBase}/cards/${key}-dark.png"><img src="${assetBase}/cards/${key}-light.png" width="100%" alt="${altText(o)}"></picture>`,
 		"",
 		...(action ? [action, ""] : []),
-		`<sub><img src="${assetBase}/mascot/${verdict(o).mood}.png" width="20" height="20" alt=""> <a href="${README_URL}">Atelier</a>${last?.sha ? ` · head <code>${last.sha.slice(0, 7)}</code>` : ""}${latest ? ` · updated ${when(latest)}` : ""}</sub>`,
-		"",
+		...(meta.length ? [`<sub>${meta.join(" · ")}</sub>`, ""] : []),
 		"<details>",
 		"<summary>Run details</summary>",
 		"",
@@ -334,10 +337,12 @@ function selfTest() {
 	t("a script's machine line stays one problem, never a fix list", machine.includes("**Ready held: CI_WAIT: pending — l1 still running; typecheck queued.**") && !machine.includes("fix 2 things"));
 	t("a refusal is a red alert", render(record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "no flag contract" })).includes("> [!CAUTION]\n> **Merge refused: no flag contract.**"));
 	t("a hold picks the held card for both themes", heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-dark.png`) && heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-light.png`));
-	t("the footer shows the mascot in the state's mood", heldBody.includes(`${ASSET_BASE}/mascot/held.png`));
+	t("the title line shows the mascot in the state's mood and names the state", heldBody.includes(`<img src="${ASSET_BASE}/mascot/held.png" width="20" height="20" alt=""> **<a href="${README_URL}">Atelier</a>** · Held at Ready`));
+	t("the card spans the comment", heldBody.includes('width="100%"'));
 	t("a failure names its reason under the card", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("**Ready failed: CI red.**"));
 	t("a proceed shows no box; Run details names the next stage", !render(s).includes("> [!") && render(s).includes("**Next:** Merge runs the merge gate"));
-	t("the footer links Atelier to the skill's README", render(s).includes(`<a href="${README_URL}">Atelier</a>`));
+	t("the title links Atelier to the skill's README and names the next step", render(s).includes(`**<a href="${README_URL}">Atelier</a>** · Ready, merge next`));
+	t("the footer carries only the head and the time", /<sub>head <code>a1<\/code> · updated /.test(render(s)));
 	t("times render as GitHub relative-time", render(s).includes('<relative-time datetime="'));
 	t("the asset base can be pointed elsewhere", render(s, { assetBase: "../assets" }).includes('srcset="../assets/cards/'));
 	s = record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "user-visible diff | no flag" });

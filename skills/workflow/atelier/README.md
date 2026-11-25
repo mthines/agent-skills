@@ -58,7 +58,8 @@ Atelier keeps **one sticky comment** on the PR and rewrites it after every stage
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="./assets/cards/done-hold-pending-pending-dark.png"><img src="./assets/cards/done-hold-pending-pending-light.png" width="700" alt="Atelier pipeline: Build done, Ready held, Merge and Deliver pending."></picture>
 
-While atelier is moving on, or once it is done, the card is all you see.
+A one-line title names the state ("Ready, merge next", "Held at Ready"), and the card shows the four stages.
+While atelier is moving on, or once it is done, that is all you see.
 When it needs you, a box appears under the card:
 
 | Box | Means | You do |

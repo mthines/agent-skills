@@ -49,20 +49,20 @@ export function allKeys() {
 	return keys;
 }
 
-/** The headline and mascot mood (the comment's footer face) for a state; colours are picked per theme by `tone`. */
+/** The headline, the comment's title line, and the mascot mood for a state; colours are picked per theme by `tone`. */
 export function verdict(o) {
 	const cur = Math.max(0, o.findLastIndex((x) => x !== "pending"));
 	const at = CARD_STAGES[cur][0].toUpperCase() + CARD_STAGES[cur].slice(1);
 	const end = o[cur];
-	if (end === "hold") return { mood: "held", tone: "amber", lead: `Held at ${at}.`, tail: "Needs you." };
-	if (end === "failed") return { mood: "failed", tone: "red", lead: `${at} failed.`, tail: "Needs a fix." };
-	if (end === "refuse") return { mood: "refused", tone: "coral", lead: `${at} refused.`, tail: "The gate said no." };
+	if (end === "hold") return { mood: "held", tone: "amber", lead: `Held at ${at}.`, tail: "Needs you.", title: `Held at ${at}` };
+	if (end === "failed") return { mood: "failed", tone: "red", lead: `${at} failed.`, tail: "Needs a fix.", title: `${at} failed` };
+	if (end === "refuse") return { mood: "refused", tone: "coral", lead: `${at} refused.`, tail: "The gate said no.", title: `${at} refused` };
 	if (cur === 3) return end === "skipped"
-		? { mood: "ready", tone: "sky", lead: "Merged.", tail: "Delivery skipped." }
-		: { mood: "shipped", tone: "green", lead: "Merged.", tail: "And delivered." };
-	if (cur === 2) return { mood: "working", tone: "blue", lead: "Merged.", tail: "Delivering…" };
-	if (cur === 1) return { mood: "ready", tone: "sky", lead: "Ready.", tail: "Waiting on the merge." };
-	return { mood: "working", tone: "blue", lead: end === "skipped" ? "Existing PR." : "Built.", tail: "Getting it ready…" };
+		? { mood: "ready", tone: "sky", lead: "Merged.", tail: "Delivery skipped.", title: "Merged, delivery skipped" }
+		: { mood: "shipped", tone: "green", lead: "Merged.", tail: "And delivered.", title: "Merged and delivered" };
+	if (cur === 2) return { mood: "working", tone: "blue", lead: "Merged.", tail: "Delivering…", title: "Merged, delivering" };
+	if (cur === 1) return { mood: "ready", tone: "sky", lead: "Ready.", tail: "Waiting on the merge.", title: "Ready, merge next" };
+	return { mood: "working", tone: "blue", lead: end === "skipped" ? "Existing PR." : "Built.", tail: "Getting it ready…", title: `${end === "skipped" ? "Existing PR" : "Built"}, getting it ready` };
 }
 
 const LABEL = { done: "done", skipped: "skipped", hold: "needs you", failed: "failed", refuse: "refused", pending: "not reached" };
