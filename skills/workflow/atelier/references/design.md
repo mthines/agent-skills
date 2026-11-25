@@ -11,6 +11,7 @@ tags: [atelier, design, rationale]
 - [The merge gate](#the-merge-gate)
 - [Ready on real CI](#ready-on-real-ci)
 - [Approval is the repo's choice](#approval-is-the-repos-choice)
+- [A GitHub error is not a decision](#a-github-error-is-not-a-decision)
 - [Preflight](#preflight)
 - [A skipped companion holds Build](#a-skipped-companion-holds-build)
 - [State in the PR](#state-in-the-pr)
@@ -113,3 +114,10 @@ These later steps will read the decision log and are not built here:
 - Earned autonomy: atelier flipping the flag itself once a repo's record of clean outcomes earns it.
 - The policy for that, in a `promotion:` block of `.agents/aw/release.yml`.
 - The decision, in a pure `promote.mjs` that takes the events and the policy and returns whether to flip.
+
+## A GitHub error is not a decision
+
+A run that has passed every gate and then records `hold` because GitHub returned a 502 hands the user a chore that needs no judgment: they re-run it and nothing differs.
+The merge is the one step whose gates are already settled, so the only open question is whether GitHub accepts the call, and that is answered by time.
+`merge-wait.mjs` therefore waits and repeats, but only for errors that say the failure is GitHub's (5xx, "Something went wrong", "already in progress"); a message that names a rule is a decision and ends the wait at once.
+The retry is pinned to the gated head, so a push during the wait is never merged unchecked, and it never uses `--admin`.

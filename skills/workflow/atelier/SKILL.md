@@ -42,7 +42,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `--ticket <id\|url>` | The ticket this work belongs to; [Step 0](#step-0--setup) links it instead of asking. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
-| `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci) or [wait for approval](#waiting-for-approval) lasts (default 30). `0` never waits: pending CI or a pending approval records a `hold`, as before. |
+| `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci), [wait for approval](#waiting-for-approval) or [wait for the merge](#merging-through-github-errors) lasts (default 30). `0` never waits: pending CI or a pending approval records a `hold`, as before. |
 | `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, and the revert). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
@@ -185,7 +185,7 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, every required companion ran (or the user accepted its skip), the [sentinel](#after-build-returns) passes, and the early gate passes | `hold` (reason `skipped: <companions>`), `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
 | **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, and `verify-comment.mjs --check --proven` printed `report complete` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line; proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
-| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → [wait for approval](#waiting-for-approval) on the same head; `approved` → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; approval `manual` or `pending` → Merge `hold`, reason = the `APPROVAL_WAIT:` line, `Needs you:` as the [approval exit table](#waiting-for-approval) says; approval `moved` → run the gate again on the new head once, then wait again; a second `moved` → Merge `hold`, reason = that line; prepare blocked → `hold`, reason = its line |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → [wait for approval](#waiting-for-approval) on the same head; `approved` → `Skill("prepare", "<pr-url> --merge --single")` right away, then [carry the merge through GitHub errors](#merging-through-github-errors) when the PR is still open; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; approval `manual` or `pending` → Merge `hold`, reason = the `APPROVAL_WAIT:` line, `Needs you:` as the [approval exit table](#waiting-for-approval) says; approval `moved` → run the gate again on the new head once, then wait again; a second `moved` → Merge `hold`, reason = that line; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -333,6 +333,35 @@ Atelier never approves a PR itself and never asks a bot to; it only waits for th
 ✗ the named check already finished NEUTRAL → wait the full 30 minutes                 # it did not approve, and will not change
 ✓ gate passed → approval-wait (merge.yml names the check) → approved → prepare --merge
 ✓ gate passed → approval-wait (nothing named) → manual → Merge hold, "Needs you: review <pr>"
+```
+
+### Merging through GitHub errors
+
+GitHub fails calls that are not the PR's fault: a 5xx, a GraphQL "Something went wrong", "Merge already in progress", and a merge queue that only enqueues.
+The gates already passed on this head, so a failed call is a reason to wait and repeat, never a reason to hand the merge to the user.
+After `prepare --merge` returns, read the PR; when it is not `MERGED`, run `merge-wait.mjs`, which polls for `MERGED` and, with `--retry-merge`, repeats the squash pinned to the gated head (`--match-head-commit`):
+
+```bash
+M="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-wait.mjs"
+node "$T" wait other -- node "$M" --pr <pr-url> --head "$GATED" --retry-merge [--max-wait <minutes>]
+```
+
+| Exit | Last line | Do |
+| --- | --- | --- |
+| 0 | `MERGE_WAIT: merged` | carry on with [After the merge](#after-the-merge); reason = `merged <sha>` |
+| 1 | `MERGE_WAIT: refused` | GitHub refused for a reason a retry cannot fix (a branch rule, a conflict): Merge `hold`, reason = that line, `Needs you:` what it names |
+| 1 | `MERGE_WAIT: closed` | the PR was closed: Merge `failed`, reason = that line |
+| 3 | `MERGE_WAIT: pending` | still open when `--max-wait` ended: Merge `hold`, reason = that line, `Needs you: re-run /atelier <pr-url>`; the gates are recorded, so the re-run goes straight to the merge |
+| 4 | `MERGE_WAIT: moved` | the head changed: run the merge gate again on the new head |
+| 2 | stderr | `failed`, reason = stderr |
+
+Only a 5xx-style message is retried; a refusal that names a rule ends the wait at once, and the retry never uses `--admin`, never bypasses a rule, and never merges a head the gates did not judge.
+
+```text
+✗ gh pr merge → HTTP 502 → record Merge hold, "run it again"        # a GitHub outage is not a decision
+✗ gh pr merge → "not mergeable: policy prohibits" → retry for 30 minutes
+✓ gh pr merge → HTTP 502 → merge-wait --retry-merge → merged → After the merge
+✓ gh pr merge → "not mergeable: policy prohibits" → refused → Merge hold, Needs you: the rule
 ```
 
 ### After Build returns

@@ -45,7 +45,7 @@ Three things, each riding on a command you already run; never spend a tool call 
    ✓ node "$T" wait ci -- node ci-wait.mjs --pr <pr-url>       # T="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs"
    ```
 
-   Kinds: `ci` (checks, `ci-wait.mjs`, the undraft poll), `review` (`approval-wait.mjs`), `human`, `other`.
+   Kinds: `ci` (checks, `ci-wait.mjs`, the undraft poll), `review` (`approval-wait.mjs`), `other` (`merge-wait.mjs`), `human`.
 2. **Memory.** On Build's `--record`, pass `--memory "lorekit=<ok|unreachable>,lessons_used=<n>"`: Step 0's LoreKit probe and the number of `aw` lessons Build applied (`0` when none).
    On any later `--record` after a bus write failed, pass `--memory "bus_failed=<n>"`.
    Unknown keys and values are dropped.
