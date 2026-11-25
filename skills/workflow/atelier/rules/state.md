@@ -34,11 +34,12 @@ A Build `hold` for companions that did not run carries reason `skipped: <names>`
 
 1. The status card: `assets/cards/<build>-<ready>-<merge>-<deliver>-<light|dark>.png` in a `<picture>`, picked by `card.mjs` from the last recorded stage (`state.stage`), linked from `main` on `raw.githubusercontent.com`.
    The card is the pipeline alone on a transparent background: one node per stage with its icon, a status badge, the stage name, and a status word, so the state never rests on colour alone.
-2. The action, one GitHub alert whose type is the state: `[!CAUTION]` after `failed` or `refuse`, `[!WARNING]` after `hold`, `[!TIP]` for the next stage or done.
+2. The action, only when the last stage stopped: one GitHub alert, `[!CAUTION]` after `failed` or `refuse`, `[!WARNING]` after `hold`.
+   A run that is moving on or done shows no alert, since the card already says so; its `**Next:**` or `**Done:**` line opens Run details.
    A stop leads with a bold `<Stage> <outcome>: <reason>.`, or `<Stage> <outcome>: fix N things, then re-run.` and one numbered line per problem when the reason holds several, then the re-run command on its own fenced line with the PR's URL.
    Preflight never shows above the footer: a gap that caused the stop is already a problem in the reason (Step 0's preflight table puts it there), and any other gap is in Run details.
-3. A footer: the mascot's face in the state's mood (`assets/mascot/<mood>.png`), the head, and `<relative-time>`, which GitHub shows as "2 minutes ago".
-4. `Run details`, collapsed: one row per stage with `<relative-time>`, the CI evidence, and the preflight line.
+3. A footer: the mascot's face in the state's mood (`assets/mascot/<mood>.png`), "Atelier" linked to the skill's [`README.md`](../README.md) (`README_URL`), the head, and `<relative-time>`, which GitHub shows as "2 minutes ago".
+4. `Run details`, collapsed: one row per stage with `<relative-time>`, the `**Next:**` or `**Done:**` line, the CI evidence, the preflight line, and the re-run command.
 
 ### Reasons
 

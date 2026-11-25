@@ -40,16 +40,7 @@ State: [`built.json`](built.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-pending-pending-pending-dark.png"><img src="../../../assets/cards/done-pending-pending-pending-light.png" width="700" alt="Atelier: Built. Getting it ready… Build done, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-> [!TIP]
-> **Next: Ready** gets the PR green: review, threads, and CI.
->
-> Atelier carries on by itself; if this run stopped, re-run:
->
-> ```text
-> /atelier https://github.com/mthines/reaper-mcp/pull/195
-> ```
-
-<sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -60,6 +51,8 @@ State: [`built.json`](built.json)
 | ⚪ | Ready | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Ready gets the PR green: review, threads, and CI. Atelier carries on by itself.
 
 **Preflight:** `ok — 0 gaps`
 
@@ -76,16 +69,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-light.png" width="700" alt="Atelier: Built. Getting it ready… Build done, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-> [!TIP]
-> **Next: Ready** gets the PR green: review, threads, and CI.
->
-> Atelier carries on by itself; if this run stopped, re-run:
->
-> ```text
-> /atelier https://github.com/mthines/reaper-mcp/pull/195
-> ```
-
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -96,6 +80,8 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 | ⚪ | Ready | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Ready gets the PR green: review, threads, and CI. Atelier carries on by itself.
 
 **Preflight:** `ok — 0 gaps`
 
@@ -120,16 +106,7 @@ State: [`existing-pr-ready.json`](existing-pr-ready.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-pending-pending-dark.png"><img src="../../../assets/cards/skipped-done-pending-pending-light.png" width="700" alt="Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached."></picture>
 
-> [!TIP]
-> **Next: Merge** runs the merge gate, then squash-merges.
->
-> Atelier carries on by itself; if this run stopped, re-run:
->
-> ```text
-> /atelier https://github.com/mthines/reaper-mcp/pull/195
-> ```
-
-<sub><img src="../../../assets/mascot/ready.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/ready.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -140,6 +117,8 @@ State: [`existing-pr-ready.json`](existing-pr-ready.json)
 | ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Merge runs the merge gate, then squash-merges. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `limited — 1 gap (flag-provider)`
@@ -157,16 +136,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-light.png" width="700" alt="Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached."></picture>
 
-> [!TIP]
-> **Next: Merge** runs the merge gate, then squash-merges.
->
-> Atelier carries on by itself; if this run stopped, re-run:
->
-> ```text
-> /atelier https://github.com/mthines/reaper-mcp/pull/195
-> ```
-
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/ready.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/ready.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -177,6 +147,8 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 | ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Merge runs the merge gate, then squash-merges. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `limited — 1 gap (flag-provider)`
@@ -211,7 +183,7 @@ State: [`build-held.json`](build-held.json)
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -247,7 +219,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -292,7 +264,7 @@ State: [`build-failed.json`](build-failed.json)
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -329,7 +301,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -373,7 +345,7 @@ State: [`build-refused.json`](build-refused.json)
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -409,7 +381,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -453,7 +425,7 @@ State: [`ready-held.json`](ready-held.json)
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -489,7 +461,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -533,7 +505,7 @@ State: [`ready-failed.json`](ready-failed.json)
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -569,7 +541,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -613,7 +585,7 @@ State: [`merge-refused.json`](merge-refused.json)
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -650,7 +622,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -686,16 +658,7 @@ State: [`merged.json`](merged.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-pending-dark.png"><img src="../../../assets/cards/done-done-done-pending-light.png" width="700" alt="Atelier: Merged. Delivering… Build done, Ready done, Merge done, Deliver not reached."></picture>
 
-> [!TIP]
-> **Next: Deliver** checks `main`'s pipeline for the merge commit.
->
-> Atelier carries on by itself; if this run stopped, re-run:
->
-> ```text
-> /atelier https://github.com/mthines/reaper-mcp/pull/195
-> ```
-
-<sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -706,6 +669,8 @@ State: [`merged.json`](merged.json)
 | ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Deliver checks `main`'s pipeline for the merge commit. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
@@ -723,16 +688,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-light.png" width="700" alt="Atelier: Merged. Delivering… Build done, Ready done, Merge done, Deliver not reached."></picture>
 
-> [!TIP]
-> **Next: Deliver** checks `main`'s pipeline for the merge commit.
->
-> Atelier carries on by itself; if this run stopped, re-run:
->
-> ```text
-> /atelier https://github.com/mthines/reaper-mcp/pull/195
-> ```
-
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -743,6 +699,8 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 | ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Deliver checks `main`'s pipeline for the merge commit. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
@@ -768,10 +726,7 @@ State: [`delivered.json`](delivered.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-done-dark.png"><img src="../../../assets/cards/done-done-done-done-light.png" width="700" alt="Atelier: Merged. And delivered. Build done, Ready done, Merge done, Deliver done."></picture>
 
-> [!TIP]
-> **Done: merged, and `main`'s pipeline is green for the merge commit.**
-
-<sub><img src="../../../assets/mascot/shipped.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/shipped.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -782,6 +737,8 @@ State: [`delivered.json`](delivered.json)
 | ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ✅ | Deliver | done | `4f1c2d9` | <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time> | main green for 4f1c2d9 |
+
+**Done:** merged, and `main`'s pipeline is green for the merge commit.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
@@ -799,10 +756,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-light.png" width="700" alt="Atelier: Merged. And delivered. Build done, Ready done, Merge done, Deliver done."></picture>
 
-> [!TIP]
-> **Done: merged, and `main`'s pipeline is green for the merge commit.**
-
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/shipped.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/shipped.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -813,6 +767,8 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 | ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ✅ | Deliver | done | `4f1c2d9` | <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time> | main green for 4f1c2d9 |
+
+**Done:** merged, and `main`'s pipeline is green for the merge commit.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
@@ -848,7 +804,7 @@ State: [`deliver-reverted.json`](deliver-reverted.json)
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
+<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
@@ -886,7 +842,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 > /atelier https://github.com/mthines/reaper-mcp/pull/195
 > ```
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> <a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a> · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
