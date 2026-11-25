@@ -25,12 +25,12 @@ Checks-only run: each criterion is a command run on this branch, and on the base
 
 <details><summary>Details</summary>
 
-**How I tested it.** No UI file in the diff, so no browser or environment ran. A criterion is ✅ only when its command passed on the branch; the Before column is the same command on the base, where a fail shows the test catches the change.
+**How I tested it.** No UI file in the diff, so no browser or environment ran. A criterion is ✅ only when its command passed on the branch; the Before column is the same command on the base, where a fail shows the test catches the change. `run` in Recorded by means `verify-comment.mjs --run` executed the command and read its exit code; `hand` means the agent typed the result.
 
-| AC | Command | Before (base) | After (branch) | Evidence |
-| --- | --- | --- | --- | --- |
-| AC‑1 | `pnpm vitest run render-lib -t 'TEMP'` | fails (catches it) | ✅ pass | 1 failed → 1 passed |
-| AC‑2 | `pnpm vitest run render-lib -t 'TMP'` | fails (catches it) | ✅ pass | 1 failed → 1 passed |
+| AC | Command | Before (base) | After (branch) | Evidence | Recorded by |
+| --- | --- | --- | --- | --- | --- |
+| AC‑1 | `pnpm vitest run render-lib -t 'TEMP'` | fails (catches it) | ✅ pass | 1 failed → 1 passed | run |
+| AC‑2 | `pnpm vitest run render-lib -t 'TMP'` | fails (catches it) | ✅ pass | 1 failed → 1 passed | run |
 
 Re-run: `/aw-verify run checks`
 

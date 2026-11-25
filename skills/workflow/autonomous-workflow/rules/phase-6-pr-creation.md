@@ -73,7 +73,7 @@ D=".agent/$(git branch --show-current)"
 | --- | --- |
 | `aw-verify run local` (a UI diff, Lite or Full) | `node "$VC" --pr "$PR_URL" --section intent --from-plan "$D/plan.md"`, then `Skill("aw-verify", "report <pr-url>")` |
 | Checks mode (`aw-verify run checks`, any diff with no UI file, and every Micro run) | `node "$VC" --checks "$D/verify/runs.json" --from-plan "$D/plan.md" --pr "$PR_URL" --head "$(git rev-parse HEAD)"` |
-| Full's sealed checks, no UI file | the checks-mode row, with `runs.json` built from the runs Step 4 recorded, or `--checks "$(node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --statuses)"` when no before-run exists |
+| Full's sealed checks, no UI file | the checks-mode row, with the `runs.json` that `--run` recorded in Step 4, or `--checks "$(node "$AW_SKILL_DIR/scripts/run-checks.mjs" "$D/checks.yaml" --statuses)"` when a check's `expect` is not an exit code (the report labels those `run-checks`) |
 
 Then gate, with `--ui` on a UI diff:
 
