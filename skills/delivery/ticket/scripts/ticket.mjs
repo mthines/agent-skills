@@ -143,10 +143,11 @@ export function loadTracker(repo, { home = homedir(), slug = repoSlug(repo) } = 
 }
 
 // A Linear key (AI-3112) or URL, a GitHub issue URL, or `#12` when the provider is github.
-export function findTicket(text, provider = null) {
+// An issue in the repo's own `origin` (`slug`) is `#n`, so its PR line closes it without naming the repo.
+export function findTicket(text, provider = null, slug = null) {
 	const s = String(text ?? "");
 	const gh = s.match(/github\.com\/([^/\s]+\/[^/\s]+)\/issues\/(\d+)/);
-	if (gh) return `${gh[1]}#${gh[2]}`;
+	if (gh) return gh[1].toLowerCase() === slug?.toLowerCase() ? `#${gh[2]}` : `${gh[1]}#${gh[2]}`;
 	const linear = s.match(/linear\.app\/[^\s]*?\/issue\/([A-Z][A-Z0-9]{1,9}-\d+)/) || s.match(/\b([A-Z][A-Z0-9]{1,9}-\d+)\b/);
 	if (linear && provider !== "github") return linear[1];
 	const hash = s.match(/(?:^|\s)#(\d+)\b/);
@@ -154,8 +155,8 @@ export function findTicket(text, provider = null) {
 	return null;
 }
 
-export function decide({ request = "", ticket = null, unattended = false, config = null }) {
-	const id = findTicket(ticket || "", config?.provider) || findTicket(request, config?.provider);
+export function decide({ request = "", ticket = null, unattended = false, config = null, slug = null }) {
+	const id = findTicket(ticket || "", config?.provider, slug) || findTicket(request, config?.provider, slug);
 	if (id) return `TICKET: link ${id}`;
 	if (!config) return "TICKET: skip — no .agents/aw/tracker.yml; /atelier setup configures a tracker";
 	if (config.provider === "none") return "TICKET: skip — tracker.yml provider: none";
@@ -184,6 +185,7 @@ function selfTest() {
 	t("a Linear key in the request links", decide({ request: "fix AI-3112 crash" }) === "TICKET: link AI-3112");
 	t("a Linear URL links its key", findTicket("see https://linear.app/dash0/issue/AI-42/some-title") === "AI-42");
 	t("a GitHub issue URL links as owner/repo#n", findTicket("https://github.com/acme/web/issues/7") === "acme/web#7");
+	t("an issue in the repo's own origin links as #n", findTicket("https://github.com/Acme/Web/issues/7", "github", "acme/web") === "#7");
 	t("#12 is a ticket only when the provider is github", findTicket("fix #12") === null && findTicket("fix #12", "github") === "#12");
 	t("✗ no tracker.yml never asks or creates", /^TICKET: skip — no \.agents\/aw\/tracker\.yml/.test(decide({ request: "add a button" })));
 	const cfg = (o) => ({ provider: "linear", require: "ask", linear: { team: "AI" }, ...o });
@@ -248,7 +250,7 @@ function main() {
 		console.error(`ticket: ${e.message}`);
 		process.exit(1);
 	}
-	if (a.decide) console.log(decide({ request: typeof a.request === "string" ? a.request : "", ticket: typeof a.ticket === "string" ? a.ticket : null, unattended: !!a.unattended, config }));
+	if (a.decide) console.log(decide({ request: typeof a.request === "string" ? a.request : "", ticket: typeof a.ticket === "string" ? a.ticket : null, unattended: !!a.unattended, config, slug: repoSlug(repo) }));
 	else if (a.state) {
 		if (!["build", "ready", "merge"].includes(a.stage)) {
 			console.error("ticket: --state needs --stage build|ready|merge");
