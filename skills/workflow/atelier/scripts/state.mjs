@@ -128,7 +128,11 @@ const sentence = (x) => {
 	return t && `${t}.`;
 };
 // A recorded reason holds one clause per problem, separated by `; ` (rules/state.md § Reasons).
-const problems = (reason) => oneLine(reason).split(/;\s+/).map(sentence).filter(Boolean);
+// A script's machine line (`APPROVAL_WAIT: …`, `PIPELINE: …`) is one result whose parts also join on `; `: keep it whole.
+const problems = (reason) => {
+	const r = oneLine(reason);
+	return (/^[A-Z][A-Z_]+: /.test(r) ? [r] : r.split(/;\s+/)).map(sentence).filter(Boolean);
+};
 // The command the reader copies: the PR's own URL when the state has it, so nothing needs filling in.
 const rerun = (state) => `/atelier ${/^https:\/\//.test(String(state.pr || "")) ? state.pr : state.pr ? `#${String(state.pr).replace(/^#/, "")}` : "<this PR>"}`;
 const command = (state) => ["```text", rerun(state), "```"];
@@ -317,6 +321,8 @@ function selfTest() {
 	const twoBody = render(record({ ...s, pr: "https://github.com/a/b/pull/7" }, { stage: "ready", decision: "failed", head: "a1", reason: "merge gate could not run: GraphQL 403; review-loop cap-reached, last fixes unreviewed" }));
 	t("a failure with two problems is a red alert with a count and one problem per line", twoBody.includes("> [!CAUTION]\n> **Ready failed: fix 2 things, then re-run.**") && twoBody.includes("> 1. merge gate could not run: GraphQL 403.\n> 2. review-loop cap-reached, last fixes unreviewed."));
 	t("the re-run command is its own fenced line with the PR's URL", twoBody.includes("> ```text\n> /atelier https://github.com/a/b/pull/7\n> ```") && !twoBody.includes("<this PR>"));
+	const machine = render(record(s, { stage: "ready", decision: "hold", head: "a1", reason: "CI_WAIT: pending — l1 still running; typecheck queued" }));
+	t("a script's machine line stays one problem, never a fix list", machine.includes("**Ready held: CI_WAIT: pending — l1 still running; typecheck queued.**") && !machine.includes("fix 2 things"));
 	t("a refusal is a red alert", render(record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "no flag contract" })).includes("> [!CAUTION]\n> **Merge refused: no flag contract.**"));
 	t("a hold picks the held card for both themes", heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-dark.png`) && heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-light.png`));
 	t("the footer shows the mascot in the state's mood", heldBody.includes(`${ASSET_BASE}/mascot/held.png`));

@@ -110,7 +110,7 @@ Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at th
 
 ## Ready (existing PR, limited preflight)
 
-Build skipped for an existing PR, Ready passed with green CI evidence, and a preflight gap shows as a heads-up.
+Build skipped for an existing PR, Ready passed with green CI evidence, and a preflight gap shows only in Run details.
 
 State: [`existing-pr-ready.json`](existing-pr-ready.json)
 

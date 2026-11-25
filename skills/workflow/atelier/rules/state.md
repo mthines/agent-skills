@@ -43,6 +43,7 @@ A Build `hold` for companions that did not run carries reason `skipped: <names>`
 ### Reasons
 
 Write a recorded reason as one clause per problem, separated by `; `, each naming what is wrong in words a reader can act on; the comment turns each clause into its own line.
+A script's machine line (`CI_WAIT: …`, `APPROVAL_WAIT: …`, `PIPELINE: …`) stays one problem: its own `; ` joins parts of one result.
 
 ```text
 ✗ --reason "merge gate could not run, gh GraphQL is blocked (HTTP 403) and companions hold since review-loop hit its cap"
