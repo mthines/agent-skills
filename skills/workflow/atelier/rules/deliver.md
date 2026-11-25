@@ -58,14 +58,14 @@ The lane exists because the pipeline broke after review, so the fix gets its own
 
 | `on_red` | First red (the merged PR) | Second red |
 | --- | --- | --- |
-| `fix-first` (default) | fix lane | the fix PR is red: revert lane, reverting the fix PR and the merged PR together |
-| `revert-first` | revert lane; once its PR is green, the fix lane re-applies the change with the fix. A revert the policy blocks (`never`, a declined or unattended `ask`) goes straight to the fix lane, as under `fix-first` | the re-apply PR is red: revert lane on the re-apply PR alone. The revert PR is red: `failed` |
+| `fix-first` (default) | fix lane | the fix PR is red: revert lane on the fix PR's and the merged PR's squash shas, newest first |
+| `revert-first` | revert lane; once its PR is green, the fix lane re-applies the change with the fix. A revert the policy blocks (`never`, a declined or unattended `ask`) goes straight to the fix lane, as under `fix-first` | the re-apply PR is red: revert lane on the re-apply PR's squash sha alone. The revert PR is red: `failed` |
 
 `revert-first` suits a repo where a red default branch blocks other people's merges or releases; `fix-first` keeps the change live when a small fix is likely.
 
 ## Revert lane
 
-One revert per Deliver run, never a revert of a revert: it backs out the merged change through a PR with the same gates, never a push to the default branch.
+Each merged PR is reverted at most once, and a revert PR is never reverted: the lane backs out the merged change through a PR with the same gates, never a push to the default branch.
 Atelier never runs `deployment-verify` and never flips a flag: a flag or platform rollback of a rolled-out change stays with `deployment-verify`, and a code revert stays here.
 
 The rollback policy decides whether the lane acts: `~/.agents/aw/config.yml` → `policies.rollback`, overridden by `repos.<slug>.policies.rollback` (the same setting `deployment-verify` reads; its `rules/config.md`, § Policy, which spells out what `auto` means for a code revert).
@@ -76,14 +76,16 @@ The rollback policy decides whether the lane acts: `~/.agents/aw/config.yml` →
 | `auto` | Revert without asking |
 | `never` | Do not revert: `failed`, reason = the `PIPELINE:` line, with the revert command under `Needs you:` |
 
+On a `revert-first` first red, a row that does not revert (`never`, a declined or unattended `ask`) runs the fix lane instead of stopping ([Order](#order)); the `hold` or `failed` above applies only when there is no fix round left.
+
 When the policy allows it:
 
 1. Revert on a new branch from the updated default branch, never on the default branch itself:
 
    ```bash
-   git fetch origin <base> && git switch -c revert/<pr-number> origin/<base>
-   git revert --no-edit <lane PR sha> <squash sha>   # newest first: every lane PR merged since, then the merge reason's sha; -m 1 for a merge commit
-   git push -u origin revert/<pr-number>
+   git fetch origin <base> && git switch -c revert/<newest reverted pr-number> origin/<base>
+   git revert --no-edit <sha> …   # the squash shas the Order row names, newest first; -m 1 for a merge commit
+   git push -u origin revert/<newest reverted pr-number>
    gh pr create --base <base> --title "Revert \"<pr title>\"" --body-file revert-body.md   # "Reverts #<pr-number>: <PIPELINE line>" + the merged PR's contract block
    ```
 
