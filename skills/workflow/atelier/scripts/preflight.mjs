@@ -43,7 +43,9 @@ export function flagCheck({ present, config = null, error = null }) {
 	}
 	if (error) return { name, ok: false, value: `release.yml does not load: ${error}`, cannot: "post-merge rollout not testable until release.yml loads" };
 	const providers = (config?.flags?.providers || []).map((p) => p?.name).filter(Boolean);
-	if (!providers.length) return { name, ok: false, value: DECLARED_NONE, cannot: "a human flips the flag; post-merge rollout not testable" };
+	// Only an explicit `providers: []` is a decision; a release.yml with no flags block was never asked.
+	const declared = Array.isArray(config?.flags?.providers);
+	if (!providers.length) return { name, ok: false, value: declared ? DECLARED_NONE : "none (release.yml has no flags.providers)", cannot: "a human flips the flag; post-merge rollout not testable" };
 	return { name, ok: true, value: providers.join(", "), cannot: "" };
 }
 
@@ -291,6 +293,8 @@ async function selfTest() {
 	const { t, done } = makeTester("preflight");
 	t("no release.yml → a gap that says a human flips the flag", !flagCheck({ present: false }).ok && /human flips/.test(flagCheck({ present: false }).cannot));
 	t("providers: [] → a gap", !flagCheck({ present: true, config: { flags: { providers: [] } } }).ok);
+	const noFlags = flagCheck({ present: true, config: { environments: { production: {} } } });
+	t("✗ no flags block is not a declared none: setup delegates it", noFlags.value === "none (release.yml has no flags.providers)" && planLines(setupPlan([noFlags])).some((l) => /deployment-verify.*flag-provider/.test(l)), noFlags.value);
 	t("a declared provider → ok", flagCheck({ present: true, config: { flags: { providers: [{ name: "launchdarkly" }] } } }).value === "launchdarkly");
 	t("a release.yml that does not load → a gap naming the error", /does not load: boom/.test(flagCheck({ present: true, error: "boom" }).value));
 	t("no telemetry.yml → a gap", !telemetryCheck(null).ok);
