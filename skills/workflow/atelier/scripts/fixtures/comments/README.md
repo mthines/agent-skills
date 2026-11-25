@@ -17,6 +17,7 @@ The layout contract is [`rules/state.md`](../../../rules/state.md).
 - [Built](#built)
 - [Ready (existing PR, limited preflight)](#ready-existing-pr-limited-preflight)
 - [Held at Build](#held-at-build)
+- [Build failed, two problems](#build-failed-two-problems)
 - [Build refused](#build-refused)
 - [Held at Ready](#held-at-ready)
 - [Ready failed](#ready-failed)
@@ -39,7 +40,14 @@ State: [`built.json`](built.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-pending-pending-pending-dark.png"><img src="../../../assets/cards/done-pending-pending-pending-light.png" width="700" alt="Atelier: Built. Getting it ready… Build done, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-**Next:** re-run `/atelier <this PR>` to get it ready: review, threads, and green CI.
+> [!TIP]
+> **Next: Ready** gets the PR green: review, threads, and CI.
+>
+> Atelier carries on by itself; if this run stopped, re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
@@ -55,7 +63,7 @@ State: [`built.json`](built.json)
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -68,7 +76,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-light.png" width="700" alt="Atelier: Built. Getting it ready… Build done, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-**Next:** re-run `/atelier <this PR>` to get it ready: review, threads, and green CI.
+> [!TIP]
+> **Next: Ready** gets the PR green: review, threads, and CI.
+>
+> Atelier carries on by itself; if this run stopped, re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
@@ -84,7 +99,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -105,8 +120,14 @@ State: [`existing-pr-ready.json`](existing-pr-ready.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-pending-pending-dark.png"><img src="../../../assets/cards/skipped-done-pending-pending-light.png" width="700" alt="Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached."></picture>
 
-**Next:** re-run `/atelier <this PR>` to run the merge gate.
-**Heads-up:** preflight is limited — 1 gap (flag-provider).
+> [!TIP]
+> **Next: Merge** runs the merge gate, then squash-merges.
+>
+> Atelier carries on by itself; if this run stopped, re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/ready.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
 
@@ -123,7 +144,7 @@ State: [`existing-pr-ready.json`](existing-pr-ready.json)
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `limited — 1 gap (flag-provider)`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -136,8 +157,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-light.png" width="700" alt="Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached."></picture>
 
-**Next:** re-run `/atelier <this PR>` to run the merge gate.
-**Heads-up:** preflight is limited — 1 gap (flag-provider).
+> [!TIP]
+> **Next: Merge** runs the merge gate, then squash-merges.
+>
+> Atelier carries on by itself; if this run stopped, re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/ready.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
 
@@ -154,7 +181,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `limited — 1 gap (flag-provider)`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -175,7 +202,14 @@ State: [`build-held.json`](build-held.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/hold-pending-pending-pending-dark.png"><img src="../../../assets/cards/hold-pending-pending-pending-light.png" width="700" alt="Atelier: Held at Build. Needs you. Build needs you, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** skipped: review-loop. Then re-run `/atelier <this PR>` to resume at Build.
+> [!WARNING]
+> **Build held: skipped: review-loop.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
@@ -191,7 +225,7 @@ State: [`build-held.json`](build-held.json)
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -204,7 +238,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/hold-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/hold-pending-pending-pending-light.png" width="700" alt="Atelier: Held at Build. Needs you. Build needs you, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** skipped: review-loop. Then re-run `/atelier <this PR>` to resume at Build.
+> [!WARNING]
+> **Build held: skipped: review-loop.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
@@ -220,11 +261,93 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
 <!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"hold","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"skipped: review-loop"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"build","refusal":null} -->
+````
+
+</details>
+
+## Build failed, two problems
+
+Two problems stopped Build; each gets its own line, and the limited preflight stays in Run details because it did not cause the stop.
+
+State: [`build-failed.json`](build-failed.json)
+
+> [!NOTE]
+> Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
+
+<!-- atelier:v1 -->
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/failed-pending-pending-pending-dark.png"><img src="../../../assets/cards/failed-pending-pending-pending-light.png" width="700" alt="Atelier: Build failed. Needs a fix. Build failed, Ready not reached, Merge not reached, Deliver not reached."></picture>
+
+> [!CAUTION]
+> **Build failed: fix 2 things, then re-run.**
+>
+> 1. merge gate could not run: gh GraphQL is blocked in this session (HTTP 403).
+> 2. review-loop hit its cap, so the last fixes are unreviewed.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+
+<details>
+<summary>Run details</summary>
+
+| | Stage | Outcome | Head | When | Why |
+| :-: | --- | --- | --- | --- | --- |
+| ❌ | Build | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed |
+| ⚪ | Ready | not reached | | | |
+| ⚪ | Merge | not reached | | | |
+| ⚪ | Deliver | not reached | | | |
+
+**Preflight:** `limited — 1 gap (flag-provider)`
+
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
+
+</details>
+
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"failed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed"}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"build","refusal":null} -->
+
+<details>
+<summary>Markdown source</summary>
+
+````markdown
+<!-- atelier:v1 -->
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/failed-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/failed-pending-pending-pending-light.png" width="700" alt="Atelier: Build failed. Needs a fix. Build failed, Ready not reached, Merge not reached, Deliver not reached."></picture>
+
+> [!CAUTION]
+> **Build failed: fix 2 things, then re-run.**
+>
+> 1. merge gate could not run: gh GraphQL is blocked in this session (HTTP 403).
+> 2. review-loop hit its cap, so the last fixes are unreviewed.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+
+<details>
+<summary>Run details</summary>
+
+| | Stage | Outcome | Head | When | Why |
+| :-: | --- | --- | --- | --- | --- |
+| ❌ | Build | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed |
+| ⚪ | Ready | not reached | | | |
+| ⚪ | Merge | not reached | | | |
+| ⚪ | Deliver | not reached | | | |
+
+**Preflight:** `limited — 1 gap (flag-provider)`
+
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
+
+</details>
+
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"failed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed"}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"build","refusal":null} -->
 ````
 
 </details>
@@ -241,7 +364,14 @@ State: [`build-refused.json`](build-refused.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/refuse-pending-pending-pending-dark.png"><img src="../../../assets/cards/refuse-pending-pending-pending-light.png" width="700" alt="Atelier: Build refused. The gate said no. Build refused, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry). Then re-run `/atelier <this PR>` to resume at Build.
+> [!CAUTION]
+> **Build refused: MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
 
@@ -257,7 +387,7 @@ State: [`build-refused.json`](build-refused.json)
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -270,7 +400,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/refuse-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/refuse-pending-pending-pending-light.png" width="700" alt="Atelier: Build refused. The gate said no. Build refused, Ready not reached, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry). Then re-run `/atelier <this PR>` to resume at Build.
+> [!CAUTION]
+> **Build refused: MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
 
@@ -286,7 +423,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -307,7 +444,14 @@ State: [`ready-held.json`](ready-held.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-hold-pending-pending-dark.png"><img src="../../../assets/cards/done-hold-pending-pending-light.png" width="700" alt="Atelier: Held at Ready. Needs you. Build done, Ready needs you, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** CI not run: draft — every required check skipped (4). Then re-run `/atelier <this PR>` to resume at Ready.
+> [!WARNING]
+> **Ready held: CI not run: draft — every required check skipped (4).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
@@ -323,7 +467,7 @@ State: [`ready-held.json`](ready-held.json)
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -336,7 +480,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-hold-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-hold-pending-pending-light.png" width="700" alt="Atelier: Held at Ready. Needs you. Build done, Ready needs you, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** CI not run: draft — every required check skipped (4). Then re-run `/atelier <this PR>` to resume at Ready.
+> [!WARNING]
+> **Ready held: CI not run: draft — every required check skipped (4).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
@@ -352,7 +503,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -373,7 +524,14 @@ State: [`ready-failed.json`](ready-failed.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-failed-pending-pending-dark.png"><img src="../../../assets/cards/done-failed-pending-pending-light.png" width="700" alt="Atelier: Ready failed. Needs a fix. Build done, Ready failed, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** CI red at 8e0b152: test failed after one fix attempt. Then re-run `/atelier <this PR>` to resume at Ready.
+> [!CAUTION]
+> **Ready failed: CI red at 8e0b152: test failed after one fix attempt.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
@@ -389,7 +547,7 @@ State: [`ready-failed.json`](ready-failed.json)
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -402,7 +560,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-failed-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-failed-pending-pending-light.png" width="700" alt="Atelier: Ready failed. Needs a fix. Build done, Ready failed, Merge not reached, Deliver not reached."></picture>
 
-**Needs you:** CI red at 8e0b152: test failed after one fix attempt. Then re-run `/atelier <this PR>` to resume at Ready.
+> [!CAUTION]
+> **Ready failed: CI red at 8e0b152: test failed after one fix attempt.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
@@ -418,7 +583,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -439,7 +604,14 @@ State: [`merge-refused.json`](merge-refused.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-refuse-pending-dark.png"><img src="../../../assets/cards/done-done-refuse-pending-light.png" width="700" alt="Atelier: Merge refused. The gate said no. Build done, Ready done, Merge refused, Deliver not reached."></picture>
 
-**Needs you:** user-visible diff without a flag contract in the PR body. Then re-run `/atelier <this PR>` to resume at Merge.
+> [!CAUTION]
+> **Merge refused: user-visible diff without a flag contract in the PR body.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
 
@@ -456,7 +628,7 @@ State: [`merge-refused.json`](merge-refused.json)
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -469,7 +641,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-refuse-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-refuse-pending-light.png" width="700" alt="Atelier: Merge refused. The gate said no. Build done, Ready done, Merge refused, Deliver not reached."></picture>
 
-**Needs you:** user-visible diff without a flag contract in the PR body. Then re-run `/atelier <this PR>` to resume at Merge.
+> [!CAUTION]
+> **Merge refused: user-visible diff without a flag contract in the PR body.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
 
@@ -486,7 +665,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -507,7 +686,14 @@ State: [`merged.json`](merged.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-pending-dark.png"><img src="../../../assets/cards/done-done-done-pending-light.png" width="700" alt="Atelier: Merged. Delivering… Build done, Ready done, Merge done, Deliver not reached."></picture>
 
-**Next:** Deliver checks `main`'s pipeline for the merge commit; re-run `/atelier <this PR>` if this run stopped.
+> [!TIP]
+> **Next: Deliver** checks `main`'s pipeline for the merge commit.
+>
+> Atelier carries on by itself; if this run stopped, re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
 
@@ -524,7 +710,7 @@ State: [`merged.json`](merged.json)
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -537,7 +723,14 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-light.png" width="700" alt="Atelier: Merged. Delivering… Build done, Ready done, Merge done, Deliver not reached."></picture>
 
-**Next:** Deliver checks `main`'s pipeline for the merge commit; re-run `/atelier <this PR>` if this run stopped.
+> [!TIP]
+> **Next: Deliver** checks `main`'s pipeline for the merge commit.
+>
+> Atelier carries on by itself; if this run stopped, re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
 
@@ -554,7 +747,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -575,7 +768,8 @@ State: [`delivered.json`](delivered.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-done-dark.png"><img src="../../../assets/cards/done-done-done-done-light.png" width="700" alt="Atelier: Merged. And delivered. Build done, Ready done, Merge done, Deliver done."></picture>
 
-**Done:** merged, and `main`'s pipeline is green for the merge commit.
+> [!TIP]
+> **Done: merged, and `main`'s pipeline is green for the merge commit.**
 
 <sub><img src="../../../assets/mascot/shipped.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
 
@@ -592,7 +786,7 @@ State: [`delivered.json`](delivered.json)
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -605,7 +799,8 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-light.png" width="700" alt="Atelier: Merged. And delivered. Build done, Ready done, Merge done, Deliver done."></picture>
 
-**Done:** merged, and `main`'s pipeline is green for the merge commit.
+> [!TIP]
+> **Done: merged, and `main`'s pipeline is green for the merge commit.**
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/shipped.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
 
@@ -622,7 +817,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -643,7 +838,15 @@ State: [`deliver-reverted.json`](deliver-reverted.json)
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-failed-dark.png"><img src="../../../assets/cards/done-done-done-failed-light.png" width="700" alt="Atelier: Deliver failed. Needs a fix. Build done, Ready done, Merge done, Deliver failed."></picture>
 
-**Needs you:** main red after one fix; reverted by revert PR #202. Then re-run `/atelier <this PR>` to resume at Deliver.
+> [!CAUTION]
+> **Deliver failed: fix 2 things, then re-run.**
+>
+> 1. main red after one fix.
+> 2. reverted by revert PR #202.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
 
@@ -660,7 +863,7 @@ State: [`deliver-reverted.json`](deliver-reverted.json)
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -673,7 +876,15 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 <!-- atelier:v1 -->
 <picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-failed-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-failed-light.png" width="700" alt="Atelier: Deliver failed. Needs a fix. Build done, Ready done, Merge done, Deliver failed."></picture>
 
-**Needs you:** main red after one fix; reverted by revert PR #202. Then re-run `/atelier <this PR>` to resume at Deliver.
+> [!CAUTION]
+> **Deliver failed: fix 2 things, then re-run.**
+>
+> 1. main red after one fix.
+> 2. reverted by revert PR #202.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
 
 <sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
 
@@ -690,7 +901,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
