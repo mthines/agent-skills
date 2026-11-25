@@ -42,7 +42,7 @@ It owns no build, review, verify, or deploy logic: each stage is one delegation,
 | `--ticket <id\|url>` | The ticket this work belongs to; [Step 0](#step-0--setup) links it instead of asking. |
 | `--unattended` | No human is present: Build forwards `--no-confirm` to `aw` and tells it to run `interview` with `--non-interactive`, so a `blocking` question ends the run as `failed` instead of waiting. |
 | `--keep-draft` | Ready leaves the PR a draft; when CI did not run on the draft (`ci-ran.mjs` prints `CI: not-run`), Ready records `hold` (reason `CI not run: draft — <its reason>`). |
-| `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci) lasts (default 30). `0` never waits: pending CI records a `hold`, as before. |
+| `--max-wait <minutes>` | The longest one [wait for CI](#waiting-for-ci) or [wait for approval](#waiting-for-approval) lasts (default 30). `0` never waits: pending CI or a pending approval records a `hold`, as before. |
 | `--no-deliver` | Stop at the merge: skip the [Deliver](#after-the-merge) step (the default-branch pipeline read, its one fix, and the revert). |
 | `--accept-gaps` | The user accepts every [preflight](#preflight) gap: Build runs even when a gap leaves a stated criterion unprovable; the gaps ride into `Degraded:`. |
 | `--accept-skip <name,…>` | The user accepts that these [companions](#after-build-returns) did not run (`review-loop`, `create-pr`, `quality-pass`, `aw-verify`); only the user passes it, never an agent, and the decision event records it. |
@@ -185,7 +185,7 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 | --- | --- | --- | --- |
 | **build** | `Skill("aw", "<request> <build suffix>")` (the suffix on its own paragraph), adding `--no-confirm` under `--unattended`; then the [after-Build checklist](#after-build-returns) | aw's `AW RUN COMPLETE` block names a PR URL, every required companion ran (or the user accepted its skip), the [sentinel](#after-build-returns) passes, and the early gate passes | `hold` (reason `skipped: <companions>`), `failed` (reason = aw's `Needs you:` line or the failing check IDs), or `refuse` after a second early-gate refusal |
 | **ready** | unless `--keep-draft`: `gh pr ready <pr-url>` when the PR is a draft, then [wait for the fresh CI run](#after-undrafting); then `Skill("prepare", "<pr-url> --single")`; then the [CI evidence](#ci-evidence); then the [proof](#proof) | prepare printed `Already green` or fixed every PR it touched, `ci-ran.mjs` printed `CI: green`, and `verify-comment.mjs --check --proven` printed `report complete` | `CI: not-run` → `hold`, reason = its `CI not run …` text (prefixed `CI not run: draft — ` under `--keep-draft`); `CI: pending` → [wait](#waiting-for-ci), then `hold` only when still pending after `--max-wait`; `CI: red` or prepare blocked → `failed`, reason = that line; proof still incomplete after one `aw-verify` run → `failed`, reason = `proof: <first problem>` |
-| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; prepare blocked → `hold`, reason = its line |
+| **merge** | gate first, on the live head: `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/merge-gate.mjs" --pr <pr-url>`; exit 0 → [wait for approval](#waiting-for-approval) on the same head; `approved` → `Skill("prepare", "<pr-url> --merge --single")` right away; merged → [finding outcomes](#after-the-merge) | the PR state is `MERGED`; reason = `merged <squash sha>`, plus the gate's `warning:` line when it printed one | gate exit 1 with the JSON's `refused_by` = `ci` and `pending` → [wait for CI](#waiting-for-ci), then run the gate again once; any other `ci` refusal, or a wait that ended `pending`, records **Ready** (not Merge) `hold` (`not-run`, `pending`) or `failed` (`red`), reason = the `MERGE_GATE:` line, so `--next` runs Ready again; `refused_by` = `proof` → record **Ready** `failed`, reason = the `MERGE_GATE:` line, so `--next` runs Ready, whose [proof](#proof) step runs `aw-verify`; `refused_by` = `contract` → `refuse`, reason = the `MERGE_GATE:` line; approval `manual` or `pending` → `hold`, reason = the `APPROVAL_WAIT:` line, with `Needs you:` a person's review; approval `moved` → run the gate again on the new head; prepare blocked → `hold`, reason = its line |
 
 The build suffix, appended verbatim to every request:
 
@@ -287,6 +287,52 @@ node "$T" wait ci -- node "$W" --pr <pr-url> --head "$SHA" --max-wait <minutes> 
 `--head` is the sha the evidence is for, so a push during the wait is never mistaken for green.
 Deliver has its own bounded wait (`pipeline.mjs --wait`); this one covers PR CI.
 
+### Waiting for approval
+
+A repo can block the merge on a required review that something other than a person gives: an auto-approval app, a policy check.
+Which one is the repo's choice, so it is configuration, not something atelier knows.
+After the merge gate passes, atelier waits for the named checks to approve, up to `--max-wait` minutes, and merges only on an approval; otherwise the merge is a person's job and the run says so.
+
+The repo names them in `.agents/aw/merge.yml` (committed, no secrets; every field optional), or a run passes `--check <regex>` (repeatable), which wins:
+
+```yaml
+version: 1
+approval:
+  wait_for: ["Darkplane auto-approval"]   # regexes, case-insensitive, on check-run or status names; all must pass
+  max_wait_minutes: 30                    # default for --max-wait
+  start_grace_minutes: 5                  # how long a named check may take to show up
+```
+
+No `merge.yml` and no `--check` → a required review is a person's job at once (`manual`), with no wait; nothing about the repo is assumed.
+`approval-wait.mjs` reads the live PR every 30 seconds; run it through the telemetry wrapper so the trace books the time as waiting:
+
+```bash
+T="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs"
+W="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/approval-wait.mjs"
+node "$T" wait review -- node "$W" --pr <pr-url> --head "$GATED" [--max-wait <minutes>] [--check <regex>]...
+```
+
+| Exit | Last line | Do |
+| --- | --- | --- |
+| 0 | `APPROVAL_WAIT: approved` | the review decision is `APPROVED`, no review is required, or every named check passed: run `Skill("prepare", "<pr-url> --merge --single")` right away |
+| 0 | `APPROVAL_WAIT: merged` | already merged: carry on with [After the merge](#after-the-merge) |
+| 1 | `APPROVAL_WAIT: manual` | a named check finished without approving or never ran, changes were requested, or a review is required and none is configured: Merge `hold`, reason = that line, `Needs you:` a person's review of `<pr-url>`; never use `--admin` or `--force` |
+| 3 | `APPROVAL_WAIT: pending` | a named check was still running after `--max-wait`: Merge `hold`, reason = that line, `Needs you: re-run /atelier <pr-url> when <the check> finishes` |
+| 4 | `APPROVAL_WAIT: moved` | the head changed while waiting: run the merge gate again on the new head |
+| 2 | stderr | `failed`, reason = stderr |
+
+Only an approval of the head the gate judged counts (`--head`), so a push during the wait is never mistaken for an approval.
+Atelier never approves a PR itself and never asks a bot to; it only waits for the repo's own automatic approval.
+`/atelier setup` does not write `merge.yml`: add it by hand when the repo has an auto-approval to wait for.
+
+```text
+✗ gate passed, reviewDecision REVIEW_REQUIRED → gh pr merge --admin                   # skips the review the repo requires
+✗ approval-wait names one vendor's check in the script itself                          # another repo has a different bot, or none
+✗ the named check already finished NEUTRAL → wait the full 30 minutes                 # it did not approve, and will not change
+✓ gate passed → approval-wait (merge.yml names the check) → approved → prepare --merge
+✓ gate passed → approval-wait (nothing named) → manual → Merge hold, "Needs you: review <pr>"
+```
+
 ### After Build returns
 
 `aw` can run for hours in this context; do these in order before anything else, and re-read this section when unsure where the run is:
@@ -370,6 +416,7 @@ After a merge, put the next human step under `Needs you:`:
 | has a contract whose flag provider `release.yml` declares | `run /deployment-verify <pr> to roll <flag> out; when release.yml sets hold_after, the rollout waits there for /deployment-verify approve <pr> (tick.mjs --approve) or override <pr> (--override)` |
 | has a contract the gate passed with the no-provider warning | `flip <flag> on by hand — deployment-verify cannot step it here (no provider)` |
 | has no user-visible diff | `nothing — not user-visible` |
+| held at Merge because approval was `manual` or `pending` | `review and approve <pr-url> (<the APPROVAL_WAIT reason>); it merges afterwards where auto-merge or a merge queue is on` |
 
 ## Terminal contract
 
