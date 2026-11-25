@@ -66,6 +66,7 @@ The brief says what to do, what must not change, and what done looks like; how y
 
 1. Load the workflow: `Skill("autonomous-workflow")`. If unavailable, ask the user to install the companion set and stop.
 2. Read [`rules/corrections.md`](../rules/corrections.md) in full. Its corrections are the reason this workflow exists; apply every one that the task triggers.
+   Then read [`rules/smallest-change.md`](../rules/smallest-change.md): list every place the change must reach before the first edit, and stop at the first rung of its ladder for each new piece of behaviour.
 3. Read the brief and the checks:
 
    ```bash
@@ -138,6 +139,13 @@ Only these run by rule; any other skill is your judgment, used when it would cha
 | 7 | `ci-auto-fix` | A CI run completes with `failure` (cap 2 handoffs) |
 
 Report each in your final message as `companion: <name> — ran | skipped (<reason>)`.
+
+End your final message with one or two lines, `Not checked: <what you skipped or did not verify, and the risk it leaves>`, or `Not checked: nothing`.
+
+```text
+✗ Not checked: some edge cases.
+✓ Not checked: the Windows path separator in resolveConfig — CI runs Linux only; a Windows user with a nested config dir may get ENOENT.
+```
 
 ## Rules
 

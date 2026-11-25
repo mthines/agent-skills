@@ -60,6 +60,7 @@ The brief says what done looks like and what must not change — never how to bu
 ## Step 2 — Work here until the checks pass
 
 Iterate: change, run the brief's After-editing command, run the checks, fix, repeat.
+Before the first edit, and for each new piece of behaviour, follow `smallest-change.md` (autonomous-workflow `rules/`): list every place the change must reach, then stop at the first rung of the ladder that holds.
 
 ```bash
 AW_SKILL_DIR="${AW_SKILL_DIR:-$HOME/.claude/skills/autonomous-workflow}"

@@ -178,16 +178,18 @@ Read [`rules/root-cause-analysis.md`](./rules/root-cause-analysis.md) and run it
 2. Rule out at least 2 alternative causes, each with concrete evidence.
 3. Name the root cause — the earliest hop whose fix makes the symptom impossible, not the symptom hop.
 4. Score it with `Skill("confidence", "analysis\n\n<conclusion + evidence>")`; below 90 %, re-trace the weakest hop once and re-score.
-5. Append the Root-Cause Record to the ledger.
+5. List every caller of the function the fix will change (`git grep`), mark each affected or unaffected, and aim the fix at the shared function.
+6. Append the Root-Cause Record to the ledger.
 
 ### `simple` path — lightweight in-skill analysis
 
 Skip the full trace ([what simple skips](./rules/complexity-triage.md#what-simple-actually-skips)):
 
 1. Read the suspect file at the suspect line + 30 lines of context.
-2. Identify the minimal change that satisfies the failing repro (Phase 2.5) and does not break neighbours.
-3. Write a root-cause paragraph to the Evidence Record — same shape as the [Root-Cause Record](./rules/root-cause-analysis.md#step-3--write-the-root-cause-record), including a `Falsifiable prediction:` line that the repro confirms.
-4. Continue to Phase 4 — the score comes from the `confidence` skill, never self-graded.
+2. Grep every caller of the function you will change (`git grep -n '\b<name>\b'`) and mark each affected or unaffected; when more than one is affected, the fix goes in the shared function, once.
+3. Identify the minimal change that satisfies the failing repro (Phase 2.5) and does not break neighbours.
+4. Write a root-cause paragraph to the Evidence Record — same shape as the [Root-Cause Record](./rules/root-cause-analysis.md#step-3--write-the-root-cause-record), including a `Falsifiable prediction:` line that the repro confirms.
+5. Continue to Phase 4 — the score comes from the `confidence` skill, never self-graded.
 
 If the lightweight analysis cannot propose a fix (suspect file not in the failing path, or more than one plausible cause), upgrade triage to `complex`, run the `complex` path, and log `triage upgrade: simple → complex (lightweight analysis under-determined)`.
 
