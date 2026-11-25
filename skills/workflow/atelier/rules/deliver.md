@@ -24,12 +24,14 @@ The wait is `pipeline.timeout_minutes` (default 20; `--wait <minutes>` overrides
 | Exit | Line | Deliver decision |
 | --- | --- | --- |
 | 0 | `PIPELINE: green` | `proceed`, reason `pipeline green <run url>` |
+| 3 | `PIPELINE: cancelled` | `hold`, reason = the line: a concurrency group usually cancelled it for a later push; `Needs you:` names that later run to read, never a fix |
 | 3 | `PIPELINE: pending` after `--wait` | `hold`, reason = the line, `Needs you:` names the run to watch |
 | 1 | `PIPELINE: none` | `hold`, reason `no pipeline run for <sha>`: the repo may not run one on merge; the user confirms |
-| 1 | `PIPELINE: red — <workflow › job › step>` | start the [fix lane](#fix-lane) once |
+| 1 | `PIPELINE: red — <workflow › job › step>` | start the [fix lane](#fix-lane) once; the fix start records `hold` (reason `fix PR <url>`), and the fix PR's own green result records `proceed` |
 | 2 | stderr | `failed`, reason = stderr; never fix on a read that errored |
 
-A required job that is `skipped` counts as red: when the release job skips, the version step before it failed, and a green run hides that.
+A required job that is `skipped` counts as red: when the release job skips, the step before it failed, and a green run hides that.
+Name a job in `required_jobs` only when it runs on every merge: a job gated on "a release is due" also skips when nothing is due, and would read red.
 A repo with no `pipeline:` block reads every run of the merge commit and requires none by name, so only a failed run or job is red.
 
 ## Fix lane

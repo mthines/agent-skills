@@ -10,7 +10,7 @@
 //   add --workflow <name> --required <job,job>                              override .agents/aw/release.yml → pipeline
 //   node pipeline.mjs --self-test
 //
-// Prints one JSON object, then a final line `PIPELINE: green|pending|red|none — <reason>`.
+// Prints one JSON object, then a final line `PIPELINE: green|pending|cancelled|red|none — <reason>`.
 // Exit: 0 green, 1 red or none, 2 error, 3 pending after --wait.
 
 import { execFileSync } from "node:child_process";
@@ -21,7 +21,8 @@ import { pathToFileURL } from "node:url";
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
 
 const NONE_WAIT_MINUTES = 3;
-const BAD = new Set(["failure", "cancelled", "timed_out", "startup_failure", "action_required"]);
+// `cancelled` is not here: a concurrency group cancels a merge's run when the next push lands, which is no failure.
+const BAD = new Set(["failure", "timed_out", "startup_failure", "action_required"]);
 
 // Pure. `runs`: [{ id, workflow, url, status, conclusion, jobs: [{ name, status, conclusion, steps: [{ name, conclusion }] }] }].
 // `required`: job names that must conclude `success` (a skipped required job is a failure: the release job
@@ -37,13 +38,16 @@ export function classify(runs, { required = [], workflow = "" } = {}) {
 	const mine = runs.filter((r) => !workflow || r.workflow === workflow);
 	if (!mine.length) return { state: "none", reason: "no workflow run started for the merge commit", failures: [] };
 	const failures = [];
+	const cancelled = [];
 	for (const r of mine) {
 		for (const j of r.jobs ?? []) {
+			if (j.status === "completed" && j.conclusion === "cancelled") cancelled.push({ workflow: r.workflow, job: j.name, run: r.url });
 			if (j.status === "completed" && BAD.has(j.conclusion)) {
 				const step = (j.steps ?? []).find((s) => BAD.has(s.conclusion))?.name ?? null;
 				failures.push({ workflow: r.workflow, job: j.name, step, conclusion: j.conclusion, run: r.url });
 			}
 		}
+		if (r.status === "completed" && r.conclusion === "cancelled" && !cancelled.some((c) => c.run === r.url)) cancelled.push({ workflow: r.workflow, job: null, run: r.url });
 		if (r.status === "completed" && BAD.has(r.conclusion) && !failures.some((f) => f.run === r.url)) {
 			failures.push({ workflow: r.workflow, job: null, step: null, conclusion: r.conclusion, run: r.url });
 		}
@@ -53,13 +57,14 @@ export function classify(runs, { required = [], workflow = "" } = {}) {
 		const j = jobs.find((x) => jobMatches(x.name, name));
 		// A job that has not appeared yet is missing only once every run is done: a queued run lists no jobs.
 		if (!j) { if (mine.every((r) => r.status === "completed")) failures.push({ workflow: workflow || null, job: name, step: null, conclusion: "missing", run: mine[0].url }); }
-		else if (j.status === "completed" && j.conclusion !== "success" && !BAD.has(j.conclusion)) {
+		else if (j.status === "completed" && j.conclusion !== "success" && j.conclusion !== "cancelled" && !BAD.has(j.conclusion)) {
 			failures.push({ workflow: j.workflow, job: name, step: null, conclusion: j.conclusion, run: j.run });
 		}
 	}
 	const describe = (f) => `${f.workflow ?? "workflow"} › ${f.job ?? "run"}${f.step ? ` › ${f.step}` : ""} ${f.conclusion}`;
 	if (failures.length) return { state: "red", reason: failures.map(describe).join("; "), failures };
 	if (mine.some((r) => r.status !== "completed")) return { state: "pending", reason: "a run is still in progress", failures: [] };
+	if (cancelled.length) return { state: "cancelled", reason: `${cancelled.map((c) => `${c.workflow} › ${c.job ?? "run"}`).join("; ")} cancelled, usually superseded by a later push: read that push's run`, failures: [] };
 	return { state: "green", reason: `${mine.length} run(s) passed`, failures: [] };
 }
 
@@ -111,6 +116,9 @@ async function selfTest() {
 	t("a missing required job is red once every run is done", classify([run("CI", [job("test", "success")])], { required: ["version"] }).failures[0].conclusion === "missing");
 	t("a required job not listed yet is pending while its run is in flight", classify([run("CI", [], "in_progress", null)], { required: ["test"] }).state === "pending");
 	t("a matrix or called-workflow job matches its base name", classify([run("CI", [job("test (ubuntu-latest)", "success"), job("ci / release", "success")])], { required: ["test", "release"] }).state === "green");
+	const cx = classify([run("CI", [job("test", "success"), job("release", "cancelled")], "completed", "cancelled")], { required: ["release"] });
+	t("a cancelled run is not red", cx.state === "cancelled", JSON.stringify(cx));
+	t("a failure still beats a cancellation", classify([run("CI", [job("a", "failure"), job("b", "cancelled")], "completed", "failure")]).state === "red");
 	t("in progress is pending", classify([run("CI", [job("test", "in_progress", [], "in_progress")], "in_progress", null)]).state === "pending");
 	t("a failure beats pending", classify([run("CI", [job("a", "failure"), job("b", null, [], "in_progress")], "in_progress", null)]).state === "red");
 	t("--workflow ignores other workflows' failures", classify([run("Docs", [job("lint", "failure")], "completed", "failure"), run("CI", [job("test", "success")])], { workflow: "CI" }).state === "green");
@@ -171,7 +179,7 @@ async function main() {
 		}
 		console.log(JSON.stringify({ repo, sha, branch, workflow: workflow || null, required, ...result }, null, 2));
 		console.log(`PIPELINE: ${result.state} — ${result.reason}`);
-		process.exit(result.state === "green" ? 0 : result.state === "pending" ? 3 : 1);
+		process.exit(result.state === "green" ? 0 : result.state === "pending" || result.state === "cancelled" ? 3 : 1);
 	} catch (e) {
 		console.error(`pipeline.mjs: ${e.message}`);
 		process.exit(2);
