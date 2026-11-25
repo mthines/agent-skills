@@ -1,14 +1,14 @@
 ---
-title: Deliver — follow the merge into the default-branch pipeline and fix a red one once
+title: Deliver — follow the merge into the default-branch pipeline; fix a red one once, then revert
 impact: HIGH
-tags: [atelier, deliver, pipeline, post-merge, ci, release]
+tags: [atelier, deliver, pipeline, post-merge, ci, release, revert]
 ---
 
 # Deliver
 
 A merged PR is not delivered until the pipeline GitHub starts for the merge commit on the default branch has gone green.
 That pipeline builds, versions, and releases the change, and PR CI does not exercise all of it: a release job that only runs on `main` can fail on a PR that was green.
-Deliver runs after the merge, reads that pipeline with `scripts/pipeline.mjs`, and starts one bounded fix when it is red.
+Deliver runs after the merge, reads that pipeline with `scripts/pipeline.mjs`, and starts one bounded fix when it is red; when the fix does not turn it green, it reverts the merge through a PR.
 **Why:** [`../references/design.md`](../references/design.md#delivery).
 
 ## Run
@@ -27,7 +27,7 @@ The wait is `pipeline.timeout_minutes` (default 20; `--wait <minutes>` overrides
 | 3 | `PIPELINE: cancelled` | `hold`, reason = the line: a concurrency group usually cancelled it for a later push; `Needs you:` names that later run to read, never a fix |
 | 3 | `PIPELINE: pending` after `--wait` | `hold`, reason = the line, `Needs you:` names the run to watch |
 | 1 | `PIPELINE: none` | `hold`, reason `no pipeline run for <sha>`: the repo may not run one on merge; the user confirms |
-| 1 | `PIPELINE: red — <workflow › job › step>` | start the [fix lane](#fix-lane) once; the fix start records `hold` (reason `fix PR <url>`), and the fix PR's own green result records `proceed` |
+| 1 | `PIPELINE: red — <workflow › job › step>` | read the cause, then follow the [order](#order): the fix start records `hold` (reason `fix PR <url>`), a revert start records `hold` (reason `revert PR <url>`), and the last PR's own green result records `proceed` |
 | 2 | stderr | `failed`, reason = stderr; never fix on a read that errored |
 
 A required job that is `skipped` counts as red: a job that should always run but skipped means a step before it failed, and a green run hides that.
@@ -49,7 +49,51 @@ The lane exists because the pipeline broke after review, so the fix gets its own
 
 2. Fix lane: a new branch from the updated default branch, `Skill("aw", "fix the default-branch pipeline failure of <pr-url>: <failing job and step, log excerpt> <build suffix>")`, which opens its own PR.
    Take that PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); then run `pipeline.mjs` against the fix PR.
-3. A second red result ends the run as `failed`, reason = the `PIPELINE:` line; there is no second fix round.
+3. A second red result goes to the [revert lane](#revert-lane) under `fix-first`, or ends the run as `failed` under `revert-first` (reason = the `PIPELINE:` line); there is no second fix round.
+
+## Order
+
+`.agents/aw/release.yml` → `pipeline.on_red` sets the order of the two lanes; only the cause class "the merged change broke it" reaches either.
+
+| `on_red` | First red (the merged PR) | Second red (the first lane's PR) |
+| --- | --- | --- |
+| `fix-first` (default) | fix lane | revert lane |
+| `revert-first` | revert lane; once its PR is green, the fix lane re-applies the change with the fix | `failed`: the revert already holds the default branch green |
+
+`revert-first` suits a repo where a red default branch blocks other people's merges or releases; `fix-first` keeps the change live when a small fix is likely.
+
+## Revert lane
+
+One revert, never more: it backs out the merged change through a PR with the same gates, never a push to the default branch.
+Atelier never runs `deployment-verify` and never flips a flag: a flag or platform rollback of a rolled-out change stays with `deployment-verify`, and a code revert stays here.
+
+The rollback policy decides whether the lane acts: `~/.agents/aw/config.yml` → `policies.rollback`, overridden by `repos.<slug>.policies.rollback` (the same setting `deployment-verify` reads; its `rules/config.md`, § Policy).
+
+| `policies.rollback` | Do |
+| --- | --- |
+| `ask` (default) | Print the `PIPELINE:` line, the cause, and the revert plan, ask once, and revert on yes; on no, `hold` with the revert command under `Needs you:`. Under `--unattended`, do not revert: `hold`, reason `revert needs a human (policies.rollback: ask)` |
+| `auto` | Revert without asking |
+| `never` | Do not revert: `failed`, reason = the `PIPELINE:` line, with the revert command under `Needs you:` |
+
+When the policy allows it:
+
+1. Revert on a new branch from the updated default branch, never on the default branch itself:
+
+   ```bash
+   git fetch origin <base> && git switch -c revert/<pr-number> origin/<base>
+   git revert --no-edit <squash sha>          # the merge reason's sha; -m 1 when the PR was merged with a merge commit
+   git push -u origin revert/<pr-number>
+   gh pr create --base <base> --title "Revert \"<pr title>\"" --body-file revert-body.md   # "Reverts #<pr-number>: <PIPELINE line>" + the merged PR's contract block
+   ```
+
+   A conflict in `git revert` means later merges touched the same lines: abort (`git revert --abort`), `hold`, and put the revert command under `Needs you:`.
+2. Take the revert PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); a revert of a user-visible change touches the same UI files, so `revert-body.md` copies the merged PR's `deployment-verify:v1` contract block when it has one, and a gate refusal is a `hold` with the `MERGE_GATE:` line, never a body edit.
+   Then run `pipeline.mjs` against the revert PR: green records `proceed`, reason `reverted <revert PR url>`; red ends the run as `failed`, because the failure predates the change.
+
+```text
+✗ fix PR red again → git revert on main and git push origin main
+✓ fix PR red again, policies.rollback: auto → revert/<n> branch → revert PR → Ready → Merge → pipeline green → Deliver: reverted <url>
+```
 
 ## Never automatic
 
@@ -68,7 +112,7 @@ These change shared release state and stay with the user, each as an exact comma
 ## Reporting
 
 Deliver is not a stage in the state comment (`state.mjs` knows `build|ready|merge`, and recording another throws).
-Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and print the terminal contract's `- Deliver: [green <run url> | red: <reason> | fix PR <url> | skipped: <reason> | not reached]` line.
+Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and print the terminal contract's `- Deliver: [green <run url> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]` line.
 A `hold` or `failed` result also goes under `Needs you:`.
 Re-running `/atelier <merged-pr-url>` runs Deliver on the merge commit, which is how a session that died mid-wait resumes.
 Skip Deliver, printing `skipped: <reason>`, when the merge was refused or held, when the PR has no merge commit, or when the user passes `--no-deliver`.

@@ -87,12 +87,13 @@ Optional; absent, Deliver reads every run of the merge commit and requires no jo
 | `workflow` | The workflow's `name:`; only its runs count. Empty reads every run started for the merge commit |
 | `required_jobs` | Job names that must conclude `success`. Name only jobs that run on every merge: a required job that is skipped or missing is red, and a job gated on a release condition also skips when nothing is due. A failed job is red without being listed |
 | `timeout_minutes` | How long Deliver waits for the run to finish (default 20; 0 reads once) |
+| `on_red` | What Deliver does first when the merged change turns the pipeline red: `fix-first` (default) opens a fix PR and reverts only when that fix is red too; `revert-first` reverts at once, then fixes forward. A revert follows `policies.rollback` ([§ Policy](#policy)) |
 
 ```yaml
 # ✗ Wrong — release-macos runs only when a release is due, so it skips (and reads red) on a merge that releases nothing
 pipeline: { workflow: CI, required_jobs: [test, release-macos] }
 # ✓ Right — only a job that runs on every merge is named; a failed version or release job is red on its own
-pipeline: { workflow: CI, required_jobs: [test], timeout_minutes: 30 }
+pipeline: { workflow: CI, required_jobs: [test], timeout_minutes: 30, on_red: fix-first }
 ```
 
 ## Hold and promotion
