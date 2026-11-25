@@ -8,6 +8,8 @@
 import { isMain, makeTester } from "./lib.mjs";
 
 export const CARD_STAGES = ["build", "ready", "merge", "deliver"];
+/** What a reader sees for each stage; the keys above stay the stored names, so old comments still resume. */
+export const STAGE_TITLE = { build: "Build & review", ready: "Verify", merge: "Merge", deliver: "Deliver" };
 const OUTCOME = { proceed: "done", skipped: "skipped", hold: "hold", failed: "failed", refuse: "refuse" };
 // What each stage can end in, so every reachable state has a pre-rendered card; state.mjs refuses
 // to record any other stage and decision pair.
@@ -52,7 +54,7 @@ export function allKeys() {
 /** The headline, the comment's title line, and the mascot mood for a state; colours are picked per theme by `tone`. */
 export function verdict(o) {
 	const cur = Math.max(0, o.findLastIndex((x) => x !== "pending"));
-	const at = CARD_STAGES[cur][0].toUpperCase() + CARD_STAGES[cur].slice(1);
+	const at = STAGE_TITLE[CARD_STAGES[cur]];
 	const end = o[cur];
 	if (end === "hold") return { mood: "held", tone: "amber", lead: `Held at ${at}.`, tail: "Needs you.", title: `Held at ${at}` };
 	if (end === "failed") return { mood: "failed", tone: "red", lead: `${at} failed.`, tail: "Needs a fix.", title: `${at} failed` };
@@ -61,8 +63,8 @@ export function verdict(o) {
 		? { mood: "ready", tone: "sky", lead: "Merged.", tail: "Delivery skipped.", title: "Merged, delivery skipped" }
 		: { mood: "shipped", tone: "green", lead: "Merged.", tail: "And delivered.", title: "Merged and delivered" };
 	if (cur === 2) return { mood: "working", tone: "blue", lead: "Merged.", tail: "Delivering…", title: "Merged, delivering" };
-	if (cur === 1) return { mood: "ready", tone: "sky", lead: "Ready.", tail: "Waiting on the merge.", title: "Ready, merge next" };
-	return { mood: "working", tone: "blue", lead: end === "skipped" ? "Existing PR." : "Built.", tail: "Getting it ready…", title: `${end === "skipped" ? "Existing PR" : "Built"}, getting it ready` };
+	if (cur === 1) return { mood: "ready", tone: "sky", lead: "Verified.", tail: "Waiting on the merge.", title: "Verified, merge next" };
+	return { mood: "working", tone: "blue", lead: end === "skipped" ? "Existing PR." : "Built and reviewed.", tail: "Verifying…", title: `${end === "skipped" ? "Existing PR" : "Reviewed"}, verify next` };
 }
 
 const LABEL = { done: "done", skipped: "skipped", hold: "needs you", failed: "failed", refuse: "refused", pending: "not reached" };
@@ -70,12 +72,12 @@ const LABEL = { done: "done", skipped: "skipped", hold: "needs you", failed: "fa
 /** One-line plain-text summary, the image's alt text. */
 export function altText(o) {
 	const v = verdict(o);
-	return `Atelier: ${v.lead} ${v.tail} ${CARD_STAGES.map((s, i) => `${s[0].toUpperCase()}${s.slice(1)} ${LABEL[o[i]]}`).join(", ")}.`;
+	return `Atelier: ${v.lead} ${v.tail} ${CARD_STAGES.map((s, i) => `${STAGE_TITLE[s]} ${LABEL[o[i]]}`).join(", ")}.`;
 }
 
 const STAGE_INFO = [
-	{ name: "Build", what: "aw builds a draft PR", icon: '<path d="m14.6 9.4 5.6-5.6a1.8 1.8 0 0 1 2.6 2.6l-5.6 5.6"/><path d="M14.6 9.4 9.9 11.8a3 3 0 0 0-1.4 1.4L7 16.5l3.5-1.5a3 3 0 0 0 1.4-1.4l2.4-4.7"/><path d="M7 16.5c-1.2 1.3-1.5 3-3.5 4 2.6.6 5.4.1 6.6-2"/>' },
-	{ name: "Ready", what: "review, threads, green CI", icon: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>' },
+	{ name: STAGE_TITLE.build, what: "aw builds it, an agent reviews it", icon: '<path d="m14.6 9.4 5.6-5.6a1.8 1.8 0 0 1 2.6 2.6l-5.6 5.6"/><path d="M14.6 9.4 9.9 11.8a3 3 0 0 0-1.4 1.4L7 16.5l3.5-1.5a3 3 0 0 0 1.4-1.4l2.4-4.7"/><path d="M7 16.5c-1.2 1.3-1.5 3-3.5 4 2.6.6 5.4.1 6.6-2"/>' },
+	{ name: STAGE_TITLE.ready, what: "green CI, every criterion proven", icon: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>' },
 	{ name: "Merge", what: "flag contract, squash", icon: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>' },
 	{ name: "Deliver", what: "main's pipeline goes green", icon: '<path d="M4.5 16.5c-1.5 1.3-2 5-2 5s3.7-.5 5-2c.7-.8.7-2.1-.1-2.9a2.2 2.2 0 0 0-2.9-.1z"/><path d="m12 15-3-3a22 22 0 0 1 2-4A12.9 12.9 0 0 1 22 2c0 2.7-.8 7.5-6 11a22.4 22.4 0 0 1-4 2z"/><path d="M9 12H4s.6-3 2-4c1.6-1.1 5 0 5 0M12 15v5s3-.6 4-2c1.1-1.6 0-5 0-5"/>' },
 ];
@@ -157,12 +159,12 @@ function selfTest() {
 	const rerun = { stage: "ready", stages: { build: { decision: "proceed" }, ready: { decision: "hold" }, merge: { decision: "refuse" } } };
 	t("the last recorded stage decides, not the furthest", cardKey(outcomes(rerun)) === "done-hold-pending-pending");
 	t("a stage before the current one counts as done", cardKey(outcomes({ stage: "merge", stages: { build: { decision: "hold" }, merge: { decision: "proceed" } } })) === "done-done-done-pending");
-	t("a refused Build has a card and names its stage", keys.includes("refuse-pending-pending-pending") && verdict(["refuse", "pending", "pending", "pending"]).lead === "Build refused.");
+	t("a refused Build has a card and names its stage", keys.includes("refuse-pending-pending-pending") && verdict(["refuse", "pending", "pending", "pending"]).lead === "Build & review refused.");
 	const decisionOf = { done: "proceed", skipped: "skipped", hold: "hold", failed: "failed", refuse: "refuse" };
 	const stateOf = (k) => { const o = k.split("-"); return { stage: CARD_STAGES[o.findLastIndex((x) => x !== "pending")], stages: Object.fromEntries(o.map((x, i) => [CARD_STAGES[i], x === "pending" ? undefined : { decision: decisionOf[x] }])) }; };
 	t("every reachable state round-trips to its own key", keys.every((k) => cardKey(outcomes(stateOf(k))) === k));
 	t("a refused merge reads as refused", verdict(["done", "done", "refuse", "pending"]).lead === "Merge refused.");
-	t("alt text names every stage", altText(["skipped", "done", "pending", "pending"]) === "Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached.");
+	t("alt text names every stage", altText(["skipped", "done", "pending", "pending"]) === "Atelier: Verified. Waiting on the merge. Build & review skipped, Verify done, Merge not reached, Deliver not reached.");
 	for (const theme of Object.keys(THEMES)) t(`${theme} card renders`, card(["done", "hold", "pending", "pending"], theme).includes(`class="node hold cur"`));
 	return done();
 }

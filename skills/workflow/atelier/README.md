@@ -9,7 +9,7 @@
 > **Experimental.**
 > The stages, the PR comment, and the merge gate may still change between versions.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="./assets/cards/done-done-done-done-dark.png"><img src="./assets/cards/done-done-done-done-light.png" width="700" alt="Atelier pipeline: Build, Ready, Merge, and Deliver, all done."></picture>
+![atelier: merges when it can prove it, hands off when it can't. Build & review (aw, review-loop, branch-reviewer, interview, create-pr, ticket: agentic review), Verify (aw-verify, prepare, ci-auto-fix, resolve-conflicts, implement-suggestion: agentic verification), Merge (merge-gate, flag contract, approval wait, prepare --merge), Deliver (main's pipeline, one fix, revert PR), then Roll out with deployment-verify (flag 1 to 100%, auto-rollback). Any stage can stop with one box on the PR, and /atelier <pr> resumes there.](./assets/atelier-flow.png)
 
 **It owns no build, review, or deploy logic of its own.**
 Each stage hands the work to a skill that already does it well, and every decision between stages is made by a script, not by the model.
@@ -42,8 +42,8 @@ Let atelier check what it can prove there, and fix the gaps with you:
 
 | Stage | What runs | It moves on when |
 | --- | --- | --- |
-| 🖌️ **Build** | [`aw`](https://github.com/mthines/agent-skills/blob/main/skills/workflow/autonomous-workflow/aw/SKILL.md) builds a draft PR, with its review, verification, and quality pass | the PR exists, every required companion ran, and the early merge gate passes |
-| 👁️ **Ready** | Undrafts the PR, waits for real CI, then [`prepare`](https://github.com/mthines/agent-skills/blob/main/skills/delivery/prepare/SKILL.md) fixes conflicts, CI, and review threads | CI really ran and is green, and the verify report proves every acceptance criterion |
+| 🖌️ **Build & review** | [`aw`](https://github.com/mthines/agent-skills/blob/main/skills/workflow/autonomous-workflow/aw/SKILL.md) builds a draft PR, with its review, verification, and quality pass | the PR exists, every required companion ran, and the early merge gate passes |
+| 👁️ **Verify** | Undrafts the PR, waits for real CI, then [`prepare`](https://github.com/mthines/agent-skills/blob/main/skills/delivery/prepare/SKILL.md) fixes conflicts, CI, and review threads | CI really ran and is green, and the verify report proves every acceptance criterion |
 | 🔀 **Merge** | A script gate, then a squash-merge | the gate passes on the live head, and any approval the repo requires has landed |
 | 🚀 **Deliver** | Reads `main`'s pipeline for the merge commit | that pipeline is green; a red one gets one fix, then a revert |
 
@@ -56,9 +56,9 @@ Nothing is ever skipped silently.
 
 Atelier keeps **one sticky comment** on the PR and rewrites it after every stage.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="./assets/cards/done-hold-pending-pending-dark.png"><img src="./assets/cards/done-hold-pending-pending-light.png" width="700" alt="Atelier pipeline: Build done, Ready held, Merge and Deliver pending."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="./assets/cards/done-hold-pending-pending-dark.png"><img src="./assets/cards/done-hold-pending-pending-light.png" width="700" alt="Atelier pipeline: Build & review done, Verify held, Merge and Deliver pending."></picture>
 
-A one-line title names the state ("Ready, merge next", "Held at Ready"), and the card shows the four stages.
+A one-line title names the state ("Verified, merge next", "Held at Verify"), and the card shows the four stages.
 While atelier is moving on, or once it is done, that is all you see.
 When it needs you, a box appears under the card:
 
@@ -112,7 +112,7 @@ Every file is optional; each one unlocks a little more.
 | --- | --- |
 | `--ticket <id\|url>` | Link this ticket instead of asking |
 | `--unattended` | No human present: a blocking question ends the run instead of waiting |
-| `--keep-draft` | Leave the PR a draft; Ready holds when CI skips drafts |
+| `--keep-draft` | Leave the PR a draft; Verify holds when CI skips drafts |
 | `--max-wait <minutes>` | The longest one wait for CI or an approval lasts (default 30) |
 | `--no-deliver` | Stop at the merge |
 | `--accept-gaps` | Accept every preflight gap |

@@ -32,9 +32,9 @@ A Build `hold` for companions that did not run carries reason `skipped: <names>`
 
 `render()` writes, in order:
 
-1. A title line: the mascot's face in the state's mood (`assets/mascot/<mood>.png`), a bold "Atelier" linked to the skill's [`README.md`](../README.md) (`README_URL`), and the state in a few words from `card.mjs`'s `verdict().title` ("Ready, merge next", "Held at Ready").
+1. A title line: the mascot's face in the state's mood (`assets/mascot/<mood>.png`), a bold "Atelier" linked to the skill's [`README.md`](../README.md) (`README_URL`), and the state in a few words from `card.mjs`'s `verdict().title` ("Verified, merge next", "Held at Verify").
    It is plain bold text, not a heading, so it never outweighs the card or the action box.
-2. The status card: `assets/cards/<build>-<ready>-<merge>-<deliver>-<light|dark>.png` in a `<picture>` at `width="100%"`, picked by `card.mjs` from the last recorded stage (`state.stage`), linked from `main` on `raw.githubusercontent.com`.
+2. The status card, its stages titled by `card.mjs`'s `STAGE_TITLE` ("Build & review", "Verify", "Merge", "Deliver"); the stored stage keys stay `build`, `ready`, `merge`, and `deliver`, so `--next`, `--record`, and old comments are unchanged: `assets/cards/<build>-<ready>-<merge>-<deliver>-<light|dark>.png` in a `<picture>` at `width="100%"`, picked by `card.mjs` from the last recorded stage (`state.stage`), linked from `main` on `raw.githubusercontent.com`.
    The card is the pipeline alone on a transparent background: one node per stage with its icon, a status badge, the stage name, and a status word, so the state never rests on colour alone.
    Nothing run-specific goes in the card: one PNG serves every PR in that state, so the head and the time stay text.
 3. The action, only when the last stage stopped: one GitHub alert, `[!CAUTION]` after `failed` or `refuse`, `[!WARNING]` after `hold`.

@@ -151,7 +151,7 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 
 [`/atelier`](./skills/workflow/atelier/README.md) takes a request, or a PR that already exists, all the way to a merged PR, then checks `main`'s pipeline for the merge commit.
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="./skills/workflow/atelier/assets/cards/done-done-done-done-dark.png"><img src="./skills/workflow/atelier/assets/cards/done-done-done-done-light.png" width="700" alt="Atelier pipeline: Build, Ready, Merge, and Deliver, all done."></picture>
+![atelier: merges when it can prove it, hands off when it can't. Build & review (aw, review-loop, branch-reviewer, interview, create-pr, ticket: agentic review), Verify (aw-verify, prepare, ci-auto-fix, resolve-conflicts, implement-suggestion: agentic verification), Merge (merge-gate, flag contract, approval wait, prepare --merge), Deliver (main's pipeline, one fix, revert PR), then Roll out with deployment-verify (flag 1 to 100%, auto-rollback). Any stage can stop with one box on the PR, and /atelier <pr> resumes there.](./skills/workflow/atelier/assets/atelier-flow.png)
 
 ```text
 /atelier Add a CSV export to the reports page
@@ -159,8 +159,8 @@ How it works inside: [`full-tier.md`](./skills/workflow/autonomous-workflow/aw/r
 /atelier setup
 ```
 
-1. **Build.** Runs [`aw`](#featured-autonomous-workflow) and holds when a required companion (review, PR, quality pass, verification) did not run.
-2. **Ready.** Undrafts the PR, waits for real CI, gets it green with [`prepare`](./skills/delivery/prepare/SKILL.md), and requires a verify report that proves every acceptance criterion.
+1. **Build & review.** Runs [`aw`](#featured-autonomous-workflow), whose agent review loops until the diff is clean, and holds when a required companion (review, PR, quality pass, verification) did not run.
+2. **Verify.** Undrafts the PR, waits for real CI, gets it green with [`prepare`](./skills/delivery/prepare/SKILL.md), and requires a verify report that proves every acceptance criterion.
 3. **Merge.** A script gate refuses a user-visible change without a feature-flag contract, then squash-merges.
 4. **Deliver.** Reads `main`'s pipeline for the merge commit, fixes a red one once, and reverts the merge when the fix stays red.
 
