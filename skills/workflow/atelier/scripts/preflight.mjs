@@ -109,10 +109,10 @@ export const PROFILE = join("memory", "observability-profile", "INDEX.md");
 export function setupPlan(checks, { profile = true, pipeline = true } = {}) {
 	const gap = new Set(checks.filter((c) => !c.ok).map((c) => c.name));
 	const steps = [];
-	const aw = ["sign-in", "telemetry"].filter((n) => gap.has(n));
-	if (aw.length) steps.push({ kind: "skill", call: 'Skill("aw-verify", "setup")', fixes: aw });
-	const dv = [...(gap.has("flag-provider") ? ["flag-provider"] : []), ...(pipeline ? [] : ["pipeline (no release.yml pipeline:)"])];
-	if (dv.length) steps.push({ kind: "skill", call: 'Skill("deployment-verify", "setup")', fixes: dv });
+	const awVerifyFixes = ["sign-in", "telemetry"].filter((n) => gap.has(n));
+	if (awVerifyFixes.length) steps.push({ kind: "skill", call: 'Skill("aw-verify", "setup")', fixes: awVerifyFixes });
+	const deployFixes = [...(gap.has("flag-provider") ? ["flag-provider"] : []), ...(pipeline ? [] : ["pipeline (no release.yml pipeline:)"])];
+	if (deployFixes.length) steps.push({ kind: "skill", call: 'Skill("deployment-verify", "setup")', fixes: deployFixes });
 	if (!profile) steps.push({ kind: "skill", call: 'Skill("measurable", "setup")', fixes: [`observability-profile (no ${PROFILE})`] });
 	const ci = checks.find((c) => c.name === "ci-on-draft" && !c.ok);
 	if (ci) {
@@ -140,7 +140,7 @@ export function compareTable(before, after) {
 	const fixed = names.filter((n) => was[n] && !was[n].ok && now[n]?.ok);
 	const remaining = names.filter((n) => now[n] && !now[n].ok);
 	const line = `SETUP: ${fixed.length} fixed, ${remaining.length} remaining${remaining.length ? ` (${remaining.join(", ")})` : ""}`;
-	return { text: ["| Capability | Before | After | Value now |", "| --- | --- | --- | --- |", ...rows].join("\n"), fixed, remaining, line };
+	return { text: ["| Capability | Before | After | Value now |", "| --- | --- | --- | --- |", ...rows].join("\n"), line };
 }
 
 const scalar = (v) => String(v ?? "").replace(/\s+#.*$/, "").trim().replace(/^(['"])(.*)\1$/, "$2");
