@@ -4,9 +4,9 @@ description: >
   Takes one change from request to merged PR by sequencing existing skills —
   aw builds the draft PR, prepare gets it green, a deterministic gate allows
   the squash-merge only when a user-visible diff ships behind a
-  deployment-verify flag contract — then stops and says what a human does
-  next. Resumable from a sticky PR comment; invoke with /atelier.
-argument-hint: '<request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>]'
+  deployment-verify flag contract — then reads the default-branch pipeline and fixes a red one once, and says
+  what a human does next. Resumable from a sticky PR comment; invoke with /atelier.
+argument-hint: '<request> | <pr-url|#n> [--unattended] [--keep-draft] [--accept-gaps] [--accept-skip <name,…>] [--no-deliver]'
 license: MIT
 disable-model-invocation: true
 metadata:

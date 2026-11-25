@@ -39,7 +39,7 @@ memory.write {
 4. A Build that failed before a PR exists uses the worktree's branch for the scope, `pr: 0`, and `failed-{ISO timestamp}` in place of `{decision}-{sha7}`.
 5. A Deliver event (`stage: deliver`, [`deliver.md`](./deliver.md)) is never read by the outcome sweep, which keys on `stage: merge`.
 6. A `skipped` Build is not a decision and writes no event.
-6. `kind` and `host` are set explicitly: LoreKit infers them only from `loop::<x>-lessons` tags.
+7. `kind` and `host` are set explicitly: LoreKit infers them only from `loop::<x>-lessons` tags.
 
 ```text
 ✗ key: "atelier-decisions::pr-41-merge"                  # a proceed after a refusal on the same head overwrites the refusal
