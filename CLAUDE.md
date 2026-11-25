@@ -41,7 +41,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 
 - `autonomous-workflow` (`/`) — phase machinery behind `aw`; `plan.md` is a six-heading brief gated on `run-checks.mjs` printing `CHECKS M/M PASS`, ending in a paste-ready `/goal`. `aw` (`auto`) is the sole entry and owns tiers. Design: [`CLAUDE.md`](./skills/workflow/autonomous-workflow/CLAUDE.md)
 - `aw-create-plan` (`Skill()`) — writes the `plan.md` brief (Task, Requirements, Guardrails, Definition of Done, Turn Cap, File Changes) + sealed `checks.yaml`. `aw-create-walkthrough` (`Skill()`) — writes `walkthrough.md`, led by a one-page review summary
-- `atelier` (`/`) — sequences `aw` → `prepare` → `prepare --merge`, then checks `main`'s pipeline; preflight names gaps; a skipped companion holds Build; `merge-gate.mjs` refuses a user-visible diff without a flag contract; resumes from a PR comment; logs to LoreKit and OTLP
+- `atelier` (`/`) — sequences `aw` → `prepare` → `prepare --merge`, then checks `main`'s CI; tickets via `ticket`; `setup` delegates each preflight gap; a skipped companion holds Build; `merge-gate.mjs` refuses a user-visible diff without a flag contract; resumable; logs to LoreKit, OTLP
 - `fix-bug` (`/`) — single-bug pipeline, phases 0–8
 - `implement-suggestion` (`/`) — apply reviewer suggestions across PRs; `--watch` loops one PR, `--resolve-all` closes non-fix threads. Never fixes CI
 
@@ -68,6 +68,7 @@ All three stay model-invocable via `Skill()` when `disable-model-invocation: fal
 - `github-actions-author` (`/`) — author / review GHA workflows
 - `prepare` (`/`) — gets a PR or its stack green (conflicts → CI → review threads) without new work; `--merge` squash-merges bottom to top behind explicit gates
 - `resolve-conflicts` (`/`) — analyze and resolve merge / rebase conflicts
+- `ticket` (`auto` + `Skill()`) — per-repo tracker (Linear, GitHub issues, none) from `.agents/aw/tracker.yml`; `ticket.mjs --decide` links, asks, creates, or skips; `create` can hand off to a configured skill; `move` follows atelier's stages
 
 ### `testing/` — E2E and fixture tooling
 
