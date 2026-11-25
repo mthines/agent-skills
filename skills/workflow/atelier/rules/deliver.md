@@ -15,10 +15,10 @@ Deliver runs after the merge, reads that pipeline with `scripts/pipeline.mjs`, a
 
 ```bash
 P="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/pipeline.mjs"
-node "$P" --pr <pr-url>               # PIPELINE: green|pending|red|none — <reason>
+node "$P" --pr <pr-url>               # PIPELINE: green|pending|cancelled|red|none — <reason>
 ```
 
-`--pr` resolves the merge commit and base branch from the merged PR; the config comes from `.agents/aw/release.yml` → `pipeline:` ([`deployment-verify` `rules/config.md`](../../../testing/deployment-verify/rules/config.md#pipeline)).
+`--pr` resolves the merge commit and base branch from the merged PR; the config comes from `.agents/aw/release.yml` → `pipeline:` (the `deployment-verify` skill's `rules/config.md`, § Pipeline).
 The wait is `pipeline.timeout_minutes` (default 20; `--wait <minutes>` overrides it), polled every 30 seconds; `none` right after a merge also waits, because GitHub registers the run a few seconds late.
 
 | Exit | Line | Deliver decision |
@@ -30,7 +30,7 @@ The wait is `pipeline.timeout_minutes` (default 20; `--wait <minutes>` overrides
 | 1 | `PIPELINE: red — <workflow › job › step>` | start the [fix lane](#fix-lane) once; the fix start records `hold` (reason `fix PR <url>`), and the fix PR's own green result records `proceed` |
 | 2 | stderr | `failed`, reason = stderr; never fix on a read that errored |
 
-A required job that is `skipped` counts as red: when the release job skips, the step before it failed, and a green run hides that.
+A required job that is `skipped` counts as red: a job that should always run but skipped means a step before it failed, and a green run hides that.
 Name a job in `required_jobs` only when it runs on every merge: a job gated on "a release is due" also skips when nothing is due, and would read red.
 A repo with no `pipeline:` block reads every run of the merge commit and requires none by name, so only a failed run or job is red.
 

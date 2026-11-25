@@ -85,7 +85,7 @@ Run the repo's `verify` command on a flag that is already set; a command that ca
 
 List `.github/workflows/*.yml` whose `on:` includes a push to the default branch.
 Prefill `release.yml` → `pipeline:` (`workflow`, `required_jobs`, `timeout_minutes`) from the one that builds or releases; a job that runs on every merge (the tests, a build) goes in `required_jobs`; leave out a job gated on `needs.<x>.outputs…` or a release condition (`release_created`, a tag check), since it also skips when nothing is due and would read red on every merge that releases nothing.
-Several candidates, or none that builds: write nothing and say so under Phase B. `atelier`'s Deliver stage reads the block ([`deployment-verify` `rules/config.md § Pipeline`](../../deployment-verify/rules/config.md#pipeline)).
+Several candidates, or none that builds: write nothing and say so under Phase B. `atelier`'s Deliver stage reads the block (the `deployment-verify` skill's `rules/config.md`, § Pipeline).
 
 ### A9 — Dependencies
 

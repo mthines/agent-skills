@@ -11,7 +11,7 @@
 //   node pipeline.mjs --self-test
 //
 // Prints one JSON object, then a final line `PIPELINE: green|pending|cancelled|red|none — <reason>`.
-// Exit: 0 green, 1 red or none, 2 error, 3 pending after --wait.
+// Exit: 0 green, 1 red or none, 2 error, 3 pending after --wait or cancelled.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -25,8 +25,8 @@ const NONE_WAIT_MINUTES = 3;
 const BAD = new Set(["failure", "timed_out", "startup_failure", "action_required"]);
 
 // Pure. `runs`: [{ id, workflow, url, status, conclusion, jobs: [{ name, status, conclusion, steps: [{ name, conclusion }] }] }].
-// `required`: job names that must conclude `success` (a skipped required job is a failure: the release job
-// skipping is how a broken version step looks from outside). `workflow`: only runs of that workflow count.
+// `required`: job names that must conclude `success` (a skipped required job is a failure: a job that should always run
+// but skipped means a step before it failed). `workflow`: only runs of that workflow count.
 // A required name matches a job's name exactly, as a matrix job (`test (ubuntu-latest)`), or as a job of a
 // called workflow (`ci / test`, `ci / test (node 20)`).
 export function jobMatches(jobName, required) {
@@ -56,7 +56,7 @@ export function classify(runs, { required = [], workflow = "" } = {}) {
 	for (const name of required) {
 		const j = jobs.find((x) => jobMatches(x.name, name));
 		// A job that has not appeared yet is missing only once every run is done: a queued run lists no jobs.
-		if (!j) { if (mine.every((r) => r.status === "completed")) failures.push({ workflow: workflow || null, job: name, step: null, conclusion: "missing", run: mine[0].url }); }
+		if (!j) { if (mine.every((r) => r.status === "completed") && !mine.some((r) => r.conclusion === "cancelled")) failures.push({ workflow: workflow || null, job: name, step: null, conclusion: "missing", run: mine[0].url }); }
 		else if (j.status === "completed" && j.conclusion !== "success" && j.conclusion !== "cancelled" && !BAD.has(j.conclusion)) {
 			failures.push({ workflow: j.workflow, job: name, step: null, conclusion: j.conclusion, run: j.run });
 		}
@@ -119,6 +119,8 @@ async function selfTest() {
 	const cx = classify([run("CI", [job("test", "success"), job("release", "cancelled")], "completed", "cancelled")], { required: ["release"] });
 	t("a cancelled run is not red", cx.state === "cancelled", JSON.stringify(cx));
 	t("a failure still beats a cancellation", classify([run("CI", [job("a", "failure"), job("b", "cancelled")], "completed", "failure")]).state === "red");
+	const q = classify([run("CI", [], "completed", "cancelled")], { required: ["test"] });
+	t("a run cancelled while queued lists no jobs and is cancelled, not red", q.state === "cancelled", JSON.stringify(q));
 	t("in progress is pending", classify([run("CI", [job("test", "in_progress", [], "in_progress")], "in_progress", null)]).state === "pending");
 	t("a failure beats pending", classify([run("CI", [job("a", "failure"), job("b", null, [], "in_progress")], "in_progress", null)]).state === "red");
 	t("--workflow ignores other workflows' failures", classify([run("Docs", [job("lint", "failure")], "completed", "failure"), run("CI", [job("test", "success")])], { workflow: "CI" }).state === "green");

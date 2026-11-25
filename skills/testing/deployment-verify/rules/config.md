@@ -79,7 +79,7 @@ Never call a provider's API directly from the skill; only through `set`.
 
 ## Pipeline
 
-`pipeline` describes the default-branch workflow that builds and releases a merge; atelier's Deliver stage reads it ([`atelier/rules/deliver.md`](../../../workflow/atelier/rules/deliver.md)), and `deployment-verify` itself ignores it.
+`pipeline` describes the default-branch workflow that builds and releases a merge; atelier's Deliver stage reads it (the `atelier` skill's `rules/deliver.md`), and `deployment-verify` itself ignores it.
 Optional; absent, Deliver reads every run of the merge commit and requires no job by name.
 
 | Field | Meaning |
