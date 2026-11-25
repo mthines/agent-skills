@@ -29,7 +29,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
-import { ENDINGS, altText, cardKey, outcomeOf, outcomes, verdict } from "./card.mjs";
+import { ENDINGS, STAGE_TITLE, altText, cardKey, outcomeOf, outcomes, verdict } from "./card.mjs";
 import { companionDecision, isMain, makeTester, parseArgs, parseDegraded, requiredCompanions } from "./lib.mjs";
 import { markCompanions, markDecision, markNext, parseMemory } from "./telemetry.mjs";
 
@@ -108,7 +108,7 @@ const STOPPED = new Set(["hold", "failed", "refuse"]);
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const oneLine = (x) => String(x ?? "").replace(/\s*\n\s*/g, " ").trim();
 const cell = (x) => oneLine(x).replace(/\|/g, "\\|");
-const title = (stage) => stage[0].toUpperCase() + stage.slice(1);
+const title = (stage) => STAGE_TITLE[stage] ?? stage[0].toUpperCase() + stage.slice(1);
 
 // GitHub's <relative-time> shows a live "2 minutes ago"; the text inside is the fallback, built from
 // UTC getters so the output is deterministic.
@@ -120,25 +120,62 @@ function when(iso) {
 	return `<relative-time datetime="${d.toISOString()}">${shown}</relative-time>`;
 }
 
-// The line under the card: what the reader does next, from the same state `--next` reads.
-function nextLine(state) {
-	const st = state.stages;
-	const e = st[state.stage];
-	if (e && STOPPED.has(e.decision)) {
-		const why = oneLine(e.reason || state.refusal).replace(/\.$/, "");
-		return `**Needs you:** ${why ? `${why}. ` : ""}Then re-run \`/atelier <this PR>\` to resume at ${title(state.stage)}.`;
-	}
-	if (st.deliver) return st.deliver.decision === "skipped"
-		? `**Done:** merged; Deliver skipped${st.deliver.reason ? ` (${oneLine(st.deliver.reason)})` : ""}.`
-		: "**Done:** merged, and `main`'s pipeline is green for the merge commit.";
-	const n = next(state, null);
-	if (n === "stop") return "**Next:** Deliver checks `main`'s pipeline for the merge commit; re-run `/atelier <this PR>` if this run stopped.";
-	if (n === "ready") return "**Next:** re-run `/atelier <this PR>` to get it ready: review, threads, and green CI.";
-	if (n === "merge") return "**Next:** re-run `/atelier <this PR>` to run the merge gate.";
-	return "**Next:** re-run `/atelier <this PR>` to finish Build.";
+// Where the footer's "Atelier" points: the skill's human guide.
+export const README_URL = "https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md";
+
+// GitHub alert type per outcome: red for a stop that failed or refused, amber for a hold.
+const ALERT = { failed: "CAUTION", refuse: "CAUTION", hold: "WARNING" };
+const STOP_WORD = { hold: "held", failed: "failed", refuse: "refused" };
+const sentence = (x) => {
+	const t = oneLine(x).replace(/[.;\s]+$/, "");
+	return t && `${t}.`;
+};
+// A recorded reason holds one clause per problem, separated by `; ` (rules/state.md § Reasons).
+// A script's machine line (`APPROVAL_WAIT: …`, `PIPELINE: …`) is one result whose parts also join on `; `: keep it whole.
+const problems = (reason) => {
+	const r = oneLine(reason);
+	return (/^[A-Z][A-Z_]+: /.test(r) ? [r] : r.split(/;\s+/)).map(sentence).filter(Boolean);
+};
+// The command the reader copies: the PR's own URL when the state has it, so nothing needs filling in.
+const rerun = ({ pr }) => {
+	const ref = String(pr ?? "");
+	if (/^https:\/\//.test(ref)) return `/atelier ${ref}`;
+	return `/atelier ${ref ? `#${ref.replace(/^#/, "")}` : "<this PR>"}`;
+};
+const command = (state) => ["```text", rerun(state), "```"];
+
+// The block under the card, only when a human must act: one GitHub alert whose type is the stop,
+// a bold line saying what to do, one problem per line, and the re-run command on its own line.
+// A run that is moving on or done shows no box: the card already says so, and Run details holds the rest.
+function actionBlock(state) {
+	const e = state.stages[state.stage];
+	if (!e || !STOPPED.has(e.decision)) return null;
+	const head = `${title(state.stage)} ${STOP_WORD[e.decision]}`;
+	const list = problems(e.reason || state.refusal);
+	const body = list.length > 1
+		? [`**${head}: fix ${list.length} things, then re-run.**`, "", ...list.map((p, i) => `${i + 1}. ${p}`), "", ...command(state)]
+		: [`**${head}${list.length ? `: ${list[0].slice(0, -1)}` : ""}.**`, "", "Then re-run:", "", ...command(state)];
+	return [`> [!${ALERT[e.decision]}]`, ...body.map((l) => (l ? `> ${l}` : ">"))].join("\n");
 }
 
-/** The sticky comment: status card, the next step, a footer, and the run details. `assetBase` repoints the images (the gallery). */
+// One line for Run details on a run that is not stopped: what happens next, or that it is done.
+function statusLine(state) {
+	const e = state.stages[state.stage];
+	if (e && STOPPED.has(e.decision)) return null;
+	const d = state.stages.deliver;
+	if (d) return d.decision === "skipped"
+		? `**Done:** merged; Deliver skipped${d.reason ? ` (${cell(d.reason)})` : ""}.`
+		: "**Done:** merged, and `main`'s pipeline is green for the merge commit.";
+	const NEXT = {
+		stop: "Deliver checks `main`'s pipeline for the merge commit.",
+		ready: "Verify gets CI green, resolves review threads, and proves every criterion.",
+		merge: "Merge runs the merge gate, then squash-merges.",
+		build: "Build & review finishes the PR.",
+	};
+	return `**Next:** ${NEXT[next(state, null)] ?? NEXT.build} Atelier carries on by itself.`;
+}
+
+/** The sticky comment: a title line, the status card, the action when one is needed, a footer, and the run details. `assetBase` repoints the images (the gallery). */
 export function render(state, { assetBase = ASSET_BASE } = {}) {
 	const o = outcomes(state);
 	const key = cardKey(o);
@@ -152,15 +189,18 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 	});
 	const ci = state.stages.ready?.ci;
 	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
+	const v = verdict(o);
+	const meta = [last?.sha && `head <code>${last.sha.slice(0, 7)}</code>`, latest && `updated ${when(latest)}`].filter(Boolean);
+	const action = actionBlock(state);
+	const status = statusLine(state);
 	const lines = [
 		MARKER,
-		`<picture><source media="(prefers-color-scheme: dark)" srcset="${assetBase}/cards/${key}-dark.png"><img src="${assetBase}/cards/${key}-light.png" width="700" alt="${altText(o)}"></picture>`,
+		`<img src="${assetBase}/mascot/${v.mood}.png" width="20" height="20" alt=""> **<a href="${README_URL}">Atelier</a>** · ${v.title}`,
 		"",
-		nextLine(state),
-		...(preflight && !preflight.startsWith("ok") ? [`**Heads-up:** preflight is ${preflight}.`] : []),
+		`<picture><source media="(prefers-color-scheme: dark)" srcset="${assetBase}/cards/${key}-dark.png"><img src="${assetBase}/cards/${key}-light.png" width="100%" alt="${altText(o)}"></picture>`,
 		"",
-		`<sub><img src="${assetBase}/mascot/${verdict(o).mood}.png" width="20" height="20" alt=""> Atelier${last?.sha ? ` · head <code>${last.sha.slice(0, 7)}</code>` : ""}${latest ? ` · updated ${when(latest)}` : ""}</sub>`,
-		"",
+		...(action ? [action, ""] : []),
+		...(meta.length ? [`<sub>${meta.join(" · ")}</sub>`, ""] : []),
 		"<details>",
 		"<summary>Run details</summary>",
 		"",
@@ -168,10 +208,11 @@ export function render(state, { assetBase = ASSET_BASE } = {}) {
 		"| :-: | --- | --- | --- | --- | --- |",
 		...rows,
 		"",
+		...(status ? [status, ""] : []),
 		...(ciLine ? [ciLine] : []),
 		...(preflight ? [`**Preflight:** \`${preflight}\``] : []),
 		...(ciLine || preflight ? [""] : []),
-		"Re-run `/atelier <this PR>` to resume at the first incomplete stage.",
+		`Re-run \`${rerun(state)}\` to resume at the first incomplete stage.`,
 		"",
 		"</details>",
 		"",
@@ -288,11 +329,20 @@ function selfTest() {
 	tampered.stages.ready.ci.head = "b2";
 	t("evidence from a head other than the entry's re-runs ready", next(tampered, "b2") === "ready");
 	const heldBody = render(record(s, { stage: "ready", decision: "hold", head: "a1", reason: "CI not run: draft" }));
-	t("a hold names its reason under the card", heldBody.includes("**Needs you:** CI not run: draft. Then re-run `/atelier <this PR>` to resume at Ready."));
+	t("a hold is an amber alert naming its one problem", heldBody.includes("> [!WARNING]\n> **Verify held: CI not run: draft.**") && heldBody.includes("> Then re-run:"));
+	const twoBody = render(record({ ...s, pr: "https://github.com/a/b/pull/7" }, { stage: "ready", decision: "failed", head: "a1", reason: "merge gate could not run: GraphQL 403; review-loop cap-reached, last fixes unreviewed" }));
+	t("a failure with two problems is a red alert with a count and one problem per line", twoBody.includes("> [!CAUTION]\n> **Verify failed: fix 2 things, then re-run.**") && twoBody.includes("> 1. merge gate could not run: GraphQL 403.\n> 2. review-loop cap-reached, last fixes unreviewed."));
+	t("the re-run command is its own fenced line with the PR's URL", twoBody.includes("> ```text\n> /atelier https://github.com/a/b/pull/7\n> ```") && !twoBody.includes("<this PR>"));
+	const machine = render(record(s, { stage: "ready", decision: "hold", head: "a1", reason: "CI_WAIT: pending — l1 still running; typecheck queued" }));
+	t("a script's machine line stays one problem, never a fix list", machine.includes("**Verify held: CI_WAIT: pending — l1 still running; typecheck queued.**") && !machine.includes("fix 2 things"));
+	t("a refusal is a red alert", render(record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "no flag contract" })).includes("> [!CAUTION]\n> **Merge refused: no flag contract.**"));
 	t("a hold picks the held card for both themes", heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-dark.png`) && heldBody.includes(`${ASSET_BASE}/cards/skipped-hold-pending-pending-light.png`));
-	t("the footer shows the mascot in the state's mood", heldBody.includes(`${ASSET_BASE}/mascot/held.png`));
-	t("a failure names its reason under the card", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("**Needs you:** CI red."));
-	t("a proceed names the next stage, not a reason", render(s).includes("**Next:** re-run `/atelier <this PR>` to run the merge gate.") && !render(s).includes("Needs you"));
+	t("the title line shows the mascot in the state's mood and names the state", heldBody.includes(`<img src="${ASSET_BASE}/mascot/held.png" width="20" height="20" alt=""> **<a href="${README_URL}">Atelier</a>** · Held at Verify`));
+	t("the card spans the comment", heldBody.includes('width="100%"'));
+	t("a failure names its reason under the card", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("**Verify failed: CI red.**"));
+	t("a proceed shows no box; Run details names the next stage", !render(s).includes("> [!") && render(s).includes("**Next:** Merge runs the merge gate"));
+	t("the title links Atelier to the skill's README and names the next step", render(s).includes(`**<a href="${README_URL}">Atelier</a>** · Verified, merge next`));
+	t("the footer carries only the head and the time", /<sub>head <code>a1<\/code> · updated /.test(render(s)));
 	t("times render as GitHub relative-time", render(s).includes('<relative-time datetime="'));
 	t("the asset base can be pointed elsewhere", render(s, { assetBase: "../assets" }).includes('srcset="../assets/cards/'));
 	s = record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "user-visible diff | no flag" });
@@ -305,8 +355,8 @@ function selfTest() {
 	t("a merged PR stops", next(s, "c3") === "stop" && s.refusal === null);
 	t("a merge with no Deliver yet says Deliver runs next", render(s).includes("**Next:** Deliver checks"));
 	const delivered = record(s, { stage: "deliver", decision: "proceed", head: "m1", reason: "main green" });
-	t("Deliver records for the comment and --next still stops", next(delivered, "c3") === "stop" && render(delivered).includes("/skipped-done-done-done-dark.png") && render(delivered).includes("**Done:** merged"));
-	t("a red Deliver asks for the human", render(record(s, { stage: "deliver", decision: "failed", head: "m1", reason: "reverted: revert PR #9" })).includes("**Needs you:** reverted: revert PR #9."));
+	t("Deliver records for the comment and --next still stops", next(delivered, "c3") === "stop" && render(delivered).includes("/skipped-done-done-done-dark.png") && render(delivered).includes("**Done:** merged") && !render(delivered).includes("> [!"));
+	t("a red Deliver asks for the human", render(record(s, { stage: "deliver", decision: "failed", head: "m1", reason: "reverted: revert PR #9" })).includes("**Deliver failed: reverted: revert PR #9.**"));
 	let threw = false;
 	try {
 		record(s, { stage: "deploy", decision: "proceed" });
@@ -325,8 +375,7 @@ function selfTest() {
 	t("an https origin parses too", repoSlug(41, () => "https://github.com/a/b.git\n") === "a/b");
 	const p = record(null, { stage: "build", decision: "proceed", head: "a1", preflight: "PREFLIGHT: limited — 1 gap (flag-provider)" });
 	const pBody = render(record(p, { stage: "ready", decision: "hold", head: "a1", reason: "x" }));
-	t("a limited preflight renders a heads-up and survives later records", pBody.includes("**Heads-up:** preflight is limited — 1 gap (flag-provider).") && pBody.includes("**Preflight:** `limited — 1 gap (flag-provider)`"));
-	t("an ok preflight gives no heads-up", !render(record(null, { stage: "build", decision: "proceed", head: "a1", preflight: "PREFLIGHT: ok — 0 gaps" })).includes("Heads-up"));
+	t("a limited preflight shows only in Run details and survives later records", !pBody.split("<details>")[0].includes("preflight") && pBody.includes("**Preflight:** `limited — 1 gap (flag-provider)`"));
 	t("a state without preflight renders no preflight line", !render(s).includes("Preflight:"));
 	// Companions: what aw's `Degraded:` line says did not run.
 	const block = (deg, tier = "Full") => `AW RUN COMPLETE\n- Tier: ${tier}\n- Delivered: https://github.com/a/b/pull/1\n- Degraded: ${deg}\n- Needs you: nothing`;

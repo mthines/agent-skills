@@ -24,8 +24,9 @@ const MASCOT = "../../../assets/mascot";
 // Gallery order and what each state shows. Each name is a `<name>.json` state in this folder.
 const STATES = [
 	["built", "Built", "aw opened the draft PR and its companions ran; Ready runs next."],
-	["existing-pr-ready", "Ready (existing PR, limited preflight)", "Build skipped for an existing PR, Ready passed with green CI evidence, and a preflight gap shows as a heads-up."],
+	["existing-pr-ready", "Ready (existing PR, limited preflight)", "Build skipped for an existing PR, Ready passed with green CI evidence, and a preflight gap shows only in Run details."],
 	["build-held", "Held at Build", "A required companion did not run, so Build holds and names it."],
+	["build-failed", "Build failed, two problems", "Two problems stopped Build; each gets its own line, and the limited preflight stays in Run details because it did not cause the stop."],
 	["build-refused", "Build refused", "The early merge gate refused twice, so Build records `refuse` and names the gate's line."],
 	["ready-held", "Held at Ready", "CI never ran on the draft, so Ready holds instead of passing on skipped checks."],
 	["ready-failed", "Ready failed", "CI stayed red after the one fix attempt."],

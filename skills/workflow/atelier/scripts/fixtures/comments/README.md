@@ -17,6 +17,7 @@ The layout contract is [`rules/state.md`](../../../rules/state.md).
 - [Built](#built)
 - [Ready (existing PR, limited preflight)](#ready-existing-pr-limited-preflight)
 - [Held at Build](#held-at-build)
+- [Build failed, two problems](#build-failed-two-problems)
 - [Build refused](#build-refused)
 - [Held at Ready](#held-at-ready)
 - [Ready failed](#ready-failed)
@@ -37,25 +38,27 @@ State: [`built.json`](built.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-pending-pending-pending-dark.png"><img src="../../../assets/cards/done-pending-pending-pending-light.png" width="700" alt="Atelier: Built. Getting it ready… Build done, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Reviewed, verify next
 
-**Next:** re-run `/atelier <this PR>` to get it ready: review, threads, and green CI.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-pending-pending-pending-dark.png"><img src="../../../assets/cards/done-pending-pending-pending-light.png" width="100%" alt="Atelier: Built and reviewed. Verifying… Build & review done, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ⚪ | Ready | not reached | | | |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ⚪ | Verify | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
+**Next:** Verify gets CI green, resolves review threads, and proves every criterion. Atelier carries on by itself.
+
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -66,25 +69,27 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-light.png" width="700" alt="Atelier: Built. Getting it ready… Build done, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Reviewed, verify next
 
-**Next:** re-run `/atelier <this PR>` to get it ready: review, threads, and green CI.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-pending-pending-pending-light.png" width="100%" alt="Atelier: Built and reviewed. Verifying… Build & review done, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ⚪ | Ready | not reached | | | |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ⚪ | Verify | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
+**Next:** Verify gets CI green, resolves review threads, and proves every criterion. Atelier carries on by itself.
+
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -95,7 +100,7 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ## Ready (existing PR, limited preflight)
 
-Build skipped for an existing PR, Ready passed with green CI evidence, and a preflight gap shows as a heads-up.
+Build skipped for an existing PR, Ready passed with green CI evidence, and a preflight gap shows only in Run details.
 
 State: [`existing-pr-ready.json`](existing-pr-ready.json)
 
@@ -103,27 +108,28 @@ State: [`existing-pr-ready.json`](existing-pr-ready.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-pending-pending-dark.png"><img src="../../../assets/cards/skipped-done-pending-pending-light.png" width="700" alt="Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached."></picture>
+<img src="../../../assets/mascot/ready.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Verified, merge next
 
-**Next:** re-run `/atelier <this PR>` to run the merge gate.
-**Heads-up:** preflight is limited — 1 gap (flag-provider).
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-pending-pending-dark.png"><img src="../../../assets/cards/skipped-done-pending-pending-light.png" width="100%" alt="Atelier: Verified. Waiting on the merge. Build & review skipped, Verify done, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/ready.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ⏭️ | Build | skipped | `8e0b152` | <relative-time datetime="2026-11-25T13:27:26.793Z">Nov 25, 2026 1:27pm</relative-time> | existing PR |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ⏭️ | Build & review | skipped | `8e0b152` | <relative-time datetime="2026-11-25T13:27:26.793Z">Nov 25, 2026 1:27pm</relative-time> | existing PR |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Merge runs the merge gate, then squash-merges. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `limited — 1 gap (flag-provider)`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -134,27 +140,28 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-light.png" width="700" alt="Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/ready.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Verified, merge next
 
-**Next:** re-run `/atelier <this PR>` to run the merge gate.
-**Heads-up:** preflight is limited — 1 gap (flag-provider).
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/skipped-done-pending-pending-light.png" width="100%" alt="Atelier: Verified. Waiting on the merge. Build & review skipped, Verify done, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/ready.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ⏭️ | Build | skipped | `8e0b152` | <relative-time datetime="2026-11-25T13:27:26.793Z">Nov 25, 2026 1:27pm</relative-time> | existing PR |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ⏭️ | Build & review | skipped | `8e0b152` | <relative-time datetime="2026-11-25T13:27:26.793Z">Nov 25, 2026 1:27pm</relative-time> | existing PR |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Merge runs the merge gate, then squash-merges. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `limited — 1 gap (flag-provider)`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -173,25 +180,34 @@ State: [`build-held.json`](build-held.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/hold-pending-pending-pending-dark.png"><img src="../../../assets/cards/hold-pending-pending-pending-light.png" width="700" alt="Atelier: Held at Build. Needs you. Build needs you, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Held at Build & review
 
-**Needs you:** skipped: review-loop. Then re-run `/atelier <this PR>` to resume at Build.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/hold-pending-pending-pending-dark.png"><img src="../../../assets/cards/hold-pending-pending-pending-light.png" width="100%" alt="Atelier: Held at Build & review. Needs you. Build & review needs you, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+> [!WARNING]
+> **Build & review held: skipped: review-loop.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ⏸️ | Build | held | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | skipped: review-loop |
-| ⚪ | Ready | not reached | | | |
+| ⏸️ | Build & review | held | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | skipped: review-loop |
+| ⚪ | Verify | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -202,29 +218,124 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/hold-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/hold-pending-pending-pending-light.png" width="700" alt="Atelier: Held at Build. Needs you. Build needs you, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Held at Build & review
 
-**Needs you:** skipped: review-loop. Then re-run `/atelier <this PR>` to resume at Build.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/hold-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/hold-pending-pending-pending-light.png" width="100%" alt="Atelier: Held at Build & review. Needs you. Build & review needs you, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+> [!WARNING]
+> **Build & review held: skipped: review-loop.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ⏸️ | Build | held | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | skipped: review-loop |
-| ⚪ | Ready | not reached | | | |
+| ⏸️ | Build & review | held | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | skipped: review-loop |
+| ⚪ | Verify | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
 <!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"hold","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"skipped: review-loop"}},"preflight":"PREFLIGHT: ok — 0 gaps","stage":"build","refusal":null} -->
+````
+
+</details>
+
+## Build failed, two problems
+
+Two problems stopped Build; each gets its own line, and the limited preflight stays in Run details because it did not cause the stop.
+
+State: [`build-failed.json`](build-failed.json)
+
+> [!NOTE]
+> Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
+
+<!-- atelier:v1 -->
+<img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Build & review failed
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/failed-pending-pending-pending-dark.png"><img src="../../../assets/cards/failed-pending-pending-pending-light.png" width="100%" alt="Atelier: Build & review failed. Needs a fix. Build & review failed, Verify not reached, Merge not reached, Deliver not reached."></picture>
+
+> [!CAUTION]
+> **Build & review failed: fix 2 things, then re-run.**
+>
+> 1. merge gate could not run: gh GraphQL is blocked in this session (HTTP 403).
+> 2. review-loop hit its cap, so the last fixes are unreviewed.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+
+<details>
+<summary>Run details</summary>
+
+| | Stage | Outcome | Head | When | Why |
+| :-: | --- | --- | --- | --- | --- |
+| ❌ | Build & review | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed |
+| ⚪ | Verify | not reached | | | |
+| ⚪ | Merge | not reached | | | |
+| ⚪ | Deliver | not reached | | | |
+
+**Preflight:** `limited — 1 gap (flag-provider)`
+
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
+
+</details>
+
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"failed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed"}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"build","refusal":null} -->
+
+<details>
+<summary>Markdown source</summary>
+
+````markdown
+<!-- atelier:v1 -->
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Build & review failed
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/failed-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/failed-pending-pending-pending-light.png" width="100%" alt="Atelier: Build & review failed. Needs a fix. Build & review failed, Verify not reached, Merge not reached, Deliver not reached."></picture>
+
+> [!CAUTION]
+> **Build & review failed: fix 2 things, then re-run.**
+>
+> 1. merge gate could not run: gh GraphQL is blocked in this session (HTTP 403).
+> 2. review-loop hit its cap, so the last fixes are unreviewed.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time></sub>
+
+<details>
+<summary>Run details</summary>
+
+| | Stage | Outcome | Head | When | Why |
+| :-: | --- | --- | --- | --- | --- |
+| ❌ | Build & review | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed |
+| ⚪ | Verify | not reached | | | |
+| ⚪ | Merge | not reached | | | |
+| ⚪ | Deliver | not reached | | | |
+
+**Preflight:** `limited — 1 gap (flag-provider)`
+
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
+
+</details>
+
+<!-- atelier:v1:state {"v":1,"pr":"https://github.com/mthines/reaper-mcp/pull/195","stages":{"build":{"decision":"failed","at":"2026-11-25T13:02:10.000Z","sha":"8e0b152270c509ca9634c6cd3363da87f98bd0ad","reason":"merge gate could not run: gh GraphQL is blocked in this session (HTTP 403); review-loop hit its cap, so the last fixes are unreviewed"}},"preflight":"PREFLIGHT: limited — 1 gap (flag-provider)","stage":"build","refusal":null} -->
 ````
 
 </details>
@@ -239,25 +350,34 @@ State: [`build-refused.json`](build-refused.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/refuse-pending-pending-pending-dark.png"><img src="../../../assets/cards/refuse-pending-pending-pending-light.png" width="700" alt="Atelier: Build refused. The gate said no. Build refused, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Build & review refused
 
-**Needs you:** MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry). Then re-run `/atelier <this PR>` to resume at Build.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/refuse-pending-pending-pending-dark.png"><img src="../../../assets/cards/refuse-pending-pending-pending-light.png" width="100%" alt="Atelier: Build & review refused. The gate said no. Build & review refused, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
+> [!CAUTION]
+> **Build & review refused: MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ⛔ | Build | refused | `8e0b152` | <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time> | MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry) |
-| ⚪ | Ready | not reached | | | |
+| ⛔ | Build & review | refused | `8e0b152` | <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time> | MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry) |
+| ⚪ | Verify | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -268,25 +388,34 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/refuse-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/refuse-pending-pending-pending-light.png" width="700" alt="Atelier: Build refused. The gate said no. Build refused, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Build & review refused
 
-**Needs you:** MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry). Then re-run `/atelier <this PR>` to resume at Build.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/refuse-pending-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/refuse-pending-pending-pending-light.png" width="100%" alt="Atelier: Build & review refused. The gate said no. Build & review refused, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
+> [!CAUTION]
+> **Build & review refused: MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ⛔ | Build | refused | `8e0b152` | <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time> | MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry) |
-| ⚪ | Ready | not reached | | | |
+| ⛔ | Build & review | refused | `8e0b152` | <relative-time datetime="2026-11-25T13:12:00.000Z">Nov 25, 2026 1:12pm</relative-time> | MERGE_GATE: refuse — user-visible diff, no flag contract (after one Build retry) |
+| ⚪ | Verify | not reached | | | |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -305,25 +434,34 @@ State: [`ready-held.json`](ready-held.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-hold-pending-pending-dark.png"><img src="../../../assets/cards/done-hold-pending-pending-light.png" width="700" alt="Atelier: Held at Ready. Needs you. Build done, Ready needs you, Merge not reached, Deliver not reached."></picture>
+<img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Held at Verify
 
-**Needs you:** CI not run: draft — every required check skipped (4). Then re-run `/atelier <this PR>` to resume at Ready.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-hold-pending-pending-dark.png"><img src="../../../assets/cards/done-hold-pending-pending-light.png" width="100%" alt="Atelier: Held at Verify. Needs you. Build & review done, Verify needs you, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+> [!WARNING]
+> **Verify held: CI not run: draft — every required check skipped (4).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ⏸️ | Ready | held | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI not run: draft — every required check skipped (4) |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ⏸️ | Verify | held | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI not run: draft — every required check skipped (4) |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -334,25 +472,34 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-hold-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-hold-pending-pending-light.png" width="700" alt="Atelier: Held at Ready. Needs you. Build done, Ready needs you, Merge not reached, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Held at Verify
 
-**Needs you:** CI not run: draft — every required check skipped (4). Then re-run `/atelier <this PR>` to resume at Ready.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-hold-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-hold-pending-pending-light.png" width="100%" alt="Atelier: Held at Verify. Needs you. Build & review done, Verify needs you, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/held.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+> [!WARNING]
+> **Verify held: CI not run: draft — every required check skipped (4).**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ⏸️ | Ready | held | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI not run: draft — every required check skipped (4) |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ⏸️ | Verify | held | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI not run: draft — every required check skipped (4) |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -371,25 +518,34 @@ State: [`ready-failed.json`](ready-failed.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-failed-pending-pending-dark.png"><img src="../../../assets/cards/done-failed-pending-pending-light.png" width="700" alt="Atelier: Ready failed. Needs a fix. Build done, Ready failed, Merge not reached, Deliver not reached."></picture>
+<img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Verify failed
 
-**Needs you:** CI red at 8e0b152: test failed after one fix attempt. Then re-run `/atelier <this PR>` to resume at Ready.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-failed-pending-pending-dark.png"><img src="../../../assets/cards/done-failed-pending-pending-light.png" width="100%" alt="Atelier: Verify failed. Needs a fix. Build & review done, Verify failed, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+> [!CAUTION]
+> **Verify failed: CI red at 8e0b152: test failed after one fix attempt.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ❌ | Ready | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI red at 8e0b152: test failed after one fix attempt |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ❌ | Verify | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI red at 8e0b152: test failed after one fix attempt |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -400,25 +556,34 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-failed-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-failed-pending-pending-light.png" width="700" alt="Atelier: Ready failed. Needs a fix. Build done, Ready failed, Merge not reached, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Verify failed
 
-**Needs you:** CI red at 8e0b152: test failed after one fix attempt. Then re-run `/atelier <this PR>` to resume at Ready.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-failed-pending-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-failed-pending-pending-light.png" width="100%" alt="Atelier: Verify failed. Needs a fix. Build & review done, Verify failed, Merge not reached, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
+> [!CAUTION]
+> **Verify failed: CI red at 8e0b152: test failed after one fix attempt.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ❌ | Ready | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI red at 8e0b152: test failed after one fix attempt |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ❌ | Verify | failed | `8e0b152` | <relative-time datetime="2026-11-25T13:20:00.000Z">Nov 25, 2026 1:20pm</relative-time> | CI red at 8e0b152: test failed after one fix attempt |
 | ⚪ | Merge | not reached | | | |
 | ⚪ | Deliver | not reached | | | |
 
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -437,26 +602,35 @@ State: [`merge-refused.json`](merge-refused.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-refuse-pending-dark.png"><img src="../../../assets/cards/done-done-refuse-pending-light.png" width="700" alt="Atelier: Merge refused. The gate said no. Build done, Ready done, Merge refused, Deliver not reached."></picture>
+<img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Merge refused
 
-**Needs you:** user-visible diff without a flag contract in the PR body. Then re-run `/atelier <this PR>` to resume at Merge.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-refuse-pending-dark.png"><img src="../../../assets/cards/done-done-refuse-pending-light.png" width="100%" alt="Atelier: Merge refused. The gate said no. Build & review done, Verify done, Merge refused, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
+> [!CAUTION]
+> **Merge refused: user-visible diff without a flag contract in the PR body.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ⛔ | Merge | refused | `8e0b152` | <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time> | user-visible diff without a flag contract in the PR body |
 | ⚪ | Deliver | not reached | | | |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -467,26 +641,35 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-refuse-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-refuse-pending-light.png" width="700" alt="Atelier: Merge refused. The gate said no. Build done, Ready done, Merge refused, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Merge refused
 
-**Needs you:** user-visible diff without a flag contract in the PR body. Then re-run `/atelier <this PR>` to resume at Merge.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-refuse-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-refuse-pending-light.png" width="100%" alt="Atelier: Merge refused. The gate said no. Build & review done, Verify done, Merge refused, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/refused.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
+> [!CAUTION]
+> **Merge refused: user-visible diff without a flag contract in the PR body.**
+>
+> Then re-run:
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ⛔ | Merge | refused | `8e0b152` | <relative-time datetime="2026-11-25T13:30:00.000Z">Nov 25, 2026 1:30pm</relative-time> | user-visible diff without a flag contract in the PR body |
 | ⚪ | Deliver | not reached | | | |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -505,26 +688,28 @@ State: [`merged.json`](merged.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-pending-dark.png"><img src="../../../assets/cards/done-done-done-pending-light.png" width="700" alt="Atelier: Merged. Delivering… Build done, Ready done, Merge done, Deliver not reached."></picture>
+<img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Merged, delivering
 
-**Next:** Deliver checks `main`'s pipeline for the merge commit; re-run `/atelier <this PR>` if this run stopped.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-pending-dark.png"><img src="../../../assets/cards/done-done-done-pending-light.png" width="100%" alt="Atelier: Merged. Delivering… Build & review done, Verify done, Merge done, Deliver not reached."></picture>
 
-<sub><img src="../../../assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Deliver checks `main`'s pipeline for the merge commit. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -535,26 +720,28 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-light.png" width="700" alt="Atelier: Merged. Delivering… Build done, Ready done, Merge done, Deliver not reached."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Merged, delivering
 
-**Next:** Deliver checks `main`'s pipeline for the merge commit; re-run `/atelier <this PR>` if this run stopped.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-pending-light.png" width="100%" alt="Atelier: Merged. Delivering… Build & review done, Verify done, Merge done, Deliver not reached."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/working.png" width="20" height="20" alt=""> Atelier · head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
+<sub>head <code>8e0b152</code> · updated <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ⚪ | Deliver | not reached | | | |
+
+**Next:** Deliver checks `main`'s pipeline for the merge commit. Atelier carries on by itself.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -573,26 +760,28 @@ State: [`delivered.json`](delivered.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-done-dark.png"><img src="../../../assets/cards/done-done-done-done-light.png" width="700" alt="Atelier: Merged. And delivered. Build done, Ready done, Merge done, Deliver done."></picture>
+<img src="../../../assets/mascot/shipped.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Merged and delivered
 
-**Done:** merged, and `main`'s pipeline is green for the merge commit.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-done-dark.png"><img src="../../../assets/cards/done-done-done-done-light.png" width="100%" alt="Atelier: Merged. And delivered. Build & review done, Verify done, Merge done, Deliver done."></picture>
 
-<sub><img src="../../../assets/mascot/shipped.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
+<sub>head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ✅ | Deliver | done | `4f1c2d9` | <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time> | main green for 4f1c2d9 |
+
+**Done:** merged, and `main`'s pipeline is green for the merge commit.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -603,26 +792,28 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-light.png" width="700" alt="Atelier: Merged. And delivered. Build done, Ready done, Merge done, Deliver done."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/shipped.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Merged and delivered
 
-**Done:** merged, and `main`'s pipeline is green for the merge commit.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-done-light.png" width="100%" alt="Atelier: Merged. And delivered. Build & review done, Verify done, Merge done, Deliver done."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/shipped.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
+<sub>head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ✅ | Deliver | done | `4f1c2d9` | <relative-time datetime="2026-11-25T13:44:12.000Z">Nov 25, 2026 1:44pm</relative-time> | main green for 4f1c2d9 |
+
+**Done:** merged, and `main`'s pipeline is green for the merge commit.
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -641,26 +832,36 @@ State: [`deliver-reverted.json`](deliver-reverted.json)
 > Rendered as GitHub shows it; times read as a fixed date here and as "2 minutes ago" on a PR.
 
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-failed-dark.png"><img src="../../../assets/cards/done-done-done-failed-light.png" width="700" alt="Atelier: Deliver failed. Needs a fix. Build done, Ready done, Merge done, Deliver failed."></picture>
+<img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Deliver failed
 
-**Needs you:** main red after one fix; reverted by revert PR #202. Then re-run `/atelier <this PR>` to resume at Deliver.
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-failed-dark.png"><img src="../../../assets/cards/done-done-done-failed-light.png" width="100%" alt="Atelier: Deliver failed. Needs a fix. Build & review done, Verify done, Merge done, Deliver failed."></picture>
 
-<sub><img src="../../../assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
+> [!CAUTION]
+> **Deliver failed: fix 2 things, then re-run.**
+>
+> 1. main red after one fix.
+> 2. reverted by revert PR #202.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ❌ | Deliver | failed | `4f1c2d9` | <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time> | main red after one fix; reverted by revert PR #202 |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -671,26 +872,36 @@ Re-run `/atelier <this PR>` to resume at the first incomplete stage.
 
 ````markdown
 <!-- atelier:v1 -->
-<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-failed-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-failed-light.png" width="700" alt="Atelier: Deliver failed. Needs a fix. Build done, Ready done, Merge done, Deliver failed."></picture>
+<img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> **<a href="https://github.com/mthines/agent-skills/blob/main/skills/workflow/atelier/README.md">Atelier</a>** · Deliver failed
 
-**Needs you:** main red after one fix; reverted by revert PR #202. Then re-run `/atelier <this PR>` to resume at Deliver.
+<picture><source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-failed-dark.png"><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards/done-done-done-failed-light.png" width="100%" alt="Atelier: Deliver failed. Needs a fix. Build & review done, Verify done, Merge done, Deliver failed."></picture>
 
-<sub><img src="https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/mascot/failed.png" width="20" height="20" alt=""> Atelier · head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
+> [!CAUTION]
+> **Deliver failed: fix 2 things, then re-run.**
+>
+> 1. main red after one fix.
+> 2. reverted by revert PR #202.
+>
+> ```text
+> /atelier https://github.com/mthines/reaper-mcp/pull/195
+> ```
+
+<sub>head <code>4f1c2d9</code> · updated <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time></sub>
 
 <details>
 <summary>Run details</summary>
 
 | | Stage | Outcome | Head | When | Why |
 | :-: | --- | --- | --- | --- | --- |
-| ✅ | Build | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
-| ✅ | Ready | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
+| ✅ | Build & review | done | `8e0b152` | <relative-time datetime="2026-11-25T13:02:10.000Z">Nov 25, 2026 1:02pm</relative-time> | aw Full: draft PR, review-loop converged |
+| ✅ | Verify | done | `8e0b152` | <relative-time datetime="2026-11-25T13:27:43.081Z">Nov 25, 2026 1:27pm</relative-time> | reviewed (WARN, no findings); mergeable, no open threads; CI green at head |
 | ✅ | Merge | done | `8e0b152` | <relative-time datetime="2026-11-25T13:31:05.000Z">Nov 25, 2026 1:31pm</relative-time> | squash-merged as 4f1c2d9; no user-visible diff |
 | ❌ | Deliver | failed | `4f1c2d9` | <relative-time datetime="2026-11-25T14:02:40.000Z">Nov 25, 2026 2:02pm</relative-time> | main red after one fix; reverted by revert PR #202 |
 
 **CI at `8e0b152`:** 🟢 1 required check ran and passed at 8e0b152 (`test`)
 **Preflight:** `ok — 0 gaps`
 
-Re-run `/atelier <this PR>` to resume at the first incomplete stage.
+Re-run `/atelier https://github.com/mthines/reaper-mcp/pull/195` to resume at the first incomplete stage.
 
 </details>
 
@@ -705,111 +916,111 @@ All 27 reachable states; the file name is `<build>-<ready>-<merge>-<deliver>-<th
 
 **`done-pending-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-pending-pending-pending-dark.png"><img src="../../../assets/cards/done-pending-pending-pending-light.png" width="560" alt="Atelier: Built. Getting it ready… Build done, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-pending-pending-pending-dark.png"><img src="../../../assets/cards/done-pending-pending-pending-light.png" width="560" alt="Atelier: Built and reviewed. Verifying… Build & review done, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
 **`skipped-pending-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-pending-pending-pending-dark.png"><img src="../../../assets/cards/skipped-pending-pending-pending-light.png" width="560" alt="Atelier: Existing PR. Getting it ready… Build skipped, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-pending-pending-pending-dark.png"><img src="../../../assets/cards/skipped-pending-pending-pending-light.png" width="560" alt="Atelier: Existing PR. Verifying… Build & review skipped, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
 **`hold-pending-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/hold-pending-pending-pending-dark.png"><img src="../../../assets/cards/hold-pending-pending-pending-light.png" width="560" alt="Atelier: Held at Build. Needs you. Build needs you, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/hold-pending-pending-pending-dark.png"><img src="../../../assets/cards/hold-pending-pending-pending-light.png" width="560" alt="Atelier: Held at Build & review. Needs you. Build & review needs you, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
 **`failed-pending-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/failed-pending-pending-pending-dark.png"><img src="../../../assets/cards/failed-pending-pending-pending-light.png" width="560" alt="Atelier: Build failed. Needs a fix. Build failed, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/failed-pending-pending-pending-dark.png"><img src="../../../assets/cards/failed-pending-pending-pending-light.png" width="560" alt="Atelier: Build & review failed. Needs a fix. Build & review failed, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
 **`refuse-pending-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/refuse-pending-pending-pending-dark.png"><img src="../../../assets/cards/refuse-pending-pending-pending-light.png" width="560" alt="Atelier: Build refused. The gate said no. Build refused, Ready not reached, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/refuse-pending-pending-pending-dark.png"><img src="../../../assets/cards/refuse-pending-pending-pending-light.png" width="560" alt="Atelier: Build & review refused. The gate said no. Build & review refused, Verify not reached, Merge not reached, Deliver not reached."></picture>
 
 **`done-done-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-pending-pending-dark.png"><img src="../../../assets/cards/done-done-pending-pending-light.png" width="560" alt="Atelier: Ready. Waiting on the merge. Build done, Ready done, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-pending-pending-dark.png"><img src="../../../assets/cards/done-done-pending-pending-light.png" width="560" alt="Atelier: Verified. Waiting on the merge. Build & review done, Verify done, Merge not reached, Deliver not reached."></picture>
 
 **`done-hold-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-hold-pending-pending-dark.png"><img src="../../../assets/cards/done-hold-pending-pending-light.png" width="560" alt="Atelier: Held at Ready. Needs you. Build done, Ready needs you, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-hold-pending-pending-dark.png"><img src="../../../assets/cards/done-hold-pending-pending-light.png" width="560" alt="Atelier: Held at Verify. Needs you. Build & review done, Verify needs you, Merge not reached, Deliver not reached."></picture>
 
 **`done-failed-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-failed-pending-pending-dark.png"><img src="../../../assets/cards/done-failed-pending-pending-light.png" width="560" alt="Atelier: Ready failed. Needs a fix. Build done, Ready failed, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-failed-pending-pending-dark.png"><img src="../../../assets/cards/done-failed-pending-pending-light.png" width="560" alt="Atelier: Verify failed. Needs a fix. Build & review done, Verify failed, Merge not reached, Deliver not reached."></picture>
 
 **`skipped-done-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-pending-pending-dark.png"><img src="../../../assets/cards/skipped-done-pending-pending-light.png" width="560" alt="Atelier: Ready. Waiting on the merge. Build skipped, Ready done, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-pending-pending-dark.png"><img src="../../../assets/cards/skipped-done-pending-pending-light.png" width="560" alt="Atelier: Verified. Waiting on the merge. Build & review skipped, Verify done, Merge not reached, Deliver not reached."></picture>
 
 **`skipped-hold-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-hold-pending-pending-dark.png"><img src="../../../assets/cards/skipped-hold-pending-pending-light.png" width="560" alt="Atelier: Held at Ready. Needs you. Build skipped, Ready needs you, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-hold-pending-pending-dark.png"><img src="../../../assets/cards/skipped-hold-pending-pending-light.png" width="560" alt="Atelier: Held at Verify. Needs you. Build & review skipped, Verify needs you, Merge not reached, Deliver not reached."></picture>
 
 **`skipped-failed-pending-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-failed-pending-pending-dark.png"><img src="../../../assets/cards/skipped-failed-pending-pending-light.png" width="560" alt="Atelier: Ready failed. Needs a fix. Build skipped, Ready failed, Merge not reached, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-failed-pending-pending-dark.png"><img src="../../../assets/cards/skipped-failed-pending-pending-light.png" width="560" alt="Atelier: Verify failed. Needs a fix. Build & review skipped, Verify failed, Merge not reached, Deliver not reached."></picture>
 
 **`done-done-done-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-pending-dark.png"><img src="../../../assets/cards/done-done-done-pending-light.png" width="560" alt="Atelier: Merged. Delivering… Build done, Ready done, Merge done, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-pending-dark.png"><img src="../../../assets/cards/done-done-done-pending-light.png" width="560" alt="Atelier: Merged. Delivering… Build & review done, Verify done, Merge done, Deliver not reached."></picture>
 
 **`done-done-hold-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-hold-pending-dark.png"><img src="../../../assets/cards/done-done-hold-pending-light.png" width="560" alt="Atelier: Held at Merge. Needs you. Build done, Ready done, Merge needs you, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-hold-pending-dark.png"><img src="../../../assets/cards/done-done-hold-pending-light.png" width="560" alt="Atelier: Held at Merge. Needs you. Build & review done, Verify done, Merge needs you, Deliver not reached."></picture>
 
 **`done-done-failed-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-failed-pending-dark.png"><img src="../../../assets/cards/done-done-failed-pending-light.png" width="560" alt="Atelier: Merge failed. Needs a fix. Build done, Ready done, Merge failed, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-failed-pending-dark.png"><img src="../../../assets/cards/done-done-failed-pending-light.png" width="560" alt="Atelier: Merge failed. Needs a fix. Build & review done, Verify done, Merge failed, Deliver not reached."></picture>
 
 **`done-done-refuse-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-refuse-pending-dark.png"><img src="../../../assets/cards/done-done-refuse-pending-light.png" width="560" alt="Atelier: Merge refused. The gate said no. Build done, Ready done, Merge refused, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-refuse-pending-dark.png"><img src="../../../assets/cards/done-done-refuse-pending-light.png" width="560" alt="Atelier: Merge refused. The gate said no. Build & review done, Verify done, Merge refused, Deliver not reached."></picture>
 
 **`skipped-done-done-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-pending-dark.png"><img src="../../../assets/cards/skipped-done-done-pending-light.png" width="560" alt="Atelier: Merged. Delivering… Build skipped, Ready done, Merge done, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-pending-dark.png"><img src="../../../assets/cards/skipped-done-done-pending-light.png" width="560" alt="Atelier: Merged. Delivering… Build & review skipped, Verify done, Merge done, Deliver not reached."></picture>
 
 **`skipped-done-hold-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-hold-pending-dark.png"><img src="../../../assets/cards/skipped-done-hold-pending-light.png" width="560" alt="Atelier: Held at Merge. Needs you. Build skipped, Ready done, Merge needs you, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-hold-pending-dark.png"><img src="../../../assets/cards/skipped-done-hold-pending-light.png" width="560" alt="Atelier: Held at Merge. Needs you. Build & review skipped, Verify done, Merge needs you, Deliver not reached."></picture>
 
 **`skipped-done-failed-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-failed-pending-dark.png"><img src="../../../assets/cards/skipped-done-failed-pending-light.png" width="560" alt="Atelier: Merge failed. Needs a fix. Build skipped, Ready done, Merge failed, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-failed-pending-dark.png"><img src="../../../assets/cards/skipped-done-failed-pending-light.png" width="560" alt="Atelier: Merge failed. Needs a fix. Build & review skipped, Verify done, Merge failed, Deliver not reached."></picture>
 
 **`skipped-done-refuse-pending`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-refuse-pending-dark.png"><img src="../../../assets/cards/skipped-done-refuse-pending-light.png" width="560" alt="Atelier: Merge refused. The gate said no. Build skipped, Ready done, Merge refused, Deliver not reached."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-refuse-pending-dark.png"><img src="../../../assets/cards/skipped-done-refuse-pending-light.png" width="560" alt="Atelier: Merge refused. The gate said no. Build & review skipped, Verify done, Merge refused, Deliver not reached."></picture>
 
 **`done-done-done-done`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-done-dark.png"><img src="../../../assets/cards/done-done-done-done-light.png" width="560" alt="Atelier: Merged. And delivered. Build done, Ready done, Merge done, Deliver done."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-done-dark.png"><img src="../../../assets/cards/done-done-done-done-light.png" width="560" alt="Atelier: Merged. And delivered. Build & review done, Verify done, Merge done, Deliver done."></picture>
 
 **`done-done-done-skipped`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-skipped-dark.png"><img src="../../../assets/cards/done-done-done-skipped-light.png" width="560" alt="Atelier: Merged. Delivery skipped. Build done, Ready done, Merge done, Deliver skipped."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-skipped-dark.png"><img src="../../../assets/cards/done-done-done-skipped-light.png" width="560" alt="Atelier: Merged. Delivery skipped. Build & review done, Verify done, Merge done, Deliver skipped."></picture>
 
 **`done-done-done-hold`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-hold-dark.png"><img src="../../../assets/cards/done-done-done-hold-light.png" width="560" alt="Atelier: Held at Deliver. Needs you. Build done, Ready done, Merge done, Deliver needs you."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-hold-dark.png"><img src="../../../assets/cards/done-done-done-hold-light.png" width="560" alt="Atelier: Held at Deliver. Needs you. Build & review done, Verify done, Merge done, Deliver needs you."></picture>
 
 **`done-done-done-failed`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-failed-dark.png"><img src="../../../assets/cards/done-done-done-failed-light.png" width="560" alt="Atelier: Deliver failed. Needs a fix. Build done, Ready done, Merge done, Deliver failed."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/done-done-done-failed-dark.png"><img src="../../../assets/cards/done-done-done-failed-light.png" width="560" alt="Atelier: Deliver failed. Needs a fix. Build & review done, Verify done, Merge done, Deliver failed."></picture>
 
 **`skipped-done-done-done`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-done-dark.png"><img src="../../../assets/cards/skipped-done-done-done-light.png" width="560" alt="Atelier: Merged. And delivered. Build skipped, Ready done, Merge done, Deliver done."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-done-dark.png"><img src="../../../assets/cards/skipped-done-done-done-light.png" width="560" alt="Atelier: Merged. And delivered. Build & review skipped, Verify done, Merge done, Deliver done."></picture>
 
 **`skipped-done-done-skipped`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-skipped-dark.png"><img src="../../../assets/cards/skipped-done-done-skipped-light.png" width="560" alt="Atelier: Merged. Delivery skipped. Build skipped, Ready done, Merge done, Deliver skipped."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-skipped-dark.png"><img src="../../../assets/cards/skipped-done-done-skipped-light.png" width="560" alt="Atelier: Merged. Delivery skipped. Build & review skipped, Verify done, Merge done, Deliver skipped."></picture>
 
 **`skipped-done-done-hold`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-hold-dark.png"><img src="../../../assets/cards/skipped-done-done-hold-light.png" width="560" alt="Atelier: Held at Deliver. Needs you. Build skipped, Ready done, Merge done, Deliver needs you."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-hold-dark.png"><img src="../../../assets/cards/skipped-done-done-hold-light.png" width="560" alt="Atelier: Held at Deliver. Needs you. Build & review skipped, Verify done, Merge done, Deliver needs you."></picture>
 
 **`skipped-done-done-failed`**
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-failed-dark.png"><img src="../../../assets/cards/skipped-done-done-failed-light.png" width="560" alt="Atelier: Deliver failed. Needs a fix. Build skipped, Ready done, Merge done, Deliver failed."></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="../../../assets/cards/skipped-done-done-failed-dark.png"><img src="../../../assets/cards/skipped-done-done-failed-light.png" width="560" alt="Atelier: Deliver failed. Needs a fix. Build & review skipped, Verify done, Merge done, Deliver failed."></picture>
 
 ## Mascot
 
