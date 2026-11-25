@@ -17,7 +17,7 @@
 //   node merge-gate.mjs --self-test
 //
 // Prints one JSON object, then a final line `MERGE_GATE: pass|refuse — <reason>`.
-// Exit: 0 pass, 1 refuse, 2 error.
+// Exit: 0 pass, 1 refuse, 2 error. Adds what it saw to the open atelier run's telemetry (telemetry.mjs).
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { isMain, makeTester, parseArgs, skillDir } from "./lib.mjs";
+import { markGate } from "./telemetry.mjs";
 
 export const CONTRACT_DOC = "skills/testing/deployment-verify/rules/contract.md";
 
@@ -309,6 +310,7 @@ async function main() {
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);
 		console.log(`MERGE_GATE: ${r.decision} — ${r.reason}`);
+		await markGate({ result: r, contractOnly });
 		process.exit(r.decision === "pass" ? 0 : 1);
 	} catch (e) {
 		console.error(`merge-gate: ${e.message}`);

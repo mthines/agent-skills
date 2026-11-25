@@ -11,9 +11,9 @@ license: MIT
 disable-model-invocation: true
 metadata:
   author: mthines
-  version: '0.4.0'
+  version: '0.5.0'
   workflow_type: orchestrator
-  tags: [workflow, orchestrator, merge, gate, deployment-verify, lorekit, resumable]
+  tags: [workflow, orchestrator, merge, gate, deployment-verify, lorekit, resumable, telemetry]
 ---
 
 # Atelier
@@ -68,9 +68,10 @@ Run `/atelier` at the top level of a session, never inside a dispatched sub-agen
 
    `GH_OK` → `ACCESS_PATH=gh`; no output with `mcp__github__*` tools present → `mcp`: read the PR and comments with the MCP tools, then pass files and bodies to the scripts' offline flags; neither → `none`: print the terminal contract with `Needs you: GitHub access` and stop.
    The scripts' `--pr`, `--fetch`, and `--upsert` modes need `gh`.
-3. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs"`, print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
+3. **Preflight.** From the target repo's checkout, run `node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/preflight.mjs" --model "<your model id>"` (add `--pr <pr-url>` when resuming a PR), print its table, and keep its last line (`PREFLIGHT: ok|limited — <n> gaps (…)`) for the first `--record` (`--preflight "<line>"`).
    When the `telemetry` row is `ok`, call the telemetry tool it names once (a cheap list or query); no tool or an error makes `telemetry` a gap, added to the line.
    Then decide with the [preflight table](#preflight).
+   Preflight also starts the run's trace; the scripts below record every stage, and [`rules/telemetry.md`](./rules/telemetry.md) lists the three things you add (**Why:** [`references/telemetry.md`](./references/telemetry.md)).
 4. Probe LoreKit: `memory.*` tools present and one call answers.
    Absent or failing → one line `Degraded: lorekit unreachable — decision log and outcomes skipped`, and every LoreKit step below is a no-op; no stage waits on it.
 5. Run the outcome sweep in [`rules/decision-log.md` § Outcomes](./rules/decision-log.md#outcomes) once, before any stage.
@@ -87,7 +88,7 @@ Preflight never blocks on its own; a gap blocks only when it leaves a criterion 
 | --- | --- | --- | --- |
 | `ok` | — | — | run Build |
 | `limited` | no | — | run Build; name each gap once under `Degraded:` |
-| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; terminal contract with `Needs you: <gap> — <its fix>, or re-run with --accept-gaps` |
+| `limited` | yes: a `telemetry:` criterion with no `telemetry`, a signed-in UI criterion with no `sign-in`, a rollout criterion with no `flag-provider` | no | stop before Build: no stage is recorded; end the trace with `telemetry.mjs finish --outcome stopped --reason "<gap>"`; terminal contract with `Needs you: <gap> — <its fix>, or re-run with --accept-gaps` |
 | `limited` | yes | yes | run Build; the gap goes into the Build reason and `Needs you:` |
 
 `ci-on-draft: no` decides nothing here: Ready undrafts to get CI (that notifies reviewers), and under `--keep-draft` Ready holds.
@@ -103,11 +104,12 @@ Run the stage `--next` named, then the ones after it, in order.
 After **every** stage decision, do both, in this order:
 
 1. Record it: `S="${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/state.mjs"; node "$S" --record --stage <s> --decision <d> --head <sha> --reason "<r>" --pr <pr-url> --body-file state.md > next.md && node "$S" --upsert --pr <pr-url> --body-file next.md && mv next.md state.md` ([`rules/state.md`](./rules/state.md)).
+   Build's record also takes `--memory "lorekit=<ok|unreachable>,lessons_used=<n>"` ([`rules/telemetry.md` § What you add](./rules/telemetry.md#what-you-add)).
    Ready `proceed` also takes `--ci-file ci.json`, the CI evidence below; `state.mjs` refuses Ready `proceed` without green evidence at `--head` (exit 2).
 2. Write one `bus` event ([`rules/decision-log.md`](./rules/decision-log.md)).
 
 A decision of `refuse`, `hold`, or `failed` ends the run at Step 4.
-A Build that fails before a PR exists has nowhere to record: skip step 1, write the bus event, and stop.
+A Build that fails before a PR exists has nowhere to record: skip step 1, write the bus event, end the trace (`node "${CLAUDE_SKILL_DIR:-$HOME/.claude/skills/atelier}/scripts/telemetry.mjs" finish --stage build --decision failed --reason "<r>"`), and stop.
 
 | Stage | Delegation | `proceed` when | Otherwise |
 | --- | --- | --- | --- |
@@ -162,12 +164,12 @@ node "${PREPARE_DIR:-$HOME/.claude/skills/prepare}/scripts/ci-ran.mjs" --pr <pr-
 Run the [CI evidence](#ci-evidence) command before `gh pr ready`.
 `CI: green`, `red`, or `pending` → CI already ran on the draft (and a workflow without a `ready_for_review` trigger will not run again): go straight to `prepare`.
 `CI: not-run` → CI has not run on this head: the checks listed right after `gh pr ready` are none or the draft's skipped ones, which `prepare` would read as green.
-Re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `gh pr checks <pr-url> --watch`, then call `prepare`.
+Re-read `gh pr checks <pr-url> --json name,state,startedAt` until at least one check started after the undraft, then `node "$T" wait ci -- gh pr checks <pr-url> --watch` (`T` = this skill's `scripts/telemetry.mjs`, so the trace books the wait as waiting, not work), then call `prepare`.
 No new check within 5 minutes → Ready `hold`, reason `CI not run: no checks started after undraft`.
 
 ```text
 ✗ gh pr ready <pr-url>; Skill("prepare", …)                 # reads 2 passed + 16 skipped from the draft → Already green
-✓ gh pr ready <pr-url>; a check started after the undraft; gh pr checks --watch; Skill("prepare", …)
+✓ gh pr ready <pr-url>; a check started after the undraft; telemetry.mjs wait ci -- gh pr checks --watch; Skill("prepare", …)
 ```
 
 ### After Build returns
@@ -271,4 +273,5 @@ ATELIER RUN
 - **LoreKit is evidence, never a gate.** A failed write is one `Degraded:` line; the stage outcome stands.
 - **No flag flips, no deploys.** Those belong to a human or `/deployment-verify`.
 - **Top level only.** Never dispatch `/atelier` or its Build into a sub-agent; a nested run drops companions.
+- **Telemetry never decides.** The trace records stages; no stage reads it, and a failed export is never a `Degraded:` item.
 - **Only the user waives.** A skipped companion or a blocking preflight gap is overridden only by the user's `--accept-skip` or `--accept-gaps`, never by your judgment.
