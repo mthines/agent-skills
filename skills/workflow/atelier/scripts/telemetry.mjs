@@ -171,7 +171,7 @@ function currentBranch(cwd = process.cwd()) {
 // Best effort, never blocking: the open PR for the current branch, or null on any failure.
 export function openPrUrl(cwd = process.cwd()) {
 	try {
-		const r = spawnSync("gh", ["pr", "view", "--json", "url", "-q", ".url"], { cwd, encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] });
+		const r = spawnSync("gh", ["pr", "view", "--json", "url,state", "-q", 'select(.state == "OPEN") | .url'], { cwd, encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] });
 		const url = r.status === 0 ? String(r.stdout || "").trim() : "";
 		return /\/pull\/\d+$/.test(url) ? url : null;
 	} catch {

@@ -107,6 +107,7 @@ export function scanYaml(text) {
 	let inEnvs = false;
 	let env = null;
 	let authIndent = -1;
+	let authChild = -1;
 	let blockIndent = -1;
 	for (const raw of String(text).split("\n")) {
 		if (!raw.trim() || /^\s*#/.test(raw)) continue;
@@ -137,7 +138,12 @@ export function scanYaml(text) {
 			const flow = rest.match(/strategy:\s*([^,}\s]+)/);
 			out.environments[env].auth = flow ? { strategy: scalar(flow[1]) } : {};
 			if (!flow) authIndent = indent;
-		} else if (authIndent >= 0 && key === "strategy" && out.environments[env].auth) out.environments[env].auth.strategy = scalar(rest);
+			authChild = -1;
+		} else if (authIndent >= 0 && key === "strategy" && out.environments[env].auth && !("strategy" in out.environments[env].auth)) {
+			// Only auth's own first-level strategy: a deeper `strategy:` (e.g. under refresh) is not the sign-in strategy.
+			if (indent === authChild || authChild < 0) out.environments[env].auth.strategy = scalar(rest);
+		}
+		if (authIndent >= 0 && indent > authIndent && authChild < 0) authChild = indent;
 	}
 	return out;
 }
@@ -214,7 +220,7 @@ async function selfTest() {
 	const envYml = [
 		"version: 1", "environments:", "  local:", "    url: http://localhost:3000", "    auth:", "      strategy: storage-state", "      refresh:",
 		"        command: |", "          set -a", "          strategy: not-this-one", "        timeout_seconds: 120", "  preview:", "    url:", "      from: pr-deployment",
-		"    auth:", "      # comment", "      strategy: 'storage-state'", "  ci:", "    auth: { strategy: none }",
+		"    auth:", "      # comment", "      refresh:", "        strategy: nested-not-this", "      strategy: 'storage-state'", "  ci:", "    auth: { strategy: none }",
 	].join("\n");
 	const sc = scanYaml(envYml);
 	t("✓ a command: | block scalar does not hide auth.strategy", signInCheck(sc).ok && sc.environments.local.auth.strategy === "storage-state" && sc.environments.preview.auth.strategy === "storage-state"
