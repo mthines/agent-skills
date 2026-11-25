@@ -310,7 +310,7 @@ async function main() {
 		if (r.how) console.log(r.how);
 		if (r.warning) console.log(`warning: ${r.warning}`);
 		console.log(`MERGE_GATE: ${r.decision} — ${r.reason}`);
-		await markGate({ result: r, contractOnly });
+		await markGate({ result: r, contractOnly, pr: a.pr ? String(a.pr) : null });
 		process.exit(r.decision === "pass" ? 0 : 1);
 	} catch (e) {
 		console.error(`merge-gate: ${e.message}`);

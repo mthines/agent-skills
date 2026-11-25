@@ -21,6 +21,7 @@
 //   node telemetry.mjs finish [--stage s --decision d --reason r | --outcome stopped --reason r] [--pr url] [--run-dir d]
 //   node telemetry.mjs summary [--run-dir d]
 //   node telemetry.mjs smoke                    exports one synthetic run and outcome marked atelier.smoke=true
+// A run is also marked smoke when ATELIER_SMOKE=1|true is set (tests) or the repo has no `origin` remote (a scratch repo).
 //   node telemetry.mjs --self-test
 // The run dir is --run-dir, else ATELIER_RUN_DIR, else `<git common dir>/atelier-telemetry` of cwd's repo.
 
@@ -102,9 +103,50 @@ export function detectHarness(env = process.env, exists = existsSync) {
 	return null;
 }
 
-export function prFacts(pr) {
+// A PR URL, or a bare number (`--pr 41`) resolved against the run's repo.
+export function prFacts(pr, repo = null) {
 	const m = String(pr ?? "").match(/github\.com\/([^/\s]+)\/([^/\s]+)\/pull\/(\d+)/);
-	return m ? { repo: `${m[1]}/${m[2]}`, pr_number: Number(m[3]), pr_url: `https://github.com/${m[1]}/${m[2]}/pull/${m[3]}` } : {};
+	if (m) return { repo: `${m[1]}/${m[2]}`, pr_number: Number(m[3]), pr_url: `https://github.com/${m[1]}/${m[2]}/pull/${m[3]}` };
+	const n = String(pr ?? "").trim().match(/^#?(\d+)$/);
+	return n && repo ? { pr_number: Number(n[1]), pr_url: `https://github.com/${repo}/pull/${n[1]}` } : {};
+}
+
+// `--ticket`: a Linear id or URL, a GitHub issue URL or `#n`, or any short id; `--task`: a one-line title.
+export function workFacts({ ticket = null, task = null, repo = null } = {}) {
+	const out = {};
+	const tk = String(ticket ?? "").trim();
+	if (tk) {
+		const linear = tk.match(/linear\.app\/[^/\s]+\/issue\/([A-Za-z][A-Za-z0-9]*-\d+)/);
+		const gh = tk.match(/github\.com\/([^/\s]+)\/([^/\s]+)\/issues\/(\d+)/);
+		const hash = tk.match(/^#(\d+)$/);
+		if (/^https?:\/\//.test(tk)) out.ticket_url = tk.slice(0, 300);
+		if (linear) out.ticket_id = linear[1].toUpperCase();
+		else if (gh) out.ticket_id = `${gh[1]}/${gh[2]}#${gh[3]}`;
+		else if (hash && repo) Object.assign(out, { ticket_id: `${repo}#${hash[1]}`, ticket_url: `https://github.com/${repo}/issues/${hash[1]}` });
+		else if (/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(tk)) out.ticket_id = tk.toUpperCase();
+		else if (!out.ticket_url) out.ticket_id = tk.replace(/\s+/g, " ").slice(0, 80);
+	}
+	const title = String(task ?? "").replace(/\s+/g, " ").trim();
+	if (title) out.task_title = title.length > 120 ? `${title.slice(0, 119)}…` : title;
+	return out;
+}
+
+// The one always-filled column a dashboard table shows: PR › ticket › repo@branch › unknown.
+export function workRef(f = {}) {
+	if (f.pr_url) return f.pr_url;
+	if (f.ticket_url) return f.ticket_url;
+	if (f.ticket_id) return f.ticket_id;
+	if (f.repo) return f.branch ? `${f.repo}@${f.branch}` : f.repo;
+	return "unknown";
+}
+
+export const smokeEnv = (env = process.env) => /^(1|true)$/i.test(String(env.ATELIER_SMOKE ?? "").trim());
+
+// Test and scratch runs stay off the dashboards: ATELIER_SMOKE wins, then a repo with no `origin` remote.
+export function smokeFacts(env = process.env, repo = null) {
+	if (smokeEnv(env)) return { smoke: true, smoke_reason: "env" };
+	if (!repo) return { smoke: true, smoke_reason: "no-remote" };
+	return {};
 }
 
 function originRepo(cwd = process.cwd()) {
@@ -117,6 +159,26 @@ function originRepo(cwd = process.cwd()) {
 	}
 }
 
+function currentBranch(cwd = process.cwd()) {
+	try {
+		const b = execFileSync("git", ["-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+		return b && b !== "HEAD" ? b : null;
+	} catch {
+		return null;
+	}
+}
+
+// Best effort, never blocking: the open PR for the current branch, or null on any failure.
+export function openPrUrl(cwd = process.cwd()) {
+	try {
+		const r = spawnSync("gh", ["pr", "view", "--json", "url", "-q", ".url"], { cwd, encoding: "utf8", timeout: 8000, stdio: ["ignore", "pipe", "ignore"] });
+		const url = r.status === 0 ? String(r.stdout || "").trim() : "";
+		return /\/pull\/\d+$/.test(url) ? url : null;
+	} catch {
+		return null;
+	}
+}
+
 export function hostFacts(env = process.env, cwd = process.cwd()) {
 	const out = {};
 	const harness = detectHarness(env);
@@ -124,6 +186,8 @@ export function hostFacts(env = process.env, cwd = process.cwd()) {
 	if (env.ATELIER_MODEL) out.model = env.ATELIER_MODEL;
 	const repo = originRepo(cwd);
 	if (repo) out.repo = repo;
+	const branch = currentBranch(cwd);
+	if (branch) out.branch = branch;
 	try {
 		const here = dirname(fileURLToPath(import.meta.url));
 		const v = execFileSync("git", ["-C", here, "rev-parse", "--short", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -205,7 +269,10 @@ export function buildRun(records, now = nowNs()) {
 	};
 	for (const { r, ns } of sorted) {
 		if (ns < run.startNs || run.finish) continue;
-		if (r.t === "facts") Object.assign(run.facts, r.facts || {});
+		if (r.t === "facts") {
+			Object.assign(run.facts, r.facts || {});
+			if (r.pr) Object.assign(run.facts, prFacts(r.pr, run.facts.repo));
+		}
 		// A stage already open stays open: `--record build skipped` opens ready, then `--next` names ready again.
 		else if (r.t === "stage") {
 			if (open?.name !== r.name) {
@@ -235,7 +302,7 @@ export function buildRun(records, now = nowNs()) {
 				if (build && !build.decision) Object.assign(build, { decision: r.decision, reason: r.reason || "", recordedAs: "build", sha: r.sha || null });
 			}
 			close(ns, extra);
-			if (r.pr) Object.assign(run.facts, prFacts(r.pr));
+			if (r.pr) Object.assign(run.facts, prFacts(r.pr, run.facts.repo));
 			if (r.sha) run.facts.head_sha = r.sha;
 			run.decisions.push({ stage: r.stage, decision: r.decision, reason: r.reason || "", ns });
 			if (!RUN_ENDING.has(r.decision) && !(r.stage === "merge" && r.decision === "proceed") && NEXT_STAGE[r.stage]) start(NEXT_STAGE[r.stage], ns);
@@ -281,11 +348,17 @@ export function identity(run) {
 		"vcs.repository.url.full": owner && name ? `https://github.com/${owner}/${name}` : null,
 		"vcs.change.id": f.pr_number ? String(f.pr_number) : null,
 		"vcs.ref.head.revision": f.head_sha || null,
+		"vcs.ref.head.name": f.branch || null,
 		"atelier.pr.url": f.pr_url || null,
+		"atelier.ticket.id": f.ticket_id || null,
+		"atelier.ticket.url": f.ticket_url || null,
+		"atelier.task.title": f.task_title || null,
+		"atelier.work.ref": workRef(f),
 		"atelier.run.id": run.runId,
 		"atelier.harness": f.harness || null,
 		"gen_ai.request.model": f.model || null,
 		"atelier.smoke": f.smoke === true ? true : null,
+		"atelier.smoke_reason": f.smoke === true ? f.smoke_reason || null : null,
 	};
 }
 
@@ -357,6 +430,8 @@ export function toExporter(run, env, otlp) {
 	});
 	ex.traceId = traceId;
 	const rootId = spanId(run.runId, "root");
+	// Every metric carries atelier.smoke, so a dashboard's atelier_smoke="" filter drops test runs from each panel.
+	const smoke = run.facts.smoke === true ? { "atelier.smoke": true } : {};
 	const failed = run.outcome === "failed";
 	const lastReason = run.finish?.reason ?? run.lastDecision?.reason ?? "";
 	ex.spans.push({
@@ -399,7 +474,7 @@ export function toExporter(run, env, otlp) {
 			}),
 			status: err ? { code: 2, message: String(s.reason || `${s.name} failed`).slice(0, 300) } : { code: 0 },
 		});
-		ex.histogram("atelier.stage.duration", durS, { "atelier.stage.name": s.name, "atelier.stage.decision": s.decision || "none" }, "s");
+		ex.histogram("atelier.stage.duration", durS, { "atelier.stage.name": s.name, "atelier.stage.decision": s.decision || "none", ...smoke }, "s");
 		run.waits.forEach((w, j) => {
 			if (w.startNs < s.startNs || w.startNs >= s.endNs) return;
 			ex.spans.push({
@@ -410,9 +485,8 @@ export function toExporter(run, env, otlp) {
 			});
 		});
 	});
-	for (const w of run.waits) ex.histogram("atelier.wait.duration", Number(w.endNs - w.startNs) / 1e9, { "atelier.wait.kind": w.kind }, "s");
-	if (typeof run.attrs["resume.idle_s"] === "number") ex.histogram("atelier.wait.duration", run.attrs["resume.idle_s"], { "atelier.wait.kind": "human" }, "s");
-	const smoke = run.facts.smoke === true ? { "atelier.smoke": true } : {};
+	for (const w of run.waits) ex.histogram("atelier.wait.duration", Number(w.endNs - w.startNs) / 1e9, { "atelier.wait.kind": w.kind, ...smoke }, "s");
+	if (typeof run.attrs["resume.idle_s"] === "number") ex.histogram("atelier.wait.duration", run.attrs["resume.idle_s"], { "atelier.wait.kind": "human", ...smoke }, "s");
 	const outcomes = OUTCOMES.includes(run.outcome) ? OUTCOMES : [...OUTCOMES, run.outcome];
 	ex.cumulativeSum(RUN_COUNTER, {
 		unit: "{run}", startNs: run.startNs,
@@ -429,7 +503,7 @@ export function summarize(run) {
 	const r1 = (n) => Math.round(n * 10) / 10;
 	return {
 		run_id: run.runId, trace_id: traceIdFor(run.runId), outcome: run.outcome, stage_reached: run.stageReached,
-		pr: run.facts.pr_url ?? null, total_s: r1(run.totalS), wait_s: r1(run.waitS), active_s: r1(run.totalS - run.waitS),
+		pr: run.facts.pr_url ?? null, work_ref: workRef(run.facts), total_s: r1(run.totalS), wait_s: r1(run.waitS), active_s: r1(run.totalS - run.waitS),
 		stages: run.stages.map((s) => ({
 			name: s.name, duration_s: r1(Number(s.endNs - s.startNs) / 1e9), ...(s.decision ? { decision: s.decision, reason_bucket: reasonBucket(s.reason) } : {}),
 		})),
@@ -440,7 +514,7 @@ export function summarize(run) {
 
 export function renderSummary(s) {
 	return [
-		`atelier ${s.run_id} · ${s.outcome} at ${s.stage_reached} · ${s.total_s}s (${s.active_s}s active, ${s.wait_s}s waiting) · trace ${s.trace_id}`,
+		`atelier ${s.run_id} · ${s.work_ref ?? "unknown"} · ${s.outcome} at ${s.stage_reached} · ${s.total_s}s (${s.active_s}s active, ${s.wait_s}s waiting) · trace ${s.trace_id}`,
 		...s.stages.map((x) => `  ${x.name.padEnd(11)} ${String(x.duration_s).padStart(9)}s${x.decision ? `  ${x.decision} (${x.reason_bucket})` : ""}`),
 		...s.waits.map((w) => `    wait ${w.kind.padEnd(6)} ${String(w.duration_s).padStart(8)}s`),
 	].join("\n");
@@ -518,9 +592,15 @@ const activeRunDir = (opts = {}) => {
 };
 
 /** preflight.mjs: begin the run, book preflight itself, open the next stage (`build` for a request, `setup` before --next on a PR). */
-export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = null, model = null, runDir } = {}) => {
+export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = null, model = null, ticket = null, task = null, lookupPr = false, cwd = process.cwd(), runDir } = {}) => {
 	const dir = resolveRunDir({ dir: runDir });
-	const facts = { ...hostFacts(), ...(model ? { model } : {}), ...prFacts(pr), ...(pr ? { resumed: true } : {}) };
+	const host = hostFacts(process.env, cwd);
+	// No --pr: the branch may already have one (a re-run after a hold); a scratch repo has no origin to ask.
+	const found = !pr && lookupPr && host.repo ? openPrUrl(cwd) : null;
+	const facts = {
+		...host, ...smokeFacts(process.env, host.repo), ...(model ? { model } : {}), ...workFacts({ ticket, task, repo: host.repo }),
+		...prFacts(pr || found, host.repo), ...(pr ? { resumed: true } : {}),
+	};
 	await beginRun(dir, facts, { ns: startNs });
 	appendRecord(dir, { t: "stage", name: "preflight", ns: startNs });
 	const g = [...gaps].sort();
@@ -531,7 +611,7 @@ export const markPreflight = guarded(async ({ startNs, status, gaps = [], pr = n
 });
 
 /** state.mjs --next: the resumed run opens the stage it will run; the time since the last recorded decision was a human's. */
-export const markNext = guarded(async ({ stage, state, runDir } = {}) => {
+export const markNext = guarded(async ({ stage, state, pr = null, runDir } = {}) => {
 	const dir = activeRunDir({ runDir });
 	if (!dir) return null;
 	const last = state?.stages?.[state.stage];
@@ -540,16 +620,17 @@ export const markNext = guarded(async ({ stage, state, runDir } = {}) => {
 		const idle = Math.max(0, Math.round((Date.now() - Date.parse(last.at)) / 1000));
 		if (Number.isFinite(idle)) Object.assign(attrs, { "resume.idle_s": idle, "resume.after": last.decision, "resume.after_bucket": reasonBucket(last.reason) });
 	}
-	if (state?.pr) appendRecord(dir, { t: "facts", facts: prFacts(state.pr) });
+	if (pr || state?.pr) appendRecord(dir, { t: "facts", pr: pr || state.pr });
 	appendRecord(dir, { t: "attr", target: "run", attrs });
 	if (stage && stage !== "stop" && STAGES.includes(stage)) appendRecord(dir, { t: "stage", name: stage });
 	return dir;
 });
 
 /** state.mjs --companions: Build's aw time ends; the after-Build checklist begins. */
-export const markCompanions = guarded(async ({ decision, tier, skipped = [], accepted = [], runDir } = {}) => {
+export const markCompanions = guarded(async ({ decision, tier, skipped = [], accepted = [], pr = null, runDir } = {}) => {
 	const dir = activeRunDir({ runDir });
 	if (!dir) return null;
+	if (pr) appendRecord(dir, { t: "facts", pr });
 	appendRecord(dir, { t: "stage", name: "companions" });
 	const bag = { "companions.decision": decision, "companions.skipped": [...skipped].sort().join(",") || null, "companions.accepted": [...accepted].sort().join(",") || null, tier: tier || null };
 	appendRecord(dir, { t: "attr", target: "stage", attrs: bag });
@@ -558,9 +639,10 @@ export const markCompanions = guarded(async ({ decision, tier, skipped = [], acc
 });
 
 /** merge-gate.mjs: what the gate saw, on the open stage and the run. */
-export const markGate = guarded(async ({ result, contractOnly, runDir } = {}) => {
+export const markGate = guarded(async ({ result, contractOnly, pr = null, runDir } = {}) => {
 	const dir = activeRunDir({ runDir });
 	if (!dir || !result) return null;
+	if (pr) appendRecord(dir, { t: "facts", pr });
 	const bag = {
 		"gate.decision": result.decision, "gate.refused_by": result.refused_by || null, "gate.contract_only": !!contractOnly,
 		user_visible: typeof result.user_visible === "boolean" ? result.user_visible : null,
@@ -578,7 +660,8 @@ export const markDecision = guarded(async ({ stage, decision, reason = "", head 
 	if (!dir) {
 		// A record with no run (preflight skipped, or ATELIER_RUN_DIR unset in this shell) starts one here.
 		dir = resolveRunDir({ dir: runDir });
-		await beginRun(dir, { ...hostFacts(), ...prFacts(pr) }, {}, env);
+		const host = hostFacts();
+		await beginRun(dir, { ...host, ...smokeFacts(env, host.repo), ...prFacts(pr, host.repo) }, {}, env);
 	}
 	if (memory && Object.keys(memory).length) appendRecord(dir, { t: "memory", memory });
 	appendRecord(dir, { t: "decision", stage, decision, reason, sha: head, pr });
@@ -589,6 +672,7 @@ export const markDecision = guarded(async ({ stage, decision, reason = "", head 
 /** outcomes.mjs: one small trace per PR whose outcome changed, plus the outcomes counter. */
 export const emitOutcomes = guarded(async ({ results = [], repo = null } = {}, env = process.env) => {
 	if (!results.length || !exportTarget(env).endpoint) return null;
+	const envSmoke = smokeEnv(env);
 	const otlp = await loadOtlp(env);
 	const startNs = nowNs();
 	const [owner, name] = String(repo || "").split("/");
@@ -603,15 +687,15 @@ export const emitOutcomes = guarded(async ({ results = [], repo = null } = {}, e
 				"atelier.outcome": r.outcome, "atelier.outcome.previous": r.stored || null, "atelier.outcome.evidence_count": (r.evidence || []).length,
 				"vcs.repository.name": name || null, "vcs.owner.name": owner || null, "vcs.change.id": String(r.pr),
 				"atelier.pr.url": owner && name ? `https://github.com/${owner}/${name}/pull/${r.pr}` : null, "atelier.merge_sha": r.sha || null,
-				"atelier.smoke": r.smoke === true ? true : null,
+				"atelier.smoke": r.smoke === true || envSmoke ? true : null,
 			}),
 			status: { code: 0 },
 		});
 		ex.cumulativeSum(OUTCOME_COUNTER, {
 			unit: "{pr}", startNs,
 			points: [
-				{ attributes: { "atelier.outcome": r.outcome, ...(r.smoke ? { "atelier.smoke": true } : {}) }, timeNs: startNs + 1_000_000n, value: 0 },
-				{ attributes: { "atelier.outcome": r.outcome, ...(r.smoke ? { "atelier.smoke": true } : {}) }, timeNs: startNs + 2_000_000n, value: 1 },
+				{ attributes: { "atelier.outcome": r.outcome, ...(r.smoke || envSmoke ? { "atelier.smoke": true } : {}) }, timeNs: startNs + 1_000_000n, value: 0 },
+				{ attributes: { "atelier.outcome": r.outcome, ...(r.smoke || envSmoke ? { "atelier.smoke": true } : {}) }, timeNs: startNs + 2_000_000n, value: 1 },
 			],
 		});
 	}
@@ -654,7 +738,10 @@ async function smoke(env = process.env) {
 	const s = BigInt(Date.now() - 600_000) * 1_000_000n;
 	const at = (sec) => s + BigInt(sec) * 1_000_000_000n;
 	const pr = "https://github.com/mthines/agent-skills/pull/0";
-	await beginRun(dir, { ...hostFacts(env), harness: "local-smoke", smoke: true, model: env.ATELIER_MODEL || "smoke" }, { ns: s }, env);
+	await beginRun(dir, {
+		...hostFacts(env), harness: "local-smoke", smoke: true, smoke_reason: "smoke-command", model: env.ATELIER_MODEL || "smoke",
+		...workFacts({ ticket: "SMOKE-1", task: "atelier telemetry smoke run" }),
+	}, { ns: s }, env);
 	appendRecord(dir, { t: "stage", name: "preflight", ns: s });
 	appendRecord(dir, { t: "attr", target: "run", attrs: { "preflight.status": "limited", "preflight.gaps": "flag-provider", "preflight.gap_count": 1 }, ns: at(2) });
 	appendRecord(dir, { t: "stage", name: "build", ns: at(3) });
@@ -748,6 +835,18 @@ async function selfTest() {
 	t("a preflight stop reaches preflight, with no empty build span", stopped.stageReached === "preflight" && stopped.stages.map((s) => s.name).join() === "preflight" && stopped.outcome === "stopped");
 	const resumed = buildRun([rec({ t: "run", run_id: "r2", facts: {} }, 0), rec({ t: "decision", stage: "merge", decision: "proceed", reason: "merged ff", pr }, 50), rec({ t: "finish" }, 50)]);
 	t("a decision with no open stage spans from the last boundary", resumed.stages.length === 1 && resumed.stages[0].name === "merge" && resumed.outcome === "merged");
+	const late = buildRun([rec({ t: "run", run_id: "r6", facts: { repo: "acme/web", branch: "feat/x", ticket_id: "AI-3112" } }, 0), rec({ t: "stage", name: "build" }, 1),
+		rec({ t: "facts", pr: "41" }, 5), rec({ t: "decision", stage: "build", decision: "hold", reason: "skipped: review-loop" }, 6), rec({ t: "finish" }, 6)]);
+	t("a PR known only after build (a bare --pr number) reaches the run's facts", late.facts.pr_url === pr && identity(late)["atelier.work.ref"] === pr && identity(late)["vcs.change.id"] === "41");
+	t("✗ no PR: work.ref falls back to the ticket URL, then its id", workRef({ ticket_url: "https://linear.app/acme/issue/AI-1/x", ticket_id: "AI-1", repo: "a/b" }) === "https://linear.app/acme/issue/AI-1/x"
+		&& workRef({ ticket_id: "AI-1", repo: "a/b", branch: "m" }) === "AI-1");
+	t("✓ no PR, no ticket: work.ref is repo@branch, then unknown", workRef({ repo: "acme/web", branch: "feat/x" }) === "acme/web@feat/x" && workRef({}) === "unknown");
+	const lin = workFacts({ ticket: "https://linear.app/acme/issue/ai-3112/fix-the-thing", task: `  ${"t".repeat(200)} ` });
+	t("a Linear URL gives id and URL; the task title is cut to 120 chars", lin.ticket_id === "AI-3112" && lin.ticket_url.startsWith("https://linear.app/") && lin.task_title.length === 120);
+	t("a GitHub issue URL, #n with a repo, and a bare id each give a ticket id", workFacts({ ticket: "https://github.com/acme/web/issues/7" }).ticket_id === "acme/web#7"
+		&& workFacts({ ticket: "#7", repo: "acme/web" }).ticket_url === "https://github.com/acme/web/issues/7" && workFacts({ ticket: "ai-12" }).ticket_id === "AI-12" && JSON.stringify(workFacts({})) === "{}");
+	t("smoke: ATELIER_SMOKE wins, then no origin remote, else not smoke", smokeFacts({ ATELIER_SMOKE: "1" }, "a/b").smoke_reason === "env" && smokeFacts({ ATELIER_SMOKE: "TRUE" }, "a/b").smoke === true
+		&& smokeFacts({}, null).smoke_reason === "no-remote" && JSON.stringify(smokeFacts({ ATELIER_SMOKE: "0" }, "a/b")) === "{}");
 	const failedRun = buildRun([rec({ t: "run", run_id: "r3", facts: {} }, 0), rec({ t: "stage", name: "build" }, 1), rec({ t: "decision", stage: "build", decision: "failed", reason: "CHECKS 3/5 FAIL: AC-1" }, 9), rec({ t: "finish" }, 9)]);
 	t("export targets: off wins, ATELIER first, PR_REVIEWER reused, host OTEL only with on", exportTarget({ ATELIER_TELEMETRY: "off", ATELIER_OTLP_ENDPOINT: "x" }).endpoint === ""
 		&& exportTarget({ ATELIER_OTLP_ENDPOINT: "a", PR_REVIEWER_OTLP_ENDPOINT: "b" }).endpoint === "a"
@@ -783,6 +882,8 @@ async function selfTest() {
 		const wait = spans.find((s) => s.name === "atelier.wait ci");
 		t("the wait is a child of its stage", wait.parentSpanId === ready.spanId && get(ready, "atelier.stage.decision") === "hold");
 		t("stage attributes ride through", get(spans[1], "atelier.preflight.gaps") === "flag-provider" && get(spans[3], "atelier.companions.skipped") === "review-loop");
+		const waitSpanS = spans.filter((s) => s.name.startsWith("atelier.wait ")).reduce((a, s) => a + Number(BigInt(s.endTimeUnixNano) - BigInt(s.startTimeUnixNano)) / 1e9, 0);
+		t("a run's wait_s equals the sum of its wait spans", waitSpanS === 300 && get(root, "atelier.run.wait_s") === waitSpanS, `${waitSpanS}`);
 		t("the trace id is stable per run", ex.traceId === traceIdFor("r1"));
 		const mp = ex.metricPayload();
 		const metrics = mp.resourceMetrics[0].scopeMetrics[0].metrics;
@@ -792,6 +893,9 @@ async function selfTest() {
 			&& OUTCOMES.every((o) => runs.sum.dataPoints.some((p) => p.asInt === "0" && p.attributes.some((x) => x.value.stringValue === o)))
 			&& runs.sum.dataPoints.filter((p) => p.asInt === "1").length === 1);
 		t("atelier.prs.merged stays 0 for a held run", byName(MERGED_COUNTER)[0].sum.dataPoints.every((p) => p.asInt === "0"));
+		const smokeHist = toExporter({ ...run, facts: { ...run.facts, smoke: true } }, env, otlp).metricPayload().resourceMetrics[0].scopeMetrics[0].metrics
+			.filter((m) => m.histogram).flatMap((m) => m.histogram.dataPoints);
+		t("a smoke run's stage and wait histograms carry atelier.smoke", smokeHist.length >= 5 && smokeHist.every((p) => p.attributes.some((x) => x.key === "atelier.smoke")));
 		t("stage and wait histograms are emitted", byName("atelier.stage.duration").length >= 4 && byName("atelier.wait.duration").length === 1);
 		t("the resource is per run", mp.resourceMetrics[0].resource.attributes.find((x) => x.key === "service.instance.id").value.stringValue === traceIdFor("r1"));
 		t("no metric attribute carries free text", metrics.every((m) => (m.sum?.dataPoints ?? m.histogram?.dataPoints ?? []).every((p) => p.attributes.every((x) => !/reason$|url|run\.id/.test(x.key)))));
@@ -823,10 +927,12 @@ async function selfTest() {
 	const saved = { ...process.env };
 	try {
 		process.env.ATELIER_RUN_DIR = dir;
+		process.env.ATELIER_SMOKE = "1"; // every run this test exports is a test run
 		delete process.env.ATELIER_TELEMETRY;
-		const first = await markPreflight({ startNs: nowNs(), status: "ok", gaps: [], model: "claude-opus-5-5" });
+		const first = await markPreflight({ startNs: nowNs(), status: "ok", gaps: [], model: "claude-opus-5-5", ticket: "AI-3112", task: "Fix the PR column" });
 		t("preflight begins a run in ATELIER_RUN_DIR and opens build", first === dir && readLedger(dir).at(-1).name === "build");
-		await markCompanions({ decision: "proceed", tier: "Lite", skipped: [] });
+		await markCompanions({ decision: "proceed", tier: "Lite", skipped: [], pr });
+		t("the PR is on the run as soon as --companions names it", buildRun(readLedger(dir)).facts.pr_url === pr);
 		const none = await markDecision({ stage: "build", decision: "proceed", head: "abc1234", pr }, env);
 		t("a proceed does not end the run", none === null && !isFinished(readLedger(dir)));
 		const code = await runWait("ci", [process.execPath, "-e", "process.exit(3)"]);
@@ -836,6 +942,10 @@ async function selfTest() {
 		t("a merge proceed finishes and exports traces then metrics", out?.exported === true && received.map((r) => r.path).join() === "/v1/traces,/v1/metrics", JSON.stringify(out));
 		const root = received[0]?.body?.resourceSpans?.[0]?.scopeSpans?.[0];
 		t("the received scope is agent-skills/atelier and the root says merged", root?.scope?.name === SCOPE_NAME && root?.spans?.[0]?.attributes?.some((x) => x.key === "atelier.run.outcome" && x.value.stringValue === "merged"));
+		const ra = (k) => root?.spans?.[0]?.attributes?.find((x) => x.key === k)?.value;
+		t("the root names the work: ticket, task, work.ref = the PR", ra("atelier.ticket.id")?.stringValue === "AI-3112" && ra("atelier.task.title")?.stringValue === "Fix the PR column"
+			&& ra("atelier.work.ref")?.stringValue === pr);
+		t("ATELIER_SMOKE marks the exported run smoke, with its reason", ra("atelier.smoke")?.boolValue === true && ra("atelier.smoke_reason")?.stringValue === "env");
 		t("the summary file is written", JSON.parse(readFileSync(join(dir, SUMMARY_FILE), "utf8")).outcome === "merged");
 		const again = await finishRun(dir, {}, env);
 		t("a second finish sends nothing", again.skipped === "already exported" && received.length === 2);
@@ -859,6 +969,17 @@ async function selfTest() {
 		delete process.env.ATELIER_OTLP_ENDPOINT;
 		delete process.env.ATELIER_TELEMETRY;
 		const dead = await finishRun(join(dir, "missing"), {}, {});
+		// An abandoned run ends at its own last event, not when the next run began.
+		const ab = join(dir, "abandon");
+		appendRecord(ab, { t: "run", run_id: "ab1", facts: {}, ns: at(0) });
+		appendRecord(ab, { t: "stage", name: "preflight", ns: at(0) });
+		appendRecord(ab, { t: "stage", name: "build", implicit: true, ns: at(1) });
+		appendRecord(ab, { t: "attr", target: "stage", attrs: { "gate.decision": "pass" }, ns: at(670) });
+		await beginRun(ab, {}, {}, {});
+		const abRun = buildRun(readFileSync(join(ab, "telemetry.ab1.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)));
+		const abSum = JSON.parse(readFileSync(join(ab, "telemetry-summary.ab1.json"), "utf8"));
+		t("an abandoned run's duration and active time run from its first to its last event", abSum.outcome === "abandoned" && abSum.total_s === 670 && abSum.active_s === 670 && abSum.stages.at(-1).duration_s === 669, JSON.stringify(abSum));
+		t("an abandoned run's last stage span ends at its last event", abRun.stages.at(-1).name === "build" && abRun.stages.at(-1).endNs === at(670));
 		t("finish on an empty dir is a quiet no-op", dead.exported === false);
 	} finally {
 		for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];

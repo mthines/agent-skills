@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 // preflight.mjs — what this repo lets an atelier run prove, checked before Build (SKILL.md Step 0).
 //
-//   node preflight.mjs [--repo <dir>] [--json] [--pr <url>] [--model <id>]
+//   node preflight.mjs [--repo <dir>] [--json] [--pr <url>] [--model <id>] [--ticket <id|url>] [--task "<title>"]
 //        prints a capability table, then `PREFLIGHT: ok|limited — <n> gaps (<names>)`; begins the run's telemetry
-//        (telemetry.mjs) — `--pr` marks a resumed run, `--model` names the model on the trace
+//        (telemetry.mjs) — `--pr` marks a resumed run, `--model` names the model on the trace, `--ticket` and
+//        `--task` name the work; with no `--pr`, the branch's open PR (gh, best effort) is recorded
 //   node preflight.mjs --self-test
 // Reads only committed config: .agents/aw/release.yml (through deployment-verify's loadConfig), telemetry.yml,
-// environments.yml (through deployment-verify's YAML reader), and .github/workflows/*.yml (as text).
+// environments.yml (through deployment-verify's YAML subset reader, else a line scan for the keys it needs),
+// and .github/workflows/*.yml (as text). A file neither can read is `unknown`, never a gap.
 // Whether the telemetry MCP tool answers is the agent's check, not this script's: it cannot call a tool.
 // It never blocks: exit 0 with any number of gaps, 2 on an error.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -35,6 +38,7 @@ export function flagCheck({ present, config = null, error = null }) {
 export function telemetryCheck(config) {
 	const name = "telemetry";
 	if (!config) return { name, ok: false, value: "none (no .agents/aw/telemetry.yml)", cannot: "telemetry: criteria are unprovable" };
+	if (config.unknown) return { name, ok: true, value: `unknown (could not parse telemetry.yml: ${config.unknown})`, cannot: "" };
 	if (config.error) return { name, ok: false, value: `telemetry.yml does not parse: ${config.error}`, cannot: "telemetry: criteria are unprovable" };
 	if (!config.backend || config.backend === "none") return { name, ok: false, value: "backend: none", cannot: "telemetry: criteria are unprovable" };
 	const tool = config.mcp_server ? `${config.backend} (${config.mcp_server})` : config.backend;
@@ -45,6 +49,7 @@ export function telemetryCheck(config) {
 export function signInCheck(config, envs = ["local", "preview"]) {
 	const name = "sign-in";
 	if (!config) return { name, ok: false, value: "none (no .agents/aw/environments.yml)", cannot: "signed-in UI criteria are unprovable — run /aw-verify setup" };
+	if (config.unknown) return { name, ok: true, value: `unknown (could not parse environments.yml: ${config.unknown})`, cannot: "" };
 	if (config.error) return { name, ok: false, value: `environments.yml does not parse: ${config.error}`, cannot: "signed-in UI criteria are unprovable" };
 	const found = envs.map((e) => [e, config.environments?.[e]?.auth?.strategy]);
 	const missing = found.filter(([e, s]) => config.environments?.[e] && !s).map(([e]) => e);
@@ -92,13 +97,61 @@ export function table(checks) {
 	].join("\n");
 }
 
+const scalar = (v) => String(v ?? "").replace(/\s+#.*$/, "").trim().replace(/^(['"])(.*)\1$/, "$2");
+
+// The keys preflight needs, read line by line from valid YAML the subset parser rejects (escaped strings,
+// block scalars): top-level `backend:` / `mcp_server:`, and `environments.<env>.auth.strategy`.
+export function scanYaml(text) {
+	const out = {};
+	let envIndent = -1;
+	let inEnvs = false;
+	let env = null;
+	let authIndent = -1;
+	let blockIndent = -1;
+	for (const raw of String(text).split("\n")) {
+		if (!raw.trim() || /^\s*#/.test(raw)) continue;
+		const indent = raw.length - raw.trimStart().length;
+		if (blockIndent >= 0 && indent > blockIndent) continue; // inside a `|` or `>` block scalar
+		blockIndent = /:\s*[|>][-+0-9]*\s*(#.*)?$/.test(raw) ? indent : -1;
+		const m = raw.trim().match(/^([A-Za-z0-9_.-]+):\s*(.*)$/);
+		if (!m) continue;
+		const [, key, rest] = m;
+		if (indent === 0) {
+			inEnvs = key === "environments";
+			env = null;
+			if (key === "backend" || key === "mcp_server") out[key] = scalar(rest);
+			continue;
+		}
+		if (!inEnvs) continue;
+		if (envIndent < 0) envIndent = indent;
+		if (indent === envIndent) {
+			env = key;
+			authIndent = -1;
+			out.environments ??= {};
+			out.environments[env] = {};
+			continue;
+		}
+		if (!env) continue;
+		if (authIndent >= 0 && indent <= authIndent) authIndent = -1;
+		if (key === "auth") {
+			const flow = rest.match(/strategy:\s*([^,}\s]+)/);
+			out.environments[env].auth = flow ? { strategy: scalar(flow[1]) } : {};
+			if (!flow) authIndent = indent;
+		} else if (authIndent >= 0 && key === "strategy" && out.environments[env].auth) out.environments[env].auth.strategy = scalar(rest);
+	}
+	return out;
+}
+
 async function readYaml(path) {
 	if (!existsSync(path)) return null;
+	const text = readFileSync(path, "utf8");
 	const { parseYaml } = await deploymentVerifyModule("yaml-lite.mjs");
 	try {
-		return parseYaml(readFileSync(path, "utf8")) || {};
+		return parseYaml(text) || {};
 	} catch (e) {
-		return { error: e.message };
+		// A subset-parser miss on valid YAML is not a gap: scan for the keys, else report unknown.
+		const scanned = scanYaml(text);
+		return Object.keys(scanned).length ? scanned : { unknown: String(e.message).slice(0, 160) };
 	}
 }
 
@@ -123,7 +176,7 @@ export async function gather(repo) {
 	return [flagCheck(flag), telemetryCheck(await readYaml(join(aw, "telemetry.yml"))), signInCheck(await readYaml(join(aw, "environments.yml"))), ciDraftCheck(workflows)];
 }
 
-function selfTest() {
+async function selfTest() {
 	const { t, done } = makeTester("preflight");
 	t("no release.yml → a gap that says a human flips the flag", !flagCheck({ present: false }).ok && /human flips/.test(flagCheck({ present: false }).cannot));
 	t("providers: [] → a gap", !flagCheck({ present: true, config: { flags: { providers: [] } } }).ok);
@@ -152,16 +205,44 @@ function selfTest() {
 	const all = [flagCheck({ present: false }), telemetryCheck({ backend: "dash0-mcp" }), signInCheck({ environments: { local: { auth: { strategy: "none" } } } }), ci];
 	t("the summary line counts and names the gaps", summarize(all).line === "PREFLIGHT: limited — 2 gaps (flag-provider, ci-on-draft)", summarize(all).line);
 	t("no gaps → ok", summarize([telemetryCheck({ backend: "logs" })]).line === "PREFLIGHT: ok — 0 gaps");
+	// Constructs from a real repo's valid .agents/aw files that the yaml-lite subset parser rejects.
+	const telemetryYml = [
+		"version: 1", "backend: dash0-mcp  # the witness", "environments:", "  local: { namespace: lorekit }", "web:", "  event_patterns:",
+		"    - \"track\\\\(\\\\{\\\\s*name:\\\\s*['\\\"]([^'\\\"]+)\"", "ingest_wait_seconds: 45",
+	].join("\n");
+	t("✓ an escaped regex in double quotes still yields the backend", telemetryCheck(scanYaml(telemetryYml)).ok && scanYaml(telemetryYml).backend === "dash0-mcp", JSON.stringify(scanYaml(telemetryYml)));
+	const envYml = [
+		"version: 1", "environments:", "  local:", "    url: http://localhost:3000", "    auth:", "      strategy: storage-state", "      refresh:",
+		"        command: |", "          set -a", "          strategy: not-this-one", "        timeout_seconds: 120", "  preview:", "    url:", "      from: pr-deployment",
+		"    auth:", "      # comment", "      strategy: 'storage-state'", "  ci:", "    auth: { strategy: none }",
+	].join("\n");
+	const sc = scanYaml(envYml);
+	t("✓ a command: | block scalar does not hide auth.strategy", signInCheck(sc).ok && sc.environments.local.auth.strategy === "storage-state" && sc.environments.preview.auth.strategy === "storage-state"
+		&& sc.environments.ci.auth.strategy === "none", JSON.stringify(sc));
+	t("✗ an environment with no auth is still a gap after a scan", !signInCheck(scanYaml("environments:\n  local:\n    url: x\n  preview:\n    url: y")).ok);
+	const tmp = mkdtempSync(join(tmpdir(), "atelier-preflight-"));
+	try {
+		mkdirSync(join(tmp, ".agents", "aw"), { recursive: true });
+		writeFileSync(join(tmp, ".agents", "aw", "telemetry.yml"), telemetryYml);
+		writeFileSync(join(tmp, ".agents", "aw", "environments.yml"), envYml);
+		const got = await gather(tmp);
+		const by = Object.fromEntries(got.map((c) => [c.name, c]));
+		t("gather: files yaml-lite rejects are read by the scan, not reported as gaps", by.telemetry.ok && by["sign-in"].ok && summarize(got).gaps.join() === "flag-provider", summarize(got).line);
+	} finally {
+		rmSync(tmp, { recursive: true, force: true });
+	}
+	t("a file nothing can read is unknown, not a gap", telemetryCheck({ unknown: "boom" }).ok && /unknown/.test(signInCheck({ unknown: "boom" }).value) && signInCheck({ unknown: "boom" }).ok);
 	t("the table escapes pipes", table([{ name: "x", ok: false, value: "a|b", cannot: "c" }]).includes("a\\|b"));
 	return done();
 }
 
 async function main() {
 	const a = parseArgs(process.argv.slice(2));
-	if (a["self-test"]) process.exit(selfTest());
+	if (a["self-test"]) process.exit(await selfTest());
 	const startNs = BigInt(Date.now()) * 1_000_000n;
 	try {
-		const checks = await gather(typeof a.repo === "string" ? a.repo : process.cwd());
+		const repo = typeof a.repo === "string" ? a.repo : process.cwd();
+		const checks = await gather(repo);
 		const { gaps, line } = summarize(checks);
 		if (a.json) console.log(JSON.stringify({ checks, gaps }, null, 2));
 		else console.log(table(checks));
@@ -169,6 +250,7 @@ async function main() {
 		await markPreflight({
 			startNs, status: gaps.length ? "limited" : "ok", gaps,
 			pr: typeof a.pr === "string" ? a.pr : null, model: typeof a.model === "string" ? a.model : null,
+			ticket: typeof a.ticket === "string" ? a.ticket : null, task: typeof a.task === "string" ? a.task : null, lookupPr: true, cwd: repo,
 		});
 	} catch (e) {
 		console.error(`preflight: ${e.message}`);
