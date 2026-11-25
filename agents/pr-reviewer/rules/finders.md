@@ -89,8 +89,9 @@ Every finder emits this shape and nothing else. It never posts, never scores its
 Two fields carry more weight than they look like they do:
 
 - **`bad_outcome`** is what makes a candidate falsifiable. "This is fragile" has no bad outcome and cannot be verified or dropped; "the sync job throws an unhandled rejection after three failures" can be. A candidate with no concrete bad outcome is a `quality` candidate at best, and the finder should say so rather than dressing it as correctness.
-- **Scale:** name the assumed load and source; cite a `shortcut:` marker in `evidence` ([rule](../../shared/rules/shortcut-markers.md)).
 - **`verify_by`** is the finder handing the verifier a cheap test. A finder that knows how to check its own claim and does not say so wastes the verifier's budget re-deriving it.
+
+A scale claim names its assumed load and source, and cites any `shortcut:` marker in `evidence` ([rule](../../shared/rules/shortcut-markers.md)).
 
 `finder` and `defect_class` come from the enums in [`scripts/fingerprint.mjs`](../scripts/fingerprint.mjs) so the fingerprint is buildable:
 
