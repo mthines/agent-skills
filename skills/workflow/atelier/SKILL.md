@@ -190,7 +190,7 @@ A Build that fails before a PR exists has nowhere to record: skip step 1, write 
 The build suffix, appended verbatim to every request:
 
 ```text
-Atelier merges this PR. A user-visible change must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider (format: deployment-verify rules/contract.md).
+Atelier merges this PR. A user-visible change must sit behind a feature flag (reuse an existing flag when one fits), and the PR body must carry a deployment-verify:v1 contract naming it: draft it with `node <deployment-verify>/scripts/tick.mjs --draft-contract --pr <n>`, then fill "flag": {"key": "<flag>"}, adding "provider" and "cohort" only when .agents/aw/release.yml declares a provider, and no "cohort" for a `rollout: pr` provider (format: deployment-verify rules/contract.md).
 ```
 
 Under `--unattended` add the line `No human is present: run interview with --non-interactive; a blocking question ends the run.`
@@ -413,10 +413,11 @@ It is display-only: `--next` stops at the merge, so Deliver also reports through
 ## Step 4 — Stop
 
 Atelier never flips a flag and never runs `deployment-verify`.
-After a merge, put the next human step under `Needs you:`:
+After a merge, put the next human step under `Needs you:`, from the first row that matches:
 
 | The merged PR | `Needs you:` |
 | --- | --- |
+| has a contract whose provider `release.yml` declares `rollout: pr` | `open a follow-up PR that only flips <flag> in <the provider's flip>, with a contract that has no flag, then run /deployment-verify <flip-pr> to measure it before/after` |
 | has a contract whose flag provider `release.yml` declares | `run /deployment-verify <pr> to roll <flag> out; when release.yml sets hold_after, the rollout waits there for /deployment-verify approve <pr> (tick.mjs --approve) or override <pr> (--override)` |
 | has a contract the gate passed with the no-provider warning | `flip <flag> on by hand — deployment-verify cannot step it here (no provider)` |
 | has no user-visible diff | `nothing — not user-visible` |

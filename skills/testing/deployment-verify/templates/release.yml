@@ -28,7 +28,7 @@ flags:
     # Placeholders: {flag} {value} {env}. `propagation_seconds` = how long a change takes to reach traffic.
     - name: example
       covers: ["apps/web/**"]           # changed paths this provider's flags gate
-      rollout: percent                  # percent | boolean (on/off only → steps collapse to [100])
+      rollout: percent                  # percent | boolean | pr — boolean: on/off only, steps [100]; pr: a follow-up PR flips it (no set; add flip: <file>)
       set: ".agents/aw/scripts/flags/set.sh {flag} {value} {env}"
       propagation_seconds: 0
 pipeline:                               # atelier's Deliver stage (rules/config.md § pipeline); off when absent

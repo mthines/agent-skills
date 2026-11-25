@@ -73,11 +73,34 @@ detect: { attribute: vercel.sha, equals: merge_sha }
 | --- | --- |
 | `name` | What a contract's `flag.provider` names |
 | `covers` | Globs of the paths whose flags this provider serves; `setup` uses them to suggest a provider per change |
-| `rollout` | `percent` — `set` takes a percentage; `boolean` — only on or off, so steps collapse to `[100]` |
-| `set` | Command; `{flag}`, `{value}` (a percent, or `true`/`false` for `boolean`), `{env}`. Idempotent, non-zero exit on failure |
+| `rollout` | `percent` — `set` takes a percentage; `boolean` — only on or off, so steps collapse to `[100]`; `pr` — a follow-up PR flips the flag, so there is no `set` |
+| `set` | Command; `{flag}`, `{value}` (a percent, or `true`/`false` for `boolean`), `{env}`. Idempotent, non-zero exit on failure. Absent for `pr` |
+| `flip` | `pr` only, required: the file (or list of files) the flip PR edits; `release.yml` fails to load without it |
 | `propagation_seconds` | How long a change takes to reach traffic (a cache TTL, a redeploy) |
 
 A provider that needs a redeploy to change a value (an environment variable read at start) is `rollout: boolean` with `propagation_seconds` set to a deploy's length.
+
+A flag compiled into the code (a repo-local registry no command can change at runtime) is `rollout: pr`:
+
+1. The feature PR ships the change with the flag off; its contract names the flag and the `pr` provider, and needs no `cohort` (no traffic is split).
+2. `tick.mjs` on the feature PR stops before step 1 with `STOPPED — flag <key> is flipped by a follow-up PR …`; nothing is set.
+3. A human opens a follow-up PR that only changes the flag's value in `flip`, with a contract that has no `flag`.
+4. `/deployment-verify <flip-pr>` measures that PR before and after its deploy ([`loop.md` § No flag](./loop.md#no-flag--before-and-after)).
+
+No script opens the flip PR: turning a feature on for everyone is a human's decision.
+**Why:** [`../references/design.md` § Flags a PR flips](../references/design.md#flags-a-pr-flips).
+
+```yaml
+# ✗ Wrong — a set command that edits the registry and cuts a release: "idempotent and instant" is a lie, and nobody reviews the flip
+- name: registry
+  rollout: boolean
+  set: "scripts/flip-and-release.sh {flag} {value}"
+# ✓ Right — the flip is its own reviewed PR, measured before/after its deploy
+- name: registry
+  covers: ["Sources/**"]
+  rollout: pr
+  flip: Sources/App/FeatureFlagRegistry.swift
+```
 Never call a provider's API directly from the skill; only through `set`.
 
 ## Pipeline
@@ -126,6 +149,7 @@ promotion: { min_agree_streak: 5, min_review_seconds: 120, risk_classes: [ui], m
 
 1. Copy the template when the file is absent.
 2. Detect flag systems: OpenFeature (`@openfeature/`, `open-feature/go-sdk`), the Vercel Flags SDK (`flags/next`, `@vercel/flags`), PostHog (`posthog-node`, `posthog-js`), LaunchDarkly, Unleash, a repo-local registry. Write one provider per system and ask for its `set` command; never invent one.
+   A repo-local registry with no command that changes it at runtime → offer `rollout: pr` first (Recommended), with `flip` set to the registry file; then "I have a `set` command"; then `providers: []`.
    No flag system found → write `providers: []` and say so: a human flips flags, and `atelier` reads it as decided, not missing.
 3. Keep a `production` environment, even in a repo with no hosted service (`deploy: { detect: manual }`, `traffic: real`): a contract with no `env` loads `production`, and `atelier`'s merge gate refuses every flag contract against a `release.yml` without it.
    With a hosted service, find the deploy attribute: query one recent production span of each service and offer the attribute whose value matches a recent `main` commit.

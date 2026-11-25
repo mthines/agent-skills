@@ -134,22 +134,25 @@ export async function flagContract(body, repoDir = process.cwd()) {
 		config = { flags: { providers: [] }, thresholds: DEFAULT_THRESHOLDS };
 	}
 	const providers = (config?.flags?.providers || []).map((p) => p.name).filter(Boolean);
-	if (error) return { has: false, missing: error.startsWith("no contract") ? "contract" : "valid-json", detail: error, providers };
-	if (!parsed) return { has: false, missing: "valid-json", detail: "the contract is not a JSON object", providers };
+	// A `rollout: pr` provider splits no traffic, so a refusal asks for a cohort only when another provider could.
+	const cohort = (config?.flags?.providers || []).some((p) => p?.name && p.rollout !== "pr");
+	const out = (r) => ({ ...r, providers, cohort });
+	if (error) return out({ has: false, missing: error.startsWith("no contract") ? "contract" : "valid-json", detail: error });
+	if (!parsed) return out({ has: false, missing: "valid-json", detail: "the contract is not a JSON object" });
 	const key = contract.flag?.key;
-	if (typeof key !== "string" || !key.trim()) return { has: false, missing: "flag", detail: "the contract names no flag", providers };
+	if (typeof key !== "string" || !key.trim()) return out({ has: false, missing: "flag", detail: "the contract names no flag" });
 	const steppable = providers.includes(contract.flag.provider);
 	// A provider name release.yml does not declare, in a repo that declares some, is a typo, not "no provider":
 	// passing it would silently drop the stepped rollout the author asked for.
 	if (!steppable && providers.length && contract.flag.provider) {
-		return { has: false, missing: "invalid", detail: `unknown provider ${contract.flag.provider} (release.yml declares ${providers.join(", ")})`, providers };
+		return out({ has: false, missing: "invalid", detail: `unknown provider ${contract.flag.provider} (release.yml declares ${providers.join(", ")})` });
 	}
 	// No provider to step it: validate the rest against a stand-in provider, and a cohort nobody can split on is not asked for.
 	const checked = steppable ? contract : { ...contract, cohort: contract.cohort ?? { unused: "no provider" } };
 	const checkedConfig = steppable ? config : { ...config, flags: { ...config.flags, providers: [{ name: contract.flag.provider }] } };
 	const invalid = validateContract(checked, checkedConfig);
-	if (invalid) return { has: false, missing: "invalid", detail: invalid, providers };
-	return { has: true, flag: key, warning: steppable ? null : NO_PROVIDER_WARNING, providers };
+	if (invalid) return out({ has: false, missing: "invalid", detail: invalid });
+	return out({ has: true, flag: key, warning: steppable ? null : NO_PROVIDER_WARNING });
 }
 
 export function decide({ isUI, contract }) {
@@ -167,7 +170,7 @@ export function decide({ isUI, contract }) {
 	// Name a provider only when release.yml declares one: never send the author after one that does not exist.
 	const providers = contract.providers || [];
 	const flagLine = providers.length
-		? `Fill "service" and "root_spans", add "flag": {"key": "<flag>", "provider": "${providers.join('" | "')}"} and "cohort",`
+		? `Fill "service" and "root_spans", add "flag": {"key": "<flag>", "provider": "${providers.join('" | "')}"}${contract.cohort === false ? "" : ' and "cohort"'},`
 		: 'Fill "service" and "root_spans", add "flag": {"key": "<flag>"} (release.yml declares no flag provider, so a human flips it),';
 	return {
 		decision: "refuse",
@@ -297,6 +300,14 @@ async function selfTest() {
 	t("a contract naming no provider passes with the warning where providers exist", r.decision === "pass" && r.warning === NO_PROVIDER_WARNING, JSON.stringify(r));
 	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: withProv });
 	t("with a provider declared, the refusal names it", /"provider": "posthog"/.test(r.how), r.how);
+	// rollout: pr — a follow-up PR flips the flag: a declared provider, so no warning, and no cohort to split on.
+	const prProv = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	mkdirSync(join(prProv, ".agents", "aw"), { recursive: true });
+	writeFileSync(join(prProv, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\nflags:\n  providers:\n    - name: registry\n      rollout: pr\n      flip: src/flags.ts\n");
+	r = await gate({ files: ["src/components/Header.tsx"], body: NOCOHORT_BODY.replace('"newHeader"', '"newHeader", "provider": "registry"'), repoDir: prProv });
+	t("rollout: pr passes a flag contract with no cohort and no warning", r.decision === "pass" && r.has_flag_contract && r.warning === null, JSON.stringify(r));
+	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: prProv });
+	t("rollout: pr only: the refusal names the provider and asks for no cohort", /"provider": "registry"\},/.test(r.how) && !/cohort/.test(r.how), r.how);
 	// CI at the head (F17/F18): a contract that passes still merges only on CI that ran green.
 	const page = (nodes) => JSON.stringify({ data: { repository: { pullRequest: { headRefOid: "h1", commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { pageInfo: { hasNextPage: false }, nodes } } } }] } } } } });
 	const cr = (name, conclusion, extra = {}) => ({ __typename: "CheckRun", name, status: "COMPLETED", conclusion, isRequired: false, checkSuite: { app: { slug: "github-actions" } }, ...extra });

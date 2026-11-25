@@ -92,6 +92,13 @@ The signal is written with `expected_version`, because two ticks or a tick and a
 - D0QL has no percentiles, so the latency rule uses averages.
 - Ingestion lags the traffic by tens of seconds, so every measurement waits and, when the skill sent the traffic, checks the count it sent.
 
+## Flags a PR flips
+
+A flag compiled into the code has no runtime switch, so a `set` command for it would edit the registry and cut a release: neither instant nor reviewed.
+Before `rollout: pr`, setup offered only that command or `providers: []`, and the second leaves the flip unmeasured.
+A PR that only flips the flag is a deploy like any other, so the no-flag before/after loop measures it without new machinery; stepping (1 → 100 %) is lost, which a compiled flag cannot do anyway.
+No script opens that PR: turning a feature on for everyone is the decision `hold_after` exists to give a human, and the flip PR keeps it with a reviewer.
+
 ## Not covered
 
 - A soak window after 100 %: the rollout ends at 100 % PASS and says so.

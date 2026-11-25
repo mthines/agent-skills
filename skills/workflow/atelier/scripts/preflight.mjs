@@ -293,6 +293,7 @@ async function selfTest() {
 	const { t, done } = makeTester("preflight");
 	t("no release.yml → a gap that says a human flips the flag", !flagCheck({ present: false }).ok && /human flips/.test(flagCheck({ present: false }).cannot));
 	t("providers: [] → a gap", !flagCheck({ present: true, config: { flags: { providers: [] } } }).ok);
+	t("rollout: pr → ok: a follow-up PR flips the flag", flagCheck({ present: true, config: { flags: { providers: [{ name: "registry", rollout: "pr", flip: "src/flags.ts" }] } } }).ok);
 	const noFlags = flagCheck({ present: true, config: { environments: { production: {} } } });
 	t("✗ no flags block is not a declared none: setup delegates it", noFlags.value === "none (release.yml has no flags.providers)" && planLines(setupPlan([noFlags])).some((l) => /deployment-verify.*flag-provider/.test(l)), noFlags.value);
 	t("a declared provider → ok", flagCheck({ present: true, config: { flags: { providers: [{ name: "launchdarkly" }] } } }).value === "launchdarkly");
