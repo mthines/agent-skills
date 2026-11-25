@@ -13,7 +13,7 @@
 // Exit 0 on success (an empty ledger included), 2 on a git or usage error.
 
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,12 +111,13 @@ function selfTest() {
 	process.exit(failed ? 1 : 0);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+// realpath both sides: /polish debt runs this through the installed skill symlink.
+if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
 	const args = process.argv.slice(2);
 	if (args.includes("--self-test")) selfTest();
 	const i = args.indexOf("--marker");
 	const word = i >= 0 ? args[i + 1] : "shortcut";
-	if (!word || !/^[\w-]+$/.test(word)) { console.error("shortcut-ledger: --marker needs a word"); process.exit(2); }
+	if (!word || word.startsWith("-") || !/^[\w-]+$/.test(word)) { console.error("shortcut-ledger: --marker needs a word"); process.exit(2); }
 	try {
 		const rows = ledger(process.cwd(), word);
 		console.log(args.includes("--json") ? JSON.stringify(rows, null, 2) : render(rows));
