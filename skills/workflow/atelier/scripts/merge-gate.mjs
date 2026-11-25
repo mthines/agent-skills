@@ -297,6 +297,12 @@ async function selfTest() {
 	t("a contract naming no provider passes with the warning where providers exist", r.decision === "pass" && r.warning === NO_PROVIDER_WARNING, JSON.stringify(r));
 	r = await gate({ files: ["src/components/Header.tsx"], body: "no contract", repoDir: withProv });
 	t("with a provider declared, the refusal names it", /"provider": "posthog"/.test(r.how), r.how);
+	// rollout: pr — a follow-up PR flips the flag: a declared provider, so no warning, and no cohort to split on.
+	const prProv = mkdtempSync(join(tmpdir(), "atelier-gate-"));
+	mkdirSync(join(prProv, ".agents", "aw"), { recursive: true });
+	writeFileSync(join(prProv, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\nflags:\n  providers:\n    - name: registry\n      rollout: pr\n      flip: src/flags.ts\n");
+	r = await gate({ files: ["src/components/Header.tsx"], body: NOCOHORT_BODY.replace('"newHeader"', '"newHeader", "provider": "registry"'), repoDir: prProv });
+	t("rollout: pr passes a flag contract with no cohort and no warning", r.decision === "pass" && r.has_flag_contract && r.warning === null, JSON.stringify(r));
 	// CI at the head (F17/F18): a contract that passes still merges only on CI that ran green.
 	const page = (nodes) => JSON.stringify({ data: { repository: { pullRequest: { headRefOid: "h1", commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { pageInfo: { hasNextPage: false }, nodes } } } }] } } } } });
 	const cr = (name, conclusion, extra = {}) => ({ __typename: "CheckRun", name, status: "COMPLETED", conclusion, isRequired: false, checkSuite: { app: { slug: "github-actions" } }, ...extra });

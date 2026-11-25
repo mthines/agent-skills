@@ -67,7 +67,7 @@ export function loadConfig(env, { cwd = process.cwd(), slug = null } = {}) {
 	const environment = merged.environments?.[env];
 	if (!environment) throw new Error(`release.yml has no environment "${env}"`);
 	const policies = { ...(overlay.policies || {}), ...(repo.policies || {}) };
-	const holdError = checkHoldAfter(merged);
+	const holdError = checkHoldAfter(merged) || checkProviders(merged);
 	if (holdError) throw new Error(holdError);
 	return { ...merged, env, environment, policies, thresholds: { ...DEFAULT_THRESHOLDS, ...(merged.thresholds || {}) } };
 }
@@ -77,6 +77,16 @@ export function checkHoldAfter(config) {
 	if (config.hold_after === undefined || config.hold_after === null) return null;
 	const steps = config.steps || [1, 10, 50, 100];
 	if (!steps.slice(0, -1).includes(config.hold_after)) return `release.yml hold_after: ${config.hold_after} must be one of steps ${JSON.stringify(steps.slice(0, -1))}`;
+	return null;
+}
+
+// A `rollout: pr` provider has no `set`: a follow-up PR flips the flag, and `flip` names the file(s) that PR edits.
+export function checkProviders(config) {
+	for (const p of config.flags?.providers || []) {
+		if (p?.rollout !== "pr") continue;
+		const flip = [].concat(p.flip ?? []).filter((f) => typeof f === "string" && f.trim());
+		if (!flip.length) return `release.yml provider ${p.name}: rollout: pr needs flip: <the file a flip PR edits>`;
+	}
 	return null;
 }
 
@@ -218,8 +228,10 @@ async function planCriteriaOf(planMd) {
 }
 
 export function validateContract(contract, config) {
-	// A cohort only exists when a flag splits traffic; a no-flag contract is measured before/after the deploy.
-	for (const k of contract.flag ? ["service", "root_spans", "cohort"] : ["service", "root_spans"]) if (!contract[k]) return `contract is missing "${k}"`;
+	// A cohort only exists when a flag splits traffic; a no-flag contract, and a flag a follow-up PR flips
+	// (`rollout: pr`), are measured before/after a deploy.
+	const split = contract.flag && providerFor(contract, config)?.rollout !== "pr";
+	for (const k of split ? ["service", "root_spans", "cohort"] : ["service", "root_spans"]) if (!contract[k]) return `contract is missing "${k}"`;
 	if (contract.flag && !providerFor(contract, config)) return `unknown provider ${contract.flag.provider}`;
 	for (const [k, v] of Object.entries(contract.thresholds || {})) {
 		const base = config.thresholds[k];
@@ -227,6 +239,14 @@ export function validateContract(contract, config) {
 		if ((k.startsWith("max_") && v > base) || (k.startsWith("min_") && v < base)) return `contract loosens ${k} — thresholds may only tighten`;
 	}
 	return null;
+}
+
+// A `rollout: pr` flag is never set from here: the feature PR stops before step 1 and names the flip PR,
+// which carries a contract with no `flag` and is measured before/after its own deploy (rules/loop.md § No flag).
+export function flipFollowUp(contract, config) {
+	const p = providerFor(contract, config);
+	if (!contract.flag || p?.rollout !== "pr") return null;
+	return `flag ${contract.flag.key} is flipped by a follow-up PR (provider ${p.name}, rollout: pr): open a PR that only flips it in ${[].concat(p.flip).join(", ")}, give it a contract with no "flag", then run /deployment-verify <flip-pr> to measure it before/after`;
 }
 
 // A rollout that has not reached step 1 yet: no state, or still waiting for its deploy or baseline (flag never set on).
@@ -249,7 +269,7 @@ function providerFor(contract, config) {
 
 function stepsFor(contract, config) {
 	const p = providerFor(contract, config);
-	if (!contract.flag || p?.rollout === "boolean") return [100];
+	if (!contract.flag || p?.rollout === "boolean" || p?.rollout === "pr") return [100];
 	return contract.steps || config.steps || [1, 10, 50, 100];
 }
 
@@ -738,7 +758,7 @@ function realIo({ config, contract, pr = null, slug = null }) {
 	return {
 		now: () => Date.now(),
 		sql: (query, opts) => backend.sql(query, opts),
-		setFlag: async (value) => provider && sh(fill(provider.set, { flag: contract.flag.key, value, env: config.env })),
+		setFlag: async (value) => provider && provider.rollout !== "pr" && sh(fill(provider.set, { flag: contract.flag.key, value, env: config.env })),
 		sendTraffic: async (n) => sh(fill(env.traffic, { n })),
 		sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
 		platformRollback: async () => {
@@ -1038,6 +1058,20 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} contract requires cohort only with a flag`);
 	}
+	// rollout: pr — a follow-up PR flips the flag: no cohort, one step, never set; the feature PR stops before step 1.
+	{
+		const prConfig = { ...base, flags: { providers: [...base.flags.providers, { name: "registry", rollout: "pr", flip: "src/flags.ts" }] } };
+		const c = { service: "api", root_spans: ["GET /x"], flag: { key: "f", provider: "registry" } };
+		const ok = validateContract(c, prConfig) === null
+			&& /follow-up PR .*src\/flags\.ts.*\/deployment-verify <flip-pr>/.test(flipFollowUp(c, prConfig) || "")
+			&& flipFollowUp({ ...contract }, prConfig) === null && flipFollowUp({ service: "api", root_spans: ["GET /x"] }, prConfig) === null
+			&& JSON.stringify(stepsFor(c, prConfig)) === "[100]"
+			&& /missing "cohort"/.test(validateContract({ ...c, flag: { key: "f", provider: "sim" } }, prConfig) || "")
+			&& /rollout: pr needs flip/.test(checkProviders({ flags: { providers: [{ name: "registry", rollout: "pr" }] } }) || "")
+			&& checkProviders(prConfig) === null && checkProviders({ flags: { providers: [{ name: "x", rollout: "percent" }] } }) === null;
+		if (!ok) failed++;
+		console.log(`${ok ? "ok  " : "FAIL"} rollout: pr needs flip, no cohort, one step, and stops the feature PR naming the flip PR`);
+	}
 	// Criteria on the PR (aw-verify's `intent` region), the visible-collapsed contract, and the draft contract.
 	{
 		const region = "<details><summary>📋 Acceptance criteria</summary>\n\n- AC-1 [ui:/settings] Saving shows a toast\n- AC-2 [api:PUT /api/x] 400 for an empty name\n- AC-3 [api:GET /api/y] lists views\n- G-1 [guardrail] Keep unchanged: the API shape\n\n</details>";
@@ -1281,7 +1315,7 @@ async function main() {
 		const contract = JSON.parse(readFileSync(a.contract, "utf8"));
 		const cfg = configFor(contract);
 		const local = localStore(a.local);
-		const err = validateContract(contract, cfg) || (holdCheckDue(local.read()) ? checkHoldReachable(contract, cfg) : null);
+		const err = validateContract(contract, cfg) || flipFollowUp(contract, cfg) || (holdCheckDue(local.read()) ? checkHoldReachable(contract, cfg) : null);
 		if (err) throw new Error(err);
 		const s = await runOne({ store: local, contract, config: cfg, deployedAt: a["deployed-at"], loop: !!a.run, decision, slug });
 		console.log(renderReport(s, contract, null).split("\n").slice(2, -2).join("\n"));
@@ -1308,7 +1342,7 @@ async function main() {
 					invalid = e.message;
 				}
 			}
-			invalid ||= validateContract(contract, cfg) || (holdCheckDue(store.read()) ? checkHoldReachable(contract, cfg) : null);
+			invalid ||= validateContract(contract, cfg) || flipFollowUp(contract, cfg) || (holdCheckDue(store.read()) ? checkHoldReachable(contract, cfg) : null);
 			if (invalid) {
 				const s = { phase: "done", outcome: "STOPPED", reason: invalid, env: cfg.env, steps: [] };
 				store.write(renderReport(s, contract || {}, store.pr));
