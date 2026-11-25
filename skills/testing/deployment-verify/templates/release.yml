@@ -32,7 +32,7 @@ flags:
       propagation_seconds: 0
 pipeline:                               # atelier's Deliver stage (rules/config.md § pipeline); off when absent
   workflow: ""                          # the default-branch workflow to read, by name; empty = every run of the merge commit
-  required_jobs: []                     # job names that must conclude success; a skipped one is a failure (e.g. [test, version, release])
+  required_jobs: []                     # job names that must conclude success; only jobs that run on every merge; a skipped one is a failure (e.g. [test])
   timeout_minutes: 20                   # how long to wait for the run to finish
 rollback:
   # Used only when a change has no flag. Tried in order; each must be safe to run twice.

@@ -85,14 +85,14 @@ Optional; absent, Deliver reads every run of the merge commit and requires no jo
 | Field | Meaning |
 | --- | --- |
 | `workflow` | The workflow's `name:`; only its runs count. Empty reads every run started for the merge commit |
-| `required_jobs` | Job names that must conclude `success`. A required job that is skipped or missing is red: a skipped release job means the step before it failed |
+| `required_jobs` | Job names that must conclude `success`. Name only jobs that run on every merge: a required job that is skipped or missing is red, and a job gated on a release condition also skips when nothing is due. A failed job is red without being listed |
 | `timeout_minutes` | How long Deliver waits for the run to finish (default 20; 0 reads once) |
 
 ```yaml
-# ✗ Wrong — release is skipped on a failed version step, and nothing names it, so the run reads green
-pipeline: { workflow: CI }
-# ✓ Right — the jobs that must run on main are named
-pipeline: { workflow: CI, required_jobs: [test, version, release-macos], timeout_minutes: 30 }
+# ✗ Wrong — release-macos runs only when a release is due, so it skips (and reads red) on a merge that releases nothing
+pipeline: { workflow: CI, required_jobs: [test, release-macos] }
+# ✓ Right — only a job that runs on every merge is named; a failed version or release job is red on its own
+pipeline: { workflow: CI, required_jobs: [test], timeout_minutes: 30 }
 ```
 
 ## Hold and promotion
