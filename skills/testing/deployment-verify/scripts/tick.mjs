@@ -1221,7 +1221,7 @@ async function selfTest() {
 		if (!ok) failed++;
 		console.log(`${ok ? "ok  " : "FAIL"} dash0 auth from telemetry.mcp_server, env override, missing server`);
 	}
-	const total = 38;
+	const total = 39;
 	console.log(failed ? `${failed}/${total} failed` : `${total}/${total} passed`);
 	process.exit(failed ? 1 : 0);
 }
