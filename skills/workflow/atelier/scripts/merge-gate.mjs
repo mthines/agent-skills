@@ -55,10 +55,11 @@ export async function ciFromRollup(json) {
 }
 
 // The proof half: aw-verify's own end-of-run gate over the PR body and its comments (newest first).
-// Returns the problems `verify-comment.mjs --check` would print; [] means `report complete`.
+// Returns the problems `verify-comment.mjs --check --proven` would print; [] means `report complete`.
+// --proven: a complete report can still say ❌ Not verified or ⛔ Blocked, which a merge must refuse.
 export async function proofCheck({ body, comments = [], ui = false }) {
-	const { checkReport } = await import(pathToFileURL(join(skillDir("aw-verify", "testing", "AW_VERIFY_DIR"), "scripts", "verify-comment.mjs")).href);
-	return checkReport(body, comments, { ui });
+	const { checkReport, provenProblems } = await import(pathToFileURL(join(skillDir("aw-verify", "testing", "AW_VERIFY_DIR"), "scripts", "verify-comment.mjs")).href);
+	return [...checkReport(body, comments, { ui }), ...provenProblems(body, comments)];
 }
 
 // A merge needs proof that every acceptance criterion holds: the PR's verify report, ticked, in the template shape.
@@ -70,7 +71,7 @@ export function decideProof(problems, { ui = false } = {}) {
 		reason: `no proof the criteria hold: ${problems[0]}${more}`,
 		how: [
 			`Record this on Ready (failed), then run /aw-verify on <pr> (${ui ? "/aw-verify run preview <pr>: a UI diff" : "/aw-verify run checks <pr>: no UI file, so recorded test runs prove each criterion"}),`,
-			`until verify-comment.mjs --pr <pr> --check${ui ? " --ui" : ""} prints \`report complete\`, then re-run /atelier <pr>. What the report lacks:`,
+			`until verify-comment.mjs --pr <pr> --check${ui ? " --ui" : ""} --proven prints \`report complete\`, then re-run /atelier <pr>. What the report lacks:`,
 			...problems.map((p) => `  - ${p}`),
 		].join("\n"),
 		proof: problems,
@@ -329,6 +330,11 @@ async function selfTest() {
 	t("green CI with a complete checks-only report passes", r.decision === "pass" && r.refused_by === null && r.proof === "report complete" && /every criterion proven/.test(r.reason), JSON.stringify(r));
 	r = await gate({ files: ["docs/guide.md"], body: "see the comment", repoDir: empty, ci: greenCi, comments: ["unrelated", PROOF_BODY.slice(PROOF_BODY.indexOf("<!-- verify:report -->"))] });
 	t("a verify report in a comment counts", r.decision === "pass", JSON.stringify(r));
+	const { checksReport, withBlock, splice } = await import(pathToFileURL(join(skillDir("aw-verify", "testing", "AW_VERIFY_DIR"), "scripts", "verify-comment.mjs")).href);
+	const fx = (f) => readFileSync(join(skillDir("aw-verify", "testing", "AW_VERIFY_DIR"), "scripts", "fixtures", "checks", f), "utf8");
+	const failed = checksReport(fx("plan.md"), JSON.parse(fx("runs-fail.json")));
+	r = await gate({ files: ["docs/guide.md"], body: withBlock("t", splice(splice("", "intent", failed.intent), "aggregate", failed.report)), repoDir: empty, ci: greenCi, comments: [] });
+	t("a complete but ❌ Not verified report refuses on proof", r.refused_by === "proof" && /AC-2/.test(r.reason) && r.proof.some((p) => /Not verified/.test(p)), JSON.stringify(r));
 	r = await gate({ files: ["docs/guide.md"], body: PROOF_BODY.replace(/✅&nbsp;AC‑2/, "⬜&nbsp;AC‑2"), repoDir: empty, ci: greenCi, comments: [] });
 	t("a criterion left ⬜ refuses on proof, naming it", r.refused_by === "proof" && /AC-2/.test(r.reason), JSON.stringify(r));
 	r = await gate({ files: ["src/components/Header.tsx"], body: FLAG_BODY + PROOF_BODY, repoDir: empty, ci: greenCi, comments: [] });

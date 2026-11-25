@@ -23,7 +23,8 @@
 //     [--to body [--seed <comment.md>]] [--notice-out <file> --comment-url <url>]
 //   node verify-comment.mjs --pr <n|url> --section intent --marks '{"AC-1":{"status":"✅"},"AC-2":{"prod":true}}'
 //     changes only the leading status / 🚀 of existing criteria lines (a JSON string or a file); never their text
-//   node verify-comment.mjs --pr <n|url> --check [--ui]   the end-of-run gate: exit 1 lists what the PR report lacks (intent ticked, aggregate in the template shape, ui spec block)
+//   node verify-comment.mjs --pr <n|url> --check [--ui] [--proven]   (--proven, the merge's gate: also refuse a ❌ criterion or a ❌/⛔ verdict)
+//   the end-of-run gate: exit 1 lists what the PR report lacks (intent ticked, aggregate in the template shape, ui spec block)
 //   node verify-comment.mjs --pr <n|url> --from-plan <plan.md> [--statuses <json|file>]
 //     publishes an `/aw` brief's criteria as the intent region (rows ⬜, or ticked from run-checks.mjs --statuses);
 //     --print renders it and exits with no GitHub call; exit 3 = the brief has no AC (nothing to publish)
@@ -293,10 +294,13 @@ const BEFORE_MARK = { fail: "fails (catches it)", pass: "⚠️ passes (does not
 export function checksReport(planMd, runs, { head = null, updated = "{{UPDATED}}" } = {}) {
   const { acs } = planCriteria(planMd);
   if (!acs.length) throw Object.assign(new Error("no AC in the brief"), { code: 3 });
-  const norm = Object.fromEntries(Object.entries(runs || {}).map(([id, r]) => [id, typeof r === "string" ? { after: r } : r || {}]));
+  // `pending` (run-checks.mjs --statuses for a check not yet run) is no run: the criterion stays ⬜.
+  const norm = Object.fromEntries(Object.entries(runs || {}).map(([id, r]) => [id, typeof r === "string" ? { after: r } : r || {}]).filter(([, r]) => r.after !== "pending"));
   for (const [id, r] of Object.entries(norm)) {
     if (!acs.some((c) => c.id === id)) throw new Error(`refused: the brief has no criterion ${id}`);
-    if (!["pass", "fail", "unsatisfiable"].includes(r.after)) throw new Error(`refused: ${id} needs "after": pass | fail | unsatisfiable, got ${JSON.stringify(r.after)}`);
+    if (!["pass", "fail", "unsatisfiable"].includes(r.after)) throw new Error(`refused: ${id} needs "after": pass | fail | unsatisfiable | pending, got ${JSON.stringify(r.after)}`);
+    const local = localPathLine(String(r.evidence ?? "")) || localPathLine(String(r.command ?? ""));
+    if (local) throw new Error(`refused: ${id}'s evidence or command names a local path (${local}); quote the result, not where it ran`);
   }
   const statuses = Object.fromEntries(acs.filter((c) => norm[c.id]).map((c) => [c.id, norm[c.id].after]));
   const ids = (pred) => acs.filter((c) => pred(norm[c.id])).map((c) => c.id);
@@ -628,6 +632,18 @@ export function checkReport(prBody, comments = [], { ui = false } = {}) {
     setMarks: "set them with --marks",
   });
   if (ui && !/<!-- (?:ui-verify:v2|ui-verify:v1|preview-spec:v1) -->/.test(prBody || "")) problems.push("no ui-verify spec block in the PR description (ui-verify author, or lift specs.md)");
+  return problems;
+}
+
+// The merge's question, stricter than a complete report: every AC holds. A complete report can still say
+// `❌ Not verified` or `⛔ Blocked`, which `--check` accepts (the run finished) and a merge must not.
+export function provenProblems(prBody, comments = []) {
+  const regions = parseRegions(bodyBlock(prBody) || comments.find((c) => c.startsWith(MARKER)) || "");
+  const failed = parseIntent(regions.get("intent") || "").filter((c) => c.id.startsWith("AC-") && c.status === "❌").map((c) => c.id);
+  const first = (regions.get("aggregate") || "").split("\n").find((l) => l.trim()) || "";
+  const problems = [];
+  if (failed.length) problems.push(`criteria failed their proof: ${failed.join(", ")}`);
+  if (/^##\s+(?:❌|⛔)/.test(first)) problems.push(`the verdict is "${first.replace(/^##\s+/, "").slice(0, 60)}"; a merge needs ✅ Verified or ⚠️ Verified with open items`);
   return problems;
 }
 
@@ -998,6 +1014,15 @@ function selfTest() {
     threw = "";
     try { checksReport("## Task\nnothing", {}); } catch (e) { threw = String(e.code); }
     assert(threw === "3", "checks-only: a brief with no AC exits 3");
+    const pend = checksReport(plan, { "AC-1": "pass", "AC-2": "pending" });
+    assert(pend.verdict === "⛔ Blocked" && parseIntent(pend.intent).find((c) => c.id === "AC-2").status === "⬜", "checks-only: run-checks' pending is no run (⬜, ⛔)");
+    threw = "";
+    try { checksReport(plan, { "AC-1": { after: "fail", evidence: "wrote /tmp/out.wav" } }); } catch (e) { threw = e.message; }
+    assert(/local path/.test(threw), "checks-only: evidence naming a local path is refused before anything is posted");
+    const body = (r) => withBlock("t", splice(splice("", "intent", r.intent), "aggregate", r.report));
+    assert(checkReport(body(bad)).length === 0 && provenProblems(body(bad)).some((p) => p.includes("AC-2")) && provenProblems(body(bad)).some((p) => p.includes("Not verified")), "proven: a complete ❌ report passes --check but not --proven");
+    assert(provenProblems(body(part)).some((p) => p.includes("Blocked")), "proven: a ⛔ verdict is not proven");
+    assert(provenProblems(body(ok)).length === 0 && provenProblems(body(skip)).length === 0, "proven: ✅ and ⚠️ are proven");
     }
     assert(!checkLocal({ intent, report }).some((p) => p.includes("AC-2")), "local gate: an api: AC ⏭️ (tests-only) under ✅ stays allowed");
     const marked = applyMarks(fx("open", "intent.md"), { "AC-2": { status: "✅" } });
@@ -1034,7 +1059,7 @@ function selfTest() {
 
 // Every flag the CLI reads; an unknown one exits 1, so a renamed flag fails loudly instead of being ignored.
 export const FLAGS = ["--pr", "--repo", "--section", "--file", "--replace-all", "--to", "--dry-run", "--existing", "--seed",
-  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local", "--checks"];
+  "--head", "--notice-out", "--comment-url", "--marks", "--from-plan", "--statuses", "--print", "--self-test", "--check", "--ui", "--no-upload", "--local", "--checks", "--proven"];
 const args = process.argv.slice(2);
 const opt = (k) => { const i = args.indexOf(k); return i === -1 ? undefined : args[i + 1]; };
 const has = (k) => args.includes(k);
@@ -1090,9 +1115,9 @@ else if (isMain) {
       const slug = opt("--repo") || checkPr.match(/github\.com\/([^/]+\/[^/]+)\/pull\//)?.[1] || gh(["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"]);
       const body = Buffer.from(gh(["api", `repos/${slug}/pulls/${num}`, "--jq", ".body // \"\" | @base64"]).trim(), "base64").toString("utf8");
       const comments = gh(["api", `repos/${slug}/issues/${num}/comments`, "--paginate", "--jq", ".[] | (.body | @base64)"]).split("\n").filter(Boolean).map((b) => Buffer.from(b, "base64").toString("utf8")).reverse();
-      const problems = checkReport(body, comments, { ui: has("--ui") });
+      const problems = [...checkReport(body, comments, { ui: has("--ui") }), ...(has("--proven") ? provenProblems(body, comments) : [])];
       if (problems.length) { console.error(`verify-comment: the PR's report is incomplete:\n${problems.map((p) => `  - ${p}`).join("\n")}`); process.exit(1); }
-      console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : ""));
+      console.log("report complete: intent region ticked, aggregate in the template shape" + (has("--ui") ? ", ui-verify spec present" : "") + (has("--proven") ? ", every criterion proven" : ""));
       process.exit(0);
     }
     const fromPlan = opt("--from-plan");

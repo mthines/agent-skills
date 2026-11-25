@@ -41,7 +41,7 @@ Everything goes under `.agent/{branch}/verify/`.
    ```
 
    Record `fail` (the test catches the change), `pass` (it does not), or `n/a` when it cannot run there, with the reason in `evidence`.
-4. **After, on the branch.** Run the same command at the head and record `pass` or `fail`, with the result line it printed (`46 passed`, `1 failed: expected 'C:\Temp'`) as `evidence`.
+4. **After, on the branch.** Run the same command at the head and record `pass` or `fail`, with the result line it printed (`46 passed`, `1 failed: TMP was ignored`) as `evidence`.
    A command that cannot run on this machine at all (a Windows-only path with no mock) is `unsatisfiable`; `evidence` says what ran instead.
 5. **Write** `.agent/{branch}/verify/runs.json` ([below](#runsjson)).
 6. **Render and gate.** `VC="${CLAUDE_SKILL_DIR}/scripts/verify-comment.mjs"`, `D=.agent/<branch>`:
@@ -67,7 +67,7 @@ Everything goes under `.agent/{branch}/verify/`.
 
 `after` is required: `pass`, `fail`, or `unsatisfiable`.
 `before` is `fail`, `pass`, or `n/a`.
-A bare string is `after` alone, which is the shape `run-checks.mjs --statuses` prints, so a Full run's sealed checks can be rendered as they are.
+A bare string is `after` alone, which is the shape `run-checks.mjs --statuses` prints, so a Full run's sealed checks can be rendered as they are; its `pending` is no run (⬜).
 A run for an ID the brief lacks, or an unknown `after`, is refused.
 
 ## Rules
@@ -75,4 +75,5 @@ A run for an ID the brief lacks, or an unknown `after`, is refused.
 - **Run it, then record it.** Every `pass` comes from a command you ran on this head, and `evidence` is copied from its output. A suite exit code is never spread across criteria it did not test.
 - **One format.** Only `verify-comment.mjs` writes the regions. Never hand-write an evidence section in the PR body: nothing reads it, and the gate refuses a PR that has only that.
 - **A pass that also passes on the base proves nothing about the change.** Keep it, but expect `⚠️`. Tighten the test when you can.
+- **Quote the result, not where it ran.** A local path in `command` or `evidence` (`/tmp/…`, `C:\…`) is refused before anything is posted: a reviewer cannot open it.
 - **Mocked platforms are named.** A Windows-only fix proven by a test that mocks `win32` is `pass` with `evidence` saying `mocked win32`, and the report's open items say what a real machine still has to confirm.

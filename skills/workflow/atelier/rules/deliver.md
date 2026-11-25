@@ -49,7 +49,7 @@ The lane exists because the pipeline broke after review, so the fix gets its own
 
 2. Fix lane: a new branch from the updated default branch, `Skill("aw", "fix the default-branch pipeline failure of <pr-url>: <failing job and step, log excerpt> <build suffix>")`, which opens its own PR.
    After a `revert-first` revert, the default branch no longer holds the change, so the request reads `re-apply the change <pr-url> reverted in <revert PR url>, with a fix for <failing job and step, log excerpt> <build suffix>`.
-   Take that PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); then run `pipeline.mjs` against the fix PR.
+   Take that PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, the Ready [proof](../SKILL.md#proof) step, `merge-gate.mjs`); then run `pipeline.mjs` against the fix PR.
 3. A second red result goes to the [revert lane](#revert-lane), as [Order](#order) says; there is no second fix round.
 
 ## Order
@@ -91,6 +91,7 @@ When the policy allows it:
 
    A conflict in `git revert` means later merges touched the same lines: abort (`git revert --abort`), `hold`, and put the revert command under `Needs you:`.
 2. Take the revert PR through Ready and Merge with the same gates as the first one (`prepare`, `ci-ran.mjs`, `merge-gate.mjs`); a revert of a user-visible change touches the same UI files, so `revert-body.md` copies the merged PR's `deployment-verify:v1` contract block when it has one, and a gate refusal is a `hold` with the `MERGE_GATE:` line, never a body edit.
+   The proof half needs the revert's one criterion proven: write `.agent/revert-<n>/plan.md` with `## Acceptance Criteria` and `- [ ] AC-1 — When the revert merges, every file <pr-url> changed shall match its state before <squash sha>.`, run `git diff --exit-code <squash sha>^ HEAD -- <the merged PR's files>` on `main` before the revert (fails) and on the revert branch (passes), and publish it with aw-verify's `verify-comment.mjs --checks '{"AC-1":{"command":"git diff --exit-code <squash sha>^ HEAD -- <files>","before":"fail","after":"pass","evidence":"<n> files restored"}}' --from-plan .agent/revert-<n>/plan.md --pr <revert PR url>`.
    Then run `pipeline.mjs` against the revert PR: green records `proceed`, reason `reverted <revert PR url>`; red ends the run as `failed`: once every merged lane PR is reverted, a pipeline that is still red failed for a reason the change did not cause.
 
 ```text
