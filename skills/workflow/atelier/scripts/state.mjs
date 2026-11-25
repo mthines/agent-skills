@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // state.mjs — atelier's stage machine, stored in one sticky PR comment (rules/state.md).
 //
-// The comment starts with `<!-- atelier:v1 -->`, shows a table a human can read, and
-// carries the machine state on one hidden line `<!-- atelier:v1:state {json} -->`.
+// The comment starts with `<!-- atelier:v1 -->`, shows the status card (card.mjs) and a readable summary,
+// and carries the machine state on one hidden line `<!-- atelier:v1:state {json} -->`.
 //
 //   node state.mjs --next   --head <sha> [--body-file <f>]   prints the stage to run: build|ready|merge|stop
 //   node state.mjs --record --stage <s> --decision <d> --head <sha> [--reason <r>] [--pr <n>] [--body-file <f>]
+//                  --stage deliver records Deliver's result for the comment only; --next never reads it
 //                  [--ci-file <f>] [--preflight <line>]    prints the re-rendered comment body; Ready `proceed`
 //                                                          needs --ci-file: prepare's ci-ran.mjs output, green at --head;
 //                                                          --preflight stores preflight.mjs's `PREFLIGHT:` line once;
@@ -28,12 +29,17 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 
+import { altText, cardKey, outcomes } from "./card.mjs";
 import { companionDecision, isMain, makeTester, parseArgs, parseDegraded, requiredCompanions } from "./lib.mjs";
 import { markCompanions, markDecision, markNext, parseMemory } from "./telemetry.mjs";
 
 export const MARKER = "<!-- atelier:v1 -->";
 const STATE_RE = /<!-- atelier:v1:state (\{.*?\}) -->/s;
 export const STAGES = ["build", "ready", "merge"];
+// Deliver is recorded for the comment only: the stage machine (`next`) stops at the merge.
+export const RECORDABLE = [...STAGES, "deliver"];
+// The pre-rendered cards (render-cards.mjs). Pinned to main so an old comment keeps resolving.
+export const CARD_BASE = "https://raw.githubusercontent.com/mthines/agent-skills/main/skills/workflow/atelier/assets/cards";
 export const DECISIONS = ["proceed", "skipped", "refuse", "hold", "failed"];
 const DONE = new Set(["proceed", "skipped"]);
 
@@ -75,7 +81,7 @@ export function next(state, head) {
 }
 
 export function record(state, { stage, decision, head, reason = "", pr = null, ci = null, preflight = null, at = new Date().toISOString() }) {
-	if (!STAGES.includes(stage)) throw new Error(`unknown stage ${stage} (want ${STAGES.join("|")})`);
+	if (!RECORDABLE.includes(stage)) throw new Error(`unknown stage ${stage} (want ${RECORDABLE.join("|")})`);
 	if (!DECISIONS.includes(decision)) throw new Error(`unknown decision ${decision} (want ${DECISIONS.join("|")})`);
 	const s = state ? structuredClone(state) : { v: 1, pr: null, stages: {} };
 	if (pr) s.pr = pr;
@@ -93,35 +99,78 @@ export function record(state, { stage, decision, head, reason = "", pr = null, c
 	return s;
 }
 
-const HEADER_VERB = { refuse: "refused", hold: "held", failed: "failed" };
+const ICON = { proceed: "✅", skipped: "⏭️", hold: "⏸️", failed: "❌", refuse: "⛔" };
+const WORD = { proceed: "done", skipped: "skipped", hold: "held", failed: "failed", refuse: "refused" };
+const STOPPED = new Set(["hold", "failed", "refuse"]);
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const oneLine = (x) => String(x ?? "").replace(/\s*\n\s*/g, " ").trim();
+const cell = (x) => oneLine(x).replace(/\|/g, "\\|");
+const title = (stage) => stage[0].toUpperCase() + stage.slice(1);
 
-// ` · refused|held|failed: <reason>` for the last recorded stage, so a human sees why the run stopped.
-function header(state) {
-	const e = state.stages?.[state.stage];
-	const verb = e && HEADER_VERB[e.decision];
-	if (!verb) return "";
-	const reason = (e.reason || state.refusal || "").replace(/\n/g, " ");
-	return reason ? ` · ${verb}: ${reason}` : ` · ${verb}`;
+// GitHub's <relative-time> shows a live "2 minutes ago"; the text inside is the fallback, built from
+// UTC getters so the output is deterministic.
+function when(iso) {
+	const d = new Date(iso);
+	if (!iso || Number.isNaN(d.getTime())) return "";
+	const h = d.getUTCHours();
+	const shown = `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()} ${h % 12 || 12}:${String(d.getUTCMinutes()).padStart(2, "0")}${h < 12 ? "am" : "pm"}`;
+	return `<relative-time datetime="${d.toISOString()}">${shown}</relative-time>`;
 }
 
-export function render(state) {
-	const rows = STAGES.map((stage) => {
+// The line under the card: what the reader does next, from the same state `--next` reads.
+function nextLine(state) {
+	const st = state.stages;
+	const e = st[state.stage];
+	if (e && STOPPED.has(e.decision)) {
+		const why = oneLine(e.reason || state.refusal).replace(/\.$/, "");
+		return `**Needs you:** ${why ? `${why}. ` : ""}Then re-run \`/atelier <this PR>\` to resume at ${title(state.stage)}.`;
+	}
+	if (st.deliver) return st.deliver.decision === "skipped"
+		? `**Done:** merged; Deliver skipped${st.deliver.reason ? ` (${oneLine(st.deliver.reason)})` : ""}.`
+		: "**Done:** merged, and `main`'s pipeline is green for the merge commit.";
+	const n = next(state, null);
+	if (n === "stop") return "**Next:** Deliver checks `main`'s pipeline for the merge commit; re-run `/atelier <this PR>` if this run stopped.";
+	if (n === "ready") return "**Next:** re-run `/atelier <this PR>` to get it ready: review, threads, and green CI.";
+	if (n === "merge") return "**Next:** re-run `/atelier <this PR>` to run the merge gate.";
+	return "**Next:** re-run `/atelier <this PR>` to finish Build.";
+}
+
+/** The sticky comment: status card, the next step, a footer, and the run details. `cardBase` repoints the image (the gallery). */
+export function render(state, { cardBase = CARD_BASE } = {}) {
+	const o = outcomes(state);
+	const key = cardKey(o);
+	const last = state.stages[state.stage];
+	const latest = RECORDABLE.map((s) => state.stages[s]?.at).filter(Boolean).sort().at(-1);
+	const preflight = state.preflight ? oneLine(state.preflight).replace(/^PREFLIGHT:\s*/, "").replace(/`/g, "'") : null;
+	const rows = RECORDABLE.map((stage) => {
 		const e = state.stages[stage];
-		if (!e) return `| ${stage} | — | — | — | |`;
-		return `| ${stage} | ${e.decision} | ${e.sha ? `\`${e.sha.slice(0, 7)}\`` : "—"} | ${e.at} | ${(e.reason || "").replace(/\|/g, "\\|").replace(/\n/g, " ")} |`;
+		if (!e) return `| ⚪ | ${title(stage)} | not reached | | | |`;
+		return `| ${ICON[e.decision]} | ${title(stage)} | ${WORD[e.decision]} | ${e.sha ? `\`${e.sha.slice(0, 7)}\`` : ""} | ${when(e.at)} | ${cell(e.reason)} |`;
 	});
+	const ci = state.stages.ready?.ci;
+	const ciLine = ci && `**CI at \`${String(ci.head || "").slice(0, 7)}\`:** ${ci.state === "green" ? "🟢" : "🔴"} ${cell(ci.reason)}${ci.ran_checks?.length ? ` (${ci.ran_checks.map((c) => `\`${cell(c)}\``).join(", ")})` : ""}`;
 	const lines = [
 		MARKER,
-		"### 🧑‍🎨 Atelier",
+		`<picture><source media="(prefers-color-scheme: dark)" srcset="${cardBase}/${key}-dark.png"><img src="${cardBase}/${key}-light.png" width="700" alt="${altText(o)}"></picture>`,
 		"",
-		`Stage reached: **${state.stage ?? "none"}**${header(state)}`,
+		nextLine(state),
+		...(preflight && !preflight.startsWith("ok") ? [`**Heads-up:** preflight is ${preflight}.`] : []),
 		"",
-		...(state.preflight ? [`Preflight: \`${state.preflight.replace(/`/g, "'").replace(/\n/g, " ")}\``, ""] : []),
-		"| Stage | Decision | Head | At | Reason |",
-		"| --- | --- | --- | --- | --- |",
+		`<sub>🧑‍🎨 Atelier${last?.sha ? ` · head <code>${last.sha.slice(0, 7)}</code>` : ""}${latest ? ` · updated ${when(latest)}` : ""}</sub>`,
+		"",
+		"<details>",
+		"<summary>Run details</summary>",
+		"",
+		"| | Stage | Outcome | Head | When | Why |",
+		"| :-: | --- | --- | --- | --- | --- |",
 		...rows,
 		"",
+		...(ciLine ? [ciLine] : []),
+		...(preflight ? [`**Preflight:** \`${preflight}\``] : []),
+		...(ciLine || preflight ? [""] : []),
 		"Re-run `/atelier <this PR>` to resume at the first incomplete stage.",
+		"",
+		"</details>",
 		"",
 		// `>` is escaped so no reason can close the HTML comment early; JSON.parse restores it.
 		`<!-- atelier:v1:state ${JSON.stringify(state).replace(/>/g, "\\u003e")} -->`,
@@ -235,9 +284,13 @@ function selfTest() {
 	const tampered = structuredClone(s);
 	tampered.stages.ready.ci.head = "b2";
 	t("evidence from a head other than the entry's re-runs ready", next(tampered, "b2") === "ready");
-	t("a hold names its reason in the header", render(record(s, { stage: "ready", decision: "hold", head: "a1", reason: "CI not run: draft" })).includes("Stage reached: **ready** · held: CI not run: draft"));
-	t("a failure names its reason in the header", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("· failed: CI red"));
-	t("a proceed shows no reason in the header", /Stage reached: \*\*ready\*\*\n/.test(render(s)));
+	const heldBody = render(record(s, { stage: "ready", decision: "hold", head: "a1", reason: "CI not run: draft" }));
+	t("a hold names its reason under the card", heldBody.includes("**Needs you:** CI not run: draft. Then re-run `/atelier <this PR>` to resume at Ready."));
+	t("a hold picks the held card for both themes", heldBody.includes(`${CARD_BASE}/skipped-hold-pending-pending-dark.png`) && heldBody.includes(`${CARD_BASE}/skipped-hold-pending-pending-light.png`));
+	t("a failure names its reason under the card", render(record(s, { stage: "ready", decision: "failed", head: "a1", reason: "CI red" })).includes("**Needs you:** CI red."));
+	t("a proceed names the next stage, not a reason", render(s).includes("**Next:** re-run `/atelier <this PR>` to run the merge gate.") && !render(s).includes("Needs you"));
+	t("times render as GitHub relative-time", render(s).includes('<relative-time datetime="'));
+	t("the card base can be pointed elsewhere", render(s, { cardBase: "../assets/cards" }).includes('srcset="../assets/cards/'));
 	s = record(s, { stage: "merge", decision: "refuse", head: "a1", reason: "user-visible diff | no flag" });
 	t("a refused merge resumes at merge", next(s, "a1") === "merge");
 	t("a refusal is surfaced", s.refusal === "user-visible diff | no flag");
@@ -246,6 +299,10 @@ function selfTest() {
 	t("a refused merge round-trips", parse(body).stages.merge.decision === "refuse");
 	s = record(s, { stage: "merge", decision: "proceed", head: "a1", reason: "merged abc" });
 	t("a merged PR stops", next(s, "c3") === "stop" && s.refusal === null);
+	t("a merge with no Deliver yet says Deliver runs next", render(s).includes("**Next:** Deliver checks"));
+	const delivered = record(s, { stage: "deliver", decision: "proceed", head: "m1", reason: "main green" });
+	t("Deliver records for the comment and --next still stops", next(delivered, "c3") === "stop" && render(delivered).includes("/skipped-done-done-done-dark.png") && render(delivered).includes("**Done:** merged"));
+	t("a red Deliver asks for the human", render(record(s, { stage: "deliver", decision: "failed", head: "m1", reason: "reverted: revert PR #9" })).includes("**Needs you:** reverted: revert PR #9."));
 	let threw = false;
 	try {
 		record(s, { stage: "deploy", decision: "proceed" });
@@ -260,7 +317,9 @@ function selfTest() {
 	t("a bare number falls back to cwd origin", repoSlug("41", origin) === "other/checkout" && repoSlug("#41", origin) === "other/checkout");
 	t("an https origin parses too", repoSlug(41, () => "https://github.com/a/b.git\n") === "a/b");
 	const p = record(null, { stage: "build", decision: "proceed", head: "a1", preflight: "PREFLIGHT: limited — 1 gap (flag-provider)" });
-	t("a preflight line renders under the header and survives later records", render(record(p, { stage: "ready", decision: "hold", head: "a1", reason: "x" })).includes("Preflight: `PREFLIGHT: limited — 1 gap (flag-provider)`"));
+	const pBody = render(record(p, { stage: "ready", decision: "hold", head: "a1", reason: "x" }));
+	t("a limited preflight renders a heads-up and survives later records", pBody.includes("**Heads-up:** preflight is limited — 1 gap (flag-provider).") && pBody.includes("**Preflight:** `limited — 1 gap (flag-provider)`"));
+	t("an ok preflight gives no heads-up", !render(record(null, { stage: "build", decision: "proceed", head: "a1", preflight: "PREFLIGHT: ok — 0 gaps" })).includes("Heads-up"));
 	t("a state without preflight renders no preflight line", !render(s).includes("Preflight:"));
 	// Companions: what aw's `Degraded:` line says did not run.
 	const block = (deg, tier = "Full") => `AW RUN COMPLETE\n- Tier: ${tier}\n- Delivered: https://github.com/a/b/pull/1\n- Degraded: ${deg}\n- Needs you: nothing`;
@@ -310,7 +369,8 @@ async function main() {
 			const ci = typeof a["ci-file"] === "string" ? JSON.parse(readFileSync(a["ci-file"], "utf8").replace(/\n?CI: .*\s*$/, "")) : null;
 			const s = record(parse(readBody(a)), { stage: a.stage, decision: a.decision, head: a.head, reason: a.reason === true ? "" : a.reason || "", pr: a.pr, ci, preflight: typeof a.preflight === "string" ? a.preflight : null });
 			process.stdout.write(`${render(s)}\n`);
-			await markDecision({
+			// Deliver is display-only in the state; its telemetry is the bus event rules/deliver.md names.
+			if (STAGES.includes(a.stage)) await markDecision({
 				stage: a.stage, decision: a.decision, reason: a.reason === true ? "" : a.reason || "", head: a.head || null,
 				pr: typeof a.pr === "string" ? a.pr : s.pr, memory: typeof a.memory === "string" ? parseMemory(a.memory) : null,
 			});

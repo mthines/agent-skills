@@ -115,7 +115,14 @@ These change shared release state and stay with the user, each as an exact comma
 
 ## Reporting
 
-Deliver is not a stage in the state comment (`state.mjs` knows `build|ready|merge`, and recording another throws).
+Record the result on the state comment: `state.mjs --record --stage deliver --decision <proceed|hold|failed|skipped> --head <merge sha> --reason "<r>"`, then `--upsert`, so the PR shows whether it was delivered.
+It is display-only: `--next` never reads it, and it writes no telemetry span.
+
+```text
+✗ main red, revert PR merged, comment still reads "Merged. Delivering…"
+✓ state.mjs --record --stage deliver --decision failed --head 4f1c2d9 --reason "main red after one fix; reverted by #202"
+```
+
 Write one `bus` event per decision ([`decision-log.md`](./decision-log.md)) and print the terminal contract's `- Deliver: [green <run url> | red: <reason> | fix PR <url> | revert PR <url> | reverted <revert PR url> | skipped: <reason> | not reached]` line.
 A `hold` or `failed` result also goes under `Needs you:`.
 Re-running `/atelier <merged-pr-url>` runs Deliver on the merge commit, which is how a session that died mid-wait resumes.

@@ -69,6 +69,7 @@ Running `/atelier` at the top level prevents most skips: the nested context is w
 
 The PR outlives the session, the worktree, and the machine that started the run.
 A sticky comment marked `<!-- atelier:v1 -->` lets any later `/atelier <pr>` resume where the last one stopped, and shows a reviewer the same table the machine reads.
+The comment leads with a pre-rendered status card because GitHub cannot draw an image per comment, and a fixed set of 26 states × 2 themes keeps every run's comment identical in shape; the table stays, collapsed, for the details.
 Ready is re-run when the head moved because a pushed fix can turn CI red or open a thread; a green result on an older head says nothing about the new one.
 
 ## Ground truth

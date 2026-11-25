@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "pr": "https://github.com/mthines/reaper-mcp/pull/195",
+  "stages": {
+    "build": {
+      "decision": "proceed",
+      "at": "2026-11-25T13:02:10.000Z",
+      "sha": "8e0b152270c509ca9634c6cd3363da87f98bd0ad",
+      "reason": "aw Full: draft PR, review-loop converged"
+    }
+  },
+  "preflight": "PREFLIGHT: ok — 0 gaps",
+  "stage": "build",
+  "refusal": null
+}

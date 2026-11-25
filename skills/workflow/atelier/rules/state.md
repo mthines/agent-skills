@@ -12,11 +12,10 @@ The run's state is one PR comment that starts with `<!-- atelier:v1 -->`, edited
 
 ## Shape
 
-Per stage (`build`, `ready`, `merge`): `decision` (`proceed | skipped | refuse | hold | failed`), `at` (ISO 8601), `sha` (head the stage ran on), `reason`.
+Per stage (`build`, `ready`, `merge`, and display-only `deliver`): `decision` (`proceed | skipped | refuse | hold | failed`), `at` (ISO 8601), `sha` (head the stage ran on), `reason`.
 A Ready `proceed` also carries `ci`: the `prepare` helper `ci-ran.mjs`'s verdict (`state`, `ran`, `head`, `reason`), passed as `--record … --ci-file ci.json`.
 `--record` refuses Ready `proceed` (exit 2) unless that verdict is `green` with `ran: true` at `--head`.
-At the top: the last stage recorded and, after a `refuse`, `hold`, or `failed`, its reason (`· refused: …`, `· held: …`, `· failed: …`).
-Under it, once recorded: `Preflight:` with `preflight.mjs`'s last line, stored at the top level of the state by the first `--record … --preflight "<line>"` and kept by every later record.
+The preflight line is stored at the top level of the state by the first `--record … --preflight "<line>"` and kept by every later record.
 A Build `hold` for companions that did not run carries reason `skipped: <names>`, which `state.mjs --companions` prints.
 
 ```text
@@ -27,6 +26,23 @@ A Build `hold` for companions that did not run carries reason `skipped: <names>`
 ```text
 ✗ node state.mjs --record --stage ready --decision proceed --head b56dfb5 --reason "16 checks skipped on draft"
 ✓ node ci-ran.mjs --pr <pr-url> --head b56dfb5 > ci.json   # CI: not-run → record Ready hold instead
+```
+
+## Comment
+
+`render()` writes, in order:
+
+1. The status card: `assets/cards/<build>-<ready>-<merge>-<deliver>-<light|dark>.png` in a `<picture>`, picked by `card.mjs`'s `cardKey`, linked from `main` on `raw.githubusercontent.com`.
+2. `**Needs you:** <reason>` after a `hold`, `failed`, or `refuse`; else `**Next:** …` from `--next`, or `**Done:** …` once Deliver is recorded.
+3. `**Heads-up:**` when preflight is not `ok`.
+4. A footer with the head and `<relative-time>`, which GitHub shows as "2 minutes ago".
+5. `Run details`, collapsed: one row per stage with `<relative-time>`, the CI evidence, and the preflight line.
+
+A change to `card.mjs` or `mascot.mjs` re-renders the cards (`render-cards.mjs`, needs Chrome) and the [gallery](../scripts/fixtures/comments/README.md) (`gallery.mjs`) in the same commit.
+
+```text
+✗ edit card.mjs, commit                         # comments link cards that no longer match the code
+✓ node render-cards.mjs && node gallery.mjs      # gallery.mjs --self-test fails on a stale README or a missing card
 ```
 
 ## Resume
