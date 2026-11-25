@@ -57,22 +57,27 @@ export function classify(pr, { checks = [], sinceStartMs = 0, graceMs = START_GR
 	if (checks.length === 0) return out("manual", "a review is required and no automatic approval is configured (.agents/aw/merge.yml approval.wait_for): a person has to review");
 
 	const contexts = pr.statusCheckRollup ?? [];
+	const phaseOf = (node) => {
+		if (node.__typename === "StatusContext") return { phase: { SUCCESS: "passed", PENDING: "pending", EXPECTED: "pending" }[node.state] ?? "failed", verdict: node.state };
+		return { phase: node.status !== "COMPLETED" ? "pending" : node.conclusion === "SUCCESS" ? "passed" : "failed", verdict: node.conclusion };
+	};
+	// A check can have several runs (one per event): it passed if any run passed, is pending if any still runs, failed only when every run finished without passing.
 	const phases = checks.map((re) => {
-		const node = contexts.find((c) => re.test(c.name ?? c.context ?? ""));
-		if (!node) return { label: String(re.source), phase: "missing" };
-		const label = node.name ?? node.context;
-		if (node.__typename === "StatusContext") {
-			return { label, phase: { SUCCESS: "passed", PENDING: "pending", EXPECTED: "pending" }[node.state] ?? "failed", verdict: node.state };
-		}
-		return { label, phase: node.status !== "COMPLETED" ? "pending" : node.conclusion === "SUCCESS" ? "passed" : "failed", verdict: node.conclusion };
+		const nodes = contexts.filter((c) => re.test(c.name ?? c.context ?? ""));
+		if (!nodes.length) return { label: String(re.source), phase: "missing" };
+		const runs = nodes.map((n) => ({ label: n.name ?? n.context, ...phaseOf(n) }));
+		return runs.find((r) => r.phase === "passed") ?? runs.find((r) => r.phase === "pending") ?? runs[0];
 	});
 	const failed = phases.find((p) => p.phase === "failed");
 	if (failed) return out("manual", `${failed.label} finished ${String(failed.verdict).toLowerCase()}, so it did not approve: a person has to review`);
 	const missing = phases.filter((p) => p.phase === "missing");
-	if (missing.length && sinceStartMs >= graceMs) return out("manual", `${missing.map((p) => p.label).join(", ")} never ran: a person has to review`);
+	if (missing.length && sinceStartMs >= graceMs) return out("manual", `${missing.map((p) => p.label).join(", ")} did not appear: a person has to review`);
 	const waiting = phases.filter((p) => p.phase !== "passed");
 	if (waiting.length) return out("pending", `${waiting.map((p) => `${p.label} ${p.phase === "missing" ? "has not started" : "is still running"}`).join("; ")}`);
-	return out("approved", `${phases.map((p) => p.label).join(", ")} passed`);
+	const names = phases.map((p) => p.label).join(", ");
+	// The merge needs the review decision itself: a passed check whose review has not landed yet is still waiting.
+	if (sinceStartMs < graceMs) return out("pending", `${names} passed; waiting for the review decision to turn APPROVED`);
+	return out("manual", `${names} passed but the review decision is still ${pr.reviewDecision}: a person has to review`);
 }
 
 // The repo's approval settings from .agents/aw/merge.yml, parsed with deployment-verify's YAML reader; absent file → {}.
@@ -99,12 +104,13 @@ export function checkFlags(argv) {
 // `check()` returns classify()'s result. All time and I/O is injected.
 export async function waitForApproval({ check, expectedHead = null, maxWaitMs, intervalMs, graceMs = START_GRACE_MINUTES * 60_000, now = Date.now, sleep }) {
 	const start = now();
+	const grace = Math.min(graceMs, maxWaitMs);
 	let polls = 0;
 	let errors = 0;
 	for (;;) {
 		let r;
 		try {
-			r = await check(now() - start, graceMs);
+			r = await check(now() - start, grace);
 			errors = 0;
 		} catch (e) {
 			if (++errors >= MAX_CONSECUTIVE_ERRORS || now() - start >= maxWaitMs) throw e;
@@ -151,7 +157,12 @@ async function selfTest() {
 	t("changes requested is manual", cls(pr({ reviewDecision: "CHANGES_REQUESTED" })).state === "manual");
 	t("no review required means approved, with no check named", classify(pr({ reviewDecision: "" })).state === "approved");
 	t("a required review with no check named is manual at once", (() => { const r = classify(pr()); return r.state === "manual" && /no automatic approval is configured/.test(r.reason); })());
-	t("a passed named check approves", cls(pr({ statusCheckRollup: [dp("COMPLETED", "SUCCESS")] })).state === "approved");
+	t("a passed named check waits for the review decision to turn APPROVED", (() => { const r = cls(pr({ statusCheckRollup: [dp("COMPLETED", "SUCCESS")] })); return r.state === "pending" && /waiting for the review decision/.test(r.reason); })());
+	t("a passed named check whose review never lands is manual after the grace", (() => { const r = cls(pr({ statusCheckRollup: [dp("COMPLETED", "SUCCESS")] }), { sinceStartMs: 6 * 60_000 }); return r.state === "manual" && /still REVIEW_REQUIRED/.test(r.reason); })());
+	t("a passed named check with the decision APPROVED approves", cls(pr({ reviewDecision: "APPROVED", statusCheckRollup: [dp("COMPLETED", "SUCCESS")] })).state === "approved");
+	t("two runs of the named check, one skipped and one passed, count as passed", cls(pr({ statusCheckRollup: [dp("COMPLETED", "SKIPPED"), dp("COMPLETED", "SUCCESS")] })).state === "pending");
+	t("two runs, one skipped and one still running, are pending", cls(pr({ statusCheckRollup: [dp("COMPLETED", "SKIPPED"), dp("IN_PROGRESS", null)] })).state === "pending");
+	t("two runs that all finished without passing are manual", cls(pr({ statusCheckRollup: [dp("COMPLETED", "SKIPPED"), dp("COMPLETED", "FAILURE")] })).state === "manual");
 	t("a running named check is pending", cls(pr({ statusCheckRollup: [dp("IN_PROGRESS", null)] })).state === "pending");
 	t("a queued named check is pending", cls(pr({ statusCheckRollup: [dp("QUEUED", null)] })).state === "pending");
 	for (const conclusion of ["FAILURE", "NEUTRAL", "SKIPPED", "CANCELLED", "TIMED_OUT"]) {
@@ -160,20 +171,21 @@ async function selfTest() {
 	}
 	const status = (state) => ({ __typename: "StatusContext", context: "Darkplane auto-approval", state });
 	t("a commit status PENDING is pending", cls(pr({ statusCheckRollup: [status("PENDING")] })).state === "pending");
-	t("a commit status SUCCESS approves", cls(pr({ statusCheckRollup: [status("SUCCESS")] })).state === "approved");
+	t("a commit status SUCCESS waits for the review decision", cls(pr({ statusCheckRollup: [status("SUCCESS")] })).state === "pending");
 	t("a commit status ERROR is manual", cls(pr({ statusCheckRollup: [status("ERROR")] })).state === "manual");
 	t("other checks are not the named one", cls(pr({ statusCheckRollup: [run("Run E2E tests", "COMPLETED", "SUCCESS")] })).state === "pending");
 	t("a named check that has not shown up waits through the grace", cls(pr(), { sinceStartMs: 60_000 }).state === "pending");
-	t("a named check that never shows up is manual after the grace", (() => { const r = cls(pr(), { sinceStartMs: 6 * 60_000 }); return r.state === "manual" && /never ran/.test(r.reason); })());
+	t("a named check that never shows up is manual after the grace", (() => { const r = cls(pr(), { sinceStartMs: 6 * 60_000 }); return r.state === "manual" && /did not appear/.test(r.reason); })());
 	t("the grace is configurable", cls(pr(), { sinceStartMs: 60_000, graceMs: 30_000 }).state === "manual");
 
 	const two = [/darkplane auto-approval/i, /policy-bot/i];
 	const both = [dp("COMPLETED", "SUCCESS"), run("policy-bot", "COMPLETED", "SUCCESS")];
-	t("several named checks: all passed approves", classify(pr({ statusCheckRollup: both }), { checks: two }).state === "approved");
+	t("several named checks: all passed, decision APPROVED, approves", classify(pr({ reviewDecision: "APPROVED", statusCheckRollup: both }), { checks: two }).state === "approved");
+	t("several named checks: all passed, review not yet APPROVED, waits", classify(pr({ statusCheckRollup: both }), { checks: two }).state === "pending");
 	t("several named checks: one failing is manual even while another runs", classify(pr({ statusCheckRollup: [dp("COMPLETED", "FAILURE"), run("policy-bot", "IN_PROGRESS", null)] }), { checks: two }).state === "manual");
 	t("several named checks: one still running is pending", classify(pr({ statusCheckRollup: [dp("COMPLETED", "SUCCESS"), run("policy-bot", "IN_PROGRESS", null)] }), { checks: two }).state === "pending");
 	t("several named checks: one missing after the grace is manual", classify(pr({ statusCheckRollup: [dp("COMPLETED", "SUCCESS")] }), { checks: two, sinceStartMs: 6 * 60_000 }).state === "manual");
-	t("a regex names the check, whatever the repo calls it", classify(pr({ statusCheckRollup: [run("Other bot", "COMPLETED", "SUCCESS")] }), { checks: [/other bot/i] }).state === "approved");
+	t("a regex names the check, whatever the repo calls it", classify(pr({ statusCheckRollup: [run("Other bot", "COMPLETED", "SUCCESS")] }), { checks: [/other bot/i] }).reason.startsWith("Other bot passed"));
 
 	t("--check flags are all collected, in order", JSON.stringify(checkFlags(["--pr", "x", "--check", "a", "--max-wait", "1", "--check", "b"])) === '["a","b"]');
 	t("a --check with no value is ignored", checkFlags(["--check"]).length === 0 && checkFlags(["--check", "--pr", "x"]).length === 0);
@@ -215,6 +227,9 @@ async function selfTest() {
 	t("manual ends the wait", declined.state === "manual" && declined.polls === 2);
 	const stuck = await wait(sequence("pending"));
 	t("pending past --max-wait ends as pending", stuck.state === "pending" && stuck.waited_s === 600, JSON.stringify(stuck));
+	const seen = [];
+	await wait(async (_since, g) => { seen.push(g); return { state: "approved", reason: "a", head: sha }; }, { maxWaitMs: 60_000, graceMs: 300_000 });
+	t("the grace never exceeds --max-wait", seen[0] === 60_000, JSON.stringify(seen));
 	const zero = await wait(sequence("pending", "approved"), { maxWaitMs: 0 });
 	t("--max-wait 0 reads once and never sleeps", zero.state === "pending" && zero.polls === 1 && zero.waited_s === 0);
 	const merged = await wait(sequence("merged"));

@@ -56,6 +56,7 @@ A passing merge gate is not a review.
 Some repos block the merge on a required review that an automatic check gives, such as an auto-approval app or a policy check; that check is usually not a required status, so CI never waits for it, and a merge attempted right after the gate meets `REVIEW_REQUIRED`.
 Atelier waits for it before merging and holds for a person when it does not approve, because the alternative is a bypass (`--admin`) or a run that ends at a hold the user must resume for a verdict that arrives in minutes.
 Which check approves is the repo's fact, so it lives in `.agents/aw/merge.yml` (`approval.wait_for`, regexes on check names), with `--check` as a one-run override; atelier names no vendor, and a required review with nothing configured is a person's job at once, with no wait.
+A check that passes is not the review: a bot can finish its check before its review lands, and the merge is refused until the review decision is `APPROVED`, so the wait ends only on that decision.
 A named check that finished without approving (neutral, skipped, failed) ends the wait immediately: its verdict will not change, so waiting out `--max-wait` would only delay the hold.
 An approval of an older head proves nothing about the one being merged, so the wait takes `--head` and ends as `moved` when the PR's head differs.
 The wait lives in its own script, `approval-wait.mjs`, because its states (approved, manual, pending) differ from CI's (green, red, not-run); it shares the loop's shape with `ci-wait.mjs`, not its code.
