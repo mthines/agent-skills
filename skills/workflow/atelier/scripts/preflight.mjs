@@ -130,7 +130,16 @@ export function planLines(steps) {
 	return steps.map((s) => (s.kind === "skill" ? `SETUP: ${s.call} — fixes ${s.fixes.join(", ")}` : `MANUAL: ${s.name} — ${s.fix}`));
 }
 
-// Before/after of the preflight checks; the profile is reported by measurable's own setup, not counted here.
+// A release.yml the reader cannot parse is not judged here: the flag-provider row already reports it.
+async function hasPipeline(repo) {
+	const release = await readYaml(join(repo, ".agents", "aw", "release.yml"));
+	return !!release?.unknown || !!release?.pipeline;
+}
+
+export const PIPELINE_MANUAL = "MANUAL: pipeline — release.yml has no pipeline: block, so Deliver cannot read main's CI; re-run /deployment-verify setup and name the workflow";
+
+// Before/after of the preflight checks only: the profile is reported by measurable's own setup, and a missing
+// pipeline: block by the PIPELINE_MANUAL line, so neither is counted here.
 export function compareTable(before, after) {
 	const was = Object.fromEntries(before.map((c) => [c.name, c]));
 	const now = Object.fromEntries(after.map((c) => [c.name, c]));
@@ -292,6 +301,16 @@ async function selfTest() {
 	const manual = planLines(setupPlan([ci]));
 	t("setup: ci-on-draft is one manual line naming the workflow", manual.length === 1 && /^MANUAL: ci-on-draft — no — 1 of 2 skip drafts \(ci\.yml\)/.test(manual[0]), manual.join(" / "));
 	t("setup: a provider but no pipeline: block still calls deployment-verify setup", planLines(setupPlan([flagCheck({ present: true, config: { flags: { providers: [{ name: "posthog" }] } } })], { pipeline: false })).join() === 'SETUP: Skill("deployment-verify", "setup") — fixes pipeline (no release.yml pipeline:)');
+	const noPipe = mkdtempSync(join(tmpdir(), "atelier-preflight-"));
+	try {
+		mkdirSync(join(noPipe, ".agents", "aw"), { recursive: true });
+		writeFileSync(join(noPipe, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\n");
+		const before = await hasPipeline(noPipe);
+		writeFileSync(join(noPipe, ".agents", "aw", "release.yml"), "environments:\n  production:\n    url: x\npipeline:\n  workflow: CI\n");
+		t("compare: a release.yml without pipeline: is reported, one with it is not", before === false && (await hasPipeline(noPipe)) === true && /^MANUAL: pipeline — /.test(PIPELINE_MANUAL));
+	} finally {
+		rmSync(noPipe, { recursive: true, force: true });
+	}
 	t("setup: no gaps and a profile → nothing to delegate", planLines(setupPlan([telemetryCheck({ backend: "logs" })])).join() === "SETUP: nothing to delegate — 0 gaps");
 	const cmp = compareTable(bare, [flagCheck({ present: false }), telemetryCheck({ backend: "logs" }), signInCheck(null), ciDraftCheck([])]);
 	t("compare: counts fixed and names the remaining gaps", cmp.line === "SETUP: 1 fixed, 2 remaining (flag-provider, sign-in)", cmp.line);
@@ -309,10 +328,7 @@ async function main() {
 		const { gaps, line } = summarize(checks);
 		// Setup modes start no trace: they are not a run.
 		if (a.setup) {
-			const release = await readYaml(join(repo, ".agents", "aw", "release.yml"));
-			// A release.yml the reader cannot parse is not judged here: the flag-provider row already reports it.
-			const pipeline = !!release?.unknown || !!release?.pipeline;
-			const steps = setupPlan(checks, { profile: existsSync(join(repo, PROFILE)), pipeline });
+			const steps = setupPlan(checks, { profile: existsSync(join(repo, PROFILE)), pipeline: await hasPipeline(repo) });
 			if (a.json) console.log(JSON.stringify({ checks, gaps, steps }, null, 2));
 			else console.log([table(checks), line, ...planLines(steps)].join("\n"));
 			return;
@@ -320,7 +336,7 @@ async function main() {
 		if (typeof a.compare === "string") {
 			const before = JSON.parse(readFileSync(a.compare, "utf8")).checks;
 			const { text, line: setupLine } = compareTable(before, checks);
-			console.log([text, line, setupLine].join("\n"));
+			console.log([text, line, setupLine, ...((await hasPipeline(repo)) ? [] : [PIPELINE_MANUAL])].join("\n"));
 			return;
 		}
 		if (a.json) console.log(JSON.stringify({ checks, gaps }, null, 2));

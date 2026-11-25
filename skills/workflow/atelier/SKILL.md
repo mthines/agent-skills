@@ -66,7 +66,7 @@ The setup skills it calls ask the user questions, so it runs interactively only:
    The called skill owns its questions, its files, and its validation; never write `.agents/aw/*` or the observability profile yourself, and never answer its questions for the user.
    A call that stops or that the user declines → note it for `Ran:` and run the next one.
 4. Print every `MANUAL:` line, with the GitHub one from step 1, for `Needs you:`; never edit `.github/workflows/` here.
-5. After: run `node "$A/preflight.mjs" --compare setup-before.json` and print its table; when the `telemetry` row is `ok`, call the tool it names once, as Step 0 item 3 does.
+5. After: run `node "$A/preflight.mjs" --compare setup-before.json` and print its table, adding its `MANUAL: pipeline` line, when printed, to `Needs you:`; when the `telemetry` row is `ok`, call the tool it names once, as Step 0 item 3 does.
 6. Commit nothing: pass on the paths the setup skills printed for the user to review and commit.
 
 ```text
